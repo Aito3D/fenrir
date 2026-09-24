@@ -237,20 +237,25 @@
    235	# Migration: tracking page view log (2026-09-06). A row is a card and a
    236	# Migration: payment-link ledger + the two project facts it reads
    237	# Migration: the customer's unspent deposits, customer-wide (2026-09-15).
-   238	# Migration: heal the 'invoiced' quote statuses the sync worker stored
-   239	# Migration: per-file print progress inside a project (#1897).
-   240	# Migration: persist the timelapse snapshot-diff baseline (#2704).
-   241	# Migration: plate-clear-required notification opt-in (#2525). Off by
-   242	# Migration: variant grouping for library files (#671 / #2570). The
-   243	# Migration: Home Assistant sensor alerts (#1148). The printer_ha_sensors
-   244	# Migration: auto-drying-suspended notification opt-in (#2770). Defaults ON:
-   245	# Migration: brand(s) a 3MF was sliced with, so the pricing calculator can
-   246	# Migration: storage location sensor alerts (#2824), own column rather than
-   247	# Migration: rename the ha_sensor_alert template (#2824). "Home Assistant
-   248	# Migration: back the one-binding-per-(location, entity) rule with a unique
-   249	# Migration: repair the tare of spools the RFID auto-add gave the wrong
-   250	# Migration: drop the AMS slot markers an older Fenrir wrote into
-   251	# Migration: whether Books has been directly observed to agree with an
+   238	# Migration: the chosen Zoho contact person on a card (2026-09-22; first
+   239	# Migration: per-customer payment rating cache (2026-09-22). See
+   240	# Migration: the rating rework of 2026-09-23 scores companies on their
+   241	# Migration: terminal (TPE) charges started from a project card (2026-09-23).
+   242	# Migration: invoice payment links share the quote links' ledger (2026-09-23).
+   243	# Migration: heal the 'invoiced' quote statuses the sync worker stored
+   244	# Migration: per-file print progress inside a project (#1897).
+   245	# Migration: persist the timelapse snapshot-diff baseline (#2704).
+   246	# Migration: plate-clear-required notification opt-in (#2525). Off by
+   247	# Migration: variant grouping for library files (#671 / #2570). The
+   248	# Migration: Home Assistant sensor alerts (#1148). The printer_ha_sensors
+   249	# Migration: auto-drying-suspended notification opt-in (#2770). Defaults ON:
+   250	# Migration: brand(s) a 3MF was sliced with, so the pricing calculator can
+   251	# Migration: storage location sensor alerts (#2824), own column rather than
+   252	# Migration: rename the ha_sensor_alert template (#2824). "Home Assistant
+   253	# Migration: back the one-binding-per-(location, entity) rule with a unique
+   254	# Migration: repair the tare of spools the RFID auto-add gave the wrong
+   255	# Migration: drop the AMS slot markers an older Fenrir wrote into
+   256	# Migration: whether Books has been directly observed to agree with an
 
 ### stderr:
 

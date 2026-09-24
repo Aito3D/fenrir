@@ -326,6 +326,7 @@
       "parts": 100,
       "partStep": 50,
       "invoice": 250,
+      "flipDot": 80,
       "halo": 280,
       "reveal": 40,
       "footer": 400,
@@ -403,7 +404,7 @@
     "BRAND": "Aito3D",
     "CARD": "relative mx-auto w-[calc(100%-32px)] max-w-[620px] rounded-[12px] border border-aito-line bg-aito-card px-[24px] py-[24px] sm:w-auto sm:px-[32px] sm:py-[32px]",
     "FOCUS": "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-aito-cyan",
-    "PRESS": "active:scale-[0.97] transition-[color,background-color,transform] duration-150",
+    "PRESS": "active:scale-[0.97] transition-[color,background-color,transform,filter] duration-150",
     "delayAt": [
       {
         "animationDelay": "0ms"
