@@ -5837,6 +5837,14 @@ async def run_migrations(conn):
         conn, "CREATE INDEX IF NOT EXISTS ix_aito_terminal_payments_status ON aito_terminal_payments(status)"
     )
 
+    # Migration: invoice payment links share the quote links' ledger (2026-09-23).
+    # Existing rows are all quote links whose `reference` IS the quote number.
+    await _safe_execute(
+        conn, "ALTER TABLE aito_payment_links ADD COLUMN document_kind VARCHAR(10) NOT NULL DEFAULT 'quote'"
+    )
+    await _safe_execute(conn, "ALTER TABLE aito_payment_links ADD COLUMN document_number VARCHAR(64)")
+    await _safe_execute(conn, "UPDATE aito_payment_links SET document_number = reference WHERE document_number IS NULL")
+
     await _backfill_aito_events(conn)
 
     # Migration: heal the 'invoiced' quote statuses the sync worker stored

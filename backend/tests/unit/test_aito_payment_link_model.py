@@ -3,7 +3,9 @@ real migrations (run_migrations creates the table on a bare schema)."""
 
 import pytest
 from sqlalchemy import select, text
+from sqlalchemy.ext.asyncio import create_async_engine
 
+from backend.app.core.database import Base
 from backend.app.models.aito_payment_link import AitoPaymentLink
 from backend.app.models.aito_project import AitoProject
 
@@ -94,5 +96,34 @@ async def test_migration_creates_table_and_columns_on_a_bare_schema():
         cols = {r[1] for r in (await conn.execute(text("PRAGMA table_info(aito_projects)"))).fetchall()}
         assert {"quote_expiry_date", "retainer_paid_total", "customer_credit_total"} <= cols
         link_cols = {r[1] for r in (await conn.execute(text("PRAGMA table_info(aito_payment_links)"))).fetchall()}
-        assert {"idempotency_key", "heimdall_id", "status", "superseded_at"} <= link_cols
+        assert {
+            "idempotency_key",
+            "heimdall_id",
+            "status",
+            "superseded_at",
+            "document_kind",
+            "document_number",
+        } <= link_cols
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_migration_adds_document_kind_to_an_existing_links_table():
+    from backend.app.core.database import run_migrations
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+        await conn.execute(text("ALTER TABLE aito_payment_links DROP COLUMN document_kind"))
+        await conn.execute(text("ALTER TABLE aito_payment_links DROP COLUMN document_number"))
+        await conn.execute(
+            text(
+                "INSERT INTO aito_payment_links (project_id, idempotency_key, reference, amount, expires_on, status)"
+                " VALUES (1, 'aito:1:1', 'DEV-1', 100, '2026-12-31', 'pending')"
+            )
+        )
+    async with engine.begin() as conn:
+        await run_migrations(conn)
+        row = (await conn.execute(text("SELECT document_kind, document_number FROM aito_payment_links"))).first()
+        assert tuple(row) == ("quote", "DEV-1")
     await engine.dispose()

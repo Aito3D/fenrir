@@ -254,23 +254,34 @@ def _in_backoff(row: AitoPaymentLink, now: datetime) -> bool:
     return now - row.checked_at < wait
 
 
-async def current_link(db: AsyncSession, project_id: int) -> AitoPaymentLink | None:
+async def current_link(db: AsyncSession, project_id: int, *, kind: str = "quote") -> AitoPaymentLink | None:
+    """The newest un-superseded link of one kind. The reconciler, the
+    tracking page and the board all mean the QUOTE link; invoice links are
+    reached only by the block that created them (`kind="invoice"`)."""
     stmt = (
         select(AitoPaymentLink)
-        .where(AitoPaymentLink.project_id == project_id, AitoPaymentLink.superseded_at.is_(None))
+        .where(
+            AitoPaymentLink.project_id == project_id,
+            AitoPaymentLink.superseded_at.is_(None),
+            AitoPaymentLink.document_kind == kind,
+        )
         .order_by(AitoPaymentLink.id.desc())
         .limit(1)
     )
     return (await db.execute(stmt)).scalar_one_or_none()
 
 
-async def current_links(db: AsyncSession, project_ids: list[int]) -> dict[int, AitoPaymentLink]:
-    """One query for a whole board: the newest un-superseded row per project."""
+async def current_links(db: AsyncSession, project_ids: list[int], *, kind: str = "quote") -> dict[int, AitoPaymentLink]:
+    """One query for a whole board: the newest un-superseded row of one kind per project."""
     if not project_ids:
         return {}
     stmt = (
         select(AitoPaymentLink)
-        .where(AitoPaymentLink.project_id.in_(project_ids), AitoPaymentLink.superseded_at.is_(None))
+        .where(
+            AitoPaymentLink.project_id.in_(project_ids),
+            AitoPaymentLink.superseded_at.is_(None),
+            AitoPaymentLink.document_kind == kind,
+        )
         .order_by(AitoPaymentLink.project_id, AitoPaymentLink.id.desc())
     )
     out: dict[int, AitoPaymentLink] = {}
@@ -286,13 +297,25 @@ async def _next_key(db: AsyncSession, project_id: int) -> str:
     return f"aito:{project_id}:{len(count) + 1}"
 
 
+async def _after_invoice_paid(db: AsyncSession, project_id: int) -> None:
+    """Hook for the figures refresh a paid INVOICE link triggers. Filled by
+    aito_manual_payments.refresh_after_payment once that module exists; a
+    lazy import here keeps this module free of the Zoho client."""
+    from backend.app.services.aito_manual_payments import refresh_after_payment
+
+    await refresh_after_payment(db, project_id, "invoice")
+
+
 async def _became_paid(db: AsyncSession, row: AitoPaymentLink, *, now: datetime) -> None:
     """Everything a link's transition to `paid` triggers, wherever it was
     discovered — a poll, a cancel racing a payment (409), a patch racing one
     (409). `row.status` must already be `'paid'` (the caller's `_adopt` set
     it) before this runs. Stamps `paid_at`, records the story event, commits,
-    then accepts the quote if the project is still active."""
+    then — for a QUOTE link — accepts the quote if the project is still
+    active. An INVOICE link accepts nothing: the quote was accepted long
+    before it was billed; it only refreshes the invoice figures."""
     project_id = row.project_id
+    kind = row.document_kind or "quote"
     row.paid_at = now
     await record(
         db,
@@ -301,9 +324,17 @@ async def _became_paid(db: AsyncSession, row: AitoPaymentLink, *, now: datetime)
         actor_class="system",
         subject_type="project",
         subject_id=project_id,
-        detail={"reference": row.reference, "amount": row.amount, "heimdall_id": row.heimdall_id},
+        detail={
+            "reference": row.reference,
+            "amount": row.amount,
+            "heimdall_id": row.heimdall_id,
+            "document_kind": kind,
+        },
     )
     await db.commit()
+    if kind == "invoice":
+        await _after_invoice_paid(db, project_id)
+        return
     from backend.app.services.aito_quote_status import accept_quote
 
     project = await db.get(AitoProject, project_id)
@@ -334,6 +365,8 @@ async def _create(
         amount=wanted.amount,
         expires_on=wanted.expires_on,
         created_at=now,
+        document_kind="quote",
+        document_number=wanted.reference,
     )
     db.add(row)
     await db.commit()
@@ -857,19 +890,30 @@ async def _run_pass(
             pending_ids = list((await db.execute(pending)).scalars().all())
             for rid in pending_ids:
                 project_id: int | None = None
+                row_kind = "quote"
                 try:
                     row = await db.get(AitoPaymentLink, rid)
                     if row is None or (not force and _in_backoff(row, now)):
                         continue
                     project_id = row.project_id
+                    row_kind = row.document_kind or "quote"
                     await poll_link(db, row, now=now)
                 except HeimdallNotFound as exc:
                     # The poll is the only thing that notices a lost link
                     # in the steady state (no drift, so the reconcile half
                     # had nothing to send). Replace it in this same pass.
-                    logger.warning("payment link row %s is gone at Heimdall, replacing: %s", rid, exc)
+                    logger.warning("payment link row %s is gone at Heimdall: %s", rid, exc)
                     await db.rollback()
                     if project_id is None:
+                        continue
+                    if row_kind == "invoice":
+                        # Nothing to replace: the block offers "create a new
+                        # link" once this one reads as failed.
+                        lost = await db.get(AitoPaymentLink, rid)
+                        if lost is not None:
+                            lost.status = "failed"
+                            _fail(lost, exc, now)
+                            await db.commit()
                         continue
                     try:
                         await _replace_lost(db, project_id, exc, now=now, pct=pct, validity_days=validity, today=today)

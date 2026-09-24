@@ -1348,3 +1348,70 @@ async def test_two_passes_at_once_mint_one_link_not_two(test_engine, fake):
         rows = await _rows(check, project_id)
     assert len(rows) == 1 and rows[0].status == "pending"
     assert [c[0] for c in fake.calls if c[0] == "create"] == ["create"]
+
+
+# --- document_kind -----------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_current_link_ignores_invoice_links_by_default(db_session):
+    project = await _project(db_session)
+    db_session.add(
+        AitoPaymentLink(
+            project_id=project.id,
+            idempotency_key=f"aito:{project.id}:1",
+            reference="DEV-1",
+            amount=100,
+            expires_on="2026-12-31",
+            document_kind="quote",
+            document_number="DEV-1",
+        )
+    )
+    db_session.add(
+        AitoPaymentLink(
+            project_id=project.id,
+            idempotency_key=f"aito:{project.id}:2",
+            reference="FA-1",
+            amount=50,
+            expires_on="2026-12-31",
+            document_kind="invoice",
+            document_number="FA-1",
+        )
+    )
+    await db_session.commit()
+    quote = await svc.current_link(db_session, project.id)
+    assert quote is not None and quote.document_kind == "quote"
+    invoice = await svc.current_link(db_session, project.id, kind="invoice")
+    assert invoice is not None and invoice.reference == "FA-1"
+    assert (await svc.current_links(db_session, [project.id]))[project.id].document_kind == "quote"
+    assert (await svc.current_links(db_session, [project.id], kind="invoice"))[project.id].reference == "FA-1"
+
+
+@pytest.mark.asyncio
+async def test_paid_invoice_link_records_but_never_accepts_the_quote(db_session, monkeypatch):
+    project = await _project(db_session, quote_status="sent")
+    row = AitoPaymentLink(
+        project_id=project.id,
+        idempotency_key=f"aito:{project.id}:1",
+        reference="FA-1",
+        amount=50,
+        expires_on="2026-12-31",
+        heimdall_id="h-1",
+        status="paid",
+        document_kind="invoice",
+        document_number="FA-1",
+    )
+    db_session.add(row)
+    await db_session.commit()
+    accepted = []
+
+    async def fake_accept(db, project, **kw):
+        accepted.append(project.id)
+        return True
+
+    monkeypatch.setattr("backend.app.services.aito_quote_status.accept_quote", fake_accept)
+    await svc._became_paid(db_session, row, now=datetime(2026, 9, 23))
+    assert accepted == []
+    events = (await db_session.execute(select(AitoEvent).where(AitoEvent.project_id == project.id))).scalars().all()
+    paid = [e for e in events if e.kind == "payment_link.paid"]
+    assert len(paid) == 1 and paid[0].detail["document_kind"] == "invoice"

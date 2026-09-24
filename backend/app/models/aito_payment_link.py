@@ -29,6 +29,10 @@ class AitoPaymentLink(Base):
     # a reservation representable at all.
     heimdall_id: Mapped[str | None] = mapped_column(String(36), nullable=True, unique=True)
     reference: Mapped[str] = mapped_column(String(64), nullable=False)
+    # quote | invoice — which Books document the link's `reference` names.
+    # Quote links are minted by the reconciler; invoice links only on demand.
+    document_kind: Mapped[str] = mapped_column(String(10), nullable=False, default="quote", server_default="quote")
+    document_number: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # Integer XPF francs — what Heimdall holds.
     amount: Mapped[int] = mapped_column(Integer, nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="XPF", server_default="XPF")
