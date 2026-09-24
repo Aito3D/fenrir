@@ -71,6 +71,7 @@ from backend.app.schemas.aito import (
     AitoTaskResponse,
     AitoTaskStepsResponse,
     AitoTaskUpdate,
+    AitoTerminalPaymentView,
     AitoTrackingLinkResponse,
     AitoTrackingResponse,
 )
@@ -104,6 +105,11 @@ from backend.app.services.aito_stats import (
     MAX_STATS_SPAN_DAYS,
     MIN_STATS_DATE,
     compute_aito_stats,
+)
+from backend.app.services.aito_terminal_payments import (
+    current_terminal_payment,
+    current_terminal_payments,
+    terminal_view,
 )
 from backend.app.services.aito_tracking import (
     build_tracking_url,
@@ -422,17 +428,20 @@ def _to_response(
     shipping_names: dict[str, str],
     external_url: str,
     payment_link: AitoPaymentLinkView | None,
+    invoice_payment_link: AitoPaymentLinkView | None,
+    terminal_payment: AitoTerminalPaymentView | None,
 ) -> AitoProjectResponse:
-    """`summary`, `shipping_names`, `external_url` and `payment_link` are all
-    required, never defaulted — `payment_link` for the same reason: resolved
-    once per request by the caller via `current_links`/`current_link`, never
+    """`summary`, `shipping_names`, `external_url`, `payment_link`,
+    `invoice_payment_link` and `terminal_payment` are all required, never
+    defaulted — resolved once per request by the caller via
+    `current_links`/`current_link`/`current_terminal_payment(s)`, never
     defaulted to None here. The detail panel writes PATCH (and move / quote-status /
     restore) responses straight into the board cache with setQueryData,
     replacing the row — so an endpoint that quietly returned zeros, an empty
     shipping_names map, or a blank external_url when one is configured, would
     blank a card's badges — or its shipping service name, or its tracking
-    link — and nothing would fail. Requiring all four makes every call site
-    state its intent instead of forgetting one silently.
+    link — and nothing would fail. Requiring all of them makes every call
+    site state its intent instead of forgetting one silently.
 
     `shipping_names` and `external_url` are each resolved ONCE per request by
     the caller (`_shipping_names`, `_external_url`), not per row: both are one
@@ -474,6 +483,8 @@ def _to_response(
         retainer_paid_total=p.retainer_paid_total,
         customer_credit_total=p.customer_credit_total,
         payment_link=payment_link,
+        invoice_payment_link=invoice_payment_link,
+        terminal_payment=terminal_payment,
         created_by=p.created_by,
         quote_sync_state=p.quote_sync_state or "idle",
         # Mirrors quote_sync_state's fallback above: the Python-side default
@@ -524,10 +535,13 @@ def _to_response(
 async def _project_response(
     db: AsyncSession, p: AitoProject, summary: TaskSummary | None = None
 ) -> AitoProjectResponse:
-    """`_to_response(p, summary, shipping_names, external_url, payment_link)` with
-    `shipping_names`, `external_url` and `payment_link` always resolved here via
-    `_shipping_names`, `_external_url` and `current_link`, and `summary` resolved via
-    `_summary_for` too when the caller has none in hand yet.
+    """`_to_response(p, summary, shipping_names, external_url, payment_link,
+    invoice_payment_link, terminal_payment)` with `shipping_names`,
+    `external_url`, `payment_link`, `invoice_payment_link` and
+    `terminal_payment` always resolved here via `_shipping_names`,
+    `_external_url`, `current_link` and `current_terminal_payment`, and
+    `summary` resolved via `_summary_for` too when the caller has none in
+    hand yet.
 
     Callers that already computed `summary` earlier — because a step before
     the response build needed it too (`_apply_rules`, `evaluate`, or simply
@@ -539,7 +553,13 @@ async def _project_response(
     if summary is None:
         summary = await _summary_for(db, p.id)
     return _to_response(
-        p, summary, await _shipping_names(db), await _external_url(db), link_view(await current_link(db, p.id))
+        p,
+        summary,
+        await _shipping_names(db),
+        await _external_url(db),
+        link_view(await current_link(db, p.id)),
+        link_view(await current_link(db, p.id, kind="invoice")),
+        terminal_view(await current_terminal_payment(db, p.id)),
     )
 
 
@@ -990,8 +1010,18 @@ async def list_projects(
     shipping_names = await _shipping_names(db)
     external_url = await _external_url(db)
     links = await current_links(db, [p.id for p in projects])
+    invoice_links = await current_links(db, [p.id for p in projects], kind="invoice")
+    terminals = await current_terminal_payments(db, [p.id for p in projects])
     return [
-        _to_response(p, summarise(task_rows.get(p.id, ())), shipping_names, external_url, link_view(links.get(p.id)))
+        _to_response(
+            p,
+            summarise(task_rows.get(p.id, ())),
+            shipping_names,
+            external_url,
+            link_view(links.get(p.id)),
+            link_view(invoice_links.get(p.id)),
+            terminal_view(terminals.get(p.id)),
+        )
         for p in projects
     ]
 
@@ -1012,8 +1042,18 @@ async def list_trash(
     shipping_names = await _shipping_names(db)
     external_url = await _external_url(db)
     links = await current_links(db, [p.id for p in projects])
+    invoice_links = await current_links(db, [p.id for p in projects], kind="invoice")
+    terminals = await current_terminal_payments(db, [p.id for p in projects])
     return [
-        _to_response(p, summarise(task_rows.get(p.id, ())), shipping_names, external_url, link_view(links.get(p.id)))
+        _to_response(
+            p,
+            summarise(task_rows.get(p.id, ())),
+            shipping_names,
+            external_url,
+            link_view(links.get(p.id)),
+            link_view(invoice_links.get(p.id)),
+            terminal_view(terminals.get(p.id)),
+        )
         for p in projects
     ]
 
@@ -3079,7 +3119,7 @@ async def import_legacy_projects(
     # project can have a shipment — an empty map is correct here, not merely
     # a shortcut.
     external_url = await _external_url(db)
-    return [_to_response(p, TaskSummary(), {}, external_url, None) for p in created]
+    return [_to_response(p, TaskSummary(), {}, external_url, None, None, None) for p in created]
 
 
 @router.patch("/{project_id}/move", response_model=AitoProjectResponse)
