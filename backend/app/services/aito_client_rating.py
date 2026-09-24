@@ -112,9 +112,6 @@ PAID_ON_FIELD = "last_payment_date"
 
 _IGNORED_STATUSES = frozenset({"void", "draft"})
 
-TIERS = ("good", "medium", "bad", "new")
-REASONS = ("overdue", "chronic", "new", "punctual", "mixed")
-
 
 @dataclass(frozen=True)
 class ClientRating:

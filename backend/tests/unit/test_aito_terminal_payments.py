@@ -19,6 +19,7 @@ from backend.app.services.heimdall import (
     HeimdallNotConfigured,
     HeimdallNotFound,
     HeimdallRateLimited,
+    HeimdallUnreachable,
     LinkView,
     heimdall_service,
 )
@@ -850,3 +851,146 @@ async def test_the_sweep_ages_out_an_abandoned_reservation_without_calling_heimd
     assert still.status == "pending" and still.sync_error is None
     failed = await _events(db_session, p.id, "payment.terminal.failed")
     assert len(failed) == 1 and failed[0].detail["reason"] == "abandoned"
+
+
+# --- transport faults (T-011) ------------------------------------------------
+
+
+def _timeout_transport(calls=None):
+    """A POST that never gets an answer — the terminal may already be
+    dialling. `httpx` raises this from inside `_request`, which turns it into
+    `HeimdallUnreachable`."""
+
+    def boom(request):
+        if calls is not None:
+            calls.append(request.headers["idempotency-key"])
+        raise httpx.ReadTimeout("timed out", request=request)
+
+    return httpx.MockTransport(boom)
+
+
+@pytest.mark.asyncio
+async def test_start_leaves_the_reservation_pending_on_a_transport_timeout(db_session):
+    """The POST carries `confirm: true`: a read timeout is exactly the case
+    where the charge DID start. Stamping the row `failed`/`settled_at` would
+    put it beyond every reconciler (the GET returns early with no
+    heimdall_id, the sweep only looks at `pending`) while the card was
+    debited. It stays an unminted reservation, with the reason on it."""
+    p = await _project(db_session)
+    heimdall_service._transport = _timeout_transport()
+    with pytest.raises(HeimdallUnreachable):
+        await svc.start_terminal_payment(db_session, p, document=INVOICE, amount=23000, actor_name="paul", now=NOW)
+    row = (await db_session.execute(select(AitoTerminalPayment))).scalar_one()
+    assert row.status == "pending" and row.heimdall_id is None and row.settled_at is None
+    assert "Heimdall unreachable" in (row.sync_error or "") and row.checked_at == NOW
+    assert await _events(db_session, p.id, "payment.terminal.started") == []
+    # Nothing is left claiming to be driving it, so the operator may replay.
+    assert row.id not in svc._in_flight
+
+
+@pytest.mark.asyncio
+async def test_start_after_a_transport_timeout_replays_the_same_key(db_session):
+    """The next start for the SAME document and amount re-POSTs under the
+    row's own idempotency key, so Heimdall re-fires the stranded draft (202)
+    rather than opening a second charge."""
+    p = await _project(db_session)
+    keys = []
+    heimdall_service._transport = _timeout_transport(keys)
+    with pytest.raises(HeimdallUnreachable):
+        await svc.start_terminal_payment(db_session, p, document=INVOICE, amount=23000, actor_name="paul", now=NOW)
+
+    def handler(request):
+        keys.append(request.headers["idempotency-key"])
+        return httpx.Response(202, json=_payment(id="h-replay"))
+
+    heimdall_service._transport = httpx.MockTransport(handler)
+    row = await svc.start_terminal_payment(
+        db_session, p, document=INVOICE, amount=23000, actor_name="paul", now=NOW + timedelta(minutes=1)
+    )
+    assert keys == [f"aito-tpe:{p.id}:1", f"aito-tpe:{p.id}:1"]  # a replay, never a new charge
+    assert row.heimdall_id == "h-replay" and row.status == "processing" and row.sync_error is None
+    rows = (await db_session.execute(select(AitoTerminalPayment))).scalars().all()
+    assert len(rows) == 1
+    started = await _events(db_session, p.id, "payment.terminal.started")
+    assert len(started) == 1 and started[0].detail["heimdall_id"] == "h-replay"
+
+
+@pytest.mark.asyncio
+async def test_start_after_a_transport_timeout_adopts_a_charge_heimdall_already_made(db_session, monkeypatch):
+    """The timed-out POST had in fact reached the terminal and the card was
+    debited: the replay's 200 hands the payment back, and the row settles —
+    the very outcome a `failed` stamp used to throw away."""
+    p = await _project(db_session)
+    accepted, refreshed = [], []
+
+    async def fake_accept(db, project, **kw):
+        accepted.append((project.id, kw["source"]))
+        return True
+
+    async def fake_refresh(db, project_id, kind):
+        refreshed.append((project_id, kind))
+
+    monkeypatch.setattr("backend.app.services.aito_quote_status.accept_quote", fake_accept)
+    monkeypatch.setattr("backend.app.services.aito_manual_payments.refresh_after_payment", fake_refresh)
+    heimdall_service._transport = _timeout_transport()
+    with pytest.raises(HeimdallUnreachable):
+        await svc.start_terminal_payment(db_session, p, document=QUOTE, amount=23000, actor_name="paul", now=NOW)
+    heimdall_service._transport = httpx.MockTransport(
+        lambda r: httpx.Response(
+            200,
+            json=_payment(
+                status="paid",
+                native_state="synced",
+                amount_confirmed=23000,
+                booking={"status": "booked", "zoho_payment_id": "pay-1", "error": None},
+            ),
+        )
+    )
+    later = NOW + timedelta(minutes=2)
+    row = await svc.start_terminal_payment(db_session, p, document=QUOTE, amount=23000, actor_name="paul", now=later)
+    assert row.status == "paid" and row.settled_at == later and row.zoho_payment_id == "pay-1"
+    paid = await _events(db_session, p.id, "payment.terminal.paid")
+    assert len(paid) == 1
+    assert accepted == [(p.id, "terminal")] and refreshed == [(p.id, "quote")]
+
+
+@pytest.mark.asyncio
+async def test_a_timed_out_reservation_is_replaced_by_a_charge_for_another_amount(db_session):
+    """Replaying it would fire the terminal for the wrong amount: it is
+    abandoned exactly like any other unminted reservation."""
+    p = await _project(db_session)
+    heimdall_service._transport = _timeout_transport()
+    with pytest.raises(HeimdallUnreachable):
+        await svc.start_terminal_payment(db_session, p, document=INVOICE, amount=23000, actor_name="paul", now=NOW)
+    stuck_id = (await db_session.execute(select(AitoTerminalPayment.id))).scalar_one()
+    heimdall_service._transport = httpx.MockTransport(lambda r: httpx.Response(202, json=_payment(id="h-fresh")))
+    later = NOW + timedelta(minutes=1)
+    row = await svc.start_terminal_payment(db_session, p, document=INVOICE, amount=500, actor_name="paul", now=later)
+    assert row.id != stuck_id and row.heimdall_id == "h-fresh"
+    abandoned = await db_session.get(AitoTerminalPayment, stuck_id)
+    assert abandoned.status == "failed" and "replaced by a new charge" in (abandoned.sync_error or "")
+    assert abandoned.settled_at == later
+
+
+@pytest.mark.asyncio
+async def test_the_sweep_ages_out_a_timed_out_reservation_the_operator_walked_away_from(db_session):
+    """Nobody came back to replay it: after ABANDONED_RESERVATION_SECONDS the
+    sweep writes it off (without one Heimdall call) so the project's counter
+    is not blocked forever."""
+    p = await _project(db_session)
+    heimdall_service._transport = _timeout_transport()
+    with pytest.raises(HeimdallUnreachable):
+        await svc.start_terminal_payment(db_session, p, document=INVOICE, amount=23000, actor_name="paul", now=NOW)
+    stuck_id = (await db_session.execute(select(AitoTerminalPayment.id))).scalar_one()
+    calls = []
+
+    def handler(request):
+        calls.append(request.url.path)
+        return httpx.Response(200, json=_payment())
+
+    heimdall_service._transport = httpx.MockTransport(handler)
+    later = NOW + timedelta(seconds=svc.ABANDONED_RESERVATION_SECONDS + 1)
+    assert await svc.poll_open_terminal_payments(db_session, now=later) == 1
+    assert calls == []
+    aged = await db_session.get(AitoTerminalPayment, stuck_id)
+    assert aged.status == "failed" and aged.sync_error == "reservation abandoned" and aged.settled_at == later

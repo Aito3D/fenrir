@@ -14,6 +14,7 @@ from backend.app.services.heimdall import (
     HeimdallNotConfigured,
     HeimdallNotFound,
     HeimdallRateLimited,
+    HeimdallUnreachable,
     HeimdallUpstreamError,
     _to_view,
     heimdall_service,
@@ -423,6 +424,39 @@ async def test_transport_failure_and_non_json_are_upstream_errors(db_session):
     heimdall_service._transport = httpx.MockTransport(lambda r: httpx.Response(200, content=b"<html>"))
     with pytest.raises(HeimdallUpstreamError):
         await heimdall_service.get_payment(db_session, "6f1e")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "error",
+    [httpx.ConnectError("refused"), httpx.ReadTimeout("timed out"), httpx.WriteError("broken pipe")],
+)
+async def test_a_transport_fault_is_heimdall_unreachable(db_session, error):
+    """A request that never got an answer says nothing about what Heimdall
+    did — callers that must tell "refused" from "no idea" (the terminal POST
+    carries `confirm: true`) branch on this subclass. Still a
+    `HeimdallUpstreamError`, so every existing handler keeps catching it."""
+    await _configure(db_session)
+
+    def boom(request):
+        raise error
+
+    heimdall_service._transport = httpx.MockTransport(boom)
+    with pytest.raises(HeimdallUnreachable) as info:
+        await heimdall_service.get_payment(db_session, "6f1e")
+    assert isinstance(info.value, HeimdallUpstreamError)
+    assert str(info.value).startswith("Heimdall unreachable: ")
+
+
+@pytest.mark.asyncio
+async def test_a_non_json_answer_is_a_plain_upstream_error_not_unreachable(db_session):
+    """Heimdall DID answer (with rubbish): the request reached it, so this
+    must not be mistaken for a transport fault."""
+    await _configure(db_session)
+    heimdall_service._transport = httpx.MockTransport(lambda r: httpx.Response(200, content=b"<html>"))
+    with pytest.raises(HeimdallUpstreamError) as info:
+        await heimdall_service.get_payment(db_session, "6f1e")
+    assert not isinstance(info.value, HeimdallUnreachable)
 
 
 @pytest.mark.asyncio

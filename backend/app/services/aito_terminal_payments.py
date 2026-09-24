@@ -20,6 +20,7 @@ from backend.app.services.heimdall import (
     HeimdallNotConfigured,
     HeimdallNotFound,
     HeimdallRateLimited,
+    HeimdallUnreachable,
     HeimdallUpstreamError,
     LinkView,
     heimdall_service,
@@ -156,11 +157,22 @@ async def start_terminal_payment(
 
     The reservation commit comes first so a crash between the POST and the
     second commit leaves a row the operator sees as `pending` with no
-    heimdall_id — never a silent second charge. A Heimdall refusal (including
-    `HeimdallNotConfigured`, which is NOT a subclass of `HeimdallUpstreamError`)
-    marks the row `failed` (with the reason) and re-raises for the route to
-    map. The guard-check-then-insert is itself serialised by `_start_lock` so
-    two concurrent starts cannot both see "nothing blocking".
+    heimdall_id — never a silent second charge. A Heimdall REFUSAL (a 4xx/5xx
+    answer, or `HeimdallNotConfigured`, which is NOT a subclass of
+    `HeimdallUpstreamError`) marks the row `failed` (with the reason) and
+    re-raises for the route to map: Heimdall answered, so nothing was
+    created. A TRANSPORT failure (`HeimdallUnreachable` — connect refused,
+    read timeout) says the opposite: the POST carries `confirm: true`, so a
+    timeout is precisely the case where the terminal may already be asking
+    for the card. Such a row is therefore left exactly as it was reserved —
+    `pending`, `heimdall_id` NULL, never `settled_at` — with the reason in
+    `sync_error`, i.e. an ordinary unminted reservation: replayable by the
+    operator under its own idempotency key (below), replaced if they charge
+    something else, aged out by `_age_out_abandoned_reservations` if they
+    walk away. Stamping it `failed` would hide a charge that reached the
+    terminal from every reconciler. The guard-check-then-insert is itself
+    serialised by `_start_lock` so two concurrent starts cannot both see
+    "nothing blocking".
 
     Such an unminted reservation blocks the project, and neither the GET nor
     the sweep may clear it by asking Heimdall (there is no id to ask about,
@@ -234,6 +246,16 @@ async def start_terminal_payment(
                 amount=row.amount,
                 document={"type": row.document_kind, "id": row.document_id},
             )
+        except HeimdallUnreachable as exc:
+            # No answer at all: the terminal may be dialling right now. Leave
+            # the reservation unminted and open so the operator's next start
+            # replays this same idempotency key and adopts whatever Heimdall
+            # actually did. `_in_flight` is released in the `finally` below,
+            # so that replay is not refused as still-in-progress.
+            row.sync_error = str(exc)[:500]
+            row.checked_at = now
+            await db.commit()
+            raise
         except (HeimdallUpstreamError, HeimdallNotConfigured) as exc:
             row.status = "failed"
             row.sync_error = str(exc)[:500]

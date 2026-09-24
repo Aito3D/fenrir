@@ -113,6 +113,32 @@ async def test_error_mapping(async_client):
 
 
 @pytest.mark.asyncio
+async def test_a_transport_failure_is_still_a_502_upstream(async_client):
+    """The route's mapping does not change with T-011: a `HeimdallUnreachable`
+    is a `HeimdallUpstreamError` and answers 502 with the same shape (its
+    message already says "unreachable"). What changed is behind it — the
+    reservation stays open, so the very next POST for the same charge is
+    refused as already in progress rather than opening a second one."""
+    p = await _create(async_client)
+    url = f"/api/v1/aito/{p['id']}/terminal-payment"
+    body = {"document_kind": "invoice", "document_id": "inv-1", "amount": 23000}
+
+    def boom(request):
+        raise httpx.ReadTimeout("timed out", request=request)
+
+    heimdall_service._transport = httpx.MockTransport(boom)
+    r = await async_client.post(url, json=body)
+    assert r.status_code == 502 and r.json()["detail"]["code"] == "upstream"
+    assert "unreachable" in r.json()["detail"]["message"]
+    board = (await async_client.get("/api/v1/aito/")).json()
+    row = next(x for x in board if x["id"] == p["id"])["terminal_payment"]
+    assert row["status"] == "pending" and row["settled_at"] is None
+    heimdall_service._transport = httpx.MockTransport(lambda r_: httpx.Response(202, json=_payment(id="h-replay")))
+    again = await async_client.post(url, json=body)
+    assert again.status_code == 201 and again.json()["id"] == row["id"]
+
+
+@pytest.mark.asyncio
 async def test_in_progress_guard_and_unknown_project(async_client):
     p = await _create(async_client)
     heimdall_service._transport = httpx.MockTransport(lambda r: httpx.Response(202, json=_payment()))

@@ -542,12 +542,12 @@
   {
    "case": "transport-connect-error",
    "message": "Heimdall unreachable: connection refused",
-   "outcome": "HeimdallUpstreamError"
+   "outcome": "HeimdallUnreachable"
   },
   {
    "case": "transport-read-timeout",
    "message": "Heimdall unreachable: timed out",
-   "outcome": "HeimdallUpstreamError"
+   "outcome": "HeimdallUnreachable"
   }
  ],
  "04-configuration": [

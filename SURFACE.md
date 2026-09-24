@@ -264,6 +264,7 @@ class HeimdallNotConfigured(Exception)
 class HeimdallNotFound(HeimdallUpstreamError)
 class HeimdallRateLimited(HeimdallUpstreamError)
 class HeimdallService
+class HeimdallUnreachable(HeimdallUpstreamError)
 class HeimdallUpstreamError(Exception)
 class InvoiceLinkExists(Exception)
 class InvoicePlan

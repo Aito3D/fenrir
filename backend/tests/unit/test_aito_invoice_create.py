@@ -634,6 +634,87 @@ async def test_a_failed_retainer_application_still_returns_the_real_invoice(asyn
     assert response.json()["retainers"] == [{"number": "RET-00269", "total": 1000.0, "applied": 0.0}]
 
 
+@pytest.mark.asyncio
+async def test_a_db_failure_after_the_real_invoice_still_returns_it(
+    async_client, db_session, books, monkeypatch, caplog
+):
+    """The invoice IS raised in Books before local `record(...)`+`commit()`
+    run; a failure there must not 500 past it — a retry would raise a
+    SECOND real invoice. The route must still answer with the invoice Books
+    actually created, log what happened, and leave the app able to keep
+    working afterward.
+
+    The failure is a GENUINE flush failure (a NOT NULL violation), not a
+    monkeypatched `commit()` — mirroring test_aito_manual_payments.py's
+    test_a_db_failure_after_the_books_write_keeps_the_guard_and_names_the_payment.
+    Only a real one puts the session into the state the route's `rollback()`
+    call is there to recover from."""
+
+    async def bad_record(db, project_id, kind, **kw):
+        db.add(AitoEvent(project_id=project_id, kind=None, actor_class="user"))  # kind is NOT NULL
+        await db.flush()
+
+    monkeypatch.setattr("backend.app.api.routes.aito.record", bad_record)
+    project_id = await _project(db_session)
+
+    with caplog.at_level("ERROR"):
+        response = await async_client.post(f"/api/v1/aito/{project_id}/invoice")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["number"] == "FA-26-4100"
+    assert body["id"] == "inv-1"
+    assert "WAS RAISED in Books" in caplog.text
+    assert "FA-26-4100" in caplog.text
+
+    # The write that failed was rolled back, so no timeline entry landed and
+    # the local flag never flipped — Books has a real invoice this app does
+    # not (yet) know about locally.
+    assert (await db_session.execute(select(AitoEvent.kind))).scalars().all() == []
+    board = (await async_client.get("/api/v1/aito/")).json()
+    assert [p["quote_invoiced"] for p in board if p["id"] == project_id] == [False]
+
+    # The session (and the app around it) recovered rather than staying
+    # poisoned: a follow-up request works normally, and the duplicate guard
+    # — which reads Books' own invoice list, not the local flag that never
+    # got a chance to commit — still refuses a second invoice.
+    second = await async_client.post(f"/api/v1/aito/{project_id}/invoice")
+    assert second.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_a_failed_rollback_after_a_db_failure_still_returns_the_real_invoice(db_session, books, monkeypatch):
+    """Belt and braces on the case above: if the rollback the route falls
+    back to ALSO fails (e.g. the connection is already gone), that must not
+    turn a real invoice into a 500 either — the `except Exception: pass`
+    wrapped around it exists for exactly this.
+
+    Called directly against `db_session`, bypassing the HTTP round trip
+    (same technique as test_aito_active_quote_index_migration.py's direct
+    `db=..., current_user=None` calls): the test client's dependency
+    override commits on the way out, and a session left aborted by two
+    failed writes in a row would fail THAT commit too — a property of the
+    test harness's simplified `get_db`, not of this route, and not what
+    this test is about."""
+    from backend.app.api.routes import aito as aito_routes
+
+    async def bad_record(db, project_id, kind, **kw):
+        db.add(AitoEvent(project_id=project_id, kind=None, actor_class="user"))  # kind is NOT NULL
+        await db.flush()
+
+    async def broken_rollback():
+        raise RuntimeError("connection already closed")
+
+    project_id = await _project(db_session)
+    monkeypatch.setattr("backend.app.api.routes.aito.record", bad_record)
+    monkeypatch.setattr(db_session, "rollback", broken_rollback)
+
+    body = await aito_routes.create_invoice(project_id=project_id, db=db_session, current_user=None)
+
+    assert body.number == "FA-26-4100"
+    assert body.id == "inv-1"
+
+
 # --- preview ------------------------------------------------------------------
 
 
