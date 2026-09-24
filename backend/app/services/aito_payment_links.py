@@ -951,6 +951,7 @@ def link_view(row: AitoPaymentLink | None) -> "AitoPaymentLinkView | None":
     if row is None:
         return None
     return AitoPaymentLinkView(
+        id=row.id,
         state=row.status if row.status in ("pending", "paid", "failed", "cancelled", "expired") else "pending",
         amount=row.amount,
         currency=row.currency or "XPF",

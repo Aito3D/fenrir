@@ -46,22 +46,23 @@ async def test_board_and_detail_carry_the_current_link(async_client, db_session)
             superseded_at=datetime(2026, 9, 2),
         )
     )
-    db_session.add(
-        AitoPaymentLink(
-            project_id=p["id"],
-            idempotency_key=f"aito:{p['id']}:2",
-            heimdall_id="L1",
-            reference="DEV-1",
-            amount=12500,
-            expires_on="2026-09-27",
-            url="https://osb/pay/L1",
-            status="pending",
-        )
+    link_row = AitoPaymentLink(
+        project_id=p["id"],
+        idempotency_key=f"aito:{p['id']}:2",
+        heimdall_id="L1",
+        reference="DEV-1",
+        amount=12500,
+        expires_on="2026-09-27",
+        url="https://osb/pay/L1",
+        status="pending",
     )
+    db_session.add(link_row)
     await db_session.commit()
+    await db_session.refresh(link_row)
     board = (await async_client.get("/api/v1/aito/")).json()
     card = next(c for c in board if c["id"] == p["id"])
     assert card["payment_link"] == {
+        "id": link_row.id,
         "state": "pending",
         "amount": 12500,
         "currency": "XPF",

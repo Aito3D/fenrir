@@ -382,6 +382,7 @@ def test_link_view_minted_reflects_heimdall_id():
     (heimdall_id still NULL) apart from an adopted link — see the follow-ups
     strip's `linkExpiring` rule, which reads it instead of `url`."""
     reservation = AitoPaymentLink(
+        id=1,
         project_id=1,
         idempotency_key="aito:1:1",
         reference="DEV-1",

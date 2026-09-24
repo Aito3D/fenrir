@@ -612,6 +612,7 @@ class AitoPaymentLinkView(BaseModel):
     `state` is Heimdall's unified status. `url` is public — the payment page
     the client opens — so it rides on the board payload like quote_url."""
 
+    id: int
     state: Literal["pending", "paid", "failed", "cancelled", "expired"]
     amount: int
     currency: str

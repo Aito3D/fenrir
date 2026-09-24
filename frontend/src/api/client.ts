@@ -4400,6 +4400,7 @@ export type AitoPaymentLinkState = 'pending' | 'paid' | 'failed' | 'cancelled' |
 /** The project's current online payment link (Heimdall/OSB), or null. `url`
  *  is the public payment page — safe on the board payload like quote_url. */
 export interface AitoPaymentLink {
+  id: number;
   state: AitoPaymentLinkState;
   amount: number;
   currency: string;
@@ -4413,6 +4414,25 @@ export interface AitoPaymentLink {
    *  there is nothing to pay. */
   minted: boolean;
 }
+
+export type AitoTerminalPaymentStatus =
+  'pending' | 'processing' | 'paid' | 'failed' | 'cancelled' | 'expired' | 'needs_attention';
+
+export interface AitoTerminalPayment {
+  id: number;
+  document_kind: 'quote' | 'invoice';
+  document_number: string;
+  status: AitoTerminalPaymentStatus;
+  amount: number;
+  amount_confirmed: number | null;
+  booking_status: 'pending' | 'booked' | 'failed' | 'not_booked' | null;
+  booking_error: string | null;
+  sync_error: string | null;
+  created_at: string;
+  settled_at: string | null;
+}
+
+export type AitoManualPaymentMode = 'card' | 'cheque' | 'cash';
 
 export interface AitoTrackingPayment {
   state: 'unpaid' | 'paid';
@@ -4491,6 +4511,10 @@ export interface AitoProject {
   customer_credit_total: number | null;
   /** The current online payment link, or null when there is none. */
   payment_link: AitoPaymentLink | null;
+  /** The invoice's on-demand payment link (counter payments), or null. */
+  invoice_payment_link: AitoPaymentLink | null;
+  /** The most recent terminal (in-person card reader) payment, or null. */
+  terminal_payment: AitoTerminalPayment | null;
   /** The worker's push state for this project's quote. Always present —
    *  never null — even on hand-made cards that have never had a quote
    *  ('idle'). 'pending' while the worker has not yet caught up with the
@@ -8449,6 +8473,20 @@ export const api = {
   getAitoTrash: () => request<AitoProject[]>('/aito/trash'),
   restoreAitoProject: (id: number) => request<AitoProject>(`/aito/${id}/restore`, { method: 'POST' }),
   refreshAitoPaymentLink: (id: number) => request<AitoProject>(`/aito/${id}/payment-link/refresh`, { method: 'POST' }),
+  startAitoTerminalPayment: (
+    projectId: number,
+    body: { document_kind: 'quote' | 'invoice'; document_id: string; amount: number },
+  ) => request<AitoTerminalPayment>(`/aito/${projectId}/terminal-payment`, { method: 'POST', body: JSON.stringify(body) }),
+  getAitoTerminalPayment: (projectId: number, paymentId: number) =>
+    request<AitoTerminalPayment>(`/aito/${projectId}/terminal-payment/${paymentId}`),
+  recordAitoManualPayment: (
+    projectId: number,
+    body: { document_kind: 'quote' | 'invoice'; document_id: string; mode: AitoManualPaymentMode; amount: number; reference: string | null },
+  ) => request<AitoProject>(`/aito/${projectId}/manual-payment`, { method: 'POST', body: JSON.stringify(body) }),
+  createAitoInvoicePaymentLink: (projectId: number, body: { document_id: string; amount: number }) =>
+    request<AitoProject>(`/aito/${projectId}/payment-link`, { method: 'POST', body: JSON.stringify(body) }),
+  cancelAitoPaymentLink: (projectId: number, linkId: number) =>
+    request<AitoProject>(`/aito/${projectId}/payment-link/${linkId}/cancel`, { method: 'POST' }),
 
   // Zoho Books integration
   getZohoStatus: (probe = false) =>

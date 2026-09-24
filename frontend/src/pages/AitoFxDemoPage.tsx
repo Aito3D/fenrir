@@ -93,6 +93,8 @@ function demoProject(card: (typeof DEMO_CARDS)[number]): AitoProject {
     retainer_paid_total: null,
     customer_credit_total: null,
     payment_link: null,
+    invoice_payment_link: null,
+    terminal_payment: null,
     quote_sync_state: 'idle',
     quote_invoiced: false,
     flag: null,
