@@ -105,9 +105,30 @@ WRITE_ROUTES = [
     ("get_tracking_link", "get", f"/api/v1/aito/{_MISSING_ID}/tracking-link", None),
     ("regenerate_tracking_token", "post", f"/api/v1/aito/{_MISSING_ID}/tracking-token", None),
     ("refresh_payment_link", "post", f"/api/v1/aito/{_MISSING_ID}/payment-link/refresh", None),
+    (
+        "start_terminal_payment",
+        "post",
+        f"/api/v1/aito/{_MISSING_ID}/terminal-payment",
+        {"document_kind": "invoice", "document_id": "x", "amount": 1},
+    ),
+    (
+        "record_manual_payment_route",
+        "post",
+        f"/api/v1/aito/{_MISSING_ID}/manual-payment",
+        {"document_kind": "invoice", "document_id": "x", "mode": "cash", "amount": 1},
+    ),
+    (
+        "create_invoice_payment_link",
+        "post",
+        f"/api/v1/aito/{_MISSING_ID}/payment-link",
+        {"document_id": "x", "amount": 1},
+    ),
+    ("cancel_invoice_payment_link", "post", f"/api/v1/aito/{_MISSING_ID}/payment-link/1/cancel", None),
 ]
 
-assert len(WRITE_ROUTES) == 26, "WRITE_ROUTES must cover exactly the 26 gated write routes aito.py declares"
+assert len(WRITE_ROUTES) == 30, (
+    "WRITE_ROUTES must cover exactly the 30 gated write routes aito.py and aito_payments.py declare"
+)
 
 
 @pytest.mark.asyncio
