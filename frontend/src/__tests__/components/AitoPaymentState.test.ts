@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import type { AitoPaymentLink, AitoTerminalPayment, AitoInvoice } from '../../api/client';
-import { derivePaymentState, blockVisible, cellsEnabled } from '../../components/aito/payment/paymentState';
+import { derivePaymentState, blockVisible, cellsEnabled, expiryText } from '../../components/aito/payment/paymentState';
 import { quoteDocument, invoiceDocument } from '../../components/aito/payment/paymentDocument';
 import { makeProject } from '../fixtures/aitoProject';
+import { localDateKey } from '../../utils/date';
+import i18n from '../../i18n';
 
 const link = (o: Partial<AitoPaymentLink> = {}): AitoPaymentLink => ({
   id: 1, state: 'pending', amount: 25000, currency: 'XPF', url: 'https://pay/x', expires_on: '2026-10-05',
@@ -66,5 +68,26 @@ describe('documents', () => {
     const inv: AitoInvoice = { id: 'i1', number: 'FA-1', date: '', due_date: '', total: 48000, balance: 22999.5, currency_code: 'XPF', status: 'sent', url: '', invoice_count: 1 };
     expect(invoiceDocument(inv)).toEqual({ kind: 'invoice', id: 'i1', number: 'FA-1', due: 23000, currency: 'XPF' });
     expect(invoiceDocument({ ...inv, balance: 0 }).due).toBeNull();
+  });
+});
+
+describe('expiryText', () => {
+  const t = i18n.getFixedT('en');
+  const today = new Date();
+
+  it('reads "Expires in 13 days" 13 days out', () => {
+    const future = new Date(today);
+    future.setDate(future.getDate() + 13);
+    expect(expiryText(t, localDateKey(future), 'en').text).toBe('Expires in 13 days');
+  });
+
+  it('reads "Expires today" for today', () => {
+    expect(expiryText(t, localDateKey(today), 'en').text).toBe('Expires today');
+  });
+
+  it('reads "Expired" for yesterday', () => {
+    const past = new Date(today);
+    past.setDate(past.getDate() - 1);
+    expect(expiryText(t, localDateKey(past), 'en').text).toBe('Expired');
   });
 });

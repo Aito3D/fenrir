@@ -1,4 +1,6 @@
+import type { TFunction } from 'i18next';
 import type { AitoPaymentLink, AitoTerminalPayment } from '../../../api/client';
+import { localDateKey, parseLocalDateKey } from '../../../utils/date';
 
 export type PaymentState =
   | { kind: 'terminal_processing'; payment: AitoTerminalPayment }
@@ -42,4 +44,27 @@ export function blockVisible(due: number | null, state: PaymentState): boolean {
 
 export function cellsEnabled({ canUpdate, due, state }: { canUpdate: boolean; due: number | null; state: PaymentState }): boolean {
   return canUpdate && due !== null && due > 0 && state.kind !== 'terminal_processing';
+}
+
+/** "Expires in N days" / "Expires today" / "Expired" for a link's
+ *  `expires_on` (an ISO `YYYY-MM-DD`, UTC end-of-day). `title` is the long
+ *  localized date for a tooltip. Shared by `PaymentLinkModal`'s live view
+ *  and (Task 16) the block's collapsed state line, so the two can never
+ *  disagree about the count — `PaymentLinkRow.tsx` still has its own copy
+ *  of this arithmetic and is left alone here; Task 16 retires it. */
+export function expiryText(t: TFunction, expiresOn: string, language: string): { text: string; title: string } {
+  const expiresDate = parseLocalDateKey(expiresOn);
+  const title = expiresDate.toLocaleDateString(language, { day: 'numeric', month: 'long', year: 'numeric' });
+  // Whole calendar days from local midnight today to the expiry date, so a
+  // link expiring tomorrow reads "1 day" all day long regardless of hour.
+  const daysLeft = Math.round(
+    (expiresDate.getTime() - parseLocalDateKey(localDateKey(new Date())).getTime()) / 86_400_000,
+  );
+  const text =
+    daysLeft > 0
+      ? t('aito.paymentLink.expiresIn', { count: daysLeft })
+      : daysLeft === 0
+        ? t('aito.paymentLink.expiresToday')
+        : t('aito.paymentLink.state.expired');
+  return { text, title };
 }
