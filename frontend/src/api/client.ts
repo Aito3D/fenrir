@@ -1530,6 +1530,9 @@ export interface AppSettings {
   /** 0 = payment links ask for the full quote; otherwise the deposit share. */
   aito_deposit_pct: number;
   aito_quote_validity_days: number;
+  aito_payment_mode_card: string;
+  aito_payment_mode_cheque: string;
+  aito_payment_mode_cash: string;
   /** Aito follow-ups strip thresholds, in days. */
   aito_followup_quote_days: number;
   aito_followup_pickup_days: number;

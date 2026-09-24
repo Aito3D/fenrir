@@ -679,6 +679,11 @@ class AppSettings(BaseModel):
     # expiry_date written on every quote Aito creates; the payment link dies
     # the same day.
     aito_quote_validity_days: int = Field(default=15, ge=1, le=365, description="Days a new quote stays valid")
+    # Zoho Books `payment_mode` names for a payment recorded by hand from a
+    # project card. Zoho's stock modes; a French org may have renamed them.
+    aito_payment_mode_card: str = Field(default="creditcard", description="Zoho payment mode for a card payment")
+    aito_payment_mode_cheque: str = Field(default="check", description="Zoho payment mode for a cheque")
+    aito_payment_mode_cash: str = Field(default="cash", description="Zoho payment mode for cash")
 
     # Obico AI failure detection (#172)
     obico_enabled: bool = Field(default=False, description="Enable Obico AI print failure detection")
@@ -896,6 +901,9 @@ class AppSettingsUpdate(BaseModel):
     heimdall_api_token: str | None = None
     aito_deposit_pct: int | None = Field(default=None, ge=0, le=100)
     aito_quote_validity_days: int | None = Field(default=None, ge=1, le=365)
+    aito_payment_mode_card: str | None = None
+    aito_payment_mode_cheque: str | None = None
+    aito_payment_mode_cash: str | None = None
     obico_enabled: bool | None = None
     obico_ml_url: str | None = None
     obico_ml_token: str | None = None
