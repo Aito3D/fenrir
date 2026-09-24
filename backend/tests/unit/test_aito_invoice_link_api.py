@@ -235,3 +235,53 @@ async def test_cancel_refuses_a_link_that_is_not_open(async_client, db_session, 
     assert r.status_code == 409, r.text
     assert r.json()["detail"]["code"] == "not_cancellable"
     assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_cancel_shares_the_counter_payment_budget_and_checks_it_before_the_lookup(async_client, db_session):
+    """T-017: cancel had no `_check_counter_payment_rate_limit` call at all,
+    unlike its three counter-payment siblings. The bucket is shared, so N
+    creates followed by a cancel exhaust the same budget, and the limiter
+    runs before any lookup -- a cancel of a link that does not even exist
+    still answers 429 once the budget is spent."""
+    from backend.app.api.routes import aito_payments
+
+    p = await _create(async_client)
+    row = AitoPaymentLink(
+        project_id=p["id"],
+        idempotency_key="k-rl",
+        reference="FA-26-0001",
+        amount=23000,
+        expires_on="2026-12-31",
+        heimdall_id="h-rl",
+        status="pending",
+        document_kind="invoice",
+        document_number="FA-26-0001",
+    )
+    db_session.add(row)
+    await db_session.commit()
+
+    calls = []
+
+    def handler(request):
+        calls.append(request.url.path)
+        return httpx.Response(422, json={"error": {"code": "invalid_request", "message": "no"}})
+
+    heimdall_service._transport = httpx.MockTransport(handler)
+    # N creates share the same "counter_payment" bucket as a cancel -- one
+    # budget for all four routes (spec: shared per-principal window).
+    for _ in range(aito_payments._COUNTER_PAYMENT_MAX_CALLS):
+        await async_client.post(f"/api/v1/aito/{p['id']}/payment-link", json={"document_id": "inv-1", "amount": 23000})
+    calls.clear()
+
+    r = await async_client.post(f"/api/v1/aito/{p['id']}/payment-link/{row.id}/cancel")
+    assert r.status_code == 429, r.text
+    assert r.json()["detail"] == {"code": "rate_limited", "message": aito_payments._COUNTER_PAYMENT_DETAIL}
+    assert calls == []  # never reached cancel_invoice_link / Heimdall
+    unchanged = await db_session.get(AitoPaymentLink, row.id)
+    assert unchanged.status == "pending" and unchanged.heimdall_id == "h-rl"
+
+    # The limiter runs before the 404 lookup too.
+    r2 = await async_client.post(f"/api/v1/aito/{p['id']}/payment-link/999999/cancel")
+    assert r2.status_code == 429, r2.text
+    assert r2.json()["detail"]["code"] == "rate_limited"
