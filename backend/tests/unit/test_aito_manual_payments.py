@@ -1,8 +1,10 @@
+import asyncio
 import time as real_time
 from datetime import date
 
 import pytest
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from backend.app.api.routes.settings import set_setting
 from backend.app.models.aito_event import AitoEvent
@@ -181,6 +183,80 @@ async def test_duplicate_within_the_window_is_refused(db_session, books, monkeyp
 
 
 @pytest.mark.asyncio
+async def test_concurrent_duplicate_calls_only_one_payment_reaches_books(db_session, test_engine, monkeypatch):
+    """Finding 2: the guard must reserve its key at ENTRY, before any Zoho
+    round trip -- otherwise two requests for the same document/amount/
+    reference a few hundred ms apart (a double-click, or two browser tabs)
+    both pass the read check under async concurrency and Books gets two
+    payments. Uses two separate sessions on the same engine, the way two
+    concurrent FastAPI requests would each get their own session."""
+    state = {"calls": []}
+
+    async def request(db, method, path, *, params=None, json=None):
+        if path == "/customerpayments" and method == "POST":
+            await asyncio.sleep(0)  # let the two coroutines actually interleave
+        state["calls"].append((method, path, json))
+        if path == "/customerpayments" and method == "POST":
+            return {"payment": {"payment_id": "pay-1"}}
+        return {}
+
+    monkeypatch.setattr(zoho_service, "_request", request)
+
+    async def no_refresh(db, project_id, kind):
+        return None
+
+    monkeypatch.setattr(svc, "refresh_after_payment", no_refresh)
+
+    p = await _project(db_session)
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as db2:
+        p2 = await db2.get(AitoProject, p.id)
+        kw = {"document": INVOICE, "mode": "cash", "amount": 100, "reference": "r", "actor_name": None, "today": TODAY}
+        results = await asyncio.gather(
+            svc.record_manual_payment(db_session, p, **kw),
+            svc.record_manual_payment(db2, p2, **kw),
+            return_exceptions=True,
+        )
+
+    successes = [r for r in results if isinstance(r, svc.ManualPaymentResult)]
+    duplicates = [r for r in results if isinstance(r, svc.DuplicateManualPayment)]
+    assert len(successes) == 1 and len(duplicates) == 1
+    post_calls = [c for c in state["calls"] if c[1] == "/customerpayments" and c[0] == "POST"]
+    assert len(post_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_zoho_failure_releases_the_duplicate_key(db_session, monkeypatch):
+    async def failing_request(db, method, path, *, params=None, json=None):
+        if path == "/customerpayments" and method == "POST":
+            raise ZohoUpstreamError("Zoho HTTP 500: internal error")
+        return {}
+
+    monkeypatch.setattr(zoho_service, "_request", failing_request)
+    p = await _project(db_session)
+    kw = {"document": INVOICE, "mode": "cash", "amount": 100, "reference": "r", "actor_name": None, "today": TODAY}
+    with pytest.raises(ZohoUpstreamError):
+        await svc.record_manual_payment(db_session, p, **kw)
+    # Immediate retry: must be refused by Books again, never by our own
+    # guard -- the failed attempt must have released its reservation.
+    with pytest.raises(ZohoUpstreamError):
+        await svc.record_manual_payment(db_session, p, **kw)
+
+
+@pytest.mark.asyncio
+async def test_a_partial_failure_keeps_the_duplicate_guard(db_session, books):
+    books["fail_payment"] = True
+    p = await _project(db_session)
+    kw = {"document": QUOTE, "mode": "card", "amount": 100, "reference": None, "actor_name": None, "today": TODAY}
+    with pytest.raises(svc.ManualPaymentPartial):
+        await svc.record_manual_payment(db_session, p, **kw)
+    # An immediate reflex retry must be refused as a duplicate, never raise
+    # a second retainer invoice on top of the one that already exists.
+    with pytest.raises(svc.DuplicateManualPayment):
+        await svc.record_manual_payment(db_session, p, **kw)
+
+
+@pytest.mark.asyncio
 async def test_refresh_after_invoice_payment_writes_the_invoice_figures(db_session, books):
     p = await _project(db_session, invoice_status="sent", invoice_balance=23000.0)
     await svc.refresh_after_payment(db_session, p.id, "invoice")
@@ -211,3 +287,30 @@ async def test_refresh_never_raises(db_session, monkeypatch):
 
     monkeypatch.setattr(zoho_service, "list_project_invoices", boom)
     await svc.refresh_after_payment(db_session, p.id, "invoice")
+    # A Zoho-READ failure never touches the session's transaction, so no
+    # rollback is needed or wanted: is_active must stay True throughout.
+    assert db_session.is_active is True
+
+
+@pytest.mark.asyncio
+async def test_refresh_recovers_a_session_poisoned_by_a_failed_commit(db_session, books):
+    """Finding 1: `db.commit()` inside the invoice branch can itself fail
+    (e.g. SQLite "database is locked") *after* the Zoho payment was already
+    written. SQLAlchemy answers a failed flush/commit by putting the session
+    into "partial rollback" state (`is_active` False); the caller's very
+    next statement on it would then raise `PendingRollbackError` instead of
+    a clean error.
+
+    Reproduced with a genuine flush failure — an unrelated pending row that
+    violates a NOT NULL constraint — rather than monkeypatching
+    `db_session.commit` to simply raise: in this in-memory SQLite test
+    harness a monkeypatched `commit()` that never touches the real
+    transaction leaves `is_active` True regardless of the fix, so it would
+    not actually exercise the conditional-rollback branch under test.
+    """
+    p = await _project(db_session, invoice_status="sent", invoice_balance=23000.0)
+    db_session.add(AitoEvent(project_id=p.id, kind=None, actor_class="user"))  # kind is NOT NULL -> flush fails
+
+    await svc.refresh_after_payment(db_session, p.id, "invoice")  # must not raise
+
+    assert db_session.is_active is True

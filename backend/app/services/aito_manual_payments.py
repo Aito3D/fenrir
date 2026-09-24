@@ -84,88 +84,102 @@ async def record_manual_payment(
     last = _recent.get(key)
     if last is not None and time.monotonic() - last < DUPLICATE_WINDOW_SECONDS:
         raise DuplicateManualPayment("This payment was recorded a moment ago")
-    if document.kind == "invoice" and document.balance is not None and amount > document.balance:
-        raise AmountAboveBalance(document.balance)
-    mode_name = await _mode_name(db, mode)
-    ref = (reference or "").strip()
-    today_s = today.isoformat()
-    retainer_number: str | None = None
-    if document.kind == "invoice":
-        payment = await zoho_service.record_customer_payment(
-            db,
-            customer_id=document.customer_id,
-            payment_mode=mode_name,
-            amount=amount,
-            reference_number=ref,
-            description=f"{document.number} · {mode}",
-            today=today_s,
-            invoice_id=document.id,
-        )
-    else:
-        retainer = await zoho_service.create_retainer_invoice(
-            db,
-            customer_id=document.customer_id,
-            reference_number=document.number,
-            description=f"Acompte {document.number}",
-            amount=amount,
-            today=today_s,
-        )
-        retainer_id = str(retainer.get("retainerinvoice_id") or "")
-        retainer_number = str(retainer.get("retainerinvoice_number") or retainer_id)
-        try:
+    # Reserved HERE, before any Zoho call -- not just after a successful one.
+    # Two requests for the same document/amount/reference a few hundred ms
+    # apart both pass the read above under async concurrency (FastAPI runs
+    # them concurrently, not one-at-a-time); reserving only after the round
+    # trip would let both reach Books. A failure below releases the key
+    # again, except a partial (`ManualPaymentPartial`), which KEEPS it so a
+    # reflex retry within the window cannot raise a second retainer -- the
+    # error already names the retainer to finish by hand.
+    _recent[key] = time.monotonic()
+    try:
+        if document.kind == "invoice" and document.balance is not None and amount > document.balance:
+            raise AmountAboveBalance(document.balance)
+        mode_name = await _mode_name(db, mode)
+        ref = (reference or "").strip()
+        today_s = today.isoformat()
+        retainer_number: str | None = None
+        if document.kind == "invoice":
             payment = await zoho_service.record_customer_payment(
                 db,
                 customer_id=document.customer_id,
                 payment_mode=mode_name,
                 amount=amount,
                 reference_number=ref,
-                description=document.number,
+                description=f"{document.number} · {mode}",
                 today=today_s,
-                retainerinvoice_id=retainer_id,
+                invoice_id=document.id,
             )
-        except (ZohoNotConfiguredError, ZohoUpstreamError) as exc:
-            await record(
+        else:
+            retainer = await zoho_service.create_retainer_invoice(
                 db,
-                project_id,
-                "payment.manual.partial",
-                actor_class="user",
-                actor_name=actor_name,
-                subject_type="project",
-                subject_id=project_id,
-                detail={
-                    "document_kind": document.kind,
-                    "document_number": document.number,
-                    "retainer_number": retainer_number,
-                    "mode": mode,
-                    "amount": int(amount),
-                    "reference": ref,
-                    "error": str(exc)[:500],
-                },
+                customer_id=document.customer_id,
+                reference_number=document.number,
+                description=f"Acompte {document.number}",
+                amount=amount,
+                today=today_s,
             )
-            await db.commit()
-            raise ManualPaymentPartial(retainer_number, exc) from exc
-    zoho_payment_id = str(payment.get("payment_id") or "")
-    await record(
-        db,
-        project_id,
-        "payment.manual.recorded",
-        actor_class="user",
-        actor_name=actor_name,
-        subject_type="project",
-        subject_id=project_id,
-        detail={
-            "document_kind": document.kind,
-            "document_number": document.number,
-            "mode": mode,
-            "mode_name": mode_name,
-            "amount": int(amount),
-            "reference": ref,
-            "zoho_payment_id": zoho_payment_id,
-            "retainer_number": retainer_number,
-        },
-    )
-    await db.commit()
-    _recent[key] = time.monotonic()
+            retainer_id = str(retainer.get("retainerinvoice_id") or "")
+            retainer_number = str(retainer.get("retainerinvoice_number") or retainer_id)
+            try:
+                payment = await zoho_service.record_customer_payment(
+                    db,
+                    customer_id=document.customer_id,
+                    payment_mode=mode_name,
+                    amount=amount,
+                    reference_number=ref,
+                    description=document.number,
+                    today=today_s,
+                    retainerinvoice_id=retainer_id,
+                )
+            except (ZohoNotConfiguredError, ZohoUpstreamError) as exc:
+                await record(
+                    db,
+                    project_id,
+                    "payment.manual.partial",
+                    actor_class="user",
+                    actor_name=actor_name,
+                    subject_type="project",
+                    subject_id=project_id,
+                    detail={
+                        "document_kind": document.kind,
+                        "document_number": document.number,
+                        "retainer_number": retainer_number,
+                        "mode": mode,
+                        "amount": int(amount),
+                        "reference": ref,
+                        "error": str(exc)[:500],
+                    },
+                )
+                await db.commit()
+                raise ManualPaymentPartial(retainer_number, exc) from exc
+        zoho_payment_id = str(payment.get("payment_id") or "")
+        await record(
+            db,
+            project_id,
+            "payment.manual.recorded",
+            actor_class="user",
+            actor_name=actor_name,
+            subject_type="project",
+            subject_id=project_id,
+            detail={
+                "document_kind": document.kind,
+                "document_number": document.number,
+                "mode": mode,
+                "mode_name": mode_name,
+                "amount": int(amount),
+                "reference": ref,
+                "zoho_payment_id": zoho_payment_id,
+                "retainer_number": retainer_number,
+            },
+        )
+        await db.commit()
+    except ManualPaymentPartial:
+        raise
+    except Exception:
+        _recent.pop(key, None)
+        raise
     await refresh_after_payment(db, project_id, document.kind)
     return ManualPaymentResult(zoho_payment_id=zoho_payment_id, retainer_number=retainer_number, mode_name=mode_name)
 
@@ -199,12 +213,23 @@ async def refresh_after_payment(db: AsyncSession, project_id: int, kind: str) ->
 
             await sync_project(db, project)
     except Exception as exc:  # noqa: BLE001 — a figures refresh must never fail the payment that triggered it
-        # No `db.rollback()` here: this session is the CALLER's, still in use
-        # after this returns (`_after_invoice_paid`, `apply_terminal_state`),
-        # and SQLAlchemy's rollback() expires every attached instance —
-        # turning the caller's very next attribute read into a lazy-load
-        # outside the async greenlet (`MissingGreenlet`). Nothing above
-        # writes to the session before `db.commit()` succeeds, so there is
-        # no dirty state here to undo; same "leave the stored figure alone"
-        # contract as `read_customer_credit`.
         logger.warning("figures refresh after a %s payment on project %s failed: %s", kind, project_id, exc)
+        # `db.rollback()` is NOT called unconditionally: this session is the
+        # CALLER's, still in use after this returns (`_after_invoice_paid`,
+        # `apply_terminal_state`), and SQLAlchemy's rollback() expires every
+        # attached instance — turning the caller's very next attribute read
+        # into a lazy-load outside the async greenlet (`MissingGreenlet`). A
+        # Zoho-READ failure (the common case — not configured, upstream
+        # error) never touches the session, so `is_active` stays True and no
+        # rollback is needed or wanted (same "leave the stored figure alone"
+        # contract as `read_customer_credit`). But `db.commit()` itself can
+        # fail (e.g. SQLite "database is locked") *after* the Zoho payment
+        # was already written — SQLAlchemy answers that by deactivating the
+        # session (`is_active` False), and the caller's very next statement
+        # on it would then raise `PendingRollbackError` rather than a clean
+        # lazy-load error. Only that poisoned-session case gets a rollback.
+        if not db.is_active:
+            try:
+                await db.rollback()
+            except Exception:  # noqa: BLE001
+                pass
