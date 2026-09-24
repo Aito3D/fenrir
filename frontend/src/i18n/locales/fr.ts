@@ -6353,6 +6353,11 @@ export default {
     testUnreachable: 'Heimdall est injoignable',
     testNotConfigured: 'Heimdall n’est pas configuré',
     offNotice: 'Liens de paiement désactivés : aucun devis ne reçoit de lien tant que l’URL et le jeton ne sont pas enregistrés.',
+    paymentModesTitle: 'Modes de paiement Zoho',
+    paymentModesHint: 'Noms que Zoho Books utilise pour un paiement enregistré depuis une fiche projet.',
+    paymentModeCard: 'Carte',
+    paymentModeCheque: 'Chèque',
+    paymentModeCash: 'Espèces',
   },
 
   // Backup

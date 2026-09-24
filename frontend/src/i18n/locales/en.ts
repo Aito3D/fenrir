@@ -6413,6 +6413,11 @@ export default {
     testUnreachable: 'Heimdall is unreachable',
     testNotConfigured: 'Heimdall is not configured',
     offNotice: 'Payment links are off: no quote gets a link until the URL and token are saved.',
+    paymentModesTitle: 'Zoho payment modes',
+    paymentModesHint: 'Names Zoho Books uses for a payment recorded from a project card.',
+    paymentModeCard: 'Card',
+    paymentModeCheque: 'Cheque',
+    paymentModeCash: 'Cash',
   },
 
   // Backup
