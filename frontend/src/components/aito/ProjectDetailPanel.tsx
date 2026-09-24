@@ -1034,11 +1034,15 @@ export function ProjectDetailPanel({
   const stepsTotal = stageWork.reduce((sum, s) => sum + s.stepsTotal, 0);
   const currency = useCurrency();
   // Same `['settings']` query `useCurrency` above already runs — React Query
-  // dedupes them onto one fetch, this just reads the one field useCurrency
-  // does not expose. Feeds PaymentLinkRow's paid-but-total-moved warning via
-  // BillingCard below.
+  // dedupes them onto one fetch, this just reads the two fields useCurrency
+  // does not expose: the deposit rule for BillingCard's quote PaymentBlock,
+  // and (below) whether Heimdall is configured at all.
   const settingsQuery = useQuery({ queryKey: ['settings'], queryFn: api.getSettings, staleTime: 60_000 });
   const depositPct = settingsQuery.data?.aito_deposit_pct ?? 0;
+  // Whether the counter's card/Terminal payment route can be used at all —
+  // BillingCard's PaymentBlocks disable that cell (with an explanation)
+  // rather than let the operator start a charge Heimdall can never process.
+  const heimdallConfigured = Boolean(settingsQuery.data?.heimdall_base_url);
 
   const [editingDesc, setEditingDesc] = useState(false);
   const [draft, setDraft] = useState(project.description);
@@ -1511,6 +1515,7 @@ export function ProjectDetailPanel({
                       forcePending={forceSyncMutation.isPending}
                       depositPct={depositPct}
                       currency={currency}
+                      heimdallConfigured={heimdallConfigured}
                     />
                     <RecordCard
                       project={project}

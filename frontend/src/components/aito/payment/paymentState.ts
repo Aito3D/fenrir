@@ -1,5 +1,5 @@
 import type { TFunction } from 'i18next';
-import type { AitoPaymentLink, AitoTerminalPayment } from '../../../api/client';
+import type { AitoPaymentLink, AitoProject, AitoTerminalPayment } from '../../../api/client';
 import { localDateKey, parseLocalDateKey } from '../../../utils/date';
 
 export type PaymentState =
@@ -46,12 +46,21 @@ export function cellsEnabled({ canUpdate, due, state }: { canUpdate: boolean; du
   return canUpdate && due !== null && due > 0 && state.kind !== 'terminal_processing';
 }
 
+/** The project's terminal payment, but only when it belongs to the document
+ *  kind asking for it — a quote's block must never show an invoice's charge
+ *  and vice versa. `project.terminal_payment` can arrive `undefined` on an
+ *  older cached row, so this tolerates that the same way it tolerates
+ *  `null`. (Task 16.) */
+export function terminalFor(project: AitoProject, kind: 'quote' | 'invoice'): AitoTerminalPayment | null {
+  const terminal = project.terminal_payment;
+  return terminal && terminal.document_kind === kind ? terminal : null;
+}
+
 /** "Expires in N days" / "Expires today" / "Expired" for a link's
  *  `expires_on` (an ISO `YYYY-MM-DD`, UTC end-of-day). `title` is the long
- *  localized date for a tooltip. Shared by `PaymentLinkModal`'s live view
- *  and (Task 16) the block's collapsed state line, so the two can never
- *  disagree about the count — `PaymentLinkRow.tsx` still has its own copy
- *  of this arithmetic and is left alone here; Task 16 retires it. */
+ *  localized date for a tooltip. Shared by `PaymentLinkModal`'s live view and
+ *  `PaymentBlock`'s `link_pending` state line, so the two can never disagree
+ *  about the count. */
 export function expiryText(t: TFunction, expiresOn: string, language: string): { text: string; title: string } {
   const expiresDate = parseLocalDateKey(expiresOn);
   const title = expiresDate.toLocaleDateString(language, { day: 'numeric', month: 'long', year: 'numeric' });

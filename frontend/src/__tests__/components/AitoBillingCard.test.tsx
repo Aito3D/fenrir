@@ -34,6 +34,7 @@ function renderCard(p: AitoProject, overrides: Partial<Parameters<typeof Billing
       forcePending={false}
       depositPct={0}
       currency="XPF"
+      heimdallConfigured
       {...overrides}
     />,
   );

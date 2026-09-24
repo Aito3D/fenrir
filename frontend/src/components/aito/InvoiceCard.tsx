@@ -9,6 +9,9 @@ import { INVOICE_STATUS_TEXT_TONE_CLASSES, invoiceStatusLabelKey, invoiceStatusT
 import { Money } from '../calculator/shared';
 import { useCurrency } from '../../hooks/useCurrency';
 import { ACTION_GROUP } from './quoteActionGroup';
+import { PaymentBlock } from './payment/PaymentBlock';
+import { invoiceDocument } from './payment/paymentDocument';
+import { terminalFor } from './payment/paymentState';
 
 /** The Zoho invoice raised from this project's quote.
  *
@@ -28,7 +31,13 @@ import { ACTION_GROUP } from './quoteActionGroup';
  *  card's own gating argues against, and the block is additive information:
  *  a card without it is still complete.
  */
-export function InvoiceCard({ project, canUpdate }: { project: AitoProject; canUpdate: boolean }) {
+export function InvoiceCard({ project, canUpdate, heimdallConfigured }: {
+  project: AitoProject;
+  canUpdate: boolean;
+  /** Whether Heimdall is configured — see `BillingCard`'s prop of the same
+   *  name, which this one mirrors down to the invoice's `PaymentBlock`. */
+  heimdallConfigured: boolean;
+}) {
   const { t } = useTranslation();
   const appCurrency = useCurrency();
 
@@ -117,6 +126,17 @@ export function InvoiceCard({ project, canUpdate }: { project: AitoProject; canU
           </>
         )}
       </dl>
+
+      {/* The Encaissement block for whatever is still owed on this invoice.
+          Renders itself away when nothing is due and nothing is in flight. */}
+      <PaymentBlock
+        project={project}
+        document={invoiceDocument(invoice)}
+        link={project.invoice_payment_link ?? null}
+        terminal={terminalFor(project, 'invoice')}
+        canUpdate={canUpdate}
+        heimdallConfigured={heimdallConfigured}
+      />
 
       {/* Books can invoice one estimate in parts. The block shows the newest,
           and says so rather than letting it look like the only one — an
