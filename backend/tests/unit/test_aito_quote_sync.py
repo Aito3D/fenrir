@@ -20,7 +20,9 @@ from backend.app.services.aito_quote_sync import (
     SYNC_FAILURE_LIMIT,
     ShippingCatalogueUnavailable,
     _bump_requeue_marker,
+    _customer_retainers,
     _deferred_reasons,
+    _referenced_retainer_total,
     _requeue_marker,
     _snapshot_pushed_costs,
     _still_selected,
@@ -452,7 +454,7 @@ async def test_run_sync_once_reloads_the_project_before_apply_rules_after_a_term
     await db_session.commit()
     project_id = project.id
 
-    async def fake_sync_project(db, proj, credit_cache=None):
+    async def fake_sync_project(db, proj, credit_cache=None, retainer_cache=None):
         # A real flush failure -- the same "poisons the session" mechanism
         # every real terminal handler relies on (an IntegrityError from a
         # racing zoho_comment_id, or a duplicate quote_id under
@@ -6907,3 +6909,364 @@ async def test_a_failed_deposit_read_leaves_the_figure_and_the_sync_alone(db_ses
     await db_session.refresh(project)
     assert project.quote_sync_state == "idle"
     assert project.customer_credit_total == 4200.0
+
+
+# --- Deposits taken at the counter (T-010, loop-20) --------------------------
+#
+# A retainer invoice is a CUSTOMER document. Books lists it under the estimate
+# only when it was raised from the estimate, so a deposit taken at the counter
+# (aito_manual_payments) or booked by Heimdall for a paid link — both carry the
+# quote number in `reference_number` and nothing else — is invisible to
+# `_paid_retainer_total`. Trigger B folds those in, by the sweep's own
+# reference rule, so a paid deposit stops the link, the tracking page's pay
+# button and the panel's "due" figure, and accepts the quote.
+
+
+def _quoted_estimate(total: int = 50000, retainers: list[dict] | None = None) -> dict:
+    return {
+        "estimate": {
+            "estimate_id": "E1",
+            "customer_id": "C1",
+            "status": "sent",
+            "total": total,
+            "is_inclusive_tax": True,
+            "retainerinvoices": retainers or [],
+        }
+    }
+
+
+def _counter_retainer(**over) -> dict:
+    row = {
+        "retainerinvoice_id": "RI9",
+        "retainerinvoice_number": "RET26-00295",
+        "status": "paid",
+        "reference_number": "DEV26-9001",
+        "total": 50000,
+    }
+    row.update(over)
+    return row
+
+
+async def _quoted_project(db) -> AitoProject:
+    project = await _project_with_quote(db, impression_cost=1000)
+    project.quote_status = "sent"
+    project.quote_sync_state = "idle"
+    await db.commit()
+    return project
+
+
+def _retainer_reads(seen: list) -> list[str]:
+    return [path for _method, path, _body in seen if path.endswith("/retainerinvoices")]
+
+
+@pytest.mark.asyncio
+async def test_counter_deposit_counts_towards_the_required_amount_and_accepts(db_session):
+    """The quote's deposit was paid in cash: Books holds a paid retainer
+    referencing DEV26-9001 that the estimate does not list. It covers the
+    required amount, so the card accepts instead of still asking to be paid."""
+    project = await _quoted_project(db_session)
+    await _configure_zoho(db_session)
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): _quoted_estimate(),
+                ("GET", "/estimates/E1/comments"): {"comments": []},
+                ("GET", "/retainerinvoices"): {"retainerinvoices": [_counter_retainer()]},
+                ("GET", "/customerpayments"): {"customerpayments": []},
+                ("POST", "/estimates/E1/status/accepted"): {"code": 0},
+            },
+            seen,
+        )
+    )
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    assert project.retainer_paid_total == 50000.0
+    assert project.quote_status == "accepted"
+    assert project.quote_sync_state == "idle"
+
+
+@pytest.mark.asyncio
+async def test_a_retainer_for_another_job_is_not_this_quotes_deposit(db_session):
+    """Per-quote, not per-customer: an advance referencing a sibling quote
+    (or nothing at all) leaves this card's deposit unpaid."""
+    project = await _quoted_project(db_session)
+    await _configure_zoho(db_session)
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): _quoted_estimate(),
+                ("GET", "/estimates/E1/comments"): {"comments": []},
+                ("GET", "/retainerinvoices"): {
+                    "retainerinvoices": [
+                        _counter_retainer(retainerinvoice_id="RI7", reference_number="DEV26-8000"),
+                        _counter_retainer(retainerinvoice_id="RI8", reference_number=""),
+                    ]
+                },
+                ("GET", "/customerpayments"): {"customerpayments": []},
+            }
+        )
+    )
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    assert project.retainer_paid_total == 0.0
+    assert project.quote_status == "sent"
+
+
+@pytest.mark.asyncio
+async def test_an_unpaid_referenced_retainer_is_not_money(db_session):
+    """A retainer raised for this quote but not yet paid is an invitation to
+    pay, exactly like the online link — it must not accept anything."""
+    project = await _quoted_project(db_session)
+    await _configure_zoho(db_session)
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): _quoted_estimate(),
+                ("GET", "/estimates/E1/comments"): {"comments": []},
+                ("GET", "/retainerinvoices"): {
+                    "retainerinvoices": [
+                        _counter_retainer(retainerinvoice_id="RI5", status="draft"),
+                        _counter_retainer(retainerinvoice_id="RI6", status="sent"),
+                    ]
+                },
+                ("GET", "/customerpayments"): {"customerpayments": []},
+            }
+        )
+    )
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    assert project.retainer_paid_total == 0.0
+    assert project.quote_status == "sent"
+
+
+@pytest.mark.asyncio
+async def test_a_retainer_both_attached_and_referenced_is_counted_once(db_session):
+    """A deposit raised FROM the quote in Books appears in both lists. Counting
+    it twice would accept a quote on half its deposit."""
+    project = await _quoted_project(db_session)
+    await _configure_zoho(db_session)
+    attached = {"retainerinvoice_id": "RI9", "status": "paid", "total": 20000}
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): _quoted_estimate(retainers=[attached]),
+                ("GET", "/estimates/E1/comments"): {"comments": []},
+                ("GET", "/retainerinvoices"): {"retainerinvoices": [_counter_retainer(total=20000)]},
+                ("GET", "/customerpayments"): {"customerpayments": []},
+            }
+        )
+    )
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    assert project.retainer_paid_total == 20000.0
+    assert project.quote_status == "sent"
+
+
+@pytest.mark.asyncio
+async def test_a_counter_deposit_tops_up_the_estimates_own_retainers(db_session):
+    """Both halves count: 10 000 raised from the quote plus 40 000 taken at
+    the counter cover the 50 000 the quote asks for."""
+    project = await _quoted_project(db_session)
+    await _configure_zoho(db_session)
+    attached = {"retainerinvoice_id": "RI1", "status": "paid", "total": 10000}
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): _quoted_estimate(retainers=[attached]),
+                ("GET", "/estimates/E1/comments"): {"comments": []},
+                ("GET", "/retainerinvoices"): {"retainerinvoices": [_counter_retainer(total=40000)]},
+                ("GET", "/customerpayments"): {"customerpayments": []},
+                ("POST", "/estimates/E1/status/accepted"): {"code": 0},
+            }
+        )
+    )
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    assert project.retainer_paid_total == 50000.0
+    assert project.quote_status == "accepted"
+
+
+@pytest.mark.asyncio
+async def test_a_failed_retainer_listing_leaves_the_estimates_own_figure(db_session):
+    """No /retainerinvoices route: the listing 404s. The reconcile already
+    succeeded, so the tick keeps the estimate-attached total and the card
+    stays idle rather than flipping to a sync error."""
+    project = await _quoted_project(db_session)
+    await _configure_zoho(db_session)
+    attached = {"retainerinvoice_id": "RI1", "status": "paid", "total": 10000}
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): _quoted_estimate(retainers=[attached]),
+                ("GET", "/estimates/E1/comments"): {"comments": []},
+                ("GET", "/customerpayments"): {"customerpayments": []},
+            }
+        )
+    )
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    assert project.retainer_paid_total == 10000.0
+    assert project.quote_sync_state == "idle"
+    assert project.quote_sync_error is None
+    assert project.quote_status == "sent"
+
+
+@pytest.mark.asyncio
+async def test_no_retainer_listing_when_there_is_nothing_to_look_for(db_session):
+    """Budget: the call is skipped when the quote asks for nothing (no total
+    yet) — there is no threshold for a deposit to reach."""
+    project = await _quoted_project(db_session)
+    await _configure_zoho(db_session)
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "customer_id": "C1",
+                        "status": "sent",
+                        "is_inclusive_tax": True,
+                        "retainerinvoices": [],
+                    }
+                },
+                ("GET", "/estimates/E1/comments"): {"comments": []},
+                ("GET", "/retainerinvoices"): {"retainerinvoices": [_counter_retainer()]},
+                ("GET", "/customerpayments"): {"customerpayments": []},
+            },
+            seen,
+        )
+    )
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    assert project.quote_total is None
+    assert _retainer_reads(seen) == []
+
+
+@pytest.mark.asyncio
+async def test_no_retainer_listing_when_the_estimates_own_retainers_already_cover_it(db_session):
+    """Budget: the estimate already says the deposit is paid, so nothing a
+    listing could add would change the answer."""
+    project = await _quoted_project(db_session)
+    await _configure_zoho(db_session)
+    seen: list = []
+    attached = {"retainerinvoice_id": "RI1", "status": "paid", "total": 50000}
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): _quoted_estimate(retainers=[attached]),
+                ("GET", "/estimates/E1/comments"): {"comments": []},
+                ("GET", "/retainerinvoices"): {"retainerinvoices": [_counter_retainer()]},
+                ("GET", "/customerpayments"): {"customerpayments": []},
+                ("POST", "/estimates/E1/status/accepted"): {"code": 0},
+            },
+            seen,
+        )
+    )
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    assert project.retainer_paid_total == 50000.0
+    assert project.quote_status == "accepted"
+    assert _retainer_reads(seen) == []
+
+
+@pytest.mark.asyncio
+async def test_the_retainer_listing_is_asked_once_per_customer_per_tick(db_session):
+    """Two projects of one customer, one retainer read — the same per-tick
+    memo the customer-credit read uses."""
+    for _ in range(2):
+        project = await _project_with_quote(db_session, impression_cost=1000)
+        project.quote_status = "sent"
+        project.quote_sync_state = "idle"
+    await db_session.commit()
+    await _configure_zoho(db_session)
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): _quoted_estimate(),
+                ("GET", "/estimates/E1/comments"): {"comments": []},
+                ("GET", "/retainerinvoices"): {"retainerinvoices": []},
+                ("GET", "/customerpayments"): {"customerpayments": []},
+            },
+            seen,
+        )
+    )
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 2
+    assert _retainer_reads(seen) == ["/books/v3/retainerinvoices"]
+
+
+@pytest.mark.asyncio
+async def test_a_rate_limited_retainer_listing_defers_the_tick(db_session):
+    """A 429 on the side read is not swallowed: it is the sweep's own signal
+    to stand down, exactly as it is out of the customer-credit read. The card
+    keeps its stored figure, spends no retry budget and shows no error."""
+    project = await _quoted_project(db_session)
+    project.retainer_paid_total = 7000.0
+    await db_session.commit()
+    await _configure_zoho(db_session)
+    routes = {
+        ("GET", "/estimates/E1"): _quoted_estimate(),
+        ("GET", "/estimates/E1/comments"): {"comments": []},
+    }
+    inner = zoho_handler(routes)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/retainerinvoices"):
+            return httpx.Response(429, json={"message": "Rate limited"})
+        return inner(request)
+
+    zoho_service.transport = httpx.MockTransport(handler)
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    assert project.retainer_paid_total == 7000.0
+    assert project.quote_sync_state == "idle"
+    assert project.quote_sync_error is None
+    assert project.quote_sync_failures == 0
+
+
+@pytest.mark.asyncio
+async def test_the_retainer_listing_is_refused_without_a_customer_id(db_session):
+    """Books reads an empty `customer_id` filter as NO filter and answers with
+    the whole org's retainers — refused before any call, same as the payments
+    read. No transport is installed, so a call here would raise."""
+    assert await _customer_retainers(db_session, "") is None
+
+
+def test_a_malformed_retainer_total_reads_as_zero_not_a_crash():
+    """Same tolerance as `_paid_retainer_total`: one odd row from Books must
+    not blank the deposits beside it."""
+    rows = [
+        {"retainerinvoice_id": "RI1", "status": "paid", "reference_number": "DEV26-9001", "total": "nonsense"},
+        {"retainerinvoice_id": "RI2", "status": "paid", "reference_number": "DEV26-9001", "total": 3000},
+    ]
+    assert _referenced_retainer_total({"retainerinvoices": []}, rows, "DEV26-9001") == 3000.0
+
+
+def test_the_reference_match_ignores_case_and_surrounding_space():
+    """The sweep's own rule (`_same_reference`), reused rather than re-read:
+    an operator typing the quote number by hand still matches."""
+    rows = [{"retainerinvoice_id": "RI1", "status": "paid", "reference_number": " dev26-9001 ", "total": 500}]
+    assert _referenced_retainer_total({}, rows, "DEV26-9001") == 500.0
+    assert _referenced_retainer_total({}, rows, None) == 0.0

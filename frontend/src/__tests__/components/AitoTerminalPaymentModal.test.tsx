@@ -35,6 +35,32 @@ describe('TerminalPaymentModal', () => {
     expect(get).toHaveBeenCalled();
   });
 
+  it('paid but booking_status failed flags the Zoho gap in warning styling', async () => {
+    vi.spyOn(api, 'startAitoTerminalPayment').mockResolvedValue(tpe());
+    vi.spyOn(api, 'getAitoTerminalPayment').mockResolvedValue(
+      tpe({ status: 'paid', amount_confirmed: 23000, settled_at: '2026-09-23T01:01:00', booking_status: 'failed' })
+    );
+    render(<TerminalPaymentModal project={makeProject({ id: 12 })} document={invoice} initialPayment={null} onClose={() => {}} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Start the terminal' }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(3100); });
+    const bookingLine = await screen.findByText('Not recorded in Zoho Books — see Heimdall');
+    expect(bookingLine).toHaveClass('text-status-warning');
+    expect(bookingLine).not.toHaveClass('text-bambu-gray');
+  });
+
+  it('paid with booking_status booked shows the neutral confirmation, not the warning', async () => {
+    vi.spyOn(api, 'startAitoTerminalPayment').mockResolvedValue(tpe());
+    vi.spyOn(api, 'getAitoTerminalPayment').mockResolvedValue(
+      tpe({ status: 'paid', amount_confirmed: 23000, settled_at: '2026-09-23T01:01:00', booking_status: 'booked' })
+    );
+    render(<TerminalPaymentModal project={makeProject({ id: 12 })} document={invoice} initialPayment={null} onClose={() => {}} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Start the terminal' }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(3100); });
+    const bookingLine = await screen.findByText('Recorded in Zoho Books');
+    expect(bookingLine).toHaveClass('text-bambu-gray');
+    expect(bookingLine).not.toHaveClass('text-status-warning');
+  });
+
   it('declined offers a retry back to the form', async () => {
     vi.spyOn(api, 'startAitoTerminalPayment').mockResolvedValue(tpe());
     vi.spyOn(api, 'getAitoTerminalPayment').mockResolvedValue(tpe({ status: 'failed', settled_at: '2026-09-23T01:01:00' }));

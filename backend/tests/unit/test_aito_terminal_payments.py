@@ -17,6 +17,7 @@ from backend.app.services.aito_payment_documents import PaymentDocument
 from backend.app.services.heimdall import (
     HeimdallConflict,
     HeimdallNotConfigured,
+    HeimdallNotFound,
     HeimdallRateLimited,
     LinkView,
     heimdall_service,
@@ -347,6 +348,118 @@ async def test_refresh_throttles_and_never_raises(db_session):
     await db_session.commit()
     await svc.refresh_terminal_payment(db_session, row2, now=NOW + timedelta(seconds=10))
     assert row2.status == "processing" and "503" in (row2.sync_error or "")
+
+
+@pytest.mark.asyncio
+async def test_refresh_marks_the_row_failed_when_heimdall_reports_404(db_session):
+    """Heimdall losing track of a reservation is the only way a stuck row
+    ever unblocks itself — `HeimdallNotFound` must mark the row `failed`,
+    stamp `checked_at`/`settled_at`, and return without raising."""
+    p = await _project(db_session)
+    row = AitoTerminalPayment(
+        project_id=p.id,
+        document_kind="invoice",
+        document_id="inv-1",
+        document_number="FA",
+        idempotency_key="k",
+        heimdall_id="h-gone",
+        amount=1,
+        status="processing",
+        created_at=NOW,
+    )
+    db_session.add(row)
+    await db_session.commit()
+    heimdall_service._transport = httpx.MockTransport(
+        lambda r: httpx.Response(404, json={"error": {"code": "not_found", "message": "no such payment"}})
+    )
+    result = await svc.refresh_terminal_payment(db_session, row, now=NOW + timedelta(seconds=10))
+    assert result is row
+    assert row.status == "failed"
+    assert "404" in (row.sync_error or "")
+    assert row.checked_at == NOW + timedelta(seconds=10)
+    assert row.settled_at == NOW + timedelta(seconds=10)
+
+
+@pytest.mark.asyncio
+async def test_refresh_404_does_not_overwrite_an_already_settled_time(db_session):
+    """`row.settled_at or now` — a row that was already settled (e.g. paid,
+    still pending booking) keeps its original `settled_at` even when the
+    poll later discovers Heimdall lost the payment."""
+    p = await _project(db_session)
+    settled = NOW - timedelta(minutes=5)
+    row = AitoTerminalPayment(
+        project_id=p.id,
+        document_kind="invoice",
+        document_id="inv-1",
+        document_number="FA",
+        idempotency_key="k2",
+        heimdall_id="h-gone-2",
+        amount=1,
+        status="paid",
+        booking_status="pending",
+        created_at=NOW,
+        settled_at=settled,
+    )
+    db_session.add(row)
+    await db_session.commit()
+    heimdall_service._transport = httpx.MockTransport(
+        lambda r: httpx.Response(404, json={"error": {"code": "not_found", "message": "no such payment"}})
+    )
+    await svc.refresh_terminal_payment(db_session, row, now=NOW + timedelta(seconds=10))
+    assert row.status == "failed"
+    assert row.settled_at == settled
+
+
+@pytest.mark.asyncio
+async def test_refresh_skips_the_heimdall_call_without_a_heimdall_id(db_session):
+    """A row that never reserved with Heimdall (`heimdall_id is None`) must
+    return as-is without attempting a request."""
+    p = await _project(db_session)
+    row = AitoTerminalPayment(
+        project_id=p.id,
+        document_kind="invoice",
+        document_id="inv-1",
+        document_number="FA",
+        idempotency_key="k3",
+        heimdall_id=None,
+        amount=1,
+        status="processing",
+        created_at=NOW,
+    )
+    db_session.add(row)
+    await db_session.commit()
+    calls = []
+    heimdall_service._transport = httpx.MockTransport(lambda r: calls.append(1) or httpx.Response(200, json={}))
+    result = await svc.refresh_terminal_payment(db_session, row, now=NOW + timedelta(seconds=10))
+    assert result is row
+    assert calls == []
+    assert row.checked_at is None
+
+
+@pytest.mark.asyncio
+async def test_refresh_skips_the_heimdall_call_for_a_closed_row(db_session):
+    """A row that is neither open nor paid-pending-booking (e.g. already
+    `failed`) must return as-is without attempting a request."""
+    p = await _project(db_session)
+    row = AitoTerminalPayment(
+        project_id=p.id,
+        document_kind="invoice",
+        document_id="inv-1",
+        document_number="FA",
+        idempotency_key="k4",
+        heimdall_id="h-4",
+        amount=1,
+        status="failed",
+        created_at=NOW,
+    )
+    db_session.add(row)
+    await db_session.commit()
+    calls = []
+    heimdall_service._transport = httpx.MockTransport(lambda r: calls.append(1) or httpx.Response(200, json={}))
+    result = await svc.refresh_terminal_payment(db_session, row, now=NOW + timedelta(seconds=10))
+    assert result is row
+    assert calls == []
+    assert row.checked_at is None
 
 
 @pytest.mark.asyncio

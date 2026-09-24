@@ -37,7 +37,7 @@ from backend.app.models.calculator import CalculatorFilament
 from backend.app.services.aito_board_rules import AWAY_STATUSES
 from backend.app.services.aito_customer_credit import read_customer_credit
 from backend.app.services.aito_events import record
-from backend.app.services.aito_invoice_sweep import sweep_invoices
+from backend.app.services.aito_invoice_sweep import _same_reference, sweep_invoices
 from backend.app.services.aito_payment_links import deposit_pct, required_amount
 from backend.app.services.aito_quote_export import (
     SERVICES,
@@ -1502,14 +1502,20 @@ def _arm_rate_limit_throttle(e: ZohoRateLimited) -> None:
 
 
 async def sync_project(
-    db: AsyncSession, project: AitoProject, credit_cache: dict[str, float] | None = None
+    db: AsyncSession,
+    project: AitoProject,
+    credit_cache: dict[str, float] | None = None,
+    retainer_cache: dict[str, list[dict]] | None = None,
 ) -> bool | None:
     """One project's whole state machine. Never raises: every outcome is a state.
 
     ``credit_cache`` is the sweep's per-tick memo for the customer-credit side
     read (aito_customer_credit.read_customer_credit): ``run_sync_once`` hands
     one dict to every project of the tick so N projects of one customer cost
-    one Books call. A direct caller passes nothing and simply reads.
+    one Books call. ``retainer_cache`` is the same thing for the other side
+    read, the customer's retainer invoices (``_customer_retainers``, used by
+    Trigger B to see a deposit taken at the counter). A direct caller passes
+    neither and simply reads.
 
     Returns True only when the failure just handled was a Zoho rate limit
     (HTTP 429, see the ``ZohoRateLimited`` handler below) — ``run_sync_once``
@@ -1634,11 +1640,43 @@ async def sync_project(
                 project.quote_total = float(estimate["total"])
 
             # Trigger B (spec §6.3): paid retainers that cover the required
-            # amount are the client's go-ahead. Read off the estimate the
-            # reconcile above already paid for — zero extra Books calls. Uses
-            # `project.quote_total` as just refreshed above, not a value from
-            # before this tick's read.
+            # amount are the client's go-ahead. The estimate's own
+            # `retainerinvoices` list is read off the reconcile above — zero
+            # extra Books calls — and covers every deposit Books attached to
+            # the quote. Uses `project.quote_total` as just refreshed above,
+            # not a value from before this tick's read.
             paid = _paid_retainer_total(estimate)
+            # The estimate's customer, not the row's client_id, for the same
+            # reason plan_invoice bills the estimate's customer.
+            customer_id = str(estimate.get("customer_id") or project.client_id or "")
+            needed = required_amount(project.quote_total, await deposit_pct(db))
+            # T-010 (loop-20, user-approved 2026-09-23): the attached list is
+            # NOT the whole story. A deposit taken at the counter (cash,
+            # cheque, terminal — aito_manual_payments) and every deposit
+            # Heimdall books for a paid link are raised as retainer invoices
+            # that carry the QUOTE NUMBER in `reference_number` and are never
+            # attached to the estimate (live DEV26-2684 / RET26-00295, see
+            # aito_invoice_sweep.linked_credits). Counting only the attached
+            # ones left `retainer_paid_total` at 0 for a fully paid deposit —
+            # so the online link stayed live and the public tracking page
+            # kept offering it, the panel's Encaissement block kept showing
+            # the money as due, and the card never auto-accepted. Same
+            # per-quote rule as the sweep's (`_same_reference`): a deposit
+            # for a SIBLING job of the same customer still counts for
+            # nothing here.
+            #
+            # Budget: one extra Books call per distinct customer per tick,
+            # memoed in `retainer_cache` exactly like `credit_cache` below,
+            # and skipped entirely when there is nothing to find — no deposit
+            # required, the attached retainers already cover it, or no quote
+            # number to match against. Best-effort: a Books hiccup leaves the
+            # attached-only figure in place (what this line computed before
+            # the fix), never a sync error; only a 429 escapes, for the same
+            # reason it does out of read_customer_credit below.
+            if needed is not None and paid < needed and project.quote_number:
+                retainers = await _customer_retainers(db, customer_id, retainer_cache)
+                if retainers:
+                    paid += _referenced_retainer_total(estimate, retainers, project.quote_number)
             project.retainer_paid_total = paid
             # Beside it, the CUSTOMER's unspent deposits — a different figure
             # with a different meaning (see aito_customer_credit): what they
@@ -1646,14 +1684,10 @@ async def sync_project(
             # raised by hand, which is what the panel shows as "deposit
             # available". One extra Books call per customer per tick, memoed
             # in `credit_cache`; best-effort, so None leaves the stored
-            # figure alone. The estimate's customer, not the row's client_id,
-            # for the same reason plan_invoice bills the estimate's customer.
-            credit = await read_customer_credit(
-                db, str(estimate.get("customer_id") or project.client_id or ""), credit_cache
-            )
+            # figure alone.
+            credit = await read_customer_credit(db, customer_id, credit_cache)
             if credit is not None:
                 project.customer_credit_total = credit
-            needed = required_amount(project.quote_total, await deposit_pct(db))
             if needed is not None and paid >= needed and project.quote_status != "accepted":
                 accepted = await accept_quote(
                     db, project, source="retainer", detail={"amount": paid, "reference": project.quote_number}
@@ -2159,6 +2193,9 @@ async def run_sync_once(db: AsyncSession, pending_only: bool = False) -> int:
     # customer share a single payments read. Dies with the tick: nothing to
     # expire, and the next tick sees fresh figures.
     credit_cache: dict[str, float] = {}
+    # Same shape, same lifetime, for Trigger B's retainer listing: the
+    # projects of one customer share a single /retainerinvoices read.
+    retainer_cache: dict[str, list[dict]] = {}
     for project_id in project_ids:
         # Re-fetched fresh on every iteration rather than loaded once as a
         # list of instances before the loop. This looks like it trades away a
@@ -2191,7 +2228,7 @@ async def run_sync_once(db: AsyncSession, pending_only: bool = False) -> int:
             # wake path promises never to spend.
             continue
         attempted += 1
-        rate_limited = await sync_project(db, project, credit_cache)
+        rate_limited = await sync_project(db, project, credit_cache, retainer_cache)
         # Commit per project, not once after the loop. sync_project's own
         # catch-all keeps it from raising, but a single end-of-batch commit
         # would still make every project's durability depend on none of its
@@ -2318,6 +2355,75 @@ def _paid_retainer_total(estimate: dict) -> float:
             except (TypeError, ValueError):
                 continue
     return total
+
+
+def _referenced_retainer_total(estimate: dict, retainers: list[dict], quote_number: str | None) -> float:
+    """Sum of the customer's PAID retainers that name this quote in
+    `reference_number` and are NOT already on the estimate — the deposits
+    `_paid_retainer_total` above cannot see (T-010, loop-20).
+
+    A retainer invoice is a customer document: Books lists it under the
+    estimate only when it was raised FROM the estimate. A deposit taken at
+    the counter (aito_manual_payments) and every deposit Heimdall books for
+    a paid payment link are raised against the customer with the quote
+    number as their reference and nothing else, so they never appear in
+    `estimate["retainerinvoices"]`.
+
+    The reference rule is the sweep's own (`aito_invoice_sweep._same_reference`,
+    imported rather than re-implemented so the two cannot drift), which keeps
+    this figure per-QUOTE:
+    an advance for another job of the same customer matches nothing here and
+    is counted only as `customer_credit_total`. Rows already attached to the
+    estimate are skipped so a retainer that is both attached AND referenced
+    counts once. Tolerant of Books' sloppiness the same way
+    `_paid_retainer_total` is: a missing or non-numeric total reads as zero
+    rather than blanking the figure.
+    """
+    attached = {str(entry.get("retainerinvoice_id") or "") for entry in estimate.get("retainerinvoices") or []}
+    attached.discard("")
+    total = 0.0
+    for row in retainers:
+        if str(row.get("status") or "") != "paid":
+            continue
+        if str(row.get("retainerinvoice_id") or "") in attached:
+            continue
+        if not _same_reference(str(row.get("reference_number") or ""), quote_number):
+            continue
+        try:
+            total += float(row.get("total") or 0)
+        except (TypeError, ValueError):
+            continue
+    return total
+
+
+async def _customer_retainers(
+    db: AsyncSession, customer_id: str, cache: dict[str, list[dict]] | None = None
+) -> list[dict] | None:
+    """The customer's retainer invoices, or None when Books could not say.
+
+    Shaped exactly like `aito_customer_credit.read_customer_credit`: the
+    `cache` is the caller's per-tick memo (one Books call per customer per
+    tick, dying with the tick), an empty id is refused before any call
+    because Books reads an empty filter as no filter, failures are not
+    cached, and a 429 is re-raised so `sync_project`'s own handler can arm
+    the shared throttle instead of this side read deepening it. Every other
+    Books failure returns None — "use what the estimate said" — rather than
+    flipping a card that reconciled fine to a sync error.
+    """
+    if not customer_id:
+        return None
+    if cache is not None and customer_id in cache:
+        return cache[customer_id]
+    try:
+        retainers = await zoho_service.list_customer_retainers(db, customer_id)
+    except ZohoRateLimited:
+        raise
+    except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
+        logger.warning("Aito: could not list customer %s's retainers from Books: %s", customer_id, e)
+        return None
+    if cache is not None:
+        cache[customer_id] = retainers
+    return retainers
 
 
 # How long an EDIT waits before the drain it asked for actually runs. The
