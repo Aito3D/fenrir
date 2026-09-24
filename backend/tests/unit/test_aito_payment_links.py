@@ -13,6 +13,7 @@ from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_payment_link import AitoPaymentLink
 from backend.app.models.aito_project import AitoProject
 from backend.app.services import aito_payment_links as svc
+from backend.app.services.aito_payment_documents import PaymentDocument
 from backend.app.services.aito_payment_links import (
     Wanted,
     current_link,
@@ -24,6 +25,7 @@ from backend.app.services.aito_payment_links import (
 )
 from backend.app.services.heimdall import (
     HeimdallConflict,
+    HeimdallNotConfigured,
     HeimdallNotFound,
     HeimdallRateLimited,
     HeimdallUpstreamError,
@@ -1466,3 +1468,181 @@ async def test_paid_invoice_link_records_but_never_accepts_the_quote(db_session,
     events = (await db_session.execute(select(AitoEvent).where(AitoEvent.project_id == project.id))).scalars().all()
     paid = [e for e in events if e.kind == "payment_link.paid"]
     assert len(paid) == 1 and paid[0].detail["document_kind"] == "invoice"
+
+
+# --- create_invoice_link / cancel_invoice_link ---------------------------------
+
+
+@pytest.mark.asyncio
+async def test_create_invoice_link_reserves_posts_and_records(db_session, fake):
+    p = await _project(db_session)
+    fake.expires_at_override = "2026-10-08T23:59:59.999Z"
+    doc = PaymentDocument(kind="invoice", id="inv-1", number="FA-26-0001", customer_id="c1", balance=23000)
+    row = await svc.create_invoice_link(
+        db_session,
+        p,
+        document=doc,
+        amount=23000,
+        actor_name="paul",
+        now=datetime(2026, 9, 23),
+        today=date(2026, 9, 23),
+        validity_days=15,
+    )
+    creates = [c for c in fake.calls if c[0] == "create"]
+    assert len(creates) == 1
+    _, key, reference, amount, days = creates[0]
+    assert reference == "FA-26-0001" and amount == 23000 and days == 15
+    assert row.document_kind == "invoice" and row.url == "https://osb/pay/L1" and row.expires_on == "2026-10-08"
+    kinds = await _kinds(db_session, p.id)
+    assert "payment_link.created" in kinds
+    with pytest.raises(svc.InvoiceLinkExists):
+        await svc.create_invoice_link(
+            db_session,
+            p,
+            document=doc,
+            amount=23000,
+            actor_name=None,
+            now=datetime(2026, 9, 23),
+            today=date(2026, 9, 23),
+            validity_days=15,
+        )
+
+
+@pytest.mark.asyncio
+async def test_create_invoice_link_marks_reservation_on_not_configured_and_reraises(db_session, fake):
+    p = await _project(db_session)
+    doc = PaymentDocument(kind="invoice", id="inv-2", number="FA-26-0002", customer_id="c1", balance=5000)
+    fake.fail_with = HeimdallNotConfigured("Heimdall is not configured (see Settings)")
+    with pytest.raises(HeimdallNotConfigured):
+        await svc.create_invoice_link(
+            db_session,
+            p,
+            document=doc,
+            amount=5000,
+            actor_name="paul",
+            now=datetime(2026, 9, 23),
+            today=date(2026, 9, 23),
+            validity_days=15,
+        )
+    (row,) = await _rows(db_session, p.id)
+    assert row.heimdall_id is None and row.sync_error is not None and "configured" in row.sync_error.lower()
+    assert row.sync_failures == 1
+
+
+@pytest.mark.asyncio
+async def test_create_invoice_link_replays_a_stuck_reservation_under_its_own_key(db_session, fake):
+    p = await _project(db_session)
+    doc = PaymentDocument(kind="invoice", id="inv-3", number="FA-26-0003", customer_id="c1", balance=7000)
+    fake.fail_with = HeimdallUpstreamError("boom")
+    with pytest.raises(HeimdallUpstreamError):
+        await svc.create_invoice_link(
+            db_session,
+            p,
+            document=doc,
+            amount=7000,
+            actor_name="paul",
+            now=datetime(2026, 9, 23),
+            today=date(2026, 9, 23),
+            validity_days=15,
+        )
+    (stuck,) = await _rows(db_session, p.id)
+    assert stuck.heimdall_id is None and stuck.sync_error == "boom"
+    stuck_key = stuck.idempotency_key
+    original_expires_on = stuck.expires_on
+    original_created_at = stuck.created_at
+    fake.fail_with = None
+    fake.calls.clear()
+    row = await svc.create_invoice_link(
+        db_session,
+        p,
+        document=doc,
+        amount=7000,
+        actor_name="paul",
+        now=datetime(2026, 10, 1),
+        today=date(2026, 10, 1),
+        validity_days=15,
+    )
+    assert row.id == stuck.id  # replayed the same reservation, not a second one
+    rows = await _rows(db_session, p.id)
+    assert len(rows) == 1
+    creates = [c for c in fake.calls if c[0] == "create"]
+    assert len(creates) == 1
+    _, key, reference, amount, days = creates[0]
+    assert key == stuck_key and reference == "FA-26-0003" and amount == 7000
+    # Identical body: expires_in_days is recomputed from the ORIGINAL
+    # reservation day, never from the later call's `now`/`today`.
+    assert days == svc.expires_in_days(original_expires_on, original_created_at.date())
+
+
+@pytest.mark.asyncio
+async def test_create_invoice_link_refuses_while_a_reservation_is_in_flight(db_session, fake):
+    p = await _project(db_session)
+    row = AitoPaymentLink(
+        project_id=p.id,
+        idempotency_key="aito:1:1",
+        reference="FA-26-0004",
+        amount=1000,
+        expires_on="2026-12-31",
+        status="pending",
+        document_kind="invoice",
+        document_number="FA-26-0004",
+    )
+    db_session.add(row)
+    await db_session.commit()
+    doc = PaymentDocument(kind="invoice", id="inv-4", number="FA-26-0004", customer_id="c1", balance=1000)
+    with pytest.raises(svc.InvoiceLinkExists):
+        await svc.create_invoice_link(
+            db_session,
+            p,
+            document=doc,
+            amount=1000,
+            actor_name="paul",
+            now=datetime(2026, 9, 23),
+            today=date(2026, 9, 23),
+            validity_days=15,
+        )
+    assert fake.calls == []
+
+
+@pytest.mark.asyncio
+async def test_cancel_invoice_link_refuses_a_quote_link(db_session):
+    p = await _project(db_session)
+    row = AitoPaymentLink(
+        project_id=p.id,
+        idempotency_key="k",
+        reference="DEV-1",
+        amount=1,
+        expires_on="2026-12-31",
+        heimdall_id="h",
+        status="pending",
+        document_kind="quote",
+        document_number="DEV-1",
+    )
+    db_session.add(row)
+    await db_session.commit()
+    with pytest.raises(svc.QuoteLinkManaged):
+        await svc.cancel_invoice_link(db_session, p, row, actor_name=None, now=datetime(2026, 9, 23))
+
+
+@pytest.mark.asyncio
+async def test_cancel_invoice_link_records_the_user_actor(db_session, fake):
+    p = await _project(db_session)
+    row = AitoPaymentLink(
+        project_id=p.id,
+        idempotency_key="k",
+        reference="FA-1",
+        amount=1,
+        expires_on="2026-12-31",
+        heimdall_id="h",
+        status="pending",
+        document_kind="invoice",
+        document_number="FA-1",
+    )
+    db_session.add(row)
+    await db_session.commit()
+    fake.links["h"] = {"id": "h", "status": "pending", "amount": 1, "reference": "FA-1", "expires_at": None}
+    paid = await svc.cancel_invoice_link(db_session, p, row, actor_name="paul", now=datetime(2026, 9, 23))
+    assert paid is False and row.status == "cancelled"
+    ev = (await db_session.execute(select(AitoEvent).where(AitoEvent.project_id == p.id))).scalars().all()
+    cancelled = [e for e in ev if e.kind == "payment_link.cancelled"]
+    assert len(cancelled) == 1 and cancelled[0].actor_class == "user" and cancelled[0].actor_name == "paul"

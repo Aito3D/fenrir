@@ -20,8 +20,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.models.aito_payment_link import AitoPaymentLink
 from backend.app.models.aito_project import AitoProject
 from backend.app.services.aito_events import record
+from backend.app.services.aito_payment_documents import PaymentDocument
 from backend.app.services.heimdall import (
     HeimdallConflict,
+    HeimdallNotConfigured,
     HeimdallNotFound,
     HeimdallRateLimited,
     HeimdallUpstreamError,
@@ -958,3 +960,119 @@ def link_view(row: AitoPaymentLink | None) -> "AitoPaymentLinkView | None":
         sync_error=row.sync_error,
         minted=row.heimdall_id is not None,
     )
+
+
+class InvoiceLinkExists(Exception):
+    """A pending invoice link already exists for this project — a live one,
+    or a reservation with no `sync_error` yet (a create still in flight)."""
+
+
+class QuoteLinkManaged(Exception):
+    """Quote links belong to the reconciler: cancelling one here would only
+    have it re-minted on the next tick."""
+
+
+async def create_invoice_link(
+    db: AsyncSession,
+    project: AitoProject,
+    *,
+    document: PaymentDocument,
+    amount: int,
+    actor_name: str | None,
+    now: datetime,
+    today: date,
+    validity_days: int,
+) -> AitoPaymentLink:
+    """On-demand link for an INVOICE (reference `FA…`). Same reservation
+    discipline as the quote links: reserve + commit, POST, adopt + commit. A
+    Heimdall failure — including `HeimdallNotConfigured`, which is NOT a
+    `HeimdallUpstreamError` subclass — is stored on the row (`_fail`) and
+    re-raised for the route; the row stays a reservation the next call
+    replays under its own key (identical body) rather than minting a second
+    link. A reservation with no `sync_error` yet means a create is already
+    in flight for this project, so it is refused exactly like a live
+    pending link rather than risking a second POST racing the first."""
+    project_id = project.id
+    existing = await current_link(db, project_id, kind="invoice")
+    if existing is not None and existing.heimdall_id is None:
+        if not existing.sync_error:
+            raise InvoiceLinkExists("A payment link is already open for this invoice")
+        row = existing  # replay the stuck reservation under its own key
+    elif existing is not None and existing.status == "pending":
+        raise InvoiceLinkExists("A payment link is already open for this invoice")
+    else:
+        row = AitoPaymentLink(
+            project_id=project_id,
+            idempotency_key=await _next_key(db, project_id),
+            reference=document.number,
+            amount=int(amount),
+            expires_on=(today + timedelta(days=validity_days)).isoformat(),
+            created_at=now,
+            document_kind="invoice",
+            document_number=document.number,
+        )
+        db.add(row)
+        await db.commit()
+    try:
+        view = await heimdall_service.create_link(
+            db,
+            idempotency_key=row.idempotency_key,
+            reference=row.reference,
+            amount=row.amount,
+            expires_in_days=expires_in_days(row.expires_on, row.created_at.date()),
+        )
+    except (HeimdallUpstreamError, HeimdallNotConfigured) as exc:
+        _fail(row, exc, now)
+        await db.commit()
+        raise
+    _adopt(row, view, now)
+    await record(
+        db,
+        project_id,
+        "payment_link.created",
+        actor_class="user",
+        actor_name=actor_name,
+        subject_type="project",
+        subject_id=project_id,
+        detail={
+            "reference": row.reference,
+            "amount": row.amount,
+            "expires_on": row.expires_on,
+            "heimdall_id": row.heimdall_id,
+            "document_kind": "invoice",
+        },
+    )
+    await db.commit()
+    return row
+
+
+async def cancel_invoice_link(
+    db: AsyncSession, project: AitoProject, row: AitoPaymentLink, *, actor_name: str | None, now: datetime
+) -> bool:
+    """The block's "Annuler le lien". Returns True when the link turned out
+    PAID instead (money wins, `_became_paid` already ran). A
+    `HeimdallNotConfigured` from `_cancel` propagates uncaught — nothing on
+    the row to mark, and the route maps it to a 502 like any other Heimdall
+    outage."""
+    if (row.document_kind or "quote") != "invoice":
+        raise QuoteLinkManaged("Quote links are managed automatically")
+    paid = await _cancel(db, project, row, now=now, reason="operator", record_event=False)
+    if paid:
+        return True
+    await record(
+        db,
+        project.id,
+        "payment_link.cancelled",
+        actor_class="user",
+        actor_name=actor_name,
+        subject_type="project",
+        subject_id=project.id,
+        detail={
+            "reference": row.reference,
+            "reason": "operator",
+            "heimdall_id": row.heimdall_id,
+            "document_kind": "invoice",
+        },
+    )
+    await db.commit()
+    return False
