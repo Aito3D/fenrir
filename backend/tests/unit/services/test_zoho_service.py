@@ -442,6 +442,64 @@ async def test_create_contact_company_path_without_person(async_client, db_sessi
 
 
 @pytest.mark.asyncio
+async def test_create_contact_company_with_contact_person_names_the_primary(async_client, db_session):
+    """A company created together with the person who walked in: that person
+    is the account's PRIMARY contact in Books, carrying the coordinates, in
+    the same single create call."""
+    await _configure(async_client)
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/oauth/v2/token" in str(request.url):
+            return httpx.Response(200, json={"access_token": "at", "expires_in": 3600})
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(201, json={"contact": {"contact_id": "c1", "contact_name": "ACME SARL"}})
+
+    zoho_service.transport = _transport(handler)
+    await zoho_service.create_contact(
+        db_session,
+        company_name="ACME SARL",
+        first_name="teva",
+        last_name="temarii",
+        email="teva@acme.pf",
+        phone="+689-87123456",
+    )
+    assert seen["body"]["contact_name"] == "ACME SARL"
+    assert seen["body"]["customer_sub_type"] == "business"
+    assert seen["body"]["contact_persons"] == [
+        {
+            "first_name": "Teva",
+            "last_name": "TEMARII",
+            "email": "teva@acme.pf",
+            "mobile": "+689-87123456",
+            "is_primary_contact": True,
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_create_contact_company_contact_person_needs_only_a_first_name(async_client, db_session):
+    """Same rule as the picker's add form: a first name is enough for a
+    company's contact person, and the last name is simply left off the row."""
+    await _configure(async_client)
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/oauth/v2/token" in str(request.url):
+            return httpx.Response(200, json={"access_token": "at", "expires_in": 3600})
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(201, json={"contact": {"contact_id": "c1", "contact_name": "ACME SARL"}})
+
+    zoho_service.transport = _transport(handler)
+    await zoho_service.create_contact(
+        db_session, company_name="ACME SARL", first_name="Teva", last_name="", email="", phone="+689-87123456"
+    )
+    assert seen["body"]["contact_persons"] == [
+        {"first_name": "Teva", "mobile": "+689-87123456", "is_primary_contact": True}
+    ]
+
+
+@pytest.mark.asyncio
 async def test_search_contacts_carries_customer_sub_type(async_client, db_session):
     await _configure(async_client)
 

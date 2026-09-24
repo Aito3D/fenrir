@@ -986,7 +986,10 @@ describe('NewProjectDrawer', () => {
     await user.type(combobox, 'zzz');
     await user.click(await screen.findByRole('button', { name: /create new client/i }));
 
-    await user.type(screen.getByLabelText(/company name/i), 'Moana Tahiti');
+    // An individual: the social chooser is folded away for a company, whose
+    // people are its contact list instead.
+    await user.type(screen.getByLabelText(/first name/i), 'Moana');
+    await user.type(screen.getByLabelText(/last name/i), 'Tahiti');
     await user.click(screen.getByRole('radio', { name: 'Instagram' }));
     await user.type(screen.getByLabelText(/username/i), 'moana.3d');
     await user.click(screen.getByRole('button', { name: /create client/i }));

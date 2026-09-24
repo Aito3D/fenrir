@@ -23,16 +23,104 @@ describe('NewContactForm', () => {
     expect(screen.getByLabelText(/company name/i)).toHaveValue('');
   });
 
-  it('disables the name fields while a company name is present, and vice versa', async () => {
+  it('keeps the name fields enabled while a company name is present: they become the contact person', async () => {
     const user = userEvent.setup();
     render(<NewContactForm onCancel={vi.fn()} onCreated={vi.fn()} />);
+    expect(screen.queryByText(/contact person at the company/i)).not.toBeInTheDocument();
     await user.type(screen.getByLabelText(/company name/i), 'ACME');
-    expect(screen.getByLabelText(/first name/i)).toBeDisabled();
-    expect(screen.getByLabelText(/last name/i)).toBeDisabled();
+    expect(screen.getByLabelText(/first name/i)).toBeEnabled();
+    expect(screen.getByLabelText(/last name/i)).toBeEnabled();
+    expect(screen.getByText(/contact person at the company/i)).toBeInTheDocument();
 
     await user.clear(screen.getByLabelText(/company name/i));
+    expect(screen.queryByText(/contact person at the company/i)).not.toBeInTheDocument();
     await user.type(screen.getByLabelText(/first name/i), 'Paul');
-    expect(screen.getByLabelText(/company name/i)).toBeDisabled();
+    expect(screen.getByLabelText(/company name/i)).toBeEnabled();
+  });
+
+  it('sends the person as the company contact when both are filled', async () => {
+    const onCreated = vi.fn();
+    let body: unknown;
+    server.use(
+      http.post('/api/v1/zoho/contacts', async ({ request }) => {
+        body = await request.json();
+        return HttpResponse.json(created, { status: 201 });
+      }),
+    );
+    const user = userEvent.setup();
+    render(<NewContactForm onCancel={vi.fn()} onCreated={onCreated} />);
+    await user.type(screen.getByLabelText(/company name/i), 'ACME SARL');
+    await user.type(screen.getByLabelText(/first name/i), 'teva');
+    await user.type(screen.getByLabelText(/last name/i), 'temarii');
+    await user.type(screen.getByLabelText(/^phone/i), '87123456');
+    await user.click(screen.getByRole('button', { name: /create client/i }));
+    await waitFor(() => expect(onCreated).toHaveBeenCalled());
+    expect(body).toMatchObject({
+      company_name: 'ACME SARL',
+      first_name: 'Teva',
+      last_name: 'TEMARII',
+      phone: '+689-87123456',
+    });
+  });
+
+  it('accepts a company contact with only a first name', async () => {
+    const onCreated = vi.fn();
+    let body: unknown;
+    server.use(
+      http.post('/api/v1/zoho/contacts', async ({ request }) => {
+        body = await request.json();
+        return HttpResponse.json(created, { status: 201 });
+      }),
+    );
+    const user = userEvent.setup();
+    render(<NewContactForm onCancel={vi.fn()} onCreated={onCreated} />);
+    await user.type(screen.getByLabelText(/company name/i), 'ACME SARL');
+    await user.type(screen.getByLabelText(/first name/i), 'Teva');
+    await user.type(screen.getByLabelText(/^phone/i), '87123456');
+    expect(screen.getByRole('button', { name: /create client/i })).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: /create client/i }));
+    await waitFor(() => expect(onCreated).toHaveBeenCalled());
+    expect(body).toMatchObject({ company_name: 'ACME SARL', first_name: 'Teva', last_name: '' });
+  });
+
+  it('previews the company with its contact person', async () => {
+    const user = userEvent.setup();
+    render(<NewContactForm onCancel={vi.fn()} onCreated={vi.fn()} />);
+    await user.type(screen.getByLabelText(/company name/i), 'ACME SARL');
+    expect(screen.getByText(/ACME SARL · no contact person yet/)).toBeInTheDocument();
+    await user.type(screen.getByLabelText(/first name/i), 'teva');
+    await user.type(screen.getByLabelText(/last name/i), 'temarii');
+    await user.tab();
+    expect(screen.getByText(/ACME SARL · contact: Teva TEMARII/)).toBeInTheDocument();
+  });
+
+  it('hides the social chooser for a company and does not count a handle typed before it', async () => {
+    const onCreated = vi.fn();
+    const user = userEvent.setup();
+    render(<NewContactForm onCancel={vi.fn()} onCreated={onCreated} />);
+    await user.click(screen.getByRole('radio', { name: 'Instagram' }));
+    await user.type(screen.getByLabelText(/username/i), 'acme.3d');
+
+    await user.type(screen.getByLabelText(/company name/i), 'ACME SARL');
+    expect(screen.queryByRole('radio', { name: 'Instagram' })).not.toBeInTheDocument();
+    // The handle alone no longer reaches anyone: a company needs a phone or an email.
+    expect(screen.getByText(/phone number or an email/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /create client/i })).toBeDisabled();
+
+    await user.type(screen.getByLabelText(/^phone/i), '87123456');
+    await user.click(screen.getByRole('button', { name: /create client/i }));
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith(created, { network: null, handle: '' }));
+  });
+
+  it('brings the social chooser back, handle intact, when the company name is cleared', async () => {
+    const user = userEvent.setup();
+    render(<NewContactForm onCancel={vi.fn()} onCreated={vi.fn()} />);
+    await user.click(screen.getByRole('radio', { name: 'Instagram' }));
+    await user.type(screen.getByLabelText(/username/i), 'acme.3d');
+    await user.type(screen.getByLabelText(/company name/i), 'ACME');
+    await user.clear(screen.getByLabelText(/company name/i));
+    expect(screen.getByRole('radio', { name: 'Instagram' })).toBeChecked();
+    expect(screen.getByLabelText(/username/i)).toHaveValue('acme.3d');
   });
 
   it('previews the enforced display name on blur', async () => {
@@ -131,8 +219,9 @@ describe('NewContactForm', () => {
     await user.type(screen.getByLabelText(/company name/i), 'ACME SARL');
 
     // The phone alone is not required, but some way to reach the client is —
-    // the same rule the drawer and the backend enforce.
-    expect(screen.getByText(/needs a phone, an email or a social network/i)).toBeInTheDocument();
+    // the same rule the drawer and the backend enforce. For a company the
+    // social handle is off the table, so the hint names the two that count.
+    expect(screen.getByText(/phone number or an email/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /create client/i })).toBeDisabled();
     await user.click(screen.getByRole('button', { name: /create client/i }));
     expect(called).toBe(false);
@@ -149,10 +238,13 @@ describe('NewContactForm', () => {
     await waitFor(() => expect(onCreated).toHaveBeenCalled());
   });
 
+  // The social channel belongs to an individual: a company's people are its
+  // contact list, so these three walk the individual path.
   it('enables submit for a client reachable only on a social network', async () => {
     const user = userEvent.setup();
     render(<NewContactForm onCancel={vi.fn()} onCreated={vi.fn()} />);
-    await user.type(screen.getByLabelText(/company name/i), 'Aito 3D');
+    await user.type(screen.getByLabelText(/first name/i), 'Moana');
+    await user.type(screen.getByLabelText(/last name/i), 'Teiki');
     expect(screen.getByRole('button', { name: /create client/i })).toBeDisabled();
 
     await user.click(screen.getByRole('radio', { name: 'Instagram' }));
@@ -165,7 +257,8 @@ describe('NewContactForm', () => {
     const onCreated = vi.fn();
     const user = userEvent.setup();
     render(<NewContactForm onCancel={vi.fn()} onCreated={onCreated} />);
-    await user.type(screen.getByLabelText(/company name/i), 'Aito 3D');
+    await user.type(screen.getByLabelText(/first name/i), 'Moana');
+    await user.type(screen.getByLabelText(/last name/i), 'Teiki');
     await user.click(screen.getByRole('radio', { name: 'Instagram' }));
     await user.type(screen.getByLabelText(/username/i), 'aito.3d');
     await user.click(screen.getByRole('button', { name: /create client/i }));
@@ -179,7 +272,8 @@ describe('NewContactForm', () => {
     const user = userEvent.setup();
     const spy = vi.spyOn(api, 'createZohoContact');
     render(<NewContactForm onCancel={vi.fn()} onCreated={vi.fn()} />);
-    await user.type(screen.getByLabelText(/company name/i), 'Aito 3D');
+    await user.type(screen.getByLabelText(/first name/i), 'Moana');
+    await user.type(screen.getByLabelText(/last name/i), 'Teiki');
     await user.click(screen.getByRole('radio', { name: 'Instagram' }));
     await user.type(screen.getByLabelText(/username/i), 'aito.3d');
     await user.click(screen.getByRole('button', { name: /create client/i }));
@@ -212,7 +306,7 @@ describe('NewContactForm', () => {
     // mouse click on the button does not take.
     await user.type(screen.getByLabelText(/^phone/i), 'n/a');
     await user.keyboard('{Enter}');
-    expect(screen.getByText(/needs a phone, an email or a social network/i)).toBeInTheDocument();
+    expect(screen.getByText(/phone number or an email/i)).toBeInTheDocument();
     expect(called).toBe(false);
     expect(onCreated).not.toHaveBeenCalled();
   });
