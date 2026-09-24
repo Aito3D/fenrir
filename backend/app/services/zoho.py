@@ -1257,16 +1257,22 @@ class ZohoService:
     ) -> dict:
         """Create a Books customer. Currency/language are omitted so the org
         defaults apply. Phone lands on the primary contact person's ``mobile``
-        because the contact-level fields are read-only mirrors of it."""
+        because the contact-level fields are read-only mirrors of it.
+
+        For a company the name parts are the CONTACT PERSON — whoever walked
+        in for it — and land on that same primary row, so the account is born
+        with a named primary instead of the nameless one Books would otherwise
+        keep. Both parts are optional there (a first name alone is enough,
+        matching the picker's add form); for an individual they are the
+        client's own name."""
         company = company_name.strip()
         if company:
             contact_name, sub_type = company, "business"
-            person_first, person_last = "", ""
         else:
             contact_name = normalize_display_name(first_name, last_name)
             sub_type = "individual"
-            person_first = _title_case_segments(first_name)
-            person_last = last_name.strip().upper()
+        person_first = _title_case_segments(first_name)
+        person_last = last_name.strip().upper()
 
         payload: dict = {
             "contact_name": contact_name,

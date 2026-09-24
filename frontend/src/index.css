@@ -1062,6 +1062,96 @@ body {
   }
 }
 
+/* Aito new-client form: the moment a company name is typed, the person
+   fields below it become the company's contact person. Nothing moves — a
+   2px line draws down the block's left edge in the form's own padding
+   (top→bottom on the signature curve, 220ms) and retracts on the exit curve
+   in 120ms, an exit being a beat quicker than the entrance it undoes.
+   Transform only, and a transition rather than keyframes, so a company name
+   typed and deleted in quick succession retargets instead of restarting. */
+.aito-nest {
+  position: relative;
+}
+.aito-nest::after {
+  content: '';
+  position: absolute;
+  left: -10px;
+  top: -6px;
+  bottom: -6px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+  transform: scaleY(0);
+  transform-origin: top;
+  transition: transform 0.12s var(--ease-exit);
+}
+.aito-nest[data-company]::after {
+  transform: scaleY(1);
+  transition: transform 0.22s var(--ease-signature);
+}
+/* A line of text that changes MEANING (the eyebrow above the names, the
+   preview's "Company:" / "Individual:"): the new text is a keyed remount, so
+   it enters with a short blur crossfade — the blur bridges the two strings
+   the eye would otherwise see swap — and nothing plays on a plain
+   keystroke, which leaves the key alone. Inside the nest it lands a beat
+   after the line starts drawing. */
+@keyframes aito-swap-in {
+  from { opacity: 0; filter: blur(2px); transform: translateY(3px); }
+  to { opacity: 1; filter: blur(0); transform: none; }
+}
+.animate-aito-swap {
+  display: inline-block;
+  animation: aito-swap-in 0.18s var(--ease-signature) backwards;
+}
+.aito-nest[data-company] .animate-aito-swap {
+  animation-delay: 60ms;
+}
+/* The social chooser folds away for a company: its grid row goes 1fr→0fr
+   while it fades, on the exit curve, quick; and reopens on the signature
+   curve when the company name is cleared. Same row idiom as the rating
+   pill's horizontal unfold above. The child clips (min-height 0) so the
+   content is cut, not squashed. */
+.aito-fold {
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition:
+    grid-template-rows 0.25s var(--ease-signature),
+    opacity 0.2s ease-out;
+}
+.aito-fold > * {
+  min-height: 0;
+  overflow: hidden;
+}
+.aito-fold[data-open='false'] {
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows 0.15s var(--ease-exit),
+    opacity 0.1s ease-in;
+}
+@media (prefers-reduced-motion: reduce) {
+  /* The line and the chooser still come and go — they carry meaning — but
+     by opacity alone: no draw, no fold travel, no blur rise. */
+  .aito-nest::after {
+    transform: scaleY(1);
+    opacity: 0;
+    transition: opacity 0.15s ease;
+  }
+  .aito-nest[data-company]::after {
+    opacity: 1;
+    transition: opacity 0.15s ease;
+  }
+  .animate-aito-swap,
+  .aito-nest[data-company] .animate-aito-swap {
+    animation: none;
+  }
+  .aito-fold,
+  .aito-fold[data-open='false'] {
+    transition: opacity 0.15s ease;
+  }
+}
+
 /* Aito: a card that just snapped back after the server refused the change.
    Paired with a toast, never alone — see hooks/useRevertFlash.ts. The ring is
    drawn on a wrapper around the card, so it reads as "this card" without
