@@ -2502,6 +2502,12 @@ async def run_sync_loop() -> None:
                     await reconcile_payment_links(db)
                 except Exception:
                     logger.exception("Payment-link reconcile failed")
+                try:
+                    from backend.app.services.aito_terminal_payments import poll_open_terminal_payments
+
+                    await poll_open_terminal_payments(db)
+                except Exception:
+                    logger.exception("Terminal payment poll failed")
         except asyncio.CancelledError:
             raise
         except Exception:
