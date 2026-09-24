@@ -2046,8 +2046,20 @@ async def create_invoice(
     # The deposits just spent must leave "deposit available" NOW, not at the
     # sweep's next tick: the panel re-renders off this response's board
     # refetch. Best-effort like the sweep's own read — None keeps the old
-    # figure, and the sweep corrects it within the tick.
-    credit = await read_customer_credit(db, plan.customer_id)
+    # figure, and the sweep corrects it within the tick. `read_customer_credit`
+    # already swallows a plain Books failure and returns None itself; the one
+    # thing it re-raises is `ZohoRateLimited` (a `ZohoUpstreamError` subclass),
+    # by design, so the sweep can stand down for the tick on a 429. This route
+    # is not the sweep and the invoice above is already real: a 429 here must
+    # not 500 an invoice that was already raised, so it gets the same
+    # best-effort treatment as `link_invoice_to_estimate` just above. This
+    # call only reads Books, not the database, so no `SQLAlchemyError` can
+    # come out of it.
+    try:
+        credit = await read_customer_credit(db, plan.customer_id)
+    except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
+        logger.warning("Aito: could not refresh customer %s's credit after invoicing: %s", plan.customer_id, e)
+        credit = None
 
     try:
         # Adopt the fact locally, in the same transaction as the event. The

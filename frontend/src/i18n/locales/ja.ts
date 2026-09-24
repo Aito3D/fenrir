@@ -797,6 +797,8 @@ export default {
       projectPauseCleared: '一時停止を解除',
       projectDueSet: '約束日を設定しました',
       projectDueCleared: '約束日を削除しました',
+      projectContactedSet: '顧客を連絡済みに設定しました',
+      projectContactedCleared: '連絡済みの設定を解除しました',
       clientChanged: 'Zoho Books で顧客が変更されました',
       smsSent: '受け取りSMSを電話に送信',
       trackingRegenerated: '追跡リンクを再生成しました',

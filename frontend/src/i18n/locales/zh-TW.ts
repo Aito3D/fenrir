@@ -797,6 +797,8 @@ export default {
       projectPauseCleared: '已取消暫停',
       projectDueSet: '設定了承諾日期',
       projectDueCleared: '清除了承諾日期',
+      projectContactedSet: '將客戶標記為已聯絡',
+      projectContactedCleared: '取消了已聯絡標記',
       clientChanged: '客戶已在 Zoho Books 中變更',
       smsSent: '取件簡訊已傳送到手機',
       trackingRegenerated: '重新產生了追蹤連結',

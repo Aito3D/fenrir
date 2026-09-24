@@ -797,6 +797,8 @@ export default {
       projectPauseCleared: 'Приостановка снята',
       projectDueSet: 'установил(а) обещанную дату',
       projectDueCleared: 'удалил(а) обещанную дату',
+      projectContactedSet: 'отметил(а), что с клиентом связались',
+      projectContactedCleared: 'снял(а) отметку о том, что с клиентом связались',
       clientChanged: 'Клиент изменён в Zoho Books',
       smsSent: 'SMS о готовности отправлено на телефон',
       trackingRegenerated: 'перегенерировал(а) ссылку отслеживания',

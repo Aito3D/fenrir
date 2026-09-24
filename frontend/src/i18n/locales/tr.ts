@@ -797,6 +797,8 @@ export default {
       projectPauseCleared: 'Duraklatma kaldırıldı',
       projectDueSet: 'söz verilen tarihi belirledi',
       projectDueCleared: 'söz verilen tarihi kaldırdı',
+      projectContactedSet: 'müşteriyle iletişime geçildiğini işaretledi',
+      projectContactedCleared: 'iletişim işaretini kaldırdı',
       clientChanged: "Müşteri Zoho Books'ta değiştirildi",
       smsSent: 'Teslim SMS’i telefona gönderildi',
       trackingRegenerated: 'takip bağlantısını yeniden oluşturdu',

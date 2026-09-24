@@ -801,6 +801,8 @@ export default {
       projectPauseCleared: 'Pause cleared',
       projectDueSet: 'set the promised date',
       projectDueCleared: 'cleared the promised date',
+      projectContactedSet: 'marked the client as contacted',
+      projectContactedCleared: 'cleared the contacted mark',
       clientChanged: 'Customer changed in Zoho Books',
       smsSent: 'Pickup SMS sent to the phone',
       trackingRegenerated: 'regenerated the tracking link',

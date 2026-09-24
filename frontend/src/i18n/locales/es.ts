@@ -797,6 +797,8 @@ export default {
       projectPauseCleared: 'Pausa quitada',
       projectDueSet: 'fijó la fecha prometida',
       projectDueCleared: 'quitó la fecha prometida',
+      projectContactedSet: 'marcó al cliente como contactado',
+      projectContactedCleared: 'quitó la marca de contactado',
       clientChanged: 'Cliente cambiado en Zoho Books',
       smsSent: 'SMS de recogida enviado al teléfono',
       trackingRegenerated: 'regeneró el enlace de seguimiento',

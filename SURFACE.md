@@ -1964,6 +1964,8 @@ aito.history.paymentTerminalFailed
 aito.history.paymentTerminalPaid
 aito.history.paymentTerminalStarted
 aito.history.pollReconciled
+aito.history.projectContactedCleared
+aito.history.projectContactedSet
 aito.history.projectCreated
 aito.history.projectDueCleared
 aito.history.projectDueSet

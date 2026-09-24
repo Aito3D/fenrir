@@ -12,7 +12,7 @@ from sqlalchemy import select
 from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
 from backend.app.services.aito_invoice_create import build_line_items
-from backend.app.services.zoho import ZohoUpstreamError, zoho_service
+from backend.app.services.zoho import ZohoRateLimited, ZohoUpstreamError, zoho_service
 
 ESTIMATE = {
     "estimate_id": "EST-9",
@@ -632,6 +632,98 @@ async def test_a_failed_retainer_application_still_returns_the_real_invoice(asyn
 
     assert response.status_code == 200
     assert response.json()["retainers"] == [{"number": "RET-00269", "total": 1000.0, "applied": 0.0}]
+
+
+def _fail_second_customerpayments_read(books, error):
+    """The plan reads `/customerpayments` once to work out what to apply;
+    the post-create refresh reads it again to report what is left. Only the
+    SECOND read is the one under test — the first must still succeed, or the
+    invoice would never be created at all."""
+    calls = {"customerpayments": 0}
+    real = books["calls"]
+
+    async def request(db, method, path, *, params=None, json=None):
+        if path == "/customerpayments":
+            calls["customerpayments"] += 1
+            if calls["customerpayments"] >= 2:
+                real.append({"method": method, "path": path, "params": params or {}, "json": json})
+                raise error
+        return await books["_original_request"](db, method, path, params=params, json=json)
+
+    return request
+
+
+@pytest.mark.asyncio
+async def test_a_rate_limited_credit_refresh_still_returns_the_real_invoice(
+    async_client, db_session, books, monkeypatch, caplog
+):
+    """Books answering 429 on the post-create `/customerpayments` re-read —
+    plausibly BECAUSE that call landed right after the three spent creating
+    the invoice and applying its retainers — must not turn an invoice that
+    already exists in Books into a 500. The stored "deposit available"
+    figure is left exactly as it was; the hourly sweep corrects it."""
+    project_id = await _project(db_session, customer_credit_total=1000.0)
+    books["_original_request"] = zoho_service._request
+    monkeypatch.setattr(
+        zoho_service,
+        "_request",
+        _fail_second_customerpayments_read(books, ZohoRateLimited("Zoho Books error (HTTP 429)")),
+    )
+
+    with caplog.at_level("WARNING"):
+        response = await async_client.post(f"/api/v1/aito/{project_id}/invoice")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["number"] == "FA-26-4100"
+    assert body["id"] == "inv-1"
+    assert "could not refresh customer" in caplog.text
+
+    kinds = (await db_session.execute(select(AitoEvent.kind))).scalars().all()
+    assert kinds.count("invoice.created") == 1
+
+    db_session.expire_all()
+    project = await db_session.get(AitoProject, project_id)
+    assert project.quote_invoiced is True
+    # Unchanged: the stale pre-invoice figure, not the fresh one the failed
+    # read would have supplied.
+    assert project.customer_credit_total == 1000.0
+
+
+@pytest.mark.asyncio
+async def test_a_5xx_credit_refresh_still_returns_the_real_invoice(
+    async_client, db_session, books, monkeypatch, caplog
+):
+    """Same contract as the 429 case for a plain Books outage on the same
+    read — the invoice above is already real either way. A non-429
+    `ZohoUpstreamError` never actually reaches this route: `read_customer_credit`
+    already swallows it and returns None with its own warning (that is the
+    pre-existing best-effort contract this fix does not change); this test
+    guards that path stays working alongside the new 429 one."""
+    project_id = await _project(db_session, customer_credit_total=1000.0)
+    books["_original_request"] = zoho_service._request
+    monkeypatch.setattr(
+        zoho_service,
+        "_request",
+        _fail_second_customerpayments_read(books, ZohoUpstreamError("Zoho Books error (HTTP 500)")),
+    )
+
+    with caplog.at_level("WARNING"):
+        response = await async_client.post(f"/api/v1/aito/{project_id}/invoice")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["number"] == "FA-26-4100"
+    assert body["id"] == "inv-1"
+    assert "could not read customer" in caplog.text
+
+    kinds = (await db_session.execute(select(AitoEvent.kind))).scalars().all()
+    assert kinds.count("invoice.created") == 1
+
+    db_session.expire_all()
+    project = await db_session.get(AitoProject, project_id)
+    assert project.quote_invoiced is True
+    assert project.customer_credit_total == 1000.0
 
 
 @pytest.mark.asyncio

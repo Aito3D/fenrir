@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
-import { api } from '../../api/client';
+import { api, ApiError } from '../../api/client';
 import type { AitoPaymentLink } from '../../api/client';
 import { PaymentLinkModal } from '../../components/aito/payment/PaymentLinkModal';
 import { makeProject } from '../fixtures/aitoProject';
@@ -26,6 +26,23 @@ describe('PaymentLinkModal', () => {
     await waitFor(() => expect(spy).toHaveBeenCalledWith(12, { document_id: 'inv-1', amount: 23000 }));
   });
 
+  it('shows the server message verbatim when create fails, and stays open', async () => {
+    vi.spyOn(api, 'createAitoInvoicePaymentLink').mockRejectedValue(
+      new ApiError('Heimdall rejected the amount', 422, 'amount_rejected'),
+    );
+    render(<PaymentLinkModal project={makeProject({ id: 12 })} document={invoice} link={null} onClose={() => {}} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Create the link' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Heimdall rejected the amount');
+    expect(screen.getByLabelText('Amount')).toBeInTheDocument();
+  });
+
+  it('falls back to a generic message when create fails with a non-Error rejection', async () => {
+    vi.spyOn(api, 'createAitoInvoicePaymentLink').mockRejectedValue('boom');
+    render(<PaymentLinkModal project={makeProject({ id: 12 })} document={invoice} link={null} onClose={() => {}} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Create the link' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Error loading data');
+  });
+
   it('shows open / copy and a two-step cancel on a live invoice link', async () => {
     const spy = vi.spyOn(api, 'cancelAitoPaymentLink').mockResolvedValue(makeProject({ id: 12 }));
     render(<PaymentLinkModal project={makeProject({ id: 12 })} document={invoice} link={live} onClose={() => {}} />);
@@ -37,6 +54,15 @@ describe('PaymentLinkModal', () => {
     expect(spy).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole('button', { name: 'Cancel this link?' }));
     await waitFor(() => expect(spy).toHaveBeenCalledWith(12, 3));
+  });
+
+  it('shows the server message verbatim when cancel fails, and stays open', async () => {
+    vi.spyOn(api, 'cancelAitoPaymentLink').mockRejectedValue(new ApiError('Link already paid', 409, 'link_already_paid'));
+    render(<PaymentLinkModal project={makeProject({ id: 12 })} document={invoice} link={live} onClose={() => {}} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel the link' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel this link?' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Link already paid');
+    expect(screen.getByRole('link', { name: 'Open payment link' })).toBeInTheDocument();
   });
 
   it('a quote link is read-only', () => {
@@ -107,6 +133,15 @@ describe('PaymentLinkModal', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Heimdall HTTP 503');
     await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
     await waitFor(() => expect(spy).toHaveBeenCalledWith(12));
+  });
+
+  it('shows the server message verbatim when retry fails, and stays open', async () => {
+    vi.spyOn(api, 'refreshAitoPaymentLink').mockRejectedValue(new ApiError('Heimdall still down', 503, 'heimdall_unavailable'));
+    const stuck = { ...live, sync_error: 'Heimdall HTTP 503' };
+    render(<PaymentLinkModal project={makeProject({ id: 12 })} document={quote} link={stuck} onClose={() => {}} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Heimdall still down');
+    expect(screen.getByRole('status')).toHaveTextContent('Heimdall HTTP 503');
   });
 
   it('an unminted quote link with a sync error keeps "being created" and offers Retry', async () => {
