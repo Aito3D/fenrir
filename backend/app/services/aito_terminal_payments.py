@@ -5,6 +5,7 @@ machinery is added alongside (see spec §4)."""
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 
@@ -16,6 +17,7 @@ from backend.app.models.aito_terminal_payment import AitoTerminalPayment
 from backend.app.services.aito_events import record
 from backend.app.services.aito_payment_documents import PaymentDocument
 from backend.app.services.heimdall import (
+    HeimdallNotConfigured,
     HeimdallNotFound,
     HeimdallRateLimited,
     HeimdallUpstreamError,
@@ -31,6 +33,13 @@ STATUSES = ("pending", "processing", "paid", "failed", "cancelled", "expired", "
 
 REFRESH_MIN_SECONDS = 2.0
 SETTLED_STATUSES = frozenset({"paid", "failed", "cancelled", "expired", "needs_attention"})
+
+# Serialises the guard-check + reservation-insert in `start_terminal_payment`.
+# Single-process app; same rationale as `aito_payment_links._pass_lock` — two
+# starts that straddle the guard would both see "nothing blocking" and both
+# reserve a row (computing colliding `:n`/`:n+1` idempotency keys). Held only
+# through the reservation commit; released before the Heimdall POST.
+_start_lock = asyncio.Lock()
 
 
 async def current_terminal_payment(db: AsyncSession, project_id: int) -> AitoTerminalPayment | None:
@@ -129,23 +138,27 @@ async def start_terminal_payment(
 
     The reservation commit comes first so a crash between the POST and the
     second commit leaves a row the operator sees as `pending` with no
-    heimdall_id — never a silent second charge. A Heimdall refusal marks the
-    row `failed` (with the reason) and re-raises for the route to map."""
+    heimdall_id — never a silent second charge. A Heimdall refusal (including
+    `HeimdallNotConfigured`, which is NOT a subclass of `HeimdallUpstreamError`)
+    marks the row `failed` (with the reason) and re-raises for the route to
+    map. The guard-check-then-insert is itself serialised by `_start_lock` so
+    two concurrent starts cannot both see "nothing blocking"."""
     project_id = project.id
-    if await _blocking_row(db, project_id) is not None:
-        raise TerminalInProgress("A terminal payment is already in progress for this project")
-    row = AitoTerminalPayment(
-        project_id=project_id,
-        document_kind=document.kind,
-        document_id=document.id,
-        document_number=document.number,
-        idempotency_key=await _next_key(db, project_id),
-        amount=int(amount),
-        created_by=actor_name,
-        created_at=now,
-    )
-    db.add(row)
-    await db.commit()
+    async with _start_lock:
+        if await _blocking_row(db, project_id) is not None:
+            raise TerminalInProgress("A terminal payment is already in progress for this project")
+        row = AitoTerminalPayment(
+            project_id=project_id,
+            document_kind=document.kind,
+            document_id=document.id,
+            document_number=document.number,
+            idempotency_key=await _next_key(db, project_id),
+            amount=int(amount),
+            created_by=actor_name,
+            created_at=now,
+        )
+        db.add(row)
+        await db.commit()
     try:
         view = await heimdall_service.create_terminal_payment(
             db,
@@ -153,13 +166,33 @@ async def start_terminal_payment(
             amount=row.amount,
             document={"type": document.kind, "id": document.id},
         )
-    except HeimdallUpstreamError as exc:
+    except (HeimdallUpstreamError, HeimdallNotConfigured) as exc:
         row.status = "failed"
         row.sync_error = str(exc)[:500]
         row.checked_at = now
         row.settled_at = now
         await db.commit()
         raise
+    # Heimdall's own document-level double-charge guard, or a plain replay of
+    # this idempotency key, can answer with a payment id ALREADY held by
+    # another row (heimdall_id is unique) — most often the one Heimdall just
+    # matched us against. Adopting it here would raise IntegrityError on
+    # commit and strand this reservation `pending` forever. Fail the fresh
+    # reservation instead and point at what already holds the charge.
+    conflict = (
+        await db.execute(
+            select(AitoTerminalPayment.id).where(
+                AitoTerminalPayment.heimdall_id == view.id, AitoTerminalPayment.id != row.id
+            )
+        )
+    ).scalar_one_or_none()
+    if conflict is not None:
+        row.status = "failed"
+        row.sync_error = f"Heimdall already holds this charge (payment {view.id})"[:500]
+        row.checked_at = now
+        row.settled_at = now
+        await db.commit()
+        raise TerminalInProgress(f"Heimdall already holds this charge (payment {view.id})")
     _adopt(row, view, now)
     await record(
         db,
@@ -185,16 +218,20 @@ async def start_terminal_payment(
 
 async def apply_terminal_state(db: AsyncSession, row: AitoTerminalPayment, view: LinkView, *, now: datetime) -> None:
     """The one place a Heimdall view lands on a row. Commits. Idempotent:
-    the transition events fire once, on the FIRST settle, and a later poll
-    only refreshes `booking_*`."""
+    the transition events fire once, on the FIRST settle (whether the row
+    was already open when this is called, or arrives here already adopted as
+    settled — e.g. `start_terminal_payment`'s 200-replay branch), and a later
+    poll only refreshes `booking_*`. Guarded on `already_settled` alone: a
+    row can be handed in with `row.status` already equal to `view.status`
+    (the caller adopted it first) and must still record/accept/refresh
+    exactly once."""
     project_id = row.project_id
-    was = row.status
     already_settled = row.settled_at is not None
     _adopt(row, view, now)
     if row.status in SETTLED_STATUSES and not already_settled:
         row.settled_at = now
     await db.commit()
-    if already_settled or row.status not in SETTLED_STATUSES or was == row.status:
+    if already_settled or row.status not in SETTLED_STATUSES:
         return
     detail = {
         "document_kind": row.document_kind,
@@ -230,15 +267,25 @@ async def apply_terminal_state(db: AsyncSession, row: AitoTerminalPayment, view:
                 db, project, source="terminal", detail={"amount": amount, "reference": row.document_number}
             )
     await refresh_after_payment(db, project_id, document_kind)
+    # accept_quote's Books push (aito_quote_status.push_quote_status) rolls
+    # the session back on failure, which expires every ORM object in it —
+    # including `row`. A caller reading `row.status` right after this call
+    # (or building `terminal_view(row)`) must not have to know that, or hit
+    # MissingGreenlet on the implicit reload. Cheap and correct either way:
+    # a no-op re-read when nothing rolled back.
+    await db.refresh(row)
 
 
 async def refresh_terminal_payment(
     db: AsyncSession, row: AitoTerminalPayment, *, now: datetime, force: bool = False
 ) -> AitoTerminalPayment:
     """One GET, throttled to REFRESH_MIN_SECONDS since the last contact.
-    Never raises: a Heimdall failure lands in `sync_error` and the stored
-    row is returned as-is. A 404 (Heimdall lost the payment) marks the row
-    `failed` so the operator can start again."""
+    Never raises, except a 429 which the caller must handle (the poll's
+    sweep stops the pass on it — see `poll_open_terminal_payments`). Every
+    other Heimdall failure, including `HeimdallNotConfigured` (not a subclass
+    of `HeimdallUpstreamError`), lands in `sync_error` and the stored row is
+    returned as-is. A 404 (Heimdall lost the payment) marks the row `failed`
+    so the operator can start again."""
     if row.heimdall_id is None:
         return row
     open_row = row.status in OPEN_STATUSES or (row.status == "paid" and row.booking_status == "pending")
@@ -255,7 +302,9 @@ async def refresh_terminal_payment(
         row.settled_at = row.settled_at or now
         await db.commit()
         return row
-    except HeimdallUpstreamError as exc:
+    except HeimdallRateLimited:
+        raise
+    except (HeimdallUpstreamError, HeimdallNotConfigured) as exc:
         row.sync_error = str(exc)[:500]
         row.checked_at = now
         await db.commit()
