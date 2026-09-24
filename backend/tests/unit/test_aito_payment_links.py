@@ -1310,6 +1310,57 @@ async def test_a_lost_link_found_by_the_poll_is_replaced_in_the_same_pass(db_ses
     assert (await _kinds(db_session, p.id)).count("payment_link.replaced") == 1
 
 
+@pytest.mark.asyncio
+async def test_a_lost_invoice_link_fails_in_place_instead_of_being_replaced(db_session, fake, monkeypatch):
+    """A 404 on an INVOICE-kind link must not take the quote-link
+    replace path (`_replace_lost` only knows how to mint a QUOTE link — a
+    wrong turn here would mint a quote link off an invoice link's 404).
+    The declined quote_status keeps `wanted_link` from wanting a quote link
+    of its own, so the only Heimdall traffic in this pass is the poll that
+    discovers the 404."""
+    p = await _project(db_session, quote_status="declined")
+    project_id = p.id
+    invoice_row = AitoPaymentLink(
+        project_id=project_id,
+        idempotency_key=f"aito:{project_id}:1",
+        reference="FA-1",
+        amount=50,
+        expires_on="2026-12-31",
+        heimdall_id="ghost-1",  # never registered with `fake` — a bare 404
+        status="pending",
+        document_kind="invoice",
+        document_number="FA-1",
+    )
+    db_session.add(invoice_row)
+    await db_session.commit()
+    await db_session.refresh(invoice_row)
+    invoice_row_id = invoice_row.id
+    accepted = []
+
+    async def fake_accept(db, project, **kw):
+        accepted.append(project.id)
+        return True
+
+    monkeypatch.setattr("backend.app.services.aito_quote_status.accept_quote", fake_accept)
+
+    # `p` (the AitoProject) is never reloaded by the invoice branch under
+    # test (unlike the quote-link path's `_replace_lost`, which re-fetches
+    # the project) — a `db.rollback()` inside `_run_pass` therefore leaves
+    # it expired, so `project_id` was captured above rather than reading
+    # `p.id` again after the pass.
+    visited = await reconcile_payment_links(db_session, now=NOW, today=TODAY, only_project_id=project_id, force=True)
+
+    assert visited == 1
+    rows = await _rows(db_session, project_id)
+    assert len(rows) == 1, "no quote link was minted off the invoice link's 404"
+    (row,) = rows
+    assert row.id == invoice_row_id and row.document_kind == "invoice"
+    assert row.status == "failed" and row.superseded_at is None
+    assert row.sync_error and "404" in row.sync_error
+    assert [c[0] for c in fake.calls] == ["get"]
+    assert accepted == []
+
+
 # --- one pass at a time -------------------------------------------------------
 
 
