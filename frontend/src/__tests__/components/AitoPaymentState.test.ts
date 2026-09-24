@@ -35,6 +35,20 @@ describe('derivePaymentState', () => {
     const s2 = derivePaymentState(link({ state: 'paid', paid_at: '2026-09-23T00:00:00' }), tpe({ status: 'paid', settled_at: '2026-09-22T00:00:00' }));
     expect(s2).toMatchObject({ kind: 'paid', channel: 'link', amount: 25000, bookingFailed: false });
   });
+  // Final review, Important 1: a `pending` row is a reservation whose
+  // Heimdall answer never came back. While it is young that is a charge
+  // genuinely in flight; once the backend's sweep would have written it off
+  // (10 min) it must stop standing in the way, or the block shows a spinner
+  // and locks the three cells forever.
+  it('a pending terminal reservation only counts as processing while it is young', () => {
+    const at = (msAgo: number) => new Date(Date.now() - msAgo).toISOString().replace('Z', '');
+    const fresh = tpe({ status: 'pending', created_at: at(60_000) });
+    expect(derivePaymentState(null, fresh).kind).toBe('terminal_processing');
+    const stale = tpe({ status: 'pending', created_at: at(11 * 60_000) });
+    expect(derivePaymentState(null, stale).kind).toBe('none');
+    expect(derivePaymentState(link(), stale).kind).toBe('link_pending');
+  });
+
   it('dead link, failed terminal, nothing', () => {
     expect(derivePaymentState(link({ state: 'expired' }), tpe({ status: 'failed' })).kind).toBe('link_dead');
     expect(derivePaymentState(null, tpe({ status: 'failed' })).kind).toBe('none');

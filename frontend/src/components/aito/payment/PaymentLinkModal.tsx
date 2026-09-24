@@ -47,9 +47,13 @@ export function PaymentLinkModal({ project, document, link, onClose }: {
   const [amount, setAmount] = useState(document.due !== null ? String(document.due) : '');
   const [error, setError] = useState<string | null>(null);
 
-  const settle = (fresh: AitoProject, toastKey: string) => {
+  const replaceBoardRow = (fresh: AitoProject) => {
     queryClient.setQueryData<AitoProject[]>(['aito-projects'], (rows) => rows?.map((r) => (r.id === fresh.id ? fresh : r)));
     queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
+  };
+
+  const settle = (fresh: AitoProject, toastKey: string) => {
+    replaceBoardRow(fresh);
     queryClient.invalidateQueries({ queryKey: ['aito-events', project.id] });
     showToast(t(toastKey), 'success');
     requestClose();
@@ -70,7 +74,18 @@ export function PaymentLinkModal({ project, document, link, onClose }: {
     onError: (e: unknown) => setError(e instanceof Error && e.message ? e.message : t('common.errorLoading')),
   });
 
-  const pending = create.isPending || cancel.isPending;
+  // The quote link's manual Retry (spec §6.2): `POST …/payment-link/refresh`
+  // is quote-only — it asks the reconciler to have another go at the link it
+  // owns. Offered wherever a QUOTE link carries a `sync_error`, which is
+  // otherwise a dead end until the next 5-minute tick. An invoice link never
+  // shows it: its own create/cancel buttons are the way back.
+  const retry = useMutation({
+    mutationFn: () => api.refreshAitoPaymentLink(project.id),
+    onSuccess: replaceBoardRow,
+    onError: (e: unknown) => setError(e instanceof Error && e.message ? e.message : t('common.errorLoading')),
+  });
+
+  const pending = create.isPending || cancel.isPending || retry.isPending;
   const { closing, requestClose, dialogRef } = useDismissableDialog(onClose, {
     animationMs: MODAL_OUT_MS,
     // While a create/cancel request is in flight the dialog is spoken for:
@@ -109,6 +124,31 @@ export function PaymentLinkModal({ project, document, link, onClose }: {
   };
 
   const live = isLiveLink(link) ? link : null;
+
+  const syncError = document.kind === 'quote' && link?.sync_error ? link.sync_error : null;
+  const retryBlock = syncError && (
+    <div className="space-y-2">
+      <p className="text-xs text-bambu-gray" role="status">{syncError}</p>
+      <Button
+        variant="secondary"
+        onClick={() => {
+          setError(null);
+          retry.mutate();
+        }}
+        className="w-full"
+        disabled={pending}
+      >
+        {retry.isPending ? (
+          <>
+            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            {t('aito.paymentLink.retry')}
+          </>
+        ) : (
+          t('aito.paymentLink.retry')
+        )}
+      </Button>
+    </div>
+  );
 
   let body: React.ReactNode;
   let footer: React.ReactNode;
@@ -149,6 +189,7 @@ export function PaymentLinkModal({ project, document, link, onClose }: {
             <dd className="text-white" title={expiry.title}>{expiry.text}</dd>
           </div>
         </dl>
+        {retryBlock}
         {error && <p className="text-status-error text-sm" role="alert">{error}</p>}
       </div>
     );
@@ -177,50 +218,42 @@ export function PaymentLinkModal({ project, document, link, onClose }: {
   } else if (document.kind === 'invoice') {
     // A `pending` link that isn't `live` is a reservation whose Heimdall
     // create hasn't (yet) landed — never a dead link, since dead states are
-    // paid/expired/failed/cancelled. Left alone (no `sync_error`), it is
-    // still in flight: nothing to submit, just wait for the reconciler.
-    // Once it has a `sync_error` the backend is expected to replay that same
-    // stuck reservation under its own key on the next create, so the form
-    // shows the plain "Create the link" label, not "again".
+    // paid/expired/failed/cancelled. It ALWAYS gets the create view, with or
+    // without a `sync_error`: nothing else in the system will ever finish it
+    // (the reconciler mints quote links only, and its poll needs a
+    // heimdall_id), so "Link being created…" with no button was a dead end.
+    // Submitting replays that same reservation under its own key on the
+    // backend, so the label stays the plain "Create the link", not "again".
     const reservation = link && link.state === 'pending' ? link : null;
-    if (reservation && !reservation.sync_error) {
-      body = <p className="text-sm text-bambu-gray">{t('aito.payment.linkPending')}</p>;
-      footer = (
-        <Button onClick={requestClose} className="flex-1">
-          {t('common.close')}
+    // A non-null, non-reservation link here is dead (paid/expired/failed/
+    // cancelled) — the create button reads "a new one" rather than "the
+    // link" so it is clear the old one is gone for good.
+    const dead = !!link && !reservation;
+    body = (
+      <div className="space-y-4">
+        <AmountField id="link-amount" value={amount} onChange={setAmount} currency={document.currency} label={t('aito.payment.amountLabel')} />
+        <p className="text-xs text-bambu-gray">{t('aito.payment.linkHintInvoice')}</p>
+        {reservation?.sync_error && <p className="text-xs text-bambu-gray">{reservation.sync_error}</p>}
+        {error && <p className="text-status-error text-sm" role="alert">{error}</p>}
+      </div>
+    );
+    footer = (
+      <>
+        <Button variant="secondary" onClick={requestClose} className="flex-1" disabled={create.isPending}>
+          {t('common.cancel')}
         </Button>
-      );
-    } else {
-      // A non-null, non-reservation link here is dead (paid/expired/failed/
-      // cancelled) — the create button reads "a new one" rather than "the
-      // link" so it is clear the old one is gone for good.
-      const dead = !!link && !reservation;
-      body = (
-        <div className="space-y-4">
-          <AmountField id="link-amount" value={amount} onChange={setAmount} currency={document.currency} label={t('aito.payment.amountLabel')} />
-          <p className="text-xs text-bambu-gray">{t('aito.payment.linkHintInvoice')}</p>
-          {reservation?.sync_error && <p className="text-xs text-bambu-gray">{reservation.sync_error}</p>}
-          {error && <p className="text-status-error text-sm" role="alert">{error}</p>}
-        </div>
-      );
-      footer = (
-        <>
-          <Button variant="secondary" onClick={requestClose} className="flex-1" disabled={create.isPending}>
-            {t('common.cancel')}
-          </Button>
-          <Button onClick={submitCreate} className="flex-1" disabled={create.isPending}>
-            {create.isPending ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                {t(dead ? 'aito.payment.linkCreateAgain' : 'aito.payment.linkCreate')}
-              </>
-            ) : (
-              t(dead ? 'aito.payment.linkCreateAgain' : 'aito.payment.linkCreate')
-            )}
-          </Button>
-        </>
-      );
-    }
+        <Button onClick={submitCreate} className="flex-1" disabled={create.isPending}>
+          {create.isPending ? (
+            <>
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              {t(dead ? 'aito.payment.linkCreateAgain' : 'aito.payment.linkCreate')}
+            </>
+          ) : (
+            t(dead ? 'aito.payment.linkCreateAgain' : 'aito.payment.linkCreate')
+          )}
+        </Button>
+      </>
+    );
   } else {
     // A quote's link is only ever minted by the reconciler — nothing to
     // create or cancel here, just today's state. `aito.paymentLink.state`
@@ -236,9 +269,15 @@ export function PaymentLinkModal({ project, document, link, onClose }: {
     } else {
       stateText = t(`aito.paymentLink.state.${link.state}`);
     }
-    body = <p className="text-sm text-bambu-gray">{stateText}</p>;
+    body = (
+      <div className="space-y-4">
+        <p className="text-sm text-bambu-gray">{stateText}</p>
+        {retryBlock}
+        {error && <p className="text-status-error text-sm" role="alert">{error}</p>}
+      </div>
+    );
     footer = (
-      <Button onClick={requestClose} className="flex-1">
+      <Button onClick={requestClose} className="flex-1" disabled={pending}>
         {t('common.close')}
       </Button>
     );

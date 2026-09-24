@@ -72,13 +72,17 @@ describe('PaymentBlock', () => {
     expect(screen.getByText(money(23000, 'XPF'))).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Payment link' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Pay by card on the terminal' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Record a payment' })).toBeEnabled();
+    const manual = screen.getByRole('button', { name: 'Manual — record a payment' });
+    expect(manual).toBeEnabled();
+    // WCAG 2.5.3: the accessible name starts with the visible label, so
+    // "click Manual" works with voice control.
+    expect(manual).toHaveTextContent('Manual');
     expect(screen.getByText('No link')).toBeInTheDocument();
   });
 
   it('hides the cells without canUpdate and keeps the link tools', () => {
     block({ canUpdate: false, link: link() });
-    expect(screen.queryByRole('button', { name: 'Record a payment' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Manual — record a payment' })).toBeNull();
     expect(screen.getByRole('link', { name: 'Open payment link' })).toBeInTheDocument();
     expect(screen.getByTestId('payment-block')).toHaveAttribute('data-state', 'link_pending');
   });
@@ -87,7 +91,7 @@ describe('PaymentBlock', () => {
     vi.spyOn(api, 'getAitoTerminalPayment').mockResolvedValue(tpe({ status: 'paid', amount_confirmed: 23000, settled_at: '2026-09-23T01:01:00', booking_status: 'booked' }));
     block({ terminal: tpe() });
     expect(screen.getByText('Terminal · waiting for the card')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Record a payment' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Manual — record a payment' })).toBeDisabled();
     expect(await screen.findByText(new RegExp(`Paid ${money(23000, 'XPF')} · terminal`))).toBeInTheDocument();
   });
 
@@ -98,7 +102,7 @@ describe('PaymentBlock', () => {
 
   it('opens the manual modal from its cell', async () => {
     block();
-    await userEvent.click(screen.getByRole('button', { name: 'Record a payment' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Manual — record a payment' }));
     expect(screen.getByRole('dialog', { name: 'Record a payment' })).toBeInTheDocument();
   });
 

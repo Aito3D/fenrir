@@ -163,8 +163,9 @@ export function PaymentBlock({ project, document, link, terminal, canUpdate, hei
 }
 
 /** The one-line state a document's payment is in right now (spec §3.2). A
- *  plain function, not a second component: it shares `t`/`i18n` state with
- *  its caller through props rather than calling the hooks itself again. */
+ *  child component in its own right — it calls `useTranslation` itself and
+ *  takes only what it cannot derive (the state, the document, the copy
+ *  flash and the two callbacks) as props. */
 function StateLine({
   state,
   document,

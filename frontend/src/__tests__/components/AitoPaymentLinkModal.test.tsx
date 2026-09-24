@@ -71,11 +71,18 @@ describe('PaymentLinkModal', () => {
     expect(screen.queryByRole('button', { name: /Cancel/ })).toBeNull();
   });
 
-  it('an in-flight invoice reservation is read-only while it is minting', () => {
+  // Final review, Important 1: "Link being created…" with no button was a
+  // dead end — the reconciler never mints an invoice link, so a create that
+  // died before storing its error left the invoice with no link and no way
+  // to ask for one. The create view is always offered; the backend replays
+  // that same reservation under its own key.
+  it('an invoice reservation offers to create the link rather than a dead end', async () => {
+    const spy = vi.spyOn(api, 'createAitoInvoicePaymentLink').mockResolvedValue(makeProject({ id: 12 }));
     render(<PaymentLinkModal project={makeProject({ id: 12 })} document={invoice} link={reservation} onClose={() => {}} />);
-    expect(screen.getByText('Link being created…')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Create/ })).toBeNull();
-    expect(screen.queryByLabelText('Amount')).toBeNull();
+    expect(screen.queryByText('Link being created…')).toBeNull();
+    expect(screen.getByLabelText('Amount')).toHaveValue('23000');
+    await userEvent.click(screen.getByRole('button', { name: 'Create the link' }));
+    await waitFor(() => expect(spy).toHaveBeenCalledWith(12, { document_id: 'inv-1', amount: 23000 }));
   });
 
   it('a stuck invoice reservation with a sync error offers to create the link, showing the error', async () => {
@@ -87,5 +94,40 @@ describe('PaymentLinkModal', () => {
     expect(button).toBeInTheDocument();
     await userEvent.click(button);
     await waitFor(() => expect(spy).toHaveBeenCalledWith(12, { document_id: 'inv-1', amount: 23000 }));
+  });
+
+  // Final review, Important 3: the quote link's manual Retry was dropped when
+  // PaymentLinkRow was retired, leaving `POST …/payment-link/refresh` and
+  // `api.refreshAitoPaymentLink` with no caller and a stuck quote link with
+  // no way out but the 5-minute tick.
+  it('a live quote link with a sync error shows it and retries on demand', async () => {
+    const spy = vi.spyOn(api, 'refreshAitoPaymentLink').mockResolvedValue(makeProject({ id: 12 }));
+    const stuck = { ...live, sync_error: 'Heimdall HTTP 503' };
+    render(<PaymentLinkModal project={makeProject({ id: 12 })} document={quote} link={stuck} onClose={() => {}} />);
+    expect(screen.getByRole('status')).toHaveTextContent('Heimdall HTTP 503');
+    await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(spy).toHaveBeenCalledWith(12));
+  });
+
+  it('an unminted quote link with a sync error keeps "being created" and offers Retry', async () => {
+    const spy = vi.spyOn(api, 'refreshAitoPaymentLink').mockResolvedValue(makeProject({ id: 12 }));
+    const stuck = { ...reservation, sync_error: 'Heimdall HTTP 503' };
+    render(<PaymentLinkModal project={makeProject({ id: 12 })} document={quote} link={stuck} onClose={() => {}} />);
+    expect(screen.getByText('Link being created…')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Create/ })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(spy).toHaveBeenCalledWith(12));
+  });
+
+  it('an invoice link never offers the quote-only Retry', () => {
+    render(
+      <PaymentLinkModal
+        project={makeProject({ id: 12 })}
+        document={invoice}
+        link={{ ...live, sync_error: 'Heimdall HTTP 503' }}
+        onClose={() => {}}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
   });
 });

@@ -609,7 +609,6 @@ const NL_COGNATES = [
   'Link',  // aito.payment.cellLink — "Link" is the Dutch word too (see "Betaallink")
   'online',  // aito.payment.channelLink — same loanword used in "Betaal online"
   'Cheque',  // aito.payment.modeCheque / heimdall.paymentModeCheque — same word in Dutch
-  '{{number}} · open, {{expires}}',  // aito.payment.linkOpenState — "open" is also Dutch, rest is placeholders
 ];
 
 const IDENTICAL_TO_EN_ALLOWED = {
