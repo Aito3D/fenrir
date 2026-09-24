@@ -135,7 +135,8 @@ async def test_rate_limit(async_client):
     body = {"document_kind": "invoice", "document_id": "inv-1", "amount": 1}
     for _ in range(10):
         assert (await async_client.post(url, json=body)).status_code == 409
-    assert (await async_client.post(url, json=body)).status_code == 429
+    r = await async_client.post(url, json=body)
+    assert r.status_code == 429 and r.json()["detail"]["code"] == "rate_limited"
 
 
 @pytest.mark.asyncio
@@ -158,7 +159,7 @@ async def test_get_rate_limited_by_heimdall(async_client, monkeypatch):
         lambda r: httpx.Response(429, json={"error": {"code": "rate_limited", "message": "slow down"}})
     )
     r = await async_client.get(f"/api/v1/aito/{p['id']}/terminal-payment/{payment_id}")
-    assert r.status_code == 429, r.text
+    assert r.status_code == 429 and r.json()["detail"]["code"] == "rate_limited", r.text
 
 
 def test_routes_are_gated():

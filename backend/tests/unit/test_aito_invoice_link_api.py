@@ -65,12 +65,13 @@ async def test_create_then_cancel(async_client, db_session):
     assert link["state"] == "pending" and link["url"] == "https://pay/x" and r.json()["payment_link"] is None
     r = await async_client.post(f"/api/v1/aito/{p['id']}/payment-link", json={"document_id": "inv-1", "amount": 1})
     assert r.status_code == 409 and r.json()["detail"]["code"] == "link_exists"
-    # The balance cap is checked before the service call reaches its own
-    # InvoiceLinkExists guard (see route order: resolve -> balance cap ->
-    # create), so an over-balance amount answers 422 here even though a live
-    # link already exists -- amount_above_balance wins, not link_exists.
+    # The route checks the live-link refusal before the balance cap (spec
+    # §6.2: link_exists is the refusal the operator cannot clear by editing
+    # the amount), so an over-balance amount still answers link_exists here,
+    # not amount_above_balance -- the balance cap is only reached once no
+    # live link is in the way (see test_amount_above_balance_and_quote_cancel).
     r = await async_client.post(f"/api/v1/aito/{p['id']}/payment-link", json={"document_id": "inv-1", "amount": 23001})
-    assert r.status_code == 422 and r.json()["detail"]["code"] == "amount_above_balance"
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "link_exists"
     row = (await db_session.execute(AitoPaymentLink.__table__.select())).first()
     heimdall_service._transport = httpx.MockTransport(lambda r: httpx.Response(200, json=_link(status="cancelled")))
     r = await async_client.post(f"/api/v1/aito/{p['id']}/payment-link/{row.id}/cancel")

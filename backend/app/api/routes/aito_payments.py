@@ -42,6 +42,7 @@ from backend.app.services.aito_payment_links import (
     QuoteLinkManaged,
     cancel_invoice_link,
     create_invoice_link,
+    current_link,
 )
 from backend.app.services.aito_terminal_payments import (
     TerminalInProgress,
@@ -69,13 +70,20 @@ _COUNTER_PAYMENT_DETAIL = "Too many payment requests. Please wait a moment and t
 
 
 def _check_counter_payment_rate_limit(request: Request, current_user: User | None) -> None:
-    _check_rate_limit(
-        request,
-        current_user,
-        bucket="counter_payment",
-        max_calls=_COUNTER_PAYMENT_MAX_CALLS,
-        detail=_COUNTER_PAYMENT_DETAIL,
-    )
+    """`_check_rate_limit` answers its own 429 with a plain-string `detail`
+    (aito.py's convention); this module's binding rule is a structured
+    `{"code","message"}` body on every 4xx/5xx, so its 429 is re-raised
+    through `_refuse` rather than propagated as-is."""
+    try:
+        _check_rate_limit(
+            request,
+            current_user,
+            bucket="counter_payment",
+            max_calls=_COUNTER_PAYMENT_MAX_CALLS,
+            detail=_COUNTER_PAYMENT_DETAIL,
+        )
+    except HTTPException as e:
+        raise _refuse(429, "rate_limited", _COUNTER_PAYMENT_DETAIL) from e
 
 
 def _now() -> datetime:
@@ -217,6 +225,13 @@ async def create_invoice_payment_link(
     _check_counter_payment_rate_limit(request, current_user)
     project = await _get_active_project_or_404(db, project_id)
     document = await _document(db, project, "invoice", body.document_id)
+    # A live, minted link is the refusal the operator cannot clear by
+    # editing the amount, so it is checked before the balance cap (spec
+    # §6.2). create_invoice_link's own InvoiceLinkExists guard stays as the
+    # backstop for the other cases (an in-flight reservation, a replay).
+    existing = await current_link(db, project_id, kind="invoice")
+    if existing is not None and existing.heimdall_id is not None and existing.status == "pending":
+        raise _refuse(409, "link_exists", "A payment link is already open for this invoice")
     if document.balance is not None and body.amount > document.balance:
         raise _refuse(422, "amount_above_balance", f"Amount exceeds the invoice balance of {document.balance}")
     try:
