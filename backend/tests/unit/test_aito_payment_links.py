@@ -1495,6 +1495,15 @@ async def test_create_invoice_link_reserves_posts_and_records(db_session, fake):
     assert row.document_kind == "invoice" and row.url == "https://osb/pay/L1" and row.expires_on == "2026-10-08"
     kinds = await _kinds(db_session, p.id)
     assert "payment_link.created" in kinds
+    ev = (
+        await db_session.execute(
+            select(AitoEvent).where(AitoEvent.project_id == p.id, AitoEvent.kind == "payment_link.created")
+        )
+    ).scalar_one()
+    assert ev.actor_class == "user" and ev.actor_name == "paul"
+    assert ev.detail["document_kind"] == "invoice"
+    assert ev.detail["reference"] == "FA-26-0001"
+    assert ev.detail["amount"] == 23000
     with pytest.raises(svc.InvoiceLinkExists):
         await svc.create_invoice_link(
             db_session,
@@ -1552,11 +1561,14 @@ async def test_create_invoice_link_replays_a_stuck_reservation_under_its_own_key
     original_created_at = stuck.created_at
     fake.fail_with = None
     fake.calls.clear()
+    # A different `amount` on the replay call must be ignored: the
+    # reservation replays under its own stored amount, not whatever the
+    # caller passes this time.
     row = await svc.create_invoice_link(
         db_session,
         p,
         document=doc,
-        amount=7000,
+        amount=8888,
         actor_name="paul",
         now=datetime(2026, 10, 1),
         today=date(2026, 10, 1),
@@ -1572,6 +1584,44 @@ async def test_create_invoice_link_replays_a_stuck_reservation_under_its_own_key
     # Identical body: expires_in_days is recomputed from the ORIGINAL
     # reservation day, never from the later call's `now`/`today`.
     assert days == svc.expires_in_days(original_expires_on, original_created_at.date())
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["cancelled", "expired", "failed", "paid"])
+async def test_create_invoice_link_falls_through_a_dead_link_to_a_new_row(db_session, fake, status):
+    p = await _project(db_session)
+    old = AitoPaymentLink(
+        project_id=p.id,
+        idempotency_key=f"aito:{p.id}:1",
+        reference="FA-26-0005",
+        amount=9000,
+        expires_on="2026-12-31",
+        heimdall_id="h-old",
+        status=status,
+        document_kind="invoice",
+        document_number="FA-26-0005",
+    )
+    db_session.add(old)
+    await db_session.commit()
+    await db_session.refresh(old)
+    old_id = old.id
+    doc = PaymentDocument(kind="invoice", id="inv-5", number="FA-26-0005", customer_id="c1", balance=9000)
+    row = await svc.create_invoice_link(
+        db_session,
+        p,
+        document=doc,
+        amount=9000,
+        actor_name="paul",
+        now=datetime(2026, 9, 23),
+        today=date(2026, 9, 23),
+        validity_days=15,
+    )
+    assert row.id != old_id
+    assert row.idempotency_key.endswith(":2")
+    await db_session.refresh(old)
+    assert old.id == old_id and old.status == status and old.heimdall_id == "h-old"
+    current = await svc.current_link(db_session, p.id, kind="invoice")
+    assert current is not None and current.id == row.id
 
 
 @pytest.mark.asyncio
