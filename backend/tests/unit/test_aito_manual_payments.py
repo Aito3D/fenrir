@@ -293,6 +293,54 @@ async def test_refresh_never_raises(db_session, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_a_db_failure_after_the_books_write_keeps_the_guard_and_names_the_payment(db_session, books, monkeypatch):
+    """Final review, Minor 11 (money path): the payment IS in Zoho Books and
+    the local `record(...)`+`commit()` fails. Releasing the duplicate guard
+    and letting the exception out as a 500 invited the operator to click
+    again and pay twice. The key is KEPT, the error names the Books payment,
+    and the session is left usable.
+
+    The failure is a GENUINE flush failure raised from inside the recording
+    step (a NOT NULL violation), not a monkeypatched `commit()`: only a real
+    one puts the session into the partial-rollback state (`is_active` False)
+    that the recovery below is about — see the test after this one."""
+
+    async def no_refresh(db, project_id, kind):
+        return None
+
+    async def bad_record(db, project_id, kind, **kw):
+        db.add(AitoEvent(project_id=project_id, kind=None, actor_class="user"))  # kind is NOT NULL
+        await db.flush()
+
+    monkeypatch.setattr(svc, "refresh_after_payment", no_refresh)
+    monkeypatch.setattr(svc, "record", bad_record)
+    p = await _project(db_session)
+    project_id = p.id  # read before the failure: the rollback expires `p`
+    with pytest.raises(svc.ManualPaymentUnrecorded) as exc:
+        await svc.record_manual_payment(
+            db_session,
+            p,
+            document=INVOICE,
+            mode="cash",
+            amount=23000,
+            reference=None,
+            actor_name="paul",
+            today=TODAY,
+        )
+    assert exc.value.zoho_payment_id == "pay-1"
+    assert "pay-1" in str(exc.value)
+    assert db_session.is_active is True  # rolled back out of the poisoned state
+    # The guard key survives, so a reflex retry inside the window is refused
+    # (`DuplicateManualPayment`) instead of writing a second payment into
+    # Books. Asserted on the guard itself rather than by calling again: the
+    # deliberately broken `record` above leaves a pending row in this test's
+    # session that a second call would trip over first.
+    assert svc._guard_key(project_id, INVOICE, 23000, None) in svc._recent
+    posts = [c for c in books["calls"] if c[0] == "POST" and c[1] == "/customerpayments"]
+    assert len(posts) == 1
+
+
+@pytest.mark.asyncio
 async def test_refresh_recovers_a_session_poisoned_by_a_failed_commit(db_session, books):
     """Finding 1: `db.commit()` inside the invoice branch can itself fail
     (e.g. SQLite "database is locked") *after* the Zoho payment was already

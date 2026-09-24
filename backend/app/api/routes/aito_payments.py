@@ -34,6 +34,7 @@ from backend.app.services.aito_manual_payments import (
     AmountAboveBalance,
     DuplicateManualPayment,
     ManualPaymentPartial,
+    ManualPaymentUnrecorded,
     record_manual_payment,
 )
 from backend.app.services.aito_payment_documents import DocumentMismatch, resolve_document
@@ -103,14 +104,18 @@ async def _document(db: AsyncSession, project, kind: str, document_id: str):
         raise _refuse(502, "upstream", str(e)) from e
 
 
-def _heimdall_refusal(e: HeimdallUpstreamError) -> HTTPException:
+def _heimdall_refusal(e: HeimdallUpstreamError, *, invalid_code: str = "amount_above_balance") -> HTTPException:
+    """`invalid_code`: what a Heimdall 422 means on THIS route. On the
+    terminal create it is essentially always the balance cap, so the code
+    says so; on the link create it can be any invalid field, so it stays the
+    neutral `invalid` and the frontend shows Heimdall's own message."""
     if isinstance(e, HeimdallAuthError) and e.status == 403:
         return _refuse(502, "forbidden", "The Heimdall key has no permission to charge the terminal")
     if isinstance(e, HeimdallConflict):
         code = "terminal_busy" if e.code == "terminal_busy" else "conflict"
         return _refuse(409, code, str(e))
     if isinstance(e, HeimdallInvalid):
-        return _refuse(422, "amount_above_balance", str(e))
+        return _refuse(422, invalid_code, str(e))
     if isinstance(e, HeimdallNotFound):
         return _refuse(422, "document_unknown", str(e))
     if isinstance(e, HeimdallRateLimited):
@@ -203,6 +208,16 @@ async def record_manual_payment_route(
             f"Retainer {e.retainer_number} was raised in Zoho Books but its payment could not be recorded: "
             f"{e.cause}. Record the payment on it in Books.",
         ) from e
+    except ManualPaymentUnrecorded as e:
+        # The money moved. Never a 500 (spec §8: once an upstream side effect
+        # has landed the route reports it rather than looking like nothing
+        # happened) — and the Books payment id is in the message so the
+        # operator can reconcile it by hand.
+        raise _refuse(
+            502,
+            "manual_unrecorded",
+            f"The payment {e.zoho_payment_id} was recorded in Zoho Books but the local record failed: {e.cause}",
+        ) from e
     except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
         await db.rollback()
         raise _refuse(502, "upstream", str(e)) from e
@@ -250,7 +265,7 @@ async def create_invoice_payment_link(
     except HeimdallNotConfigured as e:
         raise _refuse(502, "not_configured", str(e)) from e
     except HeimdallUpstreamError as e:
-        raise _heimdall_refusal(e) from e
+        raise _heimdall_refusal(e, invalid_code="invalid") from e
     project = await _get_active_project_or_404(db, project_id)
     return await _project_response(db, project)
 
@@ -266,6 +281,12 @@ async def cancel_invoice_payment_link(
     row = await db.get(AitoPaymentLink, link_id)
     if row is None or row.project_id != project_id:
         raise HTTPException(status_code=404, detail="Payment link not found")
+    # Only a live link can be cancelled. A dead one (paid, expired, already
+    # cancelled) would answer Heimdall's own 409 as an opaque `conflict`, and
+    # an unminted reservation has no Heimdall id to cancel at all — it would
+    # have gone out as `POST /payments/None/cancel`.
+    if row.heimdall_id is None or row.status != "pending":
+        raise _refuse(409, "not_cancellable", "This payment link is not open and cannot be cancelled")
     try:
         await cancel_invoice_link(db, project, row, actor_name=_actor(current_user), now=_now())
     except QuoteLinkManaged as e:

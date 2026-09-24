@@ -234,10 +234,14 @@ Permission `aito:update`. Body `AitoTerminalPaymentCreate {document_kind, docume
 
 1. Load the project; capture `id`, `quote_id`, `quote_number`, `client_id`
    into locals before any upstream call (expired-attribute trap).
-2. Guards: any row for this project with status `pending`/`processing`/
-   `needs_attention` → 409 `terminal_in_progress`. Document ownership: quote
+2. Guards: any row for this project with status `pending`/`processing` → 409
+   `terminal_in_progress`. Document ownership: quote
    → `document_id == project.quote_id`; invoice → id present in
    `list_project_invoices` for the estimate; else 422 `document_mismatch`.
+   *Amended 2026-09-23 (final review): `needs_attention` was dropped from the
+   blocking set. That ROW stays immutable — never retried, never re-polled —
+   but it must not block the PROJECT: a new charge, once the operator has
+   read the paper roll, is a new row. Blocking on it froze the card forever.*
 3. Insert the reservation row (`status: pending`, next `n` for the project),
    commit.
 4. Call Heimdall. Success (202/200): store `heimdall_id`, `status`,
@@ -251,6 +255,18 @@ Permission `aito:update`. Body `AitoTerminalPaymentCreate {document_kind, docume
    Reservation replay: a row left `pending` with no `heimdall_id` and the same
    body is re-sent with its own idempotency key (Heimdall re-fires a draft
    only on an identical body, so the body must be rebuilt from the row).
+   *Amended 2026-09-23 (final review): spelled out, because a replay carries
+   `confirm: true` and FIRES the terminal. It happens HERE and nowhere else —
+   an operator action, somebody at the counter. Same document and amount →
+   replay under the row's own key with the row's own body; a different
+   document or amount → the reservation is marked `failed`
+   (`sync_error: "reservation abandoned (replaced by a new charge)"`) and a
+   fresh one is reserved. A reservation whose own start is still in flight in
+   this process is not replayable (409 as before). The 5-minute sweep NEVER
+   re-sends one: it only ages reservations older than
+   `ABANDONED_RESERVATION_SECONDS = 600` out to `failed`
+   (`sync_error: "reservation abandoned"`, event `payment.terminal.failed`
+   with `reason: "abandoned"`), so a dead handler cannot block the card.*
 5. Response model `AitoTerminalPaymentView` (§3.5 shape).
 
 ### 4.4 Route `GET /aito/{project_id}/terminal-payment/{row_id}`
@@ -273,8 +289,11 @@ One helper, called from the GET route and from the reconciler tick:
   sync so figures refresh; commit.
 - First `failed` / `cancelled`: record `payment.terminal.failed` with
   native_state. First `needs_attention`: record `payment.terminal.attention`.
-- Booking transitions after `paid` update the row and, on `failed`, append the
-  error to the paid event's detail (no new event kind).
+- Booking transitions after `paid` update the row; the block shows
+  `booking_status`/`booking_error` from the row itself.
+  *Amended 2026-09-23 (final review): was "append the booking error to the
+  paid event's detail". The story is a log — a past event is never rewritten;
+  the row carries the booking state and the block reads it from there.*
 - Never re-creates, never re-fires, never cancels.
 
 ### 4.6 Reconciler tick
@@ -346,10 +365,26 @@ from `reference` for existing rows). Additive migration.
   invoice balance → 422. Reservation row first (`aito:{project}:{n}` key, as
   today), `create_link(reference=invoice_number, amount, expires_in_days=setting)`,
   record `payment_link.created` with `document_kind`. Response: the link view.
+  *Amended 2026-09-23 (final review): only a MINTED pending link is
+  `link_exists`. An unminted reservation is replayed under its own key with
+  its own body — the typed amount is deliberately ignored, since Heimdall
+  fingerprints the body and answers `409 idempotency_conflict` to any change;
+  a link create moves no money, so the worst case is being handed back the
+  link that key already minted. Reservations older than
+  `ABANDONED_RESERVATION_SECONDS = 600` are aged out by the pass to `failed`
+  (event `payment_link.cancelled`, `reason: "abandoned"`, no Heimdall call).
+  A Heimdall 422 on this route maps to code `invalid` (not
+  `amount_above_balance`: the balance is capped by the route itself, so a 422
+  here is some other field).*
 - `POST /aito/{project_id}/payment-link/{link_id}/cancel`, `aito:update`.
   Quote link → 409 `quote_link_managed`. Invoice link → `cancel_link`;
   Heimdall 409 → mark from a fresh GET; record `payment_link.cancelled`.
-- The existing `POST …/payment-link/refresh` stays quote-only.
+  *Amended 2026-09-23 (final review): a row that is not `pending`, or has no
+  `heimdall_id`, is refused up front with 409 `not_cancellable` — there is
+  nothing at Heimdall to cancel.*
+- The existing `POST …/payment-link/refresh` stays quote-only. It is the
+  quote link's manual Retry, offered by `PaymentLinkModal` whenever the quote
+  link carries a `sync_error`.
 
 ### 6.3 Reconciler
 
@@ -383,9 +418,15 @@ Register in `aito_events.KINDS` (story depth): `payment.terminal.started`,
   `{"code": ..., "message": ...}` like `set_quote_status`.
 - Once an upstream side effect has landed the route never answers 500: it
   commits what it knows and reports the rest in `message`.
-- A `paid` terminal payment is never re-sent whatever `booking` says;
-  `needs_attention` is never retried. Enforced by the UI (no Relancer in those
-  states) and by the in-progress guard.
+- A `paid` terminal payment is never re-sent whatever `booking` says; a
+  `needs_attention` ROW is never retried or re-polled. Enforced by the UI (no
+  Relancer in those states) and by the in-progress guard.
+  *Amended 2026-09-23 (final review): "never retried" is about that row, not
+  about the project — a new charge after a `needs_attention` is a NEW row and
+  is allowed (see §4.3). Added, same paragraph: a manual payment that reached
+  Zoho Books but could not be recorded locally answers 502 `manual_unrecorded`
+  naming the Books payment id, and KEEPS its duplicate-guard key so a reflex
+  retry cannot pay twice.*
 - Permissions: every new route is `aito:update` except the GET (`aito:read`).
   Each path is added to the API-key route classification.
 - Rate limits: the terminal create and the manual record share the existing
@@ -396,6 +437,11 @@ Register in `aito_events.KINDS` (story depth): `payment.terminal.started`,
 New keys under `aito.payment.*` (block labels, state line, three cells, three
 modals, error codes) and `aito.timeline.*` for the six event kinds, in all 14
 locale files with real translations; `npm run check:i18n` must pass.
+*Amended 2026-09-23 (final review): the server's `message` is what the UI
+shows verbatim in this phase — there is no code→i18n mapping for the error
+codes, and adding one is a follow-up. Each cell's accessible name contains its
+visible label (WCAG 2.5.3), e.g. `cellManualTitle` = "Manual — record a
+payment".*
 
 ## 10. Testing
 

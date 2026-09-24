@@ -1,5 +1,6 @@
 # backend/tests/unit/test_aito_terminal_payments.py
 import asyncio
+import json
 from datetime import datetime, timedelta
 
 import httpx
@@ -98,9 +99,9 @@ async def test_start_reserves_then_fires_and_records(db_session):
 
 
 @pytest.mark.asyncio
-async def test_start_refuses_while_a_row_is_open_or_needs_attention(db_session):
+async def test_start_refuses_while_a_row_is_open(db_session):
     p = await _project(db_session)
-    for status in ("processing", "needs_attention"):
+    for status in ("pending", "processing"):
         db_session.add(
             AitoTerminalPayment(
                 project_id=p.id,
@@ -119,6 +120,33 @@ async def test_start_refuses_while_a_row_is_open_or_needs_attention(db_session):
             await svc.start_terminal_payment(db_session, p, document=INVOICE, amount=1, actor_name=None, now=NOW)
         await db_session.execute(AitoTerminalPayment.__table__.delete())
         await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_needs_attention_does_not_block_a_new_charge(db_session):
+    """Final review, Important 2: a `needs_attention` ROW is never retried or
+    re-polled — but once the operator has read the paper roll, a NEW charge on
+    the project is a new row, not a refusal. Spec §4.3/§8 amended."""
+    p = await _project(db_session)
+    stuck = AitoTerminalPayment(
+        project_id=p.id,
+        document_kind="invoice",
+        document_id="inv-1",
+        document_number="FA",
+        idempotency_key="k-attention",
+        amount=1,
+        status="needs_attention",
+        heimdall_id="h-attention",
+        created_at=NOW,
+        settled_at=NOW,
+    )
+    db_session.add(stuck)
+    await db_session.commit()
+    heimdall_service._transport = httpx.MockTransport(lambda r: httpx.Response(202, json=_payment(id="h-new")))
+    row = await svc.start_terminal_payment(db_session, p, document=INVOICE, amount=23000, actor_name=None, now=NOW)
+    assert row.id != stuck.id and row.heimdall_id == "h-new"
+    await db_session.refresh(stuck)
+    assert stuck.status == "needs_attention" and stuck.heimdall_id == "h-attention"
 
 
 @pytest.mark.asyncio
@@ -598,3 +626,114 @@ async def test_concurrent_starts_are_serialized_by_the_lock(test_engine, db_sess
     failures = [r for r in results if isinstance(r, svc.TerminalInProgress)]
     assert len(successes) == 1 and len(failures) == 1
     assert calls == [1]
+
+
+# --- final fix wave: unminted reservations ------------------------------------
+
+
+def _reservation(project_id, **over):
+    base = {
+        "project_id": project_id,
+        "document_kind": "invoice",
+        "document_id": "inv-1",
+        "document_number": "FA-26-0001",
+        "idempotency_key": "aito-tpe:stuck",
+        "amount": 23000,
+        "status": "pending",
+        "created_at": NOW,
+    }
+    base.update(over)
+    return AitoTerminalPayment(**base)
+
+
+@pytest.mark.asyncio
+async def test_start_replays_an_unminted_reservation_under_its_own_key(db_session):
+    """Important 1: a reservation whose handler died before Heimdall answered
+    is a dead end (it blocks, and neither the GET nor the sweep may re-send
+    it). The OPERATOR's next start replays it — same idempotency key, body
+    rebuilt from the ROW (Heimdall answers `409 idempotency_conflict` to any
+    changed field), so Heimdall either re-fires the stranded draft (202) or
+    hands back the payment it already made (200)."""
+    p = await _project(db_session)
+    stuck = _reservation(p.id)
+    db_session.add(stuck)
+    await db_session.commit()
+    stuck_id = stuck.id
+    seen = {}
+
+    def handler(request):
+        seen["idem"] = request.headers["idempotency-key"]
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(202, json=_payment(id="h-replay"))
+
+    heimdall_service._transport = httpx.MockTransport(handler)
+    row = await svc.start_terminal_payment(
+        db_session, p, document=INVOICE, amount=23000, actor_name="paul", now=NOW + timedelta(minutes=30)
+    )
+    assert row.id == stuck_id and row.heimdall_id == "h-replay" and row.status == "processing"
+    assert seen["idem"] == "aito-tpe:stuck"
+    assert seen["body"]["amount"] == 23000 and seen["body"]["document"] == {"type": "invoice", "id": "inv-1"}
+    rows = (await db_session.execute(select(AitoTerminalPayment))).scalars().all()
+    assert len(rows) == 1  # replayed, never a second reservation
+    started = await _events(db_session, p.id, "payment.terminal.started")
+    assert len(started) == 1 and started[0].detail["heimdall_id"] == "h-replay"
+
+
+@pytest.mark.asyncio
+async def test_start_replaces_an_unminted_reservation_for_another_document_or_amount(db_session):
+    """The blocking reservation is not the charge the operator is asking for:
+    replaying it would fire the terminal for the WRONG amount. It is abandoned
+    (marked failed, never re-sent) and a fresh reservation takes over."""
+    p = await _project(db_session)
+    stuck = _reservation(p.id, amount=500)
+    db_session.add(stuck)
+    await db_session.commit()
+    stuck_id = stuck.id
+    seen = {}
+
+    def handler(request):
+        seen["idem"] = request.headers["idempotency-key"]
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(202, json=_payment(id="h-fresh"))
+
+    heimdall_service._transport = httpx.MockTransport(handler)
+    row = await svc.start_terminal_payment(
+        db_session, p, document=INVOICE, amount=23000, actor_name="paul", now=NOW + timedelta(minutes=1)
+    )
+    assert row.id != stuck_id and row.heimdall_id == "h-fresh"
+    assert seen["idem"] != "aito-tpe:stuck" and seen["body"]["amount"] == 23000
+    abandoned = await db_session.get(AitoTerminalPayment, stuck_id)
+    assert abandoned.status == "failed" and "replaced by a new charge" in (abandoned.sync_error or "")
+    assert abandoned.heimdall_id is None and abandoned.settled_at == NOW + timedelta(minutes=1)
+
+
+@pytest.mark.asyncio
+async def test_the_sweep_ages_out_an_abandoned_reservation_without_calling_heimdall(db_session):
+    """THE MONEY RULE: a replay carries `confirm: true` and fires the
+    terminal, so the sweep NEVER re-sends an unminted reservation — it only
+    ages one out after ABANDONED_RESERVATION_SECONDS so the project stops
+    being blocked. A younger one is left alone."""
+    p = await _project(db_session)
+    old = _reservation(p.id, idempotency_key="k-old", created_at=NOW)
+    young = _reservation(p.id, idempotency_key="k-young", created_at=NOW + timedelta(minutes=9))
+    db_session.add_all([old, young])
+    await db_session.commit()
+    old_id, young_id = old.id, young.id
+    calls = []
+
+    def handler(request):
+        calls.append(request.url.path)
+        return httpx.Response(200, json=_payment())
+
+    heimdall_service._transport = httpx.MockTransport(handler)
+    later = NOW + timedelta(minutes=11)
+    visited = await svc.poll_open_terminal_payments(db_session, now=later)
+    assert calls == []  # not one Heimdall request for an unminted reservation
+    assert visited == 1
+    aged = await db_session.get(AitoTerminalPayment, old_id)
+    assert aged.status == "failed" and aged.sync_error == "reservation abandoned" and aged.settled_at == later
+    assert aged.heimdall_id is None
+    still = await db_session.get(AitoTerminalPayment, young_id)
+    assert still.status == "pending" and still.sync_error is None
+    failed = await _events(db_session, p.id, "payment.terminal.failed")
+    assert len(failed) == 1 and failed[0].detail["reason"] == "abandoned"

@@ -50,6 +50,21 @@ class ManualPaymentPartial(Exception):
         self.cause = cause
 
 
+class ManualPaymentUnrecorded(Exception):
+    """Zoho Books took the payment and Bambuddy could not write its own
+    record of it (a failed flush/commit — "database is locked", a constraint
+    violation elsewhere in the session). The money moved: this is reported,
+    never retried behind the operator's back, and the duplicate guard is
+    deliberately KEPT so a reflex click cannot pay twice."""
+
+    def __init__(self, zoho_payment_id: str, cause: Exception) -> None:
+        super().__init__(
+            f"The payment {zoho_payment_id} was recorded in Zoho Books but the local record failed: {cause}"
+        )
+        self.zoho_payment_id = zoho_payment_id
+        self.cause = cause
+
+
 @dataclass(frozen=True)
 class ManualPaymentResult:
     zoho_payment_id: str
@@ -89,9 +104,10 @@ async def record_manual_payment(
     # apart both pass the read above under async concurrency (FastAPI runs
     # them concurrently, not one-at-a-time); reserving only after the round
     # trip would let both reach Books. A failure below releases the key
-    # again, except a partial (`ManualPaymentPartial`), which KEEPS it so a
-    # reflex retry within the window cannot raise a second retainer -- the
-    # error already names the retainer to finish by hand.
+    # again, except the two where something already landed in Books and a
+    # retry would double it: `ManualPaymentPartial` (the retainer exists) and
+    # `ManualPaymentUnrecorded` (the payment itself exists). Those KEEP the
+    # key, and their message names what to finish by hand.
     _recent[key] = time.monotonic()
     try:
         if document.kind == "invoice" and document.balance is not None and amount > document.balance:
@@ -155,27 +171,49 @@ async def record_manual_payment(
                 await db.commit()
                 raise ManualPaymentPartial(retainer_number, exc) from exc
         zoho_payment_id = str(payment.get("payment_id") or "")
-        await record(
-            db,
-            project_id,
-            "payment.manual.recorded",
-            actor_class="user",
-            actor_name=actor_name,
-            subject_type="project",
-            subject_id=project_id,
-            detail={
-                "document_kind": document.kind,
-                "document_number": document.number,
-                "mode": mode,
-                "mode_name": mode_name,
-                "amount": int(amount),
-                "reference": ref,
-                "zoho_payment_id": zoho_payment_id,
-                "retainer_number": retainer_number,
-            },
-        )
-        await db.commit()
-    except ManualPaymentPartial:
+        # Past this point the money HAS moved. A failure here is not a
+        # failure of the payment, and must not read like one: the guard key
+        # stays (a reflex retry would write a second payment into Books),
+        # the Books payment id is named so a human can reconcile by hand,
+        # and the session is left usable for the route's own response.
+        try:
+            await record(
+                db,
+                project_id,
+                "payment.manual.recorded",
+                actor_class="user",
+                actor_name=actor_name,
+                subject_type="project",
+                subject_id=project_id,
+                detail={
+                    "document_kind": document.kind,
+                    "document_number": document.number,
+                    "mode": mode,
+                    "mode_name": mode_name,
+                    "amount": int(amount),
+                    "reference": ref,
+                    "zoho_payment_id": zoho_payment_id,
+                    "retainer_number": retainer_number,
+                },
+            )
+            await db.commit()
+        except Exception as exc:
+            logger.error(
+                "manual payment %s is in Zoho Books (project %s, %s %s) but the local record failed: %s",
+                zoho_payment_id,
+                project_id,
+                document.kind,
+                document.number,
+                exc,
+                exc_info=True,
+            )
+            if not db.is_active:
+                try:
+                    await db.rollback()
+                except Exception:  # noqa: BLE001 — nothing left to salvage, the error below is the story
+                    pass
+            raise ManualPaymentUnrecorded(zoho_payment_id, exc) from exc
+    except (ManualPaymentPartial, ManualPaymentUnrecorded):
         raise
     except Exception:
         _recent.pop(key, None)

@@ -101,3 +101,61 @@ async def test_amount_above_balance_and_quote_cancel(async_client, db_session):
     r = await async_client.post(f"/api/v1/aito/{p['id']}/payment-link/{row.id}/cancel")
     assert r.status_code == 409 and r.json()["detail"]["code"] == "quote_link_managed"
     assert (await async_client.post(f"/api/v1/aito/{p['id']}/payment-link/999/cancel")).status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_a_heimdall_422_on_the_link_route_reads_invalid_not_amount_above_balance(async_client):
+    """Minor 5: the balance cap is checked by the route itself, so a 422 from
+    Heimdall here is some OTHER invalid field — labelling it
+    `amount_above_balance` sent the operator to edit an amount that was
+    already fine. The terminal route keeps that code; this one is neutral and
+    shows Heimdall's own message."""
+    p = await _create(async_client)
+    heimdall_service._transport = httpx.MockTransport(
+        lambda r: httpx.Response(
+            422, json={"error": {"code": "invalid_request", "message": "expires_in_days must be 1..90"}}
+        )
+    )
+    r = await async_client.post(f"/api/v1/aito/{p['id']}/payment-link", json={"document_id": "inv-1", "amount": 23000})
+    assert r.status_code == 422, r.text
+    assert r.json()["detail"]["code"] == "invalid"
+    assert "expires_in_days" in r.json()["detail"]["message"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "over",
+    [
+        {"status": "paid", "heimdall_id": "h-paid"},
+        {"status": "cancelled", "heimdall_id": "h-cancelled"},
+        {"status": "pending", "heimdall_id": None},  # a reservation: nothing to cancel at Heimdall
+    ],
+)
+async def test_cancel_refuses_a_link_that_is_not_open(async_client, db_session, over):
+    """Minor 6: the route had no state guard — a dead link went out as
+    Heimdall's opaque `conflict`, and a reservation as `POST
+    /payments/None/cancel`. Both are refused here, without a Heimdall call."""
+    p = await _create(async_client)
+    calls = []
+
+    def handler(request):
+        calls.append(request.url.path)
+        return httpx.Response(200, json=_link(status="cancelled"))
+
+    heimdall_service._transport = httpx.MockTransport(handler)
+    row = AitoPaymentLink(
+        project_id=p["id"],
+        idempotency_key="k-guard",
+        reference="FA-26-0001",
+        amount=1,
+        expires_on="2026-12-31",
+        document_kind="invoice",
+        document_number="FA-26-0001",
+        **over,
+    )
+    db_session.add(row)
+    await db_session.commit()
+    r = await async_client.post(f"/api/v1/aito/{p['id']}/payment-link/{row.id}/cancel")
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"]["code"] == "not_cancellable"
+    assert calls == []

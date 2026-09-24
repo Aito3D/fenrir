@@ -1626,7 +1626,14 @@ async def test_create_invoice_link_falls_through_a_dead_link_to_a_new_row(db_ses
 
 
 @pytest.mark.asyncio
-async def test_create_invoice_link_refuses_while_a_reservation_is_in_flight(db_session, fake):
+async def test_create_invoice_link_replays_a_reservation_with_no_sync_error_yet(db_session, fake):
+    """Final review, Important 1: an unminted reservation used to be refused
+    `InvoiceLinkExists` until it grew a `sync_error`, so a create killed
+    between the reservation commit and Heimdall's answer (client disconnect,
+    restart) left the invoice with no link and no way to ask for one. Any
+    unminted reservation is now replayed under its OWN key and body — a link
+    create is not a charge, and Heimdall's idempotency makes the replay hand
+    back the same link rather than minting a second one."""
     p = await _project(db_session)
     row = AitoPaymentLink(
         project_id=p.id,
@@ -1637,22 +1644,67 @@ async def test_create_invoice_link_refuses_while_a_reservation_is_in_flight(db_s
         status="pending",
         document_kind="invoice",
         document_number="FA-26-0004",
+        created_at=NOW,
     )
     db_session.add(row)
     await db_session.commit()
+    row_id = row.id
     doc = PaymentDocument(kind="invoice", id="inv-4", number="FA-26-0004", customer_id="c1", balance=1000)
-    with pytest.raises(svc.InvoiceLinkExists):
-        await svc.create_invoice_link(
-            db_session,
-            p,
-            document=doc,
+    replayed = await svc.create_invoice_link(
+        db_session,
+        p,
+        document=doc,
+        amount=4242,  # ignored: the reservation replays under its own body
+        actor_name="paul",
+        now=datetime(2026, 9, 23),
+        today=date(2026, 9, 23),
+        validity_days=15,
+    )
+    assert replayed.id == row_id and len(await _rows(db_session, p.id)) == 1
+    creates = [c for c in fake.calls if c[0] == "create"]
+    assert len(creates) == 1 and creates[0][1] == "aito:1:1" and creates[0][3] == 1000
+
+
+@pytest.mark.asyncio
+async def test_the_pass_ages_out_an_abandoned_invoice_reservation_without_calling_heimdall(db_session, fake):
+    """The mirror of the terminal sweep's rule: an unminted INVOICE
+    reservation older than `ABANDONED_RESERVATION_SECONDS` is written off by
+    the pass — no Heimdall call — so the block stops showing a link that is
+    never coming and offers to create one again. A younger one is left alone
+    for its own create to finish."""
+    p = await _project(db_session, quote_sync_state="unmanaged")  # keeps the reconcile half out of the way
+
+    def _reservation(key, created_at):
+        return AitoPaymentLink(
+            project_id=p.id,
+            idempotency_key=key,
+            reference="FA-26-0006",
             amount=1000,
-            actor_name="paul",
-            now=datetime(2026, 9, 23),
-            today=date(2026, 9, 23),
-            validity_days=15,
+            expires_on="2026-12-31",
+            status="pending",
+            document_kind="invoice",
+            document_number="FA-26-0006",
+            created_at=created_at,
         )
+
+    old = _reservation("aito:abandoned:1", NOW)
+    young = _reservation("aito:fresh:2", NOW + timedelta(minutes=9))
+    db_session.add_all([old, young])
+    await db_session.commit()
+    old_id, young_id = old.id, young.id
+    await reconcile_payment_links(db_session, now=NOW + timedelta(minutes=11), today=TODAY)
     assert fake.calls == []
+    aged = await db_session.get(AitoPaymentLink, old_id)
+    assert aged.status == "failed" and aged.sync_error == "reservation abandoned" and aged.heimdall_id is None
+    still = await db_session.get(AitoPaymentLink, young_id)
+    assert still.status == "pending" and still.sync_error is None
+    cancelled = [
+        e
+        for e in (await db_session.execute(select(AitoEvent).where(AitoEvent.project_id == p.id))).scalars()
+        if e.kind == "payment_link.cancelled"
+    ]
+    assert len(cancelled) == 1 and cancelled[0].detail["reason"] == "abandoned"
+    assert cancelled[0].detail["document_kind"] == "invoice"
 
 
 @pytest.mark.asyncio

@@ -84,6 +84,8 @@ async def test_service_errors_map(async_client, monkeypatch):
         (svc.DuplicateManualPayment("dup"), 409, "duplicate"),
         (svc.AmountAboveBalance(23000), 422, "amount_above_balance"),
         (svc.ManualPaymentPartial("RET26-0001", ZohoUpstreamError("x")), 502, "manual_partial"),
+        # Minor 11: Books has the money, Bambuddy's own record does not.
+        (svc.ManualPaymentUnrecorded("pay-77", RuntimeError("database is locked")), 502, "manual_unrecorded"),
         (ZohoUpstreamError("zoho down"), 502, "upstream"),
     ]
     for exc, status, code in cases:
@@ -97,3 +99,6 @@ async def test_service_errors_map(async_client, monkeypatch):
         assert r.json()["detail"]["code"] == code
         if code == "manual_partial":
             assert "RET26-0001" in r.json()["detail"]["message"]
+        if code == "manual_unrecorded":
+            message = r.json()["detail"]["message"]
+            assert "pay-77" in message and "database is locked" in message

@@ -70,6 +70,12 @@ def outstanding_amount(required: int, retainer_paid_total: float | None) -> int:
 
 
 MAX_POLLS_PER_TICK = 40
+# How long an unminted INVOICE reservation may sit before the pass writes it
+# off (mirrors `aito_terminal_payments.ABANDONED_RESERVATION_SECONDS`). Only
+# an operator's own create replays a reservation; the sweep never calls
+# Heimdall about one, it only stops it standing in for a link that is never
+# coming.
+ABANDONED_RESERVATION_SECONDS = 600
 # One tick of the quote-sync loop; the per-row backoff counts in these.
 _TICK_SECONDS = 300
 _MAX_BACKOFF_TICKS = 6
@@ -759,6 +765,61 @@ async def reconcile_project(
         await _record_failure(db, project_id, exc, now)
 
 
+async def _age_out_abandoned_invoice_reservations(db: AsyncSession, *, now: datetime) -> int:
+    """Write off unminted INVOICE reservations older than
+    `ABANDONED_RESERVATION_SECONDS` — the create died between the reservation
+    commit and Heimdall's answer, and nothing in the pass would ever touch
+    that row again (the mint loop is quote-only, the poll needs a
+    `heimdall_id`). No Heimdall call: the row is simply marked `failed` so the
+    block offers to create a link again, and the story gets a
+    `payment_link.cancelled` with `reason: "abandoned"`. Quote reservations
+    are left alone — `reconcile_project` re-POSTs those under their own key
+    every pass, which is how they were always meant to resolve."""
+    cutoff = now - timedelta(seconds=ABANDONED_RESERVATION_SECONDS)
+    stmt = (
+        select(AitoPaymentLink.id)
+        .where(
+            AitoPaymentLink.document_kind == "invoice",
+            AitoPaymentLink.status == "pending",
+            AitoPaymentLink.heimdall_id.is_(None),
+            AitoPaymentLink.superseded_at.is_(None),
+            AitoPaymentLink.created_at < cutoff,
+        )
+        .order_by(AitoPaymentLink.id)
+        .limit(MAX_POLLS_PER_TICK)
+    )
+    aged = 0
+    for rid in list((await db.execute(stmt)).scalars().all()):
+        try:
+            row = await db.get(AitoPaymentLink, rid)
+            if row is None:
+                continue
+            row.status = "failed"
+            row.sync_error = "reservation abandoned"
+            row.checked_at = now
+            await db.commit()
+            await record(
+                db,
+                row.project_id,
+                "payment_link.cancelled",
+                actor_class="system",
+                subject_type="project",
+                subject_id=row.project_id,
+                detail={
+                    "reference": row.reference,
+                    "reason": "abandoned",
+                    "heimdall_id": None,
+                    "document_kind": "invoice",
+                },
+            )
+            await db.commit()
+            aged += 1
+        except SQLAlchemyError as exc:
+            logger.warning("payment link sweep: ageing out reservation %s failed: %s", rid, exc)
+            await db.rollback()
+    return aged
+
+
 async def poll_link(db: AsyncSession, row: AitoPaymentLink, *, now: datetime) -> None:
     """One GET for a pending link. Spec §5.5. `paid` credits and accepts.
     A 404 propagates: the link is gone at Heimdall and the pass replaces it
@@ -877,6 +938,7 @@ async def _run_pass(
                 await db.rollback()
         if not changes_only:
             _throttled_until = None
+            await _age_out_abandoned_invoice_reservations(db, now=now)
             pending = (
                 select(AitoPaymentLink.id)
                 .where(
@@ -964,8 +1026,9 @@ def link_view(row: AitoPaymentLink | None) -> "AitoPaymentLinkView | None":
 
 
 class InvoiceLinkExists(Exception):
-    """A pending invoice link already exists for this project — a live one,
-    or a reservation with no `sync_error` yet (a create still in flight)."""
+    """A MINTED pending invoice link already exists for this project. An
+    unminted reservation is not this: it is replayed (see
+    `create_invoice_link`)."""
 
 
 class QuoteLinkManaged(Exception):
@@ -990,15 +1053,24 @@ async def create_invoice_link(
     `HeimdallUpstreamError` subclass — is stored on the row (`_fail`) and
     re-raised for the route; the row stays a reservation the next call
     replays under its own key (identical body) rather than minting a second
-    link. A reservation with no `sync_error` yet means a create is already
-    in flight for this project, so it is refused exactly like a live
-    pending link rather than risking a second POST racing the first."""
+    link.
+
+    ANY unminted pending reservation is replayed that way — with or without a
+    `sync_error` (amended 2026-09-23). Refusing the no-`sync_error` case as
+    "a create is still in flight" left the invoice with no link and no button
+    whenever the handler died before it could store the failure (client
+    disconnect, restart): the reconciler's mint loop is quote-only and its
+    poll needs a `heimdall_id`, so nothing else would ever touch that row.
+    Unlike a terminal charge, replaying a link create moves no money — the
+    worst case is Heimdall handing back the link it already minted under that
+    key. A reservation the sweep has already written off (`failed`, see
+    `_age_out_abandoned_invoice_reservations`) is history: a new row is
+    reserved instead. The typed amount is ignored on a replay; the body must
+    stay identical to the one the key was first used with."""
     project_id = project.id
     existing = await current_link(db, project_id, kind="invoice")
-    if existing is not None and existing.heimdall_id is None:
-        if not existing.sync_error:
-            raise InvoiceLinkExists("A payment link is already open for this invoice")
-        row = existing  # replay the stuck reservation under its own key
+    if existing is not None and existing.heimdall_id is None and existing.status == "pending":
+        row = existing  # replay the reservation under its own key
     elif existing is not None and existing.status == "pending":
         raise InvoiceLinkExists("A payment link is already open for this invoice")
     else:
