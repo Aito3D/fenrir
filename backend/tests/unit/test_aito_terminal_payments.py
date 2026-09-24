@@ -994,3 +994,171 @@ async def test_the_sweep_ages_out_a_timed_out_reservation_the_operator_walked_aw
     assert calls == []
     aged = await db_session.get(AitoTerminalPayment, stuck_id)
     assert aged.status == "failed" and aged.sync_error == "reservation abandoned" and aged.settled_at == later
+
+
+# --- the settle is claimed, not check-then-acted ------------------------------
+
+
+def _paid_view(**over):
+    base = {
+        "id": "h-1",
+        "status": "paid",
+        "amount": 5000,
+        "currency": "XPF",
+        "reference": "",
+        "url": None,
+        "expires_at": None,
+        "native_state": "confirmed",
+        "amount_confirmed": 5000,
+        "booking_status": "booked",
+    }
+    base.update(over)
+    return LinkView(**base)
+
+
+async def _open_quote_charge(db, project_id, **over):
+    base = {
+        "project_id": project_id,
+        "document_kind": "quote",
+        "document_id": "est-1",
+        "document_number": "DEV26-0001",
+        "idempotency_key": "k-race",
+        "heimdall_id": "h-1",
+        "amount": 5000,
+        "status": "processing",
+        "created_at": NOW,
+    }
+    base.update(over)
+    row = AitoTerminalPayment(**base)
+    db.add(row)
+    await db.commit()
+    await db.refresh(row)
+    return row
+
+
+@pytest.mark.asyncio
+async def test_two_pollers_on_one_paid_row_settle_it_exactly_once(test_engine, db_session, monkeypatch):
+    """The operator's 3 s GET and the sweep's forced poll (which bypasses
+    REFRESH_MIN_SECONDS) can both read `settled_at IS NULL` either side of
+    the same Heimdall round trip, in two different sessions. Only the one
+    that wins the conditional UPDATE may credit the card payment: one
+    `payment.terminal.paid` event, one acceptance, one notification, one
+    refresh."""
+    from backend.app.services.notification_service import notification_service
+
+    p = await _project(db_session)
+    project_id = p.id
+    row = await _open_quote_charge(db_session, project_id)
+    row_id = row.id
+
+    notified, refreshed = [], []
+
+    async def spy_notify(db, **kw):
+        notified.append(kw)
+
+    async def fake_refresh(db, project_id, kind):
+        refreshed.append((project_id, kind))
+
+    monkeypatch.setattr(notification_service, "on_aito_payment_received", spy_notify)
+    monkeypatch.setattr("backend.app.services.aito_manual_payments.refresh_after_payment", fake_refresh)
+
+    # Both pollers are inside their Heimdall GET before either settles: the
+    # first parks on the gate until the second has arrived.
+    gate = asyncio.Event()
+    arrived = []
+
+    async def fake_get(db, payment_id):
+        arrived.append(payment_id)
+        if len(arrived) < 2:
+            await gate.wait()
+        else:
+            gate.set()
+        return _paid_view()
+
+    monkeypatch.setattr(heimdall_service, "get_payment", fake_get)
+
+    maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with maker() as s1, maker() as s2:
+        r1 = await s1.get(AitoTerminalPayment, row_id)
+        r2 = await s2.get(AitoTerminalPayment, row_id)
+        results = await asyncio.gather(
+            svc.refresh_terminal_payment(s1, r1, now=NOW, force=True),
+            svc.refresh_terminal_payment(s2, r2, now=NOW, force=True),
+            return_exceptions=True,
+        )
+        assert [r for r in results if isinstance(r, BaseException)] == []
+        # The loser's row is left consistent, not half-settled.
+        assert [r.status for r in (r1, r2)] == ["paid", "paid"]
+        assert [r.settled_at for r in (r1, r2)] == [NOW, NOW]
+
+    assert arrived == ["h-1", "h-1"]
+    assert len(await _events(db_session, project_id, "payment.terminal.paid")) == 1
+    assert len(await _events(db_session, project_id, "quote.accepted")) == 1
+    assert len(notified) == 1 and len(refreshed) == 1
+    settled = await db_session.get(AitoTerminalPayment, row_id)
+    await db_session.refresh(settled)
+    assert settled.status == "paid" and settled.settled_at == NOW
+
+
+@pytest.mark.asyncio
+async def test_a_settle_claimed_by_another_session_records_nothing(test_engine, db_session, monkeypatch):
+    """The loser of the claim: another poller stamped `settled_at` while this
+    one was waiting for Heimdall. It still adopts the view (so `booking_*`
+    stays current) but records no event, accepts nothing and notifies
+    nobody — and returns without raising."""
+    from backend.app.services.notification_service import notification_service
+
+    p = await _project(db_session)
+    project_id = p.id
+    row = await _open_quote_charge(db_session, project_id)
+    row_id = row.id
+
+    notified, refreshed = [], []
+
+    async def spy_notify(db, **kw):
+        notified.append(kw)
+
+    async def fake_refresh(db, project_id, kind):
+        refreshed.append((project_id, kind))
+
+    monkeypatch.setattr(notification_service, "on_aito_payment_received", spy_notify)
+    monkeypatch.setattr("backend.app.services.aito_manual_payments.refresh_after_payment", fake_refresh)
+
+    maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with maker() as other:
+
+        async def fake_get(db, payment_id):
+            # The other poller settles the row while this GET is in flight.
+            claimed = await other.get(AitoTerminalPayment, row_id)
+            claimed.status = "paid"
+            claimed.settled_at = NOW
+            await other.commit()
+            return _paid_view(booking_status="pending")
+
+        monkeypatch.setattr(heimdall_service, "get_payment", fake_get)
+        loser = await db_session.get(AitoTerminalPayment, row_id)
+        returned = await svc.refresh_terminal_payment(db_session, loser, now=NOW + timedelta(seconds=1), force=True)
+
+    assert returned is loser
+    assert loser.status == "paid" and loser.settled_at == NOW
+    assert loser.booking_status == "pending"
+    assert await _events(db_session, project_id, "payment.terminal.paid") == []
+    assert notified == [] and refreshed == []
+    fresh = await db_session.get(AitoProject, project_id)
+    await db_session.refresh(fresh)
+    assert fresh.quote_status == "sent"
+
+
+@pytest.mark.asyncio
+async def test_a_declined_settle_still_stamps_settled_at_once(db_session):
+    """The failed path claims the settle the same way: one
+    `payment.terminal.failed` event, `settled_at` stamped by the winner and
+    never moved by a later poll."""
+    p = await _project(db_session)
+    row = await _open_quote_charge(db_session, p.id, idempotency_key="k-declined")
+    declined = _paid_view(status="failed", native_state="declined", amount_confirmed=None, booking_status=None)
+    await svc.apply_terminal_state(db_session, row, declined, now=NOW)
+    assert row.status == "failed" and row.settled_at == NOW
+    await svc.apply_terminal_state(db_session, row, declined, now=NOW + timedelta(seconds=30))
+    assert row.settled_at == NOW
+    assert len(await _events(db_session, p.id, "payment.terminal.failed")) == 1

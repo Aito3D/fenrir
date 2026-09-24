@@ -9,8 +9,9 @@ import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import set_committed_value
 
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_terminal_payment import AitoTerminalPayment
@@ -314,18 +315,40 @@ async def apply_terminal_state(db: AsyncSession, row: AitoTerminalPayment, view:
     the transition events fire once, on the FIRST settle (whether the row
     was already open when this is called, or arrives here already adopted as
     settled — e.g. `start_terminal_payment`'s 200-replay branch), and a later
-    poll only refreshes `booking_*`. Guarded on `already_settled` alone: a
-    row can be handed in with `row.status` already equal to `view.status`
-    (the caller adopted it first) and must still record/accept/refresh
-    exactly once."""
+    poll only refreshes `booking_*`. Never guarded on the in-memory
+    `settled_at` alone: a row can be handed in with `row.status` already
+    equal to `view.status` (the caller adopted it first) and must still
+    record/accept/refresh exactly once — see the claim below."""
     project_id = row.project_id
-    already_settled = row.settled_at is not None
+    was_settled = row.settled_at is not None
     _adopt(row, view, now)
-    if row.status in SETTLED_STATUSES and not already_settled:
-        row.settled_at = now
-    await db.commit()
-    if already_settled or row.status not in SETTLED_STATUSES:
+    if was_settled or row.status not in SETTLED_STATUSES:
+        await db.commit()
         return
+    # THE SETTLE IS CLAIMED, not check-then-acted. `refresh_terminal_payment`
+    # is reached both from the operator's 3 s poll and from
+    # `poll_open_terminal_payments` (which forces, so REFRESH_MIN_SECONDS does
+    # not keep them apart), on rows loaded into two different sessions. Two
+    # callers whose Heimdall round trips straddle each other both read
+    # `settled_at IS NULL` and would both fall through — two
+    # `payment.terminal.paid` events, two `accept_quote` pushes, two
+    # notifications for ONE card payment. Only the UPDATE that matches the
+    # NULL guard wins; the loser re-reads the row and returns quietly. Same
+    # idiom as `aito_tracking.ensure_tracking_token`, and unlike a module lock
+    # (`_start_lock`) it holds across processes too.
+    claimed = (
+        await db.execute(
+            update(AitoTerminalPayment)
+            .where(AitoTerminalPayment.id == row.id, AitoTerminalPayment.settled_at.is_(None))
+            .values(settled_at=now)
+            .execution_options(synchronize_session=False)
+        )
+    ).rowcount
+    await db.commit()
+    if not claimed:
+        await db.refresh(row)
+        return
+    set_committed_value(row, "settled_at", now)
     detail = {
         "document_kind": row.document_kind,
         "document_number": row.document_number,

@@ -6,6 +6,7 @@ from datetime import date, datetime, timedelta
 
 import pytest
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.routes.settings import set_setting
@@ -1362,6 +1363,98 @@ async def test_a_lost_invoice_link_fails_in_place_instead_of_being_replaced(db_s
     assert row.sync_error and "404" in row.sync_error
     assert [c[0] for c in fake.calls] == ["get"]
     assert accepted == []
+
+
+@pytest.mark.asyncio
+async def test_the_lost_links_own_replacement_failing_is_recorded_not_silently_dropped(db_session, fake, monkeypatch):
+    """`_replace_lost` marks the 404'd row dead and reserves a fresh one
+    before it ever talks to Heimdall again (see `_create`) — so when THAT
+    create call itself fails, there is still a live (unsuperseded) row: the
+    reservation. The double-failure handler around `_replace_lost` must
+    feed that reservation to `_record_failure` rather than letting the
+    project end the pass with no current link and no visible error at all."""
+    p = await _project(db_session)
+    await reconcile_payment_links(db_session, now=NOW, today=TODAY)
+    fake.forget("L1")
+    fake.calls.clear()
+
+    async def failing_create(db, **kw):
+        raise HeimdallUpstreamError("replacement boom")
+
+    monkeypatch.setattr(heimdall_service, "create_link", failing_create)
+
+    visited = await reconcile_payment_links(db_session, now=NOW + timedelta(hours=1), today=TODAY)
+
+    assert visited == 1
+    old, reservation = await _rows(db_session, p.id)
+    assert old.status == "failed" and old.superseded_at is not None and old.heimdall_id == "L1"
+    assert reservation.heimdall_id is None, "the replacement create never landed at Heimdall"
+    assert reservation.document_kind == "quote" and reservation.superseded_at is None
+    assert reservation.sync_error and "replacement boom" in reservation.sync_error
+    assert reservation.sync_failures == 1
+    assert (await current_link(db_session, p.id)).id == reservation.id, "not silently dropped"
+    assert (await _kinds(db_session, p.id)).count("payment_link.replaced") == 0
+
+
+@pytest.mark.asyncio
+async def test_a_rate_limit_during_the_lost_links_replacement_stands_the_whole_pass_down(db_session, fake, monkeypatch):
+    """A 429 from the replacement's own create must not be swallowed like an
+    ordinary Heimdall failure (`except HeimdallRateLimited: raise` ahead of
+    the generic branch) — it propagates out of the double-failure handler to
+    the pass's outer throttle logic instead of being recorded as a per-row
+    sync failure."""
+    p = await _project(db_session)
+    await reconcile_payment_links(db_session, now=NOW, today=TODAY)
+    fake.forget("L1")
+    fake.calls.clear()
+
+    async def rate_limited_create(db, **kw):
+        raise HeimdallRateLimited("slow down", 120.0)
+
+    monkeypatch.setattr(heimdall_service, "create_link", rate_limited_create)
+
+    visited = await reconcile_payment_links(db_session, now=NOW + timedelta(hours=1), today=TODAY)
+
+    assert visited == 1
+    assert svc._throttled_until is not None
+    old, reservation = await _rows(db_session, p.id)
+    assert old.status == "failed" and old.superseded_at is not None
+    assert reservation.heimdall_id is None
+    assert reservation.sync_error is None, "the rate-limit path never reaches _record_failure"
+    assert reservation.sync_failures == 0
+
+
+@pytest.mark.asyncio
+async def test_an_unrelated_db_error_polling_one_row_rolls_back_and_still_polls_the_next(db_session, fake, monkeypatch):
+    """The whole-iteration `except SQLAlchemyError` wrapping the poll must
+    isolate to its own row, exactly like the reconcile half's equivalent
+    guard — an unrelated DB error surfacing mid-poll (a dropped connection,
+    a locked table) must roll back and move on to the next pending row
+    rather than aborting the whole pass and stranding everything after it."""
+    a = await _project(db_session, quote_number="DEV-A")
+    b = await _project(db_session, quote_number="DEV-B")
+    aid, bid = a.id, b.id
+    await reconcile_payment_links(db_session, now=NOW, today=TODAY)
+    fake.calls.clear()
+
+    real_poll_link = svc.poll_link
+
+    async def flaky_poll_link(db, row, *, now):
+        if row.project_id == aid:
+            raise SQLAlchemyError("connection dropped")
+        return await real_poll_link(db, row, now=now)
+
+    monkeypatch.setattr(svc, "poll_link", flaky_poll_link)
+
+    later = NOW + timedelta(minutes=1)
+    visited = await reconcile_payment_links(db_session, now=later, today=TODAY)
+
+    assert visited == 2, "the reconcile half runs before the poll and never sees the failure"
+    ra = await current_link(db_session, aid)
+    rb = await current_link(db_session, bid)
+    assert ra.checked_at == NOW, "a's own poll blew up before it could stamp anything new"
+    assert ra.sync_error is None, "the whole-iteration guard just rolls back, it never records a failure"
+    assert rb.checked_at == later, "b was still polled despite a's failure"
 
 
 # --- one pass at a time -------------------------------------------------------
