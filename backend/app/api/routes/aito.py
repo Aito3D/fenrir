@@ -4145,9 +4145,10 @@ async def generate_pickup_message(
 # never blocked.
 _SMS_DUPLICATE_WINDOW_S = 60.0
 # (project_id, stripped message) -> time.monotonic() of the last push that MAY
-# have reached the phone: a confirmed success, or a transport failure that says
-# nothing about what Pushcut did. A clean refusal (not configured, non-2xx)
-# leaves no key, so an honest retry after a real failure still goes through.
+# have reached the phone: one still in flight, a confirmed success, or a
+# transport failure that says nothing about what Pushcut did. A clean refusal
+# (not configured, non-2xx) drops the key again, so an honest retry after a
+# real failure still goes through.
 # Pruned on every call, unlike aito_manual_payments' sibling guard: this key
 # carries a caller-supplied message, so an unevicted dict would grow with
 # every distinct body ever sent.
@@ -4230,6 +4231,19 @@ async def send_pickup_sms(
         raise HTTPException(status_code=409, detail="The project's client has no phone number")
     project_pk = project.id
     key = _sms_guard_key_or_409(project_pk, payload.message)
+    # T-043: armed BEFORE the push, not after it. Pushcut's POST runs at an 8s
+    # timeout, and a key written only on the way out leaves that whole window
+    # unguarded: the operator whose request hangs — or whose browser or proxy
+    # drops the answer — taps Send again, passes the check above, and a SECOND
+    # real SMS lands on the client's phone, the exact reflex retry this guard
+    # exists to refuse. No lock is needed even though the handler is async: the
+    # guard is single-process module state and nothing is awaited between the
+    # check and this assignment, so no other request can interleave there.
+    # Everything that can refuse the send outright (the rate limit, the 404,
+    # the unfinished-work 409, the no-phone 409) runs above, so a request that
+    # never reaches Pushcut never arms the key. Un-armed again below on a clean
+    # refusal only; success and the ambiguous PushcutUnreachable keep it.
+    _recent_sms[key] = time.monotonic()
     try:
         await send_sms_notification(
             db,
@@ -4238,13 +4252,16 @@ async def send_pickup_sms(
             title=f"SMS — {project.client_name}" if project.client_name else "SMS client",
         )
     except PushcutNotConfiguredError:
+        # A clean refusal Pushcut itself gave: nothing was pushed, so the key
+        # armed above is dropped again and an honest retry — once the URL is
+        # configured — goes straight through.
+        _recent_sms.pop(key, None)
         raise HTTPException(status_code=409, detail="Pushcut is not configured") from None
     except PushcutUnreachable as e:
         # Caught BEFORE its PushcutUpstreamError parent below — the ambiguous
-        # case. Armed in the guard so an immediate identical retry is refused,
-        # but deliberately unrecorded in the timeline: no event may claim a
-        # send nobody confirmed.
-        _recent_sms[key] = time.monotonic()
+        # case. The key stays armed (from before the push) so an immediate
+        # identical retry is refused, but the send is deliberately unrecorded
+        # in the timeline: no event may claim a send nobody confirmed.
         logger.warning(
             "Aito pickup SMS for project %s got no answer from Pushcut — the notification may "
             "already be on the phone, so no project.sms.sent event was written: %s",
@@ -4253,10 +4270,13 @@ async def send_pickup_sms(
         )
         raise HTTPException(status_code=502, detail=_SMS_UNREACHABLE_DETAIL) from e
     except PushcutUpstreamError as e:
-        # Pushcut answered and refused: nothing was pushed, so the guard is
-        # left unarmed and an honest retry is allowed straight away.
+        # Pushcut answered and refused: nothing was pushed, so the key armed
+        # above is dropped and an honest retry is allowed straight away.
+        _recent_sms.pop(key, None)
         raise HTTPException(status_code=502, detail=str(e)) from e
-    _recent_sms[key] = time.monotonic()
+    # No re-arm here: the key written before the push already covers the
+    # success path, and the window is deliberately measured from the moment
+    # the push started rather than the moment it came back.
     try:
         await record(
             db,

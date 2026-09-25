@@ -13,6 +13,7 @@ Two endpoints and one relay are pinned here:
    repo, so it is pinned byte-for-byte here.
 """
 
+import asyncio
 import json
 
 import httpx
@@ -248,6 +249,9 @@ async def test_send_is_refused_without_a_phone_number(async_client, monkeypatch)
     _patch_send_sms(monkeypatch, fake)
     r = await async_client.post(f"/api/v1/aito/{project['id']}/pickup-sms", json={"message": "prêt"})
     assert r.status_code == 409
+    # T-043: refused above the guard, so nothing was armed — see
+    # test_a_refusal_above_the_guard_never_arms_it.
+    assert aito_routes._recent_sms == {}
 
 
 @pytest.mark.asyncio
@@ -611,6 +615,10 @@ async def test_a_clean_refusal_leaves_the_guard_unarmed(async_client, monkeypatc
     assert refused.status_code == 502
     # Still the upstream's own words, not the "may already" wording.
     assert refused.json()["detail"] == "Pushcut returned 500"
+    # T-043: the key IS armed before the push now, so "unarmed" here means the
+    # refusal handler dropped it again — pinned on the state, not just on the
+    # retry below being let through.
+    assert aito_routes._recent_sms == {}
 
     fail["on"] = False
     retry = await async_client.post(f"/api/v1/aito/{project['id']}/pickup-sms", json={"message": "prêt"})
@@ -633,11 +641,90 @@ async def test_an_unconfigured_relay_leaves_the_guard_unarmed(async_client, monk
     assert (
         await async_client.post(f"/api/v1/aito/{project['id']}/pickup-sms", json={"message": "prêt"})
     ).status_code == 409
+    # T-043: armed before the push, dropped again by the not-configured handler.
+    assert aito_routes._recent_sms == {}
     fail["on"] = False
     assert (
         await async_client.post(f"/api/v1/aito/{project['id']}/pickup-sms", json={"message": "prêt"})
     ).status_code == 200
     assert pushed == ["prêt"]
+
+
+# --------------------- T-043: the guard is armed before the push, not after
+
+
+@pytest.mark.asyncio
+async def test_a_second_send_while_the_first_is_still_in_flight_is_refused(async_client, monkeypatch, db_session):
+    """The hole the late arm left open: Pushcut's POST runs at an 8s timeout,
+    so an operator whose request hangs (or whose browser dropped the answer)
+    taps Send again while the first push is still on the wire. That second tap
+    must be refused — otherwise a SECOND real SMS lands on the client's phone,
+    the very outcome this guard exists to prevent."""
+    project = await _create_finished(async_client)
+    pushed: list[str] = []
+    started = asyncio.Event()  # the first push has reached Pushcut
+    release = asyncio.Event()  # ...and may now come back
+
+    async def fake(db, *, phone, text, title):
+        pushed.append(text)
+        # Only the FIRST push hangs: if the guard ever let a second one
+        # through, it returns at once and the assertions below catch it,
+        # rather than the test deadlocking on an event nobody sets.
+        if len(pushed) == 1:
+            started.set()
+            await release.wait()
+
+    _patch_send_sms(monkeypatch, fake)
+
+    async def first():
+        try:
+            return await async_client.post(f"/api/v1/aito/{project['id']}/pickup-sms", json={"message": "prêt"})
+        finally:
+            release.set()
+
+    async def second():
+        await started.wait()
+        try:
+            return await async_client.post(f"/api/v1/aito/{project['id']}/pickup-sms", json={"message": "prêt"})
+        finally:
+            release.set()  # let the suspended first request finish either way
+
+    one, two = await asyncio.wait_for(asyncio.gather(first(), second()), timeout=10)
+
+    assert one.status_code == 200
+    assert two.status_code == 409
+    assert two.json()["detail"] == aito_routes._SMS_DUPLICATE_DETAIL
+    # The load-bearing assertion: exactly one notification reached Pushcut, and
+    # exactly one event claims a send.
+    assert pushed == ["prêt"]
+    assert (await _events(db_session, project["id"])).count("project.sms.sent") == 1
+
+
+@pytest.mark.asyncio
+async def test_a_refusal_above_the_guard_never_arms_it(async_client, monkeypatch):
+    """Arming early only stays honest if everything that refuses the send
+    outright still runs first: an unknown card, unfinished work and a client
+    with no phone leave the guard empty, so the send that does become legitimate
+    afterwards is not refused as a duplicate."""
+    unfinished = (await _create(async_client)).json()
+    phoneless = await _create_finished(async_client, client_phone=None, client_email="acme@example.com")
+    pushed: list[str] = []
+
+    async def fake(db, *, phone, text, title):
+        pushed.append(text)
+
+    _patch_send_sms(monkeypatch, fake)
+
+    assert (await async_client.post("/api/v1/aito/999999/pickup-sms", json={"message": "prêt"})).status_code == 404
+    assert (
+        await async_client.post(f"/api/v1/aito/{unfinished['id']}/pickup-sms", json={"message": "prêt"})
+    ).status_code == 409
+    assert (
+        await async_client.post(f"/api/v1/aito/{phoneless['id']}/pickup-sms", json={"message": "prêt"})
+    ).status_code == 409
+
+    assert pushed == []
+    assert aito_routes._recent_sms == {}
 
 
 @pytest.mark.asyncio
