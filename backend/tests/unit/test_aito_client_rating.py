@@ -18,14 +18,29 @@ from backend.app.services.aito_client_rating import (
     CACHE_TTL,
     GRACE_DAYS,
     ON_TIME_SLACK_DAYS,
+    REFRESH_MIN_AGE,
     ClientRating,
     rate_invoices,
     read_client_rating,
 )
-from backend.app.services.zoho import ZohoRateLimited, ZohoUpstreamError, zoho_service
+from backend.app.services.zoho import ZohoNotFound, ZohoRateLimited, ZohoUpstreamError, zoho_service
 from backend.tests.unit.test_aito_contacted import _declared_permissions
 
 TODAY = date(2026, 9, 22)
+
+
+@pytest.fixture(autouse=True)
+def _reset_rating_module_state():
+    """T-024: the negative cache and the route's rate-limit buckets are module
+    state shared by every test in this file — one test's remembered miss or
+    spent budget must never count against another's."""
+    from backend.app.api.routes import aito as aito_routes
+
+    aito_client_rating_module._reset_missing()
+    aito_routes._ai_rate_limit_calls.clear()
+    yield
+    aito_client_rating_module._reset_missing()
+    aito_routes._ai_rate_limit_calls.clear()
 
 
 def _inv(
@@ -628,6 +643,170 @@ async def test_route_never_502s_when_books_is_down(async_client, monkeypatch):
     r = await async_client.get("/api/v1/aito/clients/C9/rating")
     assert r.status_code == 200
     assert r.json()["tier"] == "unavailable"
+
+
+# ------------------------------------------- T-024: bounding an unknown id
+
+
+@pytest.mark.asyncio
+async def test_unknown_contact_is_unavailable_and_caches_nothing(db_session, monkeypatch):
+    """Books has no such customer: no invoices and a 404 on the contact. The
+    answer is `unavailable`, and — the point of the task — no row is written
+    for an id that is not a customer at all."""
+    calls: list[str] = []
+    contact_calls: list[str] = []
+    _fake_books(monkeypatch, [], calls, contact=ZohoNotFound("no such contact"), contact_calls=contact_calls)
+
+    body = await read_client_rating(db_session, "C404", now=NOW)
+
+    assert (body.tier, body.reason, body.stale, body.computed_at) == ("unavailable", None, False, None)
+    assert (calls, contact_calls) == (["C404"], ["C404"])
+    assert (await db_session.execute(select(AitoClientRating))).first() is None
+
+
+@pytest.mark.asyncio
+async def test_a_remembered_miss_answers_without_touching_books(db_session, monkeypatch):
+    """The second request inside REFRESH_MIN_AGE spends no Books call at all,
+    and once the window elapses the id is asked about again."""
+    calls: list[str] = []
+    contact_calls: list[str] = []
+    _fake_books(monkeypatch, [], calls, contact=ZohoNotFound("no such contact"), contact_calls=contact_calls)
+
+    await read_client_rating(db_session, "C404", now=NOW)
+    again = await read_client_rating(db_session, "C404", now=NOW + timedelta(seconds=59))
+    # A `?refresh=1` loop is throttled by the same memory — that is the hole
+    # the existing REFRESH_MIN_AGE guard left open for ids with no row.
+    forced = await read_client_rating(db_session, "C404", refresh=True, now=NOW + timedelta(seconds=59))
+
+    assert (again.tier, forced.tier) == ("unavailable", "unavailable")
+    assert (calls, contact_calls) == (["C404"], ["C404"])
+    assert (await db_session.execute(select(AitoClientRating))).first() is None
+
+    expired = await read_client_rating(db_session, "C404", now=NOW + REFRESH_MIN_AGE + timedelta(seconds=1))
+
+    assert expired.tier == "unavailable"
+    assert calls == ["C404", "C404"]
+
+
+@pytest.mark.asyncio
+async def test_a_miss_is_remembered_per_id_only(db_session, monkeypatch):
+    """One unknown id does not silence the rating of a real customer."""
+    _fake_books(monkeypatch, [], contact=ZohoNotFound("no such contact"))
+    await read_client_rating(db_session, "C404", now=NOW)
+
+    calls: list[str] = []
+    _fake_books(monkeypatch, _paid(4), calls)
+    body = await read_client_rating(db_session, "C1", now=NOW)
+
+    assert (body.tier, calls) == ("good", ["C1"])
+
+
+@pytest.mark.asyncio
+async def test_a_known_contact_with_no_invoices_still_caches_new(db_session, monkeypatch):
+    """The miss path needs BOTH halves: a real Books customer who has simply
+    never been invoiced is rated `new` and cached exactly as before."""
+    _fake_books(monkeypatch, [])
+
+    body = await read_client_rating(db_session, "C1", now=NOW)
+
+    assert (body.tier, body.computed_at) == ("new", NOW)
+    row = (await db_session.execute(select(AitoClientRating))).scalar_one()
+    assert (row.customer_id, row.tier) == ("C1", "new")
+
+
+@pytest.mark.asyncio
+async def test_a_404_contact_with_invoices_is_still_rated(db_session, monkeypatch):
+    """Invoices prove the customer exists, whatever the contact read said —
+    so this keeps the pre-T-024 degradation (individual profile, row cached)."""
+    _fake_books(monkeypatch, _paid(4), contact=ZohoNotFound("no such contact"))
+
+    body = await read_client_rating(db_session, "C1", now=NOW)
+
+    assert (body.tier, body.is_company) == ("good", False)
+    assert (await db_session.execute(select(AitoClientRating))).scalar_one().tier == "good"
+
+
+@pytest.mark.asyncio
+async def test_a_404_contact_never_drops_an_already_cached_customer(db_session, monkeypatch):
+    """A customer this process has already rated keeps its row and its
+    existing degradations — only a never-seen id takes the miss path."""
+    _fake_books(monkeypatch, _paid(4))
+    await read_client_rating(db_session, "C1", now=NOW)
+    _fake_books(monkeypatch, [], contact=ZohoNotFound("gone"))
+
+    body = await read_client_rating(db_session, "C1", now=NOW + CACHE_TTL)
+
+    assert body.tier == "new"
+    assert (await db_session.execute(select(AitoClientRating))).scalar_one().customer_id == "C1"
+
+
+def test_the_miss_memory_is_pruned_and_capped():
+    """The keys are caller-supplied, so the dict must not grow without
+    bound: expired entries go on every write, and a flood of live ones is
+    capped rather than kept."""
+    aito_client_rating_module._reset_missing()
+    stale_moment = NOW - timedelta(minutes=5)
+    aito_client_rating_module._remember_missing("expired", stale_moment)
+
+    aito_client_rating_module._remember_missing("fresh", NOW)
+
+    assert set(aito_client_rating_module._missing_until) == {"fresh"}
+
+    for i in range(aito_client_rating_module._MISSING_MAX_ENTRIES + 50):
+        aito_client_rating_module._remember_missing(f"id-{i}", NOW + timedelta(seconds=i / 1000))
+
+    assert len(aito_client_rating_module._missing_until) <= aito_client_rating_module._MISSING_MAX_ENTRIES
+
+
+@pytest.mark.asyncio
+async def test_route_refuses_a_malformed_id_before_spending_a_books_call(async_client, monkeypatch):
+    calls: list[str] = []
+    _fake_books(monkeypatch, _paid(4), calls)
+
+    too_long = await async_client.get(f"/api/v1/aito/clients/{'9' * 51}/rating")
+    odd_chars = await async_client.get("/api/v1/aito/clients/C1$drop/rating")
+
+    assert (too_long.status_code, odd_chars.status_code) == (422, 422)
+    assert "client_id" in too_long.json()["detail"]
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_route_answers_unavailable_for_an_unknown_id_without_caching_it(async_client, monkeypatch, db_session):
+    calls: list[str] = []
+    _fake_books(monkeypatch, [], calls, contact=ZohoNotFound("no such contact"))
+
+    first = await async_client.get("/api/v1/aito/clients/C404/rating")
+    second = await async_client.get("/api/v1/aito/clients/C404/rating")
+
+    assert (first.status_code, second.status_code) == (200, 200)
+    assert [r.json()["tier"] for r in (first, second)] == ["unavailable", "unavailable"]
+    assert calls == ["C404"]
+    assert (await db_session.execute(select(AitoClientRating))).first() is None
+
+
+@pytest.mark.asyncio
+async def test_route_rate_limit_blocks_past_the_budget(async_client, monkeypatch):
+    """Its own bucket, so the AI budget is neither spent nor spared by it."""
+    from backend.app.api.routes import aito as aito_routes
+
+    calls: list[str] = []
+    _fake_books(monkeypatch, _paid(4), calls)
+
+    for _ in range(aito_routes._CLIENT_RATING_MAX_CALLS):
+        r = await async_client.get("/api/v1/aito/clients/C9/rating")
+        assert r.status_code == 200
+
+    blocked = await async_client.get("/api/v1/aito/clients/C9/rating")
+
+    assert blocked.status_code == 429
+    assert blocked.json()["detail"] == aito_routes._CLIENT_RATING_DETAIL
+    # One Books round for the whole burst (the rest were cache hits), and the
+    # blocked call reached neither Books nor the service.
+    assert calls == ["C9"]
+    assert set(aito_routes._ai_rate_limit_calls) == {
+        k for k in aito_routes._ai_rate_limit_calls if k.startswith("client_rating:")
+    }
 
 
 def test_route_requires_aito_read():

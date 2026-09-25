@@ -163,6 +163,15 @@ _SHIPPING_PHONE_RE = re.compile(r"^\+\d{1,4}-\d{4,14}$")
 # is still correct either way.
 _CONTROL_CHARS_RE = re.compile(r"[\x00-\x1f\x7f]")
 
+# T-024: the shape a Books contact id may have before the rating route will
+# spend a Books call (and a permanent cache row) on it. Real Zoho ids are
+# ~17-digit decimal strings, but the test fixtures — and any id this shop
+# ever typed by hand — use short tokens like "C1", so the guard is the
+# conservative superset rather than digits-only: an ASCII token no longer
+# than the cache column's String(50). Anything else cannot be a Books id, so
+# asking Books about it is pure amplification.
+_CLIENT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,50}$")
+
 
 _SHIPPING_COLUMNS = (
     "shipping_island",
@@ -1116,6 +1125,7 @@ async def get_client_history(
 @router.get("/clients/{client_id}/rating", response_model=AitoClientRatingResponse)
 async def get_client_rating(
     client_id: str,
+    request: Request,
     refresh: bool = Query(False, description="Re-read Books even if the cached rating is fresh"),
     db: AsyncSession = Depends(get_db),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
@@ -1126,6 +1136,25 @@ async def get_client_rating(
     like the invoice card, the other Aito read that reaches Books. Declared
     ahead of the `/{project_id}` routes so `clients` is never parsed as an
     id."""
+    # T-024: `client_id` is whatever the caller put in the path, and a miss
+    # costs two Books calls plus a cache row that is never deleted — so the
+    # route is bounded three ways before it reaches the service: its own rate
+    # limit bucket, an id-shape check, and (in `read_client_rating`) a short
+    # negative cache for ids Books does not know. Both guards live in the
+    # body, not in the signature: a path-param `pattern=` would change the
+    # published OpenAPI schema, and this docstring IS the route's published
+    # description. The drawer's "rate the contact I just picked, before any
+    # card exists for it" flow is untouched — a picked Books contact passes
+    # the shape check and Books knows it.
+    _check_rate_limit(
+        request,
+        current_user,
+        bucket="client_rating",
+        max_calls=_CLIENT_RATING_MAX_CALLS,
+        detail=_CLIENT_RATING_DETAIL,
+    )
+    if not _CLIENT_ID_RE.match(client_id):
+        raise HTTPException(status_code=422, detail="client_id is not a Zoho Books contact id")
     return await read_client_rating(db, client_id, refresh=refresh)
 
 
@@ -1628,6 +1657,21 @@ _AI_RATE_LIMIT_DETAIL = "Too many AI requests. Please wait a moment and try agai
 # click-spammable, and it must not eat (or be starved by) the AI budget.
 _PAYMENT_LINK_REFRESH_MAX_CALLS = 10
 _PAYMENT_LINK_REFRESH_DETAIL = "Too many payment link refreshes. Please wait a moment and try again."
+# T-024: the client-rating read. Not billed like a completion, but every
+# cache miss costs up to two Books calls for a caller-named id, so it gets
+# its own bucket and its own (larger) budget: an operator opening cards and
+# picking clients produces one request per card and per contact, each cached
+# five minutes in the browser and an hour on the server, so 60 a minute is
+# far past any human pace while still bounding an id-scanning loop.
+_CLIENT_RATING_MAX_CALLS = 60
+_CLIENT_RATING_DETAIL = "Too many client rating requests. Please wait a moment and try again."
+# T-025: the pickup SMS relay. The draft above it is throttled because it is
+# billed; the SEND is throttled because it pushes a caller-supplied body to
+# Pushcut and from there to a real phone. A handful an hour is the human
+# pace, so ten a minute leaves room for a retry or two and nothing like a
+# flood.
+_PICKUP_SMS_MAX_CALLS = 10
+_PICKUP_SMS_DETAIL = "Too many pickup SMS sends. Please wait a moment and try again."
 # "<bucket>:<principal>" -> call timestamps (module's own `time.monotonic`,
 # see below). One dict, one window, one bucket per rate-limited concern.
 _ai_rate_limit_calls: dict[str, list[float]] = {}
@@ -3926,6 +3970,7 @@ async def generate_pickup_message(
 async def send_pickup_sms(
     project_id: int,
     payload: AitoPickupSmsRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
@@ -3947,6 +3992,17 @@ async def send_pickup_sms(
     project regardless of expire_on_commit, and reading one afterwards from
     async code raises MissingGreenlet rather than lazily re-fetching.
     """
+    # T-025: its own bucket, checked before any lookup — like the draft
+    # sibling's AI limiter and the counter-payment routes'. Past the cap
+    # nothing is pushed to Pushcut, so a loop cannot turn into a stream of
+    # real SMS.
+    _check_rate_limit(
+        request,
+        current_user,
+        bucket="pickup_sms",
+        max_calls=_PICKUP_SMS_MAX_CALLS,
+        detail=_PICKUP_SMS_DETAIL,
+    )
     project = await _get_active_project_or_404(db, project_id)
     await _finished_or_409(db, project)
     phone = (project.client_phone or "").strip()

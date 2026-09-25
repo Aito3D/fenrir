@@ -386,6 +386,105 @@ async def test_a_record_commit_failure_after_a_real_send_does_not_500(async_clie
     assert "project.sms.sent" not in kinds
 
 
+# ------------------------------------------- T-025: the send's rate limit
+
+
+@pytest.mark.asyncio
+async def test_send_rate_limit_blocks_the_push_past_the_budget(async_client, monkeypatch, db_session):
+    """The Nth send in the window still goes out; the N+1th gets the module's
+    plain 429 and reaches neither Pushcut nor the timeline."""
+    project = await _create_finished(async_client)
+    pushed: list[str] = []
+
+    async def fake(db, *, phone, text, title):
+        pushed.append(text)
+
+    _patch_send_sms(monkeypatch, fake)
+
+    for _ in range(aito_routes._PICKUP_SMS_MAX_CALLS):
+        r = await async_client.post(f"/api/v1/aito/{project['id']}/pickup-sms", json={"message": "prêt"})
+        assert r.status_code == 200
+
+    blocked = await async_client.post(f"/api/v1/aito/{project['id']}/pickup-sms", json={"message": "prêt"})
+
+    assert blocked.status_code == 429
+    assert blocked.json()["detail"] == aito_routes._PICKUP_SMS_DETAIL
+    assert len(pushed) == aito_routes._PICKUP_SMS_MAX_CALLS
+    kinds = (
+        (await db_session.execute(select(AitoEvent.kind).where(AitoEvent.project_id == project["id"]))).scalars().all()
+    )
+    assert kinds.count("project.sms.sent") == aito_routes._PICKUP_SMS_MAX_CALLS
+
+
+@pytest.mark.asyncio
+async def test_send_rate_limit_runs_before_the_lookups(async_client, monkeypatch):
+    """Checked ahead of the 404 and the finished-project 409, so a caller
+    hammering ids that do not exist (or are not ready) is bounded too."""
+    unfinished = (await _create(async_client)).json()
+
+    async def fake(db, *, phone, text, title):  # pragma: no cover - must not run
+        raise AssertionError("a rate-limited or unfinished project reached Pushcut")
+
+    _patch_send_sms(monkeypatch, fake)
+
+    for _ in range(aito_routes._PICKUP_SMS_MAX_CALLS):
+        r = await async_client.post(f"/api/v1/aito/{unfinished['id']}/pickup-sms", json={"message": "prêt"})
+        assert r.status_code == 409
+
+    blocked = await async_client.post("/api/v1/aito/999999/pickup-sms", json={"message": "prêt"})
+
+    assert blocked.status_code == 429
+    assert blocked.json()["detail"] == aito_routes._PICKUP_SMS_DETAIL
+
+
+@pytest.mark.asyncio
+async def test_send_rate_limit_has_its_own_bucket(async_client, monkeypatch):
+    """Exhausting the send budget must not disable the (separately budgeted)
+    draft, and vice versa."""
+    project = await _create_finished(async_client)
+
+    async def fake_send(db, *, phone, text, title):
+        pass
+
+    async def fake_draft(db, description, client_name=None, parts=None):
+        return "message", "m"
+
+    _patch_send_sms(monkeypatch, fake_send)
+    _patch_pickup_message(monkeypatch, fake_draft)
+
+    for _ in range(aito_routes._PICKUP_SMS_MAX_CALLS):
+        r = await async_client.post(f"/api/v1/aito/{project['id']}/pickup-sms", json={"message": "prêt"})
+        assert r.status_code == 200
+    assert (
+        await async_client.post(f"/api/v1/aito/{project['id']}/pickup-sms", json={"message": "prêt"})
+    ).status_code == 429
+
+    draft = await async_client.post(f"/api/v1/aito/{project['id']}/pickup-message")
+    assert draft.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_send_rate_limit_clears_once_the_window_elapses(async_client, monkeypatch):
+    project = await _create_finished(async_client)
+
+    async def fake(db, *, phone, text, title):
+        pass
+
+    clock = _FakeClock(start=1_000.0)
+    monkeypatch.setattr(aito_routes, "time", clock)
+    _patch_send_sms(monkeypatch, fake)
+
+    for _ in range(aito_routes._PICKUP_SMS_MAX_CALLS):
+        r = await async_client.post(f"/api/v1/aito/{project['id']}/pickup-sms", json={"message": "prêt"})
+        assert r.status_code == 200
+    blocked = await async_client.post(f"/api/v1/aito/{project['id']}/pickup-sms", json={"message": "prêt"})
+    assert blocked.status_code == 429
+
+    clock.now += aito_routes._AI_RATE_LIMIT_WINDOW_S + 1
+    r = await async_client.post(f"/api/v1/aito/{project['id']}/pickup-sms", json={"message": "prêt"})
+    assert r.status_code == 200
+
+
 # ---------------------------------------------------------------- the relay
 
 
