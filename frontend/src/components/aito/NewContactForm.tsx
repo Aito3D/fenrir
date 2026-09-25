@@ -9,16 +9,9 @@ import { PhoneInput } from './PhoneInput';
 import { SocialInput } from './SocialInput';
 import { FieldError } from './FieldError';
 import { inputCls, inputErrorCls, labelCls } from '../formStyles';
-import {
-  DEFAULT_COUNTRY_CODE,
-  formatPhone,
-  maskVisibleErrors,
-  titleCaseSegments,
-  upperCaseName,
-  validateEmail,
-  validatePhone,
-} from '../../utils/clientDraft';
+import { formatPhone } from '../../utils/clientDraft';
 import type { SocialNetwork } from '../../utils/clientDraft';
+import { useContactFields } from './useContactFields';
 
 export interface NewContactFormProps {
   onCancel: () => void;
@@ -49,25 +42,22 @@ export interface NewContactFormProps {
 export function NewContactForm({ onCancel, onCreated }: NewContactFormProps) {
   const { t } = useTranslation();
   const [companyName, setCompanyName] = useState('');
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
-  const [countryCode, setCountryCode] = useState(DEFAULT_COUNTRY_CODE);
-  const [nationalNumber, setNationalNumber] = useState('');
-  const [email, setEmail] = useState('');
   const [socialNetwork, setSocialNetwork] = useState<SocialNetwork | null>(null);
   const [socialHandle, setSocialHandle] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [blurred, setBlurred] = useState({ phone: false, email: false });
+  // No `onFieldChange`: this form keeps a failed-create message until the next
+  // submit, while the picker's add form clears it on any keystroke. That
+  // divergence is pre-existing and deliberately preserved here.
+  const fields = useContactFields();
+  const { phoneError, emailError, visibleErrors } = fields;
 
   const company = companyName.trim();
   const hasCompany = company !== '';
-  const personFirst = titleCaseSegments(firstName);
-  const personLast = upperCaseName(lastName);
+  const personFirst = fields.casedFirst;
+  const personLast = fields.casedLast;
   const person = [personFirst, personLast].filter(Boolean).join(' ');
   const hasName = hasCompany || (personFirst !== '' && personLast !== '');
 
-  const phoneError = validatePhone({ countryCode, nationalNumber });
-  const emailError = validateEmail(email);
   // Any ONE of the channels is enough. For an individual the social handle
   // counts even though it never reaches Zoho: the project row is what has to
   // be reachable, and the create route agrees (routes/aito.py,
@@ -75,13 +65,11 @@ export function NewContactForm({ onCancel, onCreated }: NewContactFormProps) {
   // contact list, and the client section never shows one on a company card),
   // so only the phone and the email count for it — a handle typed before the
   // company name was is kept in state, out of sight, and never handed back.
-  const hasPhoneOrEmail = nationalNumber.replace(/\D/g, '') !== '' || email.trim() !== '';
-  const reachable = hasPhoneOrEmail || (!hasCompany && socialHandle.trim() !== '');
-  const visibleErrors = maskVisibleErrors({ phone: phoneError, email: emailError }, blurred);
+  const reachable = fields.reachable || (!hasCompany && socialHandle.trim() !== '');
   // The button gates on what the user can SEE, the submit handler on what is
   // actually true — so a disabled button always has a message beside it
   // (`reachable` may gate too because its hint is never masked).
-  const canSubmit = hasName && reachable && !visibleErrors.phone && !visibleErrors.email;
+  const canSubmit = hasName && reachable && fields.errorsClear;
 
   const createMutation = useMutation({
     mutationFn: () =>
@@ -89,8 +77,8 @@ export function NewContactForm({ onCancel, onCreated }: NewContactFormProps) {
         company_name: company,
         first_name: personFirst,
         last_name: personLast,
-        email: email.trim(),
-        phone: formatPhone({ countryCode, nationalNumber }),
+        email: fields.email.trim(),
+        phone: formatPhone(fields.phone),
       }),
     onSuccess: (data) =>
       onCreated(
@@ -108,7 +96,7 @@ export function NewContactForm({ onCancel, onCreated }: NewContactFormProps) {
         // Reveal anything the user never triggered by blurring. `canSubmit` was
         // computed before this call, so the guard below re-checks the raw
         // errors rather than re-reading it.
-        setBlurred({ phone: true, email: true });
+        fields.revealErrors();
         if (!hasName || !reachable || phoneError || emailError) return;
         setError(null);
         createMutation.mutate();
@@ -164,9 +152,9 @@ export function NewContactForm({ onCancel, onCreated }: NewContactFormProps) {
                 id="aito-first-name"
                 type="text"
                 autoComplete="new-password"
-                value={firstName}
-                onChange={(e) => setFirstName(e.target.value)}
-                onBlur={(e) => setFirstName(titleCaseSegments(e.target.value))}
+                value={fields.firstName}
+                onChange={(e) => fields.onFirstNameChange(e.target.value)}
+                onBlur={(e) => fields.onFirstNameBlur(e.target.value)}
                 className={inputCls}
               />
             </div>
@@ -178,9 +166,9 @@ export function NewContactForm({ onCancel, onCreated }: NewContactFormProps) {
                 id="aito-last-name"
                 type="text"
                 autoComplete="new-password"
-                value={lastName}
-                onChange={(e) => setLastName(e.target.value)}
-                onBlur={(e) => setLastName(upperCaseName(e.target.value))}
+                value={fields.lastName}
+                onChange={(e) => fields.onLastNameChange(e.target.value)}
+                onBlur={(e) => fields.onLastNameBlur(e.target.value)}
                 className={inputCls}
               />
             </div>
@@ -192,15 +180,11 @@ export function NewContactForm({ onCancel, onCreated }: NewContactFormProps) {
             </label>
             <PhoneInput
               id="aito-new-phone"
-              countryCode={countryCode}
-              nationalNumber={nationalNumber}
+              countryCode={fields.countryCode}
+              nationalNumber={fields.nationalNumber}
               invalid={visibleErrors.phone !== null}
-              onBlur={() => setBlurred((b) => ({ ...b, phone: true }))}
-              onChange={(next, changed) => {
-                setCountryCode(next.countryCode);
-                setNationalNumber(next.nationalNumber);
-                if (changed === 'countryCode') setBlurred((b) => ({ ...b, phone: true }));
-              }}
+              onBlur={fields.onPhoneBlur}
+              onChange={fields.onPhoneChange}
             />
             <FieldError messageKey={visibleErrors.phone} />
           </div>
@@ -213,9 +197,9 @@ export function NewContactForm({ onCancel, onCreated }: NewContactFormProps) {
               id="aito-new-email"
               type="email"
               autoComplete="new-password"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              onBlur={() => setBlurred((b) => ({ ...b, email: true }))}
+              value={fields.email}
+              onChange={(e) => fields.onEmailChange(e.target.value)}
+              onBlur={fields.onEmailBlur}
               placeholder={t('aito.emailPlaceholder')}
               aria-invalid={visibleErrors.email !== null ? true : undefined}
               className={visibleErrors.email !== null ? inputErrorCls : inputCls}

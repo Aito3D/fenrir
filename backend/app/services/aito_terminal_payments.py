@@ -400,8 +400,11 @@ async def refresh_terminal_payment(
     sweep stops the pass on it — see `poll_open_terminal_payments`). Every
     other Heimdall failure, including `HeimdallNotConfigured` (not a subclass
     of `HeimdallUpstreamError`), lands in `sync_error` and the stored row is
-    returned as-is. A 404 (Heimdall lost the payment) marks the row `failed`
-    so the operator can start again."""
+    returned as-is. A 404 (Heimdall lost the payment) marks an OPEN row
+    `failed` — with a `payment.terminal.failed` event saying why — so the
+    operator can start again; a row that is already `paid` (or otherwise
+    settled) only records the 404 in `sync_error`/`checked_at`, because
+    Heimdall forgetting a charge never un-charges the card."""
     if row.heimdall_id is None:
         return row
     open_row = row.status in OPEN_STATUSES or (row.status == "paid" and row.booking_status == "pending")
@@ -412,10 +415,43 @@ async def refresh_terminal_payment(
     try:
         view = await heimdall_service.get_payment(db, row.heimdall_id)
     except HeimdallNotFound as exc:
-        row.status = "failed"
         row.sync_error = str(exc)[:500]
         row.checked_at = now
-        row.settled_at = row.settled_at or now
+        if row.status == "paid" or row.settled_at is not None:
+            # The card WAS charged; Heimdall forgetting the payment does not
+            # un-charge it. `open_row` above deliberately keeps polling a paid
+            # row whose Zoho booking is still pending, so a repointed base URL,
+            # a rotated key or a lost record used to answer 404 here and
+            # rewrite a real counter payment as `failed`. Record the 404 and
+            # leave `status`, `booking_status` and `settled_at` alone — the
+            # sweep re-reads the row on the next tick (one cheap GET), and if
+            # Heimdall comes back the booking still lands. No event: nothing
+            # about the payment changed, only our view of it.
+            await db.commit()
+            return row
+        # An open row Heimdall lost: nothing will ever settle it, so close it
+        # so the operator can charge again. Unlike every other close this one
+        # is decided here rather than in `apply_terminal_state` (which never
+        # runs — there is no view), so the timeline event is recorded by hand,
+        # in the same shape `_age_out_abandoned_reservations` uses.
+        row.status = "failed"
+        row.settled_at = now
+        await db.commit()
+        await record(
+            db,
+            row.project_id,
+            "payment.terminal.failed",
+            actor_class="system",
+            subject_type="project",
+            subject_id=row.project_id,
+            detail={
+                "document_kind": row.document_kind,
+                "document_number": row.document_number,
+                "amount": row.amount,
+                "heimdall_id": row.heimdall_id,
+                "reason": "not_found",
+            },
+        )
         await db.commit()
         return row
     except HeimdallRateLimited:

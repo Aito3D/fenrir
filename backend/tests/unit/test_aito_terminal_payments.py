@@ -352,10 +352,12 @@ async def test_refresh_throttles_and_never_raises(db_session):
 
 
 @pytest.mark.asyncio
-async def test_refresh_marks_the_row_failed_when_heimdall_reports_404(db_session):
-    """Heimdall losing track of a reservation is the only way a stuck row
-    ever unblocks itself — `HeimdallNotFound` must mark the row `failed`,
-    stamp `checked_at`/`settled_at`, and return without raising."""
+async def test_refresh_marks_an_open_row_failed_when_heimdall_reports_404(db_session):
+    """Heimdall losing track of an OPEN reservation is the only way a stuck
+    row ever unblocks itself — `HeimdallNotFound` must mark the row `failed`,
+    stamp `checked_at`/`settled_at`, record exactly one
+    `payment.terminal.failed` event (reason `not_found`, so the timeline says
+    why the card went red), and return without raising."""
     p = await _project(db_session)
     row = AitoTerminalPayment(
         project_id=p.id,
@@ -379,13 +381,21 @@ async def test_refresh_marks_the_row_failed_when_heimdall_reports_404(db_session
     assert "404" in (row.sync_error or "")
     assert row.checked_at == NOW + timedelta(seconds=10)
     assert row.settled_at == NOW + timedelta(seconds=10)
+    failed = await _events(db_session, p.id, "payment.terminal.failed")
+    assert len(failed) == 1
+    assert failed[0].detail["reason"] == "not_found"
+    assert failed[0].detail["heimdall_id"] == "h-gone" and failed[0].detail["document_number"] == "FA"
+    assert failed[0].actor_class == "system"
 
 
 @pytest.mark.asyncio
-async def test_refresh_404_does_not_overwrite_an_already_settled_time(db_session):
-    """`row.settled_at or now` — a row that was already settled (e.g. paid,
-    still pending booking) keeps its original `settled_at` even when the
-    poll later discovers Heimdall lost the payment."""
+async def test_refresh_404_leaves_a_paid_row_paid(db_session, monkeypatch):
+    """A paid row whose Zoho booking is still pending is deliberately kept in
+    the poll (`open_row`), so a 404 — repointed base URL, rotated key, lost
+    record — used to rewrite a card payment the client actually made as
+    `failed`. The 404 lands in `sync_error`/`checked_at` only: `status`,
+    `booking_status` and `settled_at` are untouched, no event is recorded, and
+    a later successful poll still books the payment."""
     p = await _project(db_session)
     settled = NOW - timedelta(minutes=5)
     row = AitoTerminalPayment(
@@ -407,8 +417,34 @@ async def test_refresh_404_does_not_overwrite_an_already_settled_time(db_session
         lambda r: httpx.Response(404, json={"error": {"code": "not_found", "message": "no such payment"}})
     )
     await svc.refresh_terminal_payment(db_session, row, now=NOW + timedelta(seconds=10))
-    assert row.status == "failed"
+    assert row.status == "paid"
+    assert row.booking_status == "pending"
     assert row.settled_at == settled
+    assert "404" in (row.sync_error or "")
+    assert row.checked_at == NOW + timedelta(seconds=10)
+    assert await _events(db_session, p.id, "payment.terminal.failed") == []
+
+    async def noop(*a, **k):
+        return None
+
+    monkeypatch.setattr("backend.app.services.aito_manual_payments.refresh_after_payment", noop)
+    heimdall_service._transport = httpx.MockTransport(
+        lambda r: httpx.Response(
+            200,
+            json=_payment(
+                id="h-gone-2",
+                status="paid",
+                native_state="captured",
+                amount=1,
+                amount_confirmed=1,
+                booking={"status": "done", "zoho_payment_id": "pay-9", "error": None},
+            ),
+        )
+    )
+    await svc.refresh_terminal_payment(db_session, row, now=NOW + timedelta(seconds=20))
+    assert row.status == "paid" and row.booking_status == "done" and row.zoho_payment_id == "pay-9"
+    assert row.settled_at == settled and row.sync_error is None
+    assert await _events(db_session, p.id, "payment.terminal.failed") == []
 
 
 @pytest.mark.asyncio

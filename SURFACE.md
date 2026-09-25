@@ -1718,6 +1718,7 @@ os.environ.get("AITO_TRACK_COLLAPSED_PROXY"
 1 export function useAitoViewers
 1 export function useCelebration
 1 export function useClientRating
+1 export function useContactFields
 1 export function useCopiedFlash
 1 export function usePrintBlob
 1 export function useProjectPatchMutation
@@ -1777,6 +1778,7 @@ os.environ.get("AITO_TRACK_COLLAPSED_PROXY"
 1 export interface TaskSummary
 1 export interface TimelineSummary
 1 export interface TrackingCodeInputProps
+1 export interface UseContactFieldsOptions
 1 export interface Vec
 1 export type AgeAnchor
 1 export type AgingLevel
@@ -1871,7 +1873,6 @@ const AitoTrackEntryPage = lazyWithReload(() => import('./pages/AitoTrackEntryPa
   getZohoStatus
   heimdall_api_token
   heimdall_base_url
-  importAitoProjects
   listZohoContactPersons
   moveAitoProject
   on_aito_payment_received
