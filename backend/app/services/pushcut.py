@@ -28,11 +28,24 @@ class PushcutUpstreamError(Exception):
     """Pushcut reachable but the call failed."""
 
 
+class PushcutUnreachable(PushcutUpstreamError):
+    """The POST never got an answer: DNS, connect refused, read timeout,
+    broken pipe. Unlike the plain non-2xx case this says NOTHING about what
+    Pushcut did — a read timeout on a POST Pushcut did receive is exactly the
+    case where the notification is already on the phone, so a caller must not
+    report it as a clean failure and invite a second real SMS. Mirrors
+    services/heimdall.py's HeimdallUnreachable, and is a SUBCLASS of
+    PushcutUpstreamError so every existing `except PushcutUpstreamError`
+    still catches it."""
+
+
 async def send_sms_notification(db: AsyncSession, *, phone: str, text: str, title: str) -> None:
     """Post one SMS notification to the configured Pushcut webhook.
 
-    Every failure mode — no URL, transport error, non-2xx — raises one of the
-    two module errors, so the caller has exactly two cases to map to HTTP.
+    Every failure mode raises one of the module errors: no URL is
+    PushcutNotConfiguredError, a transport failure is PushcutUnreachable
+    (the ambiguous one — see its docstring), and a non-2xx answer is the
+    plain PushcutUpstreamError, which is a clean refusal Pushcut answered.
     """
     # Lazy import for the same house-style reason services/openrouter.py gives:
     # the settings helpers live in the routes module.
@@ -53,6 +66,6 @@ async def send_sms_notification(db: AsyncSession, *, phone: str, text: str, titl
         async with httpx.AsyncClient(timeout=TIMEOUT_S) as client:
             response = await client.post(url, json=payload)
     except httpx.HTTPError as e:
-        raise PushcutUpstreamError(f"Pushcut request failed: {e}") from e
+        raise PushcutUnreachable(f"Pushcut request failed: {e}") from e
     if response.status_code >= 300:
         raise PushcutUpstreamError(f"Pushcut returned {response.status_code}")

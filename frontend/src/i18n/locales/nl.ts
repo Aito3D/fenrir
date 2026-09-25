@@ -7961,6 +7961,8 @@ export default {
     smsSend: 'Naar telefoon verzenden',
     smsSent: 'Melding verzonden naar je telefoon — accepteer deze om de sms te verzenden',
     smsSendFailed: 'De melding kon niet worden verzonden',
+    smsAlreadySent: 'Dit bericht is minder dan een minuut geleden al naar de telefoon gestuurd — controleer het voordat je het opnieuw verstuurt',
+    smsMaybeSent: 'De telefoon heeft niets bevestigd — de sms is misschien al verzonden; controleer het voordat je het opnieuw verstuurt',
     smsNoPhone: 'Deze klant heeft geen telefoonnummer',
     clientPlaceholder: 'Zoek een klant…',
     searching: 'Zoeken…',

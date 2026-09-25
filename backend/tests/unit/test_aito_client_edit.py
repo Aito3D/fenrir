@@ -10,6 +10,7 @@ import json
 
 import httpx
 import pytest
+from sqlalchemy import text
 
 from backend.app.services.zoho import zoho_service
 
@@ -449,6 +450,95 @@ async def test_stale_version_is_a_409_before_zoho_is_called(async_client):
     assert r.status_code == 409
     assert r.json()["detail"]["code"] == "version_conflict"
     assert seen == []
+
+
+# ------------------------------- T-031: the claim is taken before Books
+
+
+@pytest.mark.asyncio
+async def test_a_version_race_lost_during_the_request_is_refused_before_books_is_written(async_client, monkeypatch):
+    """The cheap pre-check passes against a SELECT another operator's save can
+    invalidate a moment later. The claim now runs BEFORE the Books write, so
+    the loser of that race is refused having sent nothing upstream — where it
+    used to rename the contact in Books and only then 409, leaving Books
+    holding an edit no card showed."""
+    await _configure(async_client)
+    seen: list = []
+    zoho_service.transport = _recording_books(seen)
+    project = await _create(async_client)
+
+    real_default_contact = zoho_service.get_default_contact
+
+    async def bumping_default_contact(db):
+        # Reads settings only, and runs in the window between the pre-check
+        # and the claim — exactly where the concurrent save used to slip in.
+        # It gets the REQUEST's own session, so bumping the live row here is
+        # what the claim's `WHERE version = :expected` then fails against.
+        await db.execute(text("UPDATE aito_projects SET version = version + 1 WHERE id = :id"), {"id": project["id"]})
+        return await real_default_contact(db)
+
+    monkeypatch.setattr(zoho_service, "get_default_contact", bumping_default_contact)
+
+    r = await async_client.put(
+        f"/api/v1/aito/{project['id']}/client", json={**PERSON_EDIT, "expected_version": project["version"]}
+    )
+
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "version_conflict"
+    # The whole point: Books was never called at all.
+    assert seen == []
+    # And nothing local survived the refusal either — including the claim,
+    # which writes no value and dies with the request's rollback.
+    after = await _read(async_client, project["id"])
+    assert after["version"] == project["version"]
+    assert after["client_name"] == "Jean DUPONT"
+    assert after["client_email"] == "jean@example.pf"
+
+
+@pytest.mark.asyncio
+async def test_a_books_failure_after_the_claim_leaves_no_phantom_claim_and_no_fan_out(async_client):
+    """The other hazard the old ordering guarded against, still closed: a
+    refused rename must leave the card's version exactly where it was, and
+    every sibling card on the same contact untouched."""
+    await _configure(async_client)
+    project = await _create(async_client)
+    sibling = await _create(async_client, description="Deuxième pièce")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500, json={"message": "Books is down"})
+
+    zoho_service.transport = _books(handler)
+
+    r = await async_client.put(
+        f"/api/v1/aito/{project['id']}/client", json={**PERSON_EDIT, "expected_version": project["version"]}
+    )
+    assert r.status_code == 502
+
+    for card in (project, sibling):
+        after = await _read(async_client, card["id"])
+        assert after["version"] == card["version"]
+        assert after["client_name"] == "Jean DUPONT"
+        assert after["client_phone"] == "+689-87000001"
+        assert after["client_email"] == "jean@example.pf"
+
+
+@pytest.mark.asyncio
+async def test_a_card_only_edit_still_honours_the_claim(async_client):
+    """The walk-in card takes no Books call at all, so the claim is the only
+    guard it has — moving it earlier must not have skipped it."""
+    await _configure(async_client)
+    zoho_service.transport = _recording_books([])
+    project = await _create(async_client, client_id=WALK_IN_ID)
+
+    stale = await async_client.put(
+        f"/api/v1/aito/{project['id']}/client", json={**PERSON_EDIT, "expected_version": project["version"] + 5}
+    )
+    assert stale.status_code == 409
+    ok = await async_client.put(
+        f"/api/v1/aito/{project['id']}/client", json={**PERSON_EDIT, "expected_version": project["version"]}
+    )
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["version"] == project["version"] + 1
 
 
 @pytest.mark.asyncio

@@ -43,10 +43,14 @@ class _FakeClock:
 @pytest.fixture(autouse=True)
 def _reset_ai_rate_limit():
     """Every route in this file shares the module-level bucket dict — clear it
-    so one test's calls never count against another's budget."""
+    so one test's calls never count against another's budget. The pickup SMS's
+    duplicate guard (T-030) is module state for the same reason and is emptied
+    with it, so one test's send cannot refuse another's."""
     aito_routes._ai_rate_limit_calls.clear()
+    aito_routes._reset_recent_sms()
     yield
     aito_routes._ai_rate_limit_calls.clear()
+    aito_routes._reset_recent_sms()
 
 
 def _patch_pickup_message(monkeypatch, fake):
@@ -401,8 +405,10 @@ async def test_send_rate_limit_blocks_the_push_past_the_budget(async_client, mon
 
     _patch_send_sms(monkeypatch, fake)
 
-    for _ in range(aito_routes._PICKUP_SMS_MAX_CALLS):
-        r = await async_client.post(f"/api/v1/aito/{project['id']}/pickup-sms", json={"message": "prêt"})
+    # A DISTINCT body per call: identical text inside a minute is what
+    # T-030's duplicate guard refuses, and this test is about the budget.
+    for i in range(aito_routes._PICKUP_SMS_MAX_CALLS):
+        r = await async_client.post(f"/api/v1/aito/{project['id']}/pickup-sms", json={"message": f"prêt {i}"})
         assert r.status_code == 200
 
     blocked = await async_client.post(f"/api/v1/aito/{project['id']}/pickup-sms", json={"message": "prêt"})
@@ -452,8 +458,8 @@ async def test_send_rate_limit_has_its_own_bucket(async_client, monkeypatch):
     _patch_send_sms(monkeypatch, fake_send)
     _patch_pickup_message(monkeypatch, fake_draft)
 
-    for _ in range(aito_routes._PICKUP_SMS_MAX_CALLS):
-        r = await async_client.post(f"/api/v1/aito/{project['id']}/pickup-sms", json={"message": "prêt"})
+    for i in range(aito_routes._PICKUP_SMS_MAX_CALLS):
+        r = await async_client.post(f"/api/v1/aito/{project['id']}/pickup-sms", json={"message": f"prêt {i}"})
         assert r.status_code == 200
     assert (
         await async_client.post(f"/api/v1/aito/{project['id']}/pickup-sms", json={"message": "prêt"})
@@ -474,8 +480,8 @@ async def test_send_rate_limit_clears_once_the_window_elapses(async_client, monk
     monkeypatch.setattr(aito_routes, "time", clock)
     _patch_send_sms(monkeypatch, fake)
 
-    for _ in range(aito_routes._PICKUP_SMS_MAX_CALLS):
-        r = await async_client.post(f"/api/v1/aito/{project['id']}/pickup-sms", json={"message": "prêt"})
+    for i in range(aito_routes._PICKUP_SMS_MAX_CALLS):
+        r = await async_client.post(f"/api/v1/aito/{project['id']}/pickup-sms", json={"message": f"prêt {i}"})
         assert r.status_code == 200
     blocked = await async_client.post(f"/api/v1/aito/{project['id']}/pickup-sms", json={"message": "prêt"})
     assert blocked.status_code == 429
@@ -483,6 +489,208 @@ async def test_send_rate_limit_clears_once_the_window_elapses(async_client, monk
     clock.now += aito_routes._AI_RATE_LIMIT_WINDOW_S + 1
     r = await async_client.post(f"/api/v1/aito/{project['id']}/pickup-sms", json={"message": "prêt"})
     assert r.status_code == 200
+
+
+# ----------------------- T-030: an ambiguous push, and the duplicate guard
+
+
+async def _events(db_session, project_id: int) -> list[str]:
+    return (await db_session.execute(select(AitoEvent.kind).where(AitoEvent.project_id == project_id))).scalars().all()
+
+
+@pytest.mark.asyncio
+async def test_a_transport_failure_is_reported_as_maybe_sent_and_records_no_event(
+    async_client, monkeypatch, db_session
+):
+    """Pushcut never answered: the notification may already be on the phone,
+    so the operator is told exactly that (not a plain "failed"), and the
+    timeline gains nothing — no event may claim a send nobody confirmed."""
+    project = await _create_finished(async_client)
+    pushed: list[str] = []
+
+    async def fake(db, *, phone, text, title):
+        pushed.append(text)
+        raise pushcut_service.PushcutUnreachable("Pushcut request failed: timed out")
+
+    _patch_send_sms(monkeypatch, fake)
+    r = await async_client.post(f"/api/v1/aito/{project['id']}/pickup-sms", json={"message": "prêt"})
+
+    assert r.status_code == 502
+    assert r.json()["detail"] == aito_routes._SMS_UNREACHABLE_DETAIL
+    # The distinguishing half: the detail says the push MAY have landed, which
+    # is the whole difference from the refusal case below.
+    assert "may already have been pushed" in r.json()["detail"]
+    assert "project.sms.sent" not in await _events(db_session, project["id"])
+    assert pushed == ["prêt"]
+
+
+@pytest.mark.asyncio
+async def test_a_reflex_retry_after_a_transport_failure_is_refused(async_client, monkeypatch, db_session):
+    """The point of arming the guard on the ambiguous outcome: the operator
+    reads "may already have been pushed" and taps Send again — that second tap
+    must not reach Pushcut, because the first one may have."""
+    project = await _create_finished(async_client)
+    pushed: list[str] = []
+
+    async def fake(db, *, phone, text, title):
+        pushed.append(text)
+        raise pushcut_service.PushcutUnreachable("Pushcut request failed: timed out")
+
+    _patch_send_sms(monkeypatch, fake)
+    first = await async_client.post(f"/api/v1/aito/{project['id']}/pickup-sms", json={"message": "prêt"})
+    assert first.status_code == 502
+
+    again = await async_client.post(f"/api/v1/aito/{project['id']}/pickup-sms", json={"message": "prêt"})
+    assert again.status_code == 409
+    assert again.json()["detail"] == aito_routes._SMS_DUPLICATE_DETAIL
+    assert pushed == ["prêt"]
+    assert "project.sms.sent" not in await _events(db_session, project["id"])
+
+
+@pytest.mark.asyncio
+async def test_an_identical_resend_right_after_a_successful_one_is_refused(async_client, monkeypatch, db_session):
+    project = await _create_finished(async_client)
+    pushed: list[str] = []
+
+    async def fake(db, *, phone, text, title):
+        pushed.append(text)
+
+    _patch_send_sms(monkeypatch, fake)
+    first = await async_client.post(f"/api/v1/aito/{project['id']}/pickup-sms", json={"message": "prêt. Aito3D"})
+    assert first.status_code == 200
+
+    again = await async_client.post(f"/api/v1/aito/{project['id']}/pickup-sms", json={"message": "prêt. Aito3D"})
+    assert again.status_code == 409
+    assert again.json()["detail"] == aito_routes._SMS_DUPLICATE_DETAIL
+    # One push, and exactly one event — the refused call reached neither.
+    assert pushed == ["prêt. Aito3D"]
+    assert (await _events(db_session, project["id"])).count("project.sms.sent") == 1
+
+
+@pytest.mark.asyncio
+async def test_the_guard_is_per_project_and_per_message(async_client, monkeypatch):
+    """A different body, or the same body for a different card, is a different
+    send — the guard refuses repeats, not sending."""
+    project = await _create_finished(async_client)
+    other = await _create_finished(async_client)
+    pushed: list[str] = []
+
+    async def fake(db, *, phone, text, title):
+        pushed.append(text)
+
+    _patch_send_sms(monkeypatch, fake)
+    assert (
+        await async_client.post(f"/api/v1/aito/{project['id']}/pickup-sms", json={"message": "prêt"})
+    ).status_code == 200
+    # Same project, different text.
+    assert (
+        await async_client.post(f"/api/v1/aito/{project['id']}/pickup-sms", json={"message": "prêt, à Arue"})
+    ).status_code == 200
+    # Same text, different project.
+    assert (
+        await async_client.post(f"/api/v1/aito/{other['id']}/pickup-sms", json={"message": "prêt"})
+    ).status_code == 200
+    assert pushed == ["prêt", "prêt, à Arue", "prêt"]
+
+
+@pytest.mark.asyncio
+async def test_a_clean_refusal_leaves_the_guard_unarmed(async_client, monkeypatch):
+    """Pushcut answered non-2xx: nothing was pushed, so the operator's retry
+    is honest and must go through — the guard only holds what may have landed."""
+    project = await _create_finished(async_client)
+    pushed: list[str] = []
+    fail = {"on": True}
+
+    async def fake(db, *, phone, text, title):
+        pushed.append(text)
+        if fail["on"]:
+            raise pushcut_service.PushcutUpstreamError("Pushcut returned 500")
+
+    _patch_send_sms(monkeypatch, fake)
+    refused = await async_client.post(f"/api/v1/aito/{project['id']}/pickup-sms", json={"message": "prêt"})
+    assert refused.status_code == 502
+    # Still the upstream's own words, not the "may already" wording.
+    assert refused.json()["detail"] == "Pushcut returned 500"
+
+    fail["on"] = False
+    retry = await async_client.post(f"/api/v1/aito/{project['id']}/pickup-sms", json={"message": "prêt"})
+    assert retry.status_code == 200
+    assert pushed == ["prêt", "prêt"]
+
+
+@pytest.mark.asyncio
+async def test_an_unconfigured_relay_leaves_the_guard_unarmed(async_client, monkeypatch):
+    project = await _create_finished(async_client)
+    pushed: list[str] = []
+    fail = {"on": True}
+
+    async def fake(db, *, phone, text, title):
+        if fail["on"]:
+            raise pushcut_service.PushcutNotConfiguredError()
+        pushed.append(text)
+
+    _patch_send_sms(monkeypatch, fake)
+    assert (
+        await async_client.post(f"/api/v1/aito/{project['id']}/pickup-sms", json={"message": "prêt"})
+    ).status_code == 409
+    fail["on"] = False
+    assert (
+        await async_client.post(f"/api/v1/aito/{project['id']}/pickup-sms", json={"message": "prêt"})
+    ).status_code == 200
+    assert pushed == ["prêt"]
+
+
+@pytest.mark.asyncio
+async def test_the_same_message_is_allowed_again_once_the_window_passes(async_client, monkeypatch):
+    """A minute later "send it again, they never got it" is a real intention,
+    not a double tap. Driven by the module's fake clock, never the real one."""
+    project = await _create_finished(async_client)
+    pushed: list[str] = []
+
+    async def fake(db, *, phone, text, title):
+        pushed.append(text)
+
+    clock = _FakeClock(start=1_000.0)
+    monkeypatch.setattr(aito_routes, "time", clock)
+    _patch_send_sms(monkeypatch, fake)
+
+    assert (
+        await async_client.post(f"/api/v1/aito/{project['id']}/pickup-sms", json={"message": "prêt"})
+    ).status_code == 200
+    assert (
+        await async_client.post(f"/api/v1/aito/{project['id']}/pickup-sms", json={"message": "prêt"})
+    ).status_code == 409
+
+    clock.now += aito_routes._SMS_DUPLICATE_WINDOW_S + 1
+    assert (
+        await async_client.post(f"/api/v1/aito/{project['id']}/pickup-sms", json={"message": "prêt"})
+    ).status_code == 200
+    assert pushed == ["prêt", "prêt"]
+
+
+def test_the_guard_prunes_expired_keys_and_can_be_reset(monkeypatch):
+    """The guard's key carries a caller-supplied message, so an unevicted dict
+    would grow with every distinct body ever sent: every call drops what has
+    aged out, and _reset_recent_sms empties it for the tests."""
+    clock = _FakeClock(start=500.0)
+    monkeypatch.setattr(aito_routes, "time", clock)
+    aito_routes._reset_recent_sms()
+
+    key = aito_routes._sms_guard_key_or_409(7, "  prêt  ")
+    # Stripped, so the textarea's stray whitespace cannot smuggle a repeat past
+    # the guard (the schema trims too — belt and braces).
+    assert key == (7, "prêt")
+    aito_routes._recent_sms[key] = clock.monotonic()
+    aito_routes._recent_sms[(8, "autre")] = clock.monotonic()
+
+    clock.now += aito_routes._SMS_DUPLICATE_WINDOW_S + 1
+    # Any call prunes: this one is for a third, unrelated key.
+    aito_routes._sms_guard_key_or_409(9, "troisième")
+    assert aito_routes._recent_sms == {}
+
+    aito_routes._recent_sms[(7, "prêt")] = clock.monotonic()
+    aito_routes._reset_recent_sms()
+    assert aito_routes._recent_sms == {}
 
 
 # ---------------------------------------------------------------- the relay
@@ -552,8 +760,12 @@ async def test_pushcut_non_2xx_raises(db_session, monkeypatch):
             return FakeResponse()
 
     monkeypatch.setattr(pushcut_service.httpx, "AsyncClient", FakeClient)
-    with pytest.raises(pushcut_service.PushcutUpstreamError):
+    with pytest.raises(pushcut_service.PushcutUpstreamError) as excinfo:
         await pushcut_service.send_sms_notification(db_session, phone="87", text="x", title="t")
+    # T-030: an answer Pushcut actually gave is the PLAIN error, never the
+    # ambiguous PushcutUnreachable — nothing was pushed, so the caller may
+    # report a clean failure and allow an immediate retry.
+    assert not isinstance(excinfo.value, pushcut_service.PushcutUnreachable)
 
 
 @pytest.mark.asyncio
@@ -580,9 +792,12 @@ async def test_pushcut_transport_failure_raises_and_chains_the_original(db_sessi
             raise connect_error
 
     monkeypatch.setattr(pushcut_service.httpx, "AsyncClient", FakeClient)
-    with pytest.raises(pushcut_service.PushcutUpstreamError) as excinfo:
+    # PushcutUnreachable, not the plain parent: no answer came back, so this
+    # says nothing about whether the notification was pushed (T-030).
+    with pytest.raises(pushcut_service.PushcutUnreachable) as excinfo:
         await pushcut_service.send_sms_notification(db_session, phone="87", text="x", title="t")
     assert excinfo.value.__cause__ is connect_error
+    assert isinstance(excinfo.value, pushcut_service.PushcutUpstreamError)
 
 
 @pytest.mark.asyncio
@@ -605,7 +820,9 @@ async def test_pushcut_read_timeout_raises_and_chains_the_original(db_session, m
             raise timeout_error
 
     monkeypatch.setattr(pushcut_service.httpx, "AsyncClient", FakeClient)
-    with pytest.raises(pushcut_service.PushcutUpstreamError) as excinfo:
+    # The case the whole of T-030 exists for: Pushcut may well have taken this
+    # POST and pushed the notification before the read timed out.
+    with pytest.raises(pushcut_service.PushcutUnreachable) as excinfo:
         await pushcut_service.send_sms_notification(db_session, phone="87", text="x", title="t")
     assert excinfo.value.__cause__ is timeout_error
 

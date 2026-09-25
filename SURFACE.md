@@ -279,6 +279,7 @@ class ParsedShipping
 class PatchDidNotConverge(Exception)
 class PaymentDocument
 class PushcutNotConfiguredError(Exception)
+class PushcutUnreachable(PushcutUpstreamError)
 class PushcutUpstreamError(Exception)
 class QuoteLinkManaged(Exception)
 class RatingProfile

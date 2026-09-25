@@ -127,6 +127,8 @@ export default {
     smsSend: '휴대폰으로 보내기',
     smsSent: '휴대폰으로 알림을 보냈습니다. 수락하면 SMS가 전송됩니다',
     smsSendFailed: '알림을 보낼 수 없습니다',
+    smsAlreadySent: '이 메시지는 1분 이내에 이미 휴대폰으로 전송되었습니다. 다시 보내기 전에 확인하세요',
+    smsMaybeSent: '휴대폰이 확인을 주지 않았습니다. SMS가 이미 발송되었을 수 있으니 다시 보내기 전에 확인하세요',
     smsNoPhone: '이 고객은 전화번호가 없습니다',
     clientPlaceholder: '고객 검색…',
     searching: '검색 중…',

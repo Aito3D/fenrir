@@ -127,6 +127,8 @@ export default {
     smsSend: 'Send to phone',
     smsSent: 'Notification sent to your phone — accept it there to send the SMS',
     smsSendFailed: 'Could not send the notification',
+    smsAlreadySent: 'This message already went to the phone less than a minute ago — check it before sending again',
+    smsMaybeSent: 'The phone did not confirm — the SMS may already have gone; check before sending again',
     smsNoPhone: 'This client has no phone number',
     clientPlaceholder: 'Search for a client…',
     searching: 'Searching…',

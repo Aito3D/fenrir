@@ -127,6 +127,8 @@ export default {
     smsSend: '发送到手机',
     smsSent: '通知已发送到您的手机——在手机上接受后即可发送短信',
     smsSendFailed: '无法发送通知',
+    smsAlreadySent: '该消息不到一分钟前已发送到手机——再次发送前请先确认',
+    smsMaybeSent: '手机未确认——短信可能已经发出；再次发送前请先确认',
     smsNoPhone: '该客户没有电话号码',
     clientPlaceholder: '搜索客户…',
     searching: '搜索中…',

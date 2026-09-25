@@ -127,6 +127,8 @@ export default {
     smsSend: 'Telefona gönder',
     smsSent: 'Bildirim telefonunuza gönderildi — SMS’i göndermek için orada onaylayın',
     smsSendFailed: 'Bildirim gönderilemedi',
+    smsAlreadySent: 'Bu mesaj bir dakikadan kısa süre önce telefona gitti — yeniden göndermeden önce kontrol edin',
+    smsMaybeSent: 'Telefon onay vermedi — SMS çoktan gitmiş olabilir; yeniden göndermeden önce kontrol edin',
     smsNoPhone: 'Bu müşterinin telefon numarası yok',
     clientPlaceholder: 'Müşteri ara…',
     searching: 'Aranıyor…',

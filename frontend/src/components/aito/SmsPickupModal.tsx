@@ -5,12 +5,22 @@ import { Loader2, RefreshCw, Send } from 'lucide-react';
 import { Card, CardContent } from '../Card';
 import { Button } from '../Button';
 import { inputCls, labelCls } from '../formStyles';
-import { api, type AitoProject } from '../../api/client';
+import { api, ApiError, type AitoProject } from '../../api/client';
 import { useDismissableDialog } from '../../hooks/useDismissableDialog';
 import { useToast } from '../../contexts/ToastContext';
 
 /** A beat past .animate-modal-out's 150ms — same margin SendQuoteModal gives. */
 const MODAL_OUT_MS = 170;
+
+/** The leading words of the two plain-string details send_pickup_sms returns
+ *  for the outcomes that are NOT a clean failure (backend/app/api/routes/
+ *  aito.py's _SMS_DUPLICATE_DETAIL and _SMS_UNREACHABLE_DETAIL). Matched by
+ *  prefix so the sentence's tail can be reworded, and paired with the status
+ *  so another 409/502 on this route (no phone, not finished, Pushcut refused)
+ *  still gets the generic toast. Both strings are pinned by
+ *  backend/tests/unit/test_aito_pickup_sms.py — reword them together. */
+const SMS_ALREADY_SENT_MARKER = 'Already sent —';
+const SMS_MAYBE_SENT_MARKER = 'Pushcut did not answer in time';
 
 /** Draft, edit and relay the "come and collect your part" SMS.
  *
@@ -64,7 +74,22 @@ export function SmsPickupModal({
       queryClient.invalidateQueries({ queryKey: ['aito-events', project.id] });
       requestClose();
     },
-    onError: () => showToast(t('aito.smsSendFailed'), 'error'),
+    onError: (error: unknown) => {
+      // Three outcomes, not one: a refused duplicate (the same text went to
+      // the phone moments ago), a push whose fate is unknown (Pushcut never
+      // answered — it may well be on the phone, so this is a WARNING telling
+      // the sender to check before trying again), and every other failure,
+      // which stays the plain error it has always been.
+      const status = error instanceof ApiError ? error.status : 0;
+      const detail = error instanceof ApiError ? error.message : '';
+      if (status === 409 && detail.startsWith(SMS_ALREADY_SENT_MARKER)) {
+        showToast(t('aito.smsAlreadySent'), 'error');
+      } else if (status === 502 && detail.startsWith(SMS_MAYBE_SENT_MARKER)) {
+        showToast(t('aito.smsMaybeSent'), 'warning');
+      } else {
+        showToast(t('aito.smsSendFailed'), 'error');
+      }
+    },
   });
 
   const { closing, requestClose, dialogRef } = useDismissableDialog(onClose, {

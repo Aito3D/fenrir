@@ -180,6 +180,43 @@ async def test_the_services_own_link_exists_guard_answers_409_when_the_routes_pr
 
 
 @pytest.mark.asyncio
+async def test_an_idempotency_key_taken_by_another_process_answers_409_not_500(async_client, db_session, monkeypatch):
+    """T-029: the reservation window is serialised in-process, but a lock
+    reaches no further than this process. When the unique `idempotency_key` is
+    claimed between the count and the commit anyway, the operator must still
+    get the 409 they already know for "a link is already open" — not an
+    IntegrityError escaping the handler as a 500 on the Create-link button.
+    The steal below is committed from the TEST's session, i.e. from outside
+    the request's own session, exactly as another process would."""
+    from backend.app.services import aito_payment_links as links_svc
+
+    p = await _create(async_client)
+    real_next_key = links_svc._next_key
+
+    async def steal(db, project_id):
+        key = await real_next_key(db, project_id)
+        db_session.add(
+            AitoPaymentLink(
+                project_id=project_id,
+                idempotency_key=key,
+                reference="FA-26-0001",
+                amount=23000,
+                expires_on="2026-12-31",
+                status="pending",
+                document_kind="invoice",
+                document_number="FA-26-0001",
+            )
+        )
+        await db_session.commit()
+        return key
+
+    monkeypatch.setattr(links_svc, "_next_key", steal)
+    r = await async_client.post(f"/api/v1/aito/{p['id']}/payment-link", json={"document_id": "inv-1", "amount": 23000})
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"]["code"] == "link_exists"
+
+
+@pytest.mark.asyncio
 async def test_a_heimdall_422_on_the_link_route_reads_invalid_not_amount_above_balance(async_client):
     """Minor 5: the balance cap is checked by the route itself, so a 422 from
     Heimdall here is some OTHER invalid field — labelling it

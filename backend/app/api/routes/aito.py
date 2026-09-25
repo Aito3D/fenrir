@@ -128,6 +128,7 @@ from backend.app.services.openrouter import (
 )
 from backend.app.services.pushcut import (
     PushcutNotConfiguredError,
+    PushcutUnreachable,
     PushcutUpstreamError,
     send_sms_notification,
 )
@@ -3492,8 +3493,10 @@ async def edit_project_client(
     - Ordering. Books is the record; the card is a snapshot of it. A PATCH
       that wrote the card and then tried Books would leave the two disagreeing
       on every Zoho outage. Here a Books failure returns before any row is
-      touched — the version claim below deliberately sits AFTER the Books
-      calls so a refused rename leaves no phantom claim either.
+      touched. The version claim is taken FIRST, ahead of the Books call, so
+      an edit that loses the race to a concurrent one is refused with 409
+      having sent nothing upstream — and since the claim writes no value, a
+      Books failure after it leaves nothing behind either.
     - Fan-out. One contact sits on however many open cards; every active one
       is rewritten so the board never shows two names for one client. Only
       the edited card is version-guarded — the others bump but were never the
@@ -3547,6 +3550,33 @@ async def edit_project_client(
     # rewriting its siblings would rename every counter sale after this one
     # person.
     is_zoho_contact = bool(project.client_id) and project.client_id != default_id
+
+    # T-031: claimed BEFORE the Books write, not after it. The cheap compare
+    # above passed against a SELECT that a concurrent edit can invalidate
+    # while this request is inside Books' round trip; with the claim placed
+    # after that trip, the loser of the race had already renamed the contact
+    # in Books when the 409 aborted every local write and the fan-out —
+    # leaving Books holding an edit no card showed, and the operator reading
+    # "Project was updated by someone else", which sounds like nothing
+    # happened. Claiming first means a lost race costs nothing upstream.
+    #
+    # There is nothing to release when the Books call below fails:
+    # _claim_expected_version writes no value (`SET version = version`) — it
+    # takes the row's write lock inside THIS transaction and tests the live
+    # version — so the rollback get_db does on any HTTPException is the whole
+    # of the undo, and the docstring's old "no phantom claim" worry cannot
+    # arise. The cost is that the lock is now held across update_contact (the
+    # Zoho client's 10s httpx timeout, inside SQLite's 15s busy_timeout), so
+    # a concurrent writer waits instead of interleaving — which is precisely
+    # the serialisation that makes the claim mean anything.
+    if payload.expected_version is not None and not await _claim_expected_version(
+        db, project, payload.expected_version
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "version_conflict", "message": "Project was updated by someone else"},
+        )
+
     if is_zoho_contact:
         try:
             name = await zoho_service.update_contact(
@@ -3583,14 +3613,6 @@ async def edit_project_client(
             raise HTTPException(status_code=502, detail=str(e)) from e
     else:
         name = company if is_company else normalize_display_name(first, last)
-
-    if payload.expected_version is not None and not await _claim_expected_version(
-        db, project, payload.expected_version
-    ):
-        raise HTTPException(
-            status_code=409,
-            detail={"code": "version_conflict", "message": "Project was updated by someone else"},
-        )
 
     # Never fanned out: the handle is this card's channel, not the contact's —
     # Books does not hold it, so a sibling card has no record to agree with.
@@ -3966,6 +3988,68 @@ async def generate_pickup_message(
     return AitoPickupMessageResponse(message=message, model=model)
 
 
+# T-030: the two ways the push below can fail are NOT the same answer, and
+# send_pickup_sms reports them differently. A refusal Pushcut actually gave
+# (no URL configured, a non-2xx) is a clean failure — nothing was pushed, so
+# retry freely. A transport failure (PushcutUnreachable: read timeout, connect
+# refused) says nothing about what Pushcut did, and a POST it received but did
+# not answer within its 8s timeout has already put the notification on the
+# phone; that case answers 502 with _SMS_UNREACHABLE_DETAIL ("may already have
+# been pushed") instead of the raw error and writes NO project.sms.sent event,
+# because no event may claim a send nobody confirmed.
+#
+# Kept out of the docstring on purpose: FastAPI publishes that as the
+# endpoint's OpenAPI description, and this is how the handler works rather
+# than what a caller must know.
+#
+# And a second tap must not push a second real SMS to the client. The
+# window is deliberately short — a minute is long enough to cover the reflex
+# retry after an answer the operator read as a failure, and short enough that
+# a genuine "send it again, they never got it" a moment later is only delayed,
+# never blocked.
+_SMS_DUPLICATE_WINDOW_S = 60.0
+# (project_id, stripped message) -> time.monotonic() of the last push that MAY
+# have reached the phone: a confirmed success, or a transport failure that says
+# nothing about what Pushcut did. A clean refusal (not configured, non-2xx)
+# leaves no key, so an honest retry after a real failure still goes through.
+# Pruned on every call, unlike aito_manual_payments' sibling guard: this key
+# carries a caller-supplied message, so an unevicted dict would grow with
+# every distinct body ever sent.
+_recent_sms: dict[tuple[int, str], float] = {}
+# Plain-string details, the module's shape for a message with no client-side
+# branching to do — except for their LEADING words, which SmsPickupModal
+# matches to pick its toast. Reword them with the modal, not alone.
+_SMS_DUPLICATE_DETAIL = (
+    "Already sent — this message went to the phone less than a minute ago; check it before sending again"
+)
+_SMS_UNREACHABLE_DETAIL = (
+    "Pushcut did not answer in time — the notification may already have been pushed; "
+    "check the phone before sending again"
+)
+
+
+def _reset_recent_sms() -> None:
+    """Test hook: the guard is module state, so a test that fills it must be
+    able to empty it again (the suite's own fixtures call this)."""
+    _recent_sms.clear()
+
+
+def _sms_guard_key_or_409(project_id: int, message: str) -> tuple[int, str]:
+    """Prune the guard and return this send's key, raising 409 if the same
+    message already went (or may have gone) to the phone inside the window.
+
+    Reads the clock through the module's own `time` name for the same reason
+    _check_rate_limit does — so a test can rebind it to a fake clock.
+    """
+    now = time.monotonic()
+    for stale in [k for k, at in _recent_sms.items() if now - at >= _SMS_DUPLICATE_WINDOW_S]:
+        del _recent_sms[stale]
+    key = (project_id, message.strip())
+    if key in _recent_sms:
+        raise HTTPException(status_code=409, detail=_SMS_DUPLICATE_DETAIL)
+    return key
+
+
 @router.post("/{project_id}/pickup-sms", response_model=AitoPickupSmsResponse)
 async def send_pickup_sms(
     project_id: int,
@@ -4009,6 +4093,7 @@ async def send_pickup_sms(
     if not phone:
         raise HTTPException(status_code=409, detail="The project's client has no phone number")
     project_pk = project.id
+    key = _sms_guard_key_or_409(project_pk, payload.message)
     try:
         await send_sms_notification(
             db,
@@ -4018,8 +4103,24 @@ async def send_pickup_sms(
         )
     except PushcutNotConfiguredError:
         raise HTTPException(status_code=409, detail="Pushcut is not configured") from None
+    except PushcutUnreachable as e:
+        # Caught BEFORE its PushcutUpstreamError parent below — the ambiguous
+        # case. Armed in the guard so an immediate identical retry is refused,
+        # but deliberately unrecorded in the timeline: no event may claim a
+        # send nobody confirmed.
+        _recent_sms[key] = time.monotonic()
+        logger.warning(
+            "Aito pickup SMS for project %s got no answer from Pushcut — the notification may "
+            "already be on the phone, so no project.sms.sent event was written: %s",
+            project_id,
+            e,
+        )
+        raise HTTPException(status_code=502, detail=_SMS_UNREACHABLE_DETAIL) from e
     except PushcutUpstreamError as e:
+        # Pushcut answered and refused: nothing was pushed, so the guard is
+        # left unarmed and an honest retry is allowed straight away.
         raise HTTPException(status_code=502, detail=str(e)) from e
+    _recent_sms[key] = time.monotonic()
     try:
         await record(
             db,

@@ -127,6 +127,8 @@ export default {
     smsSend: '電話に送信',
     smsSent: '通知を送信しました。電話で承認するとSMSが送信されます',
     smsSendFailed: '通知を送信できませんでした',
+    smsAlreadySent: 'このメッセージは1分以内に電話へ送信済みです。再送する前に確認してください',
+    smsMaybeSent: '電話からの確認が取れませんでした。SMSはすでに送信されている可能性があります。再送前に確認してください',
     smsNoPhone: 'この顧客には電話番号がありません',
     clientPlaceholder: '取引先を検索…',
     searching: '検索中…',

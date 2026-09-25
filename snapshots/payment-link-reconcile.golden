@@ -106,7 +106,7 @@
     "actor_class": "system",
     "detail": {
      "amount": 12500,
-     "expires_on": "2026-09-23",
+     "expires_on": "2026-10-01",
      "heimdall_id": "hd-new-1",
      "reference": "DEV-000123"
     },
@@ -116,7 +116,7 @@
   ],
   "heimdall_requests": [
    {
-    "body": "{\"method\":\"link\",\"amount\":12500,\"currency\":\"XPF\",\"reference\":\"DEV-000123\",\"expires_in_days\":7}",
+    "body": "{\"method\":\"link\",\"amount\":12500,\"currency\":\"XPF\",\"reference\":\"DEV-000123\",\"expires_in_days\":15}",
     "idempotency_key": "aito:1:1",
     "method": "POST",
     "path": "/api/v1/payments"
@@ -132,7 +132,7 @@
    {
     "amount": 12500,
     "checked_at": "2026-09-16 12:00:00",
-    "expires_on": "2026-09-23",
+    "expires_on": "2026-10-01",
     "heimdall_id": "hd-new-1",
     "key": "aito:1:1",
     "paid_at": null,
