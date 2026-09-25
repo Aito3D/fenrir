@@ -20,6 +20,8 @@ from backend.app.services.aito_client_rating import (
     ON_TIME_SLACK_DAYS,
     REFRESH_MIN_AGE,
     ClientRating,
+    _balance,
+    _months_ago,
     rate_invoices,
     read_client_rating,
 )
@@ -811,3 +813,67 @@ async def test_route_rate_limit_blocks_past_the_budget(async_client, monkeypatch
 
 def test_route_requires_aito_read():
     assert _declared_permissions("get_client_rating") == ["aito:read"]
+
+
+# --------------------------------------------- T-038: _months_ago / _balance
+
+
+class TestMonthsAgo:
+    """`rate_invoices`'s only caller passes HISTORY_MONTHS = 24, an exact
+    multiple of 12, so the year-rollover and day-clamp branches below are
+    never actually exercised through that path — pinned directly here
+    instead (T-038). Every value below was read off the current
+    implementation, not derived independently, so these tests document
+    present behaviour rather than a spec."""
+
+    def test_year_rollover(self):
+        # month = 1 - 1 = 0 -> rolls back to December of the prior year.
+        assert _months_ago(date(2026, 1, 15), 1) == date(2025, 12, 15)
+
+    def test_multi_year_rollover(self):
+        # months=13 crosses a full year plus one: 13 // 12 = 1, 13 % 12 = 1,
+        # so the same month=0 rollover fires one year further back.
+        assert _months_ago(date(2026, 1, 15), 13) == date(2024, 12, 15)
+
+    def test_day_clamp_to_28_in_a_non_leap_february(self):
+        # Target month is February 2026 (not a leap year, 28 days): the day
+        # loop tries 31, 30, 29 before landing on 28.
+        assert _months_ago(date(2026, 3, 31), 1) == date(2026, 2, 28)
+
+    def test_day_clamp_to_29_in_a_leap_february(self):
+        # Same 31-day source month, but the target February (2028) IS a leap
+        # year: the loop's 29 candidate succeeds before falling to 28,
+        # proving the clamp picks the widest valid day rather than always
+        # bottoming out at 28.
+        assert _months_ago(date(2028, 3, 31), 1) == date(2028, 2, 29)
+
+    def test_no_rollover_or_clamp_needed(self):
+        # A same-length-month, no-rollover case for contrast with the above.
+        assert _months_ago(date(2026, 9, 22), 1) == date(2026, 8, 22)
+
+
+class TestBalance:
+    """A malformed Books `balance` value must never blow up the rating fold
+    (T-038) — `_balance` catches both the "not a number at all" (ValueError)
+    and "not a number-like type" (TypeError) shapes and reports 0.0."""
+
+    def test_non_numeric_string_is_zero(self):
+        assert _balance({"balance": "n/a"}) == 0.0
+
+    def test_none_is_zero(self):
+        # `row.get("balance") or 0` short-circuits on None before float() is
+        # even attempted — a different branch to the except below, but the
+        # same observable result.
+        assert _balance({"balance": None}) == 0.0
+
+    def test_missing_key_is_zero(self):
+        assert _balance({}) == 0.0
+
+    def test_non_numeric_type_is_zero(self):
+        # A list is truthy (so the `or 0` fallback does not apply) but is not
+        # float()-able, so this drives the TypeError side of the except
+        # clause rather than the ValueError side above.
+        assert _balance({"balance": ["not", "a", "number"]}) == 0.0
+
+    def test_numeric_string_parses(self):
+        assert _balance({"balance": "12.5"}) == 12.5

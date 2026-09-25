@@ -31,6 +31,7 @@ without seeding any real board state.
 import pytest
 
 from backend.app.core.permissions import Permission
+from backend.app.main import app
 
 # An id that can never exist in a freshly-seeded test database. The gate
 # fires before the handler ever looks the id up (see the ordering test
@@ -124,11 +125,111 @@ WRITE_ROUTES = [
         {"document_id": "x", "amount": 1},
     ),
     ("cancel_invoice_payment_link", "post", f"/api/v1/aito/{_MISSING_ID}/payment-link/1/cancel", None),
+    # T-037: found by the dynamic sweep below — gated with AITO_UPDATE like
+    # every other mutation here, but never hand-added to this list.
+    ("set_project_due_date", "patch", f"/api/v1/aito/{_MISSING_ID}/due-date", {"due_date": "2026-01-01"}),
 ]
 
-assert len(WRITE_ROUTES) == 30, (
-    "WRITE_ROUTES must cover exactly the 30 gated write routes aito.py and aito_payments.py declare"
+assert len(WRITE_ROUTES) == 31, (
+    "WRITE_ROUTES must cover exactly the 31 gated write routes aito.py and aito_payments.py declare"
 )
+
+
+# --------------------------------------------- T-037: dynamic app.routes sweep
+
+
+def _is_permission_gate(dep_call) -> bool:
+    """True for a callable produced by `require_permission_if_auth_enabled` or
+    `require_any_permission_if_auth_enabled` — matched by `__qualname__`,
+    mirroring test_zoho_permissions.py's identically-named helper (not
+    imported from there: that file imports `aito_tokens` FROM this one, and
+    importing back would just be a needless coupling for one tiny helper)."""
+    qualname = getattr(dep_call, "__qualname__", "")
+    return qualname.startswith("require_permission_if_auth_enabled.") or qualname.startswith(
+        "require_any_permission_if_auth_enabled."
+    )
+
+
+# The public tracking route is unauthenticated BY DESIGN — the token itself
+# is the credential (see its docstring in aito.py: "No auth: the token IS
+# the credential"), and the auth middleware exempts this prefix. It is the
+# only route in either file with no permission dependency at all, so it is
+# excluded here explicitly rather than silently swallowed by a loose filter.
+_PUBLIC_ROUTE_NAMES = {"get_tracking"}
+
+# Genuine reads: gated with AITO_READ (never CREATE/UPDATE/DELETE or the
+# any-of route), so they are not part of the hand-maintained WRITE_ROUTES
+# sweep above — that list exists to prove a *mutation* is refused, and these
+# already get 200-path coverage elsewhere (e.g. the board-listing tests).
+# `get_tracking_link` is deliberately NOT here even though it is a GET: it
+# mints a token as a side effect and is gated with AITO_UPDATE, which is
+# exactly why it already sits in WRITE_ROUTES above.
+_READ_ONLY_ROUTE_NAMES = {
+    "list_projects",
+    "list_trash",
+    "get_aito_stats",
+    "get_client_history",
+    "get_client_rating",
+    "list_shipping_services",
+    "list_tasks",
+    "list_events",
+    "get_invoice",
+    "get_invoice_preview",
+    "get_invoice_pdf",
+    "get_invoice_email",
+    "get_quote_pdf",
+    "get_quote_email",
+    "get_terminal_payment",
+}
+
+
+def _aito_routes():
+    return [r for r in app.routes if getattr(r, "path", "").startswith("/api/v1/aito/")]
+
+
+def test_every_aito_route_declares_a_permission_gate_or_is_the_public_tracking_route():
+    """A NEW route added to aito.py or aito_payments.py without
+    RequirePermissionIfAuthEnabled / require_any_permission_if_auth_enabled
+    fails HERE, instead of silently escaping both this sweep and the
+    hand-maintained WRITE_ROUTES parametrization below (T-037)."""
+    aito_routes = _aito_routes()
+    assert len(aito_routes) == 47, (
+        "aito.py + aito_payments.py grew or shrank a route — update this count, "
+        "WRITE_ROUTES, and _READ_ONLY_ROUTE_NAMES/_PUBLIC_ROUTE_NAMES together"
+    )
+    ungated = [
+        r.name
+        for r in aito_routes
+        if r.name not in _PUBLIC_ROUTE_NAMES and not any(_is_permission_gate(d.call) for d in r.dependant.dependencies)
+    ]
+    assert ungated == [], f"these aito routes declare no permission gate: {ungated}"
+
+    # Pin the other side of the exclusion too: if get_tracking ever grows a
+    # gate, the exclusion above would start silently hiding that it is no
+    # longer the sole ungated route — this fails loudly instead.
+    public_routes = [r for r in aito_routes if r.name in _PUBLIC_ROUTE_NAMES]
+    assert len(public_routes) == 1
+    assert not any(_is_permission_gate(d.call) for d in public_routes[0].dependant.dependencies)
+
+
+def test_every_gated_mutation_route_is_covered_by_write_routes():
+    """Ties the hand-maintained WRITE_ROUTES list to the dynamic enumeration:
+    every route that is neither the public tracking route nor a known
+    read-only GET must appear in WRITE_ROUTES, so the `len(WRITE_ROUTES) ==
+    31` count above is a derived fact, not a hand-typed one someone forgot
+    to update (T-037)."""
+    aito_routes = _aito_routes()
+    excluded = _PUBLIC_ROUTE_NAMES | _READ_ONLY_ROUTE_NAMES
+    dynamic_mutation_names = {r.name for r in aito_routes if r.name not in excluded}
+    write_route_names = {r[0] for r in WRITE_ROUTES}
+
+    missing = dynamic_mutation_names - write_route_names
+    assert missing == set(), f"these gated mutation routes are missing from WRITE_ROUTES: {missing}"
+
+    extra = write_route_names - dynamic_mutation_names
+    assert extra == set(), f"WRITE_ROUTES lists routes no longer found (or now read-only/public): {extra}"
+
+    assert len(WRITE_ROUTES) == len(dynamic_mutation_names)
 
 
 @pytest.mark.asyncio

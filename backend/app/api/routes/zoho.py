@@ -294,6 +294,34 @@ async def patch_contact(
         # The walk-in bucket is shared by every passing customer and carries live
         # transaction history — it must never take one customer's details.
         raise HTTPException(status_code=400, detail="The default client cannot be modified")
+    # T-039 (user-approved behaviour change, 2026-09-25): scoped to the board.
+    # This is the one Zoho route that REWRITES a Books contact's coordinates
+    # (update_contact_person overwrites the primary person's email/mobile),
+    # and it took any contact_id at all — an aito:create principal could
+    # rewrite the recipient of every customer in Books, one id at a time,
+    # none of them on any card. Its only caller is the drawer's
+    # `syncClientToZoho`, which runs in the create mutation's `onSuccess`
+    # (frontend/src/hooks/useAitoPageMutations.ts) — the card for this very
+    # contact already exists by then — so requiring one costs the create flow
+    # nothing while turning "any contact in Books" into "a contact this board
+    # is working for". The gate stays aito:create for the same reason
+    # `list_contact_persons` has it: a create-only user must be able to
+    # finish the card they just made.
+    #
+    # Deliberately NOT recorded on those cards' timelines: the only kind that
+    # could carry it is `project.updated`, whose `changes` mean "these card
+    # fields changed" (diff_fields, applied by the caller) — nothing here
+    # writes a card — and which coalesces, so a detail-only row would fold
+    # into (or delete) an unrelated recent `project.updated`. The operator's
+    # edit is already on the timeline: the card was created carrying exactly
+    # the values pushed here.
+    scoped = (
+        await db.execute(
+            select(AitoProject.id).where(AitoProject.client_id == contact_id, AitoProject.status == "active").limit(1)
+        )
+    ).scalar_one_or_none()
+    if scoped is None:
+        raise HTTPException(status_code=404, detail="No active project for this contact")
     try:
         await zoho_service.update_contact_person(
             db, contact_id, email=payload.email, phone=payload.phone, phone_field=payload.phone_field
