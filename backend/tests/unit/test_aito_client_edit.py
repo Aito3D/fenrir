@@ -11,7 +11,13 @@ import json
 import httpx
 import pytest
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+import backend.app.api.routes.aito as aito_routes
+import backend.app.models  # noqa: F401 — populates Base.metadata for create_all
+from backend.app.core.database import Base
+from backend.app.models.aito_project import AitoProject
+from backend.app.schemas.aito import AitoClientEdit
 from backend.app.services.zoho import zoho_service
 
 WALK_IN_ID = "66407000001237340"
@@ -496,10 +502,16 @@ async def test_a_version_race_lost_during_the_request_is_refused_before_books_is
 
 
 @pytest.mark.asyncio
-async def test_a_books_failure_after_the_claim_leaves_no_phantom_claim_and_no_fan_out(async_client):
-    """The other hazard the old ordering guarded against, still closed: a
-    refused rename must leave the card's version exactly where it was, and
-    every sibling card on the same contact untouched."""
+async def test_a_books_failure_after_the_claim_writes_no_field_and_fans_out_to_nobody(async_client):
+    """A refused rename must leave every CONTENT field of the card alone, and
+    every sibling card on the same contact untouched.
+
+    The version is the one exception, and it is the approved cost of T-040:
+    the claim is committed before the Books call (so the write lock is not
+    held across it), which means a failure afterwards can no longer take it
+    back. The card is left at expected + 1 with the old name, phone and email
+    — an editor holding the old number is told to reload, which is the safe
+    direction for a guard to fail in."""
     await _configure(async_client)
     project = await _create(async_client)
     sibling = await _create(async_client, description="Deuxième pièce")
@@ -514,9 +526,10 @@ async def test_a_books_failure_after_the_claim_leaves_no_phantom_claim_and_no_fa
     )
     assert r.status_code == 502
 
-    for card in (project, sibling):
+    # The claim's bump on the edited card; nothing at all on the sibling.
+    for card, expected_version in ((project, project["version"] + 1), (sibling, sibling["version"])):
         after = await _read(async_client, card["id"])
-        assert after["version"] == card["version"]
+        assert after["version"] == expected_version
         assert after["client_name"] == "Jean DUPONT"
         assert after["client_phone"] == "+689-87000001"
         assert after["client_email"] == "jean@example.pf"
@@ -539,6 +552,112 @@ async def test_a_card_only_edit_still_honours_the_claim(async_client):
     )
     assert ok.status_code == 200, ok.text
     assert ok.json()["version"] == project["version"] + 1
+
+
+# ------------------- T-040: the claim is committed before Books is called
+
+
+@pytest.mark.asyncio
+async def test_a_guarded_edit_bumps_the_version_exactly_once(async_client):
+    """The claim bumps the version itself now, and the field writes that
+    follow it would earn a second bump from the model's listener. The route
+    pins the row back to the claimed number, so an accepted edit still lands
+    on expected + 1 — the number the panel predicted and the one the NEXT
+    save has to present."""
+    await _configure(async_client)
+    zoho_service.transport = _recording_books([])
+    project = await _create(async_client)
+    url = f"/api/v1/aito/{project['id']}/client"
+
+    first = await async_client.put(url, json={**PERSON_EDIT, "expected_version": project["version"]})
+    assert first.status_code == 200, first.text
+    assert first.json()["version"] == project["version"] + 1
+    assert (await _read(async_client, project["id"]))["version"] == project["version"] + 1
+
+    # The card really is AT that number: a second save guarded by it is
+    # accepted. A double bump would 409 the operator's very next edit.
+    second = await async_client.put(
+        url, json={**PERSON_EDIT, "email": "jp2@example.pf", "expected_version": project["version"] + 1}
+    )
+    assert second.status_code == 200, second.text
+    assert second.json()["version"] == project["version"] + 2
+
+
+@pytest.mark.asyncio
+async def test_the_write_lock_is_not_held_across_the_books_round_trip(tmp_path, monkeypatch):
+    """The claim's UPDATE takes SQLite's one write lock. Left open until the
+    end of the request it would hold that lock for all three Books calls —
+    each at the Zoho client's 10s timeout — while `PRAGMA busy_timeout`
+    (database.py) only makes other writers wait 15s: a peer's PATCH, the
+    quote-sync worker's commit and the invoice poll all failed with
+    "database is locked" during one slow contact edit.
+
+    So this is not an observation about an implementation detail: it is the
+    guarantee. A SECOND connection writes the same row while the route is
+    inside Books, and it must commit rather than block. It needs a real file
+    database — the suite's shared in-memory engine has a single connection
+    and cannot contend with itself — hence the direct call to the route
+    function rather than a request through `async_client`.
+    """
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'aito-client-edit.db'}")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    try:
+        async with maker() as setup:
+            row = AitoProject(
+                description="Support GoPro",
+                board_column="devis",
+                client_id="z1",
+                client_name="Jean DUPONT",
+                client_phone="+689-87000001",
+                client_email="jean@example.pf",
+            )
+            setup.add(row)
+            await setup.commit()
+            project_id, version = row.id, row.version or 0
+
+        peer: dict = {}
+
+        async def slow_books(db, contact_id, **kwargs):
+            """Books, mid-round-trip. Everything else in the app carries on."""
+            async with maker() as other:
+                # Fail fast instead of waiting out the default 5s driver
+                # timeout: this write either goes through at once or the lock
+                # is being held, which is the bug.
+                await other.execute(text("PRAGMA busy_timeout = 500"))
+                await other.execute(
+                    text("UPDATE aito_projects SET quote_sync_state = 'idle' WHERE id = :id"), {"id": project_id}
+                )
+                await other.commit()
+                peer["wrote"] = True
+                peer["version"] = (
+                    await other.execute(text("SELECT version FROM aito_projects WHERE id = :id"), {"id": project_id})
+                ).scalar_one()
+            return "Jean-Pierre DUPONT"
+
+        async def walk_in(db):
+            return (WALK_IN_ID, "Client comptoir")
+
+        monkeypatch.setattr(zoho_service, "get_default_contact", walk_in)
+        monkeypatch.setattr(zoho_service, "update_contact", slow_books)
+
+        async with maker() as db:
+            response = await aito_routes.edit_project_client(
+                project_id=project_id,
+                payload=AitoClientEdit(**PERSON_EDIT, expected_version=version),
+                db=db,
+                current_user=None,
+            )
+
+        # The peer's write landed, and it could already SEE the claim: the
+        # version is the committed one, not this request's uncommitted guess.
+        assert peer == {"wrote": True, "version": version + 1}
+        assert response.version == version + 1
+        assert response.client_name == "Jean-Pierre DUPONT"
+        assert response.client_email == PERSON_EDIT["email"]
+    finally:
+        await engine.dispose()
 
 
 @pytest.mark.asyncio
@@ -895,4 +1014,6 @@ async def test_contact_not_found_on_a_person_card_is_502_not_contact_person_gone
 
     row = await _read(async_client, project["id"])
     assert row["client_name"] == "Jean DUPONT"
-    assert row["version"] == project["version"]
+    # Bumped by the committed claim (T-040), never by a field write: the
+    # refusal left the card's content exactly as it was.
+    assert row["version"] == project["version"] + 1

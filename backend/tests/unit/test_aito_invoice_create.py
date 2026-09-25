@@ -6,6 +6,8 @@ invoice, and applying a deposit twice spends money the client only paid
 once. So the tests below are mostly about the calls that must NOT happen.
 """
 
+import asyncio
+
 import pytest
 from sqlalchemy import select
 
@@ -290,6 +292,91 @@ async def test_an_already_invoiced_project_is_refused_before_anything_is_created
 
     assert response.status_code == 409
     assert "POST" not in [c["method"] for c in books["calls"]]
+
+
+# --- T-041: the local flag, and one create at a time ---------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_card_already_flagged_invoiced_is_refused_without_asking_books(async_client, db_session, books):
+    """`quote_invoiced` is what the button hides on and what the create
+    itself writes the moment Books confirms. The server used to ignore it
+    entirely and go ask Books, so the refusal cost a round trip it did not
+    need — and rested on an invoice list that is empty whenever the estimate
+    link did not stick."""
+    project_id = await _project(db_session, quote_invoiced=True)
+
+    response = await async_client.post(f"/api/v1/aito/{project_id}/invoice")
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "This project already has an invoice in Zoho"
+    assert books["calls"] == []
+
+
+@pytest.mark.asyncio
+async def test_the_preview_refuses_an_already_invoiced_card_too(async_client, db_session, books):
+    """The flag check lives in the shared guard, not in the create alone: the
+    dialog must not open on a card the create will refuse — the same rule
+    that already applies to Finish, the quote id and a pending sync."""
+    project_id = await _project(db_session, quote_invoiced=True)
+
+    response = await async_client.get(f"/api/v1/aito/{project_id}/invoice-preview")
+
+    assert response.status_code == 409
+    assert books["calls"] == []
+
+
+@pytest.mark.asyncio
+async def test_an_invoice_whose_estimate_link_did_not_stick_still_blocks_a_second_one(async_client, db_session, books):
+    """Production, FA-26-4331: Books raised the invoice and linked it to
+    nothing, and the repair PUT can fail too. The estimate filter the
+    duplicate guard reads then stays EMPTY, so before T-041 a second click
+    billed the client again. The local flag is the guard that does not
+    depend on the link."""
+    books["link_sticks"] = False
+    books["fail"] = "/invoices/inv-1"  # the repair PUT (and the re-read) fail
+    project_id = await _project(db_session)
+
+    first = await async_client.post(f"/api/v1/aito/{project_id}/invoice")
+    assert first.status_code == 200, first.text
+    assert books["listed"] == []  # nothing links the invoice to the quote
+
+    second = await async_client.post(f"/api/v1/aito/{project_id}/invoice")
+
+    assert second.status_code == 409
+    assert second.json()["detail"] == "This project already has an invoice in Zoho"
+    assert len([c for c in books["calls"] if c["method"] == "POST" and c["path"] == "/invoices"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_two_concurrent_creates_raise_exactly_one_invoice(async_client, db_session, books, monkeypatch):
+    """Two operators on the same card, or one retry after a client-side
+    timeout on a request that routinely runs 10s+. Both passed the Books
+    duplicate read — it is a check-then-act with three more round trips
+    inside the window — and both created a REAL invoice.
+
+    Serialised now: the second waits, then re-reads the flag the first
+    committed and answers the same 409 a sequential double-click gets."""
+    original = zoho_service._request
+
+    async def slow_create(db, method, path, *, params=None, json=None):
+        if method == "POST" and path == "/invoices":
+            # Long enough for the waiter to have reached (and passed) the
+            # duplicate read if nothing were holding it back.
+            await asyncio.sleep(0.05)
+        return await original(db, method, path, params=params, json=json)
+
+    monkeypatch.setattr(zoho_service, "_request", slow_create)
+    project_id = await _project(db_session)
+    url = f"/api/v1/aito/{project_id}/invoice"
+
+    first, second = await asyncio.gather(async_client.post(url), async_client.post(url))
+
+    assert sorted([first.status_code, second.status_code]) == [200, 409]
+    assert len([c for c in books["calls"] if c["method"] == "POST" and c["path"] == "/invoices"]) == 1
+    db_session.expire_all()
+    project = await db_session.get(AitoProject, project_id)
+    assert project.quote_invoiced is True
 
 
 @pytest.mark.asyncio
