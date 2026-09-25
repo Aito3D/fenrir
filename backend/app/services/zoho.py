@@ -272,6 +272,9 @@ def _map_invoice(invoice: dict) -> dict:
 # the live org) and a hard ceiling on a watermark that has somehow gone stale
 # enough to select the org's whole history.
 _MAX_INVOICE_PAGES = 10
+# Same shape for the contact poll. The live org's 90-day window was 125
+# contacts (one page); the cap only matters for a watermark gone wrong.
+_MAX_CONTACT_PAGES = 10
 
 
 def _map_invoice_change(invoice: dict) -> dict:
@@ -869,6 +872,44 @@ class ZohoService:
 
     async def get_contact(self, db: AsyncSession, contact_id: str) -> dict:
         return _map_contact((await self._request(db, "GET", f"/contacts/{_seg(contact_id)}")).get("contact", {}))
+
+    async def list_contacts_modified_since(self, db: AsyncSession, since: str) -> list[dict]:
+        """Customer contacts Books has touched since ``since``, newest first.
+
+        The contact-side twin of ``list_invoices_modified_since``, feeding
+        the contact poll (services/aito_contact_poll.py): one call tells the
+        whole board which clients were renamed in Books. ``since`` is Books'
+        own ``±HHMM`` spelling — see that poll for why ``isoformat()`` is
+        not interchangeable. Verified live on the contacts list: the filter
+        is honoured server-side (a two-day window returned 24 rows of ~4000).
+
+        Rows are ``_map_contact`` plus ``last_modified_time``, the poll's
+        watermark. Vendors are dropped exactly as ``search_contacts`` drops
+        them: a card can only point at a customer.
+        """
+        rows: list[dict] = []
+        for page in range(1, _MAX_CONTACT_PAGES + 1):
+            payload = await self._request(
+                db,
+                "GET",
+                "/contacts",
+                params={
+                    "last_modified_time": since,
+                    "sort_column": "last_modified_time",
+                    "sort_order": "D",
+                    "per_page": "200",
+                    "page": str(page),
+                },
+            )
+            for contact in payload.get("contacts") or []:
+                if contact.get("contact_type", "customer") != "customer":
+                    continue
+                rows.append(
+                    {**_map_contact(contact), "last_modified_time": contact.get("last_modified_time", "") or ""}
+                )
+            if not (payload.get("page_context") or {}).get("has_more_page"):
+                break
+        return rows
 
     async def _contact_persons_raw(self, db: AsyncSession, contact_id: str) -> list[dict]:
         """The contact's ``contact_persons`` array as Books sends it. One GET

@@ -3157,7 +3157,7 @@ async def test_periodic_tick_rolls_back_a_failed_purge_before_reconciling_paymen
     import asyncio
     import contextlib as _contextlib
 
-    from backend.app.services import aito_invoice_poll, aito_payment_links, aito_quote_sync
+    from backend.app.services import aito_contact_poll, aito_invoice_poll, aito_payment_links, aito_quote_sync
 
     class FakeDB:
         def __init__(self):
@@ -3190,6 +3190,7 @@ async def test_periodic_tick_rolls_back_a_failed_purge_before_reconciling_paymen
     monkeypatch.setattr(aito_quote_sync, "sync_interval_seconds", _always(300))
     monkeypatch.setattr(aito_quote_sync, "sweep_invoices", _always(0))
     monkeypatch.setattr(aito_invoice_poll, "poll_invoices", _always(0))
+    monkeypatch.setattr(aito_contact_poll, "poll_contacts", _always(0))
     monkeypatch.setattr(aito_quote_sync, "_throttled_until", None)
     monkeypatch.setattr(aito_quote_sync, "purge_tracking_views", fake_purge_tracking_views)
     monkeypatch.setattr(aito_payment_links, "reconcile_payment_links", fake_reconcile_payment_links)
@@ -3203,6 +3204,66 @@ async def test_periodic_tick_rolls_back_a_failed_purge_before_reconciling_paymen
         # fresh one -- proving the rollback happened in place rather than by
         # abandoning the poisoned session.
         assert reconcile_called_with == [fake_db]
+        assert fake_db.rollback_calls == 1
+    finally:
+        loop_task.cancel()
+        with _contextlib.suppress(asyncio.CancelledError):
+            await loop_task
+
+
+@pytest.mark.asyncio
+async def test_a_periodic_tick_polls_contacts_and_survives_that_poll_failing(monkeypatch, caplog):
+    """The contact poll (services/aito_contact_poll.py) runs on the periodic
+    tick beside the invoice poll, on the tick's own session, and a failure in
+    it is contained: logged, the session rolled back, and the non-Books passes
+    after it (purge, payment links) still run on that same tick."""
+    import asyncio
+    import contextlib as _contextlib
+
+    from backend.app.services import aito_contact_poll, aito_invoice_poll, aito_payment_links, aito_quote_sync
+
+    class FakeDB:
+        def __init__(self):
+            self.rollback_calls = 0
+
+        async def rollback(self):
+            self.rollback_calls += 1
+
+    fake_db = FakeDB()
+
+    @_contextlib.asynccontextmanager
+    async def fake_session():
+        yield fake_db
+
+    polled_with: list[object] = []
+    reconcile_done = asyncio.Event()
+
+    async def failing_poll_contacts(db):
+        polled_with.append(db)
+        raise RuntimeError("Books hiccup")
+
+    async def fake_reconcile_payment_links(db):
+        reconcile_done.set()
+
+    monkeypatch.setattr(aito_quote_sync, "async_session", fake_session)
+    monkeypatch.setattr(aito_quote_sync, "run_sync_once", _always(0))
+    monkeypatch.setattr(aito_quote_sync, "sync_enabled", _always(True))
+    monkeypatch.setattr(aito_quote_sync.zoho_service, "is_configured", _always(True))
+    monkeypatch.setattr(aito_quote_sync, "sync_interval_seconds", _always(300))
+    monkeypatch.setattr(aito_quote_sync, "sweep_invoices", _always(0))
+    monkeypatch.setattr(aito_invoice_poll, "poll_invoices", _always(0))
+    monkeypatch.setattr(aito_contact_poll, "poll_contacts", failing_poll_contacts)
+    monkeypatch.setattr(aito_quote_sync, "_throttled_until", None)
+    monkeypatch.setattr(aito_quote_sync, "purge_tracking_views", _always(None))
+    monkeypatch.setattr(aito_payment_links, "reconcile_payment_links", fake_reconcile_payment_links)
+
+    loop_task = asyncio.create_task(aito_quote_sync.run_sync_loop())
+    try:
+        with caplog.at_level("ERROR"):
+            await asyncio.wait_for(reconcile_done.wait(), timeout=10)
+        assert polled_with == [fake_db]
+        assert "Aito contact poll failed" in caplog.text
+        assert "Aito quote sync tick failed" not in caplog.text
         assert fake_db.rollback_calls == 1
     finally:
         loop_task.cancel()

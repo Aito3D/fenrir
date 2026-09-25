@@ -2469,6 +2469,23 @@ async def run_sync_loop() -> None:
                         except ZohoRateLimited as e:
                             logger.warning("Aito invoice sweep deferred (Zoho Books rate limit): %s", e)
                             _arm_rate_limit_throttle(e)
+                        # Contacts renamed in Books, same one-call shape as
+                        # the invoice poll above (services/aito_contact_poll.py).
+                        # Its own try so a failure here neither skips the
+                        # non-Books passes below nor is masked by them; a 429
+                        # arms the shared window like every other Books read
+                        # on this tick.
+                        try:
+                            from backend.app.services.aito_contact_poll import poll_contacts
+
+                            await poll_contacts(db)
+                        except ZohoRateLimited as e:
+                            logger.warning("Aito contact poll deferred (Zoho Books rate limit): %s", e)
+                            _arm_rate_limit_throttle(e)
+                        except Exception:
+                            logger.exception("Aito contact poll failed")
+                            with contextlib.suppress(Exception):
+                                await db.rollback()
                 # Retention for the tracking-view log: unlike the sweep above,
                 # this has nothing to do with Zoho — a Fenrir instance can
                 # run the public tracking page with only `external_url` set
