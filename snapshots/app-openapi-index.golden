@@ -1122,6 +1122,20 @@
    },
    "security": true
   },
+  "GET /api/v1/aito/clients/{client_id}/rating": {
+   "operationId": "get_client_rating_api_v1_aito_clients__client_id__rating_get",
+   "params": [
+    "header:X-API-Key",
+    "path:client_id!",
+    "query:refresh"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "AitoClientRatingResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "GET /api/v1/aito/shipping/services": {
    "operationId": "list_shipping_services_api_v1_aito_shipping_services_get",
    "params": [
@@ -1279,6 +1293,20 @@
    "requestBody": {},
    "responses": {
     "200": "[AitoTaskResponse]",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/aito/{project_id}/terminal-payment/{payment_id}": {
+   "operationId": "get_terminal_payment_api_v1_aito__project_id__terminal_payment__payment_id__get",
+   "params": [
+    "header:X-API-Key",
+    "path:payment_id!",
+    "path:project_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "AitoTerminalPaymentView",
     "422": "HTTPValidationError"
    },
    "security": true
@@ -5622,6 +5650,19 @@
    },
    "security": true
   },
+  "GET /api/v1/zoho/contacts/{contact_id}/persons": {
+   "operationId": "list_contact_persons_api_v1_zoho_contacts__contact_id__persons_get",
+   "params": [
+    "header:X-API-Key",
+    "path:contact_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "[ZohoContactPerson]",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "GET /api/v1/zoho/estimates": {
    "operationId": "search_estimates_api_v1_zoho_estimates_get",
    "params": [
@@ -6565,10 +6606,54 @@
    },
    "security": true
   },
+  "POST /api/v1/aito/{project_id}/manual-payment": {
+   "operationId": "record_manual_payment_route_api_v1_aito__project_id__manual_payment_post",
+   "params": [
+    "header:X-API-Key",
+    "path:project_id!"
+   ],
+   "requestBody": {
+    "application/json": "AitoManualPaymentCreate"
+   },
+   "responses": {
+    "200": "AitoProjectResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/aito/{project_id}/payment-link": {
+   "operationId": "create_invoice_payment_link_api_v1_aito__project_id__payment_link_post",
+   "params": [
+    "header:X-API-Key",
+    "path:project_id!"
+   ],
+   "requestBody": {
+    "application/json": "AitoInvoiceLinkCreate"
+   },
+   "responses": {
+    "200": "AitoProjectResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "POST /api/v1/aito/{project_id}/payment-link/refresh": {
    "operationId": "refresh_payment_link_api_v1_aito__project_id__payment_link_refresh_post",
    "params": [
     "header:X-API-Key",
+    "path:project_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "AitoProjectResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/aito/{project_id}/payment-link/{link_id}/cancel": {
+   "operationId": "cancel_invoice_payment_link_api_v1_aito__project_id__payment_link__link_id__cancel_post",
+   "params": [
+    "header:X-API-Key",
+    "path:link_id!",
     "path:project_id!"
    ],
    "requestBody": {},
@@ -6673,6 +6758,21 @@
    },
    "responses": {
     "201": "AitoTaskResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/aito/{project_id}/terminal-payment": {
+   "operationId": "start_terminal_payment_api_v1_aito__project_id__terminal_payment_post",
+   "params": [
+    "header:X-API-Key",
+    "path:project_id!"
+   ],
+   "requestBody": {
+    "application/json": "AitoTerminalPaymentCreate"
+   },
+   "responses": {
+    "201": "AitoTerminalPaymentView",
     "422": "HTTPValidationError"
    },
    "security": true
@@ -10857,6 +10957,21 @@
    },
    "security": true
   },
+  "POST /api/v1/zoho/contacts/{contact_id}/persons": {
+   "operationId": "create_contact_person_api_v1_zoho_contacts__contact_id__persons_post",
+   "params": [
+    "header:X-API-Key",
+    "path:contact_id!"
+   ],
+   "requestBody": {
+    "application/json": "ZohoContactPersonCreate"
+   },
+   "responses": {
+    "201": "ZohoContactPerson",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "PUT /api/v1/aito/{project_id}/client": {
    "operationId": "edit_project_client_api_v1_aito__project_id__client_put",
    "params": [
@@ -11545,6 +11660,8 @@
   },
   "AitoClientEdit": {
    "properties": {
+    "client_contact_name": "anyOf(string,null)",
+    "client_contact_person_id": "anyOf(string,null)",
     "client_social_handle": "anyOf(string,null)",
     "client_social_network": "anyOf(string,null)",
     "company_name": "string",
@@ -11561,14 +11678,20 @@
    "properties": {
     "column": "string",
     "created_at": "string",
+    "description": "string",
     "id": "integer",
+    "quote_number": "anyOf(string,null)",
+    "quote_status": "anyOf(string,null)",
     "tasks": "[AitoTaskResponse]",
     "total": "number"
    },
    "required": [
     "column",
     "created_at",
+    "description",
     "id",
+    "quote_number",
+    "quote_status",
     "tasks",
     "total"
    ]
@@ -11576,10 +11699,12 @@
   "AitoClientHistoryResponse": {
    "properties": {
     "cards": "[AitoClientHistoryCard]",
+    "latest_contact_person_id": "anyOf(string,null)",
     "latest_social": "anyOf(AitoClientHistorySocial,null)"
    },
    "required": [
     "cards",
+    "latest_contact_person_id",
     "latest_social"
    ]
   },
@@ -11591,6 +11716,27 @@
    "required": [
     "handle",
     "network"
+   ]
+  },
+  "AitoClientRatingResponse": {
+   "properties": {
+    "computed_at": "anyOf(string,null)",
+    "is_company": "boolean",
+    "on_time_count": "integer",
+    "overdue_count": "integer",
+    "past_due_count": "integer",
+    "reason": "anyOf(string,null)",
+    "settled_count": "integer",
+    "stale": "boolean",
+    "tier": "string",
+    "worst_overdue_days": "integer",
+    "worst_overdue_number": "anyOf(string,null)"
+   },
+   "required": [
+    "computed_at",
+    "reason",
+    "stale",
+    "tier"
    ]
   },
   "AitoContactedUpdate": {
@@ -11712,6 +11858,16 @@
     "to"
    ]
   },
+  "AitoInvoiceLinkCreate": {
+   "properties": {
+    "amount": "integer",
+    "document_id": "string"
+   },
+   "required": [
+    "amount",
+    "document_id"
+   ]
+  },
   "AitoInvoicePreview": {
    "properties": {
     "currency_code": "string",
@@ -11756,6 +11912,21 @@
     "url"
    ]
   },
+  "AitoManualPaymentCreate": {
+   "properties": {
+    "amount": "integer",
+    "document_id": "string",
+    "document_kind": "string",
+    "mode": "string",
+    "reference": "anyOf(string,null)"
+   },
+   "required": [
+    "amount",
+    "document_id",
+    "document_kind",
+    "mode"
+   ]
+  },
   "AitoNoteCreate": {
    "properties": {
     "note": "string"
@@ -11769,6 +11940,7 @@
     "amount": "integer",
     "currency": "string",
     "expires_on": "string",
+    "id": "integer",
     "minted": "boolean",
     "paid_at": "anyOf(string,null)",
     "state": "string",
@@ -11779,6 +11951,7 @@
     "amount",
     "currency",
     "expires_on",
+    "id",
     "minted",
     "paid_at",
     "state",
@@ -11812,6 +11985,8 @@
   },
   "AitoProjectCreate": {
    "properties": {
+    "client_contact_name": "anyOf(string,null)",
+    "client_contact_person_id": "anyOf(string,null)",
     "client_email": "anyOf(string,null)",
     "client_id": "string",
     "client_is_company": "anyOf(boolean,null)",
@@ -11874,6 +12049,8 @@
   },
   "AitoProjectResponse": {
    "properties": {
+    "client_contact_name": "anyOf(string,null)",
+    "client_contact_person_id": "anyOf(string,null)",
     "client_contacted_at": "anyOf(string,null)",
     "client_email": "anyOf(string,null)",
     "client_id": "anyOf(string,null)",
@@ -11893,6 +12070,7 @@
     "invoice_balance": "anyOf(number,null)",
     "invoice_checked_at": "anyOf(string,null)",
     "invoice_due_date": "anyOf(string,null)",
+    "invoice_payment_link": "anyOf(AitoPaymentLinkView,null)",
     "invoice_status": "anyOf(string,null)",
     "move_lock": "anyOf(string,null)",
     "payment_link": "anyOf(AitoPaymentLinkView,null)",
@@ -11930,11 +12108,14 @@
     "task_services": "[string]",
     "task_steps": "[AitoTaskStepsResponse]",
     "tasks_total": "number",
+    "terminal_payment": "anyOf(AitoTerminalPaymentView,null)",
     "tracking_configured": "boolean",
     "updated_at": "string",
     "version": "integer"
    },
    "required": [
+    "client_contact_name",
+    "client_contact_person_id",
     "client_contacted_at",
     "client_email",
     "client_id",
@@ -11954,6 +12135,7 @@
     "invoice_balance",
     "invoice_checked_at",
     "invoice_due_date",
+    "invoice_payment_link",
     "invoice_status",
     "move_lock",
     "payment_link",
@@ -11991,6 +12173,7 @@
     "task_services",
     "task_steps",
     "tasks_total",
+    "terminal_payment",
     "tracking_configured",
     "updated_at",
     "version"
@@ -11998,6 +12181,8 @@
   },
   "AitoProjectUpdate": {
    "properties": {
+    "client_contact_name": "anyOf(string,null)",
+    "client_contact_person_id": "anyOf(string,null)",
     "client_email": "anyOf(string,null)",
     "client_id": "anyOf(string,null)",
     "client_is_company": "anyOf(boolean,null)",
@@ -12597,6 +12782,46 @@
    },
    "required": []
   },
+  "AitoTerminalPaymentCreate": {
+   "properties": {
+    "amount": "integer",
+    "document_id": "string",
+    "document_kind": "string"
+   },
+   "required": [
+    "amount",
+    "document_id",
+    "document_kind"
+   ]
+  },
+  "AitoTerminalPaymentView": {
+   "properties": {
+    "amount": "integer",
+    "amount_confirmed": "anyOf(integer,null)",
+    "booking_error": "anyOf(string,null)",
+    "booking_status": "anyOf(string,null)",
+    "created_at": "string",
+    "document_kind": "string",
+    "document_number": "string",
+    "id": "integer",
+    "settled_at": "anyOf(string,null)",
+    "status": "string",
+    "sync_error": "anyOf(string,null)"
+   },
+   "required": [
+    "amount",
+    "amount_confirmed",
+    "booking_error",
+    "booking_status",
+    "created_at",
+    "document_kind",
+    "document_number",
+    "id",
+    "settled_at",
+    "status",
+    "sync_error"
+   ]
+  },
   "AitoTrackingLinkResponse": {
    "properties": {
     "quote_notes": "anyOf(string,null)",
@@ -12620,6 +12845,7 @@
   },
   "AitoTrackingResponse": {
    "properties": {
+    "accepted": "boolean",
     "column": "string",
     "done_at": "anyOf(string,null)",
     "due_date": "anyOf(string,null)",
@@ -12631,6 +12857,7 @@
     "updated_at": "string"
    },
    "required": [
+    "accepted",
     "column",
     "done_at",
     "due_date",
@@ -12679,6 +12906,9 @@
     "aito_followup_link_days": "integer",
     "aito_followup_pickup_days": "integer",
     "aito_followup_quote_days": "integer",
+    "aito_payment_mode_card": "string",
+    "aito_payment_mode_cash": "string",
+    "aito_payment_mode_cheque": "string",
     "aito_quote_validity_days": "integer",
     "ambient_drying_enabled": "boolean",
     "ams_history_retention_days": "integer",
@@ -12844,6 +13074,9 @@
     "aito_followup_link_days": "anyOf(integer,null)",
     "aito_followup_pickup_days": "anyOf(integer,null)",
     "aito_followup_quote_days": "anyOf(integer,null)",
+    "aito_payment_mode_card": "anyOf(string,null)",
+    "aito_payment_mode_cash": "anyOf(string,null)",
+    "aito_payment_mode_cheque": "anyOf(string,null)",
     "aito_quote_validity_days": "anyOf(integer,null)",
     "ambient_drying_enabled": "anyOf(boolean,null)",
     "ams_history_retention_days": "anyOf(integer,null)",
@@ -16398,7 +16631,8 @@
     "folder_id": "anyOf(integer,null)",
     "instance_id": "anyOf(integer,null)",
     "model_id": "integer",
-    "profile_id": "anyOf(integer,null)"
+    "profile_id": "anyOf(integer,null)",
+    "source_type": "string"
    },
    "required": [
     "model_id"
@@ -20181,6 +20415,39 @@
     "phone_field": "string"
    },
    "required": []
+  },
+  "ZohoContactPerson": {
+   "properties": {
+    "contact_person_id": "string",
+    "email": "string",
+    "first_name": "string",
+    "is_primary": "boolean",
+    "last_name": "string",
+    "mobile": "string",
+    "name": "string",
+    "phone": "string"
+   },
+   "required": [
+    "contact_person_id",
+    "email",
+    "first_name",
+    "is_primary",
+    "last_name",
+    "mobile",
+    "name",
+    "phone"
+   ]
+  },
+  "ZohoContactPersonCreate": {
+   "properties": {
+    "email": "string",
+    "first_name": "string",
+    "last_name": "string",
+    "phone": "string"
+   },
+   "required": [
+    "first_name"
+   ]
   },
   "ZohoEstimateSummary": {
    "properties": {

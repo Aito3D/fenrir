@@ -18,6 +18,7 @@
     "bad_letter_u": null,
     "dead_link": {
       "data": {
+        "accepted": true,
         "column": "model",
         "done_at": null,
         "due_date": null,
@@ -33,6 +34,7 @@
     "declined_quote": null,
     "deposit_link_current_not_superseded": {
       "data": {
+        "accepted": true,
         "column": "model",
         "done_at": null,
         "due_date": null,
@@ -52,6 +54,7 @@
     "devis_dormant": null,
     "devis_exact": {
       "data": {
+        "accepted": false,
         "column": "devis",
         "done_at": null,
         "due_date": "2026-03-20",
@@ -91,6 +94,7 @@
     },
     "devis_hyphen_space": {
       "data": {
+        "accepted": false,
         "column": "devis",
         "done_at": null,
         "due_date": "2026-03-20",
@@ -130,6 +134,7 @@
     },
     "devis_lowercase": {
       "data": {
+        "accepted": false,
         "column": "devis",
         "done_at": null,
         "due_date": "2026-03-20",
@@ -170,6 +175,7 @@
     "done_expired": null,
     "done_no_stage_event_cold_labels": {
       "data": {
+        "accepted": true,
         "column": "done",
         "done_at": null,
         "due_date": null,
@@ -188,6 +194,7 @@
     },
     "done_shipped_lta": {
       "data": {
+        "accepted": true,
         "column": "done",
         "done_at": "2026-03-01T10:00:00",
         "due_date": null,
@@ -213,6 +220,7 @@
     "expired_quote": null,
     "finish_paid": {
       "data": {
+        "accepted": true,
         "column": "finish",
         "done_at": null,
         "due_date": "2026-03-01",
@@ -231,6 +239,7 @@
     },
     "legacy_token_folded_activity": {
       "data": {
+        "accepted": true,
         "column": "model",
         "done_at": null,
         "due_date": "2026-03-01",
@@ -246,6 +255,7 @@
     "legacy_token_lowercased_is_another_token": null,
     "link_never_created": {
       "data": {
+        "accepted": true,
         "column": "waiting",
         "done_at": null,
         "due_date": null,
@@ -260,6 +270,7 @@
     },
     "print_pending_link": {
       "data": {
+        "accepted": true,
         "column": "print",
         "done_at": null,
         "due_date": "2026-03-30",
@@ -286,11 +297,16 @@
     "unknown": null,
     "waiting_lookalikes": {
       "data": {
+        "accepted": false,
         "column": "waiting",
         "done_at": null,
         "due_date": null,
         "invoice": "unpaid",
-        "payment": null,
+        "payment": {
+          "deposit": false,
+          "state": "unpaid",
+          "url": "https://pay.example/2"
+        },
         "reference": "DEV-000102",
         "shipping": null,
         "tasks": [],
@@ -300,11 +316,16 @@
     },
     "waiting_unpaid_no_payment": {
       "data": {
+        "accepted": false,
         "column": "waiting",
         "done_at": null,
         "due_date": null,
         "invoice": "unpaid",
-        "payment": null,
+        "payment": {
+          "deposit": false,
+          "state": "unpaid",
+          "url": "https://pay.example/2"
+        },
         "reference": "DEV-000102",
         "shipping": null,
         "tasks": [],
@@ -316,6 +337,7 @@
   "lookups_with_deposit": {
     "deposit_link_current_not_superseded": {
       "data": {
+        "accepted": true,
         "column": "model",
         "done_at": null,
         "due_date": null,
@@ -334,6 +356,7 @@
     },
     "finish_paid": {
       "data": {
+        "accepted": true,
         "column": "finish",
         "done_at": null,
         "due_date": "2026-03-01",
@@ -352,6 +375,7 @@
     },
     "print_pending_link": {
       "data": {
+        "accepted": true,
         "column": "print",
         "done_at": null,
         "due_date": "2026-03-30",

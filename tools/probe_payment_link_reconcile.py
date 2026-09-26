@@ -168,6 +168,12 @@ def project_kw(**kw) -> dict:
         quote_invoiced=False,
         quote_expiry_date="2026-10-01",
         quote_sync_state="idle",
+        # Otherwise takes the model's `server_default=func.now()` — the REAL
+        # date, not this probe's frozen NOW. Unread by the reconcile pass
+        # today, but freezing it keeps the row fully deterministic rather
+        # than quietly wall-clock-dependent.
+        created_at=NOW,
+        updated_at=NOW,
     )
     base.update(kw)
     return base
@@ -185,6 +191,13 @@ def link_kw(**kw) -> dict:
         status="pending",
         url=LINK_URL,
         sync_failures=0,
+        # Otherwise takes the model's `server_default=func.now()` — the REAL
+        # date, not this probe's frozen NOW/TODAY — which drifts
+        # `expires_in_days(row.expires_on, row.created_at.date())` (a
+        # reused/unfinished reservation reads its OWN `created_at`) with the
+        # UTC calendar.
+        created_at=NOW,
+        updated_at=NOW,
     )
     base.update(kw)
     return base

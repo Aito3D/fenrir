@@ -728,6 +728,76 @@ async def test_update_rejects_blank_description(async_client):
 
 
 @pytest.mark.asyncio
+async def test_update_rejects_an_explicit_null_description(async_client):
+    """`{"description": null}` used to reach update_project's
+    `fields["description"].strip()` and 500 with an AttributeError — and it
+    did so AFTER the expected_version claim had taken the row's write lock,
+    so a guarded PATCH burnt its claim on an error the client was told
+    nothing about. It is a 422 from the schema now (T-012)."""
+    a = (await _create(async_client)).json()
+    r = await async_client.patch(f"/api/v1/aito/{a['id']}", json={"description": None})
+    assert r.status_code == 422
+    assert "description must not be null" in json.dumps(r.json())
+    unchanged = (await async_client.get("/api/v1/aito/")).json()[0]
+    assert unchanged["description"] == "Support GoPro"
+    assert unchanged["version"] == a["version"]
+
+
+@pytest.mark.asyncio
+async def test_update_rejects_an_explicit_null_description_before_the_version_claim(async_client):
+    """The reject is a schema one, so the guarded form never reaches the
+    handler at all: the version is still claimable afterwards."""
+    a = (await _create(async_client)).json()
+    r = await async_client.patch(
+        f"/api/v1/aito/{a['id']}", json={"description": None, "expected_version": a["version"]}
+    )
+    assert r.status_code == 422
+    ok = await async_client.patch(
+        f"/api/v1/aito/{a['id']}", json={"description": "Autre", "expected_version": a["version"]}
+    )
+    assert ok.status_code == 200
+    assert ok.json()["description"] == "Autre"
+
+
+@pytest.mark.asyncio
+async def test_update_with_description_omitted_still_writes_the_other_fields(async_client):
+    """The null reject must not catch the field's own default: an omitted
+    description is left alone, exactly as before."""
+    a = (await _create(async_client)).json()
+    r = await async_client.patch(f"/api/v1/aito/{a['id']}", json={"client_name": "Globex"})
+    assert r.status_code == 200
+    assert r.json()["client_name"] == "Globex"
+    assert r.json()["description"] == "Support GoPro"
+
+
+@pytest.mark.asyncio
+async def test_update_still_accepts_a_real_description(async_client):
+    a = (await _create(async_client)).json()
+    r = await async_client.patch(f"/api/v1/aito/{a['id']}", json={"description": "x"})
+    assert r.status_code == 200
+    assert r.json()["description"] == "x"
+
+
+def test_project_update_schema_separates_an_omitted_description_from_an_explicit_null():
+    """Pydantic does not run field validators on defaults — that is what lets
+    one `str | None` field mean both "left alone" and "refused"."""
+    assert AitoProjectUpdate().model_dump(exclude_unset=True) == {}
+    with pytest.raises(pydantic.ValidationError, match="description must not be null"):
+        AitoProjectUpdate(description=None)
+    with pytest.raises(pydantic.ValidationError, match="description must not be blank"):
+        AitoProjectUpdate(description="   ")
+    assert AitoProjectUpdate(description="x").description == "x"
+
+
+def test_project_create_still_has_no_null_description_validator():
+    """The reject lives on the UPDATE schema only. AitoProjectCreate declares
+    `description: str` (required, non-nullable), so its own null is already a
+    422 from the annotation and its semantics are untouched."""
+    with pytest.raises(pydantic.ValidationError):
+        AitoProjectCreate(description=None, client_id="z1", client_name="ACME")
+
+
+@pytest.mark.asyncio
 async def test_update_never_touches_column_or_position(async_client):
     # quote_status="accepted" with no tasks lands the card in 'finish' unlocked,
     # so the Finish -> Done move below is legal under the cross-column guard.

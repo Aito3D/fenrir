@@ -229,6 +229,13 @@ describe('EVENT_LABEL_KEY', () => {
   });
 });
 
+describe('project.contacted.set / project.contacted.cleared', () => {
+  it('labels both kinds', () => {
+    expect(EVENT_LABEL_KEY['project.contacted.set']).toBe('aito.history.projectContactedSet');
+    expect(EVENT_LABEL_KEY['project.contacted.cleared']).toBe('aito.history.projectContactedCleared');
+  });
+});
+
 describe('project.client.changed', () => {
   it('has a label key', () => {
     expect(EVENT_LABEL_KEY['project.client.changed']).toBe('aito.history.clientChanged');

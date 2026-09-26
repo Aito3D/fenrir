@@ -14,7 +14,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
 from sqlalchemy import select
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.aito_payment_link import AitoPaymentLink
@@ -90,6 +90,21 @@ _throttled_until: float | None = None
 # a stray live link sits at OSB. Single-process app, so a lock is the whole
 # fix — no partial unique index, no migration.
 _pass_lock = asyncio.Lock()
+# Serialises the RESERVATION window alone — the `current_link` guard read,
+# `_next_key`, the insert and its commit — for every path that reserves a row:
+# the reconciler's `_create` (already under `_pass_lock`; a second, small lock
+# nested inside it costs nothing) and `create_invoice_link`, which is an
+# operator HTTP call and takes no pass lock at all. `_next_key` counts rows and
+# only then inserts, with awaits in between, while `idempotency_key` is
+# `unique=True`: two Create-link clicks (two tabs, two operators on one card),
+# or one click landing inside a reconcile pass, would otherwise both compute
+# `aito:{pid}:{n}` and the loser's commit would raise IntegrityError — a 500 on
+# the button. Same rationale as `aito_terminal_payments._start_lock`; held only
+# through the reservation commit, never across a Heimdall round trip, so an
+# operator never waits on the network. Single-process app, so a lock is the
+# whole fix in-process; `create_invoice_link` also answers a cross-process
+# collision as the documented 409.
+_reserve_lock = asyncio.Lock()
 
 
 def _arm_throttle(retry_after: float | None) -> None:
@@ -365,19 +380,22 @@ async def _create(
     leaves a reservation the next pass re-POSTs under the same key.
     `created_at` is stamped explicitly (not left to the server default) so a
     retry days later still asks Heimdall for the SAME `expires_in_days` —
-    see `_complete`."""
-    row = AitoPaymentLink(
-        project_id=project.id,
-        idempotency_key=await _next_key(db, project.id),
-        reference=wanted.reference,
-        amount=wanted.amount,
-        expires_on=wanted.expires_on,
-        created_at=now,
-        document_kind="quote",
-        document_number=wanted.reference,
-    )
-    db.add(row)
-    await db.commit()
+    see `_complete`. The reservation runs under `_reserve_lock` so an
+    operator's `create_invoice_link` cannot compute the same `:n` key from
+    the same per-project counter at the same instant."""
+    async with _reserve_lock:
+        row = AitoPaymentLink(
+            project_id=project.id,
+            idempotency_key=await _next_key(db, project.id),
+            reference=wanted.reference,
+            amount=wanted.amount,
+            expires_on=wanted.expires_on,
+            created_at=now,
+            document_kind="quote",
+            document_number=wanted.reference,
+        )
+        db.add(row)
+        await db.commit()
     await _complete(db, project, row, now=now, kind=kind, extra_detail=extra_detail)
 
 
@@ -1066,15 +1084,24 @@ async def create_invoice_link(
     key. A reservation the sweep has already written off (`failed`, see
     `_age_out_abandoned_invoice_reservations`) is history: a new row is
     reserved instead. The typed amount is ignored on a replay; the body must
-    stay identical to the one the key was first used with."""
+    stay identical to the one the key was first used with.
+
+    The reservation window (that guard read, the key, the insert and its
+    commit) runs under `_reserve_lock`, shared with the reconciler's
+    `_create`: two clicks, or a click landing inside a reconcile pass, no
+    longer compute the same `:n` key. A collision the lock cannot cover
+    (another process) is caught and answered as `InvoiceLinkExists` — the
+    route's 409 `link_exists` — instead of an unhandled 500."""
     project_id = project.id
-    existing = await current_link(db, project_id, kind="invoice")
-    if existing is not None and existing.heimdall_id is None and existing.status == "pending":
-        row = existing  # replay the reservation under its own key
-    elif existing is not None and existing.status == "pending":
-        raise InvoiceLinkExists("A payment link is already open for this invoice")
-    else:
-        row = AitoPaymentLink(
+
+    async def _reserve() -> AitoPaymentLink:
+        """The guard read + key + insert + commit window, under the lock."""
+        existing = await current_link(db, project_id, kind="invoice")
+        if existing is not None and existing.heimdall_id is None and existing.status == "pending":
+            return existing  # replay the reservation under its own key
+        if existing is not None and existing.status == "pending":
+            raise InvoiceLinkExists("A payment link is already open for this invoice")
+        fresh = AitoPaymentLink(
             project_id=project_id,
             idempotency_key=await _next_key(db, project_id),
             reference=document.number,
@@ -1084,8 +1111,24 @@ async def create_invoice_link(
             document_kind="invoice",
             document_number=document.number,
         )
-        db.add(row)
+        db.add(fresh)
         await db.commit()
+        return fresh
+
+    async with _reserve_lock:
+        try:
+            row = await _reserve()
+        except IntegrityError as exc:
+            # The unique `idempotency_key` lost the race to something the lock
+            # cannot cover: another PROCESS (or an out-of-band insert) claimed
+            # `aito:{pid}:{n}` between our count and our commit. The winner's
+            # row is this invoice's link, so answer the refusal the operator
+            # already knows — never a 500 on the Create-link button.
+            await db.rollback()
+            winner = await current_link(db, project_id, kind="invoice")
+            if winner is not None and winner.status == "pending":
+                raise InvoiceLinkExists("A payment link is already open for this invoice") from exc
+            raise
     try:
         view = await heimdall_service.create_link(
             db,

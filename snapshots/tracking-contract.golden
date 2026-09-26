@@ -25,6 +25,7 @@
     },
     "AitoTrackingResponse": {
       "properties": {
+        "accepted": "boolean",
         "column": "string[devis,done,finish,model,print,scan,waiting]",
         "done_at": "string(date-time) | null",
         "due_date": "string(date) | null",
@@ -36,6 +37,7 @@
         "updated_at": "string(date-time)"
       },
       "required": [
+        "accepted",
         "column",
         "done_at",
         "due_date",

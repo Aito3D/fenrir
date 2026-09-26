@@ -1,9 +1,9 @@
 ### exit: 0
 ### stdout:
-9 RequirePermissionIfAuthEnabled(Permission.AITO_CREATE)
+11 RequirePermissionIfAuthEnabled(Permission.AITO_CREATE)
 2 RequirePermissionIfAuthEnabled(Permission.AITO_DELETE)
-13 RequirePermissionIfAuthEnabled(Permission.AITO_READ)
-21 RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE)
+15 RequirePermissionIfAuthEnabled(Permission.AITO_READ)
+25 RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE)
 1 RequirePermissionIfAuthEnabled(Permission.AMS_HISTORY_READ)
 1 RequirePermissionIfAuthEnabled(Permission.API_KEYS_CREATE)
 1 RequirePermissionIfAuthEnabled(Permission.API_KEYS_DELETE)
@@ -49,8 +49,6 @@
 3 RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_DELETE)
 5 RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_READ)
 4 RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_UPDATE)
-1 RequirePermissionIfAuthEnabled(Permission.MAKERWORLD_IMPORT)
-3 RequirePermissionIfAuthEnabled(Permission.MAKERWORLD_VIEW)
 4 RequirePermissionIfAuthEnabled(Permission.NOTIFICATION_TEMPLATES_READ)
 2 RequirePermissionIfAuthEnabled(Permission.NOTIFICATION_TEMPLATES_UPDATE)
 2 RequirePermissionIfAuthEnabled(Permission.NOTIFICATIONS_CREATE)

@@ -9,17 +9,12 @@ import { FieldError } from './FieldError';
 import { eyebrowCls } from './panelTypography';
 import { focusRingCls, inputCls, inputErrorCls, labelCls } from '../formStyles';
 import {
-  DEFAULT_COUNTRY_CODE,
   contactPersonPhone,
   formatPhone,
   formatPhoneDisplay,
-  maskVisibleErrors,
   pickDefaultPerson,
-  titleCaseSegments,
-  upperCaseName,
-  validateEmail,
-  validatePhone,
 } from '../../utils/clientDraft';
+import { useContactFields } from './useContactFields';
 
 export interface ContactPersonPickerProps {
   contactId: string;
@@ -236,38 +231,32 @@ interface AddContactFormProps {
  *  re-applies it anyway. Unmounted on cancel, so nothing typed survives. */
 function AddContactForm({ contactId, compact, onCancel, onCreated }: AddContactFormProps) {
   const { t } = useTranslation();
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
-  const [countryCode, setCountryCode] = useState(DEFAULT_COUNTRY_CODE);
-  const [nationalNumber, setNationalNumber] = useState('');
-  const [email, setEmail] = useState('');
-  const [blurred, setBlurred] = useState({ phone: false, email: false });
   const [error, setError] = useState<string | null>(null);
+  // `onFieldChange` clears a failed-create message on every keystroke here,
+  // which NewContactForm does NOT do (it keeps its message until the next
+  // submit). That divergence is pre-existing and deliberately preserved.
+  const fields = useContactFields({ onFieldChange: () => setError(null) });
+  const { phoneError, emailError, reachable, visibleErrors: visible } = fields;
   const firstRef = useRef<HTMLInputElement>(null);
   useEffect(() => firstRef.current?.focus(), []);
 
-  const phone = { countryCode, nationalNumber };
-  const phoneError = validatePhone(phone);
-  const emailError = validateEmail(email);
-  const visible = maskVisibleErrors({ phone: phoneError, email: emailError }, blurred);
-  const hasFirst = firstName.trim() !== '';
-  const reachable = nationalNumber.replace(/\D/g, '') !== '' || email.trim() !== '';
+  const hasFirst = fields.firstName.trim() !== '';
 
   const mutation = useMutation({
     mutationFn: () =>
       api.createZohoContactPerson(contactId, {
-        first_name: firstName.trim(),
-        last_name: lastName.trim(),
-        email: email.trim(),
-        phone: formatPhone(phone),
+        first_name: fields.firstName.trim(),
+        last_name: fields.lastName.trim(),
+        email: fields.email.trim(),
+        phone: formatPhone(fields.phone),
       }),
     onSuccess: onCreated,
     onError: (e: unknown) => setError(e instanceof ApiError && e.message ? e.message : t('aito.contactAddFailed')),
   });
-  const canSubmit = hasFirst && reachable && !visible.phone && !visible.email && !mutation.isPending;
+  const canSubmit = hasFirst && reachable && fields.errorsClear && !mutation.isPending;
 
   const submit = () => {
-    setBlurred({ phone: true, email: true });
+    fields.revealErrors();
     if (!hasFirst || !reachable || phoneError || emailError) return;
     setError(null);
     mutation.mutate();
@@ -302,12 +291,9 @@ function AddContactForm({ contactId, compact, onCancel, onCreated }: AddContactF
             id={`${ids}-first`}
             type="text"
             autoComplete="new-password"
-            value={firstName}
-            onChange={(e) => {
-              setFirstName(e.target.value);
-              setError(null);
-            }}
-            onBlur={(e) => setFirstName(titleCaseSegments(e.target.value))}
+            value={fields.firstName}
+            onChange={(e) => fields.onFirstNameChange(e.target.value)}
+            onBlur={(e) => fields.onFirstNameBlur(e.target.value)}
             className={inputCls}
           />
         </div>
@@ -319,12 +305,9 @@ function AddContactForm({ contactId, compact, onCancel, onCreated }: AddContactF
             id={`${ids}-last`}
             type="text"
             autoComplete="new-password"
-            value={lastName}
-            onChange={(e) => {
-              setLastName(e.target.value);
-              setError(null);
-            }}
-            onBlur={(e) => setLastName(upperCaseName(e.target.value))}
+            value={fields.lastName}
+            onChange={(e) => fields.onLastNameChange(e.target.value)}
+            onBlur={(e) => fields.onLastNameBlur(e.target.value)}
             className={inputCls}
           />
         </div>
@@ -336,16 +319,11 @@ function AddContactForm({ contactId, compact, onCancel, onCreated }: AddContactF
           </label>
           <PhoneInput
             id={`${ids}-phone`}
-            countryCode={countryCode}
-            nationalNumber={nationalNumber}
+            countryCode={fields.countryCode}
+            nationalNumber={fields.nationalNumber}
             invalid={visible.phone !== null}
-            onBlur={() => setBlurred((b) => ({ ...b, phone: true }))}
-            onChange={(next, changed) => {
-              setCountryCode(next.countryCode);
-              setNationalNumber(next.nationalNumber);
-              setError(null);
-              if (changed === 'countryCode') setBlurred((b) => ({ ...b, phone: true }));
-            }}
+            onBlur={fields.onPhoneBlur}
+            onChange={fields.onPhoneChange}
           />
           <FieldError messageKey={visible.phone} />
         </div>
@@ -357,12 +335,9 @@ function AddContactForm({ contactId, compact, onCancel, onCreated }: AddContactF
             id={`${ids}-email`}
             type="email"
             autoComplete="new-password"
-            value={email}
-            onChange={(e) => {
-              setEmail(e.target.value);
-              setError(null);
-            }}
-            onBlur={() => setBlurred((b) => ({ ...b, email: true }))}
+            value={fields.email}
+            onChange={(e) => fields.onEmailChange(e.target.value)}
+            onBlur={fields.onEmailBlur}
             placeholder={t('aito.emailPlaceholder')}
             aria-invalid={visible.email !== null ? true : undefined}
             className={visible.email !== null ? inputErrorCls : inputCls}

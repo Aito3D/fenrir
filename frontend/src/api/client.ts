@@ -8272,11 +8272,6 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ message }),
     }),
-  importAitoProjects: (data: { projects: { description: string; column: AitoColumnId; position: number }[] }) =>
-    request<AitoProject[]>('/aito/import', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    }),
   getAitoTasks: (projectId: number) => request<AitoTask[]>(`/aito/${projectId}/tasks`),
   createAitoTask: (projectId: number, data: AitoTaskCreate) =>
     request<AitoTask>(`/aito/${projectId}/tasks`, { method: 'POST', body: JSON.stringify(data) }),

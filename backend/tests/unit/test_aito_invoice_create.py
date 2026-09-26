@@ -6,13 +6,15 @@ invoice, and applying a deposit twice spends money the client only paid
 once. So the tests below are mostly about the calls that must NOT happen.
 """
 
+import asyncio
+
 import pytest
 from sqlalchemy import select
 
 from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
 from backend.app.services.aito_invoice_create import build_line_items
-from backend.app.services.zoho import ZohoUpstreamError, zoho_service
+from backend.app.services.zoho import ZohoRateLimited, ZohoUpstreamError, zoho_service
 
 ESTIMATE = {
     "estimate_id": "EST-9",
@@ -290,6 +292,91 @@ async def test_an_already_invoiced_project_is_refused_before_anything_is_created
 
     assert response.status_code == 409
     assert "POST" not in [c["method"] for c in books["calls"]]
+
+
+# --- T-041: the local flag, and one create at a time ---------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_card_already_flagged_invoiced_is_refused_without_asking_books(async_client, db_session, books):
+    """`quote_invoiced` is what the button hides on and what the create
+    itself writes the moment Books confirms. The server used to ignore it
+    entirely and go ask Books, so the refusal cost a round trip it did not
+    need — and rested on an invoice list that is empty whenever the estimate
+    link did not stick."""
+    project_id = await _project(db_session, quote_invoiced=True)
+
+    response = await async_client.post(f"/api/v1/aito/{project_id}/invoice")
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "This project already has an invoice in Zoho"
+    assert books["calls"] == []
+
+
+@pytest.mark.asyncio
+async def test_the_preview_refuses_an_already_invoiced_card_too(async_client, db_session, books):
+    """The flag check lives in the shared guard, not in the create alone: the
+    dialog must not open on a card the create will refuse — the same rule
+    that already applies to Finish, the quote id and a pending sync."""
+    project_id = await _project(db_session, quote_invoiced=True)
+
+    response = await async_client.get(f"/api/v1/aito/{project_id}/invoice-preview")
+
+    assert response.status_code == 409
+    assert books["calls"] == []
+
+
+@pytest.mark.asyncio
+async def test_an_invoice_whose_estimate_link_did_not_stick_still_blocks_a_second_one(async_client, db_session, books):
+    """Production, FA-26-4331: Books raised the invoice and linked it to
+    nothing, and the repair PUT can fail too. The estimate filter the
+    duplicate guard reads then stays EMPTY, so before T-041 a second click
+    billed the client again. The local flag is the guard that does not
+    depend on the link."""
+    books["link_sticks"] = False
+    books["fail"] = "/invoices/inv-1"  # the repair PUT (and the re-read) fail
+    project_id = await _project(db_session)
+
+    first = await async_client.post(f"/api/v1/aito/{project_id}/invoice")
+    assert first.status_code == 200, first.text
+    assert books["listed"] == []  # nothing links the invoice to the quote
+
+    second = await async_client.post(f"/api/v1/aito/{project_id}/invoice")
+
+    assert second.status_code == 409
+    assert second.json()["detail"] == "This project already has an invoice in Zoho"
+    assert len([c for c in books["calls"] if c["method"] == "POST" and c["path"] == "/invoices"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_two_concurrent_creates_raise_exactly_one_invoice(async_client, db_session, books, monkeypatch):
+    """Two operators on the same card, or one retry after a client-side
+    timeout on a request that routinely runs 10s+. Both passed the Books
+    duplicate read — it is a check-then-act with three more round trips
+    inside the window — and both created a REAL invoice.
+
+    Serialised now: the second waits, then re-reads the flag the first
+    committed and answers the same 409 a sequential double-click gets."""
+    original = zoho_service._request
+
+    async def slow_create(db, method, path, *, params=None, json=None):
+        if method == "POST" and path == "/invoices":
+            # Long enough for the waiter to have reached (and passed) the
+            # duplicate read if nothing were holding it back.
+            await asyncio.sleep(0.05)
+        return await original(db, method, path, params=params, json=json)
+
+    monkeypatch.setattr(zoho_service, "_request", slow_create)
+    project_id = await _project(db_session)
+    url = f"/api/v1/aito/{project_id}/invoice"
+
+    first, second = await asyncio.gather(async_client.post(url), async_client.post(url))
+
+    assert sorted([first.status_code, second.status_code]) == [200, 409]
+    assert len([c for c in books["calls"] if c["method"] == "POST" and c["path"] == "/invoices"]) == 1
+    db_session.expire_all()
+    project = await db_session.get(AitoProject, project_id)
+    assert project.quote_invoiced is True
 
 
 @pytest.mark.asyncio
@@ -632,6 +719,179 @@ async def test_a_failed_retainer_application_still_returns_the_real_invoice(asyn
 
     assert response.status_code == 200
     assert response.json()["retainers"] == [{"number": "RET-00269", "total": 1000.0, "applied": 0.0}]
+
+
+def _fail_second_customerpayments_read(books, error):
+    """The plan reads `/customerpayments` once to work out what to apply;
+    the post-create refresh reads it again to report what is left. Only the
+    SECOND read is the one under test — the first must still succeed, or the
+    invoice would never be created at all."""
+    calls = {"customerpayments": 0}
+    real = books["calls"]
+
+    async def request(db, method, path, *, params=None, json=None):
+        if path == "/customerpayments":
+            calls["customerpayments"] += 1
+            if calls["customerpayments"] >= 2:
+                real.append({"method": method, "path": path, "params": params or {}, "json": json})
+                raise error
+        return await books["_original_request"](db, method, path, params=params, json=json)
+
+    return request
+
+
+@pytest.mark.asyncio
+async def test_a_rate_limited_credit_refresh_still_returns_the_real_invoice(
+    async_client, db_session, books, monkeypatch, caplog
+):
+    """Books answering 429 on the post-create `/customerpayments` re-read —
+    plausibly BECAUSE that call landed right after the three spent creating
+    the invoice and applying its retainers — must not turn an invoice that
+    already exists in Books into a 500. The stored "deposit available"
+    figure is left exactly as it was; the hourly sweep corrects it."""
+    project_id = await _project(db_session, customer_credit_total=1000.0)
+    books["_original_request"] = zoho_service._request
+    monkeypatch.setattr(
+        zoho_service,
+        "_request",
+        _fail_second_customerpayments_read(books, ZohoRateLimited("Zoho Books error (HTTP 429)")),
+    )
+
+    with caplog.at_level("WARNING"):
+        response = await async_client.post(f"/api/v1/aito/{project_id}/invoice")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["number"] == "FA-26-4100"
+    assert body["id"] == "inv-1"
+    assert "could not refresh customer" in caplog.text
+
+    kinds = (await db_session.execute(select(AitoEvent.kind))).scalars().all()
+    assert kinds.count("invoice.created") == 1
+
+    db_session.expire_all()
+    project = await db_session.get(AitoProject, project_id)
+    assert project.quote_invoiced is True
+    # Unchanged: the stale pre-invoice figure, not the fresh one the failed
+    # read would have supplied.
+    assert project.customer_credit_total == 1000.0
+
+
+@pytest.mark.asyncio
+async def test_a_5xx_credit_refresh_still_returns_the_real_invoice(
+    async_client, db_session, books, monkeypatch, caplog
+):
+    """Same contract as the 429 case for a plain Books outage on the same
+    read — the invoice above is already real either way. A non-429
+    `ZohoUpstreamError` never actually reaches this route: `read_customer_credit`
+    already swallows it and returns None with its own warning (that is the
+    pre-existing best-effort contract this fix does not change); this test
+    guards that path stays working alongside the new 429 one."""
+    project_id = await _project(db_session, customer_credit_total=1000.0)
+    books["_original_request"] = zoho_service._request
+    monkeypatch.setattr(
+        zoho_service,
+        "_request",
+        _fail_second_customerpayments_read(books, ZohoUpstreamError("Zoho Books error (HTTP 500)")),
+    )
+
+    with caplog.at_level("WARNING"):
+        response = await async_client.post(f"/api/v1/aito/{project_id}/invoice")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["number"] == "FA-26-4100"
+    assert body["id"] == "inv-1"
+    assert "could not read customer" in caplog.text
+
+    kinds = (await db_session.execute(select(AitoEvent.kind))).scalars().all()
+    assert kinds.count("invoice.created") == 1
+
+    db_session.expire_all()
+    project = await db_session.get(AitoProject, project_id)
+    assert project.quote_invoiced is True
+    assert project.customer_credit_total == 1000.0
+
+
+@pytest.mark.asyncio
+async def test_a_db_failure_after_the_real_invoice_still_returns_it(
+    async_client, db_session, books, monkeypatch, caplog
+):
+    """The invoice IS raised in Books before local `record(...)`+`commit()`
+    run; a failure there must not 500 past it — a retry would raise a
+    SECOND real invoice. The route must still answer with the invoice Books
+    actually created, log what happened, and leave the app able to keep
+    working afterward.
+
+    The failure is a GENUINE flush failure (a NOT NULL violation), not a
+    monkeypatched `commit()` — mirroring test_aito_manual_payments.py's
+    test_a_db_failure_after_the_books_write_keeps_the_guard_and_names_the_payment.
+    Only a real one puts the session into the state the route's `rollback()`
+    call is there to recover from."""
+
+    async def bad_record(db, project_id, kind, **kw):
+        db.add(AitoEvent(project_id=project_id, kind=None, actor_class="user"))  # kind is NOT NULL
+        await db.flush()
+
+    monkeypatch.setattr("backend.app.api.routes.aito.record", bad_record)
+    project_id = await _project(db_session)
+
+    with caplog.at_level("ERROR"):
+        response = await async_client.post(f"/api/v1/aito/{project_id}/invoice")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["number"] == "FA-26-4100"
+    assert body["id"] == "inv-1"
+    assert "WAS RAISED in Books" in caplog.text
+    assert "FA-26-4100" in caplog.text
+
+    # The write that failed was rolled back, so no timeline entry landed and
+    # the local flag never flipped — Books has a real invoice this app does
+    # not (yet) know about locally.
+    assert (await db_session.execute(select(AitoEvent.kind))).scalars().all() == []
+    board = (await async_client.get("/api/v1/aito/")).json()
+    assert [p["quote_invoiced"] for p in board if p["id"] == project_id] == [False]
+
+    # The session (and the app around it) recovered rather than staying
+    # poisoned: a follow-up request works normally, and the duplicate guard
+    # — which reads Books' own invoice list, not the local flag that never
+    # got a chance to commit — still refuses a second invoice.
+    second = await async_client.post(f"/api/v1/aito/{project_id}/invoice")
+    assert second.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_a_failed_rollback_after_a_db_failure_still_returns_the_real_invoice(db_session, books, monkeypatch):
+    """Belt and braces on the case above: if the rollback the route falls
+    back to ALSO fails (e.g. the connection is already gone), that must not
+    turn a real invoice into a 500 either — the `except Exception: pass`
+    wrapped around it exists for exactly this.
+
+    Called directly against `db_session`, bypassing the HTTP round trip
+    (same technique as test_aito_active_quote_index_migration.py's direct
+    `db=..., current_user=None` calls): the test client's dependency
+    override commits on the way out, and a session left aborted by two
+    failed writes in a row would fail THAT commit too — a property of the
+    test harness's simplified `get_db`, not of this route, and not what
+    this test is about."""
+    from backend.app.api.routes import aito as aito_routes
+
+    async def bad_record(db, project_id, kind, **kw):
+        db.add(AitoEvent(project_id=project_id, kind=None, actor_class="user"))  # kind is NOT NULL
+        await db.flush()
+
+    async def broken_rollback():
+        raise RuntimeError("connection already closed")
+
+    project_id = await _project(db_session)
+    monkeypatch.setattr("backend.app.api.routes.aito.record", bad_record)
+    monkeypatch.setattr(db_session, "rollback", broken_rollback)
+
+    body = await aito_routes.create_invoice(project_id=project_id, db=db_session, current_user=None)
+
+    assert body.number == "FA-26-4100"
+    assert body.id == "inv-1"
 
 
 # --- preview ------------------------------------------------------------------

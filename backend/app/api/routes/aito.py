@@ -1,5 +1,6 @@
 """Aito production board: DB-backed Kanban with soft delete."""
 
+import asyncio
 import contextlib
 import ipaddress
 import logging
@@ -128,6 +129,7 @@ from backend.app.services.openrouter import (
 )
 from backend.app.services.pushcut import (
     PushcutNotConfiguredError,
+    PushcutUnreachable,
     PushcutUpstreamError,
     send_sms_notification,
 )
@@ -162,6 +164,15 @@ _SHIPPING_PHONE_RE = re.compile(r"^\+\d{1,4}-\d{4,14}$")
 # — see BASELINE-CHANGELOG.md for the full split and why stripping all of them
 # is still correct either way.
 _CONTROL_CHARS_RE = re.compile(r"[\x00-\x1f\x7f]")
+
+# T-024: the shape a Books contact id may have before the rating route will
+# spend a Books call (and a permanent cache row) on it. Real Zoho ids are
+# ~17-digit decimal strings, but the test fixtures — and any id this shop
+# ever typed by hand — use short tokens like "C1", so the guard is the
+# conservative superset rather than digits-only: an ASCII token no longer
+# than the cache column's String(50). Anything else cannot be a Books id, so
+# asking Books about it is pure amplification.
+_CLIENT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,50}$")
 
 
 _SHIPPING_COLUMNS = (
@@ -1116,6 +1127,7 @@ async def get_client_history(
 @router.get("/clients/{client_id}/rating", response_model=AitoClientRatingResponse)
 async def get_client_rating(
     client_id: str,
+    request: Request,
     refresh: bool = Query(False, description="Re-read Books even if the cached rating is fresh"),
     db: AsyncSession = Depends(get_db),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
@@ -1126,6 +1138,25 @@ async def get_client_rating(
     like the invoice card, the other Aito read that reaches Books. Declared
     ahead of the `/{project_id}` routes so `clients` is never parsed as an
     id."""
+    # T-024: `client_id` is whatever the caller put in the path, and a miss
+    # costs two Books calls plus a cache row that is never deleted — so the
+    # route is bounded three ways before it reaches the service: its own rate
+    # limit bucket, an id-shape check, and (in `read_client_rating`) a short
+    # negative cache for ids Books does not know. Both guards live in the
+    # body, not in the signature: a path-param `pattern=` would change the
+    # published OpenAPI schema, and this docstring IS the route's published
+    # description. The drawer's "rate the contact I just picked, before any
+    # card exists for it" flow is untouched — a picked Books contact passes
+    # the shape check and Books knows it.
+    _check_rate_limit(
+        request,
+        current_user,
+        bucket="client_rating",
+        max_calls=_CLIENT_RATING_MAX_CALLS,
+        detail=_CLIENT_RATING_DETAIL,
+    )
+    if not _CLIENT_ID_RE.match(client_id):
+        raise HTTPException(status_code=422, detail="client_id is not a Zoho Books contact id")
     return await read_client_rating(db, client_id, refresh=refresh)
 
 
@@ -1628,6 +1659,21 @@ _AI_RATE_LIMIT_DETAIL = "Too many AI requests. Please wait a moment and try agai
 # click-spammable, and it must not eat (or be starved by) the AI budget.
 _PAYMENT_LINK_REFRESH_MAX_CALLS = 10
 _PAYMENT_LINK_REFRESH_DETAIL = "Too many payment link refreshes. Please wait a moment and try again."
+# T-024: the client-rating read. Not billed like a completion, but every
+# cache miss costs up to two Books calls for a caller-named id, so it gets
+# its own bucket and its own (larger) budget: an operator opening cards and
+# picking clients produces one request per card and per contact, each cached
+# five minutes in the browser and an hour on the server, so 60 a minute is
+# far past any human pace while still bounding an id-scanning loop.
+_CLIENT_RATING_MAX_CALLS = 60
+_CLIENT_RATING_DETAIL = "Too many client rating requests. Please wait a moment and try again."
+# T-025: the pickup SMS relay. The draft above it is throttled because it is
+# billed; the SEND is throttled because it pushes a caller-supplied body to
+# Pushcut and from there to a real phone. A handful an hour is the human
+# pace, so ten a minute leaves room for a retry or two and nothing like a
+# flood.
+_PICKUP_SMS_MAX_CALLS = 10
+_PICKUP_SMS_DETAIL = "Too many pickup SMS sends. Please wait a moment and try again."
 # "<bucket>:<principal>" -> call timestamps (module's own `time.monotonic`,
 # see below). One dict, one window, one bucket per rate-limited concern.
 _ai_rate_limit_calls: dict[str, list[float]] = {}
@@ -1901,6 +1947,18 @@ async def get_invoice(
     return AitoInvoiceResponse(**newest, url=url, invoice_count=len(invoices))
 
 
+# One string for every "this card is already billed" refusal — the local
+# flag check in `_project_ready_to_invoice`, the re-check under the lock and
+# both Books-list guards — so the operator reads the same sentence whichever
+# of them fires first.
+_ALREADY_INVOICED_DETAIL = "This project already has an invoice in Zoho"
+
+# Serialises `create_invoice`'s duplicate read -> Books create -> local
+# `quote_invoiced` commit. See the comment at the `async with` for why this
+# one is held across the network when the feature's other locks are not.
+_invoice_lock = asyncio.Lock()
+
+
 async def _project_ready_to_invoice(db: AsyncSession, project_id: int) -> AitoProject:
     """The project, or the reason it must not be billed right now.
 
@@ -1927,6 +1985,17 @@ async def _project_ready_to_invoice(db: AsyncSession, project_id: int) -> AitoPr
         # lines as they were BEFORE that edit landed, and no amount of
         # re-syncing afterwards would correct a document already issued.
         raise HTTPException(status_code=409, detail="This quote has changes still syncing to Zoho")
+    if project.quote_invoiced:
+        # The last of the button's rules to be restated here, and the only
+        # one answered from local state alone: `create_invoice` itself sets
+        # this flag the moment Books confirms, and `canCreateInvoice` hides
+        # the button on it. Without it an already-billed card still reached
+        # Books — and in the "estimate link did not stick" case (logged at
+        # the end of create_invoice) the invoice list the guard there reads
+        # is empty, so nothing at all stopped a second real bill. Checked
+        # last so that a card which is also out of Finish, quote-less or
+        # mid-sync keeps naming that reason first, as it always did.
+        raise HTTPException(status_code=409, detail=_ALREADY_INVOICED_DETAIL)
     return project
 
 
@@ -1946,7 +2015,7 @@ async def get_invoice_preview(
     try:
         existing = await zoho_service.list_project_invoices(db, project.quote_id, project.client_id or "")
         if existing:
-            raise HTTPException(status_code=409, detail="This project already has an invoice in Zoho")
+            raise HTTPException(status_code=409, detail=_ALREADY_INVOICED_DETAIL)
         plan = await plan_invoice(db, project)
     except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
         logger.warning("Aito invoice preview failed for project %s: %s", project_id, e)
@@ -2014,82 +2083,118 @@ async def create_invoice(
     # the same hard-won reason, as send_invoice_email.
     project_pk, quote_id, client_id = project.id, project.quote_id, project.client_id or ""
 
-    try:
-        existing = await zoho_service.list_project_invoices(db, quote_id, client_id)
-        if existing:
-            # Idempotency, not politeness: two operators on the same card, or
-            # one double-click, would otherwise bill the client twice.
-            raise HTTPException(status_code=409, detail="This project already has an invoice in Zoho")
-        plan = await plan_invoice(db, project)
-        if not plan.line_items:
-            raise HTTPException(status_code=409, detail="This quote has no lines to invoice")
-        created = await zoho_service.create_invoice(db, build_invoice_payload(plan))
-    except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
-        logger.warning("Aito invoice creation failed for project %s: %s", project_id, e)
-        await db.rollback()
-        raise HTTPException(status_code=502, detail=str(e)) from e
-
-    invoice_id = str(created.get("invoice_id") or "")
-    invoice_number = str(created.get("invoice_number") or invoice_id)
-    if invoice_id and not str(created.get("estimate_id") or ""):
-        # Books took the invoice but did not link it to the quote. Repaired
-        # here rather than reported, because an unlinked invoice is invisible
-        # to `list_project_invoices` and therefore to the duplicate-invoice
-        # guard — the one thing standing between a double-click and a client
-        # billed twice. Never fatal: the invoice is already real, and a 500
-        # now would invite exactly the retry the guard cannot catch.
+    # T-041: the duplicate read, the Books create and the local
+    # `quote_invoiced` commit are ONE critical section. Between the read
+    # below and the create there are three more Books round trips (the
+    # estimate, the customer's payments, their retainers) and this request
+    # routinely runs 10s+, so two operators on one card — or one retry after
+    # a client-side timeout — both read an empty invoice list and both raise
+    # a REAL invoice for the client, which is the one thing in this app that
+    # nothing can undo.
+    #
+    # Unlike `aito_payment_links._reserve_lock` and
+    # `aito_terminal_payments._start_lock`, this one IS held across the
+    # network: the guard and the act cannot be separated here, and invoicing
+    # is rare and operator-driven, so the second click waiting out the first
+    # is exactly what should happen. It is released before the post-create
+    # re-read. In-process only, like those two — but the fact it protects is
+    # now a committed FLAG, so a second process meets the 409 below anyway.
+    async with _invoice_lock:
+        # Re-read now that the lock is held: the guard in
+        # `_project_ready_to_invoice` passed against a row the request ahead
+        # of us may have flagged while we were waiting. This is where the
+        # second of two concurrent clicks stops.
+        await db.refresh(project)
+        if project.quote_invoiced:
+            raise HTTPException(status_code=409, detail=_ALREADY_INVOICED_DETAIL)
         try:
-            await zoho_service.link_invoice_to_estimate(db, invoice_id, quote_id)
+            existing = await zoho_service.list_project_invoices(db, quote_id, client_id)
+            if existing:
+                # Idempotency, not politeness: two operators on the same card, or
+                # one double-click, would otherwise bill the client twice.
+                raise HTTPException(status_code=409, detail=_ALREADY_INVOICED_DETAIL)
+            plan = await plan_invoice(db, project)
+            if not plan.line_items:
+                raise HTTPException(status_code=409, detail="This quote has no lines to invoice")
+            created = await zoho_service.create_invoice(db, build_invoice_payload(plan))
         except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
-            logger.warning("Aito invoice %s could not be linked to estimate %s: %s", invoice_number, quote_id, e)
-    applications = await apply_retainers(db, invoice_id, float(created.get("balance") or 0), plan.retainers)
-    # The deposits just spent must leave "deposit available" NOW, not at the
-    # sweep's next tick: the panel re-renders off this response's board
-    # refetch. Best-effort like the sweep's own read — None keeps the old
-    # figure, and the sweep corrects it within the tick.
-    credit = await read_customer_credit(db, plan.customer_id)
-
-    try:
-        # Adopt the fact locally, in the same transaction as the event. The
-        # hourly quote-sync sweep would set this eventually, but three
-        # surfaces read it NOW: `canCreateInvoice` (or the button stays
-        # offering to bill a billed job), `mayHaveInvoice` (or reopening the
-        # panel hides the Invoice card for a real invoice), and the invoice
-        # sweep's own selection. Books is the authority and Books has just
-        # confirmed — there is nothing to wait for.
-        project.quote_invoiced = True
-        if credit is not None:
-            project.customer_credit_total = credit
-        await record(
-            db,
-            project_pk,
-            "invoice.created",
-            actor_class="user",
-            actor_name=_actor(current_user),
-            subject_type="project",
-            subject_id=project_pk,
-            detail={
-                "invoice_number": invoice_number,
-                "total": float(created.get("total") or 0),
-                "retainers_applied": round(sum(a.applied for a in applications), 2),
-            },
-        )
-        await db.commit()
-    except SQLAlchemyError as e:
-        # Never 500 past the create, for the reason in the docstring: the
-        # invoice exists, and a retry would raise a second one. The timeline
-        # loses an entry; the books do not gain a duplicate.
-        logger.error(
-            "Aito invoice %s for project %s WAS RAISED in Books but recording the local "
-            "invoice.created event failed: %s",
-            invoice_number,
-            project_id,
-            e,
-        )
-        try:
+            logger.warning("Aito invoice creation failed for project %s: %s", project_id, e)
             await db.rollback()
-        except Exception:  # noqa: BLE001 — a failed rollback must not 500 a real invoice
-            pass
+            raise HTTPException(status_code=502, detail=str(e)) from e
+
+        invoice_id = str(created.get("invoice_id") or "")
+        invoice_number = str(created.get("invoice_number") or invoice_id)
+        if invoice_id and not str(created.get("estimate_id") or ""):
+            # Books took the invoice but did not link it to the quote. Repaired
+            # here rather than reported, because an unlinked invoice is invisible
+            # to `list_project_invoices` and therefore to the duplicate-invoice
+            # guard — the one thing standing between a double-click and a client
+            # billed twice. Never fatal: the invoice is already real, and a 500
+            # now would invite exactly the retry the guard cannot catch.
+            try:
+                await zoho_service.link_invoice_to_estimate(db, invoice_id, quote_id)
+            except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
+                logger.warning("Aito invoice %s could not be linked to estimate %s: %s", invoice_number, quote_id, e)
+        applications = await apply_retainers(db, invoice_id, float(created.get("balance") or 0), plan.retainers)
+        # The deposits just spent must leave "deposit available" NOW, not at the
+        # sweep's next tick: the panel re-renders off this response's board
+        # refetch. Best-effort like the sweep's own read — None keeps the old
+        # figure, and the sweep corrects it within the tick. `read_customer_credit`
+        # already swallows a plain Books failure and returns None itself; the one
+        # thing it re-raises is `ZohoRateLimited` (a `ZohoUpstreamError` subclass),
+        # by design, so the sweep can stand down for the tick on a 429. This route
+        # is not the sweep and the invoice above is already real: a 429 here must
+        # not 500 an invoice that was already raised, so it gets the same
+        # best-effort treatment as `link_invoice_to_estimate` just above. This
+        # call only reads Books, not the database, so no `SQLAlchemyError` can
+        # come out of it.
+        try:
+            credit = await read_customer_credit(db, plan.customer_id)
+        except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
+            logger.warning("Aito: could not refresh customer %s's credit after invoicing: %s", plan.customer_id, e)
+            credit = None
+
+        try:
+            # Adopt the fact locally, in the same transaction as the event. The
+            # hourly quote-sync sweep would set this eventually, but three
+            # surfaces read it NOW: `canCreateInvoice` (or the button stays
+            # offering to bill a billed job), `mayHaveInvoice` (or reopening the
+            # panel hides the Invoice card for a real invoice), and the invoice
+            # sweep's own selection. Books is the authority and Books has just
+            # confirmed — there is nothing to wait for.
+            project.quote_invoiced = True
+            if credit is not None:
+                project.customer_credit_total = credit
+            await record(
+                db,
+                project_pk,
+                "invoice.created",
+                actor_class="user",
+                actor_name=_actor(current_user),
+                subject_type="project",
+                subject_id=project_pk,
+                detail={
+                    "invoice_number": invoice_number,
+                    "total": float(created.get("total") or 0),
+                    "retainers_applied": round(sum(a.applied for a in applications), 2),
+                },
+            )
+            await db.commit()
+        except SQLAlchemyError as e:
+            # Never 500 past the create, for the reason in the docstring: the
+            # invoice exists, and a retry would raise a second one. The timeline
+            # loses an entry; the books do not gain a duplicate.
+            logger.error(
+                "Aito invoice %s for project %s WAS RAISED in Books but recording the local "
+                "invoice.created event failed: %s",
+                invoice_number,
+                project_id,
+                e,
+            )
+            try:
+                await db.rollback()
+            except Exception:  # noqa: BLE001 — a failed rollback must not 500 a real invoice
+                pass
 
     # Re-read BY ID, not through the estimate filter: the create response was
     # written before `apply_retainers` ran, so it still says draft and owes
@@ -3278,6 +3383,54 @@ async def _claim_expected_version(db: AsyncSession, project: AitoProject, expect
     return result.rowcount > 0
 
 
+async def _claim_and_bump_version(db: AsyncSession, project: AitoProject, expected: int) -> bool:
+    """`_claim_expected_version` for a caller that then talks to the network:
+    the claim BUMPS the version and COMMITS, for `edit_project_client` (T-040).
+
+    Same atomic `WHERE version = :expected` as the sibling above, and the same
+    return contract (True = the caller may proceed, False = 409). Two things
+    differ, and both follow from what happens next in that route:
+
+    * It commits. SQLite has one write lock, and an open claim holds it for
+      every await that follows — there, three Books calls at the Zoho
+      client's 10s timeout each. `PRAGMA busy_timeout = 15000` only makes
+      other writers WAIT that long, so one slow contact edit made a peer's
+      PATCH, the quote-sync worker's commit and the invoice poll fail with
+      "database is locked". Committing hands the lock back before the round
+      trip starts.
+    * It bumps. Once the transaction is gone, a no-op `SET version = version`
+      would claim nothing at all — the next request's `WHERE version =
+      :expected` would match just as happily. Moving the version to
+      `expected + 1` IS the claim: it is what makes the second racer miss.
+      The cost is that the bump survives a failure after it (the caller
+      cannot roll it back any more) — an approved, documented trade in
+      `edit_project_client`, not something to copy without thinking.
+
+    `updated_at` is deliberately NOT pinned (unlike the sibling): this
+    statement really does change the row, so it takes the column's `onupdate`
+    default like any other write.
+
+    A LOST claim commits nothing — it leaves the transaction exactly where
+    `_claim_expected_version` leaves it, for the caller's 409 and the
+    rollback `get_db` does on it. Only a won claim is made durable, so this
+    never turns some unrelated pending write of the caller's into a commit
+    the caller did not ask for.
+    """
+    result = await db.execute(
+        update(AitoProject)
+        .where(AitoProject.id == project.id, AitoProject.version == expected)
+        .values(version=expected + 1)
+        # The in-memory `project` is deliberately left holding the pre-claim
+        # version: the caller re-reads the row after its network call, and
+        # "evaluate" cannot synchronise a criteria-bearing UPDATE anyway.
+        .execution_options(synchronize_session=False)
+    )
+    if result.rowcount == 0:
+        return False
+    await db.commit()
+    return True
+
+
 @router.patch("/{project_id}", response_model=AitoProjectResponse)
 async def update_project(
     project_id: int,
@@ -3435,9 +3588,13 @@ async def edit_project_client(
 
     - Ordering. Books is the record; the card is a snapshot of it. A PATCH
       that wrote the card and then tried Books would leave the two disagreeing
-      on every Zoho outage. Here a Books failure returns before any row is
-      touched — the version claim below deliberately sits AFTER the Books
-      calls so a refused rename leaves no phantom claim either.
+      on every Zoho outage. Here a Books failure returns before any field is
+      written. The version claim is taken FIRST, ahead of the Books call and
+      committed on its own, so an edit that loses the race to a concurrent
+      one is refused with 409 having sent nothing upstream, and the database
+      is not locked for the length of the round trip. The claim moves the
+      version, so a Books failure after it leaves the card's fields untouched
+      but its version bumped — another editor's stale draft is refused.
     - Fan-out. One contact sits on however many open cards; every active one
       is rewritten so the board never shows two names for one client. Only
       the edited card is version-guarded — the others bump but were never the
@@ -3491,11 +3648,55 @@ async def edit_project_client(
     # rewriting its siblings would rename every counter sale after this one
     # person.
     is_zoho_contact = bool(project.client_id) and project.client_id != default_id
+    # Captured before the claim below commits: the contact id is the one
+    # field of the card the Books call needs, and after that commit the row
+    # in hand is a snapshot the route deliberately re-reads only once Books
+    # has answered.
+    client_id = project.client_id
+
+    # T-031: claimed BEFORE the Books write, not after it. The cheap compare
+    # above passed against a SELECT that a concurrent edit can invalidate
+    # while this request is inside Books' round trip; with the claim placed
+    # after that trip, the loser of the race had already renamed the contact
+    # in Books when the 409 aborted every local write and the fan-out —
+    # leaving Books holding an edit no card showed, and the operator reading
+    # "Project was updated by someone else", which sounds like nothing
+    # happened. Claiming first means a lost race costs nothing upstream.
+    #
+    # T-040: and the claim is COMMITTED here, on its own, rather than left
+    # open until the end of the request. `update_project`'s claim can stay
+    # inside its transaction because nothing but local work follows it; this
+    # one is followed by three Books calls, each at the Zoho client's 10s
+    # httpx timeout with a 401-retry-once. An uncommitted claim holds
+    # SQLite's single write lock for all of it, and `PRAGMA busy_timeout`
+    # (database.py) only makes other writers wait 15s: one slow contact edit
+    # was enough to fail a peer's PATCH, the quote-sync worker's commit and
+    # the invoice poll with "database is locked". Committing releases the
+    # lock while httpx is in flight; `version = expected + 1` in the same
+    # statement is what keeps the claim EXCLUSIVE once it is no longer held
+    # by a lock — a concurrent edit's `WHERE version = :expected` now misses.
+    #
+    # The user-approved cost (2026-09-24): a claim that commits cannot be
+    # undone by the rollback get_db does on an HTTPException, so a Books
+    # refusal below leaves the card at the new version with none of its
+    # fields touched, and another editor holding the old number is told
+    # "Project was updated by someone else" on a card nothing changed on.
+    # The number an accepted edit ends on is unchanged — expected + 1, see
+    # the pin before the final commit.
+    claimed_version: int | None = None
+    if payload.expected_version is not None:
+        if not await _claim_and_bump_version(db, project, payload.expected_version):
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "version_conflict", "message": "Project was updated by someone else"},
+            )
+        claimed_version = payload.expected_version + 1
+
     if is_zoho_contact:
         try:
             name = await zoho_service.update_contact(
                 db,
-                project.client_id,
+                client_id,
                 company_name=company if is_company else None,
                 first_name=None if is_company else first,
                 last_name=None if is_company else last,
@@ -3528,13 +3729,13 @@ async def edit_project_client(
     else:
         name = company if is_company else normalize_display_name(first, last)
 
-    if payload.expected_version is not None and not await _claim_expected_version(
-        db, project, payload.expected_version
-    ):
-        raise HTTPException(
-            status_code=409,
-            detail={"code": "version_conflict", "message": "Project was updated by someone else"},
-        )
+    # Re-read before the local writes below diff against it: the claim above
+    # committed mid-request, so the row in hand is a snapshot taken before
+    # that commit (and before however long Books took to answer). Only the
+    # claiming path needs it — an unguarded edit has committed nothing and
+    # still holds the transaction it read the card in.
+    if claimed_version is not None:
+        await db.refresh(project)
 
     # Never fanned out: the handle is this card's channel, not the contact's —
     # Books does not hold it, so a sibling card has no record to agree with.
@@ -3594,6 +3795,19 @@ async def edit_project_client(
             subject_id=target.id,
             changes=changes,
         )
+    if claimed_version is not None:
+        # The claim already spent this edit's bump. The field writes above
+        # would earn a SECOND one from `_bump_version_on_content_change`, so
+        # the row is flushed (letting the listener do its unconditional
+        # thing) and then pinned back to the claimed number: a guarded edit
+        # still lands on expected + 1 exactly, which is what the panel's
+        # optimistic layer is holding. A no-op edit changes no versioned
+        # field, the listener does not fire, `project.version` is already the
+        # claimed number and nothing extra is written. Siblings are untouched
+        # here: they are not version-guarded and bump as they always did.
+        await db.flush()
+        if project.version != claimed_version:
+            project.version = claimed_version
     await db.commit()
     await _broadcast_changed("update", project.id, _actor(current_user))
     await db.refresh(project)
@@ -3910,10 +4124,74 @@ async def generate_pickup_message(
     return AitoPickupMessageResponse(message=message, model=model)
 
 
+# T-030: the two ways the push below can fail are NOT the same answer, and
+# send_pickup_sms reports them differently. A refusal Pushcut actually gave
+# (no URL configured, a non-2xx) is a clean failure — nothing was pushed, so
+# retry freely. A transport failure (PushcutUnreachable: read timeout, connect
+# refused) says nothing about what Pushcut did, and a POST it received but did
+# not answer within its 8s timeout has already put the notification on the
+# phone; that case answers 502 with _SMS_UNREACHABLE_DETAIL ("may already have
+# been pushed") instead of the raw error and writes NO project.sms.sent event,
+# because no event may claim a send nobody confirmed.
+#
+# Kept out of the docstring on purpose: FastAPI publishes that as the
+# endpoint's OpenAPI description, and this is how the handler works rather
+# than what a caller must know.
+#
+# And a second tap must not push a second real SMS to the client. The
+# window is deliberately short — a minute is long enough to cover the reflex
+# retry after an answer the operator read as a failure, and short enough that
+# a genuine "send it again, they never got it" a moment later is only delayed,
+# never blocked.
+_SMS_DUPLICATE_WINDOW_S = 60.0
+# (project_id, stripped message) -> time.monotonic() of the last push that MAY
+# have reached the phone: one still in flight, a confirmed success, or a
+# transport failure that says nothing about what Pushcut did. A clean refusal
+# (not configured, non-2xx) drops the key again, so an honest retry after a
+# real failure still goes through.
+# Pruned on every call, unlike aito_manual_payments' sibling guard: this key
+# carries a caller-supplied message, so an unevicted dict would grow with
+# every distinct body ever sent.
+_recent_sms: dict[tuple[int, str], float] = {}
+# Plain-string details, the module's shape for a message with no client-side
+# branching to do — except for their LEADING words, which SmsPickupModal
+# matches to pick its toast. Reword them with the modal, not alone.
+_SMS_DUPLICATE_DETAIL = (
+    "Already sent — this message went to the phone less than a minute ago; check it before sending again"
+)
+_SMS_UNREACHABLE_DETAIL = (
+    "Pushcut did not answer in time — the notification may already have been pushed; "
+    "check the phone before sending again"
+)
+
+
+def _reset_recent_sms() -> None:
+    """Test hook: the guard is module state, so a test that fills it must be
+    able to empty it again (the suite's own fixtures call this)."""
+    _recent_sms.clear()
+
+
+def _sms_guard_key_or_409(project_id: int, message: str) -> tuple[int, str]:
+    """Prune the guard and return this send's key, raising 409 if the same
+    message already went (or may have gone) to the phone inside the window.
+
+    Reads the clock through the module's own `time` name for the same reason
+    _check_rate_limit does — so a test can rebind it to a fake clock.
+    """
+    now = time.monotonic()
+    for stale in [k for k, at in _recent_sms.items() if now - at >= _SMS_DUPLICATE_WINDOW_S]:
+        del _recent_sms[stale]
+    key = (project_id, message.strip())
+    if key in _recent_sms:
+        raise HTTPException(status_code=409, detail=_SMS_DUPLICATE_DETAIL)
+    return key
+
+
 @router.post("/{project_id}/pickup-sms", response_model=AitoPickupSmsResponse)
 async def send_pickup_sms(
     project_id: int,
     payload: AitoPickupSmsRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
@@ -3935,12 +4213,37 @@ async def send_pickup_sms(
     project regardless of expire_on_commit, and reading one afterwards from
     async code raises MissingGreenlet rather than lazily re-fetching.
     """
+    # T-025: its own bucket, checked before any lookup — like the draft
+    # sibling's AI limiter and the counter-payment routes'. Past the cap
+    # nothing is pushed to Pushcut, so a loop cannot turn into a stream of
+    # real SMS.
+    _check_rate_limit(
+        request,
+        current_user,
+        bucket="pickup_sms",
+        max_calls=_PICKUP_SMS_MAX_CALLS,
+        detail=_PICKUP_SMS_DETAIL,
+    )
     project = await _get_active_project_or_404(db, project_id)
     await _finished_or_409(db, project)
     phone = (project.client_phone or "").strip()
     if not phone:
         raise HTTPException(status_code=409, detail="The project's client has no phone number")
     project_pk = project.id
+    key = _sms_guard_key_or_409(project_pk, payload.message)
+    # T-043: armed BEFORE the push, not after it. Pushcut's POST runs at an 8s
+    # timeout, and a key written only on the way out leaves that whole window
+    # unguarded: the operator whose request hangs — or whose browser or proxy
+    # drops the answer — taps Send again, passes the check above, and a SECOND
+    # real SMS lands on the client's phone, the exact reflex retry this guard
+    # exists to refuse. No lock is needed even though the handler is async: the
+    # guard is single-process module state and nothing is awaited between the
+    # check and this assignment, so no other request can interleave there.
+    # Everything that can refuse the send outright (the rate limit, the 404,
+    # the unfinished-work 409, the no-phone 409) runs above, so a request that
+    # never reaches Pushcut never arms the key. Un-armed again below on a clean
+    # refusal only; success and the ambiguous PushcutUnreachable keep it.
+    _recent_sms[key] = time.monotonic()
     try:
         await send_sms_notification(
             db,
@@ -3949,9 +4252,31 @@ async def send_pickup_sms(
             title=f"SMS — {project.client_name}" if project.client_name else "SMS client",
         )
     except PushcutNotConfiguredError:
+        # A clean refusal Pushcut itself gave: nothing was pushed, so the key
+        # armed above is dropped again and an honest retry — once the URL is
+        # configured — goes straight through.
+        _recent_sms.pop(key, None)
         raise HTTPException(status_code=409, detail="Pushcut is not configured") from None
+    except PushcutUnreachable as e:
+        # Caught BEFORE its PushcutUpstreamError parent below — the ambiguous
+        # case. The key stays armed (from before the push) so an immediate
+        # identical retry is refused, but the send is deliberately unrecorded
+        # in the timeline: no event may claim a send nobody confirmed.
+        logger.warning(
+            "Aito pickup SMS for project %s got no answer from Pushcut — the notification may "
+            "already be on the phone, so no project.sms.sent event was written: %s",
+            project_id,
+            e,
+        )
+        raise HTTPException(status_code=502, detail=_SMS_UNREACHABLE_DETAIL) from e
     except PushcutUpstreamError as e:
+        # Pushcut answered and refused: nothing was pushed, so the key armed
+        # above is dropped and an honest retry is allowed straight away.
+        _recent_sms.pop(key, None)
         raise HTTPException(status_code=502, detail=str(e)) from e
+    # No re-arm here: the key written before the push already covers the
+    # success path, and the window is deliberately measured from the moment
+    # the push started rather than the moment it came back.
     try:
         await record(
             db,

@@ -274,9 +274,11 @@ async def create_invoice_payment_link(
 async def cancel_invoice_payment_link(
     project_id: int,
     link_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
+    _check_counter_payment_rate_limit(request, current_user)
     project = await _get_active_project_or_404(db, project_id)
     row = await db.get(AitoPaymentLink, link_id)
     if row is None or row.project_id != project_id:

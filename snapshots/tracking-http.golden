@@ -50,6 +50,7 @@
   "public_known_again_status": 200,
   "public_known_hyphen_lowercase": {
     "body": {
+      "accepted": true,
       "column": "print",
       "done_at": null,
       "due_date": "2099-01-01",

@@ -6,6 +6,7 @@ from datetime import date, datetime, timedelta
 
 import pytest
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.routes.settings import set_setting
@@ -1364,6 +1365,98 @@ async def test_a_lost_invoice_link_fails_in_place_instead_of_being_replaced(db_s
     assert accepted == []
 
 
+@pytest.mark.asyncio
+async def test_the_lost_links_own_replacement_failing_is_recorded_not_silently_dropped(db_session, fake, monkeypatch):
+    """`_replace_lost` marks the 404'd row dead and reserves a fresh one
+    before it ever talks to Heimdall again (see `_create`) — so when THAT
+    create call itself fails, there is still a live (unsuperseded) row: the
+    reservation. The double-failure handler around `_replace_lost` must
+    feed that reservation to `_record_failure` rather than letting the
+    project end the pass with no current link and no visible error at all."""
+    p = await _project(db_session)
+    await reconcile_payment_links(db_session, now=NOW, today=TODAY)
+    fake.forget("L1")
+    fake.calls.clear()
+
+    async def failing_create(db, **kw):
+        raise HeimdallUpstreamError("replacement boom")
+
+    monkeypatch.setattr(heimdall_service, "create_link", failing_create)
+
+    visited = await reconcile_payment_links(db_session, now=NOW + timedelta(hours=1), today=TODAY)
+
+    assert visited == 1
+    old, reservation = await _rows(db_session, p.id)
+    assert old.status == "failed" and old.superseded_at is not None and old.heimdall_id == "L1"
+    assert reservation.heimdall_id is None, "the replacement create never landed at Heimdall"
+    assert reservation.document_kind == "quote" and reservation.superseded_at is None
+    assert reservation.sync_error and "replacement boom" in reservation.sync_error
+    assert reservation.sync_failures == 1
+    assert (await current_link(db_session, p.id)).id == reservation.id, "not silently dropped"
+    assert (await _kinds(db_session, p.id)).count("payment_link.replaced") == 0
+
+
+@pytest.mark.asyncio
+async def test_a_rate_limit_during_the_lost_links_replacement_stands_the_whole_pass_down(db_session, fake, monkeypatch):
+    """A 429 from the replacement's own create must not be swallowed like an
+    ordinary Heimdall failure (`except HeimdallRateLimited: raise` ahead of
+    the generic branch) — it propagates out of the double-failure handler to
+    the pass's outer throttle logic instead of being recorded as a per-row
+    sync failure."""
+    p = await _project(db_session)
+    await reconcile_payment_links(db_session, now=NOW, today=TODAY)
+    fake.forget("L1")
+    fake.calls.clear()
+
+    async def rate_limited_create(db, **kw):
+        raise HeimdallRateLimited("slow down", 120.0)
+
+    monkeypatch.setattr(heimdall_service, "create_link", rate_limited_create)
+
+    visited = await reconcile_payment_links(db_session, now=NOW + timedelta(hours=1), today=TODAY)
+
+    assert visited == 1
+    assert svc._throttled_until is not None
+    old, reservation = await _rows(db_session, p.id)
+    assert old.status == "failed" and old.superseded_at is not None
+    assert reservation.heimdall_id is None
+    assert reservation.sync_error is None, "the rate-limit path never reaches _record_failure"
+    assert reservation.sync_failures == 0
+
+
+@pytest.mark.asyncio
+async def test_an_unrelated_db_error_polling_one_row_rolls_back_and_still_polls_the_next(db_session, fake, monkeypatch):
+    """The whole-iteration `except SQLAlchemyError` wrapping the poll must
+    isolate to its own row, exactly like the reconcile half's equivalent
+    guard — an unrelated DB error surfacing mid-poll (a dropped connection,
+    a locked table) must roll back and move on to the next pending row
+    rather than aborting the whole pass and stranding everything after it."""
+    a = await _project(db_session, quote_number="DEV-A")
+    b = await _project(db_session, quote_number="DEV-B")
+    aid, bid = a.id, b.id
+    await reconcile_payment_links(db_session, now=NOW, today=TODAY)
+    fake.calls.clear()
+
+    real_poll_link = svc.poll_link
+
+    async def flaky_poll_link(db, row, *, now):
+        if row.project_id == aid:
+            raise SQLAlchemyError("connection dropped")
+        return await real_poll_link(db, row, now=now)
+
+    monkeypatch.setattr(svc, "poll_link", flaky_poll_link)
+
+    later = NOW + timedelta(minutes=1)
+    visited = await reconcile_payment_links(db_session, now=later, today=TODAY)
+
+    assert visited == 2, "the reconcile half runs before the poll and never sees the failure"
+    ra = await current_link(db_session, aid)
+    rb = await current_link(db_session, bid)
+    assert ra.checked_at == NOW, "a's own poll blew up before it could stamp anything new"
+    assert ra.sync_error is None, "the whole-iteration guard just rolls back, it never records a failure"
+    assert rb.checked_at == later, "b was still polled despite a's failure"
+
+
 # --- one pass at a time -------------------------------------------------------
 
 
@@ -1749,3 +1842,215 @@ async def test_cancel_invoice_link_records_the_user_actor(db_session, fake):
     ev = (await db_session.execute(select(AitoEvent).where(AitoEvent.project_id == p.id))).scalars().all()
     cancelled = [e for e in ev if e.kind == "payment_link.cancelled"]
     assert len(cancelled) == 1 and cancelled[0].actor_class == "user" and cancelled[0].actor_name == "paul"
+
+
+# --- one reservation at a time (T-029) ----------------------------------------
+
+_INVOICE_DOC = PaymentDocument(kind="invoice", id="inv-9", number="FA-26-0009", customer_id="c1", balance=23000)
+
+
+def _sessions(test_engine):
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    return async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+
+
+@pytest.fixture
+def own_reserve_lock(monkeypatch):
+    """`svc._reserve_lock` is a module global, and an `asyncio.Lock` binds
+    itself to the running loop the first acquire that actually CONTENDS — so a
+    contention test hands the module a lock of its own rather than leaving the
+    shared one bound to a loop that is about to close."""
+    import asyncio
+
+    monkeypatch.setattr(svc, "_reserve_lock", asyncio.Lock())
+
+
+def _slow_key(monkeypatch, delay: float = 0.02) -> None:
+    """Widen the read-then-insert window `_next_key` opens (count rows, then
+    insert, with awaits in between) so a second, unserialised reservation is
+    certain to land inside it."""
+    import asyncio
+
+    real = svc._next_key
+
+    async def slow(db, project_id):
+        key = await real(db, project_id)
+        await asyncio.sleep(delay)
+        return key
+
+    monkeypatch.setattr(svc, "_next_key", slow)
+
+
+def _steal_the_key(monkeypatch, maker, *, status: str) -> None:
+    """Another PROCESS claims `aito:{pid}:{n}` between our count and our
+    commit — the one race an in-process lock cannot cover. A second session
+    inserting that exact key from inside `_next_key` is that process."""
+    real = svc._next_key
+
+    async def steal(db, project_id):
+        key = await real(db, project_id)
+        async with maker() as other:
+            other.add(
+                AitoPaymentLink(
+                    project_id=project_id,
+                    idempotency_key=key,
+                    reference="FA-26-0009",
+                    amount=23000,
+                    expires_on="2026-12-31",
+                    created_at=NOW,
+                    status=status,
+                    document_kind="invoice",
+                    document_number="FA-26-0009",
+                )
+            )
+            await other.commit()
+        return key
+
+    monkeypatch.setattr(svc, "_next_key", steal)
+
+
+@pytest.mark.asyncio
+async def test_two_concurrent_invoice_link_creates_reserve_exactly_one_row(
+    test_engine, fake, own_reserve_lock, monkeypatch
+):
+    """Two Create-link clicks on one card (two tabs, or two operators). Both
+    used to count the same rows, compute the same `aito:{pid}:1` and the
+    loser's commit died on the unique column — an unhandled IntegrityError,
+    i.e. a 500 on the button. The reservation window is serialised now, so the
+    second click finds the first's reservation and either replays it under its
+    own key or is refused: one row, one key, one link at Heimdall, no 500."""
+    import asyncio
+
+    maker = _sessions(test_engine)
+    async with maker() as setup:
+        project_id = (await _project(setup)).id
+    _slow_key(monkeypatch)
+
+    async def click():
+        async with maker() as db:
+            project = await db.get(AitoProject, project_id)
+            return await svc.create_invoice_link(
+                db,
+                project,
+                document=_INVOICE_DOC,
+                amount=23000,
+                actor_name="paul",
+                now=NOW,
+                today=TODAY,
+                validity_days=15,
+            )
+
+    outcomes = await asyncio.gather(click(), click(), return_exceptions=True)
+    for outcome in outcomes:
+        assert not isinstance(outcome, BaseException) or isinstance(outcome, svc.InvoiceLinkExists), repr(outcome)
+    async with maker() as check:
+        rows = await _rows(check, project_id)
+    assert len(rows) == 1
+    assert rows[0].idempotency_key == f"aito:{project_id}:1"
+    assert rows[0].heimdall_id is not None  # minted, not left standing as a reservation
+    assert len(fake.links) == 1  # the second POST replayed the key, it never minted a second link
+
+
+@pytest.mark.asyncio
+async def test_an_operator_create_racing_the_reconcilers_reserve_gets_a_distinct_key(
+    test_engine, fake, own_reserve_lock, monkeypatch
+):
+    """The reconciler's `_create` and the invoice route draw from the SAME
+    per-project key counter, and the HTTP path never takes `_pass_lock`: both
+    used to reserve `aito:{pid}:1` and one of the two commits died on the
+    unique column. `_reserve_lock` is shared by both paths — nested inside
+    `_pass_lock` on the reconciler's side, which must not deadlock — so the
+    two reservations take `:1` and `:2` in whichever order they arrive."""
+    import asyncio
+
+    maker = _sessions(test_engine)
+    async with maker() as setup:
+        project_id = (await _project(setup)).id
+    _slow_key(monkeypatch)
+
+    async def operator():
+        async with maker() as db:
+            project = await db.get(AitoProject, project_id)
+            await svc.create_invoice_link(
+                db,
+                project,
+                document=_INVOICE_DOC,
+                amount=23000,
+                actor_name="paul",
+                now=NOW,
+                today=TODAY,
+                validity_days=15,
+            )
+
+    async def reconciler():
+        async with maker() as db:
+            project = await db.get(AitoProject, project_id)
+            wanted = Wanted(reference="DEV-2026-1234", amount=12500, expires_on="2026-09-27")
+            async with svc._pass_lock:  # where a real pass holds it
+                await svc._create(db, project, wanted, now=NOW, kind="payment_link.created")
+
+    await asyncio.gather(operator(), reconciler())
+    async with maker() as check:
+        rows = await _rows(check, project_id)
+    assert {r.idempotency_key for r in rows} == {f"aito:{project_id}:1", f"aito:{project_id}:2"}
+    assert {r.document_kind for r in rows} == {"invoice", "quote"}
+    assert all(r.heimdall_id is not None for r in rows), "both reservations were minted, neither commit collided"
+
+
+@pytest.mark.asyncio
+async def test_a_key_collision_from_another_process_is_refused_as_link_exists(
+    db_session, test_engine, fake, monkeypatch
+):
+    """A lock only reaches this process. When the unique key is taken anyway
+    between the count and the commit, the loser rolls back, re-reads and
+    answers with the refusal the operator already knows (`InvoiceLinkExists`
+    → the route's 409 `link_exists`) instead of an IntegrityError escaping as
+    a 500. Nothing is minted, and the session still works afterwards."""
+    project_id = (await _project(db_session)).id  # read before the rollback expires the row
+    project = await db_session.get(AitoProject, project_id)
+    _steal_the_key(monkeypatch, _sessions(test_engine), status="pending")
+    with pytest.raises(svc.InvoiceLinkExists):
+        await svc.create_invoice_link(
+            db_session,
+            project,
+            document=_INVOICE_DOC,
+            amount=23000,
+            actor_name="paul",
+            now=NOW,
+            today=TODAY,
+            validity_days=15,
+        )
+    assert [c for c in fake.calls if c[0] == "create"] == []
+    rows = await _rows(db_session, project_id)  # the session survived the rollback
+    assert len(rows) == 1 and rows[0].idempotency_key == f"aito:{project_id}:1"
+
+
+@pytest.mark.asyncio
+async def test_a_key_collision_with_no_open_link_left_still_surfaces_the_database_error(
+    db_session, test_engine, fake, monkeypatch
+):
+    """The corner the 409 cannot describe: the key was taken, but the row that
+    took it is not an open link (here: already cancelled), so there is no
+    "already open" to report. The IntegrityError surfaces rather than being
+    swallowed into a misleading refusal — after a rollback that leaves the
+    session usable."""
+    from sqlalchemy.exc import IntegrityError
+
+    project_id = (await _project(db_session)).id
+    project = await db_session.get(AitoProject, project_id)
+    _steal_the_key(monkeypatch, _sessions(test_engine), status="cancelled")
+    with pytest.raises(IntegrityError):
+        await svc.create_invoice_link(
+            db_session,
+            project,
+            document=_INVOICE_DOC,
+            amount=23000,
+            actor_name="paul",
+            now=NOW,
+            today=TODAY,
+            validity_days=15,
+        )
+    assert [c for c in fake.calls if c[0] == "create"] == []
+    rows = await _rows(db_session, project_id)
+    assert len(rows) == 1 and rows[0].status == "cancelled"

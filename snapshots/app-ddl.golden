@@ -1,5 +1,19 @@
 ### exit: 0
 ### stdout:
+CREATE TABLE aito_client_ratings (
+	customer_id VARCHAR(50) NOT NULL, 
+	tier VARCHAR(10) NOT NULL, 
+	reason VARCHAR(20) NOT NULL, 
+	settled_count INTEGER NOT NULL, 
+	on_time_count INTEGER NOT NULL, 
+	overdue_count INTEGER NOT NULL, 
+	past_due_count INTEGER NOT NULL, 
+	worst_overdue_days INTEGER NOT NULL, 
+	worst_overdue_number VARCHAR(50), 
+	is_company BOOLEAN DEFAULT '0' NOT NULL, 
+	computed_at DATETIME NOT NULL, 
+	PRIMARY KEY (customer_id)
+);
 CREATE TABLE aito_events (
 	id INTEGER NOT NULL, 
 	project_id INTEGER NOT NULL, 
@@ -25,6 +39,8 @@ CREATE TABLE aito_payment_links (
 	idempotency_key VARCHAR(64) NOT NULL, 
 	heimdall_id VARCHAR(36), 
 	reference VARCHAR(64) NOT NULL, 
+	document_kind VARCHAR(10) DEFAULT 'quote' NOT NULL, 
+	document_number VARCHAR(64), 
 	amount INTEGER NOT NULL, 
 	currency VARCHAR(3) DEFAULT 'XPF' NOT NULL, 
 	expires_on VARCHAR(10) NOT NULL, 
@@ -54,6 +70,8 @@ CREATE TABLE aito_projects (
 	client_is_company BOOLEAN, 
 	client_social_network VARCHAR(20), 
 	client_social_handle VARCHAR(100), 
+	client_contact_person_id VARCHAR(50), 
+	client_contact_name VARCHAR(200), 
 	tracking_token VARCHAR(64), 
 	quote_id VARCHAR(50), 
 	quote_number VARCHAR(50), 
@@ -135,6 +153,31 @@ CREATE TABLE aito_tasks (
 	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
 	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
 	PRIMARY KEY (id)
+);
+CREATE TABLE aito_terminal_payments (
+	id INTEGER NOT NULL, 
+	project_id INTEGER NOT NULL, 
+	document_kind VARCHAR(10) NOT NULL, 
+	document_id VARCHAR(50) NOT NULL, 
+	document_number VARCHAR(64) NOT NULL, 
+	idempotency_key VARCHAR(64) NOT NULL, 
+	heimdall_id VARCHAR(36), 
+	amount INTEGER NOT NULL, 
+	amount_confirmed INTEGER, 
+	status VARCHAR(20) DEFAULT 'pending' NOT NULL, 
+	native_state VARCHAR(30), 
+	booking_status VARCHAR(20), 
+	booking_error TEXT, 
+	zoho_payment_id VARCHAR(50), 
+	sync_error TEXT, 
+	created_by VARCHAR(100), 
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	checked_at DATETIME, 
+	settled_at DATETIME, 
+	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	PRIMARY KEY (id), 
+	UNIQUE (idempotency_key), 
+	UNIQUE (heimdall_id)
 );
 CREATE TABLE aito_tracking_views (
 	id INTEGER NOT NULL, 
@@ -502,7 +545,7 @@ CREATE TABLE library_folders (
 	PRIMARY KEY (id), 
 	FOREIGN KEY(parent_id) REFERENCES library_folders (id) ON DELETE CASCADE, 
 	FOREIGN KEY(project_id) REFERENCES projects (id) ON DELETE SET NULL, 
-	FOREIGN KEY(archive_id) REFERENCES print_archives (id) ON DELETE SET NULL
+	CONSTRAINT fk_library_folders_archive_id FOREIGN KEY(archive_id) REFERENCES print_archives (id) ON DELETE SET NULL
 );
 CREATE TABLE library_tags (
 	id INTEGER NOT NULL, 

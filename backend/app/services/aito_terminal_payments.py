@@ -9,8 +9,9 @@ import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import set_committed_value
 
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_terminal_payment import AitoTerminalPayment
@@ -20,6 +21,7 @@ from backend.app.services.heimdall import (
     HeimdallNotConfigured,
     HeimdallNotFound,
     HeimdallRateLimited,
+    HeimdallUnreachable,
     HeimdallUpstreamError,
     LinkView,
     heimdall_service,
@@ -156,11 +158,22 @@ async def start_terminal_payment(
 
     The reservation commit comes first so a crash between the POST and the
     second commit leaves a row the operator sees as `pending` with no
-    heimdall_id — never a silent second charge. A Heimdall refusal (including
-    `HeimdallNotConfigured`, which is NOT a subclass of `HeimdallUpstreamError`)
-    marks the row `failed` (with the reason) and re-raises for the route to
-    map. The guard-check-then-insert is itself serialised by `_start_lock` so
-    two concurrent starts cannot both see "nothing blocking".
+    heimdall_id — never a silent second charge. A Heimdall REFUSAL (a 4xx/5xx
+    answer, or `HeimdallNotConfigured`, which is NOT a subclass of
+    `HeimdallUpstreamError`) marks the row `failed` (with the reason) and
+    re-raises for the route to map: Heimdall answered, so nothing was
+    created. A TRANSPORT failure (`HeimdallUnreachable` — connect refused,
+    read timeout) says the opposite: the POST carries `confirm: true`, so a
+    timeout is precisely the case where the terminal may already be asking
+    for the card. Such a row is therefore left exactly as it was reserved —
+    `pending`, `heimdall_id` NULL, never `settled_at` — with the reason in
+    `sync_error`, i.e. an ordinary unminted reservation: replayable by the
+    operator under its own idempotency key (below), replaced if they charge
+    something else, aged out by `_age_out_abandoned_reservations` if they
+    walk away. Stamping it `failed` would hide a charge that reached the
+    terminal from every reconciler. The guard-check-then-insert is itself
+    serialised by `_start_lock` so two concurrent starts cannot both see
+    "nothing blocking".
 
     Such an unminted reservation blocks the project, and neither the GET nor
     the sweep may clear it by asking Heimdall (there is no id to ask about,
@@ -234,6 +247,16 @@ async def start_terminal_payment(
                 amount=row.amount,
                 document={"type": row.document_kind, "id": row.document_id},
             )
+        except HeimdallUnreachable as exc:
+            # No answer at all: the terminal may be dialling right now. Leave
+            # the reservation unminted and open so the operator's next start
+            # replays this same idempotency key and adopts whatever Heimdall
+            # actually did. `_in_flight` is released in the `finally` below,
+            # so that replay is not refused as still-in-progress.
+            row.sync_error = str(exc)[:500]
+            row.checked_at = now
+            await db.commit()
+            raise
         except (HeimdallUpstreamError, HeimdallNotConfigured) as exc:
             row.status = "failed"
             row.sync_error = str(exc)[:500]
@@ -292,18 +315,40 @@ async def apply_terminal_state(db: AsyncSession, row: AitoTerminalPayment, view:
     the transition events fire once, on the FIRST settle (whether the row
     was already open when this is called, or arrives here already adopted as
     settled — e.g. `start_terminal_payment`'s 200-replay branch), and a later
-    poll only refreshes `booking_*`. Guarded on `already_settled` alone: a
-    row can be handed in with `row.status` already equal to `view.status`
-    (the caller adopted it first) and must still record/accept/refresh
-    exactly once."""
+    poll only refreshes `booking_*`. Never guarded on the in-memory
+    `settled_at` alone: a row can be handed in with `row.status` already
+    equal to `view.status` (the caller adopted it first) and must still
+    record/accept/refresh exactly once — see the claim below."""
     project_id = row.project_id
-    already_settled = row.settled_at is not None
+    was_settled = row.settled_at is not None
     _adopt(row, view, now)
-    if row.status in SETTLED_STATUSES and not already_settled:
-        row.settled_at = now
-    await db.commit()
-    if already_settled or row.status not in SETTLED_STATUSES:
+    if was_settled or row.status not in SETTLED_STATUSES:
+        await db.commit()
         return
+    # THE SETTLE IS CLAIMED, not check-then-acted. `refresh_terminal_payment`
+    # is reached both from the operator's 3 s poll and from
+    # `poll_open_terminal_payments` (which forces, so REFRESH_MIN_SECONDS does
+    # not keep them apart), on rows loaded into two different sessions. Two
+    # callers whose Heimdall round trips straddle each other both read
+    # `settled_at IS NULL` and would both fall through — two
+    # `payment.terminal.paid` events, two `accept_quote` pushes, two
+    # notifications for ONE card payment. Only the UPDATE that matches the
+    # NULL guard wins; the loser re-reads the row and returns quietly. Same
+    # idiom as `aito_tracking.ensure_tracking_token`, and unlike a module lock
+    # (`_start_lock`) it holds across processes too.
+    claimed = (
+        await db.execute(
+            update(AitoTerminalPayment)
+            .where(AitoTerminalPayment.id == row.id, AitoTerminalPayment.settled_at.is_(None))
+            .values(settled_at=now)
+            .execution_options(synchronize_session=False)
+        )
+    ).rowcount
+    await db.commit()
+    if not claimed:
+        await db.refresh(row)
+        return
+    set_committed_value(row, "settled_at", now)
     detail = {
         "document_kind": row.document_kind,
         "document_number": row.document_number,
@@ -355,8 +400,11 @@ async def refresh_terminal_payment(
     sweep stops the pass on it — see `poll_open_terminal_payments`). Every
     other Heimdall failure, including `HeimdallNotConfigured` (not a subclass
     of `HeimdallUpstreamError`), lands in `sync_error` and the stored row is
-    returned as-is. A 404 (Heimdall lost the payment) marks the row `failed`
-    so the operator can start again."""
+    returned as-is. A 404 (Heimdall lost the payment) marks an OPEN row
+    `failed` — with a `payment.terminal.failed` event saying why — so the
+    operator can start again; a row that is already `paid` (or otherwise
+    settled) only records the 404 in `sync_error`/`checked_at`, because
+    Heimdall forgetting a charge never un-charges the card."""
     if row.heimdall_id is None:
         return row
     open_row = row.status in OPEN_STATUSES or (row.status == "paid" and row.booking_status == "pending")
@@ -367,10 +415,43 @@ async def refresh_terminal_payment(
     try:
         view = await heimdall_service.get_payment(db, row.heimdall_id)
     except HeimdallNotFound as exc:
-        row.status = "failed"
         row.sync_error = str(exc)[:500]
         row.checked_at = now
-        row.settled_at = row.settled_at or now
+        if row.status == "paid" or row.settled_at is not None:
+            # The card WAS charged; Heimdall forgetting the payment does not
+            # un-charge it. `open_row` above deliberately keeps polling a paid
+            # row whose Zoho booking is still pending, so a repointed base URL,
+            # a rotated key or a lost record used to answer 404 here and
+            # rewrite a real counter payment as `failed`. Record the 404 and
+            # leave `status`, `booking_status` and `settled_at` alone — the
+            # sweep re-reads the row on the next tick (one cheap GET), and if
+            # Heimdall comes back the booking still lands. No event: nothing
+            # about the payment changed, only our view of it.
+            await db.commit()
+            return row
+        # An open row Heimdall lost: nothing will ever settle it, so close it
+        # so the operator can charge again. Unlike every other close this one
+        # is decided here rather than in `apply_terminal_state` (which never
+        # runs — there is no view), so the timeline event is recorded by hand,
+        # in the same shape `_age_out_abandoned_reservations` uses.
+        row.status = "failed"
+        row.settled_at = now
+        await db.commit()
+        await record(
+            db,
+            row.project_id,
+            "payment.terminal.failed",
+            actor_class="system",
+            subject_type="project",
+            subject_id=row.project_id,
+            detail={
+                "document_kind": row.document_kind,
+                "document_number": row.document_number,
+                "amount": row.amount,
+                "heimdall_id": row.heimdall_id,
+                "reason": "not_found",
+            },
+        )
         await db.commit()
         return row
     except HeimdallRateLimited:

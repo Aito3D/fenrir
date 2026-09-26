@@ -154,6 +154,29 @@ def _token_then(handler):
     return httpx.MockTransport(wrapped)
 
 
+async def _card_for(async_client, contact_id: str) -> dict:
+    """An active Aito card on ``contact_id``.
+
+    T-039: PATCH /zoho/contacts/{id} is scoped to a contact this board is
+    working for, so every patch test that expects to reach Books needs one.
+    Creates no Zoho traffic of its own (no shipping in the payload), so it is
+    safe to call before a counting transport is installed.
+    """
+    r = await async_client.post(
+        "/api/v1/aito/",
+        json={
+            "description": "Support GoPro",
+            "client_id": contact_id,
+            "client_name": "Jean DUPONT",
+            "client_phone": "+689-87000001",
+            "client_email": "jean@example.pf",
+            "client_is_company": False,
+        },
+    )
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
 @pytest.mark.asyncio
 async def test_create_contact_returns_mapped_contact(async_client):
     await _configure(async_client)
@@ -256,6 +279,9 @@ async def test_contact_create_normalizes_names(async_client, monkeypatch):
 @pytest.mark.asyncio
 async def test_patch_contact_refuses_the_default_contact(async_client):
     await _configure(async_client)
+    # The walk-in refusal comes FIRST: even with an active card on it (every
+    # counter sale makes one), the shared bucket is never rewritten.
+    await _card_for(async_client, "66407000001237340")
     calls = {"n": 0}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -274,6 +300,7 @@ async def test_patch_contact_refuses_the_default_contact(async_client):
 @pytest.mark.asyncio
 async def test_patch_contact_updates_primary_person(async_client):
     await _configure(async_client)
+    await _card_for(async_client, "z1")
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.method == "GET":
@@ -298,6 +325,8 @@ async def test_patch_contact_updates_primary_person(async_client):
 @pytest.mark.asyncio
 async def test_patch_contact_rejects_malformed_values(async_client):
     await _configure(async_client)
+    # No card needed: body validation runs before the handler (and so before
+    # T-039's scoping query), which is what keeps these 422 and not 404.
     assert (await async_client.patch("/api/v1/zoho/contacts/z1", json={"email": "nope"})).status_code == 422
     assert (await async_client.patch("/api/v1/zoho/contacts/z1", json={"phone": "87123456"})).status_code == 422
 
@@ -305,6 +334,7 @@ async def test_patch_contact_rejects_malformed_values(async_client):
 @pytest.mark.asyncio
 async def test_patch_contact_accepts_empty_string_to_clear(async_client):
     await _configure(async_client)
+    await _card_for(async_client, "z1")
     seen = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -336,6 +366,85 @@ async def test_patch_contact_accepts_empty_string_to_clear(async_client):
 @pytest.mark.asyncio
 async def test_patch_contact_upstream_error_maps_to_502(async_client):
     await _configure(async_client)
+    await _card_for(async_client, "z1")
     zoho_service.transport = _token_then(lambda request: httpx.Response(500, text="boom"))
     r = await async_client.patch("/api/v1/zoho/contacts/z1", json={"email": "x@y.pf"})
     assert r.status_code == 502
+
+
+# --------------------------------------------- T-039: scoped to the board
+
+
+@pytest.mark.asyncio
+async def test_patch_contact_refuses_a_contact_with_no_card(async_client):
+    """The whole point of T-039: an aito:create principal can no longer
+    rewrite the email/phone of a Books contact the board has never worked
+    for — and the refusal costs Zoho nothing."""
+    await _configure(async_client)
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(200, json={"access_token": "at", "expires_in": 3600})
+
+    zoho_service.transport = httpx.MockTransport(handler)
+    r = await async_client.patch(
+        "/api/v1/zoho/contacts/stranger",
+        json={"email": "x@y.pf", "phone": "+689-87123456", "phone_field": "mobile"},
+    )
+    assert r.status_code == 404
+    assert r.json()["detail"] == "No active project for this contact"
+    assert calls["n"] == 0  # never reaches Zoho
+
+
+@pytest.mark.asyncio
+async def test_patch_contact_refuses_a_contact_whose_only_card_is_trashed(async_client):
+    """A trashed card is not a client the board is working for: the scoping
+    query asks for `status == "active"`, the same predicate every other
+    project route uses (`_get_active_project_or_404`)."""
+    await _configure(async_client)
+    project = await _card_for(async_client, "z9")
+    assert (await async_client.delete(f"/api/v1/aito/{project['id']}")).status_code == 204
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(200, json={"access_token": "at", "expires_in": 3600})
+
+    zoho_service.transport = httpx.MockTransport(handler)
+    r = await async_client.patch("/api/v1/zoho/contacts/z9", json={"email": "x@y.pf"})
+    assert r.status_code == 404
+    assert calls["n"] == 0
+
+
+@pytest.mark.asyncio
+async def test_patch_contact_records_nothing_on_the_timeline(async_client):
+    """Pinned deliberately (see patch_contact's comment): the Books write is
+    NOT an event. `project.updated` would claim card fields changed — none
+    do here — and it coalesces, so a detail-only row would fold into or
+    delete an unrelated recent edit."""
+    await _configure(async_client)
+    project = await _card_for(async_client, "z1")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "contact": {
+                        "contact_id": "z1",
+                        "first_name": "M",
+                        "last_name": "G",
+                        "contact_persons": [{"contact_person_id": "cp1", "is_primary_contact": True}],
+                    }
+                },
+            )
+        return httpx.Response(200, json={"contact_person": {}})
+
+    zoho_service.transport = _token_then(handler)
+    before = (await async_client.get(f"/api/v1/aito/{project['id']}/events?depth=everything")).json()["events"]
+    assert (
+        await async_client.patch("/api/v1/zoho/contacts/z1", json={"email": "x@y.pf", "phone_field": "mobile"})
+    ).status_code == 204
+    after = (await async_client.get(f"/api/v1/aito/{project['id']}/events?depth=everything")).json()["events"]
+    assert [e["kind"] for e in after] == [e["kind"] for e in before]

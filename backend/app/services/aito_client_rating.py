@@ -51,7 +51,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.aito_client_rating import AitoClientRating
 from backend.app.schemas.aito import AitoClientRatingResponse
-from backend.app.services.zoho import ZohoNotConfiguredError, ZohoRateLimited, ZohoUpstreamError, zoho_service
+from backend.app.services.zoho import (
+    ZohoNotConfiguredError,
+    ZohoNotFound,
+    ZohoRateLimited,
+    ZohoUpstreamError,
+    zoho_service,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -112,8 +118,51 @@ PAID_ON_FIELD = "last_payment_date"
 
 _IGNORED_STATUSES = frozenset({"void", "draft"})
 
-TIERS = ("good", "medium", "bad", "new")
-REASONS = ("overdue", "chronic", "new", "punctual", "mixed")
+# T-024: ids Books has never heard of, and when each may be asked about
+# again. The refresh throttle above only ever guarded ids that already had a
+# cached row; an id with no row went to Books on EVERY request and left a
+# permanent `aito_client_ratings` row behind it, so an unknown id was the one
+# input that could amplify. A miss is now remembered here for the same
+# REFRESH_MIN_AGE and answered `unavailable` from memory, and nothing is
+# persisted for it.
+#
+# In-process, not a table: a negative result is a property of this process's
+# recent conversation with Books, a restart should re-ask, and the whole
+# point of the task is that an unknown id must not be able to write rows.
+# The keys are caller-supplied, so `_remember_missing` prunes and caps.
+_MISSING_MAX_ENTRIES = 512
+_missing_until: dict[str, datetime] = {}
+
+
+def _reset_missing() -> None:
+    """Forget every remembered miss — tests run this around each case."""
+    _missing_until.clear()
+
+
+def _is_missing(customer_id: str, moment: datetime) -> bool:
+    """True while `customer_id` is inside its remembered miss window."""
+    until = _missing_until.get(customer_id)
+    if until is None:
+        return False
+    if until <= moment:
+        del _missing_until[customer_id]
+        return False
+    return True
+
+
+def _remember_missing(customer_id: str, moment: datetime) -> None:
+    """Remember that Books does not know `customer_id`, for REFRESH_MIN_AGE."""
+    for key, until in list(_missing_until.items()):
+        if until <= moment:
+            del _missing_until[key]
+    if len(_missing_until) >= _MISSING_MAX_ENTRIES:
+        # Still full of live entries: drop the oldest half rather than grow.
+        # Whoever is scanning ids pays a Books call again; the cap is what
+        # keeps a scan from costing memory instead.
+        oldest = sorted(_missing_until.items(), key=lambda kv: kv[1])[: len(_missing_until) // 2 + 1]
+        for key, _ in oldest:
+            del _missing_until[key]
+    _missing_until[customer_id] = moment + REFRESH_MIN_AGE
 
 
 @dataclass(frozen=True)
@@ -313,6 +362,12 @@ async def read_client_rating(
         return _new()
 
     moment = now or datetime.now(timezone.utc).replace(tzinfo=None)
+    if _is_missing(customer_id, moment):
+        # Books said this id does not exist a moment ago. Answering from that
+        # memory is the whole guard: without it every request for an unknown
+        # id spends a Books call, since there is no cached row to throttle
+        # against.
+        return _unavailable()
     try:
         cached = await db.get(AitoClientRating, customer_id)
     except SQLAlchemyError as e:
@@ -338,12 +393,28 @@ async def read_client_rating(
     # rating: the last known flag is kept, and a customer never seen before
     # is scored as an individual, the stricter of the two.
     is_company = cached.is_company if cached is not None else False
+    unknown_to_books = False
     try:
         contact = await zoho_service.get_contact(db, customer_id)
+    except ZohoNotFound as e:
+        # Caught ahead of the general handler below (ZohoNotFound is a
+        # subclass): Books answering 404 for an id that also has no invoices
+        # and no cached row means the id is not a customer at all. That is
+        # the amplification case — see `_missing_until`.
+        unknown_to_books = True
+        logger.warning("Aito: Zoho Books does not know customer %s, no rating cached: %s", customer_id, e)
     except (ZohoNotConfiguredError, ZohoUpstreamError, ZohoRateLimited) as e:
         logger.warning("Aito: could not read customer %s's contact type for the rating: %s", customer_id, e)
     else:
         is_company = (contact.get("customer_sub_type") or "").lower() == COMPANY_SUB_TYPE
+
+    if unknown_to_books and not rows and cached is None:
+        # No invoices, no contact, nothing cached: remember the miss for
+        # REFRESH_MIN_AGE and persist NOTHING. A customer this process has
+        # already rated keeps its row and its existing degradations — only a
+        # never-seen id takes this path.
+        _remember_missing(customer_id, moment)
+        return _unavailable()
 
     rating = rate_invoices(rows, moment.date(), is_company=is_company)
     if cached is None:

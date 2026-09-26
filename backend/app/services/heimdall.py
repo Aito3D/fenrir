@@ -69,6 +69,15 @@ class HeimdallRateLimited(HeimdallUpstreamError):
         self.retry_after = retry_after
 
 
+class HeimdallUnreachable(HeimdallUpstreamError):
+    """The request never got an answer: DNS, connect, read timeout, broken
+    pipe. Unlike every sibling below, this says NOTHING about what Heimdall
+    did — a read timeout on a POST that carries ``confirm: true`` is exactly
+    the case where the terminal was already dialling. A caller that reserved
+    a row must leave it open and replayable under its own idempotency key,
+    never stamp it settled (see services/aito_terminal_payments.py)."""
+
+
 class HeimdallInvalid(HeimdallUpstreamError):
     """422 — Heimdall refused the body: a terminal amount above the
     document's Books balance, or a link reference that resolves to no
@@ -258,7 +267,7 @@ class HeimdallService:
             async with self._client() as client:
                 response = await client.request(method, f"{base_url}{path}", content=body, headers=headers)
         except httpx.HTTPError as e:
-            raise HeimdallUpstreamError(f"Heimdall unreachable: {e}") from e
+            raise HeimdallUnreachable(f"Heimdall unreachable: {e}") from e
         try:
             payload = response.json() if response.content else {}
         except ValueError as e:

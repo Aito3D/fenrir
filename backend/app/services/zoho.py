@@ -298,11 +298,15 @@ def _map_invoice_change(invoice: dict) -> dict:
 def _map_invoice_history(invoice: dict) -> dict:
     """Zoho invoice list row -> what the client rating scores.
 
-    Its own mapper, like ``_map_invoice_change``: the rating needs the two
-    dates that say WHEN an invoice was paid (``last_payment_date``, with
-    ``last_modified_time`` as the fallback the probe of 2026-09-22 settled
-    on), and nothing the Invoice card renders should grow a field for it.
-    Numbers are coerced so one sloppy row cannot poison a customer's score.
+    Its own mapper, like ``_map_invoice_change``: the rating reads
+    ``last_payment_date`` (``PAID_ON_FIELD`` in ``aito_client_rating.py``) as
+    the date a settled invoice was paid — the read-only probe of 2026-09-22
+    confirmed Books' list rows carry it directly. ``last_modified_time`` is
+    mapped through here too, but ``rate_invoices()`` does not currently read
+    it; it is kept as the documented fallback should Books ever stop listing
+    ``last_payment_date``. Nothing the Invoice card renders should grow a
+    field for it. Numbers are coerced so one sloppy row cannot poison a
+    customer's score.
     """
 
     def _num(value) -> float:
