@@ -1,0 +1,68 @@
+{
+ "findings": [
+  {
+   "severity": "critical",
+   "category": "correctness",
+   "file": "backend/app/services/aito_quote_sync.py",
+   "line": 2310,
+   "title": "_paid_retainer_total() is blind to counter deposits, so a quote's online payment link stays live after it is paid at the counter",
+   "evidence": "`def _paid_retainer_total(estimate: dict) -> float:` / `for entry in estimate.get(\"retainerinvoices\") or []:` \u2014 it counts ONLY retainers Books attached to the estimate, and it is the sole writer of `project.retainer_paid_total` (line 1642 `project.retainer_paid_total = paid`). But a counter deposit on a quote raises an UNATTACHED retainer: `aito_manual_payments.record_manual_payment` calls `zoho_service.create_retainer_invoice(db, customer_id=..., reference_number=document.number, ...)` and `create_retainer_invoice`'s payload (services/zoho.py:1185) carries no `estimate_id` at all, and aito_invoice_sweep.linked_credits already documents that Heimdall's own bookings behave the same way (\"live DEV26-2684 / RET26-00295 ... empty retainerinvoices, reference 'DEV26-2684'\"). Concretely: a client pays the 50 000 XPF deposit on DEV26-xxxx in cash at the counter; `retainer_paid_total` never moves, so (a) `aito_payment_links.wanted_link` still computes `outstanding_amount(required, retainer_paid_total)` = 50 000 and `needs_action` leaves the existing `pending` link alone, and `aito_tracking._payment` keeps serving that link's checkout URL to the public tracking page (`if row.status == \"pending\" and project.quote_status not in PAYABLE_QUOTE_STATUSES: return None` \u2014 `accepted` IS payable), so the client can pay the same deposit a second time online; (b) the panel's own `quoteDocument()` computes `due` from the same stale `retainer_paid_total`, so `cellsEnabled` keeps the Link/Terminal/Manual cells live under a line that already says \"paid\", inviting a third charge; (c) on the cash/cheque path nothing ever calls `accept_quote` (only `aito_terminal_payments.apply_terminal_state` does), and sync_project's Trigger B auto-accept is gated on the same blind `paid >= needed`, so a fully-paid deposit leaves the card sitting unaccepted in Devis.",
+   "fix": "Make the deposit figure see reference-linked retainers: in sync_project's Trigger B, fold in the customer's retainers whose `reference_number` matches `project.quote_number` \u2014 the exact rule `aito_invoice_sweep._same_reference`/`linked_credits` already implements \u2014 instead of reading `estimate[\"retainerinvoices\"]` alone; or have `zoho_service.create_retainer_invoice` pass the estimate id so at least the hand-taken deposits attach.",
+   "behavior_change": true,
+   "behavior_change_note": "A quote whose deposit was taken at the counter will have its online payment link cancelled, show 0 due in the Encaissement block, drop the pay button from the public tracking page, and auto-accept \u2014 where today it keeps offering payment; `retainer_paid_total` is pinned in snapshots/payment-link-math.golden and SURFACE.md."
+  },
+  {
+   "severity": "high",
+   "category": "partial-failure",
+   "file": "backend/app/services/aito_terminal_payments.py",
+   "line": 237,
+   "title": "start_terminal_payment() marks the reservation failed on a transport timeout, discarding a charge that may have reached the terminal",
+   "evidence": "`except (HeimdallUpstreamError, HeimdallNotConfigured) as exc:` / `row.status = \"failed\"` / `row.settled_at = now`. `heimdall._request` funnels every transport fault into that same class \u2014 `except httpx.HTTPError as e: raise HeimdallUpstreamError(f\"Heimdall unreachable: {e}\")` \u2014 and the client is built with `_TIMEOUT_SECONDS = 10.0` while this POST carries `confirm: True`, i.e. Heimdall is dialling the card terminal. A read timeout on that POST is precisely the case where the charge DID start: the row is stamped `failed`/`settled_at` with `heimdall_id` still NULL, and from there it is unreachable to every reconciler \u2014 `refresh_terminal_payment` returns immediately on `if row.heimdall_id is None`, and `_age_out_abandoned_reservations` only selects `status == \"pending\"`. The operator sees the red 'Failed' screen and `TerminalPaymentModal`'s Retry button (`retry()` -> `setPaymentId(null)`) while the client's card was in fact debited; nothing ever records `payment.terminal.paid`, accepts the quote, or reconciles the Books booking. A retry also allocates a fresh `_next_key` (`f\"aito-tpe:{project_id}:{count + 1}\"`), so the second attempt is a brand-new charge at Heimdall rather than a replay of the first.",
+   "fix": "Distinguish a transport failure from an explicit refusal: raise a dedicated `HeimdallUnreachable(HeimdallUpstreamError)` from `heimdall._request`'s `httpx.HTTPError` branch, and in this handler leave such a row `pending` with a null `heimdall_id` (recording the reason in `sync_error`) so the documented same-key replay path in `start_terminal_payment` can adopt whatever Heimdall actually did; keep the `failed` stamp for the 4xx/5xx and not-configured cases, where nothing was created.",
+   "behavior_change": true,
+   "behavior_change_note": "After a Heimdall timeout the card will show the charge as still in progress (and block a new one until the operator replays or it ages out) instead of immediately showing 'Failed' with a Retry button."
+  },
+  {
+   "severity": "medium",
+   "category": "input-validation",
+   "file": "backend/app/api/routes/aito.py",
+   "line": 3361,
+   "title": "update_project() raises AttributeError on an explicit null description",
+   "evidence": "`if \"description\" in fields:` / `project.description = fields[\"description\"].strip()` \u2014 `AitoProjectUpdate.description` is `str | None` and its `_description_not_blank` validator explicitly lets `None` through, while `model_dump(exclude_unset=True)` keeps an explicitly-sent null. Verified against this worktree: `PATCH /api/v1/aito/{id}` with body `{\"description\": null}` raises `AttributeError: 'NoneType' object has no attribute 'strip'` out of this line and the caller gets a 500 instead of a 4xx. Worse, it happens AFTER `_claim_expected_version` has already taken the row's write lock, so a guarded PATCH burns its version claim on an error the client is told nothing useful about.",
+   "fix": "Reject a null description in the schema (make `description` non-nullable on `AitoProjectUpdate`, or 422 in `_description_not_blank` when the key is present and the value is None), or treat `None` as 'leave alone' before the `.strip()`.",
+   "behavior_change": true,
+   "behavior_change_note": "An API caller sending `{\"description\": null}` gets a 422 with a message instead of a 500."
+  },
+  {
+   "severity": "medium",
+   "category": "unbounded-growth",
+   "file": "backend/app/services/aito_invoice_poll.py",
+   "line": 299,
+   "title": "poll_invoices() pins its watermark forever on one permanently-failing invoice",
+   "evidence": "`watermark = min(x for x in (newest, oldest_failure) if x is not None) if (newest or oldest_failure) else None` \u2014 `oldest_failure` is set by the per-invoice `except (... ZohoUpstreamError, SQLAlchemyError, ValueError, TypeError, KeyError)` branch, and nothing bounds how many times the same row may fail. `_adopt` attempts `_repair_link` whenever `newly_invoiced = not project.quote_invoiced`, and since a failure writes nothing, `quote_invoiced` stays False, so an invoice Books permanently refuses to re-link (its estimate already invoiced, a stale/garbled row) fails on every single pass. The watermark is then frozen at that row's `last_modified_time - 300s` forever, so `list_invoices_modified_since(db, since)` is called every 300 s with a window that grows by five minutes each tick \u2014 after a month the poll is re-listing and re-adopting a month of the org's invoices every tick, and the failing card never gets its invoice adopted either.",
+   "fix": "Bound the rewind: count consecutive failures per invoice id (or clamp `watermark` to at most `BACKFILL_DAYS` before now) so a poison row stops holding the window open, and log it once at ERROR rather than re-attempting it silently forever.",
+   "behavior_change": true,
+   "behavior_change_note": "An invoice that keeps failing adoption will eventually stop being retried by the poll instead of being retried on every tick."
+  },
+  {
+   "severity": "low",
+   "category": "unbounded-growth",
+   "file": "backend/app/services/aito_manual_payments.py",
+   "line": 31,
+   "title": "record_manual_payment()'s _recent duplicate-guard dict is never evicted",
+   "evidence": "`# (project_id, kind, document_id, amount, reference) -> time.monotonic() of the last success.` / `_recent: dict[tuple, float] = {}` \u2014 entries are written by `_recent[key] = time.monotonic()` on every attempt and removed only by `_recent.pop(key, None)` on the failure path; a SUCCESSFUL payment's key stays for the life of the process even though `DUPLICATE_WINDOW_SECONDS` is 60. Every distinct (project, document, amount, reference) tuple ever paid accumulates in a long-lived process, and nothing sweeps expired entries, so the dict only grows between restarts.",
+   "fix": "Prune entries older than `DUPLICATE_WINDOW_SECONDS` on each call (the same `calls[:] = [t for t in calls if ...]` shape `_check_rate_limit` uses), or key the guard in a bounded structure such as an OrderedDict trimmed to a max size.",
+   "behavior_change": false
+  },
+  {
+   "severity": "low",
+   "category": "unbounded-growth",
+   "file": "backend/app/api/routes/aito.py",
+   "line": 1633,
+   "title": "_check_rate_limit()'s _ai_rate_limit_calls never drops stale principal keys",
+   "evidence": "`_ai_rate_limit_calls: dict[str, list[float]] = {}` and, in `_check_rate_limit`, `calls = _ai_rate_limit_calls.setdefault(key, [])` / `calls[:] = [t for t in calls if now - t < _AI_RATE_LIMIT_WINDOW_S]` \u2014 the per-key list is pruned only when that key is hit again, and the key itself is never deleted. On an auth-disabled install the key is `f\"ip:{host}\"` (`_ai_rate_limit_key`), so every distinct client IP that ever touches `/summarize`, `/proofread`, a counter-payment route or the link Retry leaves a permanent dict entry. The sibling tracking limiter in this same module already sweeps (`_TRACK_RATE_SWEEP_ABOVE`); this one does not.",
+   "fix": "Drop keys whose pruned list is empty, and periodically sweep buckets older than the window \u2014 mirroring the `_TRACK_RATE_SWEEP_ABOVE` housekeeping already in this module.",
+   "behavior_change": false
+  }
+ ]
+}

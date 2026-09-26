@@ -1,0 +1,64 @@
+{
+ "findings": [
+  {
+   "severity": "high",
+   "category": "coverage-gap",
+   "file": "backend/app/services/aito_terminal_payments.py",
+   "line": 369,
+   "title": "refresh_terminal_payment() has no test for the HeimdallNotFound (404 lost-payment) path",
+   "evidence": "coverage-aito20-backend.json: aito_terminal_payments.py missing_lines includes 369-375, missing_branches includes [360,361] and [363,364]. Code: `except HeimdallNotFound as exc:\\n row.status = \"failed\"\\n row.sync_error = str(exc)[:500]\\n row.checked_at = now\\n row.settled_at = row.settled_at or now\\n await db.commit()\\n return row` (lines 369-375). `grep -n HeimdallNotFound backend/tests/unit/test_aito_terminal_payments.py` -> no matches at all.",
+   "fix": "in backend/tests/unit/test_aito_terminal_payments.py, add a case where heimdall_service.get_payment raises HeimdallNotFound for an open row and assert the row is marked status='failed', sync_error set, settled_at stamped, and the call does not raise (mirrors the existing test_start_marks_the_row_failed_when_heimdall_is_not_configured pattern but for the poll/refresh 404 case, which is the only way an operator learns Heimdall lost track of a reservation).",
+   "behavior_change": false
+  },
+  {
+   "severity": "high",
+   "category": "coverage-gap",
+   "file": "frontend/src/components/aito/payment/TerminalPaymentModal.tsx",
+   "line": 136,
+   "title": "TerminalPaymentModal paid state never exercises booking_status 'failed' (Zoho booking failure after a real card charge)",
+   "evidence": "coverage-summary.json: TerminalPaymentModal.tsx branches 67.74%. Code (paid branch): `const booking = payment.booking_status === 'booked' ? 'terminalBookingDone' : payment.booking_status === 'failed' ? 'terminalBookingFailed' : 'terminalBookingPending'` with `<p className={payment.booking_status === 'failed' ? 'text-status-warning' : 'text-bambu-gray'}>`. `grep -n \"booking_status\" frontend/src/__tests__/components/AitoTerminalPaymentModal.test.tsx` -> only 'pending' (fixture default) and 'booked' (line 25) appear; no test ever sets booking_status: 'failed'.",
+   "fix": "in frontend/src/__tests__/components/AitoTerminalPaymentModal.test.tsx, add a case where getAitoTerminalPayment resolves status 'paid' with booking_status: 'failed' and assert the terminalBookingFailed copy renders with the warning styling \u2014 this is the only UI signal that a card was charged but Zoho never recorded it, so a silent money-attribution gap must be visibly flagged.",
+   "behavior_change": false
+  },
+  {
+   "severity": "high",
+   "category": "coverage-gap",
+   "file": "backend/app/api/routes/aito.py",
+   "line": 2078,
+   "title": "create_invoice route's SQLAlchemyError-after-a-real-Books-invoice path is untested",
+   "evidence": "coverage-aito20-backend.json: aito.py missing_lines includes 2078,2082,2089,2090,2091,2092. Code: `try:\\n project.quote_invoiced = True\\n ...\\n await record(db, project_pk, \"invoice.created\", ...)\\n await db.commit()\\nexcept SQLAlchemyError as e:\\n logger.error(\"Aito invoice %s for project %s WAS RAISED in Books but recording the local invoice.created event failed: %s\", ...)\\n try:\\n await db.rollback()\\n except Exception:  # noqa: BLE001 \u2014 a failed rollback must not 500 a real invoice\\n pass`. `grep -n 'SQLAlchemyError\\|WAS RAISED' backend/tests/unit/test_aito_invoice_create.py` -> no matches; none of the 24 tests in that file break `record()`/`commit()` after the Zoho invoice is created.",
+   "fix": "in backend/tests/unit/test_aito_invoice_create.py, add a test that makes the local record()/commit() fail after zoho_service.create_invoice succeeds (mirror the genuine-flush-failure technique already used in test_aito_manual_payments.py's test_a_db_failure_after_the_books_write_keeps_the_guard_and_names_the_payment, e.g. a NOT-NULL-violating AitoEvent) and assert the route still returns 2xx with the real invoice data rather than 500, and that db_session stays usable afterward \u2014 this is the invoice-create analogue of a pattern already known to be a real money-attribution risk elsewhere in Aito.",
+   "behavior_change": false
+  },
+  {
+   "severity": "medium",
+   "category": "coverage-gap",
+   "file": "backend/app/api/routes/aito_payments.py",
+   "line": 150,
+   "title": "HeimdallNotConfigured -> 502 not_configured mapping is untested on every counter-payment route",
+   "evidence": "coverage-aito20-backend.json: aito_payments.py missing_lines includes 151, 266, 295. Code repeats the same guard three times: start_terminal_payment_route `except HeimdallNotConfigured as e: raise _refuse(502, \"not_configured\", str(e)) from e` (150-151), create_invoice_payment_link (265-266), cancel_invoice_payment_link (294-295). `grep -rn not_configured backend/tests/unit/test_aito_terminal_payment_api.py backend/tests/unit/test_aito_invoice_link_api.py backend/tests/unit/test_aito_manual_payment_api.py` -> no matches. This is the exact bug class already documented as FINDING 2 in aito_terminal_payments.py ('HeimdallNotConfigured does not subclass HeimdallUpstreamError \u2014 a narrow except would leave the reservation pending forever') and covered at the service layer (test_start_marks_the_row_failed_when_heimdall_is_not_configured) but never at the route/HTTP-mapping layer.",
+   "fix": "in backend/tests/unit/test_aito_terminal_payment_api.py add a case (alongside test_error_mapping) that empties heimdall_api_token and asserts POST /terminal-payment returns 502 with code 'not_configured'; add the equivalent for POST /payment-link and POST /payment-link/{id}/cancel in backend/tests/unit/test_aito_invoice_link_api.py.",
+   "behavior_change": false
+  },
+  {
+   "severity": "medium",
+   "category": "coverage-gap",
+   "file": "backend/app/api/routes/aito_payments.py",
+   "line": 263,
+   "title": "create_invoice_payment_link's InvoiceLinkExists backstop (concurrent-create race) is untested",
+   "evidence": "coverage-aito20-backend.json: aito_payments.py missing_lines includes 264. Code: `except InvoiceLinkExists as e:\\n raise _refuse(409, \"link_exists\", str(e)) from e` at line 263-264, reached only when create_invoice_link's own guard fires (the route's own pre-check at line 247-249 is the one exercised by test_create_then_cancel's 409). `grep -n link_exists backend/tests/unit/test_aito_invoice_link_api.py` -> only the pre-check case (an already-open link read from the DB before calling the service) is tested; nothing drives the service-level InvoiceLinkExists raise itself (e.g. two concurrent creates racing past the route's own check).",
+   "fix": "in backend/tests/unit/test_aito_invoice_link_api.py, add a test that bypasses the route's pre-check (e.g. seed a pending unminted reservation with heimdall_id=None so `existing.heimdall_id is not None` is False) and drive create_invoice_link into its own InvoiceLinkExists raise, asserting the route still answers 409 link_exists.",
+   "behavior_change": false
+  },
+  {
+   "severity": "medium",
+   "category": "coverage-gap",
+   "file": "backend/app/services/aito_client_rating.py",
+   "line": 308,
+   "title": "read_client_rating() never exercises a SQLAlchemyError from get_default_contact (settings read failure)",
+   "evidence": "coverage-aito20-backend.json: aito_client_rating.py missing_lines includes 308,309,310. Code: `try:\\n default_id, _name = await zoho_service.get_default_contact(db)\\nexcept SQLAlchemyError as e:\\n logger.warning(...)\\n return _unavailable()`. test_cached_row_read_failure_returns_unavailable_without_raising (test_aito_client_rating.py:538) monkeypatches db_session.get to fail, which only reaches the LATER `await db.get(AitoClientRating, customer_id)` read at line 317 \u2014 get_default_contact reads via `get_setting` (db.execute, not db.get), so this monkeypatch never exercises the earlier except block; `grep -n 'get_default_contact' backend/tests/unit/test_aito_client_rating.py` shows it is only ever monkeypatched to SUCCEED (line 512), never to raise.",
+   "fix": "in backend/tests/unit/test_aito_client_rating.py, add a test that makes zoho_service.get_default_contact (or the underlying get_setting call) raise a SQLAlchemyError and assert read_client_rating returns the 'unavailable' tier without raising, distinct from the existing cached-row-read-failure test.",
+   "behavior_change": false
+  }
+ ]
+}

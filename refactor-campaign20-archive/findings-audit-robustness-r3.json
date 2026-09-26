@@ -1,0 +1,48 @@
+{
+ "findings": [
+  {
+   "severity": "high",
+   "category": "concurrency",
+   "file": "backend/app/api/routes/aito.py",
+   "line": 3572,
+   "title": "edit_project_client() holds the SQLite write lock across the Zoho contact round trip",
+   "evidence": "`if payload.expected_version is not None and not await _claim_expected_version(\\n        db, project, payload.expected_version\\n    ):` now runs BEFORE `name = await zoho_service.update_contact(` (line 3582). `_claim_expected_version` issues a real `UPDATE aito_projects ... SET version = version`, which takes SQLite's write lock inside this uncommitted transaction; `update_contact` then makes three Books calls (PUT /contacts, GET /contacts/{id}, PUT contactpersons) each at the client's 10 s httpx timeout with a 401-retry-once, so the lock can be held for 30 s+ while `PRAGMA busy_timeout = 15000` (backend/app/core/database.py:21) only makes other writers wait 15 s. During one slow contact edit every other board write \u2014 another operator's PATCH, the quote-sync worker's commit, the invoice poll, the payment-link reconciler \u2014 blocks and then fails with `database is locked`: the peer gets a 500 on a save that was valid, and the background tick logs 'Aito quote sync tick failed' and drops that pass.",
+   "fix": "Make the claim its own committed transaction: have `_claim_expected_version` bump (`version = version + 1`) and `await db.commit()` before any Zoho call, so the row is claimed but the write lock is released while httpx is in flight; re-read `project` after the Books call for the remaining local writes.",
+   "behavior_change": true,
+   "behavior_change_note": "The version is bumped before Books answers, so a contact edit that Books then refuses leaves the card at a new version and any other editor open on it gets a 409 even though nothing was actually changed."
+  },
+  {
+   "severity": "high",
+   "category": "partial-failure",
+   "file": "backend/app/api/routes/aito.py",
+   "line": 2063,
+   "title": "create_invoice()'s duplicate guard is a check-then-act and ignores the local quote_invoiced flag",
+   "evidence": "`existing = await zoho_service.list_project_invoices(db, quote_id, client_id)` / `if existing: raise HTTPException(status_code=409, ...)` is the ONLY duplicate protection, and between it and `created = await zoho_service.create_invoice(...)` the route makes three more Books round trips (plan_invoice reads the estimate, the customer's payments and retainers). Two operators on the same card \u2014 or one retry after a client-side timeout on a request that routinely runs 10 s+ \u2014 both read an empty list and both raise a REAL invoice for the client. `_project_ready_to_invoice` (line 1949) restates every other button rule (column, quote_id, sync pending) but never checks `project.quote_invoiced`, which the route itself sets to True on success and which `canCreateInvoice` (frontend/src/components/aito/canCreateInvoice.ts:32) relies on \u2014 so even the already-billed case reaches Books, and in the documented 'estimate link did not stick' case (logged at line 2178: 'the duplicate guard cannot see it') nothing at all stops a second bill.",
+   "fix": "Add `if project.quote_invoiced: raise HTTPException(409, ...)` to `_project_ready_to_invoice`, and serialise the Books read-then-create window behind a module `asyncio.Lock` (the same idiom as `aito_payment_links._reserve_lock` and `aito_terminal_payments._start_lock`).",
+   "behavior_change": true,
+   "behavior_change_note": "POST /aito/{id}/invoice on a card already flagged quote_invoiced now answers 409 immediately instead of asking Books, and a second concurrent request waits for the first rather than billing in parallel."
+  },
+  {
+   "severity": "high",
+   "category": "error-handling",
+   "file": "backend/app/services/aito_terminal_payments.py",
+   "line": 414,
+   "title": "refresh_terminal_payment()'s HeimdallNotFound branch overwrites an already-paid counter payment with 'failed'",
+   "evidence": "`open_row = row.status in OPEN_STATUSES or (row.status == \"paid\" and row.booking_status == \"pending\")` (line 407) deliberately keeps polling a PAID row whose Zoho booking is still pending, and the 404 handler beneath it is unconditional: `except HeimdallNotFound as exc:` / `row.status = \"failed\"` / `row.settled_at = row.settled_at or now` / `await db.commit()`. One 404 on such a row \u2014 Heimdall's base URL repointed at another instance, a key rotation, a lost record \u2014 rewrites a card payment the client actually made as `failed`, with no `payment.terminal.failed` event recorded (unlike `_age_out_abandoned_reservations`, which does record one), so the panel shows the counter charge as failed with nothing in the timeline saying why. For an open row the same line stamps `settled_at`, after which `apply_terminal_state`'s `if was_settled ... return` (line 325) permanently refuses to adopt a later `paid` view: no `payment.terminal.paid`, no `accept_quote`, no Zoho payment.",
+   "fix": "Only take the failed branch when the row is not already settled and not `status == \"paid\"`; for a paid (or settled) row record the 404 in `sync_error`/`checked_at` and leave `status`, `booking_status` and `settled_at` untouched, and record a `payment.terminal.failed` event on the branch that does mark a row failed.",
+   "behavior_change": true,
+   "behavior_change_note": "A Heimdall 404 on a paid-but-unbooked counter payment no longer flips the card to 'failed'; it stays paid with a sync error, and a 404 that does fail a row now writes a timeline event."
+  },
+  {
+   "severity": "medium",
+   "category": "concurrency",
+   "file": "backend/app/api/routes/aito.py",
+   "line": 4048,
+   "title": "_sms_guard_key_or_409()'s duplicate guard is check-then-act, so an in-flight send does not block a second one",
+   "evidence": "`key = (project_id, message.strip())` / `if key in _recent_sms: raise HTTPException(status_code=409, detail=_SMS_DUPLICATE_DETAIL)` runs before `await send_sms_notification(...)`, but `_recent_sms[key] = time.monotonic()` is only executed after that call returns (line ~4107 on success, and in the `PushcutUnreachable` handler). Pushcut's POST runs at `TIMEOUT_S = 8.0`, so for up to eight seconds the key is unarmed: an operator whose request hangs or whose browser/proxy drops the response and who sends again \u2014 the exact 'reflex retry' the guard's own comment names \u2014 passes the check and a SECOND real SMS lands on the client's phone, the outcome the guard exists to prevent.",
+   "fix": "Arm `_recent_sms[key]` before calling `send_sms_notification` and delete the key again only on the clean-refusal paths (`PushcutNotConfiguredError`, plain `PushcutUpstreamError`), leaving it armed on success and on `PushcutUnreachable`.",
+   "behavior_change": true,
+   "behavior_change_note": "A second identical pickup SMS submitted while the first is still being pushed now gets the 409 'Already sent' refusal instead of sending."
+  }
+ ]
+}

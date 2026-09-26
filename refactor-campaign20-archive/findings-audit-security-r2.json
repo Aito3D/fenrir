@@ -1,0 +1,34 @@
+{
+ "findings": [
+  {
+   "severity": "medium",
+   "category": "denial of service",
+   "file": "backend/app/services/aito_client_rating.py",
+   "line": 346,
+   "title": "read_client_rating accepts an arbitrary client_id, so GET /aito/clients/{client_id}/rating amplifies into unbounded Zoho Books calls and permanent cache rows",
+   "evidence": "backend/app/api/routes/aito.py:1116 `@router.get(\"/clients/{client_id}/rating\", ...)` with `client_id: str` unvalidated and only `RequirePermissionIfAuthEnabled(Permission.AITO_READ)`; aito_client_rating.py:319 `if refresh and cached is not None and moment - cached.computed_at < REFRESH_MIN_AGE:` \u2014 the comment above it says \"ignore it rather than let a `?refresh=1` loop amplify Books calls\", but the guard is skipped entirely when `cached is None`; the miss path then runs `rows = await zoho_service.list_customer_invoices(db, customer_id)` and `contact = await zoho_service.get_contact(db, customer_id)` and finally `if cached is None: cached = AitoClientRating(customer_id=customer_id); db.add(cached)`. The model docstring states \"rows are never deleted\". An id longer than 50 chars short-circuits list_customer_invoices (`if not customer_id or len(customer_id) > 50: return []` in zoho.py:1253) but still spends the get_contact call and still persists a row, in a String(50) primary key SQLite does not enforce.",
+   "fix": "reject a client_id that is not the client of some AitoProject (or not a resolvable Books contact) before spending an upstream call, and put the route behind the existing `_check_rate_limit` helper in routes/aito.py with its own bucket; extend the REFRESH_MIN_AGE short-circuit to cover cache misses (e.g. a negative-result row or an in-process negative cache) so an unknown id cannot be re-queried on every request",
+   "behavior_change": false
+  },
+  {
+   "severity": "medium",
+   "category": "missing rate limiting",
+   "file": "backend/app/api/routes/aito.py",
+   "line": 3913,
+   "title": "send_pickup_sms has no rate limit despite relaying a caller-supplied message to Pushcut on every call",
+   "evidence": "`@router.post(\"/{project_id}/pickup-sms\", response_model=AitoPickupSmsResponse)` / `async def send_pickup_sms(project_id: int, payload: AitoPickupSmsRequest, db: AsyncSession = Depends(get_db), current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),)` \u2014 no `request: Request` parameter and no `_check_rate_limit` call, while the sibling draft route `generate_pickup_message` (line 3876) calls `_check_ai_rate_limit(request, current_user)` and every counter-payment route in aito_payments.py calls `_check_counter_payment_rate_limit`. The body reaching the external service is caller-controlled: `await send_sms_notification(db, phone=phone, text=payload.message, title=...)`.",
+   "fix": "add `request: Request` and call `_check_rate_limit(request, current_user, bucket=\"pickup_sms\", max_calls=..., detail=...)` before the `send_sms_notification` call, mirroring the counter-payment limiter",
+   "behavior_change": false
+  },
+  {
+   "severity": "low",
+   "category": "injection",
+   "file": "backend/app/services/heimdall.py",
+   "line": 338,
+   "title": "HeimdallService.patch_link / cancel_link / get_payment interpolate heimdall_id into the request path without escaping the segment",
+   "evidence": "`return _to_view(await self._request(db, \"PATCH\", f\"/api/v1/payments/{heimdall_id}\", json_body=payload))` (line 338), `f\"/api/v1/payments/{heimdall_id}/cancel\"` (341), `f\"/api/v1/payments/{heimdall_id}\"` (344). `heimdall_id` is stored verbatim from an unauthenticated upstream body \u2014 `_to_view` does `link_id = str(data[\"id\"])` with no character validation \u2014 and httpx normalises dot segments when it builds the request, the exact hazard services/zoho.py:26 `_seg()` was added to close (\"an id of ``../../../crm/v2/Leads`` escapes the ``/books/v3`` prefix entirely\"). Not currently exploitable because `sign()` hashes the un-normalised path so a traversal would fail Heimdall's signature check, but that is an accident of the signing recipe, not a control.",
+   "fix": "wrap the id in `urllib.parse.quote(value, safe=\"\")` (or reuse the same one-line helper zoho.py's `_seg` provides) at all three call sites, and validate `data[\"id\"]` in `_to_view` against an id character class the way `_validate_link_url` already validates the url field",
+   "behavior_change": false
+  }
+ ]
+}

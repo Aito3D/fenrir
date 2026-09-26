@@ -1,0 +1,34 @@
+{
+ "findings": [
+  {
+   "severity": "medium",
+   "category": "dead-code",
+   "file": "backend/app/services/aito_client_rating.py",
+   "line": 115,
+   "title": "TIERS and REASONS tuples are unreferenced",
+   "evidence": "backend/app/services/aito_client_rating.py:115-116: `TIERS = (\"good\", \"medium\", \"bad\", \"new\")` / `REASONS = (\"overdue\", \"chronic\", \"new\", \"punctual\", \"mixed\")` | rg -n '\\bTIERS\\b|\\bREASONS\\b' across the whole repo (backend + frontend, all extensions) -> only these two definition lines; not read by any test, route, schema or the frontend tier map (ClientRatingPill.tsx hardcodes its own TIER_COLOR keys instead of importing these), and not listed in SURFACE.md under aito_client_rating.py's exports",
+   "fix": "delete both tuples (or, if they were meant to be the validation source for the tier/reason literal types, wire AitoClientRatingResponse's Pydantic literals and the frontend TIER_COLOR map to read from them instead of duplicating the literals by hand)",
+   "behavior_change": false
+  },
+  {
+   "severity": "low",
+   "category": "duplication",
+   "file": "backend/app/services/aito_client_rating.py",
+   "line": 242,
+   "title": "_response() and _response_from_rating() duplicate the same 10-field AitoClientRatingResponse mapping",
+   "evidence": "lines 242-255: `def _response(row: AitoClientRating, *, stale: bool) -> AitoClientRatingResponse: return AitoClientRatingResponse(tier=row.tier, reason=row.reason, settled_count=row.settled_count, on_time_count=row.on_time_count, overdue_count=row.overdue_count, past_due_count=row.past_due_count, worst_overdue_days=row.worst_overdue_days, worst_overdue_number=row.worst_overdue_number, is_company=row.is_company, computed_at=row.computed_at, stale=stale)` vs lines 258-271: `def _response_from_rating(rating: ClientRating, computed_at: datetime) -> AitoClientRatingResponse: return AitoClientRatingResponse(tier=rating.tier, reason=rating.reason, settled_count=rating.settled_count, on_time_count=rating.on_time_count, overdue_count=rating.overdue_count, past_due_count=rating.past_due_count, worst_overdue_days=rating.worst_overdue_days, worst_overdue_number=rating.worst_overdue_number, is_company=rating.is_company, computed_at=computed_at, stale=False)` \u2014 same 8 fields copied field-by-field from two differently-typed sources (the AitoClientRating ORM row and the ClientRating dataclass) that happen to share attribute names",
+   "fix": "since AitoClientRating and ClientRating expose the same attribute names, write one private helper that takes any object with those attributes (a typing.Protocol or just duck-typed) plus stale/computed_at, and have both call sites use it \u2014 so a future new field only has to be added in one place instead of two that can silently drift apart",
+   "behavior_change": false
+  },
+  {
+   "severity": "medium",
+   "category": "leftover",
+   "file": "backend/app/services/zoho.py",
+   "line": 298,
+   "title": "_map_invoice_history docstring claims a last_modified_time fallback that rate_invoices() never implements",
+   "evidence": "backend/app/services/zoho.py:298-301 docstring: 'the rating needs the two dates that say WHEN an invoice was paid (`last_payment_date`, with `last_modified_time` as the fallback the probe of 2026-09-22 settled on)' \u2014 but backend/app/services/aito_client_rating.py's own comment at line 106-110 says the opposite: '`last_modified_time` is still mapped through by `_map_invoice_history` but otherwise unused here \u2014 kept as the documented alternative should Books ever stop listing `last_payment_date`.' rg -n 'last_modified_time' backend/app/services/aito_client_rating.py -> only that comment; rate_invoices()'s only read of a paid date is `paid_on = _parse_date(row.get(PAID_ON_FIELD))` where PAID_ON_FIELD is fixed to \"last_payment_date\" \u2014 no fallback branch exists, so a settled invoice with an empty last_payment_date silently gets `lateness = 0` (counted on-time) instead of falling back to last_modified_time; no test in backend/tests/unit/test_aito_client_rating.py covers a paid row with an empty last_payment_date",
+   "fix": "either implement the documented fallback in rate_invoices() (use last_modified_time when last_payment_date is empty, per zoho.py's docstring) and add a test for it, or fix zoho.py's docstring to say the field is currently unused/reserved, matching aito_client_rating.py's own comment, so the two files stop disagreeing about whether missing-payment-date invoices are handled",
+   "behavior_change": false
+  }
+ ]
+}

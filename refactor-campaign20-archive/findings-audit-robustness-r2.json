@@ -1,0 +1,69 @@
+{
+ "findings": [
+  {
+   "severity": "high",
+   "category": "concurrency",
+   "file": "backend/app/services/aito_terminal_payments.py",
+   "line": 322,
+   "title": "apply_terminal_state() guards the settle with a check-then-act on row.settled_at, so two concurrent pollers credit the same card payment twice",
+   "evidence": "`already_settled = row.settled_at is not None` is read, then `_adopt(row, view, now)` and `await db.commit()` follow before `if already_settled or row.status not in SETTLED_STATUSES: return` \u2014 a check-then-act across two awaits, on rows loaded into two different sessions. `refresh_terminal_payment` is reached both from the operator's 3 s poll (`GET /{project_id}/terminal-payment/{payment_id}`) and from `poll_open_terminal_payments`, which calls it with `force=True` and so bypasses the `REFRESH_MIN_SECONDS` throttle entirely. When two of them (two tabs on the same card, or the tick's sweep landing inside a poll's Heimdall round trip) fetch the same charge in the same ~200 ms window and both see `status='paid'` with `settled_at` still NULL, both fall through: two `payment.terminal.paid` rows in the timeline, two `accept_quote()` calls (each recording `quote.accepted`, each pushing `accepted` to Books), two `on_aito_payment_received` notifications for one card payment, and two `refresh_after_payment` \u2192 `sync_project` passes. The link rail has no such hole \u2014 every `poll_link` runs under `_pass_lock`.",
+   "fix": "claim the settle atomically before doing any of the work: `UPDATE aito_terminal_payments SET settled_at=:now WHERE id=:id AND settled_at IS NULL` and only continue when `rowcount` is 1 \u2014 the same conditional-UPDATE pattern `aito_tracking.ensure_tracking_token` already uses \u2014 or serialise the settle behind a module lock the way `start_terminal_payment` does with `_start_lock`.",
+   "behavior_change": true,
+   "behavior_change_note": "a card payment settled by two pollers at once would stop producing a second payment.terminal.paid / quote.accepted entry in the timeline and a second payment notification."
+  },
+  {
+   "severity": "high",
+   "category": "partial-failure",
+   "file": "backend/app/api/routes/aito.py",
+   "line": 2050,
+   "title": "create_invoice() lets a Books 429 from read_customer_credit escape after the invoice has already been raised",
+   "evidence": "`credit = await read_customer_credit(db, plan.customer_id)` sits outside every try in the route, and `read_customer_credit` re-raises `ZohoRateLimited` by design (`except ZohoRateLimited: raise`, aito_customer_credit.py:84). Books answering 429 on that one extra `GET /customerpayments` \u2014 likely precisely because the request just spent three calls creating the invoice and applying retainers \u2014 propagates to a 500. By then `zoho_service.create_invoice` has returned a real invoice and `apply_retainers` has spent the customer's deposits on it, yet everything below this line is skipped: `project.quote_invoiced = True` is never committed, no `invoice.created` event is written, and the operator sees a 500 that reads as \"the invoice was not raised\" \u2014 the exact outcome the route's own docstring says must never happen (\"a 500 after that point would invite a retry that raises a SECOND one\").",
+   "fix": "wrap the credit read in `try/except (ZohoNotConfiguredError, ZohoUpstreamError)` and fall back to `credit = None`, matching the best-effort contract every other post-create step in this route already follows.",
+   "behavior_change": true,
+   "behavior_change_note": "an invoice creation that currently answers 500 when Books is rate-limited would answer 200 with the pre-existing (stale) \"deposit available\" figure instead."
+  },
+  {
+   "severity": "medium",
+   "category": "concurrency",
+   "file": "backend/app/services/aito_payment_links.py",
+   "line": 1079,
+   "title": "create_invoice_link() builds its idempotency key with an unsynchronised _next_key, so a concurrent reserve collides on the unique column",
+   "evidence": "`idempotency_key=await _next_key(db, project_id)` where `_next_key` is `count = SELECT id WHERE project_id=\u2026` then `f\"aito:{project_id}:{len(count) + 1}\"` \u2014 a read-then-insert with two awaits between them, and `idempotency_key` is `unique=True` (models/aito_payment_link.py:26). Nothing serialises it: the reconciler's own `_create` (line 371) computes keys from the same per-project counter under `_pass_lock`, which this HTTP path never takes, and two operator clicks (two tabs, two operators on one card) race each other as well. Both compute `aito:7:2`, the second `await db.commit()` raises IntegrityError, and since `create_invoice_link` only catches `(HeimdallUpstreamError, HeimdallNotConfigured)` it leaves the route as an unhandled 500 on the Create-link button. The sibling terminal path documents this exact hazard and takes `_start_lock` for it (aito_terminal_payments.py:48-53).",
+   "fix": "reserve the row under the same `_pass_lock` the reconciler holds (or a dedicated lock), or derive the key from the row's own autoincrement id / a uuid4 instead of a counted SELECT.",
+   "behavior_change": true,
+   "behavior_change_note": "a create-link click that currently 500s when it races the reconciler or a second click would succeed (or return the existing link) instead."
+  },
+  {
+   "severity": "medium",
+   "category": "partial-failure",
+   "file": "backend/app/api/routes/aito.py",
+   "line": 3953,
+   "title": "send_pickup_sms() reports a Pushcut transport timeout as a clean failure, inviting a second SMS to the client",
+   "evidence": "`except PushcutUpstreamError as e: raise HTTPException(status_code=502, detail=str(e)) from e` \u2014 and `send_sms_notification` folds every transport outcome into that one error (`except httpx.HTTPError as e: raise PushcutUpstreamError(f\"Pushcut request failed: {e}\")`, pushcut.py:55), read timeout included. A POST that Pushcut received but did not answer within `TIMEOUT_S = 8.0` therefore reaches the operator as `aito.smsSendFailed` (SmsPickupModal's `onError`), with no event recorded and no idempotency guard anywhere on the route \u2014 unlike `record_manual_payment`, which keeps a `_recent` key for exactly this case. The operator presses Send again, a second notification lands on the phone, and the client gets the pickup SMS twice.",
+   "fix": "distinguish the transport case (a dedicated `PushcutUnreachable`, mirroring `HeimdallUnreachable`) and report it as \"may already have been pushed\", plus a short-window duplicate guard keyed on (project_id, message) so a reflex retry is refused.",
+   "behavior_change": true,
+   "behavior_change_note": "a timed-out send would no longer read as a plain failure \u2014 the operator gets an \"it may already have gone\" message and an immediate identical retry is refused."
+  },
+  {
+   "severity": "medium",
+   "category": "partial-failure",
+   "file": "backend/app/api/routes/aito.py",
+   "line": 3496,
+   "title": "edit_project_client() writes the contact to Books before claiming the version, so a lost race leaves Books holding an edit no card shows",
+   "evidence": "`name = await zoho_service.update_contact(db, project.client_id, \u2026)` runs at line 3496, and only afterwards does line 3531 run `if payload.expected_version is not None and not await _claim_expected_version(db, project, payload.expected_version): raise HTTPException(status_code=409, \u2026)`. If another operator's write bumps `version` during that Books round trip (the pre-check at line 3454 passed a moment earlier), the client's name/phone/email have already been overwritten in Books while the 409 aborts every local write and the fan-out. The editor shows \"Project was updated by someone else\" \u2014 which reads as \"nothing happened\" \u2014 and from then on every card and every future quote PDF disagrees with the contact record in Books until somebody happens to re-save.",
+   "fix": "claim the version first and undo it (or re-push the prior contact values) when the Books call fails, rather than ordering the two so a refused claim strands a completed upstream write.",
+   "behavior_change": true,
+   "behavior_change_note": "a client edit that loses the version race would no longer reach Zoho Books at all, where today it lands there and nowhere else."
+  },
+  {
+   "severity": "low",
+   "category": "boundary-validation",
+   "file": "backend/app/api/routes/aito.py",
+   "line": 1642,
+   "title": "_ai_rate_limit_key() falls back to request.client.host, collapsing every caller onto one bucket behind a reverse proxy",
+   "evidence": "`host = request.client.host if request.client else \"unknown\"` \u2014 the raw TCP peer, not the proxy-aware `_get_client_ip` that `_track_rate_limited` in this same module deliberately uses (\"behind nginx the latter is the proxy for every visitor, and the per-IP cap would silently become a per-shop cap\"). This branch is taken whenever `current_user is None`, i.e. on an auth-disabled install and for every API-key caller, so behind nginx all of them share one key: one 30-calls/minute AI budget and one 10-calls/minute counter-payment budget (`_COUNTER_PAYMENT_MAX_CALLS`) for the whole shop, and the eleventh Create-link/cancel click of the minute 429s a different operator than the one who spent the budget.",
+   "fix": "use the same proxy-aware `_get_client_ip` helper the tracking limiter uses for the anonymous fallback.",
+   "behavior_change": false
+  }
+ ]
+}
