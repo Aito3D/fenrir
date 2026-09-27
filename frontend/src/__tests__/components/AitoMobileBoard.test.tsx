@@ -136,6 +136,16 @@ describe('MobileBoard', () => {
     expect(onNewProject).toHaveBeenCalledOnce();
   });
 
+  it('turns only the + glyph into a ×, never the button itself', async () => {
+    const user = userEvent.setup();
+    render(<MobileBoard {...props()} />);
+    const fab = screen.getByTestId('aito-mobile-fab');
+    await user.click(fab);
+    expect(fab).toHaveAttribute('aria-expanded', 'true');
+    expect(fab.className).not.toMatch(/rotate-45/);
+    expect(fab.querySelector('svg')?.getAttribute('class')).toMatch(/rotate-45/);
+  });
+
   it('hides the FAB without create permission, under a panel/drawer, and under the sheet', async () => {
     const user = userEvent.setup();
     const { rerender } = render(<MobileBoard {...props({ canCreate: false })} />);

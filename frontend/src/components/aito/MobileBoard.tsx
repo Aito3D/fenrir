@@ -201,11 +201,16 @@ export function MobileBoard({
           aria-haspopup="menu"
           aria-expanded={overlay === 'create'}
           aria-label={t('aito.mobile.create')}
-          className={`fixed right-4 bottom-[calc(1.5rem+env(safe-area-inset-bottom))] z-[60] grid place-items-center w-14 h-14 rounded-2xl bg-bambu-green text-white shadow-lg shadow-bambu-green/30 transition-[rotate] duration-200 ease-(--ease-signature) motion-reduce:transition-none ${
-            overlay === 'create' ? 'rotate-45' : ''
-          }`}
+          className="fixed right-4 bottom-[calc(1.5rem+env(safe-area-inset-bottom))] z-[60] grid place-items-center w-14 h-14 rounded-2xl bg-bambu-green text-white shadow-lg shadow-bambu-green/30"
         >
-          <Plus className="w-6 h-6" aria-hidden="true" />
+          {/* Only the glyph turns (+ → ×): rotating the rounded square
+              itself would stand it on a corner. */}
+          <Plus
+            className={`w-6 h-6 transition-[rotate] duration-200 ease-(--ease-signature) motion-reduce:transition-none ${
+              overlay === 'create' ? 'rotate-45' : ''
+            }`}
+            aria-hidden="true"
+          />
         </button>
       )}
 
