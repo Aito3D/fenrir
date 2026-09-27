@@ -2601,6 +2601,18 @@ async def run_sync_loop() -> None:
                         except ZohoRateLimited as e:
                             logger.warning("Aito invoice sweep deferred (Zoho Books rate limit): %s", e)
                             _arm_rate_limit_throttle(e)
+                        except Exception:
+                            # T-052: any other Books failure (5xx, unreachable)
+                            # costs this tick's invoice passes only. Letting it
+                            # reach the tick's outer handler would also skip the
+                            # purge and the Heimdall passes below, so a Books
+                            # outage would freeze online-payment detection for
+                            # as long as it lasted. Rolled back like the contact
+                            # poll below, so a half-flushed sweep cannot poison
+                            # the session those passes share.
+                            logger.exception("Aito invoice sweep/poll failed")
+                            with contextlib.suppress(Exception):
+                                await db.rollback()
                         # Contacts renamed in Books, same one-call shape as
                         # the invoice poll above (services/aito_contact_poll.py).
                         # Its own try so a failure here neither skips the

@@ -34,7 +34,7 @@ from backend.app.services.aito_quote_sync import (
     sync_project,
 )
 from backend.app.services.aito_shipping import SERVICE_LABELS
-from backend.app.services.zoho import zoho_service
+from backend.app.services.zoho import ZohoUnreachable, ZohoUpstreamError, zoho_service
 
 
 @pytest.fixture(autouse=True)
@@ -3267,6 +3267,112 @@ async def test_a_periodic_tick_polls_contacts_and_survives_that_poll_failing(mon
         assert "Aito contact poll failed" in caplog.text
         assert "Aito quote sync tick failed" not in caplog.text
         assert fake_db.rollback_calls == 1
+    finally:
+        loop_task.cancel()
+        with _contextlib.suppress(asyncio.CancelledError):
+            await loop_task
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failing", ["sweep_invoices", "poll_invoices"])
+@pytest.mark.parametrize(
+    "error",
+    [
+        pytest.param(ZohoUpstreamError("HTTP 503"), id="5xx"),
+        pytest.param(ZohoUnreachable("connect error"), id="unreachable"),
+    ],
+)
+async def test_a_books_failure_in_the_invoice_passes_still_runs_the_heimdall_passes(
+    monkeypatch, caplog, failing, error
+):
+    """T-052: a non-429 Books failure (5xx, unreachable) from the invoice sweep
+    or the invoice poll is contained in that block -- logged and rolled back --
+    rather than reaching the tick's outer handler. So the rest of the tick
+    still runs on the same session: the contact poll, the purge, and above
+    all the two Heimdall passes, which must keep detecting paid payment links
+    and terminal payments while Books is down. A 5xx is not a 429: it arms no
+    throttle window."""
+    import asyncio
+    import contextlib as _contextlib
+
+    from backend.app.services import (
+        aito_contact_poll,
+        aito_invoice_poll,
+        aito_payment_links,
+        aito_quote_sync,
+        aito_terminal_payments,
+    )
+
+    class FakeDB:
+        def __init__(self):
+            self.rollback_calls = 0
+
+        async def rollback(self):
+            self.rollback_calls += 1
+
+    fake_db = FakeDB()
+
+    @_contextlib.asynccontextmanager
+    async def fake_session():
+        yield fake_db
+
+    calls: list[tuple[str, object]] = []
+    terminal_done = asyncio.Event()
+
+    async def boom(db):
+        calls.append((failing, db))
+        raise error
+
+    def recorder(name, done=None):
+        async def _call(db, *args, **kwargs):
+            calls.append((name, db))
+            if done is not None:
+                done.set()
+
+        return _call
+
+    monkeypatch.setattr(aito_quote_sync, "async_session", fake_session)
+    monkeypatch.setattr(aito_quote_sync, "run_sync_once", _always(0))
+    monkeypatch.setattr(aito_quote_sync, "sync_enabled", _always(True))
+    monkeypatch.setattr(aito_quote_sync.zoho_service, "is_configured", _always(True))
+    # Long interval: only one periodic tick should fire during this test.
+    monkeypatch.setattr(aito_quote_sync, "sync_interval_seconds", _always(300))
+    monkeypatch.setattr(aito_quote_sync, "_throttled_until", None)
+    monkeypatch.setattr(
+        aito_quote_sync, "sweep_invoices", boom if failing == "sweep_invoices" else recorder("sweep_invoices")
+    )
+    monkeypatch.setattr(
+        aito_invoice_poll, "poll_invoices", boom if failing == "poll_invoices" else recorder("poll_invoices")
+    )
+    monkeypatch.setattr(aito_contact_poll, "poll_contacts", recorder("poll_contacts"))
+    monkeypatch.setattr(aito_quote_sync, "purge_tracking_views", recorder("purge_tracking_views"))
+    monkeypatch.setattr(aito_payment_links, "reconcile_payment_links", recorder("reconcile_payment_links"))
+    monkeypatch.setattr(
+        aito_terminal_payments, "poll_open_terminal_payments", recorder("poll_open_terminal_payments", terminal_done)
+    )
+
+    loop_task = asyncio.create_task(aito_quote_sync.run_sync_loop())
+    try:
+        with caplog.at_level("ERROR"):
+            await asyncio.wait_for(terminal_done.wait(), timeout=10)
+        names = [name for name, _ in calls]
+        # The failing call stops its own block (a sweep failure skips the poll
+        # after it, exactly as before) and nothing else.
+        expected_invoice_calls = (
+            ["sweep_invoices"] if failing == "sweep_invoices" else ["sweep_invoices", "poll_invoices"]
+        )
+        assert names == [
+            *expected_invoice_calls,
+            "poll_contacts",
+            "purge_tracking_views",
+            "reconcile_payment_links",
+            "poll_open_terminal_payments",
+        ]
+        assert all(db is fake_db for _, db in calls)
+        assert "Aito invoice sweep/poll failed" in caplog.text
+        assert "Aito quote sync tick failed" not in caplog.text
+        assert fake_db.rollback_calls == 1
+        assert aito_quote_sync._throttled_until is None
     finally:
         loop_task.cancel()
         with _contextlib.suppress(asyncio.CancelledError):

@@ -661,6 +661,108 @@ async def test_the_write_lock_is_not_held_across_the_books_round_trip(tmp_path, 
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("books_name", "edit", "listener_bumps"),
+    [
+        pytest.param("Jean-Pierre DUPONT", PERSON_EDIT, 1, id="edit"),
+        pytest.param(
+            "Jean DUPONT",
+            {"first_name": "Jean", "last_name": "DUPONT", "email": "jean@example.pf", "phone": "+689-87000001"},
+            0,
+            id="no-op",
+        ),
+    ],
+)
+async def test_a_write_during_the_books_round_trip_never_moves_the_version_backwards(
+    tmp_path, monkeypatch, books_name, edit, listener_bumps
+):
+    """T-053: the claim commits expected + 1 before Books is called, so an
+    UNGUARDED write can land on the card during the round trip and move it to
+    expected + 2. The route used to pin the version back to the claimed
+    number regardless, putting the card back at expected + 1: a draft read
+    before that other write would then pass the next guard and silently
+    overwrite it, and whoever held expected + 2 got a false 409.
+
+    Now the pin only happens when the card is still exactly at the claim;
+    otherwise the listener's bump stands. The version ends above expected + 1
+    (expected + 3 for a real edit, expected + 2 for a no-op one), the other
+    write's field survives, and the stale expected + 1 draft is refused.
+    Same file-backed database + second connection as the lock test above.
+    """
+    from fastapi import HTTPException
+
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'aito-client-edit-race.db'}")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    try:
+        async with maker() as setup:
+            row = AitoProject(
+                description="Support GoPro",
+                board_column="devis",
+                client_id="z1",
+                client_name="Jean DUPONT",
+                client_phone="+689-87000001",
+                client_email="jean@example.pf",
+            )
+            setup.add(row)
+            await setup.commit()
+            project_id, version = row.id, row.version or 0
+
+        peer: dict = {}
+
+        async def books_with_a_concurrent_write(db, contact_id, **kwargs):
+            """Mid-round-trip, another writer edits the card without a
+            version guard -- through the ORM, so the listener bumps it."""
+            async with maker() as other:
+                card = await other.get(AitoProject, project_id)
+                card.description = "Support GoPro v2"
+                await other.commit()
+                peer["version"] = card.version
+            return books_name
+
+        async def walk_in(db):
+            return (WALK_IN_ID, "Client comptoir")
+
+        monkeypatch.setattr(zoho_service, "get_default_contact", walk_in)
+        monkeypatch.setattr(zoho_service, "update_contact", books_with_a_concurrent_write)
+
+        async with maker() as db:
+            response = await aito_routes.edit_project_client(
+                project_id=project_id,
+                payload=AitoClientEdit(**edit, expected_version=version),
+                db=db,
+                current_user=None,
+            )
+
+        # The concurrent write saw the claim and bumped past it.
+        assert peer == {"version": version + 2}
+        assert response.version == version + 2 + listener_bumps
+        assert response.version > version + 1
+        assert response.description == "Support GoPro v2"
+        async with maker() as check:
+            stored = (
+                await check.execute(text("SELECT version FROM aito_projects WHERE id = :id"), {"id": project_id})
+            ).scalar_one()
+        assert stored == response.version
+
+        # A draft read at the claimed number, before the concurrent write, is
+        # stale -- and is now told so instead of overwriting that write.
+        async with maker() as db:
+            with pytest.raises(HTTPException) as refused:
+                await aito_routes.edit_project_client(
+                    project_id=project_id,
+                    payload=AitoClientEdit(**PERSON_EDIT, expected_version=version + 1),
+                    db=db,
+                    current_user=None,
+                )
+        assert refused.value.status_code == 409
+        assert refused.value.detail["code"] == "version_conflict"
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_unknown_or_trashed_project_is_404(async_client):
     await _configure(async_client)
     zoho_service.transport = _recording_books([])

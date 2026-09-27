@@ -3734,8 +3734,15 @@ async def edit_project_client(
     # that commit (and before however long Books took to answer). Only the
     # claiming path needs it — an unguarded edit has committed nothing and
     # still holds the transaction it read the card in.
+    # T-053: whether the card is still exactly where the claim left it. An
+    # unguarded write that committed during the Books round trip (a PATCH
+    # without expected_version, a flag, the contact poll) has already moved
+    # it past the claim, and pinning back over that would move the version
+    # BACKWARDS — re-arming a draft read before that write.
+    pin_to_claim = False
     if claimed_version is not None:
         await db.refresh(project)
+        pin_to_claim = project.version == claimed_version
 
     # Never fanned out: the handle is this card's channel, not the contact's —
     # Books does not hold it, so a sibling card has no record to agree with.
@@ -3805,8 +3812,10 @@ async def edit_project_client(
         # field, the listener does not fire, `project.version` is already the
         # claimed number and nothing extra is written. Siblings are untouched
         # here: they are not version-guarded and bump as they always did.
+        # Only when nobody else wrote in the meantime (T-053): otherwise the
+        # listener's bump stands, so the version stays monotonic.
         await db.flush()
-        if project.version != claimed_version:
+        if pin_to_claim and project.version != claimed_version:
             project.version = claimed_version
     await db.commit()
     await _broadcast_changed("update", project.id, _actor(current_user))
