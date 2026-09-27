@@ -36,6 +36,10 @@ export interface CardViewProps {
    *  and no actions: its id does not exist, so anything acting on it would act
    *  on nothing. Cleared the instant the real row replaces it. */
   placeholder?: boolean;
+  /** The mobile board's card: the contact rides inline after the client name
+   *  instead of taking its own line, and there is no grip at all — the phone
+   *  board has no drag. Every other fact on the card is unchanged. */
+  compact?: boolean;
 }
 
 /** How long the pointer must rest on a card before its description opens.
@@ -107,6 +111,7 @@ export function CardView({
   dragHandleProps,
   footerNote,
   placeholder = false,
+  compact = false,
 }: CardViewProps) {
   const { t, i18n } = useTranslation();
   // Normalised once, because a server older than this bundle sends no
@@ -251,6 +256,7 @@ export function CardView({
   // an assertion at each site.
   const paintedFlag = isFinished(project.column) ? null : project.flag;
   const awaitingContact = needsClientContact(project);
+  const contactShown = contactNameStandsOut(project.client_name, project.client_contact_name);
 
   return (
     <div
@@ -325,7 +331,7 @@ export function CardView({
           />
           <p
             data-testid="aito-card-client"
-            className={`flex-1 min-w-0 text-sm font-semibold tracking-[-0.01em] truncate ${
+            className={`${compact ? 'min-w-0' : 'flex-1 min-w-0'} text-sm font-semibold tracking-[-0.01em] truncate ${
               awaitingContact ? 'text-cyan-400' : project.client_name ? 'text-white' : 'text-bambu-gray'
             }`}
           >
@@ -334,6 +340,14 @@ export function CardView({
             </span>
             {project.client_name ?? t('aito.noClient')}
           </p>
+          {/* Compact (mobile): the contact rides on the name row instead of
+              its own line, and a spacer keeps the badges on the right edge. */}
+          {compact && contactShown && (
+            <span data-testid="aito-card-contact-inline" className="flex-none max-w-[40%] truncate text-xs text-bambu-gray">
+              · {project.client_contact_name}
+            </span>
+          )}
+          {compact && <span className="flex-1" aria-hidden="true" />}
           {/* The visible chip was removed deliberately — the halo and the
               border now carry the signal on their own. What stays is the
               text, `sr-only`: the halo is a box-shadow and a border colour, and
@@ -378,7 +392,7 @@ export function CardView({
               <span className="sr-only">{t('aito.paidOnline')}</span>
             </span>
           )}
-          {dragHandleProps && !placeholder ? (
+          {compact ? null : dragHandleProps && !placeholder ? (
             <button
               type="button"
               ref={dragHandleRef}
@@ -401,7 +415,7 @@ export function CardView({
             individual who is their own contact), and an older card simply has
             none. Indented past the icon so it reads as a sub-line of the
             name, not a new row. */}
-        {contactNameStandsOut(project.client_name, project.client_contact_name) && (
+        {!compact && contactShown && (
           <p
             data-testid="aito-card-contact"
             className="truncate px-3 pl-[2.1rem] text-xs text-bambu-gray"
