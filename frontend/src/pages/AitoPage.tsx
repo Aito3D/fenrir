@@ -44,6 +44,8 @@ import { placeholderProject } from '../utils/aitoOptimistic';
 import { toTaskLike } from '../utils/aitoBoardRules';
 import { PrintBacklogBadge } from '../components/aito/PrintBacklogBadge';
 import { printBacklog } from '../utils/aitoBacklog';
+import { MobileBoard } from '../components/aito/MobileBoard';
+import { useIsMobile } from '../hooks/useIsMobile';
 
 // Shared with SortableCard so the dropped card and the neighbours closing
 // the gap around it settle on the same curve.
@@ -113,6 +115,9 @@ export function AitoPage() {
   // task-edit controls, and restoring a trashed or archived card — every one
   // of those fires Permission.AITO_UPDATE on the backend (routes/aito.py).
   const canUpdate = hasPermission('aito:update');
+  // Phones get the one-column board (MobileBoard). The breakpoint is the
+  // app's own: useIsMobile, max-width 767px.
+  const isMobile = useIsMobile();
   // Shares the module-level counters every optimistic board mutation feeds —
   // see that hook's own doc for why there are two. Only `isIdle` (the
   // `pendingWrites` one) is used here.
@@ -166,8 +171,14 @@ export function AitoPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- thresholds is rebuilt each render; its three numbers are the real deps
     [aitoQuery.data, thresholds.quoteDays, thresholds.pickupDays, thresholds.linkDays, followupClock.now, followupClock.today],
   );
-  const followupIds = useMemo(() => (followup ? new Set(buckets[followup].ids) : null), [buckets, followup]);
-  const filtering = search.trim().length > 0 || followup !== null;
+  // Never on a phone: its pills are not rendered there, so a filter chosen at
+  // desktop width could be neither seen nor cleared. The state itself is left
+  // alone, so widening the window brings it back.
+  const followupIds = useMemo(
+    () => (followup && !isMobile ? new Set(buckets[followup].ids) : null),
+    [buckets, followup, isMobile],
+  );
+  const filtering = search.trim().length > 0 || followupIds !== null;
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const { open: openCard, close: closeCard } = useCardMorph(setExpandedId);
 
@@ -306,6 +317,7 @@ export function AitoPage() {
   // The status pill only appears after a grace period (see the hook).
   const pending = aitoQuery.isPending;
   const loadingStatus = useBoardLoadingStatus(pending && view === 'board');
+  const mobileBoard = isMobile && view === 'board';
 
   // Whether the columns' reflow slide (see BoardColumn's `dragActive`) must
   // stay out of the way. It covers the drag itself AND the beat after it: a
@@ -387,6 +399,22 @@ export function AitoPage() {
     });
   };
 
+  // Shared by both boards: the desktop board renders it as its last child
+  // (see `.stagger-parents`), the phone board over its pager. Mounted only
+  // from `shown`, so a fast first fetch never flashes it; kept through
+  // `leaving` for its fade.
+  const loadingPill =
+    loadingStatus !== 'hidden' ? (
+      <div role="status" data-testid="aito-board-loading" className="pointer-events-none absolute inset-x-0 top-[34%] flex justify-center">
+        <span
+          className={`${loadingStatus === 'leaving' ? 'animate-aito-board-status-out' : 'animate-rise'} inline-flex items-center gap-2.5 rounded-full border border-bambu-dark-tertiary bg-bambu-dark-secondary/85 px-3.5 py-2 text-[12.5px] text-bambu-gray-light backdrop-blur-sm`}
+        >
+          <Loader2 className="w-3.5 h-3.5 text-bambu-green animate-spin" aria-hidden="true" />
+          {t('aito.boardLoading')}
+        </span>
+      </div>
+    ) : null;
+
   return (
     // The celebration layer wraps the whole page — board AND detail panel —
     // because Finish -> Done is offered on both, and its canvas has to be
@@ -402,7 +430,16 @@ export function AitoPage() {
           `min-[1024px]:` not `lg:` — Tailwind v4 emits every arbitrary min-[…]
           block before the named-breakpoint blocks, so a `lg:` height here would
           override `min-[1144px]:h-dvh` and bring the dead band back. */}
-      <div className="aito-page p-4 md:px-8 md:py-4 flex flex-col gap-3 min-h-[calc(100dvh-3.5rem)] min-[1024px]:h-[calc(100dvh-3.5rem)] min-[1144px]:h-dvh">
+      {/* The phone board is exactly the viewport under the 56px top bar, with
+          no page padding (its header and pages pad themselves): each column
+          page scrolls inside itself, so its header never scrolls away. */}
+      <div
+        className={
+          mobileBoard
+            ? 'aito-page flex flex-col h-[calc(100dvh-3.5rem)]'
+            : 'aito-page p-4 md:px-8 md:py-4 flex flex-col gap-3 min-h-[calc(100dvh-3.5rem)] min-[1024px]:h-[calc(100dvh-3.5rem)] min-[1144px]:h-dvh'
+        }
+      >
       {/* Header — one row at lg+ so the board gets every remaining pixel of
           height: title, the to-chase pills, then the search box pushed to the
           right (a fixed 13rem — it used to flex across the whole middle of
@@ -412,6 +449,7 @@ export function AitoPage() {
           sentence is gone — the page title plus the column names already say
           what this screen is — and so is the pills' own row: with the page
           padding and gaps around it, it cost the board a full row of cards. */}
+      {!mobileBoard && (
       <div className="flex flex-col lg:flex-row lg:flex-wrap lg:items-center gap-4 animate-rise-lg vt-page-title">
         <h1 className="text-2xl font-bold text-white flex items-center gap-3 flex-none">
           <Kanban className="w-7 h-7 text-bambu-green" />
@@ -512,6 +550,7 @@ export function AitoPage() {
           )}
         </div>
       </div>
+      )}
 
       {/* Error state */}
       {aitoQuery.isError && (
@@ -527,7 +566,8 @@ export function AitoPage() {
       {/* Empty state — three different nothings, and telling them apart is the
           whole point. A query that matched nothing is not an empty board, and
           a shop whose work is all finished is not a shop with no work. */}
-      {!aitoQuery.isPending && !aitoQuery.isError && view === 'board' && visibleCount === 0 && (
+      {/* Not on the phone board: it says "no results" per page itself. */}
+      {!mobileBoard && !aitoQuery.isPending && !aitoQuery.isError && view === 'board' && visibleCount === 0 && (
         <div className="text-center py-8 animate-rise">
           <Kanban className="w-10 h-10 text-bambu-gray mx-auto mb-3" />
           {filtering ? (
@@ -585,6 +625,37 @@ export function AitoPage() {
             },
           }}
         />
+      ) : mobileBoard ? (
+        <MobileBoard
+          columns={visibleColumns}
+          now={followupClock.now}
+          pending={pending}
+          loadingPill={loadingPill}
+          filtering={filtering}
+          search={search}
+          onSearchChange={setSearch}
+          onExpandCard={openCard}
+          heading={
+            <>
+              <span className="text-[15px] font-bold text-white">{t('aito.title')}</span>
+              <span className="px-2 py-0.5 text-xs font-medium text-bambu-gray-light bg-bambu-dark-tertiary rounded-full tabular-nums">
+                <span aria-hidden="true">{pending ? '–' : inProduction}</span>
+                <span className="sr-only">{t('aito.inProduction', { count: inProduction })}</span>
+              </span>
+              <PrintBacklogBadge
+                minutes={backlogMinutes}
+                printerCount={printersQuery.data?.length}
+                dailyHours={(calcPrintersQuery.data ?? []).map((p) => p.daily_usage_hours)}
+              />
+            </>
+          }
+          doneCount={doneCount}
+          onShowView={changeView}
+          canCreate={canCreate}
+          onImport={() => setShowImport(true)}
+          onNewProject={() => setShowModal(true)}
+          hideFab={expandedProject !== null || showModal || showImport}
+        />
       ) : (
         <DndContext
           sensors={sensors}
@@ -631,18 +702,8 @@ export function AitoPage() {
             ))}
             {/* Last child on purpose: `.stagger-parents` hands each child an
                 entrance slot by position, and this one must not take a
-                column's. Mounted only from `shown`, so a fast first fetch
-                never flashes it; kept through `leaving` for its fade. */}
-            {loadingStatus !== 'hidden' && (
-              <div role="status" data-testid="aito-board-loading" className="pointer-events-none absolute inset-x-0 top-[34%] flex justify-center">
-                <span
-                  className={`${loadingStatus === 'leaving' ? 'animate-aito-board-status-out' : 'animate-rise'} inline-flex items-center gap-2.5 rounded-full border border-bambu-dark-tertiary bg-bambu-dark-secondary/85 px-3.5 py-2 text-[12.5px] text-bambu-gray-light backdrop-blur-sm`}
-                >
-                  <Loader2 className="w-3.5 h-3.5 text-bambu-green animate-spin" aria-hidden="true" />
-                  {t('aito.boardLoading')}
-                </span>
-              </div>
-            )}
+                column's. */}
+            {loadingPill}
           </div>
 
           <DragOverlay dropAnimation={reducedMotion ? null : DROP_ANIMATION}>
