@@ -78,6 +78,20 @@ class ZohoUpstreamError(Exception):
     """Raised when Zoho returns an error or is unreachable."""
 
 
+class ZohoUnreachable(ZohoUpstreamError):
+    """A Books API call failed at the transport level (connect error, read
+    timeout, dropped connection) -- raised by ``_send`` for any
+    ``httpx.HTTPError``.
+
+    A subclass of ZohoUpstreamError so every existing handler still catches
+    it and behaves exactly as before, with the same message. It exists for
+    callers whose request WRITES: a read timeout can arrive after Books has
+    already applied the write, so the outcome is unknown rather than failed.
+    ``record_manual_payment`` catches it by name for that reason -- a retry
+    there could book the same payment twice.
+    """
+
+
 class ZohoRequestRejected(ZohoUpstreamError):
     """Zoho rejected the payload (HTTP 400). The message is user-actionable."""
 
@@ -423,7 +437,7 @@ class ZohoService:
                         headers={"Authorization": f"Zoho-oauthtoken {token}"},
                     )
             except httpx.HTTPError as e:
-                raise ZohoUpstreamError(f"Zoho Books unreachable: {e.__class__.__name__}") from e
+                raise ZohoUnreachable(f"Zoho Books unreachable: {e.__class__.__name__}") from e
             if response.status_code == 401 and attempt == 1:
                 self.invalidate_token()  # token revoked/expired early — refresh once
                 continue

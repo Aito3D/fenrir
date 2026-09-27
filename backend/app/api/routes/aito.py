@@ -4242,7 +4242,8 @@ async def send_pickup_sms(
     # Everything that can refuse the send outright (the rate limit, the 404,
     # the unfinished-work 409, the no-phone 409) runs above, so a request that
     # never reaches Pushcut never arms the key. Un-armed again below on a clean
-    # refusal only; success and the ambiguous PushcutUnreachable keep it.
+    # refusal, or on any other exception the send itself raises (T-044);
+    # success and the ambiguous PushcutUnreachable keep it.
     _recent_sms[key] = time.monotonic()
     try:
         await send_sms_notification(
@@ -4274,6 +4275,19 @@ async def send_pickup_sms(
         # above is dropped and an honest retry is allowed straight away.
         _recent_sms.pop(key, None)
         raise HTTPException(status_code=502, detail=str(e)) from e
+    except Exception:
+        # T-044: anything else raised by the send itself (a bug, a DB error
+        # building the title argument above, ...) is not one of Pushcut's own
+        # answers, so it carries none of PushcutUnreachable's ambiguity about
+        # whether the phone got it — nothing here is known to have reached
+        # Pushcut. Un-arm the key and let the exception propagate unchanged
+        # (still a 500), so an operator's honest retry after that 500 isn't
+        # refused as "Already sent" for the rest of the window. Scoped to this
+        # call only: an exception raised AFTER a successful send (recording
+        # the event, the commit below) must NOT land here and must NOT un-arm
+        # the key, because the SMS really did go out.
+        _recent_sms.pop(key, None)
+        raise
     # No re-arm here: the key written before the push already covers the
     # success path, and the window is deliberately measured from the moment
     # the push started rather than the moment it came back.

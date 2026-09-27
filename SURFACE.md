@@ -270,6 +270,7 @@ class HeimdallUpstreamError(Exception)
 class InvoiceLinkExists(Exception)
 class InvoicePlan
 class LinkView
+class ManualPaymentOutcomeUnknown(Exception)
 class ManualPaymentPartial(Exception)
 class ManualPaymentResult
 class ManualPaymentUnrecorded(Exception)
@@ -311,6 +312,7 @@ class ZohoRequestRejected(ZohoUpstreamError)
 class ZohoService
 class ZohoSkippedLine(BaseModel)
 class ZohoStatus(BaseModel)
+class ZohoUnreachable(ZohoUpstreamError)
 class ZohoUpstreamError(Exception)
 def adopt_quote_status(project: AitoProject, new_status: str | None)
 def build_description(service: str, task: ExportTask)

@@ -11,7 +11,7 @@ from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
 from backend.app.services import aito_manual_payments as svc
 from backend.app.services.aito_payment_documents import PaymentDocument
-from backend.app.services.zoho import ZohoUpstreamError, zoho_service
+from backend.app.services.zoho import ZohoUnreachable, ZohoUpstreamError, zoho_service
 
 TODAY = date(2026, 9, 23)
 INVOICE = PaymentDocument(kind="invoice", id="inv-1", number="FA-26-0001", customer_id="c1", balance=23000)
@@ -362,3 +362,75 @@ async def test_refresh_recovers_a_session_poisoned_by_a_failed_commit(db_session
     await svc.refresh_after_payment(db_session, p.id, "invoice")  # must not raise
 
     assert db_session.is_active is True
+
+
+def _timing_out_books(monkeypatch, *, fail_path):
+    """Books answers everything except `POST fail_path`, which times out --
+    the error `_send` raises for an httpx ReadTimeout."""
+    calls = []
+
+    async def request(db, method, path, *, params=None, json=None):
+        calls.append((method, path, json))
+        if method == "POST" and path == fail_path:
+            raise ZohoUnreachable("Zoho Books unreachable: ReadTimeout")
+        if path == "/retainerinvoices" and method == "POST":
+            return {"retainerinvoice": {"retainerinvoice_id": "ret-1", "retainerinvoice_number": "RET26-0001"}}
+        return {}
+
+    monkeypatch.setattr(zoho_service, "_request", request)
+    return calls
+
+
+@pytest.mark.asyncio
+async def test_invoice_payment_timeout_is_outcome_unknown_and_keeps_the_guard(db_session, monkeypatch):
+    """T-051: a ReadTimeout on POST /customerpayments can land after Books
+    recorded the payment. It must not read as a clean failure: the guard key
+    stays, so an identical retry inside the window is refused rather than
+    writing a second payment against the invoice."""
+    calls = _timing_out_books(monkeypatch, fail_path="/customerpayments")
+    p = await _project(db_session)
+    kw = {"document": INVOICE, "mode": "cash", "amount": 100, "reference": "r", "actor_name": None, "today": TODAY}
+    with pytest.raises(svc.ManualPaymentOutcomeUnknown) as exc:
+        await svc.record_manual_payment(db_session, p, **kw)
+    assert exc.value.retainer_number is None
+    assert isinstance(exc.value.cause, ZohoUnreachable)
+    assert "ReadTimeout" in str(exc.value)
+    assert svc._guard_key(p.id, INVOICE, 100, "r") in svc._recent
+    with pytest.raises(svc.DuplicateManualPayment):
+        await svc.record_manual_payment(db_session, p, **kw)
+    posts = [c for c in calls if c[:2] == ("POST", "/customerpayments")]
+    assert len(posts) == 1
+    assert await _events(db_session, p.id, "payment.manual.recorded") == []
+
+
+@pytest.mark.asyncio
+async def test_quote_payment_timeout_is_outcome_unknown_not_partial(db_session, monkeypatch):
+    """T-051, quote path: the retainer was raised, then the payment on it
+    timed out. `ManualPaymentPartial` ("record it by hand in Books") and its
+    `payment.manual.partial` event would both claim the payment is missing
+    when Books may hold it -- the outcome is unknown instead, the retainer is
+    named, and the guard stays armed."""
+    calls = _timing_out_books(monkeypatch, fail_path="/customerpayments")
+    p = await _project(db_session)
+    kw = {"document": QUOTE, "mode": "card", "amount": 100, "reference": None, "actor_name": None, "today": TODAY}
+    with pytest.raises(svc.ManualPaymentOutcomeUnknown) as exc:
+        await svc.record_manual_payment(db_session, p, **kw)
+    assert exc.value.retainer_number == "RET26-0001"
+    assert await _events(db_session, p.id, "payment.manual.partial") == []
+    with pytest.raises(svc.DuplicateManualPayment):
+        await svc.record_manual_payment(db_session, p, **kw)
+    assert [c[:2] for c in calls if c[0] == "POST"] == [("POST", "/retainerinvoices"), ("POST", "/customerpayments")]
+
+
+@pytest.mark.asyncio
+async def test_retainer_creation_timeout_stays_a_clean_failure(db_session, monkeypatch):
+    """Only the PAYMENT call is ambiguous about money. A transport error on
+    the retainer invoice itself keeps its pre-T-051 handling: the plain
+    upstream error, the guard released, no payment attempted."""
+    calls = _timing_out_books(monkeypatch, fail_path="/retainerinvoices")
+    p = await _project(db_session)
+    kw = {"document": QUOTE, "mode": "card", "amount": 100, "reference": None, "actor_name": None, "today": TODAY}
+    with pytest.raises(ZohoUnreachable):
+        await svc.record_manual_payment(db_session, p, **kw)
+    assert svc._guard_key(p.id, QUOTE, 100, None) not in svc._recent
+    assert not [c for c in calls if c[1] == "/customerpayments"]

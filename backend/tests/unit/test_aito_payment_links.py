@@ -1425,6 +1425,79 @@ async def test_a_rate_limit_during_the_lost_links_replacement_stands_the_whole_p
 
 
 @pytest.mark.asyncio
+async def test_reconciles_own_404_replacement_failing_is_recorded_not_silently_dropped(db_session, fake, monkeypatch):
+    """T-047: `reconcile_project` has its OWN `except HeimdallNotFound` block
+    (create/patch answering 404), structurally identical to the poll's — and
+    the double-failure handler around ITS `_replace_lost` call
+    (`test_the_lost_links_own_replacement_failing_is_recorded_not_silently_dropped`
+    above) was completely unexercised: every existing 404 was raised from
+    the fake's `get_payment` (the poll-discovery path), never from
+    `create_link`/`patch_link`. This drives the 404 from `patch_link`
+    directly, reached through a drifted amount, so the SAME double-failure
+    handler runs through the reconcile half instead."""
+    p = await _project(db_session)
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    fake.calls.clear()
+
+    async def not_found_patch(db, heimdall_id, **kw):
+        raise HeimdallNotFound(f"Heimdall HTTP 404 not_found: no payment {heimdall_id}")
+
+    async def failing_create(db, **kw):
+        raise HeimdallUpstreamError("replacement boom")
+
+    monkeypatch.setattr(heimdall_service, "patch_link", not_found_patch)
+    monkeypatch.setattr(heimdall_service, "create_link", failing_create)
+
+    p.quote_total = 13000.0
+    await db_session.commit()
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW + timedelta(hours=1))
+
+    old, reservation = await _rows(db_session, p.id)
+    assert old.status == "failed" and old.superseded_at is not None and old.heimdall_id == "L1"
+    assert reservation.heimdall_id is None, "the replacement create never landed at Heimdall"
+    assert reservation.document_kind == "quote" and reservation.superseded_at is None
+    assert reservation.sync_error and "replacement boom" in reservation.sync_error
+    assert reservation.sync_failures == 1
+    assert (await current_link(db_session, p.id)).id == reservation.id, "not silently dropped"
+    assert (await _kinds(db_session, p.id)).count("payment_link.replaced") == 0
+
+
+@pytest.mark.asyncio
+async def test_a_rate_limit_during_the_reconciles_own_replacement_propagates(db_session, fake, monkeypatch):
+    """T-047's other half: a 429 from the replacement's own create, reached
+    through reconcile_project's OWN 404 (not the poll's), must propagate out
+    of `reconcile_project` itself (`except HeimdallRateLimited: raise` ahead
+    of the generic branch) instead of being recorded as a per-row sync
+    failure — mirroring
+    `test_a_rate_limit_during_the_lost_links_replacement_stands_the_whole_pass_down`
+    for this other, previously-untested `except HeimdallNotFound` block."""
+    p = await _project(db_session)
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    fake.calls.clear()
+
+    async def not_found_patch(db, heimdall_id, **kw):
+        raise HeimdallNotFound(f"Heimdall HTTP 404 not_found: no payment {heimdall_id}")
+
+    async def rate_limited_create(db, **kw):
+        raise HeimdallRateLimited("slow down", 120.0)
+
+    monkeypatch.setattr(heimdall_service, "patch_link", not_found_patch)
+    monkeypatch.setattr(heimdall_service, "create_link", rate_limited_create)
+
+    p.quote_total = 13000.0
+    await db_session.commit()
+
+    with pytest.raises(HeimdallRateLimited):
+        await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW + timedelta(hours=1))
+
+    old, reservation = await _rows(db_session, p.id)
+    assert old.status == "failed" and old.superseded_at is not None
+    assert reservation.heimdall_id is None
+    assert reservation.sync_error is None, "the rate-limit path never reaches _record_failure"
+    assert reservation.sync_failures == 0
+
+
+@pytest.mark.asyncio
 async def test_an_unrelated_db_error_polling_one_row_rolls_back_and_still_polls_the_next(db_session, fake, monkeypatch):
     """The whole-iteration `except SQLAlchemyError` wrapping the poll must
     isolate to its own row, exactly like the reconcile half's equivalent

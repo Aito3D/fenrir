@@ -33,6 +33,7 @@ from backend.app.schemas.aito import (
 from backend.app.services.aito_manual_payments import (
     AmountAboveBalance,
     DuplicateManualPayment,
+    ManualPaymentOutcomeUnknown,
     ManualPaymentPartial,
     ManualPaymentUnrecorded,
     record_manual_payment,
@@ -207,6 +208,20 @@ async def record_manual_payment_route(
             "manual_partial",
             f"Retainer {e.retainer_number} was raised in Zoho Books but its payment could not be recorded: "
             f"{e.cause}. Record the payment on it in Books.",
+        ) from e
+    except ManualPaymentOutcomeUnknown as e:
+        # Books did not answer the payment call (a timeout can land after
+        # Books applied it). The guard stays armed, so an identical retry
+        # inside the window answers 409; the message says to look first.
+        prefix = (
+            f"Retainer {e.retainer_number} was raised in Zoho Books but Books did not answer the payment on it"
+            if e.retainer_number
+            else "Zoho Books did not answer the payment"
+        )
+        raise _refuse(
+            502,
+            "manual_outcome_unknown",
+            f"{prefix} ({e.cause}). The payment may already be in Books — check before retrying.",
         ) from e
     except ManualPaymentUnrecorded as e:
         # The money moved. Never a 500 (spec §8: once an upstream side effect

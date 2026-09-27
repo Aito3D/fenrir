@@ -23,6 +23,7 @@ from backend.app.services.zoho import (
     ZohoNotFound,
     ZohoRateLimited,
     ZohoRequestRejected,
+    ZohoUnreachable,
     ZohoUpstreamError,
     zoho_service,
 )
@@ -82,6 +83,9 @@ async def test_books_network_error_maps_to_unreachable_with_the_exception_name(d
     with pytest.raises(ZohoUpstreamError) as excinfo:
         await zoho_service.search_contacts(db_session, "dupont")
     assert str(excinfo.value) == f"Zoho Books unreachable: {exc_class.__name__}"
+    # T-051: the transport failure is the ZohoUnreachable subclass, so a
+    # caller whose request writes can tell "no answer" from "refused".
+    assert isinstance(excinfo.value, ZohoUnreachable)
 
 
 @pytest.mark.asyncio
@@ -95,6 +99,8 @@ async def test_token_endpoint_network_error_maps_to_accounts_unreachable(db_sess
     with pytest.raises(ZohoUpstreamError) as excinfo:
         await zoho_service.search_contacts(db_session, "dupont")
     assert str(excinfo.value) == "Zoho accounts unreachable: ConnectError"
+    # The token call never reached Books: a clean failure, not ZohoUnreachable.
+    assert not isinstance(excinfo.value, ZohoUnreachable)
 
 
 @pytest.mark.asyncio
