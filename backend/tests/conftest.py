@@ -970,3 +970,26 @@ def _reset_tracking_rate_limits():
     yield
     aito_routes._reset_track_rate_limits()
     mfa_routes._reset_oidc_authorize_rate_limits()
+
+
+@pytest.fixture(autouse=True)
+def books_agrees_with_the_imported_quote(request, monkeypatch):
+    """T-061: ``create_project`` re-reads an imported quote from Zoho Books
+    (``_with_books_quote_snapshot``) and overwrites the posted snapshot with
+    Books' figures. Hundreds of tests import a card only as setup, against no
+    Books at all; for them Books is taken to agree with the body — the honest
+    client's case, where the drawer posts exactly what the preview read —
+    so the helper passes the payload through untouched.
+
+    Tests of the re-read itself opt out with
+    ``@pytest.mark.real_books_quote_snapshot`` and stub ``zoho_service``."""
+    if request.node.get_closest_marker("real_books_quote_snapshot"):
+        yield
+        return
+    from backend.app.api.routes import aito as aito_routes
+
+    async def _books_agrees(_db, payload):
+        return payload
+
+    monkeypatch.setattr(aito_routes, "_with_books_quote_snapshot", _books_agrees)
+    yield

@@ -12,7 +12,9 @@ from datetime import date, datetime, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from pydantic import ValidationError
 from sqlalchemy import and_, case, func, or_, select, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -89,6 +91,7 @@ from backend.app.services.aito_invoice_create import (
     share_out,
 )
 from backend.app.services.aito_payment_links import current_link, current_links, link_view, reconcile_payment_links
+from backend.app.services.aito_quote_import import build_preview
 from backend.app.services.aito_quote_status import adopt_quote_status, apply_quote_decision, push_quote_status
 from backend.app.services.aito_quote_sync import (
     _bump_requeue_marker,
@@ -1421,6 +1424,55 @@ async def get_tracking(
     return data
 
 
+async def _with_books_quote_snapshot(db: AsyncSession, payload: AitoProjectCreate) -> AitoProjectCreate:
+    """An import's quote snapshot, re-read from Books rather than taken from the body.
+
+    T-061: the browser posts the figures the preview showed, but nothing tied
+    them to ``quote_id`` — an aito:create principal could post any
+    quote_number/quote_total and the import wake would mint a Heimdall payment
+    link for that amount under that reference (and a paid link accepts the
+    quote). So the Books-owned snapshot fields are overwritten with Books'
+    values, derived through ``build_preview`` exactly as the preview the drawer
+    rendered derives them — for an honest client nothing changes. The
+    operator's own fields (description, tasks, contact coordinates, shipping,
+    due date) are left alone. The payload is re-validated so Books' values go
+    through the same schema rules (unknown statuses degrade to None, https
+    quote_url, bounds) the posted ones did.
+
+    A hand-made card (no quote_id) is returned untouched, without a Books
+    call. Books unreachable, throttling, or not knowing the quote refuses the
+    create: an import whose figures cannot be confirmed is not stored.
+    """
+    if payload.quote_id is None:
+        return payload
+    try:
+        estimate = await zoho_service.get_estimate(db, payload.quote_id)
+        quote_url = await zoho_service.books_app_url(db, payload.quote_id)
+    except ZohoNotConfiguredError:
+        # 503, not this module's usual 409: the import drawer reads a 409 on
+        # create as "this quote already has a card".
+        raise HTTPException(status_code=503, detail="Zoho is not configured") from None
+    except ZohoNotFound:
+        raise HTTPException(status_code=404, detail="Quote not found in Zoho Books") from None
+    except ZohoUpstreamError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    preview = build_preview(estimate, None, quote_url)
+    quote = preview["quote"]
+    books_fields = {
+        "quote_number": quote["number"],
+        "quote_date": quote["date"],
+        "quote_total": quote["total"],
+        "quote_status": quote["status"],
+        "quote_url": quote["url"],
+    }
+    if preview["client"]["id"]:
+        books_fields["client_id"] = preview["client"]["id"]
+    try:
+        return AitoProjectCreate.model_validate({**payload.model_dump(exclude_unset=True), **books_fields})
+    except ValidationError as e:
+        raise RequestValidationError(e.errors()) from e
+
+
 async def _validate_create_payload(
     db: AsyncSession,
     payload: AitoProjectCreate,
@@ -1534,6 +1586,7 @@ async def create_project(
     db: AsyncSession = Depends(get_db),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_CREATE),
 ):
+    payload = await _with_books_quote_snapshot(db, payload)
     shipping = await _validate_create_payload(db, payload, current_user)
     # New cards land on top of the quote column: shift existing cards down.
     for row in await _active_in_column(db, "devis"):

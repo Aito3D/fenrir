@@ -42,6 +42,12 @@ class AitoTerminalPayment(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     checked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     settled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Set (to the settle time) in the same commit as the settle claim in
+    # `apply_terminal_state`, cleared in the same commit as the settle's
+    # effects (its timeline event and, for a paid quote, the acceptance).
+    # Still set afterwards means those effects failed: the terminal sweep
+    # re-drives them (`aito_terminal_payments._redrive_settle_effects`).
+    effects_pending_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
     __table_args__ = (

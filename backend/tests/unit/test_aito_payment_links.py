@@ -2395,3 +2395,120 @@ async def test_the_panel_retry_still_calls_after_a_stood_down_pass(db_session, f
     await reconcile_payment_links(db_session, only_project_id=ids[0], force=True, now=NOW + timedelta(minutes=2))
     assert fake.calls == [("get", "L1")]
     assert (await current_link(db_session, ids[0])).sync_error is None
+
+
+# --- a paid quote link's acceptance is re-driven (T-060) ----------------------
+
+
+def _fail_rules_once(monkeypatch):
+    """`apply_quote_decision` raises once before its commit — the shape of
+    SQLite 'database is locked' or a rules failure inside the acceptance."""
+    from sqlalchemy.exc import OperationalError
+
+    import backend.app.api.routes.aito as routes
+
+    real = routes._apply_rules
+    calls = []
+
+    async def flaky(*a, **k):
+        calls.append(1)
+        if len(calls) == 1:
+            raise OperationalError("UPDATE", {}, Exception("database is locked"))
+        return await real(*a, **k)
+
+    monkeypatch.setattr(routes, "_apply_rules", flaky)
+    return calls
+
+
+def _spy_notifications(monkeypatch):
+    from backend.app.services.notification_service import notification_service
+
+    notified = []
+
+    async def spy(db, **kw):
+        notified.append(kw)
+
+    monkeypatch.setattr(notification_service, "on_aito_payment_received", spy)
+    return notified
+
+
+@pytest.mark.asyncio
+async def test_a_failed_acceptance_leaves_the_link_pending_and_the_next_pass_credits_it_once(
+    db_session, fake, monkeypatch
+):
+    """The acceptance raises once after the poll saw `paid`: nothing of the
+    paid state is kept (the link reads `pending`, no event, quote untouched,
+    nobody notified), so the next pass polls it again and credits it — the
+    event, the acceptance and the notification exactly once — and a third
+    pass does not touch it."""
+    p = await _project(db_session)
+    pid = p.id
+    await reconcile_payment_links(db_session, now=NOW, today=TODAY)
+    link = await current_link(db_session, pid)
+    fake.set_status(link.heimdall_id, "paid")
+    notified = _spy_notifications(monkeypatch)
+    rules_calls = _fail_rules_once(monkeypatch)
+
+    first = NOW + timedelta(minutes=5)
+    await reconcile_payment_links(db_session, now=first, today=TODAY)
+    assert len(rules_calls) == 1
+    (r,) = await _rows(db_session, pid)
+    await db_session.refresh(r)
+    assert r.status == "pending" and r.paid_at is None
+    kinds = await _kinds(db_session, pid)
+    assert "payment_link.paid" not in kinds and "quote.accepted" not in kinds
+    project = await db_session.get(AitoProject, pid)
+    await db_session.refresh(project)
+    assert project.quote_status == "sent"
+    assert notified == []
+
+    second = NOW + timedelta(minutes=10)
+    await reconcile_payment_links(db_session, now=second, today=TODAY)
+    (r,) = await _rows(db_session, pid)
+    await db_session.refresh(r)
+    assert r.status == "paid" and r.paid_at == second
+    kinds = await _kinds(db_session, pid)
+    assert kinds.count("payment_link.paid") == 1 and kinds.count("quote.accepted") == 1
+    await db_session.refresh(project)
+    assert project.quote_status == "accepted"
+    assert len(notified) == 1 and notified[0]["source"] == "payment_link"
+
+    fake.calls.clear()
+    await reconcile_payment_links(db_session, now=second + timedelta(minutes=5), today=TODAY)
+    assert [c for c in fake.calls if c[0] == "get"] == []
+    kinds = await _kinds(db_session, pid)
+    assert kinds.count("payment_link.paid") == 1 and kinds.count("quote.accepted") == 1
+    assert len(notified) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_failed_acceptance_on_a_cancel_conflict_is_retried_by_the_forced_pass(db_session, fake, monkeypatch):
+    """The reconcile half finds the link paid while cancelling it (409) and
+    the acceptance then fails: `reconcile_project` rolls back and records the
+    failure on the still-`pending` row, and the panel's forced pass credits
+    it — once."""
+    p = await _project(db_session)
+    pid = p.id
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    fake.set_status("L1", "paid")
+    p.quote_invoiced = True  # nothing wanted any more -> the reconcile tries to cancel
+    await db_session.commit()
+    notified = _spy_notifications(monkeypatch)
+    _fail_rules_once(monkeypatch)
+
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    (r,) = await _rows(db_session, pid)
+    await db_session.refresh(r)
+    assert r.status == "pending" and r.paid_at is None and "database is locked" in r.sync_error
+    assert "payment_link.paid" not in await _kinds(db_session, pid)
+    assert notified == []
+
+    later = NOW + timedelta(minutes=1)
+    await reconcile_payment_links(db_session, only_project_id=pid, now=later, today=TODAY, force=True)
+    (r,) = await _rows(db_session, pid)
+    await db_session.refresh(r)
+    assert r.status == "paid" and r.paid_at == later
+    kinds = await _kinds(db_session, pid)
+    assert kinds.count("payment_link.paid") == 1 and kinds.count("quote.accepted") == 1
+    assert "payment_link.cancelled" not in kinds
+    assert len(notified) == 1

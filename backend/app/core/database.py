@@ -5992,6 +5992,11 @@ async def run_migrations(conn):
         f"{_aito_quote_status_confirmed_default}",
     )
 
+    # Migration: a settled terminal charge whose event/acceptance failed is
+    # re-driven by the sweep (2026-09-26). Nullable, no backfill: existing
+    # rows read NULL, i.e. nothing owed.
+    await _safe_execute(conn, "ALTER TABLE aito_terminal_payments ADD COLUMN effects_pending_at DATETIME")
+
     await _migrate_unlock_retainer_locked_quotes(conn)
 
 

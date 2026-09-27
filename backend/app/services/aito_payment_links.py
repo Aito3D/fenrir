@@ -334,38 +334,54 @@ async def _became_paid(db: AsyncSession, row: AitoPaymentLink, *, now: datetime)
     """Everything a link's transition to `paid` triggers, wherever it was
     discovered — a poll, a cancel racing a payment (409), a patch racing one
     (409). `row.status` must already be `'paid'` (the caller's `_adopt` set
-    it) before this runs. Stamps `paid_at`, records the story event, commits,
-    then — for a QUOTE link — accepts the quote if the project is still
-    active. An INVOICE link accepts nothing: the quote was accepted long
-    before it was billed; it only refreshes the invoice figures."""
+    it) before this runs. Stamps `paid_at`, records the story event and —
+    for a QUOTE link — accepts the quote if the project is still active, then
+    commits. An INVOICE link accepts nothing: the quote was accepted long
+    before it was billed; it only refreshes the invoice figures.
+
+    For a QUOTE link the paid state, its event and the acceptance commit
+    TOGETHER (`apply_quote_decision`'s commit, or the one below when nothing
+    is accepted): a failure before that commit is rolled back here, whole —
+    `status` included, since the caller's `_adopt` is not committed yet — so
+    the link is still `pending` and the pass's poll credits it again on a
+    later tick, instead of a paid row the poll never revisits and a quote
+    that is never accepted."""
     project_id = row.project_id
     kind = row.document_kind or "quote"
+    amount = row.amount
+    reference = row.reference
     row.paid_at = now
-    await record(
-        db,
-        project_id,
-        "payment_link.paid",
-        actor_class="system",
-        subject_type="project",
-        subject_id=project_id,
-        detail={
-            "reference": row.reference,
-            "amount": row.amount,
-            "heimdall_id": row.heimdall_id,
-            "document_kind": kind,
-        },
-    )
-    await db.commit()
+    try:
+        await record(
+            db,
+            project_id,
+            "payment_link.paid",
+            actor_class="system",
+            subject_type="project",
+            subject_id=project_id,
+            detail={
+                "reference": reference,
+                "amount": amount,
+                "heimdall_id": row.heimdall_id,
+                "document_kind": kind,
+            },
+        )
+        if kind == "quote":
+            from backend.app.services.aito_quote_status import accept_quote
+
+            project = await db.get(AitoProject, project_id)
+            if project is not None and project.status == "active":
+                await accept_quote(
+                    db, project, source="payment_link", detail={"amount": amount, "reference": reference}
+                )
+        await db.commit()
+    except Exception:
+        # Never let a caller commit the paid state without the acceptance it
+        # triggers: discard both, so the link reads `pending` and is re-polled.
+        await db.rollback()
+        raise
     if kind == "invoice":
         await _after_invoice_paid(db, project_id)
-        return
-    from backend.app.services.aito_quote_status import accept_quote
-
-    project = await db.get(AitoProject, project_id)
-    if project is not None and project.status == "active":
-        await accept_quote(
-            db, project, source="payment_link", detail={"amount": row.amount, "reference": row.reference}
-        )
 
 
 async def _create(
