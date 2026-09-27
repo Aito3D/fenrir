@@ -19,7 +19,7 @@ from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
 from backend.app.services import aito_contact_poll
 from backend.app.services.aito_contact_poll import POLL_SINCE_SETTING, poll_contacts
-from backend.app.services.zoho import ZohoRateLimited, ZohoUpstreamError, zoho_service
+from backend.app.services.zoho import ModifiedSinceRows, ZohoRateLimited, ZohoUpstreamError, zoho_service
 
 
 def _row(**fields) -> dict:
@@ -115,12 +115,13 @@ async def test_the_listing_asks_books_for_customers_changed_since_the_watermark(
             {
                 "last_modified_time": "2026-09-20T10:00:00+0000",
                 "sort_column": "last_modified_time",
-                "sort_order": "D",
+                "sort_order": "A",
                 "per_page": "200",
                 "page": "1",
             },
         )
     ]
+    assert rows.truncated is False
     assert [r["id"] for r in rows] == ["C1"]
     assert rows[0]["name"] == "Damien Ritter"
     assert rows[0]["last_modified_time"] == "2026-09-23T08:34:29-1000"
@@ -142,6 +143,25 @@ async def test_the_listing_paginates_but_not_forever(monkeypatch):
     rows = await zoho_service.list_contacts_modified_since(None, "2026-09-20T10:00:00+0000")
 
     assert len(rows) == len(pages) == aito_contact_poll_pages()
+    # Stopped at the cap with Books still offering more: the poll must know.
+    assert rows.truncated is True
+
+
+@pytest.mark.asyncio
+async def test_a_window_that_ends_exactly_on_the_cap_is_not_truncated(monkeypatch):
+    async def request(db, method, path, *, params=None, json=None):
+        last = params["page"] == str(aito_contact_poll_pages())
+        return {
+            "contacts": [{"contact_id": params["page"], "contact_name": "x", "contact_type": "customer"}],
+            "page_context": {"has_more_page": not last},
+        }
+
+    monkeypatch.setattr(zoho_service, "_request", request)
+
+    rows = await zoho_service.list_contacts_modified_since(None, "2026-09-20T10:00:00+0000")
+
+    assert len(rows) == aito_contact_poll_pages()
+    assert rows.truncated is False
 
 
 def aito_contact_poll_pages() -> int:
@@ -321,6 +341,75 @@ async def test_a_row_that_fails_holds_the_watermark_so_it_is_retried(db_session,
     assert datetime.strptime(stored, "%Y-%m-%dT%H:%M:%S%z") == held - timedelta(
         seconds=aito_contact_poll.OVERLAP_SECONDS
     )
+
+
+def _capped_books(monkeypatch, rows: list[dict], cap: int, calls: list) -> None:
+    """A Books that honours ``since`` and caps a pass at ``cap`` rows, oldest
+    first, flagging the pass truncated when rows remain."""
+
+    async def list_contacts_modified_since(db, since):
+        calls.append(("list", since))
+        floor = aito_contact_poll._parse_books_time(since)
+        window = sorted(
+            (r for r in rows if aito_contact_poll._parse_books_time(r["last_modified_time"]) >= floor),
+            key=lambda r: aito_contact_poll._parse_books_time(r["last_modified_time"]),
+        )
+        page = ModifiedSinceRows(window[:cap])
+        page.truncated = len(window) > cap
+        return page
+
+    monkeypatch.setattr(zoho_service, "list_contacts_modified_since", list_contacts_modified_since)
+
+
+@pytest.mark.asyncio
+async def test_a_rename_batch_wider_than_the_cap_is_walked_across_passes_and_skips_nothing(db_session, monkeypatch):
+    """T-055: a pass the page cap cuts short resumes at the last row it read.
+
+    Twelve contacts renamed inside one minute, five a pass — a Books bulk
+    edit in miniature. A run of four equal timestamps straddles the first
+    cut-off, and the whole batch is narrower than the five-minute overlap,
+    so a pass that rewound the usual overlap would re-read the same five
+    rows forever.
+    """
+    base = datetime(2026, 9, 23, 9, 0, 0, tzinfo=timezone.utc)
+    offsets = [0, 10, 20, 30, 30, 30, 30, 40, 50, 60, 70, 80]
+    pids = []
+    for i in range(len(offsets)):
+        pids.append((await _project(db_session, client_id=f"c{i}", client_name=f"Old {i}")).id)
+    stamps = [(base + timedelta(seconds=o)).strftime("%Y-%m-%dT%H:%M:%S%z") for o in offsets]
+    rows = [_row(id=f"c{i}", name=f"New {i}", last_modified_time=stamp) for i, stamp in enumerate(stamps)]
+    await set_setting(db_session, POLL_SINCE_SETTING, (base - timedelta(days=200)).strftime("%Y-%m-%dT%H:%M:%S%z"))
+    await db_session.commit()
+    calls: list = []
+    _capped_books(monkeypatch, rows, 5, calls)
+
+    assert await poll_contacts(db_session) == 5
+    # The fifth row read (a tie) is the resume point, rewound one second so
+    # its unread twins come back on the next pass.
+    assert await get_setting(db_session, POLL_SINCE_SETTING) == (base + timedelta(seconds=29)).strftime(
+        "%Y-%m-%dT%H:%M:%S%z"
+    )
+
+    passes = 1
+    while passes < 10:
+        await poll_contacts(db_session)
+        passes += 1
+        if calls[-1][1] == await get_setting(db_session, POLL_SINCE_SETTING):
+            break
+    # Finite: the batch was walked, not re-read in a loop.
+    assert passes < 10
+
+    db_session.expire_all()
+    for i, pid in enumerate(pids):
+        assert (await db_session.get(AitoProject, pid)).client_name == f"New {i}"
+        # Re-reading the tie rows at the seam renamed nothing twice.
+        assert len(await _events(db_session, pid, "project.updated")) == 1
+    # Caught up, the watermark settles where the last capped pass left it:
+    # the overlap never reaches back into the walked batch.
+    settled = await get_setting(db_session, POLL_SINCE_SETTING)
+    assert settled == (base + timedelta(seconds=39)).strftime("%Y-%m-%dT%H:%M:%S%z")
+    await poll_contacts(db_session)
+    assert await get_setting(db_session, POLL_SINCE_SETTING) == settled
 
 
 @pytest.mark.asyncio

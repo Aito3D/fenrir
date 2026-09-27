@@ -274,6 +274,7 @@ class ManualPaymentOutcomeUnknown(Exception)
 class ManualPaymentPartial(Exception)
 class ManualPaymentResult
 class ManualPaymentUnrecorded(Exception)
+class ModifiedSinceRows(list)
 class OpenRouterNotConfiguredError(Exception)
 class OpenRouterUpstreamError(Exception)
 class ParsedLine

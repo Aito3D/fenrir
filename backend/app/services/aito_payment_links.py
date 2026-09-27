@@ -768,11 +768,15 @@ async def reconcile_project(
             await _replace_lost(db, project_id, exc, now=now, pct=pct, validity_days=validity_days, today=today)
         except HeimdallRateLimited:
             raise
-        except (HeimdallUpstreamError, SQLAlchemyError) as exc2:
+        except (HeimdallUpstreamError, HeimdallNotConfigured, SQLAlchemyError) as exc2:
             logger.warning("payment link replacement failed for project %s: %s", project_id, exc2)
             await db.rollback()
             await _record_failure(db, project_id, exc2, now)
-    except (HeimdallUpstreamError, SQLAlchemyError) as exc:
+    except (HeimdallUpstreamError, HeimdallNotConfigured, SQLAlchemyError) as exc:
+        # `HeimdallNotConfigured` is NOT a `HeimdallUpstreamError` subclass:
+        # a token in the wrong shape passes `is_configured` (non-empty) but
+        # fails `parse_credential` on every call. Stored like any other
+        # Heimdall failure, so the pass moves on and the panel shows it.
         logger.warning("payment link reconcile failed for project %s: %s", project_id, exc)
         await db.rollback()
         if project_id is None:
@@ -847,7 +851,7 @@ async def poll_link(db: AsyncSession, row: AitoPaymentLink, *, now: datetime) ->
         view = await heimdall_service.get_payment(db, row.heimdall_id)
     except (HeimdallRateLimited, HeimdallNotFound):
         raise
-    except HeimdallUpstreamError as exc:
+    except (HeimdallUpstreamError, HeimdallNotConfigured) as exc:
         _fail(row, exc, now)
         await db.commit()
         return
@@ -1001,7 +1005,7 @@ async def _run_pass(
                         await _replace_lost(db, project_id, exc, now=now, pct=pct, validity_days=validity, today=today)
                     except HeimdallRateLimited:
                         raise
-                    except (HeimdallUpstreamError, SQLAlchemyError) as exc2:
+                    except (HeimdallUpstreamError, HeimdallNotConfigured, SQLAlchemyError) as exc2:
                         logger.warning("payment link replacement failed for project %s: %s", project_id, exc2)
                         await db.rollback()
                         await _record_failure(db, project_id, exc2, now)

@@ -53,6 +53,12 @@ BACKFILL_DAYS = 90
 # poll documents. Re-reading is free: an unchanged name writes nothing.
 OVERLAP_SECONDS = 300
 
+# The rewind on a pass the listing's page cap cut short: resume at the last
+# row read (the invoice poll's TRUNCATED_OVERLAP_SECONDS, for the same
+# reasons — a bulk edit can stamp more than a capped pass inside five
+# minutes, and one second still re-reads the cut-off row's timestamp twins).
+TRUNCATED_OVERLAP_SECONDS = 1
+
 # Books' own spelling: offset as ±HHMM, never 'Z' (rejected outright).
 _BOOKS_TIME = "%Y-%m-%dT%H:%M:%S%z"
 
@@ -161,6 +167,16 @@ async def poll_contacts(db: AsyncSession) -> int:
 
     watermark = min(x for x in (newest, oldest_failure) if x is not None) if (newest or oldest_failure) else None
     if watermark is not None:
-        await set_setting(db, POLL_SINCE_SETTING, _format_books_time(watermark - timedelta(seconds=OVERLAP_SECONDS)))
+        # Rows arrive oldest first: on a truncated pass ``newest`` is the last
+        # row read and the rest of the window is still unread, so resume there.
+        rewind = TRUNCATED_OVERLAP_SECONDS if getattr(rows, "truncated", False) else OVERLAP_SECONDS
+        resume = watermark - timedelta(seconds=rewind)
+        # Never before where this pass started: those rows were just read, and
+        # the overlap would otherwise reach back into a window walked in
+        # capped passes and start the walk over.
+        started = _parse_books_time(since)
+        if started is not None and resume < started:
+            resume = started
+        await set_setting(db, POLL_SINCE_SETTING, _format_books_time(resume))
         await db.commit()
     return updated

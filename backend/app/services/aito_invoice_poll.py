@@ -84,6 +84,14 @@ BACKFILL_DAYS = 90
 # nothing (adoption is idempotent — see ``_adopt``) and closes that seam.
 OVERLAP_SECONDS = 300
 
+# The rewind used instead when the listing stopped at its page cap. The next
+# pass must resume at the last row this one read, not five minutes before it:
+# a Books bulk update can stamp more than a whole capped pass inside five
+# minutes, and rewinding that far would re-read the same rows forever. One
+# second still re-reads every row sharing the cut-off row's timestamp, so a
+# run of equal timestamps split by the cap loses nothing.
+TRUNCATED_OVERLAP_SECONDS = 1
+
 # Books' own spelling: offset as ±HHMM, never 'Z'. `...Z` is rejected outright
 # with "Invalid value passed for last_modified_time" (verified live), so this
 # is not interchangeable with datetime.isoformat().
@@ -377,6 +385,18 @@ async def poll_invoices(db: AsyncSession) -> int:
 
     watermark = min(x for x in (newest, oldest_failure) if x is not None) if (newest or oldest_failure) else None
     if watermark is not None:
-        await set_setting(db, POLL_SINCE_SETTING, _format_books_time(watermark - timedelta(seconds=OVERLAP_SECONDS)))
+        # Rows arrive oldest first, so on a pass the page cap cut short
+        # ``newest`` is the last row read and everything after it is still
+        # unread: resume right there rather than skip it.
+        rewind = TRUNCATED_OVERLAP_SECONDS if getattr(rows, "truncated", False) else OVERLAP_SECONDS
+        resume = watermark - timedelta(seconds=rewind)
+        # Never rewind to before where this pass started: everything from
+        # ``since`` on was just read, so going further back only re-reads
+        # rows already seen — and after a window walked in capped passes,
+        # the overlap would reach back into it and start the walk over.
+        started = _parse_books_time(since)
+        if started is not None and resume < started:
+            resume = started
+        await set_setting(db, POLL_SINCE_SETTING, _format_books_time(resume))
         await db.commit()
     return updated

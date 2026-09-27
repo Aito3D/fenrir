@@ -2127,3 +2127,114 @@ async def test_a_key_collision_with_no_open_link_left_still_surfaces_the_databas
     assert [c for c in fake.calls if c[0] == "create"] == []
     rows = await _rows(db_session, project_id)
     assert len(rows) == 1 and rows[0].status == "cancelled"
+
+
+# --- T-056: a malformed Heimdall token ------------------------------------------
+
+_BAD_TOKEN_ERROR = "Heimdall token is not an hmd_live.<id>.<secret> credential"
+
+
+@pytest.mark.asyncio
+async def test_a_malformed_token_is_recorded_on_every_project_instead_of_aborting_the_pass(db_session, monkeypatch):
+    """T-056: `is_configured` only checks the token is non-empty, but every
+    real call runs `parse_credential`, which raises `HeimdallNotConfigured`
+    — NOT a `HeimdallUpstreamError` subclass. Against the REAL service (no
+    fake), a token in the retired shape must land on each project's
+    reservation as a sync_error, and the pass must keep going past the first
+    project instead of dying there with a traceback."""
+    monkeypatch.setattr(svc, "_throttled_until", None)
+    await set_setting(db_session, "heimdall_base_url", "http://pos:8081")
+    await set_setting(db_session, "heimdall_api_token", "legacy-token-without-dots")
+    await db_session.commit()
+    ids = [(await _project(db_session, quote_number=q)).id for q in ("DEV-A", "DEV-B")]
+
+    visited = await reconcile_payment_links(db_session, now=NOW, today=TODAY)
+
+    assert visited == 2
+    for pid in ids:
+        (row,) = await _rows(db_session, pid)
+        assert row.heimdall_id is None, "the create never reached Heimdall"
+        assert row.sync_error == _BAD_TOKEN_ERROR
+        assert row.sync_failures == 1 and row.checked_at == NOW
+
+
+@pytest.mark.asyncio
+async def test_a_not_configured_poll_is_recorded_and_the_poll_half_still_runs(db_session, fake):
+    """T-056: with the reconcile half failing on one project, the poll half
+    still runs, and a pending link's GET failing `HeimdallNotConfigured` is
+    stored on that row like any other Heimdall failure."""
+    polled = await _project(db_session, quote_number="DEV-P")
+    await reconcile_payment_links(db_session, now=NOW, today=TODAY)
+    fresh = await _project(db_session, quote_number="DEV-F")
+    fake.calls.clear()
+    fake.fail_with = HeimdallNotConfigured(_BAD_TOKEN_ERROR)
+    later = NOW + timedelta(hours=1)
+
+    visited = await reconcile_payment_links(db_session, now=later, today=TODAY)
+
+    assert visited == 2
+    assert [c[0] for c in fake.calls] == ["create", "get"], "the poll half ran after the reconcile failure"
+    (reservation,) = await _rows(db_session, fresh.id)
+    assert reservation.heimdall_id is None and reservation.sync_error == _BAD_TOKEN_ERROR
+    (minted,) = await _rows(db_session, polled.id)
+    assert minted.status == "pending" and minted.heimdall_id == "L1"
+    assert minted.sync_error == _BAD_TOKEN_ERROR and minted.sync_failures == 1 and minted.checked_at == later
+
+
+@pytest.mark.asyncio
+async def test_poll_link_stores_not_configured_on_the_row(db_session, fake):
+    p = await _project(db_session)
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    fake.fail_with = HeimdallNotConfigured(_BAD_TOKEN_ERROR)
+    await poll_link(db_session, (await _rows(db_session, p.id))[0], now=NOW)
+    (r,) = await _rows(db_session, p.id)
+    assert r.status == "pending" and r.sync_error == _BAD_TOKEN_ERROR and r.sync_failures == 1
+
+
+@pytest.mark.asyncio
+async def test_a_not_configured_replacement_after_the_polls_404_is_recorded(db_session, fake, monkeypatch):
+    """T-056: the poll half's `_replace_lost` handler treats
+    `HeimdallNotConfigured` from the replacement's create like any other
+    Heimdall failure — recorded on the fresh reservation."""
+    p = await _project(db_session)
+    await reconcile_payment_links(db_session, now=NOW, today=TODAY)
+    fake.forget("L1")
+
+    async def not_configured_create(db, **kw):
+        raise HeimdallNotConfigured(_BAD_TOKEN_ERROR)
+
+    monkeypatch.setattr(heimdall_service, "create_link", not_configured_create)
+
+    visited = await reconcile_payment_links(db_session, now=NOW + timedelta(hours=1), today=TODAY)
+
+    assert visited == 1
+    old, reservation = await _rows(db_session, p.id)
+    assert old.status == "failed" and old.superseded_at is not None
+    assert reservation.heimdall_id is None and reservation.sync_error == _BAD_TOKEN_ERROR
+    assert reservation.sync_failures == 1
+
+
+@pytest.mark.asyncio
+async def test_a_not_configured_replacement_after_reconciles_own_404_is_recorded(db_session, fake, monkeypatch):
+    """T-056: the same, through `reconcile_project`'s OWN 404 handler (a
+    PATCH answering 404 on a drifted amount)."""
+    p = await _project(db_session)
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+
+    async def not_found_patch(db, heimdall_id, **kw):
+        raise HeimdallNotFound(f"Heimdall HTTP 404 not_found: no payment {heimdall_id}")
+
+    async def not_configured_create(db, **kw):
+        raise HeimdallNotConfigured(_BAD_TOKEN_ERROR)
+
+    monkeypatch.setattr(heimdall_service, "patch_link", not_found_patch)
+    monkeypatch.setattr(heimdall_service, "create_link", not_configured_create)
+    p.quote_total = 13000.0
+    await db_session.commit()
+
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW + timedelta(hours=1))
+
+    old, reservation = await _rows(db_session, p.id)
+    assert old.status == "failed" and old.superseded_at is not None
+    assert reservation.heimdall_id is None and reservation.sync_error == _BAD_TOKEN_ERROR
+    assert reservation.sync_failures == 1
