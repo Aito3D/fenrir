@@ -1198,3 +1198,66 @@ async def test_a_declined_settle_still_stamps_settled_at_once(db_session):
     await svc.apply_terminal_state(db_session, row, declined, now=NOW + timedelta(seconds=30))
     assert row.settled_at == NOW
     assert len(await _events(db_session, p.id, "payment.terminal.failed")) == 1
+
+
+@pytest.mark.asyncio
+async def test_one_failure_does_not_stop_the_pass(db_session, monkeypatch):
+    """`poll_open_terminal_payments`'s per-row `except Exception: ... await
+    db.rollback()` (mirroring `aito_payment_links.reconcile_payment_links`'s
+    own `test_one_failure_does_not_stop_the_pass`) must not let one row's
+    blown-up GET end the tick. `h-fail` is visited first and its
+    `refresh_terminal_payment` raises outright; `h-ok`, later in the same
+    batch, must still be visited and settled — which only holds if the
+    rollback after the first failure leaves the session usable for the
+    rest of the loop."""
+    p = await _project(db_session)
+    project_id = p.id
+    failing = AitoTerminalPayment(
+        project_id=p.id,
+        document_kind="invoice",
+        document_id="i",
+        document_number="FA",
+        idempotency_key="k-fail",
+        heimdall_id="h-fail",
+        amount=1,
+        status="processing",
+        created_at=NOW,
+    )
+    ok = AitoTerminalPayment(
+        project_id=p.id,
+        document_kind="invoice",
+        document_id="i",
+        document_number="FA",
+        idempotency_key="k-ok",
+        heimdall_id="h-ok",
+        amount=1,
+        status="processing",
+        created_at=NOW,
+    )
+    db_session.add_all([failing, ok])
+    await db_session.commit()
+    fail_id, ok_id = failing.id, ok.id
+
+    async def noop(*a, **k):
+        return None
+
+    monkeypatch.setattr("backend.app.services.aito_manual_payments.refresh_after_payment", noop)
+
+    async def flaky_get(db, payment_id):
+        if payment_id == "h-fail":
+            raise RuntimeError("boom")
+        return _paid_view(id="h-ok", amount=1, booking_status="booked", zoho_payment_id="z-ok")
+
+    monkeypatch.setattr(heimdall_service, "get_payment", flaky_get)
+    later = NOW + timedelta(minutes=5)
+    visited = await svc.poll_open_terminal_payments(db_session, now=later)
+
+    assert visited == 2
+    still_open = await db_session.get(AitoTerminalPayment, fail_id)
+    await db_session.refresh(still_open)
+    assert still_open.status == "processing" and still_open.checked_at is None
+    settled = await db_session.get(AitoTerminalPayment, ok_id)
+    await db_session.refresh(settled)
+    assert settled.status == "paid" and settled.settled_at == later
+    assert settled.zoho_payment_id == "z-ok"
+    assert len(await _events(db_session, project_id, "payment.terminal.paid")) == 1

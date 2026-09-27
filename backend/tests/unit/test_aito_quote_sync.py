@@ -7280,14 +7280,66 @@ async def test_the_retainer_listing_is_asked_once_per_customer_per_tick(db_sessi
 async def test_a_rate_limited_retainer_listing_defers_the_tick(db_session):
     """A 429 on the side read is not swallowed: it is the sweep's own signal
     to stand down, exactly as it is out of the customer-credit read. The card
-    keeps its stored figure, spends no retry budget and shows no error."""
+    keeps its stored deposit figure, spends no retry budget and shows no
+    error, the throttle is armed from THAT 429, and the tick stops before the
+    next project. T-046 (user-approved 2026-09-26): the customer-credit
+    figure beside it is still refreshed that tick instead of staying stale."""
+    from backend.app.services import aito_quote_sync
+
     project = await _quoted_project(db_session)
     project.retainer_paid_total = 7000.0
+    project.customer_credit_total = 3000.0
+    sibling = await _quoted_project(db_session)
     await db_session.commit()
     await _configure_zoho(db_session)
+    seen: list = []
     routes = {
         ("GET", "/estimates/E1"): _quoted_estimate(),
         ("GET", "/estimates/E1/comments"): {"comments": []},
+        ("GET", "/customerpayments"): {"customerpayments": [{"payment_id": "P1", "unused_amount": 12000}]},
+    }
+    inner = zoho_handler(routes, seen)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/retainerinvoices"):
+            seen.append((request.method, request.url.path, None))
+            return httpx.Response(429, json={"message": "Rate limited"}, headers={"Retry-After": "30"})
+        return inner(request)
+
+    zoho_service.transport = httpx.MockTransport(handler)
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    await db_session.refresh(sibling)
+    assert project.retainer_paid_total == 7000.0
+    assert project.customer_credit_total == 12000.0
+    assert project.quote_status == "sent"
+    assert project.quote_sync_state == "idle"
+    assert project.quote_sync_error is None
+    assert project.quote_sync_failures == 0
+    remaining = aito_quote_sync._throttled_until - time.monotonic()
+    assert 0 < remaining <= 30
+    # The stand-down: the sibling was never reconciled this tick.
+    assert sibling.customer_credit_total != 12000.0
+    assert _retainer_reads(seen) == ["/books/v3/retainerinvoices"]
+
+
+@pytest.mark.asyncio
+async def test_a_retainer_429_keeps_the_stored_deposit_but_refreshes_the_credit(db_session):
+    """T-046: the attached-only figure computed before the throttled listing
+    is NOT written over the stored `retainer_paid_total` (it would under-count
+    a counter deposit), while the customer's credit read still lands."""
+    project = await _quoted_project(db_session)
+    project.retainer_paid_total = 50000.0
+    project.customer_credit_total = None
+    await db_session.commit()
+    await _configure_zoho(db_session)
+    attached = {"retainerinvoice_id": "RI1", "status": "paid", "total": 10000}
+    routes = {
+        ("GET", "/estimates/E1"): _quoted_estimate(retainers=[attached]),
+        ("GET", "/estimates/E1/comments"): {"comments": []},
+        ("GET", "/customerpayments"): {"customerpayments": [{"payment_id": "P1", "unused_amount": 700}]},
     }
     inner = zoho_handler(routes)
 
@@ -7301,10 +7353,91 @@ async def test_a_rate_limited_retainer_listing_defers_the_tick(db_session):
 
     assert await run_sync_once(db_session) == 1
     await db_session.refresh(project)
+    assert project.retainer_paid_total == 50000.0
+    assert project.customer_credit_total == 700.0
+    assert project.quote_status == "sent"
+    assert project.quote_sync_failures == 0
+    assert project.quote_sync_error is None
+
+
+@pytest.mark.asyncio
+async def test_a_retainer_429_and_a_credit_429_keep_both_figures_and_report_the_first(db_session):
+    """Both side reads throttled: both stored figures stay, the tick still
+    stands down without spending budget, and the throttle window is the one
+    the retainer listing's 429 asked for (the first one raised, as before)."""
+    from backend.app.services import aito_quote_sync
+
+    project = await _quoted_project(db_session)
+    project.retainer_paid_total = 7000.0
+    project.customer_credit_total = 3000.0
+    await db_session.commit()
+    await _configure_zoho(db_session)
+    inner = zoho_handler(
+        {
+            ("GET", "/estimates/E1"): _quoted_estimate(),
+            ("GET", "/estimates/E1/comments"): {"comments": []},
+        }
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/retainerinvoices"):
+            return httpx.Response(429, json={"message": "Rate limited"}, headers={"Retry-After": "30"})
+        if request.url.path.endswith("/customerpayments"):
+            return httpx.Response(429, json={"message": "Rate limited"}, headers={"Retry-After": "900"})
+        return inner(request)
+
+    zoho_service.transport = httpx.MockTransport(handler)
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
     assert project.retainer_paid_total == 7000.0
+    assert project.customer_credit_total == 3000.0
     assert project.quote_sync_state == "idle"
     assert project.quote_sync_error is None
     assert project.quote_sync_failures == 0
+    remaining = aito_quote_sync._throttled_until - time.monotonic()
+    assert 0 < remaining <= 30
+
+
+@pytest.mark.asyncio
+async def test_a_credit_429_alone_still_defers_the_tick(db_session):
+    """Unchanged by T-046: with the retainer listing answering fine, a 429 on
+    the customer-credit read still escapes and stands the tick down — the
+    fresh deposit figure computed just before it is kept, the stored credit
+    figure is left alone, and no retry budget is spent."""
+    from backend.app.services import aito_quote_sync
+
+    project = await _quoted_project(db_session)
+    project.retainer_paid_total = 0.0
+    project.customer_credit_total = 3000.0
+    await db_session.commit()
+    await _configure_zoho(db_session)
+    inner = zoho_handler(
+        {
+            ("GET", "/estimates/E1"): _quoted_estimate(),
+            ("GET", "/estimates/E1/comments"): {"comments": []},
+            ("GET", "/retainerinvoices"): {"retainerinvoices": [_counter_retainer(total=20000)]},
+        }
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/customerpayments"):
+            return httpx.Response(429, json={"message": "Rate limited"}, headers={"Retry-After": "30"})
+        return inner(request)
+
+    zoho_service.transport = httpx.MockTransport(handler)
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    assert project.retainer_paid_total == 20000.0
+    assert project.customer_credit_total == 3000.0
+    assert project.quote_status == "sent"
+    assert project.quote_sync_state == "idle"
+    assert project.quote_sync_error is None
+    assert project.quote_sync_failures == 0
+    assert aito_quote_sync._throttled_until is not None
 
 
 @pytest.mark.asyncio

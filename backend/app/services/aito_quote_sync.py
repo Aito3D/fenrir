@@ -1673,21 +1673,47 @@ async def sync_project(
             # attached-only figure in place (what this line computed before
             # the fix), never a sync error; only a 429 escapes, for the same
             # reason it does out of read_customer_credit below.
+            #
+            # T-046 (loop-21, user-approved 2026-09-26): that 429 is held, not
+            # raised on the spot. Raised here it skipped the credit read just
+            # below, so one throttled retainer listing left BOTH deposit
+            # figures stale for the tick. Now a throttled listing keeps the
+            # previously stored `retainer_paid_total` (a partial,
+            # attached-only figure is not written over it, and nothing below
+            # may auto-accept on it), the credit read still runs, and the
+            # held 429 is re-raised right after it — so sync_project's
+            # ZohoRateLimited handler, the tick's stand-down and the retry
+            # budget behave exactly as before.
+            retainer_throttle: ZohoRateLimited | None = None
             if needed is not None and paid < needed and project.quote_number:
-                retainers = await _customer_retainers(db, customer_id, retainer_cache)
-                if retainers:
-                    paid += _referenced_retainer_total(estimate, retainers, project.quote_number)
-            project.retainer_paid_total = paid
+                try:
+                    retainers = await _customer_retainers(db, customer_id, retainer_cache)
+                except ZohoRateLimited as e:
+                    retainer_throttle = e
+                else:
+                    if retainers:
+                        paid += _referenced_retainer_total(estimate, retainers, project.quote_number)
+            if retainer_throttle is None:
+                project.retainer_paid_total = paid
             # Beside it, the CUSTOMER's unspent deposits — a different figure
             # with a different meaning (see aito_customer_credit): what they
             # still have on account across every retainer, quote-linked or
             # raised by hand, which is what the panel shows as "deposit
             # available". One extra Books call per customer per tick, memoed
             # in `credit_cache`; best-effort, so None leaves the stored
-            # figure alone.
-            credit = await read_customer_credit(db, customer_id, credit_cache)
+            # figure alone. Its own 429 propagates as always — unless the
+            # retainer listing's 429 is already held, which is then the one
+            # reported (the credit figure simply stays as stored).
+            try:
+                credit = await read_customer_credit(db, customer_id, credit_cache)
+            except ZohoRateLimited:
+                if retainer_throttle is None:
+                    raise
+                credit = None
             if credit is not None:
                 project.customer_credit_total = credit
+            if retainer_throttle is not None:
+                raise retainer_throttle
             if needed is not None and paid >= needed and project.quote_status != "accepted":
                 accepted = await accept_quote(
                     db, project, source="retainer", detail={"amount": paid, "reference": project.quote_number}
