@@ -275,6 +275,52 @@ async def test_an_already_linked_invoice_is_not_relinked(db_session, monkeypatch
 
 
 @pytest.mark.asyncio
+async def test_two_invoices_for_one_card_in_one_pass_are_processed_newest_first(db_session, monkeypatch):
+    """T-069: Books is read oldest first (T-054) but a pass is processed
+    newest first, exactly as before the read order changed. With two
+    invoices naming one not-yet-billed card, the NEWEST is the one linked to
+    the estimate and announced; the OLDEST, processed last, leaves its
+    figures in the card's cache."""
+    project = await _project(db_session, quote_id="EST1")
+    pid = project.id
+    older = _row(
+        id="INV-OLD",
+        number="FA-OLD",
+        reference_number=f"AITO-{pid}",
+        status="unpaid",
+        balance=1000.0,
+        due_date="2026-09-01",
+        last_modified_time="2026-09-21T09:00:00-1000",
+    )
+    newer = _row(
+        id="INV-NEW",
+        number="FA-NEW",
+        reference_number=f"AITO-{pid}",
+        status="paid",
+        balance=0.0,
+        due_date="2026-09-20",
+        last_modified_time="2026-09-21T09:30:00-1000",
+    )
+    # Oldest first, the order the listing now returns.
+    calls = _fake_books(
+        monkeypatch,
+        [older, newer],
+        detail={"INV-OLD": {"estimate_id": ""}, "INV-NEW": {"estimate_id": ""}},
+    )
+
+    assert await poll_invoices(db_session) == 2
+
+    assert [c for c in calls if c[0] in ("get", "link")] == [("get", "INV-NEW"), ("link", "INV-NEW", "EST1")]
+    db_session.expire_all()
+    row = await db_session.get(AitoProject, pid)
+    assert (row.invoice_status, row.invoice_balance, row.invoice_due_date) == ("unpaid", 1000.0, "2026-09-01")
+    events = await _events(db_session, pid, "invoice.detected")
+    assert [e.detail["invoice_number"] for e in events] == ["FA-NEW"]
+    # The watermark is order-independent: still the newest row, rewound.
+    assert await get_setting(db_session, POLL_SINCE_SETTING) == "2026-09-21T19:25:00+0000"
+
+
+@pytest.mark.asyncio
 async def test_a_second_pass_refreshes_figures_without_a_second_event(db_session, monkeypatch):
     project = await _project(db_session)
     pid = project.id

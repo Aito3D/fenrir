@@ -315,7 +315,19 @@ async def poll_invoices(db: AsyncSession) -> int:
     oldest_failure: datetime | None = None
     seen: set[str] = set()
 
-    for row in rows:
+    # Books is read oldest first (so a pass the page cap cuts short resumes
+    # where it stopped), but the rows are processed newest first, as they
+    # were when the listing itself was read newest first. The order is not
+    # cosmetic when two invoices in one pass name the same not-yet-billed
+    # card: the first one processed is the one ``_adopt`` links to the
+    # estimate and announces as ``invoice.detected``, and the last one
+    # processed leaves its figures in the card's cache. A plain reversal of
+    # the page: rows sharing one ``last_modified_time`` come out in the
+    # reverse of Books' ascending tie order, which is Books' descending tie
+    # order only if Books breaks ties the same way both directions — not
+    # something the API documents. Nothing below the loop depends on the
+    # order: ``newest`` is a max, ``oldest_failure`` a min, ``seen`` a set.
+    for row in reversed(rows):
         moment = _parse_books_time(row.get("last_modified_time"))
         key = _failure_key(row)
         seen.add(key)

@@ -78,6 +78,16 @@ class HeimdallUnreachable(HeimdallUpstreamError):
     never stamp it settled (see services/aito_terminal_payments.py)."""
 
 
+class HeimdallAmbiguous(HeimdallUpstreamError):
+    """Something answered, but the answer does not say whether Heimdall acted:
+    a 5xx (Heimdall's own, or a reverse proxy's 502/504 after Heimdall may
+    already have dialled the terminal) or a body that is not JSON at all.
+    Deliberately NOT a `HeimdallUnreachable`: the transport worked, so a pass
+    that stands down on transport failures keeps going. But a caller that
+    reserved a row under an idempotency key must treat it like one — leave
+    the reservation open and replayable (services/aito_terminal_payments.py)."""
+
+
 class HeimdallInvalid(HeimdallUpstreamError):
     """422 — Heimdall refused the body: a terminal amount above the
     document's Books balance, or a link reference that resolves to no
@@ -271,7 +281,7 @@ class HeimdallService:
         try:
             payload = response.json() if response.content else {}
         except ValueError as e:
-            raise HeimdallUpstreamError(f"Heimdall returned a non-JSON response (HTTP {response.status_code})") from e
+            raise HeimdallAmbiguous(f"Heimdall returned a non-JSON response (HTTP {response.status_code})") from e
         if response.status_code >= 400:
             error = payload.get("error") if isinstance(payload, dict) else None
             code = str((error or {}).get("code") or "")
@@ -286,6 +296,8 @@ class HeimdallService:
                 raise HeimdallInvalid(message)
             if response.status_code == 429:
                 raise HeimdallRateLimited(message, _parse_retry_after(response.headers.get("Retry-After")))
+            if response.status_code >= 500:
+                raise HeimdallAmbiguous(message)
             raise HeimdallUpstreamError(message)
         if not isinstance(payload, dict):
             raise HeimdallUpstreamError("Heimdall returned a non-object JSON body")

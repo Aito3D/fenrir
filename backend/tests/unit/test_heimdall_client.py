@@ -9,6 +9,7 @@ import pytest
 
 from backend.app.api.routes.settings import set_setting
 from backend.app.services.heimdall import (
+    HeimdallAmbiguous,
     HeimdallAuthError,
     HeimdallConflict,
     HeimdallNotConfigured,
@@ -457,6 +458,41 @@ async def test_a_non_json_answer_is_a_plain_upstream_error_not_unreachable(db_se
     with pytest.raises(HeimdallUpstreamError) as info:
         await heimdall_service.get_payment(db_session, "6f1e")
     assert not isinstance(info.value, HeimdallUnreachable)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "response",
+    [
+        pytest.param(lambda: httpx.Response(500, json={"error": {"code": "internal", "message": "boom"}}), id="500"),
+        pytest.param(lambda: httpx.Response(503, json={}), id="503-empty"),
+        pytest.param(lambda: httpx.Response(502, content=b"<html>502 Bad Gateway</html>"), id="502-html"),
+        pytest.param(lambda: httpx.Response(504, content=b"<html>504</html>"), id="504-html"),
+        pytest.param(lambda: httpx.Response(200, content=b"<html>"), id="200-html"),
+    ],
+)
+async def test_a_5xx_or_non_json_answer_is_heimdall_ambiguous(db_session, response):
+    """An answer that does not say whether Heimdall acted (T-058). Still a
+    `HeimdallUpstreamError` so every generic handler keeps catching it, and
+    NOT a `HeimdallUnreachable`: the transport worked."""
+    await _configure(db_session)
+    heimdall_service._transport = httpx.MockTransport(lambda r: response())
+    with pytest.raises(HeimdallAmbiguous) as info:
+        await heimdall_service.get_payment(db_session, "6f1e")
+    assert isinstance(info.value, HeimdallUpstreamError)
+    assert not isinstance(info.value, HeimdallUnreachable)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [400, 401, 404, 405, 409, 422, 429])
+async def test_a_json_4xx_is_never_heimdall_ambiguous(db_session, status):
+    await _configure(db_session)
+    heimdall_service._transport = httpx.MockTransport(
+        lambda r: httpx.Response(status, json={"error": {"code": "nope", "message": "no"}})
+    )
+    with pytest.raises(HeimdallUpstreamError) as info:
+        await heimdall_service.get_payment(db_session, "6f1e")
+    assert not isinstance(info.value, HeimdallAmbiguous)
 
 
 @pytest.mark.asyncio

@@ -25,10 +25,13 @@ from backend.app.services.aito_payment_links import (
     wanted_link,
 )
 from backend.app.services.heimdall import (
+    HeimdallAmbiguous,
     HeimdallConflict,
+    HeimdallInvalid,
     HeimdallNotConfigured,
     HeimdallNotFound,
     HeimdallRateLimited,
+    HeimdallUnreachable,
     HeimdallUpstreamError,
     LinkView,
     heimdall_service,
@@ -2238,3 +2241,157 @@ async def test_a_not_configured_replacement_after_reconciles_own_404_is_recorded
     assert old.status == "failed" and old.superseded_at is not None
     assert reservation.heimdall_id is None and reservation.sync_error == _BAD_TOKEN_ERROR
     assert reservation.sync_failures == 1
+
+
+# --- a hung Heimdall stops the pass (T-057) -----------------------------------
+
+
+async def _three_pending_links(db, fake):
+    """Three quoted projects, each with a live pending link minted by a
+    clean pass; the fake's call log is cleared afterwards."""
+    ids = [(await _project(db, quote_number=f"DEV-{n}")).id for n in "ABC"]
+    await reconcile_payment_links(db, now=NOW, today=TODAY)
+    fake.calls.clear()
+    return ids
+
+
+def _get_failing_for(fake, monkeypatch, failing_id, exc):
+    """`get_payment` raises `exc` for `failing_id` only; every GET is logged."""
+    real = fake.get_payment
+
+    async def get_payment(db, heimdall_id):
+        if heimdall_id == failing_id:
+            fake.calls.append(("get", heimdall_id))
+            raise exc
+        return await real(db, heimdall_id)
+
+    monkeypatch.setattr(heimdall_service, "get_payment", get_payment)
+
+
+@pytest.mark.asyncio
+async def test_an_unreachable_poll_stops_the_pass_after_the_first_link(db_session, fake, monkeypatch):
+    """A hung Heimdall costs the full client timeout per call: after the
+    first `HeimdallUnreachable` the pass makes no further call. The row that
+    hit it is stamped as before; the other two are left for the next tick,
+    untouched (no sync_error of their own)."""
+    ids = await _three_pending_links(db_session, fake)
+    _get_failing_for(fake, monkeypatch, "L1", HeimdallUnreachable("Heimdall unreachable: timed out"))
+    later = NOW + timedelta(minutes=1)
+    await reconcile_payment_links(db_session, now=later, today=TODAY)
+    assert fake.calls == [("get", "L1")]
+    first, second, third = [await current_link(db_session, pid) for pid in ids]
+    assert first.sync_error == "Heimdall unreachable: timed out" and first.checked_at == later
+    for untouched in (second, third):
+        assert untouched.sync_error is None and untouched.checked_at == NOW and untouched.sync_failures == 0
+    # Only this pass stood down: no throttle window, the next tick polls all three.
+    assert svc._throttled_until is None
+    monkeypatch.setattr(heimdall_service, "get_payment", fake.get_payment)
+    fake.calls.clear()
+    await reconcile_payment_links(db_session, now=later + timedelta(minutes=1), today=TODAY)
+    assert sorted(c[1] for c in fake.calls if c[0] == "get") == ["L2", "L3"]  # L1 is in its backoff
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "exc",
+    [
+        HeimdallUpstreamError("Heimdall HTTP 400 bad_request: no"),
+        HeimdallInvalid("Heimdall HTTP 422 invalid_request: no"),
+        HeimdallAmbiguous("Heimdall HTTP 503 :"),
+    ],
+    ids=["400", "422", "503"],
+)
+async def test_an_answered_failure_on_one_link_still_polls_the_rest(db_session, fake, monkeypatch, exc):
+    """Heimdall ANSWERED (a 4xx refusal, or a 5xx): the transport works, so
+    the pass carries on to the other links exactly as before T-057."""
+    ids = await _three_pending_links(db_session, fake)
+    _get_failing_for(fake, monkeypatch, "L1", exc)
+    later = NOW + timedelta(minutes=1)
+    await reconcile_payment_links(db_session, now=later, today=TODAY)
+    assert [c[1] for c in fake.calls if c[0] == "get"] == ["L1", "L2", "L3"]
+    first, second, third = [await current_link(db_session, pid) for pid in ids]
+    assert first.sync_error == str(exc)
+    assert second.checked_at == later and third.checked_at == later
+
+
+@pytest.mark.asyncio
+async def test_an_unreachable_create_stops_the_reconcile_half_and_skips_the_poll(db_session, fake):
+    """The reconcile half stands down the same way: the first project's
+    reservation carries the error, the next projects are not visited (no
+    reservation, no call), and the poll half makes no call either."""
+    ids = [(await _project(db_session, quote_number=f"DEV-{n}")).id for n in "ABC"]
+    fake.fail_with = HeimdallUnreachable("Heimdall unreachable: connect refused")
+    visited = await reconcile_payment_links(db_session, now=NOW, today=TODAY)
+    assert visited == 1
+    assert [c[0] for c in fake.calls] == ["create"]
+    (stuck,) = await _rows(db_session, ids[0])
+    assert stuck.heimdall_id is None and stuck.sync_error == "Heimdall unreachable: connect refused"
+    assert await _rows(db_session, ids[1]) == [] and await _rows(db_session, ids[2]) == []
+    assert svc._throttled_until is None
+
+
+@pytest.mark.asyncio
+async def test_an_unreachable_link_replacement_in_the_poll_stops_the_pass(db_session, fake, monkeypatch):
+    """The poll half's own `_replace_lost` (a 404 on the GET) failing with
+    `HeimdallUnreachable` stops the pass too."""
+    ids = await _three_pending_links(db_session, fake)
+    fake.forget("L1")
+
+    async def unreachable_create(db, **kw):
+        fake.calls.append(("create", kw["idempotency_key"]))
+        raise HeimdallUnreachable("Heimdall unreachable: timed out")
+
+    monkeypatch.setattr(heimdall_service, "create_link", unreachable_create)
+    later = NOW + timedelta(minutes=1)
+    await reconcile_payment_links(db_session, now=later, today=TODAY)
+    assert [c[0] for c in fake.calls] == ["get", "create"]
+    old, reservation = await _rows(db_session, ids[0])
+    assert old.status == "failed" and reservation.sync_error == "Heimdall unreachable: timed out"
+    for pid in ids[1:]:
+        untouched = await current_link(db_session, pid)
+        assert untouched.checked_at == NOW and untouched.sync_error is None
+
+
+@pytest.mark.asyncio
+async def test_reconcile_project_reports_only_a_transport_failure(db_session, fake, monkeypatch):
+    """The return value the pass stands down on: True only for a stored
+    `HeimdallUnreachable`, including from its own 404 replacement."""
+    p = await _project(db_session)
+    pid = p.id
+    fake.fail_with = HeimdallUpstreamError("Heimdall HTTP 500 internal: boom")
+    assert await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW) is False
+    fake.fail_with = None
+    p = await db_session.get(AitoProject, pid)
+    assert await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW, force=True) is False
+
+    async def not_found_patch(db, heimdall_id, **kw):
+        raise HeimdallNotFound(f"Heimdall HTTP 404 not_found: no payment {heimdall_id}")
+
+    async def unreachable_create(db, **kw):
+        raise HeimdallUnreachable("Heimdall unreachable: timed out")
+
+    monkeypatch.setattr(heimdall_service, "patch_link", not_found_patch)
+    monkeypatch.setattr(heimdall_service, "create_link", unreachable_create)
+    p = await db_session.get(AitoProject, pid)
+    p.quote_total = 13000.0
+    await db_session.commit()
+    later = NOW + timedelta(hours=1)
+    assert await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=later) is True
+    p = await db_session.get(AitoProject, pid)
+    fake.fail_with = HeimdallUnreachable("Heimdall unreachable: again")
+    monkeypatch.setattr(heimdall_service, "create_link", fake.create_link)
+    assert await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=later, force=True) is True
+
+
+@pytest.mark.asyncio
+async def test_the_panel_retry_still_calls_after_a_stood_down_pass(db_session, fake, monkeypatch):
+    """No cross-tick throttle is armed, so the operator's Retry (forced,
+    one project) makes its call right after a pass stood down."""
+    ids = await _three_pending_links(db_session, fake)
+    _get_failing_for(fake, monkeypatch, "L1", HeimdallUnreachable("Heimdall unreachable: timed out"))
+    await reconcile_payment_links(db_session, now=NOW + timedelta(minutes=1), today=TODAY)
+    monkeypatch.setattr(heimdall_service, "get_payment", fake.get_payment)
+    fake.calls.clear()
+    await reconcile_payment_links(db_session, only_project_id=ids[0], force=True, now=NOW + timedelta(minutes=2))
+    assert fake.calls == [("get", "L1")]
+    assert (await current_link(db_session, ids[0])).sync_error is None

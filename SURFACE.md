@@ -258,6 +258,7 @@ class DocumentMismatch(Exception)
 class DuplicateManualPayment(Exception)
 class ExportShipping
 class ExportTask
+class HeimdallAmbiguous(HeimdallUpstreamError)
 class HeimdallAuthError(HeimdallUpstreamError)
 class HeimdallConflict(HeimdallUpstreamError)
 class HeimdallInvalid(HeimdallUpstreamError)

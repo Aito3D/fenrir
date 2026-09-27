@@ -15,11 +15,13 @@ from backend.app.models.aito_terminal_payment import AitoTerminalPayment
 from backend.app.services import aito_terminal_payments as svc
 from backend.app.services.aito_payment_documents import PaymentDocument
 from backend.app.services.heimdall import (
+    HeimdallAmbiguous,
     HeimdallConflict,
     HeimdallNotConfigured,
     HeimdallNotFound,
     HeimdallRateLimited,
     HeimdallUnreachable,
+    HeimdallUpstreamError,
     LinkView,
     heimdall_service,
 )
@@ -1032,6 +1034,94 @@ async def test_the_sweep_ages_out_a_timed_out_reservation_the_operator_walked_aw
     assert aged.status == "failed" and aged.sync_error == "reservation abandoned" and aged.settled_at == later
 
 
+# --- ambiguous answers (T-058) -----------------------------------------------
+
+_AMBIGUOUS_ANSWERS = [
+    pytest.param(lambda: httpx.Response(500, json={"error": {"code": "internal", "message": "boom"}}), id="500"),
+    pytest.param(lambda: httpx.Response(502, content=b"<html>502 Bad Gateway</html>"), id="502-html"),
+    pytest.param(lambda: httpx.Response(504, content=b"<html>504 Gateway Time-out</html>"), id="504-html"),
+    pytest.param(lambda: httpx.Response(503, json={}), id="503-empty"),
+    pytest.param(lambda: httpx.Response(200, content=b"<html>ok?</html>"), id="200-html"),
+]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("answer", _AMBIGUOUS_ANSWERS)
+async def test_start_leaves_the_reservation_pending_on_an_ambiguous_answer(db_session, answer):
+    """A 5xx or a non-JSON body (a proxy's 502/504 page) on a POST carrying
+    `confirm: true` says no more about the terminal than a read timeout: the
+    row stays an unminted reservation, and the next start for the same
+    charge replays the SAME idempotency key instead of reserving a new one."""
+    p = await _project(db_session)
+    keys = []
+
+    def ambiguous(request):
+        keys.append(request.headers["idempotency-key"])
+        return answer()
+
+    heimdall_service._transport = httpx.MockTransport(ambiguous)
+    with pytest.raises(HeimdallAmbiguous):
+        await svc.start_terminal_payment(db_session, p, document=INVOICE, amount=23000, actor_name="paul", now=NOW)
+    row = (await db_session.execute(select(AitoTerminalPayment))).scalar_one()
+    assert row.status == "pending" and row.heimdall_id is None and row.settled_at is None
+    assert row.sync_error and row.checked_at == NOW
+    assert row.id not in svc._in_flight
+    assert await _events(db_session, p.id, "payment.terminal.failed") == []
+
+    def handler(request):
+        keys.append(request.headers["idempotency-key"])
+        return httpx.Response(202, json=_payment(id="h-replay"))
+
+    heimdall_service._transport = httpx.MockTransport(handler)
+    again = await svc.start_terminal_payment(
+        db_session, p, document=INVOICE, amount=23000, actor_name="paul", now=NOW + timedelta(minutes=1)
+    )
+    assert keys == [f"aito-tpe:{p.id}:1", f"aito-tpe:{p.id}:1"]  # a replay, never a second charge
+    assert again.id == row.id and again.heimdall_id == "h-replay" and again.sync_error is None
+    assert len((await db_session.execute(select(AitoTerminalPayment))).scalars().all()) == 1
+
+
+@pytest.mark.asyncio
+async def test_an_ambiguous_reservation_is_replaced_by_a_charge_for_another_amount(db_session):
+    """The existing T-011 rule, unchanged: a different amount abandons the
+    stranded reservation (never re-sent) and reserves a fresh key."""
+    p = await _project(db_session)
+    heimdall_service._transport = httpx.MockTransport(lambda r: httpx.Response(504, content=b"<html>504</html>"))
+    with pytest.raises(HeimdallAmbiguous):
+        await svc.start_terminal_payment(db_session, p, document=INVOICE, amount=23000, actor_name="paul", now=NOW)
+    stuck_id = (await db_session.execute(select(AitoTerminalPayment.id))).scalar_one()
+    keys = []
+
+    def handler(request):
+        keys.append(request.headers["idempotency-key"])
+        return httpx.Response(202, json=_payment(id="h-fresh"))
+
+    heimdall_service._transport = httpx.MockTransport(handler)
+    later = NOW + timedelta(minutes=1)
+    row = await svc.start_terminal_payment(db_session, p, document=INVOICE, amount=500, actor_name="paul", now=later)
+    assert keys == [f"aito-tpe:{p.id}:2"]
+    assert row.id != stuck_id and row.heimdall_id == "h-fresh"
+    abandoned = await db_session.get(AitoTerminalPayment, stuck_id)
+    assert abandoned.status == "failed" and "replaced by a new charge" in (abandoned.sync_error or "")
+    assert abandoned.settled_at == later
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [400, 403, 404, 422])
+async def test_a_4xx_on_start_is_still_a_clean_refusal(db_session, status):
+    """Heimdall answered and said no: nothing was created, the row is
+    `failed` and settled exactly as before T-058."""
+    p = await _project(db_session)
+    heimdall_service._transport = httpx.MockTransport(
+        lambda r: httpx.Response(status, json={"error": {"code": "nope", "message": "no"}})
+    )
+    with pytest.raises(HeimdallUpstreamError) as info:
+        await svc.start_terminal_payment(db_session, p, document=INVOICE, amount=1, actor_name=None, now=NOW)
+    assert not isinstance(info.value, (HeimdallAmbiguous, HeimdallUnreachable))
+    row = (await db_session.execute(select(AitoTerminalPayment))).scalar_one()
+    assert row.status == "failed" and row.settled_at == NOW and str(status) in (row.sync_error or "")
+
+
 # --- the settle is claimed, not check-then-acted ------------------------------
 
 
@@ -1261,3 +1351,102 @@ async def test_one_failure_does_not_stop_the_pass(db_session, monkeypatch):
     assert settled.status == "paid" and settled.settled_at == later
     assert settled.zoho_payment_id == "z-ok"
     assert len(await _events(db_session, project_id, "payment.terminal.paid")) == 1
+
+
+# --- a hung Heimdall stops the poll (T-057) -----------------------------------
+
+
+async def _three_open_charges(db, project_id):
+    rows = [
+        AitoTerminalPayment(
+            project_id=project_id,
+            document_kind="invoice",
+            document_id="inv-1",
+            document_number="FA",
+            idempotency_key=f"k-{n}",
+            heimdall_id=f"h-{n}",
+            amount=1,
+            status="processing",
+            created_at=NOW,
+        )
+        for n in (1, 2, 3)
+    ]
+    db.add_all(rows)
+    await db.commit()
+    return [r.id for r in rows]
+
+
+def _poll_transport(calls, first):
+    """GET h-1 answers with `first` (a Response, or an exception to raise);
+    every other GET answers a still-processing payment."""
+
+    def handler(request):
+        hid = request.url.path.rsplit("/", 1)[-1]
+        calls.append(hid)
+        if hid == "h-1":
+            if isinstance(first, Exception):
+                raise first
+            return first
+        return httpx.Response(200, json=_payment(id=hid, amount=1))
+
+    return httpx.MockTransport(handler)
+
+
+@pytest.mark.asyncio
+async def test_an_unreachable_poll_stops_the_terminal_sweep_after_the_first_row(db_session):
+    """A hung Heimdall costs the full client timeout per GET: the first
+    `HeimdallUnreachable` is stored on its row and the sweep stops there —
+    the other open rows are left for the next tick, untouched. No throttle:
+    the next tick polls them all again."""
+    p = await _project(db_session)
+    ids = await _three_open_charges(db_session, p.id)
+    calls = []
+    heimdall_service._transport = _poll_transport(calls, httpx.ReadTimeout("timed out"))
+    later = NOW + timedelta(minutes=5)
+    assert await svc.poll_open_terminal_payments(db_session, now=later) == 1
+    assert calls == ["h-1"]
+    first, second, third = [await db_session.get(AitoTerminalPayment, rid) for rid in ids]
+    assert first.sync_error.startswith("Heimdall unreachable") and first.checked_at == later
+    for untouched in (second, third):
+        await db_session.refresh(untouched)
+        assert untouched.sync_error is None and untouched.checked_at is None
+    calls.clear()
+    heimdall_service._transport = _poll_transport(calls, httpx.Response(200, json=_payment(id="h-1", amount=1)))
+    assert await svc.poll_open_terminal_payments(db_session, now=later + timedelta(minutes=5)) == 3
+    assert sorted(calls) == ["h-1", "h-2", "h-3"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "first",
+    [
+        httpx.Response(400, json={"error": {"code": "bad_request", "message": "no"}}),
+        httpx.Response(503, content=b"<html>503</html>"),
+    ],
+    ids=["400", "503-html"],
+)
+async def test_an_answered_failure_on_one_charge_still_polls_the_rest(db_session, first):
+    """Heimdall answered (a 4xx, or a 5xx / proxy page): the transport
+    works, so every open row is still polled, exactly as before T-057."""
+    p = await _project(db_session)
+    ids = await _three_open_charges(db_session, p.id)
+    calls = []
+    heimdall_service._transport = _poll_transport(calls, first)
+    later = NOW + timedelta(minutes=5)
+    assert await svc.poll_open_terminal_payments(db_session, now=later) == 3
+    assert calls == ["h-1", "h-2", "h-3"]
+    rows = [await db_session.get(AitoTerminalPayment, rid) for rid in ids]
+    assert rows[0].sync_error and all(r.checked_at == later for r in rows)
+
+
+@pytest.mark.asyncio
+async def test_the_get_route_refresh_still_returns_the_row_on_a_transport_failure(db_session):
+    """`refresh_terminal_payment` (the GET route's refresh) is unchanged: it
+    stores the transport error and hands the row back, never raising."""
+    p = await _project(db_session)
+    (rid, *_) = await _three_open_charges(db_session, p.id)
+    heimdall_service._transport = _poll_transport([], httpx.ReadTimeout("timed out"))
+    row = await db_session.get(AitoTerminalPayment, rid)
+    later = NOW + timedelta(minutes=5)
+    assert await svc.refresh_terminal_payment(db_session, row, now=later) is row
+    assert row.status == "processing" and row.sync_error.startswith("Heimdall unreachable")

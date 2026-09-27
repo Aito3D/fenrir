@@ -18,6 +18,7 @@ from backend.app.models.aito_terminal_payment import AitoTerminalPayment
 from backend.app.services.aito_events import record
 from backend.app.services.aito_payment_documents import PaymentDocument
 from backend.app.services.heimdall import (
+    HeimdallAmbiguous,
     HeimdallNotConfigured,
     HeimdallNotFound,
     HeimdallRateLimited,
@@ -158,14 +159,15 @@ async def start_terminal_payment(
 
     The reservation commit comes first so a crash between the POST and the
     second commit leaves a row the operator sees as `pending` with no
-    heimdall_id — never a silent second charge. A Heimdall REFUSAL (a 4xx/5xx
+    heimdall_id — never a silent second charge. A Heimdall REFUSAL (a 4xx
     answer, or `HeimdallNotConfigured`, which is NOT a subclass of
     `HeimdallUpstreamError`) marks the row `failed` (with the reason) and
     re-raises for the route to map: Heimdall answered, so nothing was
     created. A TRANSPORT failure (`HeimdallUnreachable` — connect refused,
-    read timeout) says the opposite: the POST carries `confirm: true`, so a
-    timeout is precisely the case where the terminal may already be asking
-    for the card. Such a row is therefore left exactly as it was reserved —
+    read timeout) or an AMBIGUOUS answer (`HeimdallAmbiguous` — a 5xx, or a
+    non-JSON body such as a proxy's 504 page) says the opposite: the POST
+    carries `confirm: true`, so either is precisely the case where the
+    terminal may already be asking for the card. Such a row is therefore left exactly as it was reserved —
     `pending`, `heimdall_id` NULL, never `settled_at` — with the reason in
     `sync_error`, i.e. an ordinary unminted reservation: replayable by the
     operator under its own idempotency key (below), replaced if they charge
@@ -247,11 +249,12 @@ async def start_terminal_payment(
                 amount=row.amount,
                 document={"type": row.document_kind, "id": row.document_id},
             )
-        except HeimdallUnreachable as exc:
-            # No answer at all: the terminal may be dialling right now. Leave
-            # the reservation unminted and open so the operator's next start
-            # replays this same idempotency key and adopts whatever Heimdall
-            # actually did. `_in_flight` is released in the `finally` below,
+        except (HeimdallUnreachable, HeimdallAmbiguous) as exc:
+            # No answer at all, or one that does not say what happened (a
+            # 5xx, a proxy's HTML 502/504): the terminal may be dialling right
+            # now. Leave the reservation unminted and open so the operator's
+            # next start replays this same idempotency key and adopts whatever
+            # Heimdall actually did. `_in_flight` is released in the `finally` below,
             # so that replay is not refused as still-in-progress.
             row.sync_error = str(exc)[:500]
             row.checked_at = now
@@ -405,13 +408,21 @@ async def refresh_terminal_payment(
     operator can start again; a row that is already `paid` (or otherwise
     settled) only records the 404 in `sync_error`/`checked_at`, because
     Heimdall forgetting a charge never un-charges the card."""
+    await _refresh_terminal_payment(db, row, now=now, force=force)
+    return row
+
+
+async def _refresh_terminal_payment(db: AsyncSession, row: AitoTerminalPayment, *, now: datetime, force: bool) -> bool:
+    """The body of `refresh_terminal_payment`. Returns True only when the GET
+    never got an answer (`HeimdallUnreachable`, stored in `sync_error` like
+    any other failure) — `poll_open_terminal_payments` stops its pass on it."""
     if row.heimdall_id is None:
-        return row
+        return False
     open_row = row.status in OPEN_STATUSES or (row.status == "paid" and row.booking_status == "pending")
     if not open_row:
-        return row
+        return False
     if not force and row.checked_at is not None and (now - row.checked_at) < timedelta(seconds=REFRESH_MIN_SECONDS):
-        return row
+        return False
     try:
         view = await heimdall_service.get_payment(db, row.heimdall_id)
     except HeimdallNotFound as exc:
@@ -428,7 +439,7 @@ async def refresh_terminal_payment(
             # Heimdall comes back the booking still lands. No event: nothing
             # about the payment changed, only our view of it.
             await db.commit()
-            return row
+            return False
         # An open row Heimdall lost: nothing will ever settle it, so close it
         # so the operator can charge again. Unlike every other close this one
         # is decided here rather than in `apply_terminal_state` (which never
@@ -453,16 +464,16 @@ async def refresh_terminal_payment(
             },
         )
         await db.commit()
-        return row
+        return False
     except HeimdallRateLimited:
         raise
     except (HeimdallUpstreamError, HeimdallNotConfigured) as exc:
         row.sync_error = str(exc)[:500]
         row.checked_at = now
         await db.commit()
-        return row
+        return isinstance(exc, HeimdallUnreachable)
     await apply_terminal_state(db, row, view, now=now)
-    return row
+    return False
 
 
 async def _age_out_abandoned_reservations(db: AsyncSession, *, now: datetime, limit: int) -> int:
@@ -527,7 +538,8 @@ async def poll_open_terminal_payments(db: AsyncSession, *, now: datetime | None 
     see `_age_out_abandoned_reservations`), then every open row, plus paid
     rows whose Zoho booking is still pending, oldest contact first. Returns
     the number of rows acted on. A 429 stops the polling half (the
-    reconciler's own throttle covers the next tick)."""
+    reconciler's own throttle covers the next tick); so does a
+    `HeimdallUnreachable` (stored on the row it hit), for this pass only."""
     if not await heimdall_service.is_configured(db):
         return 0
     now = now or _now()
@@ -549,7 +561,12 @@ async def poll_open_terminal_payments(db: AsyncSession, *, now: datetime | None 
             if row is None:
                 continue
             visited += 1
-            await refresh_terminal_payment(db, row, now=now, force=True)
+            if await _refresh_terminal_payment(db, row, now=now, force=True):
+                # A hung Heimdall costs the full client timeout per GET: stop
+                # here and leave the remaining rows for the next tick (no
+                # throttle window — the next tick and the GET route try again).
+                logger.warning("terminal payment poll: Heimdall unreachable, stopping this pass")
+                break
         except HeimdallRateLimited as exc:
             logger.warning("terminal payment poll: rate limited, stopping: %s", exc)
             await db.rollback()

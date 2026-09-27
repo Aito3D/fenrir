@@ -404,22 +404,22 @@
   {
    "case": "500-server-error",
    "message": "Heimdall HTTP 500 internal: boom",
-   "outcome": "HeimdallUpstreamError"
+   "outcome": "HeimdallAmbiguous"
   },
   {
    "case": "503-unavailable",
    "message": "Heimdall HTTP 503 :",
-   "outcome": "HeimdallUpstreamError"
+   "outcome": "HeimdallAmbiguous"
   },
   {
    "case": "500-html-body",
    "message": "Heimdall returned a non-JSON response (HTTP 500)",
-   "outcome": "HeimdallUpstreamError"
+   "outcome": "HeimdallAmbiguous"
   },
   {
    "case": "200-non-json-body",
    "message": "Heimdall returned a non-JSON response (HTTP 200)",
-   "outcome": "HeimdallUpstreamError"
+   "outcome": "HeimdallAmbiguous"
   },
   {
    "case": "200-empty-body",
