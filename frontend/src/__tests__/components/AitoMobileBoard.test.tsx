@@ -136,6 +136,37 @@ describe('MobileBoard', () => {
     expect(onNewProject).toHaveBeenCalledOnce();
   });
 
+  it('keeps the FAB under the shell drawer (z-30) and lifts it only while its own menu is open', async () => {
+    const user = userEvent.setup();
+    render(<MobileBoard {...props()} />);
+    const fab = screen.getByTestId('aito-mobile-fab');
+    expect(fab.className).toMatch(/\bz-30\b/);
+    expect(fab.className).not.toMatch(/z-\[60\]/);
+    await user.click(fab);
+    expect(fab.className).toMatch(/z-\[60\]/);
+  });
+
+  it('a smooth strip jump does not cycle the header through the columns it passes', async () => {
+    const user = userEvent.setup();
+    render(<MobileBoard {...props()} />);
+    const pager = screen.getByTestId('aito-mobile-pager');
+    // jsdom has no smooth scroll: stand in for the browser passing pages 1..4
+    // on its way to 5.
+    pager.scrollTo = (() => {}) as typeof pager.scrollTo;
+    await user.click(screen.getByTestId('aito-mobile-segment-finish'));
+    for (const page of [1, 2, 3, 4]) {
+      pager.scrollLeft = WIDTH * page;
+      fireEvent.scroll(pager);
+      expect(screen.getByRole('button', { name: /Finish/, expanded: false })).toBeInTheDocument();
+    }
+    pager.scrollLeft = WIDTH * 5;
+    fireEvent.scroll(pager);
+    // Arrived: ordinary swipes follow the scroll again.
+    pager.scrollLeft = WIDTH * 2;
+    fireEvent.scroll(pager);
+    expect(screen.getByRole('button', { name: /Scan/, expanded: false })).toBeInTheDocument();
+  });
+
   it('turns only the + glyph into a ×, never the button itself', async () => {
     const user = userEvent.setup();
     render(<MobileBoard {...props()} />);

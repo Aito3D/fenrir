@@ -48,7 +48,13 @@ export function MobileColumnSheet({
           if (pressY.current !== null && event.clientY - pressY.current > SWIPE_CLOSE_PX) requestClose();
           pressY.current = null;
         }}
-        className={`absolute inset-x-0 bottom-0 rounded-t-2xl border-t border-bambu-dark-tertiary bg-bambu-dark-secondary px-3 pt-2 pb-[calc(1.5rem+env(safe-area-inset-bottom))] focus:outline-none ${
+        onPointerCancel={() => {
+          pressY.current = null;
+        }}
+        // touch-none: the sheet has nothing to scroll, so it owns vertical
+        // drags — otherwise the browser starts a pan, fires pointercancel,
+        // and the swipe-down never sees its pointerup on a touch screen.
+        className={`touch-none absolute inset-x-0 bottom-0 rounded-t-2xl border-t border-bambu-dark-tertiary bg-bambu-dark-secondary px-3 pt-2 pb-[calc(1.5rem+env(safe-area-inset-bottom))] focus:outline-none ${
           closing ? 'animate-sheet-out' : 'animate-sheet-in'
         }`}
       >

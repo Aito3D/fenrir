@@ -58,6 +58,21 @@ describe('MobileColumnSheet', () => {
     await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
   });
 
+  it('owns vertical touch gestures so the browser never cancels the swipe into a pan', () => {
+    setup();
+    expect(screen.getByRole('dialog')).toHaveClass('touch-none');
+  });
+
+  it('a cancelled pointer does not leave a stale start for the next release', async () => {
+    const { onClose } = setup();
+    const dialog = screen.getByRole('dialog');
+    fireEvent(dialog, pointer('pointerdown', 400));
+    fireEvent(dialog, pointer('pointercancel', 400));
+    fireEvent(dialog, pointer('pointerup', 480));
+    await new Promise((resolve) => setTimeout(resolve, 260));
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it('does not close on a tap (no travel)', async () => {
     const { onClose } = setup();
     const dialog = screen.getByRole('dialog');

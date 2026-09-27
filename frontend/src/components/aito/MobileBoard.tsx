@@ -122,14 +122,24 @@ export function MobileBoard({
     return () => window.removeEventListener('resize', onResize);
   }, [scrollToPage]);
 
+  // A smooth jump (strip tap) scrolls THROUGH every page in between; without
+  // this the header would flick through each of their names on the way.
+  // Cleared on arrival, or the moment a finger takes over the scroll.
+  const jumpTargetRef = useRef<number | null>(null);
+
   const onScroll = () => {
     const pager = pagerRef.current;
     if (!pager || pager.clientWidth === 0) return;
     const index = Math.round(pager.scrollLeft / pager.clientWidth);
+    if (jumpTargetRef.current !== null) {
+      if (index === jumpTargetRef.current) jumpTargetRef.current = null;
+      return;
+    }
     if (index !== current) setCurrent(index);
   };
 
   const jump = (index: number, smooth: boolean) => {
+    jumpTargetRef.current = smooth ? index : null;
     setCurrent(index);
     scrollToPage(index, smooth);
   };
@@ -164,6 +174,9 @@ export function MobileBoard({
           data-testid="aito-mobile-pager"
           aria-busy={pending || undefined}
           onScroll={onScroll}
+          onPointerDown={() => {
+            jumpTargetRef.current = null;
+          }}
           className={`h-full flex overflow-x-auto overflow-y-hidden snap-x snap-mandatory overscroll-x-contain scrollbar-hide transition-opacity duration-300 ${
             pending ? 'opacity-40' : ''
           }`}
@@ -201,7 +214,10 @@ export function MobileBoard({
           aria-haspopup="menu"
           aria-expanded={overlay === 'create'}
           aria-label={t('aito.mobile.create')}
-          className="fixed right-4 bottom-[calc(1.5rem+env(safe-area-inset-bottom))] z-[60] grid place-items-center w-14 h-14 rounded-2xl bg-bambu-green text-white shadow-lg shadow-bambu-green/30"
+          // Below the shell's nav drawer (z-40 backdrop, z-50 drawer) and any
+          // app modal by default; lifted over its own menu's scrim only while
+          // that menu is open, so it can still close it.
+          className={`fixed right-4 bottom-[calc(1.5rem+env(safe-area-inset-bottom))] ${overlay === 'create' ? 'z-[60]' : 'z-30'} grid place-items-center w-14 h-14 rounded-2xl bg-bambu-green text-white shadow-lg shadow-bambu-green/30`}
         >
           {/* Only the glyph turns (+ → ×): rotating the rounded square
               itself would stand it on a corner. */}
