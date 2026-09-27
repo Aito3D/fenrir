@@ -780,3 +780,108 @@ async def test_api_key_connection_is_never_rechecked(monkeypatch, test_engine):
 
     resolve_spy.assert_not_awaited()
     assert ws.state.aito_read is False
+
+
+# ---------------------------------------------------------------------------
+# Layer 6 (T-071, user-approved 2026-09-27): a deactivated user
+# (``users.is_active`` False) is denied Aito read, at connect and on re-check.
+# Aito slice only — the socket and its printer updates are untouched.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_resolve_denies_a_deactivated_user_with_aito_read(db_session):
+    group = Group(name="T071-readers", permissions=[Permission.AITO_READ.value])
+    user = User(username="t071-disabled-reader", groups=[group], is_active=False)
+    db_session.add_all([group, user])
+    await db_session.commit()
+
+    user_id, aito_read = await ws_route._resolve_principal_and_aito_read("t071-disabled-reader", db_session)
+
+    assert user_id == user.id  # the user id is still resolved (broadcast_to_user unchanged)
+    assert aito_read is False
+
+
+@pytest.mark.asyncio
+async def test_resolve_denies_a_deactivated_admin(db_session):
+    admin = User(username="t071-disabled-admin", role="admin", is_active=False)
+    db_session.add(admin)
+    await db_session.commit()
+
+    user_id, aito_read = await ws_route._resolve_principal_and_aito_read("t071-disabled-admin", db_session)
+
+    assert user_id == admin.id
+    assert aito_read is False
+
+
+@pytest.mark.asyncio
+async def test_deactivated_user_connects_without_aito_data_but_with_printer_updates(monkeypatch, test_engine):
+    """A deactivated user whose ws token is still unexpired: the socket is
+    admitted exactly as before (general websocket auth is out of scope), but
+    it gets no initial presence map, no Aito broadcast and no viewer entry."""
+    session_maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with session_maker() as seed:
+        group = Group(name="t071-connect-group", permissions=[Permission.AITO_READ.value])
+        seed.add(group)
+        seed.add(User(username="t071-connect", groups=[group], is_active=False))
+        await seed.commit()
+    fresh_mgr = _wire(monkeypatch, session_maker, principal="t071-connect")
+    seen: dict = {}
+
+    async def broadcast_both():
+        await fresh_mgr.broadcast_aito({"type": "aito_changed", "action": "move", "project_id": 5, "actor": "x"})
+        await fresh_mgr.send_printer_status(1, {"state": "RUNNING"})
+        seen["types"] = _text_types(ws)
+        seen["viewers"] = fresh_mgr.aito_presence_state()["viewers"]
+
+    ws = _ScriptedWebSocket([{"type": "aito_presence", "project_id": 5}, broadcast_both])
+    await ws_route.websocket_endpoint(ws, token="tok")
+
+    assert ws.state.aito_read is False
+    assert "aito_presence_state" not in _sent_types(ws)
+    assert seen["types"] == ["printer_status"]
+    assert seen["viewers"] == {}
+    ws.close.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_user_deactivated_mid_session_loses_aito_on_recheck_but_keeps_printer_updates(monkeypatch, test_engine):
+    session_maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    await _seed_reader(session_maker, "t071-mid", permissions=[Permission.AITO_READ.value])
+    fresh_mgr = _wire(monkeypatch, session_maker, principal="t071-mid")
+    monkeypatch.setattr(ws_route, "_AITO_READ_RECHECK_SECONDS", 0.0)
+    observer = _conn(True)
+    observer.state.aito_project_id = None
+    fresh_mgr.active_connections.append(observer)
+    seen: dict = {}
+
+    async def deactivate():
+        async with session_maker() as db:
+            user = (await db.execute(select(User).where(User.username == "t071-mid"))).scalar_one()
+            user.is_active = False
+            await db.commit()
+
+    async def broadcast_both():
+        seen["viewers_after_deactivation"] = fresh_mgr.aito_presence_state()["viewers"]
+        ws.send_text.reset_mock()
+        await fresh_mgr.broadcast_aito({"type": "aito_changed", "action": "move", "project_id": 5, "actor": "x"})
+        await fresh_mgr.send_printer_status(1, {"state": "RUNNING"})
+        seen["types"] = _text_types(ws)
+
+    ws = _ScriptedWebSocket(
+        [
+            {"type": "aito_presence", "project_id": 5},
+            deactivate,
+            {"type": "ping"},  # the re-check runs here and finds the account deactivated
+            broadcast_both,
+            {"type": "aito_presence", "project_id": 6},  # now ignored
+        ]
+    )
+    await ws_route.websocket_endpoint(ws, token="tok")
+
+    assert ws.state.aito_read is False
+    assert seen["viewers_after_deactivation"] == {}
+    assert seen["types"] == ["printer_status"]
+    observer_maps = [json.loads(c.args[0])["viewers"] for c in observer.send_text.await_args_list if _is_presence(c)]
+    assert observer_maps == [{"5": ["t071-mid"]}, {}]
+    ws.close.assert_not_awaited()

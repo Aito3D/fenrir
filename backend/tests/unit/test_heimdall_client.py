@@ -396,6 +396,14 @@ def test_to_view_rejects_a_non_string_link_url():
         _to_view(_link_json(link={"url": 12345, "expires_at": None}))
 
 
+def test_an_unsafe_link_url_is_a_plain_upstream_error_not_ambiguous():
+    """T-077 only reclassifies an unreadable payment body; a readable one
+    carrying an unsafe url is still a plain refusal-shaped error."""
+    with pytest.raises(HeimdallUpstreamError) as info:
+        _to_view(_link_json(link={"url": "javascript:alert(1)", "expires_at": None}))
+    assert not isinstance(info.value, HeimdallAmbiguous)
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("status", "code", "exc"),
@@ -484,6 +492,11 @@ async def test_a_non_json_answer_is_a_plain_upstream_error_not_unreachable(db_se
         pytest.param(lambda: httpx.Response(502, content=b"<html>502 Bad Gateway</html>"), id="502-html"),
         pytest.param(lambda: httpx.Response(504, content=b"<html>504</html>"), id="504-html"),
         pytest.param(lambda: httpx.Response(200, content=b"<html>"), id="200-html"),
+        # T-077: a success answer whose body cannot be read as a payment.
+        pytest.param(lambda: httpx.Response(200, content=b""), id="200-empty"),
+        pytest.param(lambda: httpx.Response(200, json=[]), id="200-list"),
+        pytest.param(lambda: httpx.Response(202, json={"status": "processing", "amount": 1}), id="202-missing-id"),
+        pytest.param(lambda: httpx.Response(200, json={"id": "6f1e", "status": "paid"}), id="200-missing-amount"),
     ],
 )
 async def test_a_5xx_or_non_json_answer_is_heimdall_ambiguous(db_session, response):

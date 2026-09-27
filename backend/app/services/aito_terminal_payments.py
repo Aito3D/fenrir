@@ -165,8 +165,9 @@ async def start_terminal_payment(
     `HeimdallUpstreamError`) marks the row `failed` (with the reason) and
     re-raises for the route to map: Heimdall answered, so nothing was
     created. A TRANSPORT failure (`HeimdallUnreachable` — connect refused,
-    read timeout) or an AMBIGUOUS answer (`HeimdallAmbiguous` — a 5xx, or a
-    non-JSON body such as a proxy's 504 page) says the opposite: the POST
+    read timeout) or an AMBIGUOUS answer (`HeimdallAmbiguous` — a 5xx, a
+    non-JSON body such as a proxy's 504 page, or a 2xx whose body cannot be
+    read as a payment) says the opposite: the POST
     carries `confirm: true`, so either is precisely the case where the
     terminal may already be asking for the card. Such a row is therefore left exactly as it was reserved —
     `pending`, `heimdall_id` NULL, never `settled_at` — with the reason in
@@ -252,7 +253,7 @@ async def start_terminal_payment(
             )
         except (HeimdallUnreachable, HeimdallAmbiguous) as exc:
             # No answer at all, or one that does not say what happened (a
-            # 5xx, a proxy's HTML 502/504): the terminal may be dialling right
+            # 5xx, a proxy's HTML 502/504, an unreadable 2xx body): the terminal may be dialling right
             # now. Leave the reservation unminted and open so the operator's
             # next start replays this same idempotency key and adopts whatever
             # Heimdall actually did. `_in_flight` is released in the `finally` below,

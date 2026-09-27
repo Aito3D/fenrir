@@ -424,37 +424,37 @@
   {
    "case": "200-empty-body",
    "message": "Heimdall returned an unexpected payment shape: 'id'",
-   "outcome": "HeimdallUpstreamError"
+   "outcome": "HeimdallAmbiguous"
   },
   {
    "case": "200-json-array",
    "message": "Heimdall returned a non-object JSON body",
-   "outcome": "HeimdallUpstreamError"
+   "outcome": "HeimdallAmbiguous"
   },
   {
    "case": "200-json-string",
    "message": "Heimdall returned a non-object JSON body",
-   "outcome": "HeimdallUpstreamError"
+   "outcome": "HeimdallAmbiguous"
   },
   {
    "case": "200-missing-id",
    "message": "Heimdall returned an unexpected payment shape: 'id'",
-   "outcome": "HeimdallUpstreamError"
+   "outcome": "HeimdallAmbiguous"
   },
   {
    "case": "200-missing-status",
    "message": "Heimdall returned an unexpected payment shape: 'status'",
-   "outcome": "HeimdallUpstreamError"
+   "outcome": "HeimdallAmbiguous"
   },
   {
    "case": "200-amount-not-a-number",
    "message": "Heimdall returned an unexpected payment shape: invalid literal for int() with base 10: 'lots'",
-   "outcome": "HeimdallUpstreamError"
+   "outcome": "HeimdallAmbiguous"
   },
   {
    "case": "200-amount-null",
    "message": "Heimdall returned an unexpected payment shape: int() argument must be a string, a bytes-like object or a real number, not 'NoneType'",
-   "outcome": "HeimdallUpstreamError"
+   "outcome": "HeimdallAmbiguous"
   },
   {
    "case": "200-link-null",

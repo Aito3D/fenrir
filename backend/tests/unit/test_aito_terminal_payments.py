@@ -1042,7 +1042,19 @@ _AMBIGUOUS_ANSWERS = [
     pytest.param(lambda: httpx.Response(504, content=b"<html>504 Gateway Time-out</html>"), id="504-html"),
     pytest.param(lambda: httpx.Response(503, json={}), id="503-empty"),
     pytest.param(lambda: httpx.Response(200, content=b"<html>ok?</html>"), id="200-html"),
+    # T-077: a 2xx Heimdall answered after accepting `confirm: true`, whose
+    # body cannot be read as a payment (a proxy stripped it, a schema change).
+    pytest.param(lambda: httpx.Response(202, content=b""), id="202-empty"),
+    pytest.param(lambda: httpx.Response(202, json=[_payment()]), id="202-list"),
+    pytest.param(lambda: httpx.Response(202, json=_payment_without("id")), id="202-missing-id"),
+    pytest.param(lambda: httpx.Response(202, json=_payment_without("amount")), id="202-missing-amount"),
 ]
+
+
+def _payment_without(field):
+    body = _payment()
+    del body[field]
+    return body
 
 
 @pytest.mark.asyncio
@@ -1422,8 +1434,10 @@ async def test_an_unreachable_poll_stops_the_terminal_sweep_after_the_first_row(
     [
         httpx.Response(400, json={"error": {"code": "bad_request", "message": "no"}}),
         httpx.Response(503, content=b"<html>503</html>"),
+        httpx.Response(200, json=[]),
+        httpx.Response(200, json={"id": "h-1"}),
     ],
-    ids=["400", "503-html"],
+    ids=["400", "503-html", "200-list", "200-missing-amount"],
 )
 async def test_an_answered_failure_on_one_charge_still_polls_the_rest(db_session, first):
     """Heimdall answered (a 4xx, or a 5xx / proxy page): the transport

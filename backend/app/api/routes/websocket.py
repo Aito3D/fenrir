@@ -56,12 +56,18 @@ async def _resolve_principal_and_aito_read(principal: str, db) -> tuple[int | No
     it is the resolved user's ``Permission.AITO_READ``
     (``User.has_permission`` short-circuits True for admins already), or
     False when the username no longer resolves to a user (e.g. deleted
-    after the token was minted) — fail closed, not guessed at.
+    after the token was minted) or the user is deactivated
+    (``is_active`` False, T-071 — every other auth path in core/auth.py
+    rejects such a user) — fail closed, not guessed at. Only the Aito
+    slice: ``principal_user_id`` is returned for a deactivated user as
+    before.
     """
     row = await db.execute(select(User).where(User.username == principal))
     principal_user = row.scalar_one_or_none()
     principal_user_id = principal_user.id if principal_user is not None else None
-    aito_read = principal_user is not None and principal_user.has_permission(Permission.AITO_READ)
+    aito_read = (
+        principal_user is not None and principal_user.is_active and principal_user.has_permission(Permission.AITO_READ)
+    )
     return principal_user_id, aito_read
 
 
@@ -79,9 +85,9 @@ async def _recheck_aito_read(websocket: WebSocket) -> None:
 
     Only an authenticated user principal is ever re-checked: auth-disabled
     (``None``) and API-key (``""``) connections keep their connect-time value
-    exactly as before. The change is one-way — a revoked (or deleted) user
-    stops receiving ``aito_changed`` / ``aito_presence_state`` and leaves the
-    viewer map, while printer broadcasts continue; a re-grant takes effect on
+    exactly as before. The change is one-way — a revoked (or deleted, or
+    deactivated) user stops receiving ``aito_changed`` /
+    ``aito_presence_state`` and leaves the viewer map, while printer broadcasts continue; a re-grant takes effect on
     the next reconnect, which also resends the initial presence map. The
     socket itself is never closed here: the connect path admits any valid
     token regardless of the user row, so closing would refuse more than

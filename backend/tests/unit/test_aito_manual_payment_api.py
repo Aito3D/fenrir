@@ -1,3 +1,4 @@
+import httpx
 import pytest
 
 from backend.app.services import aito_manual_payments as svc
@@ -146,6 +147,41 @@ async def test_invoice_payment_timeout_end_to_end_then_retry_is_409(async_client
     r = await async_client.post(url, json=body)
     assert r.status_code == 502, r.text
     assert r.json()["detail"]["code"] == "manual_outcome_unknown"
+    r = await async_client.post(url, json=body)
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"]["code"] == "duplicate"
+    assert len(posts) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "answer",
+    [
+        pytest.param(lambda: httpx.Response(502, content=b"<html>502 Bad Gateway</html>"), id="502-html"),
+        pytest.param(lambda: httpx.Response(503, json={"code": 1, "message": "busy"}), id="503-json"),
+    ],
+)
+async def test_invoice_payment_books_5xx_end_to_end_then_retry_is_409(async_client, monkeypatch, answer):
+    """T-078 through the real service and Books error mapping: a gateway
+    error on the payment call answers `manual_outcome_unknown`, and the
+    identical retry is refused with 409 -- Books sees one payment only."""
+    posts = []
+
+    async def send(db, method, path, *, params=None, json=None):
+        if (method, path) == ("POST", "/customerpayments"):
+            posts.append(json)
+            return answer()
+        return httpx.Response(200, json={})
+
+    monkeypatch.setattr(zoho_service, "_send", send)
+    p = await _create(async_client)
+    url = f"/api/v1/aito/{p['id']}/manual-payment"
+    body = {"document_kind": "invoice", "document_id": "inv-1", "mode": "cash", "amount": 100, "reference": "r"}
+    r = await async_client.post(url, json=body)
+    assert r.status_code == 502, r.text
+    detail = r.json()["detail"]
+    assert detail["code"] == "manual_outcome_unknown"
+    assert "check before retrying" in detail["message"]
     r = await async_client.post(url, json=body)
     assert r.status_code == 409, r.text
     assert r.json()["detail"]["code"] == "duplicate"

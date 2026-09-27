@@ -17,7 +17,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.models.aito_project import AitoProject
 from backend.app.services.aito_events import record
 from backend.app.services.aito_payment_documents import PaymentDocument
-from backend.app.services.zoho import ZohoNotConfiguredError, ZohoUnreachable, ZohoUpstreamError, zoho_service
+from backend.app.services.zoho import (
+    ZohoAmbiguous,
+    ZohoNotConfiguredError,
+    ZohoUnreachable,
+    ZohoUpstreamError,
+    zoho_service,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -70,8 +76,10 @@ class ManualPaymentUnrecorded(Exception):
 
 class ManualPaymentOutcomeUnknown(Exception):
     """The Books call that writes the payment itself failed at the transport
-    level (``ZohoUnreachable`` -- typically a read timeout). Books may have
-    recorded the payment before the connection dropped, so this is neither a
+    level (``ZohoUnreachable`` -- typically a read timeout) or got an answer
+    that does not say whether it was applied (``ZohoAmbiguous`` -- a 5xx, or
+    an edge gateway's HTML 502/504). Books may have recorded the payment
+    before the connection dropped or the gateway gave up, so this is neither a
     success nor a failure: the duplicate guard is KEPT (an identical retry
     within the window is refused) and the operator is told to check Books
     before trying again. ``retainer_number`` is set on the quote path, where
@@ -145,10 +153,10 @@ async def record_manual_payment(
     # again, except the two where something already landed in Books and a
     # retry would double it: `ManualPaymentPartial` (the retainer exists),
     # `ManualPaymentUnrecorded` (the payment itself exists) and
-    # `ManualPaymentOutcomeUnknown` (the payment call timed out -- it may
-    # exist). Those KEEP the key, and their message names what to check or
-    # finish by hand -- the prune above cannot drop them early: it only ever
-    # removes entries already past the window.
+    # `ManualPaymentOutcomeUnknown` (the payment call timed out, or got a
+    # 5xx / non-JSON answer -- it may exist). Those KEEP the key, and their
+    # message names what to check or finish by hand -- the prune above cannot
+    # drop them early: it only ever removes entries already past the window.
     _recent[key] = now
     try:
         if document.kind == "invoice" and document.balance is not None and amount > document.balance:
@@ -169,7 +177,7 @@ async def record_manual_payment(
                     today=today_s,
                     invoice_id=document.id,
                 )
-            except ZohoUnreachable as exc:
+            except (ZohoUnreachable, ZohoAmbiguous) as exc:
                 _log_outcome_unknown(project_id, document.kind, document.number, None, exc)
                 raise ManualPaymentOutcomeUnknown(None, exc) from exc
         else:
@@ -194,7 +202,7 @@ async def record_manual_payment(
                     today=today_s,
                     retainerinvoice_id=retainer_id,
                 )
-            except ZohoUnreachable as exc:
+            except (ZohoUnreachable, ZohoAmbiguous) as exc:
                 # Not `ManualPaymentPartial`: its "payment could not be
                 # recorded -- record it by hand" would have the operator book
                 # a payment Books may already hold. Nor its

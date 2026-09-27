@@ -81,7 +81,9 @@ class HeimdallUnreachable(HeimdallUpstreamError):
 class HeimdallAmbiguous(HeimdallUpstreamError):
     """Something answered, but the answer does not say whether Heimdall acted:
     a 5xx (Heimdall's own, or a reverse proxy's 502/504 after Heimdall may
-    already have dialled the terminal) or a body that is not JSON at all.
+    already have dialled the terminal), a body that is not JSON at all, or a
+    success answer whose body cannot be read as a payment (empty, a list, a
+    payload missing `id`/`amount`) — Heimdall accepted the call there.
     Deliberately NOT a `HeimdallUnreachable`: the transport worked, so a pass
     that stands down on transport failures keeps going. But a caller that
     reserved a row under an idempotency key must treat it like one — leave
@@ -223,7 +225,11 @@ def _to_view(data: dict) -> LinkView:
             zoho_payment_id=str(booking["zoho_payment_id"]) if booking.get("zoho_payment_id") is not None else None,
         )
     except (KeyError, TypeError, ValueError) as e:
-        raise HeimdallUpstreamError(f"Heimdall returned an unexpected payment shape: {e}") from e
+        # Ambiguous, not a plain upstream error: this parses a 2xx answer, so
+        # Heimdall ACCEPTED the call — a charge start that cannot be read must
+        # stay a replayable reservation (services/aito_terminal_payments.py).
+        # Every other caller catches the `HeimdallUpstreamError` base class.
+        raise HeimdallAmbiguous(f"Heimdall returned an unexpected payment shape: {e}") from e
 
 
 def _parse_retry_after(value: str | None) -> float | None:
@@ -318,7 +324,9 @@ class HeimdallService:
                 raise HeimdallAmbiguous(message)
             raise HeimdallUpstreamError(message)
         if not isinstance(payload, dict):
-            raise HeimdallUpstreamError("Heimdall returned a non-object JSON body")
+            # A 2xx whose body is not an object: Heimdall acted, the answer
+            # cannot say how — ambiguous, like `_to_view`'s parse failure.
+            raise HeimdallAmbiguous("Heimdall returned a non-object JSON body")
         return payload
 
     async def ping(self, db: AsyncSession, *, base_url: str | None = None, token: str | None = None) -> None:

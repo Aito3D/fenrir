@@ -295,6 +295,7 @@ class TaskSteps
 class TaskSummary
 class TerminalInProgress(Exception)
 class Wanted
+class ZohoAmbiguous(ZohoUpstreamError)
 class ZohoAmbiguousReferenceError(ZohoUpstreamError)
 class ZohoContact(BaseModel)
 class ZohoContactCreate(BaseModel)

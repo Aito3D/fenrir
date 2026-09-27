@@ -92,6 +92,21 @@ class ZohoUnreachable(ZohoUpstreamError):
     """
 
 
+class ZohoAmbiguous(ZohoUpstreamError):
+    """Books (or a gateway in front of it) answered, but the answer does not
+    say whether the request was applied: an HTTP 5xx, or a body that is not
+    JSON at all (an edge 502/504 HTML page) -- raised by ``_request`` /
+    ``_raise_for_status``. A 4xx JSON refusal is NOT this: Books said no.
+
+    A subclass of ZohoUpstreamError with the same message as before, so every
+    existing handler still catches it and behaves exactly as before. It is a
+    sibling of ``ZohoUnreachable``, not a subclass, so handlers that branch on
+    that one are unchanged too. ``record_manual_payment`` catches it by name
+    next to ``ZohoUnreachable``: a gateway error can arrive after Books has
+    committed the payment, so a retry there could book it twice.
+    """
+
+
 class ZohoRequestRejected(ZohoUpstreamError):
     """Zoho rejected the payload (HTTP 400). The message is user-actionable."""
 
@@ -476,6 +491,8 @@ class ZohoService:
                 f"Zoho Books error (HTTP {response.status_code})",
                 retry_after=_parse_retry_after(response.headers.get("Retry-After")),
             )
+        if response.status_code >= 500:
+            raise ZohoAmbiguous(f"Zoho Books error (HTTP {response.status_code})")
         if response.status_code >= 400:
             raise ZohoUpstreamError(f"Zoho Books error (HTTP {response.status_code})")
 
@@ -496,7 +513,7 @@ class ZohoService:
         try:
             payload = response.json() if response.content else {}
         except ValueError as e:
-            raise ZohoUpstreamError(f"Zoho returned a non-JSON response (HTTP {response.status_code})") from e
+            raise ZohoAmbiguous(f"Zoho returned a non-JSON response (HTTP {response.status_code})") from e
         self._raise_for_status(response, payload)
         return payload
 
