@@ -8,7 +8,7 @@ state. Ten greppable call sites beat one clever hook.
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import func, select
@@ -17,6 +17,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.models.aito_event import AitoEvent
 
 logger = logging.getLogger(__name__)
+
+
+def utc_now_naive() -> datetime:
+    """The project's naive-UTC convention: UTC "now" with tzinfo stripped.
+
+    Every timestamp stored on Aito rows follows this convention (naive
+    datetimes that are implicitly UTC), so this is the one place that states
+    it. Modules that need a monkeypatchable ``_now`` should import this as
+    ``from backend.app.services.aito_events import utc_now_naive as _now``.
+    """
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
 
 # kind -> depth. THE ONLY definition of the depth ladder; the API turns a
 # requested depth into a `kind IN (...)` filter from this, and the frontend

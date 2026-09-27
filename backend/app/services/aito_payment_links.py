@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.aito_payment_link import AitoPaymentLink
 from backend.app.models.aito_project import AitoProject
-from backend.app.services.aito_events import record
+from backend.app.services.aito_events import record, utc_now_naive as _now
 from backend.app.services.aito_payment_documents import PaymentDocument
 from backend.app.services.heimdall import (
     HeimdallConflict,
@@ -111,10 +111,6 @@ _reserve_lock = asyncio.Lock()
 def _arm_throttle(retry_after: float | None) -> None:
     global _throttled_until
     _throttled_until = time.monotonic() + (retry_after if retry_after and retry_after > 0 else 60.0)
-
-
-def _now() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 @dataclass(frozen=True)

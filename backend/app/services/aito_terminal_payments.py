@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,7 +15,7 @@ from sqlalchemy.orm.attributes import set_committed_value
 
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_terminal_payment import AitoTerminalPayment
-from backend.app.services.aito_events import record
+from backend.app.services.aito_events import record, utc_now_naive as _now
 from backend.app.services.aito_payment_documents import PaymentDocument
 from backend.app.services.heimdall import (
     HeimdallAmbiguous,
@@ -117,10 +117,6 @@ class TerminalInProgress(Exception):
     exchange at a time, by design. A row waiting for a human to read the
     paper roll (`needs_attention`) does NOT raise this — see
     `BLOCKING_STATUSES`."""
-
-
-def _now() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 async def _blocking_row(db: AsyncSession, project_id: int) -> AitoTerminalPayment | None:

@@ -6,7 +6,7 @@ shares its helpers. Spec: docs/superpowers/specs/2026-09-23-aito-counter-payment
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime, timezone
+from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,6 +30,7 @@ from backend.app.schemas.aito import (
     AitoTerminalPaymentCreate,
     AitoTerminalPaymentView,
 )
+from backend.app.services.aito_events import utc_now_naive as _now
 from backend.app.services.aito_manual_payments import (
     AmountAboveBalance,
     DuplicateManualPayment,
@@ -86,10 +87,6 @@ def _check_counter_payment_rate_limit(request: Request, current_user: User | Non
         )
     except HTTPException as e:
         raise _refuse(429, "rate_limited", _COUNTER_PAYMENT_DETAIL) from e
-
-
-def _now() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def _refuse(status: int, code: str, message: str) -> HTTPException:

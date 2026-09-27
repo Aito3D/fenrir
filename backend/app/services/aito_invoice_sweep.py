@@ -50,7 +50,6 @@ cut off rather than the ones already refreshed."""
 
 import logging
 import time
-from datetime import datetime, timezone
 
 from sqlalchemy import or_, select
 from sqlalchemy.exc import SQLAlchemyError
@@ -58,6 +57,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.aito_project import AitoProject
 from backend.app.services import aito_events
+from backend.app.services.aito_events import utc_now_naive as _now
 from backend.app.services.aito_invoice_create import RetainerCredit, apply_retainers, customer_credits
 from backend.app.services.zoho import ZohoNotConfiguredError, ZohoRateLimited, ZohoUpstreamError, zoho_service
 
@@ -67,10 +67,6 @@ _SWEEP_INTERVAL_SECONDS = 3600
 # time.monotonic() of the last pass that ran; 0.0 = never. Module state so
 # the loop's 300 s ticks can call sweep_invoices() unconditionally.
 _last_run: float = 0.0
-
-
-def _now() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def _same_reference(reference: str, quote_number: str | None) -> bool:
