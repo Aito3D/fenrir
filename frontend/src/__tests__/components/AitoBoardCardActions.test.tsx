@@ -1,34 +1,544 @@
-import { describe, it, expect } from 'vitest';
-import { useRef } from 'react';
-import { screen } from '@testing-library/react';
+/**
+ * Card footer actions, mounted through the real `BoardColumn`.
+ *
+ * These gates used to live inside `CardView` and were tested against it
+ * directly. They now live in `SortableCard`, which owns the mutations they
+ * fire — so the meaningful test is the one that mounts the column and asks
+ * what a card in it actually offers. `BoardColumn` calls `useDroppable` and
+ * `useSortable`, both of which throw outside a drag context, so every render
+ * here wraps it in a real `DndContext`.
+ */
+
+import { describe, it, expect, vi } from 'vitest';
+import { act, fireEvent, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { DndContext } from '@dnd-kit/core';
 import { render } from '../utils';
-import { BoardCardActions } from '../../components/aito/BoardCardActions';
-import { makeProject } from '../fixtures/aitoProject';
+import { BoardColumn } from '../../components/aito/BoardColumn';
+import { COLUMNS } from '../../components/aito/columns';
+import { api } from '../../api/client';
 import type { AitoProject } from '../../api/client';
 
-function Harness({ project }: { project: AitoProject }) {
-  const ref = useRef<HTMLDivElement | null>(null);
-  return (
-    <div ref={ref}>
-      <BoardCardActions project={project} cardRef={ref} />
-    </div>
+const card = (over: Partial<AitoProject> = {}): AitoProject => ({
+  id: 12,
+  description: 'Support de caméra',
+  column: 'devis',
+  position: 0,
+  status: 'active',
+  client_id: 'z1',
+  client_name: 'ACME SARL',
+  client_phone: null,
+  client_email: null,
+  client_is_company: null,
+  client_social_network: null,
+  client_social_handle: null,
+  client_contact_person_id: null,
+  client_contact_name: null,
+  quote_id: null,
+  quote_number: null,
+  quote_date: null,
+  quote_total: null,
+  quote_url: null,
+  quote_salesperson: null,
+  quote_status: null,
+  quote_accepted_at: null,
+  quote_sent_at: null,
+  invoice_status: null,
+  invoice_balance: null,
+  invoice_due_date: null,
+  invoice_checked_at: null,
+  quote_sync_state: 'idle',
+  quote_invoiced: false,
+  flag: null,
+  client_contacted_at: null,
+  due_date: null,
+  quote_sync_error: null,
+  quote_status_block: null,
+  quote_status_remote: null,
+  created_by: null,
+  task_count: 0,
+  tasks_total: 0,
+  task_services: [],
+  task_pending: [],
+  steps_total: 0,
+  steps_done: 0,
+  print_minutes_pending: 0,
+  task_steps: [],
+  move_lock: null,
+  shipping_island: null,
+  shipping_service: null,
+  shipping_first_name: null,
+  shipping_last_name: null,
+  shipping_phone: null,
+  shipping_price: null,
+  shipping_lta: null,
+  shipping_service_name: null,
+  tracking_configured: false,
+  quote_expiry_date: null,
+  retainer_paid_total: null,
+  customer_credit_total: null,
+  payment_link: null,
+  version: 1,
+  created_at: '2026-07-01T10:00:00Z',
+  updated_at: '2026-07-01T10:00:00Z',
+  ...over,
+});
+
+function renderColumn(project: AitoProject) {
+  const meta = COLUMNS.find((c) => c.id === project.column) ?? COLUMNS[0];
+  return render(
+    <DndContext>
+      <BoardColumn
+        column={meta}
+        projects={[project]}
+        isDropTarget={false}
+        onExpandCard={vi.fn()}
+        transitionConfig={null}
+        shouldAnimateIn={() => false}
+      />
+    </DndContext>,
   );
 }
 
-describe('BoardCardActions', () => {
-  it('offers Mark as sent on a Quote card', () => {
-    render(<Harness project={makeProject({ column: 'devis' })} />);
-    expect(screen.getByRole('button', { name: 'Mark as sent' })).toBeInTheDocument();
+describe('board card actions — mark as sent', () => {
+  it('offers mark-as-sent on a card in the Quote column', () => {
+    renderColumn(card({ column: 'devis' }));
+    expect(screen.getByRole('button', { name: /mark as sent/i })).toBeEnabled();
   });
 
-  it('offers Accept on a Waiting card and not Mark as sent', () => {
-    render(<Harness project={makeProject({ column: 'waiting', quote_status: 'sent' })} />);
-    expect(screen.queryByRole('button', { name: 'Mark as sent' })).toBeNull();
-    expect(screen.getAllByRole('button').length).toBe(1);
+  it('traces hold progress around the button outline, not as a ring inside it', () => {
+    // These are icon-sized buttons where a bar sweeping under a single glyph
+    // would read as a highlight. `pathLength=1` normalises the perimeter so
+    // one dasharray works at any rendered size, and rx follows the button's
+    // own rounded-md so the trace turns the corners instead of cutting them.
+    renderColumn(card({ column: 'devis' }));
+    const button = screen.getByRole('button', { name: /mark as sent/i });
+    const trace = button.querySelector('[data-testid="hold-progress-perimeter"] path');
+
+    expect(trace).not.toBeNull();
+    expect(trace).toHaveAttribute('pathLength', '1');
+    // Starts at top CENTRE (`M {w/2} 0`) and closes back there, rather than at
+    // the top-left corner where an SVG <rect>'s own path begins. jsdom has no
+    // layout so the measured width is 0 here; the assertion is on the path's
+    // shape — a horizontal run to the first corner arc — not on the numbers.
+    const d = trace!.getAttribute('d')!;
+    expect(d).toMatch(/^M \d+(\.\d+)? 0 H /);
+    expect(d.trimEnd()).toMatch(/H \d+(\.\d+)?$/);
+    // Empty until held: a full outline at rest would read as a focus state.
+    expect(trace).toHaveAttribute('stroke-dashoffset', '1');
+    // And invisible until held. A fully-offset dash still paints a sub-pixel
+    // stub at the path start, which showed as a dot on the button's top edge
+    // before it was ever pressed.
+    expect(trace).toHaveAttribute('stroke-opacity', '0');
+    expect(button.querySelector('circle')).toBeNull();
   });
 
-  it('renders nothing on a Scan card with no finishing step', () => {
-    const { container } = render(<Harness project={makeProject({ column: 'scan' })} />);
-    expect(container.querySelectorAll('button').length).toBe(0);
+  it('does not offer mark-as-sent outside the Quote column', () => {
+    for (const column of ['waiting', 'scan', 'model', 'print', 'finish'] as const) {
+      const { unmount } = renderColumn(card({ column, move_lock: 'steps' }));
+      expect(screen.queryByRole('button', { name: /mark as sent/i })).not.toBeInTheDocument();
+      unmount();
+    }
+  });
+
+  it('fires mark-as-sent only once the 500ms hold completes', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    // Left deliberately unresolved: MSW's default handler for this endpoint
+    // is unconfigured and bypasses to the real network, which refuses fast
+    // enough to settle the mutation before the assertion below runs — making
+    // "still pending" indistinguishable from "already done". Same reasoning
+    // as AitoPage.test.tsx's equivalent assertion: hold the promise open by
+    // hand so the pending state is actually observable.
+    vi.spyOn(api, 'setAitoQuoteStatus').mockImplementation(() => new Promise(() => {}));
+    try {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      renderColumn(card({ column: 'devis' }));
+      const button = screen.getByRole('button', { name: /mark as sent/i });
+
+      await user.pointer({ keys: '[MouseLeft>]', target: button });
+      act(() => {
+        vi.advanceTimersByTime(300);
+      });
+      expect(button).toBeEnabled();
+
+      // Crosses the 500ms hold threshold, which fires `markSent.mutate` and
+      // flips `isPending` — a state update from a raw timer callback, not a
+      // testing-library-wrapped event, so it must be wrapped in `act` for the
+      // DOM to reflect it before the assertion below runs.
+      act(() => {
+        vi.advanceTimersByTime(300);
+      });
+      // The mutation is now in flight, and HoldButton's caller disables rather
+      // than unmounts precisely because the finger is still down.
+      expect(button).toBeDisabled();
+    } finally {
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    }
+  });
+
+  it('offers no actions on a placeholder card the server has not acknowledged', () => {
+    renderColumn(card({ id: -1, column: 'devis' }));
+    expect(screen.queryByRole('button', { name: /mark as sent/i })).not.toBeInTheDocument();
+  });
+
+  it('does not also open the card when a real action button completes its hold', async () => {
+    // AitoCardView.test.tsx only ever injects a plain <button> to prove the
+    // actions wrapper's stopPropagation works. Production injects HoldButton
+    // (see BoardColumn.tsx), which drives itself from pointerdown/pointerup
+    // and a timer rather than a click — a different event path a plain
+    // button's user.click() never exercises. This asserts the two are wired
+    // together at the layer that actually does it: BoardColumn + CardView +
+    // the real HoldButton, mounted together.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.spyOn(api, 'setAitoQuoteStatus').mockImplementation(() => new Promise(() => {}));
+    try {
+      const onExpandCard = vi.fn();
+      const meta = COLUMNS.find((c) => c.id === 'devis') ?? COLUMNS[0];
+      render(
+        <DndContext>
+          <BoardColumn
+            column={meta}
+            projects={[card({ column: 'devis' })]}
+            isDropTarget={false}
+            onExpandCard={onExpandCard}
+            transitionConfig={null}
+            shouldAnimateIn={() => false}
+          />
+        </DndContext>,
+      );
+      const button = screen.getByRole('button', { name: /mark as sent/i });
+
+      // Drive HoldButton through its own event contract — pointerdown, the
+      // 500ms timer completing (which fires `onHold`), then the native
+      // `click` a browser dispatches after the matching pointerup/mouseup on
+      // the same element. `fireEvent` (not `user.pointer`) dispatches that
+      // click directly rather than modelling "browsers suppress click on a
+      // disabled control" — the button IS disabled by this point
+      // (`markSent.isPending`), and a higher-fidelity click would be
+      // suppressed by that alone, which would pass for the wrong reason and
+      // hide a real regression in the propagation-stopping this test exists
+      // to cover.
+      fireEvent.pointerDown(button);
+      act(() => {
+        vi.advanceTimersByTime(500);
+      });
+      fireEvent.click(button);
+
+      expect(onExpandCard).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    }
+  });
+});
+
+describe('board card actions — accept quote', () => {
+  it('offers accept-quote on a card in the Waiting column', () => {
+    renderColumn(card({ column: 'waiting', quote_status: 'sent' }));
+    expect(screen.getByRole('button', { name: /accept quote/i })).toBeEnabled();
+  });
+
+  it('does not offer accept-quote in any other column', () => {
+    // Column/status pairs as the server derives them (aito_board_rules): a
+    // devis card has no settled-able quote, work columns hold an accepted one.
+    const cases = [
+      { column: 'devis', quote_status: null },
+      { column: 'scan', quote_status: 'accepted' },
+      { column: 'model', quote_status: 'accepted' },
+      { column: 'print', quote_status: 'accepted' },
+      { column: 'finish', quote_status: 'accepted' },
+    ] as const;
+    for (const over of cases) {
+      const { unmount } = renderColumn(card(over));
+      expect(screen.queryByRole('button', { name: /accept quote/i })).not.toBeInTheDocument();
+      unmount();
+    }
+  });
+
+  it('offers no accept-quote on a placeholder card', () => {
+    renderColumn(card({ id: -1, column: 'waiting', quote_status: 'sent' }));
+    expect(screen.queryByRole('button', { name: /accept quote/i })).not.toBeInTheDocument();
+  });
+
+  it('sends the accepted status only once the 500ms hold completes', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    // Same reasoning as the mark-as-sent equivalent: hold the promise open by
+    // hand so the pending state is actually observable.
+    vi.spyOn(api, 'setAitoQuoteStatus').mockImplementation(() => new Promise(() => {}));
+    try {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      renderColumn(card({ column: 'waiting', quote_status: 'sent' }));
+      const button = screen.getByRole('button', { name: /accept quote/i });
+
+      await user.pointer({ keys: '[MouseLeft>]', target: button });
+      act(() => {
+        vi.advanceTimersByTime(300);
+      });
+      expect(button).toBeEnabled();
+
+      act(() => {
+        vi.advanceTimersByTime(300);
+      });
+      expect(button).toBeDisabled();
+
+      // The status literal, spelled out: the card and the panel share one
+      // mutation hook, so the only thing this button can get wrong on its own
+      // is which transition it fires.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(api.setAitoQuoteStatus).toHaveBeenCalledWith(12, { status: 'accepted' });
+    } finally {
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    }
+  });
+});
+
+describe('board card actions — mark as done', () => {
+  it('offers mark-as-done on a released card in Finish', () => {
+    renderColumn(card({ column: 'finish', move_lock: null, client_contacted_at: '2026-08-20T09:00:00Z' }));
+    expect(screen.getByRole('button', { name: /mark project as done/i })).toBeEnabled();
+  });
+
+  it('glows the Done action when the quote is invoiced', () => {
+    renderColumn(
+      card({ column: 'finish', move_lock: null, quote_invoiced: true, flag: null, client_contacted_at: '2026-08-20T09:00:00Z' }),
+    );
+    const done = screen.getByRole('button', { name: /mark project as done/i });
+    expect(done.className).toContain('animate-invoiced-pulse');
+    // The swap must actually replace the base color: `text-bambu-green` and
+    // `text-bambu-green/70` share specificity in the generated CSS, so both
+    // present at once would leave the 70%-opacity variant winning and the
+    // glow's full color would never render.
+    expect(done.className).not.toContain('text-bambu-green/70');
+  });
+
+  it('does not glow when the quote is not invoiced', () => {
+    renderColumn(
+      card({ column: 'finish', move_lock: null, quote_invoiced: false, flag: null, client_contacted_at: '2026-08-20T09:00:00Z' }),
+    );
+    const done = screen.getByRole('button', { name: /mark project as done/i });
+    expect(done.className).not.toContain('animate-invoiced-pulse');
+    expect(done.className).toContain('text-bambu-green/70');
+  });
+
+  it('does not offer mark-as-done in any other column', () => {
+    for (const column of ['devis', 'waiting', 'scan', 'model', 'print'] as const) {
+      const { unmount } = renderColumn(card({ column, move_lock: null }));
+      expect(screen.queryByRole('button', { name: /mark project as done/i })).not.toBeInTheDocument();
+      unmount();
+    }
+  });
+
+  it('does not offer mark-as-done while the rules still hold the card', () => {
+    // move_lock is the server's own derived value. A card the rules have not
+    // released cannot leave its column, and the move endpoint would 409.
+    renderColumn(card({ column: 'finish', move_lock: 'steps' }));
+    expect(screen.queryByRole('button', { name: /mark project as done/i })).not.toBeInTheDocument();
+  });
+
+  it('offers no mark-as-done on a placeholder card', () => {
+    renderColumn(card({ id: -1, column: 'finish', move_lock: null }));
+    expect(screen.queryByRole('button', { name: /mark project as done/i })).not.toBeInTheDocument();
+  });
+
+  it('fires the move only once the 500ms hold completes', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    // Same reasoning as the mark-as-sent equivalent above: MSW has no handler
+    // for this endpoint either, and the unmocked call bypasses to the real
+    // network, which refuses fast enough to settle the mutation before the
+    // assertion below runs. Held open by hand so "still pending" is actually
+    // observable.
+    vi.spyOn(api, 'moveAitoProject').mockImplementation(() => new Promise(() => {}));
+    try {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      renderColumn(card({ column: 'finish', move_lock: null, client_contacted_at: '2026-08-20T09:00:00Z' }));
+      const button = screen.getByRole('button', { name: /mark project as done/i });
+
+      await user.pointer({ keys: '[MouseLeft>]', target: button });
+      act(() => {
+        vi.advanceTimersByTime(300);
+      });
+      expect(button).toBeEnabled();
+
+      act(() => {
+        vi.advanceTimersByTime(300);
+      });
+      expect(button).toBeDisabled();
+
+      // React Query's `onMutate` awaits `cancelQueries` before it ever reaches
+      // `mutationFn`, so the request is a microtask behind the `isPending`
+      // flip asserted above — flush before asking what was actually sent.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      // The destination column, spelled out. Without this the literal in
+      // BoardColumn.tsx is unasserted anywhere: swapping it for 'finish' would
+      // turn mark-done into a silent no-op (the card is already in Finish) with
+      // the whole suite still green, because every other assertion here only
+      // asks whether SOMETHING was mutated.
+      expect(api.moveAitoProject).toHaveBeenCalledWith(12, { column: 'done', position: 0 });
+    } finally {
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    }
+  });
+
+  it('shows a check on a Finish card with no shipping', () => {
+    renderColumn(
+      card({ column: 'finish', move_lock: null, shipping_island: null, client_contacted_at: '2026-08-20T09:00:00Z' }),
+    );
+    const done = screen.getByRole('button', { name: /mark project as done/i });
+    expect(done.querySelector('.lucide-check')).toBeTruthy();
+    expect(done.querySelector('.lucide-plane')).toBeFalsy();
+  });
+
+  it('shows a plane on a Finish card that has shipping', () => {
+    renderColumn(
+      card({ column: 'finish', move_lock: null, shipping_island: 'rangiroa', client_contacted_at: '2026-08-20T09:00:00Z' }),
+    );
+    const done = screen.getByRole('button', { name: /mark project as done/i });
+    expect(done.querySelector('.lucide-plane')).toBeTruthy();
+    expect(done.querySelector('.lucide-check')).toBeFalsy();
+  });
+});
+
+describe('board card actions — the client has to be told before the job is closed', () => {
+  // One slot in the card footer, two steps. Which one it shows IS the gate
+  // made visible: the server refuses Finish -> Done on an uncontacted project
+  // (see backend test_aito_contacted.py), and offering a Done button that
+  // could only 409 would be a button that lies.
+  const finished = (over: Partial<AitoProject> = {}) =>
+    card({ column: 'finish', move_lock: null, client_contacted_at: null, ...over });
+
+  it('offers the contact button, not Done, while nobody has told the client', () => {
+    renderColumn(finished());
+    expect(screen.getByRole('button', { name: /mark client as contacted/i })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: /mark project as done/i })).not.toBeInTheDocument();
+  });
+
+  it('offers Done, not the contact button, once the client has been told', () => {
+    renderColumn(finished({ client_contacted_at: '2026-08-20T09:00:00Z' }));
+    expect(screen.getByRole('button', { name: /mark project as done/i })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: /mark client as contacted/i })).not.toBeInTheDocument();
+  });
+
+  it('does not offer the contact button outside Finish', () => {
+    for (const column of ['devis', 'waiting', 'scan', 'model', 'print', 'done'] as const) {
+      const { unmount } = renderColumn(card({ column, client_contacted_at: null, move_lock: null }));
+      expect(screen.queryByRole('button', { name: /mark client as contacted/i })).not.toBeInTheDocument();
+      unmount();
+    }
+  });
+
+  it('does not offer the contact button on a card the rules have locked', () => {
+    // Same second half of the gate the Done button uses: a declined quote sits
+    // with a move_lock and must offer neither step.
+    renderColumn(finished({ move_lock: 'declined' }));
+    expect(screen.queryByRole('button', { name: /mark client as contacted/i })).not.toBeInTheDocument();
+  });
+
+  it('fires the contact mutation only once the 500ms hold completes', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    // Held open by hand for the same reason the mark-as-sent test above does:
+    // a settled promise makes "still pending" indistinguishable from "done".
+    const spy = vi.spyOn(api, 'setAitoProjectContacted').mockImplementation(() => new Promise(() => {}));
+    try {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      renderColumn(finished());
+      const button = screen.getByRole('button', { name: /mark client as contacted/i });
+
+      await user.pointer({ keys: '[MouseLeft>]', target: button });
+      act(() => {
+        vi.advanceTimersByTime(300);
+      });
+      expect(spy).not.toHaveBeenCalled();
+
+      // Crosses the 500ms threshold, which fires the mutation from a raw timer
+      // callback rather than a testing-library-wrapped event — hence `act`.
+      // The extra async flush is what react-query's own scheduling needs
+      // before `mutationFn` has actually run; without it the spy is still
+      // empty and the test reads as "the hold never fired".
+      act(() => {
+        vi.advanceTimersByTime(300);
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(spy).toHaveBeenCalledWith(12, true);
+    } finally {
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    }
+  });
+});
+
+describe('board card actions — the job has to be billed before it is closed', () => {
+  // The same footer slot, now three steps: tell the client, raise the
+  // invoice, archive. Which one shows IS the server's gate made visible —
+  // `move_project` 409s Finish -> Done on a quoted project with no invoice
+  // (backend test_aito_done_gate.py), so a Done button there could only lie.
+  const billable = (over: Partial<AitoProject> = {}) =>
+    card({
+      column: 'finish',
+      move_lock: null,
+      quote_id: 'EST-1',
+      quote_number: 'DEV26-1',
+      quote_status: 'accepted',
+      client_contacted_at: '2026-08-20T09:00:00Z',
+      quote_invoiced: false,
+      ...over,
+    });
+
+  it('offers Create invoice, not Done, once the client is told but nothing is billed', () => {
+    renderColumn(billable());
+    expect(screen.getByRole('button', { name: /create invoice/i })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: /mark project as done/i })).not.toBeInTheDocument();
+  });
+
+  it('offers Done, not Create invoice, once the quote is invoiced', () => {
+    renderColumn(billable({ quote_invoiced: true }));
+    expect(screen.getByRole('button', { name: /mark project as done/i })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: /create invoice/i })).not.toBeInTheDocument();
+  });
+
+  it('offers neither while nobody has told the client', () => {
+    renderColumn(billable({ client_contacted_at: null }));
+    expect(screen.getByRole('button', { name: /mark client as contacted/i })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: /create invoice/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /mark project as done/i })).not.toBeInTheDocument();
+  });
+
+  it('holds Create invoice back while an edit is still syncing to Books', () => {
+    renderColumn(billable({ quote_sync_state: 'pending' }));
+    expect(screen.queryByRole('button', { name: /create invoice/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /mark project as done/i })).not.toBeInTheDocument();
+  });
+
+  it('opens the invoice dialog on a click without opening the card', async () => {
+    const preview = vi.spyOn(api, 'getAitoInvoicePreview').mockImplementation(() => new Promise(() => {}));
+    const onExpand = vi.fn();
+    const project = billable();
+    const meta = COLUMNS.find((c) => c.id === project.column)!;
+    render(
+      <DndContext>
+        <BoardColumn
+          column={meta}
+          projects={[project]}
+          isDropTarget={false}
+          onExpandCard={onExpand}
+          transitionConfig={null}
+          shouldAnimateIn={() => false}
+        />
+      </DndContext>,
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: /create invoice/i }));
+
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    expect(preview).toHaveBeenCalledWith(project.id);
+    expect(onExpand).not.toHaveBeenCalled();
   });
 });
