@@ -167,6 +167,61 @@ async def test_summarize_rate_limit_clears_once_the_window_elapses(async_client,
     assert r.status_code == 200
 
 
+@pytest.mark.asyncio
+async def test_summarize_rate_limit_key_is_proxy_aware(async_client, monkeypatch):
+    """T-032: the anonymous bucket used to be keyed on `request.client.host`
+    -- the raw TCP peer -- so behind a reverse proxy every visitor shared
+    one `ip:<proxy>` bucket. It is now resolved through auth.py's
+    proxy-aware `_get_client_ip`, the same helper `_track_rate_limited`
+    already uses for the public tracking route: two different visitors
+    forwarded by a TRUSTED_PROXY_IPS peer get two buckets, and an untrusted
+    peer's forged X-Forwarded-For is ignored."""
+    from backend.app.api.routes import auth as auth_routes
+
+    _patch_summarize_tasks(monkeypatch)
+
+    # The test client's own TCP peer becomes a trusted proxy; the real
+    # visitor is whoever X-Forwarded-For names.
+    monkeypatch.setattr(auth_routes, "_TRUSTED_PROXY_IPS", frozenset({"127.0.0.1"}))
+
+    for _ in range(aito_routes._AI_RATE_LIMIT_MAX_CALLS):
+        r = await async_client.post("/api/v1/aito/summarize", json=_PAYLOAD, headers={"X-Forwarded-For": "203.0.113.5"})
+        assert r.status_code == 200
+    blocked = await async_client.post(
+        "/api/v1/aito/summarize", json=_PAYLOAD, headers={"X-Forwarded-For": "203.0.113.5"}
+    )
+    assert blocked.status_code == 429
+    assert "ai:ip:203.0.113.5" in aito_routes._ai_rate_limit_calls
+
+    # A second visitor behind the same trusted proxy is not affected --
+    # its own bucket, keyed on its own forwarded address.
+    r = await async_client.post("/api/v1/aito/summarize", json=_PAYLOAD, headers={"X-Forwarded-For": "203.0.113.6"})
+    assert r.status_code == 200
+    assert "ai:ip:203.0.113.6" in aito_routes._ai_rate_limit_calls
+
+
+@pytest.mark.asyncio
+async def test_summarize_rate_limit_ignores_a_forged_header_from_an_untrusted_peer(async_client, monkeypatch):
+    """No TRUSTED_PROXY_IPS configured (the default): `_get_client_ip` cannot
+    unwrap X-Forwarded-For, so a forged header from an ordinary caller must
+    not let it hop into someone else's bucket or dodge its own budget."""
+    from backend.app.api.routes import auth as auth_routes
+
+    _patch_summarize_tasks(monkeypatch)
+    monkeypatch.setattr(auth_routes, "_TRUSTED_PROXY_IPS", frozenset())
+
+    for _ in range(aito_routes._AI_RATE_LIMIT_MAX_CALLS):
+        r = await async_client.post("/api/v1/aito/summarize", json=_PAYLOAD, headers={"X-Forwarded-For": "203.0.113.5"})
+        assert r.status_code == 200
+    blocked = await async_client.post(
+        "/api/v1/aito/summarize", json=_PAYLOAD, headers={"X-Forwarded-For": "203.0.113.5"}
+    )
+    assert blocked.status_code == 429
+    # Keyed on the real (test client) peer, not the forged header.
+    assert "ai:ip:127.0.0.1" in aito_routes._ai_rate_limit_calls
+    assert not any(k.startswith("ai:ip:203.0.113.5") for k in aito_routes._ai_rate_limit_calls)
+
+
 class _FakeRequest:
     """Just enough of `Request` for `_ai_rate_limit_key`'s no-auth branch:
     `request.client.host`."""

@@ -1757,10 +1757,20 @@ _AI_RATE_LIMIT_SWEEP_ABOVE = 200
 def _ai_rate_limit_key(request: Request, current_user: User | None) -> str:
     """One bucket per authenticated user; per client IP when auth is disabled
     (or the caller authenticated via an API key, which the any-of permission
-    checker also surfaces as `None` — see require_any_permission_if_auth_enabled)."""
+    checker also surfaces as `None` — see require_any_permission_if_auth_enabled).
+
+    T-032: the IP is resolved through auth.py's proxy-aware `_get_client_ip`,
+    not the raw TCP peer — behind a reverse proxy the latter is the proxy
+    for every anonymous caller, so the whole shop's AI/counter-payment
+    budget would silently collapse onto one bucket, exactly the hazard
+    `_track_rate_limited` above already guards against for the tracking
+    limiter. `_get_client_ip` only trusts X-Forwarded-For from a peer listed
+    in TRUSTED_PROXY_IPS, so an unconfigured/direct install (and an
+    untrusted peer's forged header) still resolves the same address as
+    before."""
     if current_user is not None:
         return f"user:{current_user.id}"
-    host = request.client.host if request.client else "unknown"
+    host = _get_client_ip(request) if request.client else "unknown"
     return f"ip:{host}"
 
 
