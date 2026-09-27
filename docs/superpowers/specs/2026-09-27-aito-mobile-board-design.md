@@ -87,15 +87,20 @@ floating button.
 
 ### 1. `MobileBoardHeader` (new, `components/aito/`)
 
-A sticky bar at the top of the page's scroll area, background = page
-background.
+A plain bar (`flex-none`) at the top of the mobile board. The mobile board is
+exactly `100dvh − 3.5rem` tall (the viewport under the shell's fixed 56 px top
+bar) and each column page scrolls inside itself, so the header never scrolls
+away and nothing relies on `position: sticky` — which cannot engage here: the
+shell's `<main>` is `overflow-auto` with no height bound, so the DOCUMENT
+scrolls and a sticky child measures against `<main>`'s off-screen edge.
 
 - **Column picker button** (left): colour dot of the current column, column
   name, card count pill, `▾`. Opens the column sheet. `aria-haspopup="dialog"`,
   `aria-expanded`.
 - **Oldest-card chip**, right of the picker: the age of the oldest card in the
   current column (the maximum age, measured with the card's own `ageAnchor`),
-  short form ("9 j", "2 mois"), coloured with `agingColorCls` so it uses the
+  in days, reusing `aito.followups.longest` ("9 j", "59 j" — the same form the
+  follow-up pills used), coloured with `agingColorCls` so it uses the
   same heat ramp as the cards. `title` / sr-only text explains it ("Carte la
   plus ancienne"). Hidden when the column is empty.
 - **Search button**: magnifier icon button, `aria-expanded`. Tapping opens the
@@ -126,16 +131,18 @@ A bottom sheet over a dimmed scrim.
   relative to the largest column). The current column's row is highlighted.
 - Tapping a row jumps to that column (instant, no smooth scroll: the sheet
   closing is the transition) and closes the sheet.
-- Closes on scrim tap, Escape, and a downward swipe on the sheet. Focus moves
-  into the sheet on open and returns to the picker button on close.
-  `role="dialog"`, `aria-modal`, labelled.
+- Closes on scrim tap, Escape, and a downward swipe on the sheet. Built on
+  `useDismissableDialog` like the drawers: focus moves into the sheet on open,
+  Escape closes, the exit animation plays before unmount; the page returns
+  focus to the picker button on close. `role="dialog"`, `aria-modal`,
+  labelled.
 
 ### 3. More-menu (new)
 
 A popover anchored under the ⋯ button, over a transparent-dark scrim.
 
-- Caption: in-production count and the backlog sentence (from the same data as
-  `PrintBacklogBadge`).
+- Caption: in-production count and the `PrintBacklogBadge` itself (same
+  props as the desktop title row).
 - Items: **Terminés (N)** → `changeView('done')`, **Corbeille** →
   `changeView('trash')`, **Statistiques** → `changeView('stats')`. The same
   visibility rules as today's toggles.
@@ -148,8 +155,13 @@ A popover anchored under the ⋯ button, over a transparent-dark scrim.
   a swipe moves exactly one column.
 - Each page lists that column's cards (the same `projects` the desktop
   `BoardColumn` receives, with search applied) using `CardView`, with the
-  existing tap → `openCard` behaviour and card morph. The page scrolls with the
-  page (document scroll), not inside itself, so the sticky header works.
+  existing tap → `openCard` behaviour and card morph, and the same footer
+  actions (mark sent, accept, contacted, invoice, done) — extracted from
+  `BoardColumn`'s `SortableCard` into a shared `BoardCardActions` so both
+  surfaces render one implementation. Each page scrolls vertically inside
+  itself, so every column keeps its own scroll position.
+- Card flights (`useCardFlight`) are desktop-only: its board ref is simply not
+  attached on mobile, which the hook already treats as "board not on screen".
 - An empty column shows the same dashed empty box `BoardColumn` shows today.
 - The current column index is derived from `scrollLeft` on scroll and drives
   the header. Jumps (strip, sheet) set `scrollLeft` (strip: smooth unless
@@ -162,14 +174,13 @@ A popover anchored under the ⋯ button, over a transparent-dark scrim.
 
 ### 5. Compact cards (mobile only)
 
-`CardView` gets a compact presentation used only by the mobile pager:
+`CardView` gets a `compact` prop used only by the mobile pager. The real card
+is already leaner than the mockup — the step count lives in the body's
+`TaskStepsSummary` and the footer is already one line — so compact means:
 
 - Contact name inline after the client name ("SAS ONATI · Jeffrey") instead of
   its own line.
-- Footer on one line: progress segments (fixed ~56 px) and "0/1", then the age
-  (without the "Il y a" prefix, same colour class), then the existing action
-  icon(s).
-- No grip (no drag on mobile).
+- No grip, not even the inert one (no drag on mobile).
 
 Everything else on the card (flag, presence, paid badge, locks, tooltips,
 aria labels) is unchanged. Desktop cards are untouched.
@@ -190,25 +201,26 @@ desktop state is left alone, so widening the window restores it.
 
 ## i18n
 
-New strings (French shown), added to all 13 locales — the parity gate requires
+New strings (French shown), added to all 15 locales — the parity gate requires
 every locale, and it rejects values identical to English, so each locale needs
 a real translation:
 
 - column sheet title / label ("Colonnes")
 - "Carte la plus ancienne" (chip label)
-- search button label ("Rechercher"), clear ("Effacer la recherche")
 - more-menu button label ("Plus d'options")
-- create button label ("Créer"), menu items reuse `aito.importQuote` /
-  `aito.newProject` where the wording fits
+- create button label ("Créer")
+- column picker hint ("Changer de colonne")
 - segment label ("{{column}}, {{count}} projets", pluralised)
 
-Existing keys are reused where they fit (`aito.showDone`, `aito.trash`,
-`aito.statistics`, `aito.inProduction`, column names).
+Existing keys are reused where they fit: `common.search` (search button),
+`aito.searchPlaceholder`, `aito.clearSearch`, `aito.followups.longest` (chip),
+`aito.importQuote` / `aito.newProject` (create menu), `aito.showDone`,
+`aito.trash`, `aito.statistics`, `aito.inProduction`, column names.
 
 ## Accessibility
 
-- All new controls are buttons with labels; the sheet and menu trap focus while
-  open and return it to their trigger.
+- All new controls are buttons with labels; the sheet and menus take focus on
+  open (as the drawers do) and return it to their trigger on close.
 - The segment strip and the picker give two ways to reach any column; swiping
   is never the only way.
 - `prefers-reduced-motion`: no smooth scroll, no sheet slide (fade), no
@@ -233,22 +245,23 @@ Vitest (jsdom, `matchMedia` mocked for `max-width: 767px`):
 - More-menu items call `changeView` with done / trash / stats.
 - FAB: hidden without `canCreate`; items open the import / new-project drawers.
 - Follow-up filter is ignored on mobile.
-- Compact `CardView`: contact inline, one footer line, no grip.
+- Compact `CardView`: contact inline, no grip; the full card is unchanged.
+- `BoardCardActions`: the extraction keeps every existing `BoardColumn` test
+  green, and the mobile card shows the same action for a devis card.
 - i18n parity check passes (`npm run check:i18n`).
 
 Manual: the real `AitoPage` at 390 × 844 in Brave through the msw harness
-(no login), checking swipe snap, sticky header, sheet, menu, FAB, and the panel
+(no login), checking swipe snap, header, per-column scroll, sheet, menu, FAB, and the panel
 opening from a card. Then `npm run build`, `./test_frontend.sh`.
 
 ## Risks / notes
 
 - The main checkout has uncommitted `AitoPage.tsx` edits from a parallel
   session; merging this branch back may need a hand-resolved conflict there.
-- The shell's `<main>` is `overflow-auto` but the document scrolls; the sticky
-  header must be verified in the real shell at phone width (the memory note
-  says `position: sticky` did not engage for a bottom bar; a top sticky inside
-  the page column is expected to work but is checked first thing in the
-  harness — fallback is `position: fixed` under the 56 px top bar).
+- A Layout banner (debug / dev / update) rendered inside `<main>` above the page
+  adds its height on top of the `100dvh − 3.5rem` board; the page then scrolls
+  by that amount. Known, pre-existing for every full-height page (see the
+  2026-08-04 kanban layout follow-ups); not addressed here.
 - iOS Safari edge-swipe (back gesture) can steal a swipe that starts at the
   very edge; `overscroll-behavior-x: contain` on the pager limits the page
   bounce.
