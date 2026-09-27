@@ -72,6 +72,7 @@ const InventoryPage = lazyWithReload(() => import('./pages/InventoryPage'));
 const MakerworldPage = lazyWithReload(() => import('./pages/MakerworldPage').then(m => ({ default: m.MakerworldPage })));
 const SystemInfoPage = lazyWithReload(() => import('./pages/SystemInfoPage').then(m => ({ default: m.SystemInfoPage })));
 const LoginPage = lazyWithReload(() => import('./pages/LoginPage').then(m => ({ default: m.LoginPage })));
+const ConnectAuthorizePage = lazyWithReload(() => import('./pages/ConnectAuthorizePage').then(m => ({ default: m.ConnectAuthorizePage })));
 const SetupPage = lazyWithReload(() => import('./pages/SetupPage').then(m => ({ default: m.SetupPage })));
 const NotificationsPage = lazyWithReload(() => import('./pages/NotificationsPage').then(m => ({ default: m.NotificationsPage })));
 const GCodeViewerPage = lazyWithReload(() => import('./pages/GCodeViewerPage').then(m => ({ default: m.GCodeViewerPage })));
@@ -220,6 +221,10 @@ const router = createBrowserRouter(
 
       {/* Login page */}
       <Route path="/login" element={<LoginPage />} />
+
+      {/* "Sign in with Fenrir" for connected apps: standalone, no layout,
+          so it also fits inside the sidebar iframe of the app asking. */}
+      <Route path="/connect/authorize" element={<ProtectedRoute><ConnectAuthorizePage /></ProtectedRoute>} />
 
       {/* Design bench for the Done celebration. Dev-only and deliberately
           OUTSIDE ProtectedRoute: it renders fixture cards and talks to no

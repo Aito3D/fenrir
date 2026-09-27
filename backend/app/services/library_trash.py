@@ -30,6 +30,7 @@ from backend.app.core.database import async_session
 from backend.app.models.library import LibraryFile, LibraryFileTag, prune_empty_library_tags
 from backend.app.models.print_queue import PrintQueueItem, PrintQueueVariant
 from backend.app.models.settings import Settings
+from backend.app.utils.library_paths import remove_library_photos_dir
 from backend.app.utils.local_time import utcnow_naive
 
 logger = logging.getLogger(__name__)
@@ -354,7 +355,7 @@ class LibraryTrashService:
 
     @staticmethod
     def _disk_paths_for(row: LibraryFile) -> list[Path]:
-        """Resolve the file + thumbnail on-disk paths for a row, if any."""
+        """Resolve the file + thumbnail on-disk paths for a row, if any (photos are removed by id)."""
         paths = []
         for rel in (row.file_path, row.thumbnail_path):
             abs_path = _to_absolute_path(rel)
@@ -428,6 +429,10 @@ class LibraryTrashService:
         await prune_empty_library_tags(db)
         await db.commit()
         self._unlink_paths(pending_paths)
+        # Photos (#3077) live under a per-file-id directory; drop them only
+        # once the rows are really gone, same as the file and thumbnail bytes.
+        for file_id in ids:
+            remove_library_photos_dir(file_id)
         return len(rows)
 
 

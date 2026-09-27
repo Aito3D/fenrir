@@ -147,6 +147,7 @@ const DE_COGNATES = [
   'Details',  // aito.panelTabDetails — "Details" is the German word too
   'Bank',  // aito.track.paymentMethods.bank — "Bank" is the German word too
   'Cyan',  // settings.accentCyan — the colour is spelled "Cyan" in German too
+  'Apps',  // notifications badge for messages from connected apps — same word
   '{{ams}} · Slot {{slot}}',  // #2587 runout slot label — "Slot" is the DE term too
   'Auto',  // calibrationMode_auto — German UI uses the loanword (matches BambuStudio DE)
   'Name', 'Status', 'Tag', 'Tags', 'Online', 'Offline', 'Standard', 'Modus',
@@ -204,6 +205,7 @@ const FR_COGNATES = [
   'terminal',  // aito.payment.channelTerminal — same word, lowercase channel form
   'Cyan',  // settings.accentCyan — « cyan » is the French name of the colour
   'Minimum',  // calculator.floorGroup — same spelling/meaning in French
+  'Apps',  // notifications badge for messages from connected apps — same word
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
   'AMS Filament Backup',  // Bambu Lab product/firmware feature name
   'Status', 'Tag', 'Tags', 'Online', 'Offline', 'Standard', 'Filament',
@@ -261,6 +263,7 @@ const FR_COGNATES = [
   '= {{qMin}} + {{delta}} · {{kq}} / (q + {{kqMinus1}})',
   '×{{value}}',  // calculator.multiplier — pure ×N token, identical in every locale
   'Contacts',  // aito.contactsLabel — same word in French
+  'Photos', '{{count}} photo', '{{count}} photos',  // file details photo strip (#3077) — same word in French
 ];
 
 // Italian cognates.
@@ -337,6 +340,7 @@ const JA_COGNATES = [
 // Portuguese (BR) cognates.
 const PT_BR_COGNATES = [
   'Manual',  // aito.priceManual — same word in Portuguese
+  'Apps',  // notifications badge for messages from connected apps — same word
   '{{ams}} · Slot {{slot}}',  // #2587 runout slot label — "Slot" is the PT-BR term too
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
   'AMS Filament Backup',  // Bambu Lab product/firmware feature name
@@ -454,6 +458,7 @@ const KO_COGNATES = [
 const ES_COGNATES = [
   'Manual',  // aito.priceManual — same word in Spanish (adjetivo « manual »)
   'Auto', 'Auto ({{resolved}})',  // real words/terms in this locale
+  'Apps',  // notifications badge for messages from connected apps — same word
   '{{ams}} · Slot {{slot}}',  // #2587 runout slot label — "Slot" is the ES term too
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
   'AMS Filament Backup',  // Bambu Lab product/firmware feature name
@@ -484,6 +489,33 @@ const ES_COGNATES = [
   'f(q) = Q_MIN + (1 − Q_MIN) · KQ / (q − 1 + KQ)',
   '= {{qMin}} + {{delta}} · {{kq}} / (q + {{kqMinus1}})',
   '×{{value}}',  // calculator.multiplier — pure ×N token, identical in every locale
+];
+
+// Swedish cognates — technical UI labels that Swedish speakers use verbatim
+// from English (loanwords + acronyms + format strings). Curated, not a shortcut.
+const SV_COGNATES = [
+  'MakerWorld: {{designer}}',
+  'email',
+  '{{printer}}: {{error}}',
+  'Bambu Cloud',
+  'Orca Cloud',
+  '{{name}} — {{stage}} ({{percent}}%) — {{elapsed}}',
+  'EC984C,#6CD4BC,A66EB9,D87694',
+  '({{count}}/8)',
+  '(25%, 50%, 75%)', 'System', 'Filament', 'Status', 'Total budget', 'Budget', 'Offline', 'Problem', 'Diameter', 'Standard',
+  'Live', 'Firmware', '{{filament}} @ {{temp}}°C', 'Standard (100%)', 'Sport (124%)', '{{weight}}g', 'Pipeline', 'Pipelines', 'Position', 'Batch', 'Timelapse', 'Online',
+  'Disk', 'STARTTLS (Port 587)', 'SSL/TLS (Port 465)', 'Start', 'Auto', 'Admin', 'Data', 'Material', 'Hex', 'Accent', 'Neutral', 'Orange', 'Rotation', 'Test',
+  'Port', '(System)', 'Autologin', 'Process', 'Filament {{n}}', 'Region', 'Global', 'Normal', 'Version', 'max {{n}}', 'Expert', 'Filament {{index}} ({{type}})', 'Material:',
+  '(Inv)', 'Original', 'Commit', 'Extruder', 'Gradient', 'Proxy', 'Metadata', '{{count}} filament', 'Temp', 'Min', 'ntfy, Pushover, Discord, etc.', 'Hex: #{{hex}}', 'Designer',
+  'Prefix', 'Trend', 'max(global {{global}}d, SKU {{sku}}d)', 'Slicer',
+  // Fork keys (Aito / stats / calculator / filament profiles): real Swedish
+  // words, abbreviations and formula notation that are the same as English.
+  '{{days}} d', 'median {{days}} d', 'Bank', 'Terminal', 'terminal', 'online', 'Per kg', 'Cyan',
+  'Auto ({{resolved}})', '+ H2S / H2D / H2C / X2D', 'Initial', 'SuperTack', 'min', 'Minimum', '×{{value}}',
+  'm(u) = M_MIN + (M_MAX − M_MIN) · K / (u + K)',
+  '= {{mMin}} + {{delta}} · {{k}} / (u + {{k}})',
+  'f(q) = Q_MIN + (1 − Q_MIN) · KQ / (q − 1 + KQ)',
+  '= {{qMin}} + {{delta}} · {{kq}} / (q + {{kqMinus1}})',
 ];
 
 // Turkish cognates — technical UI labels that Turkish speakers use verbatim
@@ -574,6 +606,7 @@ const NL_COGNATES = [
   '= {{mMin}} + {{delta}} · {{k}} / (u + {{k}})',
   'f(q) = Q_MIN + (1 − Q_MIN) · KQ / (q − 1 + KQ)',
   '= {{qMin}} + {{delta}} · {{kq}} / (q + {{kqMinus1}})',
+  'Apps',  // notifications badge for messages from connected apps — same word
   '1 printer', '{{n}} printers',
   '1 week', '(25%, 50%, 75%)', 'Accent', 'AMS Filament Backup',
   '{{ams}} Slot {{slot}}', 'Auto', 'Auto Home', 'Bambu Cloud',
@@ -621,6 +654,7 @@ const IDENTICAL_TO_EN_ALLOWED = {
   'pt-BR': new Set(PT_BR_COGNATES),
   'zh-CN': new Set(ZH_CN_COGNATES),
   'zh-TW': new Set(ZH_TW_COGNATES),
+  sv: new Set(SV_COGNATES),
   tr: new Set(TR_COGNATES),
   ru: new Set(RU_COGNATES),
   uk: new Set(UK_COGNATES),

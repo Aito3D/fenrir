@@ -18,6 +18,7 @@ const LOCALE_LOADERS: Record<string, () => Promise<{ default: object }>> = {
   'pt-BR': () => import('./locales/pt-BR'),
   'zh-CN': () => import('./locales/zh-CN'),
   'zh-TW': () => import('./locales/zh-TW'),
+  sv: () => import('./locales/sv'),
   tr: () => import('./locales/tr'),
   ru: () => import('./locales/ru'),
   nl: () => import('./locales/nl'),
@@ -47,7 +48,7 @@ const resources = {
   en: { translation: en },
 };
 
-const SUPPORTED_LNGS = ['en', 'de', 'es', 'fr', 'ja', 'it', 'ko', 'nl', 'pt-BR', 'ru', 'tr', 'uk', 'zh-CN', 'zh-TW'];
+const SUPPORTED_LNGS = ['en', 'de', 'es', 'fr', 'ja', 'it', 'ko', 'nl', 'pt-BR', 'ru', 'sv', 'tr', 'uk', 'zh-CN', 'zh-TW'];
 const APPLIANCE_CONSUMED_KEY = 'fenrir_appliance_locale_consumed';
 
 i18n
@@ -131,6 +132,7 @@ export const availableLanguages = [
   { code: 'pt-BR', name: 'Portuguese (Brazil)', nativeName: 'Português (Brasil)' },
   { code: 'zh-CN', name: 'Chinese (Simplified)', nativeName: '简体中文' },
   { code: 'zh-TW', name: 'Chinese (Traditional)', nativeName: '繁體中文' },
+  { code: 'sv', name: 'Swedish', nativeName: 'Svenska' },
   { code: 'tr', name: 'Turkish', nativeName: 'Türkçe' },
   { code: 'ru', name: 'Russian', nativeName: 'Русский' },
   { code: 'uk', name: 'Ukrainian', nativeName: 'Українська' },

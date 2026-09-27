@@ -62,6 +62,8 @@ import {
   Columns,
   ChevronUp,
   ChevronDown,
+  ThumbsUp,
+  ThumbsDown,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { SliceModal } from '../components/SliceModal';
@@ -72,6 +74,7 @@ import { getCurrencySymbol } from '../utils/currency';
 import { getBedTypeInfo } from '../utils/bedType';
 import { invalidateArchiveAndProjectViews } from '../utils/projectQueries';
 import { assignableProjects } from '../utils/projectTree';
+import { verdictSourceKey } from '../utils/verdictSource';
 import { usePageFileDrop } from '../hooks/usePageFileDrop';
 import { useFlipReorder } from '../hooks/useFlipReorder';
 import type { Archive, PrintLogEntry, ProjectListItem } from '../api/client';
@@ -81,6 +84,7 @@ import { Card, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
 import { SkeletonGrid } from '../components/Skeleton';
 import { PrintModal } from '../components/PrintModal';
+import { ConfirmOutcomeDialog } from '../components/ConfirmOutcomeDialog';
 import { UploadModal } from '../components/UploadModal';
 import { PurgeArchivesModal } from '../components/PurgeArchivesModal';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -336,6 +340,8 @@ function ArchiveCard({
     return printerMap.get(saved.printer_id);
   }, [archive.extra_data, printerMap]);
   const [showReprint, setShowReprint] = useState(false);
+  // Post-print outcome confirmation dialog (#1898)
+  const [showConfirmOutcome, setShowConfirmOutcome] = useState(false);
   const [showSliceModal, setShowSliceModal] = useState(false);
   const [showRunPipeline, setShowRunPipeline] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -381,6 +387,9 @@ function ArchiveCard({
 
   // Use pre-computed duplicate sequence and original archive ID from list response
   const duplicateSequence = archive.duplicate_sequence ?? 0;
+  // Appended to the verdict badge's tooltip (#1898) so a verdict the
+  // plate-clear default recorded can be explained where it is shown.
+  const verdictSourceHintKey = verdictSourceKey(archive.user_verdict_source);
   const originalArchiveId = archive.original_archive_id ?? null;
 
   // Suggested sale price from the calculator (machine cost only, no labor),
@@ -630,6 +639,21 @@ function ArchiveCard({
       },
       disabled: !archive.external_url && !archive.makerworld_url,
     },
+    // Post-print outcome confirmation (#1898): completed prints only — the
+    // machine statuses already cover everything else.
+    ...(archive.status === 'completed'
+      ? [{
+          label: t('archives.menu.confirmOutcome'),
+          icon: archive.user_verdict === 'reject'
+            ? <ThumbsDown className="w-4 h-4" />
+            : <ThumbsUp className="w-4 h-4" />,
+          onClick: () => setShowConfirmOutcome(true),
+          disabled: !canModify('archives', 'update', archive.created_by_id),
+          title: !canModify('archives', 'update', archive.created_by_id)
+            ? t('archives.permission.noUpdateArchives')
+            : undefined,
+        }]
+      : []),
     { label: '', divider: true, onClick: () => {} },
     {
       label: t('archives.menu.preview3d'),
@@ -1012,6 +1036,42 @@ function ArchiveCard({
         {(archive.status === 'failed' || archive.status === 'aborted') && (
           <div className="absolute top-2 left-12 px-2 py-1 rounded text-xs bg-status-error/80 text-white">
             {archive.status === 'aborted' ? t('archives.card.cancelled') : t('archives.card.failed')}
+          </div>
+        )}
+        {/* Outcome-confirmation badges (#1898): a completed print either
+            waiting for its verdict (click to answer, for whoever may update
+            the archive; a status only for anyone else) or marked as reject.
+            Same spot as the failed badge — the three are mutually exclusive. */}
+        {archive.status === 'completed' && archive.confirm_requested && archive.user_verdict == null && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowConfirmOutcome(true);
+            }}
+            disabled={!canModify('archives', 'update', archive.created_by_id)}
+            className="absolute top-2 left-12 px-2 py-1 rounded text-xs bg-amber-500/90 enabled:hover:bg-amber-500 text-black flex items-center gap-1 transition-colors enabled:cursor-pointer"
+            title={!canModify('archives', 'update', archive.created_by_id) ? t('archives.permission.noUpdateArchives') : t('archives.card.confirmPendingTitle')}
+          >
+            <ThumbsUp className="w-3 h-3" />
+            {t('archives.card.confirmPending')}
+          </button>
+        )}
+        {archive.status === 'completed' && archive.user_verdict === 'reject' && (
+          <div
+            className="absolute top-2 left-12 px-2 py-1 rounded text-xs bg-status-error/80 text-white flex items-center gap-1"
+            title={`${t('archives.card.rejectedTitle')}${verdictSourceHintKey ? ` — ${t(verdictSourceHintKey)}` : ''}`}
+          >
+            <ThumbsDown className="w-3 h-3" />
+            {t('archives.card.rejected')}
+          </div>
+        )}
+        {archive.status === 'completed' && archive.user_verdict === 'good' && (
+          <div
+            className="absolute top-2 left-12 px-2 py-1 rounded text-xs bg-bambu-green/80 text-white flex items-center gap-1"
+            title={`${t('archives.card.confirmedGoodTitle')}${verdictSourceHintKey ? ` — ${t(verdictSourceHintKey)}` : ''}`}
+          >
+            <ThumbsUp className="w-3 h-3" />
+            {t('archives.card.confirmedGood')}
           </div>
         )}
         {/* Duplicate badge */}
@@ -1548,6 +1608,14 @@ function ArchiveCard({
         />
       )}
 
+      {/* Post-print outcome confirmation (#1898) */}
+      {showConfirmOutcome && (
+        <ConfirmOutcomeDialog
+          archiveId={archive.id}
+          onClose={() => setShowConfirmOutcome(false)}
+        />
+      )}
+
       {/* Slice Modal */}
       {showSliceModal && (
         <SliceModal
@@ -1881,6 +1949,8 @@ function ArchiveListRow({
   });
   const navigate = useNavigate();
   const [showReprint, setShowReprint] = useState(false);
+  // Post-print outcome confirmation dialog (#1898)
+  const [showConfirmOutcome, setShowConfirmOutcome] = useState(false);
   const [showSliceModal, setShowSliceModal] = useState(false);
   const [showRunPipeline, setShowRunPipeline] = useState(false);
   const [showTimelapse, setShowTimelapse] = useState(false);
@@ -1901,6 +1971,9 @@ function ArchiveListRow({
 
   // Use pre-computed duplicate sequence and original archive ID from list response
   const duplicateSequence = archive.duplicate_sequence ?? 0;
+  // Appended to the verdict badge's tooltip (#1898) so a verdict the
+  // plate-clear default recorded can be explained where it is shown.
+  const verdictSourceHintKey = verdictSourceKey(archive.user_verdict_source);
   const originalArchiveId = archive.original_archive_id ?? null;
 
   // 3D Preview click handler. Multi-plate archives show the plate picker
@@ -2122,6 +2195,21 @@ function ArchiveListRow({
       },
       disabled: !archive.external_url && !archive.makerworld_url,
     },
+    // Post-print outcome confirmation (#1898): completed prints only — the
+    // machine statuses already cover everything else.
+    ...(archive.status === 'completed'
+      ? [{
+          label: t('archives.menu.confirmOutcome'),
+          icon: archive.user_verdict === 'reject'
+            ? <ThumbsDown className="w-4 h-4" />
+            : <ThumbsUp className="w-4 h-4" />,
+          onClick: () => setShowConfirmOutcome(true),
+          disabled: !canModify('archives', 'update', archive.created_by_id),
+          title: !canModify('archives', 'update', archive.created_by_id)
+            ? t('archives.permission.noUpdateArchives')
+            : undefined,
+        }]
+      : []),
     { label: '', divider: true, onClick: () => {} },
     {
       label: t('archives.menu.preview3d'),
@@ -2396,6 +2484,36 @@ function ArchiveListRow({
                 {archive.status === 'aborted' ? t('archives.card.cancelled') : t('archives.card.failed')}
               </span>
             )}
+            {/* Outcome-confirmation badges (#1898), compact list variants */}
+            {archive.status === 'completed' && archive.confirm_requested && archive.user_verdict == null && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowConfirmOutcome(true);
+                }}
+                disabled={!canModify('archives', 'update', archive.created_by_id)}
+                className="px-1.5 py-0.5 rounded text-[10px] leading-tight bg-amber-500/90 enabled:hover:bg-amber-500 text-black flex-shrink-0 transition-colors"
+                title={!canModify('archives', 'update', archive.created_by_id) ? t('archives.permission.noUpdateArchives') : t('archives.card.confirmPendingTitle')}
+              >
+                {t('archives.card.confirmPending')}
+              </button>
+            )}
+            {archive.status === 'completed' && archive.user_verdict === 'reject' && (
+              <span
+                className="px-1.5 py-0.5 rounded text-[10px] leading-tight bg-status-error/80 text-white flex-shrink-0"
+                title={`${t('archives.card.rejectedTitle')}${verdictSourceHintKey ? ` — ${t(verdictSourceHintKey)}` : ''}`}
+              >
+                {t('archives.card.rejected')}
+              </span>
+            )}
+            {archive.status === 'completed' && archive.user_verdict === 'good' && (
+              <span
+                className="px-1.5 py-0.5 rounded text-[10px] leading-tight bg-bambu-green/80 text-white flex-shrink-0"
+                title={`${t('archives.card.confirmedGoodTitle')}${verdictSourceHintKey ? ` — ${t(verdictSourceHintKey)}` : ''}`}
+              >
+                {t('archives.card.confirmedGood')}
+              </span>
+            )}
             {archive.duplicate_count > 0 && duplicateSequence > 0 && originalArchiveId && (
               <button
                 onClick={(e) => {
@@ -2611,6 +2729,14 @@ function ArchiveListRow({
           archiveId={archive.id}
           archiveName={archive.print_name || archive.filename}
           onClose={() => setShowReprint(false)}
+        />
+      )}
+
+      {/* Post-print outcome confirmation (#1898) */}
+      {showConfirmOutcome && (
+        <ConfirmOutcomeDialog
+          archiveId={archive.id}
+          onClose={() => setShowConfirmOutcome(false)}
         />
       )}
 
@@ -2934,6 +3060,10 @@ export function ArchivesPage() {
   );
   const [hideFailed, setHideFailed] = useState(() =>
     localStorage.getItem('archiveHideFailed') === 'true'
+  );
+  // Only archives still waiting for their outcome verdict (#1898)
+  const [filterUnconfirmed, setFilterUnconfirmed] = useState(() =>
+    localStorage.getItem('archiveFilterUnconfirmed') === 'true'
   );
   const [hideDuplicates, setHideDuplicates] = useState(() =>
     localStorage.getItem('archiveHideDuplicates') === 'true'
@@ -3450,6 +3580,10 @@ export function ArchivesPage() {
   }, [hideFailed]);
 
   useEffect(() => {
+    localStorage.setItem('archiveFilterUnconfirmed', filterUnconfirmed.toString());
+  }, [filterUnconfirmed]);
+
+  useEffect(() => {
     localStorage.setItem('archiveHideDuplicates', hideDuplicates.toString());
   }, [hideDuplicates]);
 
@@ -3468,7 +3602,7 @@ export function ArchivesPage() {
   // Reset page when filters/search/sort/collection change
   useEffect(() => {
     setPageIndex(0);
-  }, [search, filterPrinter, filterMaterial, filterColors, colorFilterMode, filterFavorites, hideFailed, hideDuplicates, filterTag, filterFileType, sortBy, collection]);
+  }, [search, filterPrinter, filterMaterial, filterColors, colorFilterMode, filterFavorites, hideFailed, filterUnconfirmed, hideDuplicates, filterTag, filterFileType, sortBy, collection]);
 
   useEffect(() => {
     try { localStorage.setItem('archivePageSize', String(pageSize)); } catch { /* ignore */ }
@@ -3625,6 +3759,10 @@ export function ArchivesPage() {
       // Hide failed filter (don't apply when viewing failed collection)
       const matchesHideFailed = collection === 'failed' || !hideFailed || (a.status !== 'failed' && a.status !== 'aborted');
 
+      // Unconfirmed-outcome filter (#1898): archives that asked for a verdict
+      // and are still waiting for one.
+      const matchesUnconfirmed = !filterUnconfirmed || (a.confirm_requested && a.user_verdict == null);
+
       // Hide duplicates filter (don't apply when viewing duplicates collection).
       // Surface the NEWEST member of each group, not the sequence-0 original —
       // otherwise a fresh reprint of an identical file is hidden forever and
@@ -3643,7 +3781,7 @@ export function ArchivesPage() {
         (filterFileType === 'gcode' && isGcodeFile) ||
         (filterFileType === 'source' && !isGcodeFile);
 
-      return matchesCollection && matchesSearch && matchesMaterial && matchesColor && matchesFavorites && matchesHideFailed && matchesHideDuplicates && matchesTag && matchesFileType;
+      return matchesCollection && matchesSearch && matchesMaterial && matchesColor && matchesFavorites && matchesHideFailed && matchesUnconfirmed && matchesHideDuplicates && matchesTag && matchesFileType;
     })
     .sort((a, b) => {
       switch (sortBy) {
@@ -3747,12 +3885,13 @@ export function ArchivesPage() {
     setFilterMaterial(null);
     setFilterFavorites(false);
     setHideFailed(false);
+    setFilterUnconfirmed(false);
     setHideDuplicates(false);
     setFilterTag(null);
     setFilterFileType('all');
   };
 
-  const hasTopFilters = search || filterPrinter || filterMaterial || filterFavorites || hideFailed || hideDuplicates || filterTag || filterFileType !== 'all';
+  const hasTopFilters = search || filterPrinter || filterMaterial || filterFavorites || hideFailed || filterUnconfirmed || hideDuplicates || filterTag || filterFileType !== 'all';
 
   // Page-wide drag-and-drop upload (#1510). The hook covers the three cancel
   // paths the previous inline implementation missed (drag-out-of-window, Escape,
@@ -4192,6 +4331,18 @@ export function ArchivesPage() {
             >
               <AlertCircle className={`w-4 h-4 ${hideFailed ? '' : ''}`} />
               <span className="text-sm hidden md:inline">Hide Failed</span>
+            </button>
+            <button
+              onClick={() => setFilterUnconfirmed(!filterUnconfirmed)}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors flex-shrink-0 ${
+                filterUnconfirmed
+                  ? 'bg-amber-100 dark:bg-amber-500/20 border-amber-500 text-amber-700 dark:text-amber-400'
+                  : 'bg-bambu-dark border-bambu-dark-tertiary text-bambu-gray hover:text-white'
+              }`}
+              title={t('archives.filterUnconfirmedTitle')}
+            >
+              <ThumbsUp className="w-4 h-4" />
+              <span className="text-sm hidden md:inline">{t('archives.filterUnconfirmed')}</span>
             </button>
             <button
               onClick={() => setHideDuplicates(!hideDuplicates)}

@@ -12,6 +12,7 @@ from backend.app.models.archive import PrintArchive
 from backend.app.models.auth_ephemeral import AuthEphemeralToken, AuthRateLimitEvent
 from backend.app.models.calculator import CalculatorDefaults, CalculatorFilament, CalculatorPrinter
 from backend.app.models.color_catalog import ColorCatalogEntry
+from backend.app.models.connected_app import ConnectedApp, ConnectedAppGrant
 from backend.app.models.filament import Filament
 from backend.app.models.filament_profile import BaseFilamentPreset, FilamentPreset
 from backend.app.models.github_backup import GitHubBackupConfig, GitHubBackupLog
@@ -119,4 +120,6 @@ __all__ = [
     "CalculatorFilament",
     "CalculatorPrinter",
     "CalculatorDefaults",
+    "ConnectedApp",
+    "ConnectedAppGrant",
 ]
