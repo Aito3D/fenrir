@@ -28,6 +28,9 @@ MODE_SETTINGS = {
     "cash": ("aito_payment_mode_cash", "cash"),
 }
 # (project_id, kind, document_id, amount, reference) -> time.monotonic() of the last success.
+# Entries past DUPLICATE_WINDOW_SECONDS are pruned on the next call (see
+# record_manual_payment), so this never grows past the tuples active within
+# the window.
 _recent: dict[tuple, float] = {}
 
 
@@ -123,8 +126,16 @@ async def record_manual_payment(
 ) -> ManualPaymentResult:
     project_id = project.id
     key = _guard_key(project_id, document, amount, reference)
+    now = time.monotonic()
+    # Prune first: an entry past the window is already ignored by the check
+    # below, so dropping it here changes nothing a caller can observe and
+    # keeps the dict from growing forever (every distinct project/document/
+    # amount/reference tuple ever paid, for the life of the process). Same
+    # shape as _recent_sms's sweep in routes/aito.py.
+    for stale in [k for k, at in _recent.items() if now - at >= DUPLICATE_WINDOW_SECONDS]:
+        del _recent[stale]
     last = _recent.get(key)
-    if last is not None and time.monotonic() - last < DUPLICATE_WINDOW_SECONDS:
+    if last is not None and now - last < DUPLICATE_WINDOW_SECONDS:
         raise DuplicateManualPayment("This payment was recorded a moment ago")
     # Reserved HERE, before any Zoho call -- not just after a successful one.
     # Two requests for the same document/amount/reference a few hundred ms
@@ -136,8 +147,9 @@ async def record_manual_payment(
     # `ManualPaymentUnrecorded` (the payment itself exists) and
     # `ManualPaymentOutcomeUnknown` (the payment call timed out -- it may
     # exist). Those KEEP the key, and their message names what to check or
-    # finish by hand.
-    _recent[key] = time.monotonic()
+    # finish by hand -- the prune above cannot drop them early: it only ever
+    # removes entries already past the window.
+    _recent[key] = now
     try:
         if document.kind == "invoice" and document.balance is not None and amount > document.balance:
             raise AmountAboveBalance(document.balance)

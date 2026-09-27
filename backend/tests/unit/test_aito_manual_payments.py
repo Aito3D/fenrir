@@ -183,6 +183,58 @@ async def test_duplicate_within_the_window_is_refused(db_session, books, monkeyp
 
 
 @pytest.mark.asyncio
+async def test_expired_guard_entries_are_pruned_while_fresh_ones_still_refuse(db_session, books, monkeypatch):
+    """T-014: the dict must not grow forever. An entry older than
+    DUPLICATE_WINDOW_SECONDS is already ignored by the duplicate check (see
+    the test above), so removing it on a later call changes nothing a caller
+    can observe -- it just stops the process-lifetime dict from growing.
+    A second, still-fresh entry made in the same later call must keep
+    refusing a genuine duplicate."""
+
+    async def no_refresh(db, project_id, kind):
+        return None
+
+    monkeypatch.setattr(svc, "refresh_after_payment", no_refresh)
+    p = await _project(db_session)
+    old_kw = {
+        "document": INVOICE,
+        "mode": "cash",
+        "amount": 100,
+        "reference": "old",
+        "actor_name": None,
+        "today": TODAY,
+    }
+    await svc.record_manual_payment(db_session, p, **old_kw)
+    old_key = svc._guard_key(p.id, INVOICE, 100, "old")
+    assert old_key in svc._recent
+
+    future = real_time.monotonic() + svc.DUPLICATE_WINDOW_SECONDS + 1
+
+    class _LaterClock:
+        @staticmethod
+        def monotonic():
+            return future
+
+    monkeypatch.setattr(svc, "time", _LaterClock)
+    new_kw = {
+        "document": INVOICE,
+        "mode": "cash",
+        "amount": 200,
+        "reference": "new",
+        "actor_name": None,
+        "today": TODAY,
+    }
+    await svc.record_manual_payment(db_session, p, **new_kw)  # prunes `old_key` on entry
+    new_key = svc._guard_key(p.id, INVOICE, 200, "new")
+
+    assert old_key not in svc._recent  # evicted: past the window
+    assert new_key in svc._recent  # this call's own key: still fresh
+
+    with pytest.raises(svc.DuplicateManualPayment):
+        await svc.record_manual_payment(db_session, p, **new_kw)  # still inside ITS window
+
+
+@pytest.mark.asyncio
 async def test_concurrent_duplicate_calls_only_one_payment_reaches_books(db_session, test_engine, monkeypatch):
     """Finding 2: the guard must reserve its key at ENTRY, before any Zoho
     round trip -- otherwise two requests for the same document/amount/

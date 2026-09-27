@@ -1745,6 +1745,13 @@ _ZOHO_EMAIL_DETAIL = "Too many email sends. Please wait a moment and try again."
 # "<bucket>:<principal>" -> call timestamps (module's own `time.monotonic`,
 # see below). One dict, one window, one bucket per rate-limited concern.
 _ai_rate_limit_calls: dict[str, list[float]] = {}
+# More keys than this and the ones with no timestamp left inside the window
+# are swept: every bucket shares _AI_RATE_LIMIT_WINDOW_S, so a key with
+# nothing newer than that is dead regardless of which bucket it belongs to.
+# Gated on size rather than swept every call for the same reason
+# _TRACK_RATE_SWEEP_ABOVE is: a distinct principal/bucket pair that stops
+# calling would otherwise sit in the dict for the life of the process.
+_AI_RATE_LIMIT_SWEEP_ABOVE = 200
 
 
 def _ai_rate_limit_key(request: Request, current_user: User | None) -> str:
@@ -1774,6 +1781,11 @@ def _check_rate_limit(request: Request, current_user: User | None, *, bucket: st
     """
     key = f"{bucket}:{_ai_rate_limit_key(request, current_user)}"
     now = time.monotonic()
+    if len(_ai_rate_limit_calls) > _AI_RATE_LIMIT_SWEEP_ABOVE:
+        for stale in [
+            k for k, calls in _ai_rate_limit_calls.items() if not any(now - t < _AI_RATE_LIMIT_WINDOW_S for t in calls)
+        ]:
+            del _ai_rate_limit_calls[stale]
     calls = _ai_rate_limit_calls.setdefault(key, [])
     calls[:] = [t for t in calls if now - t < _AI_RATE_LIMIT_WINDOW_S]
     if len(calls) >= max_calls:
@@ -3480,6 +3492,17 @@ async def move_project(
     return await _project_response(db, project, summary)
 
 
+def _version_conflict() -> HTTPException:
+    """The 409 both `update_project` and `edit_project_client` raise, twice
+    each — once for the cheap pre-check, once for the atomic re-check right
+    before the write (`_claim_expected_version`/`_claim_and_bump_version`).
+    One builder so the code/message pair can't drift between the two guarded
+    routes."""
+    return HTTPException(
+        status_code=409, detail={"code": "version_conflict", "message": "Project was updated by someone else"}
+    )
+
+
 async def _claim_expected_version(db: AsyncSession, project: AitoProject, expected: int) -> bool:
     """Atomically claim the right to write `project`, for `update_project`'s
     `expected_version` guard (T-046).
@@ -3588,10 +3611,7 @@ async def update_project(
     project = await _get_active_project_or_404(db, project_id)
 
     if payload.expected_version is not None and payload.expected_version != (project.version or 0):
-        raise HTTPException(
-            status_code=409,
-            detail={"code": "version_conflict", "message": "Project was updated by someone else"},
-        )
+        raise _version_conflict()
 
     fields = payload.model_dump(exclude_unset=True)
     # A guard token, not a column — it must not reach diff_fields or setattr.
@@ -3629,10 +3649,7 @@ async def update_project(
     if payload.expected_version is not None and not await _claim_expected_version(
         db, project, payload.expected_version
     ):
-        raise HTTPException(
-            status_code=409,
-            detail={"code": "version_conflict", "message": "Project was updated by someone else"},
-        )
+        raise _version_conflict()
 
     # `current=project` so correcting ONE field of an existing shipment works
     # without resending the other three — the merged row is what has to be
@@ -3754,10 +3771,7 @@ async def edit_project_client(
     """
     project = await _get_active_project_or_404(db, project_id)
     if payload.expected_version is not None and payload.expected_version != (project.version or 0):
-        raise HTTPException(
-            status_code=409,
-            detail={"code": "version_conflict", "message": "Project was updated by someone else"},
-        )
+        raise _version_conflict()
 
     is_company = bool(project.client_is_company)
     company = payload.company_name.strip()
@@ -3831,10 +3845,7 @@ async def edit_project_client(
     claimed_version: int | None = None
     if payload.expected_version is not None:
         if not await _claim_and_bump_version(db, project, payload.expected_version):
-            raise HTTPException(
-                status_code=409,
-                detail={"code": "version_conflict", "message": "Project was updated by someone else"},
-            )
+            raise _version_conflict()
         claimed_version = payload.expected_version + 1
 
     if is_zoho_contact:
@@ -4303,9 +4314,9 @@ _SMS_DUPLICATE_WINDOW_S = 60.0
 # transport failure that says nothing about what Pushcut did. A clean refusal
 # (not configured, non-2xx) drops the key again, so an honest retry after a
 # real failure still goes through.
-# Pruned on every call, unlike aito_manual_payments' sibling guard: this key
-# carries a caller-supplied message, so an unevicted dict would grow with
-# every distinct body ever sent.
+# Pruned on every call (aito_manual_payments' sibling guard does the same):
+# this key carries a caller-supplied message, so an unevicted dict would grow
+# with every distinct body ever sent.
 _recent_sms: dict[tuple[int, str], float] = {}
 # Plain-string details, the module's shape for a message with no client-side
 # branching to do — except for their LEADING words, which SmsPickupModal

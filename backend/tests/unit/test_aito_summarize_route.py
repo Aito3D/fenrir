@@ -2,6 +2,7 @@
 T-043's per-principal AI call rate limit."""
 
 import pytest
+from fastapi import HTTPException
 
 from backend.app.api.routes import aito as aito_routes
 from backend.app.services import openrouter as openrouter_service
@@ -164,3 +165,58 @@ async def test_summarize_rate_limit_clears_once_the_window_elapses(async_client,
     clock.now += aito_routes._AI_RATE_LIMIT_WINDOW_S + 1
     r = await async_client.post("/api/v1/aito/summarize", json=_PAYLOAD)
     assert r.status_code == 200
+
+
+class _FakeRequest:
+    """Just enough of `Request` for `_ai_rate_limit_key`'s no-auth branch:
+    `request.client.host`."""
+
+    class _Client:
+        def __init__(self, host: str) -> None:
+            self.host = host
+
+    def __init__(self, host: str) -> None:
+        self.client = self._Client(host)
+
+
+def test_stale_keys_are_swept_while_a_key_inside_its_window_keeps_counting(monkeypatch):
+    """T-015: the shared `_ai_rate_limit_calls` dict used to keep a key
+    forever once created. Past `_AI_RATE_LIMIT_SWEEP_ABOVE` entries, a call
+    now drops any key with nothing left inside the window — but a key that
+    was touched again inside its window must survive the same sweep with its
+    call count intact (429 behaviour must not change for it)."""
+    clock = _FakeClock(start=0.0)
+    monkeypatch.setattr(aito_routes, "time", clock)
+
+    # More filler principals than the sweep threshold, all called once at t=0.
+    for i in range(aito_routes._AI_RATE_LIMIT_SWEEP_ABOVE + 1):
+        aito_routes._check_rate_limit(_FakeRequest(f"10.0.0.{i}"), None, bucket="filler", max_calls=1000, detail="x")
+    # `keeper` is called once at t=0 too, then again just before the window
+    # on its first call would elapse — same shape as a caller polling well
+    # inside the limiter's window.
+    aito_routes._check_rate_limit(_FakeRequest("keeper"), None, bucket="keeper_bucket", max_calls=5, detail="x")
+
+    clock.now = aito_routes._AI_RATE_LIMIT_WINDOW_S - 1
+    aito_routes._check_rate_limit(_FakeRequest("keeper"), None, bucket="keeper_bucket", max_calls=5, detail="x")
+
+    # Past the window for everything called at t=0 (the fillers, and
+    # `keeper`'s FIRST call) but not for `keeper`'s second call.
+    clock.now = aito_routes._AI_RATE_LIMIT_WINDOW_S + 1
+    aito_routes._check_rate_limit(_FakeRequest("poke"), None, bucket="trigger", max_calls=1000, detail="x")
+
+    assert "filler:ip:10.0.0.0" not in aito_routes._ai_rate_limit_calls  # stale: swept
+    assert "keeper_bucket:ip:keeper" in aito_routes._ai_rate_limit_calls  # a live entry survives: kept
+    # The sweep only ever deletes whole keys with nothing live left; it never
+    # prunes a surviving key's own list (that happens on the key's own next
+    # direct hit, same as before this change) — so both of `keeper`'s calls
+    # are still there.
+    assert aito_routes._ai_rate_limit_calls["keeper_bucket:ip:keeper"] == [0, aito_routes._AI_RATE_LIMIT_WINDOW_S - 1]
+    assert "trigger:ip:poke" in aito_routes._ai_rate_limit_calls  # this call's own key
+
+    # 429 behaviour for `keeper` is unaffected: it still has 1 live call, so
+    # 4 more are allowed under its max_calls=5 budget before a 5th refuses.
+    for _ in range(4):
+        aito_routes._check_rate_limit(_FakeRequest("keeper"), None, bucket="keeper_bucket", max_calls=5, detail="x")
+    with pytest.raises(HTTPException) as exc:
+        aito_routes._check_rate_limit(_FakeRequest("keeper"), None, bucket="keeper_bucket", max_calls=5, detail="x")
+    assert exc.value.status_code == 429
