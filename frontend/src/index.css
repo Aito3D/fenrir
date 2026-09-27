@@ -1830,6 +1830,46 @@ html[data-vt='aito-card-exit']::view-transition-group(aito-card) {
   }
 }
 
+/* Mobile column sheet — rises from the bottom edge it is docked to, like the
+   drawers slide from theirs. Exit mirrors it. Reduced motion: fade only. */
+@keyframes sheet-in {
+  from { opacity: 0.6; transform: translateY(100%); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes sheet-out {
+  to { opacity: 0.6; transform: translateY(100%); }
+}
+.animate-sheet-in {
+  animation: sheet-in 0.28s var(--ease-signature);
+}
+.animate-sheet-out {
+  animation: sheet-out 0.2s var(--ease-exit) forwards;
+}
+/* Mobile anchored menus — a small scale from their anchor corner. */
+@keyframes pop-in {
+  from { opacity: 0; transform: translateY(4px) scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes pop-out {
+  to { opacity: 0; transform: translateY(4px) scale(0.97); }
+}
+.animate-pop-in {
+  animation: pop-in 0.16s var(--ease-signature);
+}
+.animate-pop-out {
+  animation: pop-out 0.12s var(--ease-exit) forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-sheet-in,
+  .animate-pop-in {
+    animation: fade-in 0.15s ease-out;
+  }
+  .animate-sheet-out,
+  .animate-pop-out {
+    animation: fadeOut 0.15s ease-out forwards;
+  }
+}
+
 /* Toast enter/exit — a single transition-driven element with three states
    (pre-enter, open, leaving) instead of two @keyframes swapped by class, so a
    mid-entrance dismissal retargets smoothly from wherever the toast visually
