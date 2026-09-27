@@ -262,13 +262,13 @@
    "headers": {
     "x-heimdall-key-id": "84f32b71ac095ed2",
     "x-heimdall-nonce": "0123456789abcdef0123456789abcdef",
-    "x-heimdall-signature": "sha256=d54a07ea513b2c690f7eed60488d5b575e0a8750bb7547b73e5c8fd685a4fb2a",
+    "x-heimdall-signature": "sha256=62cc7d51b2671b5637b818e528d4ae29f2942f2812ae598c4ce756b6800fbaa8",
     "x-heimdall-timestamp": "1757707200"
    },
    "method": "GET",
-   "path": "/api/v1/payments/ping",
+   "path": "/api/v1/payments/hd-1/../ping",
    "query": "",
-   "url": "http://pos.local:8081/api/v1/payments/ping"
+   "url": "http://pos.local:8081/api/v1/payments/hd-1%2F..%2Fping"
   },
   {
    "body": "",
@@ -276,7 +276,7 @@
    "headers": {
     "x-heimdall-key-id": "84f32b71ac095ed2",
     "x-heimdall-nonce": "0123456789abcdef0123456789abcdef",
-    "x-heimdall-signature": "sha256=40dbb4c3aa0e9ebf380d1e4255e8c14e7d78b046438055a1be6e81d76d94fd6d",
+    "x-heimdall-signature": "sha256=7c4369e766f2e80d94297a1f88f1e4c246ce1a099d25ec0e121cf40a8380037d",
     "x-heimdall-timestamp": "1757707200"
    },
    "method": "GET",
@@ -290,13 +290,13 @@
    "headers": {
     "x-heimdall-key-id": "84f32b71ac095ed2",
     "x-heimdall-nonce": "0123456789abcdef0123456789abcdef",
-    "x-heimdall-signature": "sha256=f02bc5b8b231f52cbe81e6e1496157675d86427295827a75bd6f4ccb1bbfbbbe",
+    "x-heimdall-signature": "sha256=beb29f2076deba0b35e5c10bc07e038676960fd7444ce12836257f339418e21c",
     "x-heimdall-timestamp": "1757707200"
    },
    "method": "GET",
-   "path": "/api/v1/payments/hd",
-   "query": "x=1",
-   "url": "http://pos.local:8081/api/v1/payments/hd?x=1"
+   "path": "/api/v1/payments/hd?x=1",
+   "query": "",
+   "url": "http://pos.local:8081/api/v1/payments/hd%3Fx%3D1"
   },
   {
    "body": "",

@@ -71,3 +71,51 @@ async def test_disconnect_clears_presence_and_rebroadcasts():
         "type": "aito_presence_state",
         "viewers": {},
     }
+
+
+# ---------------------------------------------------------------------------
+# T-065 (user-approved 2026-09-26): a presence message that repeats the
+# connection's current project id changes nothing, so it is not re-broadcast.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_identical_presence_twice_broadcasts_once():
+    mgr = ConnectionManager()
+    paul, marie = _conn("paul"), _conn("marie")
+    mgr.active_connections = [paul, marie]
+
+    await mgr.set_aito_presence(paul, 3)
+    await mgr.set_aito_presence(paul, 3)
+
+    assert marie.send_text.await_count == 1
+    assert mgr.aito_presence_state()["viewers"] == {"3": ["paul"]}
+
+
+@pytest.mark.asyncio
+async def test_changed_presence_is_broadcast_every_time():
+    mgr = ConnectionManager()
+    paul, marie = _conn("paul"), _conn("marie")
+    mgr.active_connections = [paul, marie]
+
+    await mgr.set_aito_presence(paul, 3)
+    await mgr.set_aito_presence(paul, 4)
+    await mgr.set_aito_presence(paul, None)
+    await mgr.set_aito_presence(paul, 3)
+
+    payloads = [json.loads(call.args[0])["viewers"] for call in marie.send_text.await_args_list]
+    assert payloads == [{"3": ["paul"]}, {"4": ["paul"]}, {}, {"3": ["paul"]}]
+
+
+@pytest.mark.asyncio
+async def test_clearing_presence_that_was_never_set_is_not_broadcast():
+    """A fresh connection's first ``project_id: null`` leaves the map as it
+    was (the connection was in no project), so nothing goes out."""
+    mgr = ConnectionManager()
+    paul, marie = _conn("paul"), _conn("marie")
+    mgr.active_connections = [paul, marie]
+
+    await mgr.set_aito_presence(paul, None)
+
+    marie.send_text.assert_not_awaited()
+    assert mgr.aito_presence_state()["viewers"] == {}

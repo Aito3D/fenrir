@@ -22,7 +22,7 @@ import logging
 import secrets
 import time
 from dataclasses import dataclass
-from urllib.parse import urlparse
+from urllib.parse import quote as urlquote, urlparse
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -130,6 +130,24 @@ def parse_credential(token: str) -> tuple[str, str]:
     if len(parts) != 3 or not all(parts) or not parts[0].startswith("hmd_"):
         raise HeimdallNotConfigured("Heimdall token is not an hmd_live.<id>.<secret> credential")
     return parts[1], parts[2]
+
+
+def _seg(heimdall_id: str) -> str:
+    """Escape a Heimdall payment id as ONE path segment.
+
+    The id is stored verbatim from Heimdall's (unauthenticated) response
+    body, and httpx resolves ``/``, ``..`` and friends when it builds the
+    request URL — so an unescaped ``hd-1/../ping`` would be sent to a
+    different endpoint than the one we meant (the same hazard
+    ``services/zoho.py``'s ``_seg`` closes). ``safe=""`` keeps ``/``, ``?``,
+    ``#`` and spaces inside the segment; a bare ``.`` / ``..`` (which
+    ``quote`` leaves alone because dots are unreserved) is spelled ``%2E``
+    so it cannot act as a dot segment either. The escaped path is what is
+    both signed and sent, so the two can never diverge."""
+    segment = urlquote(heimdall_id, safe="")
+    if segment in (".", ".."):
+        segment = segment.replace(".", "%2E")
+    return segment
 
 
 def sign(
@@ -347,13 +365,13 @@ class HeimdallService:
             payload["amount"] = int(amount)
         if expires_in_days is not None:
             payload["expires_in_days"] = int(expires_in_days)
-        return _to_view(await self._request(db, "PATCH", f"/api/v1/payments/{heimdall_id}", json_body=payload))
+        return _to_view(await self._request(db, "PATCH", f"/api/v1/payments/{_seg(heimdall_id)}", json_body=payload))
 
     async def cancel_link(self, db: AsyncSession, heimdall_id: str) -> LinkView:
-        return _to_view(await self._request(db, "POST", f"/api/v1/payments/{heimdall_id}/cancel"))
+        return _to_view(await self._request(db, "POST", f"/api/v1/payments/{_seg(heimdall_id)}/cancel"))
 
     async def get_payment(self, db: AsyncSession, heimdall_id: str) -> LinkView:
-        return _to_view(await self._request(db, "GET", f"/api/v1/payments/{heimdall_id}"))
+        return _to_view(await self._request(db, "GET", f"/api/v1/payments/{_seg(heimdall_id)}"))
 
 
 heimdall_service = HeimdallService()
