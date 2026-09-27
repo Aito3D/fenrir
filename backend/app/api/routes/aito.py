@@ -140,6 +140,7 @@ from backend.app.services.zoho import (
     ZohoNotConfiguredError,
     ZohoNotFound,
     ZohoRequestRejected,
+    ZohoUnreachable,
     ZohoUpstreamError,
     normalize_display_name,
     zoho_service,
@@ -1478,7 +1479,11 @@ async def _validate_create_payload(
     payload: AitoProjectCreate,
     current_user: User | None,
 ) -> dict:
-    """Permission, contact and shipping checks for create_project; returns the validated shipping fields."""
+    """Permission, contact and shipping checks for create_project; returns the validated shipping fields.
+
+    The duplicate-quote check is not here: create_project runs it before the
+    Books re-read (T-070), since it keys on ``quote_id``, which Books never
+    overwrites."""
     if (
         payload.quote_status in ("accepted", "declined")
         and current_user is not None
@@ -1502,7 +1507,6 @@ async def _validate_create_payload(
             status_code=403,
             detail="quote_status 'accepted'/'declined' requires the aito:update permission",
         )
-    await _reject_duplicate_quote(db, payload.quote_id)
     if payload.quote_id is None and not (
         (payload.client_phone or "").strip()
         or (payload.client_email or "").strip()
@@ -1586,6 +1590,11 @@ async def create_project(
     db: AsyncSession = Depends(get_db),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_CREATE),
 ):
+    # T-070: a quote that already has an active card is refused before the
+    # Books re-read, so a duplicate import gets its 409 even when Books is
+    # unreachable or Zoho is unconfigured. It keys on quote_id, a field the
+    # snapshot never overwrites; every Books-dependent check stays after it.
+    await _reject_duplicate_quote(db, payload.quote_id)
     payload = await _with_books_quote_snapshot(db, payload)
     shipping = await _validate_create_payload(db, payload, current_user)
     # New cards land on top of the quote column: shift existing cards down.
@@ -1727,6 +1736,12 @@ _CLIENT_RATING_DETAIL = "Too many client rating requests. Please wait a moment a
 # flood.
 _PICKUP_SMS_MAX_CALLS = 10
 _PICKUP_SMS_DETAIL = "Too many pickup SMS sends. Please wait a moment and try again."
+# T-064: the quote and invoice emails. Each send mails the client from the
+# company's Zoho account and spends the Books daily API/email quota the sync
+# worker also lives on, so both routes share one bucket at the pickup SMS's
+# human pace.
+_ZOHO_EMAIL_MAX_CALLS = 10
+_ZOHO_EMAIL_DETAIL = "Too many email sends. Please wait a moment and try again."
 # "<bucket>:<principal>" -> call timestamps (module's own `time.monotonic`,
 # see below). One dict, one window, one bucket per rate-limited concern.
 _ai_rate_limit_calls: dict[str, list[float]] = {}
@@ -2472,10 +2487,64 @@ async def get_invoice_email(
     )
 
 
+# T-064: the quote and invoice emails' duplicate-send guard, the pickup SMS's
+# (_recent_sms, T-025/T-043/T-044) applied to Books' email. A second tap — or
+# the reflex retry after an answer the operator read as a failure — must not
+# mail the client the same document twice. Same one-minute window, same
+# lifecycle: armed before the send, kept on success and on ZohoUnreachable
+# (a transport failure says nothing about whether Books already sent it),
+# dropped again on a clean refusal from Books and on any other exception the
+# send itself raises, so an honest retry after a real failure goes through.
+# Kept out of the docstrings: FastAPI publishes those as the endpoints'
+# OpenAPI descriptions.
+_EMAIL_DUPLICATE_WINDOW_S = 60.0
+# (kind, project_id, Books document id, lower-cased recipient) ->
+# time.monotonic() of the last send that MAY have reached the client. Pruned
+# on every call: the recipient is caller-supplied (if allowlisted), so an
+# unevicted dict would only ever grow.
+_recent_emails: dict[tuple[str, int, str, str], float] = {}
+_EMAIL_DUPLICATE_DETAIL = (
+    "Already sent — this email went to that address less than a minute ago; check with the client before sending again"
+)
+
+
+def _reset_recent_emails() -> None:
+    """Test hook: the guard is module state, so a test that fills it must be
+    able to empty it again."""
+    _recent_emails.clear()
+
+
+def _email_guard_key_or_409(kind: str, project_id: int, document_id: str, recipient: str) -> tuple[str, int, str, str]:
+    """Prune the guard and return this send's key, raising 409 if the same
+    document already went (or may have gone) to the same address inside the
+    window. Reads the clock through the module's own `time` name, like
+    _sms_guard_key_or_409, so a test can rebind it to a fake clock."""
+    now = time.monotonic()
+    for stale in [k for k, at in _recent_emails.items() if now - at >= _EMAIL_DUPLICATE_WINDOW_S]:
+        del _recent_emails[stale]
+    key = (kind, project_id, document_id, recipient.lower())
+    if key in _recent_emails:
+        raise HTTPException(status_code=409, detail=_EMAIL_DUPLICATE_DETAIL)
+    return key
+
+
+def _check_zoho_email_rate_limit(request: Request, current_user: User | None) -> None:
+    """The quote- and invoice-email budget: one shared bucket, checked before
+    any lookup so a loop spends neither Books calls nor client inboxes."""
+    _check_rate_limit(
+        request,
+        current_user,
+        bucket="zoho_email",
+        max_calls=_ZOHO_EMAIL_MAX_CALLS,
+        detail=_ZOHO_EMAIL_DETAIL,
+    )
+
+
 @router.post("/{project_id}/invoice-email", response_model=AitoInvoiceResponse)
 async def send_invoice_email(
     project_id: int,
     payload: AitoInvoiceEmailRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
@@ -2510,6 +2579,7 @@ async def send_invoice_email(
     producing a 500 anyway. Locals sidestep that entirely; ``project`` itself
     must not be touched again past this point.
     """
+    _check_zoho_email_rate_limit(request, current_user)
     project, invoice, content, _default_email, pre_send_count = await _load_invoice_email_content(
         db, project_id, payload.invoice_id, rollback_on_error=True
     )
@@ -2531,12 +2601,22 @@ async def send_invoice_email(
     if recipient.lower() not in {r["email"].lower() for r in content["recipients"]}:
         raise HTTPException(status_code=422, detail="That address is not a recipient of this invoice")
 
+    key = _email_guard_key_or_409("invoice", project_pk, invoice["id"], recipient)
+    # Armed before the send; nothing is awaited between the check and here.
+    _recent_emails[key] = time.monotonic()
     try:
         await zoho_service.email_invoice(db, invoice["id"], to_mail_ids=[recipient])
     except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
+        if not isinstance(e, ZohoUnreachable):
+            # Books refused cleanly: nothing was sent, so an honest retry may go.
+            _recent_emails.pop(key, None)
         logger.warning("Aito invoice email failed for project %s: %s", project_id, e)
         await db.rollback()
         raise _zoho_email_http_error(e) from e
+    except Exception:
+        # Not one of Books' answers, so nothing is known to have been sent.
+        _recent_emails.pop(key, None)
+        raise
 
     event_recorded = True
     try:
@@ -2781,6 +2861,7 @@ async def get_quote_email(
 async def send_quote_email(
     project_id: int,
     payload: AitoQuoteEmailRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
@@ -2812,6 +2893,7 @@ async def send_quote_email(
     re-sending anything, so a failure there degrades to ``marked_sent=False``
     rather than a 500.
     """
+    _check_zoho_email_rate_limit(request, current_user)
     project = await _get_active_project_or_404(db, project_id)
     content, _ = await _load_quote_email_content(db, project, project_id, rollback_on_error=True)
 
@@ -2833,9 +2915,15 @@ async def send_quote_email(
     if recipient.lower() not in {r["email"].lower() for r in content["recipients"]}:
         raise HTTPException(status_code=422, detail="That address is not a recipient of this quote")
 
+    key = _email_guard_key_or_409("quote", project.id, project.quote_id, recipient)
+    # Armed before the send; nothing is awaited between the check and here.
+    _recent_emails[key] = time.monotonic()
     try:
         await zoho_service.email_estimate(db, project.quote_id, to_mail_ids=[recipient])
     except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
+        if not isinstance(e, ZohoUnreachable):
+            # Books refused cleanly: nothing was sent, so an honest retry may go.
+            _recent_emails.pop(key, None)
         logger.warning("Aito quote email failed for project %s: %s", project_id, e)
         # Belt-and-braces, not load-bearing: unlike set_quote_status, this
         # handler re-raises rather than swallowing the error, so get_db's own
@@ -2846,6 +2934,10 @@ async def send_quote_email(
         # this line and the raise that reads it.
         await db.rollback()
         raise _zoho_email_http_error(e) from e
+    except Exception:
+        # Not one of Books' answers, so nothing is known to have been sent.
+        _recent_emails.pop(key, None)
+        raise
 
     await record(
         db,

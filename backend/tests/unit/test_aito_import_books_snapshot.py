@@ -202,3 +202,22 @@ async def test_books_figures_that_fail_the_schema_are_a_422_and_store_nothing(as
     r = await async_client.post("/api/v1/aito/", json=_import_body())
     assert r.status_code == 422
     assert await _board(async_client) == []
+
+
+@pytest.mark.parametrize(
+    "error",
+    [ZohoUpstreamError("Books is down"), ZohoNotConfiguredError("missing settings"), None],
+)
+async def test_a_duplicate_import_is_a_409_before_any_books_call(async_client, db_session, books, wake, error):
+    """T-070: the already-has-a-card check keys on quote_id (never overwritten
+    by Books), so it runs before the re-read — a duplicate import is a 409 with
+    Books down, unconfigured, or up, and Books is never asked."""
+    db_session.add(AitoProject(description="Existing", client_name="ACME", quote_id="E1", board_column="devis"))
+    await db_session.commit()
+    books["error"] = error
+    r = await async_client.post("/api/v1/aito/", json=_import_body())
+    assert r.status_code == 409, r.text
+    assert "already" in r.json()["detail"]
+    assert books["calls"] == []
+    assert [p["description"] for p in await _board(async_client)] == ["Existing"]
+    assert not wake.is_set()
