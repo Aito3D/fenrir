@@ -9,7 +9,7 @@ docs/superpowers/specs/2026-09-06-aito-tracking-page-design.md
 
 import json
 import secrets
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,6 +20,7 @@ from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
 from backend.app.models.aito_tracking_view import AitoTrackingView
 from backend.app.schemas.aito import AitoTrackingPayment, AitoTrackingResponse, AitoTrackingShipping, AitoTrackingTask
+from backend.app.services.aito_events import utc_now_naive
 from backend.app.services.aito_shipping import SERVICE_LABELS
 
 # Crockford's base32: digits and capitals minus I, L, O and U, so no symbol
@@ -349,7 +350,7 @@ async def purge_tracking_views(db: AsyncSession, older_than: timedelta = timedel
     a recent window (services/aito_tracking.py's callers), so rows past
     `older_than` have no reader left and would just grow the table forever.
     Returns the number of rows removed."""
-    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - older_than
+    cutoff = utc_now_naive() - older_than
     result = await db.execute(delete(AitoTrackingView).where(AitoTrackingView.viewed_at < cutoff))
     await db.commit()
     return result.rowcount or 0

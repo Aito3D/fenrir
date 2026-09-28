@@ -59,8 +59,15 @@ class ConnectionManager:
     async def set_aito_presence(self, websocket: WebSocket, project_id: int | None):
         """Record which Aito project this connection is viewing (None: none),
         then broadcast the full map. Mutation under the lock, broadcast after —
-        broadcast() takes the same lock and would deadlock inside it."""
+        broadcast() takes the same lock and would deadlock inside it.
+
+        (T-065) A message that repeats the connection's current project id
+        changes nothing in the map, so it is not re-broadcast: every Aito
+        viewer would otherwise receive an identical full map per repeat. No
+        time-based throttle — every real change is still broadcast at once."""
         async with self._lock:
+            if getattr(websocket.state, "aito_project_id", None) == project_id:
+                return
             websocket.state.aito_project_id = project_id
         await self.broadcast_aito(self.aito_presence_state())
 

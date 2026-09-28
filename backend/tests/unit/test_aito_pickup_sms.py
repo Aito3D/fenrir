@@ -394,6 +394,73 @@ async def test_a_record_commit_failure_after_a_real_send_does_not_500(async_clie
     assert "project.sms.sent" not in kinds
 
 
+# -------------------------- T-044: the send's own exceptions un-arm the guard
+
+
+@pytest.mark.asyncio
+async def test_an_unexpected_send_failure_unarms_the_guard_and_still_propagates(async_client, monkeypatch, db_session):
+    """send_sms_notification can fail for a reason that is neither of
+    Pushcut's own answers (a bug, a DB error building the title, ...) — that
+    carries none of PushcutUnreachable's ambiguity about whether the phone got
+    it, so the key armed before the call must be dropped and the honest retry
+    let through. The exception itself must still propagate unchanged rather
+    than being swallowed into some other handled response — the test suite's
+    own ASGI stack turns an unhandled exception into the auth middleware's
+    fail-closed 503 (see test_calculator_zoho_routes for the same idiom), so
+    that is what surfaces here rather than a raw RuntimeError."""
+    project = await _create_finished(async_client)
+    fail = {"on": True}
+
+    async def fake(db, *, phone, text, title):
+        if fail["on"]:
+            raise RuntimeError("boom")
+
+    _patch_send_sms(monkeypatch, fake)
+    failed = await async_client.post(f"/api/v1/aito/{project['id']}/pickup-sms", json={"message": "prêt"})
+    assert failed.status_code == 503
+    assert aito_routes._recent_sms == {}
+
+    fail["on"] = False
+    retry = await async_client.post(f"/api/v1/aito/{project['id']}/pickup-sms", json={"message": "prêt"})
+    assert retry.status_code == 200
+    assert "project.sms.sent" in await _events(db_session, project["id"])
+
+
+@pytest.mark.asyncio
+async def test_an_exception_after_a_successful_send_leaves_the_guard_armed(async_client, monkeypatch, db_session):
+    """T-044's un-arm is scoped to the send call only: a failure recording the
+    timeline event AFTER Pushcut already pushed the notification must NOT
+    un-arm the guard, because the SMS really did go out — an immediate
+    identical retry must still be refused as a duplicate, not reach Pushcut a
+    second time."""
+    project = await _create_finished(async_client)
+
+    async def fake(db, *, phone, text, title):
+        pass
+
+    _patch_send_sms(monkeypatch, fake)
+
+    real_commit = AsyncSession.commit
+    calls = {"n": 0}
+
+    async def flaky_commit(self):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise SQLAlchemyError("database is locked")
+        return await real_commit(self)
+
+    monkeypatch.setattr(AsyncSession, "commit", flaky_commit)
+
+    r = await async_client.post(f"/api/v1/aito/{project['id']}/pickup-sms", json={"message": "prêt. Aito3D"})
+    assert r.status_code == 200
+    assert aito_routes._recent_sms != {}
+    assert "project.sms.sent" not in await _events(db_session, project["id"])
+
+    retry = await async_client.post(f"/api/v1/aito/{project['id']}/pickup-sms", json={"message": "prêt. Aito3D"})
+    assert retry.status_code == 409
+    assert retry.json()["detail"] == aito_routes._SMS_DUPLICATE_DETAIL
+
+
 # ------------------------------------------- T-025: the send's rate limit
 
 

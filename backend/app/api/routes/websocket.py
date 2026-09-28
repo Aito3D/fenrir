@@ -17,6 +17,7 @@ not require a round-trip to the auth router.
 from __future__ import annotations
 
 import logging
+import time
 
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
@@ -55,13 +56,61 @@ async def _resolve_principal_and_aito_read(principal: str, db) -> tuple[int | No
     it is the resolved user's ``Permission.AITO_READ``
     (``User.has_permission`` short-circuits True for admins already), or
     False when the username no longer resolves to a user (e.g. deleted
-    after the token was minted) — fail closed, not guessed at.
+    after the token was minted) or the user is deactivated
+    (``is_active`` False, T-071 — every other auth path in core/auth.py
+    rejects such a user) — fail closed, not guessed at. Only the Aito
+    slice: ``principal_user_id`` is returned for a deactivated user as
+    before.
     """
     row = await db.execute(select(User).where(User.username == principal))
     principal_user = row.scalar_one_or_none()
     principal_user_id = principal_user.id if principal_user is not None else None
-    aito_read = principal_user is not None and principal_user.has_permission(Permission.AITO_READ)
+    aito_read = (
+        principal_user is not None and principal_user.is_active and principal_user.has_permission(Permission.AITO_READ)
+    )
     return principal_user_id, aito_read
+
+
+# (T-065) How often an open socket re-resolves its Aito read authority. The
+# check piggybacks on inbound messages (the SPA pings every 30 s), so the
+# effective bound is this interval plus at most one ping period, and it costs
+# one user lookup per interval per Aito-permitted socket — never a timer task.
+_AITO_READ_RECHECK_SECONDS = 60.0
+
+
+async def _recheck_aito_read(websocket: WebSocket) -> None:
+    """(T-065) Re-resolve a still-permitted connection's ``aito_read`` stamp
+    with the SAME resolution the connect path uses, at most once per
+    ``_AITO_READ_RECHECK_SECONDS``.
+
+    Only an authenticated user principal is ever re-checked: auth-disabled
+    (``None``) and API-key (``""``) connections keep their connect-time value
+    exactly as before. The change is one-way — a revoked (or deleted, or
+    deactivated) user stops receiving ``aito_changed`` /
+    ``aito_presence_state`` and leaves the viewer map, while printer broadcasts continue; a re-grant takes effect on
+    the next reconnect, which also resends the initial presence map. The
+    socket itself is never closed here: the connect path admits any valid
+    token regardless of the user row, so closing would refuse more than
+    connecting does. A lookup failure keeps the current value and retries at
+    the next interval — a DB blip must not permanently cut a permitted tab."""
+    if not websocket.state.fenrir_principal or not websocket.state.aito_read:
+        return
+    now = time.monotonic()
+    if now - websocket.state.aito_read_checked_at < _AITO_READ_RECHECK_SECONDS:
+        return
+    websocket.state.aito_read_checked_at = now
+    try:
+        async with async_session() as db:
+            _user_id, aito_read = await _resolve_principal_and_aito_read(websocket.state.fenrir_principal, db)
+    except Exception:  # SEC-AUTH-EXC: transient failure keeps the current stamp; retried next interval
+        logger.warning("WebSocket Aito read re-check failed for %s", websocket.state.fenrir_principal, exc_info=True)
+        return
+    if aito_read:
+        return
+    logger.info("WebSocket Aito read revoked for %s; stopping Aito updates", websocket.state.fenrir_principal)
+    # Flag first so the presence broadcast below already skips this socket.
+    websocket.state.aito_read = False
+    await ws_manager.set_aito_presence(websocket, None)
 
 
 @router.websocket("/ws")
@@ -146,6 +195,7 @@ async def websocket_endpoint(websocket: WebSocket, token: str | None = Query(def
             logger.warning("WebSocket principal resolve failed for %s", principal, exc_info=True)
     websocket.state.fenrir_principal_user_id = principal_user_id
     websocket.state.aito_read = aito_read
+    websocket.state.aito_read_checked_at = time.monotonic()
 
     # Now safe to admit the connection — every attribute broadcast_aito()
     # or broadcast_to_user() could ever read is already stamped.
@@ -181,6 +231,7 @@ async def websocket_endpoint(websocket: WebSocket, token: str | None = Query(def
         # Keep connection alive and handle incoming messages.
         while True:
             data = await websocket.receive_json()
+            await _recheck_aito_read(websocket)
 
             # Handle ping/pong for keepalive
             if data.get("type") == "ping":

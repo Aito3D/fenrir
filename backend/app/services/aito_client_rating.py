@@ -288,36 +288,34 @@ def rate_invoices(rows: list[dict], today: date, *, is_company: bool = False) ->
     return _make("medium", "mixed")
 
 
-def _response(row: AitoClientRating, *, stale: bool) -> AitoClientRatingResponse:
+def _rating_fields_to_response(
+    source: AitoClientRating | ClientRating, *, computed_at: datetime | None, stale: bool
+) -> AitoClientRatingResponse:
+    """Map the 8 fields ``AitoClientRating`` (the ORM row) and ``ClientRating``
+    (the pure dataclass) both expose, under the same attribute names, into a
+    response. ``computed_at``/``stale`` differ per caller, so they stay params
+    rather than being read off ``source``."""
     return AitoClientRatingResponse(
-        tier=row.tier,
-        reason=row.reason,
-        settled_count=row.settled_count,
-        on_time_count=row.on_time_count,
-        overdue_count=row.overdue_count,
-        past_due_count=row.past_due_count,
-        worst_overdue_days=row.worst_overdue_days,
-        worst_overdue_number=row.worst_overdue_number,
-        is_company=row.is_company,
-        computed_at=row.computed_at,
+        tier=source.tier,
+        reason=source.reason,
+        settled_count=source.settled_count,
+        on_time_count=source.on_time_count,
+        overdue_count=source.overdue_count,
+        past_due_count=source.past_due_count,
+        worst_overdue_days=source.worst_overdue_days,
+        worst_overdue_number=source.worst_overdue_number,
+        is_company=source.is_company,
+        computed_at=computed_at,
         stale=stale,
     )
 
 
+def _response(row: AitoClientRating, *, stale: bool) -> AitoClientRatingResponse:
+    return _rating_fields_to_response(row, computed_at=row.computed_at, stale=stale)
+
+
 def _response_from_rating(rating: ClientRating, computed_at: datetime) -> AitoClientRatingResponse:
-    return AitoClientRatingResponse(
-        tier=rating.tier,
-        reason=rating.reason,
-        settled_count=rating.settled_count,
-        on_time_count=rating.on_time_count,
-        overdue_count=rating.overdue_count,
-        past_due_count=rating.past_due_count,
-        worst_overdue_days=rating.worst_overdue_days,
-        worst_overdue_number=rating.worst_overdue_number,
-        is_company=rating.is_company,
-        computed_at=computed_at,
-        stale=False,
-    )
+    return _rating_fields_to_response(rating, computed_at=computed_at, stale=False)
 
 
 def _new() -> AitoClientRatingResponse:

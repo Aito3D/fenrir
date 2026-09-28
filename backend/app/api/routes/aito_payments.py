@@ -6,7 +6,7 @@ shares its helpers. Spec: docs/superpowers/specs/2026-09-23-aito-counter-payment
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime, timezone
+from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,9 +30,11 @@ from backend.app.schemas.aito import (
     AitoTerminalPaymentCreate,
     AitoTerminalPaymentView,
 )
+from backend.app.services.aito_events import utc_now_naive as _now
 from backend.app.services.aito_manual_payments import (
     AmountAboveBalance,
     DuplicateManualPayment,
+    ManualPaymentOutcomeUnknown,
     ManualPaymentPartial,
     ManualPaymentUnrecorded,
     record_manual_payment,
@@ -85,10 +87,6 @@ def _check_counter_payment_rate_limit(request: Request, current_user: User | Non
         )
     except HTTPException as e:
         raise _refuse(429, "rate_limited", _COUNTER_PAYMENT_DETAIL) from e
-
-
-def _now() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def _refuse(status: int, code: str, message: str) -> HTTPException:
@@ -207,6 +205,29 @@ async def record_manual_payment_route(
             "manual_partial",
             f"Retainer {e.retainer_number} was raised in Zoho Books but its payment could not be recorded: "
             f"{e.cause}. Record the payment on it in Books.",
+        ) from e
+    except ManualPaymentOutcomeUnknown as e:
+        # Books did not answer the payment call (a timeout can land after
+        # Books applied it). The guard stays armed, so an identical retry
+        # inside the window answers 409; the message says to look first.
+        if e.stage == "retainer":
+            # T-079: the retainer invoice creation itself went unanswered --
+            # no payment was attempted, but a retainer may exist in Books.
+            raise _refuse(
+                502,
+                "manual_outcome_unknown",
+                f"Zoho Books did not answer the retainer invoice creation ({e.cause}). "
+                "A retainer invoice may already be in Books — check before retrying.",
+            ) from e
+        prefix = (
+            f"Retainer {e.retainer_number} was raised in Zoho Books but Books did not answer the payment on it"
+            if e.retainer_number
+            else "Zoho Books did not answer the payment"
+        )
+        raise _refuse(
+            502,
+            "manual_outcome_unknown",
+            f"{prefix} ({e.cause}). The payment may already be in Books — check before retrying.",
         ) from e
     except ManualPaymentUnrecorded as e:
         # The money moved. Never a 500 (spec §8: once an upstream side effect

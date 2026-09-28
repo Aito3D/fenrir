@@ -256,6 +256,7 @@
    254	# Migration: repair the tare of spools the RFID auto-add gave the wrong
    255	# Migration: drop the AMS slot markers an older Fenrir wrote into
    256	# Migration: whether Books has been directly observed to agree with an
+   257	# Migration: a settled terminal charge whose event/acceptance failed is
 
 ### stderr:
 

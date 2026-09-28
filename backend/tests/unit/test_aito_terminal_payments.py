@@ -15,11 +15,13 @@ from backend.app.models.aito_terminal_payment import AitoTerminalPayment
 from backend.app.services import aito_terminal_payments as svc
 from backend.app.services.aito_payment_documents import PaymentDocument
 from backend.app.services.heimdall import (
+    HeimdallAmbiguous,
     HeimdallConflict,
     HeimdallNotConfigured,
     HeimdallNotFound,
     HeimdallRateLimited,
     HeimdallUnreachable,
+    HeimdallUpstreamError,
     LinkView,
     heimdall_service,
 )
@@ -54,6 +56,15 @@ async def _heimdall(db_session):
     heimdall_service._transport = None
     yield
     heimdall_service._transport = None
+
+
+@pytest.fixture(autouse=True)
+def _forget_redrive_failures():
+    """The consecutive re-drive failure counts live in a module dict (T-082);
+    empty it around every test so no count leaks into the next one."""
+    svc._reset_redrive_failures()
+    yield
+    svc._reset_redrive_failures()
 
 
 async def _project(db, **over):
@@ -1032,6 +1043,106 @@ async def test_the_sweep_ages_out_a_timed_out_reservation_the_operator_walked_aw
     assert aged.status == "failed" and aged.sync_error == "reservation abandoned" and aged.settled_at == later
 
 
+# --- ambiguous answers (T-058) -----------------------------------------------
+
+_AMBIGUOUS_ANSWERS = [
+    pytest.param(lambda: httpx.Response(500, json={"error": {"code": "internal", "message": "boom"}}), id="500"),
+    pytest.param(lambda: httpx.Response(502, content=b"<html>502 Bad Gateway</html>"), id="502-html"),
+    pytest.param(lambda: httpx.Response(504, content=b"<html>504 Gateway Time-out</html>"), id="504-html"),
+    pytest.param(lambda: httpx.Response(503, json={}), id="503-empty"),
+    pytest.param(lambda: httpx.Response(200, content=b"<html>ok?</html>"), id="200-html"),
+    # T-077: a 2xx Heimdall answered after accepting `confirm: true`, whose
+    # body cannot be read as a payment (a proxy stripped it, a schema change).
+    pytest.param(lambda: httpx.Response(202, content=b""), id="202-empty"),
+    pytest.param(lambda: httpx.Response(202, json=[_payment()]), id="202-list"),
+    pytest.param(lambda: httpx.Response(202, json=_payment_without("id")), id="202-missing-id"),
+    pytest.param(lambda: httpx.Response(202, json=_payment_without("amount")), id="202-missing-amount"),
+]
+
+
+def _payment_without(field):
+    body = _payment()
+    del body[field]
+    return body
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("answer", _AMBIGUOUS_ANSWERS)
+async def test_start_leaves_the_reservation_pending_on_an_ambiguous_answer(db_session, answer):
+    """A 5xx or a non-JSON body (a proxy's 502/504 page) on a POST carrying
+    `confirm: true` says no more about the terminal than a read timeout: the
+    row stays an unminted reservation, and the next start for the same
+    charge replays the SAME idempotency key instead of reserving a new one."""
+    p = await _project(db_session)
+    keys = []
+
+    def ambiguous(request):
+        keys.append(request.headers["idempotency-key"])
+        return answer()
+
+    heimdall_service._transport = httpx.MockTransport(ambiguous)
+    with pytest.raises(HeimdallAmbiguous):
+        await svc.start_terminal_payment(db_session, p, document=INVOICE, amount=23000, actor_name="paul", now=NOW)
+    row = (await db_session.execute(select(AitoTerminalPayment))).scalar_one()
+    assert row.status == "pending" and row.heimdall_id is None and row.settled_at is None
+    assert row.sync_error and row.checked_at == NOW
+    assert row.id not in svc._in_flight
+    assert await _events(db_session, p.id, "payment.terminal.failed") == []
+
+    def handler(request):
+        keys.append(request.headers["idempotency-key"])
+        return httpx.Response(202, json=_payment(id="h-replay"))
+
+    heimdall_service._transport = httpx.MockTransport(handler)
+    again = await svc.start_terminal_payment(
+        db_session, p, document=INVOICE, amount=23000, actor_name="paul", now=NOW + timedelta(minutes=1)
+    )
+    assert keys == [f"aito-tpe:{p.id}:1", f"aito-tpe:{p.id}:1"]  # a replay, never a second charge
+    assert again.id == row.id and again.heimdall_id == "h-replay" and again.sync_error is None
+    assert len((await db_session.execute(select(AitoTerminalPayment))).scalars().all()) == 1
+
+
+@pytest.mark.asyncio
+async def test_an_ambiguous_reservation_is_replaced_by_a_charge_for_another_amount(db_session):
+    """The existing T-011 rule, unchanged: a different amount abandons the
+    stranded reservation (never re-sent) and reserves a fresh key."""
+    p = await _project(db_session)
+    heimdall_service._transport = httpx.MockTransport(lambda r: httpx.Response(504, content=b"<html>504</html>"))
+    with pytest.raises(HeimdallAmbiguous):
+        await svc.start_terminal_payment(db_session, p, document=INVOICE, amount=23000, actor_name="paul", now=NOW)
+    stuck_id = (await db_session.execute(select(AitoTerminalPayment.id))).scalar_one()
+    keys = []
+
+    def handler(request):
+        keys.append(request.headers["idempotency-key"])
+        return httpx.Response(202, json=_payment(id="h-fresh"))
+
+    heimdall_service._transport = httpx.MockTransport(handler)
+    later = NOW + timedelta(minutes=1)
+    row = await svc.start_terminal_payment(db_session, p, document=INVOICE, amount=500, actor_name="paul", now=later)
+    assert keys == [f"aito-tpe:{p.id}:2"]
+    assert row.id != stuck_id and row.heimdall_id == "h-fresh"
+    abandoned = await db_session.get(AitoTerminalPayment, stuck_id)
+    assert abandoned.status == "failed" and "replaced by a new charge" in (abandoned.sync_error or "")
+    assert abandoned.settled_at == later
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [400, 403, 404, 422])
+async def test_a_4xx_on_start_is_still_a_clean_refusal(db_session, status):
+    """Heimdall answered and said no: nothing was created, the row is
+    `failed` and settled exactly as before T-058."""
+    p = await _project(db_session)
+    heimdall_service._transport = httpx.MockTransport(
+        lambda r: httpx.Response(status, json={"error": {"code": "nope", "message": "no"}})
+    )
+    with pytest.raises(HeimdallUpstreamError) as info:
+        await svc.start_terminal_payment(db_session, p, document=INVOICE, amount=1, actor_name=None, now=NOW)
+    assert not isinstance(info.value, (HeimdallAmbiguous, HeimdallUnreachable))
+    row = (await db_session.execute(select(AitoTerminalPayment))).scalar_one()
+    assert row.status == "failed" and row.settled_at == NOW and str(status) in (row.sync_error or "")
+
+
 # --- the settle is claimed, not check-then-acted ------------------------------
 
 
@@ -1198,3 +1309,520 @@ async def test_a_declined_settle_still_stamps_settled_at_once(db_session):
     await svc.apply_terminal_state(db_session, row, declined, now=NOW + timedelta(seconds=30))
     assert row.settled_at == NOW
     assert len(await _events(db_session, p.id, "payment.terminal.failed")) == 1
+
+
+@pytest.mark.asyncio
+async def test_one_failure_does_not_stop_the_pass(db_session, monkeypatch):
+    """`poll_open_terminal_payments`'s per-row `except Exception: ... await
+    db.rollback()` (mirroring `aito_payment_links.reconcile_payment_links`'s
+    own `test_one_failure_does_not_stop_the_pass`) must not let one row's
+    blown-up GET end the tick. `h-fail` is visited first and its
+    `refresh_terminal_payment` raises outright; `h-ok`, later in the same
+    batch, must still be visited and settled — which only holds if the
+    rollback after the first failure leaves the session usable for the
+    rest of the loop."""
+    p = await _project(db_session)
+    project_id = p.id
+    failing = AitoTerminalPayment(
+        project_id=p.id,
+        document_kind="invoice",
+        document_id="i",
+        document_number="FA",
+        idempotency_key="k-fail",
+        heimdall_id="h-fail",
+        amount=1,
+        status="processing",
+        created_at=NOW,
+    )
+    ok = AitoTerminalPayment(
+        project_id=p.id,
+        document_kind="invoice",
+        document_id="i",
+        document_number="FA",
+        idempotency_key="k-ok",
+        heimdall_id="h-ok",
+        amount=1,
+        status="processing",
+        created_at=NOW,
+    )
+    db_session.add_all([failing, ok])
+    await db_session.commit()
+    fail_id, ok_id = failing.id, ok.id
+
+    async def noop(*a, **k):
+        return None
+
+    monkeypatch.setattr("backend.app.services.aito_manual_payments.refresh_after_payment", noop)
+
+    async def flaky_get(db, payment_id):
+        if payment_id == "h-fail":
+            raise RuntimeError("boom")
+        return _paid_view(id="h-ok", amount=1, booking_status="booked", zoho_payment_id="z-ok")
+
+    monkeypatch.setattr(heimdall_service, "get_payment", flaky_get)
+    later = NOW + timedelta(minutes=5)
+    visited = await svc.poll_open_terminal_payments(db_session, now=later)
+
+    assert visited == 2
+    still_open = await db_session.get(AitoTerminalPayment, fail_id)
+    await db_session.refresh(still_open)
+    assert still_open.status == "processing" and still_open.checked_at is None
+    settled = await db_session.get(AitoTerminalPayment, ok_id)
+    await db_session.refresh(settled)
+    assert settled.status == "paid" and settled.settled_at == later
+    assert settled.zoho_payment_id == "z-ok"
+    assert len(await _events(db_session, project_id, "payment.terminal.paid")) == 1
+
+
+# --- a hung Heimdall stops the poll (T-057) -----------------------------------
+
+
+async def _three_open_charges(db, project_id):
+    rows = [
+        AitoTerminalPayment(
+            project_id=project_id,
+            document_kind="invoice",
+            document_id="inv-1",
+            document_number="FA",
+            idempotency_key=f"k-{n}",
+            heimdall_id=f"h-{n}",
+            amount=1,
+            status="processing",
+            created_at=NOW,
+        )
+        for n in (1, 2, 3)
+    ]
+    db.add_all(rows)
+    await db.commit()
+    return [r.id for r in rows]
+
+
+def _poll_transport(calls, first):
+    """GET h-1 answers with `first` (a Response, or an exception to raise);
+    every other GET answers a still-processing payment."""
+
+    def handler(request):
+        hid = request.url.path.rsplit("/", 1)[-1]
+        calls.append(hid)
+        if hid == "h-1":
+            if isinstance(first, Exception):
+                raise first
+            return first
+        return httpx.Response(200, json=_payment(id=hid, amount=1))
+
+    return httpx.MockTransport(handler)
+
+
+@pytest.mark.asyncio
+async def test_an_unreachable_poll_stops_the_terminal_sweep_after_the_first_row(db_session):
+    """A hung Heimdall costs the full client timeout per GET: the first
+    `HeimdallUnreachable` is stored on its row and the sweep stops there —
+    the other open rows are left for the next tick, untouched. No throttle:
+    the next tick polls them all again."""
+    p = await _project(db_session)
+    ids = await _three_open_charges(db_session, p.id)
+    calls = []
+    heimdall_service._transport = _poll_transport(calls, httpx.ReadTimeout("timed out"))
+    later = NOW + timedelta(minutes=5)
+    assert await svc.poll_open_terminal_payments(db_session, now=later) == 1
+    assert calls == ["h-1"]
+    first, second, third = [await db_session.get(AitoTerminalPayment, rid) for rid in ids]
+    assert first.sync_error.startswith("Heimdall unreachable") and first.checked_at == later
+    for untouched in (second, third):
+        await db_session.refresh(untouched)
+        assert untouched.sync_error is None and untouched.checked_at is None
+    calls.clear()
+    heimdall_service._transport = _poll_transport(calls, httpx.Response(200, json=_payment(id="h-1", amount=1)))
+    assert await svc.poll_open_terminal_payments(db_session, now=later + timedelta(minutes=5)) == 3
+    assert sorted(calls) == ["h-1", "h-2", "h-3"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "first",
+    [
+        httpx.Response(400, json={"error": {"code": "bad_request", "message": "no"}}),
+        httpx.Response(503, content=b"<html>503</html>"),
+        httpx.Response(200, json=[]),
+        httpx.Response(200, json={"id": "h-1"}),
+    ],
+    ids=["400", "503-html", "200-list", "200-missing-amount"],
+)
+async def test_an_answered_failure_on_one_charge_still_polls_the_rest(db_session, first):
+    """Heimdall answered (a 4xx, or a 5xx / proxy page): the transport
+    works, so every open row is still polled, exactly as before T-057."""
+    p = await _project(db_session)
+    ids = await _three_open_charges(db_session, p.id)
+    calls = []
+    heimdall_service._transport = _poll_transport(calls, first)
+    later = NOW + timedelta(minutes=5)
+    assert await svc.poll_open_terminal_payments(db_session, now=later) == 3
+    assert calls == ["h-1", "h-2", "h-3"]
+    rows = [await db_session.get(AitoTerminalPayment, rid) for rid in ids]
+    assert rows[0].sync_error and all(r.checked_at == later for r in rows)
+
+
+@pytest.mark.asyncio
+async def test_the_get_route_refresh_still_returns_the_row_on_a_transport_failure(db_session):
+    """`refresh_terminal_payment` (the GET route's refresh) is unchanged: it
+    stores the transport error and hands the row back, never raising."""
+    p = await _project(db_session)
+    (rid, *_) = await _three_open_charges(db_session, p.id)
+    heimdall_service._transport = _poll_transport([], httpx.ReadTimeout("timed out"))
+    row = await db_session.get(AitoTerminalPayment, rid)
+    later = NOW + timedelta(minutes=5)
+    assert await svc.refresh_terminal_payment(db_session, row, now=later) is row
+    assert row.status == "processing" and row.sync_error.startswith("Heimdall unreachable")
+
+
+# --- a failed settle's effects are re-driven (T-059) --------------------------
+
+
+def _fail_rules_once(monkeypatch):
+    """`apply_quote_decision` raises once before its commit — the shape of
+    SQLite 'database is locked' or a rules failure inside the acceptance."""
+    from sqlalchemy.exc import OperationalError
+
+    import backend.app.api.routes.aito as routes
+
+    real = routes._apply_rules
+    calls = []
+
+    async def flaky(*a, **k):
+        calls.append(1)
+        if len(calls) == 1:
+            raise OperationalError("UPDATE", {}, Exception("database is locked"))
+        return await real(*a, **k)
+
+    monkeypatch.setattr(routes, "_apply_rules", flaky)
+    return calls
+
+
+def _spy_effects(monkeypatch):
+    from backend.app.services.notification_service import notification_service
+
+    notified, refreshed = [], []
+
+    async def spy_notify(db, **kw):
+        notified.append(kw)
+
+    async def fake_refresh(db, project_id, kind):
+        refreshed.append((project_id, kind))
+
+    monkeypatch.setattr(notification_service, "on_aito_payment_received", spy_notify)
+    monkeypatch.setattr("backend.app.services.aito_manual_payments.refresh_after_payment", fake_refresh)
+    return notified, refreshed
+
+
+@pytest.mark.asyncio
+async def test_a_failed_acceptance_after_the_settle_claim_is_redriven_exactly_once(db_session, monkeypatch):
+    """The settle claim commits; the acceptance then raises. The row stays
+    settled with its effects owed (`effects_pending_at`); a sweep inside the
+    grace window leaves it alone, the first sweep after it records the event,
+    accepts the quote and notifies — once — and a third sweep does nothing."""
+    p = await _project(db_session)
+    project_id = p.id
+    row = await _open_quote_charge(db_session, project_id)
+    row_id = row.id
+    notified, refreshed = _spy_effects(monkeypatch)
+    rules_calls = _fail_rules_once(monkeypatch)
+    gets = []
+
+    async def fake_get(db, payment_id):
+        gets.append(payment_id)
+        return _paid_view()
+
+    monkeypatch.setattr(heimdall_service, "get_payment", fake_get)
+
+    assert await svc.poll_open_terminal_payments(db_session, now=NOW) == 1
+    assert len(rules_calls) == 1
+    stored = await db_session.get(AitoTerminalPayment, row_id)
+    await db_session.refresh(stored)
+    assert stored.status == "paid" and stored.settled_at == NOW and stored.effects_pending_at == NOW
+    assert await _events(db_session, project_id, "payment.terminal.paid") == []
+    assert await _events(db_session, project_id, "quote.accepted") == []
+    assert notified == [] and refreshed == []
+
+    # Inside the grace window: not re-driven yet, and no Heimdall call (the row is settled).
+    inside = NOW + timedelta(seconds=svc.EFFECTS_REDRIVE_GRACE_SECONDS - 1)
+    assert await svc.poll_open_terminal_payments(db_session, now=inside) == 0
+    assert await _events(db_session, project_id, "payment.terminal.paid") == []
+
+    after = NOW + timedelta(seconds=svc.EFFECTS_REDRIVE_GRACE_SECONDS)
+    assert await svc.poll_open_terminal_payments(db_session, now=after) == 1
+    paid = await _events(db_session, project_id, "payment.terminal.paid")
+    assert len(paid) == 1 and paid[0].detail["amount_confirmed"] == 5000
+    assert len(await _events(db_session, project_id, "quote.accepted")) == 1
+    assert len(notified) == 1 and notified[0]["source"] == "terminal"
+    assert refreshed == [(project_id, "quote")]
+    fresh = await db_session.get(AitoProject, project_id)
+    await db_session.refresh(fresh)
+    assert fresh.quote_status == "accepted"
+    await db_session.refresh(stored)
+    assert stored.effects_pending_at is None and stored.settled_at == NOW
+
+    assert await svc.poll_open_terminal_payments(db_session, now=after + timedelta(hours=1)) == 0
+    assert len(await _events(db_session, project_id, "payment.terminal.paid")) == 1
+    assert len(await _events(db_session, project_id, "quote.accepted")) == 1
+    assert len(notified) == 1 and len(refreshed) == 1
+    assert gets == ["h-1"]
+
+
+@pytest.mark.asyncio
+async def test_a_failed_event_commit_on_a_declined_settle_is_redriven(db_session, monkeypatch):
+    """A non-paid settle owes only its event: re-driven once, no acceptance,
+    no refresh."""
+    p = await _project(db_session)
+    project_id = p.id
+    row = await _open_quote_charge(db_session, project_id, idempotency_key="k-redrive-declined")
+    notified, refreshed = _spy_effects(monkeypatch)
+    real_record = svc.record
+    calls = []
+
+    async def flaky_record(*a, **k):
+        calls.append(a[2])
+        if len(calls) == 1:
+            raise RuntimeError("event write failed")
+        return await real_record(*a, **k)
+
+    monkeypatch.setattr(svc, "record", flaky_record)
+    declined = _paid_view(status="failed", native_state="declined", amount_confirmed=None, booking_status=None)
+    with pytest.raises(RuntimeError):
+        await svc.apply_terminal_state(db_session, row, declined, now=NOW)
+    stored = await db_session.get(AitoTerminalPayment, row.id)
+    await db_session.refresh(stored)
+    assert stored.status == "failed" and stored.settled_at == NOW and stored.effects_pending_at == NOW
+    assert await _events(db_session, project_id, "payment.terminal.failed") == []
+
+    later = NOW + timedelta(seconds=svc.EFFECTS_REDRIVE_GRACE_SECONDS)
+    assert await svc.poll_open_terminal_payments(db_session, now=later) == 1
+    assert len(await _events(db_session, project_id, "payment.terminal.failed")) == 1
+    assert await svc.poll_open_terminal_payments(db_session, now=later + timedelta(hours=1)) == 0
+    assert len(await _events(db_session, project_id, "payment.terminal.failed")) == 1
+    assert notified == [] and refreshed == []
+    fresh = await db_session.get(AitoProject, project_id)
+    await db_session.refresh(fresh)
+    assert fresh.quote_status == "sent"
+
+
+@pytest.mark.asyncio
+async def test_a_redrive_that_fails_again_keeps_the_marker_and_the_pass_goes_on(db_session, monkeypatch):
+    p = await _project(db_session)
+    project_id = p.id
+    first = await _open_quote_charge(db_session, project_id, idempotency_key="k-r1", heimdall_id="h-r1")
+    second = await _open_quote_charge(
+        db_session, project_id, idempotency_key="k-r2", heimdall_id="h-r2", document_kind="invoice"
+    )
+    for r in (first, second):
+        r.status = "paid"
+        r.booking_status = "booked"
+        r.settled_at = NOW
+        r.effects_pending_at = NOW
+    await db_session.commit()
+    first_id, second_id = first.id, second.id
+    _spy_effects(monkeypatch)
+    real_record = svc.record
+
+    async def flaky_record(db, pid, kind, **k):
+        if k["detail"]["heimdall_id"] == "h-r1":
+            raise RuntimeError("still failing")
+        return await real_record(db, pid, kind, **k)
+
+    monkeypatch.setattr(svc, "record", flaky_record)
+    later = NOW + timedelta(seconds=svc.EFFECTS_REDRIVE_GRACE_SECONDS)
+    assert await svc.poll_open_terminal_payments(db_session, now=later) == 1
+    r1 = await db_session.get(AitoTerminalPayment, first_id)
+    r2 = await db_session.get(AitoTerminalPayment, second_id)
+    await db_session.refresh(r1)
+    await db_session.refresh(r2)
+    assert r1.effects_pending_at == NOW and r2.effects_pending_at is None
+    paid = await _events(db_session, project_id, "payment.terminal.paid")
+    assert [e.detail["heimdall_id"] for e in paid] == ["h-r2"]
+
+
+@pytest.mark.asyncio
+async def test_a_redrive_whose_marker_was_already_cleared_does_nothing(test_engine, db_session, monkeypatch):
+    """The re-drive claims the marker like the settle: if another session
+    cleared it after the selection, this one records and accepts nothing."""
+    p = await _project(db_session)
+    project_id = p.id
+    row = await _open_quote_charge(db_session, project_id, idempotency_key="k-r3")
+    row.status = "paid"
+    row.booking_status = "booked"
+    row.settled_at = NOW
+    row.effects_pending_at = NOW
+    await db_session.commit()
+    row_id = row.id
+    notified, refreshed = _spy_effects(monkeypatch)
+    maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    real_get = db_session.get
+
+    async def get_after_another_session_cleared(model, ident, **kw):
+        if model is AitoTerminalPayment:
+            async with maker() as other:
+                claimed = await other.get(AitoTerminalPayment, ident)
+                claimed.effects_pending_at = None
+                await other.commit()
+        return await real_get(model, ident, **kw)
+
+    monkeypatch.setattr(db_session, "get", get_after_another_session_cleared)
+    later = NOW + timedelta(seconds=svc.EFFECTS_REDRIVE_GRACE_SECONDS)
+    assert await svc._redrive_settle_effects(db_session, now=later, limit=10) == 0
+    monkeypatch.undo()
+    assert await _events(db_session, project_id, "payment.terminal.paid") == []
+    assert notified == [] and refreshed == []
+    stored = await db_session.get(AitoTerminalPayment, row_id)
+    await db_session.refresh(stored)
+    assert stored.effects_pending_at is None
+
+
+@pytest.mark.asyncio
+async def test_a_replayed_paid_row_whose_settle_never_committed_is_polled_and_settled(db_session, monkeypatch):
+    """`start_terminal_payment`'s 200-replay commits the adopted `paid` row
+    before `apply_terminal_state`; if the settle claim then fails, the row is
+    paid, booked and unsettled. The sweep polls it again and settles it."""
+    p = await _project(db_session)
+    project_id = p.id
+    row = await _open_quote_charge(db_session, project_id, idempotency_key="k-r4")
+    row.status = "paid"
+    row.booking_status = "booked"
+    await db_session.commit()
+    row_id = row.id
+    notified, refreshed = _spy_effects(monkeypatch)
+    gets = []
+
+    async def fake_get(db, payment_id):
+        gets.append(payment_id)
+        return _paid_view()
+
+    monkeypatch.setattr(heimdall_service, "get_payment", fake_get)
+    assert await svc.poll_open_terminal_payments(db_session, now=NOW) == 1
+    stored = await db_session.get(AitoTerminalPayment, row_id)
+    await db_session.refresh(stored)
+    assert stored.settled_at == NOW and stored.effects_pending_at is None
+    assert len(await _events(db_session, project_id, "payment.terminal.paid")) == 1
+    assert len(notified) == 1 and refreshed == [(project_id, "quote")]
+    assert await svc.poll_open_terminal_payments(db_session, now=NOW + timedelta(hours=1)) == 0
+    assert gets == ["h-1"]
+
+
+async def _owed_paid_invoice_row(db, project_id, **over):
+    row = await _open_quote_charge(db, project_id, document_kind="invoice", **over)
+    row.status = "paid"
+    row.booking_status = "booked"
+    row.settled_at = NOW
+    row.effects_pending_at = NOW
+    await db.commit()
+    return row.id
+
+
+@pytest.mark.asyncio
+async def test_a_redrive_that_keeps_failing_is_surfaced_then_capped(db_session, monkeypatch, caplog):
+    """T-082 (user-approved 2026-09-27): a deterministic re-drive failure
+    lands in the row's `sync_error` from the first attempt, is re-driven up
+    to MAX_EFFECTS_REDRIVE_FAILURES times, then no more — `effects_pending_at`
+    is cleared, the error stays visible, and ERROR is logged once."""
+    p = await _project(db_session)
+    project_id = p.id
+    row_id = await _owed_paid_invoice_row(db_session, project_id, idempotency_key="k-cap", heimdall_id="h-cap")
+    _spy_effects(monkeypatch)
+    attempts = []
+
+    async def failing_record(db, pid, kind, **k):
+        attempts.append(kind)
+        raise RuntimeError("event table is gone")
+
+    monkeypatch.setattr(svc, "record", failing_record)
+    later = NOW + timedelta(seconds=svc.EFFECTS_REDRIVE_GRACE_SECONDS)
+    cap = svc.MAX_EFFECTS_REDRIVE_FAILURES
+    for i in range(cap + 2):
+        caplog.clear()
+        with caplog.at_level("WARNING", logger="backend.app.services.aito_terminal_payments"):
+            await svc._redrive_settle_effects(db_session, now=later + timedelta(minutes=i), limit=10)
+        stored = await db_session.get(AitoTerminalPayment, row_id)
+        await db_session.refresh(stored)
+        assert stored.sync_error == "Settle effects failed: event table is gone"
+        errors = [r for r in caplog.records if r.levelname == "ERROR"]
+        if i < cap - 1:
+            assert stored.effects_pending_at == NOW
+            assert errors == []
+        elif i == cap - 1:
+            assert stored.effects_pending_at is None
+            assert len(errors) == 1 and "giving up" in errors[0].getMessage()
+        else:
+            assert stored.effects_pending_at is None
+            assert caplog.records == []
+    # Re-driven exactly `cap` times, never after.
+    assert len(attempts) == cap
+    assert row_id not in svc._redrive_failures
+    # The panel's view carries the error.
+    assert svc.terminal_view(stored).sync_error == "Settle effects failed: event table is gone"
+    assert stored.status == "paid" and stored.settled_at == NOW
+
+
+@pytest.mark.asyncio
+async def test_a_redrive_that_recovers_before_the_cap_clears_the_error_and_runs_once(db_session, monkeypatch):
+    """T-082: a success before the cap clears the `sync_error` the failed
+    attempt wrote and completes the effects exactly once."""
+    p = await _project(db_session)
+    project_id = p.id
+    row_id = await _owed_paid_invoice_row(db_session, project_id, idempotency_key="k-rec", heimdall_id="h-rec")
+    notified, refreshed = _spy_effects(monkeypatch)
+    real_record = svc.record
+    calls = []
+
+    async def flaky_record(*a, **k):
+        calls.append(1)
+        if len(calls) == 1:
+            raise RuntimeError("database is locked")
+        return await real_record(*a, **k)
+
+    monkeypatch.setattr(svc, "record", flaky_record)
+    later = NOW + timedelta(seconds=svc.EFFECTS_REDRIVE_GRACE_SECONDS)
+    assert await svc._redrive_settle_effects(db_session, now=later, limit=10) == 0
+    stored = await db_session.get(AitoTerminalPayment, row_id)
+    await db_session.refresh(stored)
+    assert stored.sync_error == "Settle effects failed: database is locked"
+    assert stored.effects_pending_at == NOW
+
+    assert await svc._redrive_settle_effects(db_session, now=later, limit=10) == 1
+    await db_session.refresh(stored)
+    assert stored.sync_error is None and stored.effects_pending_at is None
+    assert row_id not in svc._redrive_failures
+    assert len(await _events(db_session, project_id, "payment.terminal.paid")) == 1
+    assert refreshed == [(project_id, "invoice")]
+
+    assert await svc._redrive_settle_effects(db_session, now=later + timedelta(hours=1), limit=10) == 0
+    assert len(await _events(db_session, project_id, "payment.terminal.paid")) == 1
+    assert len(refreshed) == 1 and notified == []
+
+
+@pytest.mark.asyncio
+async def test_a_redrive_failure_record_that_itself_fails_does_not_end_the_pass(db_session, monkeypatch):
+    """T-082: writing the failure is best effort — if that write fails too,
+    the pass still returns and the marker stays for the next tick."""
+    p = await _project(db_session)
+    project_id = p.id
+    row_id = await _owed_paid_invoice_row(db_session, project_id, idempotency_key="k-wf", heimdall_id="h-wf")
+    _spy_effects(monkeypatch)
+
+    async def failing_record(*a, **k):
+        raise RuntimeError("event write failed")
+
+    monkeypatch.setattr(svc, "record", failing_record)
+    real_commit = db_session.commit
+    commits = []
+
+    async def failing_commit():
+        commits.append(1)
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr(db_session, "commit", failing_commit)
+    later = NOW + timedelta(seconds=svc.EFFECTS_REDRIVE_GRACE_SECONDS)
+    assert await svc._redrive_settle_effects(db_session, now=later, limit=10) == 0
+    assert commits == [1]
+    monkeypatch.setattr(db_session, "commit", real_commit)
+    stored = await db_session.get(AitoTerminalPayment, row_id)
+    await db_session.refresh(stored)
+    assert stored.effects_pending_at == NOW and stored.sync_error is None
+    assert svc._redrive_failures[row_id] == 1

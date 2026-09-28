@@ -78,6 +78,35 @@ class ZohoUpstreamError(Exception):
     """Raised when Zoho returns an error or is unreachable."""
 
 
+class ZohoUnreachable(ZohoUpstreamError):
+    """A Books API call failed at the transport level (connect error, read
+    timeout, dropped connection) -- raised by ``_send`` for any
+    ``httpx.HTTPError``.
+
+    A subclass of ZohoUpstreamError so every existing handler still catches
+    it and behaves exactly as before, with the same message. It exists for
+    callers whose request WRITES: a read timeout can arrive after Books has
+    already applied the write, so the outcome is unknown rather than failed.
+    ``record_manual_payment`` catches it by name for that reason -- a retry
+    there could book the same payment twice.
+    """
+
+
+class ZohoAmbiguous(ZohoUpstreamError):
+    """Books (or a gateway in front of it) answered, but the answer does not
+    say whether the request was applied: an HTTP 5xx, or a body that is not
+    JSON at all (an edge 502/504 HTML page) -- raised by ``_request`` /
+    ``_raise_for_status``. A 4xx JSON refusal is NOT this: Books said no.
+
+    A subclass of ZohoUpstreamError with the same message as before, so every
+    existing handler still catches it and behaves exactly as before. It is a
+    sibling of ``ZohoUnreachable``, not a subclass, so handlers that branch on
+    that one are unchanged too. ``record_manual_payment`` catches it by name
+    next to ``ZohoUnreachable``: a gateway error can arrive after Books has
+    committed the payment, so a retry there could book it twice.
+    """
+
+
 class ZohoRequestRejected(ZohoUpstreamError):
     """Zoho rejected the payload (HTTP 400). The message is user-actionable."""
 
@@ -269,12 +298,29 @@ def _map_invoice(invoice: dict) -> dict:
 # How many pages of invoices one ``list_invoices_modified_since`` pass will
 # walk. 200 rows a page, so 10 pages is ~2000 invoices — comfortably more than
 # the backfill window the poll opens with (a 90-day window read ~4 pages on
-# the live org) and a hard ceiling on a watermark that has somehow gone stale
-# enough to select the org's whole history.
+# the live org). It bounds the cost of ONE pass, not what the poll sees: the
+# listing is read oldest first and says when it stopped at the cap, so a
+# window wider than the cap (a poll paused for months, a Books bulk update)
+# is walked across several passes instead of losing its older tail.
 _MAX_INVOICE_PAGES = 10
 # Same shape for the contact poll. The live org's 90-day window was 125
-# contacts (one page); the cap only matters for a watermark gone wrong.
+# contacts (one page). As above, the cap bounds one pass: the listing is read
+# oldest first and flags a pass it cut short, so a Books bulk contact edit or
+# a long pause is caught up over several passes rather than skipped.
 _MAX_CONTACT_PAGES = 10
+
+
+class ModifiedSinceRows(list):
+    """The rows of one ``list_*_modified_since`` pass, oldest first.
+
+    A plain list plus ``truncated``: True when the pass stopped at its page
+    cap with Books still reporting ``has_more_page``, so rows newer than the
+    last one returned exist and were not read. The polls use it to set their
+    watermark from the last row they processed instead of the usual overlap
+    rewind, so the next pass resumes exactly where this one stopped.
+    """
+
+    truncated: bool = False
 
 
 def _map_invoice_change(invoice: dict) -> dict:
@@ -423,7 +469,7 @@ class ZohoService:
                         headers={"Authorization": f"Zoho-oauthtoken {token}"},
                     )
             except httpx.HTTPError as e:
-                raise ZohoUpstreamError(f"Zoho Books unreachable: {e.__class__.__name__}") from e
+                raise ZohoUnreachable(f"Zoho Books unreachable: {e.__class__.__name__}") from e
             if response.status_code == 401 and attempt == 1:
                 self.invalidate_token()  # token revoked/expired early — refresh once
                 continue
@@ -445,6 +491,8 @@ class ZohoService:
                 f"Zoho Books error (HTTP {response.status_code})",
                 retry_after=_parse_retry_after(response.headers.get("Retry-After")),
             )
+        if response.status_code >= 500:
+            raise ZohoAmbiguous(f"Zoho Books error (HTTP {response.status_code})")
         if response.status_code >= 400:
             raise ZohoUpstreamError(f"Zoho Books error (HTTP {response.status_code})")
 
@@ -465,7 +513,7 @@ class ZohoService:
         try:
             payload = response.json() if response.content else {}
         except ValueError as e:
-            raise ZohoUpstreamError(f"Zoho returned a non-JSON response (HTTP {response.status_code})") from e
+            raise ZohoAmbiguous(f"Zoho returned a non-JSON response (HTTP {response.status_code})") from e
         self._raise_for_status(response, payload)
         return payload
 
@@ -878,7 +926,7 @@ class ZohoService:
         return _map_contact((await self._request(db, "GET", f"/contacts/{_seg(contact_id)}")).get("contact", {}))
 
     async def list_contacts_modified_since(self, db: AsyncSession, since: str) -> list[dict]:
-        """Customer contacts Books has touched since ``since``, newest first.
+        """Customer contacts Books has touched since ``since``, oldest first.
 
         The contact-side twin of ``list_invoices_modified_since``, feeding
         the contact poll (services/aito_contact_poll.py): one call tells the
@@ -889,9 +937,11 @@ class ZohoService:
 
         Rows are ``_map_contact`` plus ``last_modified_time``, the poll's
         watermark. Vendors are dropped exactly as ``search_contacts`` drops
-        them: a card can only point at a customer.
+        them: a card can only point at a customer. Oldest first and capped at
+        ``_MAX_CONTACT_PAGES``, with ``truncated`` set when the cap cut the
+        window short (see ``ModifiedSinceRows``).
         """
-        rows: list[dict] = []
+        rows = ModifiedSinceRows()
         for page in range(1, _MAX_CONTACT_PAGES + 1):
             payload = await self._request(
                 db,
@@ -900,7 +950,7 @@ class ZohoService:
                 params={
                     "last_modified_time": since,
                     "sort_column": "last_modified_time",
-                    "sort_order": "D",
+                    "sort_order": "A",
                     "per_page": "200",
                     "page": str(page),
                 },
@@ -913,6 +963,8 @@ class ZohoService:
                 )
             if not (payload.get("page_context") or {}).get("has_more_page"):
                 break
+        else:
+            rows.truncated = True
         return rows
 
     async def _contact_persons_raw(self, db: AsyncSession, contact_id: str) -> list[dict]:
@@ -1033,7 +1085,7 @@ class ZohoService:
         return [_map_invoice(i) for i in invoices]
 
     async def list_invoices_modified_since(self, db: AsyncSession, since: str) -> list[dict]:
-        """Every invoice in the org touched since ``since``, newest first.
+        """Every invoice in the org touched since ``since``, oldest first.
 
         The one read that is NOT keyed on a project. ``list_project_invoices``
         above answers "what has Books raised from THIS estimate", which is a
@@ -1057,11 +1109,13 @@ class ZohoService:
         needs the link must read the invoice itself — see ``get_invoice_raw``.
 
         Paginated because the caller's first pass is a backfill over months,
-        not a five-minute window. Capped at ``_MAX_INVOICE_PAGES``: a
-        watermark that somehow ends up at the epoch must cost a bounded
-        number of calls, not walk the org's entire invoice history.
+        not a five-minute window. Capped at ``_MAX_INVOICE_PAGES`` so one pass
+        costs a bounded number of calls, and read OLDEST first so the cap cuts
+        off the newest rows, not the oldest: a pass that stops at the cap
+        with more pages left returns ``truncated`` set, and the poll resumes
+        from the last row it read (see ``ModifiedSinceRows``).
         """
-        rows: list[dict] = []
+        rows = ModifiedSinceRows()
         for page in range(1, _MAX_INVOICE_PAGES + 1):
             payload = await self._request(
                 db,
@@ -1070,7 +1124,7 @@ class ZohoService:
                 params={
                     "last_modified_time": since,
                     "sort_column": "last_modified_time",
-                    "sort_order": "D",
+                    "sort_order": "A",
                     "per_page": "200",
                     "page": str(page),
                 },
@@ -1078,6 +1132,8 @@ class ZohoService:
             rows.extend(_map_invoice_change(i) for i in payload.get("invoices") or [])
             if not (payload.get("page_context") or {}).get("has_more_page"):
                 break
+        else:
+            rows.truncated = True
         return rows
 
     async def get_invoice_raw(self, db: AsyncSession, invoice_id: str) -> dict:

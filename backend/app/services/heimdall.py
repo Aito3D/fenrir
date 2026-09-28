@@ -22,7 +22,7 @@ import logging
 import secrets
 import time
 from dataclasses import dataclass
-from urllib.parse import urlparse
+from urllib.parse import quote as urlquote, urlparse
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -78,6 +78,18 @@ class HeimdallUnreachable(HeimdallUpstreamError):
     never stamp it settled (see services/aito_terminal_payments.py)."""
 
 
+class HeimdallAmbiguous(HeimdallUpstreamError):
+    """Something answered, but the answer does not say whether Heimdall acted:
+    a 5xx (Heimdall's own, or a reverse proxy's 502/504 after Heimdall may
+    already have dialled the terminal), a body that is not JSON at all, or a
+    success answer whose body cannot be read as a payment (empty, a list, a
+    payload missing `id`/`amount`) — Heimdall accepted the call there.
+    Deliberately NOT a `HeimdallUnreachable`: the transport worked, so a pass
+    that stands down on transport failures keeps going. But a caller that
+    reserved a row under an idempotency key must treat it like one — leave
+    the reservation open and replayable (services/aito_terminal_payments.py)."""
+
+
 class HeimdallInvalid(HeimdallUpstreamError):
     """422 — Heimdall refused the body: a terminal amount above the
     document's Books balance, or a link reference that resolves to no
@@ -120,6 +132,24 @@ def parse_credential(token: str) -> tuple[str, str]:
     if len(parts) != 3 or not all(parts) or not parts[0].startswith("hmd_"):
         raise HeimdallNotConfigured("Heimdall token is not an hmd_live.<id>.<secret> credential")
     return parts[1], parts[2]
+
+
+def _seg(heimdall_id: str) -> str:
+    """Escape a Heimdall payment id as ONE path segment.
+
+    The id is stored verbatim from Heimdall's (unauthenticated) response
+    body, and httpx resolves ``/``, ``..`` and friends when it builds the
+    request URL — so an unescaped ``hd-1/../ping`` would be sent to a
+    different endpoint than the one we meant (the same hazard
+    ``services/zoho.py``'s ``_seg`` closes). ``safe=""`` keeps ``/``, ``?``,
+    ``#`` and spaces inside the segment; a bare ``.`` / ``..`` (which
+    ``quote`` leaves alone because dots are unreserved) is spelled ``%2E``
+    so it cannot act as a dot segment either. The escaped path is what is
+    both signed and sent, so the two can never diverge."""
+    segment = urlquote(heimdall_id, safe="")
+    if segment in (".", ".."):
+        segment = segment.replace(".", "%2E")
+    return segment
 
 
 def sign(
@@ -195,7 +225,11 @@ def _to_view(data: dict) -> LinkView:
             zoho_payment_id=str(booking["zoho_payment_id"]) if booking.get("zoho_payment_id") is not None else None,
         )
     except (KeyError, TypeError, ValueError) as e:
-        raise HeimdallUpstreamError(f"Heimdall returned an unexpected payment shape: {e}") from e
+        # Ambiguous, not a plain upstream error: this parses a 2xx answer, so
+        # Heimdall ACCEPTED the call — a charge start that cannot be read must
+        # stay a replayable reservation (services/aito_terminal_payments.py).
+        # Every other caller catches the `HeimdallUpstreamError` base class.
+        raise HeimdallAmbiguous(f"Heimdall returned an unexpected payment shape: {e}") from e
 
 
 def _parse_retry_after(value: str | None) -> float | None:
@@ -271,7 +305,7 @@ class HeimdallService:
         try:
             payload = response.json() if response.content else {}
         except ValueError as e:
-            raise HeimdallUpstreamError(f"Heimdall returned a non-JSON response (HTTP {response.status_code})") from e
+            raise HeimdallAmbiguous(f"Heimdall returned a non-JSON response (HTTP {response.status_code})") from e
         if response.status_code >= 400:
             error = payload.get("error") if isinstance(payload, dict) else None
             code = str((error or {}).get("code") or "")
@@ -286,9 +320,13 @@ class HeimdallService:
                 raise HeimdallInvalid(message)
             if response.status_code == 429:
                 raise HeimdallRateLimited(message, _parse_retry_after(response.headers.get("Retry-After")))
+            if response.status_code >= 500:
+                raise HeimdallAmbiguous(message)
             raise HeimdallUpstreamError(message)
         if not isinstance(payload, dict):
-            raise HeimdallUpstreamError("Heimdall returned a non-object JSON body")
+            # A 2xx whose body is not an object: Heimdall acted, the answer
+            # cannot say how — ambiguous, like `_to_view`'s parse failure.
+            raise HeimdallAmbiguous("Heimdall returned a non-object JSON body")
         return payload
 
     async def ping(self, db: AsyncSession, *, base_url: str | None = None, token: str | None = None) -> None:
@@ -335,13 +373,13 @@ class HeimdallService:
             payload["amount"] = int(amount)
         if expires_in_days is not None:
             payload["expires_in_days"] = int(expires_in_days)
-        return _to_view(await self._request(db, "PATCH", f"/api/v1/payments/{heimdall_id}", json_body=payload))
+        return _to_view(await self._request(db, "PATCH", f"/api/v1/payments/{_seg(heimdall_id)}", json_body=payload))
 
     async def cancel_link(self, db: AsyncSession, heimdall_id: str) -> LinkView:
-        return _to_view(await self._request(db, "POST", f"/api/v1/payments/{heimdall_id}/cancel"))
+        return _to_view(await self._request(db, "POST", f"/api/v1/payments/{_seg(heimdall_id)}/cancel"))
 
     async def get_payment(self, db: AsyncSession, heimdall_id: str) -> LinkView:
-        return _to_view(await self._request(db, "GET", f"/api/v1/payments/{heimdall_id}"))
+        return _to_view(await self._request(db, "GET", f"/api/v1/payments/{_seg(heimdall_id)}"))
 
 
 heimdall_service = HeimdallService()

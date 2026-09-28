@@ -16,7 +16,7 @@ from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
 from backend.app.services import aito_invoice_poll
 from backend.app.services.aito_invoice_poll import POLL_SINCE_SETTING, poll_invoices
-from backend.app.services.zoho import ZohoRateLimited, ZohoUpstreamError, zoho_service
+from backend.app.services.zoho import ModifiedSinceRows, ZohoRateLimited, ZohoUpstreamError, zoho_service
 
 
 def _row(**fields) -> dict:
@@ -101,7 +101,7 @@ def _forget_adopt_failures():
 
 
 @pytest.mark.asyncio
-async def test_the_listing_asks_books_for_one_newest_first_window(monkeypatch):
+async def test_the_listing_asks_books_for_one_oldest_first_window(monkeypatch):
     calls: list = []
 
     async def request(db, method, path, *, params=None, json=None):
@@ -135,12 +135,14 @@ async def test_the_listing_asks_books_for_one_newest_first_window(monkeypatch):
             {
                 "last_modified_time": "2026-09-20T10:00:00+0000",
                 "sort_column": "last_modified_time",
-                "sort_order": "D",
+                "sort_order": "A",
                 "per_page": "200",
                 "page": "1",
             },
         )
     ]
+    # Books said there was nothing more: the whole window was read.
+    assert rows.truncated is False
     # The three fields `_map_invoice` drops are what make a row attributable.
     assert rows[0]["reference_number"] == "AITO-9"
     assert rows[0]["customer_id"] == "C1"
@@ -164,6 +166,22 @@ async def test_the_listing_paginates_but_not_forever(monkeypatch):
 
     assert len(rows) == len(pages) == 10
     assert pages == [str(n) for n in range(1, 11)]
+    # Stopped at the cap with Books still offering more: the poll must know.
+    assert rows.truncated is True
+
+
+@pytest.mark.asyncio
+async def test_a_window_that_ends_exactly_on_the_cap_is_not_truncated(monkeypatch):
+    async def request(db, method, path, *, params=None, json=None):
+        last = params["page"] == "10"
+        return {"invoices": [{"invoice_id": params["page"]}], "page_context": {"has_more_page": not last}}
+
+    monkeypatch.setattr(zoho_service, "_request", request)
+
+    rows = await zoho_service.list_invoices_modified_since(None, "2020-01-01T00:00:00+0000")
+
+    assert len(rows) == 10
+    assert rows.truncated is False
 
 
 @pytest.mark.asyncio
@@ -257,6 +275,52 @@ async def test_an_already_linked_invoice_is_not_relinked(db_session, monkeypatch
 
 
 @pytest.mark.asyncio
+async def test_two_invoices_for_one_card_in_one_pass_are_processed_newest_first(db_session, monkeypatch):
+    """T-069: Books is read oldest first (T-054) but a pass is processed
+    newest first, exactly as before the read order changed. With two
+    invoices naming one not-yet-billed card, the NEWEST is the one linked to
+    the estimate and announced; the OLDEST, processed last, leaves its
+    figures in the card's cache."""
+    project = await _project(db_session, quote_id="EST1")
+    pid = project.id
+    older = _row(
+        id="INV-OLD",
+        number="FA-OLD",
+        reference_number=f"AITO-{pid}",
+        status="unpaid",
+        balance=1000.0,
+        due_date="2026-09-01",
+        last_modified_time="2026-09-21T09:00:00-1000",
+    )
+    newer = _row(
+        id="INV-NEW",
+        number="FA-NEW",
+        reference_number=f"AITO-{pid}",
+        status="paid",
+        balance=0.0,
+        due_date="2026-09-20",
+        last_modified_time="2026-09-21T09:30:00-1000",
+    )
+    # Oldest first, the order the listing now returns.
+    calls = _fake_books(
+        monkeypatch,
+        [older, newer],
+        detail={"INV-OLD": {"estimate_id": ""}, "INV-NEW": {"estimate_id": ""}},
+    )
+
+    assert await poll_invoices(db_session) == 2
+
+    assert [c for c in calls if c[0] in ("get", "link")] == [("get", "INV-NEW"), ("link", "INV-NEW", "EST1")]
+    db_session.expire_all()
+    row = await db_session.get(AitoProject, pid)
+    assert (row.invoice_status, row.invoice_balance, row.invoice_due_date) == ("unpaid", 1000.0, "2026-09-01")
+    events = await _events(db_session, pid, "invoice.detected")
+    assert [e.detail["invoice_number"] for e in events] == ["FA-NEW"]
+    # The watermark is order-independent: still the newest row, rewound.
+    assert await get_setting(db_session, POLL_SINCE_SETTING) == "2026-09-21T19:25:00+0000"
+
+
+@pytest.mark.asyncio
 async def test_a_second_pass_refreshes_figures_without_a_second_event(db_session, monkeypatch):
     project = await _project(db_session)
     pid = project.id
@@ -343,6 +407,111 @@ async def test_the_watermark_advances_with_an_overlap(db_session, monkeypatch):
     _fake_books(monkeypatch, [], calls=calls)
     await poll_invoices(db_session)
     assert calls[-1] == ("list", stored)
+
+
+def _capped_books(monkeypatch, rows: list[dict], cap: int, calls: list) -> None:
+    """A Books that honours ``since`` and caps a pass at ``cap`` rows, oldest
+    first, flagging the pass truncated when rows remain — the listing's real
+    contract, at a size a test can afford."""
+
+    async def list_invoices_modified_since(db, since):
+        calls.append(("list", since))
+        floor = aito_invoice_poll._parse_books_time(since)
+        window = sorted(
+            (r for r in rows if aito_invoice_poll._parse_books_time(r["last_modified_time"]) >= floor),
+            key=lambda r: aito_invoice_poll._parse_books_time(r["last_modified_time"]),
+        )
+        page = ModifiedSinceRows(window[:cap])
+        page.truncated = len(window) > cap
+        return page
+
+    monkeypatch.setattr(zoho_service, "list_invoices_modified_since", list_invoices_modified_since)
+
+
+@pytest.mark.asyncio
+async def test_a_window_wider_than_the_cap_is_walked_across_passes_and_skips_nothing(db_session, monkeypatch):
+    """T-054: a pass the page cap cuts short resumes at the last row it read.
+
+    Twelve changes inside one minute, five a pass — a Books bulk update in
+    miniature. A run of four equal timestamps straddles the first cut-off,
+    and the whole window is narrower than the five-minute overlap, so a pass
+    that rewound the usual overlap would re-read the same five rows forever.
+    """
+    base = datetime(2026, 9, 21, 9, 0, 0, tzinfo=timezone.utc)
+    offsets = [0, 10, 20, 30, 30, 30, 30, 40, 50, 60, 70, 80]
+    projects = [await _project(db_session) for _ in offsets]
+    pids = [p.id for p in projects]
+    stamps = [(base + timedelta(seconds=o)).strftime("%Y-%m-%dT%H:%M:%S%z") for o in offsets]
+    rows = [
+        _row(id=f"INV{i}", number=f"FA-{i}", reference_number=f"AITO-{pid}", last_modified_time=stamp)
+        for i, (pid, stamp) in enumerate(zip(pids, stamps, strict=True))
+    ]
+    calls = _fake_books(monkeypatch, [])
+    await set_setting(db_session, POLL_SINCE_SETTING, (base - timedelta(days=200)).strftime("%Y-%m-%dT%H:%M:%S%z"))
+    await db_session.commit()
+    _capped_books(monkeypatch, rows, 5, calls)
+
+    assert await poll_invoices(db_session) == 5
+    # The fifth row read (a tie) is the resume point, rewound one second so
+    # its unread twins come back on the next pass.
+    first_mark = await get_setting(db_session, POLL_SINCE_SETTING)
+    assert first_mark == (base + timedelta(seconds=29)).strftime("%Y-%m-%dT%H:%M:%S%z")
+
+    passes = 1
+    while passes < 10:
+        await poll_invoices(db_session)
+        passes += 1
+        if [c for c in calls if c[0] == "list"][-1][1] == await get_setting(db_session, POLL_SINCE_SETTING):
+            break
+    # Finite: the window was walked, not re-read in a loop.
+    assert passes < 10
+
+    db_session.expire_all()
+    for pid in pids:
+        assert (await db_session.get(AitoProject, pid)).quote_invoiced is True, pid
+        # Re-reading the tie rows at the seam adopted nothing twice.
+        assert len(await _events(db_session, pid, "invoice.detected")) == 1
+    # Once caught up the watermark settles on where the last capped pass
+    # left it: the overlap never reaches back into the walked window, which
+    # would start the walk over.
+    settled = await get_setting(db_session, POLL_SINCE_SETTING)
+    assert settled == (base + timedelta(seconds=39)).strftime("%Y-%m-%dT%H:%M:%S%z")
+    await poll_invoices(db_session)
+    assert await get_setting(db_session, POLL_SINCE_SETTING) == settled
+
+
+@pytest.mark.asyncio
+async def test_a_truncated_pass_still_holds_the_watermark_at_a_failed_invoice(db_session, monkeypatch):
+    """The failure hold wins over the resume point, exactly as it wins over
+    the newest row on an untruncated pass."""
+    await set_setting(db_session, POLL_SINCE_SETTING, "2026-09-01T00:00:00+0000")
+    await db_session.commit()
+    failing = await _project(db_session)
+    fine = await _project(db_session)
+    rows = ModifiedSinceRows(
+        [
+            _row(id="INV1", reference_number=f"AITO-{failing.id}", last_modified_time="2026-09-21T09:00:00+0000"),
+            _row(id="INV2", reference_number=f"AITO-{fine.id}", last_modified_time="2026-09-21T09:30:00+0000"),
+        ]
+    )
+    rows.truncated = True
+    _fake_books(monkeypatch, [])
+
+    async def list_invoices_modified_since(db, since):
+        return rows
+
+    monkeypatch.setattr(zoho_service, "list_invoices_modified_since", list_invoices_modified_since)
+    real_adopt = aito_invoice_poll._adopt
+
+    async def adopt(db, row, project):
+        if row["id"] == "INV1":
+            raise ZohoUpstreamError("Books hiccup")
+        return await real_adopt(db, row, project)
+
+    monkeypatch.setattr(aito_invoice_poll, "_adopt", adopt)
+    await poll_invoices(db_session)
+
+    assert await get_setting(db_session, POLL_SINCE_SETTING) == "2026-09-21T08:59:59+0000"
 
 
 @pytest.mark.asyncio

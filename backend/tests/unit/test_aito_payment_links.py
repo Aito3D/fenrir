@@ -25,10 +25,13 @@ from backend.app.services.aito_payment_links import (
     wanted_link,
 )
 from backend.app.services.heimdall import (
+    HeimdallAmbiguous,
     HeimdallConflict,
+    HeimdallInvalid,
     HeimdallNotConfigured,
     HeimdallNotFound,
     HeimdallRateLimited,
+    HeimdallUnreachable,
     HeimdallUpstreamError,
     LinkView,
     heimdall_service,
@@ -1425,6 +1428,79 @@ async def test_a_rate_limit_during_the_lost_links_replacement_stands_the_whole_p
 
 
 @pytest.mark.asyncio
+async def test_reconciles_own_404_replacement_failing_is_recorded_not_silently_dropped(db_session, fake, monkeypatch):
+    """T-047: `reconcile_project` has its OWN `except HeimdallNotFound` block
+    (create/patch answering 404), structurally identical to the poll's — and
+    the double-failure handler around ITS `_replace_lost` call
+    (`test_the_lost_links_own_replacement_failing_is_recorded_not_silently_dropped`
+    above) was completely unexercised: every existing 404 was raised from
+    the fake's `get_payment` (the poll-discovery path), never from
+    `create_link`/`patch_link`. This drives the 404 from `patch_link`
+    directly, reached through a drifted amount, so the SAME double-failure
+    handler runs through the reconcile half instead."""
+    p = await _project(db_session)
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    fake.calls.clear()
+
+    async def not_found_patch(db, heimdall_id, **kw):
+        raise HeimdallNotFound(f"Heimdall HTTP 404 not_found: no payment {heimdall_id}")
+
+    async def failing_create(db, **kw):
+        raise HeimdallUpstreamError("replacement boom")
+
+    monkeypatch.setattr(heimdall_service, "patch_link", not_found_patch)
+    monkeypatch.setattr(heimdall_service, "create_link", failing_create)
+
+    p.quote_total = 13000.0
+    await db_session.commit()
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW + timedelta(hours=1))
+
+    old, reservation = await _rows(db_session, p.id)
+    assert old.status == "failed" and old.superseded_at is not None and old.heimdall_id == "L1"
+    assert reservation.heimdall_id is None, "the replacement create never landed at Heimdall"
+    assert reservation.document_kind == "quote" and reservation.superseded_at is None
+    assert reservation.sync_error and "replacement boom" in reservation.sync_error
+    assert reservation.sync_failures == 1
+    assert (await current_link(db_session, p.id)).id == reservation.id, "not silently dropped"
+    assert (await _kinds(db_session, p.id)).count("payment_link.replaced") == 0
+
+
+@pytest.mark.asyncio
+async def test_a_rate_limit_during_the_reconciles_own_replacement_propagates(db_session, fake, monkeypatch):
+    """T-047's other half: a 429 from the replacement's own create, reached
+    through reconcile_project's OWN 404 (not the poll's), must propagate out
+    of `reconcile_project` itself (`except HeimdallRateLimited: raise` ahead
+    of the generic branch) instead of being recorded as a per-row sync
+    failure — mirroring
+    `test_a_rate_limit_during_the_lost_links_replacement_stands_the_whole_pass_down`
+    for this other, previously-untested `except HeimdallNotFound` block."""
+    p = await _project(db_session)
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    fake.calls.clear()
+
+    async def not_found_patch(db, heimdall_id, **kw):
+        raise HeimdallNotFound(f"Heimdall HTTP 404 not_found: no payment {heimdall_id}")
+
+    async def rate_limited_create(db, **kw):
+        raise HeimdallRateLimited("slow down", 120.0)
+
+    monkeypatch.setattr(heimdall_service, "patch_link", not_found_patch)
+    monkeypatch.setattr(heimdall_service, "create_link", rate_limited_create)
+
+    p.quote_total = 13000.0
+    await db_session.commit()
+
+    with pytest.raises(HeimdallRateLimited):
+        await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW + timedelta(hours=1))
+
+    old, reservation = await _rows(db_session, p.id)
+    assert old.status == "failed" and old.superseded_at is not None
+    assert reservation.heimdall_id is None
+    assert reservation.sync_error is None, "the rate-limit path never reaches _record_failure"
+    assert reservation.sync_failures == 0
+
+
+@pytest.mark.asyncio
 async def test_an_unrelated_db_error_polling_one_row_rolls_back_and_still_polls_the_next(db_session, fake, monkeypatch):
     """The whole-iteration `except SQLAlchemyError` wrapping the poll must
     isolate to its own row, exactly like the reconcile half's equivalent
@@ -2083,3 +2159,544 @@ async def test_a_key_collision_with_no_open_link_left_still_surfaces_the_databas
     assert [c for c in fake.calls if c[0] == "create"] == []
     rows = await _rows(db_session, project_id)
     assert len(rows) == 1 and rows[0].status == "cancelled"
+
+
+# --- T-056: a malformed Heimdall token ------------------------------------------
+
+_BAD_TOKEN_ERROR = "Heimdall token is not an hmd_live.<id>.<secret> credential"
+
+
+@pytest.mark.asyncio
+async def test_a_malformed_token_is_recorded_on_every_project_instead_of_aborting_the_pass(db_session, monkeypatch):
+    """T-056: `is_configured` only checks the token is non-empty, but every
+    real call runs `parse_credential`, which raises `HeimdallNotConfigured`
+    — NOT a `HeimdallUpstreamError` subclass. Against the REAL service (no
+    fake), a token in the retired shape must land on each project's
+    reservation as a sync_error, and the pass must keep going past the first
+    project instead of dying there with a traceback."""
+    monkeypatch.setattr(svc, "_throttled_until", None)
+    await set_setting(db_session, "heimdall_base_url", "http://pos:8081")
+    await set_setting(db_session, "heimdall_api_token", "legacy-token-without-dots")
+    await db_session.commit()
+    ids = [(await _project(db_session, quote_number=q)).id for q in ("DEV-A", "DEV-B")]
+
+    visited = await reconcile_payment_links(db_session, now=NOW, today=TODAY)
+
+    assert visited == 2
+    for pid in ids:
+        (row,) = await _rows(db_session, pid)
+        assert row.heimdall_id is None, "the create never reached Heimdall"
+        assert row.sync_error == _BAD_TOKEN_ERROR
+        assert row.sync_failures == 1 and row.checked_at == NOW
+
+
+@pytest.mark.asyncio
+async def test_a_not_configured_poll_is_recorded_and_the_poll_half_still_runs(db_session, fake):
+    """T-056: with the reconcile half failing on one project, the poll half
+    still runs, and a pending link's GET failing `HeimdallNotConfigured` is
+    stored on that row like any other Heimdall failure."""
+    polled = await _project(db_session, quote_number="DEV-P")
+    await reconcile_payment_links(db_session, now=NOW, today=TODAY)
+    fresh = await _project(db_session, quote_number="DEV-F")
+    fake.calls.clear()
+    fake.fail_with = HeimdallNotConfigured(_BAD_TOKEN_ERROR)
+    later = NOW + timedelta(hours=1)
+
+    visited = await reconcile_payment_links(db_session, now=later, today=TODAY)
+
+    assert visited == 2
+    assert [c[0] for c in fake.calls] == ["create", "get"], "the poll half ran after the reconcile failure"
+    (reservation,) = await _rows(db_session, fresh.id)
+    assert reservation.heimdall_id is None and reservation.sync_error == _BAD_TOKEN_ERROR
+    (minted,) = await _rows(db_session, polled.id)
+    assert minted.status == "pending" and minted.heimdall_id == "L1"
+    assert minted.sync_error == _BAD_TOKEN_ERROR and minted.sync_failures == 1 and minted.checked_at == later
+
+
+@pytest.mark.asyncio
+async def test_poll_link_stores_not_configured_on_the_row(db_session, fake):
+    p = await _project(db_session)
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    fake.fail_with = HeimdallNotConfigured(_BAD_TOKEN_ERROR)
+    await poll_link(db_session, (await _rows(db_session, p.id))[0], now=NOW)
+    (r,) = await _rows(db_session, p.id)
+    assert r.status == "pending" and r.sync_error == _BAD_TOKEN_ERROR and r.sync_failures == 1
+
+
+@pytest.mark.asyncio
+async def test_a_not_configured_replacement_after_the_polls_404_is_recorded(db_session, fake, monkeypatch):
+    """T-056: the poll half's `_replace_lost` handler treats
+    `HeimdallNotConfigured` from the replacement's create like any other
+    Heimdall failure — recorded on the fresh reservation."""
+    p = await _project(db_session)
+    await reconcile_payment_links(db_session, now=NOW, today=TODAY)
+    fake.forget("L1")
+
+    async def not_configured_create(db, **kw):
+        raise HeimdallNotConfigured(_BAD_TOKEN_ERROR)
+
+    monkeypatch.setattr(heimdall_service, "create_link", not_configured_create)
+
+    visited = await reconcile_payment_links(db_session, now=NOW + timedelta(hours=1), today=TODAY)
+
+    assert visited == 1
+    old, reservation = await _rows(db_session, p.id)
+    assert old.status == "failed" and old.superseded_at is not None
+    assert reservation.heimdall_id is None and reservation.sync_error == _BAD_TOKEN_ERROR
+    assert reservation.sync_failures == 1
+
+
+@pytest.mark.asyncio
+async def test_a_not_configured_replacement_after_reconciles_own_404_is_recorded(db_session, fake, monkeypatch):
+    """T-056: the same, through `reconcile_project`'s OWN 404 handler (a
+    PATCH answering 404 on a drifted amount)."""
+    p = await _project(db_session)
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+
+    async def not_found_patch(db, heimdall_id, **kw):
+        raise HeimdallNotFound(f"Heimdall HTTP 404 not_found: no payment {heimdall_id}")
+
+    async def not_configured_create(db, **kw):
+        raise HeimdallNotConfigured(_BAD_TOKEN_ERROR)
+
+    monkeypatch.setattr(heimdall_service, "patch_link", not_found_patch)
+    monkeypatch.setattr(heimdall_service, "create_link", not_configured_create)
+    p.quote_total = 13000.0
+    await db_session.commit()
+
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW + timedelta(hours=1))
+
+    old, reservation = await _rows(db_session, p.id)
+    assert old.status == "failed" and old.superseded_at is not None
+    assert reservation.heimdall_id is None and reservation.sync_error == _BAD_TOKEN_ERROR
+    assert reservation.sync_failures == 1
+
+
+# --- a hung Heimdall stops the pass (T-057) -----------------------------------
+
+
+async def _three_pending_links(db, fake):
+    """Three quoted projects, each with a live pending link minted by a
+    clean pass; the fake's call log is cleared afterwards."""
+    ids = [(await _project(db, quote_number=f"DEV-{n}")).id for n in "ABC"]
+    await reconcile_payment_links(db, now=NOW, today=TODAY)
+    fake.calls.clear()
+    return ids
+
+
+def _get_failing_for(fake, monkeypatch, failing_id, exc):
+    """`get_payment` raises `exc` for `failing_id` only; every GET is logged."""
+    real = fake.get_payment
+
+    async def get_payment(db, heimdall_id):
+        if heimdall_id == failing_id:
+            fake.calls.append(("get", heimdall_id))
+            raise exc
+        return await real(db, heimdall_id)
+
+    monkeypatch.setattr(heimdall_service, "get_payment", get_payment)
+
+
+@pytest.mark.asyncio
+async def test_an_unreachable_poll_stops_the_pass_after_the_first_link(db_session, fake, monkeypatch):
+    """A hung Heimdall costs the full client timeout per call: after the
+    first `HeimdallUnreachable` the pass makes no further call. The row that
+    hit it is stamped as before; the other two are left for the next tick,
+    untouched (no sync_error of their own)."""
+    ids = await _three_pending_links(db_session, fake)
+    _get_failing_for(fake, monkeypatch, "L1", HeimdallUnreachable("Heimdall unreachable: timed out"))
+    later = NOW + timedelta(minutes=1)
+    await reconcile_payment_links(db_session, now=later, today=TODAY)
+    assert fake.calls == [("get", "L1")]
+    first, second, third = [await current_link(db_session, pid) for pid in ids]
+    assert first.sync_error == "Heimdall unreachable: timed out" and first.checked_at == later
+    for untouched in (second, third):
+        assert untouched.sync_error is None and untouched.checked_at == NOW and untouched.sync_failures == 0
+    # Only this pass stood down: no throttle window, the next tick polls all three.
+    assert svc._throttled_until is None
+    monkeypatch.setattr(heimdall_service, "get_payment", fake.get_payment)
+    fake.calls.clear()
+    await reconcile_payment_links(db_session, now=later + timedelta(minutes=1), today=TODAY)
+    assert sorted(c[1] for c in fake.calls if c[0] == "get") == ["L2", "L3"]  # L1 is in its backoff
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "exc",
+    [
+        HeimdallUpstreamError("Heimdall HTTP 400 bad_request: no"),
+        HeimdallInvalid("Heimdall HTTP 422 invalid_request: no"),
+        HeimdallAmbiguous("Heimdall HTTP 503 :"),
+    ],
+    ids=["400", "422", "503"],
+)
+async def test_an_answered_failure_on_one_link_still_polls_the_rest(db_session, fake, monkeypatch, exc):
+    """Heimdall ANSWERED (a 4xx refusal, or a 5xx): the transport works, so
+    the pass carries on to the other links exactly as before T-057."""
+    ids = await _three_pending_links(db_session, fake)
+    _get_failing_for(fake, monkeypatch, "L1", exc)
+    later = NOW + timedelta(minutes=1)
+    await reconcile_payment_links(db_session, now=later, today=TODAY)
+    assert [c[1] for c in fake.calls if c[0] == "get"] == ["L1", "L2", "L3"]
+    first, second, third = [await current_link(db_session, pid) for pid in ids]
+    assert first.sync_error == str(exc)
+    assert second.checked_at == later and third.checked_at == later
+
+
+@pytest.mark.asyncio
+async def test_an_unreachable_create_stops_the_reconcile_half_and_skips_the_poll(db_session, fake):
+    """The reconcile half stands down the same way: the first project's
+    reservation carries the error, the next projects are not visited (no
+    reservation, no call), and the poll half makes no call either."""
+    ids = [(await _project(db_session, quote_number=f"DEV-{n}")).id for n in "ABC"]
+    fake.fail_with = HeimdallUnreachable("Heimdall unreachable: connect refused")
+    visited = await reconcile_payment_links(db_session, now=NOW, today=TODAY)
+    assert visited == 1
+    assert [c[0] for c in fake.calls] == ["create"]
+    (stuck,) = await _rows(db_session, ids[0])
+    assert stuck.heimdall_id is None and stuck.sync_error == "Heimdall unreachable: connect refused"
+    assert await _rows(db_session, ids[1]) == [] and await _rows(db_session, ids[2]) == []
+    assert svc._throttled_until is None
+
+
+@pytest.mark.asyncio
+async def test_an_unreachable_link_replacement_in_the_poll_stops_the_pass(db_session, fake, monkeypatch):
+    """The poll half's own `_replace_lost` (a 404 on the GET) failing with
+    `HeimdallUnreachable` stops the pass too."""
+    ids = await _three_pending_links(db_session, fake)
+    fake.forget("L1")
+
+    async def unreachable_create(db, **kw):
+        fake.calls.append(("create", kw["idempotency_key"]))
+        raise HeimdallUnreachable("Heimdall unreachable: timed out")
+
+    monkeypatch.setattr(heimdall_service, "create_link", unreachable_create)
+    later = NOW + timedelta(minutes=1)
+    await reconcile_payment_links(db_session, now=later, today=TODAY)
+    assert [c[0] for c in fake.calls] == ["get", "create"]
+    old, reservation = await _rows(db_session, ids[0])
+    assert old.status == "failed" and reservation.sync_error == "Heimdall unreachable: timed out"
+    for pid in ids[1:]:
+        untouched = await current_link(db_session, pid)
+        assert untouched.checked_at == NOW and untouched.sync_error is None
+
+
+@pytest.mark.asyncio
+async def test_reconcile_project_reports_only_a_transport_failure(db_session, fake, monkeypatch):
+    """The return value the pass stands down on: True only for a stored
+    `HeimdallUnreachable`, including from its own 404 replacement."""
+    p = await _project(db_session)
+    pid = p.id
+    fake.fail_with = HeimdallUpstreamError("Heimdall HTTP 500 internal: boom")
+    assert await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW) is False
+    fake.fail_with = None
+    p = await db_session.get(AitoProject, pid)
+    assert await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW, force=True) is False
+
+    async def not_found_patch(db, heimdall_id, **kw):
+        raise HeimdallNotFound(f"Heimdall HTTP 404 not_found: no payment {heimdall_id}")
+
+    async def unreachable_create(db, **kw):
+        raise HeimdallUnreachable("Heimdall unreachable: timed out")
+
+    monkeypatch.setattr(heimdall_service, "patch_link", not_found_patch)
+    monkeypatch.setattr(heimdall_service, "create_link", unreachable_create)
+    p = await db_session.get(AitoProject, pid)
+    p.quote_total = 13000.0
+    await db_session.commit()
+    later = NOW + timedelta(hours=1)
+    assert await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=later) is True
+    p = await db_session.get(AitoProject, pid)
+    fake.fail_with = HeimdallUnreachable("Heimdall unreachable: again")
+    monkeypatch.setattr(heimdall_service, "create_link", fake.create_link)
+    assert await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=later, force=True) is True
+
+
+@pytest.mark.asyncio
+async def test_the_panel_retry_still_calls_after_a_stood_down_pass(db_session, fake, monkeypatch):
+    """No cross-tick throttle is armed, so the operator's Retry (forced,
+    one project) makes its call right after a pass stood down."""
+    ids = await _three_pending_links(db_session, fake)
+    _get_failing_for(fake, monkeypatch, "L1", HeimdallUnreachable("Heimdall unreachable: timed out"))
+    await reconcile_payment_links(db_session, now=NOW + timedelta(minutes=1), today=TODAY)
+    monkeypatch.setattr(heimdall_service, "get_payment", fake.get_payment)
+    fake.calls.clear()
+    await reconcile_payment_links(db_session, only_project_id=ids[0], force=True, now=NOW + timedelta(minutes=2))
+    assert fake.calls == [("get", "L1")]
+    assert (await current_link(db_session, ids[0])).sync_error is None
+
+
+# --- a paid quote link's acceptance is re-driven (T-060) ----------------------
+
+
+def _fail_rules_once(monkeypatch):
+    """`apply_quote_decision` raises once before its commit — the shape of
+    SQLite 'database is locked' or a rules failure inside the acceptance."""
+    from sqlalchemy.exc import OperationalError
+
+    import backend.app.api.routes.aito as routes
+
+    real = routes._apply_rules
+    calls = []
+
+    async def flaky(*a, **k):
+        calls.append(1)
+        if len(calls) == 1:
+            raise OperationalError("UPDATE", {}, Exception("database is locked"))
+        return await real(*a, **k)
+
+    monkeypatch.setattr(routes, "_apply_rules", flaky)
+    return calls
+
+
+def _spy_notifications(monkeypatch):
+    from backend.app.services.notification_service import notification_service
+
+    notified = []
+
+    async def spy(db, **kw):
+        notified.append(kw)
+
+    monkeypatch.setattr(notification_service, "on_aito_payment_received", spy)
+    return notified
+
+
+@pytest.mark.asyncio
+async def test_a_failed_acceptance_leaves_the_link_pending_and_the_next_pass_credits_it_once(
+    db_session, fake, monkeypatch
+):
+    """The acceptance raises once after the poll saw `paid`: nothing of the
+    paid state is kept (the link reads `pending`, no event, quote untouched,
+    nobody notified), so the next pass polls it again and credits it — the
+    event, the acceptance and the notification exactly once — and a third
+    pass does not touch it."""
+    p = await _project(db_session)
+    pid = p.id
+    await reconcile_payment_links(db_session, now=NOW, today=TODAY)
+    link = await current_link(db_session, pid)
+    fake.set_status(link.heimdall_id, "paid")
+    notified = _spy_notifications(monkeypatch)
+    rules_calls = _fail_rules_once(monkeypatch)
+
+    first = NOW + timedelta(minutes=5)
+    await reconcile_payment_links(db_session, now=first, today=TODAY)
+    assert len(rules_calls) == 1
+    (r,) = await _rows(db_session, pid)
+    await db_session.refresh(r)
+    assert r.status == "pending" and r.paid_at is None
+    kinds = await _kinds(db_session, pid)
+    assert "payment_link.paid" not in kinds and "quote.accepted" not in kinds
+    project = await db_session.get(AitoProject, pid)
+    await db_session.refresh(project)
+    assert project.quote_status == "sent"
+    assert notified == []
+
+    second = NOW + timedelta(minutes=10)
+    await reconcile_payment_links(db_session, now=second, today=TODAY)
+    (r,) = await _rows(db_session, pid)
+    await db_session.refresh(r)
+    assert r.status == "paid" and r.paid_at == second
+    kinds = await _kinds(db_session, pid)
+    assert kinds.count("payment_link.paid") == 1 and kinds.count("quote.accepted") == 1
+    await db_session.refresh(project)
+    assert project.quote_status == "accepted"
+    assert len(notified) == 1 and notified[0]["source"] == "payment_link"
+
+    fake.calls.clear()
+    await reconcile_payment_links(db_session, now=second + timedelta(minutes=5), today=TODAY)
+    assert [c for c in fake.calls if c[0] == "get"] == []
+    kinds = await _kinds(db_session, pid)
+    assert kinds.count("payment_link.paid") == 1 and kinds.count("quote.accepted") == 1
+    assert len(notified) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_failed_acceptance_on_a_cancel_conflict_is_retried_by_the_forced_pass(db_session, fake, monkeypatch):
+    """The reconcile half finds the link paid while cancelling it (409) and
+    the acceptance then fails: `reconcile_project` rolls back and records the
+    failure on the still-`pending` row, and the panel's forced pass credits
+    it — once."""
+    p = await _project(db_session)
+    pid = p.id
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    fake.set_status("L1", "paid")
+    p.quote_invoiced = True  # nothing wanted any more -> the reconcile tries to cancel
+    await db_session.commit()
+    notified = _spy_notifications(monkeypatch)
+    _fail_rules_once(monkeypatch)
+
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    (r,) = await _rows(db_session, pid)
+    await db_session.refresh(r)
+    assert r.status == "pending" and r.paid_at is None and "database is locked" in r.sync_error
+    assert "payment_link.paid" not in await _kinds(db_session, pid)
+    assert notified == []
+
+    later = NOW + timedelta(minutes=1)
+    await reconcile_payment_links(db_session, only_project_id=pid, now=later, today=TODAY, force=True)
+    (r,) = await _rows(db_session, pid)
+    await db_session.refresh(r)
+    assert r.status == "paid" and r.paid_at == later
+    kinds = await _kinds(db_session, pid)
+    assert kinds.count("payment_link.paid") == 1 and kinds.count("quote.accepted") == 1
+    assert "payment_link.cancelled" not in kinds
+    assert len(notified) == 1
+
+
+# --- a paid link whose acceptance keeps failing backs off (T-083) --------------
+
+
+def _accept_failing_for(monkeypatch, project_ids, exc):
+    """`accept_quote` raises `exc` (NOT a SQLAlchemyError) for the given
+    projects while `project_ids` is non-empty, before its commit; any other
+    project is accepted for real. Returns the list of project ids it was
+    called for."""
+    import backend.app.services.aito_quote_status as quote_status
+
+    real = quote_status.accept_quote
+    calls = []
+
+    async def accept(db, project, **kw):
+        calls.append(project.id)
+        if project.id in project_ids:
+            raise exc
+        return await real(db, project, **kw)
+
+    monkeypatch.setattr(quote_status, "accept_quote", accept)
+    return calls
+
+
+@pytest.mark.asyncio
+async def test_a_paid_link_whose_acceptance_raises_backs_off_and_the_rest_are_still_polled(
+    db_session, fake, monkeypatch
+):
+    """`accept_quote` raising a non-SQLAlchemy error rolls the link back to
+    `pending` (T-060). The poll no longer lets that escape the pass: the link
+    carries a sync_error and backs off, the other links are polled and
+    credited in the same pass, the backed-off link is not polled again until
+    its back-off has passed, and once the acceptance works it is credited
+    exactly once. The failure is written on a row RE-FETCHED after the
+    rollback — writing it on the expired pre-rollback object would raise
+    `MissingGreenlet` out of the handler and fail this test."""
+    ids = await _three_pending_links(db_session, fake)
+    for hid in ("L1", "L2", "L3"):
+        fake.set_status(hid, "paid")
+    failing = {ids[0]}
+    accept_calls = _accept_failing_for(monkeypatch, failing, RuntimeError("Books said no"))
+
+    first = NOW + timedelta(minutes=5)
+    await reconcile_payment_links(db_session, now=first, today=TODAY)
+    assert [c[1] for c in fake.calls if c[0] == "get"] == ["L1", "L2", "L3"]
+    assert accept_calls == ids
+    stuck, second_link, third_link = [await current_link(db_session, pid) for pid in ids]
+    await db_session.refresh(stuck)
+    assert stuck.status == "pending" and stuck.paid_at is None
+    assert stuck.sync_error == "Books said no" and stuck.sync_failures == 1 and stuck.checked_at == first
+    assert "payment_link.paid" not in await _kinds(db_session, ids[0])
+    for pid, credited in ((ids[1], second_link), (ids[2], third_link)):
+        await db_session.refresh(credited)
+        assert credited.status == "paid" and credited.paid_at == first
+        kinds = await _kinds(db_session, pid)
+        assert kinds.count("payment_link.paid") == 1 and kinds.count("quote.accepted") == 1
+
+    # Inside its back-off: not polled at all.
+    fake.calls.clear()
+    await reconcile_payment_links(db_session, now=first + timedelta(minutes=1), today=TODAY)
+    assert [c for c in fake.calls if c[0] == "get"] == []
+
+    # Past it, with the acceptance working again: credited exactly once.
+    failing.clear()
+    fake.calls.clear()
+    third = first + timedelta(seconds=svc._TICK_SECONDS + 1)
+    await reconcile_payment_links(db_session, now=third, today=TODAY)
+    assert [c[1] for c in fake.calls if c[0] == "get"] == ["L1"]
+    stuck = await current_link(db_session, ids[0])
+    await db_session.refresh(stuck)
+    assert stuck.status == "paid" and stuck.paid_at == third and stuck.sync_error is None
+    kinds = await _kinds(db_session, ids[0])
+    assert kinds.count("payment_link.paid") == 1 and kinds.count("quote.accepted") == 1
+    project = await db_session.get(AitoProject, ids[0])
+    await db_session.refresh(project)
+    assert project.quote_status == "accepted"
+
+    fake.calls.clear()
+    await reconcile_payment_links(db_session, now=third + timedelta(minutes=5), today=TODAY)
+    assert [c for c in fake.calls if c[0] == "get"] == []
+    assert (await _kinds(db_session, ids[0])).count("payment_link.paid") == 1
+
+
+@pytest.mark.asyncio
+async def test_a_failing_acceptance_does_not_swallow_the_unreachable_stand_down(db_session, fake, monkeypatch):
+    """The new catch sits behind the Heimdall handlers: an acceptance failure
+    on L1 is stored and the pass moves on, but a `HeimdallUnreachable` on L2
+    still stops the pass before L3."""
+    ids = await _three_pending_links(db_session, fake)
+    fake.set_status("L1", "paid")
+    _accept_failing_for(monkeypatch, {ids[0]}, ValueError("bad total"))
+    _get_failing_for(fake, monkeypatch, "L2", HeimdallUnreachable("Heimdall unreachable: timed out"))
+    later = NOW + timedelta(minutes=1)
+    await reconcile_payment_links(db_session, now=later, today=TODAY)
+    assert [c[1] for c in fake.calls if c[0] == "get"] == ["L1", "L2"]
+    first, second, third = [await current_link(db_session, pid) for pid in ids]
+    for row in (first, second, third):
+        await db_session.refresh(row)
+    assert first.status == "pending" and first.sync_error == "bad total"
+    assert second.sync_error == "Heimdall unreachable: timed out"
+    assert third.checked_at == NOW and third.sync_error is None
+    assert svc._throttled_until is None
+
+
+@pytest.mark.asyncio
+async def test_a_cancel_conflict_whose_acceptance_raises_does_not_abort_the_pass(db_session, fake, monkeypatch):
+    """Same bug in the reconcile half: a cancel racing a payment (409) whose
+    acceptance raises a non-SQLAlchemy error. The project's link is stored
+    with the failure and backs off, the next project is still reconciled and
+    the poll half still runs."""
+    ids = await _three_pending_links(db_session, fake)
+    fake.set_status("L1", "paid")
+    project = await db_session.get(AitoProject, ids[0])
+    project.quote_invoiced = True  # nothing wanted any more -> the reconcile tries to cancel
+    await db_session.commit()
+    _accept_failing_for(monkeypatch, {ids[0]}, RuntimeError("Books said no"))
+    later = NOW + timedelta(minutes=1)
+    visited = await reconcile_payment_links(db_session, now=later, today=TODAY)
+    assert visited == 3
+    assert fake.calls[0] == ("cancel", "L1")
+    assert [c[1] for c in fake.calls if c[0] == "get"][-2:] == ["L2", "L3"]  # the poll half ran
+    stuck = await current_link(db_session, ids[0])
+    await db_session.refresh(stuck)
+    assert stuck.status == "pending" and stuck.sync_error == "Books said no" and stuck.sync_failures == 1
+    assert "payment_link.paid" not in await _kinds(db_session, ids[0])
+
+
+@pytest.mark.asyncio
+async def test_storing_an_unexpected_failure_skips_settled_rows_and_survives_a_db_error(db_session, fake, monkeypatch):
+    """A row that is no longer pending gets no sync_error (a paid row is never
+    re-adopted, so it would stick), and a failure of the store itself is only
+    logged."""
+    ids = await _three_pending_links(db_session, fake)
+    link = await current_link(db_session, ids[0])
+    rid = link.id
+    link.status = "paid"
+    await db_session.commit()
+    await svc._store_unexpected_failure(db_session, RuntimeError("x"), NOW, row_id=rid)
+    link = await db_session.get(AitoPaymentLink, rid)
+    await db_session.refresh(link)
+    assert link.sync_error is None and link.sync_failures == 0
+
+    async def broken(db, project_id, **kw):
+        raise SQLAlchemyError("database is locked")
+
+    monkeypatch.setattr(svc, "current_link", broken)
+    await svc._store_unexpected_failure(db_session, RuntimeError("x"), NOW, project_id=ids[1])
+
+
+@pytest.mark.asyncio
+async def test_a_rate_limited_poll_still_arms_the_throttle_past_the_new_catch(db_session, fake, monkeypatch):
+    """The generic per-row catch must not swallow a 429 on the GET: the pass
+    stops at L1 and the throttle is armed, exactly as before."""
+    await _three_pending_links(db_session, fake)
+    _get_failing_for(fake, monkeypatch, "L1", HeimdallRateLimited("slow down", 120.0))
+    await reconcile_payment_links(db_session, now=NOW + timedelta(minutes=1), today=TODAY)
+    assert [c[1] for c in fake.calls if c[0] == "get"] == ["L1"]
+    assert svc._throttled_until is not None

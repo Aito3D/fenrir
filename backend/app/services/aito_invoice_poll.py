@@ -49,14 +49,20 @@ repair below.
 
 import logging
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.aito_project import AitoProject
-from backend.app.services.aito_events import record
+from backend.app.services.aito_events import record, utc_now_naive
+from backend.app.services.aito_poll_watermark import (
+    advance_watermark,
+    format_books_time,
+    parse_books_time,
+    read_since,
+)
 from backend.app.services.aito_quote_sync import _lock_project
 from backend.app.services.zoho import (
     ZohoNotConfiguredError,
@@ -84,10 +90,13 @@ BACKFILL_DAYS = 90
 # nothing (adoption is idempotent — see ``_adopt``) and closes that seam.
 OVERLAP_SECONDS = 300
 
-# Books' own spelling: offset as ±HHMM, never 'Z'. `...Z` is rejected outright
-# with "Invalid value passed for last_modified_time" (verified live), so this
-# is not interchangeable with datetime.isoformat().
-_BOOKS_TIME = "%Y-%m-%dT%H:%M:%S%z"
+# The rewind used instead when the listing stopped at its page cap. The next
+# pass must resume at the last row this one read, not five minutes before it:
+# a Books bulk update can stamp more than a whole capped pass inside five
+# minutes, and rewinding that far would re-read the same rows forever. One
+# second still re-reads every row sharing the cut-off row's timestamp, so a
+# run of equal timestamps split by the cap loses nothing.
+TRUNCATED_OVERLAP_SECONDS = 1
 
 _AITO_REFERENCE = re.compile(r"^aito-(\d+)$")
 
@@ -129,33 +138,17 @@ def _failure_key(row: dict) -> str:
     return str(row.get("id") or "") or str(row.get("number") or "") or "__no_id__"
 
 
-def _format_books_time(moment: datetime) -> str:
-    return moment.astimezone(timezone.utc).strftime(_BOOKS_TIME)
-
-
-def _parse_books_time(value: str | None) -> datetime | None:
-    """Books' timestamp, or None when it is absent or unparseable.
-
-    Never raises: this feeds the watermark, and a single row with a mangled
-    timestamp must cost that row's contribution to the watermark, not the
-    pass.
-    """
-    try:
-        return datetime.strptime((value or "").strip(), _BOOKS_TIME)
-    except ValueError:
-        return None
+# The shared Books-timestamp helpers (aito_poll_watermark), under the names
+# this module and its tests have always used.
+_format_books_time = format_books_time
+_parse_books_time = parse_books_time
 
 
 async def _since(db: AsyncSession) -> str:
-    from backend.app.api.routes.settings import get_setting
-
-    stored = (await get_setting(db, POLL_SINCE_SETTING) or "").strip()
-    if _parse_books_time(stored) is not None:
-        return stored
     # No watermark, or one written by something that did not speak Books'
     # dialect: open the backfill window rather than starting from "now" — the
     # orphans this module exists to find are, by definition, already there.
-    return _format_books_time(datetime.now(timezone.utc) - timedelta(days=BACKFILL_DAYS))
+    return await read_since(db, POLL_SINCE_SETTING, BACKFILL_DAYS)
 
 
 async def _match(db: AsyncSession, reference: str, customer_id: str) -> AitoProject | None:
@@ -253,7 +246,7 @@ async def _adopt(db: AsyncSession, row: dict, project: AitoProject) -> bool:
     project.invoice_status = status
     project.invoice_balance = balance
     project.invoice_due_date = due
-    project.invoice_checked_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    project.invoice_checked_at = utc_now_naive()
     if managed:
         # Same helper, same invariants as the quote sweep's own invoiced
         # branch: 'locked' leaves the sweep for good, a stale block is cleared
@@ -290,8 +283,6 @@ async def poll_invoices(db: AsyncSession) -> int:
     shared throttle window it arms for the quote sweep and this pass simply
     resumes, unchanged, once the window clears.
     """
-    from backend.app.api.routes.settings import set_setting
-
     since = await _since(db)
     # Before any watermark write, so a 429 (or an outage) leaves the window
     # exactly where it was.
@@ -307,7 +298,19 @@ async def poll_invoices(db: AsyncSession) -> int:
     oldest_failure: datetime | None = None
     seen: set[str] = set()
 
-    for row in rows:
+    # Books is read oldest first (so a pass the page cap cuts short resumes
+    # where it stopped), but the rows are processed newest first, as they
+    # were when the listing itself was read newest first. The order is not
+    # cosmetic when two invoices in one pass name the same not-yet-billed
+    # card: the first one processed is the one ``_adopt`` links to the
+    # estimate and announces as ``invoice.detected``, and the last one
+    # processed leaves its figures in the card's cache. A plain reversal of
+    # the page: rows sharing one ``last_modified_time`` come out in the
+    # reverse of Books' ascending tie order, which is Books' descending tie
+    # order only if Books breaks ties the same way both directions — not
+    # something the API documents. Nothing below the loop depends on the
+    # order: ``newest`` is a max, ``oldest_failure`` a min, ``seen`` a set.
+    for row in reversed(rows):
         moment = _parse_books_time(row.get("last_modified_time"))
         key = _failure_key(row)
         seen.add(key)
@@ -375,8 +378,14 @@ async def poll_invoices(db: AsyncSession) -> int:
     for stale in [k for k in _adopt_failures if k not in seen]:
         del _adopt_failures[stale]
 
-    watermark = min(x for x in (newest, oldest_failure) if x is not None) if (newest or oldest_failure) else None
-    if watermark is not None:
-        await set_setting(db, POLL_SINCE_SETTING, _format_books_time(watermark - timedelta(seconds=OVERLAP_SECONDS)))
-        await db.commit()
+    await advance_watermark(
+        db,
+        POLL_SINCE_SETTING,
+        since,
+        rows,
+        newest,
+        oldest_failure,
+        overlap_seconds=OVERLAP_SECONDS,
+        truncated_overlap_seconds=TRUNCATED_OVERLAP_SECONDS,
+    )
     return updated

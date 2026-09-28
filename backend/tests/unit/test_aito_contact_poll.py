@@ -12,13 +12,24 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 
 from backend.app.api.routes.settings import get_setting, set_setting
 from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
 from backend.app.services import aito_contact_poll
 from backend.app.services.aito_contact_poll import POLL_SINCE_SETTING, poll_contacts
-from backend.app.services.zoho import ZohoRateLimited, ZohoUpstreamError, zoho_service
+from backend.app.services.zoho import ModifiedSinceRows, ZohoRateLimited, ZohoUpstreamError, zoho_service
+
+
+@pytest.fixture(autouse=True)
+def _forget_rename_failures():
+    """The consecutive-failure counts live in a module dict (T-080), so a
+    file whose tests fail the same contact id twice would carry the count
+    into the next one. Empty it around every test."""
+    aito_contact_poll._reset_rename_failures()
+    yield
+    aito_contact_poll._reset_rename_failures()
 
 
 def _row(**fields) -> dict:
@@ -114,12 +125,13 @@ async def test_the_listing_asks_books_for_customers_changed_since_the_watermark(
             {
                 "last_modified_time": "2026-09-20T10:00:00+0000",
                 "sort_column": "last_modified_time",
-                "sort_order": "D",
+                "sort_order": "A",
                 "per_page": "200",
                 "page": "1",
             },
         )
     ]
+    assert rows.truncated is False
     assert [r["id"] for r in rows] == ["C1"]
     assert rows[0]["name"] == "Damien Ritter"
     assert rows[0]["last_modified_time"] == "2026-09-23T08:34:29-1000"
@@ -141,6 +153,25 @@ async def test_the_listing_paginates_but_not_forever(monkeypatch):
     rows = await zoho_service.list_contacts_modified_since(None, "2026-09-20T10:00:00+0000")
 
     assert len(rows) == len(pages) == aito_contact_poll_pages()
+    # Stopped at the cap with Books still offering more: the poll must know.
+    assert rows.truncated is True
+
+
+@pytest.mark.asyncio
+async def test_a_window_that_ends_exactly_on_the_cap_is_not_truncated(monkeypatch):
+    async def request(db, method, path, *, params=None, json=None):
+        last = params["page"] == str(aito_contact_poll_pages())
+        return {
+            "contacts": [{"contact_id": params["page"], "contact_name": "x", "contact_type": "customer"}],
+            "page_context": {"has_more_page": not last},
+        }
+
+    monkeypatch.setattr(zoho_service, "_request", request)
+
+    rows = await zoho_service.list_contacts_modified_since(None, "2026-09-20T10:00:00+0000")
+
+    assert len(rows) == aito_contact_poll_pages()
+    assert rows.truncated is False
 
 
 def aito_contact_poll_pages() -> int:
@@ -320,3 +351,203 @@ async def test_a_row_that_fails_holds_the_watermark_so_it_is_retried(db_session,
     assert datetime.strptime(stored, "%Y-%m-%dT%H:%M:%S%z") == held - timedelta(
         seconds=aito_contact_poll.OVERLAP_SECONDS
     )
+
+
+def _capped_books(monkeypatch, rows: list[dict], cap: int, calls: list) -> None:
+    """A Books that honours ``since`` and caps a pass at ``cap`` rows, oldest
+    first, flagging the pass truncated when rows remain."""
+
+    async def list_contacts_modified_since(db, since):
+        calls.append(("list", since))
+        floor = aito_contact_poll._parse_books_time(since)
+        window = sorted(
+            (r for r in rows if aito_contact_poll._parse_books_time(r["last_modified_time"]) >= floor),
+            key=lambda r: aito_contact_poll._parse_books_time(r["last_modified_time"]),
+        )
+        page = ModifiedSinceRows(window[:cap])
+        page.truncated = len(window) > cap
+        return page
+
+    monkeypatch.setattr(zoho_service, "list_contacts_modified_since", list_contacts_modified_since)
+
+
+@pytest.mark.asyncio
+async def test_a_rename_batch_wider_than_the_cap_is_walked_across_passes_and_skips_nothing(db_session, monkeypatch):
+    """T-055: a pass the page cap cuts short resumes at the last row it read.
+
+    Twelve contacts renamed inside one minute, five a pass — a Books bulk
+    edit in miniature. A run of four equal timestamps straddles the first
+    cut-off, and the whole batch is narrower than the five-minute overlap,
+    so a pass that rewound the usual overlap would re-read the same five
+    rows forever.
+    """
+    base = datetime(2026, 9, 23, 9, 0, 0, tzinfo=timezone.utc)
+    offsets = [0, 10, 20, 30, 30, 30, 30, 40, 50, 60, 70, 80]
+    pids = []
+    for i in range(len(offsets)):
+        pids.append((await _project(db_session, client_id=f"c{i}", client_name=f"Old {i}")).id)
+    stamps = [(base + timedelta(seconds=o)).strftime("%Y-%m-%dT%H:%M:%S%z") for o in offsets]
+    rows = [_row(id=f"c{i}", name=f"New {i}", last_modified_time=stamp) for i, stamp in enumerate(stamps)]
+    await set_setting(db_session, POLL_SINCE_SETTING, (base - timedelta(days=200)).strftime("%Y-%m-%dT%H:%M:%S%z"))
+    await db_session.commit()
+    calls: list = []
+    _capped_books(monkeypatch, rows, 5, calls)
+
+    assert await poll_contacts(db_session) == 5
+    # The fifth row read (a tie) is the resume point, rewound one second so
+    # its unread twins come back on the next pass.
+    assert await get_setting(db_session, POLL_SINCE_SETTING) == (base + timedelta(seconds=29)).strftime(
+        "%Y-%m-%dT%H:%M:%S%z"
+    )
+
+    passes = 1
+    while passes < 10:
+        await poll_contacts(db_session)
+        passes += 1
+        if calls[-1][1] == await get_setting(db_session, POLL_SINCE_SETTING):
+            break
+    # Finite: the batch was walked, not re-read in a loop.
+    assert passes < 10
+
+    db_session.expire_all()
+    for i, pid in enumerate(pids):
+        assert (await db_session.get(AitoProject, pid)).client_name == f"New {i}"
+        # Re-reading the tie rows at the seam renamed nothing twice.
+        assert len(await _events(db_session, pid, "project.updated")) == 1
+    # Caught up, the watermark settles where the last capped pass left it:
+    # the overlap never reaches back into the walked batch.
+    settled = await get_setting(db_session, POLL_SINCE_SETTING)
+    assert settled == (base + timedelta(seconds=39)).strftime("%Y-%m-%dT%H:%M:%S%z")
+    await poll_contacts(db_session)
+    assert await get_setting(db_session, POLL_SINCE_SETTING) == settled
+
+
+@pytest.mark.asyncio
+async def test_a_poison_contact_stops_holding_the_watermark_after_three_passes(db_session, monkeypatch, caplog):
+    """T-080 (user-approved 2026-09-27) — rewritten from the T-049
+    characterization `test_a_poison_contact_holds_the_watermark_open_forever_across_many_passes`,
+    which pinned the old uncapped behaviour (the watermark held at the poison
+    contact's timestamp on every pass, a WARNING every tick).
+
+    Like its sibling `aito_invoice_poll.poll_invoices` (see
+    `test_a_poison_invoice_stops_holding_the_watermark_after_three_passes`),
+    `poll_contacts` now caps consecutive per-contact failures at
+    `MAX_RENAME_FAILURES = 3`: the first two failing passes hold
+    `POLL_SINCE_SETTING` at the poison contact's timestamp (WARNING each),
+    the third logs ONE ERROR and lets the watermark advance past it, and
+    later passes only mention it at debug. Its cards keep the old name."""
+    good = await _project(db_session, client_id="zgood", client_name="Old Name")
+    poison_card = await _project(db_session, client_id="zpoison", client_name="Poison Old")
+    real_rename = aito_contact_poll._rename_cards
+    poison_attempts: list[str] = []
+
+    async def flaky_rename(db, contact_id, name):
+        if contact_id == "zpoison":
+            poison_attempts.append(contact_id)
+            raise SQLAlchemyError("books forgot how to spell this contact")
+        return await real_rename(db, contact_id, name)
+
+    monkeypatch.setattr(aito_contact_poll, "_rename_cards", flaky_rename)
+
+    poison_time = "2026-09-23T08:00:00-1000"
+    held = datetime.strptime(poison_time, "%Y-%m-%dT%H:%M:%S%z") - timedelta(seconds=aito_contact_poll.OVERLAP_SECONDS)
+    held_str = held.strftime("%Y-%m-%dT%H:%M:%S%z")
+    # Seed the watermark at the value the poison row keeps re-producing while
+    # it still holds the window, so the held passes ask Books for the exact
+    # same window.
+    await set_setting(db_session, POLL_SINCE_SETTING, held_str)
+    await db_session.commit()
+
+    def good_time(i: int) -> str:
+        return f"2026-09-2{4 + i}T10:00:00-1000"
+
+    def advanced(i: int) -> datetime:
+        return datetime.strptime(good_time(i), "%Y-%m-%dT%H:%M:%S%z") - timedelta(
+            seconds=aito_contact_poll.OVERLAP_SECONDS
+        )
+
+    since_calls: list[datetime] = []
+    for i in range(5):
+        calls = _fake_books(
+            monkeypatch,
+            [
+                _row(id="zpoison", name="Poison Co", last_modified_time=poison_time),
+                _row(id="zgood", name="New Name", last_modified_time=good_time(i)),
+            ],
+        )
+        caplog.clear()
+        with caplog.at_level("DEBUG", logger="backend.app.services.aito_contact_poll"):
+            await poll_contacts(db_session)
+        since_calls.append(datetime.strptime(calls[0][1], "%Y-%m-%dT%H:%M:%S%z"))
+        stored = await get_setting(db_session, POLL_SINCE_SETTING)
+        stored_at = datetime.strptime(stored, "%Y-%m-%dT%H:%M:%S%z")
+        warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+        errors = [r for r in caplog.records if r.levelname == "ERROR"]
+        debugs = [r for r in caplog.records if r.levelname == "DEBUG" and "zpoison" in r.getMessage()]
+        assert aito_contact_poll._rename_failures["zpoison"] == i + 1
+        if i < aito_contact_poll.MAX_RENAME_FAILURES - 1:
+            # Still a retry: the watermark holds at the poison row.
+            assert stored_at == held
+            assert len(warnings) == 1 and errors == []
+            assert "zpoison" in warnings[0].getMessage()
+        else:
+            # Given up: the watermark follows the newest row, as if the
+            # poison contact had succeeded.
+            assert stored_at == advanced(i)
+            assert warnings == []
+            if i == aito_contact_poll.MAX_RENAME_FAILURES - 1:
+                assert len(errors) == 1
+                assert "zpoison" in errors[0].getMessage()
+                assert "giving up" in errors[0].getMessage()
+            else:
+                assert errors == []
+                assert len(debugs) == 1
+        assert len(poison_attempts) == i + 1
+
+    # The good contact still renamed; the poison contact's card keeps its
+    # old name.
+    await db_session.refresh(good)
+    assert good.client_name == "New Name"
+    await db_session.refresh(poison_card)
+    assert poison_card.client_name == "Poison Old"
+    # Held for the first three passes' "since", then advanced past it.
+    assert since_calls == [held, held, held, advanced(2), advanced(3)]
+
+
+@pytest.mark.asyncio
+async def test_a_contact_that_recovers_resets_its_failure_count(db_session, monkeypatch):
+    """T-080: the cap counts CONSECUTIVE failures. A success in between
+    forgets the count, so the next failure holds the watermark again."""
+    await _project(db_session, client_id="zflaky", client_name="Old")
+    real_rename = aito_contact_poll._rename_cards
+    outcomes = iter([True, True, False, True])  # fail, fail, succeed, fail
+
+    async def flaky_rename(db, contact_id, name):
+        if next(outcomes):
+            raise SQLAlchemyError("database is locked")
+        return await real_rename(db, contact_id, name)
+
+    monkeypatch.setattr(aito_contact_poll, "_rename_cards", flaky_rename)
+    stamp = "2026-09-23T08:00:00-1000"
+    held = datetime.strptime(stamp, "%Y-%m-%dT%H:%M:%S%z") - timedelta(seconds=aito_contact_poll.OVERLAP_SECONDS)
+    _fake_books(monkeypatch, [_row(id="zflaky", name="New", last_modified_time=stamp)])
+
+    for expected in (1, 2):
+        await poll_contacts(db_session)
+        assert aito_contact_poll._rename_failures["zflaky"] == expected
+    await poll_contacts(db_session)
+    assert "zflaky" not in aito_contact_poll._rename_failures
+    await poll_contacts(db_session)
+    assert aito_contact_poll._rename_failures["zflaky"] == 1
+    stored = await get_setting(db_session, POLL_SINCE_SETTING)
+    assert datetime.strptime(stored, "%Y-%m-%dT%H:%M:%S%z") == held
+
+
+@pytest.mark.asyncio
+async def test_a_counted_contact_that_leaves_the_window_is_forgotten(db_session, monkeypatch):
+    """T-080: a failure count for a contact no longer listed is dropped, so
+    the store stays the size of the current window's failures."""
+    aito_contact_poll._rename_failures["zgone"] = 2
+    _fake_books(monkeypatch, [_row(id="z1", name="Dam DH")])
+    await poll_contacts(db_session)
+    assert aito_contact_poll._rename_failures == {}

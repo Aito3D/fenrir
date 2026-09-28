@@ -12,7 +12,9 @@ from datetime import date, datetime, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from pydantic import ValidationError
 from sqlalchemy import and_, case, func, or_, select, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -81,7 +83,7 @@ from backend.app.services.aito_board_rules import AWAY_STATUSES, SERVICES, TaskS
 from backend.app.services.aito_client_history import compute_client_history
 from backend.app.services.aito_client_rating import read_client_rating
 from backend.app.services.aito_customer_credit import read_customer_credit
-from backend.app.services.aito_events import diff_fields, kinds_for_depth, record
+from backend.app.services.aito_events import diff_fields, kinds_for_depth, record, utc_now_naive
 from backend.app.services.aito_invoice_create import (
     apply_retainers,
     build_invoice_payload,
@@ -89,6 +91,7 @@ from backend.app.services.aito_invoice_create import (
     share_out,
 )
 from backend.app.services.aito_payment_links import current_link, current_links, link_view, reconcile_payment_links
+from backend.app.services.aito_quote_import import build_preview
 from backend.app.services.aito_quote_status import adopt_quote_status, apply_quote_decision, push_quote_status
 from backend.app.services.aito_quote_sync import (
     _bump_requeue_marker,
@@ -96,6 +99,7 @@ from backend.app.services.aito_quote_sync import (
     request_debounced_sync,
     request_immediate_sync,
 )
+from backend.app.services.aito_send_guard import DuplicateSendGuard
 from backend.app.services.aito_shipping import (
     SERVICE_LABELS,
     grouped_islands,
@@ -137,6 +141,7 @@ from backend.app.services.zoho import (
     ZohoNotConfiguredError,
     ZohoNotFound,
     ZohoRequestRejected,
+    ZohoUnreachable,
     ZohoUpstreamError,
     normalize_display_name,
     zoho_service,
@@ -1421,12 +1426,65 @@ async def get_tracking(
     return data
 
 
+async def _with_books_quote_snapshot(db: AsyncSession, payload: AitoProjectCreate) -> AitoProjectCreate:
+    """An import's quote snapshot, re-read from Books rather than taken from the body.
+
+    T-061: the browser posts the figures the preview showed, but nothing tied
+    them to ``quote_id`` — an aito:create principal could post any
+    quote_number/quote_total and the import wake would mint a Heimdall payment
+    link for that amount under that reference (and a paid link accepts the
+    quote). So the Books-owned snapshot fields are overwritten with Books'
+    values, derived through ``build_preview`` exactly as the preview the drawer
+    rendered derives them — for an honest client nothing changes. The
+    operator's own fields (description, tasks, contact coordinates, shipping,
+    due date) are left alone. The payload is re-validated so Books' values go
+    through the same schema rules (unknown statuses degrade to None, https
+    quote_url, bounds) the posted ones did.
+
+    A hand-made card (no quote_id) is returned untouched, without a Books
+    call. Books unreachable, throttling, or not knowing the quote refuses the
+    create: an import whose figures cannot be confirmed is not stored.
+    """
+    if payload.quote_id is None:
+        return payload
+    try:
+        estimate = await zoho_service.get_estimate(db, payload.quote_id)
+        quote_url = await zoho_service.books_app_url(db, payload.quote_id)
+    except ZohoNotConfiguredError:
+        # 503, not this module's usual 409: the import drawer reads a 409 on
+        # create as "this quote already has a card".
+        raise HTTPException(status_code=503, detail="Zoho is not configured") from None
+    except ZohoNotFound:
+        raise HTTPException(status_code=404, detail="Quote not found in Zoho Books") from None
+    except ZohoUpstreamError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    preview = build_preview(estimate, None, quote_url)
+    quote = preview["quote"]
+    books_fields = {
+        "quote_number": quote["number"],
+        "quote_date": quote["date"],
+        "quote_total": quote["total"],
+        "quote_status": quote["status"],
+        "quote_url": quote["url"],
+    }
+    if preview["client"]["id"]:
+        books_fields["client_id"] = preview["client"]["id"]
+    try:
+        return AitoProjectCreate.model_validate({**payload.model_dump(exclude_unset=True), **books_fields})
+    except ValidationError as e:
+        raise RequestValidationError(e.errors()) from e
+
+
 async def _validate_create_payload(
     db: AsyncSession,
     payload: AitoProjectCreate,
     current_user: User | None,
 ) -> dict:
-    """Permission, contact and shipping checks for create_project; returns the validated shipping fields."""
+    """Permission, contact and shipping checks for create_project; returns the validated shipping fields.
+
+    The duplicate-quote check is not here: create_project runs it before the
+    Books re-read (T-070), since it keys on ``quote_id``, which Books never
+    overwrites."""
     if (
         payload.quote_status in ("accepted", "declined")
         and current_user is not None
@@ -1450,7 +1508,6 @@ async def _validate_create_payload(
             status_code=403,
             detail="quote_status 'accepted'/'declined' requires the aito:update permission",
         )
-    await _reject_duplicate_quote(db, payload.quote_id)
     if payload.quote_id is None and not (
         (payload.client_phone or "").strip()
         or (payload.client_email or "").strip()
@@ -1570,6 +1627,12 @@ async def create_project(
     db: AsyncSession = Depends(get_db),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_CREATE),
 ):
+    # T-070: a quote that already has an active card is refused before the
+    # Books re-read, so a duplicate import gets its 409 even when Books is
+    # unreachable or Zoho is unconfigured. It keys on quote_id, a field the
+    # snapshot never overwrites; every Books-dependent check stays after it.
+    await _reject_duplicate_quote(db, payload.quote_id)
+    payload = await _with_books_quote_snapshot(db, payload)
     shipping = await _validate_create_payload(db, payload, current_user)
     # Before any write: the summary is a network round trip, and nothing here
     # should hold a dirty session open through one.
@@ -1612,7 +1675,7 @@ async def create_project(
     # backdates created_at to, or now for a hand-made card posted with an
     # away status. Never for a bare draft — it has not left the shop.
     if payload.quote_status in AWAY_STATUSES or payload.quote_status in ("accepted", "declined"):
-        project.quote_sent_at = created_at or datetime.now(timezone.utc).replace(tzinfo=None)
+        project.quote_sent_at = created_at or utc_now_naive()
     for task_payload in payload.tasks:
         _reject_ticks_without_acceptance(payload.quote_status, task_payload.model_dump())
     db.add(project)
@@ -1713,18 +1776,41 @@ _CLIENT_RATING_DETAIL = "Too many client rating requests. Please wait a moment a
 # flood.
 _PICKUP_SMS_MAX_CALLS = 10
 _PICKUP_SMS_DETAIL = "Too many pickup SMS sends. Please wait a moment and try again."
+# T-064: the quote and invoice emails. Each send mails the client from the
+# company's Zoho account and spends the Books daily API/email quota the sync
+# worker also lives on, so both routes share one bucket at the pickup SMS's
+# human pace.
+_ZOHO_EMAIL_MAX_CALLS = 10
+_ZOHO_EMAIL_DETAIL = "Too many email sends. Please wait a moment and try again."
 # "<bucket>:<principal>" -> call timestamps (module's own `time.monotonic`,
 # see below). One dict, one window, one bucket per rate-limited concern.
 _ai_rate_limit_calls: dict[str, list[float]] = {}
+# More keys than this and the ones with no timestamp left inside the window
+# are swept: every bucket shares _AI_RATE_LIMIT_WINDOW_S, so a key with
+# nothing newer than that is dead regardless of which bucket it belongs to.
+# Gated on size rather than swept every call for the same reason
+# _TRACK_RATE_SWEEP_ABOVE is: a distinct principal/bucket pair that stops
+# calling would otherwise sit in the dict for the life of the process.
+_AI_RATE_LIMIT_SWEEP_ABOVE = 200
 
 
 def _ai_rate_limit_key(request: Request, current_user: User | None) -> str:
     """One bucket per authenticated user; per client IP when auth is disabled
     (or the caller authenticated via an API key, which the any-of permission
-    checker also surfaces as `None` — see require_any_permission_if_auth_enabled)."""
+    checker also surfaces as `None` — see require_any_permission_if_auth_enabled).
+
+    T-032: the IP is resolved through auth.py's proxy-aware `_get_client_ip`,
+    not the raw TCP peer — behind a reverse proxy the latter is the proxy
+    for every anonymous caller, so the whole shop's AI/counter-payment
+    budget would silently collapse onto one bucket, exactly the hazard
+    `_track_rate_limited` above already guards against for the tracking
+    limiter. `_get_client_ip` only trusts X-Forwarded-For from a peer listed
+    in TRUSTED_PROXY_IPS, so an unconfigured/direct install (and an
+    untrusted peer's forged header) still resolves the same address as
+    before."""
     if current_user is not None:
         return f"user:{current_user.id}"
-    host = request.client.host if request.client else "unknown"
+    host = _get_client_ip(request) if request.client else "unknown"
     return f"ip:{host}"
 
 
@@ -1745,6 +1831,11 @@ def _check_rate_limit(request: Request, current_user: User | None, *, bucket: st
     """
     key = f"{bucket}:{_ai_rate_limit_key(request, current_user)}"
     now = time.monotonic()
+    if len(_ai_rate_limit_calls) > _AI_RATE_LIMIT_SWEEP_ABOVE:
+        for stale in [
+            k for k, calls in _ai_rate_limit_calls.items() if not any(now - t < _AI_RATE_LIMIT_WINDOW_S for t in calls)
+        ]:
+            del _ai_rate_limit_calls[stale]
     calls = _ai_rate_limit_calls.setdefault(key, [])
     calls[:] = [t for t in calls if now - t < _AI_RATE_LIMIT_WINDOW_S]
     if len(calls) >= max_calls:
@@ -2458,10 +2549,63 @@ async def get_invoice_email(
     )
 
 
+# T-064: the quote and invoice emails' duplicate-send guard, the pickup SMS's
+# (_recent_sms, T-025/T-043/T-044) applied to Books' email. A second tap — or
+# the reflex retry after an answer the operator read as a failure — must not
+# mail the client the same document twice. Same one-minute window, same
+# lifecycle: armed before the send, kept on success and on ZohoUnreachable
+# (a transport failure says nothing about whether Books already sent it),
+# dropped again on a clean refusal from Books and on any other exception the
+# send itself raises, so an honest retry after a real failure goes through.
+# Kept out of the docstrings: FastAPI publishes those as the endpoints'
+# OpenAPI descriptions.
+_EMAIL_DUPLICATE_WINDOW_S = 60.0
+# (kind, project_id, Books document id, lower-cased recipient) ->
+# time.monotonic() of the last send that MAY have reached the client. Pruned
+# on every call: the recipient is caller-supplied (if allowlisted), so an
+# unevicted dict would only ever grow.
+_EMAIL_GUARD = DuplicateSendGuard(_EMAIL_DUPLICATE_WINDOW_S)
+_recent_emails = _EMAIL_GUARD.entries
+_EMAIL_DUPLICATE_DETAIL = (
+    "Already sent — this email went to that address less than a minute ago; check with the client before sending again"
+)
+
+
+def _reset_recent_emails() -> None:
+    """Test hook: the guard is module state, so a test that fills it must be
+    able to empty it again."""
+    _EMAIL_GUARD.clear()
+
+
+def _email_guard_key_or_409(kind: str, project_id: int, document_id: str, recipient: str) -> tuple[str, int, str, str]:
+    """Prune the guard and return this send's key, raising 409 if the same
+    document already went (or may have gone) to the same address inside the
+    window. Reads the clock through the module's own `time` name, like
+    _sms_guard_key_or_409, so a test can rebind it to a fake clock."""
+    now = time.monotonic()
+    key = (kind, project_id, document_id, recipient.lower())
+    if _EMAIL_GUARD.is_recent(key, now):
+        raise HTTPException(status_code=409, detail=_EMAIL_DUPLICATE_DETAIL)
+    return key
+
+
+def _check_zoho_email_rate_limit(request: Request, current_user: User | None) -> None:
+    """The quote- and invoice-email budget: one shared bucket, checked before
+    any lookup so a loop spends neither Books calls nor client inboxes."""
+    _check_rate_limit(
+        request,
+        current_user,
+        bucket="zoho_email",
+        max_calls=_ZOHO_EMAIL_MAX_CALLS,
+        detail=_ZOHO_EMAIL_DETAIL,
+    )
+
+
 @router.post("/{project_id}/invoice-email", response_model=AitoInvoiceResponse)
 async def send_invoice_email(
     project_id: int,
     payload: AitoInvoiceEmailRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
@@ -2496,6 +2640,7 @@ async def send_invoice_email(
     producing a 500 anyway. Locals sidestep that entirely; ``project`` itself
     must not be touched again past this point.
     """
+    _check_zoho_email_rate_limit(request, current_user)
     project, invoice, content, _default_email, pre_send_count = await _load_invoice_email_content(
         db, project_id, payload.invoice_id, rollback_on_error=True
     )
@@ -2517,12 +2662,22 @@ async def send_invoice_email(
     if recipient.lower() not in {r["email"].lower() for r in content["recipients"]}:
         raise HTTPException(status_code=422, detail="That address is not a recipient of this invoice")
 
+    key = _email_guard_key_or_409("invoice", project_pk, invoice["id"], recipient)
+    # Armed before the send; nothing is awaited between the check and here.
+    _EMAIL_GUARD.arm(key, time.monotonic())
     try:
         await zoho_service.email_invoice(db, invoice["id"], to_mail_ids=[recipient])
     except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
+        if not isinstance(e, ZohoUnreachable):
+            # Books refused cleanly: nothing was sent, so an honest retry may go.
+            _EMAIL_GUARD.release(key)
         logger.warning("Aito invoice email failed for project %s: %s", project_id, e)
         await db.rollback()
         raise _zoho_email_http_error(e) from e
+    except Exception:
+        # Not one of Books' answers, so nothing is known to have been sent.
+        _EMAIL_GUARD.release(key)
+        raise
 
     event_recorded = True
     try:
@@ -2767,6 +2922,7 @@ async def get_quote_email(
 async def send_quote_email(
     project_id: int,
     payload: AitoQuoteEmailRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
@@ -2798,6 +2954,7 @@ async def send_quote_email(
     re-sending anything, so a failure there degrades to ``marked_sent=False``
     rather than a 500.
     """
+    _check_zoho_email_rate_limit(request, current_user)
     project = await _get_active_project_or_404(db, project_id)
     content, _ = await _load_quote_email_content(db, project, project_id, rollback_on_error=True)
 
@@ -2819,9 +2976,15 @@ async def send_quote_email(
     if recipient.lower() not in {r["email"].lower() for r in content["recipients"]}:
         raise HTTPException(status_code=422, detail="That address is not a recipient of this quote")
 
+    key = _email_guard_key_or_409("quote", project.id, project.quote_id, recipient)
+    # Armed before the send; nothing is awaited between the check and here.
+    _EMAIL_GUARD.arm(key, time.monotonic())
     try:
         await zoho_service.email_estimate(db, project.quote_id, to_mail_ids=[recipient])
     except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
+        if not isinstance(e, ZohoUnreachable):
+            # Books refused cleanly: nothing was sent, so an honest retry may go.
+            _EMAIL_GUARD.release(key)
         logger.warning("Aito quote email failed for project %s: %s", project_id, e)
         # Belt-and-braces, not load-bearing: unlike set_quote_status, this
         # handler re-raises rather than swallowing the error, so get_db's own
@@ -2832,6 +2995,10 @@ async def send_quote_email(
         # this line and the raise that reads it.
         await db.rollback()
         raise _zoho_email_http_error(e) from e
+    except Exception:
+        # Not one of Books' answers, so nothing is known to have been sent.
+        _EMAIL_GUARD.release(key)
+        raise
 
     await record(
         db,
@@ -3374,6 +3541,17 @@ async def move_project(
     return await _project_response(db, project, summary)
 
 
+def _version_conflict() -> HTTPException:
+    """The 409 both `update_project` and `edit_project_client` raise, twice
+    each — once for the cheap pre-check, once for the atomic re-check right
+    before the write (`_claim_expected_version`/`_claim_and_bump_version`).
+    One builder so the code/message pair can't drift between the two guarded
+    routes."""
+    return HTTPException(
+        status_code=409, detail={"code": "version_conflict", "message": "Project was updated by someone else"}
+    )
+
+
 async def _claim_expected_version(db: AsyncSession, project: AitoProject, expected: int) -> bool:
     """Atomically claim the right to write `project`, for `update_project`'s
     `expected_version` guard (T-046).
@@ -3482,10 +3660,7 @@ async def update_project(
     project = await _get_active_project_or_404(db, project_id)
 
     if payload.expected_version is not None and payload.expected_version != (project.version or 0):
-        raise HTTPException(
-            status_code=409,
-            detail={"code": "version_conflict", "message": "Project was updated by someone else"},
-        )
+        raise _version_conflict()
 
     fields = payload.model_dump(exclude_unset=True)
     # A guard token, not a column — it must not reach diff_fields or setattr.
@@ -3523,10 +3698,7 @@ async def update_project(
     if payload.expected_version is not None and not await _claim_expected_version(
         db, project, payload.expected_version
     ):
-        raise HTTPException(
-            status_code=409,
-            detail={"code": "version_conflict", "message": "Project was updated by someone else"},
-        )
+        raise _version_conflict()
 
     # `current=project` so correcting ONE field of an existing shipment works
     # without resending the other three — the merged row is what has to be
@@ -3648,10 +3820,7 @@ async def edit_project_client(
     """
     project = await _get_active_project_or_404(db, project_id)
     if payload.expected_version is not None and payload.expected_version != (project.version or 0):
-        raise HTTPException(
-            status_code=409,
-            detail={"code": "version_conflict", "message": "Project was updated by someone else"},
-        )
+        raise _version_conflict()
 
     is_company = bool(project.client_is_company)
     company = payload.company_name.strip()
@@ -3725,10 +3894,7 @@ async def edit_project_client(
     claimed_version: int | None = None
     if payload.expected_version is not None:
         if not await _claim_and_bump_version(db, project, payload.expected_version):
-            raise HTTPException(
-                status_code=409,
-                detail={"code": "version_conflict", "message": "Project was updated by someone else"},
-            )
+            raise _version_conflict()
         claimed_version = payload.expected_version + 1
 
     if is_zoho_contact:
@@ -3773,8 +3939,15 @@ async def edit_project_client(
     # that commit (and before however long Books took to answer). Only the
     # claiming path needs it — an unguarded edit has committed nothing and
     # still holds the transaction it read the card in.
+    # T-053: whether the card is still exactly where the claim left it. An
+    # unguarded write that committed during the Books round trip (a PATCH
+    # without expected_version, a flag, the contact poll) has already moved
+    # it past the claim, and pinning back over that would move the version
+    # BACKWARDS — re-arming a draft read before that write.
+    pin_to_claim = False
     if claimed_version is not None:
         await db.refresh(project)
+        pin_to_claim = project.version == claimed_version
 
     # Never fanned out: the handle is this card's channel, not the contact's —
     # Books does not hold it, so a sibling card has no record to agree with.
@@ -3844,8 +4017,10 @@ async def edit_project_client(
         # field, the listener does not fire, `project.version` is already the
         # claimed number and nothing extra is written. Siblings are untouched
         # here: they are not version-guarded and bump as they always did.
+        # Only when nobody else wrote in the meantime (T-053): otherwise the
+        # listener's bump stands, so the version stays monotonic.
         await db.flush()
-        if project.version != claimed_version:
+        if pin_to_claim and project.version != claimed_version:
             project.version = claimed_version
     await db.commit()
     await _broadcast_changed("update", project.id, _actor(current_user))
@@ -4004,7 +4179,7 @@ async def set_project_contacted(
         # `quote_accepted_at` is stamped the same way in
         # services/aito_quote_status.py. A tz-aware value here would compare
         # wrong against all of them.
-        project.client_contacted_at = datetime.now(timezone.utc).replace(tzinfo=None) if payload.contacted else None
+        project.client_contacted_at = utc_now_naive() if payload.contacted else None
         await record(
             db,
             project.id,
@@ -4188,10 +4363,11 @@ _SMS_DUPLICATE_WINDOW_S = 60.0
 # transport failure that says nothing about what Pushcut did. A clean refusal
 # (not configured, non-2xx) drops the key again, so an honest retry after a
 # real failure still goes through.
-# Pruned on every call, unlike aito_manual_payments' sibling guard: this key
-# carries a caller-supplied message, so an unevicted dict would grow with
-# every distinct body ever sent.
-_recent_sms: dict[tuple[int, str], float] = {}
+# Pruned on every call (aito_manual_payments' sibling guard does the same):
+# this key carries a caller-supplied message, so an unevicted dict would grow
+# with every distinct body ever sent.
+_SMS_GUARD = DuplicateSendGuard(_SMS_DUPLICATE_WINDOW_S)
+_recent_sms = _SMS_GUARD.entries
 # Plain-string details, the module's shape for a message with no client-side
 # branching to do — except for their LEADING words, which SmsPickupModal
 # matches to pick its toast. Reword them with the modal, not alone.
@@ -4207,7 +4383,7 @@ _SMS_UNREACHABLE_DETAIL = (
 def _reset_recent_sms() -> None:
     """Test hook: the guard is module state, so a test that fills it must be
     able to empty it again (the suite's own fixtures call this)."""
-    _recent_sms.clear()
+    _SMS_GUARD.clear()
 
 
 def _sms_guard_key_or_409(project_id: int, message: str) -> tuple[int, str]:
@@ -4218,10 +4394,8 @@ def _sms_guard_key_or_409(project_id: int, message: str) -> tuple[int, str]:
     _check_rate_limit does — so a test can rebind it to a fake clock.
     """
     now = time.monotonic()
-    for stale in [k for k, at in _recent_sms.items() if now - at >= _SMS_DUPLICATE_WINDOW_S]:
-        del _recent_sms[stale]
     key = (project_id, message.strip())
-    if key in _recent_sms:
+    if _SMS_GUARD.is_recent(key, now):
         raise HTTPException(status_code=409, detail=_SMS_DUPLICATE_DETAIL)
     return key
 
@@ -4281,8 +4455,9 @@ async def send_pickup_sms(
     # Everything that can refuse the send outright (the rate limit, the 404,
     # the unfinished-work 409, the no-phone 409) runs above, so a request that
     # never reaches Pushcut never arms the key. Un-armed again below on a clean
-    # refusal only; success and the ambiguous PushcutUnreachable keep it.
-    _recent_sms[key] = time.monotonic()
+    # refusal, or on any other exception the send itself raises (T-044);
+    # success and the ambiguous PushcutUnreachable keep it.
+    _SMS_GUARD.arm(key, time.monotonic())
     try:
         await send_sms_notification(
             db,
@@ -4294,7 +4469,7 @@ async def send_pickup_sms(
         # A clean refusal Pushcut itself gave: nothing was pushed, so the key
         # armed above is dropped again and an honest retry — once the URL is
         # configured — goes straight through.
-        _recent_sms.pop(key, None)
+        _SMS_GUARD.release(key)
         raise HTTPException(status_code=409, detail="Pushcut is not configured") from None
     except PushcutUnreachable as e:
         # Caught BEFORE its PushcutUpstreamError parent below — the ambiguous
@@ -4311,8 +4486,21 @@ async def send_pickup_sms(
     except PushcutUpstreamError as e:
         # Pushcut answered and refused: nothing was pushed, so the key armed
         # above is dropped and an honest retry is allowed straight away.
-        _recent_sms.pop(key, None)
+        _SMS_GUARD.release(key)
         raise HTTPException(status_code=502, detail=str(e)) from e
+    except Exception:
+        # T-044: anything else raised by the send itself (a bug, a DB error
+        # building the title argument above, ...) is not one of Pushcut's own
+        # answers, so it carries none of PushcutUnreachable's ambiguity about
+        # whether the phone got it — nothing here is known to have reached
+        # Pushcut. Un-arm the key and let the exception propagate unchanged
+        # (still a 500), so an operator's honest retry after that 500 isn't
+        # refused as "Already sent" for the rest of the window. Scoped to this
+        # call only: an exception raised AFTER a successful send (recording
+        # the event, the commit below) must NOT land here and must NOT un-arm
+        # the key, because the SMS really did go out.
+        _SMS_GUARD.release(key)
+        raise
     # No re-arm here: the key written before the push already covers the
     # success path, and the window is deliberately measured from the moment
     # the push started rather than the moment it came back.

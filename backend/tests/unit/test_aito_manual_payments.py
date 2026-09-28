@@ -2,6 +2,7 @@ import asyncio
 import time as real_time
 from datetime import date
 
+import httpx
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -11,7 +12,7 @@ from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
 from backend.app.services import aito_manual_payments as svc
 from backend.app.services.aito_payment_documents import PaymentDocument
-from backend.app.services.zoho import ZohoUpstreamError, zoho_service
+from backend.app.services.zoho import ZohoAmbiguous, ZohoUnreachable, ZohoUpstreamError, zoho_service
 
 TODAY = date(2026, 9, 23)
 INVOICE = PaymentDocument(kind="invoice", id="inv-1", number="FA-26-0001", customer_id="c1", balance=23000)
@@ -180,6 +181,58 @@ async def test_duplicate_within_the_window_is_refused(db_session, books, monkeyp
 
     monkeypatch.setattr(svc, "time", _LaterClock)
     await svc.record_manual_payment(db_session, p, **kw)  # window elapsed
+
+
+@pytest.mark.asyncio
+async def test_expired_guard_entries_are_pruned_while_fresh_ones_still_refuse(db_session, books, monkeypatch):
+    """T-014: the dict must not grow forever. An entry older than
+    DUPLICATE_WINDOW_SECONDS is already ignored by the duplicate check (see
+    the test above), so removing it on a later call changes nothing a caller
+    can observe -- it just stops the process-lifetime dict from growing.
+    A second, still-fresh entry made in the same later call must keep
+    refusing a genuine duplicate."""
+
+    async def no_refresh(db, project_id, kind):
+        return None
+
+    monkeypatch.setattr(svc, "refresh_after_payment", no_refresh)
+    p = await _project(db_session)
+    old_kw = {
+        "document": INVOICE,
+        "mode": "cash",
+        "amount": 100,
+        "reference": "old",
+        "actor_name": None,
+        "today": TODAY,
+    }
+    await svc.record_manual_payment(db_session, p, **old_kw)
+    old_key = svc._guard_key(p.id, INVOICE, 100, "old")
+    assert old_key in svc._recent
+
+    future = real_time.monotonic() + svc.DUPLICATE_WINDOW_SECONDS + 1
+
+    class _LaterClock:
+        @staticmethod
+        def monotonic():
+            return future
+
+    monkeypatch.setattr(svc, "time", _LaterClock)
+    new_kw = {
+        "document": INVOICE,
+        "mode": "cash",
+        "amount": 200,
+        "reference": "new",
+        "actor_name": None,
+        "today": TODAY,
+    }
+    await svc.record_manual_payment(db_session, p, **new_kw)  # prunes `old_key` on entry
+    new_key = svc._guard_key(p.id, INVOICE, 200, "new")
+
+    assert old_key not in svc._recent  # evicted: past the window
+    assert new_key in svc._recent  # this call's own key: still fresh
+
+    with pytest.raises(svc.DuplicateManualPayment):
+        await svc.record_manual_payment(db_session, p, **new_kw)  # still inside ITS window
 
 
 @pytest.mark.asyncio
@@ -362,3 +415,231 @@ async def test_refresh_recovers_a_session_poisoned_by_a_failed_commit(db_session
     await svc.refresh_after_payment(db_session, p.id, "invoice")  # must not raise
 
     assert db_session.is_active is True
+
+
+def _timing_out_books(monkeypatch, *, fail_path):
+    """Books answers everything except `POST fail_path`, which times out --
+    the error `_send` raises for an httpx ReadTimeout."""
+    calls = []
+
+    async def request(db, method, path, *, params=None, json=None):
+        calls.append((method, path, json))
+        if method == "POST" and path == fail_path:
+            raise ZohoUnreachable("Zoho Books unreachable: ReadTimeout")
+        if path == "/retainerinvoices" and method == "POST":
+            return {"retainerinvoice": {"retainerinvoice_id": "ret-1", "retainerinvoice_number": "RET26-0001"}}
+        return {}
+
+    monkeypatch.setattr(zoho_service, "_request", request)
+    return calls
+
+
+@pytest.mark.asyncio
+async def test_invoice_payment_timeout_is_outcome_unknown_and_keeps_the_guard(db_session, monkeypatch):
+    """T-051: a ReadTimeout on POST /customerpayments can land after Books
+    recorded the payment. It must not read as a clean failure: the guard key
+    stays, so an identical retry inside the window is refused rather than
+    writing a second payment against the invoice."""
+    calls = _timing_out_books(monkeypatch, fail_path="/customerpayments")
+    p = await _project(db_session)
+    kw = {"document": INVOICE, "mode": "cash", "amount": 100, "reference": "r", "actor_name": None, "today": TODAY}
+    with pytest.raises(svc.ManualPaymentOutcomeUnknown) as exc:
+        await svc.record_manual_payment(db_session, p, **kw)
+    assert exc.value.retainer_number is None
+    assert isinstance(exc.value.cause, ZohoUnreachable)
+    assert "ReadTimeout" in str(exc.value)
+    assert svc._guard_key(p.id, INVOICE, 100, "r") in svc._recent
+    with pytest.raises(svc.DuplicateManualPayment):
+        await svc.record_manual_payment(db_session, p, **kw)
+    posts = [c for c in calls if c[:2] == ("POST", "/customerpayments")]
+    assert len(posts) == 1
+    assert await _events(db_session, p.id, "payment.manual.recorded") == []
+
+
+@pytest.mark.asyncio
+async def test_quote_payment_timeout_is_outcome_unknown_not_partial(db_session, monkeypatch):
+    """T-051, quote path: the retainer was raised, then the payment on it
+    timed out. `ManualPaymentPartial` ("record it by hand in Books") and its
+    `payment.manual.partial` event would both claim the payment is missing
+    when Books may hold it -- the outcome is unknown instead, the retainer is
+    named, and the guard stays armed."""
+    calls = _timing_out_books(monkeypatch, fail_path="/customerpayments")
+    p = await _project(db_session)
+    kw = {"document": QUOTE, "mode": "card", "amount": 100, "reference": None, "actor_name": None, "today": TODAY}
+    with pytest.raises(svc.ManualPaymentOutcomeUnknown) as exc:
+        await svc.record_manual_payment(db_session, p, **kw)
+    assert exc.value.retainer_number == "RET26-0001"
+    assert await _events(db_session, p.id, "payment.manual.partial") == []
+    with pytest.raises(svc.DuplicateManualPayment):
+        await svc.record_manual_payment(db_session, p, **kw)
+    assert [c[:2] for c in calls if c[0] == "POST"] == [("POST", "/retainerinvoices"), ("POST", "/customerpayments")]
+
+
+@pytest.mark.asyncio
+async def test_retainer_creation_timeout_is_outcome_unknown_and_keeps_the_guard(db_session, monkeypatch):
+    """T-079 (user-approved 2026-09-27; before: the plain upstream error with
+    the guard released). A transport error on the retainer invoice itself can
+    land after Books created it: the outcome is unknown, the guard stays
+    armed so an identical retry is refused, no payment is attempted and only
+    one POST /retainerinvoices ever reaches Books."""
+    calls = _timing_out_books(monkeypatch, fail_path="/retainerinvoices")
+    p = await _project(db_session)
+    kw = {"document": QUOTE, "mode": "card", "amount": 100, "reference": None, "actor_name": None, "today": TODAY}
+    with pytest.raises(svc.ManualPaymentOutcomeUnknown) as exc:
+        await svc.record_manual_payment(db_session, p, **kw)
+    assert exc.value.retainer_number is None
+    assert exc.value.stage == "retainer"
+    assert isinstance(exc.value.cause, ZohoUnreachable)
+    assert "retainer invoice may already be" in str(exc.value)
+    assert svc._guard_key(p.id, QUOTE, 100, None) in svc._recent
+    with pytest.raises(svc.DuplicateManualPayment):
+        await svc.record_manual_payment(db_session, p, **kw)
+    assert [c[:2] for c in calls if c[0] == "POST"] == [("POST", "/retainerinvoices")]
+    assert await _events(db_session, p.id, "payment.manual.partial") == []
+
+
+# --- T-078: a Books 5xx / non-JSON answer on the payment call ------------------
+
+_AMBIGUOUS_BOOKS_ANSWERS = [
+    pytest.param(lambda: httpx.Response(500, json={"code": 1, "message": "internal"}), id="500-json"),
+    pytest.param(lambda: httpx.Response(502, content=b"<html>502 Bad Gateway</html>"), id="502-html"),
+    pytest.param(lambda: httpx.Response(503, json={"code": 1, "message": "busy"}), id="503-json"),
+    pytest.param(lambda: httpx.Response(504, content=b"<html>504 Gateway Time-out</html>"), id="504-html"),
+    pytest.param(lambda: httpx.Response(200, content=b"<html>ok?</html>"), id="200-html"),
+]
+
+
+def _books_over_http(monkeypatch, payment_answer):
+    """Books over the real `_request`/`_raise_for_status`: `_send` is the
+    seam, so the status/body mapping under test is the production one."""
+    calls = []
+
+    async def send(db, method, path, *, params=None, json=None):
+        calls.append((method, path))
+        if (method, path) == ("POST", "/customerpayments"):
+            return payment_answer()
+        if (method, path) == ("POST", "/retainerinvoices"):
+            return httpx.Response(
+                201, json={"retainerinvoice": {"retainerinvoice_id": "ret-1", "retainerinvoice_number": "RET26-0001"}}
+            )
+        return httpx.Response(200, json={})
+
+    monkeypatch.setattr(zoho_service, "_send", send)
+    return calls
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("answer", _AMBIGUOUS_BOOKS_ANSWERS)
+async def test_invoice_payment_books_5xx_is_outcome_unknown_and_keeps_the_guard(db_session, monkeypatch, answer):
+    """T-078: an edge 502/504 (or Books' own 5xx) can arrive after Books
+    committed the payment. Same as a timeout: outcome unknown, guard kept,
+    an identical retry is refused before it reaches Books."""
+    calls = _books_over_http(monkeypatch, answer)
+    p = await _project(db_session)
+    kw = {"document": INVOICE, "mode": "cash", "amount": 100, "reference": "r", "actor_name": None, "today": TODAY}
+    with pytest.raises(svc.ManualPaymentOutcomeUnknown) as exc:
+        await svc.record_manual_payment(db_session, p, **kw)
+    assert exc.value.retainer_number is None
+    assert isinstance(exc.value.cause, ZohoAmbiguous)
+    assert svc._guard_key(p.id, INVOICE, 100, "r") in svc._recent
+    with pytest.raises(svc.DuplicateManualPayment):
+        await svc.record_manual_payment(db_session, p, **kw)
+    assert calls.count(("POST", "/customerpayments")) == 1
+    assert await _events(db_session, p.id, "payment.manual.recorded") == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("answer", _AMBIGUOUS_BOOKS_ANSWERS)
+async def test_quote_payment_books_5xx_is_outcome_unknown_not_partial(db_session, monkeypatch, answer):
+    """T-078, quote path: not `ManualPaymentPartial`, whose "record the
+    payment on it in Books" would book a payment Books may already hold."""
+    calls = _books_over_http(monkeypatch, answer)
+    p = await _project(db_session)
+    kw = {"document": QUOTE, "mode": "card", "amount": 100, "reference": None, "actor_name": None, "today": TODAY}
+    with pytest.raises(svc.ManualPaymentOutcomeUnknown) as exc:
+        await svc.record_manual_payment(db_session, p, **kw)
+    assert exc.value.retainer_number == "RET26-0001"
+    assert isinstance(exc.value.cause, ZohoAmbiguous)
+    assert await _events(db_session, p.id, "payment.manual.partial") == []
+    with pytest.raises(svc.DuplicateManualPayment):
+        await svc.record_manual_payment(db_session, p, **kw)
+    assert [c for c in calls if c[0] == "POST"] == [("POST", "/retainerinvoices"), ("POST", "/customerpayments")]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [400, 401, 404, 422])
+async def test_invoice_payment_books_4xx_json_is_still_a_clean_failure(db_session, monkeypatch, status):
+    """Books answered and refused: nothing was written, so the guard is
+    released and an honest retry goes through."""
+    _books_over_http(monkeypatch, lambda: httpx.Response(status, json={"code": 9, "message": "payment mode unknown"}))
+    p = await _project(db_session)
+    kw = {"document": INVOICE, "mode": "cash", "amount": 100, "reference": "r", "actor_name": None, "today": TODAY}
+    with pytest.raises(ZohoUpstreamError) as exc:
+        await svc.record_manual_payment(db_session, p, **kw)
+    assert not isinstance(exc.value, (ZohoAmbiguous, ZohoUnreachable))
+    assert svc._guard_key(p.id, INVOICE, 100, "r") not in svc._recent
+
+
+@pytest.mark.asyncio
+async def test_quote_payment_books_400_json_is_still_partial(db_session, monkeypatch):
+    _books_over_http(monkeypatch, lambda: httpx.Response(400, json={"code": 9, "message": "payment mode unknown"}))
+    p = await _project(db_session)
+    kw = {"document": QUOTE, "mode": "card", "amount": 100, "reference": None, "actor_name": None, "today": TODAY}
+    with pytest.raises(svc.ManualPaymentPartial) as exc:
+        await svc.record_manual_payment(db_session, p, **kw)
+    assert "payment mode unknown" in str(exc.value)
+    assert len(await _events(db_session, p.id, "payment.manual.partial")) == 1
+
+
+def _books_over_http_retainer(monkeypatch, retainer_answer):
+    """Books over the real `_request`/`_raise_for_status`, with the answer to
+    POST /retainerinvoices under test."""
+    calls = []
+
+    async def send(db, method, path, *, params=None, json=None):
+        calls.append((method, path))
+        if (method, path) == ("POST", "/retainerinvoices"):
+            return retainer_answer()
+        return httpx.Response(200, json={})
+
+    monkeypatch.setattr(zoho_service, "_send", send)
+    return calls
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("answer", _AMBIGUOUS_BOOKS_ANSWERS)
+async def test_retainer_creation_books_5xx_is_outcome_unknown_and_keeps_the_guard(db_session, monkeypatch, answer):
+    """T-079: a Books 5xx / edge HTML answer on the retainer creation is as
+    ambiguous as a timeout -- guard kept, identical retry refused, one POST."""
+    calls = _books_over_http_retainer(monkeypatch, answer)
+    p = await _project(db_session)
+    kw = {"document": QUOTE, "mode": "card", "amount": 100, "reference": None, "actor_name": None, "today": TODAY}
+    with pytest.raises(svc.ManualPaymentOutcomeUnknown) as exc:
+        await svc.record_manual_payment(db_session, p, **kw)
+    assert exc.value.retainer_number is None
+    assert exc.value.stage == "retainer"
+    assert isinstance(exc.value.cause, ZohoAmbiguous)
+    assert svc._guard_key(p.id, QUOTE, 100, None) in svc._recent
+    with pytest.raises(svc.DuplicateManualPayment):
+        await svc.record_manual_payment(db_session, p, **kw)
+    assert [c for c in calls if c[0] == "POST"] == [("POST", "/retainerinvoices")]
+
+
+@pytest.mark.asyncio
+async def test_retainer_creation_books_400_json_is_still_a_clean_failure(db_session, monkeypatch):
+    """T-079 leaves a clean refusal alone: Books answered and created
+    nothing, so the plain upstream error, the guard released, and an honest
+    retry reaches Books again."""
+    calls = _books_over_http_retainer(
+        monkeypatch, lambda: httpx.Response(400, json={"code": 9, "message": "customer unknown"})
+    )
+    p = await _project(db_session)
+    kw = {"document": QUOTE, "mode": "card", "amount": 100, "reference": None, "actor_name": None, "today": TODAY}
+    with pytest.raises(ZohoUpstreamError) as exc:
+        await svc.record_manual_payment(db_session, p, **kw)
+    assert not isinstance(exc.value, (ZohoAmbiguous, ZohoUnreachable))
+    assert svc._guard_key(p.id, QUOTE, 100, None) not in svc._recent
+    with pytest.raises(ZohoUpstreamError):
+        await svc.record_manual_payment(db_session, p, **kw)
+    assert calls.count(("POST", "/retainerinvoices")) == 2
+    assert ("POST", "/customerpayments") not in calls

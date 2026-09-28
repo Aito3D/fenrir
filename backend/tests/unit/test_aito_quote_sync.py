@@ -34,7 +34,7 @@ from backend.app.services.aito_quote_sync import (
     sync_project,
 )
 from backend.app.services.aito_shipping import SERVICE_LABELS
-from backend.app.services.zoho import zoho_service
+from backend.app.services.zoho import ZohoUnreachable, ZohoUpstreamError, zoho_service
 from backend.tests.aito_request_fixture import direct_request
 
 
@@ -3268,6 +3268,112 @@ async def test_a_periodic_tick_polls_contacts_and_survives_that_poll_failing(mon
         assert "Aito contact poll failed" in caplog.text
         assert "Aito quote sync tick failed" not in caplog.text
         assert fake_db.rollback_calls == 1
+    finally:
+        loop_task.cancel()
+        with _contextlib.suppress(asyncio.CancelledError):
+            await loop_task
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failing", ["sweep_invoices", "poll_invoices"])
+@pytest.mark.parametrize(
+    "error",
+    [
+        pytest.param(ZohoUpstreamError("HTTP 503"), id="5xx"),
+        pytest.param(ZohoUnreachable("connect error"), id="unreachable"),
+    ],
+)
+async def test_a_books_failure_in_the_invoice_passes_still_runs_the_heimdall_passes(
+    monkeypatch, caplog, failing, error
+):
+    """T-052: a non-429 Books failure (5xx, unreachable) from the invoice sweep
+    or the invoice poll is contained in that block -- logged and rolled back --
+    rather than reaching the tick's outer handler. So the rest of the tick
+    still runs on the same session: the contact poll, the purge, and above
+    all the two Heimdall passes, which must keep detecting paid payment links
+    and terminal payments while Books is down. A 5xx is not a 429: it arms no
+    throttle window."""
+    import asyncio
+    import contextlib as _contextlib
+
+    from backend.app.services import (
+        aito_contact_poll,
+        aito_invoice_poll,
+        aito_payment_links,
+        aito_quote_sync,
+        aito_terminal_payments,
+    )
+
+    class FakeDB:
+        def __init__(self):
+            self.rollback_calls = 0
+
+        async def rollback(self):
+            self.rollback_calls += 1
+
+    fake_db = FakeDB()
+
+    @_contextlib.asynccontextmanager
+    async def fake_session():
+        yield fake_db
+
+    calls: list[tuple[str, object]] = []
+    terminal_done = asyncio.Event()
+
+    async def boom(db):
+        calls.append((failing, db))
+        raise error
+
+    def recorder(name, done=None):
+        async def _call(db, *args, **kwargs):
+            calls.append((name, db))
+            if done is not None:
+                done.set()
+
+        return _call
+
+    monkeypatch.setattr(aito_quote_sync, "async_session", fake_session)
+    monkeypatch.setattr(aito_quote_sync, "run_sync_once", _always(0))
+    monkeypatch.setattr(aito_quote_sync, "sync_enabled", _always(True))
+    monkeypatch.setattr(aito_quote_sync.zoho_service, "is_configured", _always(True))
+    # Long interval: only one periodic tick should fire during this test.
+    monkeypatch.setattr(aito_quote_sync, "sync_interval_seconds", _always(300))
+    monkeypatch.setattr(aito_quote_sync, "_throttled_until", None)
+    monkeypatch.setattr(
+        aito_quote_sync, "sweep_invoices", boom if failing == "sweep_invoices" else recorder("sweep_invoices")
+    )
+    monkeypatch.setattr(
+        aito_invoice_poll, "poll_invoices", boom if failing == "poll_invoices" else recorder("poll_invoices")
+    )
+    monkeypatch.setattr(aito_contact_poll, "poll_contacts", recorder("poll_contacts"))
+    monkeypatch.setattr(aito_quote_sync, "purge_tracking_views", recorder("purge_tracking_views"))
+    monkeypatch.setattr(aito_payment_links, "reconcile_payment_links", recorder("reconcile_payment_links"))
+    monkeypatch.setattr(
+        aito_terminal_payments, "poll_open_terminal_payments", recorder("poll_open_terminal_payments", terminal_done)
+    )
+
+    loop_task = asyncio.create_task(aito_quote_sync.run_sync_loop())
+    try:
+        with caplog.at_level("ERROR"):
+            await asyncio.wait_for(terminal_done.wait(), timeout=10)
+        names = [name for name, _ in calls]
+        # The failing call stops its own block (a sweep failure skips the poll
+        # after it, exactly as before) and nothing else.
+        expected_invoice_calls = (
+            ["sweep_invoices"] if failing == "sweep_invoices" else ["sweep_invoices", "poll_invoices"]
+        )
+        assert names == [
+            *expected_invoice_calls,
+            "poll_contacts",
+            "purge_tracking_views",
+            "reconcile_payment_links",
+            "poll_open_terminal_payments",
+        ]
+        assert all(db is fake_db for _, db in calls)
+        assert "Aito invoice sweep/poll failed" in caplog.text
+        assert "Aito quote sync tick failed" not in caplog.text
+        assert fake_db.rollback_calls == 1
+        assert aito_quote_sync._throttled_until is None
     finally:
         loop_task.cancel()
         with _contextlib.suppress(asyncio.CancelledError):
@@ -7281,14 +7387,66 @@ async def test_the_retainer_listing_is_asked_once_per_customer_per_tick(db_sessi
 async def test_a_rate_limited_retainer_listing_defers_the_tick(db_session):
     """A 429 on the side read is not swallowed: it is the sweep's own signal
     to stand down, exactly as it is out of the customer-credit read. The card
-    keeps its stored figure, spends no retry budget and shows no error."""
+    keeps its stored deposit figure, spends no retry budget and shows no
+    error, the throttle is armed from THAT 429, and the tick stops before the
+    next project. T-046 (user-approved 2026-09-26): the customer-credit
+    figure beside it is still refreshed that tick instead of staying stale."""
+    from backend.app.services import aito_quote_sync
+
     project = await _quoted_project(db_session)
     project.retainer_paid_total = 7000.0
+    project.customer_credit_total = 3000.0
+    sibling = await _quoted_project(db_session)
     await db_session.commit()
     await _configure_zoho(db_session)
+    seen: list = []
     routes = {
         ("GET", "/estimates/E1"): _quoted_estimate(),
         ("GET", "/estimates/E1/comments"): {"comments": []},
+        ("GET", "/customerpayments"): {"customerpayments": [{"payment_id": "P1", "unused_amount": 12000}]},
+    }
+    inner = zoho_handler(routes, seen)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/retainerinvoices"):
+            seen.append((request.method, request.url.path, None))
+            return httpx.Response(429, json={"message": "Rate limited"}, headers={"Retry-After": "30"})
+        return inner(request)
+
+    zoho_service.transport = httpx.MockTransport(handler)
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    await db_session.refresh(sibling)
+    assert project.retainer_paid_total == 7000.0
+    assert project.customer_credit_total == 12000.0
+    assert project.quote_status == "sent"
+    assert project.quote_sync_state == "idle"
+    assert project.quote_sync_error is None
+    assert project.quote_sync_failures == 0
+    remaining = aito_quote_sync._throttled_until - time.monotonic()
+    assert 0 < remaining <= 30
+    # The stand-down: the sibling was never reconciled this tick.
+    assert sibling.customer_credit_total != 12000.0
+    assert _retainer_reads(seen) == ["/books/v3/retainerinvoices"]
+
+
+@pytest.mark.asyncio
+async def test_a_retainer_429_keeps_the_stored_deposit_but_refreshes_the_credit(db_session):
+    """T-046: the attached-only figure computed before the throttled listing
+    is NOT written over the stored `retainer_paid_total` (it would under-count
+    a counter deposit), while the customer's credit read still lands."""
+    project = await _quoted_project(db_session)
+    project.retainer_paid_total = 50000.0
+    project.customer_credit_total = None
+    await db_session.commit()
+    await _configure_zoho(db_session)
+    attached = {"retainerinvoice_id": "RI1", "status": "paid", "total": 10000}
+    routes = {
+        ("GET", "/estimates/E1"): _quoted_estimate(retainers=[attached]),
+        ("GET", "/estimates/E1/comments"): {"comments": []},
+        ("GET", "/customerpayments"): {"customerpayments": [{"payment_id": "P1", "unused_amount": 700}]},
     }
     inner = zoho_handler(routes)
 
@@ -7302,10 +7460,91 @@ async def test_a_rate_limited_retainer_listing_defers_the_tick(db_session):
 
     assert await run_sync_once(db_session) == 1
     await db_session.refresh(project)
+    assert project.retainer_paid_total == 50000.0
+    assert project.customer_credit_total == 700.0
+    assert project.quote_status == "sent"
+    assert project.quote_sync_failures == 0
+    assert project.quote_sync_error is None
+
+
+@pytest.mark.asyncio
+async def test_a_retainer_429_and_a_credit_429_keep_both_figures_and_report_the_first(db_session):
+    """Both side reads throttled: both stored figures stay, the tick still
+    stands down without spending budget, and the throttle window is the one
+    the retainer listing's 429 asked for (the first one raised, as before)."""
+    from backend.app.services import aito_quote_sync
+
+    project = await _quoted_project(db_session)
+    project.retainer_paid_total = 7000.0
+    project.customer_credit_total = 3000.0
+    await db_session.commit()
+    await _configure_zoho(db_session)
+    inner = zoho_handler(
+        {
+            ("GET", "/estimates/E1"): _quoted_estimate(),
+            ("GET", "/estimates/E1/comments"): {"comments": []},
+        }
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/retainerinvoices"):
+            return httpx.Response(429, json={"message": "Rate limited"}, headers={"Retry-After": "30"})
+        if request.url.path.endswith("/customerpayments"):
+            return httpx.Response(429, json={"message": "Rate limited"}, headers={"Retry-After": "900"})
+        return inner(request)
+
+    zoho_service.transport = httpx.MockTransport(handler)
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
     assert project.retainer_paid_total == 7000.0
+    assert project.customer_credit_total == 3000.0
     assert project.quote_sync_state == "idle"
     assert project.quote_sync_error is None
     assert project.quote_sync_failures == 0
+    remaining = aito_quote_sync._throttled_until - time.monotonic()
+    assert 0 < remaining <= 30
+
+
+@pytest.mark.asyncio
+async def test_a_credit_429_alone_still_defers_the_tick(db_session):
+    """Unchanged by T-046: with the retainer listing answering fine, a 429 on
+    the customer-credit read still escapes and stands the tick down — the
+    fresh deposit figure computed just before it is kept, the stored credit
+    figure is left alone, and no retry budget is spent."""
+    from backend.app.services import aito_quote_sync
+
+    project = await _quoted_project(db_session)
+    project.retainer_paid_total = 0.0
+    project.customer_credit_total = 3000.0
+    await db_session.commit()
+    await _configure_zoho(db_session)
+    inner = zoho_handler(
+        {
+            ("GET", "/estimates/E1"): _quoted_estimate(),
+            ("GET", "/estimates/E1/comments"): {"comments": []},
+            ("GET", "/retainerinvoices"): {"retainerinvoices": [_counter_retainer(total=20000)]},
+        }
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/customerpayments"):
+            return httpx.Response(429, json={"message": "Rate limited"}, headers={"Retry-After": "30"})
+        return inner(request)
+
+    zoho_service.transport = httpx.MockTransport(handler)
+    zoho_service.invalidate_token()
+
+    assert await run_sync_once(db_session) == 1
+    await db_session.refresh(project)
+    assert project.retainer_paid_total == 20000.0
+    assert project.customer_credit_total == 3000.0
+    assert project.quote_status == "sent"
+    assert project.quote_sync_state == "idle"
+    assert project.quote_sync_error is None
+    assert project.quote_sync_failures == 0
+    assert aito_quote_sync._throttled_until is not None
 
 
 @pytest.mark.asyncio

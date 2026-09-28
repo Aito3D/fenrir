@@ -315,3 +315,34 @@ async def test_board_and_detail_carry_invoice_link_and_terminal_payment(async_cl
         )
     ).json()
     assert detail["invoice_payment_link"]["state"] == "pending" and detail["terminal_payment"]["amount"] == 50
+
+
+@pytest.mark.asyncio
+async def test_refresh_with_a_malformed_token_answers_200_with_the_error_on_the_link(async_client, db_session):
+    """T-056: a token in the wrong shape passes `is_configured` but fails
+    `parse_credential` on every call (`HeimdallNotConfigured`). The panel's
+    Retry must answer 200 with the credential error on the link row, not
+    500."""
+    from sqlalchemy import update
+
+    from backend.app.api.routes.settings import set_setting
+    from backend.app.models.aito_project import AitoProject
+
+    await set_setting(db_session, "heimdall_base_url", "http://pos:8081")
+    await set_setting(db_session, "heimdall_api_token", "legacy-token-without-dots")
+    await db_session.commit()
+    p = await _create(async_client)
+    await db_session.execute(
+        update(AitoProject)
+        .where(AitoProject.id == p["id"])
+        .values(quote_number="DEV-7", quote_total=5000.0, quote_status="sent")
+    )
+    await db_session.commit()
+    svc._throttled_until = None
+
+    r = await async_client.post(f"/api/v1/aito/{p['id']}/payment-link/refresh")
+
+    assert r.status_code == 200, r.text
+    link = r.json()["payment_link"]
+    assert link["minted"] is False and link["url"] is None
+    assert link["sync_error"] == "Heimdall token is not an hmd_live.<id>.<secret> credential"

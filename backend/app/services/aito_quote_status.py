@@ -10,14 +10,13 @@ ago and the old stamp must survive).
 """
 
 import logging
-from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.aito_project import AitoProject
 from backend.app.schemas.aito import QUOTE_STATUS_VALUES
 from backend.app.services.aito_board_rules import AWAY_STATUSES
-from backend.app.services.aito_events import record
+from backend.app.services.aito_events import record, utc_now_naive
 
 logger = logging.getLogger(__name__)
 
@@ -57,14 +56,14 @@ def adopt_quote_status(project: AitoProject, new_status: str | None) -> None:
         )
         return
     if new_status == "accepted" and project.quote_status != "accepted":
-        project.quote_accepted_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        project.quote_accepted_at = utc_now_naive()
     # First departure only: the "quotes out" follow-up counts from the first
     # time the quote left the shop, so a re-send, a view, or an unaccept
     # (accepted -> sent) never moves it. A decided status adopted straight
     # from None (a Books-side decision we never saw as sent) leaves it NULL —
     # nothing is out any more, so no clock is needed.
     if new_status in AWAY_STATUSES and project.quote_sent_at is None:
-        project.quote_sent_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        project.quote_sent_at = utc_now_naive()
     project.quote_status = new_status
 
 

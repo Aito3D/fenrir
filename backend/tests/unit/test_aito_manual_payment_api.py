@@ -1,8 +1,9 @@
+import httpx
 import pytest
 
 from backend.app.services import aito_manual_payments as svc
 from backend.app.services.aito_payment_documents import DocumentMismatch, PaymentDocument
-from backend.app.services.zoho import ZohoUpstreamError
+from backend.app.services.zoho import ZohoUnreachable, ZohoUpstreamError, zoho_service
 
 INVOICE = PaymentDocument(kind="invoice", id="inv-1", number="FA-26-0001", customer_id="c1", balance=23000)
 QUOTE = PaymentDocument(kind="quote", id="est-1", number="DEV26-0001", customer_id="c1", balance=None)
@@ -102,3 +103,138 @@ async def test_service_errors_map(async_client, monkeypatch):
         if code == "manual_unrecorded":
             message = r.json()["detail"]["message"]
             assert "pay-77" in message and "database is locked" in message
+
+
+@pytest.mark.asyncio
+async def test_outcome_unknown_maps_to_a_check_books_502(async_client, monkeypatch):
+    p = await _create(async_client)
+    url = f"/api/v1/aito/{p['id']}/manual-payment"
+    body = {"document_kind": "quote", "document_id": "est-1", "mode": "cash", "amount": 100, "reference": None}
+    cause = ZohoUnreachable("Zoho Books unreachable: ReadTimeout")
+    for retainer in (None, "RET26-0001"):
+
+        async def boom(db, project, _retainer=retainer, **kw):
+            raise svc.ManualPaymentOutcomeUnknown(_retainer, cause)
+
+        monkeypatch.setattr("backend.app.api.routes.aito_payments.record_manual_payment", boom)
+        r = await async_client.post(url, json=body)
+        assert r.status_code == 502, r.text
+        detail = r.json()["detail"]
+        assert detail["code"] == "manual_outcome_unknown"
+        assert "may already be in Books" in detail["message"] and "check before retrying" in detail["message"]
+        assert "ReadTimeout" in detail["message"]
+        assert "Record the payment" not in detail["message"]
+        assert ("RET26-0001" in detail["message"]) == (retainer is not None)
+
+
+@pytest.mark.asyncio
+async def test_invoice_payment_timeout_end_to_end_then_retry_is_409(async_client, monkeypatch):
+    """T-051 through the real service: Books times out on the payment, the
+    operator sees the check-Books 502, and the identical retry inside the
+    duplicate window is refused with 409 -- Books sees one payment only."""
+    posts = []
+
+    async def request(db, method, path, *, params=None, json=None):
+        if (method, path) == ("POST", "/customerpayments"):
+            posts.append(json)
+            raise ZohoUnreachable("Zoho Books unreachable: ReadTimeout")
+        return {}
+
+    monkeypatch.setattr(zoho_service, "_request", request)
+    p = await _create(async_client)
+    url = f"/api/v1/aito/{p['id']}/manual-payment"
+    body = {"document_kind": "invoice", "document_id": "inv-1", "mode": "cash", "amount": 100, "reference": "r"}
+    r = await async_client.post(url, json=body)
+    assert r.status_code == 502, r.text
+    assert r.json()["detail"]["code"] == "manual_outcome_unknown"
+    r = await async_client.post(url, json=body)
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"]["code"] == "duplicate"
+    assert len(posts) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "answer",
+    [
+        pytest.param(lambda: httpx.Response(502, content=b"<html>502 Bad Gateway</html>"), id="502-html"),
+        pytest.param(lambda: httpx.Response(503, json={"code": 1, "message": "busy"}), id="503-json"),
+    ],
+)
+async def test_invoice_payment_books_5xx_end_to_end_then_retry_is_409(async_client, monkeypatch, answer):
+    """T-078 through the real service and Books error mapping: a gateway
+    error on the payment call answers `manual_outcome_unknown`, and the
+    identical retry is refused with 409 -- Books sees one payment only."""
+    posts = []
+
+    async def send(db, method, path, *, params=None, json=None):
+        if (method, path) == ("POST", "/customerpayments"):
+            posts.append(json)
+            return answer()
+        return httpx.Response(200, json={})
+
+    monkeypatch.setattr(zoho_service, "_send", send)
+    p = await _create(async_client)
+    url = f"/api/v1/aito/{p['id']}/manual-payment"
+    body = {"document_kind": "invoice", "document_id": "inv-1", "mode": "cash", "amount": 100, "reference": "r"}
+    r = await async_client.post(url, json=body)
+    assert r.status_code == 502, r.text
+    detail = r.json()["detail"]
+    assert detail["code"] == "manual_outcome_unknown"
+    assert "check before retrying" in detail["message"]
+    r = await async_client.post(url, json=body)
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"]["code"] == "duplicate"
+    assert len(posts) == 1
+
+
+@pytest.mark.asyncio
+async def test_retainer_outcome_unknown_names_the_retainer_invoice(async_client, monkeypatch):
+    """T-079: the third message variant -- the retainer creation itself went
+    unanswered, so the operator is told a retainer may already exist."""
+    p = await _create(async_client)
+    url = f"/api/v1/aito/{p['id']}/manual-payment"
+    body = {"document_kind": "quote", "document_id": "est-1", "mode": "cash", "amount": 100, "reference": None}
+    cause = ZohoUnreachable("Zoho Books unreachable: ReadTimeout")
+
+    async def boom(db, project, **kw):
+        raise svc.ManualPaymentOutcomeUnknown(None, cause, stage="retainer")
+
+    monkeypatch.setattr("backend.app.api.routes.aito_payments.record_manual_payment", boom)
+    r = await async_client.post(url, json=body)
+    assert r.status_code == 502, r.text
+    detail = r.json()["detail"]
+    assert detail["code"] == "manual_outcome_unknown"
+    assert detail["message"] == (
+        "Zoho Books did not answer the retainer invoice creation (Zoho Books unreachable: ReadTimeout). "
+        "A retainer invoice may already be in Books — check before retrying."
+    )
+
+
+@pytest.mark.asyncio
+async def test_retainer_creation_timeout_end_to_end_then_retry_is_409(async_client, monkeypatch):
+    """T-079 through the real service: Books times out creating the retainer
+    invoice, the operator sees the check-Books 502, and the identical retry
+    inside the window is refused with 409 -- Books sees one retainer POST."""
+    posts = []
+
+    async def request(db, method, path, *, params=None, json=None):
+        if method == "POST":
+            posts.append(path)
+        if (method, path) == ("POST", "/retainerinvoices"):
+            raise ZohoUnreachable("Zoho Books unreachable: ReadTimeout")
+        return {}
+
+    monkeypatch.setattr(zoho_service, "_request", request)
+    p = await _create(async_client)
+    url = f"/api/v1/aito/{p['id']}/manual-payment"
+    body = {"document_kind": "quote", "document_id": "est-1", "mode": "cash", "amount": 100, "reference": None}
+    r = await async_client.post(url, json=body)
+    assert r.status_code == 502, r.text
+    detail = r.json()["detail"]
+    assert detail["code"] == "manual_outcome_unknown"
+    assert "retainer invoice may already be in Books" in detail["message"]
+    r = await async_client.post(url, json=body)
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"]["code"] == "duplicate"
+    assert posts == ["/retainerinvoices"]

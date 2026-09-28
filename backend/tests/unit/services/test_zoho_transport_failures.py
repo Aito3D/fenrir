@@ -20,9 +20,11 @@ import pytest
 
 from backend.app.api.routes.settings import set_setting
 from backend.app.services.zoho import (
+    ZohoAmbiguous,
     ZohoNotFound,
     ZohoRateLimited,
     ZohoRequestRejected,
+    ZohoUnreachable,
     ZohoUpstreamError,
     zoho_service,
 )
@@ -82,6 +84,9 @@ async def test_books_network_error_maps_to_unreachable_with_the_exception_name(d
     with pytest.raises(ZohoUpstreamError) as excinfo:
         await zoho_service.search_contacts(db_session, "dupont")
     assert str(excinfo.value) == f"Zoho Books unreachable: {exc_class.__name__}"
+    # T-051: the transport failure is the ZohoUnreachable subclass, so a
+    # caller whose request writes can tell "no answer" from "refused".
+    assert isinstance(excinfo.value, ZohoUnreachable)
 
 
 @pytest.mark.asyncio
@@ -95,6 +100,8 @@ async def test_token_endpoint_network_error_maps_to_accounts_unreachable(db_sess
     with pytest.raises(ZohoUpstreamError) as excinfo:
         await zoho_service.search_contacts(db_session, "dupont")
     assert str(excinfo.value) == "Zoho accounts unreachable: ConnectError"
+    # The token call never reached Books: a clean failure, not ZohoUnreachable.
+    assert not isinstance(excinfo.value, ZohoUnreachable)
 
 
 @pytest.mark.asyncio
@@ -376,3 +383,61 @@ async def test_failed_refresh_serves_the_stale_cache_unchanged(db_session):
     catalogue = await zoho_service.get_shipping_catalogue(db_session, refresh=True)
     assert catalogue["tuamotu"].item_id == "T1"
     assert catalogue["tuamotu"].rate == 1500
+
+
+# ---------------------------------------------------------------------------
+# T-078: answers that do not say whether Books applied the request
+# ---------------------------------------------------------------------------
+
+
+def _books_answer(response_factory):
+    def handler(request: httpx.Request) -> httpx.Response:
+        if (token := _token_ok(request)) is not None:
+            return token
+        return response_factory()
+
+    return httpx.MockTransport(handler)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("response_factory", "message"),
+    [
+        (lambda: httpx.Response(500, json={"code": 1, "message": "x"}), "Zoho Books error (HTTP 500)"),
+        (lambda: httpx.Response(503, json={}), "Zoho Books error (HTTP 503)"),
+        (lambda: httpx.Response(502, content=b"<html>502</html>"), "Zoho returned a non-JSON response (HTTP 502)"),
+        (lambda: httpx.Response(504, content=b"<html>504</html>"), "Zoho returned a non-JSON response (HTTP 504)"),
+        (lambda: httpx.Response(200, content=b"<html>ok</html>"), "Zoho returned a non-JSON response (HTTP 200)"),
+    ],
+    ids=["500-json", "503-json", "502-html", "504-html", "200-html"],
+)
+async def test_a_5xx_or_non_json_books_answer_is_zoho_ambiguous(db_session, response_factory, message):
+    """Still a ZohoUpstreamError with the unchanged message (every generic
+    handler behaves as before), and a sibling of ZohoUnreachable, not one."""
+    await _configure(db_session)
+    zoho_service.transport = _books_answer(response_factory)
+    with pytest.raises(ZohoAmbiguous) as exc:
+        await zoho_service._request(db_session, "POST", "/customerpayments", json={})
+    assert isinstance(exc.value, ZohoUpstreamError)
+    assert not isinstance(exc.value, ZohoUnreachable)
+    assert str(exc.value) == message
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [
+        (400, ZohoRequestRejected),
+        (404, ZohoNotFound),
+        (429, ZohoRateLimited),
+        (401, ZohoUpstreamError),
+        (422, ZohoUpstreamError),
+    ],
+)
+async def test_a_json_4xx_books_answer_is_never_zoho_ambiguous(db_session, status, expected):
+    """Books refused: the existing mapping (429 included) is untouched."""
+    await _configure(db_session)
+    zoho_service.transport = _books_answer(lambda: httpx.Response(status, json={"code": 9, "message": "no"}))
+    with pytest.raises(expected) as exc:
+        await zoho_service._request(db_session, "POST", "/customerpayments", json={})
+    assert not isinstance(exc.value, ZohoAmbiguous)

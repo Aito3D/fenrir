@@ -364,10 +364,11 @@ async def create_contact_person(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_CREATE),
 ):
     """Add a new person to a Books company contact, for the drawer's and
-    contact sheet's "Add contact" form. Gated like `list_contact_persons`
-    (aito:create), not `patch_contact` (aito:update): naming who at the
-    company the card is for is a create-time decision, not an edit to an
-    existing card.
+    contact sheet's "Add contact" form. Gated aito:create, like
+    `list_contact_persons` and `patch_contact`, but — unlike `patch_contact` —
+    NOT scoped to a contact with an active card: the drawer's form runs before
+    the card exists, and naming who at the company the card is for is a
+    create-time decision, not an edit to an existing card.
 
     The walk-in contact is shared by every passing customer, so a new person
     on it would belong to no one in particular — same refusal as
