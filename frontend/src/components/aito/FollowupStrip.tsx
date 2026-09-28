@@ -48,6 +48,7 @@ export function FollowupStrip({
   onChange,
   projects = [],
   className = '',
+  compact = false,
 }: {
   buckets: Record<FollowupKey, FollowupBucket>;
   active: FollowupKey | null;
@@ -56,6 +57,10 @@ export function FollowupStrip({
    *  pill without it still shows its count and longest wait. */
   projects?: FollowupProject[];
   className?: string;
+  /** The tablet header's badges: the count alone (plus the × while
+   *  pressed); the label and the longest wait move into the tooltip. The
+   *  accessible name already carries label, count and worst offender. */
+  compact?: boolean;
 }) {
   const { t } = useTranslation();
   const byId = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects]);
@@ -84,7 +89,7 @@ export function FollowupStrip({
       // Wraps rather than truncates: on a screen too narrow for four pills
       // beside the title, a second pill line still costs less than the old
       // tile strip did, and every pill stays readable.
-      className={`flex flex-wrap items-center gap-1.5 min-w-0 ${className}`}
+      className={`flex ${compact ? 'flex-nowrap' : 'flex-wrap'} items-center gap-1.5 min-w-0 ${className}`}
       onKeyDown={(e) => {
         if (e.key === 'Escape' && active !== null) onChange(null);
       }}
@@ -98,6 +103,10 @@ export function FollowupStrip({
         // The tooltip is where the worst offender's name lives now: a
         // newline keeps it on its own line above the hint in every browser.
         const title = pressed ? t('aito.followups.clear') : [worstText, t('aito.followups.hint')].filter(Boolean).join('\n');
+        const compactTitle = [
+          `${t(LABEL_KEY[key])}${bucket.maxDays > 0 ? ` · ${t('aito.followups.longest', { days: bucket.maxDays })}` : ''}`,
+          title,
+        ].join('\n');
         return (
           <button
             key={key}
@@ -105,9 +114,9 @@ export function FollowupStrip({
             data-testid={`aito-followup-${key}`}
             aria-pressed={pressed}
             aria-label={`${t(LABEL_KEY[key])} ${bucket.ids.length}${worstText ? ` — ${worstText}` : ''}`}
-            title={title}
+            title={compact ? compactTitle : title}
             onClick={() => onChange(pressed ? null : key)}
-            className={`group/pill inline-flex items-center gap-2 rounded-full border px-3 py-1 whitespace-nowrap transition-[filter,box-shadow] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current ${
+            className={`group/pill inline-flex items-center gap-2 rounded-full border ${compact ? 'px-2 py-0.5' : 'px-3 py-1'} whitespace-nowrap transition-[filter,box-shadow] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current ${
               PILL_CLS[key]
             } ${pressed ? 'ring-2 ring-current' : 'hover:brightness-110'}${
               firstPaintKeysRef.current?.has(key) ? '' : ' animate-rise-sm'
@@ -120,14 +129,14 @@ export function FollowupStrip({
             <span key={bucket.ids.length} className="text-sm font-bold leading-none tabular-nums animate-value-tick">
               {bucket.ids.length}
             </span>
-            <span className="text-[11px] font-semibold uppercase tracking-wider">{t(LABEL_KEY[key])}</span>
-            {bucket.maxDays > 0 && (
+            {!compact && <span className="text-[11px] font-semibold uppercase tracking-wider">{t(LABEL_KEY[key])}</span>}
+            {!compact && bucket.maxDays > 0 && (
               <span className="text-[11px] opacity-80 tabular-nums">{t('aito.followups.longest', { days: bucket.maxDays })}</span>
             )}
-            <Glyph
+            {(!compact || pressed) && <Glyph
               aria-hidden="true"
               className={`h-3.5 w-3.5 flex-shrink-0 transition-opacity ${pressed ? '' : 'opacity-50 group-hover/pill:opacity-100'}`}
-            />
+            />}
           </button>
         );
       })}
