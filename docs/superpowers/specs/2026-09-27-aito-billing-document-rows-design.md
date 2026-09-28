@@ -216,3 +216,9 @@ Manual: the sandboxed server recipe (`sandboxed-test-server` memory) cannot exer
 - No migration.
 - The dev `:8000` instance runs without `--reload`; the new routes are live only after the user restarts it.
 - `static/` is rebuilt in its own commit after merge, per repo convention.
+
+## Implementation notes
+
+- `resolve_project_retainer` lives in `routes/aito.py` as `_resolve_project_retainer`, beside `_resolve_project_invoice`, since it raises `HTTPException`; the service module exposes only `list_project_retainers` and `map_retainer`.
+- `aito.retainerOpenInZoho` was not added: the retainer row reuses `aito.invoiceOpenInZoho` ("Open in Zoho Books"), the same words.
+- `retainerDownloadFailed` was not added: the download button reuses `retainerPrintFailed`, as the invoice's does.
