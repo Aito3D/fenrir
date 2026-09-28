@@ -749,6 +749,11 @@ export default {
       segment_one: '{{column}}, {{count}} proje',
       segment_other: '{{column}}, {{count}} proje',
     },
+    tablet: {
+      previousColumn: 'Önceki sütun',
+      nextColumn: 'Sonraki sütun',
+      range: '{{from}} ile {{to}} arası, sütunları değiştir',
+    },
     backlogHours: '{{hours}} sa basılacak',
     backlogDays_one: '≈ {{count}} yazıcıda {{days}} gün',
     backlogDays_other: '≈ {{count}} yazıcıda {{days}} gün',

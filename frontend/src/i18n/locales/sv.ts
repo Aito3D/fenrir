@@ -8758,6 +8758,11 @@ errors: {
       segment_one: '{{column}}, {{count}} projekt',
       segment_other: '{{column}}, {{count}} projekt',
     },
+    tablet: {
+      previousColumn: 'Föregående kolumn',
+      nextColumn: 'Nästa kolumn',
+      range: '{{from}} till {{to}}, byt kolumner',
+    },
     backlogHours: '{{hours}} h kvar att skriva ut',
     backlogDays_one: '≈ {{days}} d på {{count}} skrivare',
     backlogDays_other: '≈ {{days}} d på {{count}} skrivare',

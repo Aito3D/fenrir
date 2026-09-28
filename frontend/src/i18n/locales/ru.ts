@@ -749,6 +749,11 @@ export default {
       segment_one: '{{column}}, {{count}} проект',
       segment_other: '{{column}}, {{count}} проектов',
     },
+    tablet: {
+      previousColumn: 'Предыдущая колонка',
+      nextColumn: 'Следующая колонка',
+      range: 'С {{from}} по {{to}}, сменить колонки',
+    },
     backlogHours: '{{hours}} ч печати',
     backlogDays_one: '≈ {{days}} дн. на {{count}} принтере',
     backlogDays_other: '≈ {{days}} дн. на {{count}} принтерах',

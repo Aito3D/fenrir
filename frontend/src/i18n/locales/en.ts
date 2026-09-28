@@ -753,6 +753,11 @@ export default {
       segment_one: '{{column}}, {{count}} project',
       segment_other: '{{column}}, {{count}} projects',
     },
+    tablet: {
+      previousColumn: 'Previous column',
+      nextColumn: 'Next column',
+      range: '{{from}} to {{to}}, change columns',
+    },
     backlogHours: '{{hours}} h to print',
     backlogDays_one: '≈ {{days}} d on {{count}} printer',
     backlogDays_other: '≈ {{days}} d on {{count}} printers',

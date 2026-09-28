@@ -749,6 +749,11 @@ export default {
       segment_one: '{{column}}、{{count}} 件',
       segment_other: '{{column}}、{{count}} 件',
     },
+    tablet: {
+      previousColumn: '前の列',
+      nextColumn: '次の列',
+      range: '{{from}} から {{to}}、列を切り替え',
+    },
     backlogHours: '印刷残り {{hours}} 時間',
     backlogDays_one: '≈ {{days}} 日（プリンター {{count}} 台）',
     backlogDays_other: '≈ {{days}} 日（プリンター {{count}} 台）',

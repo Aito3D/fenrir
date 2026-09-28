@@ -749,6 +749,11 @@ export default {
       segment_one: '{{column}}，{{count}} 個專案',
       segment_other: '{{column}}，{{count}} 個專案',
     },
+    tablet: {
+      previousColumn: '上一欄',
+      nextColumn: '下一欄',
+      range: '{{from}} 到 {{to}}，切換欄',
+    },
     backlogHours: '待列印 {{hours}} 小時',
     backlogDays_one: '≈ {{days}} 天（{{count}} 台印表機）',
     backlogDays_other: '≈ {{days}} 天（{{count}} 台印表機）',

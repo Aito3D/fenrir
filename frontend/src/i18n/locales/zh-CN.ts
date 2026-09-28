@@ -749,6 +749,11 @@ export default {
       segment_one: '{{column}}，{{count}} 个项目',
       segment_other: '{{column}}，{{count}} 个项目',
     },
+    tablet: {
+      previousColumn: '上一列',
+      nextColumn: '下一列',
+      range: '{{from}} 到 {{to}}，切换列',
+    },
     backlogHours: '待打印 {{hours}} 小时',
     backlogDays_one: '≈ {{days}} 天（{{count}} 台打印机）',
     backlogDays_other: '≈ {{days}} 天（{{count}} 台打印机）',

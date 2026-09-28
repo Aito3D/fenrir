@@ -8756,6 +8756,11 @@ export default {
       segment_one: '{{column}} – {{count}} project',
       segment_other: '{{column}} – {{count}} projecten',
     },
+    tablet: {
+      previousColumn: 'Vorige kolom',
+      nextColumn: 'Volgende kolom',
+      range: '{{from}} tot {{to}}, kolommen wisselen',
+    },
     backlogHours: '{{hours}} u te printen',
     backlogDays_one: '≈ {{days}} dg op {{count}} printer',
     backlogDays_other: '≈ {{days}} dg op {{count}} printers',

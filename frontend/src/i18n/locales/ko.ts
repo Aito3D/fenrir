@@ -749,6 +749,11 @@ export default {
       segment_one: '{{column}}, 프로젝트 {{count}}개',
       segment_other: '{{column}}, 프로젝트 {{count}}개',
     },
+    tablet: {
+      previousColumn: '이전 열',
+      nextColumn: '다음 열',
+      range: '{{from}}부터 {{to}}까지, 열 전환',
+    },
     backlogHours: '인쇄 잔여 {{hours}}시간',
     backlogDays_one: '≈ {{days}}일 (프린터 {{count}}대)',
     backlogDays_other: '≈ {{days}}일 (프린터 {{count}}대)',

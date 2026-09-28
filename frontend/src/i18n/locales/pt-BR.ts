@@ -749,6 +749,11 @@ export default {
       segment_one: '{{column}}, {{count}} projeto',
       segment_other: '{{column}}, {{count}} projetos',
     },
+    tablet: {
+      previousColumn: 'Coluna anterior',
+      nextColumn: 'Próxima coluna',
+      range: '{{from}} a {{to}}, trocar colunas',
+    },
     backlogHours: '{{hours}} h para imprimir',
     backlogDays_one: '≈ {{days}} d em {{count}} impressora',
     backlogDays_other: '≈ {{days}} d em {{count}} impressoras',
