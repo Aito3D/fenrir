@@ -163,3 +163,33 @@ class TestFilters:
         )
         await db_session.commit()
         assert await _ids(async_client, f"&tag_ids={tag.id}&file_type=stl") == [stl.id]
+
+
+class TestFileTypes:
+    async def test_lists_distinct_sorted_types_for_the_scope(self, async_client, file_factory, db_session):
+        from backend.app.models.library import LibraryFolder
+
+        folder = LibraryFolder(name="Clients")
+        db_session.add(folder)
+        await db_session.commit()
+        await file_factory(folder_id=folder.id, file_type="stl")
+        await file_factory(folder_id=folder.id, file_type="3mf")
+        await file_factory(folder_id=folder.id, file_type="stl")
+        await file_factory(folder_id=None, file_type="pdf")
+
+        scoped = await async_client.get(f"/api/v1/library/files/file-types?folder_id={folder.id}")
+        assert scoped.status_code == 200
+        assert scoped.json() == ["3mf", "stl"]
+
+        everything = await async_client.get("/api/v1/library/files/file-types?include_root=false")
+        assert everything.json() == ["3mf", "pdf", "stl"]
+
+    async def test_excludes_trashed_files(self, async_client, file_factory):
+        await file_factory(file_type="step", deleted_at=datetime(2025, 1, 1))
+        await file_factory(file_type="3mf")
+        response = await async_client.get("/api/v1/library/files/file-types?include_root=false")
+        assert response.json() == ["3mf"]
+
+    async def test_internal_and_external_are_mutually_exclusive(self, async_client):
+        response = await async_client.get("/api/v1/library/files/file-types?internal_only=true&external_only=true")
+        assert response.status_code == 400

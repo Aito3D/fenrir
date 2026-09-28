@@ -2226,6 +2226,63 @@ def _apply_file_filters(query, search: str | None, file_type: str | None, create
     return query
 
 
+def _apply_file_scope(
+    query,
+    *,
+    user: User | None,
+    can_read_all: bool,
+    folder_id: int | None,
+    project_id: int | None,
+    include_root: bool,
+    internal_only: bool,
+    external_only: bool,
+    recursive: bool,
+    tag_ids: list[int],
+):
+    """Ownership, folder/project/root, tag and storage scoping shared by the
+    file listing and its facet endpoints. Semantics are documented on
+    ``list_files``; keep the two in step by never scoping anywhere else."""
+    if user is not None and not can_read_all:
+        query = query.where(LibraryFile.created_by_id == user.id)
+
+    if tag_ids:
+        # Cross-cutting filter — every requested tag must be present on the
+        # file. JOIN + GROUP BY + HAVING COUNT(DISTINCT) is portable across
+        # SQLite and Postgres without dialect tricks. We deliberately skip
+        # the folder / project / include_root scoping below so the result
+        # is the global "all files carrying these tags".
+        unique_tag_ids = list(dict.fromkeys(tag_ids))
+        query = (
+            query.join(LibraryFileTag, LibraryFileTag.file_id == LibraryFile.id)
+            .where(LibraryFileTag.tag_id.in_(unique_tag_ids))
+            .group_by(LibraryFile.id)
+            .having(func.count(distinct(LibraryFileTag.tag_id)) == len(unique_tag_ids))
+        )
+    elif folder_id is not None and recursive:
+        # Walk the subtree starting at folder_id and collect every descendant
+        # id. Recursive CTE works on both SQLite (>=3.8.3, shipped 2014) and
+        # Postgres without dialect branching.
+        roots = (
+            select(LibraryFolder.id).where(LibraryFolder.id == folder_id).cte(name="folder_descendants", recursive=True)
+        )
+        descendants = roots.union_all(select(LibraryFolder.id).join(roots, LibraryFolder.parent_id == roots.c.id))
+        query = query.where(LibraryFile.folder_id.in_(select(descendants.c.id)))
+    elif folder_id is not None:
+        query = query.where(LibraryFile.folder_id == folder_id)
+    elif project_id is not None:
+        # Single join instead of one query per folder (avoids N+1 pattern)
+        query = query.join(LibraryFolder, LibraryFile.folder_id == LibraryFolder.id)
+        query = query.where(LibraryFolder.project_id == project_id)
+    elif include_root:
+        query = query.where(LibraryFile.folder_id.is_(None))
+
+    if internal_only:
+        query = query.where(LibraryFile.is_external.is_(False))
+    elif external_only:
+        query = query.where(LibraryFile.is_external.is_(True))
+    return query
+
+
 @router.get("/files", response_model=list[FileListResponse])
 @router.get("/files/", response_model=list[FileListResponse])
 async def list_files(
@@ -2300,44 +2357,18 @@ async def list_files(
         selectinload(LibraryFile.created_by),
         selectinload(LibraryFile.tags),
     )
-    if user is not None and not can_read_all:
-        query = query.where(LibraryFile.created_by_id == user.id)
-
-    if tag_ids:
-        # Cross-cutting filter — every requested tag must be present on the
-        # file. JOIN + GROUP BY + HAVING COUNT(DISTINCT) is portable across
-        # SQLite and Postgres without dialect tricks. We deliberately skip
-        # the folder / project / include_root scoping below so the result
-        # is the global "all files carrying these tags".
-        unique_tag_ids = list(dict.fromkeys(tag_ids))
-        query = (
-            query.join(LibraryFileTag, LibraryFileTag.file_id == LibraryFile.id)
-            .where(LibraryFileTag.tag_id.in_(unique_tag_ids))
-            .group_by(LibraryFile.id)
-            .having(func.count(distinct(LibraryFileTag.tag_id)) == len(unique_tag_ids))
-        )
-    elif folder_id is not None and recursive:
-        # Walk the subtree starting at folder_id and collect every descendant
-        # id. Recursive CTE works on both SQLite (>=3.8.3, shipped 2014) and
-        # Postgres without dialect branching.
-        roots = (
-            select(LibraryFolder.id).where(LibraryFolder.id == folder_id).cte(name="folder_descendants", recursive=True)
-        )
-        descendants = roots.union_all(select(LibraryFolder.id).join(roots, LibraryFolder.parent_id == roots.c.id))
-        query = query.where(LibraryFile.folder_id.in_(select(descendants.c.id)))
-    elif folder_id is not None:
-        query = query.where(LibraryFile.folder_id == folder_id)
-    elif project_id is not None:
-        # Single join instead of one query per folder (avoids N+1 pattern)
-        query = query.join(LibraryFolder, LibraryFile.folder_id == LibraryFolder.id)
-        query = query.where(LibraryFolder.project_id == project_id)
-    elif include_root:
-        query = query.where(LibraryFile.folder_id.is_(None))
-
-    if internal_only:
-        query = query.where(LibraryFile.is_external.is_(False))
-    elif external_only:
-        query = query.where(LibraryFile.is_external.is_(True))
+    query = _apply_file_scope(
+        query,
+        user=user,
+        can_read_all=can_read_all,
+        folder_id=folder_id,
+        project_id=project_id,
+        include_root=include_root,
+        internal_only=internal_only,
+        external_only=external_only,
+        recursive=recursive,
+        tag_ids=tag_ids,
+    )
 
     query = _apply_file_filters(query, search, file_type, created_by)
 
@@ -2428,6 +2459,44 @@ async def list_files(
         )
 
     return file_list
+
+
+@router.get("/files/file-types", response_model=list[str])
+async def list_file_types(
+    folder_id: int | None = None,
+    include_root: bool = True,
+    internal_only: bool = False,
+    external_only: bool = False,
+    recursive: bool = False,
+    tag_ids: list[int] = Query(default_factory=list),
+    db: AsyncSession = Depends(get_db),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.LIBRARY_READ_ALL,
+            Permission.LIBRARY_READ_OWN,
+        )
+    ),
+):
+    """Distinct ``file_type`` values in the same scope ``list_files`` would
+    return, sorted. Feeds the File Manager's type dropdown now that the
+    listing is paged and the browser no longer sees every row."""
+    if internal_only and external_only:
+        raise HTTPException(status_code=400, detail="internal_only and external_only are mutually exclusive")
+    user, can_read_all = auth_result
+    scoped = _apply_file_scope(
+        LibraryFile.active(),
+        user=user,
+        can_read_all=can_read_all,
+        folder_id=folder_id,
+        project_id=None,
+        include_root=include_root,
+        internal_only=internal_only,
+        external_only=external_only,
+        recursive=recursive,
+        tag_ids=tag_ids,
+    ).subquery()
+    result = await db.execute(select(scoped.c.file_type).distinct().order_by(scoped.c.file_type))
+    return [row[0] for row in result.all()]
 
 
 @router.post("/files/check-duplicates", response_model=CheckDuplicatesResponse)
