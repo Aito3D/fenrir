@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronDown, MoreHorizontal, Search, X } from 'lucide-react';
 import type { ColumnSummary } from '../../utils/aitoMobileBoard';
+import { ColumnStrip } from './ColumnStrip';
 
 export function ColumnCountPill({ count, pending }: { count: number; pending: boolean }) {
   return (
@@ -174,25 +175,8 @@ export function MobileBoardHeader({
         </div>
       </div>
 
-      {/* The strip: the header's bottom edge. Each segment is a real button
-          with a taller invisible hit area (the ::after) so a 3 px line is
-          still tappable. */}
-      <div className="flex gap-0.5 h-[3px]">
-        {columns.map((summary, index) => (
-          <button
-            key={summary.column.id}
-            type="button"
-            data-testid={`aito-mobile-segment-${summary.column.id}`}
-            onClick={() => onJump(index)}
-            aria-current={index === current ? 'true' : undefined}
-            aria-label={t('aito.mobile.segment', { column: t(summary.column.labelKey), count: summary.count })}
-            style={{ flexGrow: Math.max(summary.count, 0.4) }}
-            className={`relative basis-0 min-w-3 h-full ${summary.column.dot} transition-[opacity,flex-grow] duration-200 motion-reduce:transition-none after:absolute after:inset-x-0 after:-top-3 after:-bottom-1 after:content-[''] ${
-              index === current ? 'opacity-100' : 'opacity-25'
-            }`}
-          />
-        ))}
-      </div>
+      {/* The strip: the header's bottom edge — a window of one column. */}
+      <ColumnStrip columns={columns} from={current} to={current} onJump={onJump} />
     </div>
   );
 }
