@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render } from '@testing-library/react';
-import { useRef } from 'react';
 import { useInfiniteScrollSentinel } from '../../hooks/useInfiniteScrollSentinel';
 
 type Callback = (entries: Array<{ isIntersecting: boolean }>) => void;
@@ -22,12 +21,22 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-function Harness({ enabled, onReach, withRoot = false }: { enabled: boolean; onReach: () => void; withRoot?: boolean }) {
-  const rootRef = useRef<HTMLDivElement | null>(null);
-  const sentinelRef = useInfiniteScrollSentinel({ rootRef: withRoot ? rootRef : undefined, enabled, onReach });
+// jsdom does no layout, so every element reports 0 for scrollHeight and
+// clientHeight; tests that need a clipping box stub them per element.
+function setBox(el: HTMLElement, scrollHeight: number, clientHeight: number) {
+  Object.defineProperty(el, 'scrollHeight', { configurable: true, get: () => scrollHeight });
+  Object.defineProperty(el, 'clientHeight', { configurable: true, get: () => clientHeight });
+}
+
+function Harness({ enabled, onReach }: { enabled: boolean; onReach: () => void }) {
+  const sentinelRef = useInfiniteScrollSentinel({ enabled, onReach });
   return (
-    <div ref={rootRef} style={{ height: 400 }}>
-      <div ref={sentinelRef} data-testid="sentinel" />
+    <div data-testid="outer">
+      <div data-testid="pane">
+        <div data-testid="list">
+          <div ref={sentinelRef} data-testid="sentinel" />
+        </div>
+      </div>
     </div>
   );
 }
@@ -53,17 +62,70 @@ describe('useInfiniteScrollSentinel', () => {
     expect(created[0].disconnect).toHaveBeenCalled();
   });
 
-  it('observes inside the scroll container with a look-ahead margin', () => {
-    Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, get: () => 400 });
-    render(<Harness enabled onReach={() => {}} withRoot />);
-    expect(created[0].options.root).toBeInstanceOf(HTMLDivElement);
+  it('uses the nearest clipping scrollable ancestor as root, with a margin from its clientHeight', () => {
+    const { getByTestId, rerender } = render(<Harness enabled={false} onReach={() => {}} />);
+    const outer = getByTestId('outer');
+    const pane = getByTestId('pane');
+    // The outer box also clips, but the pane is nearer and must win.
+    outer.style.overflowY = 'auto';
+    setBox(outer, 5000, 900);
+    pane.style.overflowY = 'auto';
+    setBox(pane, 3000, 400);
+    rerender(<Harness enabled onReach={() => {}} />);
+    expect(created).toHaveLength(1);
+    expect(created[0].options.root).toBe(pane);
     expect(created[0].options.rootMargin).toBe('0px 0px 600px 0px');
   });
 
-  it('uses the viewport when no root is given', () => {
+  it('ignores a scrollable-styled ancestor that does not clip and falls back to the viewport', () => {
+    const { getByTestId, rerender } = render(<Harness enabled={false} onReach={() => {}} />);
+    const pane = getByTestId('pane');
+    // Below `lg` the pane keeps overflow auto in some shells but grows with
+    // its rows: scrollHeight === clientHeight, so it never scrolls.
+    pane.style.overflowY = 'auto';
+    setBox(pane, 3000, 3000);
+    rerender(<Harness enabled onReach={() => {}} />);
+    expect(created).toHaveLength(1);
+    expect(created[0].options.root).toBeNull();
+    expect(created[0].options.rootMargin).toBe(`0px 0px ${Math.round(window.innerHeight * 1.5)}px 0px`);
+  });
+
+  it('uses the viewport when no ancestor scrolls', () => {
     render(<Harness enabled onReach={() => {}} />);
     expect(created[0].options.root).toBeNull();
     expect(created[0].options.rootMargin).toBe(`0px 0px ${Math.round(window.innerHeight * 1.5)}px 0px`);
+  });
+
+  it('re-resolves the root on resize, once per animation frame, and only while enabled', () => {
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => frames.push(cb));
+    vi.stubGlobal('cancelAnimationFrame', () => {});
+    const { getByTestId, rerender } = render(<Harness enabled onReach={() => {}} />);
+    expect(created).toHaveLength(1);
+    expect(created[0].options.root).toBeNull();
+
+    // Crossing the breakpoint makes the pane clip; three resize events in
+    // one frame schedule a single re-observe.
+    const pane = getByTestId('pane');
+    pane.style.overflowY = 'auto';
+    setBox(pane, 3000, 500);
+    act(() => {
+      window.dispatchEvent(new Event('resize'));
+      window.dispatchEvent(new Event('resize'));
+      window.dispatchEvent(new Event('resize'));
+    });
+    expect(frames).toHaveLength(1);
+    act(() => frames.splice(0).forEach((cb) => cb(0)));
+    expect(created).toHaveLength(2);
+    expect(created[0].disconnect).toHaveBeenCalled();
+    expect(created[1].options.root).toBe(pane);
+    expect(created[1].options.rootMargin).toBe('0px 0px 750px 0px');
+
+    rerender(<Harness enabled={false} onReach={() => {}} />);
+    act(() => {
+      window.dispatchEvent(new Event('resize'));
+    });
+    expect(frames).toHaveLength(0);
   });
 
   it('always calls the latest onReach without re-observing', () => {

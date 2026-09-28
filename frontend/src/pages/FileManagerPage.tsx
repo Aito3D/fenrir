@@ -1582,21 +1582,33 @@ export function FileManagerPage() {
     placeholderData: keepPreviousData,
     enabled: restoredFolderChecked,
   });
-  const files = useMemo(() => filePages?.pages.flatMap((p) => p.items) ?? [], [filePages]);
+  // Offset paging over a live table can hand back a row twice (a file added
+  // or re-sorted between page fetches shifts the window), so keep the first
+  // copy of each id — duplicate React keys would otherwise misrender cards.
+  const files = useMemo(() => {
+    const seen = new Set<number>();
+    return (filePages?.pages.flatMap((p) => p.items) ?? []).filter((file) => {
+      if (seen.has(file.id)) return false;
+      seen.add(file.id);
+      return true;
+    });
+  }, [filePages]);
   const totalFiles = filePages?.pages[filePages.pages.length - 1]?.total ?? files.length;
 
   // Type dropdown options come from the facet endpoint; until it answers (or
-  // if it fails) the types seen in the loaded rows stand in.
+  // if it fails) the types seen in the loaded rows stand in. The key sits
+  // under 'library-files' so uploads/deletes that invalidate the listing
+  // refresh the facet too.
   const { data: facetTypes } = useQuery({
-    queryKey: ['library-file-types', scope],
+    queryKey: ['library-files', 'file-types', scope],
     queryFn: () => api.getLibraryFileTypes(scope),
     retry: false,
   });
 
-  const fileScrollRef = useRef<HTMLDivElement>(null);
+  // Held off while placeholder rows from the previous filter are on screen:
+  // their hasNextPage belongs to the old query, not the one being fetched.
   const sentinelRef = useInfiniteScrollSentinel({
-    rootRef: fileScrollRef,
-    enabled: Boolean(hasNextPage) && !isFetchingNextPage && !isFetchNextPageError,
+    enabled: Boolean(hasNextPage) && !isFetchingNextPage && !isFetchNextPageError && !filesArePlaceholder,
     onReach: () => void fetchNextPage(),
   });
 
@@ -2718,7 +2730,7 @@ export function FileManagerPage() {
               </Button>
             </div>
           ) : viewMode === 'grid' ? (
-            <div ref={fileScrollRef} className="flex-1 lg:overflow-y-auto">
+            <div className="flex-1 lg:overflow-y-auto">
               {/* stagger-parents + animate-rise-lg cascades the cards in on first
                   paint and for cards that newly enter; each card's info block
                   then cascades via stagger-nested inside FileCard. useFlipReorder
@@ -2798,7 +2810,7 @@ export function FileManagerPage() {
               {hasNextPage && <div ref={sentinelRef} className="h-px" aria-hidden="true" />}
             </div>
           ) : (
-            <div ref={fileScrollRef} className="flex-1 lg:overflow-y-auto">
+            <div className="flex-1 lg:overflow-y-auto">
               {/* The wrapper has overflow-x-auto so a narrow viewport scrolls
                   horizontally instead of clipping the actions column off the
                   right edge. The previous `overflow-hidden` was there for the

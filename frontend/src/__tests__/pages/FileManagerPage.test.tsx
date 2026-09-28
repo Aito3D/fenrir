@@ -1774,6 +1774,25 @@ describe('FileManagerPage', () => {
       expect(screen.getByText('200 of 250 files')).toBeInTheDocument();
     });
 
+    it('renders a row the server repeats across pages only once', async () => {
+      // A row added between page fetches shifts the offset window, so page
+      // two starts with the last row of page one.
+      server.use(
+        http.get('/api/v1/library/files', ({ request }) => {
+          const offset = Number(new URL(request.url).searchParams.get('offset') ?? '0');
+          const rows = offset === 0 ? manyFiles.slice(0, 100) : manyFiles.slice(99, 199);
+          return HttpResponse.json(rows, { headers: { 'X-Total-Count': '250' } });
+        }),
+      );
+      render(<FileManagerPage />);
+      await waitFor(() => expect(screen.getByText('part-099.stl')).toBeInTheDocument());
+      await waitFor(() => expect(observers.length).toBeGreaterThan(0));
+      act(() => observers[observers.length - 1]([{ isIntersecting: true }]));
+      await waitFor(() => expect(screen.getByText('part-198.stl')).toBeInTheDocument());
+      expect(screen.getAllByText('part-099.stl')).toHaveLength(1);
+      expect(screen.getByText('199 of 250 files')).toBeInTheDocument();
+    });
+
     it('changing the sort restarts from offset 0 with the new sort parameter', async () => {
       const seen: Array<{ sort: string | null; offset: string | null }> = [];
       server.use(pagedFilesHandler(manyFiles, (p) => seen.push({ sort: p.get('sort'), offset: p.get('offset') })));

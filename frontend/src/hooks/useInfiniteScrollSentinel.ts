@@ -7,17 +7,33 @@
 // flight; flipping it back on creates a fresh observer, and an observer
 // always reports its initial intersection, so a viewport taller than one
 // page keeps filling without any extra plumbing.
+//
+// The observer root is resolved from the DOM each time an observer is
+// created: the nearest ancestor that is scroll-styled AND actually clips its
+// content. A pane that is `overflow-y: auto` only at wide breakpoints grows
+// with its rows on narrow screens, and an `overflow-auto` shell that grows
+// taller than the window never scrolls itself; treating either as the root
+// would leave the sentinel permanently "intersecting" and load every page
+// without a scroll. When no ancestor clips, the document scrolls and the
+// viewport (`null`) is the root.
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 export const LOOK_AHEAD_RATIO = 1.5;
 
 export interface InfiniteScrollSentinelOptions {
-  rootRef?: React.RefObject<HTMLElement | null>;
   enabled: boolean;
   onReach: () => void;
 }
 
-export function useInfiniteScrollSentinel({ rootRef, enabled, onReach }: InfiniteScrollSentinelOptions) {
+function findScrollRoot(node: HTMLElement): HTMLElement | null {
+  for (let el = node.parentElement; el; el = el.parentElement) {
+    const { overflowY } = window.getComputedStyle(el);
+    if ((overflowY === 'auto' || overflowY === 'scroll') && el.scrollHeight > el.clientHeight) return el;
+  }
+  return null;
+}
+
+export function useInfiniteScrollSentinel({ enabled, onReach }: InfiniteScrollSentinelOptions) {
   const [node, setNode] = useState<HTMLElement | null>(null);
   const [resizeTick, setResizeTick] = useState(0);
   const onReachRef = useRef(onReach);
@@ -26,15 +42,29 @@ export function useInfiniteScrollSentinel({ rootRef, enabled, onReach }: Infinit
     onReachRef.current = onReach;
   }, [onReach]);
 
+  // A resize can cross the breakpoint that decides which element scrolls, so
+  // it re-resolves the root. Throttled to one re-observe per frame, and only
+  // listened for while an observer can exist.
   useEffect(() => {
-    const bump = () => setResizeTick((t) => t + 1);
-    window.addEventListener('resize', bump);
-    return () => window.removeEventListener('resize', bump);
-  }, []);
+    if (!enabled) return;
+    let frame: number | null = null;
+    const onResize = () => {
+      if (frame !== null) return;
+      frame = requestAnimationFrame(() => {
+        frame = null;
+        setResizeTick((t) => t + 1);
+      });
+    };
+    window.addEventListener('resize', onResize);
+    return () => {
+      window.removeEventListener('resize', onResize);
+      if (frame !== null) cancelAnimationFrame(frame);
+    };
+  }, [enabled]);
 
   useEffect(() => {
     if (!node || !enabled || typeof IntersectionObserver === 'undefined') return;
-    const root = rootRef?.current ?? null;
+    const root = findScrollRoot(node);
     const rootHeight = root ? root.clientHeight : window.innerHeight;
     const observer = new IntersectionObserver(
       (entries) => {
@@ -44,7 +74,7 @@ export function useInfiniteScrollSentinel({ rootRef, enabled, onReach }: Infinit
     );
     observer.observe(node);
     return () => observer.disconnect();
-  }, [node, enabled, rootRef, resizeTick]);
+  }, [node, enabled, resizeTick]);
 
   return useCallback((el: HTMLElement | null) => setNode(el), []);
 }
