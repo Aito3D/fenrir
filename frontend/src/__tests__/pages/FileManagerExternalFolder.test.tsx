@@ -247,6 +247,36 @@ describe('FileManagerPage - External Folders', () => {
     });
   });
 
+  describe('linking a folder', () => {
+    it('opens the newly linked folder even before the folder tree lists it', async () => {
+      // The folders mock never returns id 10, i.e. the tree is still stale when
+      // the link succeeds; the page must not bounce back to "All files".
+      const folderIds: Array<string | null> = [];
+      server.use(
+        http.get('/api/v1/library/files', ({ request }) => {
+          folderIds.push(new URL(request.url).searchParams.get('folder_id'));
+          return HttpResponse.json(mockFiles);
+        }),
+      );
+      const user = userEvent.setup();
+      render(<FileManagerPage />);
+
+      await user.click(await screen.findByText('Link External'));
+      await user.type(await screen.findByPlaceholderText('e.g., NAS Prints'), 'New Share');
+      await user.type(screen.getByPlaceholderText('/mnt/nas/3d-prints'), '/mnt/new');
+      await user.click(screen.getByRole('button', { name: 'Link Folder' }));
+
+      await waitFor(() => expect(folderIds.at(-1)).toBe('10'));
+      await waitFor(() =>
+        expect(JSON.parse(localStorage.getItem('library-view-settings') ?? '{}').selectedFolderId).toBe(10),
+      );
+      // Let the invalidated folder tree settle, then make sure nothing reset it.
+      await new Promise((r) => setTimeout(r, 100));
+      expect(folderIds.at(-1)).toBe('10');
+      expect(JSON.parse(localStorage.getItem('library-view-settings') ?? '{}').selectedFolderId).toBe(10);
+    });
+  });
+
   describe('external folder info bar', () => {
     it('shows info bar when external folder selected', async () => {
       const user = userEvent.setup();

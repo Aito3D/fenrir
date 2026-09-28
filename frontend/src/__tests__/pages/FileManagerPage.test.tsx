@@ -1857,6 +1857,65 @@ describe('FileManagerPage', () => {
       });
     });
 
+    it('falls back to all files when the saved folder no longer exists', async () => {
+      localStorage.setItem(
+        'library-view-settings',
+        JSON.stringify({ v: 1, search: '', filterType: 'all', filterUsername: '', topLevelView: 'internal', selectedFolderId: 99, sortField: 'name', sortDirection: 'asc' }),
+      );
+      const seen: Array<string | null> = [];
+      server.use(pagedFilesHandler(manyFiles, (p) => seen.push(p.get('folder_id'))));
+      render(<FileManagerPage />);
+      await waitFor(() => expect(screen.getByText('part-000.stl')).toBeInTheDocument());
+      expect(seen[0]).toBeNull();
+      expect(seen).not.toContain('99');
+      await waitFor(() =>
+        expect(JSON.parse(localStorage.getItem('library-view-settings') ?? '{}').selectedFolderId).toBeNull(),
+      );
+    });
+
+    it('clearing a no-match search never flashes the empty-library state or drops the search box', async () => {
+      server.use(pagedFilesHandler(manyFiles));
+      render(<FileManagerPage />);
+      await waitFor(() => expect(screen.getByText('part-000.stl')).toBeInTheDocument());
+      await userEvent.type(screen.getByPlaceholderText('Search files...'), 'zzz-nothing');
+      await waitFor(() => expect(screen.getByText('No matching files')).toBeInTheDocument());
+
+      let sawEmptyLibrary = false;
+      let lostSearchBox = false;
+      // waitFor re-runs its callback on every DOM mutation, so a transient
+      // "No files yet" or an unmounted toolbar between the two states is seen.
+      const watch = () => {
+        if (screen.queryByText('No files yet')) sawEmptyLibrary = true;
+        if (!screen.queryByPlaceholderText('Search files...')) lostSearchBox = true;
+      };
+      await userEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+      await waitFor(() => {
+        watch();
+        expect(screen.getByText('part-000.stl')).toBeInTheDocument();
+      });
+      expect(sawEmptyLibrary).toBe(false);
+      expect(lostSearchBox).toBe(false);
+    });
+
+    it('backspacing a no-match search keeps the search box mounted and focused', async () => {
+      server.use(pagedFilesHandler(manyFiles));
+      render(<FileManagerPage />);
+      await waitFor(() => expect(screen.getByText('part-000.stl')).toBeInTheDocument());
+      const input = screen.getByPlaceholderText('Search files...');
+      await userEvent.type(input, 'zzz');
+      await waitFor(() => expect(screen.getByText('No matching files')).toBeInTheDocument());
+
+      let sawEmptyLibrary = false;
+      await userEvent.type(input, '{backspace}{backspace}{backspace}');
+      await waitFor(() => {
+        if (screen.queryByText('No files yet')) sawEmptyLibrary = true;
+        expect(screen.getByText('part-000.stl')).toBeInTheDocument();
+      });
+      expect(sawEmptyLibrary).toBe(false);
+      expect(input).toBeInTheDocument();
+      expect(input).toHaveFocus();
+    });
+
     it('offers a retry when a later page fails', async () => {
       let calls = 0;
       server.use(

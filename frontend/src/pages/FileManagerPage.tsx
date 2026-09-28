@@ -1192,6 +1192,15 @@ export function FileManagerPage() {
     (id: number | null) => updateViewSettings({ selectedFolderId: id }),
     [updateViewSettings],
   );
+  // The folder restored from settings at mount (only when no ?folder= param
+  // chose one). It is judged once, against the first loaded folder tree; a
+  // folder selected after that (e.g. a just-linked external folder the stale
+  // tree does not list yet) is never second-guessed. The listing waits for
+  // that check so it never requests a folder that no longer exists.
+  const [restoredFolderId] = useState<number | null>(() =>
+    initialFolderId === null ? viewSettings.selectedFolderId : null,
+  );
+  const [restoredFolderChecked, setRestoredFolderChecked] = useState(restoredFolderId === null);
   // Which top-level pseudo-view the sidebar shows when no specific folder is
   // selected: "internal" = files in Fenrir's managed storage, "external" =
   // combined view across every linked external folder (#1621). Per-folder
@@ -1321,7 +1330,10 @@ export function FileManagerPage() {
     const id = setTimeout(() => setDebouncedSearch(searchQuery), 250);
     return () => clearTimeout(id);
   }, [searchQuery]);
-  const hasActiveFilters = Boolean(searchQuery || filterType !== 'all' || filterUsername);
+  // Includes the debounced search: `files` lags the input by the debounce
+  // (and keepPreviousData), so the gates must stay "filtered" until the
+  // unfiltered rows have actually landed.
+  const hasActiveFilters = Boolean(searchQuery || debouncedSearch || filterType !== 'all' || filterUsername);
   // Show/hide the last-modified date on each file card (#2680). Persisted.
   const [showModified, setShowModified] = useState<boolean>(
     () => localStorage.getItem('library-show-modified') === 'true'
@@ -1381,7 +1393,12 @@ export function FileManagerPage() {
     }
     return hasAnyPermission('library:read_all', 'library:read_own');
   }, [settings?.use_slicer_api, hasPermission, hasAnyPermission]);
-  const { data: folders, isLoading: foldersLoading } = useQuery({
+  const {
+    data: folders,
+    isLoading: foldersLoading,
+    isFetching: foldersFetching,
+    isError: foldersError,
+  } = useQuery({
     queryKey: ['library-folders'],
     queryFn: () => api.getLibraryFolders(),
   });
@@ -1423,13 +1440,28 @@ export function FileManagerPage() {
   }, [folders, folderSortField, folderSortDirection]);
 
   // A remembered folder can have been deleted or unlinked since the last
-  // visit; fall back to "All files" rather than showing an empty pane.
+  // visit; fall back to "All files" rather than showing an empty pane. Runs
+  // once, on the first settled folder tree (a failed tree keeps the folder).
   useEffect(() => {
-    if (!folders || selectedFolderId === null || initialFolderId !== null) return;
+    if (restoredFolderChecked) return;
+    if (foldersError) {
+      setRestoredFolderChecked(true);
+      return;
+    }
+    if (!folders || foldersFetching) return;
     const exists = (items: LibraryFolderTree[]): boolean =>
-      items.some((f) => f.id === selectedFolderId || exists(f.children));
-    if (!exists(folders)) setSelectedFolderId(null);
-  }, [folders, selectedFolderId, initialFolderId, setSelectedFolderId]);
+      items.some((f) => f.id === restoredFolderId || exists(f.children));
+    if (selectedFolderId === restoredFolderId && !exists(folders)) setSelectedFolderId(null);
+    setRestoredFolderChecked(true);
+  }, [
+    restoredFolderChecked,
+    foldersError,
+    folders,
+    foldersFetching,
+    restoredFolderId,
+    selectedFolderId,
+    setSelectedFolderId,
+  ]);
 
   // Trash count for the header badge (#1008). Empty/error are silently treated
   // as zero so a broken trash endpoint doesn't break the File Manager.
@@ -1519,6 +1551,7 @@ export function FileManagerPage() {
     hasNextPage,
     isFetchingNextPage,
     isFetchNextPageError,
+    isPlaceholderData: filesArePlaceholder,
   } = useInfiniteQuery({
     queryKey: [
       'library-files',
@@ -1547,6 +1580,7 @@ export function FileManagerPage() {
       return lastPage.items.length > 0 && loaded < lastPage.total ? loaded : undefined;
     },
     placeholderData: keepPreviousData,
+    enabled: restoredFolderChecked,
   });
   const files = useMemo(() => filePages?.pages.flatMap((p) => p.items) ?? [], [filePages]);
   const totalFiles = filePages?.pages[filePages.pages.length - 1]?.total ?? files.length;
@@ -1981,7 +2015,7 @@ export function FileManagerPage() {
     localStorage.setItem('library-view-mode', mode);
   };
 
-  const isLoading = foldersLoading || filesLoading;
+  const isLoading = foldersLoading || filesLoading || !restoredFolderChecked;
 
   // Find the selected folder in the tree to check external status
   const selectedFolder = useMemo(() => {
@@ -2404,7 +2438,7 @@ export function FileManagerPage() {
             </div>
           )}
           {/* Search, Filter, Sort toolbar - sticky on mobile for easier access */}
-          {(files.length > 0 || hasActiveFilters) && (
+          {(files.length > 0 || hasActiveFilters || filesArePlaceholder) && (
             <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-4 p-2 sm:p-3 bg-bambu-dark-secondary rounded-lg border border-bambu-dark-tertiary sticky top-0 z-10 lg:static">
               {/* Search */}
               <div className="relative w-full sm:w-auto sm:flex-1 sm:max-w-xs">
@@ -2642,7 +2676,7 @@ export function FileManagerPage() {
                 <p className="text-sm text-bambu-gray">{t('fileManager.loadingFiles')}</p>
               </div>
             </div>
-          ) : files.length === 0 && !hasActiveFilters ? (
+          ) : files.length === 0 && !hasActiveFilters && !filesArePlaceholder ? (
             <div className="flex-1 flex flex-col items-center justify-center">
               <div className="p-4 bg-bambu-dark rounded-2xl mb-4">
                 <FileBox className="w-12 h-12 text-bambu-gray/50" />
