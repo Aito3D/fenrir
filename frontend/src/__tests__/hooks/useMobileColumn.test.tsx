@@ -30,6 +30,15 @@ describe('useMobileColumn', () => {
     expect(result.current[0]).toBe(5);
   });
 
+  it('uses its own storage key when given one', () => {
+    sessionStorage.setItem('aito.tablet.first', 'scan');
+    const { result } = renderHook(() => useMobileColumn(IDS, 'aito.tablet.first'));
+    expect(result.current[0]).toBe(2);
+    act(() => result.current[1](3));
+    expect(sessionStorage.getItem('aito.tablet.first')).toBe('model');
+    expect(sessionStorage.getItem(MOBILE_COLUMN_STORAGE_KEY)).toBeNull();
+  });
+
   it('survives storage that throws', () => {
     vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('denied'); });
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('denied'); });
