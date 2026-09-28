@@ -55,6 +55,10 @@ class Go2RTCService:
     def api_url(self) -> str:
         return f"http://127.0.0.1:{_GO2RTC_API_PORT}"
 
+    def ws_url(self, stream_name: str) -> str:
+        """URL of go2rtc's WebSocket API (MSE, among others) for one stream."""
+        return f"ws://127.0.0.1:{_GO2RTC_API_PORT}/api/ws?src={stream_name}"
+
     def _find_binary(self) -> str | None:
         """Find go2rtc binary on the system."""
         path = shutil.which("go2rtc")

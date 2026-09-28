@@ -68,6 +68,8 @@ export default defineConfig({
       },
       '/api': {
         target: backendUrl,
+        // WebSocket routes under /api besides /ws (go2rtc MSE relay).
+        ws: true,
         changeOrigin: true,
       },
     },

@@ -23,6 +23,7 @@ import { RECONNECT_BASE_DELAY_MS } from '../../utils/streamConstants';
 
 vi.mock('../../api/client', () => ({
   api: { webrtcOffer: vi.fn().mockResolvedValue({ type: 'answer', sdp: 'v=0' }) },
+  withStreamToken: (url: string) => url,
 }));
 
 const NEGOTIATION_TIMEOUT_MS = 15_000;
@@ -33,7 +34,12 @@ class FakePeerConnection {
   iceConnectionState = 'new';
   ontrack: ((e: unknown) => void) | null = null;
   oniceconnectionstatechange: (() => void) | null = null;
-  setRemoteDescription = vi.fn(async () => {});
+  // ICE connects as soon as the answer lands, as it does on a LAN — the
+  // no-connect MSE fallback has its own suite (useWebRTCStream.mseFallback).
+  setRemoteDescription = vi.fn(async () => {
+    this.iceConnectionState = 'connected';
+    this.oniceconnectionstatechange?.();
+  });
   constructor() {
     // eslint-disable-next-line @typescript-eslint/no-this-alias -- capture the instance for test assertions
     lastPc = this;
@@ -94,9 +100,9 @@ describe('useWebRTCStream ICE handling', () => {
     unmount();
   });
 
-  it('errors and schedules a reconnect on ICE "failed"', async () => {
+  it('errors and schedules a reconnect on ICE "failed" after having connected', async () => {
     const { result, unmount } = renderStream();
-    await waitFor(() => expect(lastPc?.oniceconnectionstatechange).toBeTruthy());
+    await waitFor(() => expect(lastPc?.setRemoteDescription).toHaveBeenCalled());
 
     act(() => {
       lastPc!.iceConnectionState = 'failed';

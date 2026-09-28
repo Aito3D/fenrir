@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { api } from '../api/client';
+import { api, withStreamToken } from '../api/client';
+import { mseSupported, startMseStream } from '../utils/mseStream';
 import { STREAM_STALE_MS, STREAM_DEGRADED_MS, STREAM_ERROR_MS, RECONNECT_BASE_DELAY_MS, RECONNECT_MAX_DELAY_MS } from '../utils/streamConstants';
 import { startCountdown } from '../utils/countdown';
 
@@ -34,6 +35,26 @@ const CONNECTION_TIMEOUT = 30_000;
 // backoff retry instead of spinning forever.
 const NEGOTIATION_TIMEOUT_MS = 15_000;
 const FRAME_CHECK_INTERVAL = 1_000;
+// On a LAN, ICE connects well under a second after the answer. go2rtc only
+// offers host candidates (its LAN addresses on :8555), so a browser that
+// reaches the app through an HTTP-only path — a Cloudflare tunnel — can never
+// connect the media. After this long without ICE connecting, fall back to
+// go2rtc's MSE stream relayed over the app's own origin.
+export const ICE_CONNECT_TIMEOUT_MS = 5_000;
+
+// Once one tile has had to fall back, the network path is the same for every
+// other tile on the page — skip the WebRTC wait for the rest of the session.
+let preferMse = false;
+
+/** Forget the session's MSE fallback (tests). */
+export function resetStreamTransport(): void {
+  preferMse = false;
+}
+
+function mseUrl(printerId: number): string {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return withStreamToken(`${protocol}//${window.location.host}/api/v1/printers/${printerId}/camera/mse`);
+}
 
 export function useWebRTCStream({ printerId, enabled, videoRef, onStats, restartKey }: UseWebRTCStreamOptions): UseWebRTCStreamReturn {
   const [isLoading, setIsLoading] = useState(true);
@@ -65,6 +86,8 @@ export function useWebRTCStream({ printerId, enabled, videoRef, onStats, restart
   const lastFrameTimeRef = useRef(0);
   const connectionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const negotiationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const iceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const stopMseRef = useRef<(() => void) | null>(null);
   const frameMonitorRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const rvfcHandleRef = useRef<number | null>(null);
   const reconnectScheduledRef = useRef(false);
@@ -103,6 +126,12 @@ export function useWebRTCStream({ printerId, enabled, videoRef, onStats, restart
       clearTimeout(negotiationTimeoutRef.current);
       negotiationTimeoutRef.current = null;
     }
+    if (iceTimeoutRef.current) {
+      clearTimeout(iceTimeoutRef.current);
+      iceTimeoutRef.current = null;
+    }
+    stopMseRef.current?.();
+    stopMseRef.current = null;
     stopFrameMonitor();
     cleanupCountdown();
     prevBytesRef.current = 0;
@@ -187,6 +216,50 @@ export function useWebRTCStream({ printerId, enabled, videoRef, onStats, restart
     }, FRAME_CHECK_INTERVAL);
   }, [videoRef, stopFrameMonitor, setAttempt]);
 
+  // If no frame within 30s, reconnect.
+  const armConnectionTimeout = useCallback(() => {
+    connectionTimeoutRef.current = setTimeout(() => {
+      if (!mountedRef.current) return;
+      if (lastFrameTimeRef.current === 0) {
+        setIsLoading(false);
+        setHasError(true);
+        setIsConnected(false);
+        scheduleReconnectRef.current();
+      }
+    }, CONNECTION_TIMEOUT);
+  }, []);
+
+  // go2rtc's MSE stream over the app's origin (see ICE_CONNECT_TIMEOUT_MS).
+  // Expects the attempt state already reset by connect().
+  const connectMse = useCallback(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    let bytes = 0;
+    stopMseRef.current = startMseStream(video, mseUrl(printerId), {
+      onOpen: () => {
+        if (!mountedRef.current) return;
+        setIsConnected(true);
+        video.play().catch(() => {});
+        startFrameMonitor();
+      },
+      onBytes: (n) => {
+        bytes += n;
+      },
+      onError: () => {
+        if (!mountedRef.current) return;
+        setIsLoading(false);
+        setHasError(true);
+        setIsConnected(false);
+        scheduleReconnectRef.current();
+      },
+    });
+    statsIntervalRef.current = setInterval(() => {
+      if (bytes > 0) onStatsRef.current?.(printerId, { bytesPerSecond: bytes, timestamp: performance.now() });
+      bytes = 0;
+    }, 1000);
+    armConnectionTimeout();
+  }, [printerId, videoRef, startFrameMonitor, armConnectionTimeout]);
+
   const connect = useCallback(async () => {
     if (!mountedRef.current || !enabled) return;
 
@@ -199,9 +272,25 @@ export function useWebRTCStream({ printerId, enabled, videoRef, onStats, restart
     setStale(false);
     setDegraded(false);
 
+    if (preferMse) {
+      connectMse();
+      return;
+    }
+
+    // An attempt whose ICE never connected moves to MSE; one that connected
+    // and later failed is a real drop and reconnects over WebRTC.
+    let iceConnected = false;
+    const fallBackToMse = (pc: RTCPeerConnection): boolean => {
+      if (iceConnected || pcRef.current !== pc || !mseSupported()) return false;
+      preferMse = true;
+      cleanup();
+      connectMse();
+      return true;
+    };
+
     try {
       const pc = new RTCPeerConnection({
-        iceServers: [], // LAN — no STUN/TURN needed
+        iceServers: [], // host candidates only; off-LAN viewers fall back to MSE
       });
       pcRef.current = pc;
 
@@ -256,7 +345,10 @@ export function useWebRTCStream({ printerId, enabled, videoRef, onStats, restart
       pc.oniceconnectionstatechange = () => {
         if (!mountedRef.current) return;
         const state = pc.iceConnectionState;
-        if (state === 'failed' || state === 'closed') {
+        if (state === 'connected' || state === 'completed') {
+          iceConnected = true;
+        } else if (state === 'failed' || state === 'closed') {
+          if (fallBackToMse(pc)) return;
           setIsConnected(false);
           setHasError(true);
           setIsLoading(false);
@@ -296,16 +388,13 @@ export function useWebRTCStream({ printerId, enabled, videoRef, onStats, restart
         sdp: answer.sdp,
       });
 
-      // Start connection timeout — if no frame within 30s, reconnect
-      connectionTimeoutRef.current = setTimeout(() => {
-        if (!mountedRef.current) return;
-        if (lastFrameTimeRef.current === 0) {
-          setIsLoading(false);
-          setHasError(true);
-          setIsConnected(false);
-          scheduleReconnectRef.current();
-        }
-      }, CONNECTION_TIMEOUT);
+      if (!iceConnected) {
+        iceTimeoutRef.current = setTimeout(() => {
+          iceTimeoutRef.current = null;
+          if (mountedRef.current) fallBackToMse(pc);
+        }, ICE_CONNECT_TIMEOUT_MS);
+      }
+      armConnectionTimeout();
     } catch {
       if (!mountedRef.current) return;
       setIsLoading(false);
@@ -313,7 +402,7 @@ export function useWebRTCStream({ printerId, enabled, videoRef, onStats, restart
       setIsConnected(false);
       scheduleReconnectRef.current();
     }
-  }, [printerId, enabled, videoRef, cleanup, cleanupCountdown, startFrameMonitor]);
+  }, [printerId, enabled, videoRef, cleanup, cleanupCountdown, startFrameMonitor, connectMse, armConnectionTimeout]);
 
   const scheduleReconnect = useCallback(() => {
     if (!mountedRef.current || !enabled) return;

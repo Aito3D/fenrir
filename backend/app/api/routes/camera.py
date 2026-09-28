@@ -3,6 +3,7 @@
 import asyncio
 import contextlib
 import dataclasses
+import json
 import logging
 import math
 import os
@@ -18,12 +19,14 @@ from dataclasses import field
 from typing import Annotated, Literal
 
 import psutil
-from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, Request
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import Response, StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from websockets.asyncio.client import connect as _open_go2rtc_ws
+from websockets.exceptions import WebSocketException
 
 from backend.app.core import database
 from backend.app.core.auth import (
@@ -34,6 +37,7 @@ from backend.app.core.auth import (
     is_auth_enabled,
     security,
     validated_api_key_from_request,
+    verify_camera_stream_token,
 )
 from backend.app.core.database import async_session, get_db
 from backend.app.core.logging_filters import redact_url_credentials
@@ -58,6 +62,7 @@ from backend.app.services.camera import (
     rtsp_socket_timeout_flag,
     test_camera_connection,
 )
+from backend.app.services.go2rtc import go2rtc_service
 from backend.app.utils.ffmpeg_output import NO_FFMPEG_OUTPUT, summarize_ffmpeg_stderr
 
 logger = logging.getLogger(__name__)
@@ -2813,6 +2818,112 @@ async def webrtc_offer(
         raise HTTPException(503, "go2rtc failed to generate WebRTC answer")
 
     return answer
+
+
+# Close codes for the MSE relay. 4401 matches /ws (the SPA refetches a token);
+# 1013 "try again later" and 1008 "policy violation" are RFC 6455 codes.
+_MSE_CLOSE_UNAUTHORIZED = 4401
+_MSE_CLOSE_UNAVAILABLE = 1013
+_MSE_CLOSE_REFUSED = 1008
+
+
+def _is_mse_request(text: str) -> bool:
+    try:
+        message = json.loads(text)
+    except ValueError:
+        return False
+    return isinstance(message, dict) and message.get("type") == "mse"
+
+
+async def _relay_mse(client: WebSocket, upstream) -> None:
+    """Pump MSE requests browser → go2rtc and fMP4 frames go2rtc → browser
+    until either side hangs up."""
+
+    async def client_to_upstream() -> None:
+        while True:
+            message = await client.receive()
+            if message["type"] == "websocket.disconnect":
+                return
+            text = message.get("text")
+            if text is not None and _is_mse_request(text):
+                await upstream.send(text)
+
+    async def upstream_to_client() -> None:
+        async for frame in upstream:
+            if isinstance(frame, bytes):
+                await client.send_bytes(frame)
+            else:
+                await client.send_text(frame)
+
+    tasks = [asyncio.create_task(client_to_upstream()), asyncio.create_task(upstream_to_client())]
+    try:
+        done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+    for task in done:
+        exc = task.exception()
+        if exc is not None and not isinstance(exc, WebSocketDisconnect | WebSocketException | OSError):
+            logger.warning("go2rtc MSE relay ended with an error: %s", exc)
+
+
+@router.websocket("/{printer_id}/camera/mse")
+async def camera_mse_stream(websocket: WebSocket, printer_id: int, token: str | None = Query(default=None)) -> None:
+    """Relay go2rtc's MSE stream (fragmented MP4 over WebSocket) to the browser.
+
+    The WebRTC path hands the browser go2rtc's host candidates — LAN addresses
+    on :8555 — so it only works when the browser can reach that port. Behind
+    an HTTP-only path (a Cloudflare tunnel, a reverse proxy elsewhere) the
+    media never connects. The frontend falls back to this route, which carries
+    the same H.264 (no transcoding) over the app's own origin.
+
+    Auth mirrors the MJPEG stream: a camera stream token (``?token=``) when
+    auth is enabled, checked before ``accept()``.
+    """
+    from backend.app.services.camera import build_camera_url, supports_rtsp
+
+    try:
+        async with async_session() as db:
+            auth_required = await is_auth_enabled(db)
+    except Exception:  # SEC-AUTH-EXC: DB failure on auth probe → fail-closed, as /ws does
+        logger.error("MSE relay auth probe failed; refusing connection", exc_info=True)
+        await websocket.close(code=_MSE_CLOSE_UNAUTHORIZED)
+        return
+    if auth_required and (not token or not await verify_camera_stream_token(token)):
+        await websocket.close(code=_MSE_CLOSE_UNAUTHORIZED)
+        return
+
+    if not go2rtc_service.ready:
+        await websocket.close(code=_MSE_CLOSE_UNAVAILABLE)
+        return
+
+    async with async_session() as db:
+        printer = await db.get(Printer, printer_id)
+    if printer is None or not supports_rtsp(printer.model):
+        await websocket.close(code=_MSE_CLOSE_REFUSED)
+        return
+
+    rtsp_url = build_camera_url(printer.ip_address, printer.access_code, printer.model)
+    if not await go2rtc_service.ensure_stream(printer_id, rtsp_url):
+        await websocket.close(code=_MSE_CLOSE_UNAVAILABLE)
+        return
+
+    accepted = False
+    try:
+        # go2rtc sends a keyframe fragment as one message; the 1 MiB default can
+        # be too small for a high-bitrate I-frame.
+        async with _open_go2rtc_ws(
+            go2rtc_service.ws_url(f"printer_{printer_id}"), max_size=16 * 1024 * 1024
+        ) as upstream:
+            await websocket.accept()
+            accepted = True
+            await _relay_mse(websocket, upstream)
+    except (OSError, WebSocketException) as e:
+        logger.warning("go2rtc MSE socket failed for printer %s: %s", printer_id, e)
+    finally:
+        with contextlib.suppress(Exception):
+            await websocket.close(code=1000 if accepted else _MSE_CLOSE_UNAVAILABLE)
 
 
 @router.get("/{printer_id}/camera/test")

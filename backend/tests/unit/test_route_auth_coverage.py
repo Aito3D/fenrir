@@ -170,7 +170,9 @@ def _ws_endpoint_does_inline_token_check(route: APIWebSocketRoute) -> bool:
     (the WebSocket handshake doesn't carry headers), so the auth check
     lives inline in the endpoint body. We confirm by inspecting the
     endpoint function's source text — looking for an actual call to
-    ``verify_websocket_token``. A docstring-only mention would NOT
+    ``verify_websocket_token`` — or ``verify_camera_stream_token`` for the
+    go2rtc MSE relay, whose browser-side peer is a camera tile holding a
+    camera stream token, not the app socket. A docstring-only mention would NOT
     satisfy this check (we look for a call-shaped pattern, not a
     substring).
     """
@@ -180,7 +182,7 @@ def _ws_endpoint_does_inline_token_check(route: APIWebSocketRoute) -> bool:
         source = inspect.getsource(route.endpoint)
     except (OSError, TypeError):
         return False
-    return bool(re.search(r"\bverify_websocket_token\s*\(", source))
+    return bool(re.search(r"\b(verify_websocket_token|verify_camera_stream_token)\s*\(", source))
 
 
 @pytest.mark.unit

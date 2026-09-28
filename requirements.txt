@@ -12,6 +12,9 @@
 # until upstream removes the dep or explains the rationale.
 fastapi>=0.109.0,<0.136.0
 uvicorn[standard]>=0.27.0
+# Direct import (go2rtc MSE relay client), not just uvicorn's WS server.
+# 13.0 is the floor for the websockets.asyncio.client API.
+websockets>=13.0
 
 # Database
 # 2.0.38 is a hard floor, not a preference: it changed the aiosqlite dialect's
