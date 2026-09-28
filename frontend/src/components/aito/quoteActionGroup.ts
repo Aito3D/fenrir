@@ -1,4 +1,7 @@
-/** The Quote and Invoice cards' action row, as one segmented control.
+/** The payment block's collect row (Link / Terminal / Manual), as one
+ *  segmented control. The quote and invoice rows used to share it; they are
+ *  `DocumentRow`s with 24px icon clusters now (see linkActionHelpers.ts
+ *  `DOC_ICON_BUTTON_CLS`), so this is the card's only bar.
  *
  *  WHY A SEGMENTED CONTROL. Both cards live in the detail panel's first grid
  *  column — `minmax(0,20rem)` with `px-5`, inside a card with `p-3`, which
@@ -37,3 +40,7 @@ export const ACTION_CELL =
   'transition-colors motion-reduce:transition-none ' +
   'disabled:opacity-40 disabled:cursor-not-allowed ' +
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-bambu-green/40';
+
+/** How an action button renders: a cell of the segmented `ACTION_GROUP`
+ *  (the payment block), or a 24px icon in a document row's cluster. */
+export type ActionVariant = 'cell' | 'icon';

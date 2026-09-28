@@ -192,7 +192,35 @@ describe('PaymentBlock', () => {
 
   it('opens the link modal from its cell', async () => {
     block({ link: link() });
-    await userEvent.click(screen.getByRole('button', { name: 'Payment link' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Online payment' }));
     expect(screen.getByRole('dialog', { name: 'Payment link' })).toBeInTheDocument();
+  });
+});
+
+describe('PaymentBlock link row as the Link action', () => {
+  it('drops the Link cell while a link is live and opens the modal from the label', async () => {
+    block({ link: link() });
+    expect(screen.queryByRole('button', { name: 'Payment link' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Pay by card on the terminal' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Manual — record a payment' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open payment link' })).toBeInTheDocument();
+
+    const label = screen.getByRole('button', { name: 'Online payment' });
+    expect(label).toHaveAttribute('title', 'Manage the payment link');
+    await userEvent.click(label);
+    expect(await screen.findByRole('dialog', { name: 'Payment link' })).toBeInTheDocument();
+  });
+
+  it('keeps the three cells when no link is live', () => {
+    block({ link: link({ state: 'expired' }) });
+    expect(screen.getByRole('button', { name: 'Payment link' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Online payment' })).toBeNull();
+  });
+
+  it('renders the label as plain text for a reader', () => {
+    block({ link: link(), canUpdate: false });
+    expect(screen.queryByRole('button', { name: 'Online payment' })).toBeNull();
+    expect(screen.getByText('Online payment')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Pay by card on the terminal' })).toBeNull();
   });
 });

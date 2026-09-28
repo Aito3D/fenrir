@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { api, type AitoProject } from '../../api/client';
 import { PdfDownloadButton } from './PdfDownloadButton';
+import type { ActionVariant } from './quoteActionGroup';
 
 /** Fetch this project's Zoho estimate and save it as a PDF file.
  *
@@ -11,8 +12,10 @@ import { PdfDownloadButton } from './PdfDownloadButton';
  */
 export function QuoteDownloadButton({
   project,
+  variant = 'cell',
 }: {
   project: AitoProject;
+  variant?: ActionVariant;
 }) {
   const { t } = useTranslation();
 
@@ -30,6 +33,7 @@ export function QuoteDownloadButton({
       // an edit is still on its way to Zoho saves the pre-edit PDF.
       disabled={project.quote_sync_state === 'pending'}
       disabledTitle={t('aito.pdfSyncPending')}
+      variant={variant}
     />
   );
 }

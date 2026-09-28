@@ -22,8 +22,9 @@ type OpenModal = 'link' | 'terminal' | 'manual' | null;
 /** The Encaissement block: what is still due on a quote's deposit or an
  *  invoice's balance, the one-line state of any charge or link already in
  *  motion, and — while there is something to collect and nothing already in
- *  flight — the three ways to collect it (spec §3.1-3.3). Mounted once under
- *  the quote's rows (`BillingCard`) and once under the invoice's (`InvoiceCard`),
+ *  flight — the ways to collect it — three cells, or two while a live link
+ *  already covers the first (spec §3.1-3.3). Mounted twice by
+ *  `BillingCard`'s collect section — once for the quote, once for the invoice —
  *  each with its own `PaymentDocument`, its own link and its own terminal
  *  payment (never the other document's).
  *
@@ -80,6 +81,7 @@ export function PaymentBlock({ project, document, link, terminal, canUpdate, hei
 
   const enabled = cellsEnabled({ canUpdate, due, state });
   const showCells = enabled || state.kind === 'terminal_processing';
+  const linkLive = state.kind === 'link_pending';
   // Reopens the modal on whatever charge is genuinely still in flight — the
   // raw `terminal` prop, not the polled `liveTerminal`, per spec: once the
   // board refetches with a settled payment this simply stops offering one.
@@ -109,21 +111,28 @@ export function PaymentBlock({ project, document, link, terminal, canUpdate, hei
         canUpdate={canUpdate}
         onCopy={copyLink}
         onReopenTerminal={() => setOpen('terminal')}
+        onManageLink={() => setOpen('link')}
       />
 
       {showCells && (
         <div className={ACTION_GROUP}>
-          <button
-            type="button"
-            onClick={() => setOpen('link')}
-            disabled={!enabled}
-            aria-label={t('aito.payment.cellLinkTitle')}
-            title={t('aito.payment.cellLinkTitle')}
-            className={`${ACTION_CELL} gap-1.5 text-xs`}
-          >
-            <Link2 className="w-3.5 h-3.5" aria-hidden="true" />
-            {t('aito.payment.cellLink')}
-          </button>
+          {/* While a link is live the state line above IS the Link action (open,
+              copy, and the label opens the modal for cancel / retry), so the
+              cell row offers only the two OTHER channels. Otherwise the familiar
+              three. */}
+          {!linkLive && (
+            <button
+              type="button"
+              onClick={() => setOpen('link')}
+              disabled={!enabled}
+              aria-label={t('aito.payment.cellLinkTitle')}
+              title={t('aito.payment.cellLinkTitle')}
+              className={`${ACTION_CELL} gap-1.5 text-xs`}
+            >
+              <Link2 className="w-3.5 h-3.5" aria-hidden="true" />
+              {t('aito.payment.cellLink')}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setOpen('terminal')}
@@ -173,6 +182,7 @@ function StateLine({
   canUpdate,
   onCopy,
   onReopenTerminal,
+  onManageLink,
 }: {
   state: PaymentState;
   document: PaymentDocument;
@@ -180,6 +190,7 @@ function StateLine({
   canUpdate: boolean;
   onCopy: (url: string) => void;
   onReopenTerminal: () => void;
+  onManageLink: () => void;
 }) {
   const { t, i18n } = useTranslation();
 
@@ -217,7 +228,18 @@ function StateLine({
       return (
         <div data-testid="payment-link-row" data-state={link.state}>
           <div className="flex items-center justify-between gap-x-3">
-            <span className="text-bambu-gray">{t('aito.paymentLink.label')}</span>
+            {canUpdate ? (
+              <button
+                type="button"
+                onClick={onManageLink}
+                title={t('aito.paymentLink.manage')}
+                className="text-left text-bambu-gray hover:text-bambu-gray-light underline decoration-dotted decoration-bambu-gray-dark underline-offset-4"
+              >
+                {t('aito.paymentLink.label')}
+              </button>
+            ) : (
+              <span className="text-bambu-gray">{t('aito.paymentLink.label')}</span>
+            )}
             <span className="inline-flex items-center justify-end gap-x-2 min-w-0">
               {copied ? (
                 <CopiedLabel phase={copied} text={t('aito.paymentLink.copied')} testId="payment-link-copied" />

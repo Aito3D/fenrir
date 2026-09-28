@@ -38,7 +38,7 @@ describe('SendInvoiceModal', () => {
     vi.spyOn(api, 'getAitoInvoiceEmail').mockResolvedValue(CONTENT);
     const send = vi.spyOn(api, 'sendAitoInvoiceEmail').mockResolvedValue(SENT_INVOICE);
     const user = userEvent.setup();
-    render(<SendInvoiceModal projectId={12} invoiceId="INV-7" onClose={() => {}} />);
+    render(<SendInvoiceModal projectId={12} document={{ kind: 'invoice', id: 'INV-7' }} onClose={() => {}} />);
 
     const select = await screen.findByLabelText(/recipient/i);
     await waitFor(() => expect(select).toHaveValue('contact@example.pf'));
@@ -53,7 +53,7 @@ describe('SendInvoiceModal', () => {
     vi.spyOn(api, 'getAitoInvoiceEmail').mockResolvedValue(CONTENT);
     const send = vi.spyOn(api, 'sendAitoInvoiceEmail').mockResolvedValue(SENT_INVOICE);
     const user = userEvent.setup();
-    render(<SendInvoiceModal projectId={12} invoiceId="INV-7" onClose={() => {}} />);
+    render(<SendInvoiceModal projectId={12} document={{ kind: 'invoice', id: 'INV-7' }} onClose={() => {}} />);
 
     const select = await screen.findByLabelText(/recipient/i);
     await waitFor(() => expect(select).toHaveValue('contact@example.pf'));
@@ -70,7 +70,7 @@ describe('SendInvoiceModal', () => {
     vi.spyOn(api, 'sendAitoInvoiceEmail').mockResolvedValue(SENT_INVOICE);
     const onClose = vi.fn();
     const user = userEvent.setup();
-    render(<SendInvoiceModal projectId={12} invoiceId="INV-7" onClose={onClose} />);
+    render(<SendInvoiceModal projectId={12} document={{ kind: 'invoice', id: 'INV-7' }} onClose={onClose} />);
 
     await screen.findByLabelText(/recipient/i);
     await user.click(screen.getByRole('button', { name: /^send$/i }));
@@ -84,7 +84,7 @@ describe('SendInvoiceModal', () => {
     vi.spyOn(api, 'sendAitoInvoiceEmail').mockRejectedValue(new Error('502'));
     const onClose = vi.fn();
     const user = userEvent.setup();
-    render(<SendInvoiceModal projectId={12} invoiceId="INV-7" onClose={onClose} />);
+    render(<SendInvoiceModal projectId={12} document={{ kind: 'invoice', id: 'INV-7' }} onClose={onClose} />);
 
     await screen.findByLabelText(/recipient/i);
     await user.click(screen.getByRole('button', { name: /^send$/i }));
@@ -100,7 +100,7 @@ describe('SendInvoiceModal', () => {
       recipients: [],
       default_email: null,
     });
-    render(<SendInvoiceModal projectId={12} invoiceId="INV-7" onClose={() => {}} />);
+    render(<SendInvoiceModal projectId={12} document={{ kind: 'invoice', id: 'INV-7' }} onClose={() => {}} />);
 
     expect(
       await screen.findByText('This client has no email address in Zoho.'),
@@ -109,21 +109,21 @@ describe('SendInvoiceModal', () => {
 
   it('preselects the card’s contact person over the default address', async () => {
     vi.spyOn(api, 'getAitoInvoiceEmail').mockResolvedValue(CONTENT);
-    render(<SendInvoiceModal projectId={12} invoiceId="INV-7" contactPersonId="cp-2" onClose={() => {}} />);
+    render(<SendInvoiceModal projectId={12} document={{ kind: 'invoice', id: 'INV-7' }} contactPersonId="cp-2" onClose={() => {}} />);
     const select = await screen.findByLabelText(/recipient/i);
     await waitFor(() => expect(select).toHaveValue('compta@example.pf'));
   });
 
   it('falls back to the default when the person is not a recipient', async () => {
     vi.spyOn(api, 'getAitoInvoiceEmail').mockResolvedValue(CONTENT);
-    render(<SendInvoiceModal projectId={12} invoiceId="INV-7" contactPersonId="cp-9" onClose={() => {}} />);
+    render(<SendInvoiceModal projectId={12} document={{ kind: 'invoice', id: 'INV-7' }} contactPersonId="cp-9" onClose={() => {}} />);
     const select = await screen.findByLabelText(/recipient/i);
     await waitFor(() => expect(select).toHaveValue('contact@example.pf'));
   });
 
   it('reports a prefill failure instead of an empty form', async () => {
     vi.spyOn(api, 'getAitoInvoiceEmail').mockRejectedValue(new Error('502'));
-    render(<SendInvoiceModal projectId={12} invoiceId="INV-7" onClose={() => {}} />);
+    render(<SendInvoiceModal projectId={12} document={{ kind: 'invoice', id: 'INV-7' }} onClose={() => {}} />);
 
     expect(await screen.findByText('Could not load the email details')).toBeInTheDocument();
   });

@@ -933,6 +933,29 @@ class AitoInvoiceEmailRequest(BaseModel):
     invoice_id: str | None = None
 
 
+class AitoRetainerEmailContent(BaseModel):
+    """The send-retainer modal's prefill — ``AitoInvoiceEmailContent`` for a
+    retainer invoice. ``retainer_id`` is echoed back on POST so the send is
+    pinned to the row the operator saw; the server still owns the candidate
+    set and only checks the id for membership."""
+
+    subject: str
+    body: str
+    recipients: list[AitoQuoteEmailRecipient]
+    default_email: str | None
+    retainer_id: str
+    retainer_number: str
+
+
+class AitoRetainerEmailRequest(BaseModel):
+    """``retainer_id`` is required, unlike the invoice's optional pin: there
+    is no "newest" default worth having — the card always knows which row
+    was clicked."""
+
+    to: str
+    retainer_id: str
+
+
 class AitoInvoiceResponse(BaseModel):
     """The Invoice card's contents, read live from Books on panel open.
 
@@ -967,6 +990,24 @@ class AitoInvoiceResponse(BaseModel):
     # newest and uses this to say so when there are others, rather than
     # silently implying it is the only one.
     invoice_count: int
+
+
+class AitoRetainerInvoiceResponse(BaseModel):
+    """One retainer (deposit) invoice of this project, read live from Books
+    on panel open — for the same reason ``AitoInvoiceResponse`` is: its
+    interesting fields are ``status`` and ``balance``, and a snapshot of
+    either is wrong the moment the client pays. ``url`` is the Books deep
+    link, built per request like the invoice's.
+    """
+
+    id: str
+    number: str
+    date: str
+    total: float
+    balance: float
+    currency_code: str
+    status: str
+    url: str
 
 
 class AitoRetainerPreview(BaseModel):

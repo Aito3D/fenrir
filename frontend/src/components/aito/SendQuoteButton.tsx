@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ACTION_CELL } from './quoteActionGroup';
+import { ACTION_CELL, type ActionVariant } from './quoteActionGroup';
+import { DOC_ICON_BUTTON_CLS, LINK_ICON_CLS } from './linkActionHelpers';
 import { Mail } from 'lucide-react';
 import { type AitoProject } from '../../api/client';
 import { SendQuoteModal } from './SendQuoteModal';
@@ -18,8 +19,10 @@ import { SendQuoteModal } from './SendQuoteModal';
  */
 export function SendQuoteButton({
   project,
+  variant = 'cell',
 }: {
   project: AitoProject;
+  variant?: ActionVariant;
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -35,9 +38,9 @@ export function SendQuoteButton({
         onClick={() => setOpen(true)}
         aria-label={t('aito.sendQuote')}
         title={t('aito.sendQuote')}
-        className={ACTION_CELL}
+        className={variant === 'icon' ? DOC_ICON_BUTTON_CLS : ACTION_CELL}
       >
-        <Mail className="w-3.5 h-3.5" />
+        <Mail className={variant === 'icon' ? LINK_ICON_CLS : 'w-3.5 h-3.5'} />
       </button>
       {open && <SendQuoteModal project={project} onClose={() => setOpen(false)} />}
     </>

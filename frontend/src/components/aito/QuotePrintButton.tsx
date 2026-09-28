@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { api, type AitoProject } from '../../api/client';
 import { PdfPrintButton } from './PdfPrintButton';
+import type { ActionVariant } from './quoteActionGroup';
 
 /** Fetch this project's Zoho estimate and put it in front of the printer.
  *
@@ -11,8 +12,10 @@ import { PdfPrintButton } from './PdfPrintButton';
  */
 export function QuotePrintButton({
   project,
+  variant = 'cell',
 }: {
   project: AitoProject;
+  variant?: ActionVariant;
 }) {
   const { t } = useTranslation();
 
@@ -31,6 +34,7 @@ export function QuotePrintButton({
       // wanted while it is sorted out.
       disabled={project.quote_sync_state === 'pending'}
       disabledTitle={t('aito.pdfSyncPending')}
+      variant={variant}
     />
   );
 }

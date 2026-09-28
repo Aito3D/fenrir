@@ -1039,6 +1039,14 @@ class ZohoService:
         """
         return f"{await self._books_app_base(db)}#/invoices/{invoice_id}"
 
+    async def books_retainer_url(self, db: AsyncSession, retainer_invoice_id: str) -> str:
+        """Deep link to a retainer invoice in the Books web app.
+
+        The REST resource and the app route agree (`retainerinvoices`), as
+        they do for invoices.
+        """
+        return f"{await self._books_app_base(db)}#/retainerinvoices/{retainer_invoice_id}"
+
     async def list_project_invoices(self, db: AsyncSession, estimate_id: str, customer_id: str) -> list[dict]:
         """Every invoice Books has raised from this estimate, newest first.
 
@@ -1194,6 +1202,26 @@ class ZohoService:
             raise ZohoUpstreamError("Zoho Books did not return a PDF")
         return response.content
 
+    async def get_retainer_invoice_pdf(self, db: AsyncSession, retainer_invoice_id: str) -> bytes:
+        """The retainer invoice rendered as a PDF, for printing.
+
+        Same shape and same reasoning as ``get_invoice_pdf`` above: not
+        routed through ``_request`` because that parses every response as
+        JSON, and a 200 that is not a PDF is an upstream failure, not a document.
+        """
+        response = await self._send(
+            db, "GET", f"/retainerinvoices/{_seg(retainer_invoice_id)}", params={"accept": "pdf"}
+        )
+        if response.status_code >= 400:
+            try:
+                payload = response.json() if response.content else {}
+            except ValueError:
+                payload = {}
+            self._raise_for_status(response, payload)
+        if not response.content.startswith(b"%PDF-"):
+            raise ZohoUpstreamError("Zoho Books did not return a PDF")
+        return response.content
+
     async def get_invoice_email_content(self, db: AsyncSession, invoice_id: str) -> dict:
         """The invoice's default email, as Books would send it right now.
 
@@ -1226,6 +1254,31 @@ class ZohoService:
         status of its own.
         """
         await self._request(db, "POST", f"/invoices/{_seg(invoice_id)}/email", json={"to_mail_ids": to_mail_ids})
+
+    async def get_retainer_email_content(self, db: AsyncSession, retainer_invoice_id: str) -> dict:
+        """The retainer invoice's default email, as Books would send it now.
+
+        Third of the family after ``get_estimate_email_content`` and
+        ``get_invoice_email_content``; same ``data`` nesting, same
+        ``to_contacts`` list, same dropping of address-less contacts. Kept as
+        its own method for the reason the invoice one gives.
+        """
+        data = (await self._request(db, "GET", f"/retainerinvoices/{_seg(retainer_invoice_id)}/email")).get("data", {})
+        return {
+            "subject": data.get("subject", ""),
+            "body": data.get("body", ""),
+            "recipients": [_map_email_recipient(c) for c in (data.get("to_contacts") or []) if c.get("email")],
+        }
+
+    async def email_retainer(self, db: AsyncSession, retainer_invoice_id: str, *, to_mail_ids: list[str]) -> None:
+        """Email the retainer invoice through Books, on the org's default
+        template. ``subject`` and ``body`` are omitted for the reason on
+        ``email_estimate``. Books marks the retainer ``sent`` as a side
+        effect, so the Aito route re-reads it afterwards.
+        """
+        await self._request(
+            db, "POST", f"/retainerinvoices/{_seg(retainer_invoice_id)}/email", json={"to_mail_ids": to_mail_ids}
+        )
 
     async def create_invoice(self, db: AsyncSession, payload: dict) -> dict:
         """Raise an invoice. Returns Books' own copy, ids and totals included.

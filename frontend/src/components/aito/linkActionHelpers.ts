@@ -20,6 +20,12 @@ export const LINK_ICON_BUTTON_CLS = `inline-flex items-center justify-center p-1
 
 export const LINK_ICON_CLS = 'w-4 h-4';
 
+/** The document rows' action buttons (print / download / send / Books):
+ *  24px square — `p-1` around a `w-4` glyph — one step smaller than
+ *  `LINK_ICON_BUTTON_CLS` because four of them must sit beside a status
+ *  line inside the rail's 230px. Same tone, hover and focus vocabulary. */
+export const DOC_ICON_BUTTON_CLS = `inline-flex items-center justify-center p-1 rounded-md text-bambu-gray hover:text-white hover:bg-bambu-dark-tertiary disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-bambu-gray ${focusRingCls}`;
+
 const COPIED_HOLD_MS = 1500;
 const COPIED_EXIT_MS = 150; // matches .animate-fade-out-sm
 

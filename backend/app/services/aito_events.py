@@ -49,6 +49,10 @@ KINDS: dict[str, str] = {
     # the only record that an invoice was ever sent — nothing on the project
     # row stores that.
     "invoice.emailed": "story",
+    # A deposit invoice left the building — a receipt for the client, since
+    # every retainer this app raises is already paid when it exists. Story
+    # depth for the same reason invoice.emailed has it.
+    "retainer.emailed": "story",
     # The bill was raised. Distinct from invoice.emailed (the bill went OUT)
     # and from the quote.* family: this is the moment the job stops being a
     # price and becomes a receivable, and it is the only local record that

@@ -31,39 +31,44 @@ const project = {
 describe('InvoiceCard', () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it('renders the number, total and status once Books answers', async () => {
+  it('renders one document row: number with its dates tooltip, status and total on line two', async () => {
     vi.spyOn(api, 'getAitoInvoice').mockResolvedValue(INVOICE);
 
-    render(<InvoiceCard project={project} canUpdate heimdallConfigured />);
+    render(<InvoiceCard project={project} canUpdate />);
 
-    expect(await screen.findByText('FA-26-0001')).toBeInTheDocument();
-    expect(screen.getByText('2026-08-03')).toBeInTheDocument();
-    expect(screen.getByText('Paid')).toBeInTheDocument();
+    const row = await screen.findByTestId('invoice-block');
+    expect(within(row).getByText('Invoice')).toBeInTheDocument();
+    expect(within(row).getByText('FA-26-0001')).toHaveAttribute('title', 'Issued 2026-08-03 · due 2026-08-17');
+    expect(within(row).getByText('Paid')).toHaveClass('text-bambu-green-light');
+    expect(within(row).getByText(/18.350/)).toBeInTheDocument();
+    expect(within(row).queryByText('Total')).toBeNull();
+    expect(within(row).queryByText('2026-08-03')).toBeNull();
   });
 
-  it('links the number to the invoice in Books', async () => {
+  it('reaches Books through the row icon, not the number', async () => {
     vi.spyOn(api, 'getAitoInvoice').mockResolvedValue(INVOICE);
 
-    render(<InvoiceCard project={project} canUpdate heimdallConfigured />);
+    render(<InvoiceCard project={project} canUpdate />);
 
-    const link = await screen.findByRole('link', { name: /FA-26-0001/ });
+    const link = await screen.findByRole('link', { name: 'Open in Zoho Books' });
     expect(link).toHaveAttribute('href', INVOICE.url);
     // Both required together: `noopener` is what stops the opened tab from
     // reaching back through window.opener.
     expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+    expect(screen.queryByRole('link', { name: /FA-26-0001/ })).toBeNull();
   });
 
   it('renders nothing when the project has no invoice', async () => {
     vi.spyOn(api, 'getAitoInvoice').mockResolvedValue(null);
 
-    render(<InvoiceCard project={project} canUpdate heimdallConfigured />);
+    render(<InvoiceCard project={project} canUpdate />);
 
     await waitFor(() => expect(api.getAitoInvoice).toHaveBeenCalled());
     // Not `toBeEmptyDOMElement` on the container: the shared render wrapper
     // always mounts a toast viewport, so the container is never empty and the
-    // assertion would pass for the wrong reason. The card's own heading is
-    // the thing that must be absent.
-    expect(screen.queryByTestId('panel-card-heading')).not.toBeInTheDocument();
+    // assertion would pass for the wrong reason. The row itself is the thing
+    // that must be absent.
+    expect(screen.queryByTestId('invoice-block')).not.toBeInTheDocument();
   });
 
   it('renders nothing, rather than an error, when Zoho is unreachable', async () => {
@@ -71,16 +76,16 @@ describe('InvoiceCard', () => {
     // not take the panel with it — every other card still has its data.
     vi.spyOn(api, 'getAitoInvoice').mockRejectedValue(new Error('HTTP 502'));
 
-    render(<InvoiceCard project={project} canUpdate heimdallConfigured />);
+    render(<InvoiceCard project={project} canUpdate />);
 
     await waitFor(() => expect(api.getAitoInvoice).toHaveBeenCalled());
-    expect(screen.queryByTestId('panel-card-heading')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('invoice-block')).not.toBeInTheDocument();
   });
 
   it('never asks Zoho about a project that has not been invoiced', async () => {
     const spy = vi.spyOn(api, 'getAitoInvoice');
 
-    render(<InvoiceCard project={{ ...project, quote_invoiced: false } as AitoProject} canUpdate heimdallConfigured />);
+    render(<InvoiceCard project={{ ...project, quote_invoiced: false } as AitoProject} canUpdate />);
 
     await waitFor(() => expect(spy).not.toHaveBeenCalled());
   });
@@ -92,7 +97,7 @@ describe('InvoiceCard', () => {
     const spy = vi.spyOn(api, 'getAitoInvoice').mockResolvedValue(INVOICE);
 
     render(
-      <InvoiceCard project={{ ...project, quote_invoiced: false, quote_sync_state: 'unmanaged' } as AitoProject} canUpdate heimdallConfigured />,
+      <InvoiceCard project={{ ...project, quote_invoiced: false, quote_sync_state: 'unmanaged' } as AitoProject} canUpdate />,
     );
 
     await waitFor(() => expect(spy).toHaveBeenCalledWith(12));
@@ -101,7 +106,7 @@ describe('InvoiceCard', () => {
   it('never asks about a hand-made project with no quote at all', async () => {
     const spy = vi.spyOn(api, 'getAitoInvoice');
 
-    render(<InvoiceCard project={{ ...project, quote_id: null } as unknown as AitoProject} canUpdate heimdallConfigured />);
+    render(<InvoiceCard project={{ ...project, quote_id: null } as unknown as AitoProject} canUpdate />);
 
     await waitFor(() => expect(spy).not.toHaveBeenCalled());
   });
@@ -113,7 +118,7 @@ describe('InvoiceCard', () => {
     // match what the operator sees on the board.
     vi.spyOn(api, 'getAitoInvoice').mockResolvedValue(INVOICE);
 
-    render(<InvoiceCard project={{ ...project, quote_sync_state: 'pending' } as AitoProject} canUpdate heimdallConfigured />);
+    render(<InvoiceCard project={{ ...project, quote_sync_state: 'pending' } as AitoProject} canUpdate />);
 
     const print = await screen.findByRole('button', { name: /print invoice/i });
     expect(print).toBeDisabled();
@@ -126,51 +131,44 @@ describe('InvoiceCard', () => {
   it('keeps print and download enabled on a locked (invoiced) sync state', async () => {
     vi.spyOn(api, 'getAitoInvoice').mockResolvedValue(INVOICE);
 
-    render(<InvoiceCard project={project} canUpdate heimdallConfigured />);
+    render(<InvoiceCard project={project} canUpdate />);
 
     expect(await screen.findByRole('button', { name: /print invoice/i })).toBeEnabled();
     expect(screen.getByRole('button', { name: /download invoice/i })).toBeEnabled();
   });
 
-  it('shows the balance only while something is still owed', async () => {
-    // Not `heimdallConfigured` here: a balance also earns the Encaissement
-    // block a "Balance due" head label of its own (`aito.payment.dueInvoice`
-    // shares the exact wording with the row's `aito.invoiceBalanceLabel`, on
-    // purpose — they name the same fact), so the two must be told apart by
-    // scoping to the invoice's own `<dl>` rather than by text alone.
-    vi.spyOn(api, 'getAitoInvoice').mockResolvedValue({ ...INVOICE, status: 'partially_paid', balance: 5000 });
-
-    const { container } = render(<InvoiceCard project={project} canUpdate heimdallConfigured />);
-
-    await screen.findByText('FA-26-0001');
-    const dl = container.querySelector('dl') as HTMLElement;
-    expect(within(dl).getByText('Balance due')).toBeInTheDocument();
-    expect(screen.getByText('Partially paid')).toBeInTheDocument();
-  });
-
-  it('hides the balance row on a fully paid invoice', async () => {
-    vi.spyOn(api, 'getAitoInvoice').mockResolvedValue(INVOICE);
-
-    const { container } = render(<InvoiceCard project={project} canUpdate heimdallConfigured />);
-
-    await screen.findByText('FA-26-0001');
-    const dl = container.querySelector('dl') as HTMLElement;
-    expect(within(dl).queryByText('Balance due')).not.toBeInTheDocument();
-  });
-
   it('says how many other invoices this quote has', async () => {
     vi.spyOn(api, 'getAitoInvoice').mockResolvedValue({ ...INVOICE, invoice_count: 3 });
 
-    render(<InvoiceCard project={project} canUpdate heimdallConfigured />);
+    render(<InvoiceCard project={project} canUpdate />);
 
     // 3 invoices total, 2 besides the one shown.
     expect(await screen.findByText('Other invoices: 2')).toBeInTheDocument();
   });
 
+  it('keeps the other-invoices note in the same divide-y child as its row', async () => {
+    // BillingCard stacks the rows in a `divide-y` wrapper, which draws a
+    // hairline between direct children. Row and note as two children would
+    // paint a line between the row and its own note.
+    vi.spyOn(api, 'getAitoInvoice').mockResolvedValue({ ...INVOICE, invoice_count: 2 });
+
+    render(
+      <div data-testid="rows">
+        <InvoiceCard project={project} canUpdate />
+      </div>,
+    );
+
+    const note = await screen.findByText('Other invoices: 1');
+    const host = screen.getByTestId('rows');
+    expect(host.children).toHaveLength(1);
+    expect(host.firstElementChild).toContainElement(screen.getByTestId('invoice-block'));
+    expect(host.firstElementChild).toContainElement(note);
+  });
+
   it('renders a status Zoho invented rather than dropping it', async () => {
     vi.spyOn(api, 'getAitoInvoice').mockResolvedValue({ ...INVOICE, status: 'disputed' });
 
-    render(<InvoiceCard project={project} canUpdate heimdallConfigured />);
+    render(<InvoiceCard project={project} canUpdate />);
 
     expect(await screen.findByText('disputed')).toBeInTheDocument();
   });
@@ -189,7 +187,7 @@ describe('InvoiceCard', () => {
   it('falls back to the raw string and neutral tone, rather than crashing, when status collides with an Object.prototype member', async () => {
     vi.spyOn(api, 'getAitoInvoice').mockResolvedValue({ ...INVOICE, status: 'toString' });
 
-    render(<InvoiceCard project={project} canUpdate={false} heimdallConfigured />);
+    render(<InvoiceCard project={project} canUpdate={false} />);
 
     const statusValue = await screen.findByText('toString');
     expect(statusValue.className).toContain('text-bambu-gray-light');
@@ -199,7 +197,7 @@ describe('InvoiceCard', () => {
   it('offers a print button', async () => {
     vi.spyOn(api, 'getAitoInvoice').mockResolvedValue(INVOICE);
 
-    render(<InvoiceCard project={project} canUpdate heimdallConfigured />);
+    render(<InvoiceCard project={project} canUpdate />);
 
     expect(await screen.findByRole('button', { name: /print invoice/i })).toBeInTheDocument();
   });
@@ -214,7 +212,7 @@ describe('InvoiceCard', () => {
     globalThis.URL.revokeObjectURL = vi.fn();
     const user = userEvent.setup();
 
-    render(<InvoiceCard project={project} canUpdate heimdallConfigured />);
+    render(<InvoiceCard project={project} canUpdate />);
     await user.click(await screen.findByRole('button', { name: /print invoice/i }));
 
     await waitFor(() => expect(pdf).toHaveBeenCalledWith(12, 'inv-1'));
@@ -223,10 +221,10 @@ describe('InvoiceCard', () => {
   it('falls back to the id when Books gives the invoice no number', async () => {
     vi.spyOn(api, 'getAitoInvoice').mockResolvedValue({ ...INVOICE, number: '' });
 
-    render(<InvoiceCard project={project} canUpdate heimdallConfigured />);
+    render(<InvoiceCard project={project} canUpdate />);
 
-    // The link must carry readable text, not just an external-link icon.
-    const link = await screen.findByRole('link', { name: /inv-1/ });
-    expect(link).toHaveAttribute('href', INVOICE.url);
+    // The row must carry a readable number, not an empty cell.
+    expect(await screen.findByText('inv-1')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open in Zoho Books' })).toHaveAttribute('href', INVOICE.url);
   });
 });

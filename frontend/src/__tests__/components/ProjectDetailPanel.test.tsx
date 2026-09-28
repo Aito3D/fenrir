@@ -1782,8 +1782,8 @@ describe('ProjectDetailPanel quote row', () => {
   });
 
   it('links an imported project to its quote in Zoho Books, from both the header eyebrow and the quote row', () => {
-    // Two links now share the accessible name: the header's compact eyebrow
-    // (Project #12 · DEV26-2462) and the quote row's full entry with the
+    // Two links go there: the header's compact eyebrow (Project #12 ·
+    // DEV26-2462) and the quote row's "Open in Zoho Books" icon beside its
     // print button. Both must point at the same quote.
     show({
       quote_id: 'e2',
@@ -1792,7 +1792,10 @@ describe('ProjectDetailPanel quote row', () => {
       quote_total: 5600,
       quote_url: 'https://books.zoho.eu/app/999#/estimates/e2',
     });
-    const links = screen.getAllByRole('link', { name: /DEV26-2462/ });
+    const links = [
+      ...screen.getAllByRole('link', { name: /DEV26-2462/ }),
+      ...within(screen.getByTestId('doc-quote')).getAllByRole('link', { name: 'Open in Zoho Books' }),
+    ];
     expect(links).toHaveLength(2);
     for (const link of links) {
       expect(link).toHaveAttribute('href', 'https://books.zoho.eu/app/999#/estimates/e2');
@@ -2300,14 +2303,13 @@ describe('ProjectDetailPanel footer', () => {
       .find((n) => /billing/i.test(n.textContent ?? ''))!.closest('section')!;
 
     expect(within(quoteCard).getByRole('button', { name: /print quote/i })).toBeInTheDocument();
-    // The quote NUMBER is already a link to Zoho; a separate "Open in Zoho"
-    // button was a second affordance for one destination in a six-row card.
-    // The number keeps its link, so the destination is not lost.
-    expect(within(quoteCard).getByRole('link', { name: /DEV26-2462/ })).toHaveAttribute(
-      'href',
-      'https://books.zoho.com/e2',
-    );
-    expect(within(quoteCard).queryByRole('link', { name: /open in zoho/i })).not.toBeInTheDocument();
+    // One affordance per destination: the quote row's "Open in Zoho Books"
+    // icon goes to Zoho, and the number beside it is plain text rather than
+    // a second link to the same place.
+    const zohoLinks = within(quoteCard).getAllByRole('link', { name: /open in zoho/i });
+    expect(zohoLinks).toHaveLength(1);
+    expect(zohoLinks[0]).toHaveAttribute('href', 'https://books.zoho.com/e2');
+    expect(within(quoteCard).queryByRole('link', { name: /DEV26-2462/ })).not.toBeInTheDocument();
   });
 
   it('omits the trash control for a project already in the trash', () => {
@@ -2748,14 +2750,22 @@ describe('ProjectDetailPanel visual parity: quote card rows', () => {
     // card now, and two "Number" rows in one list would name neither.
     expect(within(card).getByText('Quote')).toBeInTheDocument();
     expect(within(card).getByText('DEV26-2462')).toBeInTheDocument();
-    expect(within(card).getByText('Status')).toBeInTheDocument();
+    // The status is the row's second line now, with no "Status" label of its own.
     expect(within(card).getByText('Accepted')).toBeInTheDocument();
   });
 
-  it('omits the Status row when the project has no quote status', () => {
+  it('renders no status on the quote row when the project has no quote status', () => {
+    // Positive control first: the same row with a status does render its text.
+    const { unmount } = show({ quote_number: 'DEV26-2462', quote_status: 'accepted' });
+    expect(within(screen.getByTestId('doc-quote')).getByText('Accepted')).toBeInTheDocument();
+    unmount();
+
     show({ quote_number: 'DEV26-2462', quote_status: null });
-    const card = quoteCard();
-    expect(within(card).queryByText('Status')).not.toBeInTheDocument();
+    const row = screen.getByTestId('doc-quote');
+    expect(within(row).queryByText('Accepted')).not.toBeInTheDocument();
+    // Icon-only actions carry no text, so the label and number are all the row
+    // says: no status (not even a raw or empty fallback) on its second line.
+    expect(row).toHaveTextContent(/^QuoteDEV26-2462$/);
   });
 });
 
@@ -2831,7 +2841,7 @@ describe('ProjectDetailPanel visual parity: quote status tone matches its actual
 });
 
 describe('ProjectDetailPanel visual parity: footer buttons', () => {
-  it('groups print / download / send into one segmented control, icon-only, with the names on aria-label', async () => {
+  it('groups print / download / send into one icon cluster, icon-only, with the names on aria-label', async () => {
     // This replaces an assertion that "Print quote" was VISIBLE next to the
     // icon. That was right when the row held one labelled pill; it stopped
     // being right once the row held three. The card sits in a 230.4px column
@@ -2846,14 +2856,15 @@ describe('ProjectDetailPanel visual parity: footer buttons', () => {
     expect(print).toHaveTextContent('');
     expect(print).toHaveAttribute('title', 'Print quote');
 
-    // All three actions are cells of one group, so the row reads as a single
-    // control rather than three loose pills. Asserting the shared parent is
-    // what would catch a cell escaping the group in a future refactor.
+    // All three actions sit in the quote row's one icon cluster, so the row
+    // reads as a single control rather than three loose pills. Asserting the
+    // shared parent is what would catch a button escaping the cluster in a
+    // future refactor; the cluster itself is the quote DocumentRow's.
     const download = within(quoteCard).getByRole('button', { name: /download quote/i });
     const send = within(quoteCard).getByRole('button', { name: /send quote/i });
     expect(download.parentElement).toBe(print.parentElement);
     expect(send.parentElement).toBe(print.parentElement);
-    expect(print.parentElement?.className).toContain('gap-px');
+    expect(screen.getByTestId('doc-quote')).toContainElement(print.parentElement);
   });
 
   it('renders the trash control as a permanent bordered button, not hover-revealed', () => {

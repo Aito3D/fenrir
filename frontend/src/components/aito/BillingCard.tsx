@@ -1,30 +1,39 @@
+import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ExternalLink } from 'lucide-react';
 import type { AitoProject } from '../../api/client';
 import { InvoiceCard } from './InvoiceCard';
 import { PanelCard } from './PanelCard';
+import { DocumentRow } from './DocumentRow';
 import { PaymentBlock } from './payment/PaymentBlock';
-import { quoteDocument } from './payment/paymentDocument';
+import { invoiceDocument, quoteDocument } from './payment/paymentDocument';
 import { terminalFor } from './payment/paymentState';
 import { QuoteDownloadButton } from './QuoteDownloadButton';
 import { QuotePrintButton } from './QuotePrintButton';
 import { SendQuoteButton } from './SendQuoteButton';
-import { ACTION_GROUP } from './quoteActionGroup';
+import { RetainerDownloadButton } from './RetainerDownloadButton';
+import { RetainerPrintButton } from './RetainerPrintButton';
+import { SendInvoiceButton } from './SendInvoiceButton';
 import { QUOTE_STATUS_TEXT_TONE_CLASSES, quoteStatusText, quoteStatusTone } from './quoteStatus';
+import { RETAINER_STATUS_TEXT_TONE_CLASSES, retainerStatusLabelKey, retainerStatusTone } from './retainerStatus';
 import { deriveQuoteSync } from './quoteSync';
+import { useAitoInvoice } from './useAitoInvoice';
+import { useAitoRetainers } from './useAitoRetainers';
 import { formatMoney } from '../../utils/pricing';
 
-/** The quote and, once Books has raised one, the invoice — one card, in that
- *  order, because they are one story and the two used to sit as twin cards
- *  with the same rows, the same link-out on the number and the same
- *  Print / Download / Send row, a heading and a border apart.
+/** Every Zoho document of the project — the quote, each retainer (deposit)
+ *  invoice, the invoice — as one `DocumentRow` each, in that order, then the
+ *  collect section (deposit available, the quote's and the invoice's
+ *  `PaymentBlock`), then the sync facts. One card because they are one
+ *  story; one row shape because the previous twin cards each carried their
+ *  own three-cell action bar, which read as a second copy of the collect
+ *  block's bar.
  *
  *  Gated on `quote_number || hasQuoteMessage`, not just the number: a
  *  hand-made project has no quote at all and gets no empty "Billing" heading,
  *  but a sync error or a status block on a project whose number is missing
  *  must still reach someone (see quoteSync.ts). The quote is a snapshot, so
- *  the rows render with Zoho unreachable; only the link and the invoice block
- *  need Zoho.
+ *  its row renders with Zoho unreachable; only the retainer rows and the
+ *  invoice row need Zoho.
  *
  *  Create invoice is NOT here any more. It is the panel's one irreversible
  *  commitment and lives in the footer with the other transitions, where a
@@ -42,7 +51,8 @@ export function BillingCard({
 }: {
   project: AitoProject;
   canUpdate: boolean;
-  /** The shop currency (`useCurrency()`), for the paid-deposit row. */
+  /** The shop currency (`useCurrency()`), for the deposit-available row and
+   *  for a retainer Books returns without a currency of its own. */
   currency: string;
   /** Re-marks the project pending for the sync worker (a PATCH carrying the
    *  unchanged description — see the panel's `updateMutation`). */
@@ -63,100 +73,84 @@ export function BillingCard({
 }) {
   const { t } = useTranslation();
   const { syncLabelKey, blockKey, hasQuoteMessage, canForceSync } = deriveQuoteSync(project);
+  // Both queries are shared with the rows that render them (InvoiceCard and
+  // RetainerRows call the same hooks) — one cache entry each, one request.
+  const invoice = useAitoInvoice(project).data;
 
   if (!project.quote_number && !hasQuoteMessage) return null;
 
   const statusLabel = (status: string | null): string => quoteStatusText(t, status);
+  const syncPending = project.quote_sync_state === 'pending';
+  const quotePay = quoteDocument(project, depositPct, currency);
+  const hasCredit = project.customer_credit_total != null && project.customer_credit_total > 0;
 
   return (
     <PanelCard title={t('aito.billingLabel')}>
       {project.quote_number && (
-        <>
-          {/* Labelled "Quote", not "Number": the invoice rows share this list
-              now, and two "Number" rows in one card would name neither.
-              Status repeats the quote's Zoho status already shown as the
-              header's eyebrow pill — this is the row someone scanning the
-              Details tab (rather than the header) reaches for it from.
-              Rendered only when there is a status to show, same omission
-              rule the seller/email rows elsewhere in the panel follow. */}
-          <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm items-baseline">
-            <dt className="text-bambu-gray">{t('aito.quoteSearchLabel')}</dt>
-            <dd className="text-right min-w-0">
-              {project.quote_url ? (
-                <a
-                  href={project.quote_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  title={t('aito.quoteOpenInZoho')}
-                  className="text-white hover:text-bambu-green inline-flex items-center gap-1 min-w-0 truncate"
-                >
-                  {project.quote_number}
-                  <ExternalLink className="w-3.5 h-3.5 flex-shrink-0" />
-                </a>
-              ) : (
-                <span className="min-w-0 truncate text-white">{project.quote_number}</span>
-              )}
-            </dd>
-            {project.quote_status && (
-              <>
-                <dt className="text-bambu-gray">{t('common.status')}</dt>
-                <dd className={`text-right ${QUOTE_STATUS_TEXT_TONE_CLASSES[quoteStatusTone(project.quote_status)]}`}>
-                  {quoteStatusText(t, project.quote_status)}
-                </dd>
-              </>
-            )}
-            {/* What the CUSTOMER still has on account across every deposit
-                (`customer_credit_total`, read by the status reconcile from
-                their payments' unused amounts) — not the estimate's own paid
-                retainers (`retainer_paid_total`, which drives the quote-level
-                auto-accept and payment link). A retainer raised by hand in
-                Books references no quote and only ever shows here; a deposit
-                spent on any invoice leaves here on the next tick, at once
-                when this app raised the invoice. Shown only while there is
-                something to spend, so the operator can see the bill will be
-                partly covered before it exists. */}
-            {project.customer_credit_total != null && project.customer_credit_total > 0 && (
-              <>
-                <dt className="text-bambu-gray">{t('aito.depositAvailable')}</dt>
-                <dd className="text-right text-bambu-green">{formatMoney(project.customer_credit_total, currency)}</dd>
-              </>
-            )}
-          </dl>
+        <div className="divide-y divide-bambu-dark-tertiary -mt-1.5">
+          <DocumentRow
+            testId="doc-quote"
+            label={t('aito.quoteSearchLabel')}
+            number={project.quote_number}
+            numberTitle={project.quote_date ?? undefined}
+            status={
+              project.quote_status
+                ? {
+                    text: quoteStatusText(t, project.quote_status),
+                    toneClass: QUOTE_STATUS_TEXT_TONE_CLASSES[quoteStatusTone(project.quote_status)],
+                  }
+                : null
+            }
+            booksUrl={project.quote_url}
+            booksLabel={t('aito.quoteOpenInZoho')}
+            print={<QuotePrintButton project={project} variant="icon" />}
+            download={<QuoteDownloadButton project={project} variant="icon" />}
+            send={canUpdate ? <SendQuoteButton project={project} variant="icon" /> : undefined}
+          />
+          <RetainerRows project={project} canUpdate={canUpdate} syncPending={syncPending} currency={currency} />
+          <InvoiceCard project={project} canUpdate={canUpdate} />
+        </div>
+      )}
 
-          {/* The Encaissement block — part of the same quote story as Number
-              and Status above, so it sits inside this card, under them,
-              before the actions. Renders itself away when nothing is due and
-              nothing is in flight. */}
-          {(() => {
-            const doc = quoteDocument(project, depositPct, currency);
-            return (
-              doc && (
-                <PaymentBlock
-                  project={project}
-                  document={doc}
-                  link={project.payment_link ?? null}
-                  terminal={terminalFor(project, 'quote')}
-                  canUpdate={canUpdate}
-                  heimdallConfigured={heimdallConfigured}
-                />
-              )
-            );
-          })()}
-
-          {/* Print / download / send as one segmented control; the labels
-              live on aria-label + title (see quoteActionGroup.ts for the
-              measurements). "Open in Zoho" is absent on purpose: the number
-              above already goes there. The invoice block's row is identical. */}
-          <div className={ACTION_GROUP}>
-            <QuotePrintButton project={project} />
-            {/* Reads the same PDF the print button does, but saves it. */}
-            <QuoteDownloadButton project={project} />
-            {/* POST /{project_id}/quote-email enforces AITO_UPDATE. When it
-                is absent the group is a two-cell control, which the gap-px
-                dividers handle without any last-child rule. */}
-            {canUpdate && <SendQuoteButton project={project} />}
-          </div>
-        </>
+      {/* The collect section, under a hairline: what the customer has on
+          account, then what is still due on the quote's deposit and on the
+          invoice's balance. Each PaymentBlock renders itself away when
+          nothing is due and nothing is in flight; the hairline only appears
+          when at least one part does. */}
+      {project.quote_number && (hasCredit || quotePay || invoice) && (
+        <CollectSection>
+          {/* "Deposit available" is the CUSTOMER's unspent credit across every deposit (`customer_credit_total`,
+              read from their payments' unused amounts), not the estimate's own paid retainers
+              (`retainer_paid_total`, which drives the quote-level auto-accept and payment link). */}
+          {hasCredit && (
+            <dl className="grid grid-cols-[auto_1fr] gap-x-3 text-sm items-baseline">
+              <dt className="text-bambu-gray">{t('aito.depositAvailable')}</dt>
+              <dd className="text-right text-bambu-green">
+                {formatMoney(project.customer_credit_total as number, currency)}
+              </dd>
+            </dl>
+          )}
+          {quotePay && (
+            <PaymentBlock
+              project={project}
+              document={quotePay}
+              link={project.payment_link ?? null}
+              terminal={terminalFor(project, 'quote')}
+              canUpdate={canUpdate}
+              heimdallConfigured={heimdallConfigured}
+            />
+          )}
+          {invoice && (
+            <PaymentBlock
+              project={project}
+              document={invoiceDocument(invoice)}
+              link={project.invoice_payment_link ?? null}
+              terminal={terminalFor(project, 'invoice')}
+              canUpdate={canUpdate}
+              heimdallConfigured={heimdallConfigured}
+            />
+          )}
+        </CollectSection>
       )}
 
       {/* Sync facts, under the quote rows they are about. <dt>/<dd> gives
@@ -243,12 +237,85 @@ export function BillingCard({
           )}
         </dl>
       )}
-
-      {/* The quote's next chapter, under a hairline of its own. Renders
-          itself away when there is no invoice — see InvoiceCard. `canUpdate`
-          is passed through so it can gate its own Send button the same way
-          the quote row gates SendQuoteButton above. */}
-      <InvoiceCard project={project} canUpdate={canUpdate} heimdallConfigured={heimdallConfigured} />
     </PanelCard>
+  );
+}
+
+const COLLECT_SECTION_CLS =
+  'empty:hidden has-[*]:mt-2 has-[*]:border-t has-[*]:border-bambu-dark-tertiary has-[*]:pt-2 space-y-2';
+
+/** The collect section's hairline, drawn with CSS rather than a JS check:
+ *  `has-[*]` matches only when the wrapper has at least one element child,
+ *  and a `PaymentBlock` that renders null contributes no element. */
+function CollectSection({ children }: { children: ReactNode }) {
+  return <div className={COLLECT_SECTION_CLS}>{children}</div>;
+}
+
+/** One `DocumentRow` per retainer (deposit) invoice, between the quote and
+ *  the invoice. Its own component so the query hook runs inside the list —
+ *  nothing else in the card waits on it, and an error or an empty list
+ *  simply renders no rows (same policy as `InvoiceCard`). */
+function RetainerRows({
+  project,
+  canUpdate,
+  syncPending,
+  currency,
+}: {
+  project: AitoProject;
+  canUpdate: boolean;
+  syncPending: boolean;
+  /** The shop currency — the fallback when a retainer carries no currency code. */
+  currency: string;
+}) {
+  const { t } = useTranslation();
+  const rows = useAitoRetainers(project).data ?? [];
+  return (
+    <>
+      {rows.map((r) => {
+        const key = retainerStatusLabelKey(r.status);
+        return (
+          <DocumentRow
+            key={r.id}
+            testId={`doc-retainer-${r.id}`}
+            label={t('aito.retainerLabel')}
+            number={r.number}
+            numberTitle={r.date || undefined}
+            status={
+              r.status
+                ? {
+                    text: key ? t(key) : r.status,
+                    toneClass: RETAINER_STATUS_TEXT_TONE_CLASSES[retainerStatusTone(r.status)],
+                  }
+                : null
+            }
+            amount={formatMoney(r.total, r.currency_code || currency)}
+            booksUrl={r.url || null}
+            booksLabel={t('aito.invoiceOpenInZoho')}
+            print={
+              <RetainerPrintButton projectId={project.id} retainerId={r.id} disabled={syncPending} variant="icon" />
+            }
+            download={
+              <RetainerDownloadButton
+                projectId={project.id}
+                retainerId={r.id}
+                retainerNumber={r.number}
+                disabled={syncPending}
+                variant="icon"
+              />
+            }
+            send={
+              canUpdate ? (
+                <SendInvoiceButton
+                  projectId={project.id}
+                  document={{ kind: 'retainer', id: r.id }}
+                  contactPersonId={project.client_contact_person_id}
+                  variant="icon"
+                />
+              ) : undefined
+            }
+          />
+        );
+      })}
+    </>
   );
 }
