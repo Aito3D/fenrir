@@ -492,6 +492,7 @@ export interface AMSUnit {
   serial_number: string;  // AMS unit serial number (from MQTT sn field)
   sw_ver: string;         // AMS firmware version (from get_version info.module ams/* entry)
   dry_time: number;       // Minutes remaining (0 = not drying, >0 = drying active)
+  dry_countdown_stalled?: boolean; // Timer set but countdown not ticking (never started or paused)
   dry_status: number;     // 0=Off, 1=Checking, 2=Drying, 3=Cooling, 4=Stopping, 5=Error
   dry_sub_status: number; // 0=Off, 1=Heating, 2=Dehumidify
   dry_sf_reason: number[]; // Cannot-dry reasons (1=InsufficientPower, 8=NeedPluginPower)
@@ -512,6 +513,9 @@ export interface ScheduledDrying {
   status: string;
   waiting_reason: string | null;
   error_message: string | null;
+  // Why a failed run failed (screen_only / unsupported / did_not_start); null on
+  // rows that failed before codes existed, which show error_message instead.
+  error_code?: string | null;
   created_at: string;
   started_at: string | null;
   completed_at: string | null;
@@ -1400,6 +1404,7 @@ export interface AppSettings {
   queue_drying_enabled: boolean;  // Auto-dry AMS between queued prints
   queue_drying_block: boolean;  // Block queue until drying completes
   ambient_drying_enabled: boolean;  // Auto-dry idle printers based on humidity regardless of queue
+  ambient_drying_sustained_minutes: number;  // Minutes humidity must stay above threshold before ambient auto-dry starts (0 = instant)
   print_drying_enabled: boolean;  // Continue drying while a print is running on capable hardware
   drying_no_auto_stop: boolean;  // Never auto-stop drying — only the AMS timer or a manual stop ends it
   drying_presets: string;  // JSON blob of drying presets per filament type
