@@ -5033,6 +5033,7 @@ export default {
     resultsCount: "Показано {{showing}} из {{total}} файлов",
     selectAll: "Выбрать всё",
     deselectAll: "Снять выделение",
+    loadMoreFailed: 'Не удалось загрузить больше файлов',
     selected: "Выбрано: {{count}}",
     adding: "Добавление...",
     loadingFiles: "Загрузка файлов...",

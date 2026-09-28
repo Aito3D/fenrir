@@ -5225,6 +5225,7 @@ export default {
     resultsCount: '{{total}} dosyadan {{showing}} tanesi',
     selectAll: 'Tümünü Seç',
     deselectAll: 'Seçimi Kaldır',
+    loadMoreFailed: 'Daha fazla dosya yüklenemedi',
     selected: '{{count}} seçildi',
     adding: 'Ekleniyor...',
     loadingFiles: 'Dosyalar yükleniyor...',

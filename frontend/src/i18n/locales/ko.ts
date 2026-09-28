@@ -5040,6 +5040,7 @@ export default {
     resultsCount: '전체 {{total}}개 중 {{showing}}개',
     selectAll: '모두 선택',
     deselectAll: '모두 선택 해제',
+    loadMoreFailed: '더 많은 파일을 불러오지 못했습니다',
     selected: '{{count}}개 선택됨',
     adding: '추가 중...',
     loadingFiles: '파일 불러오는 중...',

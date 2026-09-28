@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useMemo, useEffect, lazy, Suspense } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, useInfiniteQuery, keepPreviousData } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
   FolderOpen,
@@ -86,15 +86,20 @@ import { libraryTagsQueryKey } from '../utils/libraryTagsQuery';
 import { useToast } from '../contexts/ToastContext';
 import { usePageFileDrop } from '../hooks/usePageFileDrop';
 import { useFlipReorder } from '../hooks/useFlipReorder';
+import { useLibraryViewSettings } from '../hooks/useLibraryViewSettings';
+import { useInfiniteScrollSentinel } from '../hooks/useInfiniteScrollSentinel';
+import type { LibrarySortField as SortField } from '../hooks/useLibraryViewSettings';
 import { useAuth } from '../contexts/AuthContext';
-import { formatDuration, parseUTCDate, formatDate } from '../utils/date';
+import { formatDuration, formatDate } from '../utils/date';
 import { formatFileSize } from '../utils/file';
 import { assignableProjects } from '../utils/projectTree';
 import { openInSlicer, resolveDesktopSlicer, type SlicerType } from '../utils/slicer';
 import { isSlicedLibraryFile, isSliceableLibraryFile } from '../utils/libraryFiles';
 
-type SortField = 'name' | 'date' | 'size' | 'type' | 'prints';
-type SortDirection = 'asc' | 'desc';
+// Rows per request. 100 keeps the first paint under a screenful of cards on
+// a wide monitor while the look-ahead sentinel fetches the next page before
+// the user reaches the last row.
+const FILES_PAGE_SIZE = 100;
 type TFunction = (key: string, options?: Record<string, unknown>) => string;
 
 // Document previews (#2976) are code-split: pdf.js and the spreadsheet
@@ -1177,12 +1182,25 @@ export function FileManagerPage() {
   const initialFolderId = folderIdFromUrl ? parseInt(folderIdFromUrl, 10) : null;
 
   // State
-  const [selectedFolderId, setSelectedFolderId] = useState<number | null>(initialFolderId);
+  const { settings: viewSettings, update: updateViewSettings } = useLibraryViewSettings();
+  // A ?folder= param wins on the first render, before the URL-sync effect
+  // below has written it into the remembered settings; after that the
+  // settings are the single source, so sidebar clicks still navigate.
+  const [pendingUrlFolderId, setPendingUrlFolderId] = useState<number | null>(initialFolderId);
+  const selectedFolderId = pendingUrlFolderId ?? viewSettings.selectedFolderId;
+  const setSelectedFolderId = useCallback(
+    (id: number | null) => updateViewSettings({ selectedFolderId: id }),
+    [updateViewSettings],
+  );
   // Which top-level pseudo-view the sidebar shows when no specific folder is
   // selected: "internal" = files in Fenrir's managed storage, "external" =
   // combined view across every linked external folder (#1621). Per-folder
   // selection bypasses this (selectedFolderId !== null disables the filter).
-  const [topLevelView, setTopLevelView] = useState<'internal' | 'external'>('internal');
+  const topLevelView = viewSettings.topLevelView;
+  const setTopLevelView = useCallback(
+    (view: 'internal' | 'external') => updateViewSettings({ topLevelView: view }),
+    [updateViewSettings],
+  );
   const [selectedFiles, setSelectedFiles] = useState<number[]>([]);
   const [showNewFolderModal, setShowNewFolderModal] = useState(false);
   const [showExternalFolderModal, setShowExternalFolderModal] = useState(false);
@@ -1288,18 +1306,22 @@ export function FileManagerPage() {
     };
   }, [isResizing, sidebarWidth]);
 
-  // Filter and sort state (persist sort preferences to localStorage)
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filterType, setFilterType] = useState<string>('all');
-  const [filterUsername, setFilterUsername] = useState('');
-  const [sortField, setSortField] = useState<SortField>(() => {
-    const saved = localStorage.getItem('library-sort-field');
-    return (saved as SortField) || 'name';
-  });
-  const [sortDirection, setSortDirection] = useState<SortDirection>(() => {
-    const saved = localStorage.getItem('library-sort-direction');
-    return (saved as SortDirection) || 'asc';
-  });
+  // Filter and sort state — all remembered per browser by useLibraryViewSettings.
+  const searchQuery = viewSettings.search;
+  const filterType = viewSettings.filterType;
+  const filterUsername = viewSettings.filterUsername;
+  const sortField = viewSettings.sortField;
+  const sortDirection = viewSettings.sortDirection;
+  const setSearchQuery = useCallback((v: string) => updateViewSettings({ search: v }), [updateViewSettings]);
+  const setFilterType = useCallback((v: string) => updateViewSettings({ filterType: v }), [updateViewSettings]);
+  const setFilterUsername = useCallback((v: string) => updateViewSettings({ filterUsername: v }), [updateViewSettings]);
+  // The server searches, so the query key waits for typing to settle.
+  const [debouncedSearch, setDebouncedSearch] = useState(searchQuery);
+  useEffect(() => {
+    const id = setTimeout(() => setDebouncedSearch(searchQuery), 250);
+    return () => clearTimeout(id);
+  }, [searchQuery]);
+  const hasActiveFilters = Boolean(searchQuery || filterType !== 'all' || filterUsername);
   // Show/hide the last-modified date on each file card (#2680). Persisted.
   const [showModified, setShowModified] = useState<boolean>(
     () => localStorage.getItem('library-show-modified') === 'true'
@@ -1312,7 +1334,8 @@ export function FileManagerPage() {
       const newFolderId = parseInt(folderParam, 10);
       setSelectedFolderId(newFolderId);
     }
-  }, [searchParams]);
+    setPendingUrlFolderId(null);
+  }, [searchParams, setSelectedFolderId]);
 
   // Queries
   const { data: settings } = useQuery({
@@ -1399,6 +1422,15 @@ export function FileManagerPage() {
     return sortLevel(folders);
   }, [folders, folderSortField, folderSortDirection]);
 
+  // A remembered folder can have been deleted or unlinked since the last
+  // visit; fall back to "All files" rather than showing an empty pane.
+  useEffect(() => {
+    if (!folders || selectedFolderId === null || initialFolderId !== null) return;
+    const exists = (items: LibraryFolderTree[]): boolean =>
+      items.some((f) => f.id === selectedFolderId || exists(f.children));
+    if (!exists(folders)) setSelectedFolderId(null);
+  }, [folders, selectedFolderId, initialFolderId, setSelectedFolderId]);
+
   // Trash count for the header badge (#1008). Empty/error are silently treated
   // as zero so a broken trash endpoint doesn't break the File Manager.
   const { data: trashCount } = useQuery({
@@ -1420,7 +1452,7 @@ export function FileManagerPage() {
   // listing is just the immediate children and "robot.3mf" two levels deep
   // is invisible from the parent. Only kicks in for folder-scoped views —
   // root and the internal/external pseudo-nodes already return the union.
-  const searchExpandsSubfolders = selectedFolderId !== null && searchQuery.trim().length > 0;
+  const searchExpandsSubfolders = selectedFolderId !== null && debouncedSearch.trim().length > 0;
   // The tag filter overrides folder scoping server-side (#1268 design call),
   // so the FE query key includes it as a peer of folder/topLevelView. Sorted
   // so the cache hits regardless of the order tags were toggled.
@@ -1465,22 +1497,73 @@ export function FileManagerPage() {
     }
   }, [selectedTagIds]);
 
-  const { data: files, isLoading: filesLoading } = useQuery({
-    queryKey: ['library-files', selectedFolderId, topLevelView, searchExpandsSubfolders, tagFilterKey],
-    // When a specific folder is selected we list its contents directly; when
-    // no folder is selected the topLevelView pseudo-node decides whether the
-    // server scopes the result to internal-managed-storage files or to the
-    // union of every external folder (#1621). include_root stays false so the
-    // listing still descends into subfolders (regression guard from #1499).
-    queryFn: () =>
-      api.getAllLibraryFiles(
-        selectedFolderId,
-        false,
-        undefined,
-        selectedFolderId === null ? topLevelView : undefined,
-        searchExpandsSubfolders,
-        tagFilterKey,
-      ),
+  const scope = useMemo(
+    () => ({
+      folderId: selectedFolderId,
+      includeRoot: false,
+      scope: selectedFolderId === null ? topLevelView : undefined,
+      recursive: searchExpandsSubfolders,
+      tagIds: tagFilterKey,
+    }),
+    [selectedFolderId, topLevelView, searchExpandsSubfolders, tagFilterKey],
+  );
+
+  // Paged listing (server-side search/filter/sort). The key keeps the
+  // 'library-files' prefix so every existing invalidation still hits it.
+  // keepPreviousData holds the old rows on screen while a changed filter or
+  // sort fetches its first page, so the grid never blanks between states.
+  const {
+    data: filePages,
+    isLoading: filesLoading,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isFetchNextPageError,
+  } = useInfiniteQuery({
+    queryKey: [
+      'library-files',
+      'paged',
+      scope,
+      debouncedSearch.trim(),
+      filterType,
+      filterUsername.trim(),
+      sortField,
+      sortDirection,
+    ],
+    queryFn: ({ pageParam }) =>
+      api.getLibraryFilesPage({
+        ...scope,
+        search: debouncedSearch,
+        fileType: filterType,
+        createdBy: filterUsername,
+        sort: sortField,
+        direction: sortDirection,
+        limit: FILES_PAGE_SIZE,
+        offset: pageParam,
+      }),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) => {
+      const loaded = allPages.reduce((n, p) => n + p.items.length, 0);
+      return lastPage.items.length > 0 && loaded < lastPage.total ? loaded : undefined;
+    },
+    placeholderData: keepPreviousData,
+  });
+  const files = useMemo(() => filePages?.pages.flatMap((p) => p.items) ?? [], [filePages]);
+  const totalFiles = filePages?.pages[filePages.pages.length - 1]?.total ?? files.length;
+
+  // Type dropdown options come from the facet endpoint; until it answers (or
+  // if it fails) the types seen in the loaded rows stand in.
+  const { data: facetTypes } = useQuery({
+    queryKey: ['library-file-types', scope],
+    queryFn: () => api.getLibraryFileTypes(scope),
+    retry: false,
+  });
+
+  const fileScrollRef = useRef<HTMLDivElement>(null);
+  const sentinelRef = useInfiniteScrollSentinel({
+    rootRef: fileScrollRef,
+    enabled: Boolean(hasNextPage) && !isFetchingNextPage && !isFetchNextPageError,
+    onReach: () => void fetchNextPage(),
   });
 
   const { data: stats } = useQuery({
@@ -1530,70 +1613,14 @@ export function FileManagerPage() {
 
   // Get unique file types for filter dropdown
   const fileTypes = useMemo(() => {
-    if (!files) return [];
-    const types = new Set(files.map((f) => f.file_type));
+    const types = new Set<string>(facetTypes ?? files.map((f) => f.file_type));
+    if (filterType !== 'all') types.add(filterType);
     return Array.from(types).sort();
-  }, [files]);
+  }, [facetTypes, files, filterType]);
 
-  // Filter and sort files
-  const filteredAndSortedFiles = useMemo(() => {
-    if (!files) return [];
-
-    let result = [...files];
-
-    // Apply search filter
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
-      result = result.filter(
-        (f) =>
-          f.filename.toLowerCase().includes(query) ||
-          (f.print_name && f.print_name.toLowerCase().includes(query)) ||
-          (f.tags ?? []).some((tg) => tg.name.toLowerCase().includes(query))
-      );
-    }
-
-    // Apply type filter
-    if (filterType !== 'all') {
-      result = result.filter((f) => f.file_type === filterType);
-    }
-
-    // Apply username filter
-    if (filterUsername.trim()) {
-      const query = filterUsername.toLowerCase();
-      result = result.filter(
-        (f) => f.created_by_username && f.created_by_username.toLowerCase().includes(query)
-      );
-    }
-
-    // Apply sorting
-    result.sort((a, b) => {
-      let comparison = 0;
-      switch (sortField) {
-        case 'name':
-          comparison = (a.print_name || a.filename).localeCompare(b.print_name || b.filename);
-          break;
-        case 'date':
-          // #2680: sort by real on-disk mtime (matches `ls -t`), falling back to
-          // the DB created_at for managed uploads that have no filesystem mtime.
-          comparison =
-            (parseUTCDate(a.fs_modified_at ?? a.created_at)?.getTime() ?? 0) -
-            (parseUTCDate(b.fs_modified_at ?? b.created_at)?.getTime() ?? 0);
-          break;
-        case 'size':
-          comparison = a.file_size - b.file_size;
-          break;
-        case 'type':
-          comparison = a.file_type.localeCompare(b.file_type);
-          break;
-        case 'prints':
-          comparison = a.print_count - b.print_count;
-          break;
-      }
-      return sortDirection === 'asc' ? comparison : -comparison;
-    });
-
-    return result;
-  }, [files, searchQuery, filterType, filterUsername, sortField, sortDirection]);
+  // Search, filters and sort are applied by the server now; `files` is the
+  // rows loaded so far in the order the server returned them.
+  const filteredAndSortedFiles = files;
 
   // FLIP reorder for the file card grid: on search/filter/sort, persisting
   // cards slide to their new slots; newly-entering cards play `animate-rise`.
@@ -2377,7 +2404,7 @@ export function FileManagerPage() {
             </div>
           )}
           {/* Search, Filter, Sort toolbar - sticky on mobile for easier access */}
-          {files && files.length > 0 && (
+          {(files.length > 0 || hasActiveFilters) && (
             <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-4 p-2 sm:p-3 bg-bambu-dark-secondary rounded-lg border border-bambu-dark-tertiary sticky top-0 z-10 lg:static">
               {/* Search */}
               <div className="relative w-full sm:w-auto sm:flex-1 sm:max-w-xs">
@@ -2448,11 +2475,7 @@ export function FileManagerPage() {
               <div className="flex items-center gap-2">
                 <select
                   value={sortField}
-                  onChange={(e) => {
-                    const newField = e.target.value as SortField;
-                    setSortField(newField);
-                    localStorage.setItem('library-sort-field', newField);
-                  }}
+                  onChange={(e) => updateViewSettings({ sortField: e.target.value as SortField })}
                   className="bg-bambu-dark border border-bambu-dark-tertiary rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-bambu-green"
                 >
                   <option value="name">{t('common.name')}</option>
@@ -2462,11 +2485,7 @@ export function FileManagerPage() {
                   <option value="prints">{t('fileManager.prints')}</option>
                 </select>
                 <button
-                  onClick={() => setSortDirection((d) => {
-                    const newDir = d === 'asc' ? 'desc' : 'asc';
-                    localStorage.setItem('library-sort-direction', newDir);
-                    return newDir;
-                  })}
+                  onClick={() => updateViewSettings({ sortDirection: sortDirection === 'asc' ? 'desc' : 'asc' })}
                   className="p-1.5 rounded bg-bambu-dark border border-bambu-dark-tertiary hover:border-bambu-green transition-colors"
                   title={sortDirection === 'asc' ? t('fileManager.ascending') : t('fileManager.descending')}
                 >
@@ -2493,11 +2512,9 @@ export function FileManagerPage() {
               </div>
 
               {/* Results count */}
-              {(searchQuery || filterType !== 'all' || filterUsername) && (
-                <span className="text-sm text-bambu-gray hidden sm:inline">
-                  {t('fileManager.resultsCount', { showing: filteredAndSortedFiles.length, total: files.length })}
-                </span>
-              )}
+              <span className="text-sm text-bambu-gray hidden sm:inline" data-testid="files-count">
+                {t('fileManager.resultsCount', { showing: files.length, total: totalFiles })}
+              </span>
             </div>
           )}
 
@@ -2625,7 +2642,7 @@ export function FileManagerPage() {
                 <p className="text-sm text-bambu-gray">{t('fileManager.loadingFiles')}</p>
               </div>
             </div>
-          ) : files?.length === 0 ? (
+          ) : files.length === 0 && !hasActiveFilters ? (
             <div className="flex-1 flex flex-col items-center justify-center">
               <div className="p-4 bg-bambu-dark rounded-2xl mb-4">
                 <FileBox className="w-12 h-12 text-bambu-gray/50" />
@@ -2653,7 +2670,7 @@ export function FileManagerPage() {
                 {t('fileManager.uploadFiles')}
               </Button>
             </div>
-          ) : filteredAndSortedFiles.length === 0 ? (
+          ) : files.length === 0 ? (
             <div className="flex-1 flex flex-col items-center justify-center">
               <div className="p-4 bg-bambu-dark rounded-2xl mb-4">
                 <Search className="w-12 h-12 text-bambu-gray/50" />
@@ -2662,12 +2679,12 @@ export function FileManagerPage() {
               <p className="text-bambu-gray text-center max-w-md mb-6">
                 {t('fileManager.noMatchingFilesDescription')}
               </p>
-              <Button variant="secondary" onClick={() => { setSearchQuery(''); setFilterType('all'); }}>
+              <Button variant="secondary" onClick={() => updateViewSettings({ search: '', filterType: 'all', filterUsername: '' })}>
                 {t('fileManager.clearFilters')}
               </Button>
             </div>
           ) : viewMode === 'grid' ? (
-            <div className="flex-1 lg:overflow-y-auto">
+            <div ref={fileScrollRef} className="flex-1 lg:overflow-y-auto">
               {/* stagger-parents + animate-rise-lg cascades the cards in on first
                   paint and for cards that newly enter; each card's info block
                   then cascades via stagger-nested inside FileCard. useFlipReorder
@@ -2723,9 +2740,31 @@ export function FileManagerPage() {
                   </div>
                 ))}
               </div>
+              {isFetchingNextPage && (
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4 mt-4" aria-hidden="true">
+                  {Array.from({ length: 6 }, (_, i) => (
+                    <div key={i} className="rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary animate-pulse">
+                      <div className="aspect-square bg-bambu-dark rounded-t-lg" />
+                      <div className="p-3 space-y-2">
+                        <div className="h-3 rounded bg-bambu-dark-tertiary" />
+                        <div className="h-3 w-1/2 rounded bg-bambu-dark-tertiary" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {isFetchNextPageError && (
+                <div className="flex items-center justify-center gap-3 py-4 text-sm text-bambu-gray">
+                  <span>{t('fileManager.loadMoreFailed')}</span>
+                  <Button variant="secondary" size="sm" onClick={() => void fetchNextPage()}>
+                    {t('common.retry')}
+                  </Button>
+                </div>
+              )}
+              {hasNextPage && <div ref={sentinelRef} className="h-px" aria-hidden="true" />}
             </div>
           ) : (
-            <div className="flex-1 lg:overflow-y-auto">
+            <div ref={fileScrollRef} className="flex-1 lg:overflow-y-auto">
               {/* The wrapper has overflow-x-auto so a narrow viewport scrolls
                   horizontally instead of clipping the actions column off the
                   right edge. The previous `overflow-hidden` was there for the
@@ -3078,6 +3117,22 @@ export function FileManagerPage() {
                   </div>
                 ))}
               </div>
+              {isFetchingNextPage && (
+                <div className="space-y-2 p-4" aria-hidden="true">
+                  {Array.from({ length: 3 }, (_, i) => (
+                    <div key={i} className="h-10 rounded bg-bambu-dark-tertiary animate-pulse" />
+                  ))}
+                </div>
+              )}
+              {isFetchNextPageError && (
+                <div className="flex items-center justify-center gap-3 py-4 text-sm text-bambu-gray">
+                  <span>{t('fileManager.loadMoreFailed')}</span>
+                  <Button variant="secondary" size="sm" onClick={() => void fetchNextPage()}>
+                    {t('common.retry')}
+                  </Button>
+                </div>
+              )}
+              {hasNextPage && <div ref={sentinelRef} className="h-px" aria-hidden="true" />}
             </div>
           )}
         </div>

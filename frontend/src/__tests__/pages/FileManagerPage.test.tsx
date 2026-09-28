@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { FileManagerPage } from '../../pages/FileManagerPage';
@@ -130,6 +130,47 @@ const mockStats = {
   disk_total_bytes: 107374182400,
 };
 
+type Row = (typeof mockFiles)[number] & { created_by_username?: string | null; tags?: Array<{ id: number; name: string }> };
+
+/** msw handler that applies the listing's server-side search/filter/sort/paging
+ * over an in-memory row set and reports X-Total-Count, so the page tests see
+ * the same contract the backend now honours. */
+function pagedFilesHandler(rows: Row[], onRequest?: (params: URLSearchParams) => void) {
+  return http.get('/api/v1/library/files', ({ request }) => {
+    const p = new URL(request.url).searchParams;
+    onRequest?.(p);
+    let out = [...rows];
+    const search = p.get('search')?.toLowerCase();
+    if (search) {
+      out = out.filter(
+        (f) =>
+          f.filename.toLowerCase().includes(search) ||
+          (f.print_name ?? '').toLowerCase().includes(search) ||
+          (f.tags ?? []).some((t) => t.name.toLowerCase().includes(search)),
+      );
+    }
+    const type = p.get('file_type');
+    if (type) out = out.filter((f) => f.file_type === type);
+    const by = p.get('created_by')?.toLowerCase();
+    if (by) out = out.filter((f) => (f.created_by_username ?? '').toLowerCase().includes(by));
+    const sort = p.get('sort');
+    const dir = p.get('direction') === 'desc' ? -1 : 1;
+    out.sort((a, b) => {
+      let c = 0;
+      if (sort === 'name') c = (a.print_name || a.filename).localeCompare(b.print_name || b.filename);
+      else if (sort === 'date') c = Date.parse((a as Row).fs_modified_at ?? a.created_at) - Date.parse((b as Row).fs_modified_at ?? b.created_at);
+      else if (sort === 'size') c = a.file_size - b.file_size;
+      else if (sort === 'type') c = a.file_type.localeCompare(b.file_type);
+      else if (sort === 'prints') c = a.print_count - b.print_count;
+      else c = a.filename.localeCompare(b.filename);
+      return c * dir || a.id - b.id;
+    });
+    const offset = Number(p.get('offset') ?? 0);
+    const limit = Number(p.get('limit') ?? 100);
+    return HttpResponse.json(out.slice(offset, offset + limit), { headers: { 'X-Total-Count': String(out.length) } });
+  });
+}
+
 describe('FileManagerPage', () => {
   beforeEach(() => {
     // Clear localStorage to ensure consistent view mode
@@ -139,9 +180,7 @@ describe('FileManagerPage', () => {
       http.get('/api/v1/library/folders', () => {
         return HttpResponse.json(mockFolders);
       }),
-      http.get('/api/v1/library/files', () => {
-        return HttpResponse.json(mockFiles);
-      }),
+      pagedFilesHandler(mockFiles),
       http.get('/api/v1/library/stats', () => {
         return HttpResponse.json(mockStats);
       }),
@@ -1686,6 +1725,120 @@ describe('FileManagerPage', () => {
 
       await user.click(item!);
       expect(window.location.pathname).toBe('/');
+    });
+  });
+
+  describe('paging', () => {
+    type Callback = (entries: Array<{ isIntersecting: boolean }>) => void;
+    const observers: Callback[] = [];
+    beforeEach(() => {
+      observers.length = 0;
+      vi.stubGlobal(
+        'IntersectionObserver',
+        class {
+          observe = vi.fn();
+          unobserve = vi.fn();
+          disconnect = vi.fn();
+          constructor(cb: Callback) {
+            observers.push(cb);
+          }
+        },
+      );
+    });
+    afterEach(() => vi.unstubAllGlobals());
+
+    const manyFiles = Array.from({ length: 250 }, (_, i) => ({
+      ...mockFiles[1],
+      id: 100 + i,
+      filename: `part-${String(i).padStart(3, '0')}.stl`,
+      print_name: null,
+    }));
+
+    it('loads the first page only and shows the running count', async () => {
+      const offsets: string[] = [];
+      server.use(pagedFilesHandler(manyFiles, (p) => offsets.push(p.get('offset') ?? '')));
+      render(<FileManagerPage />);
+      await waitFor(() => expect(screen.getByText('part-000.stl')).toBeInTheDocument());
+      expect(screen.queryByText('part-100.stl')).not.toBeInTheDocument();
+      expect(screen.getByText('100 of 250 files')).toBeInTheDocument();
+      expect(offsets).toEqual(['0']);
+    });
+
+    it('fetches the next page when the sentinel comes into view', async () => {
+      server.use(pagedFilesHandler(manyFiles));
+      render(<FileManagerPage />);
+      await waitFor(() => expect(screen.getByText('part-000.stl')).toBeInTheDocument());
+      await waitFor(() => expect(observers.length).toBeGreaterThan(0));
+      act(() => observers[observers.length - 1]([{ isIntersecting: true }]));
+      await waitFor(() => expect(screen.getByText('part-100.stl')).toBeInTheDocument());
+      expect(screen.getByText('200 of 250 files')).toBeInTheDocument();
+    });
+
+    it('changing the sort restarts from offset 0 with the new sort parameter', async () => {
+      const seen: Array<{ sort: string | null; offset: string | null }> = [];
+      server.use(pagedFilesHandler(manyFiles, (p) => seen.push({ sort: p.get('sort'), offset: p.get('offset') })));
+      render(<FileManagerPage />);
+      await waitFor(() => expect(screen.getByText('part-000.stl')).toBeInTheDocument());
+      const sortSelect = screen.getByDisplayValue('Name');
+      await userEvent.selectOptions(sortSelect, 'size');
+      await waitFor(() => expect(seen.at(-1)).toEqual({ sort: 'size', offset: '0' }));
+    });
+
+    it('sends the search to the server after the debounce', async () => {
+      const searches: Array<string | null> = [];
+      server.use(pagedFilesHandler(manyFiles, (p) => searches.push(p.get('search'))));
+      render(<FileManagerPage />);
+      await waitFor(() => expect(screen.getByText('part-000.stl')).toBeInTheDocument());
+      await userEvent.type(screen.getByPlaceholderText('Search files...'), 'part-24');
+      await waitFor(() => expect(searches.at(-1)).toBe('part-24'));
+      await waitFor(() => expect(screen.getByText('part-240.stl')).toBeInTheDocument());
+      expect(screen.queryByText('part-000.stl')).not.toBeInTheDocument();
+    });
+
+    it('keeps the toolbar visible when the server returns no rows for a search', async () => {
+      server.use(pagedFilesHandler(manyFiles));
+      render(<FileManagerPage />);
+      await waitFor(() => expect(screen.getByText('part-000.stl')).toBeInTheDocument());
+      await userEvent.type(screen.getByPlaceholderText('Search files...'), 'zzz-nothing');
+      await waitFor(() => expect(screen.getByText('No matching files')).toBeInTheDocument());
+      expect(screen.getByPlaceholderText('Search files...')).toBeInTheDocument();
+    });
+
+    it('reopens with the saved search, type and sort', async () => {
+      localStorage.setItem(
+        'library-view-settings',
+        JSON.stringify({ v: 1, search: 'part-01', filterType: 'stl', filterUsername: '', topLevelView: 'internal', selectedFolderId: null, sortField: 'size', sortDirection: 'desc' }),
+      );
+      const seen: URLSearchParams[] = [];
+      server.use(pagedFilesHandler(manyFiles, (p) => seen.push(p)));
+      render(<FileManagerPage />);
+      await waitFor(() => expect(screen.getByText('part-010.stl')).toBeInTheDocument());
+      const last = seen.at(-1)!;
+      expect(last.get('search')).toBe('part-01');
+      expect(last.get('file_type')).toBe('stl');
+      expect(last.get('sort')).toBe('size');
+      expect(last.get('direction')).toBe('desc');
+      expect(screen.getByDisplayValue('part-01')).toBeInTheDocument();
+    });
+
+    it('offers a retry when a later page fails', async () => {
+      let calls = 0;
+      server.use(
+        http.get('/api/v1/library/files', ({ request }) => {
+          calls += 1;
+          const p = new URL(request.url).searchParams;
+          if (p.get('offset') !== '0') return HttpResponse.json({ detail: 'boom' }, { status: 500 });
+          return HttpResponse.json(manyFiles.slice(0, 100), { headers: { 'X-Total-Count': '250' } });
+        }),
+      );
+      render(<FileManagerPage />);
+      await waitFor(() => expect(screen.getByText('part-000.stl')).toBeInTheDocument());
+      await waitFor(() => expect(observers.length).toBeGreaterThan(0));
+      act(() => observers[observers.length - 1]([{ isIntersecting: true }]));
+      await waitFor(() => expect(screen.getByText("Couldn't load more files")).toBeInTheDocument());
+      const before = calls;
+      await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
+      await waitFor(() => expect(calls).toBeGreaterThan(before));
     });
   });
 });

@@ -4145,6 +4145,7 @@ errors: {
     resultsCount: 'Visar {{showing}} av {{total}} filer',
     selectAll: 'Markera alla',
     deselectAll: 'Avmarkera alla',
+    loadMoreFailed: 'Kunde inte läsa in fler filer',
     selected: '{{count}} valda',
     adding: 'Lägger till...',
     loadingFiles: 'Laddar filer...',

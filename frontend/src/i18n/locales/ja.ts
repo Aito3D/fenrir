@@ -5230,6 +5230,7 @@ export default {
     resultsCount: '{{total}}件中{{showing}}件',
     selectAll: 'すべて選択',
     deselectAll: 'すべて選択解除',
+    loadMoreFailed: 'これ以上のファイルを読み込めませんでした',
     selected: '{{count}}件選択中',
     adding: '追加中...',
     loadingFiles: 'ファイルを読み込み中...',

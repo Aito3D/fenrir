@@ -5037,6 +5037,7 @@ export default {
     resultsCount: "{{showing}} з {{total}} файлів",
     selectAll: "Вибрати усі",
     deselectAll: "Зняти вибір із усіх",
+    loadMoreFailed: 'Не вдалося завантажити більше файлів',
     selected: "Вибрано: {{count}}",
     adding: "Додавання...",
     loadingFiles: "Завантаження файлів...",

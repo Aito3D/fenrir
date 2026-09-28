@@ -5264,6 +5264,7 @@ export default {
     resultsCount: '{{showing}} of {{total}} files',
     selectAll: 'Select All',
     deselectAll: 'Deselect All',
+    loadMoreFailed: 'Couldn\'t load more files',
     selected: '{{count}} selected',
     adding: 'Adding...',
     loadingFiles: 'Loading files...',

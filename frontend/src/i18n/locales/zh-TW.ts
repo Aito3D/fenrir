@@ -5218,6 +5218,7 @@ export default {
     resultsCount: '{{showing}} / {{total}} 個檔案',
     selectAll: '全選',
     deselectAll: '取消全選',
+    loadMoreFailed: '無法載入更多檔案',
     selected: '已選擇 {{count}} 個',
     adding: '新增中...',
     loadingFiles: '載入檔案中...',

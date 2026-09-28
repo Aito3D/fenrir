@@ -4145,6 +4145,7 @@ export default {
     resultsCount: '{{showing}} van {{total}} bestanden',
     selectAll: 'Alles selecteren',
     deselectAll: 'Alles deselecteren',
+    loadMoreFailed: 'Kon geen bestanden meer laden',
     selected: '{{count}} geselecteerd',
     adding: 'Toevoegen...',
     loadingFiles: 'Bestanden laden...',

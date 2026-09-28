@@ -5230,6 +5230,7 @@ export default {
     resultsCount: '{{showing}} von {{total}} Dateien',
     selectAll: 'Alle auswählen',
     deselectAll: 'Auswahl aufheben',
+    loadMoreFailed: 'Weitere Dateien konnten nicht geladen werden',
     selected: '{{count}} ausgewählt',
     adding: 'Hinzufügen...',
     loadingFiles: 'Dateien werden geladen...',

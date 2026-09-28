@@ -5219,6 +5219,7 @@ export default {
     resultsCount: '{{showing}} sur {{total}} fichiers',
     selectAll: 'Tout sélectionner',
     deselectAll: 'Tout désélectionner',
+    loadMoreFailed: 'Impossible de charger plus de fichiers',
     selected: '{{count}} sélectionnés',
     adding: 'Ajout...',
     loadingFiles: 'Chargement...',
