@@ -162,13 +162,15 @@ export function TabletBoard({
 
   // Land on the stored column, and re-align after every width change: the
   // column pitch is in px, so a rotation would otherwise leave the window
-  // between two columns. Clamped so the end never shows blank space.
+  // between two columns. The clamp lives in the render (`start`), NOT in the
+  // stored value: writing it back here saved the provisional pre-measure
+  // clamp on mount, and lost the place on a 2 → 4 → 2 rotation. Nothing runs
+  // until the board has been measured.
   useLayoutEffect(() => {
     const pager = pagerRef.current;
-    if (!pager) return;
+    if (!pager || !boardWidth) return;
     pager.scrollLeft = start * pitch();
-    if (start !== first) setFirst(start);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs on size changes only; `first`/`start` are read fresh
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs on size changes only; `start` is read fresh
   }, [boardWidth, k]);
 
   // A smooth jump scrolls THROUGH the columns in between; without this the
@@ -243,7 +245,17 @@ export function TabletBoard({
           data-testid="aito-tablet-pager"
           aria-busy={pending || undefined}
           onScroll={onScroll}
+          // Any scroll the user starts — finger, trackpad, keyboard — takes
+          // over from a smooth jump still in flight; a trackpad fires no
+          // pointerdown, so without onWheel the header could stay on the
+          // jump's target while the pager sits elsewhere.
           onPointerDown={() => {
+            jumpTargetRef.current = null;
+          }}
+          onWheel={() => {
+            jumpTargetRef.current = null;
+          }}
+          onKeyDown={() => {
             jumpTargetRef.current = null;
           }}
           className={`h-full flex gap-3 overflow-x-auto overflow-y-hidden snap-x snap-mandatory overscroll-x-contain scrollbar-hide px-4 pt-3 pb-4 scroll-px-4 transition-opacity duration-300 ${

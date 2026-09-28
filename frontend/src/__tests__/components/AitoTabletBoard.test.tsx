@@ -122,6 +122,46 @@ describe('TabletBoard', () => {
     expect(Math.round(screen.getByTestId('aito-tablet-pager').scrollLeft)).toBe(Math.round(pitch() * 2));
   });
 
+  it('restores the saved window on a narrow board without overwriting it before measuring', () => {
+    boardWidth = 560;
+    sessionStorage.setItem('aito.tablet.first', 'print');
+    render(<TabletBoard {...props()} />);
+    expect(range()).toMatch(/Printing.*Finish/);
+    expect(sessionStorage.getItem('aito.tablet.first')).toBe('print');
+  });
+
+  it('gets the place back after a 2 → 4 → 2 rotation', () => {
+    boardWidth = 560;
+    sessionStorage.setItem('aito.tablet.first', 'print');
+    render(<TabletBoard {...props()} />);
+    boardWidth = 1250;
+    act(() => {
+      window.dispatchEvent(new Event('resize'));
+    });
+    expect(range()).toMatch(/Scan.*Finish/);
+    boardWidth = 560;
+    act(() => {
+      window.dispatchEvent(new Event('resize'));
+    });
+    expect(range()).toMatch(/Printing.*Finish/);
+  });
+
+  it('a wheel scroll during a smooth jump releases the header to follow the real position', async () => {
+    const user = userEvent.setup();
+    render(<TabletBoard {...props()} />);
+    const pager = screen.getByTestId('aito-tablet-pager');
+    const scrollTo = vi.fn();
+    pager.scrollTo = scrollTo as typeof pager.scrollTo;
+    vi.spyOn(window, 'matchMedia').mockImplementation((q: string) => ({ matches: false, media: q, onchange: null, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent: () => false }) as MediaQueryList);
+    await user.click(screen.getByRole('button', { name: 'Next column' }));
+    expect(scrollTo).toHaveBeenCalled();
+    // The trackpad takes over before the smooth scroll lands: back to 0.
+    fireEvent.wheel(pager, { deltaX: -300 });
+    pager.scrollLeft = 0;
+    fireEvent.scroll(pager);
+    expect(range()).toMatch(/Quote.*Scan/);
+  });
+
   it('the range popover lists the columns and brings a pick into view', async () => {
     const user = userEvent.setup();
     render(<TabletBoard {...props()} />);
