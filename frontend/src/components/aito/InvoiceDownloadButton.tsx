@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { api } from '../../api/client';
 import { PdfDownloadButton } from './PdfDownloadButton';
+import type { ActionVariant } from './quoteActionGroup';
 
 /** Fetch this project's Zoho invoice and save it as a PDF file.
  *
@@ -22,11 +23,13 @@ export function InvoiceDownloadButton({
    *  InvoicePrintButton: the caller holds the project, so the caller
    *  decides. */
   disabled = false,
+  variant = 'cell',
 }: {
   projectId: number;
   invoiceId: string;
   invoiceNumber?: string | null;
   disabled?: boolean;
+  variant?: ActionVariant;
 }) {
   const { t } = useTranslation();
 
@@ -38,6 +41,7 @@ export function InvoiceDownloadButton({
       failureMessage={t('aito.invoicePrintFailed')}
       disabled={disabled}
       disabledTitle={t('aito.pdfSyncPending')}
+      variant={variant}
     />
   );
 }

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Download, Loader2 } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
-import { ACTION_CELL } from './quoteActionGroup';
+import { ACTION_CELL, type ActionVariant } from './quoteActionGroup';
+import { DOC_ICON_BUTTON_CLS, LINK_ICON_CLS } from './linkActionHelpers';
 
 /** How long to keep the object URL alive after handing it to the anchor.
  *  The click is synchronous but the browser reads the URL lazily when it
@@ -42,6 +43,7 @@ export function PdfDownloadButton({
   /** Tooltip shown instead of `label` while `disabled`; aria-label stays
    *  `label` so the accessible name never changes. */
   disabledTitle,
+  variant = 'cell',
 }: {
   fetchPdf: () => Promise<Blob>;
   label: string;
@@ -49,6 +51,7 @@ export function PdfDownloadButton({
   failureMessage: string;
   disabled?: boolean;
   disabledTitle?: string;
+  variant?: ActionVariant;
 }) {
   const { showToast } = useToast();
   const [busy, setBusy] = useState(false);
@@ -90,6 +93,7 @@ export function PdfDownloadButton({
     }
   };
 
+  const icon = variant === 'icon' ? LINK_ICON_CLS : 'w-3.5 h-3.5';
   return (
     <button
       type="button"
@@ -97,9 +101,9 @@ export function PdfDownloadButton({
       disabled={busy || disabled}
       aria-label={label}
       title={disabled && disabledTitle ? disabledTitle : label}
-      className={ACTION_CELL}
+      className={variant === 'icon' ? DOC_ICON_BUTTON_CLS : ACTION_CELL}
     >
-      {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+      {busy ? <Loader2 className={`${icon} animate-spin`} /> : <Download className={icon} />}
     </button>
   );
 }

@@ -303,6 +303,14 @@ describe('QuotePrintButton', () => {
       vi.useRealTimers();
     }
   });
+
+  it('renders as a 24px icon button in the icon variant', () => {
+    render(<QuotePrintButton project={project} variant="icon" />);
+    const button = screen.getByRole('button', { name: 'Print quote' });
+    expect(button.className).toContain('p-1 ');
+    expect(button.className).not.toContain('flex-1');
+    expect(button.querySelector('svg')).toHaveClass('w-4');
+  });
 });
 
 describe('QuoteDownloadButton', () => {

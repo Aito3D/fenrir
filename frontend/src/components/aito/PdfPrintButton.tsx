@@ -1,4 +1,5 @@
-import { ACTION_CELL } from './quoteActionGroup';
+import { ACTION_CELL, type ActionVariant } from './quoteActionGroup';
+import { DOC_ICON_BUTTON_CLS, LINK_ICON_CLS } from './linkActionHelpers';
 import { Loader2, Printer } from 'lucide-react';
 import { usePrintBlob } from './usePrintBlob';
 
@@ -30,12 +31,14 @@ export function PdfPrintButton({
    *  operator can learn why the button refuses. aria-label stays `label`
    *  so the button keeps its accessible name (and test queries) either way. */
   disabledTitle,
+  variant = 'cell',
 }: {
   fetchPdf: () => Promise<Blob>;
   label: string;
   failureMessage: string;
   disabled?: boolean;
   disabledTitle?: string;
+  variant?: ActionVariant;
 }) {
   // A blob URL is not "download.pdf" on its own — the browser has no path to
   // read a name from — so the fallback anchor needs one supplied. Derived
@@ -47,6 +50,7 @@ export function PdfPrintButton({
 
   const { print, busy } = usePrintBlob({ failureMessage, downloadFilename });
 
+  const icon = variant === 'icon' ? LINK_ICON_CLS : 'w-3.5 h-3.5';
   return (
     <button
       type="button"
@@ -54,9 +58,9 @@ export function PdfPrintButton({
       disabled={busy || disabled}
       aria-label={label}
       title={disabled && disabledTitle ? disabledTitle : label}
-      className={ACTION_CELL}
+      className={variant === 'icon' ? DOC_ICON_BUTTON_CLS : ACTION_CELL}
     >
-      {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5" />}
+      {busy ? <Loader2 className={`${icon} animate-spin`} /> : <Printer className={icon} />}
     </button>
   );
 }

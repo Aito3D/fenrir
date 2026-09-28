@@ -37,3 +37,7 @@ export const ACTION_CELL =
   'transition-colors motion-reduce:transition-none ' +
   'disabled:opacity-40 disabled:cursor-not-allowed ' +
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-bambu-green/40';
+
+/** How an action button renders: a cell of the segmented `ACTION_GROUP`
+ *  (the payment block), or a 24px icon in a document row's cluster. */
+export type ActionVariant = 'cell' | 'icon';
