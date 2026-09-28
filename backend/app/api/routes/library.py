@@ -15,7 +15,7 @@ import zipfile
 from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import NamedTuple
+from typing import Literal, NamedTuple
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import FileResponse as FastAPIFileResponse
@@ -2160,6 +2160,37 @@ async def scan_external_folder(
 # ============ File Endpoints ============
 
 
+FileSortField = Literal["name", "date", "size", "type", "prints"]
+SortDirection = Literal["asc", "desc"]
+
+
+def _file_sort_clauses(sort: str | None, direction: str) -> list:
+    """ORDER BY clauses for the file listing (File Manager paging).
+
+    Mirrors the comparator the browser used to apply after fetching every
+    row: ``name`` is the print name when present (empty string counts as
+    absent, like ``print_name || filename``), else the filename, compared
+    case-insensitively; ``date`` is the on-disk mtime falling back to
+    ``created_at``. ``None`` keeps the historical filename order so callers
+    that never asked for a sort see no change. Every ordering ends on
+    ``id`` so consecutive pages neither overlap nor skip a row on ties.
+    """
+    if sort is None:
+        return [LibraryFile.filename.asc(), LibraryFile.id.asc()]
+    if sort == "name":
+        print_name = func.nullif(LibraryFile.file_metadata["print_name"].as_string(), "")
+        key = func.lower(func.coalesce(print_name, LibraryFile.filename))
+    elif sort == "date":
+        key = func.coalesce(LibraryFile.fs_modified_at, LibraryFile.created_at)
+    elif sort == "size":
+        key = LibraryFile.file_size
+    elif sort == "type":
+        key = LibraryFile.file_type
+    else:
+        key = LibraryFile.print_count
+    return [key.desc() if direction == "desc" else key.asc(), LibraryFile.id.asc()]
+
+
 @router.get("/files", response_model=list[FileListResponse])
 @router.get("/files/", response_model=list[FileListResponse])
 async def list_files(
@@ -2171,7 +2202,9 @@ async def list_files(
     external_only: bool = False,
     recursive: bool = False,
     tag_ids: list[int] = Query(default_factory=list),
-    limit: int = Query(default=500, ge=1, le=2000),
+    sort: FileSortField | None = None,
+    direction: SortDirection = "asc",
+    limit: int = Query(default=100, ge=1, le=2000),
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
     auth_result: tuple[User | None, bool] = Depends(
@@ -2204,7 +2237,12 @@ async def list_files(
                  intentionally bypassed — tags are cross-cutting and the user
                  wants "every file with this tag" regardless of where it lives.
                  ``recursive`` becomes irrelevant in that case.
-        limit: Page size, capped to keep the response bounded on large libraries.
+        sort: Server-side ordering (File Manager paging). ``name`` orders on the
+              print name (falling back to the filename), ``date`` on the on-disk
+              mtime falling back to ``created_at``; ``size``/``type``/``prints``
+              on their columns. Omitted = historical filename order.
+        direction: ``asc`` (default) or ``desc`` for the primary sort key.
+        limit: Page size (default 100), capped to keep the response bounded on large libraries.
                Total matching row count is returned in the ``X-Total-Count``
                response header so callers can page through the full result.
         offset: Number of matching rows to skip (paired with ``limit``).
@@ -2267,7 +2305,7 @@ async def list_files(
     count_result = await db.execute(select(func.count()).select_from(query.subquery()))
     total_count = int(count_result.scalar() or 0)
 
-    query = query.order_by(LibraryFile.filename).offset(offset).limit(limit)
+    query = query.order_by(*_file_sort_clauses(sort, direction)).offset(offset).limit(limit)
     result = await db.execute(query)
     files = result.scalars().unique().all() if tag_ids else result.scalars().all()
 
