@@ -16,6 +16,7 @@ from sqlalchemy import select
 from backend.app.api.routes.aito import create_project, delete_project, restore_project, update_project
 from backend.app.models.aito_project import AitoProject
 from backend.app.schemas.aito import AitoProjectCreate, AitoProjectUpdate, AitoTaskCreate
+from backend.tests.aito_request_fixture import direct_request
 
 
 @pytest.mark.asyncio
@@ -29,7 +30,7 @@ async def test_creating_a_project_without_a_quote_id_marks_it_pending(db_session
         client_phone="+689 87 00 00 11",
         tasks=[AitoTaskCreate(title="Helice", scan_cost=5000)],
     )
-    response = await create_project(payload=payload, db=db_session, current_user=None)
+    response = await create_project(payload=payload, request=direct_request(), db=db_session, current_user=None)
     assert response.quote_sync_state == "pending"
 
 
@@ -51,7 +52,7 @@ async def test_importing_a_project_with_a_quote_id_does_not_mark_it_pending(db_s
         quote_number="DEV26-9001",
         tasks=[AitoTaskCreate(title="Helice", scan_cost=5000)],
     )
-    response = await create_project(payload=payload, db=db_session, current_user=None)
+    response = await create_project(payload=payload, request=direct_request(), db=db_session, current_user=None)
     assert response.quote_id == "E1"
     assert response.quote_sync_state == "idle"
 
@@ -203,7 +204,7 @@ async def test_trashing_before_first_quote_then_restoring_and_editing_is_re_enqu
         client_phone="+689 87 00 00 12",
         tasks=[AitoTaskCreate(title="Helice", scan_cost=5000)],
     )
-    created = await create_project(payload=payload, db=db_session, current_user=None)
+    created = await create_project(payload=payload, request=direct_request(), db=db_session, current_user=None)
     assert created.quote_sync_state == "pending"
 
     await delete_project(project_id=created.id, db=db_session, current_user=None)

@@ -331,6 +331,13 @@ class AitoProjectCreate(AitoShippingInput, AitoClientSocialInput):
     # import cannot get the user to fix is not worth failing the whole
     # import over.
     quote_status: AitoQuoteStatus | None = Field(default=None)
+    # True when `description` is a summary the drawer knows is stale — one
+    # generated for an earlier task list, or its fallback enumeration while a
+    # request was still in flight — and never a hand-edit. The route then
+    # summarises `tasks` itself before the card is written, and falls back to
+    # `description` as sent when OpenRouter cannot answer. See
+    # routes/aito.py:_create_description.
+    regenerate_description: bool = False
     # 300, not AitoSummarizeRequest.tasks' 50 below, because THIS field has two
     # live callers with very different shapes, and the tighter of the two is
     # not the binding one. Caller 1: the create drawer (AiSummaryPanel calls

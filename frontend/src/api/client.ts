@@ -8327,6 +8327,10 @@ export const api = {
     }),
   createAitoProject: (data: {
     description: string;
+    /** Drawer only: `description` is a summary of an earlier task list (or
+     *  the fallback while one was generating), so the server summarises
+     *  `tasks` itself. Falls back to `description` when OpenRouter cannot. */
+    regenerate_description?: boolean;
     client_id: string;
     client_name: string;
     client_phone?: string | null;

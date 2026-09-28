@@ -1528,19 +1528,58 @@ async def _record_creation_events(
         )
 
 
+async def _create_description(
+    request: Request, db: AsyncSession, payload: AitoProjectCreate, current_user: User | None
+) -> str:
+    """The description a new card is born with.
+
+    The drawer only asks OpenRouter for a summary when its Client section
+    OPENS with tasks the last summary did not describe. An operator who picks
+    the client first and types the work afterwards — or edits the work with
+    the Client section already open — therefore reaches Create with a summary
+    of some earlier task list, or with the drawer's fallback enumeration while
+    a request is still in flight. Rather than teach the drawer every ordering,
+    it flags the text as stale (`regenerate_description`) and the card is
+    summarised here, from the tasks actually being created, before anything is
+    written. Never over a hand-edit: the drawer only sets the flag when the
+    operator has not touched the text.
+
+    Best effort, never a refusal: the card is the point of the request and the
+    sentence on it is not. An unconfigured or failing OpenRouter, or a
+    principal past the shared AI budget, keeps the description as sent.
+    """
+    sent = payload.description.strip()
+    if not payload.regenerate_description or not payload.tasks:
+        return sent
+    try:
+        _check_ai_rate_limit(request, current_user)
+        summary, _model = await summarize_tasks(db, [t.model_dump() for t in payload.tasks])
+    except HTTPException as e:
+        if e.status_code != 429:
+            raise
+        return sent
+    except (OpenRouterNotConfiguredError, OpenRouterUpstreamError):
+        return sent
+    return summary.strip() or sent
+
+
 @router.post("/", response_model=AitoProjectResponse, status_code=201)
 async def create_project(
     payload: AitoProjectCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_CREATE),
 ):
     shipping = await _validate_create_payload(db, payload, current_user)
+    # Before any write: the summary is a network round trip, and nothing here
+    # should hold a dirty session open through one.
+    description = await _create_description(request, db, payload, current_user)
     # New cards land on top of the quote column: shift existing cards down.
     for row in await _active_in_column(db, "devis"):
         row.position += 1
     created_at = _imported_created_at(payload.quote_id, payload.quote_date)
     project = AitoProject(
-        description=payload.description.strip(),
+        description=description,
         board_column="devis",
         position=0,
         client_id=payload.client_id,

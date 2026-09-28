@@ -86,12 +86,16 @@ export function useAitoPageMutations() {
       tasks: TaskDraft[];
       shipping: ShippingDraft | null;
       dueDate: string | null;
+      /** The drawer's verdict that `description` no longer describes `tasks`
+       *  (see NewProjectDrawer.create): the server summarises them itself. */
+      regenerateDescription: boolean;
       placeholder: AitoProject;
     }
   >({
-    mutationFn: ({ description, draft, tasks, shipping, dueDate }) =>
+    mutationFn: ({ description, draft, tasks, shipping, dueDate, regenerateDescription }) =>
       api.createAitoProject({
         description,
+        regenerate_description: regenerateDescription,
         client_id: draft.id,
         client_name: draft.name,
         client_phone: formatPhone(draft) || null,

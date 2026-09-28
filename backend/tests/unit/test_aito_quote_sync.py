@@ -35,6 +35,7 @@ from backend.app.services.aito_quote_sync import (
 )
 from backend.app.services.aito_shipping import SERVICE_LABELS
 from backend.app.services.zoho import zoho_service
+from backend.tests.aito_request_fixture import direct_request
 
 
 @pytest.fixture(autouse=True)
@@ -3905,7 +3906,7 @@ async def test_trashing_before_first_tick_then_restoring_and_editing_is_re_enque
         client_phone="+689 87 00 00 13",
         tasks=[AitoTaskCreate(title="Helice", scan_cost=5000)],
     )
-    created = await create_project(payload=payload, db=db_session, current_user=None)
+    created = await create_project(payload=payload, request=direct_request(), db=db_session, current_user=None)
     assert created.quote_sync_state == "pending"
 
     await delete_project(project_id=created.id, db=db_session, current_user=None)

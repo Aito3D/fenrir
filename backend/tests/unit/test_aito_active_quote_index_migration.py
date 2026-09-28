@@ -24,6 +24,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from backend.app.core.database import run_migrations
+from backend.tests.aito_request_fixture import direct_request
 
 
 @pytest.fixture(autouse=True)
@@ -229,13 +230,17 @@ async def test_a_concurrent_create_race_on_the_index_is_a_409_not_a_500(migrated
         quote_id="EST-9",
         quote_number="QT-9",
     )
-    first = await aito_routes.create_project(payload=payload, db=migrated_session, current_user=None)
+    first = await aito_routes.create_project(
+        payload=payload, request=direct_request(), db=migrated_session, current_user=None
+    )
     assert first.quote_id == "EST-9"
 
     await _bypass_precheck(monkeypatch)
 
     with pytest.raises(HTTPException) as exc_info:
-        await aito_routes.create_project(payload=payload, db=migrated_session, current_user=None)
+        await aito_routes.create_project(
+            payload=payload, request=direct_request(), db=migrated_session, current_user=None
+        )
     assert exc_info.value.status_code == 409
     assert exc_info.value.detail == aito_routes._DUPLICATE_QUOTE_DETAIL
 
@@ -258,9 +263,13 @@ async def test_a_concurrent_restore_race_on_the_index_is_a_409_not_a_500(migrate
         quote_id="EST-9",
         quote_number="QT-9",
     )
-    first = await aito_routes.create_project(payload=payload, db=migrated_session, current_user=None)
+    first = await aito_routes.create_project(
+        payload=payload, request=direct_request(), db=migrated_session, current_user=None
+    )
     await aito_routes.delete_project(project_id=first.id, db=migrated_session, current_user=None)
-    await aito_routes.create_project(payload=payload, db=migrated_session, current_user=None)  # claims the quote
+    await aito_routes.create_project(
+        payload=payload, request=direct_request(), db=migrated_session, current_user=None
+    )  # claims the quote
 
     await _bypass_precheck(monkeypatch)
 

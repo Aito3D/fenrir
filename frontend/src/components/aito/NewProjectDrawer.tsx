@@ -56,6 +56,10 @@ export interface NewProjectDrawerProps {
     tasks: TaskDraft[],
     shipping: ShippingDraft | null,
     dueDate: string | null,
+    /** True when `description` is a summary the drawer knows does not
+     *  describe `tasks` — see `create` below. The server then summarises the
+     *  tasks it actually creates. */
+    regenerateDescription: boolean,
   ) => void;
 }
 
@@ -492,12 +496,23 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
     // the panel showing a fallback enumeration, and even that is rebuilt here
     // rather than trusting the panel to have run at all.
     const serviceLabel = (id: string) => t(AITO_SERVICE_LABEL_KEYS[id] ?? id);
+    // Opening the Client section is the ONLY thing that asks for a summary
+    // (`openClient`), so a client picked before the work — or work edited
+    // with the Client section already open — reaches here with a summary of
+    // some earlier task list, or with none while a request is still in
+    // flight. Rather than teach the drawer every ordering, tell the server
+    // the text is stale and let it summarise the tasks it actually creates.
+    // Never over a hand-edit: that latch means "this is what I want it to
+    // say", and it is what keeps a duplicated card's copied description too.
+    const regenerateDescription =
+      !summaryEdited && (summaryText.trim() === '' || tasksSignature(tasks) !== summarySignatureRef.current);
     onCreate(
       summaryText.trim() || buildFallbackSummary(tasks, serviceLabel),
       draft,
       tasks,
       revealedShipping,
       dueDate || null,
+      regenerateDescription,
     );
   };
 

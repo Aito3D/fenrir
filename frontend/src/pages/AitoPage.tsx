@@ -373,6 +373,7 @@ export function AitoPage() {
     tasks: TaskDraft[],
     shipping: ShippingDraft | null,
     dueDate: string | null,
+    regenerateDescription: boolean,
   ) => {
     // Closed here, not in onSuccess: the whole point is that the modal does
     // not sit open through a round trip. The placeholder is what tells the
@@ -384,6 +385,9 @@ export function AitoPage() {
       tasks,
       shipping,
       dueDate,
+      regenerateDescription,
+      // The placeholder carries the description as the drawer had it; when
+      // the server regenerates one, `onSuccess` swaps the whole card in.
       placeholder: placeholderProject({
         description,
         client_id: draft.id,

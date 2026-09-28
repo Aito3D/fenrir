@@ -718,6 +718,7 @@ describe('NewProjectDrawer', () => {
       [expect.objectContaining({ scanCost: 10 })],
       null,
       null,
+      false,
     );
   });
 
@@ -745,6 +746,7 @@ describe('NewProjectDrawer', () => {
       expect.any(Array),
       null,
       '2026-09-20',
+      false,
     );
   });
 
@@ -839,6 +841,7 @@ describe('NewProjectDrawer', () => {
       expect.any(Array),
       expect.objectContaining({ island: 'rangiroa', service: 'tuamotu', price: 3200 }),
       null,
+      false,
     );
   });
 
@@ -961,6 +964,7 @@ describe('NewProjectDrawer', () => {
       expect.any(Array),
       null,
       null,
+      false,
     );
   });
 
@@ -1320,6 +1324,7 @@ describe('company contact persons', () => {
       expect.any(Array),
       null,
       null,
+      false,
     );
   });
 
@@ -1382,6 +1387,87 @@ describe('company contact persons', () => {
       expect.any(Array),
       null,
       null,
+      false,
+    );
+  });
+});
+
+describe('NewProjectDrawer — stale summary at Create', () => {
+  // `openClient` is the only place that asks for a summary, so a client picked
+  // BEFORE the work leaves the drawer with a summary of a blank task and no
+  // second chance to fix it. The sixth onCreate argument is what tells the
+  // server to summarise the tasks it is actually creating.
+  it('flags the description for regeneration when the client was picked before the work', async () => {
+    const user = userEvent.setup();
+    const { onCreate } = await renderDrawer();
+
+    await user.click(clientHeader());
+    await waitFor(() => expect(screen.getByLabelText('Project summary')).toHaveValue('Résumé IA.'));
+    await user.type(screen.getByLabelText(/^phone$/i), '87123456');
+
+    // The work, typed with the Client section still open: no reopen, so the
+    // signature check never runs again and the summary stays the blank one.
+    await user.click(screen.getByRole('button', { name: 'Add Scan' }));
+    fireEvent.change(screen.getByLabelText('Scan Cost'), { target: { value: '10' } });
+    expect(api.summarizeAitoProject).toHaveBeenCalledTimes(1);
+
+    await user.click(createButton());
+
+    expect(onCreate).toHaveBeenCalledWith(
+      'Résumé IA.',
+      expect.objectContaining({ id: DEFAULT_ID }),
+      [expect.objectContaining({ scanCost: 10 })],
+      null,
+      null,
+      true,
+    );
+  });
+
+  it('flags it while the summary is still generating, handing over the fallback text', async () => {
+    vi.mocked(api.summarizeAitoProject).mockImplementation(() => new Promise(() => {}));
+    const user = userEvent.setup();
+    const { onCreate } = await renderDrawer();
+
+    await user.click(screen.getByRole('button', { name: 'Add Scan' }));
+    fireEvent.change(screen.getByLabelText('Scan Cost'), { target: { value: '10' } });
+    await user.click(clientHeader());
+    await user.type(screen.getByLabelText(/^phone$/i), '87123456');
+    expect(screen.getByTestId('ai-summary-shimmer')).toBeInTheDocument();
+
+    await user.click(createButton());
+
+    expect(onCreate).toHaveBeenCalledTimes(1);
+    const [description, , , , , regenerate] = onCreate.mock.calls[0];
+    expect(description).not.toBe('');
+    expect(description).not.toBe('Résumé IA.');
+    expect(regenerate).toBe(true);
+  });
+
+  it('never flags a hand-edited summary, even one the work has outgrown', async () => {
+    const user = userEvent.setup();
+    const { onCreate } = await renderDrawer();
+
+    await user.click(screen.getByRole('button', { name: 'Add Scan' }));
+    fireEvent.change(screen.getByLabelText('Scan Cost'), { target: { value: '10' } });
+    await user.click(clientHeader());
+    await waitFor(() => expect(screen.getByLabelText('Project summary')).toHaveValue('Résumé IA.'));
+    await user.type(screen.getByLabelText(/^phone$/i), '87123456');
+
+    const textarea = screen.getByLabelText('Project summary');
+    await user.clear(textarea);
+    await user.type(textarea, 'Écrit à la main.');
+    // A real signature change after the edit: the title is part of it.
+    await user.type(screen.getByLabelText(/optional title/i), 'Capot');
+
+    await user.click(createButton());
+
+    expect(onCreate).toHaveBeenCalledWith(
+      'Écrit à la main.',
+      expect.any(Object),
+      [expect.objectContaining({ title: 'Capot' })],
+      null,
+      null,
+      false,
     );
   });
 });

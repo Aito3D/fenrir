@@ -234,6 +234,7 @@ describe('createMutation — onError', () => {
         tasks: [],
         shipping: null,
         dueDate: null,
+        regenerateDescription: false,
         placeholder,
       });
     });
@@ -283,6 +284,7 @@ describe('createMutation — promised date', () => {
         tasks: [],
         shipping: null,
         dueDate: '2026-09-20',
+        regenerateDescription: false,
         placeholder,
       });
     });
@@ -335,6 +337,7 @@ describe('createMutation — contact person', () => {
         tasks: [],
         shipping: null,
         dueDate: null,
+        regenerateDescription: false,
         placeholder,
       });
     });
@@ -382,6 +385,7 @@ describe('createMutation — contact person', () => {
         tasks: [],
         shipping: null,
         dueDate: null,
+        regenerateDescription: false,
         placeholder,
       });
     });
@@ -450,5 +454,49 @@ describe('importMutation — onError', () => {
       client.getQueryData<AitoProject[]>(['aito-projects'])?.some((p) => p.id === placeholder.id),
     ).toBe(false);
     expect(await screen.findByText('Could not create the project. Please try again.')).toBeInTheDocument();
+  });
+});
+
+describe('createMutation — stale summary', () => {
+  beforeEach(() => __resetBoardSync());
+
+  it('forwards the regenerate flag in the create POST body', async () => {
+    const spy = vi.spyOn(api, 'createAitoProject').mockResolvedValue({ id: 99 } as AitoProject);
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    client.setQueryData(['aito-projects'], []);
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>
+        <ToastProvider>{children}</ToastProvider>
+      </QueryClientProvider>
+    );
+    const { result } = renderHook(() => useAitoPageMutations(), { wrapper });
+
+    const placeholder = placeholderProject({
+      description: 'Stale summary',
+      client_id: null,
+      client_name: 'Walk-in',
+      client_phone: null,
+      client_email: null,
+      client_is_company: false,
+    });
+
+    act(() => {
+      result.current.createMutation.mutate({
+        description: 'Stale summary',
+        draft: defaultClientDraft('walkin', 'Walk-in'),
+        tasks: [],
+        shipping: null,
+        dueDate: null,
+        regenerateDescription: true,
+        placeholder,
+      });
+    });
+
+    await waitFor(() => expect(spy).toHaveBeenCalled());
+    expect(spy).toHaveBeenCalledWith(
+      expect.objectContaining({ description: 'Stale summary', regenerate_description: true }),
+    );
   });
 });
