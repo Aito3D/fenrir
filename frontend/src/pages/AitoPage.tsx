@@ -46,6 +46,8 @@ import { PrintBacklogBadge } from '../components/aito/PrintBacklogBadge';
 import { printBacklog } from '../utils/aitoBacklog';
 import { MobileBoard } from '../components/aito/MobileBoard';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { useIsTablet } from '../hooks/useIsTablet';
+import { TabletBoard } from '../components/aito/TabletBoard';
 
 // Shared with SortableCard so the dropped card and the neighbours closing
 // the gap around it settle on the same curve.
@@ -118,6 +120,9 @@ export function AitoPage() {
   // Phones get the one-column board (MobileBoard). The breakpoint is the
   // app's own: useIsMobile, max-width 767px.
   const isMobile = useIsMobile();
+  // Touch screens from 768px get the tablet board (a window of columns);
+  // mouse-primary screens keep the six columns at every width.
+  const isTablet = useIsTablet();
   // Shares the module-level counters every optimistic board mutation feeds —
   // see that hook's own doc for why there are two. Only `isIdle` (the
   // `pendingWrites` one) is used here.
@@ -318,6 +323,7 @@ export function AitoPage() {
   const pending = aitoQuery.isPending;
   const loadingStatus = useBoardLoadingStatus(pending && view === 'board');
   const mobileBoard = isMobile && view === 'board';
+  const tabletBoard = !isMobile && isTablet && view === 'board';
 
   // Whether the columns' reflow slide (see BoardColumn's `dragActive`) must
   // stay out of the way. It covers the drag itself AND the beat after it: a
@@ -399,6 +405,24 @@ export function AitoPage() {
     });
   };
 
+  // The in-production count and the print backlog, shown by the touch boards
+  // where the desktop title row used to say it (phone sheet + ⋯ caption,
+  // tablet ⋯ caption).
+  const boardCaption = (
+    <>
+      <span className="text-[15px] font-bold text-white">{t('aito.title')}</span>
+      <span className="px-2 py-0.5 text-xs font-medium text-bambu-gray-light bg-bambu-dark-tertiary rounded-full tabular-nums">
+        <span aria-hidden="true">{pending ? '–' : inProduction}</span>
+        <span className="sr-only">{t('aito.inProduction', { count: inProduction })}</span>
+      </span>
+      <PrintBacklogBadge
+        minutes={backlogMinutes}
+        printerCount={printersQuery.data?.length}
+        dailyHours={(calcPrintersQuery.data ?? []).map((p) => p.daily_usage_hours)}
+      />
+    </>
+  );
+
   // Shared by both boards: the desktop board renders it as its last child
   // (see `.stagger-parents`), the phone board over its pager. Mounted only
   // from `shown`, so a fast first fetch never flashes it; kept through
@@ -437,7 +461,9 @@ export function AitoPage() {
         className={
           mobileBoard
             ? 'aito-page flex flex-col h-[calc(100dvh-3.5rem)]'
-            : 'aito-page p-4 md:px-8 md:py-4 flex flex-col gap-3 min-h-[calc(100dvh-3.5rem)] min-[1024px]:h-[calc(100dvh-3.5rem)] min-[1144px]:h-dvh'
+            : tabletBoard
+              ? 'aito-page flex flex-col h-[calc(100dvh-3.5rem)] min-[1144px]:h-dvh'
+              : 'aito-page p-4 md:px-8 md:py-4 flex flex-col gap-3 min-h-[calc(100dvh-3.5rem)] min-[1024px]:h-[calc(100dvh-3.5rem)] min-[1144px]:h-dvh'
         }
       >
       {/* Header — one row at lg+ so the board gets every remaining pixel of
@@ -449,7 +475,7 @@ export function AitoPage() {
           sentence is gone — the page title plus the column names already say
           what this screen is — and so is the pills' own row: with the page
           padding and gaps around it, it cost the board a full row of cards. */}
-      {!mobileBoard && (
+      {!mobileBoard && !tabletBoard && (
       <div className="flex flex-col lg:flex-row lg:flex-wrap lg:items-center gap-4 animate-rise-lg vt-page-title">
         <h1 className="text-2xl font-bold text-white flex items-center gap-3 flex-none">
           <Kanban className="w-7 h-7 text-bambu-green" />
@@ -567,7 +593,7 @@ export function AitoPage() {
           whole point. A query that matched nothing is not an empty board, and
           a shop whose work is all finished is not a shop with no work. */}
       {/* Not on the phone board: it says "no results" per page itself. */}
-      {!mobileBoard && !aitoQuery.isPending && !aitoQuery.isError && view === 'board' && visibleCount === 0 && (
+      {!mobileBoard && !tabletBoard && !aitoQuery.isPending && !aitoQuery.isError && view === 'board' && visibleCount === 0 && (
         <div className="text-center py-8 animate-rise">
           <Kanban className="w-10 h-10 text-bambu-gray mx-auto mb-3" />
           {filtering ? (
@@ -635,26 +661,41 @@ export function AitoPage() {
           search={search}
           onSearchChange={setSearch}
           onExpandCard={openCard}
-          heading={
-            <>
-              <span className="text-[15px] font-bold text-white">{t('aito.title')}</span>
-              <span className="px-2 py-0.5 text-xs font-medium text-bambu-gray-light bg-bambu-dark-tertiary rounded-full tabular-nums">
-                <span aria-hidden="true">{pending ? '–' : inProduction}</span>
-                <span className="sr-only">{t('aito.inProduction', { count: inProduction })}</span>
-              </span>
-              <PrintBacklogBadge
-                minutes={backlogMinutes}
-                printerCount={printersQuery.data?.length}
-                dailyHours={(calcPrintersQuery.data ?? []).map((p) => p.daily_usage_hours)}
-              />
-            </>
-          }
+          heading={boardCaption}
           doneCount={doneCount}
           onShowView={changeView}
           canCreate={canCreate}
           onImport={() => setShowImport(true)}
           onNewProject={() => setShowModal(true)}
           hideFab={expandedProject !== null || showModal || showImport}
+        />
+      ) : tabletBoard ? (
+        <TabletBoard
+          columns={visibleColumns}
+          now={followupClock.now}
+          pending={pending}
+          loadingPill={loadingPill}
+          filtering={filtering}
+          search={search}
+          onSearchChange={setSearch}
+          onExpandCard={openCard}
+          followups={
+            <FollowupStrip
+              compact
+              className="vt-aito-followups flex-none"
+              buckets={buckets}
+              active={followup}
+              onChange={setFollowup}
+              projects={aitoQuery.data ?? []}
+            />
+          }
+          inProduction={inProduction}
+          heading={boardCaption}
+          doneCount={doneCount}
+          onShowView={changeView}
+          canCreate={canCreate}
+          onImport={() => setShowImport(true)}
+          onNewProject={() => setShowModal(true)}
         />
       ) : (
         <DndContext
