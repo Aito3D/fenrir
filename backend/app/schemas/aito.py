@@ -969,6 +969,24 @@ class AitoInvoiceResponse(BaseModel):
     invoice_count: int
 
 
+class AitoRetainerInvoiceResponse(BaseModel):
+    """One retainer (deposit) invoice of this project, read live from Books
+    on panel open — for the same reason ``AitoInvoiceResponse`` is: its
+    interesting fields are ``status`` and ``balance``, and a snapshot of
+    either is wrong the moment the client pays. ``url`` is the Books deep
+    link, built per request like the invoice's.
+    """
+
+    id: str
+    number: str
+    date: str
+    total: float
+    balance: float
+    currency_code: str
+    status: str
+    url: str
+
+
 class AitoRetainerPreview(BaseModel):
     """One deposit already taken against this quote, and what of it is spendable.
 

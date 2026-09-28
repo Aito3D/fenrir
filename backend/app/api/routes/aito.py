@@ -62,6 +62,7 @@ from backend.app.schemas.aito import (
     AitoQuoteStatusResponse,
     AitoQuoteStatusUpdate,
     AitoRetainerApplied,
+    AitoRetainerInvoiceResponse,
     AitoRetainerPreview,
     AitoShippingIsland,
     AitoShippingService,
@@ -99,6 +100,7 @@ from backend.app.services.aito_quote_sync import (
     request_debounced_sync,
     request_immediate_sync,
 )
+from backend.app.services.aito_retainers import list_project_retainers
 from backend.app.services.aito_send_guard import DuplicateSendGuard
 from backend.app.services.aito_shipping import (
     SERVICE_LABELS,
@@ -2075,6 +2077,46 @@ async def get_invoice(
         logger.warning("Aito invoice lookup failed for project %s: %s", project_id, e)
         raise HTTPException(status_code=502, detail=str(e)) from e
     return AitoInvoiceResponse(**newest, url=url, invoice_count=len(invoices))
+
+
+async def _retainer_response(db: AsyncSession, row: dict) -> AitoRetainerInvoiceResponse:
+    """A resolver row plus its Books deep link. Built explicitly rather than
+    ``**row`` so the resolver may grow fields the card does not render."""
+    return AitoRetainerInvoiceResponse(
+        id=row["id"],
+        number=row["number"],
+        date=row["date"],
+        total=row["total"],
+        balance=row["balance"],
+        currency_code=row["currency_code"],
+        status=row["status"],
+        url=await zoho_service.books_retainer_url(db, row["id"]),
+    )
+
+
+@router.get("/{project_id}/retainers", response_model=list[AitoRetainerInvoiceResponse])
+async def get_retainers(
+    project_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
+) -> list[AitoRetainerInvoiceResponse]:
+    """The retainer (deposit) invoices Books holds for this project's quote.
+
+    Read live, like ``get_invoice`` — see ``AitoRetainerInvoiceResponse``.
+    ``[]`` (not 404) for a project with no quote: that is the ordinary state
+    of a hand-made card, and a 404 here means the PROJECT is missing.
+    """
+    project = await db.get(AitoProject, project_id)
+    if project is None or project.status == "deleted":
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not project.quote_id:
+        return []
+    try:
+        rows = await list_project_retainers(db, project)
+        return [await _retainer_response(db, row) for row in rows]
+    except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
+        logger.warning("Aito retainer lookup failed for project %s: %s", project_id, e)
+        raise HTTPException(status_code=502, detail=str(e)) from e
 
 
 # One string for every "this card is already billed" refusal — the local
