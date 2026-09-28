@@ -58,6 +58,15 @@ async def _heimdall(db_session):
     heimdall_service._transport = None
 
 
+@pytest.fixture(autouse=True)
+def _forget_redrive_failures():
+    """The consecutive re-drive failure counts live in a module dict (T-082);
+    empty it around every test so no count leaks into the next one."""
+    svc._reset_redrive_failures()
+    yield
+    svc._reset_redrive_failures()
+
+
 async def _project(db, **over):
     base = {
         "description": "d",
@@ -1695,3 +1704,125 @@ async def test_a_replayed_paid_row_whose_settle_never_committed_is_polled_and_se
     assert len(notified) == 1 and refreshed == [(project_id, "quote")]
     assert await svc.poll_open_terminal_payments(db_session, now=NOW + timedelta(hours=1)) == 0
     assert gets == ["h-1"]
+
+
+async def _owed_paid_invoice_row(db, project_id, **over):
+    row = await _open_quote_charge(db, project_id, document_kind="invoice", **over)
+    row.status = "paid"
+    row.booking_status = "booked"
+    row.settled_at = NOW
+    row.effects_pending_at = NOW
+    await db.commit()
+    return row.id
+
+
+@pytest.mark.asyncio
+async def test_a_redrive_that_keeps_failing_is_surfaced_then_capped(db_session, monkeypatch, caplog):
+    """T-082 (user-approved 2026-09-27): a deterministic re-drive failure
+    lands in the row's `sync_error` from the first attempt, is re-driven up
+    to MAX_EFFECTS_REDRIVE_FAILURES times, then no more — `effects_pending_at`
+    is cleared, the error stays visible, and ERROR is logged once."""
+    p = await _project(db_session)
+    project_id = p.id
+    row_id = await _owed_paid_invoice_row(db_session, project_id, idempotency_key="k-cap", heimdall_id="h-cap")
+    _spy_effects(monkeypatch)
+    attempts = []
+
+    async def failing_record(db, pid, kind, **k):
+        attempts.append(kind)
+        raise RuntimeError("event table is gone")
+
+    monkeypatch.setattr(svc, "record", failing_record)
+    later = NOW + timedelta(seconds=svc.EFFECTS_REDRIVE_GRACE_SECONDS)
+    cap = svc.MAX_EFFECTS_REDRIVE_FAILURES
+    for i in range(cap + 2):
+        caplog.clear()
+        with caplog.at_level("WARNING", logger="backend.app.services.aito_terminal_payments"):
+            await svc._redrive_settle_effects(db_session, now=later + timedelta(minutes=i), limit=10)
+        stored = await db_session.get(AitoTerminalPayment, row_id)
+        await db_session.refresh(stored)
+        assert stored.sync_error == "Settle effects failed: event table is gone"
+        errors = [r for r in caplog.records if r.levelname == "ERROR"]
+        if i < cap - 1:
+            assert stored.effects_pending_at == NOW
+            assert errors == []
+        elif i == cap - 1:
+            assert stored.effects_pending_at is None
+            assert len(errors) == 1 and "giving up" in errors[0].getMessage()
+        else:
+            assert stored.effects_pending_at is None
+            assert caplog.records == []
+    # Re-driven exactly `cap` times, never after.
+    assert len(attempts) == cap
+    assert row_id not in svc._redrive_failures
+    # The panel's view carries the error.
+    assert svc.terminal_view(stored).sync_error == "Settle effects failed: event table is gone"
+    assert stored.status == "paid" and stored.settled_at == NOW
+
+
+@pytest.mark.asyncio
+async def test_a_redrive_that_recovers_before_the_cap_clears_the_error_and_runs_once(db_session, monkeypatch):
+    """T-082: a success before the cap clears the `sync_error` the failed
+    attempt wrote and completes the effects exactly once."""
+    p = await _project(db_session)
+    project_id = p.id
+    row_id = await _owed_paid_invoice_row(db_session, project_id, idempotency_key="k-rec", heimdall_id="h-rec")
+    notified, refreshed = _spy_effects(monkeypatch)
+    real_record = svc.record
+    calls = []
+
+    async def flaky_record(*a, **k):
+        calls.append(1)
+        if len(calls) == 1:
+            raise RuntimeError("database is locked")
+        return await real_record(*a, **k)
+
+    monkeypatch.setattr(svc, "record", flaky_record)
+    later = NOW + timedelta(seconds=svc.EFFECTS_REDRIVE_GRACE_SECONDS)
+    assert await svc._redrive_settle_effects(db_session, now=later, limit=10) == 0
+    stored = await db_session.get(AitoTerminalPayment, row_id)
+    await db_session.refresh(stored)
+    assert stored.sync_error == "Settle effects failed: database is locked"
+    assert stored.effects_pending_at == NOW
+
+    assert await svc._redrive_settle_effects(db_session, now=later, limit=10) == 1
+    await db_session.refresh(stored)
+    assert stored.sync_error is None and stored.effects_pending_at is None
+    assert row_id not in svc._redrive_failures
+    assert len(await _events(db_session, project_id, "payment.terminal.paid")) == 1
+    assert refreshed == [(project_id, "invoice")]
+
+    assert await svc._redrive_settle_effects(db_session, now=later + timedelta(hours=1), limit=10) == 0
+    assert len(await _events(db_session, project_id, "payment.terminal.paid")) == 1
+    assert len(refreshed) == 1 and notified == []
+
+
+@pytest.mark.asyncio
+async def test_a_redrive_failure_record_that_itself_fails_does_not_end_the_pass(db_session, monkeypatch):
+    """T-082: writing the failure is best effort — if that write fails too,
+    the pass still returns and the marker stays for the next tick."""
+    p = await _project(db_session)
+    project_id = p.id
+    row_id = await _owed_paid_invoice_row(db_session, project_id, idempotency_key="k-wf", heimdall_id="h-wf")
+    _spy_effects(monkeypatch)
+
+    async def failing_record(*a, **k):
+        raise RuntimeError("event write failed")
+
+    monkeypatch.setattr(svc, "record", failing_record)
+    real_commit = db_session.commit
+    commits = []
+
+    async def failing_commit():
+        commits.append(1)
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr(db_session, "commit", failing_commit)
+    later = NOW + timedelta(seconds=svc.EFFECTS_REDRIVE_GRACE_SECONDS)
+    assert await svc._redrive_settle_effects(db_session, now=later, limit=10) == 0
+    assert commits == [1]
+    monkeypatch.setattr(db_session, "commit", real_commit)
+    stored = await db_session.get(AitoTerminalPayment, row_id)
+    await db_session.refresh(stored)
+    assert stored.effects_pending_at == NOW and stored.sync_error is None
+    assert svc._redrive_failures[row_id] == 1

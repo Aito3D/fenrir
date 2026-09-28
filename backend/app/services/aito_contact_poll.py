@@ -65,6 +65,28 @@ OVERLAP_SECONDS = 300
 # minutes, and one second still re-reads the cut-off row's timestamp twins).
 TRUNCATED_OVERLAP_SECONDS = 1
 
+# Consecutive passes a contact's rename may fail while still holding the
+# watermark (T-080, the invoice poll's MAX_ADOPT_FAILURES for the same
+# reason): past that the row is poison, not transiently broken, and pinning
+# the window at its timestamp would make every tick re-list a growing slice
+# of the org — once that slice passes the listing's page cap, no rename made
+# in Books after it would ever reach a card. Giving up costs the poison
+# contact its retries (its cards keep the old name), not the future: a
+# contact edited in Books again gets a fresh ``last_modified_time`` and
+# re-enters the window, and its count is dropped once it leaves the window.
+MAX_RENAME_FAILURES = 3
+
+# Consecutive rename failures, per contact id. Module state, as the invoice
+# poll's: a property of this process's conversation with Books, and a restart
+# re-earning three attempts is the right behaviour.
+_rename_failures: dict[str, int] = {}
+
+
+def _reset_rename_failures() -> None:
+    """Forget every counted failure — tests run this around each pass."""
+    _rename_failures.clear()
+
+
 # The shared Books-timestamp helpers (aito_poll_watermark), under the names
 # this module and its tests have always used.
 _format_books_time = format_books_time
@@ -131,29 +153,64 @@ async def poll_contacts(db: AsyncSession) -> int:
     updated = 0
     newest: datetime | None = None
     # The oldest row this pass could not finish: the watermark must not pass
-    # it, or the retry would never be offered.
+    # it, or the retry would never be offered — up to MAX_RENAME_FAILURES
+    # passes, after which a contact that is never going to succeed stops
+    # holding the window open for everyone else.
     oldest_failure: datetime | None = None
+    seen: set[str] = set()
 
     for row in rows:
         moment = _parse_books_time(row.get("last_modified_time"))
         contact_id = str(row.get("id") or "")
         name = (row.get("name") or "").strip()
+        seen.add(contact_id)
         try:
             # A blank name is a Books row this pass cannot trust; the walk-in
             # bucket is shared by every counter sale.
             if contact_id and name and contact_id != walk_in_id:
                 updated += await _rename_cards(db, contact_id, name)
         except (SQLAlchemyError, ValueError, TypeError, KeyError) as exc:
-            logger.warning("Contact poll skipped contact %s: %s", contact_id, exc)
+            failures = _rename_failures.get(contact_id, 0) + 1
+            _rename_failures[contact_id] = failures
             try:
                 await db.rollback()
             except SQLAlchemyError:
                 pass
-            if moment and (oldest_failure is None or moment < oldest_failure):
-                oldest_failure = moment
+            if failures < MAX_RENAME_FAILURES:
+                logger.warning("Contact poll skipped contact %s: %s", contact_id, exc)
+                if moment and (oldest_failure is None or moment < oldest_failure):
+                    oldest_failure = moment
+                continue
+            if failures == MAX_RENAME_FAILURES:
+                # Once, at ERROR — the count is kept so the next pass says it
+                # again at debug rather than filling the log every tick.
+                logger.error(
+                    "Contact poll giving up on contact %s after %d consecutive failures; "
+                    "the watermark will advance past it. Last error: %s",
+                    contact_id,
+                    failures,
+                    exc,
+                )
+            else:
+                logger.debug(
+                    "Contact poll still failing on contact %s (%d consecutive): %s",
+                    contact_id,
+                    failures,
+                    exc,
+                )
+            # Deliberately NOT fed into oldest_failure: a poison contact
+            # counts as seen from here on, so the window stops growing.
+            if moment and (newest is None or moment > newest):
+                newest = moment
             continue
+        _rename_failures.pop(contact_id, None)
         if moment and (newest is None or moment > newest):
             newest = moment
+
+    # A counted contact no longer in the window cannot be retried anyway;
+    # drop it so the dict stays the size of the current window's failures.
+    for stale in [k for k in _rename_failures if k not in seen]:
+        del _rename_failures[stale]
 
     await advance_watermark(
         db,

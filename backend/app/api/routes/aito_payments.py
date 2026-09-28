@@ -210,6 +210,15 @@ async def record_manual_payment_route(
         # Books did not answer the payment call (a timeout can land after
         # Books applied it). The guard stays armed, so an identical retry
         # inside the window answers 409; the message says to look first.
+        if e.stage == "retainer":
+            # T-079: the retainer invoice creation itself went unanswered --
+            # no payment was attempted, but a retainer may exist in Books.
+            raise _refuse(
+                502,
+                "manual_outcome_unknown",
+                f"Zoho Books did not answer the retainer invoice creation ({e.cause}). "
+                "A retainer invoice may already be in Books — check before retrying.",
+            ) from e
         prefix = (
             f"Retainer {e.retainer_number} was raised in Zoho Books but Books did not answer the payment on it"
             if e.retainer_number

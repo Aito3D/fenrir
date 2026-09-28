@@ -51,6 +51,25 @@ SETTLED_STATUSES = frozenset({"paid", "failed", "cancelled", "expired", "needs_a
 # the marker within a few DB round trips of its claim unless it failed; the
 # grace only keeps the sweep from racing a settle still in flight.
 EFFECTS_REDRIVE_GRACE_SECONDS = 300
+# How many consecutive re-drives of one settle's effects may fail before the
+# sweep gives up on it (T-082). Past that the failure is deterministic (an
+# event or acceptance that will never commit), and re-driving it every tick
+# forever would also crowd newer re-drives out of the `limit`. Giving up
+# clears `effects_pending_at` (the row is no longer selected) and leaves the
+# failure in `sync_error`, where the operator can see it.
+MAX_EFFECTS_REDRIVE_FAILURES = 3
+
+# Consecutive re-drive failures, per terminal row id. Module state, as the
+# invoice/contact polls' failure stores: the durable facts are the row's own
+# `effects_pending_at` (cleared at the cap) and `sync_error` (written on every
+# failure); a restart re-earning the remaining attempts is harmless.
+_redrive_failures: dict[int, int] = {}
+
+
+def _reset_redrive_failures() -> None:
+    """Forget every counted failure — tests run this around each pass."""
+    _redrive_failures.clear()
+
 
 # Serialises the guard-check + reservation-insert in `start_terminal_payment`.
 # Single-process app; same rationale as `aito_payment_links._pass_lock` — two
@@ -460,13 +479,52 @@ async def _redrive_settle_effects(db: AsyncSession, *, now: datetime, limit: int
                 await db.rollback()
                 continue
             set_committed_value(row, "effects_pending_at", None)
+            if rid in _redrive_failures:
+                # The `sync_error` an earlier failed re-drive wrote: cleared
+                # in the same commit as the effects (rolled back with them).
+                row.sync_error = None
             logger.info("terminal payment sweep: re-driving the settle effects of row %s", rid)
             await _settle_effects(db, row)
+            _redrive_failures.pop(rid, None)
             redriven += 1
         except Exception as exc:  # noqa: BLE001 — one row's failure must not end the pass
-            logger.warning("terminal payment sweep: re-driving the settle effects of row %s failed: %s", rid, exc)
             await db.rollback()
+            await _record_redrive_failure(db, rid, exc)
     return redriven
+
+
+async def _record_redrive_failure(db: AsyncSession, rid: int, exc: Exception) -> None:
+    """Count a failed re-drive (T-082): write it to the row's `sync_error`
+    and, at MAX_EFFECTS_REDRIVE_FAILURES, stop re-driving by clearing
+    `effects_pending_at`, logging ERROR once. Both writes are guarded on the
+    marker still being set, so a row whose effects did commit (a failure
+    after that commit) is never branded with an error."""
+    failures = _redrive_failures.get(rid, 0) + 1
+    values: dict = {"sync_error": f"Settle effects failed: {exc}"[:500]}
+    if failures < MAX_EFFECTS_REDRIVE_FAILURES:
+        _redrive_failures[rid] = failures
+        logger.warning("terminal payment sweep: re-driving the settle effects of row %s failed: %s", rid, exc)
+    else:
+        _redrive_failures.pop(rid, None)
+        values["effects_pending_at"] = None
+        logger.error(
+            "terminal payment sweep: giving up on the settle effects of row %s after %d consecutive failures; "
+            "the error stays in its sync_error. Last error: %s",
+            rid,
+            failures,
+            exc,
+        )
+    try:
+        await db.execute(
+            update(AitoTerminalPayment)
+            .where(AitoTerminalPayment.id == rid, AitoTerminalPayment.effects_pending_at.is_not(None))
+            .values(**values)
+            .execution_options(synchronize_session=False)
+        )
+        await db.commit()
+    except Exception as write_exc:  # noqa: BLE001 — best effort; the next tick re-drives the row anyway
+        logger.warning("terminal payment sweep: recording the re-drive failure of row %s failed: %s", rid, write_exc)
+        await db.rollback()
 
 
 async def refresh_terminal_payment(

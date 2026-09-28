@@ -85,12 +85,21 @@ class ManualPaymentOutcomeUnknown(Exception):
     success nor a failure: the duplicate guard is KEPT (an identical retry
     within the window is refused) and the operator is told to check Books
     before trying again. ``retainer_number`` is set on the quote path, where
-    the retainer invoice was raised before the payment call."""
+    the retainer invoice was raised before the payment call.
 
-    def __init__(self, retainer_number: str | None, cause: Exception) -> None:
-        super().__init__(f"The payment may already be in Zoho Books: {cause}")
+    ``stage`` is ``"retainer"`` when it is the quote path's retainer-invoice
+    CREATION that went unanswered (T-079): no payment was attempted, but
+    Books may hold a retainer invoice nothing in Bambuddy knows about, so a
+    retry would raise a second one. ``retainer_number`` is then ``None``."""
+
+    def __init__(self, retainer_number: str | None, cause: Exception, *, stage: str = "payment") -> None:
+        if stage == "retainer":
+            super().__init__(f"A retainer invoice may already be in Zoho Books: {cause}")
+        else:
+            super().__init__(f"The payment may already be in Zoho Books: {cause}")
         self.retainer_number = retainer_number
         self.cause = cause
+        self.stage = stage
 
 
 @dataclass(frozen=True)
@@ -153,8 +162,9 @@ async def record_manual_payment(
     # again, except the two where something already landed in Books and a
     # retry would double it: `ManualPaymentPartial` (the retainer exists),
     # `ManualPaymentUnrecorded` (the payment itself exists) and
-    # `ManualPaymentOutcomeUnknown` (the payment call timed out, or got a
-    # 5xx / non-JSON answer -- it may exist). Those KEEP the key, and their
+    # `ManualPaymentOutcomeUnknown` (the payment call -- or the retainer
+    # invoice creation -- timed out, or got a 5xx / non-JSON answer -- it
+    # may exist). Those KEEP the key, and their
     # message names what to check or finish by hand -- the prune above cannot
     # drop them early: it only ever removes entries already past the window.
     _GUARD.arm(key, now)
@@ -181,14 +191,30 @@ async def record_manual_payment(
                 _log_outcome_unknown(project_id, document.kind, document.number, None, exc)
                 raise ManualPaymentOutcomeUnknown(None, exc) from exc
         else:
-            retainer = await zoho_service.create_retainer_invoice(
-                db,
-                customer_id=document.customer_id,
-                reference_number=document.number,
-                description=f"Acompte {document.number}",
-                amount=amount,
-                today=today_s,
-            )
+            try:
+                retainer = await zoho_service.create_retainer_invoice(
+                    db,
+                    customer_id=document.customer_id,
+                    reference_number=document.number,
+                    description=f"Acompte {document.number}",
+                    amount=amount,
+                    today=today_s,
+                )
+            except (ZohoUnreachable, ZohoAmbiguous) as exc:
+                # T-079: a timeout (or 5xx / non-JSON answer) can land after
+                # Books created the retainer. Releasing the guard would let a
+                # reflex retry raise a second, orphaned retainer invoice, so
+                # the key is KEPT and the operator is told to check Books.
+                # A clean refusal (4xx JSON) still releases it below.
+                logger.error(
+                    "manual payment on project %s (%s %s): Books did not answer the retainer invoice creation, "
+                    "a retainer may already exist there: %s",
+                    project_id,
+                    document.kind,
+                    document.number,
+                    exc,
+                )
+                raise ManualPaymentOutcomeUnknown(None, exc, stage="retainer") from exc
             retainer_id = str(retainer.get("retainerinvoice_id") or "")
             retainer_number = str(retainer.get("retainerinvoice_number") or retainer_id)
             try:
