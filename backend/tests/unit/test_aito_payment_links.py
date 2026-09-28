@@ -1856,6 +1856,35 @@ def _sessions(test_engine):
 
 
 @pytest.fixture
+async def file_engine(test_engine, tmp_path):
+    """A WAL file database, for tests whose sessions run CONCURRENTLY.
+    `test_engine` is `:memory:` behind a StaticPool, so every session shares
+    one sqlite3 connection, and one session's commit while another has a
+    statement open fails with "cannot commit transaction - SQL statements in
+    progress" (SQLite 3.46 on the CI runners; 3.53 on macOS lets it through).
+    Production gives each session its own connection to a WAL file, as this
+    does. Depends on `test_engine` only for its model registration."""
+    from sqlalchemy import event
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from backend.app.core.database import Base
+
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'race.db'}")
+
+    @event.listens_for(engine.sync_engine, "connect")
+    def _pragmas(dbapi_conn, _record):
+        cursor = dbapi_conn.cursor()
+        cursor.execute("PRAGMA journal_mode = WAL")
+        cursor.execute("PRAGMA busy_timeout = 15000")
+        cursor.close()
+
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    yield engine
+    await engine.dispose()
+
+
+@pytest.fixture
 def own_reserve_lock(monkeypatch):
     """`svc._reserve_lock` is a module global, and an `asyncio.Lock` binds
     itself to the running loop the first acquire that actually CONTENDS — so a
@@ -1912,7 +1941,7 @@ def _steal_the_key(monkeypatch, maker, *, status: str) -> None:
 
 @pytest.mark.asyncio
 async def test_two_concurrent_invoice_link_creates_reserve_exactly_one_row(
-    test_engine, fake, own_reserve_lock, monkeypatch
+    file_engine, fake, own_reserve_lock, monkeypatch
 ):
     """Two Create-link clicks on one card (two tabs, or two operators). Both
     used to count the same rows, compute the same `aito:{pid}:1` and the
@@ -1922,7 +1951,7 @@ async def test_two_concurrent_invoice_link_creates_reserve_exactly_one_row(
     own key or is refused: one row, one key, one link at Heimdall, no 500."""
     import asyncio
 
-    maker = _sessions(test_engine)
+    maker = _sessions(file_engine)
     async with maker() as setup:
         project_id = (await _project(setup)).id
     _slow_key(monkeypatch)
@@ -1954,7 +1983,7 @@ async def test_two_concurrent_invoice_link_creates_reserve_exactly_one_row(
 
 @pytest.mark.asyncio
 async def test_an_operator_create_racing_the_reconcilers_reserve_gets_a_distinct_key(
-    test_engine, fake, own_reserve_lock, monkeypatch
+    file_engine, fake, own_reserve_lock, monkeypatch
 ):
     """The reconciler's `_create` and the invoice route draw from the SAME
     per-project key counter, and the HTTP path never takes `_pass_lock`: both
@@ -1964,7 +1993,7 @@ async def test_an_operator_create_racing_the_reconcilers_reserve_gets_a_distinct
     two reservations take `:1` and `:2` in whichever order they arrive."""
     import asyncio
 
-    maker = _sessions(test_engine)
+    maker = _sessions(file_engine)
     async with maker() as setup:
         project_id = (await _project(setup)).id
     _slow_key(monkeypatch)
