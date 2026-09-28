@@ -22,7 +22,7 @@ import contextlib
 import logging
 import math
 import time
-from datetime import datetime, timezone
+from datetime import datetime
 
 from sqlalchemy import and_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -36,7 +36,7 @@ from backend.app.models.aito_task import AitoTask
 from backend.app.models.calculator import CalculatorFilament
 from backend.app.services.aito_board_rules import AWAY_STATUSES
 from backend.app.services.aito_customer_credit import read_customer_credit
-from backend.app.services.aito_events import record
+from backend.app.services.aito_events import record, utc_now_naive
 from backend.app.services.aito_invoice_sweep import _same_reference, sweep_invoices
 from backend.app.services.aito_payment_links import deposit_pct, required_amount
 from backend.app.services.aito_quote_export import (
@@ -1113,7 +1113,7 @@ async def _reconcile_status(db: AsyncSession, project: AitoProject, estimate: di
         # bucket forever. Once-only, mirroring adopt_quote_status: a restore
         # to an away status that already carries a stamp keeps the original.
         if restore_target in AWAY_STATUSES and project.quote_sent_at is None:
-            project.quote_sent_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            project.quote_sent_at = utc_now_naive()
         project.quote_status_before_trash = None
         _clear_block(project)
     return False

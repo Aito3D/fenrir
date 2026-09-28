@@ -83,7 +83,7 @@ from backend.app.services.aito_board_rules import AWAY_STATUSES, SERVICES, TaskS
 from backend.app.services.aito_client_history import compute_client_history
 from backend.app.services.aito_client_rating import read_client_rating
 from backend.app.services.aito_customer_credit import read_customer_credit
-from backend.app.services.aito_events import diff_fields, kinds_for_depth, record
+from backend.app.services.aito_events import diff_fields, kinds_for_depth, record, utc_now_naive
 from backend.app.services.aito_invoice_create import (
     apply_retainers,
     build_invoice_payload,
@@ -99,6 +99,7 @@ from backend.app.services.aito_quote_sync import (
     request_debounced_sync,
     request_immediate_sync,
 )
+from backend.app.services.aito_send_guard import DuplicateSendGuard
 from backend.app.services.aito_shipping import (
     SERVICE_LABELS,
     grouped_islands,
@@ -1635,7 +1636,7 @@ async def create_project(
     # backdates created_at to, or now for a hand-made card posted with an
     # away status. Never for a bare draft — it has not left the shop.
     if payload.quote_status in AWAY_STATUSES or payload.quote_status in ("accepted", "declined"):
-        project.quote_sent_at = created_at or datetime.now(timezone.utc).replace(tzinfo=None)
+        project.quote_sent_at = created_at or utc_now_naive()
     for task_payload in payload.tasks:
         _reject_ticks_without_acceptance(payload.quote_status, task_payload.model_dump())
     db.add(project)
@@ -2524,7 +2525,8 @@ _EMAIL_DUPLICATE_WINDOW_S = 60.0
 # time.monotonic() of the last send that MAY have reached the client. Pruned
 # on every call: the recipient is caller-supplied (if allowlisted), so an
 # unevicted dict would only ever grow.
-_recent_emails: dict[tuple[str, int, str, str], float] = {}
+_EMAIL_GUARD = DuplicateSendGuard(_EMAIL_DUPLICATE_WINDOW_S)
+_recent_emails = _EMAIL_GUARD.entries
 _EMAIL_DUPLICATE_DETAIL = (
     "Already sent — this email went to that address less than a minute ago; check with the client before sending again"
 )
@@ -2533,7 +2535,7 @@ _EMAIL_DUPLICATE_DETAIL = (
 def _reset_recent_emails() -> None:
     """Test hook: the guard is module state, so a test that fills it must be
     able to empty it again."""
-    _recent_emails.clear()
+    _EMAIL_GUARD.clear()
 
 
 def _email_guard_key_or_409(kind: str, project_id: int, document_id: str, recipient: str) -> tuple[str, int, str, str]:
@@ -2542,10 +2544,8 @@ def _email_guard_key_or_409(kind: str, project_id: int, document_id: str, recipi
     window. Reads the clock through the module's own `time` name, like
     _sms_guard_key_or_409, so a test can rebind it to a fake clock."""
     now = time.monotonic()
-    for stale in [k for k, at in _recent_emails.items() if now - at >= _EMAIL_DUPLICATE_WINDOW_S]:
-        del _recent_emails[stale]
     key = (kind, project_id, document_id, recipient.lower())
-    if key in _recent_emails:
+    if _EMAIL_GUARD.is_recent(key, now):
         raise HTTPException(status_code=409, detail=_EMAIL_DUPLICATE_DETAIL)
     return key
 
@@ -2625,19 +2625,19 @@ async def send_invoice_email(
 
     key = _email_guard_key_or_409("invoice", project_pk, invoice["id"], recipient)
     # Armed before the send; nothing is awaited between the check and here.
-    _recent_emails[key] = time.monotonic()
+    _EMAIL_GUARD.arm(key, time.monotonic())
     try:
         await zoho_service.email_invoice(db, invoice["id"], to_mail_ids=[recipient])
     except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
         if not isinstance(e, ZohoUnreachable):
             # Books refused cleanly: nothing was sent, so an honest retry may go.
-            _recent_emails.pop(key, None)
+            _EMAIL_GUARD.release(key)
         logger.warning("Aito invoice email failed for project %s: %s", project_id, e)
         await db.rollback()
         raise _zoho_email_http_error(e) from e
     except Exception:
         # Not one of Books' answers, so nothing is known to have been sent.
-        _recent_emails.pop(key, None)
+        _EMAIL_GUARD.release(key)
         raise
 
     event_recorded = True
@@ -2939,13 +2939,13 @@ async def send_quote_email(
 
     key = _email_guard_key_or_409("quote", project.id, project.quote_id, recipient)
     # Armed before the send; nothing is awaited between the check and here.
-    _recent_emails[key] = time.monotonic()
+    _EMAIL_GUARD.arm(key, time.monotonic())
     try:
         await zoho_service.email_estimate(db, project.quote_id, to_mail_ids=[recipient])
     except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
         if not isinstance(e, ZohoUnreachable):
             # Books refused cleanly: nothing was sent, so an honest retry may go.
-            _recent_emails.pop(key, None)
+            _EMAIL_GUARD.release(key)
         logger.warning("Aito quote email failed for project %s: %s", project_id, e)
         # Belt-and-braces, not load-bearing: unlike set_quote_status, this
         # handler re-raises rather than swallowing the error, so get_db's own
@@ -2958,7 +2958,7 @@ async def send_quote_email(
         raise _zoho_email_http_error(e) from e
     except Exception:
         # Not one of Books' answers, so nothing is known to have been sent.
-        _recent_emails.pop(key, None)
+        _EMAIL_GUARD.release(key)
         raise
 
     await record(
@@ -4140,7 +4140,7 @@ async def set_project_contacted(
         # `quote_accepted_at` is stamped the same way in
         # services/aito_quote_status.py. A tz-aware value here would compare
         # wrong against all of them.
-        project.client_contacted_at = datetime.now(timezone.utc).replace(tzinfo=None) if payload.contacted else None
+        project.client_contacted_at = utc_now_naive() if payload.contacted else None
         await record(
             db,
             project.id,
@@ -4327,7 +4327,8 @@ _SMS_DUPLICATE_WINDOW_S = 60.0
 # Pruned on every call (aito_manual_payments' sibling guard does the same):
 # this key carries a caller-supplied message, so an unevicted dict would grow
 # with every distinct body ever sent.
-_recent_sms: dict[tuple[int, str], float] = {}
+_SMS_GUARD = DuplicateSendGuard(_SMS_DUPLICATE_WINDOW_S)
+_recent_sms = _SMS_GUARD.entries
 # Plain-string details, the module's shape for a message with no client-side
 # branching to do — except for their LEADING words, which SmsPickupModal
 # matches to pick its toast. Reword them with the modal, not alone.
@@ -4343,7 +4344,7 @@ _SMS_UNREACHABLE_DETAIL = (
 def _reset_recent_sms() -> None:
     """Test hook: the guard is module state, so a test that fills it must be
     able to empty it again (the suite's own fixtures call this)."""
-    _recent_sms.clear()
+    _SMS_GUARD.clear()
 
 
 def _sms_guard_key_or_409(project_id: int, message: str) -> tuple[int, str]:
@@ -4354,10 +4355,8 @@ def _sms_guard_key_or_409(project_id: int, message: str) -> tuple[int, str]:
     _check_rate_limit does — so a test can rebind it to a fake clock.
     """
     now = time.monotonic()
-    for stale in [k for k, at in _recent_sms.items() if now - at >= _SMS_DUPLICATE_WINDOW_S]:
-        del _recent_sms[stale]
     key = (project_id, message.strip())
-    if key in _recent_sms:
+    if _SMS_GUARD.is_recent(key, now):
         raise HTTPException(status_code=409, detail=_SMS_DUPLICATE_DETAIL)
     return key
 
@@ -4419,7 +4418,7 @@ async def send_pickup_sms(
     # never reaches Pushcut never arms the key. Un-armed again below on a clean
     # refusal, or on any other exception the send itself raises (T-044);
     # success and the ambiguous PushcutUnreachable keep it.
-    _recent_sms[key] = time.monotonic()
+    _SMS_GUARD.arm(key, time.monotonic())
     try:
         await send_sms_notification(
             db,
@@ -4431,7 +4430,7 @@ async def send_pickup_sms(
         # A clean refusal Pushcut itself gave: nothing was pushed, so the key
         # armed above is dropped again and an honest retry — once the URL is
         # configured — goes straight through.
-        _recent_sms.pop(key, None)
+        _SMS_GUARD.release(key)
         raise HTTPException(status_code=409, detail="Pushcut is not configured") from None
     except PushcutUnreachable as e:
         # Caught BEFORE its PushcutUpstreamError parent below — the ambiguous
@@ -4448,7 +4447,7 @@ async def send_pickup_sms(
     except PushcutUpstreamError as e:
         # Pushcut answered and refused: nothing was pushed, so the key armed
         # above is dropped and an honest retry is allowed straight away.
-        _recent_sms.pop(key, None)
+        _SMS_GUARD.release(key)
         raise HTTPException(status_code=502, detail=str(e)) from e
     except Exception:
         # T-044: anything else raised by the send itself (a bug, a DB error
@@ -4461,7 +4460,7 @@ async def send_pickup_sms(
         # call only: an exception raised AFTER a successful send (recording
         # the event, the commit below) must NOT land here and must NOT un-arm
         # the key, because the SMS really did go out.
-        _recent_sms.pop(key, None)
+        _SMS_GUARD.release(key)
         raise
     # No re-arm here: the key written before the push already covers the
     # success path, and the window is deliberately measured from the moment

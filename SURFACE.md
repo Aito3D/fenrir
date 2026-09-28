@@ -140,6 +140,7 @@ client method — and fails the iteration unless the user approved it.
 async def accept_quote(
 async def add_note(
 async def add_task(
+async def advance_watermark(
 async def apply_quote_decision(
 async def apply_retainers(
 async def apply_terminal_state(db: AsyncSession, row: AitoTerminalPayment, view: LinkView, *, now: datetime)
@@ -211,6 +212,7 @@ async def push_quote_status(db: AsyncSession, project: AitoProject, status: str)
 async def quote_validity_days(db: AsyncSession)
 async def read_client_rating(
 async def read_customer_credit(
+async def read_since(db: AsyncSession, setting: str, backfill_days: int)
 async def reconcile_payment_links(
 async def reconcile_project(
 async def reconcile_quote_status(db: AsyncSession, project: AitoProject, estimate: dict)
@@ -256,6 +258,7 @@ class Catalogue
 class ClientRating
 class DocumentMismatch(Exception)
 class DuplicateManualPayment(Exception)
+class DuplicateSendGuard
 class ExportShipping
 class ExportTask
 class HeimdallAmbiguous(HeimdallUpstreamError)
@@ -333,6 +336,7 @@ def enabled_services(task: ExportTask)
 def evaluate(quote_status: str | None, stored_column: str, pending: Collection[str])
 def expires_in_days(expires_on: str, today: date)
 def expiry_for(quote_date: str | None, validity_days: int)
+def format_books_time(moment: datetime)
 def format_time(minutes: int | None)
 def format_weight(grams: float | None)
 def group_lines(lines: list[ParsedLine])
@@ -355,6 +359,7 @@ def net_cost(task: Any, service: str)
 def normalize_display_name(first_name: str, last_name: str)
 def normalize_token(raw: str)
 def outstanding_amount(required: int, retainer_paid_total: float | None)
+def parse_books_time(value: str | None)
 def parse_credential(token: str)
 def parse_description(
 def parse_lines(

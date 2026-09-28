@@ -27,7 +27,7 @@ shown with the "automatic" suffix — so "who changed the name" has an answer.
 """
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
@@ -36,6 +36,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.core.websocket import ws_manager
 from backend.app.models.aito_project import AitoProject
 from backend.app.services.aito_events import diff_fields, record
+from backend.app.services.aito_poll_watermark import (
+    advance_watermark,
+    format_books_time,
+    parse_books_time,
+    read_since,
+)
 from backend.app.services.zoho import zoho_service
 
 logger = logging.getLogger(__name__)
@@ -59,28 +65,14 @@ OVERLAP_SECONDS = 300
 # minutes, and one second still re-reads the cut-off row's timestamp twins).
 TRUNCATED_OVERLAP_SECONDS = 1
 
-# Books' own spelling: offset as ±HHMM, never 'Z' (rejected outright).
-_BOOKS_TIME = "%Y-%m-%dT%H:%M:%S%z"
-
-
-def _format_books_time(moment: datetime) -> str:
-    return moment.astimezone(timezone.utc).strftime(_BOOKS_TIME)
-
-
-def _parse_books_time(value: str | None) -> datetime | None:
-    try:
-        return datetime.strptime((value or "").strip(), _BOOKS_TIME)
-    except ValueError:
-        return None
+# The shared Books-timestamp helpers (aito_poll_watermark), under the names
+# this module and its tests have always used.
+_format_books_time = format_books_time
+_parse_books_time = parse_books_time
 
 
 async def _since(db: AsyncSession) -> str:
-    from backend.app.api.routes.settings import get_setting
-
-    stored = (await get_setting(db, POLL_SINCE_SETTING) or "").strip()
-    if _parse_books_time(stored) is not None:
-        return stored
-    return _format_books_time(datetime.now(timezone.utc) - timedelta(days=BACKFILL_DAYS))
+    return await read_since(db, POLL_SINCE_SETTING, BACKFILL_DAYS)
 
 
 async def _rename_cards(db: AsyncSession, contact_id: str, name: str) -> int:
@@ -132,8 +124,6 @@ async def poll_contacts(db: AsyncSession) -> int:
     other listing failure) without advancing the watermark, so the window is
     re-read once Books answers again.
     """
-    from backend.app.api.routes.settings import set_setting
-
     since = await _since(db)
     rows = await zoho_service.list_contacts_modified_since(db, since)
     walk_in_id, _walk_in_name = await zoho_service.get_default_contact(db)
@@ -165,18 +155,14 @@ async def poll_contacts(db: AsyncSession) -> int:
         if moment and (newest is None or moment > newest):
             newest = moment
 
-    watermark = min(x for x in (newest, oldest_failure) if x is not None) if (newest or oldest_failure) else None
-    if watermark is not None:
-        # Rows arrive oldest first: on a truncated pass ``newest`` is the last
-        # row read and the rest of the window is still unread, so resume there.
-        rewind = TRUNCATED_OVERLAP_SECONDS if getattr(rows, "truncated", False) else OVERLAP_SECONDS
-        resume = watermark - timedelta(seconds=rewind)
-        # Never before where this pass started: those rows were just read, and
-        # the overlap would otherwise reach back into a window walked in
-        # capped passes and start the walk over.
-        started = _parse_books_time(since)
-        if started is not None and resume < started:
-            resume = started
-        await set_setting(db, POLL_SINCE_SETTING, _format_books_time(resume))
-        await db.commit()
+    await advance_watermark(
+        db,
+        POLL_SINCE_SETTING,
+        since,
+        rows,
+        newest,
+        oldest_failure,
+        overlap_seconds=OVERLAP_SECONDS,
+        truncated_overlap_seconds=TRUNCATED_OVERLAP_SECONDS,
+    )
     return updated

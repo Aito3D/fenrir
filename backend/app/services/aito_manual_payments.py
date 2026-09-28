@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.models.aito_project import AitoProject
 from backend.app.services.aito_events import record
 from backend.app.services.aito_payment_documents import PaymentDocument
+from backend.app.services.aito_send_guard import DuplicateSendGuard
 from backend.app.services.zoho import (
     ZohoAmbiguous,
     ZohoNotConfiguredError,
@@ -37,7 +38,8 @@ MODE_SETTINGS = {
 # Entries past DUPLICATE_WINDOW_SECONDS are pruned on the next call (see
 # record_manual_payment), so this never grows past the tuples active within
 # the window.
-_recent: dict[tuple, float] = {}
+_GUARD = DuplicateSendGuard(DUPLICATE_WINDOW_SECONDS)
+_recent = _GUARD.entries
 
 
 class DuplicateManualPayment(Exception):
@@ -139,11 +141,9 @@ async def record_manual_payment(
     # below, so dropping it here changes nothing a caller can observe and
     # keeps the dict from growing forever (every distinct project/document/
     # amount/reference tuple ever paid, for the life of the process). Same
-    # shape as _recent_sms's sweep in routes/aito.py.
-    for stale in [k for k, at in _recent.items() if now - at >= DUPLICATE_WINDOW_SECONDS]:
-        del _recent[stale]
-    last = _recent.get(key)
-    if last is not None and now - last < DUPLICATE_WINDOW_SECONDS:
+    # guard as _recent_sms's in routes/aito.py (DuplicateSendGuard). After the
+    # prune, a key still present is by construction inside the window.
+    if _GUARD.is_recent(key, now):
         raise DuplicateManualPayment("This payment was recorded a moment ago")
     # Reserved HERE, before any Zoho call -- not just after a successful one.
     # Two requests for the same document/amount/reference a few hundred ms
@@ -157,7 +157,7 @@ async def record_manual_payment(
     # 5xx / non-JSON answer -- it may exist). Those KEEP the key, and their
     # message names what to check or finish by hand -- the prune above cannot
     # drop them early: it only ever removes entries already past the window.
-    _recent[key] = now
+    _GUARD.arm(key, now)
     try:
         if document.kind == "invoice" and document.balance is not None and amount > document.balance:
             raise AmountAboveBalance(document.balance)
@@ -276,7 +276,7 @@ async def record_manual_payment(
     except (ManualPaymentPartial, ManualPaymentUnrecorded, ManualPaymentOutcomeUnknown):
         raise
     except Exception:
-        _recent.pop(key, None)
+        _GUARD.release(key)
         raise
     await refresh_after_payment(db, project_id, document.kind)
     return ManualPaymentResult(zoho_payment_id=zoho_payment_id, retainer_number=retainer_number, mode_name=mode_name)
