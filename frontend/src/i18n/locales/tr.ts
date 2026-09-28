@@ -553,8 +553,6 @@ export default {
       expired: 'Süresi doldu',
     },
     invoiceLabel: 'Fatura',
-    invoiceTotalLabel: 'Toplam',
-    invoiceBalanceLabel: 'Kalan tutar',
     invoiceOpenInZoho: 'Zoho Books\'ta aç',
     invoiceMoreCount: 'Diğer faturalar: {{count}}',
     printInvoice: 'Faturayı yazdır',

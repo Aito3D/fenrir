@@ -553,8 +553,6 @@ export default {
       expired: 'Истекло',
     },
     invoiceLabel: 'Счёт',
-    invoiceTotalLabel: 'Итого',
-    invoiceBalanceLabel: 'Остаток к оплате',
     invoiceOpenInZoho: 'Открыть в Zoho Books',
     invoiceMoreCount: 'Другие счета: {{count}}',
     printInvoice: 'Печать счёта',

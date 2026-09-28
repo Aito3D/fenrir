@@ -553,8 +553,6 @@ export default {
       expired: '만료됨',
     },
     invoiceLabel: '청구서',
-    invoiceTotalLabel: '합계',
-    invoiceBalanceLabel: '미결제 잔액',
     invoiceOpenInZoho: 'Zoho Books에서 열기',
     invoiceMoreCount: '기타 청구서: {{count}}',
     printInvoice: '청구서 인쇄',

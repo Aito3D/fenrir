@@ -1,185 +1,94 @@
 import { useTranslation } from 'react-i18next';
-import { ExternalLink } from 'lucide-react';
 import type { AitoProject } from '../../api/client';
 import { useAitoInvoice } from './useAitoInvoice';
+import { DocumentRow } from './DocumentRow';
 import { InvoiceDownloadButton } from './InvoiceDownloadButton';
 import { InvoicePrintButton } from './InvoicePrintButton';
 import { SendInvoiceButton } from './SendInvoiceButton';
 import { INVOICE_STATUS_TEXT_TONE_CLASSES, invoiceStatusLabelKey, invoiceStatusTone } from './invoiceStatus';
-import { Money } from '../calculator/shared';
 import { useCurrency } from '../../hooks/useCurrency';
-import { ACTION_GROUP } from './quoteActionGroup';
-import { PaymentBlock } from './payment/PaymentBlock';
-import { invoiceDocument } from './payment/paymentDocument';
-import { terminalFor } from './payment/paymentState';
+import { formatMoney } from '../../utils/pricing';
 
-/** The Zoho invoice raised from this project's quote.
+/** The Zoho invoice raised from this project's quote, as one `DocumentRow`
+ *  of the Billing card.
  *
- *  The lower half of the Billing card — a hairline, then the same
- *  definition-list rows and the same link-out affordance on the number as the
- *  quote rows above it. It used to be a card of its own under a "Invoice"
- *  heading; the two read as one story in that order, so they share one card
- *  now and this block labels its first row "Invoice" instead. The difference
- *  that matters is where the data comes from: every quote field is a snapshot
- *  on the project row and renders with Zoho unreachable, while this is
- *  fetched live on panel open. That is deliberate (see `AitoInvoiceResponse`)
- *  — a stored "Unpaid" is wrong the moment the client pays, and a stale
- *  payment status is worse than an absent block.
+ *  Every quote field is a snapshot on the project row and renders with Zoho
+ *  unreachable, while this is fetched live on panel open — deliberately
+ *  (see `AitoInvoiceResponse`): a stored "Unpaid" is wrong the moment the
+ *  client pays. Renders nothing while loading, on error and when there is
+ *  no invoice: the row is additive, and a card without it is complete.
  *
- *  Renders nothing at all while loading, on error, and when there is no
- *  invoice. A hairline over a spinner would be exactly the noise the Billing
- *  card's own gating argues against, and the block is additive information:
- *  a card without it is still complete.
- */
-export function InvoiceCard({ project, canUpdate, heimdallConfigured }: {
-  project: AitoProject;
-  canUpdate: boolean;
-  /** Whether Heimdall is configured — see `BillingCard`'s prop of the same
-   *  name, which this one mirrors down to the invoice's `PaymentBlock`. */
-  heimdallConfigured: boolean;
-}) {
+ *  The invoice's collect block (`PaymentBlock`) is NOT here: `BillingCard`
+ *  mounts it under all the rows, reading the same cached query, so the
+ *  documents list and the collect section stay two separate things. */
+export function InvoiceCard({ project, canUpdate }: { project: AitoProject; canUpdate: boolean }) {
   const { t } = useTranslation();
   const appCurrency = useCurrency();
-
-  // The gating (can this project have an invoice at all?) and the fetch both
-  // live in `useAitoInvoice`, shared with the shipping label so the panel
-  // never asks Books twice for one project.
   const invoiceQuery = useAitoInvoice(project);
-
   const invoice = invoiceQuery.data;
   if (!invoice) return null;
 
   const statusKey = invoiceStatusLabelKey(invoice.status);
-  // The invoice's own currency, not the app's: Books states the amount in the
-  // currency the client is billed in, and relabelling that with the board's
-  // display currency would put the wrong symbol on a real number. The app
-  // currency is only the fallback for an invoice that arrived without one.
+  // The invoice's own currency, not the app's — Books states the amount in
+  // the currency the client is billed in.
   const currency = invoice.currency_code || appCurrency;
+  const syncPending = project.quote_sync_state === 'pending';
+  const dates = invoice.date
+    ? t('aito.invoiceDatesTitle', { date: invoice.date, due: invoice.due_date || '—' })
+    : undefined;
 
   return (
-    <div data-testid="invoice-block" className="mt-3 border-t border-bambu-dark-tertiary pt-3">
-      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm items-baseline">
-        <dt className="text-bambu-gray">{t('aito.invoiceLabel')}</dt>
-        <dd className="text-right min-w-0">
-          {/* `url` is normally never empty — GET /invoice 502s rather than
-              returning one. The one path that produces `""` is the send
-              route's own post-send degrade (see routes/aito.py), and
-              `useSendInvoiceMutation` writes that response straight into this
-              block's cache. An `<a href="">` self-navigates: it reloads the
-              whole SPA and drops the panel, which reads as far worse than a
-              plain-text row the next 5-minute refetch quietly upgrades back
-              into a link. */}
-          {invoice.url ? (
-            <a
-              href={invoice.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              title={t('aito.invoiceOpenInZoho')}
-              className="text-white hover:text-bambu-green inline-flex items-center gap-1 min-w-0 truncate"
-            >
-              {/* Falls back to the id: Books has returned an invoice with no
-                  number before it is finalised, and a link whose only visible
-                  content is an external-link icon is unclickable-looking and
-                  says nothing about where it goes. */}
-              {invoice.number || invoice.id}
-              <ExternalLink className="w-3.5 h-3.5 flex-shrink-0" />
-            </a>
-          ) : (
-            <span className="text-white inline-block min-w-0 truncate">{invoice.number || invoice.id}</span>
-          )}
-        </dd>
-
-        {/* `common.date`, not a new aito key: it is the same word, already
-            translated in all 13 locales and already carrying the parity
-            allowlist entries a bare "Date" needs. */}
-        {invoice.date && (
-          <>
-            <dt className="text-bambu-gray">{t('common.date')}</dt>
-            <dd className="text-right text-white">{invoice.date}</dd>
-          </>
-        )}
-
-        <dt className="text-bambu-gray">{t('aito.invoiceTotalLabel')}</dt>
-        <dd className="text-right text-white">
-          <Money value={invoice.total} currency={currency} />
-        </dd>
-
-        {/* Only when something is still owed. On a paid invoice this row would
-            read "0" under a Status already saying "Paid" — the same fact
-            twice, which is what the omitted rows elsewhere in this panel
-            exist to avoid. */}
-        {invoice.balance > 0 && (
-          <>
-            <dt className="text-bambu-gray">{t('aito.invoiceBalanceLabel')}</dt>
-            <dd className="text-right text-status-warning">
-              <Money value={invoice.balance} currency={currency} />
-            </dd>
-          </>
-        )}
-
-        {invoice.status && (
-          <>
-            <dt className="text-bambu-gray">{t('common.status')}</dt>
-            <dd className={`text-right ${INVOICE_STATUS_TEXT_TONE_CLASSES[invoiceStatusTone(invoice.status)]}`}>
-              {statusKey ? t(statusKey) : invoice.status}
-            </dd>
-          </>
-        )}
-      </dl>
-
-      {/* The Encaissement block for whatever is still owed on this invoice.
-          Renders itself away when nothing is due and nothing is in flight. */}
-      <PaymentBlock
-        project={project}
-        document={invoiceDocument(invoice)}
-        link={project.invoice_payment_link ?? null}
-        terminal={terminalFor(project, 'invoice')}
-        canUpdate={canUpdate}
-        heimdallConfigured={heimdallConfigured}
+    <>
+      <DocumentRow
+        testId="invoice-block"
+        label={t('aito.invoiceLabel')}
+        // Falls back to the id: Books returns an unnumbered invoice before it is finalised.
+        number={invoice.number || invoice.id}
+        numberTitle={dates}
+        status={
+          invoice.status
+            ? {
+                text: statusKey ? t(statusKey) : invoice.status,
+                toneClass: INVOICE_STATUS_TEXT_TONE_CLASSES[invoiceStatusTone(invoice.status)],
+              }
+            : null
+        }
+        amount={formatMoney(invoice.total, currency)}
+        // `url` can be "" after the send route's post-send degrade (see routes/aito.py); no link then.
+        booksUrl={invoice.url || null}
+        booksLabel={t('aito.invoiceOpenInZoho')}
+        // Both PDF buttons sit out a pending quote sync: until the edit lands,
+        // the PDF Books returns may not match the card.
+        print={
+          <InvoicePrintButton projectId={project.id} invoiceId={invoice.id} disabled={syncPending} variant="icon" />
+        }
+        download={
+          <InvoiceDownloadButton
+            projectId={project.id}
+            invoiceId={invoice.id}
+            invoiceNumber={invoice.number}
+            disabled={syncPending}
+            variant="icon"
+          />
+        }
+        // POST /{project_id}/invoice-email enforces AITO_UPDATE — the same gate SendQuoteButton's call site applies.
+        send={
+          canUpdate ? (
+            <SendInvoiceButton
+              projectId={project.id}
+              document={{ kind: 'invoice', id: invoice.id }}
+              contactPersonId={project.client_contact_person_id}
+              variant="icon"
+            />
+          ) : undefined
+        }
       />
-
-      {/* Books can invoice one estimate in parts. The block shows the newest,
-          and says so rather than letting it look like the only one — an
-          operator who prints "the" invoice on a part-billed job would
-          otherwise never learn there were others. */}
+      {/* Books can invoice one estimate in parts; the row shows the newest and says so. */}
       {invoice.invoice_count > 1 && (
-        <p className="mt-2 text-xs text-bambu-gray">
+        <p className="pb-1.5 text-xs text-bambu-gray">
           {t('aito.invoiceMoreCount', { count: invoice.invoice_count - 1 })}
         </p>
       )}
-
-      {/* The same segmented control as the quote rows above, deliberately:
-          the two halves of this card are meant to read as one family. See
-          quoteActionGroup.ts. "Open in Zoho" is still absent for the same
-          reason it always was — the number above already goes there. */}
-      {/* Both PDF buttons sit out a pending quote sync: the invoice has no
-          sync state of its own, so the project's is the only signal that an
-          edit is still on its way to Zoho — and until it lands, the PDF
-          Books returns may not match what the operator sees here. */}
-      <div className={ACTION_GROUP}>
-        <InvoicePrintButton
-          projectId={project.id}
-          invoiceId={invoice.id}
-          disabled={project.quote_sync_state === 'pending'}
-        />
-        {/* Saves the same PDF the print button fetches, named after the
-            invoice number. */}
-        <InvoiceDownloadButton
-          projectId={project.id}
-          invoiceId={invoice.id}
-          invoiceNumber={invoice.number}
-          disabled={project.quote_sync_state === 'pending'}
-        />
-        {/* POST /{project_id}/invoice-email enforces AITO_UPDATE — same gate,
-            same call site pattern, as SendQuoteButton in the quote rows. */}
-        {canUpdate && (
-          <SendInvoiceButton
-            projectId={project.id}
-            document={{ kind: 'invoice', id: invoice.id }}
-            contactPersonId={project.client_contact_person_id}
-          />
-        )}
-      </div>
-    </div>
+    </>
   );
 }

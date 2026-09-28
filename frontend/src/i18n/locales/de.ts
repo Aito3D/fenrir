@@ -553,8 +553,6 @@ export default {
       expired: 'Abgelaufen',
     },
     invoiceLabel: 'Rechnung',
-    invoiceTotalLabel: 'Gesamt',
-    invoiceBalanceLabel: 'Offener Betrag',
     invoiceOpenInZoho: 'In Zoho Books öffnen',
     invoiceMoreCount: 'Weitere Rechnungen: {{count}}',
     printInvoice: 'Rechnung drucken',

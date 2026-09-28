@@ -554,8 +554,6 @@ export default {
       expired: "Термін минув",
     },
     invoiceLabel: 'Рахунок',
-    invoiceTotalLabel: 'Разом',
-    invoiceBalanceLabel: 'Залишок до сплати',
     invoiceOpenInZoho: 'Відкрити в Zoho Books',
     invoiceMoreCount: 'Інші рахунки: {{count}}',
     printInvoice: 'Друк рахунку',

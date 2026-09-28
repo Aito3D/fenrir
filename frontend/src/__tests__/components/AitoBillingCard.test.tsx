@@ -1,8 +1,9 @@
-import { describe, it, expect, vi } from 'vitest';
-import { screen } from '@testing-library/react';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { BillingCard } from '../../components/aito/BillingCard';
+import { api } from '../../api/client';
 import type { AitoProject } from '../../api/client';
 
 vi.mock('../../utils/clipboard', () => ({ copyTextToClipboard: vi.fn(async () => true) }));
@@ -116,5 +117,94 @@ describe('BillingCard force sync', () => {
     });
     expect(screen.getByText(TAX_EXCLUSIVE)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Force sync' })).not.toBeInTheDocument();
+  });
+});
+
+const RETAINER = {
+  id: 'RET-B', number: 'AC-26-0031', date: '2026-09-03', total: 17500, balance: 0, currency_code: 'XPF',
+  status: 'paid', url: 'https://books.zoho.eu/app/org1#/retainerinvoices/RET-B',
+};
+const INVOICE = {
+  id: 'inv-1', number: 'FA-26-4100', date: '2026-09-27', due_date: '2026-10-12', total: 35000, balance: 17500,
+  currency_code: 'XPF', status: 'unpaid', url: 'https://books.zoho.eu/app/org1#/invoices/inv-1', invoice_count: 1,
+};
+
+describe('BillingCard document rows', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('lists quote, retainers, invoice in that order, then the collect block, then sync facts', async () => {
+    vi.spyOn(api, 'getAitoRetainers').mockResolvedValue([RETAINER]);
+    vi.spyOn(api, 'getAitoInvoice').mockResolvedValue(INVOICE);
+    renderCard(
+      project({
+        quote_invoiced: true, quote_sync_state: 'locked', retainer_paid_total: 17500, quote_url: 'https://books/q',
+      }),
+    );
+
+    expect(await screen.findByTestId('doc-retainer-RET-B')).toBeInTheDocument();
+    await screen.findByTestId('invoice-block');
+    const labels = screen.getAllByTestId(/^doc-|^invoice-block$/).map((n) => n.textContent ?? '');
+    expect(labels[0]).toContain('DEV-2026-1234');
+    expect(labels[1]).toContain('AC-26-0031');
+    expect(labels[2]).toContain('FA-26-4100');
+    // The collect block sits under the rows and names the invoice's balance.
+    const card = screen.getByTestId('doc-quote').parentElement!.parentElement!;
+    const blocks = within(card).getAllByTestId('payment-block');
+    expect(blocks.length).toBeGreaterThanOrEqual(1);
+    expect(within(card).getByText('Balance due')).toBeInTheDocument();
+    expect(within(card).getByText('Quote invoiced')).toBeInTheDocument();
+  });
+
+  it('gives the retainer row all four actions', async () => {
+    vi.spyOn(api, 'getAitoRetainers').mockResolvedValue([RETAINER]);
+    renderCard(project({ retainer_paid_total: 17500 }));
+
+    const row = await screen.findByTestId('doc-retainer-RET-B');
+    expect(within(row).getByText('Retainer invoice')).toBeInTheDocument();
+    expect(within(row).getByText('Paid')).toBeInTheDocument();
+    expect(within(row).getByText(/17.500/)).toBeInTheDocument();
+    expect(within(row).getByRole('button', { name: 'Print retainer invoice' })).toBeInTheDocument();
+    expect(within(row).getByRole('button', { name: 'Download retainer invoice' })).toBeInTheDocument();
+    expect(within(row).getByRole('button', { name: 'Send retainer invoice' })).toBeInTheDocument();
+    expect(within(row).getByRole('link', { name: 'Open in Zoho Books' })).toHaveAttribute('href', RETAINER.url);
+  });
+
+  it('never asks for retainers on a quoted, unpaid card, and renders no retainer row', async () => {
+    const spy = vi.spyOn(api, 'getAitoRetainers');
+    renderCard(project());
+    await waitFor(() => expect(screen.getByTestId('doc-quote')).toBeInTheDocument());
+    expect(spy).not.toHaveBeenCalled();
+    expect(screen.queryByTestId(/^doc-retainer-/)).toBeNull();
+  });
+
+  it('hides every send button from a reader', async () => {
+    vi.spyOn(api, 'getAitoRetainers').mockResolvedValue([RETAINER]);
+    vi.spyOn(api, 'getAitoInvoice').mockResolvedValue(INVOICE);
+    renderCard(project({ quote_invoiced: true, retainer_paid_total: 17500 }), { canUpdate: false });
+    await screen.findByTestId('doc-retainer-RET-B');
+    await screen.findByTestId('invoice-block');
+    expect(screen.queryByRole('button', { name: /^Send/ })).toBeNull();
+    expect(screen.getAllByRole('button', { name: /^Print/ })).toHaveLength(3);
+  });
+
+  it('has no segmented action bar any more — only the collect block uses it', async () => {
+    renderCard(project({ quote_total: 100000 }), { depositPct: 30 });
+    // The quote row's cluster: four 24px buttons/links; the collect block's cells are the only `flex-1` buttons.
+    const cells = screen.getAllByRole('button').filter((b) => b.className.includes('flex-1'));
+    expect(cells.map((b) => b.getAttribute('aria-label'))).toEqual([
+      'Payment link',
+      'Pay by card on the terminal',
+      'Manual — record a payment',
+    ]);
+    expect(screen.getByRole('button', { name: 'Print quote' }).className).toContain('p-1 ');
+  });
+
+  it('disables print and download on every row while the quote sync is pending', async () => {
+    vi.spyOn(api, 'getAitoRetainers').mockResolvedValue([RETAINER]);
+    renderCard(project({ quote_sync_state: 'pending', retainer_paid_total: 17500 }));
+    await screen.findByTestId('doc-retainer-RET-B');
+    for (const name of ['Print quote', 'Download quote', 'Print retainer invoice', 'Download retainer invoice']) {
+      expect(screen.getByRole('button', { name })).toBeDisabled();
+    }
   });
 });

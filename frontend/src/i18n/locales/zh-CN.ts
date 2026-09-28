@@ -553,8 +553,6 @@ export default {
       expired: '已过期',
     },
     invoiceLabel: '发票',
-    invoiceTotalLabel: '合计',
-    invoiceBalanceLabel: '未付余额',
     invoiceOpenInZoho: '在 Zoho Books 中打开',
     invoiceMoreCount: '其他发票：{{count}}',
     printInvoice: '打印发票',

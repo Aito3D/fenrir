@@ -553,8 +553,6 @@ export default {
       expired: '期限切れ',
     },
     invoiceLabel: '請求書',
-    invoiceTotalLabel: '合計',
-    invoiceBalanceLabel: '未払い残高',
     invoiceOpenInZoho: 'Zoho Books で開く',
     invoiceMoreCount: 'その他の請求書: {{count}}',
     printInvoice: '請求書を印刷',

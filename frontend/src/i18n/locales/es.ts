@@ -553,8 +553,6 @@ export default {
       expired: 'Caducado',
     },
     invoiceLabel: 'Factura',
-    invoiceTotalLabel: 'Total',
-    invoiceBalanceLabel: 'Saldo pendiente',
     invoiceOpenInZoho: 'Abrir en Zoho Books',
     invoiceMoreCount: 'Otras facturas: {{count}}',
     printInvoice: 'Imprimir factura',

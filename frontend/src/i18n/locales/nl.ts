@@ -8560,8 +8560,6 @@ export default {
       expired: 'Verlopen',
     },
     invoiceLabel: 'Factuur',
-    invoiceTotalLabel: 'Totaal',
-    invoiceBalanceLabel: 'Openstaand saldo',
     invoiceOpenInZoho: 'Openen in Zoho Books',
     invoiceMoreCount: 'Andere facturen: {{count}}',
     printInvoice: 'Factuur afdrukken',

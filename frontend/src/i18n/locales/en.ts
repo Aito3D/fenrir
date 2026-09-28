@@ -557,8 +557,6 @@ export default {
       expired: 'Expired',
     },
     invoiceLabel: 'Invoice',
-    invoiceTotalLabel: 'Total',
-    invoiceBalanceLabel: 'Balance due',
     invoiceOpenInZoho: 'Open in Zoho Books',
     invoiceMoreCount: 'Other invoices: {{count}}',
     printInvoice: 'Print invoice',

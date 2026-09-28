@@ -8562,8 +8562,6 @@ errors: {
       expired: 'Utgången',
     },
     invoiceLabel: 'Faktura',
-    invoiceTotalLabel: 'Totalt',
-    invoiceBalanceLabel: 'Utestående saldo',
     invoiceOpenInZoho: 'Öppna i Zoho Books',
     invoiceMoreCount: 'Andra fakturor: {{count}}',
     printInvoice: 'Skriv ut faktura',
