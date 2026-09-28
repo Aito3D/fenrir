@@ -519,6 +519,29 @@ async def _record_failure(db: AsyncSession, project_id: int, exc: Exception, now
         await db.commit()
 
 
+async def _store_unexpected_failure(
+    db: AsyncSession, exc: Exception, now: datetime, *, row_id: int | None = None, project_id: int = 0
+) -> None:
+    """T-083: store a failure nothing more specific caught (e.g. `accept_quote`
+    raising inside `_became_paid`) on a PENDING row, so it backs off and shows
+    a `sync_error` instead of being retried first on every tick. The caller
+    has rolled back, so the row is RE-FETCHED here — by `row_id`, or as the
+    project's current quote link — never the pre-rollback object, whose
+    expired attributes would lazy-load and raise `MissingGreenlet`. A row
+    that is no longer pending (an invoice link whose paid state committed
+    before its follow-up failed) is left alone: a paid row is never
+    re-adopted, so an error stamped on it would stick forever. A failure of
+    this write itself is only logged."""
+    try:
+        row = await db.get(AitoPaymentLink, row_id) if row_id is not None else await current_link(db, project_id)
+        if row is not None and row.status == "pending":
+            _fail(row, exc, now)
+            await db.commit()
+    except SQLAlchemyError as exc2:
+        logger.warning("payment link: storing failure on row failed: %s", exc2)
+        await db.rollback()
+
+
 async def _replace_lost(
     db: AsyncSession,
     project_id: int,
@@ -993,9 +1016,18 @@ async def _run_pass(
                     stood_down = True
                     logger.warning("payment link pass: Heimdall unreachable, standing down for this pass")
                     break
+            except HeimdallRateLimited:
+                raise
             except SQLAlchemyError as exc:
                 logger.warning("payment link reconcile: project %s failed unexpectedly: %s", pid, exc)
                 await db.rollback()
+            except Exception as exc:  # noqa: BLE001 -- one project's failure must not end the pass
+                # T-083: e.g. a 409 racing a payment whose `accept_quote`
+                # fails — `_became_paid` rolled the link back to `pending`,
+                # so without a stored failure it would abort every pass here.
+                logger.warning("payment link reconcile: project %s failed unexpectedly: %s", pid, exc)
+                await db.rollback()
+                await _store_unexpected_failure(db, exc, now, project_id=pid)
         if not changes_only:
             _throttled_until = None
             await _age_out_abandoned_invoice_reservations(db, now=now)
@@ -1052,9 +1084,21 @@ async def _run_pass(
                         await db.rollback()
                         await _record_failure(db, project_id, exc2, now)
                         stood_down = isinstance(exc2, HeimdallUnreachable)
+                except HeimdallRateLimited:
+                    raise
                 except SQLAlchemyError as exc:
                     logger.warning("payment link poll: row %s failed unexpectedly: %s", rid, exc)
                     await db.rollback()
+                except Exception as exc:  # noqa: BLE001 -- one row's failure must not end the pass
+                    # T-083: e.g. `accept_quote` failing inside `_became_paid`,
+                    # which rolls the link back to `pending` with its OLD
+                    # `checked_at` — first in line again on every tick.
+                    # Stored on the row (re-fetched by id: the rollback
+                    # expired it) so it backs off and surfaces a sync_error,
+                    # and the rest of this pass's links are still polled.
+                    logger.warning("payment link poll: row %s failed unexpectedly: %s", rid, exc)
+                    await db.rollback()
+                    await _store_unexpected_failure(db, exc, now, row_id=rid)
     except HeimdallRateLimited as exc:
         logger.warning("Heimdall rate limit: standing down for %s s", exc.retry_after)
         await db.rollback()

@@ -2512,3 +2512,162 @@ async def test_a_failed_acceptance_on_a_cancel_conflict_is_retried_by_the_forced
     assert kinds.count("payment_link.paid") == 1 and kinds.count("quote.accepted") == 1
     assert "payment_link.cancelled" not in kinds
     assert len(notified) == 1
+
+
+# --- a paid link whose acceptance keeps failing backs off (T-083) --------------
+
+
+def _accept_failing_for(monkeypatch, project_ids, exc):
+    """`accept_quote` raises `exc` (NOT a SQLAlchemyError) for the given
+    projects while `project_ids` is non-empty, before its commit; any other
+    project is accepted for real. Returns the list of project ids it was
+    called for."""
+    import backend.app.services.aito_quote_status as quote_status
+
+    real = quote_status.accept_quote
+    calls = []
+
+    async def accept(db, project, **kw):
+        calls.append(project.id)
+        if project.id in project_ids:
+            raise exc
+        return await real(db, project, **kw)
+
+    monkeypatch.setattr(quote_status, "accept_quote", accept)
+    return calls
+
+
+@pytest.mark.asyncio
+async def test_a_paid_link_whose_acceptance_raises_backs_off_and_the_rest_are_still_polled(
+    db_session, fake, monkeypatch
+):
+    """`accept_quote` raising a non-SQLAlchemy error rolls the link back to
+    `pending` (T-060). The poll no longer lets that escape the pass: the link
+    carries a sync_error and backs off, the other links are polled and
+    credited in the same pass, the backed-off link is not polled again until
+    its back-off has passed, and once the acceptance works it is credited
+    exactly once. The failure is written on a row RE-FETCHED after the
+    rollback — writing it on the expired pre-rollback object would raise
+    `MissingGreenlet` out of the handler and fail this test."""
+    ids = await _three_pending_links(db_session, fake)
+    for hid in ("L1", "L2", "L3"):
+        fake.set_status(hid, "paid")
+    failing = {ids[0]}
+    accept_calls = _accept_failing_for(monkeypatch, failing, RuntimeError("Books said no"))
+
+    first = NOW + timedelta(minutes=5)
+    await reconcile_payment_links(db_session, now=first, today=TODAY)
+    assert [c[1] for c in fake.calls if c[0] == "get"] == ["L1", "L2", "L3"]
+    assert accept_calls == ids
+    stuck, second_link, third_link = [await current_link(db_session, pid) for pid in ids]
+    await db_session.refresh(stuck)
+    assert stuck.status == "pending" and stuck.paid_at is None
+    assert stuck.sync_error == "Books said no" and stuck.sync_failures == 1 and stuck.checked_at == first
+    assert "payment_link.paid" not in await _kinds(db_session, ids[0])
+    for pid, credited in ((ids[1], second_link), (ids[2], third_link)):
+        await db_session.refresh(credited)
+        assert credited.status == "paid" and credited.paid_at == first
+        kinds = await _kinds(db_session, pid)
+        assert kinds.count("payment_link.paid") == 1 and kinds.count("quote.accepted") == 1
+
+    # Inside its back-off: not polled at all.
+    fake.calls.clear()
+    await reconcile_payment_links(db_session, now=first + timedelta(minutes=1), today=TODAY)
+    assert [c for c in fake.calls if c[0] == "get"] == []
+
+    # Past it, with the acceptance working again: credited exactly once.
+    failing.clear()
+    fake.calls.clear()
+    third = first + timedelta(seconds=svc._TICK_SECONDS + 1)
+    await reconcile_payment_links(db_session, now=third, today=TODAY)
+    assert [c[1] for c in fake.calls if c[0] == "get"] == ["L1"]
+    stuck = await current_link(db_session, ids[0])
+    await db_session.refresh(stuck)
+    assert stuck.status == "paid" and stuck.paid_at == third and stuck.sync_error is None
+    kinds = await _kinds(db_session, ids[0])
+    assert kinds.count("payment_link.paid") == 1 and kinds.count("quote.accepted") == 1
+    project = await db_session.get(AitoProject, ids[0])
+    await db_session.refresh(project)
+    assert project.quote_status == "accepted"
+
+    fake.calls.clear()
+    await reconcile_payment_links(db_session, now=third + timedelta(minutes=5), today=TODAY)
+    assert [c for c in fake.calls if c[0] == "get"] == []
+    assert (await _kinds(db_session, ids[0])).count("payment_link.paid") == 1
+
+
+@pytest.mark.asyncio
+async def test_a_failing_acceptance_does_not_swallow_the_unreachable_stand_down(db_session, fake, monkeypatch):
+    """The new catch sits behind the Heimdall handlers: an acceptance failure
+    on L1 is stored and the pass moves on, but a `HeimdallUnreachable` on L2
+    still stops the pass before L3."""
+    ids = await _three_pending_links(db_session, fake)
+    fake.set_status("L1", "paid")
+    _accept_failing_for(monkeypatch, {ids[0]}, ValueError("bad total"))
+    _get_failing_for(fake, monkeypatch, "L2", HeimdallUnreachable("Heimdall unreachable: timed out"))
+    later = NOW + timedelta(minutes=1)
+    await reconcile_payment_links(db_session, now=later, today=TODAY)
+    assert [c[1] for c in fake.calls if c[0] == "get"] == ["L1", "L2"]
+    first, second, third = [await current_link(db_session, pid) for pid in ids]
+    for row in (first, second, third):
+        await db_session.refresh(row)
+    assert first.status == "pending" and first.sync_error == "bad total"
+    assert second.sync_error == "Heimdall unreachable: timed out"
+    assert third.checked_at == NOW and third.sync_error is None
+    assert svc._throttled_until is None
+
+
+@pytest.mark.asyncio
+async def test_a_cancel_conflict_whose_acceptance_raises_does_not_abort_the_pass(db_session, fake, monkeypatch):
+    """Same bug in the reconcile half: a cancel racing a payment (409) whose
+    acceptance raises a non-SQLAlchemy error. The project's link is stored
+    with the failure and backs off, the next project is still reconciled and
+    the poll half still runs."""
+    ids = await _three_pending_links(db_session, fake)
+    fake.set_status("L1", "paid")
+    project = await db_session.get(AitoProject, ids[0])
+    project.quote_invoiced = True  # nothing wanted any more -> the reconcile tries to cancel
+    await db_session.commit()
+    _accept_failing_for(monkeypatch, {ids[0]}, RuntimeError("Books said no"))
+    later = NOW + timedelta(minutes=1)
+    visited = await reconcile_payment_links(db_session, now=later, today=TODAY)
+    assert visited == 3
+    assert fake.calls[0] == ("cancel", "L1")
+    assert [c[1] for c in fake.calls if c[0] == "get"][-2:] == ["L2", "L3"]  # the poll half ran
+    stuck = await current_link(db_session, ids[0])
+    await db_session.refresh(stuck)
+    assert stuck.status == "pending" and stuck.sync_error == "Books said no" and stuck.sync_failures == 1
+    assert "payment_link.paid" not in await _kinds(db_session, ids[0])
+
+
+@pytest.mark.asyncio
+async def test_storing_an_unexpected_failure_skips_settled_rows_and_survives_a_db_error(db_session, fake, monkeypatch):
+    """A row that is no longer pending gets no sync_error (a paid row is never
+    re-adopted, so it would stick), and a failure of the store itself is only
+    logged."""
+    ids = await _three_pending_links(db_session, fake)
+    link = await current_link(db_session, ids[0])
+    rid = link.id
+    link.status = "paid"
+    await db_session.commit()
+    await svc._store_unexpected_failure(db_session, RuntimeError("x"), NOW, row_id=rid)
+    link = await db_session.get(AitoPaymentLink, rid)
+    await db_session.refresh(link)
+    assert link.sync_error is None and link.sync_failures == 0
+
+    async def broken(db, project_id, **kw):
+        raise SQLAlchemyError("database is locked")
+
+    monkeypatch.setattr(svc, "current_link", broken)
+    await svc._store_unexpected_failure(db_session, RuntimeError("x"), NOW, project_id=ids[1])
+
+
+@pytest.mark.asyncio
+async def test_a_rate_limited_poll_still_arms_the_throttle_past_the_new_catch(db_session, fake, monkeypatch):
+    """The generic per-row catch must not swallow a 429 on the GET: the pass
+    stops at L1 and the throttle is armed, exactly as before."""
+    await _three_pending_links(db_session, fake)
+    _get_failing_for(fake, monkeypatch, "L1", HeimdallRateLimited("slow down", 120.0))
+    await reconcile_payment_links(db_session, now=NOW + timedelta(minutes=1), today=TODAY)
+    assert [c[1] for c in fake.calls if c[0] == "get"] == ["L1"]
+    assert svc._throttled_until is not None
