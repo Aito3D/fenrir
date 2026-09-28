@@ -3,7 +3,7 @@
 import pytest
 
 from backend.app.services import aito_retainers
-from backend.app.services.zoho import ZohoUpstreamError, zoho_service
+from backend.app.services.zoho import ZohoRequestRejected, ZohoUnreachable, ZohoUpstreamError, zoho_service
 from backend.app.utils.http import build_content_disposition
 
 RETAINER = {
@@ -282,3 +282,64 @@ async def test_send_degrades_to_the_pre_send_row_when_the_re_read_fails(
     assert response.json()["number"] == "AC-26-0031"
     assert response.json()["status"] == "paid"
     assert len(books_retainer_email) == 1
+
+
+def _flaky_send(monkeypatch, error: Exception) -> tuple[list[str], list[str]]:
+    """Replace the send fake with one that raises ``error`` on its first call
+    and succeeds after. Returns (attempts, delivered): every call Books saw,
+    and the ones that actually went out."""
+    attempts: list[str] = []
+    delivered: list[str] = []
+
+    async def send(db, retainer_id, *, to_mail_ids):
+        attempts.append(retainer_id)
+        if len(attempts) == 1:
+            raise error
+        delivered.append(retainer_id)
+
+    monkeypatch.setattr(zoho_service, "email_retainer", send)
+    return attempts, delivered
+
+
+@pytest.mark.asyncio
+async def test_a_clean_books_refusal_releases_the_guard(async_client, books_retainer_email, monkeypatch):
+    # Books refused the payload outright — nothing went out — so the operator
+    # must be able to fix the contact and send again without waiting out the window.
+    from backend.app.api.routes.aito import _reset_recent_emails
+
+    _reset_recent_emails()
+    attempts, delivered = _flaky_send(monkeypatch, ZohoRequestRejected("No email address for this contact"))
+    project = await _create(async_client)
+    payload = {"to": "contact@example.pf", "retainer_id": "RET-B"}
+
+    first = await async_client.post(f"/api/v1/aito/{project['id']}/retainer-email", json=payload)
+    second = await async_client.post(f"/api/v1/aito/{project['id']}/retainer-email", json=payload)
+
+    assert first.status_code >= 400
+    assert first.status_code != 409
+    assert first.json()["detail"] == "No email address for this contact"
+    assert second.status_code == 200, second.text
+    assert attempts == ["RET-B", "RET-B"]
+    assert delivered == ["RET-B"]
+    _reset_recent_emails()
+
+
+@pytest.mark.asyncio
+async def test_an_unreachable_books_keeps_the_guard_armed(async_client, books_retainer_email, monkeypatch):
+    # A timeout may arrive after Books has already sent the mail, so the
+    # outcome is unknown: a retry inside the window could mail the client twice.
+    from backend.app.api.routes.aito import _reset_recent_emails
+
+    _reset_recent_emails()
+    attempts, delivered = _flaky_send(monkeypatch, ZohoUnreachable("timeout"))
+    project = await _create(async_client)
+    payload = {"to": "contact@example.pf", "retainer_id": "RET-B"}
+
+    first = await async_client.post(f"/api/v1/aito/{project['id']}/retainer-email", json=payload)
+    second = await async_client.post(f"/api/v1/aito/{project['id']}/retainer-email", json=payload)
+
+    assert first.status_code == 502
+    assert second.status_code == 409
+    assert attempts == ["RET-B"]
+    assert delivered == []
+    _reset_recent_emails()

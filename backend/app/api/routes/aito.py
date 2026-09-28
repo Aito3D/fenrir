@@ -2842,8 +2842,9 @@ def _email_guard_key_or_409(kind: str, project_id: int, document_id: str, recipi
 
 
 def _check_zoho_email_rate_limit(request: Request, current_user: User | None) -> None:
-    """The quote- and invoice-email budget: one shared bucket, checked before
-    any lookup so a loop spends neither Books calls nor client inboxes."""
+    """The quote-, invoice- and retainer-email budget: one shared bucket,
+    checked before any lookup so a loop spends neither Books calls nor client
+    inboxes."""
     _check_rate_limit(
         request,
         current_user,
@@ -3107,7 +3108,7 @@ async def _quote_email_content(db: AsyncSession, project: AitoProject) -> tuple[
 
 
 def _zoho_email_http_error(e: Exception) -> HTTPException:
-    """Books' failures, mapped for the quote- and invoice-email routes.
+    """Books' failures, mapped for the quote-, invoice- and retainer-email routes.
 
     The isinstance order is load-bearing: ZohoNotFound and
     ZohoRequestRejected both subclass ZohoUpstreamError, so testing the base
