@@ -5573,6 +5573,17 @@ export interface AuthStatus {
   requires_setup: boolean;
 }
 
+function libraryFilesScopeParams(scope: LibraryFilesScope): URLSearchParams {
+  const params = new URLSearchParams();
+  if (scope.folderId !== null && scope.folderId !== undefined) params.set('folder_id', String(scope.folderId));
+  params.set('include_root', String(scope.includeRoot ?? true));
+  if (scope.scope === 'internal') params.set('internal_only', 'true');
+  else if (scope.scope === 'external') params.set('external_only', 'true');
+  if (scope.recursive) params.set('recursive', 'true');
+  for (const tagId of scope.tagIds ?? []) params.append('tag_ids', String(tagId));
+  return params;
+}
+
 // API functions
 export const api = {
   // Authentication
@@ -8997,6 +9008,41 @@ export const api = {
     }
     return all;
   },
+  /** One page of the File Manager listing with the server's filtered total,
+   * read from the X-Total-Count header (`request` hides headers, so this
+   * goes through fetch like the upload calls). A missing header — an older
+   * backend or a test mock — is treated as "this page is the last one" so
+   * an infinite query can never loop. */
+  getLibraryFilesPage: async (p: LibraryFilesPageParams): Promise<LibraryFilesPage> => {
+    const params = libraryFilesScopeParams(p);
+    if (p.search && p.search.trim()) params.set('search', p.search.trim());
+    if (p.fileType && p.fileType !== 'all') params.set('file_type', p.fileType);
+    if (p.createdBy && p.createdBy.trim()) params.set('created_by', p.createdBy.trim());
+    if (p.sort) params.set('sort', p.sort);
+    if (p.direction) params.set('direction', p.direction);
+    params.set('limit', String(p.limit));
+    params.set('offset', String(p.offset));
+    const headers: Record<string, string> = {};
+    if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+    const response = await fetch(`${API_BASE}/library/files?${params}`, {
+      headers,
+      cache: 'no-store',
+      credentials: 'include',
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(typeof error.detail === 'string' ? error.detail : `HTTP ${response.status}`);
+    }
+    const items = (await response.json()) as LibraryFileListItem[];
+    const header = response.headers.get('X-Total-Count');
+    const parsed = header === null ? NaN : Number(header);
+    const total = Number.isFinite(parsed) ? parsed : p.offset + items.length;
+    return { items, total };
+  },
+  /** Distinct file types in a scope — feeds the type dropdown now that the
+   * browser no longer sees every row. */
+  getLibraryFileTypes: (scope: LibraryFilesScope) =>
+    request<string[]>(`/library/files/file-types?${libraryFilesScopeParams(scope)}`),
   getLibraryFolderReadme: (folderId: number) =>
     request<{ filename: string; content: string; truncated: boolean }>(
       `/library/folders/${folderId}/readme`,
@@ -9871,6 +9917,31 @@ export interface LibraryFileListItem {
   external_url?: string | null;
   has_notes?: boolean;
   photo_count?: number;
+}
+
+// File Manager paging (server-side sort/filter). `fileType` of '' or 'all'
+// and blank `search`/`createdBy` are dropped from the query so the toolbar
+// can pass its raw state through.
+export type LibraryFileSortField = 'name' | 'date' | 'size' | 'type' | 'prints';
+export interface LibraryFilesScope {
+  folderId: number | null;
+  includeRoot?: boolean;
+  scope?: 'internal' | 'external';
+  recursive?: boolean;
+  tagIds?: number[];
+}
+export interface LibraryFilesPageParams extends LibraryFilesScope {
+  search?: string;
+  fileType?: string;
+  createdBy?: string;
+  sort?: LibraryFileSortField;
+  direction?: 'asc' | 'desc';
+  limit: number;
+  offset: number;
+}
+export interface LibraryFilesPage {
+  items: LibraryFileListItem[];
+  total: number;
 }
 
 // Variant groups (#671 / #2570): the same job sliced for different printers.
