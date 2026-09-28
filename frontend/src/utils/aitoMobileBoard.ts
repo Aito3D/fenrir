@@ -29,3 +29,12 @@ export function summariseColumn(column: ColumnMeta, projects: AitoProject[], now
     oldestCls: agingColorCls(oldest.project, oldest.at, now),
   };
 }
+
+const TABLET_MIN_COLUMN_PX = 280;
+/** Gap between tablet board columns, px (the pager's `gap-3`). */
+export const TABLET_GAP_PX = 12;
+
+/** How many full columns fit the tablet board: 280 px each, between 2 and 4. */
+export function visibleCount(boardWidth: number): number {
+  return Math.min(4, Math.max(2, Math.floor((boardWidth + TABLET_GAP_PX) / (TABLET_MIN_COLUMN_PX + TABLET_GAP_PX))));
+}
