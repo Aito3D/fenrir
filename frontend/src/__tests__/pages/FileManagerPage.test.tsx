@@ -1821,6 +1821,42 @@ describe('FileManagerPage', () => {
       expect(screen.getByDisplayValue('part-01')).toBeInTheDocument();
     });
 
+    describe('folder from the URL', () => {
+      // The shared render util mounts a BrowserRouter, which reads the jsdom
+      // location, so pushState sets the route the page opens on.
+      beforeEach(() => window.history.pushState({}, '', '/library?folder=1'));
+      afterEach(() => window.history.pushState({}, '', '/'));
+
+      it('opens the folder from ?folder= and still lets a sidebar click leave it', async () => {
+        const seen: Array<string | null> = [];
+        server.use(pagedFilesHandler(manyFiles, (p) => seen.push(p.get('folder_id'))));
+        render(<FileManagerPage />);
+        await waitFor(() => expect(seen.length).toBeGreaterThan(0));
+        expect(seen[0]).toBe('1');
+        await userEvent.click(await screen.findByText('Art Projects'));
+        await waitFor(() => expect(seen.at(-1)).toBe('3'));
+        await waitFor(() =>
+          expect(JSON.parse(localStorage.getItem('library-view-settings') ?? '{}').selectedFolderId).toBe(3),
+        );
+      });
+
+      it('lets ?folder= win over a remembered folder on open', async () => {
+        localStorage.setItem(
+          'library-view-settings',
+          JSON.stringify({ v: 1, search: '', filterType: 'all', filterUsername: '', topLevelView: 'internal', selectedFolderId: 3, sortField: 'name', sortDirection: 'asc' }),
+        );
+        const seen: Array<string | null> = [];
+        server.use(pagedFilesHandler(manyFiles, (p) => seen.push(p.get('folder_id'))));
+        render(<FileManagerPage />);
+        await waitFor(() => expect(seen.length).toBeGreaterThan(0));
+        expect(seen[0]).toBe('1');
+        await waitFor(() =>
+          expect(JSON.parse(localStorage.getItem('library-view-settings') ?? '{}').selectedFolderId).toBe(1),
+        );
+        expect(seen).not.toContain('3');
+      });
+    });
+
     it('offers a retry when a later page fails', async () => {
       let calls = 0;
       server.use(
