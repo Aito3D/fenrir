@@ -1,0 +1,20 @@
+{"findings": [
+  {"severity": "low", "category": "dead-code",
+   "file": "backend/app/services/aito_quote_sync.py", "line": 777,
+   "title": "_write_back_rounded_costs()'s project_id parameter is unused",
+   "evidence": "ruff (ARG001): 'Unused function argument: project_id' at aito_quote_sync.py:777; reading the function body (lines 776-813) confirms project_id is never referenced inside — only db and pushed_costs are used. Both call sites (lines 663 and 1260) pass project.id positionally.",
+   "fix": "Drop the project_id parameter and update both call sites (lines 663, 1260) to `_write_back_rounded_costs(db, pushed_costs)`.",
+   "behavior_change": false},
+  {"severity": "medium", "category": "duplication",
+   "file": "backend/app/services/aito_terminal_payments.py", "line": 116,
+   "title": "_now() = datetime.now(timezone.utc).replace(tzinfo=None) is copy-pasted in 4 modules",
+   "evidence": "Identical 2-line definitions: backend/app/services/aito_terminal_payments.py:116-117, backend/app/services/aito_invoice_sweep.py:72-73, backend/app/services/aito_payment_links.py:115-116, backend/app/api/routes/aito_payments.py:90-91 — all `def _now() -> datetime: return datetime.now(timezone.utc).replace(tzinfo=None)` verbatim. rg -n '^def _now' across backend/app -> exactly these 4 definitions, no shared import.",
+   "fix": "Move this to a single shared helper (e.g. backend/app/services/aito_events.py or a small aito_time.py) and have all 4 modules import it, so the naive-UTC convention only has to be stated once.",
+   "behavior_change": false},
+  {"severity": "medium", "category": "dead-code",
+   "file": "frontend/src/i18n/locales/en.ts", "line": 8,
+   "title": "Four Aito i18n keys (descriptionPlaceholder, deleteTitle, quoteNumberLabel, invoiceNumberLabel) are unreferenced",
+   "evidence": "rg -n \"aito\\.descriptionPlaceholder|aito\\.deleteTitle|aito\\.quoteNumberLabel|aito\\.invoiceNumberLabel\" frontend/src (excluding i18n/locales/*) -> no matches, static or templated. Cross-checked against every other dynamic-key pattern used elsewhere in the same aito namespace (t(`aito.rating.${tier}`), t(`aito.stats.${id}`), t(`aito.stats.brief.${kind}Heading`), t(`aito.payment.${booking}`), t(`aito.payment.mode${...}`)) to rule out template-string construction — none of those patterns produce these 4 names. The sibling key aito.productDescription (line 7) IS used as the field label in ImportQuoteDrawer.tsx:319 and ProjectDetailPanel.tsx:1337, but neither passes a placeholder prop, and aito.holdToDelete (line 15) is used by TaskRow.tsx/ProjectDetailPanel.tsx where aito.deleteTitle is not. quoteNumberLabel/invoiceNumberLabel (en.ts:510,562) have zero hits of any kind, static or dynamic. All 4 keys are duplicated verbatim across all 14 locale files (~56 dead lines total). check-i18n-parity.mjs only checks cross-locale parity, not usage, so it will not catch this.",
+   "fix": "Delete descriptionPlaceholder, deleteTitle, quoteNumberLabel and invoiceNumberLabel from the aito block in every locale file under frontend/src/i18n/locales/.",
+   "behavior_change": false}
+]}
