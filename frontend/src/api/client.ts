@@ -4780,6 +4780,30 @@ export interface AitoInvoice {
   invoice_count: number;
 }
 
+/** One retainer (deposit) invoice of a project, read live from Books like
+ *  `AitoInvoice` — see `AitoRetainerInvoiceResponse` in schemas/aito.py. */
+export interface AitoRetainerInvoice {
+  id: string;
+  number: string;
+  date: string;
+  total: number;
+  balance: number;
+  currency_code: string;
+  /** Books' retainer vocabulary — draft / sent / paid / partially_paid / void. */
+  status: string;
+  url: string;
+}
+
+/** The send-retainer modal's prefill; the retainer twin of `AitoInvoiceEmailContent`. */
+export interface AitoRetainerEmailContent {
+  subject: string;
+  body: string;
+  recipients: AitoQuoteEmailRecipient[];
+  default_email: string | null;
+  retainer_id: string;
+  retainer_number: string;
+}
+
 /** One deposit already taken against a quote, as the create-invoice confirm
  *  dialog lists it. `applicable` is what can actually be put on the new
  *  invoice — the sum of the retainer's UNUSED advance payments, which is 0
@@ -8504,6 +8528,34 @@ export const api = {
     }
     return response.blob();
   },
+  /** This project's retainer (deposit) invoices, or `[]`. Hits Zoho twice
+   *  per call (estimate + customer retainers), so callers cache and gate —
+   *  see `useAitoRetainers`. */
+  getAitoRetainers: (projectId: number) => request<AitoRetainerInvoice[]>(`/aito/${projectId}/retainers`),
+  /** One retainer invoice as a PDF blob — same manual-fetch reasoning as
+   *  `getAitoInvoicePdf`. `retainerId` is required: the row always knows
+   *  which document was clicked. */
+  getAitoRetainerPdf: async (projectId: number, retainerId: string): Promise<Blob> => {
+    const headers: Record<string, string> = {};
+    if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+    const query = `?retainer_id=${encodeURIComponent(retainerId)}`;
+    const response = await fetch(`${API_BASE}/aito/${projectId}/retainer.pdf${query}`, { headers });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.detail || `HTTP ${response.status}`);
+    }
+    return response.blob();
+  },
+  /** What Books would send if this retainer invoice were emailed now — preview only. */
+  getAitoRetainerEmail: (projectId: number, retainerId: string) =>
+    request<AitoRetainerEmailContent>(`/aito/${projectId}/retainer-email?retainer_id=${encodeURIComponent(retainerId)}`),
+  /** Email the retainer invoice through Books; returns the row as Books now
+   *  sees it (emailing marks it `sent`). */
+  sendAitoRetainerEmail: (projectId: number, data: { to: string; retainer_id: string }) =>
+    request<AitoRetainerInvoice>(`/aito/${projectId}/retainer-email`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
   updateAitoProject: (id: number, data: AitoProjectUpdate) =>
     request<AitoProject>(`/aito/${id}`, {
       method: 'PATCH',
