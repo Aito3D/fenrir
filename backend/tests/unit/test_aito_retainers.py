@@ -4,7 +4,7 @@ import pytest
 
 from backend.app.services import aito_retainers
 from backend.app.services.zoho import ZohoUpstreamError, zoho_service
-from backend.app.utils.http import build_content_disposition  # noqa: F401
+from backend.app.utils.http import build_content_disposition
 
 RETAINER = {
     "id": "RET-B",
@@ -97,3 +97,49 @@ async def test_zoho_failure_is_502(async_client, monkeypatch):
 
     assert response.status_code == 502
     assert "Books is down" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_retainer_pdf_is_inline_and_named_after_the_number(async_client, books_retainers, monkeypatch):
+    fetched = []
+
+    async def pdf(db, retainer_id):
+        fetched.append(retainer_id)
+        return b"%PDF-1.4 fake"
+
+    monkeypatch.setattr(zoho_service, "get_retainer_invoice_pdf", pdf)
+    project = await _create(async_client)
+
+    response = await async_client.get(f"/api/v1/aito/{project['id']}/retainer.pdf", params={"retainer_id": "RET-A"})
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/pdf"
+    assert response.headers["content-disposition"] == build_content_disposition("AC-26-0001.pdf", disposition="inline")
+    assert response.content == b"%PDF-1.4 fake"
+    assert fetched == ["RET-A"]
+
+
+@pytest.mark.asyncio
+async def test_retainer_pdf_refuses_an_id_that_is_not_this_projects(async_client, books_retainers, monkeypatch):
+    async def pdf(db, retainer_id):
+        raise AssertionError("must not fetch")
+
+    monkeypatch.setattr(zoho_service, "get_retainer_invoice_pdf", pdf)
+    project = await _create(async_client)
+
+    response = await async_client.get(f"/api/v1/aito/{project['id']}/retainer.pdf", params={"retainer_id": "RET-Z"})
+
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_retainer_pdf_requires_the_id(async_client, books_retainers):
+    project = await _create(async_client)
+    assert (await async_client.get(f"/api/v1/aito/{project['id']}/retainer.pdf")).status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_retainer_pdf_on_a_quoteless_card_is_404(async_client, books_retainers):
+    project = await _create(async_client, quoted=False)
+    response = await async_client.get(f"/api/v1/aito/{project['id']}/retainer.pdf", params={"retainer_id": "RET-A"})
+    assert response.status_code == 404

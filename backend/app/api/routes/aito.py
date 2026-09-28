@@ -2119,6 +2119,54 @@ async def get_retainers(
         raise HTTPException(status_code=502, detail=str(e)) from e
 
 
+async def _resolve_project_retainer(db: AsyncSession, project: AitoProject, retainer_id: str) -> dict:
+    """The chosen retainer, membership-checked server-side.
+
+    The candidate set is ALWAYS resolved from the project's own quote;
+    ``retainer_id`` only narrows it — it is checked for membership, never
+    trusted — so it cannot reach another customer's retainer by walking ids.
+    Same control, same 404-not-403 reasoning as ``_resolve_project_invoice``.
+    Caller has already checked ``project.quote_id``.
+    """
+    rows = await list_project_retainers(db, project)
+    row = next((r for r in rows if r["id"] == retainer_id), None)
+    if row is None:
+        raise HTTPException(status_code=404, detail="That retainer invoice is not one of this project's")
+    return row
+
+
+@router.get("/{project_id}/retainer.pdf")
+async def get_retainer_pdf(
+    project_id: int,
+    retainer_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
+) -> Response:
+    """One of this project's retainer invoices, rendered as a PDF.
+
+    A proxy returned whole, inline, for the reasons on ``get_quote_pdf``.
+    ``retainer_id`` is required: unlike the invoice there is no "newest"
+    default worth having, since the card always knows which row was clicked.
+    """
+    project = await db.get(AitoProject, project_id)
+    if project is None or project.status == "deleted":
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not project.quote_id:
+        raise HTTPException(status_code=404, detail="This project has no Zoho quote")
+    try:
+        retainer = await _resolve_project_retainer(db, project, retainer_id)
+        pdf = await zoho_service.get_retainer_invoice_pdf(db, retainer["id"])
+    except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
+        logger.warning("Aito retainer PDF failed for project %s: %s", project_id, e)
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    filename = _CONTROL_CHARS_RE.sub("", f"{retainer['number'] or retainer['id']}.pdf")
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": build_content_disposition(filename, disposition="inline")},
+    )
+
+
 # One string for every "this card is already billed" refusal — the local
 # flag check in `_project_ready_to_invoice`, the re-check under the lock and
 # both Books-list guards — so the operator reads the same sentence whichever

@@ -178,6 +178,7 @@ _READ_ONLY_ROUTE_NAMES = {
     "get_invoice_pdf",
     "get_invoice_email",
     "get_retainers",
+    "get_retainer_pdf",
     "get_quote_pdf",
     "get_quote_email",
     "get_terminal_payment",
@@ -194,7 +195,7 @@ def test_every_aito_route_declares_a_permission_gate_or_is_the_public_tracking_r
     fails HERE, instead of silently escaping both this sweep and the
     hand-maintained WRITE_ROUTES parametrization below (T-037)."""
     aito_routes = _aito_routes()
-    assert len(aito_routes) == 48, (
+    assert len(aito_routes) == 49, (
         "aito.py + aito_payments.py grew or shrank a route — update this count, "
         "WRITE_ROUTES, and _READ_ONLY_ROUTE_NAMES/_PUBLIC_ROUTE_NAMES together"
     )
