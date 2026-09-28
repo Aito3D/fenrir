@@ -94,3 +94,72 @@ class TestSort:
         response = await async_client.get("/api/v1/library/files?include_root=false")
         assert len(response.json()) == 100
         assert response.headers["X-Total-Count"] == "101"
+
+
+class TestFilters:
+    async def test_search_matches_filename_print_name_and_tag(self, async_client, file_factory, db_session):
+        by_name = await file_factory(filename="Benchy_boat.3mf")
+        by_print = await file_factory(filename="x.3mf", file_metadata={"print_name": "Little BENCHY"})
+        tag = LibraryTag(name="benchy-tag", name_key="benchy-tag")
+        db_session.add(tag)
+        await db_session.commit()
+        by_tag = await file_factory(filename="y.3mf")
+        db_session.add(LibraryFileTag(file_id=by_tag.id, tag_id=tag.id))
+        await db_session.commit()
+        await file_factory(filename="cube.3mf")
+
+        assert sorted(await _ids(async_client, "&search=benchy")) == sorted([by_name.id, by_print.id, by_tag.id])
+
+    async def test_search_escapes_like_wildcards(self, async_client, file_factory):
+        literal = await file_factory(filename="100%_done.3mf")
+        await file_factory(filename="100X_done.3mf")
+        await file_factory(filename="100XXdone.3mf")
+        assert await _ids(async_client, "&search=100%25_done") == [literal.id]
+
+    async def test_blank_search_is_ignored(self, async_client, file_factory):
+        a = await file_factory()
+        b = await file_factory()
+        assert await _ids(async_client, "&search=%20%20") == [a.id, b.id]
+
+    async def test_file_type_is_exact(self, async_client, file_factory):
+        sliced = await file_factory(file_type="gcode.3mf")
+        await file_factory(file_type="3mf")
+        assert await _ids(async_client, "&file_type=gcode.3mf") == [sliced.id]
+
+    async def test_created_by_is_a_username_substring(self, async_client, file_factory, db_session):
+        paul = User(username="paul.theis", password_hash="x", role="user")
+        marie = User(username="marie", password_hash="x", role="user")
+        db_session.add_all([paul, marie])
+        await db_session.commit()
+        mine = await file_factory(created_by_id=paul.id)
+        await file_factory(created_by_id=marie.id)
+        await file_factory(created_by_id=None)
+        assert await _ids(async_client, "&created_by=THEIS") == [mine.id]
+
+    async def test_filters_compose_with_folder_scope_and_total(self, async_client, file_factory, db_session):
+        from backend.app.models.library import LibraryFolder
+
+        folder = LibraryFolder(name="Clients")
+        db_session.add(folder)
+        await db_session.commit()
+        inside = await file_factory(folder_id=folder.id, filename="clip.stl", file_type="stl")
+        await file_factory(folder_id=folder.id, filename="clip.3mf", file_type="3mf")
+        await file_factory(folder_id=None, filename="clip.stl", file_type="stl")
+
+        response = await async_client.get(
+            f"/api/v1/library/files?folder_id={folder.id}&search=clip&file_type=stl&limit=1"
+        )
+        assert [row["id"] for row in response.json()] == [inside.id]
+        assert response.headers["X-Total-Count"] == "1"
+
+    async def test_filters_compose_with_tag_filter(self, async_client, file_factory, db_session):
+        tag = LibraryTag(name="toy", name_key="toy")
+        db_session.add(tag)
+        await db_session.commit()
+        stl = await file_factory(file_type="stl")
+        threemf = await file_factory(file_type="3mf")
+        db_session.add_all(
+            [LibraryFileTag(file_id=stl.id, tag_id=tag.id), LibraryFileTag(file_id=threemf.id, tag_id=tag.id)]
+        )
+        await db_session.commit()
+        assert await _ids(async_client, f"&tag_ids={tag.id}&file_type=stl") == [stl.id]

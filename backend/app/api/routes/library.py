@@ -39,7 +39,7 @@ from backend.app.core.env_compat import env_get
 from backend.app.core.permissions import Permission
 from backend.app.core.tasks import spawn_background_task
 from backend.app.models.archive import PrintArchive
-from backend.app.models.library import LibraryFile, LibraryFileTag, LibraryFolder, prune_empty_library_tags
+from backend.app.models.library import LibraryFile, LibraryFileTag, LibraryFolder, LibraryTag, prune_empty_library_tags
 from backend.app.models.print_log import PrintLogEntry
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.printer import Printer
@@ -2191,6 +2191,41 @@ def _file_sort_clauses(sort: str | None, direction: str) -> list:
     return [key.desc() if direction == "desc" else key.asc(), LibraryFile.id.asc()]
 
 
+def _escape_like(value: str) -> str:
+    """Escape LIKE wildcards so user input matches literally (escape char is ``\\``)."""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _apply_file_filters(query, search: str | None, file_type: str | None, created_by: str | None):
+    """Server-side counterparts of the File Manager's toolbar filters.
+
+    ``search`` matches the filename, the parsed print name or any tag name
+    (case-insensitive substring); ``file_type`` is exact; ``created_by`` is
+    a username substring. Blank strings are treated as absent so the
+    browser can pass its input through untouched.
+    """
+    if search and search.strip():
+        pattern = f"%{_escape_like(search.strip())}%"
+        tagged = (
+            select(LibraryFileTag.file_id)
+            .join(LibraryTag, LibraryTag.id == LibraryFileTag.tag_id)
+            .where(LibraryTag.name.ilike(pattern, escape="\\"))
+        )
+        query = query.where(
+            or_(
+                LibraryFile.filename.ilike(pattern, escape="\\"),
+                LibraryFile.file_metadata["print_name"].as_string().ilike(pattern, escape="\\"),
+                LibraryFile.id.in_(tagged),
+            )
+        )
+    if file_type:
+        query = query.where(LibraryFile.file_type == file_type)
+    if created_by and created_by.strip():
+        pattern = f"%{_escape_like(created_by.strip())}%"
+        query = query.join(User, LibraryFile.created_by_id == User.id).where(User.username.ilike(pattern, escape="\\"))
+    return query
+
+
 @router.get("/files", response_model=list[FileListResponse])
 @router.get("/files/", response_model=list[FileListResponse])
 async def list_files(
@@ -2202,6 +2237,9 @@ async def list_files(
     external_only: bool = False,
     recursive: bool = False,
     tag_ids: list[int] = Query(default_factory=list),
+    search: str | None = None,
+    file_type: str | None = None,
+    created_by: str | None = None,
     sort: FileSortField | None = None,
     direction: SortDirection = "asc",
     limit: int = Query(default=100, ge=1, le=2000),
@@ -2237,6 +2275,10 @@ async def list_files(
                  intentionally bypassed — tags are cross-cutting and the user
                  wants "every file with this tag" regardless of where it lives.
                  ``recursive`` becomes irrelevant in that case.
+        search: Case-insensitive substring match on filename, print name or a tag
+                name. LIKE wildcards in the input are escaped. Blank = no filter.
+        file_type: Exact ``file_type`` match (e.g. ``gcode.3mf``).
+        created_by: Case-insensitive substring match on the uploader's username.
         sort: Server-side ordering (File Manager paging). ``name`` orders on the
               print name (falling back to the filename), ``date`` on the on-disk
               mtime falling back to ``created_at``; ``size``/``type``/``prints``
@@ -2296,6 +2338,8 @@ async def list_files(
         query = query.where(LibraryFile.is_external.is_(False))
     elif external_only:
         query = query.where(LibraryFile.is_external.is_(True))
+
+    query = _apply_file_filters(query, search, file_type, created_by)
 
     # Total matching row count (before paging), exposed via X-Total-Count so
     # the client can page through the full result without the server ever
