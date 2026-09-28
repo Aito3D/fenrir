@@ -2754,10 +2754,18 @@ describe('ProjectDetailPanel visual parity: quote card rows', () => {
     expect(within(card).getByText('Accepted')).toBeInTheDocument();
   });
 
-  it('omits the Status row when the project has no quote status', () => {
+  it('renders no status on the quote row when the project has no quote status', () => {
+    // Positive control first: the same row with a status does render its text.
+    const { unmount } = show({ quote_number: 'DEV26-2462', quote_status: 'accepted' });
+    expect(within(screen.getByTestId('doc-quote')).getByText('Accepted')).toBeInTheDocument();
+    unmount();
+
     show({ quote_number: 'DEV26-2462', quote_status: null });
-    const card = quoteCard();
-    expect(within(card).queryByText('Status')).not.toBeInTheDocument();
+    const row = screen.getByTestId('doc-quote');
+    expect(within(row).queryByText('Accepted')).not.toBeInTheDocument();
+    // Icon-only actions carry no text, so the label and number are all the row
+    // says: no status (not even a raw or empty fallback) on its second line.
+    expect(row).toHaveTextContent(/^QuoteDEV26-2462$/);
   });
 });
 
