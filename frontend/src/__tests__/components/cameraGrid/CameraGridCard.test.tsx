@@ -10,10 +10,10 @@
  */
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { screen } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../../utils';
-import { CameraGridCard } from '../../../components/cameraGrid/CameraGridCard';
+import { CameraGridCard, SPOTLIGHT_CLICK_DELAY_MS } from '../../../components/cameraGrid/CameraGridCard';
 import type { CameraGridCardProps, GridCardHandlers } from '../../../components/cameraGrid/CameraGridCard';
 import type { HMSError } from '../../../api/client';
 
@@ -121,14 +121,75 @@ describe('CameraGridCard', () => {
       expect(handlers.onSpotlight).not.toHaveBeenCalled();
     });
 
-    it('clicking the tile body (not a button) fires onSpotlight with printerId', async () => {
+    it('clicking the tile body (not a button) fires onSpotlight with printerId once the double-click window has passed', async () => {
       const user = userEvent.setup();
       const handlers = makeHandlers();
       render(<CameraGridCard {...baseProps({ printerId: 11, printerName: 'Printer Eleven', state: 'IDLE', handlers })} />);
 
       await user.click(screen.getByLabelText('Printer Eleven'));
 
+      // Deferred by SPOTLIGHT_CLICK_DELAY_MS so a double-click can cancel it.
+      expect(handlers.onSpotlight).not.toHaveBeenCalled();
+      await waitFor(() => expect(handlers.onSpotlight).toHaveBeenCalledWith(11));
+      expect(handlers.onSpotlight).toHaveBeenCalledTimes(1);
+    });
+
+    it('double-clicking the tile expands it without ever toggling the spotlight', async () => {
+      const user = userEvent.setup();
+      const handlers = makeHandlers();
+      render(<CameraGridCard {...baseProps({ printerId: 11, printerName: 'Printer Eleven', state: 'IDLE', handlers })} />);
+
+      await user.dblClick(screen.getByLabelText('Printer Eleven'));
+
+      expect(handlers.onExpand).toHaveBeenCalledTimes(1);
+      expect(handlers.onExpand).toHaveBeenCalledWith(11, 'Printer Eleven');
+      // Wait out the single-click window: the pending toggle must have been cancelled.
+      await new Promise(r => setTimeout(r, SPOTLIGHT_CLICK_DELAY_MS + 50));
+      expect(handlers.onSpotlight).not.toHaveBeenCalled();
+    });
+
+    it('toggles the spotlight immediately when the tile cannot expand (no competing double-click)', async () => {
+      const user = userEvent.setup();
+      const handlers = makeHandlers({ onExpand: undefined });
+      render(<CameraGridCard {...baseProps({ printerId: 11, printerName: 'Printer Eleven', state: 'IDLE', handlers })} />);
+
+      await user.click(screen.getByLabelText('Printer Eleven'));
+
       expect(handlers.onSpotlight).toHaveBeenCalledWith(11);
+    });
+  });
+
+  describe('capped overlay', () => {
+    it('shows the wall-limit message and suppresses the loading spinner', () => {
+      const { container } = render(<CameraGridCard {...baseProps({ loading: true, capped: true })} />);
+      expect(screen.getByText('Beyond the 30-camera wall limit')).toBeInTheDocument();
+      expect(container.querySelector('.animate-spin')).toBeNull();
+    });
+
+    it('is absent for a streamed tile', () => {
+      render(<CameraGridCard {...baseProps({ loading: true, capped: false })} />);
+      expect(screen.queryByText('Beyond the 30-camera wall limit')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('spotlight span per layout', () => {
+    it('spans 2×2 only from the breakpoint where the layout has ≥2 columns (large: lg, not sm)', () => {
+      const { container, rerender } = render(<CameraGridCard {...baseProps({ layout: 'large', spotlighted: true })} />);
+      const tile = () => container.querySelector('[data-flip-key]') as HTMLElement;
+      // A sm: span on large's 1-column sm grid would add an implicit column
+      // and squeeze every other tile between 640px and 1024px.
+      expect(tile().className).toContain('lg:col-span-2 lg:row-span-2');
+      expect(tile().className).not.toContain('sm:col-span-2');
+
+      rerender(<CameraGridCard {...baseProps({ layout: 'default', spotlighted: true })} />);
+      expect(tile().className).toContain('sm:col-span-2 sm:row-span-2');
+
+      rerender(<CameraGridCard {...baseProps({ layout: 'compact', spotlighted: true })} />);
+      expect(tile().className).toContain('col-span-2 row-span-2');
+      expect(tile().className).not.toMatch(/\b(sm|lg):col-span-2/);
+
+      rerender(<CameraGridCard {...baseProps({ layout: 'large', spotlighted: false })} />);
+      expect(tile().className).not.toContain('col-span-2');
     });
   });
 

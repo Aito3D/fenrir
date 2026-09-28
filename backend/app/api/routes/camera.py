@@ -1820,7 +1820,7 @@ def _check_system_load() -> float | None:
 
 async def _ensure_producer(
     printer_id: int,
-    db: AsyncSession,
+    db: AsyncSession | None,
     fps: int,
     quality: int,
     scale: float,
@@ -1836,7 +1836,8 @@ async def _ensure_producer(
     Returns the _SharedStream entry, or None if the printer doesn't exist
     or has an external camera (not supported via the hub).
 
-    Pass an already-fetched ``printer`` to skip the DB lookup.
+    Pass an already-fetched ``printer`` to skip the DB lookup (``db`` may then
+    be ``None``; it is only used to look the printer up).
     Set ``force_quality=True`` to restart the producer if params changed
     (used when a client explicitly switches quality).
     """
@@ -1850,6 +1851,8 @@ async def _ensure_producer(
             return existing
 
     if printer is None:
+        if db is None:
+            raise ValueError("_ensure_producer needs a db session when no printer is passed")
         result = await db.execute(select(Printer).where(Printer.id == printer_id))
         printer = result.scalar_one_or_none()
     if not printer:
@@ -1990,7 +1993,16 @@ async def camera_grid_stream(
             fps, quality, scale, threads, gpu_accel, skip_frames, preset_label = await _resolve_quality_from_settings(
                 db, len(printer_ids), "grid"
             )
-            force = True  # Ensure producers match preset params
+            # Deliberately NOT forcing a producer restart here. The resolved
+            # params depend on *this* caller's stream count (skip_frames flips
+            # at 4 printers, the "auto" preset scales with the count), so two
+            # walls watching different subsets — or a wall and a single-camera
+            # viewer — would each restart the other's producers on connect and
+            # then ping-pong forever via the dead-producer restart path below.
+            # An alive producer is reused whatever its params (see
+            # SharedStreamHub.get_or_start); a preset change already stops
+            # every producer from the settings route, so nothing stale
+            # survives it. Callers that really want a restart pass ?force=true.
         else:
             fps = fps or 5
             quality = quality or 15
@@ -2042,35 +2054,46 @@ async def camera_grid_stream(
                 if new_entry is not None:
                     entries[pid] = new_entry
 
-        # Single batch DB query for printers that need a new producer.
+        # Single batch DB query for printers that need a new producer. Only
+        # the query runs inside the session — the spawn loop below sleeps
+        # between producers (0.15s each, 1s under load: up to ~30s for a full
+        # wall), and doing that here pinned a pooled connection for the whole
+        # stagger on every cold connect.
+        printers_by_id: dict[int, Printer] = {}
         if need_db:
             result = await db.execute(select(Printer).where(Printer.id.in_(need_db)))
             printers_by_id = {p.id: p for p in result.scalars().all()}
-            for i, pid in enumerate(need_db):
-                printer = printers_by_id.get(pid)
-                if printer is None:
-                    continue
-                if i > 0:
-                    # Increase stagger under load to reduce spawn pressure
-                    load = _check_system_load()
-                    stagger = (
-                        1.0 if (load is not None and load > _SPAWN_LOAD_THRESHOLD * 0.5) else _GRID_SPAWN_STAGGER_DELAY
-                    )
-                    await asyncio.sleep(stagger)
-                entry = await _ensure_producer(
-                    pid,
-                    db,
-                    fps,
-                    quality,
-                    scale,
-                    printer=printer,
-                    force_quality=force,
-                    threads=threads,
-                    gpu_accel=gpu_accel,
-                    skip_frames=skip_frames,
-                )
-                if entry is not None:
-                    entries[pid] = entry
+
+    # Spawn producers for printers that had none, staggered to spread the
+    # ffmpeg start-up cost. Runs outside the DB session (see above); the
+    # printers are already fetched so _ensure_producer never touches the db.
+    spawn_ids = [pid for pid in need_db if pid in printers_by_id]
+    for i, pid in enumerate(spawn_ids):
+        if i > 0:
+            # Increase stagger under load to reduce spawn pressure
+            load = _check_system_load()
+            stagger = 1.0 if (load is not None and load > _SPAWN_LOAD_THRESHOLD * 0.5) else _GRID_SPAWN_STAGGER_DELAY
+            await asyncio.sleep(stagger)
+            # A tab closed or navigated away mid-stagger has no use for the
+            # rest of the fleet's ffmpeg processes; whatever was spawned
+            # already idles out 30s after its last viewer.
+            if await request.is_disconnected():
+                logger.info("Grid stream client left mid-spawn; skipping %d remaining producers", len(spawn_ids) - i)
+                break
+        entry = await _ensure_producer(
+            pid,
+            None,
+            fps,
+            quality,
+            scale,
+            printer=printers_by_id[pid],
+            force_quality=force,
+            threads=threads,
+            gpu_accel=gpu_accel,
+            skip_frames=skip_frames,
+        )
+        if entry is not None:
+            entries[pid] = entry
 
     if not entries:
         raise HTTPException(404, "No valid printers found")
@@ -2303,13 +2326,18 @@ async def camera_grid_stream(
                                 ) = await _resolve_quality_from_settings(
                                     restart_db, len(entries) + len(pending_restarts), "grid"
                                 )
+                                # Not forced: if another viewer already brought
+                                # this camera back (possibly with params
+                                # resolved for its own stream count), adopt its
+                                # producer instead of killing it — forcing here
+                                # is what made two walls restart each other's
+                                # cameras indefinitely.
                                 entry = await _ensure_producer(
                                     pid,
                                     restart_db,
                                     r_fps,
                                     r_quality,
                                     r_scale,
-                                    force_quality=True,
                                     threads=r_threads,
                                     gpu_accel=r_gpu_accel,
                                     skip_frames=r_skip_frames,

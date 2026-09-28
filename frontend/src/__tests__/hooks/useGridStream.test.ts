@@ -1127,6 +1127,46 @@ describe('useGridStream', () => {
     unmount();
   });
 
+  it('re-seeds a restarted worker with the tracked visibility, so off-screen tiles stay undecoded after the restart', async () => {
+    vi.useFakeTimers();
+    const jpeg = new Uint8Array([1, 2, 3]);
+    const { stream, push } = openPushableStream();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(fakeResponse(stream)));
+
+    const { result, unmount } = renderHook(() =>
+      useGridStream({ printerIdsKey: '1,2', gridParamsKey: '', restartKey: 0 }),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    // Printer 2 scrolls out of view before the stall.
+    act(() => { result.current.handleVisibilityChange(2, false); });
+
+    // Stalled decoder + flowing network frames -> ping, then restart (same
+    // recipe as the exhaustion test above; one restart needs two 5s ticks).
+    let elapsed = 0;
+    while (workerInstances.length < 2 && elapsed < 20_000) {
+      for (let i = 0; i < 10; i++) push(encodeGridFrame(1, jpeg));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000);
+      });
+      elapsed += 1000;
+    }
+    expect(workerInstances.length).toBe(2);
+
+    const seeds = workerInstances[1].postMessage.mock.calls
+      .map((c: unknown[]) => c[0] as { type: string; printerId: number; visible: boolean })
+      .filter(m => m.type === 'visibility');
+    expect(seeds).toEqual(expect.arrayContaining([
+      { type: 'visibility', printerId: 1, visible: true },
+      { type: 'visibility', printerId: 2, visible: false },
+    ]));
+    expect(seeds.find(m => m.printerId === 2 && m.visible === true)).toBeUndefined();
+
+    unmount();
+  });
+
   it('replenishes the worker-restart budget once a restarted worker delivers a decoded frame again, so a 4th stall still restarts instead of latching a terminal error (T-051)', async () => {
     vi.useFakeTimers();
     const jpeg = new Uint8Array([1, 2, 3]);
@@ -1300,6 +1340,80 @@ describe('useGridStream', () => {
     expect(worker.postMessage).toHaveBeenCalledWith({ type: 'visibility', printerId: 1, visible: false });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(workerInstances.length).toBe(1);
+  });
+
+  /** A canvas stand-in exposing only what handleWorkerMessage touches. */
+  function fakeCanvas(): { canvas: HTMLCanvasElement; drawImage: ReturnType<typeof vi.fn> } {
+    const drawImage = vi.fn();
+    const canvas = { width: 0, height: 0, getContext: () => ({ drawImage }) } as unknown as HTMLCanvasElement;
+    return { canvas, drawImage };
+  }
+
+  it('keeps a drawn tile out of loadingSet when the id set changes — only the newcomer spins', () => {
+    vi.stubGlobal('fetch', vi.fn().mockReturnValue(new Promise(() => {})));
+
+    const { result, rerender } = renderHook(
+      ({ ids, restartKey }: { ids: string; restartKey: number }) =>
+        useGridStream({ printerIdsKey: ids, gridParamsKey: '', restartKey }),
+      { initialProps: { ids: '1', restartKey: 0 } },
+    );
+    expect(result.current.loadingSet).toEqual(new Set([1]));
+
+    const { canvas, drawImage } = fakeCanvas();
+    result.current.canvasRefs.current.get(1)!.current = canvas;
+    const bitmap = { close: vi.fn(), width: 10, height: 10 };
+    act(() => {
+      workerInstances[0].onmessage?.({ data: { type: 'frame', printerId: 1, bitmap } } as MessageEvent);
+    });
+    expect(drawImage).toHaveBeenCalledTimes(1);
+    expect(result.current.loadingSet.size).toBe(0);
+
+    // Printer 2 connects: the stream restarts, but printer 1's canvas still
+    // holds a frame — it must not go back behind a spinner.
+    rerender({ ids: '1,2', restartKey: 0 });
+    expect(result.current.loadingSet).toEqual(new Set([2]));
+
+    // A manual restart is an explicit reload: every tile spins again.
+    rerender({ ids: '1,2', restartKey: 1 });
+    expect(result.current.loadingSet).toEqual(new Set([1, 2]));
+  });
+
+  it('drops the connection and reconnects on a corrupt frame header instead of parsing garbage forever', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { stream, push } = openPushableStream();
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(fakeResponse(stream))
+      .mockReturnValue(new Promise(() => {}));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { result, unmount } = renderHook(() =>
+      useGridStream({ printerIdsKey: '1', gridParamsKey: '', restartKey: 0 }),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // Header claiming a 20 MB JPEG — over parseGridFrames' 10 MB sanity cap.
+    const bad = new Uint8Array(8);
+    const view = new DataView(bad.buffer);
+    view.setUint32(0, 1, true);
+    view.setUint32(4, 20_000_000, true);
+    push(bad);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    // The hook gave up on this connection and entered the backoff reconnect...
+    expect(result.current.reconnectingSet.has(1)).toBe(true);
+    // ...and opens a fresh response (frame-aligned) once the backoff elapses.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(RECONNECT_BASE_DELAY_MS);
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    unmount();
   });
 
   it('tears down the fetch and worker on unmount', async () => {

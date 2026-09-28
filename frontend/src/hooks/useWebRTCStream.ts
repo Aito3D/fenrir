@@ -78,7 +78,6 @@ export function useWebRTCStream({ printerId, enabled, videoRef, onStats, restart
   const statsIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const prevBytesRef = useRef(0);
   const mountedRef = useRef(true);
-  const restartKeyRef = useRef(0);
   const onStatsRef = useRef(onStats);
   onStatsRef.current = onStats;
 
@@ -430,7 +429,6 @@ export function useWebRTCStream({ printerId, enabled, videoRef, onStats, restart
 
   const restart = useCallback(() => {
     setAttempt(0);
-    restartKeyRef.current++;
     reconnectScheduledRef.current = false;
     setIsReconnecting(false);
     setReconnectCountdown(0);

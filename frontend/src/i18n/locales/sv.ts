@@ -882,6 +882,7 @@ export default {
       high: 'Hög',
       cameraUnavailable: 'Kameran är inte tillgänglig',
       streamRejected: 'Strömmen avvisades av servern (HTTP {{status}})',
+      wallCapped: 'Över väggens gräns på {{max}} kameror',
       connectionLost: 'Anslutningen förlorad',
       reconnecting: 'Återansluter om {{countdown}}s (försök {{attempt}})',
       expand: 'Expandera',

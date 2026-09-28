@@ -8796,14 +8796,25 @@ function PowerDropdownItem({
   );
 }
 
-/* Fullscreen camera-wall clock — 24h seven-segment readout. The dim "88:88:88"
+/* Fullscreen camera-wall clock — 24h seven-segment readout. The dim "88:88"
    layer underneath reproduces a real LCD's unlit segments; both layers use the
    fixed-advance DSEG7 digits, so they stay perfectly registered. */
 function CamWallClock() {
   const [now, setNow] = useState(() => new Date());
+  // Only HH:MM is shown, so tick on the minute boundary instead of every
+  // second — 60× fewer re-renders on a display that runs for days.
   useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(id);
+    let id: ReturnType<typeof setTimeout>;
+    const schedule = () => {
+      const d = new Date();
+      const untilNextMinute = 60_000 - (d.getSeconds() * 1000 + d.getMilliseconds());
+      id = setTimeout(() => {
+        setNow(new Date());
+        schedule();
+      }, untilNextMinute + 20);
+    };
+    schedule();
+    return () => clearTimeout(id);
   }, []);
   const pad = (n: number) => String(n).padStart(2, '0');
   const time = `${pad(now.getHours())}:${pad(now.getMinutes())}`;

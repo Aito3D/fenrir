@@ -11,7 +11,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { screen, within, waitFor } from '@testing-library/react';
+import { act, screen, within, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { render } from '../utils';
@@ -19,12 +19,14 @@ import { server } from '../mocks/server';
 import { CameraGrid } from '../../components/CameraGrid';
 import type { GridPrinter } from '../../components/CameraGrid';
 import { useGridStream } from '../../hooks/useGridStream';
+import { useCombinedGridStats } from '../../hooks/useCombinedGridStats';
 import { api } from '../../api/client';
 import type { HMSError, PrintQueueItem } from '../../api/client';
 import {
   GRID_LAYOUT_COLS,
   GRID_LAYOUT_ICONS,
   GRID_BLINK_PERIOD_MS,
+  computeWallFit,
   gridBlinkSyncStyle,
   gridCardHighlightClass,
 } from '../../components/cameraGridLayout';
@@ -56,12 +58,20 @@ vi.mock('../../hooks/useGridStream', () => ({
 }));
 
 vi.mock('../../hooks/useCombinedGridStats', () => ({
-  useCombinedGridStats: () => ({
+  useCombinedGridStats: vi.fn(() => ({
     subscribeStats: () => () => {},
     getStatsSnapshot: () => EMPTY_GRID_STATS,
     handleWebRTCStats: vi.fn(),
-  }),
+  })),
 }));
+
+// Partial mock: keep every real export (the layout tests below exercise them
+// directly) but spy on computeWallFit so the fullscreen measurement test can
+// assert the box CameraGrid hands it.
+vi.mock('../../components/cameraGridLayout', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../components/cameraGridLayout')>();
+  return { ...actual, computeWallFit: vi.fn(actual.computeWallFit) };
+});
 
 vi.mock('../../hooks/useWebRTCStream', () => ({
   useWebRTCStream: () => ({
@@ -419,6 +429,94 @@ describe('CameraGrid rendering', () => {
 
       const lastCall = vi.mocked(useGridStream).mock.calls.at(-1)?.[0];
       expect(lastCall!.printerIdsKey).toBe('1,2,3,4,5');
+    });
+  });
+
+  describe('tiles past the 30-printer stream cap', () => {
+    it('tell the operator they are beyond the wall limit instead of sitting black', () => {
+      const printers = Array.from({ length: 33 }, (_, i) => makePrinter({ id: i + 1, name: `Printer ${i + 1}` }));
+      render(<CameraGrid printers={printers} layout="default" />);
+
+      const capped = screen.getAllByText('Beyond the 30-camera wall limit');
+      expect(capped).toHaveLength(3);
+      // Printers 31–33 (highest ids) are the ones sliced off; printer 1 is streamed.
+      const tileOf = (name: string) => screen.getByLabelText(name).closest('[data-flip-key]') as HTMLElement;
+      expect(within(tileOf('Printer 33')).queryByText('Beyond the 30-camera wall limit')).toBeInTheDocument();
+      expect(within(tileOf('Printer 1')).queryByText('Beyond the 30-camera wall limit')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('hidden-tab mount', () => {
+    it('starts suspended (empty id set, no stream) when mounted while the tab is hidden', () => {
+      vi.mocked(useGridStream).mockClear();
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+      try {
+        render(<CameraGrid printers={[makePrinter({ id: 1 }), makePrinter({ id: 2 })]} layout="default" />);
+        const lastCall = vi.mocked(useGridStream).mock.calls.at(-1)?.[0];
+        expect(lastCall!.printerIdsKey).toBe('');
+      } finally {
+        delete (document as unknown as { hidden?: boolean }).hidden;
+      }
+    });
+  });
+
+  describe('stats totals', () => {
+    it('counts only connected (streamed) printers, so offline printers do not read as dead cameras', () => {
+      vi.mocked(useCombinedGridStats).mockClear();
+      render(
+        <CameraGrid
+          printers={[makePrinter({ id: 1 }), makePrinter({ id: 2 }), makePrinter({ id: 3, connected: false })]}
+          layout="default"
+        />,
+      );
+      const args = vi.mocked(useCombinedGridStats).mock.calls.at(-1)?.[0];
+      expect(args!.mjpegCount).toBe(2);
+      expect(args!.webrtcCount).toBe(0);
+    });
+  });
+
+  describe('kiosk idle cursor', () => {
+    it('hides the cursor on <body> after idle input in fullscreen and restores it on input / unmount', () => {
+      vi.useFakeTimers();
+      try {
+        const { unmount } = render(<CameraGrid printers={[makePrinter({ id: 1 })]} layout="default" fullscreen />);
+        expect(document.body.classList.contains('cursor-none')).toBe(false);
+
+        act(() => { vi.advanceTimersByTime(4_000); });
+        expect(document.body.classList.contains('cursor-none')).toBe(true);
+
+        act(() => { document.dispatchEvent(new Event('pointermove')); });
+        expect(document.body.classList.contains('cursor-none')).toBe(false);
+
+        act(() => { vi.advanceTimersByTime(4_000); });
+        expect(document.body.classList.contains('cursor-none')).toBe(true);
+        unmount();
+        expect(document.body.classList.contains('cursor-none')).toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
+  describe('fullscreen wall fit measurement', () => {
+    it('measures the available height from the grid\'s document position, unaffected by page scroll', () => {
+      vi.mocked(computeWallFit).mockClear();
+      const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+        top: -100, left: 0, right: 1000, bottom: 500, width: 1000, height: 600, x: 0, y: -100, toJSON: () => ({}),
+      } as DOMRect);
+      const origScrollY = Object.getOwnPropertyDescriptor(window, 'scrollY');
+      const origInnerHeight = window.innerHeight;
+      // Scrolled 100px: the grid's viewport top is -100 but its document top is 0.
+      Object.defineProperty(window, 'scrollY', { configurable: true, value: 100 });
+      window.innerHeight = 800;
+      try {
+        render(<CameraGrid printers={[makePrinter({ id: 1 })]} layout="default" fullscreen />);
+        expect(computeWallFit).toHaveBeenCalledWith(expect.objectContaining({ width: 1000, height: 800 - 0 - 8 }));
+      } finally {
+        rectSpy.mockRestore();
+        if (origScrollY) Object.defineProperty(window, 'scrollY', origScrollY);
+        window.innerHeight = origInnerHeight;
+      }
     });
   });
 });

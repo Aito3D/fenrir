@@ -1281,6 +1281,7 @@ export default {
       high: "Высокое",
       cameraUnavailable: "Камера недоступна",
       streamRejected: "Поток отклонён сервером (HTTP {{status}})",
+      wallCapped: 'Превышен лимит стены в {{max}} камер',
       connectionLost: "Соединение потеряно",
       reconnecting: "Переподключение через {{countdown}} с (попытка {{attempt}})",
       expand: "Развернуть",

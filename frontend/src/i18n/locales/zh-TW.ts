@@ -1298,6 +1298,7 @@ export default {
       high: '高',
       cameraUnavailable: '相機無法使用',
       streamRejected: '伺服器拒絕了串流 (HTTP {{status}})',
+      wallCapped: '超出攝影機牆 {{max}} 路上限',
       connectionLost: '連線中斷',
       reconnecting: '{{countdown}} 秒後重新連線（第 {{attempt}} 次嘗試）',
       expand: '展開',

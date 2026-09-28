@@ -882,6 +882,7 @@ export default {
       high: 'Hoog',
       cameraUnavailable: 'Camera niet beschikbaar',
       streamRejected: 'Stream geweigerd door de server (HTTP {{status}})',
+      wallCapped: "Boven de limiet van {{max}} camera's per wand",
       connectionLost: 'Verbinding verbroken',
       reconnecting: 'Opnieuw verbinden over {{countdown}}s (poging {{attempt}})',
       expand: 'Vergroten',

@@ -1298,6 +1298,7 @@ export default {
       high: 'Hoch',
       cameraUnavailable: 'Kamera nicht verfügbar',
       streamRejected: 'Stream vom Server abgelehnt (HTTP {{status}})',
+      wallCapped: 'Über dem Limit von {{max}} Kameras pro Wand',
       connectionLost: 'Verbindung verloren',
       reconnecting: 'Neuverbindung in {{countdown}}s (Versuch {{attempt}})',
       expand: 'Vergrößern',

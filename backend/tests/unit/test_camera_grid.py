@@ -1904,3 +1904,229 @@ class TestGridStreamAPIKeyPrinterScope:
                 chunk = await resp.body_iterator.__anext__()
                 seen.add(chunk[:4])
             assert seen == {struct.pack("<I", pid_a), struct.pack("<I", pid_b)}
+
+
+# ---------------------------------------------------------------------------
+# TestGridStreamDoesNotForceProducerRestarts
+# ---------------------------------------------------------------------------
+
+
+class TestGridStreamDoesNotForceProducerRestarts:
+    """A grid connect that resolves its params from the quality preset must
+    NOT force-restart producers that are already alive.
+
+    The resolved params depend on the caller's own stream count (skip_frames
+    flips at 4 printers, "auto" scales with the count), so forcing meant two
+    walls watching different subsets — or a wall and a single-camera viewer —
+    each restarted the other's producers on connect, and then kept doing so
+    from the dead-producer restart path: alternating ~20s live / ~20s black
+    per viewer, with ffmpeg respawning every cycle.
+    """
+
+    @staticmethod
+    def _alive_entry(params_key: str):
+        from backend.app.api.routes.camera import _SharedStream
+
+        entry = _SharedStream(params_key=params_key)
+        entry.alive = True
+        entry.frame = b"\xff\xd8other-viewer-jpeg\xff\xd9"
+        entry.frame_seq = 1
+        entry.last_frame_produced = 2_000_000.0
+        return entry
+
+    @pytest.mark.asyncio
+    async def test_preset_connect_reuses_alive_producer_with_different_params(self):
+        from unittest.mock import AsyncMock
+
+        import backend.app.api.routes.camera as cam
+
+        pid = 7301
+        # Started by another viewer with params resolved for ITS stream count.
+        other_viewers_entry = self._alive_entry("5-15-0.5-0-True-True")
+        request = _StubRequest(disconnect_after=1)
+
+        with (
+            patch(
+                "backend.app.api.routes.camera._hub.get_existing_batch",
+                new=AsyncMock(return_value=({pid: other_viewers_entry}, [])),
+            ),
+            patch("backend.app.api.routes.camera.database.async_session", return_value=_FakeSessionCtx()),
+            patch("backend.app.api.routes.camera.time", _FakeTime()),
+            patch(
+                "backend.app.api.routes.camera._resolve_quality_from_settings",
+                # This caller resolves to different params (skip_frames=False).
+                new=AsyncMock(return_value=(5, 15, 0.5, 0, True, False, "medium")),
+            ),
+            patch("backend.app.api.routes.camera._ensure_producer", new=AsyncMock()) as mock_ensure,
+        ):
+            resp = await cam.camera_grid_stream(
+                request, ids=str(pid), fps=None, quality=None, scale=None, force=False, api_key=None
+            )
+            chunk = await resp.body_iterator.__anext__()
+            assert chunk[:4] == struct.pack("<I", pid)
+            with pytest.raises(StopAsyncIteration):
+                await resp.body_iterator.__anext__()
+
+        # The other viewer's producer was adopted as-is — never restarted.
+        mock_ensure.assert_not_called()
+        assert other_viewers_entry.alive is True
+
+    @pytest.mark.asyncio
+    async def test_explicit_force_query_param_still_restarts(self):
+        """``?force=true`` remains the explicit opt-in for a restart."""
+        from unittest.mock import AsyncMock
+
+        import backend.app.api.routes.camera as cam
+
+        pid = 7302
+        entry = self._alive_entry("5-15-0.5-0-True-True")
+        request = _StubRequest(disconnect_after=1)
+
+        with (
+            patch(
+                "backend.app.api.routes.camera._hub.get_existing_batch",
+                new=AsyncMock(return_value=({pid: entry}, [])),
+            ),
+            patch("backend.app.api.routes.camera.database.async_session", return_value=_FakeSessionCtx()),
+            patch("backend.app.api.routes.camera.time", _FakeTime()),
+            patch(
+                "backend.app.api.routes.camera._resolve_quality_from_settings",
+                new=AsyncMock(return_value=(5, 15, 0.5, 0, True, False, "medium")),
+            ),
+            patch("backend.app.api.routes.camera._ensure_producer", new=AsyncMock(return_value=entry)) as mock_ensure,
+        ):
+            resp = await cam.camera_grid_stream(
+                request, ids=str(pid), fps=None, quality=None, scale=None, force=True, api_key=None
+            )
+            await resp.body_iterator.__anext__()
+            with pytest.raises(StopAsyncIteration):
+                await resp.body_iterator.__anext__()
+
+        mock_ensure.assert_called_once()
+        assert mock_ensure.call_args.kwargs["force_quality"] is True
+
+    @pytest.mark.asyncio
+    async def test_dead_producer_restart_does_not_force(self):
+        """The in-loop restart of a dead producer must adopt a replacement
+        another viewer may already have started, instead of forcing its own
+        params on it (the other half of the ping-pong)."""
+        from unittest.mock import AsyncMock
+
+        import backend.app.api.routes.camera as cam
+
+        pid_dead = 7303
+        pid_helper = 7304
+        entry_dead = self._alive_entry("200-15-0.5-0-False-False")
+        entry_dead.alive = False
+        entry_helper = TestGridStreamGenerateLoop._incrementing_entry()
+        new_entry = self._alive_entry("200-15-0.5-0-False-False")
+        request = _StubRequest(disconnect_after=1000)
+
+        old_killed = cam._state.watchdog_killed_printers.copy()
+        old_cooldown = cam._state.per_printer_cooldown.copy()
+        old_fleet_cooldown = cam._state.fleet_cooldown_until
+        cam._state.fleet_cooldown_until = 0.0
+        try:
+            with (
+                patch(
+                    "backend.app.api.routes.camera._hub.get_existing_batch",
+                    new=AsyncMock(return_value=({pid_dead: entry_dead, pid_helper: entry_helper}, [])),
+                ),
+                patch("backend.app.api.routes.camera.database.async_session", return_value=_FakeSessionCtx()),
+                patch("backend.app.api.routes.camera.async_session", return_value=_FakeSessionCtx()),
+                patch("backend.app.api.routes.camera.time", _FakeTime()),
+                patch(
+                    "backend.app.api.routes.camera._resolve_quality_from_settings",
+                    new=AsyncMock(return_value=(200, 15, 0.5, 0, False, False, "custom")),
+                ),
+                patch(
+                    "backend.app.api.routes.camera._ensure_producer", new=AsyncMock(return_value=new_entry)
+                ) as mock_ensure,
+            ):
+                resp = await cam.camera_grid_stream(
+                    request,
+                    ids=f"{pid_dead},{pid_helper}",
+                    fps=200,
+                    quality=15,
+                    scale=0.5,
+                    force=False,
+                    api_key=None,
+                )
+                for _ in range(20):
+                    await resp.body_iterator.__anext__()
+                    if resp.body_iterator.ag_frame.f_locals["entries"].get(pid_dead) is new_entry:
+                        break
+                else:
+                    pytest.fail("restart was never executed within 20 outer-loop iterations")
+                await resp.body_iterator.aclose()
+        finally:
+            cam._state.watchdog_killed_printers.clear()
+            cam._state.watchdog_killed_printers.update(old_killed)
+            cam._state.per_printer_cooldown.clear()
+            cam._state.per_printer_cooldown.update(old_cooldown)
+            cam._state.fleet_cooldown_until = old_fleet_cooldown
+
+        mock_ensure.assert_called_once()
+        assert mock_ensure.call_args.args[0] == pid_dead
+        assert mock_ensure.call_args.kwargs.get("force_quality", False) is False
+
+
+class TestGridStreamSpawnOutsideSession:
+    """Cold-connect producer spawning must not pin the pooled DB connection
+    for the whole stagger, and must stop once the client has gone away."""
+
+    @pytest.mark.asyncio
+    async def test_spawn_loop_runs_after_the_session_closed_and_stops_when_client_leaves(self):
+        from unittest.mock import AsyncMock, MagicMock
+
+        import backend.app.api.routes.camera as cam
+
+        pids = [7401, 7402, 7403]
+        printers = {}
+        for pid in pids:
+            p = MagicMock()
+            p.id = pid
+            printers[pid] = p
+
+        session_state = {"open": False, "spawned_while_open": []}
+
+        class _TrackingSessionCtx:
+            async def __aenter__(self):
+                session_state["open"] = True
+                db = AsyncMock()
+                result = MagicMock()
+                result.scalars.return_value.all.return_value = list(printers.values())
+                db.execute = AsyncMock(return_value=result)
+                return db
+
+            async def __aexit__(self, exc_type, exc, tb):
+                session_state["open"] = False
+                return False
+
+        spawned = []
+
+        async def fake_ensure(pid, db, *_args, **kwargs):
+            session_state["spawned_while_open"].append(session_state["open"])
+            assert db is None  # the printer is passed in; no session needed
+            assert kwargs["printer"] is printers[pid]
+            spawned.append(pid)
+            entry = TestGridStreamGenerateLoop._live_entry()
+            return entry
+
+        # Connected for the first spawn, gone by the second stagger check.
+        request = _StubRequest(disconnect_after=0)
+
+        with (
+            patch("backend.app.api.routes.camera._hub.get_existing_batch", new=AsyncMock(return_value=({}, pids))),
+            patch("backend.app.api.routes.camera.database.async_session", return_value=_TrackingSessionCtx()),
+            patch("backend.app.api.routes.camera._check_system_load", return_value=0.0),
+            patch("backend.app.api.routes.camera.asyncio.sleep", new=AsyncMock()),
+            patch("backend.app.api.routes.camera._ensure_producer", new=AsyncMock(side_effect=fake_ensure)),
+        ):
+            resp = await cam.camera_grid_stream(
+                request, ids=",".join(map(str, pids)), fps=200, quality=15, scale=0.5, force=False, api_key=None
+            )
+            await resp.body_iterator.aclose()
+
+        assert spawned == [pids[0]]  # the disconnect check before #2 stopped the loop
+        assert session_state["spawned_while_open"] == [False]

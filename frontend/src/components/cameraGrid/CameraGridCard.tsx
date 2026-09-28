@@ -16,6 +16,7 @@ import {
   Maximize2,
   Flame,
   Thermometer,
+  VideoOff,
 } from 'lucide-react';
 
 import { formatDuration, formatETA } from '../../utils/date';
@@ -24,7 +25,7 @@ import type { HMSError } from '../../api/client';
 import { Card } from '../Card';
 import { getTopHMSError } from '../HMSErrorModal';
 import type { GridLayout } from '../cameraGridLayout';
-import { gridBlinkSyncStyle, gridCardHighlightClass } from '../cameraGridLayout';
+import { SPOTLIGHT_SPAN_CLASS, GRID_STREAM_MAX_PRINTERS, gridBlinkSyncStyle, gridCardHighlightClass } from '../cameraGridLayout';
 
 /** State label color, keyed by the same stateKey used for the i18n label. */
 const STATE_COLORS = {
@@ -45,6 +46,16 @@ const STATE_KEYS: Record<string, keyof typeof STATE_COLORS> = {
   FINISH: 'finished',
   FAILED: 'failed',
 };
+
+/**
+ * A single click waits this long for a possible second click before it
+ * toggles the spotlight. A double-click (expand) delivers two click events
+ * first, so without the wait the tile spotlighted on and straight back off —
+ * two FLIP reflows of the whole wall behind the opening viewer. Well inside
+ * the platform double-click window (~500ms) so a real double-click always
+ * cancels the pending toggle.
+ */
+export const SPOTLIGHT_CLICK_DELAY_MS = 250;
 
 /** Video/canvas share the same fade + stale-blur presentation. */
 const mediaClass = (hidden: boolean) => `w-full h-full object-cover ${hidden ? 'opacity-0' : 'opacity-100'}`;
@@ -110,6 +121,12 @@ export interface CameraGridCardProps extends GridCardBaseProps {
   reconnectAttempt: number;
   degraded?: boolean;
   stale?: boolean;
+  /**
+   * The printer is connected but sits past the grid stream's printer cap
+   * (GRID_STREAM_MAX_PRINTERS), so no frame will ever arrive for it — say so
+   * instead of leaving a black tile with no spinner and no error.
+   */
+  capped?: boolean;
   onVisibilityChange?: (printerId: number, visible: boolean) => void;
   onRestart?: () => void;
 }
@@ -153,6 +170,7 @@ export const CameraGridCard = memo(function CameraGridCard({
   controlLoading,
   degraded,
   stale,
+  capped,
   hmsErrors,
   hasQueuedJobs,
   dismissedErrorDesc,
@@ -173,6 +191,20 @@ export const CameraGridCard = memo(function CameraGridCard({
     observer.observe(el);
     return () => observer.disconnect();
   }, [printerId, onVisibilityChange]);
+
+  // Pending single-click spotlight toggle (see SPOTLIGHT_CLICK_DELAY_MS).
+  const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelPendingSpotlight = () => {
+    if (clickTimerRef.current !== null) {
+      clearTimeout(clickTimerRef.current);
+      clickTimerRef.current = null;
+    }
+  };
+  useEffect(() => () => {
+    if (clickTimerRef.current !== null) clearTimeout(clickTimerRef.current);
+  }, []);
+  // Only a tile that can expand has a competing double-click handler.
+  const canExpand = connected && !!onExpand;
 
   const stateKey = !connected ? 'offline' : (state && STATE_KEYS[state]) || 'idle';
   const stateColor = STATE_COLORS[stateKey];
@@ -203,11 +235,8 @@ export const CameraGridCard = memo(function CameraGridCard({
     [isBlinking],
   );
 
-  // Spotlight span — every layout has ≥2 columns from `sm` up; compact
-  // already has 2 at base, so it can span everywhere.
-  const spotlightClass = spotlighted
-    ? layout === 'compact' ? 'col-span-2 row-span-2' : 'sm:col-span-2 sm:row-span-2'
-    : '';
+  // Spotlight span — breakpoint-gated per layout, see SPOTLIGHT_SPAN_CLASS.
+  const spotlightClass = spotlighted ? SPOTLIGHT_SPAN_CLASS[layout] : '';
 
   return (
     <Card
@@ -223,11 +252,23 @@ export const CameraGridCard = memo(function CameraGridCard({
         onClick={onSpotlight ? (e) => {
           // Ignore clicks bubbling from overlay buttons (pause/stop/dismiss)
           if ((e.target as HTMLElement).closest('button')) return;
-          onSpotlight(printerId);
+          if (!canExpand) {
+            // No double-click handler to race — toggle right away.
+            onSpotlight(printerId);
+            return;
+          }
+          cancelPendingSpotlight();
+          // Second click of a double-click: onDoubleClick owns it.
+          if (e.detail > 1) return;
+          clickTimerRef.current = setTimeout(() => {
+            clickTimerRef.current = null;
+            onSpotlight(printerId);
+          }, SPOTLIGHT_CLICK_DELAY_MS);
         } : undefined}
-        onDoubleClick={connected && onExpand ? (e) => {
+        onDoubleClick={canExpand ? (e) => {
           if ((e.target as HTMLElement).closest('button')) return;
-          onExpand(printerId, printerName);
+          cancelPendingSpotlight();
+          onExpand!(printerId, printerName);
         } : undefined}
         onKeyDown={(e) => {
           if (e.target !== e.currentTarget) return;
@@ -256,7 +297,15 @@ export const CameraGridCard = memo(function CameraGridCard({
             style={mediaStyle(!!(connected && stale && !loading && !error && !reconnecting))}
           />
         )}
-        {connected && loading && !reconnecting && (
+        {connected && capped && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 animate-grid-fade-in">
+            <VideoOff className="w-6 h-6 text-bambu-gray/50" />
+            <span className={`${textXs} text-bambu-gray/50 text-center px-3`}>
+              {t('printers.cameraGrid.wallCapped', { max: GRID_STREAM_MAX_PRINTERS })}
+            </span>
+          </div>
+        )}
+        {connected && loading && !reconnecting && !capped && (
           <div className="absolute inset-0 flex items-center justify-center">
             <Loader2 className="w-8 h-8 text-white/60 animate-spin" />
           </div>

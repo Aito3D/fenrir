@@ -15,7 +15,7 @@ import { useFlipReorder } from '../hooks/useFlipReorder';
 import { useIdleHide } from '../hooks/useIdleHide';
 import { useStaggeredEntrance } from '../hooks/useStaggeredEntrance';
 import type { GridLayout } from './cameraGridLayout';
-import { GRID_LAYOUT_COLS, computeWallFit } from './cameraGridLayout';
+import { GRID_LAYOUT_COLS, GRID_STREAM_MAX_PRINTERS, computeWallFit } from './cameraGridLayout';
 import { CameraGridCard } from './cameraGrid/CameraGridCard';
 import type { GridCardHandlers } from './cameraGrid/CameraGridCard';
 import { WebRTCGridCard } from './cameraGrid/WebRTCGridCard';
@@ -27,8 +27,6 @@ const HIDDEN_SUSPEND_DELAY_MS = 15_000;
 const IDS_DEBOUNCE_MS = 2_000;
 /** Fullscreen wall: hide cursor + toolbar after this much input silence. */
 const KIOSK_IDLE_MS = 4_000;
-/** Backend hard cap on grid-stream printer count (camera.py grid-stream route: "Maximum 30 printers per grid stream"). */
-const GRID_STREAM_MAX_PRINTERS = 30;
 
 /** Printer info consumed by the camera grid, derived from printer + live status. */
 export interface GridPrinter {
@@ -243,7 +241,11 @@ export function CameraGrid({
   // producers auto-stop 30s after their last viewer, dropping ffmpeg CPU and
   // bandwidth to zero for backgrounded tabs. Resume is instant on return
   // (the '' → non-empty ids fast path below skips the debounce).
-  const [suspended, setSuspended] = useState(false);
+  // Seeded from document.hidden: a wall mounted behind another tab (a kiosk
+  // reloading in the background, a link opened in a new tab) would otherwise
+  // stream at full rate until the tab was shown and hidden once — the
+  // visibilitychange listener below never fires for the initial state.
+  const [suspended, setSuspended] = useState(() => document.hidden);
   useEffect(() => {
     let hideTimer: ReturnType<typeof setTimeout> | null = null;
     const onVisibilityChange = () => {
@@ -266,6 +268,14 @@ export function CameraGrid({
 
   // Kiosk mode: on the fullscreen wall, hide cursor + toolbar after idle input
   const kioskIdle = useIdleHide(!!fullscreen, KIOSK_IDLE_MS);
+  // The cursor is hidden on <body>, not on the grid wrapper: a mouse parked
+  // over the page header or the clock still sat visible on the kiosk display.
+  const kioskHidden = !!fullscreen && kioskIdle;
+  useEffect(() => {
+    if (!kioskHidden) return;
+    document.body.classList.add('cursor-none');
+    return () => document.body.classList.remove('cursor-none');
+  }, [kioskHidden]);
 
   // Order the wall ETA-first (active prints by soonest ETA), then failed,
   // finished/idle, and offline last; ties within a tier fall back to name.
@@ -303,14 +313,20 @@ export function CameraGrid({
   // against unreachable printers and slow-retry them forever. Offline cards
   // still render (with the offline overlay); they join the stream once the
   // printer reconnects and the debounced ids key updates.
-  const rawPrinterIdsKey = suspended
-    ? ''
-    : mjpegPrinters
-        .filter(p => p.connected)
-        .map(p => p.id)
-        .sort((a, b) => a - b)
-        .slice(0, GRID_STREAM_MAX_PRINTERS)
-        .join(',');
+  // Ids past the backend cap still render a tile, but their canvas would
+  // never receive a frame — cappedMjpegIds lets the card say why instead of
+  // sitting black forever with no spinner and no error.
+  const { streamedMjpegIds, cappedMjpegIds } = useMemo(() => {
+    const connected = mjpegPrinters
+      .filter(p => p.connected)
+      .map(p => p.id)
+      .sort((a, b) => a - b);
+    return {
+      streamedMjpegIds: connected.slice(0, GRID_STREAM_MAX_PRINTERS),
+      cappedMjpegIds: new Set(connected.slice(GRID_STREAM_MAX_PRINTERS)),
+    };
+  }, [mjpegPrinters]);
+  const rawPrinterIdsKey = suspended ? '' : streamedMjpegIds.join(',');
 
   // Debounce printerIdsKey so transient printer list changes don't tear down the stream
   const [printerIdsKey, setPrinterIdsKey] = useState(rawPrinterIdsKey);
@@ -345,10 +361,14 @@ export function CameraGrid({
 
   // Combined stats (MJPEG + WebRTC) via ref + subscriber pattern
   const webrtcPrinterIdsKey = webrtcPrinters.map(p => p.id).sort((a, b) => a - b).join(',');
+  // Counts feed the toolbar's "live/total" readout. Total is the number of
+  // cameras we are actually streaming (connected printers only, capped like
+  // the stream itself) — counting offline printers made a wall with two
+  // powered-off printers read "3/5" forever, as if two cameras were down.
   const { subscribeStats, getStatsSnapshot, handleWebRTCStats } = useCombinedGridStats({
     getMjpegStatsSnapshot,
-    mjpegCount: mjpegPrinters.length,
-    webrtcCount: webrtcPrinters.length,
+    mjpegCount: streamedMjpegIds.length,
+    webrtcCount: webrtcPrinters.filter(p => p.connected).length,
     webrtcPrinterIdsKey,
     suspended,
   });
@@ -372,10 +392,15 @@ export function CameraGrid({
     if (!el) return;
     const measure = () => {
       const rect = el.getBoundingClientRect();
+      // rect.top is viewport-relative: once the page has scrolled (a spotlight
+      // row can overflow — computeWallFit's row math is approximate) it goes
+      // negative and would inflate the available height, growing the tiles
+      // and the overflow with them. Measure from the document top instead.
+      const gridDocTop = rect.top + window.scrollY;
       setWallBox({
         width: rect.width,
         // Small bottom inset so the last row's rounded corners don't kiss the edge
-        height: Math.max(0, window.innerHeight - rect.top - 8),
+        height: Math.max(0, window.innerHeight - gridDocTop - 8),
       });
     };
     measure();
@@ -413,8 +438,6 @@ export function CameraGrid({
     );
   }
 
-  const kioskHidden = !!fullscreen && kioskIdle;
-
   const gapClass = layout === 'compact' ? 'gap-2' : 'gap-4';
   const gapPx = layout === 'compact' ? 8 : 16;
   // Paused prints auto-expand to 2x2 exactly like a manual spotlight (see the
@@ -431,7 +454,7 @@ export function CameraGrid({
     : null;
 
   return (
-    <div className={kioskHidden ? 'cursor-none' : undefined}>
+    <div>
       <GridToolbar
         canChangeQuality={canChangeQuality}
         quality={gridParamsKey}
@@ -498,6 +521,7 @@ export function CameraGrid({
               onVisibilityChange={handleVisibilityChange}
               degraded={degradedSet.has(p.id)}
               stale={staleSet.has(p.id)}
+              capped={cappedMjpegIds.has(p.id)}
             />
           );
         })}

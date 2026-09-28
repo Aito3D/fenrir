@@ -1305,6 +1305,7 @@ export default {
       high: 'High',
       cameraUnavailable: 'Camera unavailable',
       streamRejected: 'Stream rejected by server (HTTP {{status}})',
+      wallCapped: 'Beyond the {{max}}-camera wall limit',
       connectionLost: 'Connection lost',
       reconnecting: 'Reconnecting in {{countdown}}s (attempt {{attempt}})',
       expand: 'Expand',

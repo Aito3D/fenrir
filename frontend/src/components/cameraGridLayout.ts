@@ -3,10 +3,25 @@ import { Grid, Grid2x2, LayoutGrid } from 'lucide-react';
 
 export type GridLayout = 'compact' | 'default' | 'large';
 
+/** Backend hard cap on grid-stream printer count (camera.py grid-stream route: "Maximum 30 printers per grid stream"). */
+export const GRID_STREAM_MAX_PRINTERS = 30;
+
 export const GRID_LAYOUT_COLS: Record<GridLayout, string> = {
   compact: 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6',
   default: 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5',
   large:   'grid-cols-1 sm:grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4',
+};
+
+/**
+ * 2×2 spotlight span per layout — must only kick in at breakpoints where the
+ * layout above has ≥2 columns: a 2-column span on a 1-column grid makes CSS
+ * grid add an implicit column and squeezes every other tile. Compact has 2
+ * columns at base, default from `sm`, large only from `lg`.
+ */
+export const SPOTLIGHT_SPAN_CLASS: Record<GridLayout, string> = {
+  compact: 'col-span-2 row-span-2',
+  default: 'sm:col-span-2 sm:row-span-2',
+  large: 'lg:col-span-2 lg:row-span-2',
 };
 
 export const GRID_LAYOUT_ICONS: Record<GridLayout, ComponentType<{ className?: string }>> = {

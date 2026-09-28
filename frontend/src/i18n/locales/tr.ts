@@ -1298,6 +1298,7 @@ export default {
       high: 'Yüksek',
       cameraUnavailable: 'Kamera kullanılamıyor',
       streamRejected: 'Akış sunucu tarafından reddedildi (HTTP {{status}})',
+      wallCapped: 'Duvar sınırı olan {{max}} kamera aşıldı',
       connectionLost: 'Bağlantı kesildi',
       reconnecting: '{{countdown}} sn içinde yeniden bağlanılıyor (deneme {{attempt}})',
       expand: 'Genişlet',

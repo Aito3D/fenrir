@@ -114,6 +114,17 @@ export function useGridStream({ printerIdsKey, gridParamsKey, restartKey }: UseG
   // exactly one fresh STREAM_ERROR_MS window to resume decoding before
   // erroring, mirroring the mount/reconnect timers it substitutes for.
   const reentryTimersRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
+  // Ids whose canvas currently holds a drawn frame. The main effect below
+  // re-runs whenever the id set changes (a printer connects or disconnects,
+  // the tab resumes) and every re-run tears the stream down and reconnects;
+  // marking every id "loading" on each re-run hid every canvas behind a
+  // spinner until its next frame — the whole wall flashed black because one
+  // printer joined. Only ids with nothing on their canvas need the spinner;
+  // the rest keep showing their last frame until it is replaced. Ids that
+  // leave the streamed set are dropped (their next frame could be minutes
+  // old), and a manual restart clears the whole set so it reads as a reload.
+  const drawnRef = useRef<Set<number>>(new Set());
+  const lastRestartKeyRef = useRef(restartKey);
 
   const [loadingSet, setLoadingSet] = useState<Set<number>>(new Set());
   const [errorSet, setErrorSet] = useState<Set<number>>(new Set());
@@ -176,6 +187,7 @@ export function useGridStream({ printerIdsKey, gridParamsKey, restartKey }: UseG
     for (const id of canvasRefs.current.keys()) {
       if (!connectedIds.has(id)) {
         canvasRefs.current.delete(id);
+        drawnRef.current.delete(id);
       }
     }
   }, [printerIdsKey]);
@@ -223,7 +235,14 @@ export function useGridStream({ printerIdsKey, gridParamsKey, restartKey }: UseG
     const ids = printerIdsKey ? printerIdsKey.split(',').map(Number) : [];
     if (ids.length === 0) return;
 
-    setLoadingSet(new Set(ids));
+    if (lastRestartKeyRef.current !== restartKey) {
+      drawnRef.current.clear();
+      lastRestartKeyRef.current = restartKey;
+    }
+    const drawn = drawnRef.current;
+    const undrawn = () => new Set(ids.filter(id => !drawn.has(id)));
+
+    setLoadingSet(undrawn());
     setErrorSet(new Set());
     setTerminalError(null);
     resetReconnect();
@@ -446,6 +465,7 @@ export function useGridStream({ printerIdsKey, gridParamsKey, restartKey }: UseG
       ctx.drawImage(bitmap, 0, 0);
       bitmap.close();
       pipeline.framesDrawn++;
+      drawn.add(pid);
     }
 
     worker.onmessage = handleWorkerMessage;
@@ -567,12 +587,14 @@ export function useGridStream({ printerIdsKey, gridParamsKey, restartKey }: UseG
           workerRef.current = worker;
           worker.onmessage = handleWorkerMessage;
 
-          // Re-seed visibility for all printer IDs — mirror that reset in our
-          // own tracking so the health pass doesn't keep treating ids as
-          // invisible against a worker that now considers everything visible.
-          visibilityRef.current.clear();
+          // Re-seed the fresh worker with the visibility we already track —
+          // the IntersectionObserver only reports changes, so it won't tell
+          // the new worker about tiles that are currently off-screen.
+          // Seeding everything as visible instead would make a worker that
+          // just stalled (typically: overloaded) decode every off-screen tile
+          // too, exactly when it can least afford to.
           for (const id of ids) {
-            worker.postMessage({ type: 'visibility', printerId: id, visible: true });
+            worker.postMessage({ type: 'visibility', printerId: id, visible: isVisible(id) });
           }
 
           // Reset worker-related pipeline counters
@@ -656,8 +678,9 @@ export function useGridStream({ printerIdsKey, gridParamsKey, restartKey }: UseG
         // now caught instead.
         lastFrameTime.clear();
         if (!wasReconnecting) {
-          // Only show per-camera loading spinners on initial connect
-          setLoadingSet(new Set(ids));
+          // Only show per-camera loading spinners on initial connect, and
+          // only for tiles with nothing drawn yet (see drawnRef).
+          setLoadingSet(undrawn());
         } else {
           // Give reconnected printers the same bounded grace window as a
           // fresh connect: one that resumes decoding within it is re-added
@@ -702,8 +725,11 @@ export function useGridStream({ printerIdsKey, gridParamsKey, restartKey }: UseG
           try {
             gbuf.append(value);
           } catch {
-            console.error('Grid stream: buffer exceeded limit, resetting');
+            console.error('Grid stream: buffer exceeded limit, reconnecting');
             gbuf.reset();
+            // Close this connection so the throw below reconnects on a fresh
+            // one — leaving the body open would leak the connection.
+            reader.cancel().catch(() => {});
             break;
           }
           bytesRef.current += value.length;
@@ -739,8 +765,16 @@ export function useGridStream({ printerIdsKey, gridParamsKey, restartKey }: UseG
           }
 
           if (bytesConsumed === -1) {
-            console.error('Grid stream: corrupt frame header, resetting buffer');
+            // Resetting the buffer alone can't resync: the next chunk starts at
+            // an arbitrary byte offset, so every header parsed from here on is
+            // garbage too, and the stall timer never fires because bytes keep
+            // arriving. Drop the connection instead — the throw below runs the
+            // normal backoff reconnect, and a fresh response starts on a frame
+            // boundary.
+            console.error('Grid stream: corrupt frame header, reconnecting');
             gbuf.reset();
+            reader.cancel().catch(() => {});
+            break;
           } else if (bytesConsumed > 0) {
             // Compact: shift remaining bytes to front, release oversized buffers
             gbuf.compact(bytesConsumed);
