@@ -9,6 +9,7 @@ import re
 import time
 from collections.abc import Iterable
 from datetime import date, datetime, timezone
+from types import SimpleNamespace
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
@@ -62,6 +63,8 @@ from backend.app.schemas.aito import (
     AitoQuoteStatusResponse,
     AitoQuoteStatusUpdate,
     AitoRetainerApplied,
+    AitoRetainerEmailContent,
+    AitoRetainerEmailRequest,
     AitoRetainerInvoiceResponse,
     AitoRetainerPreview,
     AitoShippingIsland,
@@ -2164,6 +2167,165 @@ async def get_retainer_pdf(
         content=pdf,
         media_type="application/pdf",
         headers={"Content-Disposition": build_content_disposition(filename, disposition="inline")},
+    )
+
+
+async def _load_retainer_email_content(
+    db: AsyncSession, project_id: int, retainer_id: str, *, rollback_on_error: bool = False
+) -> tuple[AitoProject, dict, dict, str | None]:
+    """Shared preamble for both retainer-email routes — the retainer twin of
+    ``_load_invoice_email_content``, including the widening of recipients
+    with the card's own ``client_email`` and the casing rule for the default.
+    """
+    project = await db.get(AitoProject, project_id)
+    if project is None or project.status == "deleted":
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not project.quote_id:
+        raise HTTPException(status_code=404, detail="This project has no Zoho quote")
+    try:
+        retainer = await _resolve_project_retainer(db, project, retainer_id)
+        content = await zoho_service.get_retainer_email_content(db, retainer["id"])
+    except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
+        logger.warning("Aito retainer email prefill failed for project %s: %s", project_id, e)
+        if rollback_on_error:
+            await db.rollback()
+        raise _zoho_email_http_error(e) from e
+
+    recipients = list(content["recipients"])
+    client_email = (project.client_email or "").strip()
+    if client_email and not any(r["email"].lower() == client_email.lower() for r in recipients):
+        recipients.insert(0, {"email": client_email, "name": project.client_name or "", "contact_person_id": ""})
+    default = next((r["email"] for r in recipients if r["email"].lower() == client_email.lower()), None) or (
+        recipients[0]["email"] if recipients else None
+    )
+    return project, retainer, {**content, "recipients": recipients}, default
+
+
+@router.get("/{project_id}/retainer-email", response_model=AitoRetainerEmailContent)
+async def get_retainer_email(
+    project_id: int,
+    retainer_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
+):
+    """What Books would send if this retainer invoice were emailed now.
+    Preview only; the send re-reads everything — see ``send_retainer_email``."""
+    _project, retainer, content, default_email = await _load_retainer_email_content(db, project_id, retainer_id)
+    return AitoRetainerEmailContent(
+        subject=content["subject"],
+        body=content["body"],
+        recipients=[AitoQuoteEmailRecipient(**r) for r in content["recipients"]],
+        default_email=default_email,
+        retainer_id=retainer["id"],
+        retainer_number=retainer["number"],
+    )
+
+
+@router.post("/{project_id}/retainer-email", response_model=AitoRetainerInvoiceResponse)
+async def send_retainer_email(
+    project_id: int,
+    payload: AitoRetainerEmailRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
+):
+    """Email one of this project's retainer invoices through Books.
+
+    ZOHO-FIRST, for the reason on ``send_invoice_email``: the email IS the
+    act, so nothing is written locally until Books confirms. One
+    ``retainer.emailed`` event, no board move. The response is the retainer
+    re-read AFTER the send (Books marks it ``sent``); if that re-read fails
+    the pre-send row is returned with an empty ``url`` — the mail has gone
+    out, and a 500 would invite a real second send.
+
+    Every field still needed off ``project`` is captured into a local BEFORE
+    the send, for the MissingGreenlet reason ``send_invoice_email`` spells
+    out; ``project`` is not touched again past that line.
+    """
+    _check_zoho_email_rate_limit(request, current_user)
+    project, retainer, content, _default_email = await _load_retainer_email_content(
+        db, project_id, payload.retainer_id, rollback_on_error=True
+    )
+    project_pk = project.id
+    project_snapshot = SimpleNamespace(
+        quote_id=project.quote_id, quote_number=project.quote_number, client_id=project.client_id
+    )
+
+    recipient = payload.to.strip()
+    if recipient.lower() not in {r["email"].lower() for r in content["recipients"]}:
+        raise HTTPException(status_code=422, detail="That address is not a recipient of this retainer invoice")
+
+    key = _email_guard_key_or_409("retainer", project_pk, retainer["id"], recipient)
+    _EMAIL_GUARD.arm(key, time.monotonic())
+    try:
+        await zoho_service.email_retainer(db, retainer["id"], to_mail_ids=[recipient])
+    except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
+        if not isinstance(e, ZohoUnreachable):
+            _EMAIL_GUARD.release(key)
+        logger.warning("Aito retainer email failed for project %s: %s", project_id, e)
+        await db.rollback()
+        raise _zoho_email_http_error(e) from e
+    except Exception:
+        _EMAIL_GUARD.release(key)
+        raise
+
+    event_recorded = True
+    try:
+        await record(
+            db,
+            project_pk,
+            "retainer.emailed",
+            actor_class="user",
+            actor_name=_actor(current_user),
+            subject_type="project",
+            subject_id=project_pk,
+            detail={"email": recipient, "retainer_number": retainer["number"]},
+        )
+        await db.commit()
+    except SQLAlchemyError as e:
+        event_recorded = False
+        logger.error(
+            "Aito retainer email for project %s WAS SENT via Books but recording the local "
+            "retainer.emailed event failed — no event exists for this send: %s",
+            project_id,
+            e,
+        )
+        try:
+            await db.rollback()
+        except Exception:  # noqa: BLE001 — a real send must never 500 past this point
+            pass
+
+    fresh, url = retainer, ""
+    try:
+        rows = await list_project_retainers(db, project_snapshot)
+        fresh = next((r for r in rows if r["id"] == retainer["id"]), retainer)
+        url = await zoho_service.books_retainer_url(db, fresh["id"])
+    except (ZohoNotConfiguredError, ZohoUpstreamError, SQLAlchemyError) as e:
+        logger.warning(
+            "Aito retainer re-read after emailing project %s failed%s: %s",
+            project_id,
+            "" if event_recorded else " (retainer.emailed event was also not recorded — see the error above)",
+            e,
+        )
+        try:
+            await db.rollback()
+        except Exception:  # noqa: BLE001 — see above
+            pass
+    try:
+        await db.rollback()
+    except Exception:  # noqa: BLE001 — see above
+        pass
+
+    await _broadcast_changed("retainer-email", project_pk, _actor(current_user))
+    return AitoRetainerInvoiceResponse(
+        id=fresh["id"],
+        number=fresh["number"],
+        date=fresh["date"],
+        total=fresh["total"],
+        balance=fresh["balance"],
+        currency_code=fresh["currency_code"],
+        status=fresh["status"],
+        url=url,
     )
 
 

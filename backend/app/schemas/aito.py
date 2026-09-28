@@ -933,6 +933,29 @@ class AitoInvoiceEmailRequest(BaseModel):
     invoice_id: str | None = None
 
 
+class AitoRetainerEmailContent(BaseModel):
+    """The send-retainer modal's prefill — ``AitoInvoiceEmailContent`` for a
+    retainer invoice. ``retainer_id`` is echoed back on POST so the send is
+    pinned to the row the operator saw; the server still owns the candidate
+    set and only checks the id for membership."""
+
+    subject: str
+    body: str
+    recipients: list[AitoQuoteEmailRecipient]
+    default_email: str | None
+    retainer_id: str
+    retainer_number: str
+
+
+class AitoRetainerEmailRequest(BaseModel):
+    """``retainer_id`` is required, unlike the invoice's optional pin: there
+    is no "newest" default worth having — the card always knows which row
+    was clicked."""
+
+    to: str
+    retainer_id: str
+
+
 class AitoInvoiceResponse(BaseModel):
     """The Invoice card's contents, read live from Books on panel open.
 
