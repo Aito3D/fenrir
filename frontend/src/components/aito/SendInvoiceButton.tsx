@@ -4,6 +4,7 @@ import { ACTION_CELL, type ActionVariant } from './quoteActionGroup';
 import { DOC_ICON_BUTTON_CLS, LINK_ICON_CLS } from './linkActionHelpers';
 import { Mail } from 'lucide-react';
 import { SendInvoiceModal } from './SendInvoiceModal';
+import type { EmailDocument } from './emailDocument';
 
 /** Email this project's invoice to the client, from the panel's Invoice card.
  *
@@ -25,12 +26,12 @@ import { SendInvoiceModal } from './SendInvoiceModal';
  */
 export function SendInvoiceButton({
   projectId,
-  invoiceId,
+  document,
   contactPersonId = null,
   variant = 'cell',
 }: {
   projectId: number;
-  invoiceId: string;
+  document: EmailDocument;
   /** The card's contact person, when it has one: preferred over Books'
    *  default recipient. Null on person cards and older company cards. */
   contactPersonId?: string | null;
@@ -38,14 +39,15 @@ export function SendInvoiceButton({
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
+  const label = t(document.kind === 'invoice' ? 'aito.sendInvoice' : 'aito.sendRetainer');
 
   return (
     <>
       <button
         type="button"
         onClick={() => setOpen(true)}
-        aria-label={t('aito.sendInvoice')}
-        title={t('aito.sendInvoice')}
+        aria-label={label}
+        title={label}
         className={variant === 'icon' ? DOC_ICON_BUTTON_CLS : ACTION_CELL}
       >
         <Mail className={variant === 'icon' ? LINK_ICON_CLS : 'w-3.5 h-3.5'} />
@@ -53,7 +55,7 @@ export function SendInvoiceButton({
       {open && (
         <SendInvoiceModal
           projectId={projectId}
-          invoiceId={invoiceId}
+          document={document}
           contactPersonId={contactPersonId}
           onClose={() => setOpen(false)}
         />

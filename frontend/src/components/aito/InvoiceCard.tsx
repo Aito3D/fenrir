@@ -175,7 +175,7 @@ export function InvoiceCard({ project, canUpdate, heimdallConfigured }: {
         {canUpdate && (
           <SendInvoiceButton
             projectId={project.id}
-            invoiceId={invoice.id}
+            document={{ kind: 'invoice', id: invoice.id }}
             contactPersonId={project.client_contact_person_id}
           />
         )}

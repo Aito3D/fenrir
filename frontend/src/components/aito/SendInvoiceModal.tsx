@@ -5,10 +5,11 @@ import { Loader2 } from 'lucide-react';
 import { Card, CardContent } from '../Card';
 import { Button } from '../Button';
 import { inputCls, labelCls } from '../formStyles';
-import { api } from '../../api/client';
+import { api, type AitoInvoiceEmailContent, type AitoRetainerEmailContent } from '../../api/client';
 import { useDismissableDialog } from '../../hooks/useDismissableDialog';
-import { useSendInvoiceMutation } from '../../hooks/useSendInvoiceMutation';
+import { useSendDocumentEmailMutation } from '../../hooks/useSendInvoiceMutation';
 import { ZohoEmailPreview } from './ZohoEmailPreview';
+import type { EmailDocument } from './emailDocument';
 
 /** A beat past .animate-modal-out's 150ms, same margin the drawers give
  *  drawer-out (200ms → 220). */
@@ -22,22 +23,23 @@ const MODAL_OUT_MS = 170;
  *  server validates `to` against the addresses Books offers for this invoice
  *  and the UI must not offer what the API will refuse.
  *
- *  Takes ids rather than the project row: unlike a quote, whose id lives on
- *  the project, the invoice is only known once InvoiceCard's query has
- *  answered — and pinning to THAT invoice is the point (see `invoiceId`).
+ *  Takes the `EmailDocument` (invoice or retainer) rather than the project
+ *  row: unlike a quote, whose id lives on the project, the invoice or
+ *  retainer is only known once the card's query has answered — and pinning
+ *  to THAT document is the point (see `document`).
  */
 export function SendInvoiceModal({
   projectId,
-  /** The invoice the card is displaying. The card renders from a cache while
-   *  the endpoint resolves live, so "whatever is newest" could email a
-   *  document whose number the operator never saw. The server still owns the
-   *  candidate set; this only says which of them. */
-  invoiceId,
+  /** The invoice or retainer invoice the card is displaying. The card
+   *  renders from a cache while the endpoint resolves live, so "whatever is
+   *  newest" could email a document whose number the operator never saw.
+   *  The server still owns the candidate set; this only says which of them. */
+  document,
   contactPersonId = null,
   onClose,
 }: {
   projectId: number;
-  invoiceId: string;
+  document: EmailDocument;
   /** The card's contact person, when it has one: preferred over Books'
    *  default recipient. Null on person cards and older company cards. */
   contactPersonId?: string | null;
@@ -49,7 +51,7 @@ export function SendInvoiceModal({
   // the way it entered (animate-modal-out) whether dismissed or done. The
   // arrow defers the read past this line — `requestClose` is declared below,
   // and only ever called after render.
-  const mutation = useSendInvoiceMutation(projectId, invoiceId, () => requestClose());
+  const mutation = useSendDocumentEmailMutation(projectId, document, () => requestClose());
   const { closing, requestClose, dialogRef } = useDismissableDialog(onClose, {
     animationMs: MODAL_OUT_MS,
     // Same gate the backdrop has: while the send is in flight the modal is
@@ -59,9 +61,14 @@ export function SendInvoiceModal({
     },
   });
 
-  const { data, isPending, isError } = useQuery({
-    queryKey: ['aito-invoice-email', projectId, invoiceId],
-    queryFn: () => api.getAitoInvoiceEmail(projectId, invoiceId),
+  const title = t(document.kind === 'invoice' ? 'aito.sendInvoiceTitle' : 'aito.sendRetainerTitle');
+
+  const { data, isPending, isError } = useQuery<AitoInvoiceEmailContent | AitoRetainerEmailContent>({
+    queryKey: [document.kind === 'invoice' ? 'aito-invoice-email' : 'aito-retainer-email', projectId, document.id],
+    queryFn: () =>
+      document.kind === 'invoice'
+        ? api.getAitoInvoiceEmail(projectId, document.id)
+        : api.getAitoRetainerEmail(projectId, document.id),
     // Books' current truth, and the modal is short-lived: a list cached from
     // an hour ago could offer an address Books has since removed, which the
     // send would then reject.
@@ -100,7 +107,7 @@ export function SendInvoiceModal({
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
-        aria-label={t('aito.sendInvoiceTitle')}
+        aria-label={title}
         tabIndex={-1}
         // max-w-2xl, not max-w-md: Books' templates are built on fixed-width
         // tables that re-wrap into nonsense in a narrower frame.
@@ -114,7 +121,7 @@ export function SendInvoiceModal({
         onClick={(e: React.MouseEvent) => e.stopPropagation()}
       >
         <CardContent className="p-6 flex flex-col min-h-0">
-          <h3 className="text-lg font-semibold text-white mb-4">{t('aito.sendInvoiceTitle')}</h3>
+          <h3 className="text-lg font-semibold text-white mb-4">{title}</h3>
 
           {/* Scrollable content region: everything except the button row, so
               the row below stays reachable even when the preview pushes the
@@ -128,7 +135,9 @@ export function SendInvoiceModal({
             )}
 
             {isError && (
-              <p className="text-status-error text-sm py-6">{t('aito.sendInvoiceLoadFailed')}</p>
+              <p className="text-status-error text-sm py-6">
+                {t(document.kind === 'invoice' ? 'aito.sendInvoiceLoadFailed' : 'aito.sendRetainerLoadFailed')}
+              </p>
             )}
 
             {data && (

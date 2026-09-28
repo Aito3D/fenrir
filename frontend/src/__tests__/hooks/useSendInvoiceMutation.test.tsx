@@ -16,8 +16,8 @@ import type { ReactNode } from 'react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useSendInvoiceMutation } from '../../hooks/useSendInvoiceMutation';
-import { api, type AitoInvoice } from '../../api/client';
+import { useSendInvoiceMutation, useSendDocumentEmailMutation } from '../../hooks/useSendInvoiceMutation';
+import { api, type AitoInvoice, type AitoRetainerInvoice } from '../../api/client';
 import { showToastMock } from './boardMutationHarness';
 
 // `vi.mock(...)` factories are hoisted above this file's own imports, so the
@@ -85,5 +85,31 @@ describe('useSendInvoiceMutation', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
     expect(client.getQueryData(['aito-invoice', 99])).toEqual({ id: 'unrelated' });
+  });
+});
+
+const SENT_RETAINER = {
+  id: 'RET-B', number: 'AC-26-0031', date: '2026-09-03', total: 17500, balance: 0, currency_code: 'XPF', status: 'sent',
+  url: 'https://books.zoho.eu/app/org1#/retainerinvoices/RET-B',
+} as AitoRetainerInvoice;
+
+describe('useSendDocumentEmailMutation (retainer)', () => {
+  it("replaces the sent row inside ['aito-retainers', projectId] and toasts the retainer key", async () => {
+    vi.spyOn(api, 'sendAitoRetainerEmail').mockResolvedValue(SENT_RETAINER);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    client.setQueryData(['aito-retainers', 12], [{ ...SENT_RETAINER, status: 'paid' }, { ...SENT_RETAINER, id: 'RET-A', number: 'AC-26-0001', status: 'paid' }]);
+    const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+    const onDone = vi.fn();
+    const { result } = renderHook(() => useSendDocumentEmailMutation(12, { kind: 'retainer', id: 'RET-B' }, onDone), { wrapper });
+
+    await act(async () => {
+      result.current.mutate('contact@example.pf');
+    });
+
+    await waitFor(() => expect(onDone).toHaveBeenCalled());
+    expect(api.sendAitoRetainerEmail).toHaveBeenCalledWith(12, { to: 'contact@example.pf', retainer_id: 'RET-B' });
+    const rows = client.getQueryData<AitoRetainerInvoice[]>(['aito-retainers', 12]);
+    expect(rows?.map((r) => [r.id, r.status])).toEqual([['RET-B', 'sent'], ['RET-A', 'paid']]);
+    expect(showToastMock).toHaveBeenCalledWith('aito.retainerEmailed', 'success');
   });
 });

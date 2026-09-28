@@ -18,12 +18,30 @@ describe('SendInvoiceButton', () => {
       invoice_number: 'INV-00087',
     });
     const user = userEvent.setup();
-    render(<SendInvoiceButton projectId={12} invoiceId="INV-7" />);
+    render(<SendInvoiceButton projectId={12} document={{ kind: 'invoice', id: 'INV-7' }} />);
 
     await user.click(screen.getByRole('button', { name: /send invoice/i }));
 
     expect(await screen.findByLabelText(/recipient/i)).toBeInTheDocument();
     // Pinned to the invoice the card is showing, not "whatever is newest".
     expect(spy).toHaveBeenCalledWith(12, 'INV-7');
+  });
+
+  it('fetches the retainer prefill and posts the retainer send for a retainer document', async () => {
+    const spy = vi.spyOn(api, 'getAitoRetainerEmail').mockResolvedValue({
+      subject: 'Acompte AC-26-0031',
+      body: '<p>Bonjour</p>',
+      recipients: [{ email: 'contact@example.pf', name: 'Jean-Pierre Dupont', contact_person_id: 'cp-1' }],
+      default_email: 'contact@example.pf',
+      retainer_id: 'RET-B',
+      retainer_number: 'AC-26-0031',
+    });
+    const user = userEvent.setup();
+    render(<SendInvoiceButton projectId={12} document={{ kind: 'retainer', id: 'RET-B' }} />);
+
+    await user.click(screen.getByRole('button', { name: 'Send retainer invoice' }));
+
+    expect(await screen.findByRole('dialog', { name: 'Send retainer invoice by email' })).toBeInTheDocument();
+    expect(spy).toHaveBeenCalledWith(12, 'RET-B');
   });
 });
