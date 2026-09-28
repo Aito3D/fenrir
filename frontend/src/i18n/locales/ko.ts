@@ -751,6 +751,7 @@ export default {
       range: '{{from}}부터 {{to}}까지, 열 전환',
     },
     backlogHours: '인쇄 잔여 {{hours}}시간',
+    backlogShort: '{{hours}}시간 ≈ {{days}}일',
     backlogDays_one: '≈ {{days}}일 (프린터 {{count}}대)',
     backlogDays_other: '≈ {{days}}일 (프린터 {{count}}대)',
     backlogTitle: '수락된 작업의 남은 인쇄 시간을 프린터 수와 계산기의 일일 가동 시간으로 나눈 값',

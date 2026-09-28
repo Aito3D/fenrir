@@ -18,6 +18,14 @@ interface ViewToggleButtonProps {
    *  Statistics. A square button cannot reflow, so the stacked-strut trick
    *  below is not needed here; the active state swaps the icon for the arrow. */
   iconOnly?: boolean;
+  /** Classes for the two text labels (not the icons) — the desktop header
+   *  passes a container-query `hidden` so the button falls back to its icon
+   *  on a narrow header without a second component. The label stays the
+   *  tooltip, so the icon-only fallback is still named. */
+  labelClassName?: string;
+  /** Extra classes on the button itself — the header pairs a hidden label
+   *  with the narrower padding of the icon-only variant. */
+  className?: string;
   /** Marks this button as a landing pad for `useCardFlight`: a card that
    *  leaves the board for the archive flies into it. Passed straight through
    *  to the <button>, which is what the hook measures. */
@@ -52,13 +60,22 @@ const LAYER_IN = 'opacity-100 translate-x-0';
 const LAYER_OUT_LEFT = 'opacity-0 -translate-x-1 pointer-events-none';
 const LAYER_OUT_RIGHT = 'opacity-0 translate-x-1 pointer-events-none';
 
-export function ViewToggleButton({ active, onToggle, icon: Icon, label, iconOnly, ...rest }: ViewToggleButtonProps) {
+export function ViewToggleButton({
+  active,
+  onToggle,
+  icon: Icon,
+  label,
+  iconOnly,
+  labelClassName = '',
+  className = '',
+  ...rest
+}: ViewToggleButtonProps) {
   const { t } = useTranslation();
 
   if (iconOnly) {
     const name = active ? t('aito.backToBoard') : label;
     return (
-      <Button variant="secondary" onClick={onToggle} aria-pressed={active} aria-label={name} title={name} className="px-2.5" {...rest}>
+      <Button variant="secondary" onClick={onToggle} aria-pressed={active} aria-label={name} title={name} className={`px-2.5 ${className}`} {...rest}>
         <span className="grid">
           <span aria-hidden="true" className={`${LAYER} ${active ? LAYER_OUT_LEFT : LAYER_IN}`}>
             <Icon className="w-4 h-4" />
@@ -71,16 +88,19 @@ export function ViewToggleButton({ active, onToggle, icon: Icon, label, iconOnly
     );
   }
 
+  // The icon–label gap rides on the label (`ml-2`), not the icon, so hiding
+  // the label leaves the icon centred rather than trailing a margin.
+  const name = active ? t('aito.backToBoard') : label;
   return (
-    <Button variant="secondary" onClick={onToggle} aria-pressed={active} {...rest}>
+    <Button variant="secondary" onClick={onToggle} aria-pressed={active} title={name} className={className} {...rest}>
       <span className="grid">
         <span aria-hidden={active} className={`${LAYER} ${active ? LAYER_OUT_LEFT : LAYER_IN}`}>
-          <Icon className="w-4 h-4 mr-2" />
-          {label}
+          <Icon className="w-4 h-4" />
+          <span className={`ml-2 ${labelClassName}`}>{label}</span>
         </span>
         <span aria-hidden={!active} className={`${LAYER} ${active ? LAYER_IN : LAYER_OUT_RIGHT}`}>
-          <ArrowLeft className="w-4 h-4 mr-2" />
-          {t('aito.backToBoard')}
+          <ArrowLeft className="w-4 h-4" />
+          <span className={`ml-2 ${labelClassName}`}>{t('aito.backToBoard')}</span>
         </span>
       </span>
     </Button>

@@ -8760,6 +8760,7 @@ errors: {
       range: '{{from}} till {{to}}, byt kolumner',
     },
     backlogHours: '{{hours}} h kvar att skriva ut',
+    backlogShort: '{{hours}} h ≈ {{days}} d',
     backlogDays_one: '≈ {{days}} d på {{count}} skrivare',
     backlogDays_other: '≈ {{days}} d på {{count}} skrivare',
     backlogTitle: 'Utskriftstid som återstår på accepterade jobb, fördelad på dina skrivare och kalkylatorns dagliga timmar',

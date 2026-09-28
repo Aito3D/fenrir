@@ -755,6 +755,7 @@ export default {
       range: '{{from}} to {{to}}, change columns',
     },
     backlogHours: '{{hours}} h to print',
+    backlogShort: '{{hours}} h ≈ {{days}} d',
     backlogDays_one: '≈ {{days}} d on {{count}} printer',
     backlogDays_other: '≈ {{days}} d on {{count}} printers',
     backlogTitle: 'Print time still owed on accepted jobs, divided by your printers and the calculator’s daily hours',

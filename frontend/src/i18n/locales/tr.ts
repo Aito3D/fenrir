@@ -751,6 +751,7 @@ export default {
       range: '{{from}} ile {{to}} arası, sütunları değiştir',
     },
     backlogHours: '{{hours}} sa basılacak',
+    backlogShort: '{{hours}} sa ≈ {{days}} gün',
     backlogDays_one: '≈ {{count}} yazıcıda {{days}} gün',
     backlogDays_other: '≈ {{count}} yazıcıda {{days}} gün',
     backlogTitle: 'Kabul edilen işlerde kalan baskı süresi, yazıcı sayınıza ve hesaplayıcının günlük saatlerine bölünmüş',

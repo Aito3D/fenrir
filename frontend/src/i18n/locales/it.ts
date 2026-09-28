@@ -751,6 +751,7 @@ export default {
       range: 'Da {{from}} a {{to}}, cambia colonne',
     },
     backlogHours: '{{hours}} h da stampare',
+    backlogShort: '{{hours}} h ≈ {{days}} gg',
     backlogDays_one: '≈ {{days}} gg su {{count}} stampante',
     backlogDays_other: '≈ {{days}} gg su {{count}} stampanti',
     backlogTitle: 'Tempo di stampa ancora dovuto sui lavori accettati, diviso per le tue stampanti e le ore giornaliere del calcolatore',

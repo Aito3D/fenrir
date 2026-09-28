@@ -21,6 +21,7 @@ export function PrintBacklogBadge({
   const capacityKnown = printerCount !== undefined;
   let title = t('aito.backlogTitle');
   let daysLabel: string | null = null;
+  let shortLabel: string | null = null;
   if (capacityKnown) {
     const printers = Math.max(1, printerCount);
     const capacity = dailyCapacityHours(printerCount, dailyHours);
@@ -30,6 +31,7 @@ export function PrintBacklogBadge({
     const perPrinterStr = Number.isInteger(perPrinter) ? String(perPrinter) : perPrinter.toFixed(1);
     title = `${t('aito.backlogTitle')} — ${hours} h ÷ (${printers} × ${perPrinterStr} h) ≈ ${days} d`;
     daysLabel = t('aito.backlogDays', { days, count: printers });
+    shortLabel = t('aito.backlogShort', { hours, days });
   }
   return (
     // animate-rise-sm on the pill: it mounts and unmounts with the backlog
@@ -47,9 +49,22 @@ export function PrintBacklogBadge({
           changes — the same treatment its two neighbours in the h1 (the
           in-production count and the column badges) already get. Opacity
           only, so nothing in the row shifts. */}
+      {/* Two forms, one shown: the sentence, or below 1950px of the header's
+          own width (it is a container — see AitoPage) just the two figures,
+          "38 h ≈ 1.6 d", so a laptop keeps the header to one row. Without a
+          printer count there is no days figure and the hours alone are
+          already short, so the sentence stays. The tooltip carries the whole
+          formula in both. */}
       <span key={hours} className="inline-flex items-center gap-1.5 animate-value-tick">
-        <span>{t('aito.backlogHours', { hours })}</span>
-        {daysLabel !== null && <span className="text-bambu-gray">{daysLabel}</span>}
+        <span className={`inline-flex items-center gap-1.5 ${shortLabel !== null ? '@max-[1950px]:hidden' : ''}`}>
+          <span>{t('aito.backlogHours', { hours })}</span>
+          {daysLabel !== null && <span className="text-bambu-gray">{daysLabel}</span>}
+        </span>
+        {shortLabel !== null && (
+          <span data-testid="aito-print-backlog-short" className="hidden @max-[1950px]:inline">
+            {shortLabel}
+          </span>
+        )}
       </span>
     </span>
   );

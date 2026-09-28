@@ -751,6 +751,7 @@ export default {
       range: '{{from}} à {{to}}, changer de colonnes',
     },
     backlogHours: '{{hours}} h à imprimer',
+    backlogShort: '{{hours}} h ≈ {{days}} j',
     backlogDays_one: '≈ {{days}} j sur {{count}} imprimante',
     backlogDays_other: '≈ {{days}} j sur {{count}} imprimantes',
     backlogTitle: 'Temps d’impression restant sur les travaux acceptés, divisé par vos imprimantes et les heures quotidiennes du calculateur',

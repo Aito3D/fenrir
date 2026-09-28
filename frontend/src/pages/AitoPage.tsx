@@ -478,9 +478,24 @@ export function AitoPage() {
           Below lg it stacks: title, pills, search, controls. The subtitle
           sentence is gone — the page title plus the column names already say
           what this screen is — and so is the pills' own row: with the page
-          padding and gaps around it, it cost the board a full row of cards. */}
+          padding and gaps around it, it cost the board a full row of cards.
+
+          One row on a laptop too: the row is a container, and each element
+          has a compact form keyed to the row's own width (so a collapsing
+          sidebar counts as much as a smaller window). The steps, widest
+          first, each measured against four full pills and a three-digit
+          done count (2026-09-27) — 1950px: the pills lose their longest
+          wait and the backlog badge its sentence (the full form needs
+          ~1940px); 1700px: Import loses its text (labelled pills need ~1630
+          without it, ~1575 with — a 1920 window with the sidebar open gives
+          1632, so the label is what buys the margin); 1580px: the pills
+          lose their label (colour and tooltip carry it); 1100px: Show done
+          loses its text and the search narrows. "+ Project" never compacts:
+          it is the one thing here that creates work. `lg:flex-wrap` stays
+          as the fallback for a locale whose strings outgrow even the last
+          step — a wrap is now the last resort rather than the first. */}
       {!mobileBoard && !tabletBoard && (
-      <div className="flex flex-col lg:flex-row lg:flex-wrap lg:items-center gap-4 animate-rise-lg vt-page-title">
+      <div className="@container flex flex-col lg:flex-row lg:flex-wrap lg:items-center gap-4 animate-rise-lg vt-page-title">
         <h1 className="text-2xl font-bold text-white flex items-center gap-3 flex-none">
           <Kanban className="w-7 h-7 text-bambu-green" />
           {t('aito.title')}
@@ -515,6 +530,7 @@ export function AitoPage() {
         </h1>
         {view === 'board' && (
           <FollowupStrip
+            responsive
             className="vt-aito-followups"
             buckets={buckets}
             active={followup}
@@ -528,7 +544,7 @@ export function AitoPage() {
           <BoardSearch
             value={search}
             onChange={setSearch}
-            className={`vt-aito-search w-full lg:ml-auto lg:flex-none ${archive ? 'lg:w-96' : 'lg:w-52'}`}
+            className={`vt-aito-search w-full lg:ml-auto lg:flex-none ${archive ? 'lg:w-96' : 'lg:w-52 @max-[1100px]:w-40'}`}
           />
         )}
         <div className={`vt-aito-toolbar flex flex-wrap items-center gap-2 flex-none ${view === 'stats' ? 'lg:ml-auto' : ''}`}>
@@ -545,6 +561,8 @@ export function AitoPage() {
               onToggle={() => changeView(view === 'done' ? 'board' : 'done')}
               icon={Archive}
               label={`${t('aito.showDone')} (${pending ? '–' : doneCount})`}
+              labelClassName="@max-[1100px]:hidden"
+              className="@max-[1100px]:px-2.5"
               data-flight-target=""
             />
           )}
@@ -567,9 +585,14 @@ export function AitoPage() {
             />
           )}
           {canCreate && view === 'board' && (
-            <Button variant="secondary" onClick={() => setShowImport(true)} className="flex-1 sm:flex-none">
-              <FileInput className="w-4 h-4 mr-2" />
-              {t('aito.importQuote')}
+            <Button
+              variant="secondary"
+              onClick={() => setShowImport(true)}
+              title={t('aito.importQuote')}
+              className="flex-1 sm:flex-none @max-[1700px]:px-2.5"
+            >
+              <FileInput className="w-4 h-4" />
+              <span className="ml-2 @max-[1700px]:hidden">{t('aito.importQuote')}</span>
             </Button>
           )}
           {canCreate && view === 'board' && (

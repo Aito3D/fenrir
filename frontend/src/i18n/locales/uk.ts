@@ -752,6 +752,7 @@ export default {
       range: 'З {{from}} по {{to}}, змінити колонки',
     },
     backlogHours: '{{hours}} год друку',
+    backlogShort: '{{hours}} год ≈ {{days}} дн.',
     backlogDays_one: '≈ {{days}} дн. на {{count}} принтері',
     backlogDays_other: '≈ {{days}} дн. на {{count}} принтерах',
     backlogTitle: 'Залишок часу друку за прийнятими замовленнями, поділений на кількість принтерів і денні години калькулятора',

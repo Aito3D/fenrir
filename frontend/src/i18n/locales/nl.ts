@@ -8758,6 +8758,7 @@ export default {
       range: '{{from}} tot {{to}}, kolommen wisselen',
     },
     backlogHours: '{{hours}} u te printen',
+    backlogShort: '{{hours}} u ≈ {{days}} dg',
     backlogDays_one: '≈ {{days}} dg op {{count}} printer',
     backlogDays_other: '≈ {{days}} dg op {{count}} printers',
     backlogTitle: 'Resterende afdruktijd voor geaccepteerde opdrachten, verdeeld over je printers en de dagelijkse uren van de rekentool',

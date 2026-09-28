@@ -41,4 +41,16 @@ describe('ViewToggleButton', () => {
     // Still two layers: the hidden one is the strut that holds the width.
     expect(screen.getByRole('button').querySelectorAll('span.grid > span')).toHaveLength(2);
   });
+
+  it('labelClassName lands on both text labels, so a container query can hide them together', () => {
+    render(
+      <ViewToggleButton active={false} onToggle={vi.fn()} icon={Trash2} label="Show done (3)" labelClassName="@max-[1100px]:hidden" />,
+    );
+    expect(screen.getByText('Show done (3)')).toHaveClass('@max-[1100px]:hidden');
+    expect(screen.getByText('Back to board')).toHaveClass('@max-[1100px]:hidden');
+    // The icons keep their place: hiding the text must not empty the button.
+    expect(screen.getByRole('button').querySelectorAll('svg')).toHaveLength(2);
+    // The button still names itself when the text is hidden.
+    expect(screen.getByRole('button')).toHaveAttribute('title', 'Show done (3)');
+  });
 });

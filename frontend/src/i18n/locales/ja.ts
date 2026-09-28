@@ -751,6 +751,7 @@ export default {
       range: '{{from}} から {{to}}、列を切り替え',
     },
     backlogHours: '印刷残り {{hours}} 時間',
+    backlogShort: '{{hours}} 時間 ≈ {{days}} 日',
     backlogDays_one: '≈ {{days}} 日（プリンター {{count}} 台）',
     backlogDays_other: '≈ {{days}} 日（プリンター {{count}} 台）',
     backlogTitle: '受注済み案件の残り印刷時間を、プリンター台数と計算機の1日あたり稼働時間で割った値',

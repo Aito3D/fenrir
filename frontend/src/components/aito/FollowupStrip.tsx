@@ -49,6 +49,7 @@ export function FollowupStrip({
   projects = [],
   className = '',
   compact = false,
+  responsive = false,
 }: {
   buckets: Record<FollowupKey, FollowupBucket>;
   active: FollowupKey | null;
@@ -61,6 +62,13 @@ export function FollowupStrip({
    *  pressed); the label and the longest wait move into the tooltip. The
    *  accessible name already carries label, count and worst offender. */
   compact?: boolean;
+  /** The desktop header's pills: full at a wide header, shedding parts as
+   *  the header (a container — see AitoPage) narrows, so the row never
+   *  wraps on a laptop. Two steps: 1950px drops the longest wait, 1580px
+   *  drops the label and glyph, leaving the coloured count — the tablet's
+   *  `compact` look, reached by CSS instead of a prop. The label lives in
+   *  the tooltip throughout, since it may be the hidden part. */
+  responsive?: boolean;
 }) {
   const { t } = useTranslation();
   const byId = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects]);
@@ -114,9 +122,11 @@ export function FollowupStrip({
             data-testid={`aito-followup-${key}`}
             aria-pressed={pressed}
             aria-label={`${t(LABEL_KEY[key])} ${bucket.ids.length}${worstText ? ` — ${worstText}` : ''}`}
-            title={compact ? compactTitle : title}
+            title={compact || responsive ? compactTitle : title}
             onClick={() => onChange(pressed ? null : key)}
-            className={`group/pill inline-flex items-center gap-2 rounded-full border ${compact ? 'px-2 py-0.5' : 'px-3 py-1'} whitespace-nowrap transition-[filter,box-shadow] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current ${
+            className={`group/pill inline-flex items-center gap-2 rounded-full border ${compact ? 'px-2 py-0.5' : 'px-3 py-1'} ${
+              responsive ? '@max-[1950px]:gap-1.5 @max-[1580px]:px-2.5' : ''
+            } whitespace-nowrap transition-[filter,box-shadow] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current ${
               PILL_CLS[key]
             } ${pressed ? 'ring-2 ring-current' : 'hover:brightness-110'}${
               firstPaintKeysRef.current?.has(key) ? '' : ' animate-rise-sm'
@@ -129,13 +139,23 @@ export function FollowupStrip({
             <span key={bucket.ids.length} className="text-sm font-bold leading-none tabular-nums animate-value-tick">
               {bucket.ids.length}
             </span>
-            {!compact && <span className="text-[11px] font-semibold uppercase tracking-wider">{t(LABEL_KEY[key])}</span>}
-            {!compact && bucket.maxDays > 0 && (
-              <span className="text-[11px] opacity-80 tabular-nums">{t('aito.followups.longest', { days: bucket.maxDays })}</span>
+            {!compact && (
+              <span className={`text-[11px] font-semibold uppercase tracking-wider ${responsive ? '@max-[1580px]:hidden' : ''}`}>
+                {t(LABEL_KEY[key])}
+              </span>
             )}
+            {!compact && bucket.maxDays > 0 && (
+              <span className={`text-[11px] opacity-80 tabular-nums ${responsive ? '@max-[1950px]:hidden' : ''}`}>
+                {t('aito.followups.longest', { days: bucket.maxDays })}
+              </span>
+            )}
+            {/* The × that clears the filter stays at every width; only the
+                hover-revealed filter hint goes with the label. */}
             {(!compact || pressed) && <Glyph
               aria-hidden="true"
-              className={`h-3.5 w-3.5 flex-shrink-0 transition-opacity ${pressed ? '' : 'opacity-50 group-hover/pill:opacity-100'}`}
+              className={`h-3.5 w-3.5 flex-shrink-0 transition-opacity ${pressed ? '' : 'opacity-50 group-hover/pill:opacity-100'}${
+                responsive && !pressed ? ' @max-[1580px]:hidden' : ''
+              }`}
             />}
           </button>
         );

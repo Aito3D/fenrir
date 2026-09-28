@@ -2290,3 +2290,39 @@ describe('client history swap', () => {
     expect(within(swapped).getByRole('button', { name: 'Edit the client' })).toHaveAttribute('aria-expanded', 'false');
   });
 });
+
+/** On a laptop the header used to wrap its toolbar onto a second row. Now
+ *  the row is a container and each element has a compact form keyed to the
+ *  header's own width: 1950px drops the pills' wait and the backlog
+ *  sentence, 1700px drops Import's text, 1580px the pill labels, 1100px
+ *  Show done's text (and narrows the search). "+ Project" never compacts. */
+describe('laptop header density', () => {
+  it('makes the header row a container so the steps measure the header, not the window', async () => {
+    render(<AitoPage />);
+    await screen.findByText('ACME SARL');
+    expect(document.querySelector('.vt-page-title')).toHaveClass('@container');
+  });
+
+  it('compacts Import to its icon below 1700px and keeps its name in a tooltip', async () => {
+    render(<AitoPage />);
+    await screen.findByText('ACME SARL');
+    const importBtn = screen.getByRole('button', { name: /^import$/i });
+    expect(importBtn).toHaveAttribute('title', 'Import');
+    expect(screen.getByText('Import', { selector: 'span' })).toHaveClass('@max-[1700px]:hidden');
+    expect(importBtn.querySelector('svg')).not.toHaveClass('mr-2');
+  });
+
+  it('compacts Show done below 1100px, and narrows the search box', async () => {
+    render(<AitoPage />);
+    await screen.findByText('ACME SARL');
+    const toggle = screen.getByRole('button', { name: /show done/i });
+    expect(toggle.querySelector('span.grid > span > span')).toHaveClass('@max-[1100px]:hidden');
+    expect(document.querySelector('.vt-aito-search')).toHaveClass('@max-[1100px]:w-40');
+  });
+
+  it('never compacts the primary action', async () => {
+    render(<AitoPage />);
+    await screen.findByText('ACME SARL');
+    expect(screen.getByRole('button', { name: /^project$/i }).innerHTML).not.toContain('@max-');
+  });
+});

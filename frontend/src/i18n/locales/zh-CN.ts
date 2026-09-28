@@ -751,6 +751,7 @@ export default {
       range: '{{from}} 到 {{to}}，切换列',
     },
     backlogHours: '待打印 {{hours}} 小时',
+    backlogShort: '{{hours}} 小时 ≈ {{days}} 天',
     backlogDays_one: '≈ {{days}} 天（{{count}} 台打印机）',
     backlogDays_other: '≈ {{days}} 天（{{count}} 台打印机）',
     backlogTitle: '已接受作业的剩余打印时间，除以打印机数量和计算器的每日工时',

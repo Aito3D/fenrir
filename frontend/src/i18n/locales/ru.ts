@@ -751,6 +751,7 @@ export default {
       range: 'С {{from}} по {{to}}, сменить колонки',
     },
     backlogHours: '{{hours}} ч печати',
+    backlogShort: '{{hours}} ч ≈ {{days}} дн.',
     backlogDays_one: '≈ {{days}} дн. на {{count}} принтере',
     backlogDays_other: '≈ {{days}} дн. на {{count}} принтерах',
     backlogTitle: 'Оставшееся время печати по принятым заказам, делённое на число принтеров и дневные часы калькулятора',

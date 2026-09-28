@@ -53,3 +53,22 @@ describe('PrintBacklogBadge motion', () => {
     expect(badge.querySelector('.animate-value-tick')).not.toBe(before);
   });
 });
+
+/** Below 1700px of header width the sentence gives way to the two figures
+ *  alone — "38 h ≈ 1.6 d" — so the laptop header keeps to one row. Both
+ *  forms are rendered and the container query picks one; the tooltip still
+ *  carries the whole formula either way. */
+describe('PrintBacklogBadge short form', () => {
+  it('renders the figures-only form for narrow headers alongside the sentence', () => {
+    render(<PrintBacklogBadge minutes={2280} printerCount={3} dailyHours={[8]} />);
+    const short = screen.getByTestId('aito-print-backlog-short');
+    expect(short).toHaveTextContent('38 h ≈ 1.6 d');
+    expect(short).toHaveClass('hidden', '@max-[1950px]:inline');
+    expect(screen.getByText('38 h to print').parentElement).toHaveClass('@max-[1950px]:hidden');
+  });
+  it('has no short form without a printer count: the hours alone are already short', () => {
+    render(<PrintBacklogBadge minutes={2280} dailyHours={[8]} />);
+    expect(screen.queryByTestId('aito-print-backlog-short')).not.toBeInTheDocument();
+    expect(screen.getByText('38 h to print').parentElement).not.toHaveClass('@max-[1950px]:hidden');
+  });
+});

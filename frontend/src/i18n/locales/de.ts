@@ -751,6 +751,7 @@ export default {
       range: '{{from}} bis {{to}}, Spalten wechseln',
     },
     backlogHours: '{{hours}} h zu drucken',
+    backlogShort: '{{hours}} h ≈ {{days}} T',
     backlogDays_one: '≈ {{days}} T auf {{count}} Drucker',
     backlogDays_other: '≈ {{days}} T auf {{count}} Druckern',
     backlogTitle: 'Verbleibende Druckzeit angenommener Aufträge, geteilt durch Ihre Drucker und die Tagesstunden des Rechners',
