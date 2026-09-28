@@ -212,7 +212,8 @@ class Go2RTCService:
 
         stream_name = f"printer_{printer_id}"
         try:
-            await self._client.delete("/api/streams", params={"name": stream_name})
+            # DELETE keys on src=; name= is ignored (200, nothing removed).
+            await self._client.delete("/api/streams", params={"src": stream_name})
             logger.debug("go2rtc stream removed: %s", stream_name)
         except httpx.HTTPError as e:
             logger.debug("go2rtc stream removal failed: %s", e)

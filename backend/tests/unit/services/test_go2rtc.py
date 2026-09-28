@@ -106,7 +106,8 @@ class TestGo2RTCService:
 
     @pytest.mark.asyncio
     async def test_remove_stream(self):
-        """remove_stream calls delete on client."""
+        """remove_stream deletes by ``src=`` — go2rtc ignores ``name=`` on
+        DELETE /api/streams and answers 200 without removing anything."""
         svc = Go2RTCService()
         svc._process = MagicMock(returncode=None)
         svc._api_ready = True
@@ -114,7 +115,7 @@ class TestGo2RTCService:
         svc._client.delete = AsyncMock()
 
         await svc.remove_stream(42)
-        svc._client.delete.assert_called_once()
+        svc._client.delete.assert_called_once_with("/api/streams", params={"src": "printer_42"})
 
     def test_find_binary_uses_shutil_which(self):
         svc = Go2RTCService()
