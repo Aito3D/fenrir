@@ -1,12 +1,15 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
-import { api } from '../../api/client';
+import { api, ApiError, getAuthToken, setAuthToken } from '../../api/client';
 
 const rows = (n: number, offset = 0) =>
   Array.from({ length: n }, (_, i) => ({ id: offset + i + 1, filename: `f${offset + i + 1}.3mf`, file_type: '3mf' }));
 
-afterEach(() => server.resetHandlers());
+afterEach(() => {
+  server.resetHandlers();
+  setAuthToken(null);
+});
 
 describe('api.getLibraryFilesPage', () => {
   it('sends every filter, sort and paging parameter and reads X-Total-Count', async () => {
@@ -67,6 +70,45 @@ describe('api.getLibraryFilesPage', () => {
       http.get('/api/v1/library/files', () => HttpResponse.json({ detail: 'nope' }, { status: 400 })),
     );
     await expect(api.getLibraryFilesPage({ folderId: null, limit: 100, offset: 0 })).rejects.toThrow('nope');
+  });
+
+  it('clears an invalid token and announces auth:expired on a 401, like request()', async () => {
+    setAuthToken('stale-token');
+    let sentAuth: string | null = null;
+    server.use(
+      http.get('/api/v1/library/files', ({ request }) => {
+        sentAuth = request.headers.get('Authorization');
+        return HttpResponse.json({ detail: 'Could not validate credentials' }, { status: 401 });
+      }),
+    );
+    const expired = vi.fn();
+    window.addEventListener('auth:expired', expired);
+    try {
+      const err = await api.getLibraryFilesPage({ folderId: null, limit: 100, offset: 0 }).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(ApiError);
+      expect((err as ApiError).status).toBe(401);
+      expect((err as ApiError).message).toBe('Could not validate credentials');
+    } finally {
+      window.removeEventListener('auth:expired', expired);
+    }
+    expect(sentAuth).toBe('Bearer stale-token');
+    expect(getAuthToken()).toBeNull();
+    expect(expired).toHaveBeenCalledTimes(1);
+  });
+
+  it('flattens an array-shaped 422 detail into the thrown message', async () => {
+    server.use(
+      http.get('/api/v1/library/files', () =>
+        HttpResponse.json(
+          { detail: [{ msg: 'Value error, limit too large' }, { msg: 'offset must be >= 0' }] },
+          { status: 422 },
+        ),
+      ),
+    );
+    const err = await api.getLibraryFilesPage({ folderId: null, limit: 100, offset: 0 }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).status).toBe(422);
+    expect((err as ApiError).message).toBe('limit too large; offset must be >= 0');
   });
 });
 

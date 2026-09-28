@@ -146,6 +146,65 @@ function setTzOffsetParam(params: URLSearchParams, dateFrom?: string, dateTo?: s
   }
 }
 
+/** Maps a non-OK response to an ApiError: string, FastAPI-422 array and
+ * structured `{code, message}` details become the message/code, and a 401
+ * for an invalid token clears it and announces `auth:expired`. Shared by
+ * `request()` and the header-reading fetches that bypass it. */
+async function throwApiError(response: Response): Promise<never> {
+  const error = await response.json().catch(() => ({}));
+  const detail = error.detail;
+  let message: string;
+  let code: string | null = null;
+  if (typeof detail === 'string') {
+    message = detail;
+  } else if (Array.isArray(detail)) {
+    // FastAPI 422 shape: each entry has `msg` like "Value error, <real msg>".
+    // Strip the prefix and join. Fall back to raw JSON if every entry has an
+    // empty msg (defensive — shouldn't happen with stock Pydantic, but the
+    // previous fallback masked the real cause as a bare "HTTP 422" toast).
+    const joined = detail
+      .map((e: { msg?: string }) => (e.msg ?? '').replace(/^Value error,\s*/i, ''))
+      .filter(Boolean)
+      .join('; ');
+    message = joined || JSON.stringify(detail) || `HTTP ${response.status}`;
+  } else if (detail && typeof detail === 'object') {
+    // Structured detail `{code, message, ...}` — frontend uses the code
+    // to pick an i18n key, message is the English fallback, any extra
+    // fields land on ApiError.detail (e.g. `deficit` for #1496).
+    code = typeof detail.code === 'string' ? detail.code : null;
+    message = typeof detail.message === 'string' ? detail.message : `HTTP ${response.status}`;
+  } else {
+    message = `HTTP ${response.status}`;
+  }
+  const structuredDetail = detail && typeof detail === 'object' && !Array.isArray(detail)
+    ? (detail as Record<string, unknown>)
+    : null;
+
+  // Handle 401 Unauthorized - only clear token if it's actually invalid
+  // Don't clear on "Authentication required" which might be a timing issue
+  if (response.status === 401) {
+    const invalidTokenMessages = [
+      'Could not validate credentials',
+      'Token has expired',
+      'User not found or inactive',
+      'Invalid API key',
+      'API key has expired',
+    ];
+    if (invalidTokenMessages.some(m => message.includes(m))) {
+      setAuthToken(null);
+      // Notify AuthContext so the protected route guard re-evaluates and
+      // redirects to /login on the same tab — without this, AuthContext.user
+      // stays cached and the tab silently fails every request until a manual
+      // refresh remounts AuthProvider (#1698, reported by @TCL987).
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('auth:expired'));
+      }
+    }
+  }
+
+  throw new ApiError(message, response.status, code, structuredDetail);
+}
+
 async function request<T>(
   endpoint: string,
   options: RequestInit = {}
@@ -168,58 +227,7 @@ async function request<T>(
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    const detail = error.detail;
-    let message: string;
-    let code: string | null = null;
-    if (typeof detail === 'string') {
-      message = detail;
-    } else if (Array.isArray(detail)) {
-      // FastAPI 422 shape: each entry has `msg` like "Value error, <real msg>".
-      // Strip the prefix and join. Fall back to raw JSON if every entry has an
-      // empty msg (defensive — shouldn't happen with stock Pydantic, but the
-      // previous fallback masked the real cause as a bare "HTTP 422" toast).
-      const joined = detail
-        .map((e: { msg?: string }) => (e.msg ?? '').replace(/^Value error,\s*/i, ''))
-        .filter(Boolean)
-        .join('; ');
-      message = joined || JSON.stringify(detail) || `HTTP ${response.status}`;
-    } else if (detail && typeof detail === 'object') {
-      // Structured detail `{code, message, ...}` — frontend uses the code
-      // to pick an i18n key, message is the English fallback, any extra
-      // fields land on ApiError.detail (e.g. `deficit` for #1496).
-      code = typeof detail.code === 'string' ? detail.code : null;
-      message = typeof detail.message === 'string' ? detail.message : `HTTP ${response.status}`;
-    } else {
-      message = `HTTP ${response.status}`;
-    }
-    const structuredDetail = detail && typeof detail === 'object' && !Array.isArray(detail)
-      ? (detail as Record<string, unknown>)
-      : null;
-
-    // Handle 401 Unauthorized - only clear token if it's actually invalid
-    // Don't clear on "Authentication required" which might be a timing issue
-    if (response.status === 401) {
-      const invalidTokenMessages = [
-        'Could not validate credentials',
-        'Token has expired',
-        'User not found or inactive',
-        'Invalid API key',
-        'API key has expired',
-      ];
-      if (invalidTokenMessages.some(m => message.includes(m))) {
-        setAuthToken(null);
-        // Notify AuthContext so the protected route guard re-evaluates and
-        // redirects to /login on the same tab — without this, AuthContext.user
-        // stays cached and the tab silently fails every request until a manual
-        // refresh remounts AuthProvider (#1698, reported by @TCL987).
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('auth:expired'));
-        }
-      }
-    }
-
-    throw new ApiError(message, response.status, code, structuredDetail);
+    await throwApiError(response);
   }
 
   // Handle empty responses (204 No Content, etc.)
@@ -8977,7 +8985,7 @@ export const api = {
     for (const tagId of tagIds) {
       params.append('tag_ids', String(tagId));
     }
-    // T-150: server caps a single response (default 500, max 2000 rows) and
+    // T-150: server caps a single response (default 100, max 2000 rows) and
     // reports the full matching count via the X-Total-Count response header.
     // Optional so every pre-existing caller keeps getting the server default.
     if (limit !== undefined) params.set('limit', String(limit));
@@ -9029,10 +9037,7 @@ export const api = {
       cache: 'no-store',
       credentials: 'include',
     });
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      throw new Error(typeof error.detail === 'string' ? error.detail : `HTTP ${response.status}`);
-    }
+    if (!response.ok) await throwApiError(response);
     const items = (await response.json()) as LibraryFileListItem[];
     const header = response.headers.get('X-Total-Count');
     const parsed = header === null ? NaN : Number(header);
