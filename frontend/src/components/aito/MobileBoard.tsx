@@ -3,15 +3,12 @@ import { useTranslation } from 'react-i18next';
 import { Archive, BarChart3, FileInput, Plus, Trash2 } from 'lucide-react';
 import type { AitoProject } from '../../api/client';
 import type { ColumnMeta } from './columns';
-import { CardView } from './CardView';
-import { BoardCardActions } from './BoardCardActions';
+import { CompactBoardCard } from './CompactBoardCard';
 import { MobileBoardHeader } from './MobileBoardHeader';
 import { MobileColumnSheet } from './MobileColumnSheet';
 import { MobileMenu } from './MobileMenu';
 import { summariseColumn } from '../../utils/aitoMobileBoard';
 import { useMobileColumn } from '../../hooks/useMobileColumn';
-import { useIsReverting } from '../../hooks/useRevertFlash';
-import { isPlaceholder } from '../../utils/aitoOptimistic';
 import { prefersReducedMotion } from '../../utils/motion';
 
 export interface MobileBoardProps {
@@ -30,25 +27,6 @@ export interface MobileBoardProps {
   onImport: () => void;
   onNewProject: () => void;
   hideFab: boolean;
-}
-
-/** One card on the phone board: the compact CardView with the board's own
- *  footer actions, no sortable wrapper. */
-function MobileCard({ project, onExpand }: { project: AitoProject; onExpand: () => void }) {
-  const cardRef = useRef<HTMLDivElement | null>(null);
-  const reverting = useIsReverting(project.id);
-  const placeholder = isPlaceholder(project);
-  return (
-    <div ref={cardRef} className={reverting ? 'animate-revert-flash' : ''}>
-      <CardView
-        project={project}
-        placeholder={placeholder}
-        onExpand={onExpand}
-        compact
-        actions={<BoardCardActions project={project} cardRef={cardRef} />}
-      />
-    </div>
-  );
 }
 
 type Overlay = 'columns' | 'more' | 'create' | null;
@@ -190,7 +168,7 @@ export function MobileBoard({
               className="w-full flex-none snap-start snap-always overflow-y-auto overscroll-y-contain px-4 pt-3 pb-28 flex flex-col gap-2"
             >
               {projects.map((project) => (
-                <MobileCard key={project.id} project={project} onExpand={() => onExpandCard(project.id)} />
+                <CompactBoardCard key={project.id} project={project} onExpand={() => onExpandCard(project.id)} />
               ))}
               {projects.length === 0 &&
                 !pending &&
