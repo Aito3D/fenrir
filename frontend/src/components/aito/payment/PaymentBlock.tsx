@@ -23,8 +23,8 @@ type OpenModal = 'link' | 'terminal' | 'manual' | null;
  *  invoice's balance, the one-line state of any charge or link already in
  *  motion, and — while there is something to collect and nothing already in
  *  flight — the ways to collect it — three cells, or two while a live link
- *  already covers the first (spec §3.1-3.3). Mounted once under
- *  the quote's rows (`BillingCard`) and once under the invoice's (`InvoiceCard`),
+ *  already covers the first (spec §3.1-3.3). Mounted twice by
+ *  `BillingCard`'s collect section — once for the quote, once for the invoice —
  *  each with its own `PaymentDocument`, its own link and its own terminal
  *  payment (never the other document's).
  *

@@ -37,8 +37,10 @@ export function InvoiceCard({ project, canUpdate }: { project: AitoProject; canU
     ? t('aito.invoiceDatesTitle', { date: invoice.date, due: invoice.due_date || '—' })
     : undefined;
 
+  // One element, not a fragment: BillingCard stacks the rows in a `divide-y`
+  // wrapper, and a fragment would put a hairline between the row and its note.
   return (
-    <>
+    <div>
       <DocumentRow
         testId="invoice-block"
         label={t('aito.invoiceLabel')}
@@ -89,6 +91,6 @@ export function InvoiceCard({ project, canUpdate }: { project: AitoProject; canU
           {t('aito.invoiceMoreCount', { count: invoice.invoice_count - 1 })}
         </p>
       )}
-    </>
+    </div>
   );
 }

@@ -152,7 +152,10 @@ describe('BillingCard document rows', () => {
     const blocks = within(card).getAllByTestId('payment-block');
     expect(blocks.length).toBeGreaterThanOrEqual(1);
     expect(within(card).getByText('Balance due')).toBeInTheDocument();
-    expect(within(card).getByText('Quote invoiced')).toBeInTheDocument();
+    const syncFacts = within(card).getByText('Quote invoiced');
+    const follows = (a: Node, b: Node) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+    expect(follows(screen.getByTestId('invoice-block'), blocks[0])).toBe(true);
+    expect(follows(blocks[blocks.length - 1], syncFacts)).toBe(true);
   });
 
   it('gives the retainer row all four actions', async () => {
@@ -167,6 +170,14 @@ describe('BillingCard document rows', () => {
     expect(within(row).getByRole('button', { name: 'Download retainer invoice' })).toBeInTheDocument();
     expect(within(row).getByRole('button', { name: 'Send retainer invoice' })).toBeInTheDocument();
     expect(within(row).getByRole('link', { name: 'Open in Zoho Books' })).toHaveAttribute('href', RETAINER.url);
+  });
+
+  it('states a retainer with no currency of its own in the shop currency', async () => {
+    vi.spyOn(api, 'getAitoRetainers').mockResolvedValue([{ ...RETAINER, currency_code: '' }]);
+    renderCard(project({ retainer_paid_total: 17500 }));
+
+    const row = await screen.findByTestId('doc-retainer-RET-B');
+    expect(within(row).getByText(/17.500 FCFP/)).toBeInTheDocument();
   });
 
   it('never asks for retainers on a quoted, unpaid card, and renders no retainer row', async () => {

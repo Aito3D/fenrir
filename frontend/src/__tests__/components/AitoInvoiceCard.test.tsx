@@ -66,9 +66,9 @@ describe('InvoiceCard', () => {
     await waitFor(() => expect(api.getAitoInvoice).toHaveBeenCalled());
     // Not `toBeEmptyDOMElement` on the container: the shared render wrapper
     // always mounts a toast viewport, so the container is never empty and the
-    // assertion would pass for the wrong reason. The card's own heading is
-    // the thing that must be absent.
-    expect(screen.queryByTestId('panel-card-heading')).not.toBeInTheDocument();
+    // assertion would pass for the wrong reason. The row itself is the thing
+    // that must be absent.
+    expect(screen.queryByTestId('invoice-block')).not.toBeInTheDocument();
   });
 
   it('renders nothing, rather than an error, when Zoho is unreachable', async () => {
@@ -79,7 +79,7 @@ describe('InvoiceCard', () => {
     render(<InvoiceCard project={project} canUpdate />);
 
     await waitFor(() => expect(api.getAitoInvoice).toHaveBeenCalled());
-    expect(screen.queryByTestId('panel-card-heading')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('invoice-block')).not.toBeInTheDocument();
   });
 
   it('never asks Zoho about a project that has not been invoiced', async () => {
@@ -144,6 +144,25 @@ describe('InvoiceCard', () => {
 
     // 3 invoices total, 2 besides the one shown.
     expect(await screen.findByText('Other invoices: 2')).toBeInTheDocument();
+  });
+
+  it('keeps the other-invoices note in the same divide-y child as its row', async () => {
+    // BillingCard stacks the rows in a `divide-y` wrapper, which draws a
+    // hairline between direct children. Row and note as two children would
+    // paint a line between the row and its own note.
+    vi.spyOn(api, 'getAitoInvoice').mockResolvedValue({ ...INVOICE, invoice_count: 2 });
+
+    render(
+      <div data-testid="rows">
+        <InvoiceCard project={project} canUpdate />
+      </div>,
+    );
+
+    const note = await screen.findByText('Other invoices: 1');
+    const host = screen.getByTestId('rows');
+    expect(host.children).toHaveLength(1);
+    expect(host.firstElementChild).toContainElement(screen.getByTestId('invoice-block'));
+    expect(host.firstElementChild).toContainElement(note);
   });
 
   it('renders a status Zoho invented rather than dropping it', async () => {

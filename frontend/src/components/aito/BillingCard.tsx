@@ -32,8 +32,8 @@ import { formatMoney } from '../../utils/pricing';
  *  hand-made project has no quote at all and gets no empty "Billing" heading,
  *  but a sync error or a status block on a project whose number is missing
  *  must still reach someone (see quoteSync.ts). The quote is a snapshot, so
- *  the rows render with Zoho unreachable; only the link and the invoice block
- *  need Zoho.
+ *  its row renders with Zoho unreachable; only the retainer rows and the
+ *  invoice row need Zoho.
  *
  *  Create invoice is NOT here any more. It is the panel's one irreversible
  *  commitment and lives in the footer with the other transitions, where a
@@ -51,7 +51,8 @@ export function BillingCard({
 }: {
   project: AitoProject;
   canUpdate: boolean;
-  /** The shop currency (`useCurrency()`), for the paid-deposit row. */
+  /** The shop currency (`useCurrency()`), for the deposit-available row and
+   *  for a retainer Books returns without a currency of its own. */
   currency: string;
   /** Re-marks the project pending for the sync worker (a PATCH carrying the
    *  unchanged description — see the panel's `updateMutation`). */
@@ -106,7 +107,7 @@ export function BillingCard({
             download={<QuoteDownloadButton project={project} variant="icon" />}
             send={canUpdate ? <SendQuoteButton project={project} variant="icon" /> : undefined}
           />
-          <RetainerRows project={project} canUpdate={canUpdate} syncPending={syncPending} />
+          <RetainerRows project={project} canUpdate={canUpdate} syncPending={syncPending} currency={currency} />
           <InvoiceCard project={project} canUpdate={canUpdate} />
         </div>
       )}
@@ -118,6 +119,9 @@ export function BillingCard({
           when at least one part does. */}
       {project.quote_number && (hasCredit || quotePay || invoice) && (
         <CollectSection>
+          {/* "Deposit available" is the CUSTOMER's unspent credit across every deposit (`customer_credit_total`,
+              read from their payments' unused amounts), not the estimate's own paid retainers
+              (`retainer_paid_total`, which drives the quote-level auto-accept and payment link). */}
           {hasCredit && (
             <dl className="grid grid-cols-[auto_1fr] gap-x-3 text-sm items-baseline">
               <dt className="text-bambu-gray">{t('aito.depositAvailable')}</dt>
@@ -255,10 +259,13 @@ function RetainerRows({
   project,
   canUpdate,
   syncPending,
+  currency,
 }: {
   project: AitoProject;
   canUpdate: boolean;
   syncPending: boolean;
+  /** The shop currency — the fallback when a retainer carries no currency code. */
+  currency: string;
 }) {
   const { t } = useTranslation();
   const rows = useAitoRetainers(project).data ?? [];
@@ -281,7 +288,7 @@ function RetainerRows({
                   }
                 : null
             }
-            amount={formatMoney(r.total, r.currency_code)}
+            amount={formatMoney(r.total, r.currency_code || currency)}
             booksUrl={r.url || null}
             booksLabel={t('aito.invoiceOpenInZoho')}
             print={

@@ -222,3 +222,7 @@ Manual: the sandboxed server recipe (`sandboxed-test-server` memory) cannot exer
 - `resolve_project_retainer` lives in `routes/aito.py` as `_resolve_project_retainer`, beside `_resolve_project_invoice`, since it raises `HTTPException`; the service module exposes only `list_project_retainers` and `map_retainer`.
 - `aito.retainerOpenInZoho` was not added: the retainer row reuses `aito.invoiceOpenInZoho` ("Open in Zoho Books"), the same words.
 - `retainerDownloadFailed` was not added: the download button reuses `retainerPrintFailed`, as the invoice's does.
+- An unknown `to` address is refused with 422 (not the 400 above), matching `send_invoice_email`.
+- The `retainer.emailed` event detail is `{"email", "retainer_number"}`, matching `invoice.emailed`, not `{retainer_id, retainer_number, to}`.
+- The "Online payment" label button carries the manage hint on `title`, not `aria-label`, so its accessible name stays the visible text (WCAG 2.5.3).
+- `aito.history.retainerEmailed` reads "emailed the retainer invoice", matching the invoice's history label, not "Retainer invoice {{number}} emailed to {{to}}".
