@@ -6,6 +6,7 @@ import { server } from '../mocks/server';
 import { render } from '../utils';
 import { CardView } from '../../components/aito/CardView';
 import { setAitoPresenceState, __resetAitoPresence } from '../../hooks/useAitoPresence';
+import { __resetHoverWarmth } from '../../components/aito/hoverWarmth';
 import { setAuthToken } from '../../api/client';
 import type { AitoProject } from '../../api/client';
 
@@ -250,15 +251,17 @@ describe('CardView', () => {
     expect(onExpand).toHaveBeenCalledTimes(1);
   });
 
-  it('shows no quote number on the card — the age has that slot; the panel has the number', () => {
+  it('shows the quote number in the footer, beside the age, as plain text', () => {
     render(
       <CardView
         project={{ ...project, quote_number: 'DEV26-2462', quote_id: 'e2' }}
         onExpand={vi.fn()}
       />,
     );
-    expect(screen.queryByText(/DEV26-/)).not.toBeInTheDocument();
-    expect(screen.getByTestId('aito-card-footer')).toContainElement(screen.getByTestId('aito-card-elapsed'));
+    const footer = screen.getByTestId('aito-card-footer');
+    expect(footer).toContainElement(screen.getByTestId('aito-card-quote'));
+    expect(screen.getByTestId('aito-card-quote')).toHaveTextContent('DEV26-2462');
+    expect(footer).toContainElement(screen.getByTestId('aito-card-elapsed'));
     expect(document.querySelector('a[href*="zoho"]')).toBeNull();
   });
 
@@ -597,12 +600,14 @@ describe('hybrid card anatomy', () => {
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
   });
 
-  it('keeps the age in the footer, where the quote number used to be, not in the name row', () => {
+  it('keeps the age in the footer beside the quote number, not in the name row', () => {
     render(<CardView project={{ ...project, quote_number: 'DEV26-2607' }} onExpand={vi.fn()} />);
     const elapsed = screen.getByTestId('aito-card-elapsed');
-    expect(screen.getByTestId('aito-card-footer')).toContainElement(elapsed);
+    const footer = screen.getByTestId('aito-card-footer');
+    expect(footer).toContainElement(elapsed);
     expect(screen.getByTestId('aito-card-name-row')).not.toContainElement(elapsed);
-    expect(screen.getByTestId('aito-card-footer')).not.toHaveTextContent('DEV26-2607');
+    expect(footer).toContainElement(screen.getByTestId('aito-card-quote'));
+    expect(screen.getByTestId('aito-card-name-row')).not.toHaveTextContent('DEV26-2607');
   });
 
   it('walks the timestamp through the heat ramp with age', () => {
@@ -710,7 +715,10 @@ describe('CardView — hover to read a clamped description', () => {
     Object.defineProperty(node, 'offsetHeight', { value: height, configurable: true });
   }
 
-  beforeEach(() => vi.useFakeTimers());
+  beforeEach(() => {
+    vi.useFakeTimers();
+    __resetHoverWarmth();
+  });
   afterEach(() => vi.useRealTimers());
 
   it('un-clamps the description after the full dwell', () => {
@@ -926,6 +934,119 @@ describe('CardView — hover to read a clamped description', () => {
     act(() => vi.advanceTimersByTime(1000));
 
     expect(description).not.toHaveClass('line-clamp-3');
+  });
+
+  it('keeps one dwell running while the pointer crosses from the name row into the body', () => {
+    // The dwell is a property of the card, not of the zone the pointer is in.
+    // Restarting it at every zone boundary is what made a one-second dwell
+    // feel like three: a pointer that drifts from the name to the text never
+    // rested a full second inside either.
+    render(<CardView project={project} onExpand={vi.fn()} />);
+    const description = screen.getByTestId('aito-card-description');
+    setClamped(description, true);
+    const nameRow = screen.getByTestId('aito-card-name-row');
+    const body = screen.getByTestId('aito-card-body');
+
+    fireEvent.mouseEnter(nameRow);
+    act(() => vi.advanceTimersByTime(600));
+    fireEvent.mouseLeave(nameRow, { relatedTarget: body });
+    fireEvent.mouseEnter(body, { relatedTarget: nameRow });
+    act(() => vi.advanceTimersByTime(400));
+
+    expect(description).not.toHaveClass('line-clamp-3');
+  });
+
+  it('pauses the dwell over the footer and resumes it on the way back up', () => {
+    render(<CardView project={project} onExpand={vi.fn()} />);
+    const description = screen.getByTestId('aito-card-description');
+    setClamped(description, true);
+    const body = screen.getByTestId('aito-card-body');
+    const footer = screen.getByTestId('aito-card-footer');
+
+    fireEvent.mouseEnter(body);
+    act(() => vi.advanceTimersByTime(700));
+    fireEvent.mouseLeave(body, { relatedTarget: footer });
+    fireEvent.mouseEnter(footer);
+    act(() => vi.advanceTimersByTime(5000));
+    expect(description).toHaveClass('line-clamp-3');
+
+    fireEvent.mouseLeave(footer, { relatedTarget: body });
+    fireEvent.mouseEnter(body, { relatedTarget: footer });
+    act(() => vi.advanceTimersByTime(250));
+    expect(description).toHaveClass('line-clamp-3');
+    act(() => vi.advanceTimersByTime(50));
+    expect(description).not.toHaveClass('line-clamp-3');
+  });
+
+  it('opens the next card after a short dwell right after a reveal was read', () => {
+    // Reading mode: the pointer moving down the column from a card it has just
+    // read is the same reader, not a new arrival, so the neighbour keeps up.
+    render(
+      <>
+        <CardView project={project} onExpand={vi.fn()} />
+        <CardView project={{ ...project, id: 2, description: 'Second card' }} onExpand={vi.fn()} />
+      </>,
+    );
+    const [first, second] = screen.getAllByTestId('aito-card-description');
+    setClamped(first, true);
+    setClamped(second, true);
+    const [firstShell, secondShell] = screen.getAllByTestId('aito-card-shell');
+    const [, secondBody] = screen.getAllByTestId('aito-card-body');
+
+    fireEvent.mouseEnter(firstShell);
+    act(() => vi.advanceTimersByTime(1000));
+    expect(first).not.toHaveClass('line-clamp-3');
+    fireEvent.mouseLeave(firstShell);
+
+    act(() => vi.advanceTimersByTime(200));
+    fireEvent.mouseEnter(secondShell);
+    fireEvent.mouseEnter(secondBody);
+    act(() => vi.advanceTimersByTime(300));
+    expect(second).not.toHaveClass('line-clamp-3');
+  });
+
+  it('cools down: a card entered after the warm window waits the full second again', () => {
+    render(
+      <>
+        <CardView project={project} onExpand={vi.fn()} />
+        <CardView project={{ ...project, id: 2, description: 'Second card' }} onExpand={vi.fn()} />
+      </>,
+    );
+    const [first, second] = screen.getAllByTestId('aito-card-description');
+    setClamped(first, true);
+    setClamped(second, true);
+    const [firstShell, secondShell] = screen.getAllByTestId('aito-card-shell');
+
+    fireEvent.mouseEnter(firstShell);
+    act(() => vi.advanceTimersByTime(1000));
+    fireEvent.mouseLeave(firstShell);
+
+    act(() => vi.advanceTimersByTime(800));
+    fireEvent.mouseEnter(secondShell);
+    act(() => vi.advanceTimersByTime(900));
+    expect(second).toHaveClass('line-clamp-3');
+    act(() => vi.advanceTimersByTime(100));
+    expect(second).not.toHaveClass('line-clamp-3');
+  });
+
+  it('a pending dwell that was never a reveal does not warm the board', () => {
+    render(
+      <>
+        <CardView project={project} onExpand={vi.fn()} />
+        <CardView project={{ ...project, id: 2, description: 'Second card' }} onExpand={vi.fn()} />
+      </>,
+    );
+    const [first, second] = screen.getAllByTestId('aito-card-description');
+    setClamped(first, true);
+    setClamped(second, true);
+    const [firstShell, secondShell] = screen.getAllByTestId('aito-card-shell');
+
+    fireEvent.mouseEnter(firstShell);
+    act(() => vi.advanceTimersByTime(500));
+    fireEvent.mouseLeave(firstShell);
+    fireEvent.mouseEnter(secondShell);
+    act(() => vi.advanceTimersByTime(500));
+    expect(second).toHaveClass('line-clamp-3');
   });
 
   it('never grows a card whose pointer is resting on the footer', () => {

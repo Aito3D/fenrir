@@ -11,6 +11,7 @@ import { formatElapsedTime, parseUTCDate } from '../../utils/date';
 import { prefersReducedMotion } from '../../utils/motion';
 import { ageAnchor, agingTextCls } from '../../utils/aitoAging';
 import { isFinished, needsClientContact } from '../../utils/aitoBoard';
+import { hoverRevealDelay, markHoverWarm } from './hoverWarmth';
 
 export interface CardViewProps {
   project: AitoProject;
@@ -42,17 +43,6 @@ export interface CardViewProps {
   compact?: boolean;
 }
 
-/** How long the pointer must rest on a card before its description opens.
- *
- *  One second. It started at two because a shorter dwell was firing on the
- *  ordinary act of moving onto a card and clicking it, so every click was
- *  preceded by the card growing and then — the instant the panel took the
- *  pointer — shrinking back. That flash is now prevented by the press itself:
- *  pointerdown cancels a pending reveal outright (see `cancelHoverIntent`),
- *  which is what lets the dwell come back down to something that feels
- *  responsive rather than reluctant. */
-const HOVER_REVEAL_MS = 1000;
-
 /** Static lookups, not interpolated class names. These are hand-written CSS
  *  classes (index.css) rather than Tailwind utilities, so interpolation would
  *  compile — but a record keeps them greppable and makes a new flag value a
@@ -83,10 +73,10 @@ const FLAG_LABEL_KEY: Record<AitoFlag, string> = {
  *  because `useCardMorph` queries `[data-aito-card-id]` to assign the view
  *  transition name and must keep finding the styled element, not empty space.
  *
- *  Two zones: the name row carries the client name, the aging timestamp and
- *  is the ONLY drag source (via the grip) — it sits flat on the card surface,
- *  no header band beneath it; everything below it — description, per-task
- *  rows, money, quote number, sync indicator, the steps count, and the
+ *  Two zones: the name row carries the client name, the due date and is the
+ *  ONLY drag source (via the grip) — it sits flat on the card surface, no
+ *  header band beneath it; everything below it — description, per-task
+ *  rows, quote number, sync indicator, the steps count, the age, and the
  *  padding between them — is a single click region that opens the detail
  *  panel. There is no edge progress bar; the body's one-line steps summary
  *  carries that total instead. The click handler lives on that region's wrapper
@@ -137,64 +127,110 @@ export function CardView({
 
   // Hover-intent reveal of a clamped description and of the per-task rows
   // (collapsed, the card shows one summary line for all its tasks — see
-  // TaskStepsSummary). The dwell starts from the name row or the body only —
-  // never from the footer, whose buttons must not move under a pointer that
-  // is about to press them — and ends when the pointer leaves the whole
-  // card. The card floats over its
-  // neighbours rather than growing in place: the shell holds the collapsed
-  // height so the column never reflows, which is what stops the cards below
-  // jumping out from under the pointer that is resting on this one.
+  // TaskStepsSummary). ONE dwell per visit: it starts when the pointer enters
+  // the card and ends when it leaves the whole card. It used to run per zone
+  // (name row, body) and restart at every boundary, so a pointer that drifted
+  // from the name to the text never rested a full second inside either — a
+  // one-second dwell that took three. The footer is the one exception: its
+  // buttons must not move under a pointer that is about to press them, so
+  // resting there PAUSES the dwell and moving back up resumes it. How long
+  // the dwell is comes from hoverWarmth.ts — a second, or much less right
+  // after another card was read. The card floats over its neighbours rather
+  // than growing in place: the shell holds the collapsed height so the
+  // column never reflows, which is what stops the cards below jumping out
+  // from under the pointer that is resting on this one.
   const [expanded, setExpanded] = useState(false);
   const [shellHeight, setShellHeight] = useState<number | null>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   const descriptionRef = useRef<HTMLParagraphElement>(null);
   const timerRef = useRef<number | null>(null);
+  // When the running dwell fires, so a pause can compute what is left of it.
+  const deadlineRef = useRef<number | null>(null);
+  // What a paused dwell still owes; null when nothing is paused.
+  const remainingRef = useRef<number | null>(null);
+  // `expanded` as a ref, for handlers that must not re-arm the dwell on an
+  // already-open card without waiting for a render.
+  const expandedRef = useRef(false);
 
   const clearTimer = useCallback(() => {
     if (timerRef.current !== null) {
       window.clearTimeout(timerRef.current);
       timerRef.current = null;
     }
+    deadlineRef.current = null;
   }, []);
 
   // A card can be unmounted mid-hover by a refetch, a filter or a drag.
   useEffect(() => clearTimer, [clearTimer]);
 
+  const armTimer = useCallback(
+    (delay: number) => {
+      clearTimer();
+      deadlineRef.current = Date.now() + delay;
+      timerRef.current = window.setTimeout(() => {
+        timerRef.current = null;
+        deadlineRef.current = null;
+        const description = descriptionRef.current;
+        const card = cardRef.current;
+        if (!description || !card) return;
+        // Nothing hidden means nothing to reveal. The +1 absorbs the sub-pixel
+        // rounding a fractional line-height leaves behind. Tasks always have
+        // something hidden: their names and per-task progress sit behind the
+        // summary line until the card grows.
+        const clipped = description.scrollHeight > description.clientHeight + 1;
+        if (!clipped && !hasTasks) return;
+        setShellHeight(card.offsetHeight);
+        expandedRef.current = true;
+        setExpanded(true);
+      }, delay);
+    },
+    [clearTimer, hasTasks],
+  );
+
+  // The pointer arrived on the card (shell mouseenter). Idempotent: a dwell
+  // already running or paused is this visit's dwell and keeps its clock —
+  // one dwell per visit is the whole rule.
   const startHoverIntent = useCallback(() => {
     // The overlay is a picture of a card mid-drag and a placeholder has no id
     // yet; neither should grow under the pointer.
-    if (overlay || placeholder) return;
-    clearTimer();
-    timerRef.current = window.setTimeout(() => {
-      timerRef.current = null;
-      const description = descriptionRef.current;
-      const card = cardRef.current;
-      if (!description || !card) return;
-      // Nothing hidden means nothing to reveal. The +1 absorbs the sub-pixel
-      // rounding a fractional line-height leaves behind. Tasks always have
-      // something hidden: their names and per-task progress sit behind the
-      // summary line until the card grows.
-      const clipped = description.scrollHeight > description.clientHeight + 1;
-      if (!clipped && !hasTasks) return;
-      setShellHeight(card.offsetHeight);
-      setExpanded(true);
-    }, HOVER_REVEAL_MS);
-  }, [clearTimer, overlay, placeholder, hasTasks]);
+    if (overlay || placeholder || expandedRef.current) return;
+    if (timerRef.current !== null || remainingRef.current !== null) return;
+    armTimer(hoverRevealDelay());
+  }, [armTimer, overlay, placeholder]);
 
-  // Leaving a trigger zone drops a PENDING dwell but leaves an open reveal
-  // alone: a pointer that crossed the description on its way to a footer
-  // button must not get the reveal a moment later, on the button; while one
-  // that read the description, got the reveal, and then moved down to the
-  // button must keep it (`endHoverIntent`, on the shell, handles the leave).
-  const cancelHoverIntent = clearTimer;
+  // The pointer moved onto the footer: hold a PENDING dwell where it is, and
+  // leave an open reveal alone. A pointer that crossed the description on its
+  // way to a button must not get the reveal a moment later, on the button;
+  // one that read the description, got the reveal, and then moved down to
+  // the button must keep it (`endHoverIntent`, on the shell, handles the
+  // leave).
+  const pauseHoverIntent = useCallback(() => {
+    if (timerRef.current === null || deadlineRef.current === null) return;
+    remainingRef.current = Math.max(0, deadlineRef.current - Date.now());
+    clearTimer();
+  }, [clearTimer]);
+
+  // The pointer left the footer — back up into the body, or off the card,
+  // in which case the shell's own leave runs next and clears this again.
+  const resumeHoverIntent = useCallback(() => {
+    const remaining = remainingRef.current;
+    if (remaining === null || expandedRef.current) return;
+    remainingRef.current = null;
+    armTimer(remaining);
+  }, [armTimer]);
 
   const endHoverIntent = useCallback(() => {
     clearTimer();
+    remainingRef.current = null;
+    // Only a reveal that was actually read warms the board; a pointer that
+    // merely crossed the card on its way somewhere else was not reading.
+    if (expandedRef.current) markHoverWarm();
+    expandedRef.current = false;
     setExpanded(false);
     setShellHeight(null);
   }, [clearTimer]);
 
-  // Grow into the reveal instead of jumping to it. The dwell is a full second
+  // Grow into the reveal instead of jumping to it. The dwell is deliberate
   // — a press cancels it, so by the time this fires the user is holding still
   // and looking straight at the card, which is the worst possible moment to
   // teleport. `shellHeight` is the collapsed
@@ -261,11 +297,12 @@ export function CardView({
   return (
     <div
       data-testid="aito-card-shell"
-      // The dwell STARTS only from the name row and the body (see
-      // `startHoverIntent` on those two zones), but it ENDS here: once open,
-      // the reveal lives until the pointer leaves the whole card, so moving
+      // The dwell starts and ends here, on the whole card: once open, the
+      // reveal lives until the pointer leaves the card entirely, so moving
       // down onto the footer's buttons does not collapse it and pull the
-      // footer back up out from under the pointer.
+      // footer back up out from under the pointer. (The footer below only
+      // pauses a dwell that has not fired yet.)
+      onMouseEnter={startHoverIntent}
       onMouseLeave={endHoverIntent}
       // A press states an intent to OPEN the card, which is the opposite of
       // wanting to read it where it lies — so it abandons the reveal outright,
@@ -311,8 +348,6 @@ export function CardView({
         <div
           data-testid="aito-card-name-row"
           className="flex items-center gap-2 px-3 pt-2.5"
-          onMouseEnter={startHoverIntent}
-          onMouseLeave={cancelHoverIntent}
         >
           {/* `aria-hidden` with the label carried in text beside it, so the
               split is not sighted-users-only; null reads as an individual,
@@ -450,8 +485,6 @@ export function CardView({
             <div
               data-testid="aito-card-body"
               className="px-3 pt-2.5 pb-1.5"
-              onMouseEnter={startHoverIntent}
-              onMouseLeave={cancelHoverIntent}
             >
               <p
                 ref={descriptionRef}
@@ -480,19 +513,36 @@ export function CardView({
               )}
             </div>
 
-            {/* Not a trigger zone, on purpose. The footer holds the injected
+            {/* The dwell pauses here, on purpose. The footer holds the injected
                 action buttons, and a hold-to-confirm press takes about as long
                 as the dwell — its pointerdown stops propagation, so the shell
                 never hears the press and cannot cancel the reveal. With the
-                dwell running from the footer, the card grew mid-hold, the
+                dwell running over the footer, the card grew mid-hold, the
                 footer slid down out from under the pointer, and the hold was
                 cancelled by its own success. Hovering a button must never
                 move the button. */}
             <div
               data-testid="aito-card-footer"
               className="px-3 pb-2 flex items-center justify-between gap-2"
+              onMouseEnter={pauseHoverIntent}
+              onMouseLeave={resumeHoverIntent}
             >
               <div className="flex items-center gap-2 min-w-0">
+                {/* The quote number, as plain text: it is what a client reads
+                    out on the phone and what the shop writes on the parcel,
+                    so the operator scanning a column wants it without opening
+                    anything. Muted and tabular so it reads as a reference
+                    beside the age, not as a second heading. Absent while the
+                    worker has not created the quote yet — the pending note
+                    below covers that. */}
+                {project.quote_number && (
+                  <span
+                    data-testid="aito-card-quote"
+                    className="text-xs font-medium tabular-nums whitespace-nowrap text-bambu-gray-light"
+                  >
+                    {project.quote_number}
+                  </span>
+                )}
                 {/* On a finished card waiting on a phone call, the one thing
                     outstanding is that nobody has rung the client, so it sits
                     here in the footer rather than as a banner: a Finish column
@@ -515,9 +565,7 @@ export function CardView({
                 )}
                 {footerNote && <span className="text-xs text-bambu-gray truncate">{footerNote}</span>}
                 {/* How long the job has been open, on the heat ramp
-                    (utils/aitoAging). This is the footer's fact; the quote
-                    number that used to sit here is on the panel, where a
-                    person who needs it is already looking (2026-09-08). */}
+                    (utils/aitoAging). */}
                 <span
                   data-testid="aito-card-elapsed"
                   title={dateTitle}
