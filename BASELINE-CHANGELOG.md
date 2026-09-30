@@ -57,3 +57,53 @@ only rewrite same-origin /api/v1/ media srcs with the stream token".
 
 - Golden probes re-recorded: none (13/13 match).
 - SURFACE.md sections regenerated: none.
+
+## T-011 — grid-stream answers 503 + Retry-After when the load gate refuses every producer (user-approved 2026-09-29)
+
+`camera_grid_stream` in `backend/app/api/routes/camera.py` now tells apart
+the two ways a request can end with no producer. When the requested printers
+exist and can stream through the hub (no external camera), but the
+spawn-time load gate in `_ensure_producer` refused every one of them, the
+route raises `HTTPException(503, "Camera producers temporarily unavailable
+(system under load)")` with a `Retry-After: 5` header. The 5 seconds is the
+new module constant `_GRID_SPAWN_REFUSED_RETRY_AFTER`, defined next to
+`_SPAWN_LOAD_THRESHOLD`. Before this change the route answered
+`404 "No valid printers found"`, which the camera wall treats as terminal, so
+a wall that connected during a load spike stayed dead until someone pressed
+Restart. Unchanged: no printers found, none allowed by an API key's
+allowlist, or only external-camera printers still get the same 404; a
+request where at least one producer starts still streams as before.
+Frontend: no change. `useGridStream.ts` already sends every 5xx through the
+existing backoff reconnect path, and its only terminal branch is 4xx other
+than 408/429. The existing T-138 hook test "still retries on a 500" covers
+that path.
+
+- Golden probes re-recorded: none (13/13 match; no `responses=` declared).
+- SURFACE.md sections regenerated: none (route signature unchanged).
+
+## T-003 — grid-stream `?force=true` requires `settings:update` (user-approved 2026-09-29)
+
+`camera_grid_stream` in `backend/app/api/routes/camera.py` now checks, only
+when `force` is true, that the caller also holds `Permission.SETTINGS_UPDATE`
+(new private helper `_require_grid_stream_force_permission`, called at the
+top of the route body). A forced restart tears down the shared ffmpeg
+producers every other camera wall and single-camera viewer is watching, so it
+is an administrative action; `SETTINGS_UPDATE` was chosen because it is the
+permission that changes the camera quality preset (the settings route already
+stops every producer on a preset change) and no camera-specific admin
+permission exists (`CAMERA_VIEW` is the only camera permission). JWT users
+without it get `403 "Missing required permissions: settings:update"`; admins
+pass (they hold every permission). API keys go through the normal
+`authorize_api_key` gate, where `SETTINGS_UPDATE` is administrative, so any
+key with `force=true` gets `403 "API keys cannot be used for administrative
+operations"`. Before this change any `camera:view` caller (user or
+read-status key) could restart every viewer's producers. Unchanged: requests
+without `force` keep exactly the old auth (CAMERA_VIEW + optional API-key
+printer allowlist); auth-disabled deployments keep `force` working; the route
+signature and OpenAPI are unchanged (runtime check, no new dependency, no
+`responses=`). The frontend never sends `force`.
+
+- Golden probes re-recorded: `camera-route-perms` (new line
+  `3 Permission.SETTINGS_UPDATE`); the other 12 match.
+- SURFACE.md sections regenerated: "Permissions guarding camera routes (count
+  per permission)" (same new line).

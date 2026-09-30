@@ -32,6 +32,7 @@ from backend.app.core import database
 from backend.app.core.auth import (
     RequireCameraStreamTokenIfAuthEnabled,
     RequirePermissionIfAuthEnabled,
+    authorize_api_key,
     check_printer_access,
     create_camera_stream_token,
     is_auth_enabled,
@@ -132,6 +133,7 @@ _CPU_PCT_KILL_THRESHOLD = 50.0  # Kill if avg CPU% exceeds this between samples
 _CPU_WATCHDOG_GRACE_SECS = 10.0  # Skip processes younger than this (startup probe can be CPU-heavy)
 _FLEET_CPU_PCT_THRESHOLD = (os.cpu_count() or 4) * 50.0  # Fleet-level CPU cap (e.g. 200% on 4 cores)
 _SPAWN_LOAD_THRESHOLD = (os.cpu_count() or 4) * 1.5  # Spawn-time load gate
+_GRID_SPAWN_REFUSED_RETRY_AFTER = 5  # Retry-After (s) on a grid 503 when the load gate refused every producer
 _FLEET_COOLDOWN_DURATION = 15.0  # Only triggers on fleet-level aggregate CPU overload
 _PER_PRINTER_COOLDOWN_DURATION = 10.0
 _STDERR_RECENT_CAP = 20  # Max recent error lines kept per stream
@@ -1942,6 +1944,29 @@ async def _grid_stream_api_key_if_auth_enabled(
     return await validated_api_key_from_request(credentials, x_api_key)
 
 
+async def _require_grid_stream_force_permission(user: User | None, api_key: APIKey | None) -> None:
+    """Gate ``?force=true`` on the grid stream behind ``SETTINGS_UPDATE``.
+
+    A forced restart tears down the shared ffmpeg producers every other wall
+    and single-camera viewer is watching, so it is an administrative action
+    rather than a viewing one — the same permission that changes the camera
+    quality preset (which already stops every producer from the settings
+    route). Plain ``camera:view`` callers keep streaming exactly as before;
+    only the restart is refused.
+
+    ``user`` / ``api_key`` are what the route's auth dependencies resolved:
+    both are ``None`` when auth is disabled, so ``force`` keeps working there.
+    API keys go through the normal key gate, which refuses administrative
+    permissions.
+    """
+    if api_key is not None:
+        async with database.async_session() as db:
+            await authorize_api_key(db, api_key, [Permission.SETTINGS_UPDATE.value])
+        return
+    if user is not None and not user.has_permission(Permission.SETTINGS_UPDATE.value):
+        raise HTTPException(403, f"Missing required permissions: {Permission.SETTINGS_UPDATE.value}")
+
+
 @router.get("/camera/grid-stream")
 async def camera_grid_stream(
     request: Request,
@@ -1966,6 +1991,9 @@ async def camera_grid_stream(
     The frontend reads this stream with one fetch() and demuxes frames to
     the correct <canvas> element by printer ID.
     """
+    if force:
+        await _require_grid_stream_force_permission(_, api_key)
+
     # Parse printer IDs early so we know the actual stream count for quality resolution
     try:
         printer_ids = [int(x.strip()) for x in ids.split(",") if x.strip()]
@@ -2071,6 +2099,10 @@ async def camera_grid_stream(
     # ffmpeg start-up cost. Runs outside the DB session (see above); the
     # printers are already fetched so _ensure_producer never touches the db.
     spawn_ids = [pid for pid in need_db if pid in printers_by_id]
+    # Set when a printer that CAN stream through the hub (it exists and has no
+    # external camera) got no producer: _ensure_producer's only remaining
+    # refusal is the spawn-time load gate, which is transient.
+    spawn_refused = False
     for i, pid in enumerate(spawn_ids):
         if i > 0:
             # Increase stagger under load to reduce spawn pressure
@@ -2097,8 +2129,22 @@ async def camera_grid_stream(
         )
         if entry is not None:
             entries[pid] = entry
+        else:
+            printer = printers_by_id[pid]
+            if not (printer.external_camera_enabled and printer.external_camera_url):
+                spawn_refused = True
 
     if not entries:
+        if spawn_refused:
+            # Printers exist but the load gate refused every producer. That is
+            # transient (restart / ffmpeg start-up burst), so answer 503 and let
+            # the camera wall back off and retry instead of treating a 404 as
+            # terminal.
+            raise HTTPException(
+                503,
+                "Camera producers temporarily unavailable (system under load)",
+                headers={"Retry-After": str(_GRID_SPAWN_REFUSED_RETRY_AFTER)},
+            )
         raise HTTPException(404, "No valid printers found")
 
     async def generate():

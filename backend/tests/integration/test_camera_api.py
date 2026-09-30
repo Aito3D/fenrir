@@ -1071,6 +1071,165 @@ class TestCameraGridStreamAPIKeyPrinterScope:
         assert captured_ids == [1, 2, 3]
 
 
+class TestCameraGridStreamForcePermission:
+    """T-003: ``?force=true`` restarts the shared ffmpeg producers every other
+    wall is watching, so it needs ``settings:update`` on top of the route's
+    ``camera:view``. Plain grid-stream requests keep today's auth unchanged,
+    and auth-disabled deployments keep ``force`` working as before."""
+
+    URL = "/api/v1/printers/camera/grid-stream"
+
+    @staticmethod
+    async def _enable_auth(async_client: AsyncClient, *, username: str):
+        setup = await async_client.post(
+            "/api/v1/auth/setup",
+            json={"auth_enabled": True, "admin_username": username, "admin_password": "AdminPass1!"},
+        )
+        assert setup.status_code == 200, setup.text
+
+    @staticmethod
+    async def _login(async_client: AsyncClient, username: str, password: str) -> dict:
+        login = await async_client.post("/api/v1/auth/login", json={"username": username, "password": password})
+        assert login.status_code == 200, login.text
+        return {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    @staticmethod
+    async def _make_user(db_session, username: str, permissions: list[str]) -> str:
+        from backend.app.core.auth import get_password_hash
+        from backend.app.models.group import Group
+        from backend.app.models.user import User
+
+        password = "ViewerPass1!"  # noqa: S105
+        group = Group(name=f"grp-{username}", description="t", permissions=permissions, is_system=False)
+        db_session.add(group)
+        await db_session.flush()
+        db_session.add(
+            User(
+                username=username,
+                password_hash=get_password_hash(password),
+                role="user",
+                is_active=True,
+                groups=[group],
+            )
+        )
+        await db_session.commit()
+        return password
+
+    @staticmethod
+    async def _make_key(db_session) -> str:
+        from backend.app.core.auth import generate_api_key
+        from backend.app.models.api_key import APIKey
+
+        full_key, key_hash, key_prefix = generate_api_key()
+        db_session.add(
+            APIKey(
+                name="grid-force",
+                key_hash=key_hash,
+                key_prefix=key_prefix,
+                can_read_status=True,
+                can_queue=True,
+                can_control_printer=True,
+                printer_ids=None,
+                enabled=True,
+            )
+        )
+        await db_session.commit()
+        return full_key
+
+    async def _get(self, async_client: AsyncClient, *, force: bool, headers: dict | None = None):
+        """Issue the request with the hub mocked; return (response, ids the hub saw)."""
+        captured_ids: list[int] = []
+
+        async def mock_batch(printer_ids):
+            captured_ids.extend(printer_ids)
+            return {}, printer_ids
+
+        params = {"ids": "1,2", "scale": "0.5"}
+        if force:
+            params["force"] = "true"
+        with patch("backend.app.api.routes.camera._hub.get_existing_batch", side_effect=mock_batch):
+            response = await async_client.get(self.URL, params=params, headers=headers or {})
+        return response, captured_ids
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_camera_view_only_user_with_force_gets_403(self, async_client: AsyncClient, db_session):
+        await self._enable_auth(async_client, username="gridforce1")
+        password = await self._make_user(db_session, "viewer1", ["camera:view"])
+        headers = await self._login(async_client, "viewer1", password)
+
+        response, captured_ids = await self._get(async_client, force=True, headers=headers)
+
+        assert response.status_code == 403
+        assert "settings:update" in response.json()["detail"]
+        assert captured_ids == []  # refused before any producer is touched
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_camera_view_only_user_without_force_is_unchanged(self, async_client: AsyncClient, db_session):
+        await self._enable_auth(async_client, username="gridforce2")
+        password = await self._make_user(db_session, "viewer2", ["camera:view"])
+        headers = await self._login(async_client, "viewer2", password)
+
+        response, captured_ids = await self._get(async_client, force=False, headers=headers)
+
+        assert response.status_code == 404  # no printers in the test DB — past auth
+        assert captured_ids == [1, 2]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_user_with_settings_update_can_force(self, async_client: AsyncClient, db_session):
+        await self._enable_auth(async_client, username="gridforce3")
+        password = await self._make_user(db_session, "operator3", ["camera:view", "settings:update"])
+        headers = await self._login(async_client, "operator3", password)
+
+        response, captured_ids = await self._get(async_client, force=True, headers=headers)
+
+        assert response.status_code == 404
+        assert captured_ids == [1, 2]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_admin_can_force(self, async_client: AsyncClient):
+        await self._enable_auth(async_client, username="gridforce4")
+        headers = await self._login(async_client, "gridforce4", "AdminPass1!")
+
+        response, captured_ids = await self._get(async_client, force=True, headers=headers)
+
+        assert response.status_code == 404
+        assert captured_ids == [1, 2]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_api_key_with_force_gets_403(self, async_client: AsyncClient, db_session):
+        await self._enable_auth(async_client, username="gridforce5")
+        full_key = await self._make_key(db_session)
+
+        response, captured_ids = await self._get(async_client, force=True, headers={"X-API-Key": full_key})
+
+        assert response.status_code == 403
+        assert captured_ids == []
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_api_key_without_force_is_unchanged(self, async_client: AsyncClient, db_session):
+        await self._enable_auth(async_client, username="gridforce6")
+        full_key = await self._make_key(db_session)
+
+        response, captured_ids = await self._get(async_client, force=False, headers={"X-API-Key": full_key})
+
+        assert response.status_code == 404
+        assert captured_ids == [1, 2]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_auth_disabled_force_is_unchanged(self, async_client: AsyncClient):
+        response, captured_ids = await self._get(async_client, force=True)
+
+        assert response.status_code == 404
+        assert captured_ids == [1, 2]
+
+
 class TestCameraStreamTokenAPIKeyPrinterScope:
     """T-001: /camera/stream-token mints a token with no printer allowlist,
     so an API key restricted by ``printer_ids`` must be refused (403) rather

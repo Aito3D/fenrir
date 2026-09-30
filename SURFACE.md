@@ -194,6 +194,7 @@ settings_map.get("camera_quality")
 ## Permissions guarding camera routes (count per permission)
 ```regen: grep -hoE "RequirePermissionIfAuthEnabled\([^)]*\)|Permission\.[A-Z_]+" backend/app/api/routes/camera.py | sort | uniq -c | sed "s/^ *//"```
 ```
+3 Permission.SETTINGS_UPDATE
 15 RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW)
 1 RequirePermissionIfAuthEnabled(Permission.PRINTERS_UPDATE)
 ```

@@ -1996,7 +1996,7 @@ class TestGridStreamDoesNotForceProducerRestarts:
             patch("backend.app.api.routes.camera._ensure_producer", new=AsyncMock(return_value=entry)) as mock_ensure,
         ):
             resp = await cam.camera_grid_stream(
-                request, ids=str(pid), fps=None, quality=None, scale=None, force=True, api_key=None
+                request, ids=str(pid), fps=None, quality=None, scale=None, force=True, _=None, api_key=None
             )
             await resp.body_iterator.__anext__()
             with pytest.raises(StopAsyncIteration):
@@ -2130,3 +2130,122 @@ class TestGridStreamSpawnOutsideSession:
 
         assert spawned == [pids[0]]  # the disconnect check before #2 stopped the loop
         assert session_state["spawned_while_open"] == [False]
+
+
+class TestGridStreamLoadGateRefusal:
+    """T-011: a cold connect whose every producer the spawn-time load gate
+    refuses answers 503 + Retry-After (transient: the wall retries), while
+    "no streamable printers" keeps its 404."""
+
+    @staticmethod
+    def _printer(pid: int, external: bool = False):
+        from unittest.mock import MagicMock
+
+        p = MagicMock()
+        p.id = pid
+        p.external_camera_enabled = external
+        p.external_camera_url = "rtsp://cam.example/stream" if external else None
+        p.model = "X1C"
+        return p
+
+    @staticmethod
+    def _session_returning(printers):
+        from unittest.mock import AsyncMock, MagicMock
+
+        class _Ctx:
+            async def __aenter__(self):
+                db = AsyncMock()
+                result = MagicMock()
+                result.scalars.return_value.all.return_value = list(printers)
+                db.execute = AsyncMock(return_value=result)
+                return db
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+        return _Ctx()
+
+    async def _call(self, pids, printers, **patches):
+        from unittest.mock import AsyncMock
+
+        import backend.app.api.routes.camera as cam
+
+        load = patches.pop("load", 0.0)
+        ensure = patches.pop("ensure", None)
+        ctx = [
+            patch("backend.app.api.routes.camera._hub.get_existing_batch", new=AsyncMock(return_value=({}, pids))),
+            patch(
+                "backend.app.api.routes.camera.database.async_session",
+                return_value=self._session_returning(printers),
+            ),
+            patch("backend.app.api.routes.camera._check_system_load", return_value=load),
+            patch("backend.app.api.routes.camera.asyncio.sleep", new=AsyncMock()),
+        ]
+        if ensure is not None:
+            ctx.append(patch("backend.app.api.routes.camera._ensure_producer", new=AsyncMock(side_effect=ensure)))
+        for c in ctx:
+            c.start()
+        try:
+            return await cam.camera_grid_stream(
+                _StubRequest(disconnect_after=100),
+                ids=",".join(map(str, pids)),
+                fps=5,
+                quality=15,
+                scale=0.5,
+                force=False,
+                api_key=None,
+            )
+        finally:
+            for c in reversed(ctx):
+                c.stop()
+
+    @pytest.mark.asyncio
+    async def test_load_gate_refusing_every_producer_returns_503_with_retry_after(self):
+        from fastapi import HTTPException
+
+        import backend.app.api.routes.camera as cam
+
+        pids = [7501, 7502]
+        printers = [self._printer(pid) for pid in pids]
+        with pytest.raises(HTTPException) as exc_info:
+            # Real _ensure_producer: the patched load is above the gate.
+            await self._call(pids, printers, load=cam._SPAWN_LOAD_THRESHOLD + 1.0)
+
+        assert exc_info.value.status_code == 503
+        assert exc_info.value.headers == {"Retry-After": "5"}
+        assert cam._GRID_SPAWN_REFUSED_RETRY_AFTER == 5
+
+    @pytest.mark.asyncio
+    async def test_no_printers_found_still_returns_404(self):
+        from fastapi import HTTPException
+
+        with pytest.raises(HTTPException) as exc_info:
+            await self._call([7511, 7512], [])
+
+        assert exc_info.value.status_code == 404
+        assert exc_info.value.detail == "No valid printers found"
+
+    @pytest.mark.asyncio
+    async def test_only_external_camera_printers_still_returns_404(self):
+        from fastapi import HTTPException
+
+        pids = [7521]
+        with pytest.raises(HTTPException) as exc_info:
+            await self._call(pids, [self._printer(7521, external=True)])
+
+        assert exc_info.value.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_one_producer_started_still_streams(self):
+        from fastapi.responses import StreamingResponse
+
+        pids = [7531, 7532]
+        printers = [self._printer(pid) for pid in pids]
+
+        async def ensure(pid, _db, *_args, **_kwargs):
+            # First refused by the gate, second started.
+            return None if pid == pids[0] else TestGridStreamGenerateLoop._live_entry()
+
+        resp = await self._call(pids, printers, ensure=ensure)
+        assert isinstance(resp, StreamingResponse)
+        await resp.body_iterator.aclose()
