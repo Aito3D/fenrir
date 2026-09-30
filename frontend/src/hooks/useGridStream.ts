@@ -56,6 +56,235 @@ export interface GridStreamStats {
 
 const EMPTY_STATS: GridStreamStats = { bw: '', active: 0, total: 0, uptime: '', rawBytesPerSecond: 0, droppedFrames: 0 };
 
+type IdSetSetter = React.Dispatch<React.SetStateAction<Set<number>>>;
+
+// Frame-flow counters shared between the stream loop, the worker message
+// handler and the intervals below (shape of useGridStream's pipelineRef).
+interface PipelineCounters {
+  chunksReceived: number;
+  framesParsed: number;
+  framesSentToWorker: number;
+  framesFromWorker: number;
+  framesDrawn: number;
+  workerDecodeErrors: number;
+  workerDroppedFrames: number;
+  lastChunkTime: number;
+  lastWorkerFrameTime: number;
+  lastParseTime: number;
+  workerRestarts: number;
+  stallPingPending: boolean;
+  workerExhausted: boolean;
+}
+
+// The helpers below each start one interval of useGridStream's main effect
+// and return a function that clears it. `isActive` reads the effect run's
+// live `active` flag (a getter, not a copied boolean), so a tick after the
+// run has been deactivated is skipped exactly as when the code was inline.
+
+interface GridStatsIntervalDeps {
+  isActive: () => boolean;
+  getT0: () => number;
+  ids: number[];
+  lastFrameTime: Map<number, number>;
+  loadedPrinters: Set<number>;
+  isVisible: (id: number) => boolean;
+  pipeline: PipelineCounters;
+  bytesRef: React.MutableRefObject<number>;
+  statsRef: React.MutableRefObject<GridStreamStats>;
+  statsSubscribers: React.MutableRefObject<Set<() => void>>;
+  setErrorSet: IdSetSetter;
+  setDegradedSet: IdSetSetter;
+  setStaleSet: IdSetSetter;
+}
+
+function startGridStatsInterval(deps: GridStatsIntervalDeps): () => void {
+  const {
+    isActive, getT0, ids, lastFrameTime, loadedPrinters, isVisible, pipeline,
+    bytesRef, statsRef, statsSubscribers, setErrorSet, setDegradedSet, setStaleSet,
+  } = deps;
+  // Compute stats every second
+  const statsInterval = setInterval(() => {
+    if (!isActive()) return;
+    const bytes = bytesRef.current;
+    bytesRef.current = 0;
+    const elapsed = Math.floor((performance.now() - getT0()) / 1000);
+
+    // Detect degraded / stale / error cameras from last DECODED-frame time,
+    // and derive the "active" count from the same data in the same pass —
+    // a printer whose last decoded frame is stale no longer counts as live,
+    // so the toolbar's live-camera count drops when a camera stops
+    // delivering frames instead of only ever growing, and recovers on its
+    // own once frames resume (lastFrameTime advances again).
+    const now = performance.now();
+    const errorIds: number[] = [];
+    const newDegraded = new Set<number>();
+    const newStale = new Set<number>();
+    let activeCount = 0;
+    for (const id of ids) {
+      const last = lastFrameTime.get(id);
+      if (!last || !loadedPrinters.has(id)) continue;
+      if (!isVisible(id)) {
+        // Off-screen: the worker deliberately drops this printer's frames
+        // before decoding (workers/cameraGridDecoder.worker.ts), so
+        // lastFrameTime is frozen by design — that's not evidence the
+        // stream died. Exempt it from stale/degraded/error classification
+        // and keep counting it toward "active" (it already delivered at
+        // least one frame and its underlying stream is presumed alive,
+        // just not decoded) so the toolbar reads N/N on a scrolled wall.
+        activeCount++;
+        continue;
+      }
+      const gap = now - last;
+      if (gap > STREAM_ERROR_MS) {
+        errorIds.push(id);
+        loadedPrinters.delete(id); // allow first-frame detection to recover it
+      } else if (gap > STREAM_DEGRADED_MS) {
+        newDegraded.add(id);
+        newStale.add(id);
+      } else if (gap > STREAM_STALE_MS) {
+        newStale.add(id);
+      } else {
+        activeCount++;
+      }
+    }
+
+    statsRef.current = {
+      bw: `${formatFileSize(bytes)}/s`,
+      active: activeCount,
+      total: ids.length,
+      uptime: formatUptime(elapsed),
+      rawBytesPerSecond: bytes,
+      droppedFrames: pipeline.workerDroppedFrames,
+    };
+    statsSubscribers.current.forEach(cb => cb());
+
+    if (errorIds.length > 0) {
+      setErrorSet(prev => {
+        const hasAll = errorIds.every(id => prev.has(id));
+        if (hasAll && prev.size === errorIds.length) return prev;
+        const next = new Set(prev);
+        for (const id of errorIds) next.add(id);
+        return next;
+      });
+    }
+    setDegradedSet(prev => {
+      if (prev.size === newDegraded.size && [...prev].every(id => newDegraded.has(id))) return prev;
+      return newDegraded;
+    });
+    setStaleSet(prev => {
+      if (prev.size === newStale.size && [...prev].every(id => newStale.has(id))) return prev;
+      return newStale;
+    });
+  }, 1000);
+  return () => clearInterval(statsInterval);
+}
+
+interface PipelineStatsLoggingDeps {
+  isActive: () => boolean;
+  pipeline: PipelineCounters;
+  workerRef: React.MutableRefObject<Worker | null>;
+}
+
+function startPipelineStatsLogging(deps: PipelineStatsLoggingDeps): () => void {
+  const { isActive, pipeline, workerRef } = deps;
+  // Pipeline stats logging — directly every 10s.  The routine ping keeps
+  // worker-side counters (dropped frames) flowing back via pong; any pong
+  // also proves the worker is alive to the stall detector.
+  const pipelineStatsInterval = setInterval(() => {
+    if (!isActive()) return;
+    workerRef.current?.postMessage({ type: 'ping' });
+    console.debug(
+      `[grid] Pipeline: chunks=${pipeline.chunksReceived} parsed=${pipeline.framesParsed} →worker=${pipeline.framesSentToWorker} ←worker=${pipeline.framesFromWorker} drawn=${pipeline.framesDrawn} dropped=${pipeline.workerDroppedFrames} errors=${pipeline.workerDecodeErrors} restarts=${pipeline.workerRestarts}`,
+    );
+  }, 10_000);
+  return () => clearInterval(pipelineStatsInterval);
+}
+
+interface WorkerHealthMonitorDeps {
+  isActive: () => boolean;
+  /** The worker the effect run spawned; replaced here on each restart. */
+  worker: Worker;
+  workerRef: React.MutableRefObject<Worker | null>;
+  onMessage: (e: MessageEvent) => void;
+  ids: number[];
+  isVisible: (id: number) => boolean;
+  pipeline: PipelineCounters;
+  setErrorSet: IdSetSetter;
+  setDegradedSet: IdSetSetter;
+  setStaleSet: IdSetSetter;
+  setLoadingSet: IdSetSetter;
+}
+
+function startWorkerHealthMonitor(deps: WorkerHealthMonitorDeps): () => void {
+  const {
+    isActive, workerRef, onMessage, ids, isVisible, pipeline,
+    setErrorSet, setDegradedSet, setStaleSet, setLoadingSet,
+  } = deps;
+  let worker = deps.worker;
+  // Worker health monitor — detect and recover from stalled worker
+  const healthInterval = setInterval(() => {
+    if (!isActive()) return;
+    const now = performance.now();
+    const dataFlowing = pipeline.lastParseTime > 0 && (now - pipeline.lastParseTime) < 5000;
+    const workerSilent =
+      (pipeline.lastWorkerFrameTime > 0 && (now - pipeline.lastWorkerFrameTime) > 15000) ||
+      (pipeline.framesSentToWorker > 20 && pipeline.framesFromWorker === 0);
+
+    if (dataFlowing && workerSilent) {
+      if (!pipeline.stallPingPending) {
+        // First detection: ping the worker to check if it's alive
+        pipeline.stallPingPending = true;
+        console.debug(
+          `[grid] Worker stall detected — pinging. sent=${pipeline.framesSentToWorker} received=${pipeline.framesFromWorker} lastWorkerFrame=${pipeline.lastWorkerFrameTime > 0 ? Math.round(now - pipeline.lastWorkerFrameTime) + 'ms ago' : 'never'}`,
+        );
+        workerRef.current?.postMessage({ type: 'ping' });
+      } else if (pipeline.workerRestarts < MAX_WORKER_RESTARTS) {
+        // Ping was sent but stall persists — restart the worker
+        pipeline.workerRestarts++;
+        console.debug(`[grid] Restarting worker (attempt ${pipeline.workerRestarts}/${MAX_WORKER_RESTARTS})`);
+
+        worker.terminate();
+        worker = new CameraGridDecoderWorker();
+        workerRef.current = worker;
+        worker.onmessage = onMessage;
+
+        // Re-seed the fresh worker with the visibility we already track —
+        // the IntersectionObserver only reports changes, so it won't tell
+        // the new worker about tiles that are currently off-screen.
+        // Seeding everything as visible instead would make a worker that
+        // just stalled (typically: overloaded) decode every off-screen tile
+        // too, exactly when it can least afford to.
+        for (const id of ids) {
+          worker.postMessage({ type: 'visibility', printerId: id, visible: isVisible(id) });
+        }
+
+        // Reset worker-related pipeline counters
+        pipeline.framesFromWorker = 0;
+        pipeline.framesSentToWorker = 0;
+        pipeline.workerDecodeErrors = 0;
+        pipeline.lastWorkerFrameTime = 0;
+        pipeline.stallPingPending = false;
+      } else if (!pipeline.workerExhausted) {
+        // Restarts exhausted and the worker is still not decoding — give up
+        // restarting and surface a terminal error state for every tile instead
+        // of silently leaving frozen frames on screen with no indication.
+        pipeline.workerExhausted = true;
+        console.debug(
+          `[grid] Worker restarts exhausted (${MAX_WORKER_RESTARTS}) — marking all printers as unavailable`,
+        );
+        setErrorSet(new Set(ids));
+        setDegradedSet(new Set());
+        setStaleSet(new Set());
+        setLoadingSet(new Set());
+      }
+    } else {
+      // Worker is healthy or no data flowing — reset stall tracking
+      pipeline.stallPingPending = false;
+    }
+  }, 5000);
+  return () => clearInterval(healthInterval);
+}
+
 interface UseGridStreamOptions {
   printerIdsKey: string;
   gridParamsKey: string;
@@ -251,7 +480,7 @@ export function useGridStream({ printerIdsKey, gridParamsKey, restartKey }: UseG
     let t0 = performance.now();
 
     // Spin up worker for off-thread JPEG decoding
-    let worker = new CameraGridDecoderWorker();
+    const worker = new CameraGridDecoderWorker(); // startWorkerHealthMonitor owns restarts
     workerRef.current = worker;
 
     // Seed worker with all printer IDs as visible — IntersectionObserver only
@@ -474,153 +703,36 @@ export function useGridStream({ printerIdsKey, gridParamsKey, restartKey }: UseG
     const controllerRef = { current: new AbortController() };
     let readerRef: ReadableStreamDefaultReader<Uint8Array> | null = null;
 
-    // Compute stats every second
-    const statsInterval = setInterval(() => {
-      if (!active) return;
-      const bytes = bytesRef.current;
-      bytesRef.current = 0;
-      const elapsed = Math.floor((performance.now() - t0) / 1000);
-
-      // Detect degraded / stale / error cameras from last DECODED-frame time,
-      // and derive the "active" count from the same data in the same pass —
-      // a printer whose last decoded frame is stale no longer counts as live,
-      // so the toolbar's live-camera count drops when a camera stops
-      // delivering frames instead of only ever growing, and recovers on its
-      // own once frames resume (lastFrameTime advances again).
-      const now = performance.now();
-      const errorIds: number[] = [];
-      const newDegraded = new Set<number>();
-      const newStale = new Set<number>();
-      let activeCount = 0;
-      for (const id of ids) {
-        const last = lastFrameTime.get(id);
-        if (!last || !loadedPrinters.has(id)) continue;
-        if (!isVisible(id)) {
-          // Off-screen: the worker deliberately drops this printer's frames
-          // before decoding (workers/cameraGridDecoder.worker.ts), so
-          // lastFrameTime is frozen by design — that's not evidence the
-          // stream died. Exempt it from stale/degraded/error classification
-          // and keep counting it toward "active" (it already delivered at
-          // least one frame and its underlying stream is presumed alive,
-          // just not decoded) so the toolbar reads N/N on a scrolled wall.
-          activeCount++;
-          continue;
-        }
-        const gap = now - last;
-        if (gap > STREAM_ERROR_MS) {
-          errorIds.push(id);
-          loadedPrinters.delete(id); // allow first-frame detection to recover it
-        } else if (gap > STREAM_DEGRADED_MS) {
-          newDegraded.add(id);
-          newStale.add(id);
-        } else if (gap > STREAM_STALE_MS) {
-          newStale.add(id);
-        } else {
-          activeCount++;
-        }
-      }
-
-      statsRef.current = {
-        bw: `${formatFileSize(bytes)}/s`,
-        active: activeCount,
-        total: ids.length,
-        uptime: formatUptime(elapsed),
-        rawBytesPerSecond: bytes,
-        droppedFrames: pipeline.workerDroppedFrames,
-      };
-      statsSubscribers.current.forEach(cb => cb());
-
-      if (errorIds.length > 0) {
-        setErrorSet(prev => {
-          const hasAll = errorIds.every(id => prev.has(id));
-          if (hasAll && prev.size === errorIds.length) return prev;
-          const next = new Set(prev);
-          for (const id of errorIds) next.add(id);
-          return next;
-        });
-      }
-      setDegradedSet(prev => {
-        if (prev.size === newDegraded.size && [...prev].every(id => newDegraded.has(id))) return prev;
-        return newDegraded;
-      });
-      setStaleSet(prev => {
-        if (prev.size === newStale.size && [...prev].every(id => newStale.has(id))) return prev;
-        return newStale;
-      });
-    }, 1000);
-
-    // Pipeline stats logging — directly every 10s.  The routine ping keeps
-    // worker-side counters (dropped frames) flowing back via pong; any pong
-    // also proves the worker is alive to the stall detector.
-    const pipelineStatsInterval = setInterval(() => {
-      if (!active) return;
-      workerRef.current?.postMessage({ type: 'ping' });
-      console.debug(
-        `[grid] Pipeline: chunks=${pipeline.chunksReceived} parsed=${pipeline.framesParsed} →worker=${pipeline.framesSentToWorker} ←worker=${pipeline.framesFromWorker} drawn=${pipeline.framesDrawn} dropped=${pipeline.workerDroppedFrames} errors=${pipeline.workerDecodeErrors} restarts=${pipeline.workerRestarts}`,
-      );
-    }, 10_000);
-
-    // Worker health monitor — detect and recover from stalled worker
-    const healthInterval = setInterval(() => {
-      if (!active) return;
-      const now = performance.now();
-      const dataFlowing = pipeline.lastParseTime > 0 && (now - pipeline.lastParseTime) < 5000;
-      const workerSilent =
-        (pipeline.lastWorkerFrameTime > 0 && (now - pipeline.lastWorkerFrameTime) > 15000) ||
-        (pipeline.framesSentToWorker > 20 && pipeline.framesFromWorker === 0);
-
-      if (dataFlowing && workerSilent) {
-        if (!pipeline.stallPingPending) {
-          // First detection: ping the worker to check if it's alive
-          pipeline.stallPingPending = true;
-          console.debug(
-            `[grid] Worker stall detected — pinging. sent=${pipeline.framesSentToWorker} received=${pipeline.framesFromWorker} lastWorkerFrame=${pipeline.lastWorkerFrameTime > 0 ? Math.round(now - pipeline.lastWorkerFrameTime) + 'ms ago' : 'never'}`,
-          );
-          workerRef.current?.postMessage({ type: 'ping' });
-        } else if (pipeline.workerRestarts < MAX_WORKER_RESTARTS) {
-          // Ping was sent but stall persists — restart the worker
-          pipeline.workerRestarts++;
-          console.debug(`[grid] Restarting worker (attempt ${pipeline.workerRestarts}/${MAX_WORKER_RESTARTS})`);
-
-          worker.terminate();
-          worker = new CameraGridDecoderWorker();
-          workerRef.current = worker;
-          worker.onmessage = handleWorkerMessage;
-
-          // Re-seed the fresh worker with the visibility we already track —
-          // the IntersectionObserver only reports changes, so it won't tell
-          // the new worker about tiles that are currently off-screen.
-          // Seeding everything as visible instead would make a worker that
-          // just stalled (typically: overloaded) decode every off-screen tile
-          // too, exactly when it can least afford to.
-          for (const id of ids) {
-            worker.postMessage({ type: 'visibility', printerId: id, visible: isVisible(id) });
-          }
-
-          // Reset worker-related pipeline counters
-          pipeline.framesFromWorker = 0;
-          pipeline.framesSentToWorker = 0;
-          pipeline.workerDecodeErrors = 0;
-          pipeline.lastWorkerFrameTime = 0;
-          pipeline.stallPingPending = false;
-        } else if (!pipeline.workerExhausted) {
-          // Restarts exhausted and the worker is still not decoding — give up
-          // restarting and surface a terminal error state for every tile instead
-          // of silently leaving frozen frames on screen with no indication.
-          pipeline.workerExhausted = true;
-          console.debug(
-            `[grid] Worker restarts exhausted (${MAX_WORKER_RESTARTS}) — marking all printers as unavailable`,
-          );
-          setErrorSet(new Set(ids));
-          setDegradedSet(new Set());
-          setStaleSet(new Set());
-          setLoadingSet(new Set());
-        }
-      } else {
-        // Worker is healthy or no data flowing — reset stall tracking
-        pipeline.stallPingPending = false;
-      }
-    }, 5000);
+    const getActive = () => active;
+    const stopStatsInterval = startGridStatsInterval({
+      isActive: getActive,
+      getT0: () => t0,
+      ids,
+      lastFrameTime,
+      loadedPrinters,
+      isVisible,
+      pipeline,
+      bytesRef,
+      statsRef,
+      statsSubscribers,
+      setErrorSet,
+      setDegradedSet,
+      setStaleSet,
+    });
+    const stopPipelineStatsLogging = startPipelineStatsLogging({ isActive: getActive, pipeline, workerRef });
+    const stopWorkerHealthMonitor = startWorkerHealthMonitor({
+      isActive: getActive,
+      worker,
+      workerRef,
+      onMessage: handleWorkerMessage,
+      ids,
+      isVisible,
+      pipeline,
+      setErrorSet,
+      setDegradedSet,
+      setStaleSet,
+      setLoadingSet,
+    });
 
     async function startMultiplexedStream() {
       while (active) {
@@ -820,9 +932,9 @@ export function useGridStream({ printerIdsKey, gridParamsKey, restartKey }: UseG
       active = false;
       readerRef?.cancel().catch(() => {});
       controllerRef.current.abort();
-      clearInterval(statsInterval);
-      clearInterval(pipelineStatsInterval);
-      clearInterval(healthInterval);
+      stopStatsInterval();
+      stopPipelineStatsLogging();
+      stopWorkerHealthMonitor();
       clearTimeout(startupTimeout);
       clearReconnectGraceTimer();
       clearReentryTimers();

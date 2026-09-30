@@ -1,4 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { RECONNECT_BASE_DELAY_MS, RECONNECT_MAX_DELAY_MS } from '../utils/streamConstants';
+import { startCountdown } from '../utils/countdown';
 
 interface UseStreamReconnectOptions {
   maxAttempts?: number;
@@ -27,8 +29,8 @@ interface UseStreamReconnectReturn {
 
 export function useStreamReconnect({
   maxAttempts = 5,
-  initialDelay = 2000,
-  maxDelay = 30000,
+  initialDelay = RECONNECT_BASE_DELAY_MS,
+  maxDelay = RECONNECT_MAX_DELAY_MS,
   stallCheckInterval = 30000,
   initialRetryDelay = 500,
   initialRetryMax = 10,
@@ -42,7 +44,7 @@ export function useStreamReconnect({
   const [reconnectCountdown, setReconnectCountdown] = useState(0);
 
   const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const cancelCountdownRef = useRef<(() => void) | null>(null);
   const stallCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const hasConnectedRef = useRef(false);
   const initialRetryCountRef = useRef(0);
@@ -51,7 +53,7 @@ export function useStreamReconnect({
 
   const clearTimers = useCallback(() => {
     if (reconnectTimerRef.current) { clearTimeout(reconnectTimerRef.current); reconnectTimerRef.current = null; }
-    if (countdownIntervalRef.current) { clearInterval(countdownIntervalRef.current); countdownIntervalRef.current = null; }
+    if (cancelCountdownRef.current) { cancelCountdownRef.current(); cancelCountdownRef.current = null; }
     if (stallCheckIntervalRef.current) { clearInterval(stallCheckIntervalRef.current); stallCheckIntervalRef.current = null; }
     if (initialRetryTimerRef.current) { clearTimeout(initialRetryTimerRef.current); initialRetryTimerRef.current = null; }
   }, []);
@@ -68,18 +70,9 @@ export function useStreamReconnect({
 
     const delay = Math.min(initialDelay * Math.pow(2, reconnectAttemptsRef.current), maxDelay);
     setIsReconnecting(true);
-    setReconnectCountdown(Math.ceil(delay / 1000));
 
-    if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
-    countdownIntervalRef.current = setInterval(() => {
-      setReconnectCountdown(prev => {
-        if (prev <= 1) {
-          if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
+    if (cancelCountdownRef.current) cancelCountdownRef.current();
+    cancelCountdownRef.current = startCountdown(delay, setReconnectCountdown);
 
     reconnectTimerRef.current = setTimeout(() => {
       reconnectAttemptsRef.current += 1;
@@ -168,7 +161,7 @@ export function useStreamReconnect({
     setReconnectAttempts(0);
     setIsReconnecting(false);
     if (reconnectTimerRef.current) { clearTimeout(reconnectTimerRef.current); reconnectTimerRef.current = null; }
-    if (countdownIntervalRef.current) { clearInterval(countdownIntervalRef.current); countdownIntervalRef.current = null; }
+    if (cancelCountdownRef.current) { cancelCountdownRef.current(); cancelCountdownRef.current = null; }
   }, []);
 
   const reset = useCallback(() => {
