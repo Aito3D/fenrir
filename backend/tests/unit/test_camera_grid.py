@@ -1784,6 +1784,440 @@ class TestGridStreamGenerateLoop:
         assert entry_helper.viewer_count == 0
 
 
+class _CountingSessionCtx:
+    """``async_session()`` stand-in that counts how many sessions are open."""
+
+    def __init__(self, state: dict):
+        self._state = state
+
+    async def __aenter__(self):
+        from unittest.mock import AsyncMock
+
+        self._state["open"] += 1
+        return AsyncMock()
+
+    async def __aexit__(self, exc_type, exc, tb):
+        self._state["open"] -= 1
+        return False
+
+
+class TestGridStreamBackgroundRestarts:
+    """T-013: producer restarts run as background tasks tracked per connection,
+    so one camera restarting never stalls the frames of the healthy tiles."""
+
+    @pytest.fixture(autouse=True)
+    def _isolate_restart_state(self):
+        import backend.app.api.routes.camera as cam
+
+        old_killed = cam._state.watchdog_killed_printers.copy()
+        old_cooldown = cam._state.per_printer_cooldown.copy()
+        old_fleet_cooldown = cam._state.fleet_cooldown_until
+        cam._state.fleet_cooldown_until = 0.0
+        yield
+        cam._state.watchdog_killed_printers.clear()
+        cam._state.watchdog_killed_printers.update(old_killed)
+        cam._state.per_printer_cooldown.clear()
+        cam._state.per_printer_cooldown.update(old_cooldown)
+        cam._state.fleet_cooldown_until = old_fleet_cooldown
+
+    @staticmethod
+    def _patches(batch_result, ensure, session_factory, fake_time=None):
+        from unittest.mock import AsyncMock
+
+        return (
+            patch("backend.app.api.routes.camera._hub.get_existing_batch", new=AsyncMock(return_value=batch_result)),
+            patch("backend.app.api.routes.camera.database.async_session", return_value=_FakeSessionCtx()),
+            patch("backend.app.api.routes.camera.async_session", side_effect=session_factory),
+            patch("backend.app.api.routes.camera.time", fake_time or _FakeTime()),
+            patch(
+                "backend.app.api.routes.camera._resolve_quality_from_settings",
+                new=AsyncMock(return_value=(200, 15, 0.5, 0, False, False, "custom")),
+            ),
+            patch("backend.app.api.routes.camera._ensure_producer", new=ensure),
+        )
+
+    @staticmethod
+    async def _open(ids):
+        import backend.app.api.routes.camera as cam
+
+        return await cam.camera_grid_stream(
+            _StubRequest(disconnect_after=1000),
+            ids=",".join(map(str, ids)),
+            fps=200,
+            quality=15,
+            scale=0.5,
+            force=False,
+            api_key=None,
+        )
+
+    @pytest.mark.asyncio
+    async def test_slow_restart_does_not_block_healthy_tiles(self):
+        """(a) While one printer's restart is stuck in _ensure_producer, the
+        healthy printer on the same wall keeps yielding frames."""
+        import asyncio
+        from contextlib import ExitStack
+        from unittest.mock import AsyncMock
+
+        pid_dead, pid_healthy = 7501, 7502
+        entry_dead = TestGridStreamGenerateLoop._live_entry()
+        entry_dead.alive = False
+        entry_healthy = TestGridStreamGenerateLoop._incrementing_entry()
+        gate = asyncio.Event()
+
+        async def slow_ensure(*_args, **_kwargs):
+            await gate.wait()
+            return None
+
+        sessions = {"open": 0}
+        ensure = AsyncMock(side_effect=slow_ensure)
+        with ExitStack() as stack:
+            for p in self._patches(
+                ({pid_dead: entry_dead, pid_healthy: entry_healthy}, []), ensure, lambda: _CountingSessionCtx(sessions)
+            ):
+                stack.enter_context(p)
+            resp = await self._open([pid_dead, pid_healthy])
+
+            # Step until the restart is in flight.
+            for _ in range(10):
+                await resp.body_iterator.__anext__()
+                if pid_dead in resp.body_iterator.ag_frame.f_locals["conn"].restart_tasks:
+                    break
+            else:
+                pytest.fail("restart task was never spawned")
+
+            # The restart stays blocked, yet the healthy tile keeps streaming.
+            for _ in range(5):
+                chunk = await resp.body_iterator.__anext__()
+                assert struct.unpack("<I", chunk[:4])[0] == pid_healthy
+            local_vars = resp.body_iterator.ag_frame.f_locals
+            task, _attempts, _started = local_vars["conn"].restart_tasks[pid_dead]
+            assert not task.done()
+            assert pid_dead in local_vars["pending_restarts"]
+            assert ensure.call_count == 1  # an in-flight printer is never re-spawned
+            assert sessions["open"] == 1
+
+            await resp.body_iterator.aclose()
+
+        assert task.cancelled()
+        assert sessions["open"] == 0
+        assert entry_healthy.viewer_count == 0
+
+    @pytest.mark.asyncio
+    async def test_restarted_entry_is_adopted_and_its_frames_flow(self):
+        """(b) Once the background restart completes, a later pass adopts the
+        new producer exactly like the inline code did, and its frames flow."""
+        import asyncio
+        from contextlib import ExitStack
+        from unittest.mock import AsyncMock
+
+        pid_dead, pid_healthy = 7511, 7512
+        entry_dead = TestGridStreamGenerateLoop._live_entry()
+        entry_dead.alive = False
+        entry_healthy = TestGridStreamGenerateLoop._incrementing_entry()
+        new_entry = TestGridStreamGenerateLoop._live_entry(frame=b"\xff\xd8restarted\xff\xd9")
+        gate = asyncio.Event()
+
+        async def gated_ensure(*_args, **_kwargs):
+            await gate.wait()
+            return new_entry
+
+        sessions = {"open": 0}
+        with ExitStack() as stack:
+            for p in self._patches(
+                ({pid_dead: entry_dead, pid_healthy: entry_healthy}, []),
+                AsyncMock(side_effect=gated_ensure),
+                lambda: _CountingSessionCtx(sessions),
+            ):
+                stack.enter_context(p)
+            resp = await self._open([pid_dead, pid_healthy])
+
+            for _ in range(10):
+                await resp.body_iterator.__anext__()
+                if pid_dead in resp.body_iterator.ag_frame.f_locals["conn"].restart_tasks:
+                    break
+            else:
+                pytest.fail("restart task was never spawned")
+            started_at = resp.body_iterator.ag_frame.f_locals["conn"].restart_tasks[pid_dead][2]
+            assert new_entry.viewer_count == 0  # not adopted while in flight
+
+            gate.set()
+            restarted_frames = []
+            for _ in range(10):
+                chunk = await resp.body_iterator.__anext__()
+                if struct.unpack("<I", chunk[:4])[0] == pid_dead:
+                    restarted_frames.append(chunk)
+                    break
+            assert restarted_frames == [struct.pack("<II", pid_dead, len(new_entry.frame)) + new_entry.frame]
+
+            local_vars = resp.body_iterator.ag_frame.f_locals
+            assert local_vars["entries"][pid_dead] is new_entry
+            assert local_vars["registered_entries"][pid_dead] is new_entry
+            assert pid_dead not in local_vars["pending_restarts"]
+            assert pid_dead not in local_vars["conn"].restart_tasks
+            assert local_vars["restart_history"][pid_dead] == (1, started_at)
+            assert entry_dead.viewer_count == 0
+            assert new_entry.viewer_count == 1
+            assert sessions["open"] == 0
+
+            await resp.body_iterator.aclose()
+
+        assert new_entry.viewer_count == 0
+
+    @pytest.mark.asyncio
+    async def test_restarts_in_flight_are_capped(self):
+        """(c) No more than _GRID_MAX_CONCURRENT_RESTARTS restart tasks run at
+        once; the rest wait for a slot."""
+        import asyncio
+        from contextlib import ExitStack
+        from unittest.mock import AsyncMock
+
+        import backend.app.api.routes.camera as cam
+
+        dead_pids = list(range(7521, 7521 + cam._GRID_MAX_CONCURRENT_RESTARTS + 2))
+        pid_healthy = 7520
+        batch = {}
+        for pid in dead_pids:
+            e = TestGridStreamGenerateLoop._live_entry()
+            e.alive = False
+            batch[pid] = e
+        batch[pid_healthy] = TestGridStreamGenerateLoop._incrementing_entry()
+        gate = asyncio.Event()
+
+        async def slow_ensure(*_args, **_kwargs):
+            await gate.wait()
+            return None
+
+        ensure = AsyncMock(side_effect=slow_ensure)
+        sessions = {"open": 0}
+        with ExitStack() as stack:
+            for p in self._patches((batch, []), ensure, lambda: _CountingSessionCtx(sessions)):
+                stack.enter_context(p)
+            resp = await self._open([*dead_pids, pid_healthy])
+
+            for _ in range(15):
+                await resp.body_iterator.__anext__()
+                assert len(resp.body_iterator.ag_frame.f_locals["conn"].restart_tasks) <= (
+                    cam._GRID_MAX_CONCURRENT_RESTARTS
+                )
+            assert len(resp.body_iterator.ag_frame.f_locals["conn"].restart_tasks) == (
+                cam._GRID_MAX_CONCURRENT_RESTARTS
+            )
+            assert ensure.call_count == cam._GRID_MAX_CONCURRENT_RESTARTS
+            assert sessions["open"] == cam._GRID_MAX_CONCURRENT_RESTARTS
+
+            # Releasing the slots lets the waiting printers be spawned.
+            gate.set()
+            for _ in range(10):
+                await resp.body_iterator.__anext__()
+                if ensure.call_count > cam._GRID_MAX_CONCURRENT_RESTARTS:
+                    break
+            else:
+                pytest.fail("waiting restarts were never spawned after slots freed")
+
+            await resp.body_iterator.aclose()
+
+        assert sessions["open"] == 0
+
+    @pytest.mark.asyncio
+    async def test_disconnect_cancels_pending_restart_tasks(self):
+        """(d) Closing the stream cancels and awaits in-flight restarts: the
+        task is cancelled, its DB session is closed, nothing is left tracked."""
+        import asyncio
+        from contextlib import ExitStack
+        from unittest.mock import AsyncMock
+
+        pid_dead, pid_healthy = 7531, 7532
+        entry_dead = TestGridStreamGenerateLoop._live_entry()
+        entry_dead.alive = False
+        entry_healthy = TestGridStreamGenerateLoop._incrementing_entry()
+        cancelled = asyncio.Event()
+
+        async def never_finishes(*_args, **_kwargs):
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                cancelled.set()
+                raise
+
+        sessions = {"open": 0}
+        with ExitStack() as stack:
+            for p in self._patches(
+                ({pid_dead: entry_dead, pid_healthy: entry_healthy}, []),
+                AsyncMock(side_effect=never_finishes),
+                lambda: _CountingSessionCtx(sessions),
+            ):
+                stack.enter_context(p)
+            resp = await self._open([pid_dead, pid_healthy])
+            for _ in range(10):
+                await resp.body_iterator.__anext__()
+                if pid_dead in resp.body_iterator.ag_frame.f_locals["conn"].restart_tasks:
+                    break
+            else:
+                pytest.fail("restart task was never spawned")
+            conn = resp.body_iterator.ag_frame.f_locals["conn"]
+            task = conn.restart_tasks[pid_dead][0]
+            # Let the task reach _ensure_producer so the session is open.
+            for _ in range(3):
+                await asyncio.sleep(0)
+            assert sessions["open"] == 1
+
+            await resp.body_iterator.aclose()
+
+        assert task.done() and task.cancelled()
+        assert cancelled.is_set()
+        assert conn.restart_tasks == {}
+        assert sessions["open"] == 0
+        assert entry_dead.viewer_count == 0
+        assert entry_healthy.viewer_count == 0
+
+    @pytest.mark.asyncio
+    async def test_http_disconnect_mid_restart_still_decrements_viewer_counts(self):
+        """Regression: through a real Starlette StreamingResponse, a client
+        disconnect cancels the response's anyio scope, which re-cancels any
+        await in generate()'s ``finally:``. With a restart in flight, the
+        viewer-count cleanup must still run (it is synchronous and runs before
+        any await), and the cancelled restart must still unwind and close its
+        DB session on its own."""
+        import asyncio
+        from contextlib import ExitStack
+        from unittest.mock import AsyncMock
+
+        pid_dead, pid_healthy = 7561, 7562
+        entry_dead = TestGridStreamGenerateLoop._live_entry()
+        entry_dead.alive = False
+        entry_healthy = TestGridStreamGenerateLoop._incrementing_entry()
+        restart_started = asyncio.Event()
+        restart = {}
+
+        async def never_finishes(*_args, **_kwargs):
+            restart["task"] = asyncio.current_task()
+            restart_started.set()
+            await asyncio.Event().wait()
+
+        async def receive():
+            await restart_started.wait()
+            return {"type": "http.disconnect"}
+
+        async def send(_message):
+            pass
+
+        sessions = {"open": 0}
+        scope = {"type": "http", "asgi": {"version": "3.0", "spec_version": "2.3"}}
+        with ExitStack() as stack:
+            for p in self._patches(
+                ({pid_dead: entry_dead, pid_healthy: entry_healthy}, []),
+                AsyncMock(side_effect=never_finishes),
+                lambda: _CountingSessionCtx(sessions),
+            ):
+                stack.enter_context(p)
+            resp = await self._open([pid_dead, pid_healthy])
+            await asyncio.wait_for(resp(scope, receive, send), timeout=10)
+
+            # Viewer counts were released even though the scope was cancelled.
+            assert entry_healthy.viewer_count == 0
+            assert entry_dead.viewer_count == 0
+
+            task = restart["task"]
+            for _ in range(10):
+                if task.done():
+                    break
+                await asyncio.sleep(0)
+            assert task.cancelled()
+            assert sessions["open"] == 0
+
+    @pytest.mark.asyncio
+    async def test_restart_finished_after_close_is_never_registered(self):
+        """A restart that completed but was not yet adopted when the viewer
+        left is discarded: its producer never gains a viewer from this
+        connection, so the hub's idle timeout can reap it."""
+        from contextlib import ExitStack
+        from unittest.mock import AsyncMock
+
+        pid_dead, pid_healthy = 7541, 7542
+        entry_dead = TestGridStreamGenerateLoop._live_entry()
+        entry_dead.alive = False
+        entry_healthy = TestGridStreamGenerateLoop._incrementing_entry()
+        new_entry = TestGridStreamGenerateLoop._live_entry()
+
+        with ExitStack() as stack:
+            for p in self._patches(
+                ({pid_dead: entry_dead, pid_healthy: entry_healthy}, []),
+                AsyncMock(return_value=new_entry),
+                lambda: _FakeSessionCtx(),
+            ):
+                stack.enter_context(p)
+            resp = await self._open([pid_dead, pid_healthy])
+            for _ in range(10):
+                await resp.body_iterator.__anext__()
+                tasks = resp.body_iterator.ag_frame.f_locals["conn"].restart_tasks
+                if pid_dead in tasks and tasks[pid_dead][0].done():
+                    break
+            else:
+                pytest.fail("restart task never finished before being harvested")
+            conn = resp.body_iterator.ag_frame.f_locals["conn"]
+
+            await resp.body_iterator.aclose()
+
+        assert conn.restart_tasks == {}
+        assert pid_dead not in conn.entries
+        assert new_entry.viewer_count == 0
+        assert entry_dead.viewer_count == 0
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("outcome", ["none", "raises"])
+    async def test_failed_restart_task_schedules_backoff(self, outcome, caplog):
+        """(e) A failed background restart (None, or an exception logged the
+        same way as before) is rescheduled with the unchanged exponential
+        backoff, measured from the pass that spawned it."""
+        import logging
+        from contextlib import ExitStack
+        from unittest.mock import AsyncMock
+
+        import backend.app.api.routes.camera as cam
+
+        pid_dead, pid_healthy = 7551, 7552
+        entry_dead = TestGridStreamGenerateLoop._live_entry()
+        entry_dead.alive = False
+        entry_healthy = TestGridStreamGenerateLoop._incrementing_entry()
+        ensure = AsyncMock(return_value=None) if outcome == "none" else AsyncMock(side_effect=RuntimeError("boom"))
+
+        with ExitStack() as stack:
+            for p in self._patches(
+                ({pid_dead: entry_dead, pid_healthy: entry_healthy}, []), ensure, lambda: _FakeSessionCtx()
+            ):
+                stack.enter_context(p)
+            caplog.set_level(logging.WARNING, logger=cam.logger.name)
+            resp = await self._open([pid_dead, pid_healthy])
+            spawned = None
+            for _ in range(10):
+                await resp.body_iterator.__anext__()
+                local_vars = resp.body_iterator.ag_frame.f_locals
+                tasks = local_vars["conn"].restart_tasks
+                if spawned is None and pid_dead in tasks:
+                    spawned = tasks[pid_dead]
+                    assert local_vars["pending_restarts"][pid_dead][0] == spawned[1]
+                elif spawned is not None and pid_dead not in tasks:
+                    break
+            else:
+                pytest.fail("failed restart was never harvested")
+
+            _task, attempts, started_at = spawned
+            new_attempts, next_retry = local_vars["pending_restarts"][pid_dead]
+            assert new_attempts == attempts + 1
+            base_delay = min(cam._GRID_RESTART_BASE_DELAY * (2**attempts), cam._GRID_RESTART_MAX_DELAY)
+            assert base_delay <= next_retry - started_at <= base_delay * 1.3 + 1e-6
+            assert pid_dead not in local_vars["entries"]
+            assert ensure.call_count == 1
+
+            await resp.body_iterator.aclose()
+
+        messages = [r.getMessage() for r in caplog.records]
+        assert any(m.startswith(f"Grid restart failed for printer {pid_dead} (attempt 1/") for m in messages)
+        assert any(m == f"Grid restart DB/producer error for printer {pid_dead}" for m in messages) == (
+            outcome == "raises"
+        )
+
+
 class TestGridStreamAPIKeyPrinterScope:
     """T-165: an API key's ``printer_ids`` allowlist must be honoured by the
     multiplexed grid stream, not just the single-printer camera routes.

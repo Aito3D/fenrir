@@ -940,3 +940,320 @@ class TestStaleProducerTimeoutConstant:
         assert hub.STALE_PRODUCER_TIMEOUT == 10.0
         # Class default unchanged
         assert SharedStreamHub.STALE_PRODUCER_TIMEOUT == 45.0
+
+
+class TestSharedStreamHubWaitsForTeardown:
+    """T-012: every caller waits for a dying producer's teardown before a new
+    producer is started for the same printer — not only the caller that
+    detached the dying entry. Otherwise a second viewer arriving mid-teardown
+    dials the camera while the old ffmpeg/SSL connection is still closing.
+    """
+
+    @staticmethod
+    def _counting_starter(calls):
+        async def source():
+            calls.append(1)
+            while True:
+                yield b"frame"
+                await asyncio.sleep(0.01)
+
+        return source
+
+    @staticmethod
+    def _slow_teardown_task(started, release):
+        """A producer-like task whose cancellation/exit waits on *release*.
+
+        The cancelled path is bounded (3s) so a failing assertion cannot leave
+        the event loop hanging on an unreleased teardown at test exit.
+        """
+
+        async def body():
+            started.set()
+            try:
+                await release.wait()
+            except asyncio.CancelledError:
+                try:
+                    await asyncio.wait_for(release.wait(), timeout=3.0)
+                except asyncio.TimeoutError:
+                    pass
+                raise
+
+        return asyncio.create_task(body())
+
+    @staticmethod
+    async def _settle():
+        for _ in range(5):
+            await asyncio.sleep(0)
+
+    @pytest.mark.asyncio
+    async def test_concurrent_get_or_start_on_dying_entry_waits_and_starts_one_producer(self):
+        from backend.app.api.routes.camera import SharedStreamHub, _SharedStream
+
+        hub = SharedStreamHub()
+        started, release = asyncio.Event(), asyncio.Event()
+        dead_entry = _SharedStream(params_key="old")
+        dead_entry.alive = False
+        dead_entry.task = self._slow_teardown_task(started, release)
+        hub._streams[1] = dead_entry
+        await started.wait()
+
+        calls: list[int] = []
+        first = asyncio.create_task(hub.get_or_start(1, self._counting_starter(calls), params_key="a"))
+        await self._settle()
+        # The first caller detached the dead entry and is awaiting its teardown.
+        assert 1 not in hub._streams
+        second = asyncio.create_task(hub.get_or_start(1, self._counting_starter(calls), params_key="b"))
+        await self._settle()
+
+        # Neither caller may start a producer while the teardown is running.
+        assert not first.done()
+        assert not second.done()
+        assert 1 not in hub._streams
+        assert calls == []
+
+        release.set()
+        entry_a, entry_b = await asyncio.gather(first, second)
+        await self._settle()
+
+        assert entry_a is entry_b
+        assert hub._streams[1] is entry_a
+        assert len(calls) == 1
+        assert hub._tearing_down == {}
+        await hub.stop_all()
+
+    @pytest.mark.asyncio
+    async def test_get_or_start_during_restart_waits_for_old_producer_teardown(self):
+        from backend.app.api.routes.camera import SharedStreamHub, _SharedStream
+
+        hub = SharedStreamHub()
+        started, release = asyncio.Event(), asyncio.Event()
+        old = _SharedStream(params_key="old-params")
+        old.task = self._slow_teardown_task(started, release)
+        hub._streams[1] = old
+        await started.wait()
+
+        calls: list[int] = []
+        restarter = asyncio.create_task(hub.restart(1, self._counting_starter(calls), params_key="new-params"))
+        await self._settle()
+        viewer = asyncio.create_task(hub.get_or_start(1, self._counting_starter(calls), params_key="other"))
+        await self._settle()
+
+        assert not restarter.done()
+        assert not viewer.done()
+        assert calls == []
+        assert 1 not in hub._streams
+
+        release.set()
+        restarted, viewed = await asyncio.gather(restarter, viewer)
+        await self._settle()
+
+        assert restarted is viewed
+        assert restarted.params_key == "new-params"
+        assert len(calls) == 1
+        await hub.stop_all()
+
+    @pytest.mark.asyncio
+    async def test_get_or_start_racing_stop_waits_for_teardown(self):
+        from backend.app.api.routes.camera import SharedStreamHub, _SharedStream
+
+        hub = SharedStreamHub()
+        started, release = asyncio.Event(), asyncio.Event()
+        entry = _SharedStream(params_key="p")
+        entry.task = self._slow_teardown_task(started, release)
+        hub._streams[1] = entry
+        await started.wait()
+
+        calls: list[int] = []
+        stopper = asyncio.create_task(hub.stop(1))
+        await self._settle()
+        viewer = asyncio.create_task(hub.get_or_start(1, self._counting_starter(calls), params_key="p"))
+        await self._settle()
+
+        assert not stopper.done()
+        assert not viewer.done()
+        assert calls == []
+        assert 1 not in hub._streams
+
+        release.set()
+        stopped, new_entry = await asyncio.gather(stopper, viewer)
+        await self._settle()
+
+        assert stopped is True
+        assert new_entry is not entry
+        assert new_entry.alive is True
+        assert len(calls) == 1
+        await hub.stop_all()
+
+    @pytest.mark.asyncio
+    async def test_get_or_start_racing_stop_all_waits_for_teardown(self):
+        from backend.app.api.routes.camera import SharedStreamHub, _SharedStream
+
+        hub = SharedStreamHub()
+        started, release = asyncio.Event(), asyncio.Event()
+        entry = _SharedStream(params_key="p")
+        entry.task = self._slow_teardown_task(started, release)
+        hub._streams[1] = entry
+        await started.wait()
+
+        calls: list[int] = []
+        stopper = asyncio.create_task(hub.stop_all())
+        await self._settle()
+        viewer = asyncio.create_task(hub.get_or_start(1, self._counting_starter(calls), params_key="p"))
+        await self._settle()
+
+        assert not viewer.done()
+        assert calls == []
+
+        release.set()
+        count, new_entry = await asyncio.gather(stopper, viewer)
+        await self._settle()
+
+        assert count == 1
+        assert new_entry.alive is True
+        assert len(calls) == 1
+        await hub.stop_all()
+
+    @pytest.mark.asyncio
+    async def test_concurrent_get_or_start_on_stale_producer_starts_one_producer(self):
+        from backend.app.api.routes.camera import SharedStreamHub, _SharedStream
+
+        hub = SharedStreamHub()
+        started, release = asyncio.Event(), asyncio.Event()
+        stale = _SharedStream(params_key="old")
+        stale.frame_seq = 3
+        stale.last_frame_produced = time.monotonic() - hub.STALE_PRODUCER_TIMEOUT - 5
+        stale.task = self._slow_teardown_task(started, release)
+        hub._streams[1] = stale
+        await started.wait()
+
+        calls: list[int] = []
+        first = asyncio.create_task(hub.get_or_start(1, self._counting_starter(calls), params_key="a"))
+        await self._settle()
+        second = asyncio.create_task(hub.get_or_start(1, self._counting_starter(calls), params_key="b"))
+        await self._settle()
+        assert calls == []
+
+        release.set()
+        entry_a, entry_b = await asyncio.gather(first, second)
+        await self._settle()
+
+        assert entry_a is entry_b
+        assert len(calls) == 1
+        await hub.stop_all()
+
+    @pytest.mark.asyncio
+    async def test_waits_for_dead_entry_still_registered_during_replace(self):
+        """A dead entry that lands in _streams while a caller awaits its own old
+        task is itself awaited before the new producer is created."""
+        from backend.app.api.routes.camera import SharedStreamHub, _SharedStream
+
+        hub = SharedStreamHub()
+        started, release, go = asyncio.Event(), asyncio.Event(), asyncio.Event()
+        other_dead = _SharedStream(params_key="other")
+        other_dead.alive = False
+
+        async def old_task_body():
+            await go.wait()  # run only once the caller has detached dead_entry
+            other_dead.task = self._slow_teardown_task(started, release)
+            hub._streams[1] = other_dead
+            await started.wait()
+
+        dead_entry = _SharedStream(params_key="old")
+        dead_entry.alive = False
+        dead_entry.task = asyncio.create_task(old_task_body())
+        hub._streams[1] = dead_entry
+
+        calls: list[int] = []
+        caller = asyncio.create_task(hub.get_or_start(1, self._counting_starter(calls), params_key="new"))
+        await self._settle()
+        assert 1 not in hub._streams
+        go.set()
+        await self._settle()
+        assert hub._streams[1] is other_dead
+        assert not caller.done()
+        assert calls == []
+
+        release.set()
+        entry = await caller
+        await self._settle()
+        assert entry.params_key == "new"
+        assert len(calls) == 1
+        await hub.stop_all()
+
+    @pytest.mark.asyncio
+    async def test_second_caller_wait_is_bounded_by_timeout(self):
+        """The wait stays bounded: a teardown that never finishes is force-cancelled
+        after the timeout and the waiting caller proceeds to start one producer."""
+        from backend.app.api.routes import camera as camera_mod
+        from backend.app.api.routes.camera import SharedStreamHub, _SharedStream
+
+        real_wait = camera_mod._await_displaced_task
+
+        async def short_wait(task, timeout):
+            assert timeout == 8.0
+            await real_wait(task, timeout=0.05)
+
+        hub = SharedStreamHub()
+        stuck = asyncio.Event()  # never set
+
+        async def never_finishes():
+            await stuck.wait()
+
+        dead_entry = _SharedStream(params_key="old")
+        dead_entry.alive = False
+        dead_entry.task = asyncio.create_task(never_finishes())
+        hub._streams[1] = dead_entry
+        await asyncio.sleep(0)
+
+        calls: list[int] = []
+        with patch.object(camera_mod, "_await_displaced_task", short_wait):
+            first = asyncio.create_task(hub.get_or_start(1, self._counting_starter(calls), params_key="a"))
+            await self._settle()
+            second = asyncio.create_task(hub.get_or_start(1, self._counting_starter(calls), params_key="b"))
+            entry_a, entry_b = await asyncio.wait_for(asyncio.gather(first, second), timeout=2.0)
+        await self._settle()
+
+        assert dead_entry.task.cancelled()
+        assert entry_a is entry_b
+        assert len(calls) == 1
+        await hub.stop_all()
+
+
+class TestTrackTeardown:
+    """T-012: the per-printer teardown record clears itself when its task
+    finishes, but never clears a newer teardown recorded after it."""
+
+    @pytest.mark.asyncio
+    async def test_finished_task_does_not_clear_newer_record(self):
+        from backend.app.api.routes.camera import _track_teardown
+
+        registry: dict[int, asyncio.Task] = {}
+        gate_a, gate_b = asyncio.Event(), asyncio.Event()
+        task_a = asyncio.create_task(gate_a.wait())
+        task_b = asyncio.create_task(gate_b.wait())
+
+        _track_teardown(registry, 1, task_a)
+        _track_teardown(registry, 1, task_b)
+        assert registry[1] is task_b
+
+        gate_a.set()
+        await task_a
+        await asyncio.sleep(0)
+        assert registry[1] is task_b
+
+        gate_b.set()
+        await task_b
+        await asyncio.sleep(0)
+        assert registry == {}
+
+    @pytest.mark.asyncio
+    async def test_ignores_missing_or_finished_task(self):
+        from backend.app.api.routes.camera import _track_teardown
+
+        registry: dict[int, asyncio.Task] = {}
+        done = asyncio.create_task(asyncio.sleep(0))
+        await done
+
+        _track_teardown(registry, 1, None)
+        _track_teardown(registry, 1, done)
+        assert registry == {}

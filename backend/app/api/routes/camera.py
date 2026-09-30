@@ -551,6 +551,27 @@ async def _await_displaced_task(task: asyncio.Task, timeout: float) -> None:
         await asyncio.wait({task})
 
 
+def _track_teardown(registry: dict[int, asyncio.Task], printer_id: int, task: asyncio.Task | None) -> None:
+    """Record *task* as the producer still tearing down for *printer_id*.
+
+    Called under the hub lock whenever a dying entry is detached from
+    ``_streams``. Every caller that later wants to start a producer for the
+    same printer waits on this task (see ``_replace_producer``), not just the
+    caller that detached it, so two ffmpeg/SSL connections never overlap on
+    one camera. The record clears itself when the task finishes, unless a
+    newer teardown has replaced it.
+    """
+    if task is None or task.done():
+        return
+    registry[printer_id] = task
+
+    def _clear(done_task: asyncio.Task) -> None:
+        if registry.get(printer_id) is done_task:
+            del registry[printer_id]
+
+    task.add_done_callback(_clear)
+
+
 class SharedStreamHub:
     """One camera source per printer, shared across multiple viewers.
 
@@ -572,6 +593,9 @@ class SharedStreamHub:
     def __init__(self) -> None:
         self._lock = asyncio.Lock()
         self._streams: dict[int, _SharedStream] = {}
+        # Producer tasks detached from _streams whose finally (ffmpeg/SSL
+        # teardown) may still be running; see _track_teardown.
+        self._tearing_down: dict[int, asyncio.Task] = {}
 
     async def get_or_start(self, printer_id: int, starter_fn, params_key: str = "") -> _SharedStream:
         """Return the shared stream for a printer, starting a producer if needed.
@@ -596,6 +620,7 @@ class SharedStreamHub:
                     old_task = entry.task
                     if old_task and not old_task.done():
                         old_task.cancel()
+                    _track_teardown(self._tearing_down, printer_id, old_task)
                     del self._streams[printer_id]
                 else:
                     entry.last_accessed = time.monotonic()
@@ -604,6 +629,7 @@ class SharedStreamHub:
                 # Entry dead but task may still be cleaning up (e.g. ffmpeg terminating).
                 # Await it to avoid two ffmpeg processes competing for the same RTSP slot.
                 old_task = entry.task if entry.task and not entry.task.done() else None
+                _track_teardown(self._tearing_down, printer_id, old_task)
                 del self._streams[printer_id]
 
         return await self._replace_producer(
@@ -648,6 +674,7 @@ class SharedStreamHub:
                         old_task = old.task
                         if old_task and not old_task.done():
                             old_task.cancel()
+                        _track_teardown(self._tearing_down, printer_id, old_task)
                         del self._streams[printer_id]
                     else:
                         old.last_accessed = time.monotonic()
@@ -663,12 +690,14 @@ class SharedStreamHub:
                     old_task = old.task
                     if old_task:
                         old_task.cancel()
+                    _track_teardown(self._tearing_down, printer_id, old_task)
                     # Remove so the old producer's finally block identity check won't match
                     del self._streams[printer_id]
             elif old is not None:
                 # Entry dead but task may still be cleaning up (e.g. ffmpeg terminating).
                 # Await it to avoid two ffmpeg processes competing for the same RTSP slot.
                 old_task = old.task if old.task and not old.task.done() else None
+                _track_teardown(self._tearing_down, printer_id, old_task)
                 del self._streams[printer_id]
 
         # Phase 2 & 3 — await old task outside lock, then re-acquire lock to create new entry
@@ -699,28 +728,43 @@ class SharedStreamHub:
         Phase 3 (re-acquire lock): guard against a concurrently created entry —
         if `reuse_existing` accepts it, return it as-is; otherwise cancel it and
         register a fresh producer for `params_key`.
-        """
-        # Await old task outside lock so its finally block (ffmpeg kill) completes
-        if old_task is not None:
-            await _await_displaced_task(old_task, timeout=8.0)
 
-        # Re-acquire lock to create new entry (guard against concurrent calls)
-        async with self._lock:
-            existing = self._streams.get(printer_id)
-            if existing is not None and existing.alive:
-                if reuse_existing(existing):
-                    existing.last_accessed = time.monotonic()
-                    return existing
-                # Not reusable (e.g. different params) — cancel it and create a new one
-                existing.alive = False
-                if existing.task:
-                    existing.task.cancel()
-                del self._streams[printer_id]
-            entry = _SharedStream(params_key=params_key)
-            self._streams[printer_id] = entry
-            entry.task = asyncio.create_task(self._run_producer(printer_id, starter_fn, entry))
-            log_new_producer(len(self._streams))
-            return entry
+        Any producer still tearing down for this printer (recorded in
+        `_tearing_down` by whichever caller detached it, or a dead entry still
+        in `_streams`) is awaited first, bounded by the same timeout, so a
+        concurrent caller never dials the camera while that teardown runs.
+        """
+        pending = old_task
+        while True:
+            # Await old task outside lock so its finally block (ffmpeg kill) completes
+            if pending is not None:
+                await _await_displaced_task(pending, timeout=8.0)
+
+            # Re-acquire lock to create new entry (guard against concurrent calls)
+            async with self._lock:
+                existing = self._streams.get(printer_id)
+                if existing is not None and existing.alive:
+                    if reuse_existing(existing):
+                        existing.last_accessed = time.monotonic()
+                        return existing
+                    # Not reusable (e.g. different params) — cancel it and create a new one
+                    existing.alive = False
+                    if existing.task:
+                        existing.task.cancel()
+                    del self._streams[printer_id]
+                else:
+                    # Another producer's teardown still running — wait for it (outside the lock)
+                    pending = self._tearing_down.get(printer_id)
+                    if pending is None or pending.done():
+                        # A dead entry still in _streams whose producer is mid-teardown
+                        pending = existing.task if existing is not None else None
+                    if pending is not None and not pending.done():
+                        continue
+                entry = _SharedStream(params_key=params_key)
+                self._streams[printer_id] = entry
+                entry.task = asyncio.create_task(self._run_producer(printer_id, starter_fn, entry))
+                log_new_producer(len(self._streams))
+                return entry
 
     # NOTE: viewer_count uses plain += which is safe because all access
     # runs on a single asyncio event loop (no threads, no awaits between
@@ -857,6 +901,8 @@ class SharedStreamHub:
         async with self._lock:
             entries = list(self._streams.items())
             self._streams.clear()
+            for pid, entry in entries:
+                _track_teardown(self._tearing_down, pid, entry.task)
         count = 0
         for _pid, entry in entries:
             entry.alive = False
@@ -873,6 +919,8 @@ class SharedStreamHub:
         """Force-stop the shared stream for a printer."""
         async with self._lock:
             entry = self._streams.pop(printer_id, None)
+            if entry is not None:
+                _track_teardown(self._tearing_down, printer_id, entry.task)
         if entry is None:
             return False
         # Mark dead — viewers will stop on next poll
@@ -1967,6 +2015,222 @@ async def _require_grid_stream_force_permission(user: User | None, api_key: APIK
         raise HTTPException(403, f"Missing required permissions: {Permission.SETTINGS_UPDATE.value}")
 
 
+@dataclasses.dataclass
+class _GridConnState:
+    """Per-connection state a grid stream's send loop shares with its restart
+    processing. The dicts are the loop's own objects (aliased, not copied), so
+    mutations on either side are visible to the other."""
+
+    entries: dict[int, _SharedStream]
+    registered_entries: dict[int, _SharedStream]
+    seen_seqs: dict[int, int]
+    pending_restarts: dict[int, tuple[int, float]]
+    restart_history: dict[int, tuple[int, float]]
+    # pid -> (background restart task, attempts when it was spawned, pass time it
+    # was spawned at). A pid stays in pending_restarts while its task is in
+    # flight; the task's result is adopted by a later _process_grid_restarts pass.
+    restart_tasks: dict[int, tuple[asyncio.Task, int, float]] = dataclasses.field(default_factory=dict)
+
+
+def _log_grid_stream_stats(
+    elapsed: float, now: float, stats_frames: dict[int, list[int]], preset_label: str, fps: int
+) -> None:
+    """Log one grid connection's bandwidth / load / cooldown stats for the last window."""
+    total_bytes = sum(sum(sizes) for sizes in stats_frames.values())
+    total_kbps = total_bytes / elapsed / 1024
+    parts = []
+    for spid in sorted(stats_frames):
+        sizes = stats_frames[spid]
+        if sizes:
+            avg_kb = sum(sizes) / len(sizes) / 1024
+            parts.append(f"p{spid}: frames={len(sizes)}, avg={avg_kb:.1f}KB")
+        else:
+            parts.append(f"p{spid}: frames=0")
+    # Include system load and cooldown status
+    load_info = ""
+    load = _check_system_load()
+    if load is not None:
+        try:
+            load1, load5, load15 = os.getloadavg()
+            load_info = f", load={load1:.1f}/{load5:.1f}/{load15:.1f}"
+        except (OSError, AttributeError):
+            pass
+    cooldown_info = ""
+    if now < _state.fleet_cooldown_until:
+        cooldown_info = f", cooldown={_state.fleet_cooldown_until - now:.0f}s"
+    logger.info(
+        "Grid stream stats (%.0fs) [preset=%s, fps=%d]: %.1f KB/s total, %d printers: %s%s%s",
+        elapsed,
+        preset_label,
+        fps,
+        total_kbps,
+        len(stats_frames),
+        ", ".join(parts),
+        load_info,
+        cooldown_info,
+    )
+
+
+async def _grid_restart_producer(conn: _GridConnState, pid: int) -> _SharedStream | None:
+    """Background body of one grid producer restart.
+
+    Resolves the quality preset and brings the printer's producer back with a
+    fresh DB session — the endpoint's `db` may be stale hours into a stream.
+    Returns the entry, or None when the restart failed (errors are logged here).
+    """
+    try:
+        async with async_session() as restart_db:
+            (
+                r_fps,
+                r_quality,
+                r_scale,
+                r_threads,
+                r_gpu_accel,
+                r_skip_frames,
+                _r_preset,
+            ) = await _resolve_quality_from_settings(restart_db, len(conn.entries) + len(conn.pending_restarts), "grid")
+            # Not forced: if another viewer already brought
+            # this camera back (possibly with params
+            # resolved for its own stream count), adopt its
+            # producer instead of killing it — forcing here
+            # is what made two walls restart each other's
+            # cameras indefinitely.
+            return await _ensure_producer(
+                pid,
+                restart_db,
+                r_fps,
+                r_quality,
+                r_scale,
+                threads=r_threads,
+                gpu_accel=r_gpu_accel,
+                skip_frames=r_skip_frames,
+            )
+    except Exception:
+        logger.warning("Grid restart DB/producer error for printer %d", pid, exc_info=True)
+        return None
+
+
+def _adopt_grid_restart(conn: _GridConnState, pid: int, entry: _SharedStream | None, attempts: int, now: float) -> None:
+    """Apply one finished restart's outcome to the connection's bookkeeping.
+
+    ``attempts`` and ``now`` are the values from the pass that spawned the
+    restart, so the backoff and recovery-window math is unchanged.
+    """
+    if entry is not None:
+        conn.entries[pid] = entry
+        # Decrement old entry's viewer_count before replacing
+        old_registered = conn.registered_entries.get(pid)
+        if old_registered is not None and old_registered is not entry:
+            old_registered.viewer_count = max(0, old_registered.viewer_count - 1)
+        entry.viewer_count += 1
+        conn.registered_entries[pid] = entry
+        conn.seen_seqs[pid] = 0
+        del conn.pending_restarts[pid]
+        # Remember the cycle until the producer proves recovery
+        conn.restart_history[pid] = (attempts + 1, now)
+        logger.info("Grid producer restarted for printer %d (attempt %d)", pid, attempts + 1)
+    else:
+        # Exponential backoff with jitter: base * 2^attempt, capped
+        base_delay = min(_GRID_RESTART_BASE_DELAY * (2**attempts), _GRID_RESTART_MAX_DELAY)
+        delay = base_delay + random.uniform(0, base_delay * 0.3)
+        conn.pending_restarts[pid] = (attempts + 1, now + delay)
+        logger.warning(
+            "Grid restart failed for printer %d (attempt %d/%d), next retry in %.0fs",
+            pid,
+            attempts + 1,
+            _GRID_MAX_RESTARTS,
+            delay,
+        )
+
+
+def _harvest_grid_restarts(conn: _GridConnState) -> set[int]:
+    """Adopt every finished background restart; return the pids harvested."""
+    finished = [pid for pid, (task, _attempts, _started) in conn.restart_tasks.items() if task.done()]
+    for pid in finished:
+        task, attempts, started_at = conn.restart_tasks.pop(pid)
+        _adopt_grid_restart(conn, pid, task.result(), attempts, started_at)
+    return set(finished)
+
+
+def _cancel_grid_restarts(conn: _GridConnState) -> list[asyncio.Task]:
+    """Cancel every in-flight restart when the connection closes (synchronous).
+
+    Results are discarded, never adopted: a producer a finished-but-unharvested
+    task brought up was never registered with this connection (viewer_count
+    untouched), so there is nothing to unregister and the hub's idle timeout
+    stops it unless another viewer is watching. Each cancelled task unwinds its
+    own `async with async_session()` on its next loop turn, whether or not
+    anyone awaits it. Returns the cancelled tasks for a best-effort await.
+    """
+    tasks = [task for task, _attempts, _started in conn.restart_tasks.values()]
+    conn.restart_tasks.clear()
+    for task in tasks:
+        task.cancel()
+    return tasks
+
+
+async def _process_grid_restarts(conn: _GridConnState, now: float) -> None:
+    """Run one pass of the grid stream's producer restart processing.
+
+    Adopts restarts that finished since the last pass, applies the
+    fleet-cooldown circuit breaker, then spawns due restarts as background
+    tasks (at most _GRID_MAX_CONCURRENT_RESTARTS in flight), each with a fresh
+    DB session; failures are rescheduled with exponential backoff and jitter
+    when harvested. Never awaits a restart inline, so the send loop keeps
+    streaming the healthy tiles while one restarts.
+    """
+    pending_restarts = conn.pending_restarts
+    restart_tasks = conn.restart_tasks
+
+    # A pid harvested this pass waits for the next pass before a new attempt,
+    # keeping one restart attempt per printer per pass.
+    harvested = _harvest_grid_restarts(conn)
+
+    # Fleet-level circuit breaker — skip ALL restarts during fleet cooldown
+    fleet_cooldown_active = now < _state.fleet_cooldown_until
+    if fleet_cooldown_active and pending_restarts:
+        remaining_cooldown = _state.fleet_cooldown_until - now
+        if int(remaining_cooldown) % 10 == 0:  # Log every ~10s
+            logger.info(
+                "Fleet circuit breaker active: skipping %d pending restarts (cooldown %.0fs remaining)",
+                len(pending_restarts),
+                remaining_cooldown,
+            )
+    elif not fleet_cooldown_active:
+        _state.watchdog_killed_printers.clear()  # Cooldown expired, reset
+
+    # Process pending restarts (budget-limited to prevent thundering herd)
+    if not fleet_cooldown_active:
+        for pid in list(pending_restarts):
+            if len(restart_tasks) >= _GRID_MAX_CONCURRENT_RESTARTS:
+                break
+            if pid in restart_tasks or pid in harvested:
+                continue
+            # Per-printer cooldown — only blocks this specific printer
+            printer_cooldown_until = _state.per_printer_cooldown.get(pid, 0.0)
+            if now < printer_cooldown_until:
+                continue
+            attempts, next_retry = pending_restarts[pid]
+            if now < next_retry:
+                continue
+            if attempts >= _GRID_MAX_RESTARTS:
+                # Switch to slow retry cadence — don't permanently give up.
+                # RTSP/chamber connections can recover after network hiccups,
+                # printer reboots, or temporary camera unavailability.
+                base_delay = _GRID_RESTART_MAX_DELAY
+                delay = base_delay + random.uniform(0, base_delay * 0.3)
+                pending_restarts[pid] = (attempts + 1, now + delay)
+                if (attempts - _GRID_MAX_RESTARTS) % 10 == 0:
+                    logger.warning(
+                        "Grid producer for printer %d: %d restart attempts, slow-retrying every %.0fs",
+                        pid,
+                        attempts,
+                        delay,
+                    )
+                continue
+            restart_tasks[pid] = (asyncio.create_task(_grid_restart_producer(conn, pid)), attempts, now)
+
+
 @router.get("/camera/grid-stream")
 async def camera_grid_stream(
     request: Request,
@@ -2193,6 +2457,13 @@ async def camera_grid_stream(
 
         # Register as viewer on all entries (keyed by printer_id for clean replacement on restart)
         registered_entries: dict[int, _SharedStream] = {}
+        conn = _GridConnState(
+            entries=entries,
+            registered_entries=registered_entries,
+            seen_seqs=seen_seqs,
+            pending_restarts=pending_restarts,
+            restart_history=restart_history,
+        )
         for pid, entry in entries.items():
             entry.viewer_count += 1
             registered_entries[pid] = entry
@@ -2284,143 +2555,11 @@ async def camera_grid_stream(
                 # Periodic bandwidth stats
                 elapsed = now - stats_start
                 if elapsed >= stats_interval:
-                    total_bytes = sum(sum(sizes) for sizes in stats_frames.values())
-                    total_kbps = total_bytes / elapsed / 1024
-                    parts = []
-                    for spid in sorted(stats_frames):
-                        sizes = stats_frames[spid]
-                        if sizes:
-                            avg_kb = sum(sizes) / len(sizes) / 1024
-                            parts.append(f"p{spid}: frames={len(sizes)}, avg={avg_kb:.1f}KB")
-                        else:
-                            parts.append(f"p{spid}: frames=0")
-                    # Include system load and cooldown status
-                    load_info = ""
-                    load = _check_system_load()
-                    if load is not None:
-                        try:
-                            load1, load5, load15 = os.getloadavg()
-                            load_info = f", load={load1:.1f}/{load5:.1f}/{load15:.1f}"
-                        except (OSError, AttributeError):
-                            pass
-                    cooldown_info = ""
-                    if now < _state.fleet_cooldown_until:
-                        cooldown_info = f", cooldown={_state.fleet_cooldown_until - now:.0f}s"
-                    logger.info(
-                        "Grid stream stats (%.0fs) [preset=%s, fps=%d]: %.1f KB/s total, %d printers: %s%s%s",
-                        elapsed,
-                        preset_label,
-                        fps,
-                        total_kbps,
-                        len(stats_frames),
-                        ", ".join(parts),
-                        load_info,
-                        cooldown_info,
-                    )
+                    _log_grid_stream_stats(elapsed, now, stats_frames, preset_label, fps)
                     stats_start = now
                     stats_frames = {p: [] for p in entries}
 
-                # Fleet-level circuit breaker — skip ALL restarts during fleet cooldown
-                fleet_cooldown_active = now < _state.fleet_cooldown_until
-                if fleet_cooldown_active and pending_restarts:
-                    remaining_cooldown = _state.fleet_cooldown_until - now
-                    if int(remaining_cooldown) % 10 == 0:  # Log every ~10s
-                        logger.info(
-                            "Fleet circuit breaker active: skipping %d pending restarts (cooldown %.0fs remaining)",
-                            len(pending_restarts),
-                            remaining_cooldown,
-                        )
-                elif not fleet_cooldown_active:
-                    _state.watchdog_killed_printers.clear()  # Cooldown expired, reset
-
-                # Process pending restarts (budget-limited to prevent thundering herd)
-                restarts_this_cycle = 0
-                if not fleet_cooldown_active:
-                    for pid in list(pending_restarts):
-                        if restarts_this_cycle >= _GRID_MAX_CONCURRENT_RESTARTS:
-                            break
-                        # Per-printer cooldown — only blocks this specific printer
-                        printer_cooldown_until = _state.per_printer_cooldown.get(pid, 0.0)
-                        if now < printer_cooldown_until:
-                            continue
-                        attempts, next_retry = pending_restarts[pid]
-                        if now < next_retry:
-                            continue
-                        if attempts >= _GRID_MAX_RESTARTS:
-                            # Switch to slow retry cadence — don't permanently give up.
-                            # RTSP/chamber connections can recover after network hiccups,
-                            # printer reboots, or temporary camera unavailability.
-                            base_delay = _GRID_RESTART_MAX_DELAY
-                            delay = base_delay + random.uniform(0, base_delay * 0.3)
-                            pending_restarts[pid] = (attempts + 1, now + delay)
-                            if (attempts - _GRID_MAX_RESTARTS) % 10 == 0:
-                                logger.warning(
-                                    "Grid producer for printer %d: %d restart attempts, slow-retrying every %.0fs",
-                                    pid,
-                                    attempts,
-                                    delay,
-                                )
-                            continue
-                        # Use a fresh DB session — the endpoint's `db` may be stale hours into a stream
-                        try:
-                            async with async_session() as restart_db:
-                                (
-                                    r_fps,
-                                    r_quality,
-                                    r_scale,
-                                    r_threads,
-                                    r_gpu_accel,
-                                    r_skip_frames,
-                                    _r_preset,
-                                ) = await _resolve_quality_from_settings(
-                                    restart_db, len(entries) + len(pending_restarts), "grid"
-                                )
-                                # Not forced: if another viewer already brought
-                                # this camera back (possibly with params
-                                # resolved for its own stream count), adopt its
-                                # producer instead of killing it — forcing here
-                                # is what made two walls restart each other's
-                                # cameras indefinitely.
-                                entry = await _ensure_producer(
-                                    pid,
-                                    restart_db,
-                                    r_fps,
-                                    r_quality,
-                                    r_scale,
-                                    threads=r_threads,
-                                    gpu_accel=r_gpu_accel,
-                                    skip_frames=r_skip_frames,
-                                )
-                        except Exception:
-                            logger.warning("Grid restart DB/producer error for printer %d", pid, exc_info=True)
-                            entry = None
-
-                        if entry is not None:
-                            entries[pid] = entry
-                            # Decrement old entry's viewer_count before replacing
-                            old_registered = registered_entries.get(pid)
-                            if old_registered is not None and old_registered is not entry:
-                                old_registered.viewer_count = max(0, old_registered.viewer_count - 1)
-                            entry.viewer_count += 1
-                            registered_entries[pid] = entry
-                            seen_seqs[pid] = 0
-                            del pending_restarts[pid]
-                            # Remember the cycle until the producer proves recovery
-                            restart_history[pid] = (attempts + 1, now)
-                            restarts_this_cycle += 1
-                            logger.info("Grid producer restarted for printer %d (attempt %d)", pid, attempts + 1)
-                        else:
-                            # Exponential backoff with jitter: base * 2^attempt, capped
-                            base_delay = min(_GRID_RESTART_BASE_DELAY * (2**attempts), _GRID_RESTART_MAX_DELAY)
-                            delay = base_delay + random.uniform(0, base_delay * 0.3)
-                            pending_restarts[pid] = (attempts + 1, now + delay)
-                            logger.warning(
-                                "Grid restart failed for printer %d (attempt %d/%d), next retry in %.0fs",
-                                pid,
-                                attempts + 1,
-                                _GRID_MAX_RESTARTS,
-                                delay,
-                            )
+                await _process_grid_restarts(conn, now)
 
                 if not entries and not pending_restarts:
                     break
@@ -2457,9 +2596,17 @@ async def camera_grid_stream(
                                 pass
                         raise
         finally:
+            # Synchronous cleanup first: when the client disconnects, Starlette
+            # cancels the enclosing anyio scope, which re-cancels every await in
+            # here — nothing that matters may sit behind one.
+            cancelled_restarts = _cancel_grid_restarts(conn)
             # Decrement viewer count on all entries we registered with
             for entry in registered_entries.values():
                 entry.viewer_count = max(0, entry.viewer_count - 1)
+            # Best-effort wait for the cancelled restarts to unwind; if the scope
+            # cancels this await, they still finish on their own.
+            if cancelled_restarts:
+                await asyncio.gather(*cancelled_restarts, return_exceptions=True)
 
     return StreamingResponse(
         generate(),

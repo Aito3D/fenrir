@@ -107,3 +107,69 @@ signature and OpenAPI are unchanged (runtime check, no new dependency, no
   `3 Permission.SETTINGS_UPDATE`); the other 12 match.
 - SURFACE.md sections regenerated: "Permissions guarding camera routes (count
   per permission)" (same new line).
+
+## T-012 — SharedStreamHub waits for a dying producer's teardown for every caller (user-approved 2026-09-29)
+
+`SharedStreamHub` in `backend/app/api/routes/camera.py` now keeps a private
+per-printer teardown record (`self._tearing_down`, filled by the new private
+module helper `_track_teardown`, which clears the record from a done-callback
+unless a newer teardown replaced it). Every path that detaches a dying entry
+under the hub lock records its task there: `get_or_start` (dead entry and
+stale-producer branches), `restart` (dead entry, stale same-params and
+params-change branches), `stop` and `stop_all`. `_replace_producer` now, after
+awaiting its own old task as before, re-checks under the lock and, when no
+alive entry exists, waits (outside the lock) for any recorded teardown or for
+a dead entry still in `_streams` whose task is running, then re-checks again.
+Before this change only the caller that found the dying entry waited; a second
+viewer (another camera wall, or a single-camera viewer) arriving during that
+wait found no entry and dialed a second ffmpeg/socket on the same camera while
+the old teardown was still running. Now it waits for that teardown, bounded by
+the existing `_await_displaced_task` timeout (8s, then force-cancel), and then
+reuses the single producer the first caller started. Unchanged: producer
+parameters, frame delivery, every timeout (8s in `_replace_producer`, 5s in
+`stop`/`stop_all`), the hub-status payload shape, the public method names and
+return values, the caller's own cancellation still propagating, and the
+phase-3 replacement of an alive entry with different params (still cancelled
+and replaced without waiting).
+
+- Golden probes re-recorded: none (13/13 match).
+- SURFACE.md sections regenerated: none (private names only).
+
+## T-013 — grid-stream producer restarts run as background tasks (user-approved 2026-09-29)
+
+`camera_grid_stream`'s restart processing in `backend/app/api/routes/camera.py`
+(`_process_grid_restarts`) no longer awaits a producer restart inline. Each
+due restart is spawned as an `asyncio` task (private `_grid_restart_producer`,
+still one fresh `async_session()` per restart) and tracked on the connection's
+`_GridConnState.restart_tasks` together with the attempt count and pass time it
+was spawned at. A later pass harvests finished tasks (`_harvest_grid_restarts`)
+and applies the outcome exactly as the inline code did (`_adopt_grid_restart`):
+on success the entry replaces the old one in `entries`/`registered_entries`
+with the same viewer-count, `seen_seqs` and `restart_history` bookkeeping; on
+failure the same exponential backoff with jitter is scheduled, measured from
+the spawning pass. Before this change a restart stuck in `_ensure_producer`
+(up to 8s per displaced producer teardown, up to 4 restarts serially) froze
+every healthy tile on the wall; now the send loop keeps streaming them and the
+restarted tile's frames resume once its task is adopted. A printer whose
+restart is in flight stays in `pending_restarts`, is never re-spawned, and a
+printer harvested in a pass waits for the next pass before a new attempt.
+`_GRID_MAX_CONCURRENT_RESTARTS` (4) now caps the restarts in flight. On
+disconnect, `generate()`'s `finally:` runs its synchronous cleanup first: it
+cancels every in-flight restart with plain `task.cancel()`
+(`_cancel_grid_restarts`), then decrements the viewer count of every entry the
+connection registered, as before. Only after that does it await the cancelled
+tasks (`asyncio.gather(..., return_exceptions=True)`), on a best-effort basis.
+Starlette cancels the response's anyio scope on `http.disconnect`, and that
+re-cancels this await, so nothing that matters comes after it. Each cancelled
+task unwinds its own `async with async_session()` on its next loop turn, so
+the session still closes when the await itself gets cancelled. A restart that
+finished but was not yet adopted is discarded without registering a viewer, so
+the hub's idle timeout reaps its producer unless another viewer uses it.
+Unchanged: the restart budget, backoff math and slow-retry schedule, the
+fleet-cooldown circuit breaker, the per-printer cooldown, the log lines, the
+quality resolution (same stream count formula), non-forced `_ensure_producer`,
+and the viewer-count decrement itself (same code, still guaranteed to run on
+disconnect because it happens before any await in `finally:`).
+
+- Golden probes re-recorded: none (13/13 match).
+- SURFACE.md sections regenerated: none (private names only).
