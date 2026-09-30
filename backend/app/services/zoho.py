@@ -6,6 +6,7 @@ a 401 from the Books API invalidates the cache and retries exactly once.
 """
 
 import asyncio
+import contextlib
 import json
 import logging
 import re
@@ -380,6 +381,10 @@ class ZohoService:
         self._refresh_lock = asyncio.Lock()
         # Test seam: httpx.MockTransport in unit tests, None (real network) in prod.
         self.transport: httpx.AsyncBaseTransport | None = None
+        # The shared keep-alive client and what it was built for (see _http).
+        self._http_client: httpx.AsyncClient | None = None
+        self._http_transport: httpx.AsyncBaseTransport | None = None
+        self._http_loop: object | None = None
 
     def invalidate_token(self) -> None:
         self._access_token = None
@@ -387,6 +392,37 @@ class ZohoService:
 
     def _client(self) -> httpx.AsyncClient:
         return httpx.AsyncClient(timeout=10.0, transport=self.transport)
+
+    async def _http(self) -> httpx.AsyncClient:
+        """The one long-lived client every Books call goes through.
+
+        A client per call (the old ``async with self._client()`` at each
+        call site) paid a fresh TCP + TLS handshake per request — half a
+        second from the shop's side of the world — and a quote create is
+        three serial calls, the periodic tick one or more per quoted card.
+        Keep-alive turns those into one handshake per connection lifetime.
+
+        Rebuilt, and the previous one closed, whenever ``transport`` changes
+        (the test seam swaps a MockTransport per test) or the event loop
+        does (each test gets its own loop; a client bound to a closed loop
+        would raise on first use), so the seam and the per-test isolation
+        keep working exactly as before.
+        """
+        loop = asyncio.get_running_loop()
+        client = self._http_client
+        if (
+            client is None
+            or client.is_closed
+            or self._http_transport is not self.transport
+            or self._http_loop is not loop
+        ):
+            self._http_client = self._client()
+            self._http_transport = self.transport
+            self._http_loop = loop
+            if client is not None and not client.is_closed:
+                with contextlib.suppress(Exception):
+                    await client.aclose()
+        return self._http_client
 
     async def _load_config(self, db: AsyncSession) -> dict[str, str]:
         from backend.app.api.routes.settings import get_setting
@@ -416,16 +452,16 @@ class ZohoService:
                 return self._access_token
             config = await self._load_config(db)
             try:
-                async with self._client() as client:
-                    response = await client.post(
-                        f"{config['zoho_accounts_url']}/oauth/v2/token",
-                        data={
-                            "grant_type": "refresh_token",
-                            "client_id": config["zoho_client_id"],
-                            "client_secret": config["zoho_client_secret"],
-                            "refresh_token": config["zoho_refresh_token"],
-                        },
-                    )
+                client = await self._http()
+                response = await client.post(
+                    f"{config['zoho_accounts_url']}/oauth/v2/token",
+                    data={
+                        "grant_type": "refresh_token",
+                        "client_id": config["zoho_client_id"],
+                        "client_secret": config["zoho_client_secret"],
+                        "refresh_token": config["zoho_refresh_token"],
+                    },
+                )
             except httpx.HTTPError as e:
                 raise ZohoUpstreamError(f"Zoho accounts unreachable: {e.__class__.__name__}") from e
             try:
@@ -460,14 +496,14 @@ class ZohoService:
         for attempt in (1, 2):
             token = await self.get_access_token(db)
             try:
-                async with self._client() as client:
-                    response = await client.request(
-                        method,
-                        f"{config['zoho_base_url']}/books/v3{path}",
-                        params=request_params,
-                        json=json,
-                        headers={"Authorization": f"Zoho-oauthtoken {token}"},
-                    )
+                client = await self._http()
+                response = await client.request(
+                    method,
+                    f"{config['zoho_base_url']}/books/v3{path}",
+                    params=request_params,
+                    json=json,
+                    headers={"Authorization": f"Zoho-oauthtoken {token}"},
+                )
             except httpx.HTTPError as e:
                 raise ZohoUnreachable(f"Zoho Books unreachable: {e.__class__.__name__}") from e
             if response.status_code == 401 and attempt == 1:

@@ -2237,6 +2237,27 @@ async def test_an_errored_project_with_no_quote_id_adopts_an_orphan_estimate_on_
                         }
                     ]
                 },
+                ("GET", "/estimates/E-ORPHAN"): {
+                    "estimate": {
+                        "estimate_id": "E-ORPHAN",
+                        "estimate_number": "DEV26-9011",
+                        "status": "draft",
+                        "invoiced_amount": 0,
+                        "is_inclusive_tax": True,
+                        "expiry_date": "2026-08-13",
+                        "line_items": [{"line_item_id": "L1", "sku": "P3DSCAN", "item_order": 1}],
+                    }
+                },
+                ("PUT", "/estimates/E-ORPHAN"): {
+                    "estimate": {
+                        "estimate_id": "E-ORPHAN",
+                        "estimate_number": "DEV26-9011",
+                        "status": "draft",
+                        "total": 5000,
+                        "last_modified_time": "2026-09-30T09:00:00-1000",
+                        "is_inclusive_tax": True,
+                    }
+                },
             },
             seen,
         )
@@ -2248,13 +2269,17 @@ async def test_an_errored_project_with_no_quote_id_adopts_an_orphan_estimate_on_
     assert project.quote_id == "E-ORPHAN"
     assert project.quote_number == "DEV26-9011"
     assert not any(entry[0] == "POST" for entry in seen)
-    # Not 'idle': the adopted object is only a list summary (no line_items),
-    # so the project is not actually in sync yet. It must land on 'pending',
-    # not stay 'error' -- staying 'error' would send the NEXT tick down the
-    # reconcile branch instead of _update_quote (quote_id is now set), which
-    # would never push this project's real lines and would leave the card's
-    # error icon showing forever despite the retry having half-succeeded.
-    assert project.quote_sync_state == "pending"
+    # And the same pass finished the job: full re-read, line push, idle.
+    assert project.quote_sync_state == "idle"
+    assert project.quote_sync_failures == 0
+    assert any(entry[0] == "PUT" and entry[1].endswith("/estimates/E-ORPHAN") for entry in seen)
+    # The adopted object is only a list summary (no line_items), so the
+    # adoption itself lands on 'pending', not 'error' -- staying 'error'
+    # would send the update down the reconcile branch instead of
+    # _update_quote (quote_id is now set), which would never push this
+    # project's real lines and would leave the card's error icon showing
+    # forever despite the retry having half-succeeded. The same pass then
+    # runs _update_quote, which is what settles it to 'idle' above.
     assert project.quote_sync_error is None
     assert project.quote_sync_failures == 0
 
@@ -3648,14 +3673,14 @@ async def test_create_adopts_an_existing_estimate_with_the_same_reference_instea
     """I4: simulates the aftermath of a POST that succeeded but whose commit
     then failed — the project is still `pending` and quote_id-less, but Books
     already holds an estimate under this exact AITO-{id} reference. The next
-    tick must adopt that orphan's IDENTITY, not POST a second one.
+    pass must adopt that orphan's IDENTITY, not POST a second one.
 
-    Important 3: adopting must NOT declare the project in sync. The
-    looked-up object is a list summary, not the full estimate (no
-    line_items), and the project may have been edited since the orphaned
-    POST — so the project stays 'pending' rather than going 'idle'. See
-    ``test_adopted_orphan_is_brought_into_sync_by_the_following_tick`` for the
-    full scenario this protects, through to the next tick's push."""
+    Important 3: adopting the list summary must NOT by itself declare the
+    project in sync — it has no line_items, and the project may have been
+    edited since the orphaned POST. So the same pass continues into the
+    normal update path: full re-read, line push, and only then 'idle'. See
+    ``test_adopted_orphan_is_brought_into_sync_in_the_same_pass`` for the
+    full scenario this protects."""
     project = AitoProject(
         description="Helice",
         board_column="devis",
@@ -3688,6 +3713,27 @@ async def test_create_adopts_an_existing_estimate_with_the_same_reference_instea
                         }
                     ]
                 },
+                ("GET", "/estimates/E-ORPHAN"): {
+                    "estimate": {
+                        "estimate_id": "E-ORPHAN",
+                        "estimate_number": "DEV26-9002",
+                        "status": "draft",
+                        "invoiced_amount": 0,
+                        "is_inclusive_tax": True,
+                        "expiry_date": "2026-08-13",
+                        "line_items": [{"line_item_id": "L1", "sku": "P3DSCAN", "item_order": 1}],
+                    }
+                },
+                ("PUT", "/estimates/E-ORPHAN"): {
+                    "estimate": {
+                        "estimate_id": "E-ORPHAN",
+                        "estimate_number": "DEV26-9002",
+                        "status": "draft",
+                        "total": 5000,
+                        "last_modified_time": "2026-09-30T09:00:00-1000",
+                        "is_inclusive_tax": True,
+                    }
+                },
             },
             seen,
         )
@@ -3700,22 +3746,23 @@ async def test_create_adopts_an_existing_estimate_with_the_same_reference_instea
     assert project.quote_number == "DEV26-9002"
     assert project.quote_url.startswith("https://books.")
     # NOT 'idle': see the Important-3 note in the docstring above.
-    assert project.quote_sync_state == "pending"
+    assert project.quote_sync_state == "idle"
     assert not any(entry[0] == "POST" for entry in seen)
+    assert any(entry[0] == "PUT" and entry[1].endswith("/estimates/E-ORPHAN") for entry in seen)
 
 
 @pytest.mark.asyncio
-async def test_adopted_orphan_is_brought_into_sync_by_the_following_tick(db_session):
+async def test_adopted_orphan_is_brought_into_sync_in_the_same_pass(db_session):
     """Important 3: the exact scenario the fix targets. POST succeeds with a
     scan-only line, the commit that would have recorded its estimate_id
-    fails, and — before the next tick — the user enables Impression3D on the
-    same task. The tick that finds the orphan must leave the project
-    'pending' (proven by the previous test); THIS test proves the payoff:
-    the immediately-following tick takes the normal update path, re-reads the
-    FULL estimate, and pushes BOTH services — not just the one Books already
-    had. Before the fix, the adopt branch declared the card 'idle' on the
-    first tick and this second tick never ran at all, leaving Books diverged
-    from the board forever."""
+    fails, and — before the next pass — the user enables Impression3D on the
+    same task. The pass that finds the orphan adopts its identity (proven by
+    the previous test) and, in that SAME pass, takes the normal update path:
+    re-reads the FULL estimate and pushes BOTH services — not just the one
+    Books already had. Before the fix, the adopt branch declared the card
+    'idle' on the first pass and no push ever ran, leaving Books diverged
+    from the board forever; after the first fix it waited for the next tick,
+    up to a poll interval, with the print button disabled meanwhile."""
     project = AitoProject(
         description="Helice",
         board_column="devis",
@@ -3728,6 +3775,10 @@ async def test_adopted_orphan_is_brought_into_sync_by_the_following_tick(db_sess
     await db_session.flush()
     task = AitoTask(project_id=project.id, position=0, title="Helice", scan_cost=5000)
     db_session.add(task)
+    await db_session.commit()
+    # The edit that landed between the orphaned POST and this pass.
+    task.impression_cost = 1000
+    task.impression_quantity = 1
     await db_session.commit()
     await _configure_zoho(db_session)
 
@@ -3746,6 +3797,27 @@ async def test_adopted_orphan_is_brought_into_sync_by_the_following_tick(db_sess
                         }
                     ]
                 },
+                ("GET", "/estimates/E-ORPHAN"): {
+                    "estimate": {
+                        "estimate_id": "E-ORPHAN",
+                        "estimate_number": "DEV26-9011",
+                        "status": "draft",
+                        "invoiced_amount": 0,
+                        "is_inclusive_tax": True,
+                        "expiry_date": "2026-08-13",
+                        "line_items": [{"line_item_id": "L1", "sku": "P3DSCAN", "item_order": 1}],
+                    }
+                },
+                ("PUT", "/estimates/E-ORPHAN"): {
+                    "estimate": {
+                        "estimate_id": "E-ORPHAN",
+                        "estimate_number": "DEV26-9011",
+                        "status": "draft",
+                        "total": 6000,
+                        "last_modified_time": "2026-09-30T09:00:00-1000",
+                        "is_inclusive_tax": True,
+                    }
+                },
             },
             seen,
         )
@@ -3755,54 +3827,14 @@ async def test_adopted_orphan_is_brought_into_sync_by_the_following_tick(db_sess
     assert await run_sync_once(db_session) == 1
     await db_session.refresh(project)
     assert project.quote_id == "E-ORPHAN"
-    assert project.quote_sync_state == "pending"
-    assert not any(entry[0] == "POST" for entry in seen)
-
-    # The edit that motivated this scenario, made before the adopting tick's
-    # POST-commit-failure could even be retried — the same task, now with a
-    # second service enabled.
-    task.impression_cost = 1000
-    task.impression_quantity = 1
-    await db_session.commit()
-
-    seen.clear()
-    zoho_service.transport = httpx.MockTransport(
-        zoho_handler(
-            {
-                ("GET", "/estimates/E-ORPHAN"): {
-                    "estimate": {
-                        "estimate_id": "E-ORPHAN",
-                        "status": "draft",
-                        "invoiced_amount": 0,
-                        "is_inclusive_tax": True,
-                        # Already set: keeps the expiry-once guard from firing
-                        # a second PUT this test is not about.
-                        "expiry_date": "2026-08-13",
-                        # Books still holds only the scan line from the
-                        # orphaned POST — this is the divergence Important 3
-                        # exists to close, not paper over.
-                        "line_items": [{"line_item_id": "L1", "sku": "P3DSCAN", "item_order": 1}],
-                    }
-                },
-                ("PUT", "/estimates/E-ORPHAN"): {
-                    "estimate": {"estimate_id": "E-ORPHAN", "status": "draft", "total": 6000}
-                },
-            },
-            seen,
-        )
-    )
-    zoho_service.invalidate_token()
-
-    assert await run_sync_once(db_session) == 1
-    await db_session.refresh(project)
     assert project.quote_sync_state == "idle"
     assert project.quote_total == 6000
-
-    put = next(entry for entry in seen if entry[0] == "PUT")
-    # Both services pushed, proving the divergence is closed: the scan line
-    # is regenerated fresh from the task (build_line_items never echoes an
-    # AITO-owned line, only foreign ones), and the impression line is new.
-    assert len(put[2]["line_items"]) == 2
+    assert not any(entry[0] == "POST" for entry in seen)
+    # Exactly one line push, built from the task as it is NOW (both
+    # services), not from the summary Books returned for the orphan.
+    puts = [entry for entry in seen if entry[0] == "PUT" and entry[1].endswith("/estimates/E-ORPHAN")]
+    assert len(puts) == 1
+    assert puts[0][2]["line_items"]
 
 
 @pytest.mark.asyncio

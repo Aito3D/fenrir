@@ -13,6 +13,13 @@ drain right away. That drain spends only the Books calls the pending projects
 were going to spend anyway — it never reconciles quoted projects — so the wake
 does not touch the quota budget the 300s interval below exists to protect.
 
+Two things keep that wake from silently degrading back into "wait for the
+tick": a transient Books failure on the drain schedules its own short retries
+(``FAST_RETRY_DELAYS``) instead of leaving the card for the next tick, and a
+wake that lands while the periodic tick is mid-flight is served between the
+tick's projects and passes (``_serve_wake_mid_tick``) rather than after all
+of them. Both are logged at INFO with their timings.
+
 Phase 1 is push-only. ``quote_synced_at`` is written here and read by the
 Phase 2 poller.
 """
@@ -24,7 +31,7 @@ import math
 import time
 from datetime import datetime
 
-from sqlalchemy import and_, or_, select, update
+from sqlalchemy import and_, case, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.database import async_session
@@ -617,9 +624,10 @@ async def _create_quote(db: AsyncSession, project: AitoProject) -> None:
         # would declare the card in sync while Books still holds only the
         # scan line. Setting quote_sync_state to 'pending' here — even though
         # for most callers it already IS 'pending' and this is a same-value
-        # no-op — means the very next tick takes the normal _update_quote
-        # path instead, which re-reads the FULL estimate and pushes whatever
-        # the project's lines currently are. This is no longer always a
+        # no-op — means sync_project continues straight into the normal
+        # _update_quote path (in this same pass; it used to be the next
+        # tick), which re-reads the FULL estimate and pushes whatever the
+        # project's lines currently are. This is no longer always a
         # no-op since T-008: a project swept back in from 'error' with no
         # quote_id reaches this same branch still carrying 'error', and
         # leaving that untouched would send the NEXT tick down the reconcile
@@ -671,6 +679,7 @@ async def _create_quote(db: AsyncSession, project: AitoProject) -> None:
     # this fix's own regression test.
     await db.refresh(project, ["quote_status"])
     _apply_estimate(project, estimate, requeue_marker=requeue_marker)
+    logger.info("Aito quote %s created for project %s", project.quote_number, project.id)
     await record(
         db,
         project.id,
@@ -1501,13 +1510,43 @@ def _arm_rate_limit_throttle(e: ZohoRateLimited) -> None:
     _throttled_until = time.monotonic() + window
 
 
+def _throttle_delay() -> float | None:
+    """Seconds until the rate-limit window (``_throttled_until``) closes,
+    ``0.0`` once it has, ``None`` when Books never asked us to back off.
+
+    Read by ``run_sync_loop``'s wait so the end of the window is served
+    like a scheduled retry: before this, a 429 on the create a creation
+    woke parked the card until the next periodic tick — ``run_sync_once``
+    skips every drain inside the window, and nothing re-woke the loop when
+    it ended."""
+    if _throttled_until is None:
+        return None
+    return max(0.0, _throttled_until - time.monotonic())
+
+
+def _clear_expired_throttle() -> None:
+    """Forget a window that has closed. An open one is left alone: the
+    ``run_sync_once`` gate still needs it. Called once per loop lap so an
+    empty drain after the window cannot spin on a window already past."""
+    global _throttled_until
+    if _throttled_until is not None and time.monotonic() >= _throttled_until:
+        _throttled_until = None
+
+
 async def sync_project(
     db: AsyncSession,
     project: AitoProject,
     credit_cache: dict[str, float] | None = None,
     retainer_cache: dict[str, list[dict]] | None = None,
+    *,
+    fast_retry: bool = False,
 ) -> bool | None:
     """One project's whole state machine. Never raises: every outcome is a state.
+
+    ``fast_retry`` marks a drain the loop scheduled itself from
+    ``FAST_RETRY_DELAYS`` after a transient push failure. A transient failure
+    on such a drain still records its message on the card but does not count
+    toward ``SYNC_FAILURE_LIMIT`` — see the constant's own comment.
 
     ``credit_cache`` is the sweep's per-tick memo for the customer-credit side
     read (aito_customer_credit.read_customer_credit): ``run_sync_once`` hands
@@ -1538,6 +1577,10 @@ async def sync_project(
     already_in_error = project.quote_sync_state == "error"
     previous_sync_error = project.quote_sync_error
     sync_failures_before = project.quote_sync_failures or 0
+    # The push (create/update) branch is the one somebody may be waiting on;
+    # a reconcile read failing costs a tick of freshness and nobody notices.
+    # Mirrors the routing condition on the reconcile branch below.
+    push_path = project.quote_sync_state == "pending" or project.quote_id is None
     # `project.id` itself is not exempt from this: Session.rollback() expires
     # EVERY attribute on every instance touched by the transaction, primary
     # key included, so a bare `project.id` read after
@@ -1851,6 +1894,18 @@ async def sync_project(
                 _deferred_reasons.pop(project_id, None)
                 return
             await _create_quote(db, project)
+            if project.quote_id is not None and project.quote_sync_state == "pending":
+                # _create_quote found and adopted an orphan (a POST that
+                # reached Books but whose response or commit never landed):
+                # identity only, lines unverified — see its own comment. Or
+                # _apply_estimate's requeue guard saw an edit land mid-POST.
+                # Either way the card now shows a quote number with the
+                # print button disabled, and "the next tick" is up to a poll
+                # interval away while the operator waits at the printer.
+                # Finish the job in this same pass: the exact call the next
+                # tick would have made, with a failure handled exactly as one
+                # there would be.
+                await _update_quote(db, project)
         else:
             await _update_quote(db, project)
         # Reached only when _create_quote/_update_quote returned WITHOUT
@@ -1974,9 +2029,17 @@ async def sync_project(
         # Below the limit, this is a plain in-memory write, no flush -- so
         # there is nothing here for a poisoned session to break, and no
         # rollback is needed unless the escalation branch below is taken.
-        failures = sync_failures_before + 1
+        #
+        # A fast retry (see FAST_RETRY_DELAYS) records the message but not
+        # the failure: the budget counts ticks, not the extra tries squeezed
+        # in between them.
+        failures = sync_failures_before if fast_retry else sync_failures_before + 1
         project.quote_sync_failures = failures
         project.quote_sync_error = str(e)
+        if push_path and failures < SYNC_FAILURE_LIMIT:
+            # Still pending, and for a reason a retry in a few seconds can
+            # fix. The loop reads this right after the drain.
+            _note_transient_push_failure()
         if failures >= SYNC_FAILURE_LIMIT:
             await _rollback_after_terminal_failure(db)
             project.quote_sync_failures = failures
@@ -2158,9 +2221,19 @@ def _still_selected(project: AitoProject) -> bool:
     return project.quote_sync_state == "error"
 
 
-async def run_sync_once(db: AsyncSession, pending_only: bool = False) -> int:
+async def run_sync_once(db: AsyncSession, pending_only: bool = False, *, fast_retry: bool = False) -> int:
     """Drain every pending project, and reconcile the status of every other
     non-terminal managed quote. Returns how many were actually attempted.
+
+    Pending cards go first, whatever their id: a pending card is one somebody
+    is waiting on (a creation, an edit), a reconcile is bookkeeping nobody
+    watches. And between projects the full sweep looks for a wake
+    (``_serve_wake_mid_tick``): a card created while the sweep is halfway
+    through a board of quoted cards gets its quote next, not after every
+    remaining reconcile — each of which is a Books round trip, ten seconds
+    on a timeout.
+
+    ``fast_retry`` is passed straight through to ``sync_project``; see there.
 
     "Non-terminal" (T-010, gated by T-026): the reconcile half skips a card
     that is archived (``board_column == "done"``) or whose quote is settled
@@ -2211,9 +2284,19 @@ async def run_sync_once(db: AsyncSession, pending_only: bool = False) -> int:
         # See _sweep_predicate's own docstring for why this is a function
         # call and not an inline expression here (T-022).
         selected = _sweep_predicate()
-    project_ids = list(
-        (await db.execute(select(AitoProject.id).where(selected).order_by(AitoProject.id))).scalars().all()
-    )
+    pending_first = case((AitoProject.quote_sync_state == "pending", 0), else_=1)
+    # The state at selection time rides along with the id: a card selected
+    # as pending that is no longer pending when the loop reaches it was
+    # pushed by someone else in between (the mid-tick wake drain below, a
+    # Force sync) and owes nothing more to this tick -- reconciling it here
+    # would spend a Books read on a quote written moments ago.
+    rows = (
+        await db.execute(
+            select(AitoProject.id, AitoProject.quote_sync_state).where(selected).order_by(pending_first, AitoProject.id)
+        )
+    ).all()
+    project_ids = [row[0] for row in rows]
+    selected_as_pending = {row[0] for row in rows if row[1] == "pending"}
     attempted = 0
     # One customer-credit memo for the whole tick, so the projects of one
     # customer share a single payments read. Dies with the tick: nothing to
@@ -2223,6 +2306,8 @@ async def run_sync_once(db: AsyncSession, pending_only: bool = False) -> int:
     # projects of one customer share a single /retainerinvoices read.
     retainer_cache: dict[str, list[dict]] = {}
     for project_id in project_ids:
+        if not pending_only:
+            attempted += await _serve_wake_mid_tick(db)
         # Re-fetched fresh on every iteration rather than loaded once as a
         # list of instances before the loop. This looks like it trades away a
         # single SELECT for N of them, but that trade is load-bearing, not an
@@ -2247,14 +2332,20 @@ async def run_sync_once(db: AsyncSession, pending_only: bool = False) -> int:
             # selected above — nothing left to sync. Not counted below: it was
             # never actually attempted.
             continue
-        if pending_only and project.quote_sync_state != "pending":
+        if project_id in selected_as_pending and project.quote_sync_state != "pending":
             # Selected as pending but the state moved on before the loop got
             # here. _still_selected alone would wave a now-reconcilable row
             # through to sync_project's reconcile branch — an extra GET the
-            # wake path promises never to spend.
+            # wake path promises never to spend, and one the full sweep has
+            # no reason to spend on a quote it (or a Force sync) just wrote.
             continue
         attempted += 1
-        rate_limited = await sync_project(db, project, credit_cache, retainer_cache)
+        # The kwarg only when set, for the same reason _drain_pending passes
+        # its own only when set: tests fake sync_project with the positional
+        # signature.
+        rate_limited = await sync_project(
+            db, project, credit_cache, retainer_cache, **({"fast_retry": True} if fast_retry else {})
+        )
         # Commit per project, not once after the loop. sync_project's own
         # catch-all keeps it from raising, but a single end-of-batch commit
         # would still make every project's durability depend on none of its
@@ -2492,8 +2583,9 @@ def request_immediate_sync() -> None:
     edit rides along with the create instead of delaying it. Edits themselves
     go through ``request_debounced_sync``.
     """
-    global _debounce_deadline
+    global _debounce_deadline, _fast_retries_left
     _debounce_deadline = None
+    _fast_retries_left = len(FAST_RETRY_DELAYS)
     _wake.set()
 
 
@@ -2511,9 +2603,10 @@ def request_debounced_sync() -> None:
     A fixed window still collapses the burst into one PUT while bounding how
     long any single edit can wait at EDIT_DEBOUNCE_SECONDS.
     """
-    global _debounce_deadline
+    global _debounce_deadline, _fast_retries_left
     if _debounce_deadline is None:
         _debounce_deadline = time.monotonic() + EDIT_DEBOUNCE_SECONDS
+    _fast_retries_left = len(FAST_RETRY_DELAYS)
     _wake.set()
 
 
@@ -2527,6 +2620,84 @@ def _debounce_delay() -> float:
 def _clear_debounce() -> None:
     global _debounce_deadline
     _debounce_deadline = None
+
+
+# Backoff schedule for re-draining after a PENDING push failed transiently on
+# a wake drain (a ReadTimeout, a ConnectError, a 5xx). Before this, one such
+# blip on the drain a creation woke left the card pending until the next
+# periodic tick — up to ``aito_quote_poll_seconds`` (300s) later, while an
+# operator stood at the printer waiting for the quote. Three attempts inside
+# the first minute cover a blip; a real outage then falls back to the tick
+# cadence exactly as before. The schedule is re-armed by every wake, so a
+# fresh creation or edit always gets its own three tries.
+#
+# A fast retry does NOT spend a slot of ``SYNC_FAILURE_LIMIT``'s budget (see
+# ``sync_project``'s ``fast_retry`` flag): that limit was sized as "five
+# consecutive TICKS", 25 minutes of outage before the card shows an error,
+# and three extra attempts in the first minute must not turn it into six.
+FAST_RETRY_DELAYS: tuple[float, ...] = (5.0, 15.0, 45.0)
+
+# Set by ``sync_project`` when a pending push failed transiently, consumed by
+# the loop right after the drain that ran it (``_arm_fast_retry_if_needed``).
+# Same process-local, same-event-loop shape as ``_debounce_deadline`` above.
+_transient_push_failure = False
+# Retries still allowed for the wake most recently served, and the monotonic
+# instant the next one is due (None when none is scheduled).
+_fast_retries_left = 0
+_fast_retry_deadline: float | None = None
+
+
+def _note_transient_push_failure() -> None:
+    """Record that this drain left a pending card unpushed for a transient
+    reason. Called from ``sync_project``'s ``ZohoUpstreamError`` handler."""
+    global _transient_push_failure
+    _transient_push_failure = True
+
+
+def _take_transient_push_failure() -> bool:
+    """Read and clear the memo: True when the drain just run hit one."""
+    global _transient_push_failure
+    seen = _transient_push_failure
+    _transient_push_failure = False
+    return seen
+
+
+def _arm_fast_retry_if_needed() -> None:
+    """After a pending drain: schedule the next fast retry when the drain
+    left a card unpushed transiently and the wake's schedule is not spent."""
+    global _fast_retries_left, _fast_retry_deadline
+    if not _take_transient_push_failure() or _fast_retries_left <= 0:
+        return
+    attempt = len(FAST_RETRY_DELAYS) - _fast_retries_left
+    _fast_retries_left -= 1
+    _fast_retry_deadline = time.monotonic() + FAST_RETRY_DELAYS[attempt]
+
+
+def _fast_retry_delay() -> float | None:
+    """Seconds until the scheduled fast retry, or None when none is due."""
+    if _fast_retry_deadline is None:
+        return None
+    return max(0.0, _fast_retry_deadline - time.monotonic())
+
+
+def _clear_fast_retry() -> None:
+    global _fast_retry_deadline
+    _fast_retry_deadline = None
+
+
+def _scheduled_lap_due() -> bool:
+    """True when the loop's wait ended because a lap it scheduled itself is
+    due — a fast retry, or a rate-limit window that has just closed — as
+    opposed to the poll interval simply running out."""
+    return any(delay == 0.0 for delay in (_fast_retry_delay(), _throttle_delay()) if delay is not None)
+
+
+def _reset_fast_retry_state() -> None:
+    """Test seam: the three memos above are module state, reset per test."""
+    global _transient_push_failure, _fast_retries_left, _fast_retry_deadline
+    _transient_push_failure = False
+    _fast_retries_left = 0
+    _fast_retry_deadline = None
 
 
 async def sync_interval_seconds(db: AsyncSession) -> int:
@@ -2548,6 +2719,73 @@ async def sync_enabled(db: AsyncSession) -> bool:
     return (raw or "true").strip().lower() not in ("false", "0", "no")
 
 
+async def _drain_pending(db: AsyncSession, *, fast_retry: bool = False, where: str) -> int:
+    """One pending-only drain plus the payment-link change pass that
+    follows it, then the fast-retry bookkeeping. Shared by the loop's wake
+    lap and by ``_serve_wake_mid_tick``. Returns the drain's attempted count.
+
+    A quote just created owes its link now, and a quote just pushed with a
+    new total owes Heimdall the new amount now, not next tick — a client on
+    the tracking page must never be offered a stale figure. Changes only
+    (create / patch / cancel for the projects that drifted), no polling, so
+    the Copy button lights up and the amount follows within seconds without
+    spending the poll budget.
+    """
+    started = time.monotonic()
+    # Only a failure inside THIS drain may arm a retry: the periodic tick's
+    # own push attempts (a T-008 re-selected create, say) note the memo too,
+    # and left standing it would schedule a retry after a later drain that
+    # actually succeeded.
+    _take_transient_push_failure()
+    try:
+        # The kwarg only when set: the loop's collaborator-level tests fake
+        # run_sync_once with the two-argument signature.
+        attempted = await run_sync_once(db, pending_only=True, **({"fast_retry": True} if fast_retry else {}))
+        if attempted:
+            logger.info("Aito %s drain: %d project(s) in %.1fs", where, attempted, time.monotonic() - started)
+        try:
+            from backend.app.services.aito_payment_links import reconcile_payment_links
+
+            await reconcile_payment_links(db, changes_only=True)
+        except Exception:
+            logger.exception("Payment-link change drain failed")
+        return attempted
+    finally:
+        _arm_fast_retry_if_needed()
+
+
+async def _serve_wake_mid_tick(db: AsyncSession) -> int:
+    """Serve a creation's wake from INSIDE the periodic tick. Returns how
+    many projects the drain attempted (0 when there was no wake to serve),
+    so a tick's own count includes the cards it pushed this way.
+
+    The tick is strictly serial — every quoted card's reconcile, then the
+    invoice, contact and Heimdall passes — and each step is a network round
+    trip, so a wake that lands after it starts used to wait for all of it.
+    ``run_sync_once`` calls this between projects and ``run_sync_loop``
+    between passes. An EDIT's window is left alone (``_debounce_delay``): a
+    burst of edits mid-tick still collapses into the one drain the post-tick
+    wait runs, exactly as before. Only a creation (no window) is taken here.
+
+    Same session as the tick, so the drain's own commit-per-project keeps the
+    tick's accounting intact; a failure is contained the way the wake lap
+    contains it.
+    """
+    if not _wake.is_set() or _debounce_delay() > 0:
+        return 0
+    _clear_debounce()
+    _wake.clear()
+    try:
+        return await _drain_pending(db, where="mid-tick wake")
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        logger.exception("Aito mid-tick wake drain failed")
+        with contextlib.suppress(Exception):
+            await db.rollback()
+        return 0
+
+
 async def run_sync_loop() -> None:
     """Drain the outbox forever. Cancellation is the only way out.
 
@@ -2557,11 +2795,18 @@ async def run_sync_loop() -> None:
     """
     while True:
         interval = _DEFAULT_INTERVAL_SECONDS
+        tick_started = time.monotonic()
+        # The tick's own pending-first pass IS any retry still scheduled.
+        _clear_fast_retry()
         try:
             async with async_session() as db:
                 interval = await sync_interval_seconds(db)
-                if await sync_enabled(db) and await zoho_service.is_configured(db):
+                # Whether a wake can be served mid-tick at all: the same gate
+                # the wake lap below applies before draining.
+                serving = await sync_enabled(db) and await zoho_service.is_configured(db)
+                if serving:
                     await run_sync_once(db)
+                    await _serve_wake_mid_tick(db)
                     # Piggybacks on the same gate: no Books access, no sweep.
                     # Its own hourly gate makes the 300 s tick a no-op most
                     # of the time.
@@ -2630,6 +2875,7 @@ async def run_sync_loop() -> None:
                             logger.exception("Aito contact poll failed")
                             with contextlib.suppress(Exception):
                                 await db.rollback()
+                    await _serve_wake_mid_tick(db)
                 # Retention for the tracking-view log: unlike the sweep above,
                 # this has nothing to do with Zoho — a Fenrir instance can
                 # run the public tracking page with only `external_url` set
@@ -2663,6 +2909,8 @@ async def run_sync_loop() -> None:
                     await reconcile_payment_links(db)
                 except Exception:
                     logger.exception("Payment-link reconcile failed")
+                if serving:
+                    await _serve_wake_mid_tick(db)
                 try:
                     from backend.app.services.aito_terminal_payments import poll_open_terminal_payments
 
@@ -2673,47 +2921,52 @@ async def run_sync_loop() -> None:
             raise
         except Exception:
             logger.exception("Aito quote sync tick failed")
+        # One line per tick so a slow board (many quoted cards, a slow Books
+        # day) is visible in the log rather than guessed at.
+        logger.info("Aito quote sync tick took %.1fs", time.monotonic() - tick_started)
         # Not a plain sleep: request_immediate_sync can cut the wait short for
         # a pending-only drain. The full tick above keeps its own fixed
         # cadence — wakes run against a DEADLINE, not a reset timer, so a
         # steady stream of creations can never starve reconciliation.
         deadline = asyncio.get_running_loop().time() + interval
         while (remaining := deadline - asyncio.get_running_loop().time()) > 0:
+            # A scheduled fast retry (FAST_RETRY_DELAYS) or the end of a
+            # rate-limit window (_throttled_until) shortens the wait: on
+            # expiry the lap below runs as a retry drain instead of a wake.
+            due = [d for d in (_fast_retry_delay(), _throttle_delay()) if d is not None]
+            timeout = min(remaining, *due) if due else remaining
             try:
-                await asyncio.wait_for(_wake.wait(), timeout=remaining)
+                await asyncio.wait_for(_wake.wait(), timeout=timeout)
+                woke = True
             except asyncio.TimeoutError:
-                break
-            # An edit's window, waited out here rather than in the request
-            # handler: every further edit that lands during this sleep is
-            # absorbed into the same drain, which is the whole point of the
-            # window. A creation sets no deadline (and clears any standing
-            # one), so it falls straight through with no delay.
-            if (delay := _debounce_delay()) > 0:
-                await asyncio.sleep(delay)
-            _clear_debounce()
-            # Cleared BEFORE draining: a wake that lands mid-drain either made
-            # its row visible in time to be selected, or re-sets the event and
-            # the next lap of this inner loop picks it up. Cleared after, it
-            # could be lost.
-            _wake.clear()
+                woke = _wake.is_set()
+                if not woke and not _scheduled_lap_due():
+                    break  # the interval itself expired: back to the tick
+            if woke:
+                # An edit's window, waited out here rather than in the
+                # request handler: every further edit that lands during
+                # this sleep is absorbed into the same drain, which is the
+                # whole point of the window. A creation sets no deadline
+                # (and clears any standing one), so it falls straight
+                # through with no delay.
+                if (delay := _debounce_delay()) > 0:
+                    await asyncio.sleep(delay)
+                _clear_debounce()
+                # Cleared BEFORE draining: a wake that lands mid-drain
+                # either made its row visible in time to be selected, or
+                # re-sets the event and the next lap of this inner loop
+                # picks it up. Cleared after, it could be lost.
+                _wake.clear()
+            # Either way this lap is the retry, if one was due — and a
+            # rate-limit window that has closed is forgotten here, so an
+            # empty drain after it cannot spin on a window already past.
+            where = "wake" if woke else ("fast-retry" if _fast_retry_delay() == 0.0 else "throttle-expired")
+            _clear_fast_retry()
+            _clear_expired_throttle()
             try:
                 async with async_session() as db:
                     if await sync_enabled(db) and await zoho_service.is_configured(db):
-                        await run_sync_once(db, pending_only=True)
-                        # A quote just created owes its link now, and a
-                        # quote just pushed with a new total owes Heimdall
-                        # the new amount now, not next tick — a client on
-                        # the tracking page must never be offered a stale
-                        # figure. Changes only (create / patch / cancel for
-                        # the projects that drifted), no polling, so the
-                        # Copy button lights up and the amount follows
-                        # within seconds without spending the poll budget.
-                        try:
-                            from backend.app.services.aito_payment_links import reconcile_payment_links
-
-                            await reconcile_payment_links(db, changes_only=True)
-                        except Exception:
-                            logger.exception("Payment-link change drain failed")
+                        await _drain_pending(db, fast_retry=not woke, where=where)
             except asyncio.CancelledError:
                 raise
             except Exception:
