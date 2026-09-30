@@ -1071,6 +1071,89 @@ class TestCameraGridStreamAPIKeyPrinterScope:
         assert captured_ids == [1, 2, 3]
 
 
+class TestCameraStreamTokenAPIKeyPrinterScope:
+    """T-001: /camera/stream-token mints a token with no printer allowlist,
+    so an API key restricted by ``printer_ids`` must be refused (403) rather
+    than handed a token that opens every printer's stream/snapshot URL.
+    Unrestricted keys and JWT users keep getting a token."""
+
+    _make_key = staticmethod(TestCameraGridStreamAPIKeyPrinterScope._make_key)
+    _enable_auth = staticmethod(TestCameraGridStreamAPIKeyPrinterScope._enable_auth)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_restricted_key_is_refused(self, async_client: AsyncClient, db_session):
+        await self._enable_auth(async_client, username="tokscope1")
+        full_key = await self._make_key(db_session, printer_ids=[1])
+
+        response = await async_client.post(
+            "/api/v1/printers/camera/stream-token",
+            headers={"X-API-Key": full_key},
+        )
+
+        assert response.status_code == 403
+        assert "printer-restricted" in response.json()["detail"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_restricted_key_via_bearer_is_refused(self, async_client: AsyncClient, db_session):
+        await self._enable_auth(async_client, username="tokscope2")
+        full_key = await self._make_key(db_session, printer_ids=[1])
+
+        response = await async_client.post(
+            "/api/v1/printers/camera/stream-token",
+            headers={"Authorization": f"Bearer {full_key}"},
+        )
+
+        assert response.status_code == 403
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_unrestricted_key_still_gets_a_token(self, async_client: AsyncClient, db_session):
+        await self._enable_auth(async_client, username="tokscope3")
+        full_key = await self._make_key(db_session, printer_ids=None)
+
+        response = await async_client.post(
+            "/api/v1/printers/camera/stream-token",
+            headers={"X-API-Key": full_key},
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json()["token"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_jwt_user_still_gets_a_token(self, async_client: AsyncClient):
+        await self._enable_auth(async_client, username="tokscope4")
+        login = await async_client.post(
+            "/api/v1/auth/login",
+            json={"username": "tokscope4", "password": "AdminPass1!"},
+        )
+        token = login.json()["access_token"]
+
+        response = await async_client.post(
+            "/api/v1/printers/camera/stream-token",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json()["token"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_auth_disabled_restricted_key_still_gets_a_token(self, async_client: AsyncClient, db_session):
+        """Auth off: the key is never consulted, same as before T-001."""
+        full_key = await self._make_key(db_session, printer_ids=[1])
+
+        response = await async_client.post(
+            "/api/v1/printers/camera/stream-token",
+            headers={"X-API-Key": full_key},
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json()["token"]
+
+
 class TestCameraStreamValidation:
     """Tests for single-stream scale validation at /{id}/camera/stream."""
 

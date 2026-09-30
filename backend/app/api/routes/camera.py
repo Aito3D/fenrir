@@ -756,7 +756,10 @@ class SharedStreamHub:
                         evt = entry.frame_event
                         try:
                             await asyncio.wait_for(evt.wait(), timeout=frame_interval)
-                        except TimeoutError:
+                        # asyncio.TimeoutError is only an alias of the builtin TimeoutError on
+                        # Python 3.11+; on 3.10 wait_for raises asyncio.exceptions.TimeoutError,
+                        # which a bare `except TimeoutError` misses. Catch both explicitly.
+                        except asyncio.TimeoutError:
                             pass
                         continue
 
@@ -2427,6 +2430,7 @@ async def camera_grid_stream(
 @router.post("/camera/stream-token")
 async def create_stream_token(
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
+    api_key: APIKey | None = Depends(_grid_stream_api_key_if_auth_enabled),
 ):
     """Create a reusable token for camera stream/snapshot access.
 
@@ -2437,7 +2441,14 @@ async def create_stream_token(
     library-thumbnail routes resolve the caller behind this same token to
     apply LIBRARY_READ_ALL/OWN scoping, mirroring how ``/ws-token`` already
     records its principal for ``verify_websocket_token``.
+
+    Refuses printer-restricted API keys (T-001 / audit-security): the minted
+    token carries no printer allowlist, so a key with ``printer_ids`` set
+    would otherwise get a token that opens every printer's stream/snapshot.
+    Unrestricted keys, JWT users and the auth-disabled path are unchanged.
     """
+    if api_key is not None and api_key.printer_ids is not None:
+        raise HTTPException(403, "Stream tokens are not available for printer-restricted API keys")
     username = current_user.username if current_user is not None else None
     return {"token": await create_camera_stream_token(username)}
 

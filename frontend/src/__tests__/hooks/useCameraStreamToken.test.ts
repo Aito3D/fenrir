@@ -121,6 +121,29 @@ describe('rewriteMediaSrcWithToken', () => {
     rewriteMediaSrcWithToken(root, 'a b/c=d', null);
     expect(img.getAttribute('src')).toBe('/api/v1/library/files/42/thumbnail?token=a%20b%2Fc%3Dd');
   });
+
+  // Security: user-editable notes rendered through DOMPurify can contain
+  // <img src="https://attacker/api/v1/..."> — the token must never leak to
+  // an origin other than the page's own.
+  it('leaves a cross-origin /api/v1/ src untouched (does not leak the token off-origin)', () => {
+    const img = addImg('https://attacker.example.com/api/v1/library/files/42/thumbnail');
+    const count = rewriteMediaSrcWithToken(root, 'abc123', null);
+    expect(count).toBe(0);
+    expect(img.getAttribute('src')).toBe('https://attacker.example.com/api/v1/library/files/42/thumbnail');
+  });
+
+  it('rewrites a same-origin absolute /api/v1/ src exactly as it would a relative one', () => {
+    const img = addImg('http://localhost:3000/api/v1/library/files/42/thumbnail');
+    const count = rewriteMediaSrcWithToken(root, 'abc123', null);
+    expect(count).toBe(1);
+    expect(img.getAttribute('src')).toBe('http://localhost:3000/api/v1/library/files/42/thumbnail?token=abc123');
+  });
+
+  it('does not throw on a src that fails URL parsing, and leaves it untouched', () => {
+    const img = addImg('http://[invalid/api/v1/library/files/42/thumbnail');
+    expect(() => rewriteMediaSrcWithToken(root, 'abc123', null)).not.toThrow();
+    expect(img.getAttribute('src')).toBe('http://[invalid/api/v1/library/files/42/thumbnail');
+  });
 });
 
 describe('useStreamTokenSync', () => {
@@ -234,6 +257,32 @@ describe('useStreamTokenSync', () => {
     }
   });
 
+  it('ignores an error on a cross-origin element even if its src happens to carry the current token', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const elements: HTMLElement[] = [];
+    try {
+      authState.value = { authEnabled: true, user: mockUser, loading: false };
+      getCameraStreamTokenMock.mockResolvedValue({ token: 'tok-cross' });
+      const qc = makeQueryClient();
+      const invalidateSpy = vi.spyOn(qc, 'invalidateQueries');
+
+      const { unmount } = renderHook(() => useStreamTokenSync(), { wrapper: makeWrapper(qc) });
+      await waitFor(() => expect(getStreamToken()).toBe('tok-cross'));
+
+      const crossOriginImg = document.createElement('img');
+      crossOriginImg.src = `https://attacker.example.com/api/v1/printers/1/camera/stream?token=${encodeURIComponent('tok-cross')}`;
+      document.body.appendChild(crossOriginImg);
+      elements.push(crossOriginImg);
+      crossOriginImg.dispatchEvent(new Event('error'));
+      expect(invalidateSpy).not.toHaveBeenCalled();
+
+      unmount();
+    } finally {
+      elements.forEach((el) => el.remove());
+      vi.useRealTimers();
+    }
+  });
+
   it('ignores an error on an element whose src does not carry the current token', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const elements: HTMLElement[] = [];
@@ -329,5 +378,14 @@ describe('rewriteMediaSrcWithToken picks the token per URL (#3025)', () => {
     expect(isCameraUrl('/api/v1/archives/5/timelapse')).toBe(false);
     expect(isCameraUrl('/api/v1/printers/1/cover')).toBe(false);
     expect(isCameraUrl('/api/v1/external-links/3/icon')).toBe(false);
+  });
+
+  it('never classifies a cross-origin src as a camera URL, even with /camera/ in the path', () => {
+    expect(isCameraUrl('https://attacker.example.com/api/v1/printers/1/camera/stream')).toBe(false);
+  });
+
+  it('does not throw for isCameraUrl on a src that fails URL parsing', () => {
+    expect(() => isCameraUrl('http://[invalid/api/v1/printers/1/camera/stream')).not.toThrow();
+    expect(isCameraUrl('http://[invalid/api/v1/printers/1/camera/stream')).toBe(false);
   });
 });

@@ -5,6 +5,7 @@ is_active(), get_last_frame(), status(), and cleanup start/stop.
 """
 
 import asyncio
+import inspect
 import time
 from unittest.mock import patch
 
@@ -798,6 +799,73 @@ class TestMakeViewer:
         await asyncio.wait_for(consume(), timeout=2.0)
         # Should have exactly 3 chunks (one frame: header + data + boundary)
         assert len(chunks) == 3
+
+    @pytest.mark.asyncio
+    async def test_viewer_survives_asyncio_timeouterror_not_builtin(self, monkeypatch):
+        """Regression for T-010.
+
+        ``asyncio.TimeoutError`` is only an alias of the builtin ``TimeoutError`` on
+        Python 3.11+. On Python 3.10, ``asyncio.wait_for`` raises
+        ``asyncio.exceptions.TimeoutError``, a distinct class that a bare
+        ``except TimeoutError:`` does NOT catch, so the whole viewer generator would
+        raise out instead of looping.
+
+        This suite runs on Python 3.13, where the two classes are identical, so a
+        real ``asyncio.wait_for`` timeout can't distinguish the buggy clause from the
+        fixed one. To make the test meaningful, we monkeypatch
+        ``asyncio.wait_for`` (as seen by the camera module) so the very first call
+        explicitly raises ``asyncio.exceptions.TimeoutError()`` -- reproducing what
+        Python 3.10 raises -- and assert the viewer keeps polling and eventually
+        yields a frame instead of propagating the exception.
+        """
+        import backend.app.api.routes.camera as camera_module
+        from backend.app.api.routes.camera import SharedStreamHub, _SharedStream
+
+        hub = SharedStreamHub()
+        entry = _SharedStream(params_key="test")
+        entry.alive = True
+        # No frame yet, so make_viewer's poll loop takes the wait_for() branch.
+
+        real_wait_for = asyncio.wait_for
+        calls = {"n": 0}
+
+        async def fake_wait_for(aw, timeout):
+            # Only intercept the viewer's own `evt.wait()` call (a plain coroutine
+            # object). `inspect.iscoroutine` (unlike `asyncio.iscoroutine`) does NOT
+            # also match the async_generator_asend object produced by this test's own
+            # `chunk_iter.__anext__()` polling below, so that call passes through
+            # untouched.
+            if calls["n"] == 0 and inspect.iscoroutine(aw):
+                calls["n"] += 1
+                # Close the coroutine we were handed instead of awaiting it, mirroring
+                # wait_for's own cancel-on-timeout behavior, then raise the
+                # asyncio-specific TimeoutError subclass Python 3.10 raises.
+                aw.close()
+                raise asyncio.exceptions.TimeoutError()
+            return await real_wait_for(aw, timeout)
+
+        monkeypatch.setattr(camera_module.asyncio, "wait_for", fake_wait_for)
+
+        viewer = hub.make_viewer(entry, fps=30)
+        chunk_iter = viewer.__aiter__()
+
+        async def deliver_frame():
+            await asyncio.sleep(0.05)
+            entry.frame = b"\xff\xd8test\xff\xd9"
+            entry.frame_seq = 1
+            entry.frame_event.set()
+
+        deliver_task = asyncio.create_task(deliver_frame())
+        try:
+            chunk = await asyncio.wait_for(chunk_iter.__anext__(), timeout=2.0)
+        finally:
+            await deliver_task
+
+        # The viewer must have survived the simulated 3.10-style TimeoutError and
+        # continued on to yield the frame delivered afterwards.
+        assert calls["n"] == 1
+        assert b"--frame" in chunk
+        await chunk_iter.aclose()
 
 
 class TestProducerErrorHandling:

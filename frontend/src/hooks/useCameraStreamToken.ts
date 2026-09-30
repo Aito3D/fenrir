@@ -11,11 +11,28 @@ import {
 } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 
+/**
+ * True when `src` resolves (against the current page) to this origin and its
+ * path lives under /api/v1/. User-editable content (e.g. notes rendered
+ * through DOMPurify) can contain <img src="https://attacker/api/v1/..."> —
+ * this gate keeps the viewer's camera/media token from ever being appended
+ * to a URL that isn't actually our backend.
+ */
+function isSameOriginApiV1Src(src: string): boolean {
+  try {
+    const url = new URL(src, window.location.href);
+    return url.origin === window.location.origin && url.pathname.startsWith('/api/v1/');
+  } catch {
+    return false;
+  }
+}
+
 /** True for the three live-camera routes, which take the camera stream token.
  *  Everything else under /api/v1/ that a browser loads as an element src is
- *  media and takes the media token (#3025). */
+ *  media and takes the media token (#3025). Cross-origin srcs are never
+ *  camera URLs, regardless of path. */
 export function isCameraUrl(src: string): boolean {
-  return src.includes('/camera/');
+  return isSameOriginApiV1Src(src) && src.includes('/camera/');
 }
 
 /**
@@ -38,6 +55,7 @@ export function rewriteMediaSrcWithToken(
     )
     .forEach((el) => {
       const src = el.getAttribute('src') || '';
+      if (!isSameOriginApiV1Src(src)) return;
       const token = isCameraUrl(src) ? cameraToken : mediaToken;
       if (!token) return;
       const tokenParam = `token=${encodeURIComponent(token)}`;
@@ -141,6 +159,7 @@ export function useStreamTokenSync() {
       if (!(el instanceof HTMLImageElement || el instanceof HTMLVideoElement)) return;
 
       const src = el.src || '';
+      if (!isSameOriginApiV1Src(src)) return;
       const camera = isCameraUrl(src);
       const token = camera ? getStreamToken() : getMediaToken();
       if (!token || !src.includes(`token=${encodeURIComponent(token)}`)) return;
