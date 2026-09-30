@@ -1,0 +1,7 @@
+### exit: 0
+### stdout:
+15 RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW)
+1 RequirePermissionIfAuthEnabled(Permission.PRINTERS_UPDATE)
+
+### stderr:
+

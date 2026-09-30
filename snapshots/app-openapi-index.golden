@@ -240,6 +240,19 @@
    },
    "security": true
   },
+  "DELETE /api/v1/connect/apps/{app_id}": {
+   "operationId": "delete_connected_app_api_v1_connect_apps__app_id__delete",
+   "params": [
+    "header:X-API-Key",
+    "path:app_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "DELETE /api/v1/external-links/{link_id}": {
    "operationId": "delete_external_link_api_v1_external_links__link_id__delete",
    "params": [
@@ -507,6 +520,20 @@
    "params": [
     "header:X-API-Key",
     "path:file_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "DELETE /api/v1/library/files/{file_id}/photos/{filename}": {
+   "operationId": "delete_file_photo_api_v1_library_files__file_id__photos__filename__delete",
+   "params": [
+    "header:X-API-Key",
+    "path:file_id!",
+    "path:filename!"
    ],
    "requestBody": {},
    "responses": {
@@ -1284,6 +1311,47 @@
    },
    "security": true
   },
+  "GET /api/v1/aito/{project_id}/retainer-email": {
+   "operationId": "get_retainer_email_api_v1_aito__project_id__retainer_email_get",
+   "params": [
+    "header:X-API-Key",
+    "path:project_id!",
+    "query:retainer_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "AitoRetainerEmailContent",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/aito/{project_id}/retainer.pdf": {
+   "operationId": "get_retainer_pdf_api_v1_aito__project_id__retainer_pdf_get",
+   "params": [
+    "header:X-API-Key",
+    "path:project_id!",
+    "query:retainer_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/aito/{project_id}/retainers": {
+   "operationId": "get_retainers_api_v1_aito__project_id__retainers_get",
+   "params": [
+    "header:X-API-Key",
+    "path:project_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "[AitoRetainerInvoiceResponse]",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "GET /api/v1/aito/{project_id}/tasks": {
    "operationId": "list_tasks_api_v1_aito__project_id__tasks_get",
    "params": [
@@ -1413,6 +1481,19 @@
     "422": "HTTPValidationError"
    },
    "security": true
+  },
+  "GET /api/v1/archives/confirm/{token}/{verdict}": {
+   "operationId": "confirm_outcome_page_api_v1_archives_confirm__token___verdict__get",
+   "params": [
+    "path:token!",
+    "path:verdict!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": false
   },
   "GET /api/v1/archives/export": {
    "operationId": "export_archives_api_v1_archives_export_get",
@@ -2310,6 +2391,31 @@
    },
    "security": true
   },
+  "GET /api/v1/connect/apps": {
+   "operationId": "list_connected_apps_api_v1_connect_apps_get",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "[ConnectedAppResponse]",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/connect/authorize/info": {
+   "operationId": "authorize_info_api_v1_connect_authorize_info_get",
+   "params": [
+    "query:client_id!",
+    "query:redirect_uri!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "ConnectAuthorizeInfo",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "GET /api/v1/discovery/info": {
    "operationId": "get_discovery_info_api_v1_discovery_info_get",
    "params": [
@@ -3071,7 +3177,10 @@
    "operationId": "list_files_api_v1_library_files_get",
    "params": [
     "header:X-API-Key",
+    "query:created_by",
+    "query:direction",
     "query:external_only",
+    "query:file_type",
     "query:folder_id",
     "query:include_root",
     "query:internal_only",
@@ -3079,6 +3188,8 @@
     "query:offset",
     "query:project_id",
     "query:recursive",
+    "query:search",
+    "query:sort",
     "query:tag_ids"
    ],
    "requestBody": {},
@@ -3092,7 +3203,10 @@
    "operationId": "list_files_api_v1_library_files__get",
    "params": [
     "header:X-API-Key",
+    "query:created_by",
+    "query:direction",
     "query:external_only",
+    "query:file_type",
     "query:folder_id",
     "query:include_root",
     "query:internal_only",
@@ -3100,11 +3214,31 @@
     "query:offset",
     "query:project_id",
     "query:recursive",
+    "query:search",
+    "query:sort",
     "query:tag_ids"
    ],
    "requestBody": {},
    "responses": {
     "200": "[FileListResponse]",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/library/files/file-types": {
+   "operationId": "list_file_types_api_v1_library_files_file_types_get",
+   "params": [
+    "header:X-API-Key",
+    "query:external_only",
+    "query:folder_id",
+    "query:include_root",
+    "query:internal_only",
+    "query:recursive",
+    "query:tag_ids"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "[string]",
     "422": "HTTPValidationError"
    },
    "security": true
@@ -3188,6 +3322,21 @@
    "requestBody": {},
    "responses": {
     "200": "FileHistoryResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/library/files/{file_id}/photos/{filename}": {
+   "operationId": "get_file_photo_api_v1_library_files__file_id__photos__filename__get",
+   "params": [
+    "header:X-API-Key",
+    "path:file_id!",
+    "path:filename!",
+    "query:token"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
     "422": "HTTPValidationError"
    },
    "security": true
@@ -3719,6 +3868,18 @@
    "requestBody": {},
    "responses": {
     "200": "[NotificationProviderResponse]",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/notifications/app-message/channels": {
+   "operationId": "app_message_channels_api_v1_notifications_app_message_channels_get",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "[AppMessageChannel]",
     "422": "HTTPValidationError"
    },
    "security": true
@@ -4659,6 +4820,8 @@
    "operationId": "list_batches_api_v1_queue_batches_get",
    "params": [
     "header:X-API-Key",
+    "query:external_ref",
+    "query:external_source",
     "query:status"
    ],
    "requestBody": {},
@@ -5971,6 +6134,21 @@
    },
    "security": true
   },
+  "PATCH /api/v1/connect/apps/{app_id}": {
+   "operationId": "update_connected_app_api_v1_connect_apps__app_id__patch",
+   "params": [
+    "header:X-API-Key",
+    "path:app_id!"
+   ],
+   "requestBody": {
+    "application/json": "ConnectedAppUpdate"
+   },
+   "responses": {
+    "200": "ConnectedAppResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "PATCH /api/v1/external-links/{link_id}": {
    "operationId": "update_external_link_api_v1_external_links__link_id__patch",
    "params": [
@@ -6734,6 +6912,21 @@
    },
    "security": true
   },
+  "POST /api/v1/aito/{project_id}/retainer-email": {
+   "operationId": "send_retainer_email_api_v1_aito__project_id__retainer_email_post",
+   "params": [
+    "header:X-API-Key",
+    "path:project_id!"
+   ],
+   "requestBody": {
+    "application/json": "AitoRetainerEmailRequest"
+   },
+   "responses": {
+    "200": "AitoRetainerInvoiceResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "POST /api/v1/aito/{project_id}/sync": {
    "operationId": "sync_project_now_api_v1_aito__project_id__sync_post",
    "params": [
@@ -6815,6 +7008,19 @@
     "422": "HTTPValidationError"
    },
    "security": true
+  },
+  "POST /api/v1/archives/confirm/{token}/{verdict}": {
+   "operationId": "confirm_outcome_by_token_api_v1_archives_confirm__token___verdict__post",
+   "params": [
+    "path:token!",
+    "path:verdict!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": false
   },
   "POST /api/v1/archives/purge": {
    "operationId": "execute_archive_purge_api_v1_archives_purge_post",
@@ -7603,6 +7809,57 @@
     "422": "HTTPValidationError"
    },
    "security": true
+  },
+  "POST /api/v1/connect/apps": {
+   "operationId": "create_connected_app_api_v1_connect_apps_post",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {
+    "application/json": "ConnectedAppCreate"
+   },
+   "responses": {
+    "200": "ConnectedAppSecretResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/connect/apps/{app_id}/rotate-secret": {
+   "operationId": "rotate_connected_app_secret_api_v1_connect_apps__app_id__rotate_secret_post",
+   "params": [
+    "header:X-API-Key",
+    "path:app_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "ConnectedAppSecretResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/connect/authorize": {
+   "operationId": "authorize_api_v1_connect_authorize_post",
+   "params": [],
+   "requestBody": {
+    "application/json": "ConnectAuthorizeRequest"
+   },
+   "responses": {
+    "200": "ConnectAuthorizeResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/connect/token": {
+   "operationId": "exchange_code_api_v1_connect_token_post",
+   "params": [],
+   "requestBody": {
+    "application/json": "ConnectTokenRequest"
+   },
+   "responses": {
+    "200": "ConnectTokenResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": false
   },
   "POST /api/v1/discovery/scan": {
    "operationId": "start_subnet_scan_api_v1_discovery_scan_post",
@@ -8485,6 +8742,36 @@
    },
    "security": true
   },
+  "POST /api/v1/library/files/{file_id}/photos": {
+   "operationId": "upload_file_photo_api_v1_library_files__file_id__photos_post",
+   "params": [
+    "header:X-API-Key",
+    "path:file_id!"
+   ],
+   "requestBody": {
+    "multipart/form-data": "Body_upload_file_photo_api_v1_library_files__file_id__photos_post"
+   },
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/library/files/{file_id}/preview-thumbnail": {
+   "operationId": "upload_preview_thumbnail_api_v1_library_files__file_id__preview_thumbnail_post",
+   "params": [
+    "header:X-API-Key",
+    "path:file_id!"
+   ],
+   "requestBody": {
+    "multipart/form-data": "Body_upload_preview_thumbnail_api_v1_library_files__file_id__preview_thumbnail_post"
+   },
+   "responses": {
+    "200": "ClientThumbnailResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "POST /api/v1/library/files/{file_id}/print": {
    "operationId": "print_library_file_api_v1_library_files__file_id__print_post",
    "params": [
@@ -8919,6 +9206,20 @@
    },
    "responses": {
     "200": "NotificationProviderResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/notifications/app-message": {
+   "operationId": "send_app_message_api_v1_notifications_app_message_post",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {
+    "application/json": "AppMessage"
+   },
+   "responses": {
+    "200": "AppMessageResult",
     "422": "HTTPValidationError"
    },
    "security": true
@@ -11460,6 +11761,7 @@
   },
   "AMSUnit": {
    "properties": {
+    "dry_countdown_stalled": "boolean",
     "dry_filament": "anyOf(string,null)",
     "dry_sf_reason": "[integer]",
     "dry_status": "integer",
@@ -11490,6 +11792,7 @@
     "can_manage_projects": "boolean",
     "can_queue": "boolean",
     "can_read_status": "boolean",
+    "can_send_notifications": "boolean",
     "can_update_energy_cost": "boolean",
     "expires_at": "anyOf(string,null)",
     "name": "string",
@@ -11510,6 +11813,7 @@
     "can_manage_projects": "boolean",
     "can_queue": "boolean",
     "can_read_status": "boolean",
+    "can_send_notifications": "boolean",
     "can_update_energy_cost": "boolean",
     "created_at": "string",
     "enabled": "boolean",
@@ -11532,6 +11836,7 @@
     "can_manage_projects",
     "can_queue",
     "can_read_status",
+    "can_send_notifications",
     "can_update_energy_cost",
     "created_at",
     "enabled",
@@ -11556,6 +11861,7 @@
     "can_manage_projects": "boolean",
     "can_queue": "boolean",
     "can_read_status": "boolean",
+    "can_send_notifications": "boolean",
     "can_update_energy_cost": "boolean",
     "created_at": "string",
     "enabled": "boolean",
@@ -11577,6 +11883,7 @@
     "can_manage_projects",
     "can_queue",
     "can_read_status",
+    "can_send_notifications",
     "can_update_energy_cost",
     "created_at",
     "enabled",
@@ -11600,6 +11907,7 @@
     "can_manage_projects": "anyOf(boolean,null)",
     "can_queue": "anyOf(boolean,null)",
     "can_read_status": "anyOf(boolean,null)",
+    "can_send_notifications": "anyOf(boolean,null)",
     "can_update_energy_cost": "anyOf(boolean,null)",
     "enabled": "anyOf(boolean,null)",
     "expires_at": "anyOf(string,null)",
@@ -12003,6 +12311,7 @@
     "quote_status": "anyOf(string,null)",
     "quote_total": "anyOf(number,null)",
     "quote_url": "anyOf(string,null)",
+    "regenerate_description": "boolean",
     "shipping_first_name": "anyOf(string,null)",
     "shipping_island": "anyOf(string,null)",
     "shipping_last_name": "anyOf(string,null)",
@@ -12292,6 +12601,56 @@
     "applied",
     "number",
     "total"
+   ]
+  },
+  "AitoRetainerEmailContent": {
+   "properties": {
+    "body": "string",
+    "default_email": "anyOf(string,null)",
+    "recipients": "[AitoQuoteEmailRecipient]",
+    "retainer_id": "string",
+    "retainer_number": "string",
+    "subject": "string"
+   },
+   "required": [
+    "body",
+    "default_email",
+    "recipients",
+    "retainer_id",
+    "retainer_number",
+    "subject"
+   ]
+  },
+  "AitoRetainerEmailRequest": {
+   "properties": {
+    "retainer_id": "string",
+    "to": "string"
+   },
+   "required": [
+    "retainer_id",
+    "to"
+   ]
+  },
+  "AitoRetainerInvoiceResponse": {
+   "properties": {
+    "balance": "number",
+    "currency_code": "string",
+    "date": "string",
+    "id": "string",
+    "number": "string",
+    "status": "string",
+    "total": "number",
+    "url": "string"
+   },
+   "required": [
+    "balance",
+    "currency_code",
+    "date",
+    "id",
+    "number",
+    "status",
+    "total",
+    "url"
    ]
   },
   "AitoRetainerPreview": {
@@ -12900,6 +13259,35 @@
     "label"
    ]
   },
+  "AppMessage": {
+   "properties": {
+    "message": "string",
+    "title": "string",
+    "url": "anyOf(string,null)"
+   },
+   "required": [
+    "message",
+    "title"
+   ]
+  },
+  "AppMessageChannel": {
+   "properties": {
+    "name": "string",
+    "provider_type": "string"
+   },
+   "required": [
+    "name",
+    "provider_type"
+   ]
+  },
+  "AppMessageResult": {
+   "properties": {
+    "channels": "integer"
+   },
+   "required": [
+    "channels"
+   ]
+  },
   "AppSettings": {
    "properties": {
     "aito_deposit_pct": "integer",
@@ -12911,6 +13299,7 @@
     "aito_payment_mode_cheque": "string",
     "aito_quote_validity_days": "integer",
     "ambient_drying_enabled": "boolean",
+    "ambient_drying_sustained_minutes": "integer",
     "ams_history_retention_days": "integer",
     "ams_humidity_fair": "integer",
     "ams_humidity_good": "integer",
@@ -12932,12 +13321,15 @@
     "chamber_temp_presets": "string",
     "check_printer_firmware": "boolean",
     "check_updates": "boolean",
+    "confirm_default_good_on_plate_clear": "boolean",
+    "confirm_outcome_external_prints": "boolean",
     "currency": "string",
     "dark_accent": "string",
     "dark_background": "string",
     "dark_style": "string",
     "date_format": "string",
     "default_bed_levelling": "string",
+    "default_confirm_outcome": "boolean",
     "default_filament_cost": "number",
     "default_flow_cali": "string",
     "default_layer_inspect": "boolean",
@@ -13079,6 +13471,7 @@
     "aito_payment_mode_cheque": "anyOf(string,null)",
     "aito_quote_validity_days": "anyOf(integer,null)",
     "ambient_drying_enabled": "anyOf(boolean,null)",
+    "ambient_drying_sustained_minutes": "anyOf(integer,null)",
     "ams_history_retention_days": "anyOf(integer,null)",
     "ams_humidity_fair": "anyOf(integer,null)",
     "ams_humidity_good": "anyOf(integer,null)",
@@ -13100,12 +13493,15 @@
     "chamber_temp_presets": "anyOf(string,null)",
     "check_printer_firmware": "anyOf(boolean,null)",
     "check_updates": "anyOf(boolean,null)",
+    "confirm_default_good_on_plate_clear": "anyOf(boolean,null)",
+    "confirm_outcome_external_prints": "anyOf(boolean,null)",
     "currency": "anyOf(string,null)",
     "dark_accent": "anyOf(string,null)",
     "dark_background": "anyOf(string,null)",
     "dark_style": "anyOf(string,null)",
     "date_format": "anyOf(string,null)",
     "default_bed_levelling": "anyOf(string,null)",
+    "default_confirm_outcome": "anyOf(boolean,null)",
     "default_filament_cost": "anyOf(number,null)",
     "default_flow_cali": "anyOf(string,null)",
     "default_layer_inspect": "anyOf(boolean,null)",
@@ -13317,6 +13713,7 @@
     "bed_temperature": "anyOf(integer,null)",
     "bed_type": "anyOf(string,null)",
     "completed_at": "anyOf(string,null)",
+    "confirm_requested": "boolean",
     "content_hash": "anyOf(string,null)",
     "content_verified": "anyOf(boolean,null)",
     "cost": "anyOf(number,null)",
@@ -13370,7 +13767,10 @@
     "time_accuracy": "anyOf(number,null)",
     "timelapse_path": "anyOf(string,null)",
     "total_filament_actual_grams": "anyOf(number,null)",
-    "total_layers": "anyOf(integer,null)"
+    "total_layers": "anyOf(integer,null)",
+    "user_verdict": "anyOf(string,null)",
+    "user_verdict_at": "anyOf(string,null)",
+    "user_verdict_source": "anyOf(string,null)"
    },
    "required": [
     "bed_temperature",
@@ -13480,7 +13880,9 @@
     "project_id": "anyOf(integer,null)",
     "quantity": "anyOf(integer,null)",
     "status": "anyOf(string,null)",
-    "tags": "anyOf(string,null)"
+    "tags": "anyOf(string,null)",
+    "user_verdict": "anyOf(string,null)",
+    "user_verdict_source": "anyOf(string,null)"
    },
    "required": []
   },
@@ -13834,6 +14236,14 @@
     "file"
    ]
   },
+  "Body_upload_file_photo_api_v1_library_files__file_id__photos_post": {
+   "properties": {
+    "file": "string"
+   },
+   "required": [
+    "file"
+   ]
+  },
   "Body_upload_icon_api_v1_external_links__link_id__icon_post": {
    "properties": {
     "file": "string"
@@ -13848,6 +14258,14 @@
    },
    "required": [
     "file"
+   ]
+  },
+  "Body_upload_preview_thumbnail_api_v1_library_files__file_id__preview_thumbnail_post": {
+   "properties": {
+    "thumbnail": "string"
+   },
+   "required": [
+    "thumbnail"
    ]
   },
   "Body_upload_project_cover_image_api_v1_projects__project_id__cover_image_post": {
@@ -14259,6 +14677,14 @@
    },
    "required": []
   },
+  "ClientThumbnailResponse": {
+   "properties": {
+    "updated": "boolean"
+   },
+   "required": [
+    "updated"
+   ]
+  },
   "CloudAccountCounts": {
    "properties": {
     "bambu": "integer",
@@ -14400,6 +14826,145 @@
    },
    "required": [
     "found"
+   ]
+  },
+  "ConnectAuthorizeInfo": {
+   "properties": {
+    "already_granted": "boolean",
+    "app_name": "string",
+    "username": "string"
+   },
+   "required": [
+    "already_granted",
+    "app_name",
+    "username"
+   ]
+  },
+  "ConnectAuthorizeRequest": {
+   "properties": {
+    "client_id": "string",
+    "code_challenge": "string",
+    "code_challenge_method": "string",
+    "redirect_uri": "string"
+   },
+   "required": [
+    "client_id",
+    "code_challenge",
+    "code_challenge_method",
+    "redirect_uri"
+   ]
+  },
+  "ConnectAuthorizeResponse": {
+   "properties": {
+    "code": "string",
+    "redirect_uri": "string"
+   },
+   "required": [
+    "code",
+    "redirect_uri"
+   ]
+  },
+  "ConnectTokenRequest": {
+   "properties": {
+    "client_id": "string",
+    "client_secret": "string",
+    "code": "string",
+    "code_verifier": "string",
+    "grant_type": "string",
+    "redirect_uri": "string"
+   },
+   "required": [
+    "client_id",
+    "client_secret",
+    "code",
+    "code_verifier",
+    "grant_type",
+    "redirect_uri"
+   ]
+  },
+  "ConnectTokenResponse": {
+   "properties": {
+    "issued_at": "string",
+    "user": "ConnectedUser"
+   },
+   "required": [
+    "issued_at",
+    "user"
+   ]
+  },
+  "ConnectedAppCreate": {
+   "properties": {
+    "name": "string",
+    "redirect_uri": "string"
+   },
+   "required": [
+    "name",
+    "redirect_uri"
+   ]
+  },
+  "ConnectedAppResponse": {
+   "properties": {
+    "client_id": "string",
+    "created_at": "anyOf(string,null)",
+    "enabled": "boolean",
+    "id": "integer",
+    "last_used_at": "anyOf(string,null)",
+    "name": "string",
+    "redirect_uri": "string"
+   },
+   "required": [
+    "client_id",
+    "created_at",
+    "enabled",
+    "id",
+    "name",
+    "redirect_uri"
+   ]
+  },
+  "ConnectedAppSecretResponse": {
+   "properties": {
+    "client_id": "string",
+    "client_secret": "string",
+    "created_at": "anyOf(string,null)",
+    "enabled": "boolean",
+    "id": "integer",
+    "last_used_at": "anyOf(string,null)",
+    "name": "string",
+    "redirect_uri": "string"
+   },
+   "required": [
+    "client_id",
+    "client_secret",
+    "created_at",
+    "enabled",
+    "id",
+    "name",
+    "redirect_uri"
+   ]
+  },
+  "ConnectedAppUpdate": {
+   "properties": {
+    "enabled": "anyOf(boolean,null)",
+    "name": "anyOf(string,null)",
+    "redirect_uri": "anyOf(string,null)"
+   },
+   "required": []
+  },
+  "ConnectedUser": {
+   "properties": {
+    "email": "anyOf(string,null)",
+    "groups": "[string]",
+    "id": "integer",
+    "is_admin": "boolean",
+    "permissions": "[string]",
+    "username": "string"
+   },
+   "required": [
+    "groups",
+    "id",
+    "is_admin",
+    "permissions",
+    "username"
    ]
   },
   "CostCenterBudgetUpdateRequest": {
@@ -15252,6 +15817,7 @@
     "created_by_id": "anyOf(integer,null)",
     "created_by_username": "anyOf(string,null)",
     "duplicate_count": "integer",
+    "external_url": "anyOf(string,null)",
     "filament_type": "anyOf(string,null)",
     "filament_used_grams": "anyOf(number,null)",
     "file_size": "integer",
@@ -15259,8 +15825,10 @@
     "filename": "string",
     "folder_id": "anyOf(integer,null)",
     "fs_modified_at": "anyOf(string,null)",
+    "has_notes": "boolean",
     "id": "integer",
     "is_external": "boolean",
+    "photo_count": "integer",
     "print_count": "integer",
     "print_name": "anyOf(string,null)",
     "print_time_seconds": "anyOf(integer,null)",
@@ -15297,6 +15865,7 @@
     "created_by_username": "anyOf(string,null)",
     "duplicate_count": "integer",
     "duplicates": "anyOf([FileDuplicate],null)",
+    "external_url": "anyOf(string,null)",
     "filament_type": "anyOf(string,null)",
     "filament_used_grams": "anyOf(number,null)",
     "file_hash": "anyOf(string,null)",
@@ -15311,12 +15880,14 @@
     "last_printed_at": "anyOf(string,null)",
     "metadata": "anyOf(object,null)",
     "notes": "anyOf(string,null)",
+    "photos": "[string]",
     "print_count": "integer",
     "print_name": "anyOf(string,null)",
     "print_time_seconds": "anyOf(integer,null)",
     "project_id": "anyOf(integer,null)",
     "project_name": "anyOf(string,null)",
     "sliced_for_model": "anyOf(string,null)",
+    "source_url": "anyOf(string,null)",
     "thumbnail_path": "anyOf(string,null)",
     "updated_at": "string"
    },
@@ -15340,6 +15911,7 @@
   },
   "FileUpdate": {
    "properties": {
+    "external_url": "anyOf(string,null)",
     "filename": "anyOf(string,null)",
     "folder_id": "anyOf(integer,null)",
     "notes": "anyOf(string,null)",
@@ -16802,6 +17374,7 @@
     "on_ams_ht_temperature_high": "boolean",
     "on_ams_humidity_high": "boolean",
     "on_ams_temperature_high": "boolean",
+    "on_app_message": "boolean",
     "on_bed_cooled": "boolean",
     "on_billing_charge_failed": "boolean",
     "on_filament_low": "boolean",
@@ -16812,6 +17385,7 @@
     "on_plate_clear_required": "boolean",
     "on_plate_not_empty": "boolean",
     "on_print_complete": "boolean",
+    "on_print_confirm_request": "boolean",
     "on_print_failed": "boolean",
     "on_print_missing_spool_assignment": "boolean",
     "on_print_progress": "boolean",
@@ -16859,6 +17433,7 @@
     "on_ams_ht_temperature_high": "boolean",
     "on_ams_humidity_high": "boolean",
     "on_ams_temperature_high": "boolean",
+    "on_app_message": "boolean",
     "on_bed_cooled": "boolean",
     "on_billing_charge_failed": "boolean",
     "on_filament_low": "boolean",
@@ -16869,6 +17444,7 @@
     "on_plate_clear_required": "boolean",
     "on_plate_not_empty": "boolean",
     "on_print_complete": "boolean",
+    "on_print_confirm_request": "boolean",
     "on_print_failed": "boolean",
     "on_print_missing_spool_assignment": "boolean",
     "on_print_progress": "boolean",
@@ -16915,6 +17491,7 @@
     "on_ams_ht_temperature_high": "anyOf(boolean,null)",
     "on_ams_humidity_high": "anyOf(boolean,null)",
     "on_ams_temperature_high": "anyOf(boolean,null)",
+    "on_app_message": "anyOf(boolean,null)",
     "on_bed_cooled": "anyOf(boolean,null)",
     "on_billing_charge_failed": "anyOf(boolean,null)",
     "on_filament_low": "anyOf(boolean,null)",
@@ -16925,6 +17502,7 @@
     "on_plate_clear_required": "anyOf(boolean,null)",
     "on_plate_not_empty": "anyOf(boolean,null)",
     "on_print_complete": "anyOf(boolean,null)",
+    "on_print_confirm_request": "anyOf(boolean,null)",
     "on_print_failed": "anyOf(boolean,null)",
     "on_print_missing_spool_assignment": "anyOf(boolean,null)",
     "on_print_progress": "anyOf(boolean,null)",
@@ -17409,6 +17987,8 @@
    "properties": {
     "archive_id": "anyOf(integer,null)",
     "due_date": "anyOf(string,null)",
+    "external_ref": "anyOf(string,null)",
+    "external_source": "anyOf(string,null)",
     "item_ids": "anyOf([integer],null)",
     "library_file_id": "anyOf(integer,null)",
     "name": "string",
@@ -17471,6 +18051,8 @@
     "dispatchable_count": "integer",
     "due_date": "anyOf(string,null)",
     "estimated_remaining_cost": "anyOf(number,null)",
+    "external_ref": "anyOf(string,null)",
+    "external_source": "anyOf(string,null)",
     "failed_count": "integer",
     "filament_used_grams": "anyOf(number,null)",
     "has_targets": "boolean",
@@ -17539,7 +18121,8 @@
     "printer_name": "anyOf(string,null)",
     "started_at": "anyOf(string,null)",
     "status": "string",
-    "thumbnail_path": "anyOf(string,null)"
+    "thumbnail_path": "anyOf(string,null)",
+    "user_verdict": "anyOf(string,null)"
    },
    "required": [
     "created_at",
@@ -17588,6 +18171,7 @@
    "properties": {
     "auto_off_after": "anyOf(boolean,null)",
     "bed_levelling": "anyOf(string,null)",
+    "confirm_outcome": "anyOf(boolean,null)",
     "cost_center_id": "anyOf(integer,null)",
     "estimated_cost": "anyOf(number,null)",
     "flow_cali": "anyOf(string,null)",
@@ -17629,6 +18213,7 @@
     "batch_id": "anyOf(integer,null)",
     "bed_levelling": "string",
     "cleanup_library_after_dispatch": "boolean",
+    "confirm_outcome": "boolean",
     "cost_center_id": "anyOf(integer,null)",
     "estimated_cost": "anyOf(number,null)",
     "filament_overrides": "anyOf([object],null)",
@@ -17676,6 +18261,7 @@
     "been_jumped": "boolean",
     "cleanup_library_after_dispatch": "boolean",
     "completed_at": "anyOf(string,null)",
+    "confirm_outcome": "boolean",
     "cost_center_id": "anyOf(integer,null)",
     "created_at": "anyOf(string,null)",
     "created_by_id": "anyOf(integer,null)",
@@ -17744,6 +18330,7 @@
     "ams_mapping": "anyOf([integer],null)",
     "auto_off_after": "anyOf(boolean,null)",
     "bed_levelling": "anyOf(string,null)",
+    "confirm_outcome": "anyOf(boolean,null)",
     "cost_center_id": "anyOf(integer,null)",
     "estimated_cost": "anyOf(number,null)",
     "filament_overrides": "anyOf([object],null)",
@@ -18558,6 +19145,7 @@
     "completed_at": "anyOf(string,null)",
     "created_at": "anyOf(string,null)",
     "duration_hours": "integer",
+    "error_code": "anyOf(string,null)",
     "error_message": "anyOf(string,null)",
     "filament": "string",
     "id": "integer",

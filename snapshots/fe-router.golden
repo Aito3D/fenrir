@@ -11,132 +11,135 @@
      9	path="/login"
     10	element=LoginPage
     11	<Route
-    12	path="/aito/fx"
-    13	element=AitoFxDemoPage
+    12	path="/connect/authorize"
+    13	element=ProtectedRoute
     14	<Route
-    15	path="/camera/:printerId"
-    16	element=CameraPage
+    15	path="/aito/fx"
+    16	element=AitoFxDemoPage
     17	<Route
-    18	path="/overlay/:printerId"
-    19	element=StreamOverlayPage
+    18	path="/camera/:printerId"
+    19	element=CameraPage
     20	<Route
-    21	path="/t"
-    22	element=TrackingErrorBoundary
+    21	path="/overlay/:printerId"
+    22	element=StreamOverlayPage
     23	<Route
-    24	path="/track"
+    24	path="/t"
     25	element=TrackingErrorBoundary
     26	<Route
-    27	path="/t/:token"
+    27	path="/track"
     28	element=TrackingErrorBoundary
     29	<Route
-    30	path="/track/:token"
+    30	path="/t/:token"
     31	element=TrackingErrorBoundary
     32	<Route
-    33	path="/calculator/quote"
-    34	<Route
-    35	element=ProtectedRoute
-    36	<Route
-    37	path="spoolbuddy"
-    38	element=SpoolBuddyDashboard
+    33	path="/track/:token"
+    34	element=TrackingErrorBoundary
+    35	<Route
+    36	path="/calculator/quote"
+    37	<Route
+    38	element=ProtectedRoute
     39	<Route
-    40	path="spoolbuddy/ams"
-    41	element=SpoolBuddyAmsPage
+    40	path="spoolbuddy"
+    41	element=SpoolBuddyDashboard
     42	<Route
-    43	path="spoolbuddy/write-tag"
-    44	element=SpoolBuddyWriteTagPage
+    43	path="spoolbuddy/ams"
+    44	element=SpoolBuddyAmsPage
     45	<Route
-    46	path="spoolbuddy/inventory"
-    47	element=SpoolBuddyInventoryPage
+    46	path="spoolbuddy/write-tag"
+    47	element=SpoolBuddyWriteTagPage
     48	<Route
-    49	path="spoolbuddy/settings"
-    50	element=SpoolBuddySettingsPage
+    49	path="spoolbuddy/inventory"
+    50	element=SpoolBuddyInventoryPage
     51	<Route
-    52	path="spoolbuddy/calibration"
-    53	element=SpoolBuddyCalibrationPage
+    52	path="spoolbuddy/settings"
+    53	element=SpoolBuddySettingsPage
     54	<Route
-    55	element=ProtectedRoute
-    56	<Route
-    57	element=PrintersPage
-    58	<Route
-    59	path="archives"
-    60	element=ArchivesPage
+    55	path="spoolbuddy/calibration"
+    56	element=SpoolBuddyCalibrationPage
+    57	<Route
+    58	element=ProtectedRoute
+    59	<Route
+    60	element=PrintersPage
     61	<Route
-    62	path="queue"
-    63	element=QueuePage
+    62	path="archives"
+    63	element=ArchivesPage
     64	<Route
-    65	path="pipelines/runs"
-    66	element=Navigate
+    65	path="queue"
+    66	element=QueuePage
     67	<Route
-    68	path="stats"
-    69	element=StatsPage
+    68	path="pipelines/runs"
+    69	element=Navigate
     70	<Route
-    71	path="profiles"
-    72	element=ProfilesPage
+    71	path="stats"
+    72	element=StatsPage
     73	<Route
-    74	path="filament-profiles"
-    75	element=FilamentProfilesPage
+    74	path="profiles"
+    75	element=ProfilesPage
     76	<Route
-    77	path="finance"
-    78	element=PermissionRoute
+    77	path="filament-profiles"
+    78	element=FilamentProfilesPage
     79	<Route
-    80	path="maintenance"
-    81	element=MaintenancePage
+    80	path="finance"
+    81	element=PermissionRoute
     82	<Route
-    83	path="calculator"
-    84	element=PermissionRoute
+    83	path="maintenance"
+    84	element=MaintenancePage
     85	<Route
-    86	path="projects"
-    87	element=ProjectsPage
+    86	path="calculator"
+    87	element=PermissionRoute
     88	<Route
-    89	path="projects/:id"
-    90	element=ProjectDetailPage
+    89	path="projects"
+    90	element=ProjectsPage
     91	<Route
-    92	path="aito"
-    93	element=PermissionRoute
+    92	path="projects/:id"
+    93	element=ProjectDetailPage
     94	<Route
-    95	path="inventory"
-    96	element=InventoryPage
+    95	path="aito"
+    96	element=PermissionRoute
     97	<Route
-    98	path="files"
-    99	element=FileManagerPage
+    98	path="inventory"
+    99	element=InventoryPage
    100	<Route
-   101	path="files/trash"
-   102	element=LibraryTrashPage
+   101	path="files"
+   102	element=FileManagerPage
    103	<Route
-   104	path="makerworld"
-   105	element=PermissionRoute
+   104	path="files/trash"
+   105	element=LibraryTrashPage
    106	<Route
-   107	path="settings"
+   107	path="makerworld"
    108	element=PermissionRoute
    109	<Route
-   110	path="groups/new"
+   110	path="settings"
    111	element=PermissionRoute
    112	<Route
-   113	path="groups/:id/edit"
+   113	path="groups/new"
    114	element=PermissionRoute
    115	<Route
-   116	path="users"
-   117	element=Navigate
+   116	path="groups/:id/edit"
+   117	element=PermissionRoute
    118	<Route
-   119	path="groups"
+   119	path="users"
    120	element=Navigate
    121	<Route
-   122	path="system"
-   123	element=SystemInfoPage
+   122	path="groups"
+   123	element=Navigate
    124	<Route
-   125	path="notifications"
-   126	element=NotificationsPage
+   125	path="system"
+   126	element=SystemInfoPage
    127	<Route
-   128	path="gcode-viewer"
-   129	element=GCodeViewerPage
+   128	path="notifications"
+   129	element=NotificationsPage
    130	<Route
-   131	path="external/:id"
-   132	element=ExternalLinkPage
+   131	path="gcode-viewer"
+   132	element=GCodeViewerPage
    133	<Route
-   134	path="camera-tokens"
-   135	element=Navigate
+   134	path="external/:id"
+   135	element=ExternalLinkPage
    136	<Route
-   137	<Route
+   137	path="camera-tokens"
+   138	element=Navigate
+   139	<Route
+   140	<Route
 
 ### stderr:
 

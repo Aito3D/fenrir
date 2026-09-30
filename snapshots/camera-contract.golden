@@ -1,0 +1,356 @@
+### exit: 0
+### stdout:
+{
+ "hub_methods": {
+  "SharedStreamHub": [
+   "_replace_producer",
+   "_run_producer",
+   "get_existing",
+   "get_existing_batch",
+   "get_last_frame",
+   "get_or_start",
+   "is_active",
+   "make_viewer",
+   "restart",
+   "status",
+   "stop",
+   "stop_all",
+   "viewer_count"
+  ],
+  "_SharedStream": [],
+  "_StreamState": []
+ },
+ "operations": {
+  "DELETE /api/v1/printers/{printer_id}/camera/plate-detection/calibrate": {
+   "operationId": "delete_plate_calibration_api_v1_printers__printer_id__camera_plate_detection_calibrate_delete",
+   "params": [
+    "header:X-API-Key",
+    "path:printer_id!",
+    "query:plate_type"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "DELETE /api/v1/printers/{printer_id}/camera/plate-detection/references/{index}": {
+   "operationId": "delete_reference_api_v1_printers__printer_id__camera_plate_detection_references__index__delete",
+   "params": [
+    "header:X-API-Key",
+    "path:index!",
+    "path:printer_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/printers/camera/grid-stream": {
+   "operationId": "camera_grid_stream_api_v1_printers_camera_grid_stream_get",
+   "params": [
+    "header:X-API-Key",
+    "query:force",
+    "query:fps",
+    "query:ids!",
+    "query:quality",
+    "query:scale"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/printers/camera/hub-status": {
+   "operationId": "camera_hub_status_api_v1_printers_camera_hub_status_get",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/printers/{printer_id}/camera/check-plate": {
+   "operationId": "check_plate_empty_api_v1_printers__printer_id__camera_check_plate_get",
+   "params": [
+    "header:X-API-Key",
+    "path:printer_id!",
+    "query:include_debug_image",
+    "query:plate_type",
+    "query:use_external"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/printers/{printer_id}/camera/plate-detection/references": {
+   "operationId": "get_plate_references_api_v1_printers__printer_id__camera_plate_detection_references_get",
+   "params": [
+    "header:X-API-Key",
+    "path:printer_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/printers/{printer_id}/camera/plate-detection/references/{index}/thumbnail": {
+   "operationId": "get_reference_thumbnail_api_v1_printers__printer_id__camera_plate_detection_references__index__thumbnail_get",
+   "params": [
+    "path:index!",
+    "path:printer_id!",
+    "query:token"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": false
+  },
+  "GET /api/v1/printers/{printer_id}/camera/plate-detection/status": {
+   "operationId": "get_plate_detection_status_api_v1_printers__printer_id__camera_plate_detection_status_get",
+   "params": [
+    "header:X-API-Key",
+    "path:printer_id!",
+    "query:plate_type"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/printers/{printer_id}/camera/snapshot": {
+   "operationId": "camera_snapshot_api_v1_printers__printer_id__camera_snapshot_get",
+   "params": [
+    "path:printer_id!",
+    "query:token"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": false
+  },
+  "GET /api/v1/printers/{printer_id}/camera/status": {
+   "operationId": "camera_status_api_v1_printers__printer_id__camera_status_get",
+   "params": [
+    "header:X-API-Key",
+    "path:printer_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/printers/{printer_id}/camera/stream": {
+   "operationId": "camera_stream_api_v1_printers__printer_id__camera_stream_get",
+   "params": [
+    "path:printer_id!",
+    "query:fps",
+    "query:quality",
+    "query:scale",
+    "query:token"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": false
+  },
+  "GET /api/v1/printers/{printer_id}/camera/test": {
+   "operationId": "test_camera_api_v1_printers__printer_id__camera_test_get",
+   "params": [
+    "header:X-API-Key",
+    "path:printer_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/printers/camera/stream-token": {
+   "operationId": "create_stream_token_api_v1_printers_camera_stream_token_post",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/printers/{printer_id}/camera/diagnose": {
+   "operationId": "diagnose_camera_route_api_v1_printers__printer_id__camera_diagnose_post",
+   "params": [
+    "header:X-API-Key",
+    "path:printer_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/printers/{printer_id}/camera/external/test": {
+   "operationId": "test_external_camera_api_v1_printers__printer_id__camera_external_test_post",
+   "params": [
+    "header:X-API-Key",
+    "path:printer_id!"
+   ],
+   "requestBody": {
+    "application/json": "ExternalCameraTestRequest"
+   },
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/printers/{printer_id}/camera/plate-detection/calibrate": {
+   "operationId": "calibrate_plate_detection_api_v1_printers__printer_id__camera_plate_detection_calibrate_post",
+   "params": [
+    "header:X-API-Key",
+    "path:printer_id!",
+    "query:label",
+    "query:use_external"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/printers/{printer_id}/camera/stop": {
+   "operationId": "stop_camera_stream_api_v1_printers__printer_id__camera_stop_post",
+   "params": [
+    "header:X-API-Key",
+    "path:printer_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/printers/{printer_id}/camera/webrtc": {
+   "operationId": "webrtc_offer_api_v1_printers__printer_id__camera_webrtc_post",
+   "params": [
+    "header:X-API-Key",
+    "path:printer_id!"
+   ],
+   "requestBody": {
+    "application/json": "WebRTCOfferRequest"
+   },
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "PUT /api/v1/printers/{printer_id}/camera/plate-detection/references/{index}": {
+   "operationId": "update_reference_label_api_v1_printers__printer_id__camera_plate_detection_references__index__put",
+   "params": [
+    "header:X-API-Key",
+    "path:index!",
+    "path:printer_id!"
+   ],
+   "requestBody": {
+    "application/json": "Body_update_reference_label_api_v1_printers__printer_id__camera_plate_detection_references__index__put"
+   },
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  }
+ },
+ "route_models": {
+  "ExternalCameraTestRequest": {
+   "camera_type": "typing.Literal['mjpeg', 'rtsp', 'snapshot', 'usb']",
+   "url": "<class 'str'>"
+  },
+  "WebRTCOfferRequest": {
+   "sdp": "<class 'str'>"
+  }
+ },
+ "schemas": {
+  "Body_update_reference_label_api_v1_printers__printer_id__camera_plate_detection_references__index__put": {
+   "properties": {
+    "label": "string"
+   },
+   "required": [
+    "label"
+   ]
+  },
+  "ExternalCameraTestRequest": {
+   "properties": {
+    "camera_type": "string",
+    "url": "string"
+   },
+   "required": [
+    "camera_type",
+    "url"
+   ]
+  },
+  "HTTPValidationError": {
+   "properties": {
+    "detail": "[ValidationError]"
+   },
+   "required": []
+  },
+  "ValidationError": {
+   "properties": {
+    "ctx": "object",
+    "input": null,
+    "loc": "[anyOf(string,integer)]",
+    "msg": "string",
+    "type": "string"
+   },
+   "required": [
+    "loc",
+    "msg",
+    "type"
+   ]
+  },
+  "WebRTCOfferRequest": {
+   "properties": {
+    "sdp": "string"
+   },
+   "required": [
+    "sdp"
+   ]
+  }
+ },
+ "websockets": [
+  "/api/v1/printers/{printer_id}/camera/mse"
+ ]
+}
+
+### stderr:
+
