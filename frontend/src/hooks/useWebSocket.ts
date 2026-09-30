@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useToast } from '../contexts/ToastContext';
 import { useTranslation } from 'react-i18next';
 import { api, ApiError } from '../api/client';
-import { inventoryLocationsQueryKey } from '../utils/inventoryQueries';
+import { inventoryLocationsQueryKey, inventorySuppliersQueryKey } from '../utils/inventoryQueries';
 import { useBoardSync } from './useBoardSync';
 import { registerPresenceSender, setAitoPresenceState } from './useAitoPresence';
 
@@ -435,6 +435,9 @@ export function useWebSocket() {
         debouncedInvalidate('inventory-spools');
         debouncedInvalidate('spoolman-inventory-spools');
         debouncedInvalidate(inventoryLocationsQueryKey[0]);
+        debouncedInvalidate(inventorySuppliersQueryKey[0]);
+        // The per-material-number aggregate is derived from the same rows (#2870).
+        debouncedInvalidate('material-number-stats');
         break;
 
       case 'spool_assignment_changed':

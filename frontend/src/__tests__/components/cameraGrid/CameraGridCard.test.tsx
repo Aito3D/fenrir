@@ -361,8 +361,9 @@ describe('CameraGridCard', () => {
   });
 
   describe('HMS error banner', () => {
-    const err: HMSError = { attr: 0x0300, code: '0x400C', module: 0, severity: 2 };
     const desc = 'The task was canceled.';
+    // The text is the backend's catalogue sentence (#2728); the frontend keeps no table.
+    const err: HMSError = { attr: 0x0300, code: '0x400C', module: 0, severity: 2, full_code: '0300400C', description: desc };
 
     it('shows the top HMS error and dismissing it calls onDismissError with (printerId, description)', async () => {
       const user = userEvent.setup();

@@ -342,10 +342,9 @@ describe('CameraGrid rendering', () => {
   });
 
   describe('HMS error dismissal', () => {
-    // Known HMS code from HMSErrorModal.test.tsx's fixtures — maps to a real
-    // description string in the error database.
-    const err: HMSError = { attr: 0x0300, code: '0x400C', severity: 2 };
+    // The text is the backend's catalogue sentence (#2728); the frontend keeps no table.
     const desc = 'The task was canceled.';
+    const err: HMSError = { attr: 0x0300, code: '0x400C', severity: 2, full_code: '0300400C', description: desc };
 
     it('dismissing one printer\'s HMS error hides only that printer\'s banner', async () => {
       // Both printers surface the SAME error/description on purpose: a

@@ -1328,9 +1328,15 @@ class TestOIDCProviders:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_default_group_id_in_admin_list_not_public(self, async_client: AsyncClient, db_session: AsyncSession):
-        """default_group_id appears in the admin list; the public list is slimmed
-        to id/name/has_icon (T-067) so it no longer carries this field."""
+    async def test_default_group_id_in_public_and_admin_list(self, async_client: AsyncClient, db_session: AsyncSession):
+        """default_group_id appears in the admin list response.
+
+        #3107 review: the public list now serves the slim login-page shape
+        (id, name, has_icon, is_autologin) so group sync config and other
+        provider internals stay behind the permission gate — the previous
+        expectation of default_group_id on the public list is what let the
+        group mapping leak to anonymous callers.
+        """
         from sqlalchemy import select
 
         from backend.app.models.group import Group
@@ -1368,9 +1374,10 @@ class TestOIDCProviders:
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_public_list_is_slimmed_to_id_name_has_icon(self, async_client: AsyncClient):
-        """T-067: the unauthenticated public list must carry ONLY id/name/has_icon —
-        none of the connection details or auto-create/auto-link/email-claim policy
-        fields that the full OIDCProviderResponse exposes on /oidc/providers/all."""
+        """T-067 / #3107: the unauthenticated public list must carry ONLY
+        id/name/has_icon/is_autologin — none of the connection details, the
+        auto-create/auto-link/email-claim policy fields or the group mapping
+        that the full OIDCProviderResponse exposes on /oidc/providers/all."""
         token = await _setup_and_login(async_client, "oidcslimpub", "OidcSlimPub1!")
         await async_client.post(
             "/api/v1/auth/oidc/providers",
@@ -1391,7 +1398,7 @@ class TestOIDCProviders:
         pub_items = pub_resp.json()
         assert len(pub_items) >= 1
         for item in pub_items:
-            assert set(item.keys()) == {"id", "name", "has_icon"}
+            assert set(item.keys()) == {"id", "name", "has_icon", "is_autologin"}
             for forbidden_field in (
                 "issuer_url",
                 "client_id",
@@ -1402,6 +1409,8 @@ class TestOIDCProviders:
                 "require_email_verified",
                 "default_group_id",
                 "is_env_managed",
+                "group_claim",
+                "group_mapping",
             ):
                 assert forbidden_field not in item
 
@@ -1420,6 +1429,8 @@ class TestOIDCProviders:
             "auto_link_existing_accounts",
             "email_claim",
             "require_email_verified",
+            "group_claim",
+            "group_mapping",
             "icon_url",
             "default_group_id",
             "is_autologin",

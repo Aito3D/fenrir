@@ -382,17 +382,31 @@ jobs:
               print('exempted (documented, unreachable): ' + ', '.join(exempted))
           "
 
-  # There is no separate "Frontend Type Check" job any more, and nothing was
-  # lost by removing it: it ran `npx tsc --noEmit`, and frontend/tsconfig.json
-  # is a solution-style config (`"files": []` plus project references), so that
-  # command type-checks *nothing*. It completed in 0.0-0.3s in every recorded
-  # run and would have stayed green through any type error in src/.
-  #
-  # The real type check is `tsc -b`, which frontend-build already runs as the
-  # first half of `npm run build` (~20s locally, and the only form that honours
-  # project references). frontend-build now starts in the first wave alongside
-  # everything else, so type errors surface just as early as before — they just
-  # surface from a check that actually looks at the code.
+  frontend-typecheck:
+    name: Frontend Type Check
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event.pull_request.user.login != github.repository_owner
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      # `tsc -b`, not `tsc --noEmit`: the root tsconfig only holds project
+      # references, so plain `tsc` checks zero files. Kept out of `npm run
+      # build` because every installer runs that on the user's machine, and
+      # the type check alone needs ~1 GB of Node heap (#3181).
+      - name: Run TypeScript check
+        working-directory: frontend
+        run: npm run typecheck
 
   frontend-tests:
     name: Frontend Tests (shard ${{ matrix.shard }}/2)

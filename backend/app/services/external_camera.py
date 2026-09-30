@@ -8,6 +8,7 @@ to ensure they are well-formed before use.
 """
 
 import asyncio
+import contextlib
 import ipaddress
 import logging
 import re
@@ -755,6 +756,7 @@ async def generate_mjpeg_stream(
     threads: int = 0,
     *,
     on_process: Callable[[asyncio.subprocess.Process], None] | None = None,
+    on_frame: Callable[[bytes], None] | None = None,
     stop_event: asyncio.Event | None = None,
 ) -> AsyncGenerator[bytes, None]:
     """Generator yielding MJPEG frames for streaming.
@@ -773,6 +775,11 @@ async def generate_mjpeg_stream(
             open (#2675). Without it the process is reachable only from this
             generator's own ``finally``, which an abrupt client disconnect can
             skip (same cancellation-timing class as #776).
+        on_frame: Called with each RAW frame, before it is wrapped for the wire,
+            so the route layer can publish it as the printer's buffered frame
+            (#2707). It has to be a callback: what this generator yields is
+            multipart-wrapped, so a consumer of the stream cannot recover the
+            JPEG without re-parsing its own output.
         stop_event: When set, the reconnect loops stop retrying — so an explicit
             stop (which kills the current ffmpeg) doesn't immediately respawn a
             new process and reacquire the device.
@@ -783,55 +790,74 @@ async def generate_mjpeg_stream(
     frame_interval = 1.0 / max(fps, 1)
     last_frame_time = 0.0
 
-    if camera_type == "mjpeg":
-        # Proxy MJPEG stream directly, with reconnect on timeout
-        max_retries = 3
-        for attempt in range(max_retries + 1):
+    def _publish(frame: bytes) -> bytes:
+        """Hand the raw frame to on_frame, then format it for the wire."""
+        if on_frame is not None:
+            try:
+                on_frame(frame)
+            except Exception:
+                logger.exception("on_frame callback raised")
+        return _format_mjpeg_frame(frame)
+
+    async def _reconnecting(open_session, label: str):
+        """Yield frames across sessions, reconnecting after each that delivered.
+
+        A session that ends without a single frame stops the stream: the
+        source is down, and retrying is the viewer's call. One that delivered
+        frames and then ended is a routine drop and is always reconnected.
+        This used to be three reconnects for the life of the stream, so a
+        server that closes its sessions periodically ended the stream for good
+        on the fourth drop, however long each session had run -- the external
+        twin of the built-in RTSP path's lifetime reconnect budget.
+        """
+        drops = 0
+        while True:
             frame_yielded = False
-            async for frame in _stream_mjpeg(url):
-                frame_yielded = True
+            # aclosing: stop the session's ffmpeg the moment this generator is
+            # closed, rather than whenever the abandoned iterator is collected.
+            async with contextlib.aclosing(open_session()) as session:
+                async for frame in session:
+                    frame_yielded = True
+                    yield frame
+            if not frame_yielded or (stop_event is not None and stop_event.is_set()):
+                break
+            # The sessions swallow CancelledError and simply end, so a viewer
+            # whose task was cancelled mid-read looks like a routine drop here.
+            # Never redial for a task that is being cancelled (Task.cancelling
+            # is 3.11+; without it this falls back to the next await raising).
+            task = asyncio.current_task()
+            if task is not None and getattr(task, "cancelling", lambda: 0)():
+                break
+            drops += 1
+            logger.warning("External %s stream ended, reconnecting (drop %d)...", label, drops)
+            await asyncio.sleep(2)
+
+    if camera_type == "mjpeg":
+        # Proxy MJPEG stream directly, reconnecting after routine drops.
+        async with contextlib.aclosing(_reconnecting(lambda: _stream_mjpeg(url), "MJPEG")) as frames:
+            async for frame in frames:
                 current_time = time.monotonic()
                 if current_time - last_frame_time >= frame_interval:
                     last_frame_time = current_time
-                    yield _format_mjpeg_header(len(frame))
-                    yield frame
-                    yield b"\r\n"
-            if not frame_yielded or attempt == max_retries or (stop_event is not None and stop_event.is_set()):
-                break
-            logger.warning(
-                "External MJPEG stream ended, reconnecting (attempt %d/%d)...",
-                attempt + 1,
-                max_retries,
-            )
-            await asyncio.sleep(2)
+                    yield _publish(frame)
 
     elif camera_type == "rtsp":
-        # Use ffmpeg to convert RTSP to MJPEG, with reconnect on timeout
-        max_retries = 3
-        for attempt in range(max_retries + 1):
-            frame_yielded = False
-            async for frame in _stream_rtsp(
-                url, fps, gpu_accel=gpu_accel, quality=quality, threads=threads, on_process=on_process
-            ):
-                frame_yielded = True
-                yield _format_mjpeg_header(len(frame))
-                yield frame
-                yield b"\r\n"
-            if not frame_yielded or attempt == max_retries or (stop_event is not None and stop_event.is_set()):
-                break
-            logger.warning(
-                "External RTSP stream ended, reconnecting (attempt %d/%d)...",
-                attempt + 1,
-                max_retries,
+        # Use ffmpeg to convert RTSP to MJPEG, reconnecting after routine drops.
+        async with contextlib.aclosing(
+            _reconnecting(
+                lambda: _stream_rtsp(
+                    url, fps, gpu_accel=gpu_accel, quality=quality, threads=threads, on_process=on_process
+                ),
+                "RTSP",
             )
-            await asyncio.sleep(2)
+        ) as frames:
+            async for frame in frames:
+                yield _publish(frame)
 
     elif camera_type == "usb":
         # Use ffmpeg to stream from USB camera
         async for frame in _stream_usb(url, fps, quality=quality, threads=threads, on_process=on_process):
-            yield _format_mjpeg_header(len(frame))
-            yield frame
-            yield b"\r\n"
+            yield _publish(frame)
 
     elif camera_type == "snapshot":
         # Poll snapshot URL at interval — reuse a single session for connection pooling
@@ -840,9 +866,7 @@ async def generate_mjpeg_stream(
                 try:
                     frame = await _capture_snapshot(url, timeout=10, session=session)
                     if frame:
-                        yield _format_mjpeg_header(len(frame))
-                        yield frame
-                        yield b"\r\n"
+                        yield _publish(frame)
                     await asyncio.sleep(frame_interval)
                 except asyncio.CancelledError:
                     break
@@ -854,6 +878,11 @@ async def generate_mjpeg_stream(
 def _format_mjpeg_header(frame_len: int) -> bytes:
     """Format the MJPEG boundary header (without frame data)."""
     return b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: " + str(frame_len).encode() + b"\r\n\r\n"
+
+
+def _format_mjpeg_frame(frame: bytes) -> bytes:
+    """Format frame for MJPEG HTTP response."""
+    return _format_mjpeg_header(len(frame)) + frame + b"\r\n"
 
 
 async def _stream_mjpeg(url: str) -> AsyncGenerator[bytes, None]:

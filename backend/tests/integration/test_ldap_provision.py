@@ -579,11 +579,17 @@ class TestLdapSyncFailureRollsBackSession:
         db_session: AsyncSession,
         monkeypatch: pytest.MonkeyPatch,
     ):
-        """Auth bypass regression check: a provisioned-but-not-fully-synced LDAP
-        user must never be treated as authenticated. Before the fix, this
-        exact scenario (local login disabled, `ensure_user_finance_defaults`
-        raising right after a successful provision) returned HTTP 200 with a
-        valid access token -- login() never actually checked a credential."""
+        """Auth bypass regression check: an LDAP user whose per-login sync did
+        not complete must never be treated as authenticated. Before the fix,
+        this scenario (local login disabled, `ensure_user_finance_defaults`
+        raising right after `_sync_ldap_user` had resolved `user`) returned
+        HTTP 200 with a valid access token -- login() never actually checked a
+        credential.
+
+        Upstream #3197 made a freshly provisioned user skip that sync (the
+        provisioning already did its work), so the half-synced state is now
+        only reachable for a returning LDAP user; the guard under test is the
+        same `user = None` reset in the except block."""
         await async_client.post(
             "/api/v1/auth/setup",
             json={
@@ -596,30 +602,22 @@ class TestLdapSyncFailureRollsBackSession:
         # Local login disabled: without the `user = None` reset, nothing else
         # in login() would ever overwrite the leaked `user`.
         db_session.add(Settings(key="local_login_enabled", value="false"))
-        await db_session.commit()
-
-        # `_provision_ldap_user` "succeeds": it creates and commits a brand-new
-        # User row (auth_source=ldap) and returns it, exactly like the real
-        # provisioning path does once its own internal finance-defaults call
-        # has gone through. `user` is now bound to a real, committed row.
-        async def fake_provision(db, ldap_user_info, ldap_config):
-            new_user = User(
-                username=ldap_user_info.username,
-                email=ldap_user_info.email,
+        # A returning LDAP user: get_user_by_username resolves it, so `user`
+        # is bound to a real row before the sync step runs.
+        db_session.add(
+            User(
+                username="halfprovisioned",
+                email="halfprovisioned@test.com",
                 password_hash=None,
                 role="user",
                 auth_source="ldap",
                 is_active=True,
             )
-            db.add(new_user)
-            await db.commit()
-            await db.refresh(new_user)
-            return new_user
+        )
+        await db_session.commit()
 
-        monkeypatch.setattr("backend.app.api.routes.auth._provision_ldap_user", fake_provision)
-        # The *second* finance-defaults call further down in login() -- the
-        # one that keeps every LDAP user's wallet in sync on every login,
-        # run right after `_sync_ldap_user` -- is the one that fails here.
+        # The finance-defaults call that follows `_sync_ldap_user` on every
+        # login of an existing LDAP user is the one that fails here.
         monkeypatch.setattr(
             "backend.app.api.routes.auth.ensure_user_finance_defaults",
             AsyncMock(side_effect=RuntimeError("simulated finance-defaults failure")),
@@ -641,13 +639,10 @@ class TestLdapSyncFailureRollsBackSession:
         assert "access_token" not in response.json()
         assert "Incorrect username or password" in response.json()["detail"]
 
-        # The user row from the aborted provision attempt may or may not
-        # persist (provisioning itself committed before finance-defaults
-        # raised) -- what matters is that this request was never treated as
-        # an authenticated session for it.
-        row = (await db_session.execute(select(User).where(User.username == "halfprovisioned"))).scalar_one_or_none()
-        if row is not None:
-            assert row.auth_source == "ldap"
+        # The row is untouched by the failed login -- what matters is that
+        # this request was never treated as an authenticated session for it.
+        row = (await db_session.execute(select(User).where(User.username == "halfprovisioned"))).scalar_one()
+        assert row.auth_source == "ldap"
 
 
 class TestLdapLoginOffLoop:
@@ -852,3 +847,73 @@ class TestLoginLocalAccountCollisionGuard:
         # No user must have been created as a side effect of the (discarded) LDAP result.
         row = (await db_session.execute(select(User).where(User.username == "brandnew"))).scalar_one_or_none()
         assert row is None
+
+
+class TestLdapFirstLoginProvisionsOnce:
+    """Auto-provisioning on login used to be followed straight away by the sync
+    meant for returning users, which repeated what provisioning had just done and
+    logged the default-group warning twice (#3197)."""
+
+    async def _login(
+        self, async_client: AsyncClient, db_session: AsyncSession, groups: list[str], default_group: str = "Viewers"
+    ):
+        await async_client.post(
+            "/api/v1/auth/setup",
+            json={"auth_enabled": True, "admin_username": "ldapadmin", "admin_password": "AdminPass1!"},
+        )
+        await _seed_ldap_settings(
+            db_session,
+            ldap_auto_provision="true",
+            ldap_default_group=default_group,
+            ldap_group_mapping='{"cn=fenrir-admins,ou=groups,dc=test,dc=com": "Administrators"}',
+        )
+        fake_ldap = LDAPUserInfo(username="tofm", email="tofm@test.com", display_name=None, groups=groups)
+        with patch("backend.app.services.ldap_service.authenticate_ldap_user", return_value=fake_ldap):
+            return await async_client.post("/api/v1/auth/login", json={"username": "tofm", "password": "irrelevant"})
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_default_group_warning_is_logged_once(
+        self, async_client: AsyncClient, db_session: AsyncSession, caplog
+    ):
+        with caplog.at_level("WARNING", logger="backend.app.api.routes.auth"):
+            response = await self._login(async_client, db_session, groups=[])
+
+        assert response.status_code == 200
+        assert {g["name"] for g in response.json()["user"]["groups"]} == {"Viewers"}
+        assert caplog.text.count("has no mapped groups") == 1
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_new_user_gets_mapped_group_and_finance_defaults(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        response = await self._login(async_client, db_session, groups=["CN=Fenrir-Admins,OU=Groups,DC=Test,DC=Com"])
+
+        assert response.status_code == 200
+        body = response.json()["user"]
+        assert body["auth_source"] == "ldap"
+        assert body["email"] == "tofm@test.com"
+        assert {g["name"] for g in body["groups"]} == {"Administrators"}
+        user = (await db_session.execute(select(User).where(User.username == "tofm"))).scalar_one()
+        wallet = (
+            await db_session.execute(select(UserWallet).where(UserWallet.user_id == user.id))
+        ).scalar_one_or_none()
+        assert wallet is not None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_new_user_with_no_groups_at_all_logs_in_twice(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """No mapped group and no default group: the new user has no groups, and
+        the second login (the sync path) still works."""
+        first = await self._login(async_client, db_session, groups=[], default_group="")
+        assert first.status_code == 200
+        assert first.json()["user"]["groups"] == []
+
+        fake_ldap = LDAPUserInfo(username="tofm", email="new@test.com", display_name=None, groups=[])
+        with patch("backend.app.services.ldap_service.authenticate_ldap_user", return_value=fake_ldap):
+            second = await async_client.post("/api/v1/auth/login", json={"username": "tofm", "password": "irrelevant"})
+        assert second.status_code == 200
+        assert second.json()["user"]["email"] == "new@test.com"

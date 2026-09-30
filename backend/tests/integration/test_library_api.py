@@ -1394,6 +1394,31 @@ endsolid cube"""
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_upload_image_stores_a_thumbnail(self, async_client: AsyncClient, db_session):
+        """An uploaded image gets its own grid thumbnail, so PNGs are not blank cards (#2976)."""
+        from PIL import Image
+
+        buffer = io.BytesIO()
+        Image.new("RGB", (640, 480), (0, 174, 66)).save(buffer, format="PNG")
+
+        files = {"file": ("photo.png", buffer.getvalue(), "image/png")}
+        response = await async_client.post("/api/v1/library/files", files=files)
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["file_type"] == "png"
+        assert result["thumbnail_path"]
+
+        from backend.app.api.routes.library import to_absolute_path
+
+        thumb = to_absolute_path(result["thumbnail_path"])
+        assert thumb is not None and thumb.exists()
+        with Image.open(thumb) as thumbnail:
+            assert thumbnail.format == "PNG"
+            assert max(thumbnail.size) <= 256
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_extract_zip_with_stl_thumbnail_param(self, async_client: AsyncClient, db_session):
         """Verify ZIP extraction accepts generate_stl_thumbnails parameter."""
         # Create a ZIP file containing an STL
@@ -1728,7 +1753,7 @@ endsolid cube"""
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_backfill_external_stl_thumbnails_runs_off_the_event_loop(
+    async def test_backfill_external_thumbnails_runs_off_the_event_loop(
         self, test_engine, db_session, file_factory, monkeypatch
     ):
         """T-145: the external-folder backfill task must render off the event
@@ -1738,7 +1763,7 @@ endsolid cube"""
 
         from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-        from backend.app.api.routes.library import _backfill_external_stl_thumbnails
+        from backend.app.api.routes.library import _backfill_external_thumbnails
         from backend.app.models.library import LibraryFolder
 
         with tempfile.NamedTemporaryFile(suffix=".stl", delete=False, mode="w") as f:
@@ -1774,7 +1799,7 @@ endsolid cube"""
                 folder_id=folder.id,
             )
 
-            await _backfill_external_stl_thumbnails([stl_file.folder_id])
+            await _backfill_external_thumbnails([stl_file.folder_id])
 
             await db_session.refresh(stl_file)
             assert stl_file.thumbnail_path is not None
@@ -1801,7 +1826,7 @@ endsolid cube"""
 
         from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-        from backend.app.api.routes.library import _backfill_external_stl_thumbnails
+        from backend.app.api.routes.library import _backfill_external_thumbnails
         from backend.app.models.library import LibraryFolder
 
         active = 0
@@ -1852,8 +1877,8 @@ endsolid cube"""
             )
 
             await asyncio.gather(
-                _backfill_external_stl_thumbnails([file_a.folder_id]),
-                _backfill_external_stl_thumbnails([file_b.folder_id]),
+                _backfill_external_thumbnails([file_a.folder_id]),
+                _backfill_external_thumbnails([file_b.folder_id]),
             )
 
             assert entries == 2
@@ -2001,7 +2026,7 @@ endsolid cube"""
                     await batch_generate_stl_thumbnails(
                         request=BatchThumbnailRequest(file_ids=[stl_file.id]),
                         db=session,
-                        _=None,
+                        auth_result=(None, True),
                     )
 
             await asyncio.gather(_drive_upload(), _drive_batch())

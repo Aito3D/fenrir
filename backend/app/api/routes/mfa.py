@@ -76,9 +76,9 @@ from backend.app.schemas.auth import (
     OIDCExchangeRequest,
     OIDCLinkResponse,
     OIDCProviderCreate,
+    OIDCProviderPublicResponse,
     OIDCProviderResponse,
     OIDCProviderUpdate,
-    OIDCPublicProviderResponse,
     TOTPDisableRequest,
     TOTPEnableRequest,
     TOTPEnableResponse,
@@ -139,14 +139,6 @@ def _build_provider_response(provider: OIDCProvider) -> OIDCProviderResponse:
     ``has_icon`` field is supplied by ``OIDCProvider.has_icon`` (a property
     reading the non-deferred ``icon_content_type`` column)."""
     return OIDCProviderResponse.model_validate(provider)
-
-
-def _build_public_provider_response(provider: OIDCProvider) -> OIDCPublicProviderResponse:
-    """Slim projection of ``_build_provider_response`` for the unauthenticated
-    ``GET /oidc/providers`` list (T-067) — id/name/has_icon only, no policy
-    or connection fields. ``has_icon`` is derived the same way as the full
-    response, via ``OIDCProvider.has_icon``."""
-    return OIDCPublicProviderResponse.model_validate(provider)
 
 
 def _etag_matches(if_none_match: str | None, etag_raw: str | None) -> bool:
@@ -1462,24 +1454,24 @@ async def admin_disable_2fa(
 # ===========================================================================
 
 
-@router.get("/oidc/providers", response_model=list[OIDCPublicProviderResponse])
+@router.get("/oidc/providers", response_model=list[OIDCProviderPublicResponse])
 async def list_oidc_providers(
     db: AsyncSession = Depends(get_db),
-) -> list[OIDCPublicProviderResponse]:
+) -> list[OIDCProviderPublicResponse]:
     """List all enabled OIDC providers (public).
 
     The login page renders icons via /oidc/providers/{id}/icon — `icon_data`
     stays deferred so this list query never pulls the BLOB.
 
-    T-067: the public response is slimmed to id/name/has_icon — the fields
-    OIDCProviderButton actually reads. issuer_url/client_id/scopes and the
-    auto-create/auto-link/email-claim policy fields are not exposed to
-    unauthenticated callers; admins still get the full record via
-    ``GET /oidc/providers/all``.
+    #3107: returns the slim public shape only. The login page needs id, name,
+    has_icon and is_autologin; the full response (scopes, claims, and now
+    group_claim / group_mapping) is served by the permission-gated
+    /oidc/providers/all below, so an unauthenticated caller cannot learn
+    which IdP group name maps to which Fenrir group.
     """
     result = await db.execute(select(OIDCProvider).where(OIDCProvider.is_enabled.is_(True)))
     providers = result.scalars().all()
-    return [_build_public_provider_response(p) for p in providers]
+    return [OIDCProviderPublicResponse.model_validate(p) for p in providers]
 
 
 @router.get("/oidc/providers/all", response_model=list[OIDCProviderResponse])
@@ -1513,6 +1505,17 @@ async def create_oidc_provider(
                 detail="default_group_id references a non-existent group",
             )
 
+    # #3107 — every mapping value must reference an existing Fenrir group,
+    # same answer default_group_id gets. Checked as a set: a mapping with three
+    # entries naming the same group is one lookup, not three.
+    if body.group_mapping:
+        missing_groups = await _missing_group_names(db, set(body.group_mapping.values()))
+        if missing_groups:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=f"group_mapping references non-existent groups: {', '.join(sorted(missing_groups))}",
+            )
+
     # Fetch the icon BEFORE creating the row so a failure leaves the DB clean.
     icon_data: bytes | None = None
     icon_content_type: str | None = None
@@ -1531,6 +1534,8 @@ async def create_oidc_provider(
         auto_link_existing_accounts=body.auto_link_existing_accounts,
         email_claim=body.email_claim,
         require_email_verified=body.require_email_verified,
+        group_claim=body.group_claim,
+        group_mapping=body.group_mapping,
         icon_url=body.icon_url,
         icon_data=icon_data,
         icon_content_type=icon_content_type,
@@ -1564,6 +1569,21 @@ def _refuse_if_env_managed(provider: OIDCProvider) -> None:
         )
 
 
+async def _missing_group_names(db: AsyncSession, names: set[str]) -> set[str]:
+    """#3107 — names from a group_mapping with no matching Fenrir group.
+
+    Exact match only, same as the sync's own ``Group.name.in_()`` lookup and
+    the env path's ``Group.name == target``: the sync resolves names exactly,
+    so admitting a case-variant here would pass validation only to have the
+    sync silently never grant it — the exact failure this check exists to
+    catch at save time, in front of the admin, instead of at login time.
+    """
+    if not names:
+        return set()
+    exact = set((await db.execute(select(Group.name).where(Group.name.in_(names)))).scalars().all())
+    return names - exact
+
+
 @router.put("/oidc/providers/{provider_id}", response_model=OIDCProviderResponse)
 async def update_oidc_provider(
     provider_id: int,
@@ -1594,6 +1614,17 @@ async def update_oidc_provider(
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="default_group_id references a non-existent group",
+            )
+
+    # #3107 — same existence check as the create route, on the submitted
+    # mapping only. A null group_mapping (field absent) leaves the stored one
+    # alone; an explicit {} empties it, and emptiness needs no group lookup.
+    if body.group_mapping:
+        missing_groups = await _missing_group_names(db, set(body.group_mapping.values()))
+        if missing_groups:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=f"group_mapping references non-existent groups: {', '.join(sorted(missing_groups))}",
             )
 
     dumped = body.model_dump(exclude_none=True)
@@ -2454,6 +2485,33 @@ async def oidc_callback(
 
             if not user or not user.is_active:
                 return RedirectResponse(url=f"{frontend_error_url}account_inactive", status_code=302)
+
+            # #3107 — apply the provider's group mapping on every login, not
+            # just at account creation. Same managed-slice contract as the
+            # LDAP sync (#1292): only groups named in group_mapping values are
+            # touched, manual assignments elsewhere survive. A sync failure is
+            # logged inside and never blocks the login.
+            if provider.group_mapping:
+                from backend.app.services.oidc_group_sync import sync_oidc_user_groups
+
+                await sync_oidc_user_groups(
+                    db,
+                    user,
+                    group_claim=provider.group_claim,
+                    group_mapping=provider.group_mapping,
+                    claims=claims,
+                )
+                # Post-rollback guard, not token freshness: nothing below reads
+                # user.groups (the callback only puts the username on the exchange
+                # token; /oidc/exchange re-selects the user with selectinload).
+                # ALL attributes, not just groups: a sync that raised called
+                # db.rollback(), which expires every loaded object in the
+                # session — the next username=user.username below would then
+                # lazy-load and raise MissingGreenlet, landing the user on
+                # ?oidc_error=user_resolution_failed, i.e. a failed sync would
+                # block the login after all. Inside the mapping branch so
+                # sync-off installs do not pay the query.
+                await db.refresh(user)
 
             # Issue an OIDC exchange token (short-lived, single-use) stored in DB.
             # I7: Opportunistically prune expired exchange tokens to keep the table small.

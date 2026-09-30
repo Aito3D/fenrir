@@ -193,6 +193,7 @@ const DE_COGNATES = [
   'f(q) = Q_MIN + (1 − Q_MIN) · KQ / (q − 1 + KQ)',
   '= {{qMin}} + {{delta}} · {{kq}} / (q + {{kqMinus1}})',
   '×{{value}}',  // calculator.multiplier — pure ×N token, identical in every locale
+  'Version 2',  // stream overlay artwork picker (#3177) — same word in German
 ];
 
 // French cognates — many UI labels overlap with English exactly.
@@ -264,6 +265,7 @@ const FR_COGNATES = [
   '×{{value}}',  // calculator.multiplier — pure ×N token, identical in every locale
   'Contacts',  // aito.contactsLabel — same word in French
   'Photos', '{{count}} photo', '{{count}} photos',  // file details photo strip (#3077) — same word in French
+  'Version 2',  // stream overlay artwork picker (#3177) — same word in French
 ];
 
 // Italian cognates.
@@ -519,6 +521,7 @@ const SV_COGNATES = [
   '= {{mMin}} + {{delta}} · {{k}} / (u + {{k}})',
   'f(q) = Q_MIN + (1 − Q_MIN) · KQ / (q − 1 + KQ)',
   '= {{qMin}} + {{delta}} · {{kq}} / (q + {{kqMinus1}})',
+  'Version 2',  // stream overlay artwork picker (#3177) — same word in Swedish
 ];
 
 // Turkish cognates — technical UI labels that Turkish speakers use verbatim
