@@ -1,9 +1,0 @@
-{"findings": [
-  {"severity": "medium", "category": "authorization",
-   "file": "backend/app/api/routes/websocket.py", "line": 234,
-   "title": "_recheck_aito_read only runs on inbound messages, so a silent socket keeps Aito broadcasts after revocation",
-   "evidence": "`data = await websocket.receive_json()` then `await _recheck_aito_read(websocket)` (websocket.py:233-234) — the T-065 re-check is driven only by inbound traffic; no timer, no receive timeout. The fix assumes the app frontend pings every 30 s, but a client script can connect and never send anything: aito_read is never re-resolved on that socket, so a user whose Aito permission is removed, or who is deactivated or deleted, keeps receiving aito_changed and presence broadcasts until they disconnect.",
-   "fix": "Drive the re-check independently of inbound traffic: either run a per-connection task (or one ConnectionManager sweep) that re-resolves aito_read every _AITO_READ_RECHECK_SECONDS, or wrap receive_json in asyncio.wait_for with a timeout of about 2x the ping period and re-check (or close) when it expires, so a connection that never sends is still re-evaluated.",
-   "behavior_change": true,
-   "behavior_change_note": "A websocket client that never sends messages would, after a revoked Aito permission or a deactivated account, stop receiving aito_changed/aito_presence_state within about a minute (or be disconnected on an idle timeout) instead of receiving them until it disconnects."}
-]}
