@@ -19,9 +19,10 @@ export function QuoteDownloadButton({
 }) {
   const { t } = useTranslation();
 
-  // A hand-made card has no quote to download — same gate as
-  // QuotePrintButton, for the same reason.
-  if (!project.quote_id) return null;
+  // A hand-made card has no quote. A card whose quote is still being created
+  // has none YET: the endpoint waits for the creation, so the button is
+  // already useful.
+  if (!project.quote_id && project.quote_sync_state !== 'pending') return null;
 
   return (
     <PdfDownloadButton

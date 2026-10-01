@@ -511,9 +511,13 @@ describe('board card actions — the job has to be billed before it is closed', 
     expect(screen.queryByRole('button', { name: /mark project as done/i })).not.toBeInTheDocument();
   });
 
-  it('holds Create invoice back while an edit is still syncing to Books', () => {
+  it('still offers Create invoice while an edit is syncing to Books: the server pushes it first', () => {
+    // The invoice routes push the pending edit and wait for it before reading
+    // or billing anything (and refuse if it does not land), so the button no
+    // longer disappears for the length of a sync. Done stays held back: the
+    // job has not been billed yet.
     renderColumn(billable({ quote_sync_state: 'pending' }));
-    expect(screen.queryByRole('button', { name: /create invoice/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /create invoice/i })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /mark project as done/i })).not.toBeInTheDocument();
   });
 

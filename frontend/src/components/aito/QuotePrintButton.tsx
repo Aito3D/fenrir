@@ -23,9 +23,10 @@ export function QuotePrintButton({
 }) {
   const { t } = useTranslation();
 
-  // A hand-made card has no quote to print. Unchanged from when this file
-  // owned the printing: the gate belongs to the quote, not to the printer.
-  if (!project.quote_id) return null;
+  // A hand-made card has no quote. A card whose quote is still being created
+  // has none YET: the endpoint waits for the creation, so the button is
+  // already useful.
+  if (!project.quote_id && project.quote_sync_state !== 'pending') return null;
 
   return (
     <PdfPrintButton
