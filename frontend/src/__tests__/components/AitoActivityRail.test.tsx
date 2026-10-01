@@ -600,6 +600,12 @@ describe('ActivityRail — menu and overdue kinds', () => {
       { kind: 'task.transferred_in', subject_label: 'Pièce BMW', detail: { task_count: 3, split: false } },
       'moved 3 tasks here from “Pièce BMW”',
     ],
+    // An event without a task_count: no number, rather than "moved 0 tasks".
+    [{ kind: 'task.transferred_out', subject_label: 'Pièce BMW', detail: null }, 'moved tasks to “Pièce BMW”'],
+    [
+      { kind: 'task.transferred_in', subject_label: 'Pièce BMW', detail: { split: true } },
+      'moved tasks here from “Pièce BMW”',
+    ],
     [
       {
         kind: 'client.transferred',

@@ -20,7 +20,7 @@ import { api, type AitoProject } from '../api/client';
  *
  *  A hook so the gesture lives wherever its trigger does: the panel's ⋯ menu
  *  row calls `start()` and renders `DuplicateReplaceConfirm` while
- *  `confirming`; `DuplicateProjectButton` is the same thing as a button.
+ *  `confirming`.
  *
  *  `onDuplicate` fires once the seed is in storage. The page closes the panel
  *  and opens the drawer, which then reads the seed on mount. */

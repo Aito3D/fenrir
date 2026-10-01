@@ -5,6 +5,7 @@ import {
   EVENT_LABEL_KEY,
   formatValue,
   labelParams,
+  eventLabelKey,
 } from '../../components/aito/history/eventKinds';
 import i18n from '../../i18n';
 
@@ -308,10 +309,35 @@ describe('labelParams', () => {
     expect(labelParams(ev('task.transferred_in', '', { task_count: 1 }))).toEqual({ label: '#58', count: 1 });
   });
 
+  it('leaves the count out, rather than saying 0, when the event carries none', () => {
+    expect(labelParams(ev('task.transferred_out', 'Pièce BMW', null))).toEqual({ label: 'Pièce BMW' });
+    expect(labelParams(ev('task.transferred_in', 'Pièce BMW', { split: true }))).toEqual({ label: 'Pièce BMW' });
+    expect(labelParams(ev('project.merged', 'Pièce BMW', null))).toEqual({ label: 'Pièce BMW' });
+  });
+
   it('reads both client names for client.transferred', () => {
     expect(
       labelParams(ev('client.transferred', 'PACIFIC MARINE', { from_name: 'ACME SARL', to_name: 'PACIFIC MARINE' })),
     ).toEqual({ from: 'ACME SARL', to: 'PACIFIC MARINE' });
     expect(labelParams(ev('client.transferred', 'PACIFIC MARINE', null))).toEqual({ from: '—', to: 'PACIFIC MARINE' });
+  });
+});
+
+describe('eventLabelKey', () => {
+  const ev = (kind: string, detail: Record<string, unknown> | null) => ({ kind, detail });
+
+  it('is the counted label when the event says how many tasks moved', () => {
+    expect(eventLabelKey(ev('task.transferred_out', { task_count: 2 }))).toBe('aito.history.taskTransferredOut');
+    expect(eventLabelKey(ev('task.transferred_in', { task_count: 1 }))).toBe('aito.history.taskTransferredIn');
+  });
+
+  it('is a count-less label when it does not', () => {
+    expect(eventLabelKey(ev('task.transferred_out', null))).toBe('aito.history.taskTransferredOutSome');
+    expect(eventLabelKey(ev('task.transferred_in', {}))).toBe('aito.history.taskTransferredInSome');
+  });
+
+  it('is the plain label for every other kind, and undefined for an unknown one', () => {
+    expect(eventLabelKey(ev('project.merged', null))).toBe('aito.history.projectMerged');
+    expect(eventLabelKey(ev('no.such.kind', null))).toBeUndefined();
   });
 });

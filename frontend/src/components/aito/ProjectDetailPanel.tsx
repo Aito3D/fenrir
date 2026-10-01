@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Building2, Check, Copy, ExternalLink, Eye, History, Loader2, Lock, Mail, Pencil, Phone, Plane, RefreshCw, User } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { DuplicateReplaceConfirm } from './DuplicateProjectButton';
+import { DuplicateReplaceConfirm } from './DuplicateReplaceConfirm';
 import { MergeProjectModal } from './MergeProjectModal';
 import { TaskTransferModal } from './TaskTransferModal';
 import { TransferClientModal } from './TransferClientModal';

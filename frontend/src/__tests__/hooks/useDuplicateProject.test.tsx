@@ -1,10 +1,16 @@
+/**
+ * `useDuplicateProject`: the seed it writes into the new-project drawer's
+ * storage, the replace question it asks over a draft with work in it, and its
+ * wait for the tasks. Ported from the retired DuplicateProjectButton's tests;
+ * the panel's ⋯ menu row is now the only trigger (see ProjectDetailPanel tests).
+ */
 import { afterEach, describe, it, expect, vi } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+import { act, renderHook, waitFor } from '@testing-library/react';
+import type { ReactNode } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
-import { render } from '../utils';
-import { DuplicateProjectButton } from '../../components/aito/DuplicateProjectButton';
+import { useDuplicateProject } from '../../hooks/useDuplicateProject';
 import { readNewProjectDraft, writeNewProjectDraft } from '../../hooks/useNewProjectDraft';
 import { emptyTaskDraft } from '../../utils/taskDraft';
 import type { AitoProject, AitoTask } from '../../api/client';
@@ -54,17 +60,26 @@ const dirtyDraft = () =>
     dueDate: '',
   });
 
+function mount(onDuplicate: () => void) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const wrapper = ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={client}>{children}</QueryClientProvider>
+  );
+  return renderHook(() => useDuplicateProject(project, onDuplicate), { wrapper });
+}
+
 afterEach(() => localStorage.clear());
 
-describe('DuplicateProjectButton', () => {
-  it('seeds the drawer from the card and opens it when no draft is waiting', async () => {
+describe('useDuplicateProject', () => {
+  it('seeds the drawer from the card and hands over when no draft is waiting', async () => {
     mockTasks();
     const onDuplicate = vi.fn();
-    render(<DuplicateProjectButton project={project} onDuplicate={onDuplicate} />);
+    const { result } = mount(onDuplicate);
 
-    await userEvent.click(screen.getByRole('button', { name: /duplicate/i }));
+    act(() => result.current.start());
 
     await waitFor(() => expect(onDuplicate).toHaveBeenCalledTimes(1));
+    expect(result.current.confirming).toBe(false);
     const seeded = readNewProjectDraft()!;
     expect(seeded.tasks).toHaveLength(1);
     expect(seeded.tasks[0].title).toBe('Support GoPro');
@@ -80,14 +95,15 @@ describe('DuplicateProjectButton', () => {
     mockTasks();
     dirtyDraft();
     const onDuplicate = vi.fn();
-    render(<DuplicateProjectButton project={project} onDuplicate={onDuplicate} />);
+    const { result } = mount(onDuplicate);
 
-    await userEvent.click(screen.getByRole('button', { name: /duplicate/i }));
-    expect(await screen.findByRole('button', { name: /^cancel$/i })).toBeInTheDocument();
+    act(() => result.current.start());
+    await waitFor(() => expect(result.current.confirming).toBe(true));
     expect(onDuplicate).not.toHaveBeenCalled();
 
-    await userEvent.click(screen.getByRole('button', { name: /^cancel$/i }));
+    act(() => result.current.cancelReplace());
 
+    expect(result.current.confirming).toBe(false);
     expect(onDuplicate).not.toHaveBeenCalled();
     expect(readNewProjectDraft()?.tasks[0].title).toBe('Un devis en cours');
   });
@@ -96,10 +112,11 @@ describe('DuplicateProjectButton', () => {
     mockTasks();
     dirtyDraft();
     const onDuplicate = vi.fn();
-    render(<DuplicateProjectButton project={project} onDuplicate={onDuplicate} />);
+    const { result } = mount(onDuplicate);
 
-    await userEvent.click(screen.getByRole('button', { name: /duplicate/i }));
-    await userEvent.click(await screen.findByRole('button', { name: /replace/i }));
+    act(() => result.current.start());
+    await waitFor(() => expect(result.current.confirming).toBe(true));
+    act(() => result.current.confirmReplace());
 
     await waitFor(() => expect(onDuplicate).toHaveBeenCalledTimes(1));
     expect(readNewProjectDraft()?.tasks[0].title).toBe('Support GoPro');
@@ -117,16 +134,18 @@ describe('DuplicateProjectButton', () => {
       }),
     );
     const onDuplicate = vi.fn();
-    render(<DuplicateProjectButton project={project} onDuplicate={onDuplicate} />);
+    const { result } = mount(onDuplicate);
 
-    await userEvent.click(screen.getByRole('button', { name: /duplicate/i }));
-    // Still loading: nothing seeded, nothing opened.
+    act(() => result.current.start());
+    // Still loading: nothing seeded, nothing opened, and the trigger says it is waiting.
+    expect(result.current.waiting).toBe(true);
     expect(onDuplicate).not.toHaveBeenCalled();
     expect(readNewProjectDraft()).toBeNull();
 
     release(null);
 
     await waitFor(() => expect(onDuplicate).toHaveBeenCalledTimes(1));
+    expect(result.current.waiting).toBe(false);
     expect(readNewProjectDraft()?.tasks[0].title).toBe('Support GoPro');
   });
 });

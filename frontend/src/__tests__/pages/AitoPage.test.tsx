@@ -2181,7 +2181,7 @@ describe('print backlog badge', () => {
   });
   // Duplicate belongs to the panel, but only the page can act on it: it closes
   // the panel and opens the new-project drawer, which reads the seed the
-  // button just wrote (DuplicateProjectButton -> writeNewProjectDraft).
+  // menu row just wrote (useDuplicateProject -> writeNewProjectDraft).
   it('closes the panel and opens the drawer seeded from the duplicated card', async () => {
     const duplicated: AitoTask = {
       id: 501,

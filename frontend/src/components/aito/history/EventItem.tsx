@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { EVENT_LABEL_KEY, dotClass, detailText, formatValue, elapsedBucket, labelParams } from './eventKinds';
+import { eventLabelKey, dotClass, detailText, formatValue, elapsedBucket, labelParams } from './eventKinds';
 import type { AitoEvent } from '../../../api/client';
 import { parseUTCDate } from '../../../utils/date';
 
@@ -52,7 +52,7 @@ export function EventItem({
   const { t, i18n } = useTranslation();
   const [expanded, setExpanded] = useState(false);
 
-  const labelKey = EVENT_LABEL_KEY[event.kind];
+  const labelKey = eventLabelKey(event);
   const params = labelParams(event);
   const label = labelKey ? t(labelKey, params ?? undefined) : event.kind;
   const at = parseUTCDate(event.occurred_at);

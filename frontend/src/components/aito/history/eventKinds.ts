@@ -70,6 +70,21 @@ export const EVENT_LABEL_KEY: Record<string, string> = {
   'project.due.overdue': 'aito.history.projectDueOverdue',
 };
 
+/** The transfer labels to use when the event does not say how many tasks moved. */
+const COUNTLESS_LABEL_KEY: Record<string, string> = {
+  'task.transferred_out': 'aito.history.taskTransferredOutSome',
+  'task.transferred_in': 'aito.history.taskTransferredInSome',
+};
+
+/** The i18n key for an event's sentence: `EVENT_LABEL_KEY`, except that a
+ *  task transfer without a `task_count` gets a sentence with no number in it.
+ *  `undefined` for a kind this build does not know. */
+export function eventLabelKey(event: Pick<AitoEvent, 'kind' | 'detail'>): string | undefined {
+  const countless = COUNTLESS_LABEL_KEY[event.kind];
+  if (countless && typeof event.detail?.task_count !== 'number') return countless;
+  return EVENT_LABEL_KEY[event.kind];
+}
+
 /** The values a label interpolates, for the kinds whose sentence names the
  *  other side itself — the card a merge or a task transfer came from or went
  *  to (`{{label}}`, plus `{{count}}` tasks), or the two clients of a transfer.
@@ -85,10 +100,10 @@ export function labelParams(
   const text = (value: unknown) => (typeof value === 'string' && value ? value : null);
 
   if (event.kind === 'project.merged' || event.kind === 'task.transferred_out' || event.kind === 'task.transferred_in') {
-    return {
-      label: text(event.subject_label) ?? `#${event.subject_id ?? '?'}`,
-      count: typeof detail.task_count === 'number' ? detail.task_count : 0,
-    };
+    const label = text(event.subject_label) ?? `#${event.subject_id ?? '?'}`;
+    // No count rather than a made-up 0: `eventLabelKey` then picks the
+    // count-less sentence ("moved tasks to …").
+    return typeof detail.task_count === 'number' ? { label, count: detail.task_count } : { label };
   }
 
   if (event.kind === 'client.transferred') {

@@ -1272,7 +1272,7 @@ describe('repeat-client recall', () => {
     // `maindoeuvreValid` only looks at REVEALED rows, and that set starts
     // empty on a fresh mount — nothing seeds it from the persisted draft. So
     // a draft restored from localStorage (close/reopen, a reload, or
-    // DuplicateProjectButton, which writes the same blob) arrives with the
+    // a card duplicate, which writes the same blob) arrives with the
     // error already on screen and Create live: the exact inverse of the rule
     // "a rule only names its offender once the user has left the surface".
     localStorage.setItem(

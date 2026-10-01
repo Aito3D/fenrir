@@ -177,7 +177,7 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
   const [openSections, setOpenSections] = useState<Set<SectionId>>(() => new Set<SectionId>(['work']));
   // Seeded from the RESTORED rows, not empty. "Revealed" means "the user has
   // already left this surface", and a row that survived a close/reopen, a
-  // reload or `DuplicateProjectButton` (which writes this same blob) was left
+  // reload or a card duplicate (`useDuplicateProject` writes this same blob) was left
   // in a previous session — so its errors are owed to the user immediately.
   // Empty here is what let a restored draft carrying a priced, undescribed
   // labour step render its error and keep Create live at the same time.
