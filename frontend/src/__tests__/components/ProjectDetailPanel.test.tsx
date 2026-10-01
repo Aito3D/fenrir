@@ -1966,6 +1966,50 @@ describe('ProjectDetailPanel left column cards', () => {
     expect(screen.getByTestId('panel-column-tasks')).toBeInTheDocument();
   });
 
+  it('opens the split dialog from the ⋯ menu and swaps to the new card once the split lands', async () => {
+    const created = { ...project, id: 58 };
+    server.use(
+      http.get('/api/v1/aito/12/tasks', () => HttpResponse.json([mockTask, mockTask2])),
+      http.post('/api/v1/aito/12/tasks/transfer', () => HttpResponse.json({ source: project, target: created })),
+    );
+    const onOpenCard = vi.fn();
+    render(
+      <ProjectDetailPanel canCreate canUpdate canDelete project={project} onClose={vi.fn()} onOpenCard={onOpenCard} />,
+    );
+    await screen.findByText('Second bracket');
+    fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Split into a new card…' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Split into a new card' });
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: /Second bracket/ }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Split' }));
+    await waitFor(() => expect(onOpenCard).toHaveBeenCalledWith(58));
+    await waitFor(() => expect(screen.queryByTestId('task-transfer-modal')).not.toBeInTheDocument());
+  });
+
+  it('opens the move dialog from the ⋯ menu and stays on this card once the move lands', async () => {
+    server.use(
+      http.get('/api/v1/aito/12/tasks', () => HttpResponse.json([mockTask, mockTask2])),
+      http.get('/api/v1/aito/', () => HttpResponse.json([project, { ...project, id: 33, description: 'Autre carte' }])),
+      http.post('/api/v1/aito/12/tasks/transfer', () =>
+        HttpResponse.json({ source: project, target: { ...project, id: 33 } }),
+      ),
+    );
+    const onOpenCard = vi.fn();
+    render(
+      <ProjectDetailPanel canCreate canUpdate canDelete project={project} onClose={vi.fn()} onOpenCard={onOpenCard} />,
+    );
+    await screen.findByText('Second bracket');
+    fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Move tasks to another card…' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Move tasks to another card' });
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: /Bracket mount/ }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Next' }));
+    fireEvent.click(await within(dialog).findByTestId('merge-candidate'));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Move' }));
+    await waitFor(() => expect(screen.queryByTestId('task-transfer-modal')).not.toBeInTheDocument());
+    expect(onOpenCard).not.toHaveBeenCalled();
+  });
+
   // Always there, whatever the permissions or the card's state: a row the
   // operator cannot use is disabled with its reason (the full matrix is in
   // AitoProjectActionsMenu.test.tsx), never hidden.

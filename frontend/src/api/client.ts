@@ -8819,6 +8819,15 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ source_project_id: sourceId }),
     }),
+  /** Move `task_ids` off card `id`: onto `target_project_id`, or onto a new
+   *  card for the same client when it is null (a split — that also needs
+   *  aito:create). 409 when the list is stale, every task would leave on a
+   *  split, or either card is invoiced. */
+  transferAitoTasks: (id: number, body: { task_ids: number[]; target_project_id: number | null }) =>
+    request<{ source: AitoProject; target: AitoProject }>(`/aito/${id}/tasks/transfer`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
   getAitoTrash: () => request<AitoProject[]>('/aito/trash'),
   restoreAitoProject: (id: number) => request<AitoProject>(`/aito/${id}/restore`, { method: 'POST' }),
   refreshAitoPaymentLink: (id: number) => request<AitoProject>(`/aito/${id}/payment-link/refresh`, { method: 'POST' }),

@@ -5,6 +5,7 @@ import { Building2, Check, Copy, ExternalLink, History, Loader2, Lock, Mail, Pen
 import type { LucideIcon } from 'lucide-react';
 import { DuplicateReplaceConfirm } from './DuplicateProjectButton';
 import { MergeProjectModal } from './MergeProjectModal';
+import { TaskTransferModal } from './TaskTransferModal';
 import { ProjectActionsMenu } from './ProjectActionsMenu';
 import { TrashConfirmModal } from './TrashConfirmModal';
 import { ActivityRail } from './history/ActivityRail';
@@ -876,6 +877,7 @@ export function ProjectDetailPanel({
   // rows are usable (see ProjectActionsMenu's `rows`); the panel only owns
   // what each row opens, so a dialog outlives the menu that launched it.
   const [merging, setMerging] = useState(false);
+  const [transferMode, setTransferMode] = useState<'split' | 'move' | null>(null);
   const [trashing, setTrashing] = useState(false);
   // Same seed path the Record card's Duplicate button used before it moved
   // into the menu; the hook is inert until `start()`, and its queries share
@@ -1260,6 +1262,21 @@ export function ProjectDetailPanel({
           )}
         </div>
         {merging && <MergeProjectModal project={project} onClose={() => setMerging(false)} />}
+        {transferMode && (
+          <TaskTransferModal
+            project={project}
+            tasks={tasks}
+            mode={transferMode}
+            onClose={() => setTransferMode(null)}
+            onDone={({ target }) => {
+              // A split hands the operator the card it just made (the host
+              // swaps the panel to it); a move keeps them on this one, where
+              // the task list's resync drops the rows that left.
+              setTransferMode(null);
+              if (transferMode === 'split') onOpenCard?.(target.id);
+            }}
+          />
+        )}
         {duplicate.confirming && (
           <DuplicateReplaceConfirm onConfirm={duplicate.confirmReplace} onCancel={duplicate.cancelReplace} />
         )}
@@ -1439,9 +1456,9 @@ export function ProjectDetailPanel({
                     canUpdate={canUpdate}
                     canDelete={canDelete}
                     onMerge={() => setMerging(true)}
-                    // wired in Task 8/9/10
-                    onSplit={() => {}}
-                    onMoveTasks={() => {}}
+                    onSplit={() => setTransferMode('split')}
+                    onMoveTasks={() => setTransferMode('move')}
+                    // wired in Task 9/10
                     onCopySummary={() => {}}
                     onPrintTicket={() => {}}
                     onTransferClient={() => {}}
@@ -1451,7 +1468,7 @@ export function ProjectDetailPanel({
                     // Off while any of the panel's own overlays is up: the
                     // key must not open a menu behind the dialog in front.
                     shortcutEnabled={
-                      !(merging || trashing || historyOpen || duplicate.confirming || editingClient)
+                      !(merging || transferMode || trashing || historyOpen || duplicate.confirming || editingClient)
                     }
                   />
                 }
