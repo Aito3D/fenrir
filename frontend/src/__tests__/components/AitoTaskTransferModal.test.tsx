@@ -60,7 +60,11 @@ describe('TaskTransferModal — split', () => {
     await user.click(screen.getByRole('button', { name: 'Select all' }));
     for (const box of screen.getAllByRole('checkbox')) expect(box).toBeChecked();
     expect(split).toBeDisabled();
-    expect(screen.getByText(/The ticked tasks move to a new card for ACME SARL/)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'The ticked tasks move to a new card for ACME SARL, which starts as a draft quote, so their done ticks are cleared.',
+      ),
+    ).toBeInTheDocument();
   });
 
   it('leaves an unsaved row unpickable', () => {
@@ -184,9 +188,9 @@ describe('TaskTransferModal — move', () => {
     mockTransfer();
     const user = userEvent.setup();
     render(<TaskTransferModal project={source} tasks={tasks} mode="move" onClose={vi.fn()} onDone={vi.fn()} />);
-    expect(screen.queryByText('This card will be left without tasks.')).not.toBeInTheDocument();
+    expect(screen.queryByText('This card will be left without tasks. Its quote in Books keeps its lines, so trash this card if it is no longer needed.')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Select all' }));
-    expect(screen.getByText('This card will be left without tasks.')).toBeInTheDocument();
+    expect(screen.getByText('This card will be left without tasks. Its quote in Books keeps its lines, so trash this card if it is no longer needed.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled();
   });
 
@@ -203,7 +207,7 @@ describe('TaskTransferModal — move', () => {
       />,
     );
     await user.click(screen.getByRole('button', { name: 'Select all' }));
-    expect(screen.queryByText('This card will be left without tasks.')).not.toBeInTheDocument();
+    expect(screen.queryByText('This card will be left without tasks. Its quote in Books keeps its lines, so trash this card if it is no longer needed.')).not.toBeInTheDocument();
   });
 
   it('holds Next while the panel still has task saves in flight', async () => {
