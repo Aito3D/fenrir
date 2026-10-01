@@ -89,7 +89,8 @@ async def fan_out(db: AsyncSession, event: AitoEvent, project: AitoProject | Non
     """One Notification per watcher who wants this event's inbox kind.
 
     Called by ``aito_events.record()`` in the same session as the event and
-    never commits. Returns the recipients' user ids.
+    never commits. A user event skips the watcher who performed it. Returns
+    the recipients' user ids.
     """
     kind = inbox_kind_for(event.kind)
     if kind is None:
@@ -111,6 +112,8 @@ async def fan_out(db: AsyncSession, event: AitoEvent, project: AitoProject | Non
         user = await db.get(User, watch.user_id)
         if user is None or not user.is_active or not user.has_permission(_READ_PERMISSION):
             continue
+        if event.actor_class == "user" and event.actor_name == user.username:
+            continue  # nobody needs telling about what they just did themselves
         db.add(
             Notification(
                 user_id=watch.user_id,

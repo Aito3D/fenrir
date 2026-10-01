@@ -29,6 +29,7 @@ from backend.app.core.websocket import ws_manager
 from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
+from backend.app.models.notification_inbox import AitoWatch
 from backend.app.models.user import User
 from backend.app.schemas.aito import (
     AitoClientEdit,
@@ -86,6 +87,8 @@ from backend.app.schemas.aito import (
     AitoTerminalPaymentView,
     AitoTrackingLinkResponse,
     AitoTrackingResponse,
+    AitoWatchResponse,
+    AitoWatchUpdate,
 )
 from backend.app.services import aito_tracking as tracking_service
 from backend.app.services.aito_board_rules import AWAY_STATUSES, SERVICES, TaskSummary, evaluate, summarise
@@ -134,7 +137,7 @@ from backend.app.services.aito_tracking import (
     tracking_url,
     with_tracking_sms,
 )
-from backend.app.services.inbox import auto_watch, broadcast_pending
+from backend.app.services.inbox import KINDS as INBOX_KINDS, auto_watch, broadcast_pending, preferences_for
 from backend.app.services.openrouter import (
     OpenRouterNotConfiguredError,
     OpenRouterUpstreamError,
@@ -4584,6 +4587,69 @@ async def regenerate_tracking_token(
     )
     await db.commit()
     return AitoTrackingLinkResponse(tracking_url=await tracking_url(db, project), quote_notes=quote_notes)
+
+
+async def _own_watch(db: AsyncSession, project_id: int, user_id: int) -> AitoWatch | None:
+    return (
+        await db.execute(select(AitoWatch).where(AitoWatch.user_id == user_id, AitoWatch.project_id == project_id))
+    ).scalar_one_or_none()
+
+
+def _watch_response(watch: AitoWatch | None) -> AitoWatchResponse:
+    if watch is None:
+        return AitoWatchResponse(watching=False, kinds=[])
+    return AitoWatchResponse(watching=True, kinds=list(watch.kinds_json or []))
+
+
+@router.get("/{project_id}/watch", response_model=AitoWatchResponse)
+async def get_watch(
+    project_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
+):
+    """Whether the caller watches this card, and for which inbox kinds.
+    Nobody watches anything with auth disabled (no user, no inbox)."""
+    await _get_active_project_or_404(db, project_id)
+    if current_user is None:
+        return _watch_response(None)
+    return _watch_response(await _own_watch(db, project_id, current_user.id))
+
+
+@router.put("/{project_id}/watch", response_model=AitoWatchResponse)
+async def set_watch(
+    project_id: int,
+    payload: AitoWatchUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
+):
+    """Watch this card for ``kinds`` (Aito inbox kinds the caller has enabled
+    in Settings), replacing any earlier choice; an empty list stops watching.
+    A no-op with auth disabled."""
+    await _get_active_project_or_404(db, project_id)
+    kinds = list(dict.fromkeys(payload.kinds))
+    unknown = [k for k in kinds if k not in INBOX_KINDS or INBOX_KINDS[k].family != "aito"]
+    if unknown:
+        raise HTTPException(status_code=422, detail=f"unknown kinds: {unknown}")
+    if current_user is None:
+        return _watch_response(None)
+    prefs = await preferences_for(db, current_user.id)
+    off = [k for k in kinds if k not in (prefs.kinds_json or [])]
+    if off:
+        raise HTTPException(status_code=422, detail=f"kind disabled in preferences: {off}")
+
+    watch = await _own_watch(db, project_id, current_user.id)
+    if not kinds:
+        if watch is not None:
+            await db.delete(watch)
+            await db.commit()
+        return _watch_response(None)
+    if watch is None:
+        watch = AitoWatch(user_id=current_user.id, project_id=project_id, kinds_json=kinds)
+        db.add(watch)
+    else:
+        watch.kinds_json = kinds
+    await db.commit()
+    return _watch_response(watch)
 
 
 @router.post("/{project_id}/payment-link/refresh", response_model=AitoProjectResponse)

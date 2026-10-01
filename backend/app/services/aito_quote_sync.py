@@ -44,7 +44,7 @@ from backend.app.models.calculator import CalculatorFilament
 from backend.app.services.aito_board_rules import AWAY_STATUSES
 from backend.app.services.aito_customer_credit import read_customer_credit
 from backend.app.services.aito_events import record, utc_now_naive
-from backend.app.services.aito_invoice_sweep import _same_reference, sweep_invoices
+from backend.app.services.aito_invoice_sweep import _same_reference, sweep_inbox, sweep_invoices
 from backend.app.services.aito_payment_links import deposit_pct, required_amount
 from backend.app.services.aito_quote_export import (
     SERVICES,
@@ -2905,6 +2905,15 @@ async def run_sync_loop() -> None:
                     # non-poisoned path.
                     with contextlib.suppress(Exception):
                         await db.rollback()
+                # Overdue events and the inbox purge: local like the purge
+                # above, so outside the Books gate — a Books outage or a 429
+                # window must not freeze either. Hourly by its own gate; it
+                # rolls back its own database failures, so this guard only
+                # keeps anything else from costing the passes below.
+                try:
+                    await sweep_inbox(db)
+                except Exception:
+                    logger.exception("Inbox sweep failed")
                 # Payment links: gated on Heimdall, not Books — a link can
                 # be polled with Books down. Its own try/except like the
                 # purge: one failed pass costs this tick, never the loop.

@@ -50,11 +50,13 @@ cut off rather than the ones already refreshed."""
 
 import logging
 import time
+from datetime import date, datetime, time as dtime, timezone
 
 from sqlalchemy import or_, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
 from backend.app.services import aito_events
 from backend.app.services.aito_events import utc_now_naive as _now
@@ -68,6 +70,8 @@ _SWEEP_INTERVAL_SECONDS = 3600
 # time.monotonic() of the last pass that ran; 0.0 = never. Module state so
 # the loop's 300 s ticks can call sweep_invoices() unconditionally.
 _last_run: float = 0.0
+# The same, for sweep_inbox's own hourly gate.
+_last_inbox_run: float = 0.0
 
 
 def _same_reference(reference: str, quote_number: str | None) -> bool:
@@ -169,23 +173,77 @@ async def settle_with_deposits(
     return (fresh or invoice), max(remaining - applied_total, 0.0)
 
 
-async def _purge_inbox(db: AsyncSession) -> None:
-    """The hourly sweep's sibling step: inbox rows past their retention
-    (services/inbox.py) go. Runs after a completed pass, so it shares the
-    hourly gate; best effort -- a failure is logged and the next hour
-    retries it."""
+# The Aito columns where a promised date is moot: a delivered job is not late.
+# Same set as the board's ordering (`_FINISHED_COLUMNS` in routes/aito.py)
+# and the frontend's `isFinished`.
+_FINISHED_COLUMNS: tuple[str, ...] = ("finish", "done")
+
+
+def _local_midnight_utc(today: date) -> datetime:
+    """Start of ``today`` on the server's calendar, as a naive-UTC timestamp
+    comparable with ``AitoEvent.occurred_at``. ``due_date`` is a local
+    calendar date (the board's ``_today_iso`` reads the server's clock too),
+    so "already said today" must mean the same day."""
+    return datetime.combine(today, dtime.min).astimezone(timezone.utc).replace(tzinfo=None)
+
+
+async def _record_overdue(db: AsyncSession, today: date) -> int:
+    """One ``project.due.overdue`` per open card whose promise is past and
+    that has not had one since local midnight. Never commits."""
+    already = (
+        select(AitoEvent.id)
+        .where(
+            AitoEvent.project_id == AitoProject.id,
+            AitoEvent.kind == "project.due.overdue",
+            AitoEvent.occurred_at >= _local_midnight_utc(today),
+        )
+        .exists()
+    )
+    stmt = (
+        select(AitoProject.id, AitoProject.due_date)
+        .where(
+            AitoProject.status == "active",
+            AitoProject.due_date.is_not(None),
+            AitoProject.due_date < today.isoformat(),
+            AitoProject.board_column.not_in(_FINISHED_COLUMNS),
+            ~already,
+        )
+        .order_by(AitoProject.id)
+    )
+    late = list((await db.execute(stmt)).all())
+    for project_id, due_date in late:
+        await aito_events.record(
+            db, project_id, "project.due.overdue", actor_class="system", detail={"due_date": due_date}
+        )
+    return len(late)
+
+
+async def sweep_inbox(db: AsyncSession, *, force: bool = False) -> None:
+    """The hourly local step: overdue events, then the inbox retention purge.
+
+    Its own step of the sync tick, not part of ``sweep_invoices``: neither
+    half touches Books, so a Books outage (or a 429 window) must not stop
+    either. Own hourly gate, spent on entry so a failing step is retried an
+    hour later rather than every tick. Best effort -- a database failure is
+    logged and rolled back; ``force`` bypasses the gate (tests)."""
+    global _last_inbox_run
+    if not force and _last_inbox_run and time.monotonic() - _last_inbox_run < _SWEEP_INTERVAL_SECONDS:
+        return
+    _last_inbox_run = time.monotonic()
     try:
+        overdue = await _record_overdue(db, date.today())
         purged = await purge_old(db, now=_now())
         await db.commit()
     except SQLAlchemyError as exc:
-        logger.warning("Invoice sweep could not purge old inbox rows: %s", exc)
+        logger.warning("Inbox sweep failed: %s", exc)
         try:
             await db.rollback()
         except SQLAlchemyError:
             pass
         return
-    if purged:
-        logger.info("Invoice sweep purged %d inbox row(s) past retention", purged)
+    await broadcast_pending(db)
+    if overdue or purged:
+        logger.info("Inbox sweep: %d overdue card(s) recorded, %d inbox row(s) purged", overdue, purged)
 
 
 async def sweep_invoices(db: AsyncSession, *, force: bool = False) -> int:
@@ -342,5 +400,4 @@ async def sweep_invoices(db: AsyncSession, *, force: bool = False) -> int:
         raise
     else:
         _last_run = time.monotonic()
-    await _purge_inbox(db)
     return updated

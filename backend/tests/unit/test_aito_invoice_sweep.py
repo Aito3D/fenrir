@@ -10,7 +10,7 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from backend.app.models.aito_project import AitoProject
-from backend.app.services import aito_invoice_sweep, aito_quote_sync
+from backend.app.services import aito_events, aito_invoice_sweep, aito_quote_sync
 from backend.app.services.aito_invoice_sweep import sweep_invoices
 from backend.app.services.zoho import ZohoRateLimited, ZohoUpstreamError, zoho_service
 
@@ -18,8 +18,10 @@ from backend.app.services.zoho import ZohoRateLimited, ZohoUpstreamError, zoho_s
 @pytest.fixture(autouse=True)
 def reset_gate():
     aito_invoice_sweep._last_run = 0.0
+    aito_invoice_sweep._last_inbox_run = 0.0
     yield
     aito_invoice_sweep._last_run = 0.0
+    aito_invoice_sweep._last_inbox_run = 0.0
 
 
 @pytest.fixture(autouse=True)
@@ -926,3 +928,111 @@ async def test_rate_limit_during_the_deposit_read_propagates(db_session, monkeyp
 
     with pytest.raises(ZohoRateLimited):
         await sweep_invoices(db_session, force=True)
+
+
+# --- The local hourly step: overdue events (and the inbox purge) -----------
+#
+# A broken promise is news once a day: the step records one
+# `project.due.overdue` per card per calendar day, which the inbox turns
+# into `aito.overdue` for whoever watches for it. No Books involved.
+
+
+async def _overdue_events(db, project_id: int) -> list[AitoEvent]:
+    return [e for e in await _events(db, project_id) if e.kind == "project.due.overdue"]
+
+
+@pytest.mark.asyncio
+async def test_an_overdue_card_gets_one_event_per_day(db_session):
+    from datetime import date, timedelta
+
+    from backend.app.services.aito_invoice_sweep import sweep_inbox
+
+    yesterday = (date.today() - timedelta(days=1)).isoformat()
+    tomorrow = (date.today() + timedelta(days=1)).isoformat()
+    late = await _project(db_session, board_column="print", due_date=yesterday)
+    soon = await _project(db_session, board_column="print", due_date=tomorrow)
+    today = await _project(db_session, board_column="print", due_date=date.today().isoformat())
+    delivered = await _project(db_session, board_column="done", due_date=yesterday)
+    trashed = await _project(db_session, board_column="print", due_date=yesterday, status="deleted")
+    ids = {"late": late.id, "soon": soon.id, "today": today.id, "delivered": delivered.id, "trashed": trashed.id}
+
+    await sweep_inbox(db_session, force=True)
+    events = await _overdue_events(db_session, ids["late"])
+    assert len(events) == 1
+    assert events[0].actor_class == "system" and events[0].detail == {"due_date": yesterday}
+    for name in ("soon", "today", "delivered", "trashed"):
+        assert await _overdue_events(db_session, ids[name]) == [], name
+
+    # A second pass the same day adds nothing — forced, so the hourly gate
+    # is not what stops it.
+    await sweep_inbox(db_session, force=True)
+    assert len(await _overdue_events(db_session, ids["late"])) == 1
+
+
+@pytest.mark.asyncio
+async def test_an_overdue_event_from_yesterday_does_not_block_today_s(db_session):
+    from datetime import date, timedelta
+
+    from backend.app.services.aito_invoice_sweep import sweep_inbox
+
+    due = (date.today() - timedelta(days=3)).isoformat()
+    late = await _project(db_session, board_column="print", due_date=due)
+    late_id = late.id
+    await aito_events.record(
+        db_session,
+        late_id,
+        "project.due.overdue",
+        actor_class="system",
+        detail={"due_date": due},
+        occurred_at=datetime.utcnow() - timedelta(days=1, hours=1),
+    )
+    await db_session.commit()
+
+    await sweep_inbox(db_session, force=True)
+    assert len(await _overdue_events(db_session, late_id)) == 2
+
+
+@pytest.mark.asyncio
+async def test_the_overdue_event_reaches_a_watcher_who_wants_it(db_session, monkeypatch):
+    from datetime import date, timedelta
+
+    from backend.app.models.notification_inbox import AitoWatch, Notification, UserInboxPreference
+    from backend.app.services import inbox
+    from backend.app.services.aito_invoice_sweep import sweep_inbox
+    from backend.tests.unit.test_inbox_service import _user
+
+    pushed: list[int] = []
+
+    async def fake_broadcast_to_user(user_id, message):
+        pushed.append(user_id)
+
+    monkeypatch.setattr(inbox.ws_manager, "broadcast_to_user", fake_broadcast_to_user)
+    alice = await _user(db_session, "alice")
+    alice_id = alice.id
+    late = await _project(db_session, board_column="print", due_date=(date.today() - timedelta(days=1)).isoformat())
+    late_id = late.id
+    db_session.add_all(
+        [
+            UserInboxPreference(user_id=alice_id, kinds_json=["aito.overdue"], sound_kinds_json=[], auto_watch=True),
+            AitoWatch(user_id=alice_id, project_id=late_id, kinds_json=["aito.overdue"]),
+        ]
+    )
+    await db_session.commit()
+
+    await sweep_inbox(db_session, force=True)
+    rows = list((await db_session.execute(select(Notification))).scalars())
+    assert [(r.user_id, r.kind, r.target_id) for r in rows] == [(alice_id, "aito.overdue", late_id)]
+    assert pushed == [alice_id]
+
+
+@pytest.mark.asyncio
+async def test_the_inbox_step_has_its_own_hourly_gate(db_session, monkeypatch):
+    from datetime import date, timedelta
+
+    from backend.app.services.aito_invoice_sweep import sweep_inbox
+
+    monkeypatch.setattr(aito_invoice_sweep, "_last_inbox_run", 0.0)
+    await sweep_inbox(db_session)
+    late = await _project(db_session, board_column="print", due_date=(date.today() - timedelta(days=1)).isoformat())
+    await sweep_inbox(db_session)  # inside the hour: skipped
+    assert await _overdue_events(db_session, late.id) == []

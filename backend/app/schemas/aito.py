@@ -1532,3 +1532,14 @@ class AitoTrackingLinkResponse(BaseModel):
     # the new link ('updated'), could not be ('failed' — the panel warns), or
     # there was no quote / no public URL to write (None).
     quote_notes: Literal["updated", "failed"] | None = None
+
+
+class AitoWatchUpdate(BaseModel):
+    """The inbox kinds (`aito.*`) to watch this card for; empty = unwatch."""
+
+    kinds: list[str] = Field(max_length=20)
+
+
+class AitoWatchResponse(BaseModel):
+    watching: bool
+    kinds: list[str]

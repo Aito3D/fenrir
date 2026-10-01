@@ -139,8 +139,8 @@ async def test_auto_watch_and_purge(async_client, db_session):
 
 
 @pytest.mark.asyncio
-async def test_the_hourly_invoice_sweep_purges_old_rows(db_session):
-    from backend.app.services.aito_invoice_sweep import sweep_invoices
+async def test_the_hourly_inbox_sweep_purges_old_rows(db_session):
+    from backend.app.services.aito_invoice_sweep import sweep_inbox
 
     alice = await _user(db_session, "alice")
     db_session.add(
@@ -154,8 +154,87 @@ async def test_the_hourly_invoice_sweep_purges_old_rows(db_session):
         )
     )
     await db_session.commit()
-    await sweep_invoices(db_session, force=True)
+    await sweep_inbox(db_session, force=True)
     assert (await db_session.execute(select(Notification))).scalars().first() is None
+
+
+@pytest.mark.asyncio
+async def test_a_failing_books_pass_still_purges_the_inbox(db_session, test_engine, monkeypatch):
+    """The purge is its own step of the sync tick: a Books outage that makes
+    the invoice sweep raise does not keep 30-day-old rows around."""
+    import asyncio
+    import contextlib
+
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+    from backend.app.services import (
+        aito_contact_poll,
+        aito_invoice_poll,
+        aito_invoice_sweep,
+        aito_payment_links,
+        aito_quote_sync,
+        aito_terminal_payments,
+    )
+    from backend.app.services.zoho import ZohoUpstreamError
+
+    alice = await _user(db_session, "alice")
+    db_session.add(
+        Notification(
+            user_id=alice.id,
+            kind="aito.paid",
+            family="aito",
+            title="x",
+            body="y",
+            created_at=datetime.utcnow() - timedelta(days=45),
+        )
+    )
+    await db_session.commit()
+
+    async def ok(*_args, **_kwargs):
+        return 0
+
+    async def books_down(db):
+        raise ZohoUpstreamError("HTTP 503")
+
+    tick_done = asyncio.Event()
+
+    async def last_pass(db):
+        tick_done.set()
+
+    monkeypatch.setattr(aito_quote_sync, "_wake", asyncio.Event())
+    monkeypatch.setattr(aito_quote_sync, "_debounce_deadline", None)
+    monkeypatch.setattr(aito_quote_sync, "_throttled_until", None)
+    monkeypatch.setattr(aito_invoice_sweep, "_last_inbox_run", 0.0)
+    monkeypatch.setattr(
+        aito_quote_sync, "async_session", async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    )
+    monkeypatch.setattr(aito_quote_sync, "sync_enabled", lambda db: _true())
+    monkeypatch.setattr(aito_quote_sync.zoho_service, "is_configured", lambda db: _true())
+    monkeypatch.setattr(aito_quote_sync, "sync_interval_seconds", lambda db: _value(300))
+    monkeypatch.setattr(aito_quote_sync, "run_sync_once", ok)
+    monkeypatch.setattr(aito_quote_sync, "sweep_invoices", books_down)
+    monkeypatch.setattr(aito_invoice_poll, "poll_invoices", ok)
+    monkeypatch.setattr(aito_contact_poll, "poll_contacts", ok)
+    monkeypatch.setattr(aito_payment_links, "reconcile_payment_links", ok)
+    monkeypatch.setattr(aito_terminal_payments, "poll_open_terminal_payments", last_pass)
+
+    loop_task = asyncio.create_task(aito_quote_sync.run_sync_loop())
+    try:
+        await asyncio.wait_for(tick_done.wait(), timeout=10)
+    finally:
+        loop_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await loop_task
+    db_session.expire_all()
+    assert (await db_session.execute(select(Notification))).scalars().first() is None
+
+
+async def _value(value):
+    return value
+
+
+async def _true():
+    return True
 
 
 @pytest.mark.asyncio
@@ -217,3 +296,53 @@ async def test_routes_auto_watch_the_creator_and_nudge_after_commit(async_client
     rows = list((await db_session.execute(select(Notification))).scalars())
     assert [(r.user_id, r.kind, r.target_id) for r in rows] == [(alice.id, "aito.quote_accepted", project_id)]
     assert pushes == [(alice.id, {"type": "inbox_changed", "user_ids": [alice.id]})]
+
+
+@pytest.mark.asyncio
+async def test_a_watcher_is_not_notified_about_their_own_action(async_client, db_session, pushes):
+    """The creator accepts the quote by hand on a card they auto-watch: no
+    row for them. Another watcher of the same card still gets one."""
+    from backend.app.core.auth import create_access_token
+    from backend.app.models.settings import Settings
+
+    perms = ("aito:read", "aito:create", "aito:update")
+    alice = await _user(db_session, "alice", perms)
+    bob = await _user(db_session, "bob", perms)
+    db_session.add(Settings(key="auth_enabled", value="true"))
+    await db_session.commit()
+    as_alice = {"Authorization": f"Bearer {create_access_token(data={'sub': alice.username})}"}
+    as_bob = {"Authorization": f"Bearer {create_access_token(data={'sub': bob.username})}"}
+
+    resp = await async_client.post(
+        "/api/v1/aito/",
+        json={"description": "Mine", "client_id": "z1", "client_name": "ACME", "client_phone": "+689 87 00 00 00"},
+        headers=as_alice,
+    )
+    assert resp.status_code == 201, resp.text
+    project_id = resp.json()["id"]
+    resp = await async_client.put(
+        f"/api/v1/aito/{project_id}/watch", json={"kinds": ["aito.quote_accepted"]}, headers=as_bob
+    )
+    assert resp.status_code == 200, resp.text
+
+    resp = await async_client.post(
+        f"/api/v1/aito/{project_id}/quote-status", json={"status": "accepted"}, headers=as_alice
+    )
+    assert resp.status_code == 200, resp.text
+    rows = list((await db_session.execute(select(Notification))).scalars())
+    assert [(r.user_id, r.kind) for r in rows] == [(bob.id, "aito.quote_accepted")]
+    assert pushes == [(bob.id, {"type": "inbox_changed", "user_ids": [bob.id]})]
+
+
+@pytest.mark.asyncio
+async def test_a_client_action_still_reaches_a_watcher_who_shares_the_actor_name(async_client, db_session):
+    """Only a USER event is the watcher's own: a client decision recorded with
+    an actor name equal to a username is still news to that user."""
+    alice = await _user(db_session, "alice")
+    p = await _create_with_tasks(async_client, [])
+    db_session.add(AitoWatch(user_id=alice.id, project_id=p["id"], kinds_json=["aito.quote_accepted"]))
+    await db_session.commit()
+    await record(db_session, p["id"], "quote.accepted", actor_class="client", actor_name=alice.username)
+    await db_session.commit()
+    rows = list((await db_session.execute(select(Notification))).scalars())
+    assert [r.user_id for r in rows] == [alice.id]
