@@ -3526,6 +3526,12 @@ export default {
       permissionsSelected: '{{count}} seçildi',
       noResults: 'Aramanızla eşleşen izin yok',
       websocketHint: 'Canlı güncellemeler için gereklidir. Bu izin olmadan arayüz düzenli yoklamaya geri döner.',
+      printerAccess: 'Yazıcı erişimi',
+      restrictPrinters: 'Üyelere yalnızca seçilen yazıcıları göster',
+      restrictPrintersHint: 'Üyeler yalnızca bu yazıcıları görebilir ve kontrol edebilir. Bu ayarı olmayan gruplar yazıcıları sınırlamaz; bu nedenle hiçbir sınırlı grupta olmayan bir kullanıcı tüm yazıcıları görür.',
+      noPrintersSelected: 'Hiç yazıcı seçilmedi: bu grubun üyeleri hiçbir yazıcıyı görmeyecek.',
+      adminsSeeAllPrinters: 'Yöneticiler her zaman tüm yazıcıları görür.',
+      noPrintersConfigured: 'Henüz yazıcı eklenmedi.',
     },
   },
 

@@ -281,3 +281,112 @@ describe('GroupEditPage', () => {
     });
   });
 });
+
+describe('GroupEditPage printer access (#1727)', () => {
+  const printers = [
+    { id: 1, name: 'Lab X1C' },
+    { id: 2, name: 'Training P1S' },
+  ];
+  let posted: Record<string, unknown> | null;
+  let patched: Record<string, unknown> | null;
+
+  const setup = (group: Record<string, unknown>) => {
+    posted = null;
+    patched = null;
+    server.use(
+      http.get('/api/v1/groups/permissions', () => HttpResponse.json(mockPermissions)),
+      http.get('/api/v1/printers/', () => HttpResponse.json(printers)),
+      http.get('/api/v1/groups/:id', () => HttpResponse.json(group)),
+      http.post('/api/v1/groups/', async ({ request }) => {
+        posted = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({ ...group, ...posted, id: 10 });
+      }),
+      http.patch('/api/v1/groups/:id', async ({ request }) => {
+        patched = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({ ...group, ...patched });
+      })
+    );
+  };
+
+  const renderEdit = async () => {
+    const { MemoryRouter, Routes, Route } = await import('react-router-dom');
+    const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query');
+    const { AuthProvider } = await import('../../contexts/AuthContext');
+    const { ToastProvider } = await import('../../contexts/ToastContext');
+    const { ThemeProvider } = await import('../../contexts/ThemeContext');
+    const { render: rtlRender } = await import('@testing-library/react');
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    rtlRender(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <ThemeProvider>
+            <ToastProvider>
+              <MemoryRouter initialEntries={['/groups/2/edit']}>
+                <Routes>
+                  <Route path="/groups/:id/edit" element={<GroupEditPage />} />
+                  <Route path="/settings" element={<div>Settings</div>} />
+                </Routes>
+              </MemoryRouter>
+            </ToastProvider>
+          </ThemeProvider>
+        </AuthProvider>
+      </QueryClientProvider>
+    );
+  };
+
+  it('sends the selected printers when creating a restricted group', async () => {
+    setup({});
+    const user = userEvent.setup();
+    render(<GroupEditPage />);
+
+    await waitFor(() => expect(screen.getByText('Printer access')).toBeInTheDocument());
+    await user.type(screen.getByPlaceholderText(/group name/i), 'Team A');
+    await user.click(screen.getByRole('switch'));
+    await user.click(await screen.findByLabelText('Lab X1C'));
+    await user.click(screen.getByText('Save'));
+
+    await waitFor(() => expect(posted).not.toBeNull());
+    expect(posted).toMatchObject({ name: 'Team A', restrict_printers: true, printer_ids: [1] });
+  });
+
+  it('warns when a restricted group has no printers', async () => {
+    setup({});
+    const user = userEvent.setup();
+    render(<GroupEditPage />);
+
+    await waitFor(() => expect(screen.getByText('Printer access')).toBeInTheDocument());
+    expect(screen.queryByText(/won't see any printer/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole('switch'));
+    expect(await screen.findByText(/won't see any printer/)).toBeInTheDocument();
+  });
+
+  it('saves printer access on a system group without resending its permissions', async () => {
+    setup({ ...mockGroup, restrict_printers: true, printer_ids: [2] });
+    const user = userEvent.setup();
+    await renderEdit();
+
+    await waitFor(() => expect(screen.getByDisplayValue('Operators')).toBeInTheDocument());
+    expect(screen.getByLabelText('Training P1S')).toBeChecked();
+    await user.click(screen.getByLabelText('Lab X1C'));
+    await user.click(screen.getByText('Save'));
+
+    await waitFor(() => expect(patched).not.toBeNull());
+    expect(patched).toMatchObject({ restrict_printers: true, printer_ids: [2, 1] });
+    expect(patched).not.toHaveProperty('permissions');
+  });
+
+  it('explains that Administrators always see every printer', async () => {
+    setup({ ...mockGroup, id: 1, name: 'Administrators', restrict_printers: false, printer_ids: [] });
+    const user = userEvent.setup();
+    await renderEdit();
+
+    await waitFor(() => expect(screen.getByDisplayValue('Administrators')).toBeInTheDocument());
+    expect(screen.getByText('Administrators always see every printer.')).toBeInTheDocument();
+    expect(screen.queryByRole('switch')).not.toBeInTheDocument();
+    await user.click(screen.getByText('Save'));
+
+    await waitFor(() => expect(patched).not.toBeNull());
+    expect(patched).not.toHaveProperty('restrict_printers');
+    expect(patched).not.toHaveProperty('printer_ids');
+  });
+});

@@ -14,6 +14,8 @@ from __future__ import annotations
 import pytest
 from httpx import AsyncClient
 
+from backend.app.core.printer_scope import ALL_PRINTERS
+
 pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
 
@@ -257,7 +259,7 @@ class TestOverlayTokenReachesTheVideo:
         jwt = await _setup_admin(async_client, suffix="_video")
         overlay_token = await _mint(async_client, jwt, scope="overlay")
 
-        assert await verify_camera_stream_token(overlay_token) is True
+        assert await verify_camera_stream_token(overlay_token) == ALL_PRINTERS  # admin-owned: every printer (#1727)
 
     async def test_overlay_gate_rejects_camera_stream_and_camwall(self, async_client: AsyncClient):
         from backend.app.core.auth import verify_overlay_token
@@ -266,8 +268,8 @@ class TestOverlayTokenReachesTheVideo:
         stream_token = await _mint(async_client, jwt, scope="camera_stream")
         camwall_token = await _mint(async_client, jwt, scope="camwall", name="wall")
 
-        assert await verify_overlay_token(stream_token) is False
-        assert await verify_overlay_token(camwall_token) is False
+        assert await verify_overlay_token(stream_token) is None
+        assert await verify_overlay_token(camwall_token) is None
 
     async def test_camwall_gate_rejects_an_overlay_token(self, async_client: AsyncClient):
         """Symmetric guard: the new scope must not widen the Cam Wall either."""
@@ -276,4 +278,4 @@ class TestOverlayTokenReachesTheVideo:
         jwt = await _setup_admin(async_client, suffix="_gate_camwall")
         overlay_token = await _mint(async_client, jwt, scope="overlay")
 
-        assert await verify_camwall_token(overlay_token) is False
+        assert await verify_camwall_token(overlay_token) is None

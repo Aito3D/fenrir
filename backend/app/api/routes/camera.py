@@ -19,10 +19,13 @@ from backend.app.core import database
 from backend.app.core.auth import (
     RequireCameraStreamTokenIfAuthEnabled,
     RequirePermissionIfAuthEnabled,
+    RequirePrinterPermissionIfAuthEnabled,
     create_camera_stream_token,
+    current_api_key_if_present,
 )
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
+from backend.app.models.api_key import APIKey
 from backend.app.models.printer import Printer
 from backend.app.models.user import User
 from backend.app.services.camera import (
@@ -847,14 +850,21 @@ async def generate_rtsp_mjpeg_stream(
 
 @router.post("/camera/stream-token")
 async def create_stream_token(
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
+    user: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
+    api_key: APIKey | None = Depends(current_api_key_if_present),
 ):
     """Create a reusable token for camera stream/snapshot access.
 
     Returns a token valid for 60 minutes that can be appended as ?token=xxx
-    to camera stream/snapshot URLs loaded via <img> tags.
+    to camera stream/snapshot URLs loaded via <img> tags. The token opens only
+    the printers its minter may see (#1727).
     """
-    return {"token": await create_camera_stream_token()}
+    return {
+        "token": await create_camera_stream_token(
+            username=user.username if user is not None else None,
+            api_key_id=api_key.id if api_key is not None else None,
+        )
+    }
 
 
 @router.get("/{printer_id}/camera/stream")
@@ -1095,7 +1105,7 @@ async def camera_stream(
 @router.api_route("/{printer_id}/camera/stop", methods=["GET", "POST"])
 async def stop_camera_stream(
     printer_id: int,
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
+    _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.CAMERA_VIEW),
 ):
     """Stop active camera streams for a printer.
 
@@ -1284,7 +1294,7 @@ async def camera_snapshot(
 async def test_camera(
     printer_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
+    _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.CAMERA_VIEW),
 ):
     """Test camera connection for a printer.
 
@@ -1305,7 +1315,7 @@ async def test_camera(
 async def diagnose_camera_route(
     printer_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
+    _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.CAMERA_VIEW),
 ):
     """Run staged diagnostics for a printer's camera path.
 
@@ -1339,7 +1349,7 @@ async def diagnose_camera_route(
 @router.get("/{printer_id}/camera/status")
 async def camera_status(
     printer_id: int,
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
+    _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.CAMERA_VIEW),
 ):
     """Get the status of an active camera stream.
 
@@ -1407,7 +1417,7 @@ async def test_external_camera(
     url: str,
     camera_type: str,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
+    _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.CAMERA_VIEW),
 ):
     """Test external camera connection.
 
@@ -1434,7 +1444,7 @@ async def check_plate_empty(
     use_external: bool | None = None,
     include_debug_image: bool = False,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
+    _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.CAMERA_VIEW),
 ):
     """Check if the build plate is empty using camera vision.
 
@@ -1552,7 +1562,7 @@ async def calibrate_plate_detection(
     label: str | None = None,
     use_external: bool | None = None,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
+    _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.CAMERA_VIEW),
 ):
     """Calibrate plate detection by capturing a reference image of the empty plate.
 
@@ -1625,7 +1635,7 @@ async def delete_plate_calibration(
     printer_id: int,
     plate_type: str | None = None,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
+    _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.CAMERA_VIEW),
 ):
     """Delete the plate detection calibration for a printer and plate type.
 
@@ -1666,7 +1676,7 @@ async def get_plate_detection_status(
     printer_id: int,
     plate_type: str | None = None,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
+    _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.CAMERA_VIEW),
 ):
     """Check plate detection status for a printer and plate type.
 
@@ -1710,7 +1720,7 @@ async def get_plate_detection_status(
 async def get_plate_references(
     printer_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
+    _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.CAMERA_VIEW),
 ):
     """Get all calibration references for a printer with metadata.
 
@@ -1775,7 +1785,7 @@ async def update_reference_label(
     index: int,
     label: str,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
+    _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.CAMERA_VIEW),
 ):
     """Update the label for a calibration reference."""
     from backend.app.services.plate_detection import PlateDetector, is_plate_detection_available
@@ -1800,7 +1810,7 @@ async def delete_reference(
     printer_id: int,
     index: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
+    _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.CAMERA_VIEW),
 ):
     """Delete a specific calibration reference."""
     from backend.app.services.plate_detection import PlateDetector, is_plate_detection_available

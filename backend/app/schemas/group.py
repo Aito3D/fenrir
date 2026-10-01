@@ -21,6 +21,9 @@ class GroupCreate(BaseModel):
     name: str
     description: str | None = None
     permissions: list[str] = []
+    # Printer scope (#1727): when set, members only see these printers
+    restrict_printers: bool = False
+    printer_ids: list[int] = []
 
 
 class GroupUpdate(BaseModel):
@@ -29,6 +32,8 @@ class GroupUpdate(BaseModel):
     name: str | None = None
     description: str | None = None
     permissions: list[str] | None = None
+    restrict_printers: bool | None = None
+    printer_ids: list[int] | None = None
 
 
 class GroupResponse(BaseModel):
@@ -39,6 +44,8 @@ class GroupResponse(BaseModel):
     description: str | None
     permissions: list[str]
     is_system: bool
+    restrict_printers: bool = False
+    printer_ids: list[int] = []
     user_count: int = 0
     created_at: datetime
     updated_at: datetime

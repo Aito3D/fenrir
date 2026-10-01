@@ -3351,7 +3351,13 @@ export default {
       clearAll: '모두 해제',
       permissionsSelected: '{{count}}개 선택됨',
       noResults: '검색과 일치하는 권한이 없습니다',
-      websocketHint: '실시간 업데이트에 필요합니다. 이 권한이 없으면 인터페이스는 주기적 폴링으로 대체됩니다.'
+      websocketHint: '실시간 업데이트에 필요합니다. 이 권한이 없으면 인터페이스는 주기적 폴링으로 대체됩니다.',
+      printerAccess: '프린터 접근',
+      restrictPrinters: '구성원에게 선택한 프린터만 표시',
+      restrictPrintersHint: '구성원은 이 프린터만 보고 제어할 수 있습니다. 이 설정이 없는 그룹은 프린터를 제한하지 않으므로, 제한된 그룹에 속하지 않은 사용자는 모든 프린터를 볼 수 있습니다.',
+      noPrintersSelected: '선택된 프린터가 없습니다. 이 그룹의 구성원에게는 프린터가 표시되지 않습니다.',
+      adminsSeeAllPrinters: '관리자는 항상 모든 프린터를 볼 수 있습니다.',
+      noPrintersConfigured: '아직 추가된 프린터가 없습니다.',
     }
   },
   users: {

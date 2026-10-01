@@ -3524,6 +3524,12 @@ export default {
       permissionsSelected: '{{count}}件選択',
       noResults: '検索に一致する権限がありません',
       websocketHint: 'ライブ更新に必要です。この権限がないと、インターフェースは定期的なポーリングに切り替わります。',
+      printerAccess: 'プリンターへのアクセス',
+      restrictPrinters: 'メンバーには選択したプリンターのみ表示する',
+      restrictPrintersHint: 'メンバーはこれらのプリンターのみ表示・操作できます。この設定がないグループはプリンターを制限しないため、制限付きグループに属していないユーザーはすべてのプリンターを表示できます。',
+      noPrintersSelected: 'プリンターが選択されていません。このグループのメンバーにはプリンターが表示されません。',
+      adminsSeeAllPrinters: '管理者には常にすべてのプリンターが表示されます。',
+      noPrintersConfigured: 'プリンターはまだ追加されていません。',
     },
   },
 

@@ -3554,6 +3554,12 @@ export default {
       permissionsSelected: '{{count}} geselecteerd',
       noResults: 'Geen machtigingen komen overeen met je zoekopdracht',
       websocketHint: 'Vereist voor live-updates. Zonder dit valt de interface terug op periodieke polling.',
+      printerAccess: 'Printertoegang',
+      restrictPrinters: 'Leden alleen de geselecteerde printers tonen',
+      restrictPrintersHint: 'Leden zien en bedienen alleen deze printers. Groepen zonder deze instelling beperken printers niet, dus een gebruiker die in geen enkele beperkte groep zit, ziet ze allemaal.',
+      noPrintersSelected: 'Geen printers geselecteerd: leden van deze groep zien geen enkele printer.',
+      adminsSeeAllPrinters: 'Beheerders zien altijd alle printers.',
+      noPrintersConfigured: 'Er zijn nog geen printers toegevoegd.',
     },
   },
 

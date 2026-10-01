@@ -3511,6 +3511,12 @@ export default {
       permissionsSelected: '已选 {{count}} 个',
       noResults: '没有权限匹配您的搜索',
       websocketHint: '实时更新所需。缺少此权限时，界面将回退到定期轮询。',
+      printerAccess: '打印机访问',
+      restrictPrinters: '仅向成员显示所选打印机',
+      restrictPrintersHint: '成员只能查看和控制这些打印机。未启用此设置的组不会限制打印机，因此不属于任何受限组的用户可以看到所有打印机。',
+      noPrintersSelected: '未选择打印机：该组成员将看不到任何打印机。',
+      adminsSeeAllPrinters: '管理员始终可以看到所有打印机。',
+      noPrintersConfigured: '尚未添加打印机。',
     },
   },
 

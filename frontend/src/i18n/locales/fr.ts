@@ -3512,6 +3512,12 @@ export default {
       permissionsSelected: '{{count}} sélectionnée(s)',
       noResults: 'Aucune permission ne correspond à votre recherche',
       websocketHint: "Requis pour les mises à jour en direct. Sans cette permission, l'interface bascule sur une actualisation périodique.",
+      printerAccess: 'Accès aux imprimantes',
+      restrictPrinters: 'Ne montrer aux membres que les imprimantes sélectionnées',
+      restrictPrintersHint: 'Les membres ne voient et ne contrôlent que ces imprimantes. Les groupes sans ce réglage ne limitent pas les imprimantes : un utilisateur qui n\'est dans aucun groupe limité les voit toutes.',
+      noPrintersSelected: 'Aucune imprimante sélectionnée : les membres de ce groupe ne verront aucune imprimante.',
+      adminsSeeAllPrinters: 'Les administrateurs voient toujours toutes les imprimantes.',
+      noPrintersConfigured: 'Aucune imprimante n\'a encore été ajoutée.',
     },
   },
 

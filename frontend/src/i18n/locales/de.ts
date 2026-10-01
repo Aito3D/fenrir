@@ -3524,6 +3524,12 @@ export default {
       permissionsSelected: '{{count}} ausgewählt',
       noResults: 'Keine Berechtigungen entsprechen Ihrer Suche',
       websocketHint: 'Erforderlich für Live-Aktualisierungen. Ohne diese Berechtigung greift die Oberfläche auf regelmäßiges Abrufen zurück.',
+      printerAccess: 'Druckerzugriff',
+      restrictPrinters: 'Mitgliedern nur die ausgewählten Drucker zeigen',
+      restrictPrintersHint: 'Mitglieder sehen und steuern nur diese Drucker. Gruppen ohne diese Einstellung schränken die Drucker nicht ein, daher sieht ein Benutzer, der in keiner eingeschränkten Gruppe ist, alle.',
+      noPrintersSelected: 'Keine Drucker ausgewählt: Mitglieder dieser Gruppe sehen keinen Drucker.',
+      adminsSeeAllPrinters: 'Administratoren sehen immer alle Drucker.',
+      noPrintersConfigured: 'Es wurden noch keine Drucker hinzugefügt.',
     },
   },
 

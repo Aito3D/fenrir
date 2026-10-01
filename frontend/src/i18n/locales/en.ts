@@ -3554,6 +3554,12 @@ export default {
       permissionsSelected: '{{count}} selected',
       noResults: 'No permissions match your search',
       websocketHint: 'Required for live updates. Without it, the interface falls back to periodic polling.',
+      printerAccess: 'Printer access',
+      restrictPrinters: 'Only show members the selected printers',
+      restrictPrintersHint: 'Members can see and control only these printers. Groups without this setting don\'t limit printers, so a user who is in no limited group sees all of them.',
+      noPrintersSelected: 'No printers selected: members of this group won\'t see any printer.',
+      adminsSeeAllPrinters: 'Administrators always see every printer.',
+      noPrintersConfigured: 'No printers have been added yet.',
     },
   },
 

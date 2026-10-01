@@ -3511,6 +3511,12 @@ export default {
       permissionsSelected: '{{count}} selecionada(s)',
       noResults: 'Nenhuma permissão corresponde à sua pesquisa',
       websocketHint: 'Necessário para atualizações em tempo real. Sem esta permissão, a interface recorre à sondagem periódica.',
+      printerAccess: 'Acesso às impressoras',
+      restrictPrinters: 'Mostrar aos membros apenas as impressoras selecionadas',
+      restrictPrintersHint: 'Os membros só podem ver e controlar estas impressoras. Grupos sem esta configuração não limitam as impressoras, então um usuário que não está em nenhum grupo limitado vê todas.',
+      noPrintersSelected: 'Nenhuma impressora selecionada: os membros deste grupo não verão nenhuma impressora.',
+      adminsSeeAllPrinters: 'Administradores sempre veem todas as impressoras.',
+      noPrintersConfigured: 'Nenhuma impressora foi adicionada ainda.',
     },
   },
 

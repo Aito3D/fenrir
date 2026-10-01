@@ -3511,6 +3511,12 @@ export default {
       permissionsSelected: '{{count}} selezionati',
       noResults: 'Nessun permesso corrisponde alla ricerca',
       websocketHint: "Necessario per gli aggiornamenti in tempo reale. Senza questo permesso, l'interfaccia ripiega sul polling periodico.",
+      printerAccess: 'Accesso alle stampanti',
+      restrictPrinters: 'Mostra ai membri solo le stampanti selezionate',
+      restrictPrintersHint: 'I membri vedono e controllano solo queste stampanti. I gruppi senza questa impostazione non limitano le stampanti, quindi un utente che non fa parte di alcun gruppo limitato le vede tutte.',
+      noPrintersSelected: 'Nessuna stampante selezionata: i membri di questo gruppo non vedranno alcuna stampante.',
+      adminsSeeAllPrinters: 'Gli amministratori vedono sempre tutte le stampanti.',
+      noPrintersConfigured: 'Non è ancora stata aggiunta alcuna stampante.',
     },
   },
 

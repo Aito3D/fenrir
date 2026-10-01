@@ -3511,6 +3511,12 @@ export default {
       permissionsSelected: '已選 {{count}} 個',
       noResults: '沒有權限匹配您的搜尋',
       websocketHint: '即時更新所需。缺少此權限時，介面將回退到定期輪詢。',
+      printerAccess: '印表機存取',
+      restrictPrinters: '僅向成員顯示所選印表機',
+      restrictPrintersHint: '成員只能檢視和控制這些印表機。未啟用此設定的群組不會限制印表機，因此不屬於任何受限群組的使用者可以看到所有印表機。',
+      noPrintersSelected: '未選擇印表機：此群組的成員將看不到任何印表機。',
+      adminsSeeAllPrinters: '管理員一律可以看到所有印表機。',
+      noPrintersConfigured: '尚未新增印表機。',
     },
   },
 

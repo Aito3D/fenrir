@@ -4298,6 +4298,9 @@ export interface Group {
   description: string | null;
   permissions: Permission[];
   is_system: boolean;
+  /** Members only see the printers in printer_ids (#1727) */
+  restrict_printers: boolean;
+  printer_ids: number[];
   user_count: number;
   created_at: string;
   updated_at: string;
@@ -4311,12 +4314,16 @@ export interface GroupCreate {
   name: string;
   description?: string;
   permissions: Permission[];
+  restrict_printers?: boolean;
+  printer_ids?: number[];
 }
 
 export interface GroupUpdate {
   name?: string;
   description?: string;
   permissions?: Permission[];
+  restrict_printers?: boolean;
+  printer_ids?: number[];
 }
 
 export interface PermissionInfo {

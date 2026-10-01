@@ -2,11 +2,12 @@ import { useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { ArrowLeft, Save, Loader2, Search, Check, Minus, Shield, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, Search, Check, Minus, Shield, AlertTriangle, Printer as PrinterIcon } from 'lucide-react';
 import { api } from '../api/client';
-import type { Permission, PermissionCategory } from '../api/client';
+import type { GroupCreate, GroupUpdate, Permission, PermissionCategory } from '../api/client';
 import { Button } from '../components/Button';
 import { Card } from '../components/Card';
+import { Toggle } from '../components/Toggle';
 import { useToast } from '../contexts/ToastContext';
 
 export function GroupEditPage() {
@@ -20,6 +21,8 @@ export function GroupEditPage() {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [permissions, setPermissions] = useState<Permission[]>([]);
+  const [restrictPrinters, setRestrictPrinters] = useState(false);
+  const [printerIds, setPrinterIds] = useState<number[]>([]);
   const [search, setSearch] = useState('');
   const [initialized, setInitialized] = useState(false);
 
@@ -34,17 +37,23 @@ export function GroupEditPage() {
     queryFn: () => api.getPermissions(),
   });
 
+  const { data: printers } = useQuery({
+    queryKey: ['printers'],
+    queryFn: () => api.getPrinters(),
+  });
+
   // Initialize form from fetched group data (once)
   if (isEditing && groupData && !initialized) {
     setName(groupData.name);
     setDescription(groupData.description || '');
     setPermissions(groupData.permissions);
+    setRestrictPrinters(groupData.restrict_printers ?? false);
+    setPrinterIds(groupData.printer_ids ?? []);
     setInitialized(true);
   }
 
   const createMutation = useMutation({
-    mutationFn: (data: { name: string; description?: string; permissions: Permission[] }) =>
-      api.createGroup(data),
+    mutationFn: (data: GroupCreate) => api.createGroup(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['groups'] });
       queryClient.invalidateQueries({ queryKey: ['group'] });
@@ -57,8 +66,7 @@ export function GroupEditPage() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: (data: { name?: string; description?: string; permissions: Permission[] }) =>
-      api.updateGroup(Number(id), data),
+    mutationFn: (data: GroupUpdate) => api.updateGroup(Number(id), data),
     onSuccess: (updatedGroup) => {
       queryClient.invalidateQueries({ queryKey: ['groups'] });
       // Prime the single-group detail cache with the PATCH response body so
@@ -81,6 +89,8 @@ export function GroupEditPage() {
   });
 
   const isSaving = createMutation.isPending || updateMutation.isPending;
+  // Administrators see every printer regardless; the backend refuses to restrict them
+  const isAdministrators = isEditing && groupData?.is_system === true && groupData.name === 'Administrators';
 
   const handleSave = () => {
     if (!name.trim()) {
@@ -88,18 +98,35 @@ export function GroupEditPage() {
       return;
     }
     if (isEditing) {
+      // System groups refuse any permissions payload, so only send it when it
+      // changed -- otherwise their description and printer access couldn't be
+      // saved at all.
+      const permissionsChanged =
+        !groupData ||
+        permissions.length !== groupData.permissions.length ||
+        permissions.some((p) => !groupData.permissions.includes(p));
       updateMutation.mutate({
         name: name !== groupData?.name ? name : undefined,
         description,
-        permissions,
+        permissions: groupData?.is_system && !permissionsChanged ? undefined : permissions,
+        restrict_printers: isAdministrators ? undefined : restrictPrinters,
+        printer_ids: isAdministrators ? undefined : printerIds,
       });
     } else {
       createMutation.mutate({
         name,
         description: description || undefined,
         permissions,
+        restrict_printers: restrictPrinters,
+        printer_ids: printerIds,
       });
     }
+  };
+
+  const togglePrinter = (printerId: number) => {
+    setPrinterIds((prev) =>
+      prev.includes(printerId) ? prev.filter((p) => p !== printerId) : [...prev, printerId]
+    );
   };
 
   const togglePermission = (perm: Permission) => {
@@ -206,6 +233,72 @@ export function GroupEditPage() {
           />
         </div>
       </div>
+
+      {/* Printer access (#1727) */}
+      <Card>
+        <div className="p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <PrinterIcon className="w-4 h-4 text-bambu-gray shrink-0" />
+            <span className="text-white font-medium text-sm">{t('groups.editor.printerAccess')}</span>
+          </div>
+          {isAdministrators ? (
+            <p className="text-sm text-bambu-gray">{t('groups.editor.adminsSeeAllPrinters')}</p>
+          ) : (
+            <>
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm text-white">{t('groups.editor.restrictPrinters')}</p>
+                  <p className="text-xs text-bambu-gray mt-1">{t('groups.editor.restrictPrintersHint')}</p>
+                </div>
+                <Toggle checked={restrictPrinters} onChange={setRestrictPrinters} />
+              </div>
+              {restrictPrinters && (
+                <div className="space-y-2">
+                  {!printers || printers.length === 0 ? (
+                    <p className="text-sm text-bambu-gray">{t('groups.editor.noPrintersConfigured')}</p>
+                  ) : (
+                    <>
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm text-bambu-gray">
+                          {t('groups.editor.permissionsSelected', { count: printerIds.length })} / {printers.length}
+                        </span>
+                        <Button size="sm" variant="ghost" onClick={() => setPrinterIds(printers.map((p) => p.id))}>
+                          {t('groups.editor.selectAll')}
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => setPrinterIds([])}>
+                          {t('groups.editor.clearAll')}
+                        </Button>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-1">
+                        {printers.map((printer) => (
+                          <label
+                            key={printer.id}
+                            className="flex items-center gap-3 px-2 py-1.5 rounded hover:bg-bambu-dark-secondary cursor-pointer"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={printerIds.includes(printer.id)}
+                              onChange={() => togglePrinter(printer.id)}
+                              className="w-4 h-4 shrink-0 rounded border-bambu-gray text-bambu-green focus:ring-bambu-green focus:ring-offset-0 bg-bambu-dark-secondary"
+                            />
+                            <span className="text-sm text-bambu-gray truncate">{printer.name}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                  {printerIds.length === 0 && (
+                    <div className="flex items-center gap-2 text-xs text-yellow-700 dark:text-yellow-400">
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                      {t('groups.editor.noPrintersSelected')}
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </Card>
 
       {/* Toolbar */}
       <div className="flex items-center justify-between flex-wrap gap-3">

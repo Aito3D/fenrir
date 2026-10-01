@@ -3553,6 +3553,12 @@ errors: {
       permissionsSelected: '{{count}} valda',
       noResults: 'Inga behörigheter matchar din sökning',
       websocketHint: 'Krävs för liveuppdateringar. Utan det faller gränssnittet tillbaka på periodisk avfrågning.',
+      printerAccess: 'Skrivaråtkomst',
+      restrictPrinters: 'Visa endast de valda skrivarna för medlemmar',
+      restrictPrintersHint: 'Medlemmar kan bara se och styra dessa skrivare. Grupper utan den här inställningen begränsar inte skrivare, så en användare som inte är med i någon begränsad grupp ser alla.',
+      noPrintersSelected: 'Inga skrivare valda: medlemmar i den här gruppen ser ingen skrivare.',
+      adminsSeeAllPrinters: 'Administratörer ser alltid alla skrivare.',
+      noPrintersConfigured: 'Inga skrivare har lagts till än.',
     },
   },
 

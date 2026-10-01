@@ -5197,6 +5197,28 @@ async def run_migrations(conn):
             text("UPDATE notification_providers SET attach_photo = :on WHERE attach_photo IS NULL"), {"on": True}
         )
 
+    # Migration: printer-scoped groups (#1727). Defaults off, so no existing
+    # group narrows anyone's printers on upgrade; the group_printers table
+    # itself comes from create_all(). The backfill covers a table create_all()
+    # already gave the column, where the ALTER is swallowed as a duplicate.
+    await _safe_execute(conn, "ALTER TABLE groups ADD COLUMN restrict_printers BOOLEAN DEFAULT FALSE")
+    async with conn.begin_nested():
+        await conn.execute(
+            text("UPDATE groups SET restrict_printers = :off WHERE restrict_printers IS NULL"), {"off": False}
+        )
+
+    # Migration: camera-stream and websocket tokens record who minted them, so
+    # they carry that caller's printer scope (#1727). Camera tokens minted
+    # before this have no principal at all (username NULL; every new one sets
+    # it, "" for API keys and auth-off), and would now resolve to no printers.
+    # They live 60 minutes; dropping them sends the browser to mint a new one.
+    await _safe_execute(conn, "ALTER TABLE auth_ephemeral_tokens ADD COLUMN api_key_id INTEGER")
+    async with conn.begin_nested():
+        await conn.execute(
+            text("DELETE FROM auth_ephemeral_tokens WHERE token_type = :t AND username IS NULL"),
+            {"t": "camera_stream"},
+        )
+
 
 async def _migrate_confirm_prompt_body_template(conn) -> None:
     """Replace the one-tap verdict URLs in the outcome prompt's body (#1898).

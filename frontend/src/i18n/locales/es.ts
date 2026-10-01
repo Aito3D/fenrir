@@ -3526,6 +3526,12 @@ export default {
       permissionsSelected: '{{count}} seleccionados',
       noResults: 'Ningún permiso coincide con su búsqueda',
       websocketHint: 'Necesario para las actualizaciones en vivo. Sin este permiso, la interfaz recurre al sondeo periódico.',
+      printerAccess: 'Acceso a impresoras',
+      restrictPrinters: 'Mostrar a los miembros solo las impresoras seleccionadas',
+      restrictPrintersHint: 'Los miembros solo pueden ver y controlar estas impresoras. Los grupos sin este ajuste no limitan las impresoras, así que un usuario que no esté en ningún grupo limitado las ve todas.',
+      noPrintersSelected: 'No hay impresoras seleccionadas: los miembros de este grupo no verán ninguna impresora.',
+      adminsSeeAllPrinters: 'Los administradores siempre ven todas las impresoras.',
+      noPrintersConfigured: 'Aún no se ha añadido ninguna impresora.',
     },
   },
 
