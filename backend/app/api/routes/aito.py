@@ -34,6 +34,7 @@ from backend.app.schemas.aito import (
     AitoClientEdit,
     AitoClientHistoryResponse,
     AitoClientRatingResponse,
+    AitoClientTransfer,
     AitoContactedUpdate,
     AitoDueDateUpdate,
     AitoEventPage,
@@ -4037,6 +4038,66 @@ async def update_project(
     # actually change something need the rest of the board to hear about it).
     if changes or shipping is not None:
         await _broadcast_changed("update", project.id, _actor(current_user))
+    await db.refresh(project)
+    return await _project_response(db, project)
+
+
+@router.put("/{project_id}/transfer-client", response_model=AitoProjectResponse)
+async def transfer_client(
+    project_id: int,
+    payload: AitoClientTransfer,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
+):
+    """Re-point the card at another contact. Unlike `edit_project_client`,
+    Books' contact is not edited: the card leaves it for another one.
+
+    Quote status is kept (operator decision: a sent quote stays sent); the
+    card is marked pending so the sync worker pushes the estimate's new
+    customer. The social pair belonged to the old client and is cleared, and
+    so is the contact person's name — the body carries only the new person's
+    id, and the panel refreshes the name from Books. The same contact id is a
+    silent no-op: no event, no wake, no broadcast.
+    """
+    project = await _get_active_project_or_404(db, project_id)
+    if project.quote_invoiced:
+        raise HTTPException(status_code=409, detail="This project has been invoiced — it cannot change client")
+    if payload.client_id == project.client_id:
+        return await _project_response(db, project)
+    detail = {
+        "from_id": project.client_id,
+        "from_name": project.client_name,
+        "to_id": payload.client_id,
+        "to_name": payload.client_name,
+    }
+    project.client_id = payload.client_id
+    project.client_name = payload.client_name
+    project.client_phone = payload.client_phone
+    project.client_email = payload.client_email
+    project.client_is_company = payload.client_is_company
+    project.client_contact_person_id = payload.client_contact_person_id
+    project.client_contact_name = None
+    project.client_social_network = None
+    project.client_social_handle = None
+    was_pending = project.quote_sync_state == "pending"
+    _mark_pending_if_ours(project)
+    actor = _actor(current_user)
+    await record(
+        db,
+        project.id,
+        "client.transferred",
+        actor_class="user",
+        actor_name=actor,
+        subject_type="project",
+        subject_id=project.id,
+        subject_label=payload.client_name,
+        detail=detail,
+    )
+    if not was_pending and project.quote_sync_state == "pending":
+        await record(db, project.id, "sync.queued", actor_class="system")
+    queued = project.quote_sync_state == "pending"
+    await _commit_and_wake(db, queued, project.id)
+    await _broadcast_changed("project", project.id, actor)
     await db.refresh(project)
     return await _project_response(db, project)
 

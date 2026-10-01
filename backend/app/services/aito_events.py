@@ -90,6 +90,8 @@ KINDS: dict[str, str] = {
     # move-to-another-card. Story on both sides — where did the lines go.
     "task.transferred_out": "story",
     "task.transferred_in": "story",
+    # The card changed hands — the audit trail of who is billed.
+    "client.transferred": "story",
     "project.urgent.set": "story",
     "project.urgent.cleared": "story",
     "project.sav.set": "story",

@@ -493,6 +493,29 @@ class AitoTaskTransfer(BaseModel):
         return value
 
 
+class AitoClientTransfer(BaseModel):
+    """PUT /aito/{id}/transfer-client — the card changes hands. Same caps and
+    phone/email checks as AitoProjectCreate's client fields; the social pair
+    is NOT accepted (it belonged to the old client and is cleared)."""
+
+    client_id: str = Field(min_length=1, max_length=50)
+    client_name: str = Field(min_length=1, max_length=200)
+    client_phone: str | None = Field(default=None, max_length=50)
+    client_email: str | None = Field(default=None, max_length=200)
+    client_is_company: bool | None = None
+    client_contact_person_id: str | None = Field(default=None, max_length=50)
+
+    @field_validator("client_email")
+    @classmethod
+    def _validate_client_email(cls, value: str | None) -> str | None:
+        return value if value is None else _check_email(value)
+
+    @field_validator("client_phone")
+    @classmethod
+    def _validate_client_phone(cls, value: str | None) -> str | None:
+        return value if value is None else _check_phone(value)
+
+
 class AitoProjectUpdate(AitoShippingInput, AitoClientSocialInput):
     """Content edits from the card detail panel. Ordering (column/position) is
     owned by the /move endpoint and deliberately not accepted here."""
