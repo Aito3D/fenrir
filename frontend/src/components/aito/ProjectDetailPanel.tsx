@@ -6,6 +6,7 @@ import type { LucideIcon } from 'lucide-react';
 import { DuplicateReplaceConfirm } from './DuplicateProjectButton';
 import { MergeProjectModal } from './MergeProjectModal';
 import { TaskTransferModal } from './TaskTransferModal';
+import { useCardActions } from './useCardActions';
 import { ProjectActionsMenu } from './ProjectActionsMenu';
 import { TrashConfirmModal } from './TrashConfirmModal';
 import { ActivityRail } from './history/ActivityRail';
@@ -1196,6 +1197,7 @@ export function ProjectDetailPanel({
 
   const { user } = useAuth();
   const otherViewers = useAitoViewers(project.id).filter((name) => name !== (user?.username ?? ''));
+  const cardActions = useCardActions(project, tasks, currency, canUpdate);
 
   return (
     <div
@@ -1459,9 +1461,9 @@ export function ProjectDetailPanel({
                     onMerge={() => setMerging(true)}
                     onSplit={() => setTransferMode('split')}
                     onMoveTasks={() => setTransferMode('move')}
-                    // wired in Task 9/10
-                    onCopySummary={() => {}}
-                    onPrintTicket={() => {}}
+                    onCopySummary={() => void cardActions.copySummary()}
+                    onPrintTicket={() => void cardActions.printTicket()}
+                    // wired in Task 10
                     onTransferClient={() => {}}
                     onDuplicate={onDuplicate && duplicate.start}
                     onDelete={onDelete && (() => setTrashing(true))}

@@ -266,6 +266,7 @@ const FR_COGNATES = [
   'Contacts',  // aito.contactsLabel — same word in French
   'Photos', '{{count}} photo', '{{count}} photos',  // file details photo strip (#3077) — same word in French
   'Version 2',  // stream overlay artwork picker (#3177) — same word in French
+  'Total {{amount}}',  // aito.summaryTotal — same word in French
 ];
 
 // Italian cognates.
@@ -385,6 +386,7 @@ const PT_BR_COGNATES = [
   'f(q) = Q_MIN + (1 − Q_MIN) · KQ / (q − 1 + KQ)',
   '= {{qMin}} + {{delta}} · {{kq}} / (q + {{kqMinus1}})',
   '×{{value}}',  // calculator.multiplier — pure ×N token, identical in every locale
+  'Total {{amount}}',  // aito.summaryTotal — same word in Portuguese
 ];
 
 // Chinese (Simplified): very few cognates beyond brand names.
@@ -493,6 +495,7 @@ const ES_COGNATES = [
   'f(q) = Q_MIN + (1 − Q_MIN) · KQ / (q − 1 + KQ)',
   '= {{qMin}} + {{delta}} · {{kq}} / (q + {{kqMinus1}})',
   '×{{value}}',  // calculator.multiplier — pure ×N token, identical in every locale
+  'Total {{amount}}',  // aito.summaryTotal — same word in Spanish
 ];
 
 // Swedish cognates — technical UI labels that Swedish speakers use verbatim

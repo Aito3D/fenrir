@@ -4032,3 +4032,126 @@ describe('client history from the masthead', () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 });
+
+describe('ProjectDetailPanel copy summary and job ticket', () => {
+  const trackingHandler = (calls: { n: number }) =>
+    http.get('/api/v1/aito/12/tracking-link', () => {
+      calls.n += 1;
+      return HttpResponse.json({ tracking_url: 'https://shop.example/t/tok' });
+    });
+
+  const chooseMenuRow = async (name: string) => {
+    await screen.findByText('Second bracket');
+    fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
+    fireEvent.click(screen.getByRole('menuitem', { name }));
+  };
+
+  /** Swaps in a clipboard whose writeText the test controls, in a secure
+   *  context so `copyText` takes the modern branch; returns the restore. */
+  const stubClipboard = (writeText: ReturnType<typeof vi.fn>) => {
+    const clipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+    const secure = Object.getOwnPropertyDescriptor(window, 'isSecureContext');
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    Object.defineProperty(window, 'isSecureContext', { value: true, configurable: true });
+    return () => {
+      if (clipboard) Object.defineProperty(navigator, 'clipboard', clipboard);
+      else delete (navigator as unknown as { clipboard?: unknown }).clipboard;
+      if (secure) Object.defineProperty(window, 'isSecureContext', secure);
+      else delete (window as unknown as { isSecureContext?: unknown }).isSecureContext;
+    };
+  };
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('copies the card as text, tracking link last, and says so', async () => {
+    const calls = { n: 0 };
+    server.use(http.get('/api/v1/aito/12/tasks', () => HttpResponse.json([mockTask, mockTask2])), trackingHandler(calls));
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    const restore = stubClipboard(writeText);
+    try {
+      show({ quote_number: 'DEV26-2656', tracking_configured: true });
+      await chooseMenuRow('Copy summary');
+      await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
+      expect(writeText.mock.calls[0][0]).toBe(
+        [
+          '#12 · DEV26-2656 · ACME SARL',
+          'Support de caméra',
+          '',
+          `- Bracket mount — ${formatMoney(500, 'USD')}`,
+          `- Second bracket — ${formatMoney(500, 'USD')}`,
+          `Total ${formatMoney(1000, 'USD')}`,
+          '',
+          'https://shop.example/t/tok',
+        ].join('\n'),
+      );
+      expect(await screen.findByText('Summary copied')).toBeInTheDocument();
+      expect(calls.n).toBe(1);
+    } finally {
+      restore();
+    }
+  });
+
+  it('asks for no tracking link when the shop has none configured, and toasts a refused copy', async () => {
+    const calls = { n: 0 };
+    server.use(http.get('/api/v1/aito/12/tasks', () => HttpResponse.json([mockTask, mockTask2])), trackingHandler(calls));
+    const writeText = vi.fn().mockRejectedValue(new Error('denied'));
+    const restore = stubClipboard(writeText);
+    (document as unknown as { execCommand: unknown }).execCommand = () => false;
+    try {
+      show({ tracking_configured: false });
+      await chooseMenuRow('Copy summary');
+      expect(await screen.findByText('Could not copy the summary')).toBeInTheDocument();
+      expect(writeText.mock.calls[0][0]).not.toContain('https://');
+      expect(calls.n).toBe(0);
+    } finally {
+      restore();
+      (document as unknown as { execCommand: unknown }).execCommand = undefined;
+    }
+  });
+
+  it('prints the job ticket through the hidden iframe, with printer names and no prices', async () => {
+    const printTask = { ...mockImpressionTask, id: 102, title: 'Second bracket' };
+    server.use(
+      http.get('/api/v1/aito/12/tasks', () => HttpResponse.json([mockTask, printTask])),
+      trackingHandler({ n: 0 }),
+    );
+    let printed: Blob | null = null;
+    globalThis.URL.createObjectURL = vi.fn((blob: Blob) => {
+      printed = blob;
+      return 'blob:ticket';
+    });
+    globalThis.URL.revokeObjectURL = vi.fn();
+    const print = vi.fn();
+    vi.spyOn(HTMLIFrameElement.prototype, 'contentWindow', 'get').mockReturnValue({
+      focus: () => {},
+      print,
+    } as unknown as Window);
+
+    show({ tracking_configured: true });
+    await chooseMenuRow('Print job ticket');
+    let iframe: HTMLIFrameElement | null = null;
+    await waitFor(() => {
+      iframe = document.querySelector('iframe[src="blob:ticket"]');
+      expect(iframe).not.toBeNull();
+    });
+    fireEvent.load(iframe as unknown as HTMLIFrameElement);
+    await waitFor(() => expect(print).toHaveBeenCalledTimes(1));
+
+    const html = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsText(printed as unknown as Blob);
+    });
+    expect((printed as unknown as Blob).type).toBe('text/html');
+    expect(html).toContain('#12');
+    expect(html).toContain('Bracket mount');
+    expect(html).toContain('H2S');
+    expect(html).toContain('Sunlu PA6-CF · Noir');
+    expect(html).toContain('<svg');
+    expect(html).not.toContain(formatMoney(12345, 'USD'));
+    expect(html).not.toContain(formatMoney(500, 'USD'));
+  });
+});

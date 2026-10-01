@@ -75,6 +75,9 @@ export function TrackingLinkControl({ project }: { project: AitoProject }) {
       // as part of the regenerate. When Books was unreachable the local
       // link still changed, so say so — the next sync fixes the quote.
       if (data.quote_notes === 'failed') showToast(t('aito.trackingQuoteNotUpdated'), 'error');
+      // The card menu's Copy summary / job ticket cache the URL; the old
+      // one is dead now.
+      queryClient.removeQueries({ queryKey: ['aito-tracking-link', project.id] });
       invalidate();
     },
     onError: () => showToast(t('common.errorLoading'), 'error'),
