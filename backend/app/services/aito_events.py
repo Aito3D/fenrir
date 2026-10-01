@@ -86,6 +86,10 @@ KINDS: dict[str, str] = {
     # where half of this project's lines came from — the trashed card's own
     # timeline carries the mirror (`project.trashed` with `merged_into`).
     "project.merged": "story",
+    # Tasks moved off this card (out) / onto this card (in): split and
+    # move-to-another-card. Story on both sides — where did the lines go.
+    "task.transferred_out": "story",
+    "task.transferred_in": "story",
     "project.urgent.set": "story",
     "project.urgent.cleared": "story",
     "project.sav.set": "story",

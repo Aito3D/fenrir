@@ -79,6 +79,8 @@ from backend.app.schemas.aito import (
     AitoTaskReorder,
     AitoTaskResponse,
     AitoTaskStepsResponse,
+    AitoTaskTransfer,
+    AitoTaskTransferResponse,
     AitoTaskUpdate,
     AitoTerminalPaymentView,
     AitoTrackingLinkResponse,
@@ -5003,6 +5005,151 @@ async def restore_project(
     await _broadcast_changed("restore", project.id, _actor(current_user))
     await db.refresh(project)
     return await _project_response(db, project, summary)
+
+
+@router.post("/{project_id}/tasks/transfer", response_model=AitoTaskTransferResponse)
+async def transfer_tasks(
+    project_id: int,
+    payload: AitoTaskTransfer,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
+):
+    """Move tasks to another active card, or split them onto a new card for
+    the same client (target None).
+
+    Moves, not copies (unlike `merge_project`): the rows change project, so
+    each task keeps its id. The moved tasks land after the target's last
+    task, in the source's order, and the tasks left behind are renumbered
+    from 0.
+
+    Done ticks survive only onto an accepted target — the rule every task
+    write follows (`_reject_ticks_without_acceptance`); a split card starts
+    as a draft, so its ticks are always cleared.
+
+    Every refusal comes before the first write: an invoiced card on either
+    side (409, its lines are accounting), an id that is not this card's
+    (409, a stale client list), a split of every task (409, that is a client
+    transfer, not a split) and a card transferring to itself (409).
+    """
+    source = await _get_active_project_or_404(db, project_id)
+    _reject_task_change_if_invoiced(source)
+    if payload.target_project_id == project_id:
+        raise HTTPException(status_code=409, detail="A card cannot transfer tasks to itself")
+    stmt = select(AitoTask).where(AitoTask.project_id == project_id).order_by(AitoTask.position, AitoTask.id)
+    own = list((await db.execute(stmt)).scalars())
+    by_id = {t.id: t for t in own}
+    if any(tid not in by_id for tid in payload.task_ids):
+        raise HTTPException(status_code=409, detail="The task list changed — refresh and try again")
+    moving_ids = set(payload.task_ids)
+    moving = [t for t in own if t.id in moving_ids]
+    staying = [t for t in own if t.id not in moving_ids]
+    split = payload.target_project_id is None
+    actor = _actor(current_user)
+    if split:
+        # Splitting creates a card, so it also needs what create_project
+        # needs — the same inline check add_task uses for its tick gate.
+        if current_user is not None and not current_user.has_permission(Permission.AITO_CREATE.value):
+            raise HTTPException(status_code=403, detail="Splitting creates a card and requires aito:create")
+        if not staying:
+            raise HTTPException(status_code=409, detail="A card cannot split off every task")
+        highest_card = await db.scalar(
+            select(func.max(AitoProject.position)).where(
+                AitoProject.board_column == "devis", AitoProject.status == "active"
+            )
+        )
+        target = AitoProject(
+            description=source.description,
+            board_column="devis",
+            position=(highest_card + 1) if highest_card is not None else 0,
+            status="active",
+            client_id=source.client_id,
+            client_name=source.client_name,
+            client_phone=source.client_phone,
+            client_email=source.client_email,
+            client_is_company=source.client_is_company,
+            client_contact_person_id=source.client_contact_person_id,
+            # Travels with the person id: the id alone would show no name.
+            client_contact_name=source.client_contact_name,
+            client_social_network=source.client_social_network,
+            client_social_handle=source.client_social_handle,
+            quote_salesperson=source.quote_salesperson,
+            quote_status="draft",
+            created_by=actor,
+        )
+        # A brand-new card owns its quote: the worker creates its estimate.
+        _mark_pending(target)
+        db.add(target)
+        await db.flush()  # for target.id
+    else:
+        target = await _get_active_project_or_404(db, payload.target_project_id)
+        if target.quote_invoiced:
+            raise HTTPException(
+                status_code=409, detail="This project has been invoiced — its tasks can no longer be changed"
+            )
+
+    keep_ticks = target.quote_status == "accepted"
+    highest = await db.scalar(select(func.max(AitoTask.position)).where(AitoTask.project_id == target.id))
+    next_position = (highest + 1) if highest is not None else 0
+    for offset, task in enumerate(moving):
+        task.project_id = target.id
+        task.position = next_position + offset
+        if not keep_ticks:
+            for service in SERVICES:
+                setattr(task, f"{service}_done", False)
+    for index, task in enumerate(staying):
+        task.position = index
+
+    source_was_pending = source.quote_sync_state == "pending"
+    target_was_pending = target.quote_sync_state == "pending"
+    _mark_pending_if_ours(source)
+    _mark_pending_if_ours(target)
+    await db.flush()  # so _summary_for's SELECTs see the moved rows
+    detail = {"task_count": len(moving), "target_id": target.id, "split": split}
+    await record(
+        db,
+        source.id,
+        "task.transferred_out",
+        actor_class="user",
+        actor_name=actor,
+        subject_type="project",
+        subject_id=target.id,
+        subject_label=target.description,
+        detail=detail,
+    )
+    await record(
+        db,
+        target.id,
+        "task.transferred_in",
+        actor_class="user",
+        actor_name=actor,
+        subject_type="project",
+        subject_id=source.id,
+        subject_label=source.description,
+        detail=detail,
+    )
+    if not source_was_pending and source.quote_sync_state == "pending":
+        await record(db, source.id, "sync.queued", actor_class="system")
+    if not target_was_pending and target.quote_sync_state == "pending":
+        await record(db, target.id, "sync.queued", actor_class="system")
+    # Both columns may move: the source can step back (its ticked work left),
+    # the target forward.
+    await _apply_rules(db, source, await _summary_for(db, source.id), actor=actor)
+    await _apply_rules(db, target, await _summary_for(db, target.id), actor=actor)
+    source_queued = source.quote_sync_state == "pending"
+    target_queued = target.quote_sync_state == "pending"
+    await _commit_and_wake(db, source_queued or target_queued, source.id if source_queued else None)
+    if target_queued:
+        # The target's own requeue marker: _commit_and_wake bumped the
+        # source's only, and the worker tracks the two separately.
+        _bump_requeue_marker(target.id)
+    await _broadcast_changed("task", source.id, actor)
+    await _broadcast_changed("task", target.id, actor)
+    await db.refresh(source)
+    await db.refresh(target)
+    return AitoTaskTransferResponse(
+        source=await _project_response(db, source, await _summary_for(db, source.id)),
+        target=await _project_response(db, target, await _summary_for(db, target.id)),
+    )
 
 
 @router.post("/{project_id}/merge", response_model=AitoProjectResponse)

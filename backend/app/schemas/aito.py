@@ -476,6 +476,23 @@ class AitoMergeRequest(BaseModel):
     source_project_id: int
 
 
+class AitoTaskTransfer(BaseModel):
+    """Tasks leaving this card. `target_project_id` None = split onto a new
+    card for the same client; an id = move onto that card. Ids must be
+    unique (a duplicate is a stale client list, 422 here, 409 in the handler
+    when they are not this card's)."""
+
+    task_ids: list[int] = Field(min_length=1, max_length=300)
+    target_project_id: int | None = None
+
+    @field_validator("task_ids")
+    @classmethod
+    def _unique(cls, value: list[int]) -> list[int]:
+        if len(set(value)) != len(value):
+            raise ValueError("task_ids must be unique")
+        return value
+
+
 class AitoProjectUpdate(AitoShippingInput, AitoClientSocialInput):
     """Content edits from the card detail panel. Ordering (column/position) is
     owned by the /move endpoint and deliberately not accepted here."""
@@ -832,6 +849,15 @@ class AitoProjectResponse(BaseModel):
     version: int
     created_at: datetime
     updated_at: datetime
+
+
+class AitoTaskTransferResponse(BaseModel):
+    """Both cards a task transfer touched, so the client can patch both
+    without a board refetch. Lives after AitoProjectResponse (not beside
+    AitoTaskTransfer) because it references it."""
+
+    source: AitoProjectResponse
+    target: AitoProjectResponse
 
 
 class AitoQuoteStatusUpdate(BaseModel):
