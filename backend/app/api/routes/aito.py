@@ -4066,8 +4066,12 @@ async def transfer_client(
     card is marked pending so the sync worker pushes the estimate's new
     customer. The social pair belonged to the old client and is cleared, and
     so is the contact person's name — the body carries only the new person's
-    id, and the panel refreshes the name from Books. The same contact id is a
-    silent no-op: no event, no wake, no broadcast.
+    id, and the panel refreshes the name from Books. Until it does, a later
+    `edit_project_client` that names no person falls back to the card's
+    `client_contact_name` (its `target_person_name`) and so sees None — the
+    person id still routes the write, only the name is missing. The same
+    contact id is a silent no-op: no event, no wake, no broadcast, and the
+    body's other fields are ignored.
     """
     project = await _get_active_project_or_404(db, project_id)
     if project.quote_invoiced:

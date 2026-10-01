@@ -1,7 +1,9 @@
 """PUT /aito/{project_id}/transfer-client: re-point a card at another contact."""
 
 import pytest
+from sqlalchemy import select
 
+from backend.app.models.aito_project import AitoProject
 from backend.tests.unit.test_aito_merge import _create_with_tasks, _set_invoiced
 
 NEW = {
@@ -40,13 +42,48 @@ async def test_transfer_keeps_the_quote_status(async_client):
 
 @pytest.mark.asyncio
 async def test_same_client_is_a_silent_no_op(async_client):
-    p = await _create_with_tasks(async_client, [])
+    """Same contact id: nothing is written, even when the rest of the body
+    differs — the no-op is decided on `client_id` alone."""
+    p = await _create_with_tasks(async_client, [], client_social_network="instagram", client_social_handle="@acme")
+    fields = (
+        "client_name",
+        "client_phone",
+        "client_email",
+        "client_is_company",
+        "client_contact_person_id",
+        "client_social_network",
+        "client_social_handle",
+        "quote_sync_state",
+    )
+    before_card = await _card(async_client, p["id"])
     before = len((await async_client.get(f"/api/v1/aito/{p['id']}/events")).json()["events"])
     resp = await async_client.put(
-        f"/api/v1/aito/{p['id']}/transfer-client", json={"client_id": "z1", "client_name": "ACME"}
+        f"/api/v1/aito/{p['id']}/transfer-client",
+        json={**NEW, "client_id": "z1", "client_name": "ACME RENAMED"},
     )
     assert resp.status_code == 200
+    assert {f: resp.json()[f] for f in fields} == {f: before_card[f] for f in fields}
+    assert resp.json()["client_name"] == "ACME"
+    after_card = await _card(async_client, p["id"])
+    assert {f: after_card[f] for f in fields} == {f: before_card[f] for f in fields}
     assert len((await async_client.get(f"/api/v1/aito/{p['id']}/events")).json()["events"]) == before
+
+
+@pytest.mark.asyncio
+async def test_a_trashed_card_is_a_404(async_client, db_session):
+    p = await _create_with_tasks(async_client, [])
+    assert (await async_client.delete(f"/api/v1/aito/{p['id']}")).status_code == 204
+    resp = await async_client.put(f"/api/v1/aito/{p['id']}/transfer-client", json=NEW)
+    assert resp.status_code == 404, resp.text
+    trashed = (await db_session.execute(select(AitoProject).where(AitoProject.id == p["id"]))).scalar_one()
+    assert trashed.status != "active"
+    assert (trashed.client_id, trashed.client_name) == ("z1", "ACME")
+
+
+async def _card(client, project_id):
+    resp = await client.get("/api/v1/aito/")
+    assert resp.status_code == 200, resp.text
+    return next(c for c in resp.json() if c["id"] == project_id)
 
 
 @pytest.mark.asyncio
