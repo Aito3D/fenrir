@@ -257,6 +257,7 @@ export default {
     moveTasksDone_one: '{{count}} tâche déplacée vers #{{id}}',
     moveTasksDone_other: '{{count}} tâches déplacées vers #{{id}}',
     transferError: 'Le transfert a été refusé.',
+    transferSavingHint: 'En attente de l’enregistrement des tâches…',
     stageAndWorkLeft: 'Étape et travail restant',
     panelTabDetails: 'Détails',
     billingLabel: 'Facturation',

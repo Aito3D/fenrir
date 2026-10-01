@@ -257,6 +257,7 @@ export default {
     moveTasksDone_one: '{{count}} görev #{{id}} kartına taşındı',
     moveTasksDone_other: '{{count}} görev #{{id}} kartına taşındı',
     transferError: 'Aktarım reddedildi.',
+    transferSavingHint: 'Görevlerin kaydedilmesi bekleniyor…',
     stageAndWorkLeft: 'Aşama ve kalan iş',
     panelTabDetails: 'Ayrıntılar',
     billingLabel: 'Faturalama',

@@ -257,6 +257,7 @@ export default {
     moveTasksDone_one: '{{count}} задача перемещена в #{{id}}',
     moveTasksDone_other: 'Перемещено задач: {{count}} в #{{id}}',
     transferError: 'Перенос отклонён.',
+    transferSavingHint: 'Ожидание сохранения задач…',
     stageAndWorkLeft: 'Этап и оставшаяся работа',
     panelTabDetails: 'Детали',
     billingLabel: 'Выставление счетов',

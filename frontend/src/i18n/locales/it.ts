@@ -257,6 +257,7 @@ export default {
     moveTasksDone_one: '{{count}} attività spostata in #{{id}}',
     moveTasksDone_other: '{{count}} attività spostate in #{{id}}',
     transferError: 'Il trasferimento è stato rifiutato.',
+    transferSavingHint: 'In attesa del salvataggio delle attività…',
     stageAndWorkLeft: 'Fase e lavoro rimanente',
     panelTabDetails: 'Dettagli',
     billingLabel: 'Fatturazione',

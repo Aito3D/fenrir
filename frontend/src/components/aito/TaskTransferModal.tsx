@@ -9,6 +9,7 @@ import { useDismissableDialog } from '../../hooks/useDismissableDialog';
 import { useCurrency } from '../../hooks/useCurrency';
 import { useToast } from '../../contexts/ToastContext';
 import { formatMoney } from '../../utils/pricing';
+import { replaceProject } from '../../utils/aitoOptimistic';
 import { taskTotal, type TaskDraft } from '../../utils/taskDraft';
 import { focusRingCls } from '../formStyles';
 import { CandidateList } from './CandidateList';
@@ -28,7 +29,9 @@ export type TransferResult = { source: AitoProject; target: AitoProject };
  *  step with the merge dialog's list; moving all of them is allowed.
  *
  *  Only saved rows can travel: a row still being typed (`id === null`) has
- *  nothing on the server to move, so it is listed but disabled.
+ *  nothing on the server to move, so it is listed but disabled. While the
+ *  panel still has task saves in flight (`savesPending`) the confirm is held:
+ *  a row mid-POST has no id yet and would be left behind silently.
  *
  *  Same shell as MergeProjectModal: z-[110] over the panel, Escape stopped
  *  at the overlay so one key press does not close the panel as well. */
@@ -36,12 +39,14 @@ export function TaskTransferModal({
   project,
   tasks,
   mode,
+  savesPending = false,
   onClose,
   onDone,
 }: {
   project: AitoProject;
   tasks: TaskDraft[];
   mode: 'split' | 'move';
+  savesPending?: boolean;
   onClose: () => void;
   onDone: (result: TransferResult) => void;
 }) {
@@ -60,6 +65,9 @@ export function TaskTransferModal({
   // In list order, not tick order: the server appends them in the order given.
   const pickedIds = savedIds.filter((id) => ticked.has(id));
   const allTicked = savedIds.length > 0 && pickedIds.length === savedIds.length;
+  // "Left without tasks" only when nothing at all stays — an unsaved draft
+  // row is still on the card after the move.
+  const leavesNone = allTicked && savedIds.length === tasks.length;
 
   const title = mode === 'split' ? t('aito.transferTitleSplit') : t('aito.transferTitleMove');
   const Icon = mode === 'split' ? Split : MoveRight;
@@ -68,6 +76,16 @@ export function TaskTransferModal({
     mutationFn: (target: number | null) =>
       api.transferAitoTasks(project.id, { task_ids: pickedIds, target_project_id: target }),
     onSuccess: (result) => {
+      // Seed the board cache BEFORE anything else: the host resolves the
+      // panel's card from `['aito-projects']`, so swapping to a just-split
+      // card the board has never seen would find nothing and close the panel.
+      queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) => {
+        const rows = replaceProject(prev, result.source);
+        if (!rows) return rows;
+        return rows.some((p) => p.id === result.target.id)
+          ? replaceProject(rows, result.target)
+          : [...rows, result.target];
+      });
       queryClient.invalidateQueries({ queryKey: ['aito-tasks', result.source.id] });
       queryClient.invalidateQueries({ queryKey: ['aito-events', result.source.id] });
       queryClient.invalidateQueries({ queryKey: ['aito-projects'] });
@@ -98,7 +116,7 @@ export function TaskTransferModal({
   const note =
     mode === 'split'
       ? t('aito.transferNoteSplit', { client: project.client_name ?? t('aito.noClient') })
-      : allTicked
+      : leavesNone
         ? t('aito.transferNoteMoveAll')
         : null;
 
@@ -253,9 +271,12 @@ export function TaskTransferModal({
           )}
 
           <footer className="flex items-center justify-between gap-3 border-t border-bambu-dark-tertiary px-6 py-3">
-            <p role="alert" className="min-w-0 truncate text-xs text-red-400">
-              {error}
-            </p>
+            <div className="min-w-0">
+              <p role="alert" className="truncate text-xs text-red-400">
+                {error}
+              </p>
+              {savesPending && !error && <p className="truncate text-xs text-bambu-gray">{t('aito.transferSavingHint')}</p>}
+            </div>
             <div className="flex flex-none items-center gap-2">
               {step === 'pick-target' ? (
                 <Button
@@ -278,7 +299,7 @@ export function TaskTransferModal({
                 <Button
                   variant="primary"
                   size="sm"
-                  disabled={pickedIds.length === 0 || allTicked || transfer.isPending}
+                  disabled={pickedIds.length === 0 || allTicked || savesPending || transfer.isPending}
                   onClick={() => transfer.mutate(null)}
                 >
                   {transfer.isPending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
@@ -288,7 +309,7 @@ export function TaskTransferModal({
                 <Button
                   variant="primary"
                   size="sm"
-                  disabled={pickedIds.length === 0}
+                  disabled={pickedIds.length === 0 || savesPending}
                   onClick={() => {
                     setError(null);
                     setStep('pick-target');
@@ -300,7 +321,7 @@ export function TaskTransferModal({
                 <Button
                   variant="primary"
                   size="sm"
-                  disabled={targetId === null || transfer.isPending}
+                  disabled={targetId === null || savesPending || transfer.isPending}
                   onClick={() => targetId !== null && transfer.mutate(targetId)}
                 >
                   {transfer.isPending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}

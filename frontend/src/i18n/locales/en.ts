@@ -260,6 +260,7 @@ export default {
     moveTasksDone_one: '{{count}} task moved to #{{id}}',
     moveTasksDone_other: '{{count}} tasks moved to #{{id}}',
     transferError: 'The transfer was refused.',
+    transferSavingHint: 'Waiting for the tasks to finish saving…',
     stageAndWorkLeft: 'Stage & work left',
     panelTabDetails: 'Details',
     billingLabel: 'Billing',

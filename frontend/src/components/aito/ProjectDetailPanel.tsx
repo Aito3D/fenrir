@@ -1267,6 +1267,7 @@ export function ProjectDetailPanel({
             project={project}
             tasks={tasks}
             mode={transferMode}
+            savesPending={pendingTaskUids.size > 0}
             onClose={() => setTransferMode(null)}
             onDone={({ target }) => {
               // A split hands the operator the card it just made (the host

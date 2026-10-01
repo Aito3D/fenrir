@@ -257,6 +257,7 @@ export default {
     moveTasksDone_one: '{{count}} 件のタスクを #{{id}} へ移動しました',
     moveTasksDone_other: '{{count}} 件のタスクを #{{id}} へ移動しました',
     transferError: '移動は拒否されました。',
+    transferSavingHint: 'タスクの保存が終わるのを待っています…',
     stageAndWorkLeft: '工程と残作業',
     panelTabDetails: '詳細',
     billingLabel: '請求',

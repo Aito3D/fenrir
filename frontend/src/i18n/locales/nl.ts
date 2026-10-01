@@ -8398,6 +8398,7 @@ export default {
     moveTasksDone_one: '{{count}} taak verplaatst naar #{{id}}',
     moveTasksDone_other: '{{count}} taken verplaatst naar #{{id}}',
     transferError: 'De overdracht is geweigerd.',
+    transferSavingHint: 'Wachten tot de taken zijn opgeslagen…',
     stageAndWorkLeft: 'Fase en resterend werk',
     panelTabDetails: 'Gegevens',
     billingLabel: 'Facturatie',

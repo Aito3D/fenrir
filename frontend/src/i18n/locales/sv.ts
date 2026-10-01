@@ -8398,6 +8398,7 @@ errors: {
     moveTasksDone_one: '{{count}} uppgift flyttad till #{{id}}',
     moveTasksDone_other: '{{count}} uppgifter flyttade till #{{id}}',
     transferError: 'Överföringen nekades.',
+    transferSavingHint: 'Väntar på att uppgifterna sparas klart…',
     stageAndWorkLeft: 'Steg och återstående arbete',
     panelTabDetails: 'Detaljer',
     billingLabel: 'Fakturering',

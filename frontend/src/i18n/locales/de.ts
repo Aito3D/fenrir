@@ -257,6 +257,7 @@ export default {
     moveTasksDone_one: '{{count}} Aufgabe nach #{{id}} verschoben',
     moveTasksDone_other: '{{count}} Aufgaben nach #{{id}} verschoben',
     transferError: 'Die Übertragung wurde abgelehnt.',
+    transferSavingHint: 'Warten, bis die Aufgaben gespeichert sind…',
     stageAndWorkLeft: 'Phase & verbleibende Arbeit',
     panelTabDetails: 'Details',
     billingLabel: 'Abrechnung',

@@ -257,6 +257,7 @@ export default {
     moveTasksDone_one: '작업 {{count}}개를 #{{id}}(으)로 이동했습니다',
     moveTasksDone_other: '작업 {{count}}개를 #{{id}}(으)로 이동했습니다',
     transferError: '이동이 거부되었습니다.',
+    transferSavingHint: '작업 저장이 끝나기를 기다리는 중…',
     stageAndWorkLeft: '단계 및 남은 작업',
     panelTabDetails: '세부 정보',
     billingLabel: '청구',

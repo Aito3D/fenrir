@@ -257,6 +257,7 @@ export default {
     moveTasksDone_one: '已将 {{count}} 个任务移至 #{{id}}',
     moveTasksDone_other: '已将 {{count}} 个任务移至 #{{id}}',
     transferError: '转移被拒绝。',
+    transferSavingHint: '正在等待任务保存完成…',
     stageAndWorkLeft: '阶段与剩余工作',
     panelTabDetails: '详情',
     billingLabel: '账单',
