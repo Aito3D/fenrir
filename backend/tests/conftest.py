@@ -269,13 +269,15 @@ def reset_aito_quote_sync_rate_limit_throttle():
     ``zoho._shipping_fail_at``.
 
     The sync worker's other process-local memos are reset here too, for the
-    same reason: the Books call meter on the ``zoho_service`` singleton."""
-    from backend.app.services import aito_quote_sync
+    same reason: the Books call meter on the ``zoho_service`` singleton and
+    the per-card push windows and flush waiters."""
+    from backend.app.services import aito_push_schedule, aito_quote_sync
     from backend.app.services.zoho import zoho_service
 
     def _reset() -> None:
         aito_quote_sync._throttled_until = None
         zoho_service.reset_call_meter()
+        aito_push_schedule.reset()
 
     _reset()
     yield
