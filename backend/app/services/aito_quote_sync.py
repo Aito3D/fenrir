@@ -2179,8 +2179,14 @@ def _attention_predicate():
     """Quoted cards that must be retried at the full tick's cadence whatever
     Books reports as changed: a card in 'error' (a failed create, or a push
     that spent its retry budget — the read that proves Books is back is what
-    clears it), and a terminal card whose status Books has not yet been seen
-    to agree with (T-026). Everything else is reached by the change pass."""
+    clears it), and a card whose status Books has not yet been seen to agree
+    with (``quote_status_confirmed`` false): a decision made on the board
+    while Books was unreachable, which the reconcile re-pushes until it
+    lands (T-026). Two kinds of unconfirmed card: a terminal one is retried
+    whatever else is recorded on it, exactly as the full sweep did; a
+    non-terminal one only while no block is recorded — a decision Books
+    REFUSED reads the same on every tick, so it is left to the trickle.
+    Everything else is reached by the change pass."""
     return and_(
         AitoProject.status == "active",
         AitoProject.quote_sync_state.not_in(("pending", "unmanaged", "locked")),
@@ -2192,6 +2198,7 @@ def _attention_predicate():
                 or_(
                     AitoProject.board_column == "done",
                     AitoProject.quote_status.in_(("declined", "expired")),
+                    AitoProject.quote_status_block.is_(None),
                 ),
             ),
         ),
@@ -2459,7 +2466,18 @@ async def run_sync_once(
         # this back into a single select of full rows — the board holds a
         # handful of cards, and correctness beats saving a few primary-key
         # lookups.
-        project = await db.get(AitoProject, project_id)
+        #
+        # ``populate_existing``: read the ROW, not this session's memory of
+        # it. The worker's sessions do not expire on commit, and a drain
+        # served mid-tick (``_serve_due_pushes``) runs on a session that has
+        # already loaded most of the board — the link reconciler and the
+        # reconciles before it see to that. A card it read as 'idle' and that
+        # a request handler has since committed 'pending' would otherwise
+        # still read 'idle' here, be taken for "pushed by someone else"
+        # below, and be skipped with its window spent and its waiter
+        # released: pending, and nothing left to push it before the next
+        # tick.
+        project = await db.get(AitoProject, project_id, populate_existing=True)
         if project is None or not _still_selected(project):
             # Gone, or already handled by something else since the id was
             # selected above — nothing left to sync. Not counted below: it was
@@ -2573,7 +2591,10 @@ async def _drain_reconcile_queue(db: AsyncSession) -> int:
         if zoho_service.calls_in_last_minute() >= BACKGROUND_CALL_CEILING:
             break
         project_id = _reconcile_queue.pop(0)
-        project = await db.get(AitoProject, project_id)
+        # The row, not this session's memory of it — same reason as in
+        # run_sync_once: a card queued here may have been made pending by a
+        # request handler since this session last read it.
+        project = await db.get(AitoProject, project_id, populate_existing=True)
         if project is None or project.quote_sync_state == "pending" or not _still_selected(project):
             # Gone, settled, or owed a push: the push path will read it.
             continue
@@ -3033,7 +3054,18 @@ async def run_sync_loop() -> None:
                         _take_drain_request()
                         await run_sync_once(db, attention_only=True)
                         await _serve_due_pushes(db)
-                        await run_change_pass(db)
+                        # Its own try, like every pass below: a failure here
+                        # (a locked database while a watermark is stored, a
+                        # bug) costs this tick's change pass only — never the
+                        # invoice, contact, payment-link and terminal passes
+                        # that follow it. Rolled back so a half-flushed pass
+                        # cannot poison the session they share.
+                        try:
+                            await run_change_pass(db)
+                        except Exception:
+                            logger.exception("Aito change pass failed")
+                            with contextlib.suppress(Exception):
+                                await db.rollback()
                         # Piggybacks on the same gate: no Books access, no sweep.
                         # Its own hourly gate makes the 300 s tick a no-op most
                         # of the time.

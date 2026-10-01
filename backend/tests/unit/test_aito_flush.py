@@ -251,3 +251,63 @@ async def test_ensure_pushed_does_not_wait_when_the_worker_is_not_serving(db_ses
     await aito_routes.ensure_pushed(db_session, project)  # returns; the route behaves as it did before
     assert time.monotonic() - started < 0.1
     assert project.quote_sync_state == "pending"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("ended", ["error", "locked"])
+async def test_strict_ensure_pushed_refuses_when_the_push_did_not_land(db_session, serving, monkeypatch, ended):
+    """The routes that cannot be undone — raising an invoice, emailing the
+    quote to the client — pass ``strict``. The card was pending when the
+    operator clicked; the push was attempted and Books refused it ('error')
+    or the worker refused to write ('locked'). Books therefore still holds
+    the lines as they were BEFORE the edit, and billing or sending them now
+    is exactly what waiting for the push was meant to prevent."""
+    project = await _pending(db_session)
+
+    async def refused(pid, timeout=20.0, request=True):
+        row = await db_session.get(AitoProject, pid)
+        row.quote_sync_state = ended
+        row.quote_sync_error = "Books said no"
+        await db_session.commit()
+        return True
+
+    monkeypatch.setattr(aito_quote_sync, "flush_and_wait", refused)
+    with pytest.raises(HTTPException) as caught:
+        await aito_routes.ensure_pushed(db_session, project, strict=True)
+    assert caught.value.status_code == 409
+    assert "Zoho" in caught.value.detail
+    if ended == "error":
+        assert "Books said no" in caught.value.detail
+
+
+@pytest.mark.asyncio
+async def test_a_read_only_route_still_proceeds_when_the_push_ended_in_error(db_session, serving, monkeypatch):
+    """Printing is not irreversible: the panel already shows the sync error
+    with a retry, and the PDF Books holds may still be what is wanted."""
+    project = await _pending(db_session)
+
+    async def refused(pid, timeout=20.0, request=True):
+        row = await db_session.get(AitoProject, pid)
+        row.quote_sync_state = "error"
+        await db_session.commit()
+        return True
+
+    monkeypatch.setattr(aito_quote_sync, "flush_and_wait", refused)
+    await aito_routes.ensure_pushed(db_session, project)
+    assert project.quote_sync_state == "error"
+
+
+@pytest.mark.asyncio
+async def test_strict_ensure_pushed_leaves_a_card_alone_that_was_not_pending(db_session, serving, monkeypatch):
+    """A card already in 'error' when the operator clicks was billable before
+    this change and stays so: the refusal is about an edit this very click
+    tried, and failed, to push."""
+    project = await _pending(db_session)
+    project.quote_sync_state = "error"
+    await db_session.commit()
+
+    async def never(*_args, **_kwargs):
+        raise AssertionError("must not flush")
+
+    monkeypatch.setattr(aito_quote_sync, "flush_and_wait", never)
+    await aito_routes.ensure_pushed(db_session, project, strict=True)

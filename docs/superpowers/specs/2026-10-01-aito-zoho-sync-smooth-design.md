@@ -91,10 +91,15 @@ The window is memory only. A restart loses it and the card, still `pending` in t
 2. Awaits a per-project waiter that the loop resolves after that card's push attempt has committed.
 3. Returns; the caller re-reads the project through its own session.
 
-A route helper `ensure_pushed(db, project)` in `routes/aito.py` calls it when `quote_sync_state == "pending"` and then applies one rule:
+A route helper `ensure_pushed(db, project, *, strict=False)` in `routes/aito.py` calls it when `quote_sync_state == "pending"` and then applies these rules:
 
-- State no longer `pending` (idle, error or locked): proceed exactly as the route does today for that state.
+- State now `idle`: proceed.
+- State now `error` or `locked` (the push was attempted and did not land):
+  - read-only routes (the PDFs) proceed exactly as they do today for that state;
+  - routes whose effect cannot be undone (`strict=True`: the invoice preview and create routes, the quote email content and send routes) answer 409 with the reason. Books still holds the lines as they were before the edit, and billing or sending those is what the wait is there to prevent. *(Added after the final review, 2026-10-01: with the button no longer hidden while pending, one click could otherwise go from a failed edit straight to an invoice.)*
 - Still `pending` after the timeout: HTTP 503 with detail code `sync_pending`. Nothing stale is served.
+
+The drain is asked for once per request. A card still pending after that attempt (an edit landed mid-push, Books refused the push) is waited on until the worker's own next attempt — its fast retry, or the window the edit re-opened — rather than asked for again, which would re-push a refused card as fast as the refusals return.
 
 Routes that call `ensure_pushed` before touching Zoho:
 
@@ -117,7 +122,7 @@ Matched card ids go into an in-memory reconcile queue (ordered, no duplicates). 
 
 Each change pass drains the queue through the existing reconcile branch of `sync_project`, unchanged, with the per-pass credit and retainer caches. Cards left in the queue when the pass stops (budget guard, 429) stay for the next pass. The queue is memory only; after a restart the trickle re-covers every card within one cycle.
 
-The full tick no longer reconciles every quoted card. It queues only the cards that need a retry at today's cadence: cards in `error` state, and terminal cards whose status Books has not confirmed (`quote_status_confirmed` false). Production has one such card.
+The full tick no longer reconciles every quoted card. It reconciles only the cards that need a retry at today's cadence: cards in `error` state, and cards whose status Books has not been seen to agree with (`quote_status_confirmed` false) — a decision made on the board while Books was unreachable. A non-terminal unconfirmed card with a recorded refusal (`quote_status_block`) is left to the trickle, since re-reading it every tick changes nothing. Production has one unconfirmed card.
 
 The passes that exist today keep their place, logic and cadence on the full tick: hourly invoice sweep, invoice poll, contact poll, tracking-view purge, payment-link reconcile, terminal-payment poll. They are not moved to the 60-second cadence because the payment-link reconcile polls Heimdall for every pending link and both existing polls are tuned for a five-minute pass. `aito_quote_poll_seconds` keeps its meaning and its default.
 

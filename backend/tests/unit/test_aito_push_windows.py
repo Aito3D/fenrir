@@ -7,6 +7,7 @@ import time
 
 import httpx
 import pytest
+from sqlalchemy import update
 
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
@@ -123,6 +124,96 @@ async def test_a_drain_takes_the_windows_it_pushes_and_drops_stale_ones(db_sessi
     await run_sync_once(db_session, pending_only=True)
 
     assert aito_push_schedule.next_due(time.monotonic()) is None
+
+
+@pytest.mark.asyncio
+async def test_a_card_the_worker_session_already_holds_is_pushed_when_another_session_queues_it(db_session):
+    """The worker's session keeps every row it has loaded (expire_on_commit is
+    off), and a drain served in the middle of a tick reuses that session. A
+    card it read earlier as 'idle' and that a request handler has since
+    committed 'pending' must be pushed: read from the session's memory, it
+    still looks idle, and the drain used to take its window, release its
+    waiter and skip it — leaving it pending with nothing left to push it until
+    the next tick, and a Print click hanging its full twenty seconds."""
+    card = await _pending(db_session)
+    await _configure_zoho(db_session)
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates"): {"estimates": []},
+                ("POST", "/estimates"): CREATED,
+                ("GET", "/estimates/NEW"): {"estimate": {**CREATED["estimate"], "line_items": []}},
+                ("PUT", "/estimates/NEW"): CREATED,
+            },
+            seen,
+        )
+    )
+    # The worker's session pushes the card: it now holds it as 'idle'.
+    assert await run_sync_once(db_session, pending_only=True) == 1
+    assert card.quote_sync_state == "idle"
+
+    # A request handler's commit, through another session: the ROW is pending,
+    # the instance the worker session holds is untouched.
+    await db_session.execute(
+        update(AitoProject)
+        .where(AitoProject.id == card.id)
+        .values(quote_sync_state="pending")
+        .execution_options(synchronize_session=False)
+    )
+    await db_session.commit()
+    aito_push_schedule.note_immediate(card.id, time.monotonic())
+    seen.clear()
+
+    assert await run_sync_once(db_session, pending_only=True) == 1
+
+    assert any(method == "PUT" for method, _path, _body in seen)
+    await db_session.refresh(card)
+    assert card.quote_sync_state == "idle"
+
+
+@pytest.mark.asyncio
+async def test_a_second_push_on_the_same_session_carries_the_edited_task_not_the_one_it_remembers(db_session):
+    """Same staleness, one level down: the session that pushed a card holds
+    its TASK rows too. An edit committed by a request handler and then pushed
+    on that same session (a flush served mid-tick) must send the edited cost,
+    not the one the session read for the first push."""
+    card = await _pending(db_session)
+    await _configure_zoho(db_session)
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates"): {"estimates": []},
+                ("POST", "/estimates"): CREATED,
+                ("GET", "/estimates/NEW"): {"estimate": {**CREATED["estimate"], "line_items": []}},
+                ("PUT", "/estimates/NEW"): CREATED,
+            },
+            seen,
+        )
+    )
+    assert await run_sync_once(db_session, pending_only=True) == 1  # scan_cost 5000, tasks now in the session
+
+    # The operator's edit, committed through another session.
+    await db_session.execute(
+        update(AitoTask)
+        .where(AitoTask.project_id == card.id)
+        .values(scan_cost=7300)
+        .execution_options(synchronize_session=False)
+    )
+    await db_session.execute(
+        update(AitoProject)
+        .where(AitoProject.id == card.id)
+        .values(quote_sync_state="pending")
+        .execution_options(synchronize_session=False)
+    )
+    await db_session.commit()
+    seen.clear()
+
+    assert await run_sync_once(db_session, pending_only=True) == 1
+
+    put = next(body for method, _path, body in seen if method == "PUT" and "line_items" in (body or {}))
+    assert [line["rate"] for line in put["line_items"]] == [7300]
 
 
 @pytest.mark.asyncio
@@ -253,6 +344,36 @@ async def test_a_change_pass_does_not_cancel_a_scheduled_fast_retry(monkeypatch)
     finally:
         await _stop(loop_task)
         aito_quote_sync._reset_fast_retry_state()
+
+
+@pytest.mark.asyncio
+async def test_a_failing_change_pass_does_not_cost_the_tick_its_other_passes(monkeypatch, caplog):
+    """The change pass runs ahead of the invoice, contact, payment-link and
+    terminal passes. A failure inside it (a locked database while it stores a
+    watermark, a bug) must cost that pass only: left unguarded, every tick
+    would stop there and online-payment detection would freeze with it."""
+    from backend.app.services import aito_terminal_payments
+
+    drains: list = []
+    _loop_fakes(monkeypatch, drains)
+    terminal_polled = asyncio.Event()
+
+    async def broken_change_pass(db):
+        raise RuntimeError("database is locked")
+
+    async def fake_terminal_poll(db):
+        terminal_polled.set()
+
+    monkeypatch.setattr(aito_quote_sync, "run_change_pass", broken_change_pass)
+    monkeypatch.setattr(aito_terminal_payments, "poll_open_terminal_payments", fake_terminal_poll)
+    loop_task = asyncio.create_task(aito_quote_sync.run_sync_loop())
+    try:
+        with caplog.at_level("ERROR"):
+            await asyncio.wait_for(terminal_polled.wait(), timeout=5)
+        assert "Aito change pass failed" in caplog.text
+        assert "Aito quote sync tick failed" not in caplog.text
+    finally:
+        await _stop(loop_task)
 
 
 @pytest.mark.asyncio

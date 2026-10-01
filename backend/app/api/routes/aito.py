@@ -873,9 +873,20 @@ SYNC_PENDING_DETAIL = {
 }
 
 
-async def ensure_pushed(db: AsyncSession, project: AitoProject) -> None:
+async def ensure_pushed(db: AsyncSession, project: AitoProject, *, strict: bool = False) -> None:
     """Make sure Books holds this card's latest state before a route reads a
     document from it or bills it.
+
+    ``strict`` is for the routes whose effect cannot be undone — raising an
+    invoice, emailing the quote to the client. There, a push that was
+    attempted for this very request and did NOT land (the card went from
+    pending to 'error' or 'locked') is a refusal, 409 with the reason: Books
+    still holds the lines as they were before the operator's edit, and
+    billing or sending those is the mistake the wait exists to prevent. The
+    read-only routes (the PDFs) proceed in that case, as they always did for
+    an 'error' card: the panel shows the failure with its retry, and the
+    document Books holds may still be the one wanted. A card that was not
+    pending on entry is never refused here, whatever its state.
 
     A card that is not pending returns at once. A pending one is pushed now
     (``flush_and_wait``) and re-read; if it is still pending when the flush
@@ -908,6 +919,16 @@ async def ensure_pushed(db: AsyncSession, project: AitoProject) -> None:
         request = False
         await db.refresh(project)
         if project.quote_sync_state != "pending":
+            if strict and project.quote_sync_state == "error":
+                reason = project.quote_sync_error or "the sync failed"
+                raise HTTPException(
+                    status_code=409, detail=f"The latest changes did not reach Zoho ({reason}) — fix the sync first"
+                )
+            if strict and project.quote_sync_state == "locked":
+                raise HTTPException(
+                    status_code=409,
+                    detail="Zoho did not take the latest changes: the quote is locked there",
+                )
             return
         if not completed:
             raise HTTPException(status_code=503, detail=SYNC_PENDING_DETAIL)
@@ -2414,8 +2435,9 @@ async def _project_ready_to_invoice(db: AsyncSession, project_id: int) -> AitoPr
         # The rule the operator asked for: a job is billed when it is
         # finished, not while it is still on a printer.
         raise HTTPException(status_code=409, detail="Only a project in Finish can be invoiced")
-    # An edit still on its way to Books is pushed now, and waited for.
-    await ensure_pushed(db, project)
+    # An edit still on its way to Books is pushed now, and waited for. Strict:
+    # an invoice cannot be undone, so a push that fails is a refusal.
+    await ensure_pushed(db, project, strict=True)
     if project.quote_sync_state == "pending":
         # Reached only when no worker is serving (`ensure_pushed` waits
         # otherwise, and answers 503 itself if the push does not land).
@@ -3222,7 +3244,9 @@ async def get_quote_email(
     project = await db.get(AitoProject, project_id)
     if project is None or project.status == "deleted":
         raise HTTPException(status_code=404, detail="Project not found")
-    await ensure_pushed(db, project)
+    # Strict, like the send it previews: the dialog must not open on a quote
+    # Books refused the latest edit of.
+    await ensure_pushed(db, project, strict=True)
     content, default_email = await _load_quote_email_content(db, project, project_id)
     return AitoQuoteEmailContent(
         subject=content["subject"],
@@ -3270,8 +3294,9 @@ async def send_quote_email(
     """
     _check_zoho_email_rate_limit(request, current_user)
     project = await _get_active_project_or_404(db, project_id)
-    # The quote that goes out must carry the card's latest lines.
-    await ensure_pushed(db, project)
+    # The quote that goes out must carry the card's latest lines. Strict: an
+    # email cannot be recalled, so a push that fails is a refusal.
+    await ensure_pushed(db, project, strict=True)
     content, _ = await _load_quote_email_content(db, project, project_id, rollback_on_error=True)
 
     # Re-read rather than trust the request. An allowlist the caller supplies

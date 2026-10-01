@@ -6,6 +6,7 @@ from datetime import datetime
 
 import httpx
 import pytest
+from sqlalchemy import update
 
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
@@ -178,6 +179,34 @@ async def test_the_attention_pass_reconciles_error_cards_and_leaves_healthy_ones
 
 
 @pytest.mark.asyncio
+async def test_the_attention_pass_retries_a_decision_books_has_not_been_seen_to_take(db_session):
+    """The operator clicked Accept while Books was unreachable: the card is
+    accepted on the board, on a work column, and unconfirmed. The full sweep
+    used to re-push that decision every tick; left to the trickle alone,
+    Books would go on saying "sent" for most of an hour. A decision Books
+    REFUSED (a recorded block) is different: re-reading it every tick would
+    change nothing, so it waits for the trickle like any healthy card."""
+    await _quoted(db_session, "ACCEPTED-UNSEEN", board_column="print", quote_status_confirmed=False)
+    await _quoted(db_session, "SENT-UNSEEN", board_column="waiting", quote_status="sent", quote_status_confirmed=False)
+    await _quoted(
+        db_session,
+        "REFUSED",
+        board_column="print",
+        quote_status_confirmed=False,
+        quote_status_block="rejected",
+        quote_status_remote="sent",
+    )
+    await _quoted(db_session, "HEALTHY", board_column="print")
+    await _configure_zoho(db_session)
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(_books(seen))
+
+    await run_sync_once(db_session, attention_only=True)
+
+    assert sorted(_single_reads(seen)) == ["ACCEPTED-UNSEEN", "SENT-UNSEEN"]
+
+
+@pytest.mark.asyncio
 async def test_a_429_on_a_push_arms_a_fast_retry_and_a_hold_of_at_most_a_minute(db_session):
     await _pending(db_session)
     await _configure_zoho(db_session)
@@ -307,3 +336,27 @@ async def test_a_pending_card_named_by_a_change_is_left_to_the_push(db_session):
     assert _single_reads(seen) == []
     await db_session.refresh(project)
     assert project.quote_sync_state == "pending"
+
+
+@pytest.mark.asyncio
+async def test_a_queued_card_another_session_has_since_made_pending_is_left_to_the_push(db_session):
+    """Same staleness as above, on the reconcile queue: the pass holds the card
+    as 'idle' from its own earlier read, a request handler commits it
+    'pending', and the queue reaches it. It is owed a push, not a reconcile
+    that would read the estimate the push is about to rewrite."""
+    project = await _quoted(db_session, "E1")
+    await _configure_zoho(db_session)
+    seen: list = []
+    zoho_service.transport = httpx.MockTransport(_books(seen))
+    aito_quote_sync._reconcile_queue.append(project.id)
+    await db_session.execute(
+        update(AitoProject)
+        .where(AitoProject.id == project.id)
+        .values(quote_sync_state="pending")
+        .execution_options(synchronize_session=False)
+    )
+    await db_session.commit()
+
+    assert await aito_quote_sync._drain_reconcile_queue(db_session) == 0
+
+    assert _single_reads(seen) == []

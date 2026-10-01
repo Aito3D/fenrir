@@ -8,14 +8,17 @@ from fastapi import HTTPException
 from backend.app.api.routes import aito as aito_routes
 from backend.app.models.aito_project import AitoProject
 
+# (method, path, body, strict). Strict routes lead to something that cannot be
+# undone — an invoice raised, a quote emailed — so they also refuse when the
+# push was attempted and failed; the PDF routes only read.
 ROUTES = [
-    ("GET", "/api/v1/aito/{id}/quote.pdf", None),
-    ("GET", "/api/v1/aito/{id}/quote-email", None),
-    ("POST", "/api/v1/aito/{id}/quote-email", {"to": "client@example.com"}),
-    ("GET", "/api/v1/aito/{id}/invoice.pdf", None),
-    ("GET", "/api/v1/aito/{id}/retainer.pdf?retainer_id=R1", None),
-    ("GET", "/api/v1/aito/{id}/invoice-preview", None),
-    ("POST", "/api/v1/aito/{id}/invoice", None),
+    ("GET", "/api/v1/aito/{id}/quote.pdf", None, False),
+    ("GET", "/api/v1/aito/{id}/quote-email", None, True),
+    ("POST", "/api/v1/aito/{id}/quote-email", {"to": "client@example.com"}, True),
+    ("GET", "/api/v1/aito/{id}/invoice.pdf", None, False),
+    ("GET", "/api/v1/aito/{id}/retainer.pdf?retainer_id=R1", None, False),
+    ("GET", "/api/v1/aito/{id}/invoice-preview", None, True),
+    ("POST", "/api/v1/aito/{id}/invoice", None, True),
 ]
 
 
@@ -34,26 +37,30 @@ async def _pending_card(db, **fields) -> AitoProject:
     return project
 
 
-def _refusing(seen: list):
-    async def refuse(db, project):
+def _refusing(seen: list, strictness: list | None = None):
+    async def refuse(db, project, strict=False):
         seen.append(project.id)
+        if strictness is not None:
+            strictness.append(strict)
         raise HTTPException(status_code=503, detail=aito_routes.SYNC_PENDING_DETAIL)
 
     return refuse
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(("method", "path", "body"), ROUTES)
+@pytest.mark.parametrize(("method", "path", "body", "strict"), ROUTES)
 async def test_the_route_pushes_a_pending_card_before_touching_books(
-    async_client, db_session, monkeypatch, method, path, body
+    async_client, db_session, monkeypatch, method, path, body, strict
 ):
     project = await _pending_card(db_session, quote_id="E1", quote_number="DEV26-1")
     seen: list[int] = []
-    monkeypatch.setattr(aito_routes, "ensure_pushed", _refusing(seen))
+    strictness: list[bool] = []
+    monkeypatch.setattr(aito_routes, "ensure_pushed", _refusing(seen, strictness))
 
     response = await async_client.request(method, path.format(id=project.id), json=body)
 
     assert seen == [project.id]
+    assert strictness == [strict]
     assert response.status_code == 503, response.text
     assert response.json()["detail"]["code"] == "sync_pending"
 
