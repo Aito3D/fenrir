@@ -1037,10 +1037,11 @@ export function ProjectDetailPanel({
       .catch(() => {});
   };
 
-  const { tasks, onTasksChange, onRemoveTask, onRowBlur, pendingTaskUids, reorderTasks } = useProjectTasks(project.id, {
-    onDirtyClose: requestCloseSync,
-    externalDirtyRef,
-  });
+  const { tasks, onTasksChange, onRemoveTask, onRowBlur, pendingTaskUids, reorderTasks, hasPendingSaves } =
+    useProjectTasks(project.id, {
+      onDirtyClose: requestCloseSync,
+      externalDirtyRef,
+    });
   const { data: latestEvent } = useLatestProjectEvent(project.id);
 
   // Value-weighted, not step-weighted — see ValueRing's doc.
@@ -1303,7 +1304,8 @@ export function ProjectDetailPanel({
             project={project}
             tasks={tasks}
             mode={transferMode}
-            savesPending={pendingTaskUids.size > 0}
+            // A row still being created, or an edit not yet saved (debounced or in flight).
+            savesPending={pendingTaskUids.size > 0 || hasPendingSaves}
             onClose={() => setTransferMode(null)}
             onDone={({ target }) => {
               // A split hands the operator the card it just made (the host

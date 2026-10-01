@@ -703,5 +703,11 @@ export function useProjectTasks(
     [],
   );
 
-  return { tasks, onTasksChange, onRemoveTask, onRowBlur: flush, pendingTaskUids, reorderTasks };
+  // An edit still owed to the server: debounced in `pendingRef`, or sent and
+  // not yet landed. Read from the refs at render time, which is current
+  // because every change to them comes with a render of its own: the edit's
+  // `setTasks`, the PATCH's pending status, and `onSettled`'s generation bump.
+  const hasPendingSaves = pendingRef.current.size > 0 || inFlightRef.current > 0;
+
+  return { tasks, onTasksChange, onRemoveTask, onRowBlur: flush, pendingTaskUids, reorderTasks, hasPendingSaves };
 }

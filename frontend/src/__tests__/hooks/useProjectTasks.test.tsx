@@ -82,6 +82,37 @@ describe('useProjectTasks', () => {
     expect(updateAitoTask).toHaveBeenCalledWith(7, { scan_cost: 4000 });
   });
 
+  it('reports saves pending from the first keystroke until the PATCH lands', async () => {
+    let land: () => void = () => {};
+    updateAitoTask.mockImplementation(
+      (_id: number, patch: object) =>
+        new Promise((resolve) => {
+          land = () => resolve({ ...ROW, ...patch });
+        }),
+    );
+    const { result } = await mounted();
+    expect(result.current.hasPendingSaves).toBe(false);
+
+    // Debounced: nothing sent yet, but the edit is owed.
+    act(() => {
+      result.current.onTasksChange([{ ...result.current.tasks[0], scanCost: 12 }]);
+    });
+    expect(updateAitoTask).not.toHaveBeenCalled();
+    expect(result.current.hasPendingSaves).toBe(true);
+
+    // Sent and still open.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+    });
+    expect(updateAitoTask).toHaveBeenCalledTimes(1);
+    expect(result.current.hasPendingSaves).toBe(true);
+
+    await act(async () => {
+      land();
+    });
+    await waitFor(() => expect(result.current.hasPendingSaves).toBe(false));
+  });
+
   it('merges edits to different fields into one patch', async () => {
     const { result } = await mounted();
 
