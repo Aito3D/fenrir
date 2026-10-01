@@ -96,3 +96,32 @@ async def test_transfer_refusals(async_client, db_session):
     await _set_invoiced(db_session, p["id"])
     assert (await async_client.put(url, json=NEW)).status_code == 409
     assert (await async_client.get("/api/v1/aito/")).json()[0]["client_id"] == "z1"
+
+
+@pytest.mark.asyncio
+async def test_a_quoted_card_owes_books_the_customer_push(async_client, db_session):
+    """A card with an estimate is flagged so the sync pushes the new
+    customer; a card with none is not (its estimate is created under the
+    card's customer). A split from a flagged card starts unflagged."""
+    quoted = await _create_with_tasks(async_client, [{"title": "A", "scan_cost": 1}, {"title": "B", "scan_cost": 2}])
+    bare = await _create_with_tasks(async_client, [])
+    row = (await db_session.execute(select(AitoProject).where(AitoProject.id == quoted["id"]))).scalar_one()
+    row.quote_id = "E-T1"
+    row.quote_sync_state = "idle"
+    await db_session.commit()
+
+    for p in (quoted, bare):
+        assert (await async_client.put(f"/api/v1/aito/{p['id']}/transfer-client", json=NEW)).status_code == 200
+    db_session.expire_all()
+    flags = dict((await db_session.execute(select(AitoProject.id, AitoProject.client_push_pending))).all())
+    assert flags[quoted["id"]] is True
+    assert flags[bare["id"]] is False
+
+    tasks = (await async_client.get(f"/api/v1/aito/{quoted['id']}/tasks")).json()
+    resp = await async_client.post(f"/api/v1/aito/{quoted['id']}/tasks/transfer", json={"task_ids": [tasks[0]["id"]]})
+    assert resp.status_code == 200, resp.text
+    split_id = resp.json()["target"]["id"]
+    db_session.expire_all()
+    split = (await db_session.execute(select(AitoProject).where(AitoProject.id == split_id))).scalar_one()
+    assert split.client_id == "z9"
+    assert split.client_push_pending is False

@@ -1264,15 +1264,15 @@ async def _update_quote(db: AsyncSession, project: AitoProject) -> None:
             # is even made. None of the three may cost the line-item push
             # below — an expiry is a nicety, the lines are the job.
             logger.warning("expiry_date not written on estimate %s", project.quote_id, exc_info=True)
-    # A card re-pointed at another contact (transfer-client) names a customer
-    # the estimate does not: push it with the lines, or the next sweep's
+    # A card re-pointed at another contact (transfer-client) owes Books its
+    # new customer: push it with the lines, or the next sweep's
     # _follow_customer reads the old customer back and undoes the transfer.
-    # Only on a disagreement — the common push stays a lines-only PUT, and a
-    # read that omits customer_id is no evidence of one (same rule as
-    # _follow_customer).
-    remote_customer = str(estimate.get("customer_id") or "")
+    # Decided by the explicit flag, never by "card and Books disagree": that
+    # disagreement is also what a reassignment made IN Books looks like, and
+    # pushing the card's customer then would silently write the old one back
+    # (and bill it). Unflagged, the customer is left to _follow_customer.
     customer_move: dict = {}
-    if project.client_id and remote_customer and remote_customer != project.client_id:
+    if project.client_push_pending and project.client_id:
         customer_move = {"customer_id": project.client_id, "contact_person_id": project.client_contact_person_id}
     updated = await zoho_service.update_estimate_lines(
         db,
@@ -1281,6 +1281,10 @@ async def _update_quote(db: AsyncSession, project: AitoProject) -> None:
         notes=await notes_with_tracking(db, project, estimate.get("notes")),
         **customer_move,
     )
+    if customer_move:
+        # Cleared only once a PUT that carried the customer succeeded: a
+        # failure above raises past this line and leaves the flag owed.
+        project.client_push_pending = False
     await _write_back_rounded_costs(db, project.id, pushed_costs)
     # `project.quote_status` was loaded before this call's own get_estimate,
     # let alone this update_estimate_lines round trip -- and nothing in
@@ -1339,12 +1343,11 @@ async def _follow_customer(db: AsyncSession, project: AitoProject, estimate: dic
     remote_id = str(estimate.get("customer_id") or "")
     if not remote_id or remote_id == (project.client_id or ""):
         return
-    if project.quote_sync_state in ("pending", "error"):
-        # The card holds an edit Books has not received yet — a transfer
-        # among them (_update_quote pushes the new customer). Here the card
-        # is the side that changed, so following Books would undo it. The
-        # sweep only reaches this for 'error' today (pending takes the push
-        # branch), but the guard names both states the card is ahead in.
+    if project.client_push_pending:
+        # A transfer Books has not received yet: the card is the side that
+        # changed, and _update_quote pushes its customer. Following Books here
+        # would undo the transfer. Any other disagreement is Books' own
+        # reassignment, which the card follows.
         return
     try:
         contact = await zoho_service.get_contact(db, remote_id)
@@ -1879,7 +1882,11 @@ async def sync_project(
             # against. Neither column changes between that snapshot and here on
             # any path that reaches this line, so it is still accurate.
             if already_in_error and sync_failures_before >= SYNC_FAILURE_LIMIT:
-                project.quote_sync_state = "idle"
+                # A card that still owes Books its customer (a transfer whose
+                # push escalated) goes back to pending so the push is retried;
+                # settling it idle would let the next sweep follow Books back
+                # to the old customer.
+                project.quote_sync_state = "pending" if project.client_push_pending else "idle"
                 project.quote_sync_error = None
             project.quote_sync_failures = 0
             return

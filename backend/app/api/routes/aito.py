@@ -4111,6 +4111,13 @@ async def transfer_client(
     project.client_social_handle = None
     was_pending = project.quote_sync_state == "pending"
     _mark_pending_if_ours(project)
+    # The estimate's customer is now the card's to push (see
+    # AitoProject.client_push_pending): without it the sync would read Books'
+    # old customer as a reassignment made in Books and follow it back. Only
+    # with an estimate to move: a card not yet quoted is created under the
+    # card's customer, which needs no flag.
+    if project.quote_sync_state == "pending" and project.quote_id:
+        project.client_push_pending = True
     actor = _actor(current_user)
     await record(
         db,

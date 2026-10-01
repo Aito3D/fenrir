@@ -15,7 +15,7 @@ import pytest
 from sqlalchemy import select
 
 from backend.app.models.aito_event import AitoEvent
-from backend.app.services.aito_quote_sync import sync_project
+from backend.app.services.aito_quote_sync import SYNC_FAILURE_LIMIT, sync_project
 from backend.app.services.zoho import zoho_service
 
 from .test_aito_quote_sync import _configure_zoho, _project_with_quote, zoho_handler
@@ -263,6 +263,7 @@ class _StatefulBooks:
             "line_items": [],
         }
         self.puts: list[dict] = []
+        self.fail_puts = 0  # answer the next N PUTs with a 503, writing nothing
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
         if "oauth" in request.url.path:
@@ -273,6 +274,9 @@ class _StatefulBooks:
         if request.method == "PUT" and path.endswith("/estimates/E1"):
             body = json.loads(request.content)
             self.puts.append(body)
+            if self.fail_puts:
+                self.fail_puts -= 1
+                return httpx.Response(503, json={"message": "down"})
             if "customer_id" in body:
                 self.estimate["customer_id"] = body["customer_id"]
                 self.estimate["customer_name"] = "PACIFIC MARINE"
@@ -286,12 +290,14 @@ class _StatefulBooks:
 
 async def _transferred_project(db, *, contact_person_id: str | None):
     """The state transfer_client leaves behind: the card names the new
-    customer, Books still names the old one, and the card is pending."""
+    customer, Books still names the old one, the card is pending and owes
+    Books the customer push."""
     project = await _project_with_quote(db, impression_cost=1000)
     project.quote_status = "sent"
     project.client_id = "C2"
     project.client_name = "PACIFIC MARINE"
     project.client_contact_person_id = contact_person_id
+    project.client_push_pending = True
     project.quote_sync_state = "pending"
     await db.commit()
     await _configure_zoho(db)
@@ -341,28 +347,103 @@ async def test_a_push_names_no_contact_person_when_the_card_has_none(db_session)
 
 
 @pytest.mark.asyncio
-async def test_a_push_with_the_same_customer_still_sends_only_its_lines(db_session):
-    project = await _transferred_project(db_session, contact_person_id="CP9")
-    books = _StatefulBooks("C2")
+async def test_a_transfer_survives_a_failure_escalation_and_is_pushed_after_it(db_session):
+    """Five failed pushes escalate the card to error. The first good read
+    afterwards must not settle it idle (the next sweep would then follow
+    Books back to the old customer): it owes the customer push, so it goes
+    back to pending, and that push carries the new customer."""
+    project = await _transferred_project(db_session, contact_person_id=None)
+    books = _StatefulBooks("C1")
+    books.fail_puts = SYNC_FAILURE_LIMIT
     zoho_service.transport = httpx.MockTransport(books)
     zoho_service.invalidate_token()
     try:
-        await sync_project(db_session, project)
+        for _ in range(SYNC_FAILURE_LIMIT):
+            await sync_project(db_session, project)
+            await db_session.commit()
+        assert project.quote_sync_state == "error"
+        assert project.quote_sync_failures == SYNC_FAILURE_LIMIT
+        assert project.client_push_pending is True
+
+        await sync_project(db_session, project)  # Books is back: a reconcile read
+        await db_session.commit()
+        assert project.quote_sync_state == "pending"
+        assert project.client_id == "C2"
+
+        await sync_project(db_session, project)  # the owed push
+        await db_session.commit()
+        assert project.client_push_pending is False
+        await sync_project(db_session, project)  # and a sweep after it
+        await db_session.commit()
+    finally:
+        zoho_service.transport = None
+
+    assert books.puts[-1]["customer_id"] == "C2"
+    assert books.estimate["customer_id"] == "C2"
+    assert project.client_id == "C2"
+    kinds = [e.kind for e in await _events(db_session, project.id)]
+    assert "project.client.changed" not in kinds
+
+
+@pytest.mark.asyncio
+async def test_a_books_reassignment_is_never_overwritten_by_a_local_edit(db_session):
+    """Books moved the quote to C3 while the card (unflagged) still names
+    C1, and an operator edited the card before the next reconcile. The push
+    must not write C1 back into Books; the next reconcile follows Books."""
+    project = await _project_with_quote(db_session, impression_cost=1000)
+    project.quote_status = "sent"
+    project.quote_sync_state = "pending"  # the local line edit
+    await db_session.commit()
+    await _configure_zoho(db_session)
+    books = _StatefulBooks("C3")
+    zoho_service.transport = httpx.MockTransport(books)
+    zoho_service.invalidate_token()
+    try:
+        await sync_project(db_session, project)  # the push
+        await db_session.commit()
+        await sync_project(db_session, project)  # the next reconcile
         await db_session.commit()
     finally:
         zoho_service.transport = None
 
     line_put = next(p for p in books.puts if "line_items" in p)
     assert "customer_id" not in line_put and "contact_persons" not in line_put
+    assert books.estimate["customer_id"] == "C3"
+    assert project.client_id == "C3"
+    kinds = [e.kind for e in await _events(db_session, project.id)]
+    assert "project.client.changed" in kinds
 
 
 @pytest.mark.asyncio
-async def test_a_card_whose_push_errored_does_not_follow_books_back(db_session):
-    """An 'error' card still holds edits Books never received — a transfer
-    among them. Following Books there would undo the operator's change."""
+async def test_the_flag_clears_only_after_a_put_that_carried_the_customer_succeeded(db_session):
+    project = await _transferred_project(db_session, contact_person_id="CP9")
+    books = _StatefulBooks("C1")
+    books.fail_puts = 1
+    zoho_service.transport = httpx.MockTransport(books)
+    zoho_service.invalidate_token()
+    try:
+        await sync_project(db_session, project)  # the PUT fails
+        await db_session.commit()
+        assert books.puts and books.puts[-1]["customer_id"] == "C2"
+        assert project.client_push_pending is True
+        assert project.quote_sync_state == "pending"
+
+        await sync_project(db_session, project)  # the retry lands
+        await db_session.commit()
+    finally:
+        zoho_service.transport = None
+
+    assert books.puts[-1]["customer_id"] == "C2"
+    assert project.client_push_pending is False
+    assert project.quote_sync_state == "idle"
+
+
+@pytest.mark.asyncio
+async def test_a_flagged_card_is_not_moved_by_the_sweep(db_session):
+    """While the flag is set the card is the side that changed: a reconcile
+    read that sees the old customer leaves the card alone."""
     project = await _transferred_project(db_session, contact_person_id=None)
-    project.quote_sync_state = "error"
-    project.quote_sync_error = "Main d'oeuvre line has no description"
+    project.quote_sync_state = "idle"
     await db_session.commit()
     books = _StatefulBooks("C1")
     zoho_service.transport = httpx.MockTransport(books)

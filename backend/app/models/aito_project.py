@@ -47,6 +47,12 @@ class AitoProject(Base):
     # looks here.
     client_contact_person_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
     client_contact_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # The card owes Books its customer: set by transfer-client, cleared by the
+    # sync once a PUT that carried customer_id succeeded. It is what decides
+    # who owns the estimate's customer when card and Books disagree — set, the
+    # card changed and the push sends it; unset, Books changed and the sweep
+    # follows it (services/aito_quote_sync.py). Never exposed to the frontend.
+    client_push_pending: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
     # Public tracking link token (services/aito_tracking.py). Minted lazily
     # the first time a link is needed; Regenerate replaces it. NOT in
     # VERSIONED_FIELDS: rotating a link is not an edit the panel conflicts on.

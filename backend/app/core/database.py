@@ -6152,6 +6152,15 @@ async def run_migrations(conn):
         f"{_aito_quote_status_confirmed_default}",
     )
 
+    # Migration: the card owes Books its customer after a client transfer
+    # (2026-10-01). See AitoProject.client_push_pending. Every existing row
+    # backfills to False: nothing was owed before the flag existed.
+    await _safe_execute(
+        conn,
+        "ALTER TABLE aito_projects ADD COLUMN client_push_pending BOOLEAN NOT NULL DEFAULT "
+        f"{_aito_quote_status_confirmed_default}",
+    )
+
     # Migration: a settled terminal charge whose event/acceptance failed is
     # re-driven by the sweep (2026-09-26). Nullable, no backfill: existing
     # rows read NULL, i.e. nothing owed.
