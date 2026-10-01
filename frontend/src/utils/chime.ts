@@ -12,6 +12,7 @@
 
 let shared: AudioContext | null = null;
 let removeUnlock: (() => void) | null = null;
+let removeKeepAwake: (() => void) | null = null;
 
 function contextClass(): typeof AudioContext | undefined {
   if (typeof window === 'undefined') return undefined;
@@ -31,6 +32,24 @@ function wake(ctx: AudioContext): void {
   if (ctx.state === 'suspended') ctx.resume().catch(() => {});
 }
 
+/** After the first unlock: a light, persistent gesture listener that only
+ *  resumes the shared context when the system suspended it again (an iPad
+ *  going to sleep). WebKit ignores resume() outside a gesture, so the chime's
+ *  own resume cannot bring it back; the next tap or key does. */
+function installKeepAwake(): void {
+  if (removeKeepAwake || typeof window === 'undefined') return;
+  const onGesture = () => {
+    if (shared && shared.state === 'suspended') shared.resume().catch(() => {});
+  };
+  window.addEventListener('pointerdown', onGesture, true);
+  window.addEventListener('keydown', onGesture, true);
+  removeKeepAwake = () => {
+    window.removeEventListener('pointerdown', onGesture, true);
+    window.removeEventListener('keydown', onGesture, true);
+    removeKeepAwake = null;
+  };
+}
+
 /**
  * Create (or resume) the shared context on the first pointerdown/keydown —
  * inside the gesture, which is what WebKit requires. One-time: the listener
@@ -44,7 +63,10 @@ export function unlockChime(): () => void {
     remove();
     try {
       const ctx = context();
-      if (ctx) wake(ctx);
+      if (ctx) {
+        wake(ctx);
+        installKeepAwake();
+      }
     } catch {
       // No audio: the ring and the badge still happen.
     }
@@ -89,5 +111,6 @@ export function chime(): void {
 export function __resetChimeForTests(): void {
   removeUnlock?.();
   removeUnlock = null;
+  removeKeepAwake?.();
   shared = null;
 }

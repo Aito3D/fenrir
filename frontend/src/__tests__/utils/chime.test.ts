@@ -88,6 +88,21 @@ describe('chime', () => {
     expect(FakeAudioContext.instances).toHaveLength(0);
   });
 
+  it('a later gesture resumes a context the system suspended again', () => {
+    unlockChime();
+    window.dispatchEvent(new Event('pointerdown'));
+    const ctx = FakeAudioContext.instances[0];
+    ctx.state = 'suspended'; // iPad slept
+    ctx.resume.mockClear();
+    window.dispatchEvent(new Event('pointerdown'));
+    expect(ctx.resume).toHaveBeenCalledTimes(1);
+    expect(FakeAudioContext.instances).toHaveLength(1);
+    // A running context costs nothing on the next gesture.
+    ctx.resume.mockClear();
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'a' }));
+    expect(ctx.resume).not.toHaveBeenCalled();
+  });
+
   it('removing the listener before any gesture leaves nothing behind', () => {
     const remove = unlockChime();
     remove();
