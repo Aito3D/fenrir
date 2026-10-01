@@ -338,6 +338,11 @@ async def refresh_after_payment(db: AsyncSession, project_id: int, kind: str) ->
             from backend.app.services.aito_quote_sync import sync_project
 
             await sync_project(db, project)
+            # The paid-deposit auto-accept records quote.accepted, an inbox
+            # row for the card's watchers: commit and push it here, as the
+            # sweep does after its own sync_project.
+            await db.commit()
+        await broadcast_pending(db)
     except Exception as exc:  # noqa: BLE001 — a figures refresh must never fail the payment that triggered it
         logger.warning("figures refresh after a %s payment on project %s failed: %s", kind, project_id, exc)
         # `db.rollback()` is NOT called unconditionally: this session is the

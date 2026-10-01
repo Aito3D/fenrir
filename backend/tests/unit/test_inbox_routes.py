@@ -235,3 +235,64 @@ async def test_auth_enabled_without_a_token_is_401(async_client, inbox_users, me
     kwargs = {"json": body} if body is not None else {}
     r = await getattr(async_client, method)(url, **kwargs)
     assert r.status_code == 401, r.text
+
+
+@pytest.mark.asyncio
+async def test_an_api_key_has_an_empty_inbox_and_its_writes_are_no_ops(async_client, db_session, inbox_users):
+    """An API key carries no user (require_auth_if_enabled answers None for
+    it), even one owned by a user with rows: nothing is listed, and the
+    writes touch nobody's inbox."""
+    from backend.app.core.auth import generate_api_key
+    from backend.app.models.api_key import APIKey
+
+    alice, _ = inbox_users
+    (row_id,) = await _seed(db_session, alice.id, 1)
+    full_key, key_hash, key_prefix = generate_api_key()
+    db_session.add(
+        APIKey(
+            name="inbox-key",
+            key_hash=key_hash,
+            key_prefix=key_prefix,
+            user_id=alice.id,
+            can_read_status=True,
+            enabled=True,
+        )
+    )
+    await db_session.commit()
+    headers = {"X-API-Key": full_key}
+
+    r = await async_client.get("/api/v1/inbox", headers=headers)
+    assert r.status_code == 200 and r.json() == {"items": [], "unread": 0}
+    assert (await async_client.post(f"/api/v1/inbox/{row_id}/read", headers=headers)).status_code == 204
+    assert (await async_client.post("/api/v1/inbox/read-all", headers=headers)).status_code == 204
+    r = await async_client.put(
+        "/api/v1/inbox/preferences", json={"kinds": [], "sound_kinds": [], "auto_watch": False}, headers=headers
+    )
+    assert r.status_code == 204
+    assert (await db_session.execute(select(UserInboxPreference))).scalars().first() is None
+    row = (await db_session.execute(select(Notification))).scalar_one()
+    await db_session.refresh(row)
+    assert row.read_at is None
+
+
+@pytest.mark.asyncio
+async def test_aito_rows_are_hidden_once_aito_read_is_revoked(async_client, db_session):
+    """Rows written while the user could read Aito stay stored, but the
+    inbox stops showing (and counting) them once aito:read is gone."""
+    from backend.app.core.auth import create_access_token
+    from backend.app.models.settings import Settings
+
+    carol = await _user(db_session, "carol", perms=("printers:read",))
+    carol_id, carol_name = carol.id, carol.username
+    await _seed(db_session, carol_id, 2)
+    db_session.add(
+        Notification(user_id=carol_id, kind="printer.finished", family="printer", title="printer.finished", body="p")
+    )
+    db_session.add(Settings(key="auth_enabled", value="true"))
+    await db_session.commit()
+    headers = {"Authorization": f"Bearer {create_access_token(data={'sub': carol_name})}"}
+
+    r = await async_client.get("/api/v1/inbox", headers=headers)
+    assert r.status_code == 200, r.text
+    assert [i["family"] for i in r.json()["items"]] == ["printer"]
+    assert r.json()["unread"] == 1

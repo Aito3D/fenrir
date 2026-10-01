@@ -7679,3 +7679,62 @@ def test_the_reference_match_ignores_case_and_surrounding_space():
     rows = [{"retainerinvoice_id": "RI1", "status": "paid", "reference_number": " dev26-9001 ", "total": 500}]
     assert _referenced_retainer_total({}, rows, "DEV26-9001") == 500.0
     assert _referenced_retainer_total({}, rows, None) == 0.0
+
+
+@pytest.mark.asyncio
+async def test_the_sweeps_commit_drains_the_inbox_rows_its_mirror_wrote(db_session, monkeypatch):
+    """A client acceptance mirrored from Books comments becomes an inbox row
+    for the card's watcher, and the worker's per-project commit pushes it."""
+    from backend.app.models.notification_inbox import AitoWatch, Notification
+    from backend.app.services import inbox
+    from backend.tests.unit.test_inbox_service import _user
+
+    alice = await _user(db_session, "alice")
+    alice_id = alice.id
+    project = await _project_with_quote(db_session, impression_cost=1000)
+    project.quote_sync_state = "idle"
+    project.quote_status = "sent"
+    db_session.add(AitoWatch(user_id=alice_id, project_id=project.id, kinds_json=None, created_at=datetime(2026, 1, 1)))
+    await db_session.commit()
+    await _configure_zoho(db_session)
+    pushes: list[int] = []
+
+    async def fake_broadcast_to_user(user_id, message):
+        pushes.append(user_id)
+
+    monkeypatch.setattr(inbox.ws_manager, "broadcast_to_user", fake_broadcast_to_user)
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {
+                    "estimate": {
+                        "estimate_id": "E1",
+                        "status": "accepted",
+                        "customer_id": "C1",
+                        "is_transaction_created": False,
+                        "invoiced_amount": 0,
+                    }
+                },
+                ("GET", "/estimates/E1/comments"): {
+                    "comments": [
+                        {
+                            "comment_id": "c-acc",
+                            "description": "Devis accepté à l'aide du lien public",
+                            "comment_type": "system",
+                            "date": "2026-07-28",
+                            "time": "01:02",
+                        }
+                    ]
+                },
+            }
+        )
+    )
+    zoho_service.invalidate_token()
+    try:
+        await run_sync_once(db_session)
+    finally:
+        zoho_service.transport = None
+
+    rows = list((await db_session.execute(select(Notification))).scalars())
+    assert [(r.user_id, r.kind) for r in rows] == [(alice_id, "aito.quote_accepted")]
+    assert pushes == [alice_id]

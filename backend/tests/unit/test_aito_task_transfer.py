@@ -131,6 +131,60 @@ def wakes(monkeypatch):
     return calls
 
 
+@pytest.fixture
+def markers_at_wake(monkeypatch):
+    """The sync worker's requeue markers as they stood when each wake fired."""
+    from backend.app.api.routes import aito as aito_routes
+    from backend.app.services.aito_quote_sync import _requeue_marker
+
+    _requeue_marker.clear()
+    seen: list[dict[int, int]] = []
+    monkeypatch.setattr(aito_routes, "request_immediate_sync", lambda: seen.append(dict(_requeue_marker)))
+    monkeypatch.setattr(aito_routes, "request_debounced_sync", lambda: seen.append(dict(_requeue_marker)))
+    yield seen
+    _requeue_marker.clear()
+
+
+@pytest.mark.asyncio
+async def test_both_cards_markers_are_bumped_before_the_wake(async_client, markers_at_wake):
+    """A worker woken before the target's marker moved could capture the
+    stale marker, push, and settle the target idle over an edit it never
+    saw. Both bumps land before the wake, for a split and for a move."""
+    from backend.app.services.aito_quote_sync import _requeue_marker
+
+    source = await _create_with_tasks(async_client, TASKS)
+    target = await _create_with_tasks(async_client, [])
+    ids = [t["id"] for t in await _tasks(async_client, source["id"])]
+
+    markers_at_wake.clear()
+    resp = await _transfer(async_client, source["id"], [ids[0]], None)
+    assert resp.status_code == 200
+    split_id = resp.json()["target"]["id"]
+    assert markers_at_wake[-1].get(split_id) == _requeue_marker[split_id]
+    assert markers_at_wake[-1].get(source["id"]) == _requeue_marker[source["id"]]
+
+    markers_at_wake.clear()
+    assert (await _transfer(async_client, source["id"], [ids[1]], target["id"])).status_code == 200
+    assert markers_at_wake[-1].get(target["id"]) == _requeue_marker[target["id"]]
+    assert markers_at_wake[-1].get(source["id"]) == _requeue_marker[source["id"]]
+
+
+@pytest.mark.asyncio
+async def test_a_merges_source_marker_is_bumped_before_the_wake(async_client, db_session, markers_at_wake):
+    from backend.app.models.aito_project import AitoProject
+    from backend.app.services.aito_quote_sync import _requeue_marker
+    from backend.tests.unit.test_aito_merge import _merge
+
+    target = await _create_with_tasks(async_client, TASKS[:1])
+    source = await _create_with_tasks(async_client, TASKS[1:])
+    markers_at_wake.clear()
+    assert (await _merge(async_client, target["id"], source["id"])).status_code == 200
+    row = await db_session.get(AitoProject, source["id"])
+    await db_session.refresh(row)
+    assert row.quote_sync_state == "pending"
+    assert markers_at_wake[-1].get(source["id"]) == _requeue_marker[source["id"]]
+
+
 @pytest.mark.asyncio
 async def test_a_split_wakes_the_worker_immediately_and_a_move_debounces(async_client, wakes):
     """A split card is a brand-new card that owes Books an estimate — the same

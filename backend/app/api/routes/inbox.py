@@ -26,6 +26,7 @@ from backend.app.services.aito_events import utc_now_naive
 from backend.app.services.inbox import DEFAULT_KINDS, KINDS, preferences_for
 
 router = APIRouter(prefix="/inbox", tags=["inbox"])
+_AITO_READ = "aito:read"
 
 
 def _available() -> list[InboxKindInfo]:
@@ -54,14 +55,18 @@ async def list_inbox(
     """Newest first; ``before`` pages back by id."""
     if current_user is None:
         return InboxPage(items=[], unread=0)
-    stmt = select(Notification).where(Notification.user_id == current_user.id)
+    mine = [Notification.user_id == current_user.id]
+    if not current_user.has_permission(_AITO_READ):
+        # Rows written while the user could read Aito stay stored, but a
+        # revoked aito:read hides them (and their unread count) from now on:
+        # their bodies carry client names and quote numbers.
+        mine.append(Notification.family != "aito")
+    stmt = select(Notification).where(*mine)
     if before is not None:
         stmt = stmt.where(Notification.id < before)
     rows = (await db.execute(stmt.order_by(Notification.id.desc()).limit(limit))).scalars().all()
     unread = await db.scalar(
-        select(func.count())
-        .select_from(Notification)
-        .where(Notification.user_id == current_user.id, Notification.read_at.is_(None))
+        select(func.count()).select_from(Notification).where(*mine, Notification.read_at.is_(None))
     )
     return InboxPage(items=[InboxItem.model_validate(r) for r in rows], unread=unread or 0)
 

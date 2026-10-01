@@ -332,6 +332,32 @@ async def test_refresh_after_quote_payment_runs_sync_project(db_session, monkeyp
 
 
 @pytest.mark.asyncio
+async def test_refresh_after_quote_payment_commits_and_drains_the_inbox(db_session, monkeypatch):
+    """The quote refresh is the sweep's own unit, whose paid-deposit
+    auto-accept records quote.accepted — an inbox row for the card's
+    watchers. Committed and pushed here, not left for whoever commits next."""
+    from backend.app.services import inbox
+    from backend.app.services.aito_events import record
+
+    p = await _project(db_session)
+    pushes: list[int] = []
+
+    async def fake_broadcast_to_user(user_id, message):
+        pushes.append(user_id)
+
+    async def fake_sync(db, project, credit_cache=None):
+        await record(db, project.id, "quote.accepted", actor_class="system")
+        db.info.setdefault("inbox_users", set()).add(7)  # what fan_out notes for a watcher
+
+    monkeypatch.setattr(inbox.ws_manager, "broadcast_to_user", fake_broadcast_to_user)
+    monkeypatch.setattr("backend.app.services.aito_quote_sync.sync_project", fake_sync)
+    await svc.refresh_after_payment(db_session, p.id, "quote")
+    assert pushes == [7]
+    kinds = [e.kind for e in (await db_session.execute(select(AitoEvent))).scalars()]
+    assert "quote.accepted" in kinds
+
+
+@pytest.mark.asyncio
 async def test_refresh_never_raises(db_session, monkeypatch):
     p = await _project(db_session)
 

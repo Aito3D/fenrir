@@ -7,7 +7,7 @@ import logging
 import os
 import re
 import time
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from datetime import date, datetime, timezone
 from types import SimpleNamespace
 from typing import Literal
@@ -880,7 +880,11 @@ def _wake_worker(queued: bool, immediate: bool = False) -> None:
 
 
 async def _commit_and_wake(
-    db: AsyncSession, queued: bool, project_id: int | None = None, immediate: bool = False
+    db: AsyncSession,
+    queued: bool,
+    project_id: int | None = None,
+    immediate: bool = False,
+    also_bump: Sequence[int] = (),
 ) -> None:
     """Commit the session, bump the sync worker's requeue marker if this call
     left a project pending, then wake the worker.
@@ -920,6 +924,12 @@ async def _commit_and_wake(
     await db.commit()
     if queued and project_id is not None:
         _bump_requeue_marker(project_id)
+    # A second card the same commit left pending (a task transfer's other
+    # side, a merge's source): bumped here too, after the commit and BEFORE
+    # the wake, so a worker woken by it can never capture that card's stale
+    # marker and settle it idle over the edit just committed.
+    for other_id in also_bump:
+        _bump_requeue_marker(other_id)
     _wake_worker(queued, immediate)
     await broadcast_pending(db)  # inbox rows record() wrote during this request
 
@@ -5303,11 +5313,14 @@ async def transfer_tasks(
     target_queued = target.quote_sync_state == "pending"
     # A split is a card creation: the new card owes Books an estimate now,
     # like create_project's, so it skips the edit window. A move is an edit.
-    await _commit_and_wake(db, source_queued or target_queued, source.id if source_queued else None, immediate=split)
-    if target_queued:
-        # The target's own requeue marker: _commit_and_wake bumped the
-        # source's only, and the worker tracks the two separately.
-        _bump_requeue_marker(target.id)
+    # The worker tracks the two markers separately: the target's rides along.
+    await _commit_and_wake(
+        db,
+        source_queued or target_queued,
+        source.id if source_queued else None,
+        immediate=split,
+        also_bump=[target.id] if target_queued else [],
+    )
     await _broadcast_changed("task", source.id, actor)
     await _broadcast_changed("task", target.id, actor)
     await db.refresh(source)
@@ -5397,11 +5410,10 @@ async def merge_project(
     summary = await _summary_for(db, project_id)
     await _apply_rules(db, target, summary, actor=actor)
     queued = target.quote_sync_state == "pending" or source.quote_sync_state == "pending"
-    await _commit_and_wake(db, queued, target.id)
-    if source.quote_sync_state == "pending":
-        # The source's own requeue marker: _commit_and_wake bumped the
-        # target's only, and the worker tracks the two separately.
-        _bump_requeue_marker(source.id)
+    # The worker tracks the two markers separately: the source's rides along.
+    # Read before the commit, which expires it.
+    source_pending = source.quote_sync_state == "pending"
+    await _commit_and_wake(db, queued, target.id, also_bump=[source.id] if source_pending else [])
     if not queued:
         # Same as delete_project: an imported source owes Books nothing, but
         # its payment link still has to be cancelled by the link reconciler.
