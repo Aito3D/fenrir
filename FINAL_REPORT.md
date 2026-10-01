@@ -1,118 +1,103 @@
-# Refactor loop — campaign 21 final report (whole Aito feature, seeded by campaign 20's leftovers)
+# Refactor-loop campaign 22 — final report
 
-Campaign 21 · 2026-09-26 → 2026-09-27 · branch `auto-refactor-loop` · BASE `refactor-base` = 4a9fc782c · UPSTREAM 636305d9c
+**Scope:** camera wall (grid-stream slice of `backend/app/api/routes/camera.py`, `services/camera_fanout.py`, the CameraGrid components, the stream hooks, the decoder worker, the camera-wall slice of `PrintersPage.tsx`) plus the Aito card hover dwell (`components/aito/CardView.tsx`, `hoverWarmth.ts`).
+**Branch:** `auto-refactor-loop` in `../bambuddy-refactor`, cut from `main` at `a601a46357da1333ef46aa468b2cc6d239321513` (UPSTREAM, 2026-09-29). BASE = tag `refactor-base` (`4256972f4`, the setup commit).
+**Parameters:** TRIAGE P3 · MAX_ITER 12 · MAX_ROUNDS 3 · BATCH 3 · auto · grouped commits · merge at exit.
+**Ran:** 2026-09-29 → 2026-10-01.
 
 ## Why the loop ended
 
-**Stopped on user request** after iteration 15 (`loop-15` = fc432b0b2), during the round-3 (final) survey.
-Round 3's security auditor had finished (1 finding, T-084, left BLOCKED for approval); the robustness,
-cleanliness and tests auditors were stopped before reporting, so round 3 is **incomplete**.
-Not converged, not MAX_ROUNDS, not MAX_ITER (15 of 18 iterations used).
+MAX_ROUNDS reached: round 3 was the last survey allowed, and its plan was worked to exhaustion. The iteration budget (12) was spent at the same moment. The campaign did not converge: every round still produced workable findings.
 
 ## Numbers
 
 | | |
 |---|---|
-| Iterations run | 15 (each squashed to one commit + tagged `loop-1` … `loop-15`) |
-| Survey rounds | 3 started (round 1 and 2 complete, round 3 partial) |
-| Commits on the branch since BASE | 15 iteration commits (+ this report) |
-| Diff since BASE | 67 files, +5356 / −440 |
-| Tasks | 45 filed: **41 DONE**, 1 BLOCKED (T-084, awaiting approval), 3 WONTFIX (T-016 duplicate, T-062 + T-063 declined) |
-| Triaged (P3, not worked) | 4 — T-066, T-072, T-076, T-081 (full evidence in the archived TRIAGE.md) |
-| Behavior changes approved by the user | 28 tasks (see below) + 6 changelog addenda |
-| Verifier verdicts | 15/15 PASS, 0 FAIL |
+| Iterations run | 12 (every one verified PASS by a blind verifier; `loop-1` … `loop-12` tags) |
+| Survey rounds | 3 (round 1 at setup, rounds 2 and 3 after the plan ran dry) |
+| Commits on the branch | 12 squashed iteration commits + the setup commit (`refactor-base`) + this report; `git log refactor-base..HEAD` |
+| Files changed since BASE | 23 files, +5670 / −508 lines (before this report) |
+| Tasks filed into the plan | 37 — 35 DONE, 2 declined by the user (WONTFIX-AUTO), 0 open, 0 blocked |
+| Findings diverted to TRIAGE.md | 22 (P3) |
 
-## Findings by auditor (from `plan.py stats`)
+### Coverage (scoped statements, the ratchet; both only ever went up)
 
-| Source | Filed | DONE | BLOCKED | WONTFIX | Triaged (campaign-wide) |
-|---|---|---|---|---|---|
-| audit-security | 9 | 5 | 1 (T-084) | 3 (T-016 dup of T-015 was a c20 carry-over; T-062, T-063 declined) | 1 (T-072) |
-| audit-robustness | 19 (incl. c20 seeds) | 19 | 0 | 0 | 1 (T-081) |
-| audit-cleanliness | 8 (incl. c20 seeds) | 8 | 0 | 0 | 2 (T-066, T-076) |
-| audit-tests | 4 | 4 | 0 | 0 | 0 |
-| survey (c20 leads + user requests) | 5 | 5 | 0 | 0 | — |
+| Stack | BASE | Final |
+|---|---|---|
+| Backend (`routes/camera.py` + `services/camera_fanout.py`) | 78.28 % (1474/1883) | 83.25 % (1655/1988) |
+| Frontend (18 scoped files) | 84.62 % (1392/1645) | 93.13 % (1559/1674) |
 
-Seeds carried over from campaign 20: its 8 triaged P3s (T-002, T-014, T-015, T-016, T-018, T-026, T-032, T-035) and 3 unfiled
-leads (T-044, T-045, T-046). User-requested tasks: T-069, T-070.
+Notable per-file moves: `useStreamReconnect.ts` 71.9 → 90 %, `useWebRTCStream.ts` 67.4 → 92 % lines, `useMjpegStream.ts` 85 → 96.9 %, `CameraGridCard.tsx` 78.9 → 97.4 %, `CameraGrid.tsx` 81.3 → 92.5 %, `routes/camera.py` 73.0 → 79.3 % (whole file).
 
-## What each survey round found
+### Tests
 
-- **Round 1** (2026-09-26): 21 filed (tests 4, robustness 10, security 5, cleanliness 2) + 1 triaged. Headline: money-path
-  ambiguity (a Books timeout on a manual payment could double-book), Heimdall/Books outages freezing the other passes, poll
-  watermarks skipping truncated windows, payment follow-up steps lost after a commit, imports trusting the browser's quote
-  figures, unbounded email sends, websocket read access checked only at connect.
-- **Round 2** (2026-09-27): 10 filed (security 1, robustness 6, cleanliness 3, tests 0) + 3 triaged. Headline: Books 5xx /
-  Heimdall unparseable 2xx still treated as clean failures, retainer-creation timeout, contact-poll poison row, a
-  **regression introduced by T-060** (a failing acceptance blocked the whole payment-link poll — fixed as T-083), deactivated
-  users on the websocket, and three duplication clean-ups of code this campaign added.
-- **Round 3** (partial): security only — T-084 (the T-065 websocket re-check only runs when the client sends a message).
+| | BASE | Final |
+|---|---|---|
+| Backend tests | 16 393 passed | 16 467 passed (+74), 1 skipped |
+| Frontend tests | 7 450 | 7 532 (+82) |
+| Golden probes | 13/13 | 13/13 at every one of the 12 gates |
+| SURFACE.md | 428 lines | regenerated identical at every gate; the only diffs vs BASE are the sanctioned T-001/T-003/T-004 route-signature and permission lines |
 
-## User-approved behavior changes (full text in BASELINE-CHANGELOG.md, campaign-21 entries)
+Lint (ruff check/format, eslint, tsc, i18n parity for all 15 locales) and `npm run build` (Safari 16 baseline) were clean at every gate.
 
-Money / payments: T-051 (+T-078 addendum) manual payment Books timeout/5xx/non-JSON → "outcome unknown, check before retrying",
-guard kept · T-078 · T-079 retainer-creation timeout keeps the guard · T-058 (+addendum) Heimdall 5xx/non-JSON on a terminal
-charge stays pending/replayable · T-077 unparseable 2xx likewise · T-059 terminal follow-up steps re-driven (new nullable column
-`aito_terminal_payments.effects_pending_at`, additive migration) · T-082 re-drive capped with a sync_error · T-060 paid link +
-event + acceptance in one transaction · T-083 a failing acceptance backs off instead of blocking the poll · T-061 imported quote
-figures read from Books (+T-070 duplicate import refused before any Books call) · T-064 quote/invoice email rate limit +
-duplicate guard.
-Sync / polls: T-046 retainer 429 keeps the credit refresh · T-052 a Books outage no longer skips the Heimdall passes · T-054 /
-T-055 Books polls read oldest-first and resume a truncated window (`sort_order` D→A) · T-069 newest-first processing order
-restored within a pass (user request) · T-080 contact-poll poison cap · T-056 malformed Heimdall token recorded, Retry 200 ·
-T-057 a hung Heimdall stops the pass after the first transport failure · T-053 card version never moves backwards.
-Security / access: T-026 Heimdall ids escaped as one path segment · T-032 proxy-aware anonymous rate-limit keys · T-065
-websocket read re-check + no-change presence skip · T-071 deactivated users get no Aito websocket data · T-044 SMS guard
-un-armed after an unexpected failure.
-Docs / i18n: T-045 create_contact_person description · T-068 four unused i18n keys deleted.
-Declined: T-062, T-063 (contact scope — would break the new-project drawer / too intrusive for a staff tool).
+### Known-broken tests: before → after
 
-## Deviations and consequences the user should know (verifier notes)
+- Backend: none → none. `test_camera_grid_hub.py::test_restart_identity_check_prevents_stale_removal` was a `-n 10` load flake at setup; T-037 rewrote it as a deterministic event-gated race (passes 3× alone in ~2 s).
+- Frontend: `AppRouterAitoGuard.test.tsx` "with aito:read: mounts the Aito board at /aito" fails at BASE and still fails (its "auth disabled" sibling is intermittent). Out of scope for this campaign (Aito router, not camera wall) — see leads.
+- Load-sensitive flakes that pass alone (unchanged by the campaign, recorded for the next runner): ArchivesPage ZIP toast, ModelViewerModal #2725, FileUploadModal hashing, PrintModal, FileManagerPage paging, SettingsPage, LocationSensorOptionsModal; backend `test_aito_routes.py::test_import_accepts_a_thousand_projects` (240 s timeout under load) and `test_scheduler_concurrent_dispatch.py::test_check_queue_returns_without_awaiting_the_uploads`. Several verifier runs happened while other sessions pushed the load average past 150.
 
-1. **T-061 delivered only its first half.** Imports now read the quote from Books, but `wanted_link` was NOT gated on a
-   confirmed snapshot (the gate would cancel live links on every card left in sync error after a Books outage). Cards imported
-   with forged figures *before* this change keep them until the next sweep.
-2. **T-082's "visible on the panel" is not delivered for paid charges.** The capped re-drive error is stored and returned, but
-   `TerminalPaymentModal.tsx` shows `sync_error` only for pending/processing and failed/cancelled/expired rows. A stale
-   "Settle effects failed" error can also survive a restart (the counter is in memory).
-3. **T-051** no longer writes the `payment.manual.partial` Activity event on a quote-path payment timeout (its label was the
-   misleading instruction); only an ERROR log line remains.
-4. **T-060** — while its acceptance keeps failing, a quote link shows `pending` instead of `paid`.
-5. **Known limits documented, not fixed (user decisions):** >~2000 Books rows sharing one second stall the fixed polls;
-   the T-059 re-drive waits while the Heimdall token is empty; T-080/T-082 counters reset on restart.
-6. **T-078/T-058:** a non-JSON 4xx (proxy/WAF HTML page) is also treated as "outcome unknown" (user accepted).
+## User-approved behavior changes (16, all in BASELINE-CHANGELOG.md)
 
-## Operator notes (deploy-relevant)
+| Task | Change |
+|---|---|
+| T-001 | `create_stream_token` refuses printer-restricted API keys (403) instead of minting a printer-unbound token |
+| T-002 | the stream token is appended only to same-origin `/api/v1/` media srcs |
+| T-003 | grid-stream `?force=true` requires `settings:update` |
+| T-004 | hub-status diagnostics scoped to the API key's printer allowlist |
+| T-011 | grid-stream answers 503 + `Retry-After: 5` (not 404) when the load gate refuses every producer |
+| T-012 | SharedStreamHub waits for a dying producer's teardown for every caller |
+| T-013 | grid-stream producer restarts run as background tasks (tiles no longer freeze during a restart) |
+| T-016 | grid-stream request times out after 45 s when response headers never arrive, then reconnects |
+| T-017 | WebRTC `connect()` ignores a superseded attempt's rejection |
+| T-018 | `attemptReconnect` cancels a pending reconnect timer before re-arming |
+| T-019 | camera wall recovers from a render error (20 s auto-remount + Retry) instead of staying on the error text |
+| T-026 | `webrtc_offer` scoped to the API key's printer allowlist |
+| T-027 | a params-change replacement waits for the displaced producer's teardown |
+| T-053 | hub-status hides fleet-wide `ffmpeg_processes` and `producer_count` from printer-restricted keys |
+| T-054 | the single-camera fast lookup treats a producer frozen for >45 s as missing and replaces it |
+| T-055 | the camera-wall auto-remount backs off 20 → 40 → 80 → 160 → 300 s and resets after 60 s of stability |
 
-- **Migration 257** adds `aito_terminal_payments.effects_pending_at` (nullable, no backfill) — runs on the next backend restart.
-- **Books polls now send `sort_order=A`** on `list_invoices_modified_since` / `list_contacts_modified_since`. This was never
-  exercised against the real Zoho Books API — watch the first poll after deploy (log lines "Invoice poll" / "Contact poll").
-- **TRUSTED_PROXY_IPS** must list only proxies that append the real client to X-Forwarded-For (T-032): with a proxy that
-  forwards a client-supplied header unchanged, anonymous callers could rotate their rate-limit key.
-- New refusals operators may see: 409 duplicate quote/invoice email within 60 s, 429 past 10 emails/min, 502
-  `manual_outcome_unknown` (three wordings), 404/502/503 on a quote import Books cannot confirm.
-- New rate-limit bucket: `zoho_email` 10/min per principal.
+Declined by the user: T-048 (delete the dead `camera_fanout.py` — kept so upstream merges stay clean), T-052 (revoke camera stream tokens on logout — lives in core `auth.py`, outside scope).
 
-## Gates
+## Findings by auditor (filed into the plan)
 
-- Coverage (scope statements): backend 97.87% → **FINAL_BACKEND**; frontend 92.86% → **FINAL_FRONTEND**.
-- known_broken: none → none. One pre-existing load-sensitive test: `AppRouterAitoGuard.test.tsx` "mounts the Aito board"
-  fails under heavy machine load at BASE too (1 s `findByText` vs the lazy AitoPage chunk) — needs an idle-machine re-check.
-- Snapshot probes: 34/34 matching at every iteration; sanctioned re-records confined to `heimdall-wire` (T-026, T-058,
-  T-077), `aito-openapi` (T-045), `app-ddl` + `app-migrations-index` (T-059), `fe-i18n-parity` (T-068).
-- SURFACE.md: +12 sanctioned lines (new exception classes, `ModifiedSinceRows`, `utc_now_naive`, `DuplicateSendGuard`,
-  the four watermark helpers, the `effects_pending_at` DDL line); no removals.
-- Backend tests 15609 → FINAL_BE_TESTS; frontend 7142 → 7148 tests (479 files).
+| Auditor | Filed | DONE | WONTFIX-AUTO | Triaged (never filed) |
+|---|---|---|---|---|
+| audit-security | 8 | 7 | 1 (T-052) | 0 |
+| audit-robustness | 11 | 11 | 0 | 5 |
+| audit-cleanliness | 4 | 3 | 1 (T-048) | 12 |
+| audit-tests | 14 | 14 | 0 | 5 |
+| survey (hand-added) | 0 | — | — | — |
 
-## Left for humans
+Triaged per round: round 1 → 5, round 2 → 13, round 3 → 4 (22 in all; `plan.py stats` reports the same 22 because nothing was promoted). Every one sits in TRIAGE.md with full evidence; promote one with `python tools/plan.py promote <id> --iteration N` (the flag is required). A copy of TRIAGE.md is in the main checkout under `plans/refactor-campaign22/`.
 
-- **T-084 (BLOCKED, needs approval):** drive the websocket Aito read re-check from a timer / receive timeout so a silent
-  socket is also re-evaluated.
-- **Triaged P3s (TRIAGE.md):** T-066 unused `project_id` param in `_write_back_rounded_costs`; T-072 zoho `_seg` bare-dot
-  escaping; T-076 repeated stand-down idiom; T-081 version listener bumps from the loaded value (SQL-side bump).
-- **Round 3 was not completed** for robustness, cleanliness and tests — a campaign-22 panel should start there, with these
-  leads: T-082 paid-row sync_error not displayed; stale sync_error after restart; AppRouterAitoGuard test wait.
+## What each resurvey round found
+
+- **Round 1 (setup):** 25 findings — 20 filed, 5 triaged. All 6 behavior-change findings approved at setup.
+- **Round 2:** 22 findings — security 1 (T-026 WebRTC allowlist, approved), robustness 2 (T-027 approved, T-028 triaged), cleanliness 8 (all low → triaged; a 9th, "unused `useMediaToken` export", was dropped before ingest because SURFACE.md freezes it), tests 11 (7 filed, 4 triaged). Lesson: two auditors returned thin first passes (14 s and 34 s) and had to be resumed with an explicit "read these files in full" list.
+- **Round 3:** 12 findings — security 2 (T-053 approved, T-052 declined), robustness 2 (T-054, T-055 approved), cleanliness 4 (T-048 declined, 3 triaged), tests 4 (3 filed, T-056 triaged).
+
+## Leads for humans (not worked, deliberately)
+
+1. **Sibling `/{printer_id}/camera/*` routes** (stop, test, diagnose, status, plate-detection) still use the unscoped `CAMERA_VIEW` check and ignore an API key's printer allowlist — the same gap T-026 closed on `webrtc_offer`. Use the T-026 pattern (`_require_webrtc_printer_access`: auth-gated key lookup + `check_printer_access`), not `RequirePrinterPermissionIfAuthEnabled`, which validates keys even when auth is off.
+2. **T-052:** `verify_camera_stream_token` never re-checks the minting user, so a camera token keeps working for up to 60 min after logout/deactivation/permission loss. Needs a core `auth.py` change plus revocation hooks.
+3. **T-048:** `services/camera_fanout.py` is dead in production (only `shutdown_all_broadcasters` is called, over an always-empty registry); its docstrings still claim `/camera/stop` uses it. Kept to avoid upstream merge conflicts.
+4. **Builtin `TimeoutError` vs `asyncio.TimeoutError` on Python 3.10** at `_terminate_ffmpeg`, `_rtsp_mjpeg_frames` and `cleanup_orphaned_streams` (the same bug T-010 fixed inside the scoped slice).
+5. **npm audit:** the `brace-expansion` advisory remains after T-005 (no verified non-breaking fix version at the time).
+6. **AppRouterAitoGuard tests** fail at BASE and after (not camera-wall code).
+7. **T-019 wording:** the error fallback's countdown reuses `printers.cameraGrid.reconnecting` ("Reconnecting in Ns (attempt N)") because a new locale key would have broken the frozen i18n-parity golden; a dedicated string is a small follow-up.
+8. **T-053:** `ffmpeg_processes` is hidden entirely from restricted keys because OS pids carry no printer id; mapping pids to printers would need new bookkeeping.
 
 ## Preserved state
 
-All loop state files (PLAN.md, PLAN.campaign20.md, TRIAGE.md, BASELINE.md, VERDICTS.log, every findings-audit-*-r*.json)
-are copied to `refactor-campaign21-archive/` in the main checkout (untracked — commit it with the merge).
+Per the user's choice, PLAN.md, TRIAGE.md, BASELINE.md, VERDICTS.log, BASELINE-CHANGELOG.md, SURFACE.md and the 12 `findings-audit-*-r{1,2,3}.json` files were copied to `plans/refactor-campaign22/` in the main checkout (gitignored) before this report was written.
