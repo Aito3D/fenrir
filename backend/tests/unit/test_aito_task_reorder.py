@@ -79,7 +79,6 @@ async def test_reorder_wakes_the_quote_sync_worker(async_client):
     ids = await _task_ids(async_client, project["id"])
 
     aito_quote_sync._wake.clear()
-    aito_quote_sync._debounce_deadline = None
     resp = await async_client.patch(
         f"/api/v1/aito/{project['id']}/tasks/reorder", json={"task_ids": list(reversed(ids))}
     )
@@ -105,7 +104,6 @@ async def test_reorder_never_touches_an_unmanaged_project(async_client):
     ids = await _task_ids(async_client, project_id)
 
     aito_quote_sync._wake.clear()
-    aito_quote_sync._debounce_deadline = None
     resp = await async_client.patch(f"/api/v1/aito/{project_id}/tasks/reorder", json={"task_ids": list(reversed(ids))})
     assert resp.status_code == 200
     assert await _task_ids(async_client, project_id) == list(reversed(ids))
@@ -152,7 +150,6 @@ async def test_reorder_in_place_is_a_no_op(async_client):
     ids = await _task_ids(async_client, project["id"])
 
     aito_quote_sync._wake.clear()
-    aito_quote_sync._debounce_deadline = None
     resp = await async_client.patch(f"/api/v1/aito/{project['id']}/tasks/reorder", json={"task_ids": ids})
     assert resp.status_code == 200
     assert [t["id"] for t in resp.json()] == ids

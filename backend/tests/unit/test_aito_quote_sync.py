@@ -67,9 +67,23 @@ def fresh_wake_event():
     from backend.app.services import aito_quote_sync
 
     aito_quote_sync._wake = asyncio.Event()
-    aito_quote_sync._debounce_deadline = None
+    aito_quote_sync._drain_requested = False
     yield
-    aito_quote_sync._debounce_deadline = None
+    aito_quote_sync._drain_requested = False
+
+
+@pytest.fixture(autouse=True)
+def no_change_pass_in_loop_tests(monkeypatch):
+    """The loop runs a change pass on every tick. Loop tests fake a session
+    or a narrow MockTransport ("GET /estimates" is also how a create looks
+    its reference up), so the loop's lookup of ``run_change_pass`` is stubbed
+    here. Tests of the pass itself import the real function by name."""
+    from backend.app.services import aito_quote_sync
+
+    async def _no_change_pass(db):
+        return 0
+
+    monkeypatch.setattr(aito_quote_sync, "run_change_pass", _no_change_pass)
 
 
 @pytest.fixture(autouse=True)
@@ -1991,12 +2005,10 @@ async def test_429_with_retry_after_holds_reconciles_but_not_pushes(db_session, 
     zoho_service.transport = httpx.MockTransport(rate_limited)
     zoho_service.invalidate_token()
 
-    # First value is read (possibly more than once -- see
-    # _FakeMonotonicClock's own docstring for why zoho.py's OAuth token cache
-    # shares this same clock) while the 429 handler stamps the throttle; the
-    # last is what run_sync_once's own guard reads on the immediate wake
-    # drain right after.
-    monkeypatch.setattr(aito_quote_sync, "time", _FakeMonotonicClock([100.0, 105.0]))
+    # A frozen clock: every read (run_sync_once's own, the 429 handler's)
+    # sees 100.0, so the hold is exactly Retry-After past it and every drain
+    # below runs well inside the window.
+    monkeypatch.setattr(aito_quote_sync, "time", _FakeMonotonicClock([100.0]))
 
     assert await run_sync_once(db_session) == 1
     assert len(calls) == 1
@@ -2937,7 +2949,7 @@ async def test_wake_drains_a_pending_project_without_waiting_for_the_interval(db
     original_run_sync_once = aito_quote_sync.run_sync_once
     drain_completed = asyncio.Event()
 
-    async def _tracking_run_sync_once(db, pending_only=False):
+    async def _tracking_run_sync_once(db, pending_only=False, fast_retry=False, attention_only=False):
         result = await original_run_sync_once(db, pending_only=pending_only)
         if pending_only:
             drain_completed.set()
@@ -3048,7 +3060,7 @@ async def test_run_sync_loop_survives_a_failing_periodic_tick(monkeypatch, caplo
     third_tick_started = asyncio.Event()
     hang = asyncio.Event()
 
-    async def flaky_run_sync_once(db, pending_only=False):
+    async def flaky_run_sync_once(db, pending_only=False, fast_retry=False, attention_only=False):
         tick_calls.append(None)
         n = len(tick_calls)
         if n == 1:
@@ -3115,7 +3127,7 @@ async def test_run_sync_loop_survives_a_failing_wake_drain(monkeypatch, caplog):
     third_drain_started = asyncio.Event()
     hang = asyncio.Event()
 
-    async def flaky_run_sync_once(db, pending_only=False):
+    async def flaky_run_sync_once(db, pending_only=False, fast_retry=False, attention_only=False):
         if not pending_only:
             # The loop's own startup full pass -- not what this test is about.
             return 0
@@ -6593,46 +6605,12 @@ def _always(value):
     return _call
 
 
-def test_a_burst_of_edits_shares_one_debounce_window(monkeypatch):
-    """The FIRST edit of a burst sets the deadline and later ones must not
-    push it out.
-
-    A trailing debounce (each call resetting the timer) lets a user who keeps
-    typing starve the push indefinitely. A fixed window collapses the burst
-    into one PUT — the property the 300s interval was protecting — while
-    bounding how long any edit can wait at EDIT_DEBOUNCE_SECONDS.
-    """
-    from backend.app.services import aito_quote_sync
-
-    monkeypatch.setattr(aito_quote_sync, "_debounce_deadline", None)
-    monkeypatch.setattr(aito_quote_sync, "EDIT_DEBOUNCE_SECONDS", 10.0)
-    clock = iter([100.0, 103.0, 109.0])
-    monkeypatch.setattr(aito_quote_sync.time, "monotonic", lambda: next(clock))
-
-    aito_quote_sync.request_debounced_sync()
-    first = aito_quote_sync._debounce_deadline
-    aito_quote_sync.request_debounced_sync()
-    aito_quote_sync.request_debounced_sync()
-
-    assert first == 110.0
-    assert aito_quote_sync._debounce_deadline == 110.0
-
-
-def test_a_create_cancels_a_pending_edit_debounce(monkeypatch):
-    """A creation is the one moment a user is watching for a quote to appear,
-    so it must not be made to wait out an edit's window. The drain re-reads
-    every pending row anyway, so it takes the edit along with it."""
-    from backend.app.services import aito_quote_sync
-
-    monkeypatch.setattr(aito_quote_sync, "_debounce_deadline", 999.0)
-    aito_quote_sync.request_immediate_sync()
-    assert aito_quote_sync._debounce_deadline is None
-
-
 @pytest.mark.asyncio
 async def test_an_edit_drains_on_the_debounce_not_the_interval(monkeypatch):
-    """run_sync_loop must honour the edit window: one PENDING-only drain, and
-    not before the window closes.
+    """run_sync_loop must honour the card's edit window: one PENDING-only
+    drain for a burst of edits, and not before the card has gone quiet. (The
+    window's own rules — per card, restarted by each edit, bounded — are
+    pinned in test_aito_push_schedule.py.)
 
     Driven against the loop's own collaborators rather than a database. Two
     reasons: the scheduling IS the change under test (which drain runs, and
@@ -6644,7 +6622,7 @@ async def test_an_edit_drains_on_the_debounce_not_the_interval(monkeypatch):
     import asyncio
     import contextlib
 
-    from backend.app.services import aito_quote_sync
+    from backend.app.services import aito_push_schedule, aito_quote_sync
 
     drains: list[tuple[bool, float]] = []
 
@@ -6652,8 +6630,10 @@ async def test_an_edit_drains_on_the_debounce_not_the_interval(monkeypatch):
     async def fake_session():
         yield None
 
-    async def fake_run_sync_once(db, pending_only=False):
+    async def fake_run_sync_once(db, pending_only=False, fast_retry=False, attention_only=False):
         drains.append((pending_only, time.monotonic()))
+        # What the real drain does with the windows it serves.
+        aito_push_schedule.drop_due_except(time.monotonic(), set())
         return 0
 
     monkeypatch.setattr(aito_quote_sync, "async_session", fake_session)
@@ -6661,8 +6641,7 @@ async def test_an_edit_drains_on_the_debounce_not_the_interval(monkeypatch):
     monkeypatch.setattr(aito_quote_sync, "sync_enabled", _always(True))
     monkeypatch.setattr(aito_quote_sync.zoho_service, "is_configured", _always(True))
     monkeypatch.setattr(aito_quote_sync, "sync_interval_seconds", _always(300))
-    monkeypatch.setattr(aito_quote_sync, "EDIT_DEBOUNCE_SECONDS", 0.3)
-    monkeypatch.setattr(aito_quote_sync, "_debounce_deadline", None)
+    monkeypatch.setattr(aito_push_schedule, "EDIT_QUIET_SECONDS", 0.3)
 
     loop_task = asyncio.create_task(aito_quote_sync.run_sync_loop())
     try:
@@ -6670,12 +6649,12 @@ async def test_an_edit_drains_on_the_debounce_not_the_interval(monkeypatch):
         await asyncio.sleep(0.05)
         assert drains == [(False, drains[0][1])]
 
-        # A burst of three edits, well inside one window.
+        # A burst of three edits to one card, well inside one window.
         opened = time.monotonic()
-        aito_quote_sync.request_debounced_sync()
+        aito_quote_sync.request_debounced_sync(7)
         await asyncio.sleep(0.05)
-        aito_quote_sync.request_debounced_sync()
-        aito_quote_sync.request_debounced_sync()
+        aito_quote_sync.request_debounced_sync(7)
+        aito_quote_sync.request_debounced_sync(7)
 
         # Still nothing: the window has not closed.
         await asyncio.sleep(0.05)

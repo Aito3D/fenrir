@@ -23,6 +23,7 @@ from sqlalchemy import select
 from backend.app.api.routes.settings import set_setting
 from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
+from backend.app.services import aito_push_schedule
 from backend.app.services.aito_quote_sync import SYNC_FAILURE_LIMIT, _deferred_reasons, run_sync_once
 from backend.app.services.zoho import zoho_service
 
@@ -43,9 +44,7 @@ def fresh_wake_event():
     from backend.app.services import aito_quote_sync
 
     aito_quote_sync._wake = asyncio.Event()
-    aito_quote_sync._debounce_deadline = None
     yield
-    aito_quote_sync._debounce_deadline = None
 
 
 @pytest.fixture(autouse=True)
@@ -269,6 +268,9 @@ async def test_shipping_attached_through_the_api_reaches_the_wire_then_a_detach_
     assert response.status_code == 200, response.text
     assert response.json()["shipping_service"] is None
     assert response.json()["quote_sync_state"] == "pending"
+    # The edit opened the card's quiet period; the drain below stands for the
+    # one that runs once it has elapsed.
+    aito_push_schedule.take(project_id)
 
     remote_lines = [
         {

@@ -277,6 +277,7 @@ def reset_aito_quote_sync_rate_limit_throttle():
 
     def _reset() -> None:
         aito_quote_sync._throttled_until = None
+        aito_quote_sync._drain_requested = False
         aito_quote_sync._reset_change_pass_state()
         zoho_service.reset_call_meter()
         aito_push_schedule.reset()

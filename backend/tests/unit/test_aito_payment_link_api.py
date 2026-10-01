@@ -260,12 +260,13 @@ async def test_importing_a_quote_wakes_the_loop_for_its_link(async_client, db_se
     from backend.app.services import aito_quote_sync
 
     aito_quote_sync._wake = asyncio.Event()
-    aito_quote_sync._debounce_deadline = None
 
     p = await _create(async_client, quote_id="E9", quote_number="DEV26-9", quote_total=12500.0, quote_status="sent")
 
     assert aito_quote_sync._wake.is_set()
-    assert aito_quote_sync._debounce_deadline is None
+    # A drain was asked for NOW — an edit's wake only opens a quiet period,
+    # and the link must not wait one out.
+    assert aito_quote_sync._drain_requested is True
     project = await db_session.get(AitoProject, p["id"])
     assert project.quote_sync_state == "idle"
 

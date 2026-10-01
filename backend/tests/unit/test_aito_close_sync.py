@@ -1,23 +1,21 @@
 """POST /aito/{id}/sync — the push the detail panel owes Books when it closes.
 
-Every other write path wakes the worker through ``request_debounced_sync``,
-whose window is FIXED: the first edit opens it and later edits do not push the
-deadline out (see that function's own docstring). A task added through the
-panel is POSTed empty and filled in afterwards, so that window routinely
-expires mid-edit — the drain pushes a task with no priced service, which
-``build_line_items`` emits no line for at all, and the card reads as "not in
-the quote".
+Every other write path wakes the worker through ``request_debounced_sync``:
+each edit restarts its card's quiet period (``aito_push_schedule``), so a task
+POSTed empty by "+ Add task" and filled in afterwards is not pushed half-typed
+— the push waits for the card to go quiet.
 
-This route is the panel's answer: it is called once, after every write the
-panel made has settled, and it wakes the worker IMMEDIATELY — cancelling any
-standing edit window rather than queueing behind it, so the push carries the
-finished task instead of a half-typed one.
+This route is the panel's shortcut past that wait: it is called once, after
+every write the panel made has settled, and it wakes the worker IMMEDIATELY —
+closing the card's window on the spot instead of letting the quiet period run
+out, so Books has the finished task the moment the panel closes.
 
 Fixtures mirror test_aito_quote_e2e.py (wire assertions go through
 ``zoho_service.transport``, never a class-level monkeypatch).
 """
 
 import json
+import time
 from datetime import datetime, timezone
 
 import httpx
@@ -27,6 +25,7 @@ from sqlalchemy import select
 from backend.app.api.routes.settings import set_setting
 from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
+from backend.app.services import aito_push_schedule
 from backend.app.services.aito_quote_sync import run_sync_once
 from backend.app.services.zoho import zoho_service
 
@@ -47,9 +46,7 @@ def fresh_wake_event():
     from backend.app.services import aito_quote_sync
 
     aito_quote_sync._wake = asyncio.Event()
-    aito_quote_sync._debounce_deadline = None
     yield
-    aito_quote_sync._debounce_deadline = None
 
 
 async def _create(client, **overrides):
@@ -139,25 +136,25 @@ async def test_closing_a_card_queues_it_for_a_push(async_client, db_session):
 async def test_closing_a_card_cancels_a_standing_edit_window(async_client):
     """The reason this route exists rather than reusing the edit path's wake.
 
-    `request_debounced_sync` opens a FIXED window — a task PATCH made while one
-    is already open does not extend it, so the drain can fire mid-edit. Closing
-    the panel means the edit is finished, so the window it opened is stale:
-    this route must clear it and wake now, not queue behind a deadline set
-    before the operator had typed anything.
+    An edit opens the card's quiet period: the push waits for the operator to
+    stop. Closing the panel is the proof that they have, so this route must
+    close the window and wake now, not let the quiet period run out.
     """
     from backend.app.services import aito_quote_sync
 
     project_id = (await _create(async_client)).json()["id"]
+    # The creation's own drain has run and spent the "now" it asked for.
+    aito_push_schedule.take(project_id)
     task = await async_client.post(f"/api/v1/aito/{project_id}/tasks", json={"scan_cost": 1000})
     assert task.status_code == 201, task.text
 
     # An ordinary edit leaves a window standing — the state this route inherits.
-    assert aito_quote_sync._debounce_deadline is not None
+    assert aito_push_schedule.is_due(project_id, time.monotonic()) is False
     aito_quote_sync._wake.clear()
 
     assert (await async_client.post(f"/api/v1/aito/{project_id}/sync")).status_code == 200
 
-    assert aito_quote_sync._debounce_deadline is None
+    assert aito_push_schedule.is_due(project_id, time.monotonic()) is True
     assert aito_quote_sync._wake.is_set()
 
 
@@ -175,7 +172,6 @@ async def test_closing_an_unmanaged_card_never_queues_it(async_client, db_sessio
     await db_session.commit()
 
     aito_quote_sync._wake.clear()
-    aito_quote_sync._debounce_deadline = None
     response = await async_client.post(f"/api/v1/aito/{project_id}/sync")
 
     assert response.status_code == 200, response.text
@@ -224,24 +220,22 @@ async def test_a_task_added_in_the_panel_reaches_the_quote_after_the_card_closes
     """The reported bug, end to end.
 
     The panel POSTs a task the instant "+ Add task" is clicked — empty, no
-    priced service — and the title and cost arrive as later PATCHes. The drain
-    that fires in that gap pushes a quote with no line for the task at all
-    (asserted below), and settles the card to 'idle' as though it were in sync.
+    priced service — and the title and cost arrive as later PATCHes. A drain
+    that pushed in that gap would write a quote with no line for the task at
+    all and settle the card to 'idle' as though it were in sync; that was the
+    bug, back when the edit window was fixed and global.
 
-    What makes that stick is the fixed edit window: the PATCH that finally
-    carries the real content re-queues the project but does NOT reopen the
-    window it is already inside, so the push it earns waits out the full
-    300s poll. This test pins that — `_debounce_delay()` is still counting
-    down after the PATCH — and then pins the fix: closing the card clears the
-    window, and the very next drain carries the finished task.
+    Two things prevent it now, and both are pinned here. The empty POST opens
+    the card's quiet period, so a drain that runs in the gap leaves the card
+    alone, and each later PATCH restarts that period. And closing the card
+    ends the period on the spot: the very next drain carries the finished
+    task.
 
     `db_session.rollback()` before each drain is test plumbing, not a
     behaviour: the worker owns its own session in production, while here it
     shares the test's, whose open read snapshot would otherwise predate the
     routes' commits and select nothing.
     """
-    from backend.app.services.aito_quote_sync import _debounce_delay
-
     await _configure_zoho(db_session)
     # One priced task up front: `_create_quote` refuses to POST a quote with no
     # priced service at all, and this test is about the SECOND task.
@@ -263,27 +257,23 @@ async def test_a_task_added_in_the_panel_reaches_the_quote_after_the_card_closes
         zoho_handler({("GET", "/estimates/E1"): _estimate(), ("PUT", "/estimates/E1"): _estimate()}, seen)
     )
     await db_session.rollback()
-    assert await run_sync_once(db_session, pending_only=True) == 1
-
-    # The bug: that push carried no line for the task the operator just added,
-    # and left the card reading as in sync.
-    mid_edit = next(entry for entry in seen if entry[0] == "PUT")
-    assert [line.get("header_name") for line in mid_edit[2]["line_items"]] == ["Moyeu"]
+    # A drain in the gap (another card's creation, say) leaves this card
+    # alone: nothing half-typed reaches Books, and the card stays queued.
+    assert await run_sync_once(db_session, pending_only=True) == 0
+    assert seen == []
     await db_session.refresh(project)
-    assert project.quote_sync_state == "idle"
+    assert project.quote_sync_state == "pending"
 
-    # The operator finishes typing. This re-queues the card but does NOT
-    # reopen the window it is already inside, so the worker is still counting
-    # down to a deadline set before any of this content existed.
+    # The operator finishes typing: the PATCH restarts the quiet period.
     await async_client.patch(
         f"/api/v1/aito/tasks/{task_id}",
         json={"title": "Bague de serrage", "usinage_cost": 6000},
     )
-    assert _debounce_delay() > 0
+    assert aito_push_schedule.is_due(project_id, time.monotonic()) is False
 
-    # The card closes: the stale window goes, and the worker drains now.
+    # The card closes: the window closes with it, and the worker drains now.
     assert (await async_client.post(f"/api/v1/aito/{project_id}/sync")).status_code == 200
-    assert _debounce_delay() == 0
+    assert aito_push_schedule.is_due(project_id, time.monotonic()) is True
     seen.clear()
     await db_session.rollback()
     assert await run_sync_once(db_session, pending_only=True) == 1

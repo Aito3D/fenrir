@@ -63,7 +63,6 @@ def books(monkeypatch):
 @pytest.fixture
 def wake():
     aito_quote_sync._wake = asyncio.Event()
-    aito_quote_sync._debounce_deadline = None
     return aito_quote_sync._wake
 
 

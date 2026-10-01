@@ -835,8 +835,8 @@ def _mark_pending_if_ours(project: AitoProject) -> None:
         _mark_pending(project)
 
 
-def _wake_worker(queued: bool, immediate: bool = False) -> None:
-    """Ask the sync worker to drain, for an edit that left a project pending.
+def _wake_worker(queued: bool, immediate: bool = False, project_id: int | None = None) -> None:
+    """Ask the sync worker to push, for a write that left a project pending.
 
     Call AFTER the commit, never before — the worker reads through its own
     session, and a wake that fires ahead of the commit finds nothing (see
@@ -844,24 +844,25 @@ def _wake_worker(queued: bool, immediate: bool = False) -> None:
     the commit: ``expire_on_commit`` expires every attribute, so reading
     ``project.quote_sync_state`` afterwards is a lazy load on an async session.
 
-    Debounced, not immediate: an edit gets a bounded wait rather than the full
-    300s poll, while a burst of task ticks still collapses into one PUT.
-    Creation uses ``request_immediate_sync`` instead — see there.
+    Debounced per card: an edit restarts that card's quiet period
+    (``request_debounced_sync``), so a burst of task edits collapses into one
+    PUT once the operator stops, and one card's editing never delays
+    another's push. Creation uses ``request_immediate_sync`` instead.
 
-    ``immediate`` is for the one caller that is not itself an edit:
-    ``sync_project_now``, the push a detail panel owes Books when it closes.
-    An edit wants the window because more edits are likely coming; a close is
-    the proof that none are. It matters that this CANCELS the standing window
-    rather than merely bypassing it — ``request_debounced_sync``'s window is
-    fixed, so the deadline still open at close time was set by the FIRST edit
-    of the session (often the empty task POST that "+ Add task" fires) and
-    would otherwise drain a half-typed card. See ``request_immediate_sync``.
+    ``immediate`` is for the callers that are not edits with more edits
+    coming: ``sync_project_now`` (the push a detail panel owes Books when it
+    closes, and Force sync), a restore, a merge. It closes the card's window
+    on the spot — a window opened by the empty task POST that "+ Add task"
+    fires must not outlive the close that proves the card is finished.
+
+    Without a ``project_id`` there is no card to buffer for, so the drain is
+    simply asked for now.
     """
     if queued:
-        if immediate:
-            request_immediate_sync()
+        if immediate or project_id is None:
+            request_immediate_sync(project_id)
         else:
-            request_debounced_sync()
+            request_debounced_sync(project_id)
 
 
 async def _commit_and_wake(
@@ -905,7 +906,7 @@ async def _commit_and_wake(
     await db.commit()
     if queued and project_id is not None:
         _bump_requeue_marker(project_id)
-    _wake_worker(queued, immediate)
+    _wake_worker(queued, immediate, project_id)
 
 
 def _actor(user: User | None) -> str | None:
@@ -1742,7 +1743,7 @@ async def create_project(
     # own-quote branch, as this once did, left an imported quote with no link
     # until the next full tick, up to `aito_quote_poll_seconds` later — which
     # the operator reads as "no payment link on an imported quote".
-    request_immediate_sync()
+    request_immediate_sync(project.id)
     await _broadcast_changed("create", project.id, _actor(current_user))
     await db.refresh(project)
     return await _project_response(db, project, summary)
@@ -4999,7 +5000,7 @@ async def restore_project(
         if _is_duplicate_active_quote_error(exc):
             raise HTTPException(status_code=409, detail=_DUPLICATE_QUOTE_DETAIL) from exc
         raise
-    _wake_worker(queued)
+    _wake_worker(queued, immediate=True, project_id=project.id)
     await _broadcast_changed("restore", project.id, _actor(current_user))
     await db.refresh(project)
     return await _project_response(db, project, summary)
@@ -5084,7 +5085,7 @@ async def merge_project(
     summary = await _summary_for(db, project_id)
     await _apply_rules(db, target, summary, actor=actor)
     queued = target.quote_sync_state == "pending" or source.quote_sync_state == "pending"
-    await _commit_and_wake(db, queued, target.id)
+    await _commit_and_wake(db, queued, target.id, immediate=True)
     if source.quote_sync_state == "pending":
         # The source's own requeue marker: _commit_and_wake bumped the
         # target's only, and the worker tracks the two separately.
