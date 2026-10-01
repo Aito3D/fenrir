@@ -7,7 +7,7 @@ import { CompactBoardCard } from './CompactBoardCard';
 import { ColumnList } from './ColumnList';
 import { ColumnStrip } from './ColumnStrip';
 import { ColumnCountPill, OldestCardChip } from './MobileBoardHeader';
-import { MobileMenu } from './MobileMenu';
+import { ActionMenu } from './ActionMenu';
 import { TabletBoardHeader } from './TabletBoardHeader';
 import { summariseColumn, visibleCount, TABLET_GAP_PX, type ColumnSummary } from '../../utils/aitoMobileBoard';
 import { TABLET_FIRST_STORAGE_KEY, useMobileColumn } from '../../hooks/useMobileColumn';
@@ -327,7 +327,7 @@ export function TabletBoard({
         />
       )}
       {overlay === 'more' && (
-        <MobileMenu
+        <ActionMenu
           label={t('aito.mobile.moreOptions')}
           anchorRef={moreRef}
           placement="below"

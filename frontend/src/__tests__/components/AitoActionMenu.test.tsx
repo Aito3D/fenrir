@@ -4,14 +4,14 @@ import { screen, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Archive, Trash2 } from 'lucide-react';
 import { render } from '../utils';
-import { MobileMenu } from '../../components/aito/MobileMenu';
+import { ActionMenu } from '../../components/aito/ActionMenu';
 
 function setup() {
   const onDone = vi.fn();
   const onTrash = vi.fn();
   const onClose = vi.fn();
   render(
-    <MobileMenu
+    <ActionMenu
       label="More options"
       anchorRef={createRef()}
       placement="below"
@@ -26,7 +26,7 @@ function setup() {
   return { onDone, onTrash, onClose };
 }
 
-describe('MobileMenu', () => {
+describe('ActionMenu', () => {
   it('is a labelled menu that takes focus, with a caption', () => {
     setup();
     const menu = screen.getByRole('menu', { name: 'More options' });
@@ -48,7 +48,7 @@ describe('MobileMenu', () => {
   it('closes on the scrim', async () => {
     const user = userEvent.setup();
     const { onClose } = setup();
-    await user.click(screen.getByTestId('aito-mobile-menu-scrim'));
+    await user.click(screen.getByTestId('aito-action-menu-scrim'));
     await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
   });
 
@@ -62,9 +62,47 @@ describe('MobileMenu', () => {
     const anchor = document.createElement('button');
     anchor.getBoundingClientRect = () => ({ top: 60, bottom: 96, left: 330, right: 366, width: 36, height: 36, x: 330, y: 60, toJSON: () => ({}) });
     const ref = { current: anchor };
-    render(<MobileMenu label="m" anchorRef={ref} placement="below" items={[]} onClose={() => {}} />);
+    render(<ActionMenu label="m" anchorRef={ref} placement="below" items={[]} onClose={() => {}} />);
     const menu = screen.getByRole('menu');
     expect(menu.style.top).toBe('102px');
     expect(menu.style.right).toBe(`${window.innerWidth - 366}px`);
+  });
+
+  it('renders a disabled item muted with its hint and ignores clicks on it', async () => {
+    const user = userEvent.setup();
+    const onSelect = vi.fn();
+    const onClose = vi.fn();
+    render(
+      <ActionMenu
+        label="More"
+        anchorRef={createRef()}
+        placement="below"
+        onClose={onClose}
+        items={[{ key: 'x', icon: Archive, label: 'Split', onSelect, disabled: true, hint: 'Invoiced' }]}
+      />,
+    );
+    const item = screen.getByRole('menuitem', { name: /Split/ });
+    expect(item).toHaveAttribute('aria-disabled', 'true');
+    expect(item).toHaveTextContent('Invoiced');
+    await user.click(item);
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('draws a separator before an item that asks for one and reddens a danger item', () => {
+    render(
+      <ActionMenu
+        label="More"
+        anchorRef={createRef()}
+        placement="below"
+        onClose={vi.fn()}
+        items={[
+          { key: 'a', icon: Archive, label: 'A', onSelect: vi.fn() },
+          { key: 'b', icon: Trash2, label: 'Trash', onSelect: vi.fn(), separatorBefore: true, danger: true },
+        ]}
+      />,
+    );
+    expect(screen.getAllByRole('separator')).toHaveLength(1);
+    expect(screen.getByRole('menuitem', { name: 'Trash' }).className).toMatch(/text-red/);
   });
 });

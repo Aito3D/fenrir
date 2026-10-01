@@ -6,7 +6,7 @@ import type { ColumnMeta } from './columns';
 import { CompactBoardCard } from './CompactBoardCard';
 import { MobileBoardHeader } from './MobileBoardHeader';
 import { MobileColumnSheet } from './MobileColumnSheet';
-import { MobileMenu } from './MobileMenu';
+import { ActionMenu } from './ActionMenu';
 import { summariseColumn } from '../../utils/aitoMobileBoard';
 import { useMobileColumn } from '../../hooks/useMobileColumn';
 import { prefersReducedMotion } from '../../utils/motion';
@@ -219,7 +219,7 @@ export function MobileBoard({
         />
       )}
       {overlay === 'more' && (
-        <MobileMenu
+        <ActionMenu
           label={t('aito.mobile.moreOptions')}
           anchorRef={moreRef}
           placement="below"
@@ -239,7 +239,7 @@ export function MobileBoard({
         />
       )}
       {overlay === 'create' && (
-        <MobileMenu
+        <ActionMenu
           label={t('aito.mobile.create')}
           anchorRef={fabRef}
           placement="above"

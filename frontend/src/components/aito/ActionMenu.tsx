@@ -1,18 +1,26 @@
-import { useState, type CSSProperties, type ReactNode, type RefObject } from 'react';
+import { Fragment, useState, type CSSProperties, type ReactNode, type RefObject } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { useDismissableDialog } from '../../hooks/useDismissableDialog';
 
-export interface MobileMenuItem {
+export interface ActionMenuItem {
   key: string;
   icon: LucideIcon;
   label: string;
   trailing?: ReactNode;
   onSelect: () => void;
+  /** Muted and inert; `hint` says why on a second line. */
+  disabled?: boolean;
+  hint?: string;
+  /** A rule above the row, to set it apart from the ones before it. */
+  separatorBefore?: boolean;
+  /** Red text, for the destructive row (Trash). */
+  danger?: boolean;
 }
 
 /** A small menu anchored to the button that opened it — the phone board's ⋯
- *  detours and the create button's two choices. Mount only while open. */
-export function MobileMenu({
+ *  detours, the create button's two choices and the open card's actions.
+ *  Mount only while open. */
+export function ActionMenu({
   label,
   anchorRef,
   placement,
@@ -24,7 +32,7 @@ export function MobileMenu({
   anchorRef: RefObject<HTMLElement | null>;
   placement: 'below' | 'above';
   caption?: ReactNode;
-  items: MobileMenuItem[];
+  items: ActionMenuItem[];
   onClose: () => void;
 }) {
   const { closing, requestClose, dialogRef } = useDismissableDialog(onClose, { animationMs: 120 });
@@ -39,7 +47,7 @@ export function MobileMenu({
   return (
     <div className="fixed inset-0 z-50">
       <div
-        data-testid="aito-mobile-menu-scrim"
+        data-testid="aito-action-menu-scrim"
         onClick={requestClose}
         className={`absolute inset-0 bg-black/30 ${closing ? 'animate-overlay-out' : 'animate-overlay-in'}`}
       />
@@ -59,22 +67,33 @@ export function MobileMenu({
             <div role="separator" className="mx-1.5 mb-1 border-t border-bambu-dark-tertiary" />
           </>
         )}
-        {items.map(({ key, icon: Icon, label: itemLabel, trailing, onSelect }) => (
-          <button
-            key={key}
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              onSelect();
-              onClose();
-            }}
-            className="w-full flex items-center gap-2.5 px-2.5 py-2.5 rounded-lg text-left text-sm text-white active:bg-bambu-dark-tertiary focus-visible:outline-none focus-visible:bg-bambu-dark-tertiary"
-          >
-            <Icon className="w-4 h-4 flex-none text-bambu-gray-light" aria-hidden="true" />
-            <span className="flex-1">{itemLabel}</span>
-            {trailing !== undefined && <span className="text-xs text-bambu-gray tabular-nums">{trailing}</span>}
-          </button>
-        ))}
+        {items.map(
+          ({ key, icon: Icon, label: itemLabel, trailing, onSelect, disabled, hint, separatorBefore, danger }) => (
+            <Fragment key={key}>
+              {separatorBefore && <div role="separator" className="mx-1.5 my-1 border-t border-bambu-dark-tertiary" />}
+              <button
+                type="button"
+                role="menuitem"
+                aria-disabled={disabled || undefined}
+                onClick={() => {
+                  if (disabled) return;
+                  onSelect();
+                  onClose();
+                }}
+                className={`w-full flex items-center gap-2.5 px-2.5 py-2.5 rounded-lg text-left text-sm active:bg-bambu-dark-tertiary focus-visible:outline-none focus-visible:bg-bambu-dark-tertiary ${
+                  disabled ? 'opacity-50 cursor-default' : ''
+                } ${danger ? 'text-red-400' : 'text-white'}`}
+              >
+                <Icon className="w-4 h-4 flex-none text-bambu-gray-light" aria-hidden="true" />
+                <span className="flex-1">
+                  {itemLabel}
+                  {hint && <span className="block text-[11px] text-bambu-gray">{hint}</span>}
+                </span>
+                {trailing !== undefined && <span className="text-xs text-bambu-gray tabular-nums">{trailing}</span>}
+              </button>
+            </Fragment>
+          ),
+        )}
       </div>
     </div>
   );

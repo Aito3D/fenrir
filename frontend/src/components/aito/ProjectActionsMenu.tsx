@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Ellipsis, Merge } from 'lucide-react';
-import { MobileMenu } from './MobileMenu';
+import { ActionMenu } from './ActionMenu';
 import { focusRingCls } from '../formStyles';
 
 /** The ⋯ beside "Stage & work left": the detours that change what this card
@@ -9,7 +9,7 @@ import { focusRingCls } from '../formStyles';
  *  tasks into this one — so the menu is the affordance that keeps the next
  *  such action from growing a third icon button on the heading.
  *
- *  Reuses MobileMenu: it is already an anchored, labelled, dismissable
+ *  Reuses ActionMenu: it is already an anchored, labelled, dismissable
  *  `role="menu"`, and the phone board's ⋯ is the same gesture. The host
  *  renders this only when the operator may both update this card and trash
  *  another (the merge route enforces both permissions) and the card is not
@@ -36,7 +36,7 @@ export function ProjectActionsMenu({ onMerge }: { onMerge: () => void }) {
         <Ellipsis className="h-4 w-4" aria-hidden="true" />
       </button>
       {open && (
-        <MobileMenu
+        <ActionMenu
           label={label}
           anchorRef={anchorRef}
           placement="below"
