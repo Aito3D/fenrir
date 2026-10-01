@@ -97,6 +97,37 @@ async def test_watch_on_a_trashed_or_missing_card_is_404(async_client, db_sessio
 
 
 @pytest.mark.asyncio
+async def test_a_first_watch_that_loses_the_insert_race_updates_the_winner(async_client, db_session, monkeypatch):
+    """Two first-time PUTs (or a PUT racing create_project's auto_watch): the
+    loser read "no watch" before the winner committed. Simulated by a stored
+    row plus a first read that misses it — the insert trips the unique
+    (user_id, project_id), and the retry re-reads and updates the stored row
+    instead of answering 500."""
+    from backend.app.api.routes import aito as aito_routes
+
+    card = await _card(async_client)
+    alice, headers = await _sign_in_alice(db_session)
+    alice_id = alice.id
+    db_session.add(AitoWatch(user_id=alice_id, project_id=card, kinds_json=["aito.paid"]))
+    await db_session.commit()
+
+    real = aito_routes._own_watch
+    reads: list[int] = []
+
+    async def stale_first_read(db, project_id, user_id):
+        reads.append(project_id)
+        return None if len(reads) == 1 else await real(db, project_id, user_id)
+
+    monkeypatch.setattr(aito_routes, "_own_watch", stale_first_read)
+    r = await async_client.put(f"/api/v1/aito/{card}/watch", json={"kinds": ["aito.quote_viewed"]}, headers=headers)
+    assert r.status_code == 200, r.text
+    assert r.json() == {"watching": True, "kinds": ["aito.quote_viewed"]}
+    assert reads == [card, card]
+    db_session.expire_all()
+    assert await _watches(db_session) == [(alice_id, card, ["aito.quote_viewed"])]
+
+
+@pytest.mark.asyncio
 async def test_watch_with_auth_disabled_is_a_no_op(async_client, db_session):
     card = await _card(async_client)
     r = await async_client.get(f"/api/v1/aito/{card}/watch")

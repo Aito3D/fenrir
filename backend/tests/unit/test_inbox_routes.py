@@ -168,6 +168,40 @@ async def test_preferences_roundtrip_and_validation(async_client, db_session, in
 
 
 @pytest.mark.asyncio
+async def test_a_first_save_that_loses_the_insert_race_updates_the_winner(
+    async_client, db_session, inbox_users, monkeypatch
+):
+    """Two first-time PUTs from one user: the second one read "no row" before
+    the first committed. Simulated by a stored row plus a first read that
+    misses it — the insert trips the unique user_id, and the retry re-reads
+    and updates the stored row instead of answering 500."""
+    from backend.app.api.routes import inbox as inbox_routes
+
+    alice, _ = inbox_users
+    db_session.add(UserInboxPreference(user_id=alice.id, kinds_json=["aito.paid"], sound_kinds_json=[]))
+    await db_session.commit()
+
+    real = inbox_routes.preferences_for
+    reads: list[int] = []
+
+    async def stale_first_read(db, user_id):
+        reads.append(user_id)
+        if len(reads) == 1:
+            return UserInboxPreference(user_id=user_id, kinds_json=[], sound_kinds_json=[], auto_watch=True)
+        return await real(db, user_id)
+
+    monkeypatch.setattr(inbox_routes, "preferences_for", stale_first_read)
+    wanted = {"kinds": ["aito.quote_viewed"], "sound_kinds": [], "auto_watch": False}
+    r = await async_client.put("/api/v1/inbox/preferences", json=wanted, headers=alice.headers)
+    assert r.status_code == 200, r.text
+    assert {k: r.json()[k] for k in wanted} == wanted
+    assert reads == [alice.id, alice.id]
+    db_session.expire_all()
+    rows = list((await db_session.execute(select(UserInboxPreference))).scalars())
+    assert [(row.user_id, row.kinds_json, row.auto_watch) for row in rows] == [(alice.id, ["aito.quote_viewed"], False)]
+
+
+@pytest.mark.asyncio
 async def test_auth_disabled_inbox_is_empty(async_client, db_session):
     alice = await _user(db_session, "alice")
     (row_id,) = await _seed(db_session, alice.id, 1)

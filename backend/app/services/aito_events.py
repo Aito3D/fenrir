@@ -104,8 +104,11 @@ KINDS: dict[str, str] = {
     "project.due.cleared": "story",
     # The promise was broken: emitted once per overdue day by the hourly
     # sweep (aito_invoice_sweep.sweep_inbox), never by a person. The
-    # inbox's `aito.overdue`. detail = {due_date}.
-    "project.due.overdue": "story",
+    # inbox's `aito.overdue`. detail = {due_date}. Detail, not story, unlike
+    # the set/cleared pair: the inbox maps by kind regardless of depth, and a
+    # daily story row on a long-overdue card is noise — the due-date badge
+    # already tells that story.
+    "project.due.overdue": "detail",
     # Story, not detail, and for a reason the board flags do not share: this
     # pair is the audit trail of the promise made to the client, and of the
     # gate that lets a project be archived. "Who told them, and when" is

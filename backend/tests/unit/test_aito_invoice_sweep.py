@@ -1036,3 +1036,25 @@ async def test_the_inbox_step_has_its_own_hourly_gate(db_session, monkeypatch):
     late = await _project(db_session, board_column="print", due_date=(date.today() - timedelta(days=1)).isoformat())
     await sweep_inbox(db_session)  # inside the hour: skipped
     assert await _overdue_events(db_session, late.id) == []
+
+
+@pytest.mark.asyncio
+async def test_the_overdue_event_stays_out_of_the_story(async_client, db_session):
+    """A daily row on a long-overdue card would drown the story view: the
+    event is detail depth. The inbox maps it by kind, so depth costs nothing
+    there (see test_the_overdue_event_reaches_a_watcher_who_wants_it)."""
+    from datetime import date, timedelta
+
+    from backend.app.services.aito_invoice_sweep import sweep_inbox
+
+    late = await _project(db_session, board_column="print", due_date=(date.today() - timedelta(days=1)).isoformat())
+    late_id = late.id
+    await sweep_inbox(db_session, force=True)
+
+    async def kinds(depth):
+        resp = await async_client.get(f"/api/v1/aito/{late_id}/events", params={"depth": depth})
+        assert resp.status_code == 200, resp.text
+        return [e["kind"] for e in resp.json()["events"]]
+
+    assert "project.due.overdue" not in await kinds("story")
+    assert (await kinds("detail")).count("project.due.overdue") == 1

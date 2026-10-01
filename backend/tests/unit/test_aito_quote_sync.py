@@ -93,6 +93,22 @@ def reset_requeue_marker():
     _requeue_marker.clear()
 
 
+@pytest.fixture(autouse=True)
+def stub_inbox_sweep(monkeypatch):
+    """The loop's inbox step is a no-op here: it has its own hourly gate, so
+    whether it ran (and, on the FakeDB tests' sessions, failed and rolled
+    back) would depend on which test last spent the gate in this xdist
+    worker. The rollback counts below therefore count only the step under
+    test. The step itself is covered by test_aito_invoice_sweep.py and by
+    test_a_failing_inbox_sweep_rolls_back_before_reconciling_payment_links."""
+    from backend.app.services import aito_quote_sync
+
+    async def _no_inbox_sweep(db, *, force=False):
+        return None
+
+    monkeypatch.setattr(aito_quote_sync, "sweep_inbox", _no_inbox_sweep)
+
+
 async def _configure_zoho(db) -> None:
     """Seed the settings the sync worker needs to consider Zoho configured.
 
@@ -3231,6 +3247,66 @@ async def test_periodic_tick_rolls_back_a_failed_purge_before_reconciling_paymen
         # The reconcile ran on the SAME (now-rolled-back) session, not a
         # fresh one -- proving the rollback happened in place rather than by
         # abandoning the poisoned session.
+        assert reconcile_called_with == [fake_db]
+        assert fake_db.rollback_calls == 1
+    finally:
+        loop_task.cancel()
+        with _contextlib.suppress(asyncio.CancelledError):
+            await loop_task
+
+
+@pytest.mark.asyncio
+async def test_a_failing_inbox_sweep_rolls_back_before_reconciling_payment_links(monkeypatch, caplog):
+    """The inbox step rolls back its own SQLAlchemy failures; anything else
+    escaping it is caught by the loop, which rolls the shared session back
+    like the purge above does, so the payment-link pass still runs on it."""
+    import asyncio
+    import contextlib as _contextlib
+
+    from backend.app.services import aito_contact_poll, aito_invoice_poll, aito_payment_links, aito_quote_sync
+
+    class FakeDB:
+        def __init__(self):
+            self.rollback_calls = 0
+
+        async def rollback(self):
+            self.rollback_calls += 1
+
+    fake_db = FakeDB()
+
+    @_contextlib.asynccontextmanager
+    async def fake_session():
+        yield fake_db
+
+    reconcile_called_with: list[object] = []
+    reconcile_done = asyncio.Event()
+
+    async def failing_sweep_inbox(db, *, force=False):
+        raise RuntimeError("inbox step blew up")
+
+    async def fake_reconcile_payment_links(db):
+        reconcile_called_with.append(db)
+        reconcile_done.set()
+
+    monkeypatch.setattr(aito_quote_sync, "async_session", fake_session)
+    monkeypatch.setattr(aito_quote_sync, "run_sync_once", _always(0))
+    monkeypatch.setattr(aito_quote_sync, "sync_enabled", _always(True))
+    monkeypatch.setattr(aito_quote_sync.zoho_service, "is_configured", _always(True))
+    monkeypatch.setattr(aito_quote_sync, "sync_interval_seconds", _always(300))
+    monkeypatch.setattr(aito_quote_sync, "sweep_invoices", _always(0))
+    monkeypatch.setattr(aito_invoice_poll, "poll_invoices", _always(0))
+    monkeypatch.setattr(aito_contact_poll, "poll_contacts", _always(0))
+    monkeypatch.setattr(aito_quote_sync, "_throttled_until", None)
+    monkeypatch.setattr(aito_quote_sync, "purge_tracking_views", _always(None))
+    monkeypatch.setattr(aito_quote_sync, "sweep_inbox", failing_sweep_inbox)
+    monkeypatch.setattr(aito_payment_links, "reconcile_payment_links", fake_reconcile_payment_links)
+
+    loop_task = asyncio.create_task(aito_quote_sync.run_sync_loop())
+    try:
+        with caplog.at_level("ERROR"):
+            await asyncio.wait_for(reconcile_done.wait(), timeout=10)
+        assert "Inbox sweep failed" in caplog.text
+        assert "Aito quote sync tick failed" not in caplog.text
         assert reconcile_called_with == [fake_db]
         assert fake_db.rollback_calls == 1
     finally:

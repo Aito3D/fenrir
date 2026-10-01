@@ -8,6 +8,7 @@ empty or with the defaults, writes are no-ops.
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import func, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.auth import require_auth_if_enabled
@@ -112,10 +113,23 @@ async def put_preferences(
     if current_user is None:
         return Response(status_code=204)
 
-    row = await preferences_for(db, current_user.id)
+    user_id = current_user.id  # read before a rollback can expire the user
+    try:
+        return await _save_preferences(db, user_id, kinds, sound_kinds, payload.auto_watch)
+    except IntegrityError:
+        # A concurrent first save inserted the row between our read and this
+        # insert (user_id is unique): the retry re-reads and updates that row.
+        await db.rollback()
+        return await _save_preferences(db, user_id, kinds, sound_kinds, payload.auto_watch)
+
+
+async def _save_preferences(
+    db: AsyncSession, user_id: int, kinds: list[str], sound_kinds: list[str], auto_watch: bool
+) -> InboxPreferences:
+    row = await preferences_for(db, user_id)
     row.kinds_json = kinds
     row.sound_kinds_json = sound_kinds
-    row.auto_watch = payload.auto_watch
+    row.auto_watch = auto_watch
     db.add(row)  # a no-op for a stored row; inserts the defaults placeholder
     await db.commit()
     return _preferences(row)

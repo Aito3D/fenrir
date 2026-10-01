@@ -4643,14 +4643,27 @@ async def set_watch(
     if off:
         raise HTTPException(status_code=422, detail=f"kind disabled in preferences: {off}")
 
-    watch = await _own_watch(db, project_id, current_user.id)
+    user_id = current_user.id  # read before a rollback can expire the user
     if not kinds:
+        watch = await _own_watch(db, project_id, user_id)
         if watch is not None:
             await db.delete(watch)
             await db.commit()
         return _watch_response(None)
+    try:
+        return await _save_watch(db, project_id, user_id, kinds)
+    except IntegrityError:
+        # A concurrent first watch (another tab, or create_project's
+        # auto_watch) inserted the row between our read and this insert —
+        # (user_id, project_id) is unique. The retry re-reads and updates it.
+        await db.rollback()
+        return await _save_watch(db, project_id, user_id, kinds)
+
+
+async def _save_watch(db: AsyncSession, project_id: int, user_id: int, kinds: list[str]) -> AitoWatchResponse:
+    watch = await _own_watch(db, project_id, user_id)
     if watch is None:
-        watch = AitoWatch(user_id=current_user.id, project_id=project_id, kinds_json=kinds)
+        watch = AitoWatch(user_id=user_id, project_id=project_id, kinds_json=kinds)
         db.add(watch)
     else:
         watch.kinds_json = kinds

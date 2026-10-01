@@ -2908,12 +2908,16 @@ async def run_sync_loop() -> None:
                 # Overdue events and the inbox purge: local like the purge
                 # above, so outside the Books gate — a Books outage or a 429
                 # window must not freeze either. Hourly by its own gate; it
-                # rolls back its own database failures, so this guard only
-                # keeps anything else from costing the passes below.
+                # rolls back its own database failures. Anything else that
+                # escapes it gets the purge's treatment: logged, and the
+                # session rolled back so the passes below do not run on a
+                # poisoned one.
                 try:
                     await sweep_inbox(db)
                 except Exception:
                     logger.exception("Inbox sweep failed")
+                    with contextlib.suppress(Exception):
+                        await db.rollback()
                 # Payment links: gated on Heimdall, not Books — a link can
                 # be polled with Books down. Its own try/except like the
                 # purge: one failed pass costs this tick, never the loop.
