@@ -57,7 +57,12 @@ Verified against the live Zoho org on 2026-10-01 with three read-only requests:
 
 ### 1. One worker, pushes first
 
-`run_sync_loop` stays a single task that performs one sync operation at a time. Its wait ends at the earliest of: a push becoming due, a scheduled fast retry, the end of a background hold, the next background pass.
+`run_sync_loop` stays a single task that performs one sync operation at a time. It runs two cadences:
+
+- the **change pass**, every `CHANGE_PASS_SECONDS = 60`: the three change polls and the reconcile queue (section 4);
+- the **full tick**, every `aito_quote_poll_seconds` (default 300, unchanged): a pending drain, a change pass, then the passes that exist today.
+
+Its wait ends at the earliest of: a push becoming due, a scheduled fast retry, the next change pass, the next full tick.
 
 Between every background step (each poll, each reconciled card, each of the existing passes) the loop serves every push that is due. This replaces `_serve_wake_mid_tick`, which serves creations only; due edits and flushes are now served there too. A push therefore waits at most one background step, about 1–2 seconds.
 
@@ -69,13 +74,14 @@ New module `backend/app/services/aito_push_schedule.py`, pure and clock-injected
 - `note_immediate(project_id, now)`: due now. Used by creation, panel close, Force sync, merge, restore and every flush.
 - `is_due(project_id, now)`: True when the card has no window (for example after a restart, when the database row is `pending` but memory is empty) or its window has closed.
 - `next_due(now)`: seconds until the earliest open window closes, for the loop's wait.
-- `clear(project_id)`: called once the card's push has been attempted.
+- `take(project_id)`: removes the card's window when the drain selects it, before the push. An edit that lands during the push opens a fresh window and is not lost.
+- `add_waiter(project_id)` / `resolve(project_id)` / `discard_waiter(...)`: the futures behind flush on intent (section 3).
 
 `request_debounced_sync` and `request_immediate_sync` take the project id and delegate to this module. `_wake_worker` and `_commit_and_wake` in `routes/aito.py` pass the id they already have. The global `_debounce_deadline` and `EDIT_DEBOUNCE_SECONDS` are removed.
 
 The pending drain selects `pending` rows as today and skips those whose window is still open. Order within a drain: flushed cards with a waiter first, then by due time.
 
-The window is memory only. A restart loses it and the card, still `pending` in the database, is pushed on the first pass. That is the existing recovery behaviour.
+The window is memory only. A restart loses it and the card, still `pending` in the database, is pushed by the full tick the loop starts with. That is the existing recovery behaviour.
 
 ### 3. Flush on intent
 
@@ -95,9 +101,9 @@ Routes that call `ensure_pushed` before touching Zoho:
 - `GET /aito/{id}/quote.pdf` (Print and Download). For a card whose quote does not exist yet, the route waits for the creation; still no `quote_id` after the wait is the same 503.
 - The quote email content and send routes.
 - `POST /aito/{id}/invoice`, replacing the immediate 409 "changes still syncing"; the 409 remains only if the card is still pending after the wait.
-- The invoice PDF routes, which the interface disables today for the same reason.
+- The invoice and retainer PDF routes, which the interface disables today for the same reason.
 
-When sync is disabled or Zoho is not configured, `ensure_pushed` does not wait and the routes behave as today.
+When the worker is not serving (sync disabled, Zoho not configured, loop not running), `ensure_pushed` does not wait and the routes behave as today.
 
 ### 4. Background: poll what changed
 
@@ -107,13 +113,15 @@ New module `backend/app/services/aito_change_poll.py`, modelled on `aito_invoice
 - `zoho.py` gains `list_estimates_modified_since`, `list_customer_payments_modified_since`, `list_retainers_modified_since`, built like `list_invoices_modified_since`.
 - Mapping to cards, restricted to cards the sweep predicate selects today (`_sweep_predicate`, non-pending): a changed estimate maps by `quote_id`; a changed payment or retainer maps by `client_id` to every selected card of that customer.
 
-Matched card ids go into an in-memory reconcile queue (ordered, no duplicates). Each pass also adds a safety trickle: the next `TRICKLE_PER_PASS = 2` selected cards after a rotating id cursor. On a 77-card board every card gets a full reconcile about every 40 minutes whatever the polls report.
+Matched card ids go into an in-memory reconcile queue (ordered, no duplicates). Each change pass also adds a safety trickle: the next `TRICKLE_PER_PASS = 2` selected cards after a rotating id cursor. On a 77-card board every card gets a full reconcile about every 40 minutes whatever the polls report.
 
-Each pass drains the queue through the existing reconcile branch of `sync_project`, unchanged, with the per-pass credit and retainer caches. Cards left in the queue when the pass stops (budget guard, 429) stay for the next pass. The queue is memory only; after a restart the trickle re-covers every card within one cycle.
+Each change pass drains the queue through the existing reconcile branch of `sync_project`, unchanged, with the per-pass credit and retainer caches. Cards left in the queue when the pass stops (budget guard, 429) stay for the next pass. The queue is memory only; after a restart the trickle re-covers every card within one cycle.
 
-The existing passes keep their place and logic: hourly invoice sweep, invoice poll, contact poll, tracking-view purge, payment-link reconcile, terminal-payment poll.
+The full tick no longer reconciles every quoted card. It queues only the cards that need a retry at today's cadence: cards in `error` state, and terminal cards whose status Books has not confirmed (`quote_status_confirmed` false). Production has one such card.
 
-The default pass interval (`aito_quote_poll_seconds` unset) changes from 300 to 60 seconds. Estimated steady load: 5 list calls, 2 trickle cards and the few changed cards per pass, about 10–15 Books calls a minute.
+The passes that exist today keep their place, logic and cadence on the full tick: hourly invoice sweep, invoice poll, contact poll, tracking-view purge, payment-link reconcile, terminal-payment poll. They are not moved to the 60-second cadence because the payment-link reconcile polls Heimdall for every pending link and both existing polls are tuned for a five-minute pass. `aito_quote_poll_seconds` keeps its meaning and its default.
+
+Estimated steady load of the change pass: 3 list calls, 2 trickle cards and the few changed cards, about 5–10 Books calls a minute.
 
 Assumption to verify during implementation, read-only, on a real estimate: a client viewing or accepting a quote moves the estimate's `last_modified_time`. The comments mirror already relies on this. If it does not hold, `TRICKLE_PER_PASS` is raised so the cycle is 15 minutes or less.
 
@@ -121,11 +129,11 @@ Assumption to verify during implementation, read-only, on a real estimate: a cli
 
 - `_throttled_until` gates background work only: the change polls, queue reconciles, the invoice sweep and the invoice and contact polls. The pending drain no longer checks it.
 - A background 429 holds background work for `min(Retry-After, 60 s)`; `_RATE_LIMIT_MAX_RETRY_SECONDS` drops from 15 minutes to 60 seconds.
-- A 429 on a push leaves the card `pending` with no failure counted, as today, and schedules the existing fast retries (5, 15, 45 s). After those, the card is retried on every pass.
+- A 429 on a push leaves the card `pending` with no failure counted, as today, arms the same 60-second background hold, and schedules the existing fast retries (5, 15, 45 s). After those, the card is retried on every full tick and on every later wake.
 - Budget guard: `zoho_service` keeps the send times of the last minute and exposes `calls_in_last_minute()`. Background work stops for the pass when the count reaches `BACKGROUND_CALL_CEILING = 50`. Pushes and operator requests are never held by the guard.
-- Daily guard: `zoho_service` records `x-rate-limit-remaining` from each response. Below 5,000 remaining, the background pass interval is 300 seconds until the count recovers.
+- Daily guard: `zoho_service` records `x-rate-limit-remaining` from each response. Below 5,000 remaining, the change pass runs only with the full tick until the count recovers.
 - `ZohoRateLimited` carries Zoho's error code (44 per-minute, 45 daily, 1070 concurrent) and the raw `Retry-After`. Every 429 is logged at WARNING with both.
-- Pass log line at INFO when the pass pushed or reconciled anything, DEBUG otherwise: duration, Books calls in the pass, calls in the last minute, daily remaining, queue length.
+- Change-pass log line at INFO when the pass reconciled anything, DEBUG otherwise: duration, Books calls in the pass, calls in the last minute, daily remaining, queue length. The full tick keeps its existing `tick took` line.
 
 ### 6. Interface
 
@@ -167,7 +175,7 @@ Backend unit tests (fake clock, `MockTransport`, the existing fixtures of `test_
 - Push schedule: quiet period extends on each edit; ceiling caps it; windows are per card; immediate overrides; no window means due.
 - Loop: a background 429 does not delay a creation or an edit push; a push's own 429 retries at 5/15/45 s; due pushes are served between background steps.
 - Change poll: each of the three polls maps rows to the right cards; watermark advances and resumes; a failed poll leaves its watermark.
-- Budget: one pass on a 77-card board with nothing changed makes at most 15 Books calls; the guard stops background work at the ceiling and leaves the queue intact.
+- Budget: one change pass on a 77-card board with nothing changed makes at most 10 Books calls; a full tick no longer reads every quoted card; the guard stops background work at the ceiling and leaves the queue intact.
 - Flush: `ensure_pushed` waits and proceeds; times out to 503; does not wait when sync is disabled; waiter cleanup.
 - Payment links: an expired-date pending link makes no Heimdall call and is not marked failed.
 - Existing suites `test_aito_quote_sync*.py`, `test_aito_close_sync.py`, `test_aito_permissions.py` stay green; tests that assert the removed global debounce are rewritten against the per-card window.
@@ -183,6 +191,6 @@ Local `main` is 57 commits ahead of the image running on the shop host. Deployin
 After deploy, on the shop host:
 
 - `docker logs -t fenrir | grep -E "deferred \(Zoho|HTTP 429"`: none on a normal working day.
-- Pass log lines: Books calls per pass at or under 15 in steady state.
+- Change-pass log lines: Books calls per pass at or under 10 in steady state.
 - `aito_events` deltas over one working day: card created → quote created with 90% under 10 s; edit queued → pushed with median under 20 s and none over 60 s outside a Zoho outage.
 - No `Nothing to update` warnings.
