@@ -137,7 +137,13 @@ from backend.app.services.aito_tracking import (
     tracking_url,
     with_tracking_sms,
 )
-from backend.app.services.inbox import KINDS as INBOX_KINDS, auto_watch, broadcast_pending, preferences_for
+from backend.app.services.inbox import (
+    KINDS as INBOX_KINDS,
+    auto_watch,
+    broadcast_pending,
+    effective_watch_kinds,
+    preferences_for,
+)
 from backend.app.services.openrouter import (
     OpenRouterNotConfiguredError,
     OpenRouterUpstreamError,
@@ -4601,10 +4607,15 @@ async def _own_watch(db: AsyncSession, project_id: int, user_id: int) -> AitoWat
     ).scalar_one_or_none()
 
 
-def _watch_response(watch: AitoWatch | None) -> AitoWatchResponse:
+async def _watch_response(db: AsyncSession, watch: AitoWatch | None) -> AitoWatchResponse:
     if watch is None:
         return AitoWatchResponse(watching=False, kinds=[])
-    return AitoWatchResponse(watching=True, kinds=list(watch.kinds_json or []))
+    prefs = await preferences_for(db, watch.user_id)
+    return AitoWatchResponse(
+        watching=True,
+        kinds=effective_watch_kinds(watch, prefs),
+        follows_settings=watch.kinds_json is None,
+    )
 
 
 @router.get("/{project_id}/watch", response_model=AitoWatchResponse)
@@ -4617,8 +4628,8 @@ async def get_watch(
     Nobody watches anything with auth disabled (no user, no inbox)."""
     await _get_active_project_or_404(db, project_id)
     if current_user is None:
-        return _watch_response(None)
-    return _watch_response(await _own_watch(db, project_id, current_user.id))
+        return await _watch_response(db, None)
+    return await _watch_response(db, await _own_watch(db, project_id, current_user.id))
 
 
 @router.put("/{project_id}/watch", response_model=AitoWatchResponse)
@@ -4637,7 +4648,7 @@ async def set_watch(
     if unknown:
         raise HTTPException(status_code=422, detail=f"unknown kinds: {unknown}")
     if current_user is None:
-        return _watch_response(None)
+        return await _watch_response(db, None)
     prefs = await preferences_for(db, current_user.id)
     off = [k for k in kinds if k not in (prefs.kinds_json or [])]
     if off:
@@ -4649,7 +4660,7 @@ async def set_watch(
         if watch is not None:
             await db.delete(watch)
             await db.commit()
-        return _watch_response(None)
+        return await _watch_response(db, None)
     try:
         return await _save_watch(db, project_id, user_id, kinds)
     except IntegrityError:
@@ -4668,7 +4679,7 @@ async def _save_watch(db: AsyncSession, project_id: int, user_id: int, kinds: li
     else:
         watch.kinds_json = kinds
     await db.commit()
-    return _watch_response(watch)
+    return await _watch_response(db, watch)
 
 
 @router.post("/{project_id}/payment-link/refresh", response_model=AitoProjectResponse)

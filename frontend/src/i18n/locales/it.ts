@@ -9615,6 +9615,7 @@ export default {
     watchTitle: 'Segui questa scheda',
     watchBody: 'Scegli quali eventi di questa scheda arrivano nella tua casella.',
     watchSave: 'Salva',
+    watchFollowsSettings: 'Segue le tue Impostazioni',
     watchStop: 'Smetti di seguire',
     watchLoadFailed: 'Impossibile caricare il monitoraggio di questa scheda',
     watching: 'Stai seguendo questa scheda',

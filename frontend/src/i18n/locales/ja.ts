@@ -9629,6 +9629,7 @@ export default {
     watchTitle: 'このカードをウォッチ',
     watchBody: 'このカードのどのイベントを受信箱に届けるか選びます。',
     watchSave: '保存',
+    watchFollowsSettings: '設定に従います',
     watchStop: 'ウォッチを解除',
     watchLoadFailed: 'このカードのウォッチを読み込めませんでした',
     watching: 'このカードをウォッチしています',

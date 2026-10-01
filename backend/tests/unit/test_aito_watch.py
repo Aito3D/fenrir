@@ -35,27 +35,27 @@ async def test_watch_roundtrip_and_unwatch(async_client, db_session):
 
     r = await async_client.get(f"/api/v1/aito/{card}/watch", headers=headers)
     assert r.status_code == 200, r.text
-    assert r.json() == {"watching": False, "kinds": []}
+    assert r.json() == {"watching": False, "kinds": [], "follows_settings": False}
 
     r = await async_client.put(
         f"/api/v1/aito/{card}/watch", json={"kinds": ["aito.paid", "aito.quote_accepted"]}, headers=headers
     )
     assert r.status_code == 200, r.text
-    assert r.json() == {"watching": True, "kinds": ["aito.paid", "aito.quote_accepted"]}
+    assert r.json() == {"watching": True, "kinds": ["aito.paid", "aito.quote_accepted"], "follows_settings": False}
     assert (await async_client.get(f"/api/v1/aito/{card}/watch", headers=headers)).json() == r.json()
 
     # A second PUT replaces the kinds on the same row.
     r = await async_client.put(f"/api/v1/aito/{card}/watch", json={"kinds": ["aito.paid"]}, headers=headers)
-    assert r.json() == {"watching": True, "kinds": ["aito.paid"]}
+    assert r.json() == {"watching": True, "kinds": ["aito.paid"], "follows_settings": False}
     assert await _watches(db_session) == [(alice.id, card, ["aito.paid"])]
 
     r = await async_client.put(f"/api/v1/aito/{card}/watch", json={"kinds": []}, headers=headers)
     assert r.status_code == 200
-    assert r.json() == {"watching": False, "kinds": []}
+    assert r.json() == {"watching": False, "kinds": [], "follows_settings": False}
     assert await _watches(db_session) == []
     # Unwatching a card nobody watches is a no-op, not an error.
     r = await async_client.put(f"/api/v1/aito/{card}/watch", json={"kinds": []}, headers=headers)
-    assert r.status_code == 200 and r.json() == {"watching": False, "kinds": []}
+    assert r.status_code == 200 and r.json() == {"watching": False, "kinds": [], "follows_settings": False}
 
 
 @pytest.mark.asyncio
@@ -80,7 +80,7 @@ async def test_watch_rejects_unknown_printer_and_disabled_kinds(async_client, db
     await db_session.commit()
     r = await async_client.put(f"/api/v1/aito/{card}/watch", json={"kinds": ["aito.overdue"]}, headers=headers)
     assert r.status_code == 200, r.text
-    assert r.json() == {"watching": True, "kinds": ["aito.overdue"]}
+    assert r.json() == {"watching": True, "kinds": ["aito.overdue"], "follows_settings": False}
 
 
 @pytest.mark.asyncio
@@ -121,7 +121,7 @@ async def test_a_first_watch_that_loses_the_insert_race_updates_the_winner(async
     monkeypatch.setattr(aito_routes, "_own_watch", stale_first_read)
     r = await async_client.put(f"/api/v1/aito/{card}/watch", json={"kinds": ["aito.quote_viewed"]}, headers=headers)
     assert r.status_code == 200, r.text
-    assert r.json() == {"watching": True, "kinds": ["aito.quote_viewed"]}
+    assert r.json() == {"watching": True, "kinds": ["aito.quote_viewed"], "follows_settings": False}
     assert reads == [card, card]
     db_session.expire_all()
     assert await _watches(db_session) == [(alice_id, card, ["aito.quote_viewed"])]
@@ -131,7 +131,43 @@ async def test_a_first_watch_that_loses_the_insert_race_updates_the_winner(async
 async def test_watch_with_auth_disabled_is_a_no_op(async_client, db_session):
     card = await _card(async_client)
     r = await async_client.get(f"/api/v1/aito/{card}/watch")
-    assert r.status_code == 200 and r.json() == {"watching": False, "kinds": []}
+    assert r.status_code == 200 and r.json() == {"watching": False, "kinds": [], "follows_settings": False}
     r = await async_client.put(f"/api/v1/aito/{card}/watch", json={"kinds": ["aito.paid"]})
-    assert r.status_code == 200 and r.json() == {"watching": False, "kinds": []}
+    assert r.status_code == 200 and r.json() == {"watching": False, "kinds": [], "follows_settings": False}
     assert await _watches(db_session) == []
+
+
+@pytest.mark.asyncio
+async def test_an_auto_watch_reads_as_following_settings_until_saved(async_client, db_session):
+    """An auto-watch (no stored list) answers with the user's enabled Aito
+    kinds and follows_settings; saving a selection makes it explicit."""
+    from backend.app.services import inbox
+
+    card = await _card(async_client)
+    alice, headers = await _sign_in_alice(db_session)
+    alice_id = alice.id
+    await inbox.auto_watch(db_session, card, alice_id)
+    await db_session.commit()
+
+    r = await async_client.get(f"/api/v1/aito/{card}/watch", headers=headers)
+    assert r.status_code == 200, r.text
+    assert r.json() == {
+        "watching": True,
+        "kinds": [k for k in inbox.DEFAULT_KINDS if k.startswith("aito.")],
+        "follows_settings": True,
+    }
+
+    # A kind enabled in Settings later shows up on the existing auto-watch.
+    db_session.add(
+        UserInboxPreference(
+            user_id=alice_id, kinds_json=["aito.paid", "aito.overdue"], sound_kinds_json=[], auto_watch=True
+        )
+    )
+    await db_session.commit()
+    r = await async_client.get(f"/api/v1/aito/{card}/watch", headers=headers)
+    assert r.json() == {"watching": True, "kinds": ["aito.paid", "aito.overdue"], "follows_settings": True}
+
+    r = await async_client.put(f"/api/v1/aito/{card}/watch", json={"kinds": ["aito.paid"]}, headers=headers)
+    assert r.json() == {"watching": True, "kinds": ["aito.paid"], "follows_settings": False}
+    db_session.expire_all()
+    assert await _watches(db_session) == [(alice_id, card, ["aito.paid"])]

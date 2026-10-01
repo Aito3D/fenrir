@@ -104,6 +104,41 @@ class TestDeleteUserCleansAuthRows:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_delete_user_removes_the_inbox(
+        self,
+        async_client: AsyncClient,
+        db_session: AsyncSession,
+        auth_token: str,
+    ):
+        """Notifications, card watches and inbox preferences go with the user:
+        users.id can be reused, and a new user must not inherit them."""
+        from backend.app.models.notification_inbox import AitoWatch, Notification, UserInboxPreference
+
+        user_id = await self._create_user(async_client, auth_token, "inboxclean")
+        keeper_id = await self._create_user(async_client, auth_token, "inboxkeep")
+        for uid in (user_id, keeper_id):
+            db_session.add_all(
+                [
+                    Notification(user_id=uid, kind="aito.paid", family="aito", title="aito.paid", body="b"),
+                    AitoWatch(user_id=uid, project_id=1, kinds_json=["aito.paid"]),
+                    UserInboxPreference(user_id=uid, kinds_json=[], sound_kinds_json=[], auto_watch=True),
+                ]
+            )
+        await db_session.commit()
+
+        resp = await async_client.delete(
+            f"/api/v1/users/{user_id}",
+            headers={"Authorization": f"Bearer {auth_token}"},
+        )
+        assert resp.status_code == 204
+
+        await db_session.commit()
+        for model in (Notification, AitoWatch, UserInboxPreference):
+            owners = [r.user_id for r in (await db_session.execute(select(model))).scalars()]
+            assert owners == [keeper_id], f"{model.__name__} rows left behind for the deleted user"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_delete_user_removes_user_totp(
         self,
         async_client: AsyncClient,

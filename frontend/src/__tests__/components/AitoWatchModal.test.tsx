@@ -31,7 +31,7 @@ const PREFS: InboxPreferences = {
   ],
 };
 
-function mockWatch(watch: { watching: boolean; kinds: string[] }, put?: () => Response) {
+function mockWatch(watch: { watching: boolean; kinds: string[]; follows_settings?: boolean }, put?: () => Response) {
   const puts: { url: string; body: unknown }[] = [];
   server.use(
     http.get('/api/v1/inbox/preferences', () => HttpResponse.json(PREFS)),
@@ -162,5 +162,36 @@ describe('WatchModal', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent("kind disabled in preferences: ['aito.paid']");
     expect(onClose).not.toHaveBeenCalled();
     expect(screen.getByRole('dialog', { name: 'Watch this card' })).toBeInTheDocument();
+  });
+
+  it('says an auto-watch follows Settings, and an unedited Save keeps it that way', async () => {
+    const puts = mockWatch({ watching: true, kinds: ['aito.quote_viewed', 'aito.paid'], follows_settings: true });
+    const onClose = vi.fn();
+    const user = userEvent.setup();
+    render(<WatchModal project={project} onClose={onClose} />);
+    expect(await screen.findByText('Follows your Settings')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(puts).toEqual([]);
+  });
+
+  it('saving an edited selection on an auto-watch makes it explicit', async () => {
+    const puts = mockWatch({ watching: true, kinds: ['aito.quote_viewed', 'aito.paid'], follows_settings: true });
+    const onClose = vi.fn();
+    const user = userEvent.setup();
+    render(<WatchModal project={project} onClose={onClose} />);
+    await screen.findByText('Follows your Settings');
+    await user.click(box('Quote opened by the client'));
+    expect(screen.queryByText('Follows your Settings')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(puts).toEqual([{ url: '/api/v1/aito/41/watch', body: { kinds: ['aito.paid'] } }]);
+  });
+
+  it('shows no Settings line on an explicit watch', async () => {
+    mockWatch({ watching: true, kinds: ['aito.paid'], follows_settings: false });
+    render(<WatchModal project={project} onClose={vi.fn()} />);
+    await waitFor(() => expect(box('Payment received')).toBeChecked());
+    expect(screen.queryByText('Follows your Settings')).not.toBeInTheDocument();
   });
 });

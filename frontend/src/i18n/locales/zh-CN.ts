@@ -9613,6 +9613,7 @@ export default {
     watchTitle: '关注此卡片',
     watchBody: '选择此卡片的哪些事件会进入你的收件箱。',
     watchSave: '保存',
+    watchFollowsSettings: '跟随你的设置',
     watchStop: '取消关注',
     watchLoadFailed: '无法加载此卡片的关注设置',
     watching: '你正在关注此卡片',

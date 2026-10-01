@@ -9638,6 +9638,7 @@ export default {
     watchTitle: 'Seguir esta tarjeta',
     watchBody: 'Elige qué eventos de esta tarjeta llegan a tu bandeja.',
     watchSave: 'Guardar',
+    watchFollowsSettings: 'Sigue tus Ajustes',
     watchStop: 'Dejar de seguir',
     watchLoadFailed: 'No se pudo cargar el seguimiento de esta tarjeta',
     watching: 'Sigues esta tarjeta',

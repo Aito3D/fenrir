@@ -44,6 +44,8 @@ export function WatchModal({ project, onClose }: { project: AitoProject; onClose
   const initial = watch?.watching ? usable.filter((k) => watch.kinds.includes(k)) : usable;
   const ticked = edited ?? initial;
   const watching = watch?.watching ?? false;
+  // An auto-watch follows Settings until the user saves a selection of their own.
+  const followsSettings = watching && watch?.follows_settings === true && edited === null;
 
   const toggle = (kind: string) => {
     setError(null);
@@ -164,6 +166,9 @@ export function WatchModal({ project, onClose }: { project: AitoProject; onClose
                 })}
               </ul>
             )}
+            {ready && followsSettings && (
+              <p className="mt-3 text-xs text-bambu-gray">{t('inbox.watchFollowsSettings')}</p>
+            )}
           </div>
 
           <footer className="flex items-center justify-between gap-3 border-t border-bambu-dark-tertiary px-6 py-3">
@@ -181,7 +186,9 @@ export function WatchModal({ project, onClose }: { project: AitoProject; onClose
                 size="sm"
                 // Unticking everything on a watched card is a stop, and Save says so by sending [].
                 disabled={!ready || save.isPending || (toSend.length === 0 && !watching)}
-                onClick={() => save.mutate(toSend)}
+                // An untouched auto-watch already delivers what Settings enables:
+                // saving it as a list would freeze it, so Save just closes.
+                onClick={() => (followsSettings ? requestClose() : save.mutate(toSend))}
               >
                 {save.isPending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
                 {t('inbox.watchSave')}

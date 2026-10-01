@@ -9615,6 +9615,7 @@ export default {
     watchTitle: 'Suivre cette carte',
     watchBody: 'Choisissez quels événements de cette carte arrivent dans votre boîte.',
     watchSave: 'Enregistrer',
+    watchFollowsSettings: 'Suit vos Réglages',
     watchStop: 'Ne plus suivre',
     watchLoadFailed: 'Impossible de charger le suivi de cette carte',
     watching: 'Vous suivez cette carte',

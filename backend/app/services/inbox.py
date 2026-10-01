@@ -105,6 +105,15 @@ async def preferences_for(db: AsyncSession, user_id: int) -> UserInboxPreference
     return row
 
 
+def effective_watch_kinds(watch: AitoWatch, prefs: UserInboxPreference) -> list[str]:
+    """The Aito kinds a watch actually delivers: the user's enabled ``aito.*``
+    kinds for an auto-watch (no stored list), else its own list within them."""
+    enabled = [k for k in (prefs.kinds_json or []) if k.startswith("aito.")]
+    if watch.kinds_json is None:
+        return enabled
+    return [k for k in watch.kinds_json if k in enabled]
+
+
 async def fan_out(db: AsyncSession, event: AitoEvent, project: AitoProject | None = None) -> list[int]:
     """One Notification per watcher who wants this event's inbox kind.
 
@@ -116,7 +125,14 @@ async def fan_out(db: AsyncSession, event: AitoEvent, project: AitoProject | Non
     if kind is None:
         return []
     watches = list((await db.execute(select(AitoWatch).where(AitoWatch.project_id == event.project_id))).scalars())
-    watches = [w for w in watches if kind in (w.kinds_json or [])]
+    # Old history is not news: importing a quote auto-watches it, and the
+    # first comment mirror then records the quote's PAST Books events with
+    # their past occurred_at. Nothing that happened before the watch existed
+    # becomes a row.
+    watches = [w for w in watches if w.created_at is None or event.occurred_at >= w.created_at]
+    # An explicit watch must list the kind; an auto-watch (no list) follows
+    # Settings, which the preference check below applies to every watch.
+    watches = [w for w in watches if w.kinds_json is None or kind in w.kinds_json]
     if not watches:
         return []
     if project is None:
@@ -167,7 +183,7 @@ async def broadcast_pending(db: AsyncSession) -> None:
 
 
 async def auto_watch(db: AsyncSession, project_id: int, user_id: int | None) -> None:
-    """Watch a card its creator just made, with their enabled Aito kinds.
+    """Watch a card its creator just made, following their Settings.
 
     No-op without a user (auth disabled), when the user turned auto-watch
     off, or when they already watch the card. Never commits.
@@ -182,8 +198,9 @@ async def auto_watch(db: AsyncSession, project_id: int, user_id: int | None) -> 
     ).scalar_one_or_none()
     if existing is not None:
         return
-    kinds = [k for k in (prefs.kinds_json or []) if k.startswith("aito.")]
-    db.add(AitoWatch(user_id=user_id, project_id=project_id, kinds_json=kinds))
+    # No kind list: an auto-watch follows the user's Settings, so a kind they
+    # enable later reaches the cards they already watch.
+    db.add(AitoWatch(user_id=user_id, project_id=project_id, kinds_json=None))
     await db.flush()
 
 

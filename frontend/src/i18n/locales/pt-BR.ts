@@ -9615,6 +9615,7 @@ export default {
     watchTitle: 'Acompanhar este cartão',
     watchBody: 'Escolha quais eventos deste cartão chegam à sua caixa de entrada.',
     watchSave: 'Salvar',
+    watchFollowsSettings: 'Segue suas Configurações',
     watchStop: 'Parar de acompanhar',
     watchLoadFailed: 'Não foi possível carregar o acompanhamento deste cartão',
     watching: 'Você acompanha este cartão',

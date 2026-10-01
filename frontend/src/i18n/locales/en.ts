@@ -9684,6 +9684,7 @@ export default {
     watchTitle: 'Watch this card',
     watchBody: 'Choose which events about this card reach your inbox.',
     watchSave: 'Save',
+    watchFollowsSettings: 'Follows your Settings',
     watchStop: 'Stop watching',
     watchLoadFailed: 'Couldn\'t load this card\'s watch',
     watching: 'You watch this card',

@@ -9630,6 +9630,7 @@ export default {
     watchTitle: 'Diese Karte beobachten',
     watchBody: 'Wähle, welche Ereignisse zu dieser Karte in deinem Posteingang landen.',
     watchSave: 'Speichern',
+    watchFollowsSettings: 'Folgt deinen Einstellungen',
     watchStop: 'Nicht mehr beobachten',
     watchLoadFailed: 'Die Beobachtung dieser Karte konnte nicht geladen werden',
     watching: 'Du beobachtest diese Karte',

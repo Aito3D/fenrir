@@ -9654,6 +9654,7 @@ errors: {
     watchTitle: 'Bevaka det här kortet',
     watchBody: 'Välj vilka händelser för det här kortet som når din inkorg.',
     watchSave: 'Spara',
+    watchFollowsSettings: 'Följer dina Inställningar',
     watchStop: 'Sluta bevaka',
     watchLoadFailed: 'Det gick inte att läsa in bevakningen av kortet',
     watching: 'Du bevakar det här kortet',

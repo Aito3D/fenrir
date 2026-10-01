@@ -30,6 +30,7 @@ from backend.app.models.connected_app import ConnectedApp, ConnectedAppGrant
 from backend.app.models.group import Group
 from backend.app.models.library import LibraryFile
 from backend.app.models.long_lived_token import LongLivedToken
+from backend.app.models.notification_inbox import AitoWatch, Notification, UserInboxPreference
 from backend.app.models.oidc_provider import UserOIDCLink
 from backend.app.models.print_batch import PrintBatch
 from backend.app.models.print_queue import PrintQueueItem
@@ -500,6 +501,13 @@ async def delete_user(
     await db.execute(delete(UserTOTP).where(UserTOTP.user_id == user_id))
     await db.execute(delete(UserOTPCode).where(UserOTPCode.user_id == user_id))
     await db.execute(delete(LongLivedToken).where(LongLivedToken.user_id == user_id))
+
+    # The notification inbox, same SQLite/FK pattern: users.id can be reused,
+    # and the next user given this id would otherwise inherit the rows, the
+    # card watches (and so the pushes) and the preferences.
+    await db.execute(delete(Notification).where(Notification.user_id == user_id))
+    await db.execute(delete(AitoWatch).where(AitoWatch.user_id == user_id))
+    await db.execute(delete(UserInboxPreference).where(UserInboxPreference.user_id == user_id))
 
     # Connected apps, same SQLite/FK pattern. A leftover consent row would
     # skip the consent screen for whoever is next given this user id, and a

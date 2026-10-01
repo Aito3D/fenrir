@@ -9247,6 +9247,7 @@ export default {
     watchTitle: '이 카드 관찰',
     watchBody: '이 카드의 어떤 이벤트를 받은 편지함에 보낼지 선택하세요.',
     watchSave: '저장',
+    watchFollowsSettings: '설정을 따릅니다',
     watchStop: '관찰 중지',
     watchLoadFailed: '이 카드의 관찰 설정을 불러오지 못했습니다',
     watching: '이 카드를 관찰하고 있습니다',

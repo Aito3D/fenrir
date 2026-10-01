@@ -198,7 +198,7 @@ async def test_auto_watch_and_purge(async_client, db_session):
     await db_session.commit()
     watch = (await db_session.execute(select(AitoWatch))).scalars().one()
     assert watch.user_id == alice.id
-    assert set(watch.kinds_json) == {k for k in inbox.DEFAULT_KINDS if k.startswith("aito.")}
+    assert watch.kinds_json is None  # an auto-watch follows Settings
 
     old = Notification(
         user_id=alice.id,
@@ -424,3 +424,88 @@ async def test_a_client_action_still_reaches_a_watcher_who_shares_the_actor_name
     await db_session.commit()
     rows = list((await db_session.execute(select(Notification))).scalars())
     assert [r.user_id for r in rows] == [alice.id]
+
+
+@pytest.mark.asyncio
+async def test_history_older_than_the_watch_is_not_news(async_client, db_session):
+    """Importing a quote auto-watches it, then the first comment mirror
+    records the quote's PAST Books history with its past occurred_at. Those
+    events predate the watch and write no row; a later one does."""
+    alice = await _user(db_session, "alice")
+    p = await _create_with_tasks(async_client, [])
+    watched_at = datetime.utcnow()
+    db_session.add(
+        AitoWatch(
+            user_id=alice.id,
+            project_id=p["id"],
+            kinds_json=["aito.quote_viewed", "aito.quote_accepted"],
+            created_at=watched_at,
+        )
+    )
+    await db_session.commit()
+
+    await record(db_session, p["id"], "quote.viewed", actor_class="client", occurred_at=watched_at - timedelta(days=3))
+    await db_session.commit()
+    assert (await db_session.execute(select(Notification))).scalars().first() is None
+
+    await record(
+        db_session, p["id"], "quote.accepted", actor_class="client", occurred_at=watched_at + timedelta(seconds=5)
+    )
+    await db_session.commit()
+    rows = list((await db_session.execute(select(Notification))).scalars())
+    assert [(r.user_id, r.kind) for r in rows] == [(alice.id, "aito.quote_accepted")]
+
+
+@pytest.mark.asyncio
+async def test_an_auto_watch_stores_no_kinds_and_follows_settings(async_client, db_session):
+    """An auto-watch means "follow my Settings": a kind enabled AFTER the
+    watch was made reaches it, and one turned off stops reaching it."""
+    alice = await _user(db_session, "alice")
+    p = await _create_with_tasks(async_client, [])
+    await inbox.auto_watch(db_session, p["id"], alice.id)
+    await db_session.commit()
+    watch = (await db_session.execute(select(AitoWatch))).scalars().one()
+    assert watch.kinds_json is None
+    watch.created_at = datetime.utcnow() - timedelta(minutes=5)
+
+    # Defaults leave overdue off: nothing yet.
+    await record(db_session, p["id"], "project.due.overdue", actor_class="system")
+    await db_session.commit()
+    assert (await db_session.execute(select(Notification))).scalars().first() is None
+
+    # Enabled in Settings later — the existing auto-watch now delivers it.
+    db_session.add(
+        UserInboxPreference(user_id=alice.id, kinds_json=["aito.overdue"], sound_kinds_json=[], auto_watch=True)
+    )
+    await db_session.commit()
+    await record(db_session, p["id"], "project.due.overdue", actor_class="system", detail={"day": 2})
+    await record(db_session, p["id"], "quote.accepted", actor_class="client")  # default kind, now turned off
+    await db_session.commit()
+    rows = list((await db_session.execute(select(Notification))).scalars())
+    assert [(r.user_id, r.kind) for r in rows] == [(alice.id, "aito.overdue")]
+
+
+@pytest.mark.asyncio
+async def test_an_explicit_watch_keeps_its_own_list_within_settings(async_client, db_session):
+    alice = await _user(db_session, "alice")
+    p = await _create_with_tasks(async_client, [])
+    db_session.add_all(
+        [
+            AitoWatch(
+                user_id=alice.id,
+                project_id=p["id"],
+                kinds_json=["aito.quote_accepted"],
+                created_at=datetime.utcnow() - timedelta(minutes=5),
+            ),
+            UserInboxPreference(
+                user_id=alice.id,
+                kinds_json=["aito.quote_accepted", "aito.quote_declined"],
+                sound_kinds_json=[],
+                auto_watch=True,
+            ),
+        ]
+    )
+    await db_session.commit()
+    await record(db_session, p["id"], "quote.declined", actor_class="client")  # enabled, but not on this watch
+    await db_session.commit()
+    assert (await db_session.execute(select(Notification))).scalars().first() is None

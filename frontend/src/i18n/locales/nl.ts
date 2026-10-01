@@ -9654,6 +9654,7 @@ export default {
     watchTitle: 'Deze kaart volgen',
     watchBody: 'Kies welke gebeurtenissen van deze kaart je inbox bereiken.',
     watchSave: 'Opslaan',
+    watchFollowsSettings: 'Volgt je Instellingen',
     watchStop: 'Niet meer volgen',
     watchLoadFailed: 'Kon het volgen van deze kaart niet laden',
     watching: 'Je volgt deze kaart',

@@ -9555,6 +9555,7 @@ export default {
     watchTitle: 'Bu kartı izle',
     watchBody: 'Bu kartla ilgili hangi olayların gelen kutunuza ulaşacağını seçin.',
     watchSave: 'Kaydet',
+    watchFollowsSettings: 'Ayarlarınızı izler',
     watchStop: 'İzlemeyi bırak',
     watchLoadFailed: 'Bu kartın izleme ayarı yüklenemedi',
     watching: 'Bu kartı izliyorsunuz',

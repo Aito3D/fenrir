@@ -10,6 +10,7 @@ from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Uni
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.app.core.database import Base
+from backend.app.utils.local_time import utcnow_naive
 
 
 class Notification(Base):
@@ -32,7 +33,14 @@ class Notification(Base):
 
 class AitoWatch(Base):
     """A user following one card for the listed inbox kinds. Kept when the
-    card is trashed (a restore keeps the watcher) or reaches Done."""
+    card is trashed (a restore keeps the watcher) or reaches Done.
+
+    ``kinds_json`` NULL is an AUTO-watch: it stores no list and follows the
+    user's Settings, so a kind enabled later reaches it. A list is an
+    explicit choice saved from the watch modal (still bounded by Settings).
+    ``created_at`` is set in Python as well as by the server so a watch made
+    in the same session as an event already carries it: fan_out skips events
+    that happened before the watch existed."""
 
     __tablename__ = "aito_watches"
     __table_args__ = (UniqueConstraint("user_id", "project_id", name="uq_aito_watch_user_project"),)
@@ -40,8 +48,8 @@ class AitoWatch(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), index=True)
     project_id: Mapped[int] = mapped_column(Integer, index=True)
-    kinds_json: Mapped[list] = mapped_column(JSON, default=list)
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    kinds_json: Mapped[list | None] = mapped_column(JSON, nullable=True, default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, server_default=func.now())
 
 
 class UserInboxPreference(Base):

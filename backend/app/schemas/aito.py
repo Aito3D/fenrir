@@ -1542,4 +1542,7 @@ class AitoWatchUpdate(BaseModel):
 
 class AitoWatchResponse(BaseModel):
     watching: bool
+    # The kinds the watch delivers now: an auto-watch's are the user's enabled
+    # Aito kinds (follows_settings), an explicit watch's its saved list.
     kinds: list[str]
+    follows_settings: bool = False

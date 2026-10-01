@@ -5783,7 +5783,10 @@ export interface InboxPreferences extends InboxPreferencesUpdate {
 /** The caller's own watch on one Aito card (GET/PUT /aito/{id}/watch). */
 export interface AitoWatch {
   watching: boolean;
+  /** What the watch delivers now: for an auto-watch, the user's enabled Aito kinds. */
   kinds: string[];
+  /** An auto-watch: it stores no list and follows the user's Settings. Saving a selection makes it explicit. */
+  follows_settings?: boolean;
 }
 
 // API functions
