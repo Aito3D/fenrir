@@ -228,6 +228,7 @@ export default {
 
   // Printers page
   printers: {
+    focusGone: 'Den här skrivaren finns inte längre',
     title: 'Skrivare',
     addPrinter: 'Lägg till skrivare',
     addPreflight: {
@@ -8143,6 +8144,8 @@ errors: {
   },
   aito: {
     title: 'Aito',
+    cardInTrash: 'Det här kortet ligger i papperskorgen',
+    cardGone: 'Det här kortet finns inte längre',
     newProject: 'Projekt',
     modalTitle: 'Nytt projekt',
     productDescription: 'Produktbeskrivning',

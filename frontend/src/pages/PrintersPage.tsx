@@ -187,6 +187,7 @@ import { LinkSpoolModal } from '../components/LinkSpoolModal';
 import { AssignSpoolModal } from '../components/AssignSpoolModal';
 import { ConfigureAmsSlotModal } from '../components/ConfigureAmsSlotModal';
 import { useToast } from '../contexts/ToastContext';
+import { usePrinterFocus } from '../hooks/usePrinterFocus';
 import { ChamberLight } from '../components/icons/ChamberLight';
 import { PlateClearedIcon } from '../components/icons/PlateClearedIcon';
 import { SkipObjectsModal, SkipObjectsIcon } from '../components/SkipObjectsModal';
@@ -2089,6 +2090,7 @@ function PrinterCard({
   requirePlateClear = false,
   selectionMode = false,
   isSelected = false,
+  focused = false,
   onToggleSelect,
   onOpenCompactCard,
   nozzleTempPresets = NOZZLE_TEMP_DEFAULTS,
@@ -2130,6 +2132,8 @@ function PrinterCard({
   requirePlateClear?: boolean;
   selectionMode?: boolean;
   isSelected?: boolean;
+  /** Briefly ringed after a `?focus=` link (see usePrinterFocus). */
+  focused?: boolean;
   onToggleSelect?: (id: number) => void;
   onOpenCompactCard?: (id: number) => void;
   nozzleTempPresets?: readonly [number, number, number];
@@ -3820,7 +3824,7 @@ function PrinterCard({
       // Fork's entrance animation and upstream's card scaling are orthogonal:
       // one is a keyframed transform on mount, the other a persistent inline
       // scale from the user's card-size setting. Both apply.
-      className={`relative flex h-full flex-col animate-rise-lg ${isSelected ? 'ring-2 ring-bambu-green' : ''} ${selectionMode || viewMode === 'compact' ? 'cursor-pointer' : ''}`}
+      className={`relative flex h-full flex-col animate-rise-lg ${isSelected || focused ? 'ring-2 ring-bambu-green' : ''} ${selectionMode || viewMode === 'compact' ? 'cursor-pointer' : ''}`}
       style={cardScaleStyle}
       onClick={handleCardClick}
       onDragEnter={handleCardDragEnter}
@@ -8881,6 +8885,7 @@ export function PrintersPage() {
     queryKey: ['printers'],
     queryFn: api.getPrinters,
   });
+  const focusedPrinterId = usePrinterFocus(printers);
 
   // Fetch the UI-rendering subset of settings. Uses /ui-preferences (not /settings)
   // so users with printers:read but no settings:read still get the values needed
@@ -10066,6 +10071,7 @@ export function PrintersPage() {
                   requirePlateClear={settings?.require_plate_clear === true}
                   selectionMode={selectionMode}
                   isSelected={selectedPrinterIds.has(printer.id)}
+                  focused={focusedPrinterId === printer.id}
                   onToggleSelect={toggleSelect}
                   onOpenCompactCard={openCompactCard}
                   aiDetectionEnabled={isAiMonitored(printer.id)}

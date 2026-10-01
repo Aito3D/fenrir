@@ -2,6 +2,8 @@ export default {
   // Aito production board (quote -> model -> print -> finish)
   aito: {
     title: 'Aito',
+    cardInTrash: 'このカードはゴミ箱にあります',
+    cardGone: 'このカードはもう存在しません',
     newProject: 'プロジェクト',
     modalTitle: '新規プロジェクト',
     productDescription: '製品の説明',
@@ -1201,6 +1203,7 @@ export default {
   },
   // Printers page
   printers: {
+    focusGone: 'このプリンターはもう存在しません',
     addPreflight: {
       checking: '接続を確認しています...',
       warning: '一部の接続チェックに失敗しました。このプリンターはオフラインと表示される可能性があります。下のチェックを確認し、可能な範囲で修正するか、そのまま保存してください。',

@@ -3,6 +3,8 @@
 export default {
   aito: {
     title: "Aito",
+    cardInTrash: "Ця картка в кошику",
+    cardGone: "Ця картка більше не існує",
     newProject: "Проєкт",
     modalTitle: "Новий проєкт",
     productDescription: "Опис виробу",
@@ -1198,6 +1200,7 @@ export default {
     deleteTransaction: "Видалити операцію",
   },
   printers: {
+    focusGone: "Цей принтер більше не існує",
     title: "Принтери",
     addPrinter: "Додати принтер",
     addPreflight: {

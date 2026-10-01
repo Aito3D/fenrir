@@ -2,6 +2,8 @@ export default {
   // Aito production board (quote -> model -> print -> finish)
   aito: {
     title: 'Aito',
+    cardInTrash: 'Эта карточка в корзине',
+    cardGone: 'Эта карточка больше не существует',
     newProject: 'Проект',
     modalTitle: 'Новый проект',
     productDescription: 'Описание изделия',
@@ -1196,6 +1198,7 @@ export default {
     deleteTransaction: "Удалить операцию",
   },
   printers: {
+    focusGone: 'Этот принтер больше не существует',
     title: "Принтеры",
     addPrinter: "Добавить принтер",
     addPreflight: {

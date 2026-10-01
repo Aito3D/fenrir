@@ -2,6 +2,8 @@ export default {
   // Aito production board (quote -> model -> print -> finish)
   aito: {
     title: 'Aito',
+    cardInTrash: '此卡片在垃圾桶中',
+    cardGone: '此卡片已不存在',
     newProject: '專案',
     modalTitle: '新增專案',
     productDescription: '產品描述',
@@ -1202,6 +1204,7 @@ export default {
 
   // Printers page
   printers: {
+    focusGone: '此印表機已不存在',
     addPreflight: {
       checking: '正在檢查連線...',
       warning: '部分連線檢查未通過。此印表機可能顯示為離線。請查看下方的檢查項目，盡量修復，或仍然儲存。',

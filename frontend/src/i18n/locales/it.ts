@@ -2,6 +2,8 @@ export default {
   // Aito production board (quote -> model -> print -> finish)
   aito: {
     title: 'Aito',
+    cardInTrash: 'Questa scheda è nel cestino',
+    cardGone: 'Questa scheda non esiste più',
     newProject: 'Progetto',
     modalTitle: 'Nuovo progetto',
     productDescription: 'Descrizione del prodotto',
@@ -1202,6 +1204,7 @@ export default {
 
   // Printers page
   printers: {
+    focusGone: 'Questa stampante non esiste più',
     addPreflight: {
       checking: 'Verifica della connessione...',
       warning: 'Alcuni controlli di connessione non sono riusciti. Questa stampante potrebbe risultare offline. Controlla le verifiche qui sotto, risolvi ciò che puoi oppure salva comunque.',

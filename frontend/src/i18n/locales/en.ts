@@ -2,6 +2,8 @@ export default {
   // Aito production board (quote -> model -> print -> finish)
   aito: {
     title: 'Aito',
+    cardInTrash: 'This card is in the trash',
+    cardGone: 'This card no longer exists',
     newProject: 'Project',
     modalTitle: 'New Project',
     productDescription: 'Product description',
@@ -1207,6 +1209,7 @@ export default {
   // Printers page
   printers: {
     title: 'Printers',
+    focusGone: 'This printer no longer exists',
     addPrinter: 'Add Printer',
     addPreflight: {
       checking: 'Checking connection...',

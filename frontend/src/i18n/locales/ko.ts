@@ -2,6 +2,8 @@ export default {
   // Aito production board (quote -> model -> print -> finish)
   aito: {
     title: 'Aito',
+    cardInTrash: '이 카드는 휴지통에 있습니다',
+    cardGone: '이 카드는 더 이상 존재하지 않습니다',
     newProject: '프로젝트',
     modalTitle: '새 프로젝트',
     productDescription: '제품 설명',
@@ -1196,6 +1198,7 @@ export default {
     deleteTransaction: '거래 삭제',
   },
   printers: {
+    focusGone: '이 프린터는 더 이상 존재하지 않습니다',
     title: '프린터',
     addPrinter: '프린터 추가',
     editPrinter: '프린터 편집',

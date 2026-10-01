@@ -228,6 +228,7 @@ export default {
 
   // Printers page
   printers: {
+    focusGone: 'Deze printer bestaat niet meer',
     title: 'Printers',
     addPrinter: 'Printer toevoegen',
     addPreflight: {
@@ -8143,6 +8144,8 @@ export default {
   },
   aito: {
     title: 'Aito',
+    cardInTrash: 'Deze kaart staat in de prullenbak',
+    cardGone: 'Deze kaart bestaat niet meer',
     newProject: 'Nieuw',
     modalTitle: 'Nieuw project',
     productDescription: 'Productbeschrijving',

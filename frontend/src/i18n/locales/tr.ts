@@ -2,6 +2,8 @@ export default {
   // Aito production board (quote -> model -> print -> finish)
   aito: {
     title: 'Aito',
+    cardInTrash: 'Bu kart çöp kutusunda',
+    cardGone: 'Bu kart artık mevcut değil',
     newProject: 'Proje',
     modalTitle: 'Yeni Proje',
     productDescription: 'Ürün açıklaması',
@@ -1202,6 +1204,7 @@ export default {
 
   // Yazıcılar sayfası
   printers: {
+    focusGone: 'Bu yazıcı artık mevcut değil',
     title: 'Yazıcılar',
     addPrinter: 'Yazıcı Ekle',
     addPreflight: {

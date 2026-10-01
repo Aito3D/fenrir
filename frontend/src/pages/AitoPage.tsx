@@ -6,6 +6,7 @@ import { DndContext, DragOverlay, MeasuringStrategy, closestCorners, type DropAn
 import { AlertTriangle, Archive, BarChart3, FileInput, Kanban, Loader2, Plus, Trash2 } from 'lucide-react';
 import { Button } from '../components/Button';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 import { CardView } from '../components/aito/CardView';
 import { BoardColumn } from '../components/aito/BoardColumn';
 import { BoardSearch } from '../components/aito/BoardSearch';
@@ -30,6 +31,7 @@ import { localDateKey } from '../utils/date';
 import { useCardFlight } from '../hooks/useCardFlight';
 import { CelebrationProvider } from '../components/aito/celebration';
 import { useCardMorph } from '../hooks/useCardMorph';
+import { useDeepLinkParam } from '../hooks/useDeepLinkParam';
 import { useBoardLoadingStatus } from '../hooks/useBoardLoadingStatus';
 import { useReducedMotion } from '../hooks/useReducedMotion';
 import { prefersReducedMotion } from '../utils/motion';
@@ -186,6 +188,10 @@ export function AitoPage() {
   const filtering = search.trim().length > 0 || followupIds !== null;
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const { open: openCard, close: closeCard } = useCardMorph(setExpandedId);
+  const { showToast } = useToast();
+  // `?card=41` (an inbox row's link). Acted on once both lists can answer it,
+  // then dropped from the URL — see the effect below.
+  const [cardParam, clearCardParam] = useDeepLinkParam('card');
 
   // Deleted projects. Fetched only while their view is on screen: the trash is
   // the one surface that needs them, its button carries no count, and the board
@@ -193,8 +199,28 @@ export function AitoPage() {
   const trashQuery = useQuery({
     queryKey: ['aito-trash'],
     queryFn: api.getAitoTrash,
-    enabled: view === 'trash',
+    // Also while a `?card=` link is pending: a card missing from the board may
+    // be in the trash, and the toast has to say which.
+    enabled: view === 'trash' || cardParam !== null,
   });
+
+  // The plain `setExpandedId`, not `openCard`: the morph needs a source card
+  // on screen, and a link arrives with nothing clicked.
+  useEffect(() => {
+    if (cardParam === null || !aitoQuery.data) return;
+    const id = Number(cardParam);
+    const card = aitoQuery.data.find((p) => p.id === id);
+    if (card) {
+      clearCardParam();
+      setExpandedId(id);
+      document.querySelector(`[data-column-id="${card.column}"]`)?.scrollIntoView({ block: 'nearest', inline: 'center' });
+      return;
+    }
+    if (trashQuery.isPending) return;
+    clearCardParam();
+    const inTrash = trashQuery.data?.some((p) => p.id === id) ?? false;
+    showToast(t(inTrash ? 'aito.cardInTrash' : 'aito.cardGone'), inTrash ? 'info' : 'error');
+  }, [cardParam, aitoQuery.data, trashQuery.isPending, trashQuery.data, clearCardParam, showToast, t]);
 
   // Both lists, because a card opens the same detail panel from either. The
   // board query holds active rows only, so a trashed card looked up there
@@ -748,7 +774,11 @@ export function AitoPage() {
               // lg:min-w-0, not a px floor: the six columns must always fit
               // the width the sidebar leaves them — an expanded sidebar
               // shrinks the columns, it never pushes the last one off-screen.
-              <div key={column.id} className="animate-rise-lg flex flex-shrink-0 lg:flex-1 lg:min-w-0">
+              <div
+                key={column.id}
+                data-column-id={column.id}
+                className="animate-rise-lg flex flex-shrink-0 lg:flex-1 lg:min-w-0"
+              >
                 <BoardColumn
                   column={column}
                   projects={projects}
