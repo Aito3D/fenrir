@@ -28,6 +28,20 @@ async def _user(db, name, perms=("aito:read", "aito:update")):
     return user
 
 
+@pytest.fixture(autouse=True)
+def reset_sweep_gates():
+    """The sweeps' hourly gates are module state: reset them around every
+    test so a test's pass never closes the gate for the next one in the same
+    xdist worker (mirrors test_aito_invoice_sweep.py's reset)."""
+    from backend.app.services import aito_invoice_sweep
+
+    aito_invoice_sweep._last_run = 0.0
+    aito_invoice_sweep._last_inbox_run = 0.0
+    yield
+    aito_invoice_sweep._last_run = 0.0
+    aito_invoice_sweep._last_inbox_run = 0.0
+
+
 @pytest.fixture
 def pushes(monkeypatch):
     sent: list[tuple[int, dict]] = []
@@ -106,8 +120,72 @@ async def test_rows_roll_back_with_the_event(async_client, db_session):
     db_session.add(AitoWatch(user_id=alice.id, project_id=p["id"], kinds_json=["aito.quote_accepted"]))
     await db_session.commit()
     await record(db_session, p["id"], "quote.accepted", actor_class="client")
+    assert db_session.info["inbox_users"] == {alice.id}
     await db_session.rollback()
     assert (await db_session.execute(select(Notification))).scalars().first() is None
+    assert not db_session.info.get("inbox_users")  # nobody is told about a row that never landed
+
+
+@pytest.mark.asyncio
+async def test_a_failing_commit_after_a_fan_out_leaves_no_pending_push(async_client, db_session, pushes):
+    """The commit itself fails (here a duplicate watch trips the unique
+    constraint) and the caller rolls back, as every commit site does: the
+    recipients noted by fan_out go with the rows, so a later drain on the
+    same session pushes nothing."""
+    from sqlalchemy.exc import IntegrityError
+
+    alice = await _user(db_session, "alice")
+    p = await _create_with_tasks(async_client, [])
+    db_session.add(AitoWatch(user_id=alice.id, project_id=p["id"], kinds_json=["aito.quote_accepted"]))
+    await db_session.commit()
+
+    await record(db_session, p["id"], "quote.accepted", actor_class="client")
+    assert db_session.info["inbox_users"] == {alice.id}
+    db_session.add(AitoWatch(user_id=alice.id, project_id=p["id"], kinds_json=[]))
+    with pytest.raises(IntegrityError):
+        await db_session.commit()
+    await db_session.rollback()
+
+    assert not db_session.info.get("inbox_users")
+    await inbox.broadcast_pending(db_session)
+    assert pushes == []
+    assert (await db_session.execute(select(Notification))).scalars().first() is None
+
+
+@pytest.mark.asyncio
+async def test_a_rolled_back_savepoint_keeps_the_ids_noted_before_it(async_client, db_session):
+    """Only the outermost rollback forgets: a savepoint rolled back after the
+    fan-out leaves the event's row, so its recipient must still be nudged."""
+    alice = await _user(db_session, "alice")
+    p = await _create_with_tasks(async_client, [])
+    db_session.add(AitoWatch(user_id=alice.id, project_id=p["id"], kinds_json=["aito.quote_accepted"]))
+    await db_session.commit()
+
+    await record(db_session, p["id"], "quote.accepted", actor_class="client")
+    savepoint = await db_session.begin_nested()
+    await savepoint.rollback()
+    assert db_session.info["inbox_users"] == {alice.id}
+    await db_session.commit()
+    assert [r.user_id for r in (await db_session.execute(select(Notification))).scalars()] == [alice.id]
+
+
+@pytest.mark.asyncio
+async def test_commit_and_wake_drains_the_pending_pushes(async_client, db_session, pushes):
+    """Every route that commits through `_commit_and_wake` nudges the
+    recipients its events fanned out to — after the commit, not before."""
+    from backend.app.api.routes.aito import _commit_and_wake
+
+    alice = await _user(db_session, "alice")
+    p = await _create_with_tasks(async_client, [])
+    db_session.add(AitoWatch(user_id=alice.id, project_id=p["id"], kinds_json=["aito.quote_accepted"]))
+    await db_session.commit()
+
+    await record(db_session, p["id"], "quote.accepted", actor_class="client")
+    assert pushes == []
+    await _commit_and_wake(db_session, False)
+    assert pushes == [(alice.id, {"type": "inbox_changed", "user_ids": [alice.id]})]
+    assert not db_session.info.get("inbox_users")
+    assert [r.user_id for r in (await db_session.execute(select(Notification))).scalars()] == [alice.id]
 
 
 @pytest.mark.asyncio

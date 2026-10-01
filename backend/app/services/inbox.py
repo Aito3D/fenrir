@@ -5,7 +5,8 @@ per-user WebSocket nudge after commit.
 rolled-back event takes its notifications with it. ``fan_out`` only notes the
 recipients on ``db.info["inbox_users"]``; whoever commits calls
 ``broadcast_pending`` afterwards, so nobody is told about a row that never
-landed.
+landed. A rollback forgets the noted recipients along with the rows (see
+``_forget_pending_on_rollback``).
 """
 
 from __future__ import annotations
@@ -15,8 +16,9 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, event, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
 from backend.app.core.websocket import ws_manager
 from backend.app.models.aito_project import AitoProject
@@ -31,6 +33,24 @@ logger = logging.getLogger(__name__)
 RETENTION_DAYS = 30
 _READ_PERMISSION = "aito:read"
 _PENDING_KEY = "inbox_users"
+
+
+@event.listens_for(Session, "after_rollback")
+def _forget_pending_on_rollback(session: Session) -> None:
+    """Drop the noted recipients when their rows roll back.
+
+    One listener covers every commit site, including a commit that fails and
+    is rolled back by its caller: otherwise the ids would survive on
+    ``session.info`` until the next drain on that session (a long-lived sync
+    loop session, say) and push a nudge about a row that never landed.
+    ``after_rollback`` also fires for a savepoint, which is still the current
+    transaction when it does: that one is skipped, because rows fanned out
+    before the savepoint survive it. An id whose row was inside the savepoint
+    stays, which costs one spurious refetch and nothing else.
+    """
+    if session.in_nested_transaction():
+        return
+    session.info.pop(_PENDING_KEY, None)
 
 
 @dataclass(frozen=True)
