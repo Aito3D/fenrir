@@ -377,3 +377,102 @@ describe('useWebRTCStream frame monitor thresholds and connection timeout (T-022
     unmount();
   });
 });
+
+/**
+ * T-017: the catch block had no attempt guard, so a superseded attempt's
+ * rejection could tear down the live connection it had already been replaced
+ * by (e.g. the grid Restart button firing while the old attempt is still
+ * awaiting the offer). connect() now hoists `pc` out of the try so the catch
+ * block can compare it against pcRef.current, the same guard already used
+ * after the webrtcOffer await.
+ */
+describe('useWebRTCStream stale-attempt supersede guard (T-017)', () => {
+  beforeEach(() => {
+    lastPc = null;
+    vi.stubGlobal('RTCPeerConnection', FakePeerConnection);
+    vi.mocked(api.webrtcOffer).mockReset();
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  function renderRestartable(initialRestartKey: number) {
+    const videoRef = { current: document.createElement('video') };
+    videoRef.current.play = vi.fn().mockResolvedValue(undefined);
+    const rendered = renderHook(
+      ({ restartKey }: { restartKey: number }) => useWebRTCStream({ printerId: 1, enabled: true, videoRef, restartKey }),
+      { initialProps: { restartKey: initialRestartKey } },
+    );
+    return { ...rendered, videoRef };
+  }
+
+  it("a superseded attempt's later rejection does not error, reconnect, or close the new connection", async () => {
+    let rejectFirstOffer: ((reason: unknown) => void) | null = null;
+    let offerCalls = 0;
+    vi.mocked(api.webrtcOffer).mockImplementation(() => {
+      offerCalls += 1;
+      if (offerCalls === 1) {
+        // Attempt 1's offer hangs — never resolves on its own, giving the
+        // test control over exactly when it rejects (mirrors an
+        // InvalidStateError on a since-closed pc, or an HTTP failure).
+        return new Promise((_resolve, reject) => {
+          rejectFirstOffer = reject;
+        });
+      }
+      return Promise.resolve({ type: 'answer', sdp: 'v=0' });
+    });
+
+    const { result, rerender, unmount } = renderRestartable(0);
+
+    // Attempt 1 reaches the hung offer await.
+    await pollUntil(() => offerCalls >= 1);
+    const pc1 = lastPc!;
+
+    // Supersede attempt 1 (e.g. the grid Restart button, or a suspend/
+    // resume) while it is still awaiting the offer: the effect cleanup
+    // closes pc1 and a fresh attempt (pc2) starts.
+    rerender({ restartKey: 1 });
+    await pollUntil(() => offerCalls >= 2 && lastPc !== pc1);
+    const pc2 = lastPc!;
+    const pc2CloseSpy = vi.spyOn(pc2, 'close');
+
+    // Attempt 1's stale await now rejects — must not affect the now-live pc2.
+    await act(async () => {
+      rejectFirstOffer!(new Error('stale attempt rejected'));
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(result.current.hasError).toBe(false);
+    expect(result.current.isReconnecting).toBe(false);
+    expect(result.current.reconnectAttempt).toBe(0);
+    expect(pc2CloseSpy).not.toHaveBeenCalled();
+
+    // No stray reconnect was scheduled either: advancing well past a full
+    // backoff cycle triggers no additional offer and leaves pc2 alone. Prior
+    // to the fix, the backoff's connect() call would have closed the live
+    // pc2 and started a third attempt.
+    await vi.advanceTimersByTimeAsync(RECONNECT_BASE_DELAY_MS * 8);
+    expect(offerCalls).toBe(2);
+    expect(pc2CloseSpy).not.toHaveBeenCalled();
+    expect(result.current.hasError).toBe(false);
+
+    unmount();
+  });
+
+  it("the current (non-superseded) attempt's rejection still errors and schedules a reconnect", async () => {
+    vi.mocked(api.webrtcOffer).mockRejectedValue(new Error('network error'));
+
+    const { result, unmount } = renderRestartable(0);
+
+    await pollUntil(() => result.current.hasError === true);
+
+    expect(result.current.isLoading).toBe(false);
+    expect(result.current.isConnected).toBe(false);
+    expect(result.current.isReconnecting).toBe(true);
+    expect(result.current.reconnectAttempt).toBe(1);
+    unmount();
+  });
+});

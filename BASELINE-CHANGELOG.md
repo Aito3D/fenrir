@@ -173,3 +173,91 @@ disconnect because it happens before any await in `finally:`).
 
 - Golden probes re-recorded: none (13/13 match).
 - SURFACE.md sections regenerated: none (private names only).
+
+## T-016 — grid-stream request times out when response headers never arrive (user-approved 2026-09-29)
+
+`startMultiplexedStream` in `frontend/src/hooks/useGridStream.ts` now arms a
+one-shot timer of 45s (module-private `GRID_RESPONSE_HEADERS_TIMEOUT_MS =
+45_000`) right before each `fetch` of `/api/v1/printers/camera/grid-stream`,
+and clears it in a `finally` as soon as `fetch` resolves or rejects. 45s leaves
+15s of headroom over the backend's spawn stagger (up to about 30s on a loaded
+30-printer wall, during which the response headers are legitimately held back)
+and matches the existing 45s mid-stream stall timer, so the longest silent wait
+is the same before and after the body starts. If the timer fires, it sets a
+per-attempt `headersTimedOut` flag and calls `abort()` on that attempt's
+`AbortController`; the rejected `fetch` (an `AbortError`) then reaches the
+existing `catch`, which no longer returns early for an `AbortError` when that
+flag is set. It takes the same path as any other stream failure:
+`scheduleReconnect(ids)` shows the reconnect overlay and countdown and runs the
+exponential backoff, after which a fresh `AbortController` is created and a new
+request goes out. Before this change a request with no response headers (for
+example a half-open TCP connection after a kiosk's Wi-Fi drop) waited
+indefinitely, bounded only by the OS TCP timeout, with frozen frames and no
+reconnect overlay. Unchanged: an abort from unmount/effect re-run or
+`beforeunload` still ends the loop without reconnecting (the flag is only set
+by the timeout); a request that gets its headers within 45s behaves exactly as
+before (the timer is cleared before the status check, and the terminal 4xx
+handling, the 45s body stall timer, the backoff math and the startup timeout
+are untouched). No new export, setting or UI string.
+
+- Golden probes re-recorded: none (13/13 match).
+- SURFACE.md sections regenerated: none (private names only).
+
+## T-017 — connect()'s catch block ignores a superseded attempt's rejection (user-approved 2026-09-30)
+
+Sanctions commit b42fb1570 "refactor(loop-5): T-017 guard connect()'s catch
+block against superseded attempts". `connect()` in
+`frontend/src/hooks/useWebRTCStream.ts` now hoists its local `pc` out of the
+`try` block (declared `let pc: RTCPeerConnection | null = null` before the
+`try`, assigned inside it), so the `catch` block can compare it against
+`pcRef.current` the same way the existing guard after the `webrtcOffer` await
+already does. The `catch` now reads `if (!mountedRef.current ||
+pcRef.current !== pc) return;` instead of just `if (!mountedRef.current)
+return;`. A superseded attempt's later rejection — for example the grid
+Restart button or a suspend/resume changing `restartKey`, or a resume racing
+a still-pending `createOffer`/`setLocalDescription`/`webrtcOffer` from before
+suspend — used to reach the `catch` after `pcRef.current` had already moved on
+to a newer attempt's `pc`, and unconditionally called `setIsLoading(false)`,
+`setHasError(true)`, `setIsConnected(false)` and `scheduleReconnectRef`,
+tearing down or reconnecting the live connection the newer attempt had
+already established. Now that rejection is silently dropped when
+`pcRef.current` no longer points at the attempt's own `pc`. Unchanged: the
+current (non-superseded) attempt's own rejection still sets the error state,
+clears loading/connected, and schedules a reconnect exactly as before (this
+is the `pcRef.current === pc` case); and if the `RTCPeerConnection`
+constructor itself throws, `connect()` had already called `cleanup()` at its
+top, which nulls `pcRef.current`, so the local `pc` (still its initial
+`null`) equals `pcRef.current` (`null`) and the old unconditional error path
+still runs.
+
+- Golden probes re-recorded: none (13/13 match).
+- SURFACE.md sections regenerated: none (private names only).
+
+## T-018 — attemptReconnect cancels a pending reconnect timer before re-arming (user-approved 2026-09-30)
+
+Sanctions commit 1183d51e0 "refactor(loop-5): T-018 fix attemptReconnect
+orphaning a pending reconnect timer". `attemptReconnect` in
+`frontend/src/hooks/useStreamReconnect.ts` now clears any pending
+`reconnectTimerRef.current` (`clearTimeout` + set to `null`) immediately
+before arming the new `setTimeout`, mirroring the cancel-then-restart pattern
+already used a few lines above for `cancelCountdownRef.current`. Before this
+change, two triggers landing inside the same backoff window (for example the
+stall-detection interval and the MJPEG `onError` → `handleStreamError` path
+firing close together) overwrote `reconnectTimerRef.current` with the second
+timer's handle without clearing the first, so the first `setTimeout` was
+still live and unreachable by `clearTimers()`/`reset()`. If `reset()` ran or
+the component unmounted before the first timer's original delay elapsed, that
+orphaned first timer still fired its own `onReconnect()` afterwards,
+restarting an MJPEG fetch nothing had aborted (`CameraPage` /
+`EmbeddedCameraViewer` unmount is the caller-facing case). Now the second
+trigger's own `setTimeout` is the only one left pending, so
+`reset()`/unmount and the existing `clearTimeout` in `clearTimers()` are
+guaranteed to cancel it. Unchanged: which trigger wins when two land in the
+same window (the second trigger's attempt count, restarted countdown display,
+and delay were already what fired, and still are — the only observable
+change is that the first timer can no longer also fire); the single-trigger
+scheduling path; the exponential backoff schedule and its `maxDelay` clamp;
+and everything else `reset()`/unmount already cleared.
+
+- Golden probes re-recorded: none (13/13 match).
+- SURFACE.md sections regenerated: none (private names only).

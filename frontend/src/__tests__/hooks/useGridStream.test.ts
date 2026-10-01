@@ -14,8 +14,7 @@
  * here we only assert that a stream failure schedules a reconnect.
  *
  * NOTE: several behaviors are intentionally NOT pinned here because they're
- * targeted by queued fixes (see PLAN.md T-007): no fetch connect-phase
- * timeout, worker restart re-marking all printers visible, no worker.onerror
+ * targeted by queued fixes (see PLAN.md T-007): worker restart re-marking all printers visible, no worker.onerror
  * handler. Tests below stick to the stable surface: first-frame loading
  * clear, frame parse+dispatch, stream-failure reconnect + startup timeout,
  * visibility forwarding, and unmount teardown.
@@ -91,6 +90,13 @@
  * again, and (b) alongside workerExhausted on every successful network
  * reconnect — so only *consecutive, unrecovered* stalls still exhaust the
  * budget and latch the terminal state, exactly as before.
+ *
+ * T-016 (2026-09-29, user-approved behavior change): the stall timer is only
+ * armed once the response body is being read, so a grid-stream request that
+ * never produced response headers (half-open TCP connection) used to wait
+ * indefinitely. The request is now aborted after 45s without headers and
+ * goes through the same backoff reconnect as any other stream failure; an
+ * unmount abort is still treated as intentional (no reconnect).
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -1414,6 +1420,104 @@ describe('useGridStream', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
 
     unmount();
+  });
+
+  /** A fetch that never produces response headers but rejects like a real fetch once its signal aborts. */
+  function hangingFetchUntilAbort() {
+    return vi.fn((_url: string, init: { signal: AbortSignal }) => new Promise<Response>((_resolve, reject) => {
+      init.signal.addEventListener('abort', () => reject(new DOMException('The operation was aborted.', 'AbortError')));
+    }));
+  }
+
+  it('aborts a request whose response headers never arrive within 45s and enters the backoff reconnect (T-016)', async () => {
+    vi.useFakeTimers();
+    const fetchMock = hangingFetchUntilAbort();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { result, unmount } = renderHook(() =>
+      useGridStream({ printerIdsKey: '1', gridParamsKey: '', restartKey: 0 }),
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const signal = fetchMock.mock.calls[0][1].signal;
+
+    // Just short of the timeout: still waiting, nothing aborted, no reconnect.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(44_999);
+    });
+    expect(signal.aborted).toBe(false);
+    expect(result.current.reconnectingSet.size).toBe(0);
+
+    // The timeout elapses: the hung request is aborted and — unlike an
+    // unmount abort — the reconnect overlay/backoff path runs.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(signal.aborted).toBe(true);
+    expect(result.current.reconnectingSet.has(1)).toBe(true);
+    expect(result.current.reconnectAttempt).toBe(1);
+
+    // After the backoff, a fresh request goes out on a fresh (unaborted) signal.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(RECONNECT_BASE_DELAY_MS);
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1][1].signal.aborted).toBe(false);
+
+    unmount();
+  });
+
+  it('clears the response-headers timeout once headers arrive, so a healthy stream is never aborted by it (T-016)', async () => {
+    vi.useFakeTimers();
+    const { stream, push } = openPushableStream();
+    const fetchMock = vi.fn().mockResolvedValue(fakeResponse(stream));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { result, unmount } = renderHook(() =>
+      useGridStream({ printerIdsKey: '1', gridParamsKey: '', restartKey: 0 }),
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const signal = fetchMock.mock.calls[0][1].signal as AbortSignal;
+
+    // Keep data flowing (so the separate 45s stall timer never fires) well
+    // past the headers timeout: nothing aborts, nothing reconnects.
+    for (let i = 0; i < 6; i++) {
+      push(encodeGridFrame(1, new Uint8Array([i])));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
+    }
+    expect(signal.aborted).toBe(false);
+    expect(result.current.reconnectingSet.size).toBe(0);
+    expect(result.current.reconnectAttempt).toBe(0);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    unmount();
+  });
+
+  it('still treats an unmount abort of a request awaiting headers as intentional: no reconnect (T-016)', async () => {
+    vi.useFakeTimers();
+    const fetchMock = hangingFetchUntilAbort();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { unmount } = renderHook(() =>
+      useGridStream({ printerIdsKey: '1', gridParamsKey: '', restartKey: 0 }),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    unmount();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(120_000);
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('tears down the fetch and worker on unmount', async () => {

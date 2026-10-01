@@ -123,6 +123,88 @@ describe('useStreamReconnect', () => {
     });
   });
 
+  describe('pending reconnect timer (T-018)', () => {
+    it('cancels the first pending reconnect when a second trigger arrives, firing onReconnect exactly once', () => {
+      const onReconnect = vi.fn();
+      const { result } = setup({ onReconnect, initialDelay: 1000, maxDelay: 8000 });
+
+      // First successful connection, then two error triggers within the same delay window
+      // (e.g. the stall interval and the MJPEG onError path both firing close together).
+      act(() => result.current.handleStreamSuccess());
+      act(() => result.current.handleStreamError());
+      expect(result.current.isReconnecting).toBe(true);
+      expect(result.current.reconnectCountdown).toBe(1); // ceil(1000/1000)
+
+      act(() => { vi.advanceTimersByTime(400); });
+      act(() => result.current.handleStreamError());
+      // Second trigger re-arms with the same backoff (attempt count hasn't advanced yet)
+      // and restarts the countdown — this is what the user already observes today.
+      expect(result.current.isReconnecting).toBe(true);
+      expect(result.current.reconnectCountdown).toBe(1);
+
+      // Advance past what would have been the FIRST timer's fire time. Only the
+      // second (most recent) trigger should be armed, so nothing should fire yet.
+      act(() => { vi.advanceTimersByTime(700); }); // total 1100ms since first trigger
+      expect(onReconnect).not.toHaveBeenCalled();
+
+      // Advance past the second timer's fire time (armed at t=400, delay 1000 -> fires at t=1400)
+      act(() => { vi.advanceTimersByTime(400); }); // total 1500ms since first trigger
+      expect(onReconnect).toHaveBeenCalledTimes(1);
+      expect(result.current.reconnectAttempts).toBe(1);
+    });
+
+    it('never fires onReconnect if reset() happens before the (re-armed) pending reconnect delay elapses', () => {
+      const onReconnect = vi.fn();
+      const { result } = setup({ onReconnect, initialDelay: 1000, maxDelay: 8000 });
+
+      act(() => result.current.handleStreamSuccess());
+      act(() => result.current.handleStreamError());
+      act(() => { vi.advanceTimersByTime(400); });
+      act(() => result.current.handleStreamError());
+
+      act(() => result.current.reset());
+
+      // Advance well past both the original and the re-armed timer's fire times.
+      act(() => { vi.advanceTimersByTime(3000); });
+      expect(onReconnect).not.toHaveBeenCalled();
+    });
+
+    it('never fires onReconnect if the component unmounts before the (re-armed) pending reconnect delay elapses', () => {
+      const onReconnect = vi.fn();
+      const { result, unmount } = setup({ onReconnect, initialDelay: 1000, maxDelay: 8000 });
+
+      act(() => result.current.handleStreamSuccess());
+      act(() => result.current.handleStreamError());
+      act(() => { vi.advanceTimersByTime(400); });
+      act(() => result.current.handleStreamError());
+
+      unmount();
+
+      // Advance well past both the original and the re-armed timer's fire times.
+      act(() => { vi.advanceTimersByTime(3000); });
+      expect(onReconnect).not.toHaveBeenCalled();
+    });
+
+    it('schedules a fresh reconnect normally after a pending one has already fired', () => {
+      const onReconnect = vi.fn();
+      const { result } = setup({ onReconnect, initialDelay: 1000, maxDelay: 8000 });
+
+      act(() => result.current.handleStreamSuccess());
+      act(() => result.current.handleStreamError());
+      act(() => { vi.advanceTimersByTime(1100); });
+      expect(onReconnect).toHaveBeenCalledTimes(1);
+      expect(result.current.reconnectAttempts).toBe(1);
+
+      // A later trigger (after the pending one fired) should schedule normally,
+      // using the next backoff step.
+      act(() => result.current.handleStreamError());
+      expect(result.current.isReconnecting).toBe(true);
+      act(() => { vi.advanceTimersByTime(2100); }); // 1000 * 2^1 = 2000
+      expect(onReconnect).toHaveBeenCalledTimes(2);
+      expect(result.current.reconnectAttempts).toBe(2);
+    });
+  });
+
   describe('returned API', () => {
     it('returns all expected functions', () => {
       const { result } = setup();

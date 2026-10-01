@@ -11,6 +11,13 @@ const MAX_WORKER_RESTARTS = 3;
 
 // Grid stream constants
 const GRID_FRAME_HEADER_SIZE = 8;          // [4B printer_id LE][4B length LE]
+// Upper bound on waiting for the grid stream response headers (T-016). The
+// backend holds the response back for its per-printer spawn stagger (up to
+// ~30s on a loaded 30-printer wall), so this leaves 15s of headroom over that
+// and matches the 45s mid-stream stall timer below. A request still without
+// headers after this long (e.g. a half-open TCP connection after a kiosk's
+// Wi-Fi drop) is aborted and goes through the normal backoff reconnect.
+const GRID_RESPONSE_HEADERS_TIMEOUT_MS = 45_000;
 
 export interface ParsedFrame {
   printerId: number;
@@ -742,6 +749,10 @@ export function useGridStream({ printerIdsKey, gridParamsKey, restartKey }: UseG
       // Declared outside try so catch can clear it on error (prevents leaked timers
       // from cancelling a new connection's reader after reconnect).
       let stallTimer: ReturnType<typeof setTimeout> | null = null;
+      // Set only by the response-headers timeout below, so its abort is
+      // reconnected like any other failure instead of being mistaken for an
+      // intentional abort (unmount / beforeunload), which ends the loop.
+      let headersTimedOut = false;
       const resetStallTimer = () => {
         if (stallTimer !== null) clearTimeout(stallTimer);
         stallTimer = setTimeout(() => {
@@ -754,7 +765,19 @@ export function useGridStream({ printerIdsKey, gridParamsKey, restartKey }: UseG
         const token = getAuthToken();
         if (token) gridHeaders['Authorization'] = `Bearer ${token}`;
         const streamUrl = `/api/v1/printers/camera/grid-stream?ids=${ids.join(',')}`;
-        const res = await fetch(streamUrl, { signal: controllerRef.current.signal, headers: gridHeaders });
+        // Bound the wait for response headers: before getReader() the stall
+        // timer isn't armed, so nothing else would ever time this request out.
+        const controller = controllerRef.current;
+        const headersTimer = setTimeout(() => {
+          headersTimedOut = true;
+          controller.abort();
+        }, GRID_RESPONSE_HEADERS_TIMEOUT_MS);
+        let res: Response;
+        try {
+          res = await fetch(streamUrl, { signal: controller.signal, headers: gridHeaders });
+        } finally {
+          clearTimeout(headersTimer);
+        }
         if (!res.ok || !res.body) {
           // 4xx other than 408 (request timeout) and 429 (rate limited) won't
           // be fixed by retrying — a malformed request (too many printers),
@@ -901,7 +924,7 @@ export function useGridStream({ printerIdsKey, gridParamsKey, restartKey }: UseG
       } catch (e: unknown) {
         if (stallTimer !== null) clearTimeout(stallTimer);
 
-        if (e instanceof DOMException && e.name === 'AbortError') return;
+        if (e instanceof DOMException && e.name === 'AbortError' && !headersTimedOut) return;
         if (!active) return;
 
         // Exponential backoff reconnect via sub-hook

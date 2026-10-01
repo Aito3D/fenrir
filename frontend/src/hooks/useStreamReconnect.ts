@@ -74,6 +74,7 @@ export function useStreamReconnect({
     if (cancelCountdownRef.current) cancelCountdownRef.current();
     cancelCountdownRef.current = startCountdown(delay, setReconnectCountdown);
 
+    if (reconnectTimerRef.current) { clearTimeout(reconnectTimerRef.current); reconnectTimerRef.current = null; }
     reconnectTimerRef.current = setTimeout(() => {
       reconnectAttemptsRef.current += 1;
       setReconnectAttempts(reconnectAttemptsRef.current);
