@@ -320,3 +320,52 @@ on the grid stream.
   OpenAPI parameters beyond the security/X-API-Key ones the route already had).
 - SURFACE.md sections regenerated: "Route signatures — grid stream, hub status,
   stream token, stream, stop" (`camera_hub_status` gains the `api_key` line).
+
+## T-026 — webrtc_offer scoped to the API key's printer allowlist (user-approved 2026-10-01)
+
+Sanctions commit <this commit> "refactor(loop-8): T-026 scope webrtc_offer to
+the API key's printer allowlist (user-approved behavior change)".
+`POST /printers/{printer_id}/camera/webrtc` (`webrtc_offer` in
+`backend/app/api/routes/camera.py`) only checked CAMERA_VIEW, so an API key
+restricted to a `printer_ids` allowlist got a live WebRTC answer for any
+printer. The route keeps its `RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW)`
+gate and gains a second dependency, `__: None = Depends(_require_webrtc_printer_access)`,
+which resolves the caller's key through `_grid_stream_api_key_if_auth_enabled`
+(the T-004 / grid-stream helper) and applies `check_printer_access(api_key,
+printer_id)`. A restricted key (X-API-Key or `Authorization: Bearer bb_…`)
+whose allowlist excludes the path's printer now gets 403
+"API key does not have access to printer {id}" before go2rtc is touched.
+`RequirePrinterPermissionIfAuthEnabled` was deliberately NOT used: it reads
+and validates an attached key even when auth is disabled, which would turn
+auth-off requests carrying a restricted or stale key into 403/401.
+Unchanged: JWT users, global keys (`printer_ids=None`), restricted keys on an
+allowed printer, unauthenticated callers (401), auth-disabled callers (no key
+header is read), the request/response shape and every 400/404/503 path.
+
+- Golden probes re-recorded: none (13/13 match before and after).
+- SURFACE.md sections regenerated: none (`gen_surface_c22.sh` output identical).
+
+## T-027 — params-change replacement waits for the displaced producer's teardown (user-approved 2026-10-01)
+
+Sanctions commit <this commit> "refactor(loop-8): T-027 await the displaced
+producer's teardown on a params-change restart (user-approved behavior change)".
+In `SharedStreamHub._replace_producer` (`backend/app/api/routes/camera.py`),
+the phase-3 branch that finds a concurrently created alive entry which
+`reuse_existing` rejects (different params on a `restart()`) still marks it
+dead, cancels its task and removes it from `_streams`, but now also records
+that task through `_track_teardown(self._tearing_down, ...)` and, when it is
+still running, loops back to await it via `_await_displaced_task` (same 8s
+bound, then force-cancel) before re-checking under the lock and creating the
+new entry. Before this change that branch spawned the new producer at once,
+so two ffmpeg/RTSP sessions overlapped on one camera (e.g. two concurrent
+forced grid streams resolving different fps/quality), and a third caller
+arriving meanwhile did not wait for the displaced task either. Users may see
+a concurrent forced quality change take up to 8s longer to start its new
+stream. Unchanged: every other detach site and path of the hub, the reuse
+rules, producer parameters, frame delivery, every timeout, the `_run_producer`
+finally identity check (it never removes the replacement entry), the
+hub-status payload, public method names and return values, and the caller's
+own cancellation propagating.
+
+- Golden probes re-recorded: none (13/13 match).
+- SURFACE.md sections regenerated: none (`gen_surface_c22.sh` output identical).

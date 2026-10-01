@@ -141,24 +141,66 @@ class TestSharedStreamHubRestart:
         await hub.stop_all()
 
     @pytest.mark.asyncio
-    async def test_restart_identity_check_prevents_stale_removal(self):
-        """Producer's finally block uses identity check to avoid removing a replacement entry."""
+    async def test_restart_identity_check_prevents_stale_removal(self, monkeypatch):
+        """Old producer's finally runs AFTER its replacement is registered and must not remove it."""
+        from backend.app.api.routes import camera as camera_mod
         from backend.app.api.routes.camera import SharedStreamHub
 
         hub = SharedStreamHub()
-        # Start a producer that will finish quickly
-        starter1 = _make_frame_source(frames=2, interval=0.01)
-        entry1 = await hub.get_or_start(1, starter1, params_key="old")
+        running, release = asyncio.Event(), asyncio.Event()
 
-        # Let the first producer finish naturally
-        await asyncio.sleep(0.1)
+        def gated_starter():
+            async def source():
+                try:
+                    yield b"old"
+                    running.set()
+                    await asyncio.Event().wait()
+                finally:
+                    # Hold the old producer's teardown open until released.
+                    await release.wait()
 
-        # Now start a new one — it should NOT be removed when old producer's finally runs
-        starter2 = _make_frame_source(frames=100, interval=0.1)
-        entry2 = await hub.get_or_start(1, starter2, params_key="new")
+            return source()
+
+        entry1 = await hub.get_or_start(1, gated_starter, params_key="old")
+        await running.wait()
+
+        # Simulate the displaced-task wait giving up (its bounded timeout) while
+        # entry1's finally is still pending: stop tracking the teardown so the
+        # replacement registers before that finally runs.
+        async def no_wait(_task, timeout):
+            hub._tearing_down.pop(1, None)
+
+        monkeypatch.setattr(camera_mod, "_await_displaced_task", no_wait)
+
+        entry2 = await hub.restart(1, _make_frame_source(frames=100, interval=0.1), params_key="new")
+        assert entry2 is not entry1
+        assert hub._streams[1] is entry2
+        assert not entry1.task.done()
+
+        # Now let entry1's finally run, after the replacement exists.
+        release.set()
+        await asyncio.wait({entry1.task}, timeout=5.0)
+        assert entry1.task.done()
+
+        assert entry1.alive is False
+        assert hub._streams[1] is entry2
+        assert entry2.alive is True
+        await hub.stop_all()
+
+    @pytest.mark.asyncio
+    async def test_replacement_after_old_producer_finished_naturally(self):
+        """Old producer's finally has already run before the replacement is created."""
+        from backend.app.api.routes.camera import SharedStreamHub
+
+        hub = SharedStreamHub()
+        entry1 = await hub.get_or_start(1, _make_frame_source(frames=2, interval=0), params_key="old")
+        await asyncio.wait({entry1.task}, timeout=5.0)
+        assert entry1.task.done()
+        assert 1 not in hub._streams
+
+        entry2 = await hub.get_or_start(1, _make_frame_source(frames=100, interval=0.1), params_key="new")
 
         assert entry2 is not entry1
-        assert 1 in hub._streams
         assert hub._streams[1] is entry2
         await hub.stop_all()
 
@@ -1257,3 +1299,157 @@ class TestTrackTeardown:
         _track_teardown(registry, 1, None)
         _track_teardown(registry, 1, done)
         assert registry == {}
+
+
+class TestParamsChangeReplaceWaitsForTeardown:
+    """T-027: when _replace_producer's phase 3 finds a concurrently created producer
+    with the wrong params, it records that producer in ``_tearing_down`` and waits
+    for its teardown before starting the replacement, so two ffmpeg/RTSP sessions
+    never overlap on one camera — and any other caller arriving meanwhile waits too.
+    """
+
+    async def _drive_to_phase3_cancel(self, monkeypatch):
+        """Restart A (params p1) and restart B (params p2) race on a dying producer.
+
+        A wins phase 3 and starts producer P1; B is held after its phase-2 wait
+        until P1 is running, then reaches phase 3 and finds P1 with the wrong params.
+        Returns once B has cancelled P1 and P1's (gated) teardown is in progress.
+        """
+        from backend.app.api.routes import camera as camera_mod
+        from backend.app.api.routes.camera import SharedStreamHub, _SharedStream
+
+        helpers = TestSharedStreamHubWaitsForTeardown
+        hub = SharedStreamHub()
+        old_started, old_release = asyncio.Event(), asyncio.Event()
+        old = _SharedStream(params_key="old")
+        old.task = helpers._slow_teardown_task(old_started, old_release)
+        hub._streams[1] = old
+        await old_started.wait()
+
+        p1_running, p1_release, never = asyncio.Event(), asyncio.Event(), asyncio.Event()
+        p1_teardown_done: list[int] = []
+
+        def p1_starter():
+            async def source():
+                try:
+                    yield b"p1"
+                    p1_running.set()
+                    await never.wait()
+                finally:
+                    try:
+                        await asyncio.wait_for(p1_release.wait(), timeout=3.0)
+                    except asyncio.TimeoutError:
+                        pass
+                    p1_teardown_done.append(1)
+
+            return source()
+
+        p2_starts: list[int] = []
+
+        def p2_starter():
+            async def source():
+                # Record how many P1 teardowns had completed when P2 dialed the camera.
+                p2_starts.append(len(p1_teardown_done))
+                while True:
+                    yield b"p2"
+                    await never.wait()
+
+            return source()
+
+        b_gate = asyncio.Event()
+        b_holder: list[asyncio.Task] = []
+        real_wait = camera_mod._await_displaced_task
+
+        async def gated_wait(task, timeout):
+            await real_wait(task, timeout)
+            if b_holder and asyncio.current_task() is b_holder[0]:
+                await b_gate.wait()
+
+        monkeypatch.setattr(camera_mod, "_await_displaced_task", gated_wait)
+
+        a = asyncio.create_task(hub.restart(1, p1_starter, params_key="p1"))
+        await helpers._settle()
+        b = asyncio.create_task(hub.restart(1, p2_starter, params_key="p2"))
+        b_holder.append(b)
+        await helpers._settle()
+        assert not a.done() and not b.done()
+
+        old_release.set()
+        p1_entry = await a
+        await p1_running.wait()
+        assert p1_entry.params_key == "p1"
+        assert hub._streams[1] is p1_entry
+        assert hub._tearing_down == {}
+
+        b_gate.set()
+        await helpers._settle()
+        # B cancelled P1, but P1's teardown is still gated.
+        assert p1_entry.alive is False
+        assert not p1_entry.task.done()
+        assert p1_teardown_done == []
+        return hub, b, p1_entry, p1_release, p2_starts, p1_teardown_done
+
+    @pytest.mark.asyncio
+    async def test_second_producer_starts_only_after_first_finished(self, monkeypatch):
+        hub, b, p1_entry, p1_release, p2_starts, p1_teardown_done = await self._drive_to_phase3_cancel(monkeypatch)
+        helpers = TestSharedStreamHubWaitsForTeardown
+
+        # While P1 is tearing down, B must neither register nor start P2.
+        assert not b.done()
+        assert 1 not in hub._streams
+        assert p2_starts == []
+
+        p1_release.set()
+        p2_entry = await b
+        await helpers._settle()
+
+        assert p1_entry.task.done()
+        assert p1_teardown_done == [1]
+        assert p2_entry.params_key == "p2"
+        assert p2_entry.alive is True
+        # P2 dialed only after P1's teardown completed.
+        assert p2_starts == [1]
+        # P1's finally identity check did not remove the replacement entry.
+        assert hub._streams[1] is p2_entry
+        await hub.stop_all()
+
+    @pytest.mark.asyncio
+    async def test_displaced_task_is_tracked_while_tearing_down(self, monkeypatch):
+        hub, b, p1_entry, p1_release, _p2_starts, _done = await self._drive_to_phase3_cancel(monkeypatch)
+        helpers = TestSharedStreamHubWaitsForTeardown
+
+        assert hub._tearing_down[1] is p1_entry.task
+
+        p1_release.set()
+        p2_entry = await b
+        await helpers._settle()
+
+        assert 1 not in hub._tearing_down
+        assert hub._streams[1] is p2_entry
+        await hub.stop_all()
+
+    @pytest.mark.asyncio
+    async def test_third_caller_waits_for_displaced_task(self, monkeypatch):
+        hub, b, p1_entry, p1_release, p2_starts, p1_teardown_done = await self._drive_to_phase3_cancel(monkeypatch)
+        helpers = TestSharedStreamHubWaitsForTeardown
+
+        calls: list[int] = []
+        c = asyncio.create_task(hub.get_or_start(1, helpers._counting_starter(calls), params_key="c"))
+        await helpers._settle()
+
+        # The third caller sees no stream but must wait on P1's teardown too.
+        assert not c.done()
+        assert calls == []
+        assert 1 not in hub._streams
+
+        p1_release.set()
+        p2_entry, c_entry = await asyncio.gather(b, c)
+        await helpers._settle()
+
+        assert p1_teardown_done == [1]
+        assert p2_starts == [1]
+        # The third caller reuses B's producer rather than dialing a second session.
+        assert c_entry is p2_entry
+        assert calls == []
+        assert hub._streams[1] is p2_entry
+        await hub.stop_all()

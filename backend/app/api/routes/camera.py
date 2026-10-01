@@ -726,8 +726,9 @@ class SharedStreamHub:
         Phase 2 (no lock): await the old task so its finally block (ffmpeg kill)
         completes before a new producer is started for the same printer.
         Phase 3 (re-acquire lock): guard against a concurrently created entry —
-        if `reuse_existing` accepts it, return it as-is; otherwise cancel it and
-        register a fresh producer for `params_key`.
+        if `reuse_existing` accepts it, return it as-is; otherwise cancel it, record
+        it in `_tearing_down`, await its teardown, and only then register a fresh
+        producer for `params_key`.
 
         Any producer still tearing down for this printer (recorded in
         `_tearing_down` by whichever caller detached it, or a dead entry still
@@ -747,11 +748,17 @@ class SharedStreamHub:
                     if reuse_existing(existing):
                         existing.last_accessed = time.monotonic()
                         return existing
-                    # Not reusable (e.g. different params) — cancel it and create a new one
+                    # Not reusable (e.g. different params) — cancel it, record its
+                    # teardown so every caller waits on it, and await it (outside the
+                    # lock) before creating the new entry, like every other detach site.
                     existing.alive = False
                     if existing.task:
                         existing.task.cancel()
+                    _track_teardown(self._tearing_down, printer_id, existing.task)
                     del self._streams[printer_id]
+                    pending = existing.task
+                    if pending is not None and not pending.done():
+                        continue
                 else:
                     # Another producer's teardown still running — wait for it (outside the lock)
                     pending = self._tearing_down.get(printer_id)
@@ -3012,12 +3019,28 @@ async def camera_snapshot(
             temp_path.unlink()
 
 
+async def _require_webrtc_printer_access(
+    printer_id: int,
+    api_key: APIKey | None = Depends(_grid_stream_api_key_if_auth_enabled),
+) -> None:
+    """Enforce an API key's ``printer_ids`` allowlist on the WebRTC offer.
+
+    Same ``check_printer_access`` boundary as ``RequirePrinterPermissionIfAuthEnabled``,
+    but resolved through ``_grid_stream_api_key_if_auth_enabled`` so that with
+    auth disabled an attached key is never looked at — auth-off requests keep
+    sailing through exactly as they did under the plain CAMERA_VIEW dependency.
+    """
+    if api_key is not None:
+        check_printer_access(api_key, printer_id)
+
+
 @router.post("/{printer_id}/camera/webrtc")
 async def webrtc_offer(
     printer_id: int,
     body: "WebRTCOfferRequest" = Body(...),
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
+    __: None = Depends(_require_webrtc_printer_access),
 ):
     """Exchange WebRTC SDP offer/answer via go2rtc for zero-transcode streaming.
 

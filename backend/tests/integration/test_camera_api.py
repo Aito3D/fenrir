@@ -1313,6 +1313,146 @@ class TestCameraStreamTokenAPIKeyPrinterScope:
         assert response.json()["token"]
 
 
+class TestWebRTCOfferAPIKeyPrinterScope:
+    """T-026: POST /{printer_id}/camera/webrtc must honour an API key's
+    ``printer_ids`` allowlist (``check_printer_access``, auth-on only).
+    Before the fix the route used ``RequirePermissionIfAuthEnabled`` and a
+    key scoped to one printer got a live WebRTC answer for any printer.
+    Unrestricted keys, JWT users and auth-off requests are unchanged."""
+
+    _make_key = staticmethod(TestCameraGridStreamAPIKeyPrinterScope._make_key)
+    _enable_auth = staticmethod(TestCameraGridStreamAPIKeyPrinterScope._enable_auth)
+
+    _ANSWER = {"type": "answer", "sdp": "v=0-answer"}
+
+    @classmethod
+    def _go2rtc_mock(cls):
+        mock = MagicMock()
+        mock.ready = True
+        mock.ensure_stream = AsyncMock(return_value=True)
+        mock.webrtc_offer = AsyncMock(return_value=cls._ANSWER)
+        return mock
+
+    async def _offer(self, async_client: AsyncClient, printer_id: int, headers: dict | None = None):
+        mock = self._go2rtc_mock()
+        with patch("backend.app.services.go2rtc.go2rtc_service", mock):
+            response = await async_client.post(
+                f"/api/v1/printers/{printer_id}/camera/webrtc",
+                json={"sdp": "v=0-offer"},
+                headers=headers or {},
+            )
+        return response, mock
+
+    def test_route_uses_the_printer_scoped_dependency(self):
+        from backend.app.api.routes.camera import router
+
+        route = next(r for r in router.routes if getattr(r, "path", "") == "/printers/{printer_id}/camera/webrtc")
+        qualnames = [d.call.__qualname__ for d in route.dependant.dependencies]
+        assert "require_permission_if_auth_enabled.<locals>.permission_checker" in qualnames
+        assert "_require_webrtc_printer_access" in qualnames
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_restricted_key_on_another_printer_is_refused(
+        self, async_client: AsyncClient, db_session, printer_factory
+    ):
+        await self._enable_auth(async_client, username="rtcscope1")
+        printer = await printer_factory()
+        other = await printer_factory()
+        full_key = await self._make_key(db_session, printer_ids=[other.id])
+
+        response, mock = await self._offer(async_client, printer.id, {"X-API-Key": full_key})
+
+        assert response.status_code == 403
+        assert f"printer {printer.id}" in response.json()["detail"]
+        mock.ensure_stream.assert_not_awaited()
+        mock.webrtc_offer.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_restricted_key_via_bearer_on_another_printer_is_refused(
+        self, async_client: AsyncClient, db_session, printer_factory
+    ):
+        await self._enable_auth(async_client, username="rtcscope2")
+        printer = await printer_factory()
+        other = await printer_factory()
+        full_key = await self._make_key(db_session, printer_ids=[other.id])
+
+        response, mock = await self._offer(async_client, printer.id, {"Authorization": f"Bearer {full_key}"})
+
+        assert response.status_code == 403
+        mock.webrtc_offer.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_restricted_key_on_an_allowed_printer_is_unchanged(
+        self, async_client: AsyncClient, db_session, printer_factory
+    ):
+        await self._enable_auth(async_client, username="rtcscope3")
+        printer = await printer_factory()
+        full_key = await self._make_key(db_session, printer_ids=[printer.id])
+
+        response, mock = await self._offer(async_client, printer.id, {"X-API-Key": full_key})
+
+        assert response.status_code == 200, response.text
+        assert response.json() == self._ANSWER
+        mock.webrtc_offer.assert_awaited_once_with(f"printer_{printer.id}", "v=0-offer")
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_unrestricted_key_is_unchanged(self, async_client: AsyncClient, db_session, printer_factory):
+        await self._enable_auth(async_client, username="rtcscope4")
+        printer = await printer_factory()
+        full_key = await self._make_key(db_session, printer_ids=None)
+
+        response, _mock = await self._offer(async_client, printer.id, {"X-API-Key": full_key})
+
+        assert response.status_code == 200, response.text
+        assert response.json() == self._ANSWER
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_jwt_user_is_unchanged(self, async_client: AsyncClient, printer_factory):
+        await self._enable_auth(async_client, username="rtcscope5")
+        login = await async_client.post(
+            "/api/v1/auth/login",
+            json={"username": "rtcscope5", "password": "AdminPass1!"},
+        )
+        token = login.json()["access_token"]
+        printer = await printer_factory()
+
+        response, _mock = await self._offer(async_client, printer.id, {"Authorization": f"Bearer {token}"})
+
+        assert response.status_code == 200, response.text
+        assert response.json() == self._ANSWER
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_unauthenticated_caller_is_still_refused(self, async_client: AsyncClient, printer_factory):
+        await self._enable_auth(async_client, username="rtcscope6")
+        printer = await printer_factory()
+
+        response, mock = await self._offer(async_client, printer.id)
+
+        assert response.status_code == 401
+        mock.webrtc_offer.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_auth_disabled_restricted_key_is_unchanged(
+        self, async_client: AsyncClient, db_session, printer_factory
+    ):
+        """Auth off: the key is never consulted, same as before T-026."""
+        printer = await printer_factory()
+        other = await printer_factory()
+        full_key = await self._make_key(db_session, printer_ids=[other.id])
+
+        response, _mock = await self._offer(async_client, printer.id, {"X-API-Key": full_key})
+
+        assert response.status_code == 200, response.text
+        assert response.json() == self._ANSWER
+
+
 class TestCameraStreamValidation:
     """Tests for single-stream scale validation at /{id}/camera/stream."""
 
