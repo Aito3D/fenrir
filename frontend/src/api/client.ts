@@ -5743,6 +5743,43 @@ function libraryFilesScopeParams(scope: LibraryFilesScope): URLSearchParams {
   return params;
 }
 
+// Notification inbox (routes/inbox.py). `title` carries the kind string; the
+// bell renders the title from i18n `inbox.kind.*`.
+export interface InboxItem {
+  id: number;
+  kind: string;
+  family: string;
+  title: string;
+  body: string;
+  target_type: string | null;
+  target_id: number | null;
+  created_at: string;
+  read_at: string | null;
+}
+
+export interface InboxPage {
+  items: InboxItem[];
+  // Unread rows in the whole inbox, not just this page.
+  unread: number;
+}
+
+export interface InboxKindInfo {
+  kind: string;
+  family: string;
+  default_on: boolean;
+  available: boolean;
+}
+
+export interface InboxPreferencesUpdate {
+  kinds: string[];
+  sound_kinds: string[];
+  auto_watch: boolean;
+}
+
+export interface InboxPreferences extends InboxPreferencesUpdate {
+  available: InboxKindInfo[];
+}
+
 // API functions
 export const api = {
   // Authentication
@@ -8515,6 +8552,14 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(data),
     }),
+
+  // Notification inbox
+  getInbox: (before?: number) => request<InboxPage>(before ? `/inbox?before=${before}` : '/inbox'),
+  markInboxRead: (id: number) => request<void>(`/inbox/${id}/read`, { method: 'POST' }),
+  markInboxAllRead: () => request<void>('/inbox/read-all', { method: 'POST' }),
+  getInboxPreferences: () => request<InboxPreferences>('/inbox/preferences'),
+  putInboxPreferences: (body: InboxPreferencesUpdate) =>
+    request<InboxPreferences>('/inbox/preferences', { method: 'PUT', body: JSON.stringify(body) }),
 
   // Aito kanban board
   getAitoProjects: () => request<AitoProject[]>('/aito/'),

@@ -692,6 +692,25 @@ describe('useWebSocket hook', () => {
       vi.unstubAllGlobals();
     });
 
+    it('refetches the inbox on inbox_changed', async () => {
+      const { useWebSocket } = await import('../../hooks/useWebSocket');
+      const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+      renderHook(() => useWebSocket(), {
+        wrapper: createWrapper(queryClient),
+      });
+      const ws = await waitForWs();
+      act(() => {
+        ws.open();
+      });
+      act(() => {
+        ws.simulateMessage({ type: 'inbox_changed', user_ids: [7] });
+      });
+
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['inbox'] });
+      vi.unstubAllGlobals();
+    });
+
     it('ignores pong messages without error', async () => {
       const { useWebSocket } = await import('../../hooks/useWebSocket');
 

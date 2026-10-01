@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
-import { Printer, Archive, ListOrdered, BarChart3, Calculator, Cloud, Settings, Sun, Moon, Monitor, ChevronLeft, ChevronRight, Keyboard, Github, ArrowUpCircle, Wrench, FolderKanban, FolderOpen, Kanban, X, Menu, Info, Plug, Bug, LogOut, Key, Loader2, Disc3, Droplets, ShieldAlert, Globe, Bell, Receipt, type LucideIcon } from 'lucide-react';
+import { Printer, Archive, ListOrdered, BarChart3, Calculator, Cloud, Settings, Sun, Moon, Monitor, ChevronLeft, ChevronRight, Keyboard, ArrowUpCircle, Wrench, FolderKanban, FolderOpen, Kanban, X, Menu, Info, Plug, Bug, LogOut, Key, Loader2, Disc3, Droplets, ShieldAlert, Globe, Bell, Receipt, type LucideIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../contexts/ThemeContext';
 import { KeyboardShortcutsModal } from './KeyboardShortcutsModal';
 import { InstallAppButton } from './InstallAppButton';
+import { NotificationBell } from './NotificationBell';
 import { SwitchbarPopover } from './SwitchbarPopover';
 import { useQuery, useQueries } from '@tanstack/react-query';
 import { api, supportApi, pendingUploadsApi, type Permission } from '../api/client';
@@ -572,6 +573,9 @@ export function Layout() {
               This is the fork's branding and stays — upstream's Fenrir logo
               is deliberately not taken here. */}
           <img src={aito3dLogo} alt="AITO3D" className="ml-3 h-6 w-auto dark:invert dark:hue-rotate-180" />
+          <div className="ml-auto -mr-2">
+            <NotificationBell />
+          </div>
         </header>
       )}
 
@@ -734,6 +738,8 @@ export function Layout() {
             <div className="flex flex-col gap-2 px-2">
               {/* Top row: icons — staggered fade-in on mount */}
               <div className={`flex items-center justify-center gap-1 flex-wrap ${playIntro ? 'stagger-fade-in' : ''}`}>
+                {/* On a phone the bell lives in the top bar; one bell, one chime. */}
+                {!isSidebarCompact && <NotificationBell />}
                 {hasSwitchbarPlugs && (
                   <div className="relative">
                     <button
@@ -772,15 +778,6 @@ export function Layout() {
                   </span>
                 )}
                 <InstallAppButton />
-                <a
-                  href="https://github.com/maziggy/bambuddy"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="p-2 rounded-lg hover:bg-bambu-dark-tertiary transition-colors text-bambu-gray-light hover:text-white"
-                  title={t('nav.viewOnGithub')}
-                >
-                  <Github className="w-5 h-5" />
-                </a>
                 <button
                   onClick={() => setShowShortcuts(true)}
                   className="p-2 rounded-lg hover:bg-bambu-dark-tertiary transition-colors text-bambu-gray-light hover:text-white"
@@ -831,6 +828,7 @@ export function Layout() {
             </div>
           ) : (
             <div className={`flex flex-col items-center gap-1 overflow-y-auto max-h-[50vh] ${playIntro ? 'stagger-fade-in' : ''}`}>
+              <NotificationBell />
               {updateCheck?.update_available && (
                 <button
                   onClick={() => navigate('/settings')}
@@ -878,15 +876,6 @@ export function Layout() {
                 </span>
               )}
               <InstallAppButton />
-              <a
-                href="https://github.com/maziggy/bambuddy"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="p-2 rounded-lg hover:bg-bambu-dark-tertiary transition-colors text-bambu-gray-light hover:text-white"
-                title={t('nav.viewOnGithub')}
-              >
-                <Github className="w-5 h-5" />
-              </a>
               <button
                 onClick={() => setShowShortcuts(true)}
                 className="p-2 rounded-lg hover:bg-bambu-dark-tertiary transition-colors text-bambu-gray-light hover:text-white"

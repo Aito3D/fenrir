@@ -3095,3 +3095,33 @@ tbody .calc-table-row:hover {
     .track-panel:not([data-state='open']) { transform: translateY(100%); }
   }
 }
+
+/* The notification bell: a swing from its hook when a row arrives, and a pop
+   of the badge. Reduced motion keeps the badge and drops both movements. */
+@keyframes bell-ring {
+  0% { transform: rotate(0); }
+  15% { transform: rotate(18deg); }
+  30% { transform: rotate(-16deg); }
+  45% { transform: rotate(12deg); }
+  60% { transform: rotate(-8deg); }
+  75% { transform: rotate(4deg); }
+  100% { transform: rotate(0); }
+}
+.bell-ring {
+  animation: bell-ring 1s ease-in-out;
+  transform-origin: 50% 0;
+}
+@keyframes badge-pop {
+  0% { transform: scale(0.4); }
+  60% { transform: scale(1.25); }
+  100% { transform: scale(1); }
+}
+.badge-pop {
+  animation: badge-pop 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.4);
+}
+@media (prefers-reduced-motion: reduce) {
+  .bell-ring,
+  .badge-pop {
+    animation: none;
+  }
+}

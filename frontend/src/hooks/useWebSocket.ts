@@ -588,6 +588,11 @@ export function useWebSocket() {
         }
         break;
 
+      // Sent only to the sockets of the users it names, so it is ours.
+      case 'inbox_changed':
+        queryClient.invalidateQueries({ queryKey: ['inbox'] });
+        break;
+
       case 'aito_changed': {
         if (message.action === 'delete' || message.action === 'restore') {
           aitoTrashDirtyRef.current = true;
