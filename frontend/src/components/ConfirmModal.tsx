@@ -24,6 +24,10 @@ interface ConfirmModalProps {
   // item is mid-print, so the archive delete must be blocked at the UI
   // layer too even though the backend will 409 anyway).
   confirmDisabled?: boolean;
+  // Replaces the default confirm button with the caller's own control, for a
+  // confirm that is a gesture rather than a click (Aito's hold-to-trash). The
+  // control commits on its own; `onConfirm` is then never called by the modal.
+  confirmControl?: ReactNode;
   // Optional extra content rendered between the message and the buttons —
   // used for opt-in checkboxes (e.g. the "Also remove from statistics"
   // toggle in the archive delete confirmation, #1343).
@@ -44,6 +48,7 @@ export function ConfirmModal({
   isLoading = false,
   loadingText,
   confirmDisabled = false,
+  confirmControl,
   children,
   onConfirm,
   onCancel,
@@ -107,20 +112,22 @@ export function ConfirmModal({
             >
               {resolvedCancelText}
             </Button>
-            <Button
-              onClick={onConfirm}
-              className={`flex-1 ${styles.button}`}
-              disabled={isLoading || confirmDisabled}
-            >
-              {isLoading ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  {resolvedLoadingText}
-                </>
-              ) : (
-                resolvedConfirmText
-              )}
-            </Button>
+            {confirmControl ?? (
+              <Button
+                onClick={onConfirm}
+                className={`flex-1 ${styles.button}`}
+                disabled={isLoading || confirmDisabled}
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    {resolvedLoadingText}
+                  </>
+                ) : (
+                  resolvedConfirmText
+                )}
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>

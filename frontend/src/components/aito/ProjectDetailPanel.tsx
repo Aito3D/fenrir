@@ -3,10 +3,10 @@ import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Building2, Check, Copy, ExternalLink, History, Loader2, Lock, Mail, Pencil, Phone, Plane, RefreshCw, User } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { DeleteHoldButton } from './DeleteHoldButton';
-import { DuplicateProjectButton } from './DuplicateProjectButton';
+import { DuplicateReplaceConfirm } from './DuplicateProjectButton';
 import { MergeProjectModal } from './MergeProjectModal';
 import { ProjectActionsMenu } from './ProjectActionsMenu';
+import { TrashConfirmModal } from './TrashConfirmModal';
 import { ActivityRail } from './history/ActivityRail';
 import { PanelAgeStat } from './PanelAgeStat';
 import { UnacceptHoldPill } from './UnacceptHoldPill';
@@ -50,6 +50,7 @@ import { useDismissableDialog } from '../../hooks/useDismissableDialog';
 import { useLatestProjectEvent } from '../../hooks/useLatestProjectEvent';
 import { usePanelTab } from '../../hooks/usePanelTab';
 import { useProjectTasks } from '../../hooks/useProjectTasks';
+import { useDuplicateProject } from '../../hooks/useDuplicateProject';
 import { api, ApiError, type AitoEvent, type AitoProject, type AitoProjectUpdate } from '../../api/client';
 import { Money } from '../calculator/shared';
 import { ageAnchor, agingColorCls } from '../../utils/aitoAging';
@@ -75,7 +76,7 @@ interface ProjectDetailPanelProps {
   project: AitoProject;
   onClose: () => void;
   /** Omitted for a project that is already in the trash — see AitoPage. The
-   *  delete button is then not rendered at all. */
+   *  ⋯ menu's Trash row is then disabled. */
   onDelete?: () => void;
   /** Gates the task list's "+ Add task" affordance — POST /{project_id}/tasks
    *  enforces Permission.AITO_CREATE, a different permission than editing or
@@ -93,7 +94,7 @@ interface ProjectDetailPanelProps {
   /** Start a new project from this one. The panel seeds the drawer's stored
    *  draft and calls this; the HOST closes the panel and opens the drawer,
    *  because the drawer is the page's to own. Omitted by a host that has no
-   *  drawer to open — the action then does not appear. Also gated on
+   *  drawer to open — the menu row is then disabled. Also gated on
    *  `canCreate`: the create it leads to enforces Permission.AITO_CREATE. */
   onDuplicate?: () => void;
   /** The history dialog's row action: the page swaps the expanded card to
@@ -704,17 +705,12 @@ function RecordCard({
   project,
   latestEvent,
   canUpdate,
-  onDuplicate,
 }: {
   project: AitoProject;
   latestEvent: AitoEvent | undefined;
   /** Gates the tracking-link row, which mints and revokes a public URL. Same
    *  permission the header row gated it on before it moved down here. */
   canUpdate: boolean;
-  /** Absent when the operator cannot create projects, or when the host has
-   *  nowhere to open the drawer — the action is then not rendered at all
-   *  rather than shown dead. */
-  onDuplicate?: () => void;
 }) {
   const { t, i18n } = useTranslation();
   const created = parseUTCDate(project.created_at);
@@ -760,13 +756,7 @@ function RecordCard({
     );
 
   return (
-    <PanelCard
-      title={t('aito.recordLabel')}
-      // On the Record card rather than the footer: this is where the card's
-      // provenance already lives ("made on the 3rd, by paul"), and unlike the
-      // footer's transitions it changes nothing about THIS card.
-      action={onDuplicate && <DuplicateProjectButton project={project} onDuplicate={onDuplicate} />}
-    >
+    <PanelCard title={t('aito.recordLabel')}>
       {/* Same shape and type as the Quote card above — label left, value
           right, one row each. These were stacked pairs while the left column
           was 17rem and `{when} · {who}` could not fit a line; at the column's
@@ -882,13 +872,15 @@ export function ProjectDetailPanel({
   // since a tab is otherwise the one place a failed sync could hide.
   const { needsAttention: billingNeedsAttention } = deriveQuoteSync(project);
   const [rightTab, setRightTab] = usePanelTab(RIGHT_TABS);
-  // The ⋯ on the Stage card. Both permissions, because POST /{id}/merge
-  // enforces both (it edits this card AND trashes another); never on an
-  // invoiced card, whose tasks are frozen; never on a trashed one, which the
-  // route 404s. Hidden rather than disabled: a menu with one dead item is
-  // worse than no menu.
+  // The dialogs the Stage card's ⋯ menu opens. The menu decides which of its
+  // rows are usable (see ProjectActionsMenu's `rows`); the panel only owns
+  // what each row opens, so a dialog outlives the menu that launched it.
   const [merging, setMerging] = useState(false);
-  const canMerge = canUpdate && canDelete && !project.quote_invoiced && project.status === 'active';
+  const [trashing, setTrashing] = useState(false);
+  // Same seed path the Record card's Duplicate button used before it moved
+  // into the menu; the hook is inert until `start()`, and its queries share
+  // keys this panel already holds.
+  const duplicate = useDuplicateProject(project, () => onDuplicate?.());
   // The tab panel is keyed on `rightTab` below so a switch remounts its
   // content with .animate-calc-tab-in, the entrance the underline's 300ms
   // slide was missing a partner for. Never on the panel's own first paint,
@@ -1268,6 +1260,18 @@ export function ProjectDetailPanel({
           )}
         </div>
         {merging && <MergeProjectModal project={project} onClose={() => setMerging(false)} />}
+        {duplicate.confirming && (
+          <DuplicateReplaceConfirm onConfirm={duplicate.confirmReplace} onCancel={duplicate.cancelReplace} />
+        )}
+        {trashing && onDelete && (
+          <TrashConfirmModal
+            onTrash={() => {
+              setTrashing(false);
+              onDelete();
+            }}
+            onCancel={() => setTrashing(false)}
+          />
+        )}
         {historyOpen && (
           <ClientHistoryModal
             project={project}
@@ -1425,7 +1429,27 @@ export function ProjectDetailPanel({
 
               <PanelCard
                 title={t('aito.stageAndWorkLeft')}
-                action={canMerge ? <ProjectActionsMenu onMerge={() => setMerging(true)} /> : undefined}
+                action={
+                  <ProjectActionsMenu
+                    project={project}
+                    // The live list, not `project.task_count`: the board row
+                    // lags an add or a remove made here by one refetch.
+                    tasksCount={tasks.length}
+                    canCreate={canCreate}
+                    canUpdate={canUpdate}
+                    canDelete={canDelete}
+                    onMerge={() => setMerging(true)}
+                    // wired in Task 8/9/10
+                    onSplit={() => {}}
+                    onMoveTasks={() => {}}
+                    onCopySummary={() => {}}
+                    onPrintTicket={() => {}}
+                    onTransferClient={() => {}}
+                    onDuplicate={onDuplicate && duplicate.start}
+                    onDelete={onDelete && (() => setTrashing(true))}
+                    shortcutKey="."
+                  />
+                }
               >
                 <StageRail tasks={tasks} column={project.column} currency={currency} />
               </PanelCard>
@@ -1534,7 +1558,6 @@ export function ProjectDetailPanel({
                       project={project}
                       latestEvent={latestEvent}
                       canUpdate={canUpdate}
-                      onDuplicate={canCreate ? onDuplicate : undefined}
                     />
                     <ShippingCard project={project} currency={currency} onWrite={markExternalWrite} />
                   </>
@@ -1557,23 +1580,9 @@ export function ProjectDetailPanel({
             sheetOpen ? 'blur-[5px] opacity-60' : ''
           }`}
         >
-          {/* Destructive far left, safe actions far right — the two ends of the
-              bar. This is what the header adjacency to Close cost us.
-              `alwaysVisible`/`withLabel`: far from any dismiss control down
-              here, an icon that only reveals itself on hover (the header's
-              old behaviour, kept as the default for TaskRow's own delete
-              control) would be invisible at rest — all three footer actions
-              are permanent bordered buttons with a visible label. */}
-          {onDelete && (
-            <DeleteHoldButton
-              onDelete={onDelete}
-              label={t('aito.moveToTrash')}
-              hint={t('aito.holdToDelete')}
-              alwaysVisible
-            />
-          )}
-          {/* Mark sent / Accept / Decline / Done sit at the far right, with
-              the destructive action at the far left — the two ends of the bar.
+          {/* Mark sent / Accept / Decline / Done sit at the far right. Trash
+              used to hold the far left; it moved into the Stage card's ⋯
+              menu, behind a confirm whose control is still the 1s hold.
               These are the transitions that MOVE the card off this column, so
               they belong with the panel's other commitments rather than buried
               under the left rail's reference cards, where they sat below the

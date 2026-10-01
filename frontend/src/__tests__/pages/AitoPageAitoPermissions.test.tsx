@@ -174,6 +174,13 @@ const task = {
 const openCard = async (user: ReturnType<typeof userEvent.setup>) =>
   user.click(await screen.findByRole('button', { name: /Support GoPro/ }));
 
+// The panel's trash control is a row of the Stage card's ⋯ menu, present for
+// every operator and disabled ("No permission") for one who may not delete.
+const trashRow = async (user: ReturnType<typeof userEvent.setup>) => {
+  await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'More actions' }));
+  return screen.getByRole('menuitem', { name: /^Move to trash/ });
+};
+
 beforeEach(() => {
   Element.prototype.scrollIntoView = vi.fn();
   mockUseAuth.hasPermission.mockReset();
@@ -197,7 +204,7 @@ describe('AitoPage — aito:* permission gating (T-019)', () => {
     expect(screen.getByRole('button', { name: 'Import' })).toBeInTheDocument();
 
     await openCard(user);
-    expect(await screen.findByLabelText('Move to trash')).toBeInTheDocument();
+    expect(await trashRow(user)).not.toHaveAttribute('aria-disabled');
   });
 
   it('auth enabled + every aito permission granted: shows New project, Import quote and the delete control', async () => {
@@ -213,7 +220,7 @@ describe('AitoPage — aito:* permission gating (T-019)', () => {
     expect(screen.getByRole('button', { name: 'Import' })).toBeInTheDocument();
 
     await openCard(user);
-    expect(await screen.findByLabelText('Move to trash')).toBeInTheDocument();
+    expect(await trashRow(user)).not.toHaveAttribute('aria-disabled');
   });
 
   it('auth enabled + read-only (aito:read only): hides New project, Import quote and the delete control', async () => {
@@ -230,8 +237,9 @@ describe('AitoPage — aito:* permission gating (T-019)', () => {
     expect(screen.queryByRole('button', { name: 'Import' })).not.toBeInTheDocument();
 
     await openCard(user);
-    await screen.findByRole('dialog');
-    await waitFor(() => expect(screen.queryByLabelText('Move to trash')).not.toBeInTheDocument());
+    const row = await trashRow(user);
+    expect(row).toHaveAttribute('aria-disabled', 'true');
+    expect(row).toHaveTextContent('No permission');
   });
 });
 

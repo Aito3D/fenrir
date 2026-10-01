@@ -27,6 +27,13 @@ describe('ConfirmModal', () => {
       expect(screen.getByText('Confirm Action')).toBeInTheDocument();
     });
 
+    it('swaps the confirm button for a caller-supplied control, keeping Cancel', () => {
+      render(<ConfirmModal {...defaultProps} confirmControl={<button type="button">Hold me</button>} />);
+      expect(screen.getByRole('button', { name: 'Hold me' })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Confirm' })).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
+    });
+
     it('renders message', () => {
       render(<ConfirmModal {...defaultProps} />);
       expect(

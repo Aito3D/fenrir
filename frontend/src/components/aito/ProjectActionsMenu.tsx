@@ -1,24 +1,131 @@
 import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Ellipsis, Merge } from 'lucide-react';
-import { ActionMenu } from './ActionMenu';
+import type { TFunction } from 'i18next';
+import {
+  ClipboardCopy,
+  CopyPlus,
+  Ellipsis,
+  Merge,
+  MoveRight,
+  Printer,
+  Split,
+  Trash2,
+  UserRoundPen,
+} from 'lucide-react';
+import { ActionMenu, type ActionMenuItem } from './ActionMenu';
 import { focusRingCls } from '../formStyles';
+import { useMenuShortcut } from '../../hooks/useMenuShortcut';
+import type { AitoProject } from '../../api/client';
 
-/** The ⋯ beside "Stage & work left": the detours that change what this card
- *  IS, rather than a field on it. One item today — merge another card's
- *  tasks into this one — so the menu is the affordance that keeps the next
- *  such action from growing a third icon button on the heading.
+interface ProjectActionsMenuProps {
+  project: AitoProject;
+  /** The panel's live task list length, not `project.task_count`: the board
+   *  row lags an add or a remove made in the panel by one refetch. */
+  tasksCount: number;
+  canCreate: boolean;
+  canUpdate: boolean;
+  canDelete: boolean;
+  onMerge: () => void;
+  onSplit: () => void;
+  onMoveTasks: () => void;
+  onCopySummary: () => void;
+  onPrintTicket: () => void;
+  onTransferClient: () => void;
+  /** Absent when the host has no drawer to open — the row is then disabled. */
+  onDuplicate?: () => void;
+  /** Absent for a card the host will not trash (see AitoPage) — disabled too. */
+  onDelete?: () => void;
+  /** A bare key that opens the menu from anywhere on the panel (`.`). */
+  shortcutKey?: string;
+}
+
+/** Every row's `disabled` and `hint`, from one place: the card's state first
+ *  (trashed, then invoiced — the reasons the operator can do nothing about
+ *  from here), then permission, then the task count. The first reason that
+ *  applies is the one shown; the server enforces the same rules route by
+ *  route, so this only keeps the menu from offering a guaranteed refusal. */
+function rows(p: ProjectActionsMenuProps, t: TFunction): ActionMenuItem[] {
+  const trashed = p.project.status === 'deleted';
+  const invoiced = p.project.quote_invoiced;
+  const hintTrashed = t('aito.hintTrashed');
+  const hintInvoiced = t('aito.hintInvoiced');
+  const hintNoPermission = t('aito.hintNoPermission');
+  // [condition, hint] pairs in priority order → the first that holds.
+  const reason = (...checks: [boolean, string][]) => checks.find(([when]) => when)?.[1];
+  const item = (base: Omit<ActionMenuItem, 'disabled' | 'hint'>, hint: string | undefined): ActionMenuItem => ({
+    ...base,
+    disabled: hint !== undefined,
+    hint,
+  });
+
+  return [
+    item(
+      { key: 'merge', icon: Merge, label: t('aito.mergeProject'), onSelect: p.onMerge },
+      // POST /{id}/merge edits this card AND trashes the other one.
+      reason([trashed, hintTrashed], [invoiced, hintInvoiced], [!(p.canUpdate && p.canDelete), hintNoPermission]),
+    ),
+    item(
+      { key: 'split', icon: Split, label: t('aito.splitProject'), onSelect: p.onSplit },
+      // A split creates the new card, so it also rides AITO_CREATE.
+      reason(
+        [trashed, hintTrashed],
+        [invoiced, hintInvoiced],
+        [!(p.canUpdate && p.canCreate), hintNoPermission],
+        [p.tasksCount < 2, t('aito.hintNeedTwoTasks')],
+      ),
+    ),
+    item(
+      { key: 'move', icon: MoveRight, label: t('aito.moveTasks'), onSelect: p.onMoveTasks },
+      reason(
+        [trashed, hintTrashed],
+        [invoiced, hintInvoiced],
+        [!p.canUpdate, hintNoPermission],
+        [p.tasksCount === 0, t('aito.hintNoTasks')],
+      ),
+    ),
+    // Read-only: they only render what the panel already shows.
+    { key: 'copy', icon: ClipboardCopy, label: t('aito.copySummary'), onSelect: p.onCopySummary },
+    { key: 'print', icon: Printer, label: t('aito.printJobTicket'), onSelect: p.onPrintTicket },
+    item(
+      { key: 'transfer', icon: UserRoundPen, label: t('aito.transferClient'), onSelect: p.onTransferClient },
+      reason([trashed, hintTrashed], [invoiced, hintInvoiced], [!p.canUpdate, hintNoPermission]),
+    ),
+    item(
+      { key: 'duplicate', icon: CopyPlus, label: t('aito.duplicateProject'), onSelect: () => p.onDuplicate?.() },
+      // Not gated on the card's state: "same thing again" is as valid for a
+      // trashed or invoiced job as for a live one — it touches neither.
+      reason([!p.canCreate || !p.onDuplicate, hintNoPermission]),
+    ),
+    item(
+      {
+        key: 'trash',
+        icon: Trash2,
+        label: t('aito.trashProject'),
+        onSelect: () => p.onDelete?.(),
+        separatorBefore: true,
+        danger: true,
+      },
+      reason([trashed, hintTrashed], [!p.canDelete || !p.onDelete, hintNoPermission]),
+    ),
+  ];
+}
+
+/** The ⋯ beside "Stage & work left": the actions that change what this card
+ *  IS, or act on it as a whole, rather than a field on it.
+ *
+ *  Always rendered while the panel is open, on a live card and a trashed one
+ *  alike: a row the operator cannot use stays in place, muted, with the
+ *  reason under its label (see `rows`). A menu that grew and shrank with the
+ *  card's state taught nobody where an action lives.
  *
  *  Reuses ActionMenu: it is already an anchored, labelled, dismissable
- *  `role="menu"`, and the phone board's ⋯ is the same gesture. The host
- *  renders this only when the operator may both update this card and trash
- *  another (the merge route enforces both permissions) and the card is not
- *  invoiced (its tasks are frozen), so there is never a dead menu item. */
-export function ProjectActionsMenu({ onMerge }: { onMerge: () => void }) {
+ *  `role="menu"`, and the phone board's ⋯ is the same gesture. */
+export function ProjectActionsMenu(props: ProjectActionsMenuProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const anchorRef = useRef<HTMLButtonElement>(null);
   const label = t('aito.moreActions');
+  useMenuShortcut(props.shortcutKey ?? '', props.shortcutKey !== undefined, () => setOpen(true));
 
   return (
     <>
@@ -40,7 +147,7 @@ export function ProjectActionsMenu({ onMerge }: { onMerge: () => void }) {
           label={label}
           anchorRef={anchorRef}
           placement="below"
-          items={[{ key: 'merge', icon: Merge, label: t('aito.mergeProject'), onSelect: onMerge }]}
+          items={rows(props, t)}
           onClose={() => setOpen(false)}
         />
       )}

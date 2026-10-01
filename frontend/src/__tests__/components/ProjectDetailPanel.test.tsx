@@ -8,6 +8,7 @@ import { server } from '../mocks/server';
 import { render } from '../utils';
 import { ProjectDetailPanel } from '../../components/aito/ProjectDetailPanel';
 import { diffTaskDraft } from '../../hooks/useProjectTasks';
+import { readNewProjectDraft, writeNewProjectDraft } from '../../hooks/useNewProjectDraft';
 import { registerPresenceSender, setAitoPresenceState, __resetAitoPresence } from '../../hooks/useAitoPresence';
 import { AuthProvider } from '../../contexts/AuthContext';
 import { ToastProvider } from '../../contexts/ToastContext';
@@ -1833,10 +1834,10 @@ describe('ProjectDetailPanel quote row', () => {
     expect(screen.getByTestId('record-created')).toHaveTextContent('· unknown');
   });
 
-  // "Same thing again" lives on the Record card, beside who made the original
-  // and when. It creates nothing itself — it fills the drawer, which is why
-  // the page has to be the one to open it.
-  it('offers Duplicate on the record card only when the page can act on it', async () => {
+  // "Same thing again" moved from the Record card into the Stage card's ⋯
+  // menu. It creates nothing itself — it fills the drawer, which is why the
+  // page has to be the one to open it.
+  it('no longer offers Duplicate on the record card', async () => {
     render(
       <ProjectDetailPanel
         canCreate
@@ -1848,27 +1849,58 @@ describe('ProjectDetailPanel quote row', () => {
         onDuplicate={vi.fn()}
       />,
     );
-    expect(await screen.findByRole('button', { name: /duplicate/i })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId('record-created')).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: /duplicate/i })).not.toBeInTheDocument();
   });
 
-  it('hides Duplicate without the create permission, and when the page offers no handler', async () => {
-    const { unmount } = render(
+  it('duplicates from the ⋯ menu: seeds the drawer, then hands over to the page', async () => {
+    const onDuplicate = vi.fn();
+    render(
       <ProjectDetailPanel
-        canCreate={false}
+        canCreate
         canUpdate
         canDelete
         project={project}
         onClose={vi.fn()}
         onDelete={vi.fn()}
-        onDuplicate={vi.fn()}
+        onDuplicate={onDuplicate}
       />,
     );
-    await waitFor(() => expect(screen.getByTestId('record-created')).toBeInTheDocument());
-    expect(screen.queryByRole('button', { name: /duplicate/i })).not.toBeInTheDocument();
-    unmount();
-    show();
-    await waitFor(() => expect(screen.getByTestId('record-created')).toBeInTheDocument());
-    expect(screen.queryByRole('button', { name: /duplicate/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Duplicate' }));
+    await waitFor(() => expect(onDuplicate).toHaveBeenCalledOnce());
+    expect(readNewProjectDraft()?.summaryText).toBe(project.description);
+  });
+
+  it('asks before a menu Duplicate replaces a draft that has work in it', async () => {
+    writeNewProjectDraft({
+      tasks: [{ ...emptyTaskDraft(), title: 'Un devis en cours' }],
+      client: null,
+      summaryText: '',
+      summaryEdited: false,
+      summarySignature: '',
+      shipping: null,
+      dueDate: '',
+    });
+    const onDuplicate = vi.fn();
+    render(
+      <ProjectDetailPanel
+        canCreate
+        canUpdate
+        canDelete
+        project={project}
+        onClose={vi.fn()}
+        onDelete={vi.fn()}
+        onDuplicate={onDuplicate}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Duplicate' }));
+    expect(await screen.findByText('Replace the draft in progress?')).toBeInTheDocument();
+    expect(onDuplicate).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Replace' }));
+    await waitFor(() => expect(onDuplicate).toHaveBeenCalledOnce());
+    localStorage.clear();
   });
 });
 
@@ -1901,19 +1933,37 @@ describe('ProjectDetailPanel left column cards', () => {
     expect(screen.getByTestId('panel-column-tasks')).toBeInTheDocument();
   });
 
-  it('hides the ⋯ menu without the delete permission, without the update permission, and on an invoiced card', () => {
+  // Always there, whatever the permissions or the card's state: a row the
+  // operator cannot use is disabled with its reason (the full matrix is in
+  // AitoProjectActionsMenu.test.tsx), never hidden.
+  it('keeps the ⋯ menu without the delete permission, without the update permission, on an invoiced card and in the trash', () => {
+    const mergeRow = () => {
+      fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
+      return screen.getByRole('menuitem', { name: /^Merge another card…/ });
+    };
     const { unmount } = render(
       <ProjectDetailPanel canCreate canUpdate canDelete={false} project={project} onClose={vi.fn()} />,
     );
-    expect(screen.queryByRole('button', { name: 'More actions' })).not.toBeInTheDocument();
+    expect(mergeRow()).toHaveTextContent('No permission');
     unmount();
     const second = render(
       <ProjectDetailPanel canCreate canUpdate={false} canDelete project={project} onClose={vi.fn()} onDelete={vi.fn()} />,
     );
-    expect(screen.queryByRole('button', { name: 'More actions' })).not.toBeInTheDocument();
+    expect(mergeRow()).toHaveTextContent('No permission');
     second.unmount();
-    show({ quote_invoiced: true });
-    expect(screen.queryByRole('button', { name: 'More actions' })).not.toBeInTheDocument();
+    const third = show({ quote_invoiced: true });
+    expect(mergeRow()).toHaveAttribute('aria-disabled', 'true');
+    expect(mergeRow()).toHaveTextContent('Invoiced');
+    third.unmount();
+    show({ status: 'deleted' });
+    expect(mergeRow()).toHaveTextContent('In the trash');
+  });
+
+  it('opens the ⋯ menu on the "." key', () => {
+    show();
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    fireEvent.keyDown(window, { key: '.' });
+    expect(screen.getByRole('menu', { name: 'More actions' })).toBeInTheDocument();
   });
 
   it('folds the creator into the created timestamp', async () => {
@@ -2313,10 +2363,11 @@ describe('ProjectDetailPanel footer', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
-  it('leaves the footer to the destructive action alone', () => {
+  it('keeps the footer to the transitions: no trash, no quote document controls', () => {
     show({ quote_id: 'e2', quote_number: 'DEV26-2462' });
     const footer = screen.getByTestId('panel-footer');
-    expect(within(footer).getByRole('button', { name: /move to trash|delete project/i })).toBeInTheDocument();
+    // Trash moved into the Stage card's ⋯ menu.
+    expect(within(footer).queryByRole('button', { name: /move to trash|delete project/i })).not.toBeInTheDocument();
     // Print and Open in Zoho act on the quote, so they live in the Quote card
     // beside its number and status — not in a bar spanning the whole panel.
     expect(within(footer).queryByRole('button', { name: /print/i })).not.toBeInTheDocument();
@@ -2338,9 +2389,16 @@ describe('ProjectDetailPanel footer', () => {
     expect(within(quoteCard).queryByRole('link', { name: /DEV26-2462/ })).not.toBeInTheDocument();
   });
 
-  it('omits the trash control for a project already in the trash', () => {
-    render(<ProjectDetailPanel canCreate canUpdate canDelete project={project} onClose={vi.fn()} />);
-    expect(screen.queryByRole('button', { name: /move to trash|delete project/i })).not.toBeInTheDocument();
+  it('disables the trash row when the page offers no delete, and on a card already in the trash', () => {
+    const { unmount } = render(<ProjectDetailPanel canCreate canUpdate canDelete project={project} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
+    const noHost = screen.getByRole('menuitem', { name: /^Move to trash/ });
+    expect(noHost).toHaveAttribute('aria-disabled', 'true');
+    expect(noHost).toHaveTextContent('No permission');
+    unmount();
+    show({ status: 'deleted' });
+    fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
+    expect(screen.getByRole('menuitem', { name: /^Move to trash/ })).toHaveTextContent('In the trash');
   });
 });
 
@@ -2468,24 +2526,44 @@ describe('ProjectDetailPanel mark as done', () => {
 });
 
 describe('ProjectDetailPanel delete', () => {
-  it('offers delete in the expanded card, on a 1s hold', async () => {
+  it('trashes from the ⋯ menu through a confirm whose control is a 1s hold', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       const onDelete = vi.fn();
-      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
       render(<ProjectDetailPanel canCreate canUpdate canDelete project={project} onClose={vi.fn()} onDelete={onDelete} />);
 
-      const footer = screen.getByTestId('panel-footer');
-      const button = within(footer).getByRole('button', { name: /move to trash|delete project/i });
-      await user.pointer({ keys: '[MouseLeft>]', target: button });
-      vi.advanceTimersByTime(600);
-      expect(onDelete).not.toHaveBeenCalled(); // 500ms is not enough — this is the 1s gesture
+      fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Move to trash' }));
+      expect(screen.getByText('Move this card to the trash?')).toBeInTheDocument();
+      expect(onDelete).not.toHaveBeenCalled(); // opening the confirm is not the commitment
 
-      vi.advanceTimersByTime(500);
+      const hold = screen.getByRole('button', { name: 'Hold to move to trash' });
+      // A click is not a hold: the confirm survives the move into the menu.
+      fireEvent.click(hold);
+      expect(onDelete).not.toHaveBeenCalled();
+
+      fireEvent.pointerDown(hold);
+      act(() => {
+        vi.advanceTimersByTime(600);
+      });
+      expect(onDelete).not.toHaveBeenCalled(); // 500ms is not enough — this is the 1s gesture
+      act(() => {
+        vi.advanceTimersByTime(500);
+      });
       expect(onDelete).toHaveBeenCalledTimes(1);
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('cancelling the trash confirm leaves the card alone', () => {
+    const onDelete = vi.fn();
+    render(<ProjectDetailPanel canCreate canUpdate canDelete project={project} onClose={vi.fn()} onDelete={onDelete} />);
+    fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Move to trash' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByText('Move this card to the trash?')).not.toBeInTheDocument();
+    expect(onDelete).not.toHaveBeenCalled();
   });
 
   it('separates the left column from the tasks on wide screens', () => {
@@ -2891,15 +2969,6 @@ describe('ProjectDetailPanel visual parity: footer buttons', () => {
     expect(download.parentElement).toBe(print.parentElement);
     expect(send.parentElement).toBe(print.parentElement);
     expect(screen.getByTestId('doc-quote')).toContainElement(print.parentElement);
-  });
-
-  it('renders the trash control as a permanent bordered button, not hover-revealed', () => {
-    show();
-    const footer = screen.getByTestId('panel-footer');
-    const button = within(footer).getByRole('button', { name: /move to trash/i });
-    expect(button.className).not.toContain('opacity-0');
-    expect(button.className).toContain('border');
-    expect(button).toHaveTextContent('Move to trash');
   });
 });
 

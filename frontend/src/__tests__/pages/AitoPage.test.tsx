@@ -121,6 +121,15 @@ function makeProject(overrides: Partial<AitoProject> = {}): AitoProject {
 const openCard = async (user: ReturnType<typeof userEvent.setup>) =>
   user.click(await screen.findByRole('button', { name: /Support GoPro/ }));
 
+/** The open card's trash: ⋯ menu → "Move to trash" → the confirm's hold
+ *  button, returned for the caller to press. Plain events, so it works under
+ *  fake timers without a timer-aware userEvent. */
+const holdToTrash = async () => {
+  fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'More actions' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Move to trash' }));
+  return screen.getByRole('button', { name: 'Hold to move to trash' });
+};
+
 /** The description edit box, disambiguated from ActivityRail's note <input>
  *  — mounting the rail as the panel's third column means `getByRole('textbox')`
  *  now matches both, since a plain text <input> shares the textbox role with
@@ -245,7 +254,7 @@ describe('AitoPage (backend board)', () => {
       render(<AitoPage />);
       await openCard(user);
 
-      const deleteButton = await screen.findByLabelText('Move to trash');
+      const deleteButton = await holdToTrash();
 
       await act(async () => {
         fireEvent.pointerDown(deleteButton);
@@ -253,8 +262,9 @@ describe('AitoPage (backend board)', () => {
       });
 
       expect(deleteSpy).toHaveBeenCalledWith('12');
-      // The old ConfirmModal rendered a "Delete" confirm button distinct
-      // from the hold-to-delete control's "Move to trash" aria-label.
+      // The confirm's commit is the hold itself: no click-to-confirm button,
+      // and the confirm leaves with the panel.
+      expect(screen.queryByText('Move this card to the trash?')).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
       // AitoPage.tsx closes the panel before the mutation lands (see the
       // comment on ProjectDetailPanel's onDelete there) so the card morph
@@ -277,7 +287,7 @@ describe('AitoPage (backend board)', () => {
       render(<AitoPage />);
       await openCard(user);
 
-      const deleteButton = await screen.findByLabelText('Move to trash');
+      const deleteButton = await holdToTrash();
 
       await act(async () => {
         fireEvent.pointerDown(deleteButton);
@@ -362,7 +372,7 @@ describe('AitoPage (backend board)', () => {
       await waitFor(() => expect(boardFetches).toHaveBeenCalledTimes(2));
       boardFetches.mockClear();
 
-      const deleteButton = await screen.findByLabelText('Move to trash');
+      const deleteButton = await holdToTrash();
       fireEvent.pointerDown(deleteButton);
       await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument(), { timeout: 2000 });
 
@@ -955,7 +965,7 @@ describe('AitoPage (backend board)', () => {
       await waitFor(() => expect(getAitoProjects).toHaveBeenCalledTimes(1));
 
       await user.click(await screen.findByRole('button', { name: /Delete me/ }));
-      const deleteButton = await screen.findByLabelText('Move to trash');
+      const deleteButton = await holdToTrash();
       await act(async () => {
         fireEvent.pointerDown(deleteButton);
         await vi.advanceTimersByTimeAsync(1000);
@@ -1008,7 +1018,7 @@ describe('AitoPage (backend board)', () => {
       render(<AitoPage />);
 
       await user.click(await screen.findByRole('button', { name: /doomed/ }));
-      const deleteButton = await screen.findByLabelText('Move to trash');
+      const deleteButton = await holdToTrash();
       await act(async () => {
         fireEvent.pointerDown(deleteButton);
         await vi.advanceTimersByTimeAsync(1000);
@@ -2219,7 +2229,8 @@ describe('print backlog badge', () => {
     await openCard(user);
 
     const panel = await screen.findByRole('dialog');
-    await user.click(within(panel).getByRole('button', { name: /duplicate/i }));
+    await user.click(within(panel).getByRole('button', { name: 'More actions' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Duplicate' }));
     await waitFor(() => expect(screen.getByTestId('drawer-section-work')).toBeInTheDocument());
 
     // Panel gone, drawer up, carrying the card's work.
