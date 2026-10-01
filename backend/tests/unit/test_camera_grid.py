@@ -1075,7 +1075,7 @@ class TestStderrCategorization:
             # hub-status surfaces the bounded, most-recent-only summary for
             # the failing printer and leaves the live printer's summary
             # (raw dicts and per-printer aggregate) unaffected.
-            status = await cam.camera_hub_status(_=None)
+            status = await cam.camera_hub_status(_=None, api_key=None)
             raw_failing_keys = [k for k in status["stderr_error_counts"] if k.startswith(f"{failing_pid}-")]
             assert raw_failing_keys == [last_stream_id]
             assert status["stderr_error_counts"][other_stream] == 5
@@ -1163,7 +1163,7 @@ class TestStderrCategorization:
             # and the new attempt hasn't written (or evicted) anything yet.
             assert stream_1 in cam._state.stderr_error_counts
             assert stream_2 not in cam._state.stderr_error_counts
-            status = await cam.camera_hub_status(_=None)
+            status = await cam.camera_hub_status(_=None, api_key=None)
             assert status["per_printer_status"][str(failing_pid)]["error_counts"] == {"generic_error": 1}
 
             # Let the attempt finish — it should now replace the previous one.
@@ -1172,7 +1172,7 @@ class TestStderrCategorization:
 
             assert stream_2 in cam._state.stderr_error_counts
             assert stream_1 not in cam._state.stderr_error_counts
-            status = await cam.camera_hub_status(_=None)
+            status = await cam.camera_hub_status(_=None, api_key=None)
             assert status["per_printer_status"][str(failing_pid)]["error_counts"] == {"generic_error": 1}
         finally:
             cam._state.stderr_error_counts.clear()
@@ -2338,6 +2338,108 @@ class TestGridStreamAPIKeyPrinterScope:
                 chunk = await resp.body_iterator.__anext__()
                 seen.add(chunk[:4])
             assert seen == {struct.pack("<I", pid_a), struct.pack("<I", pid_b)}
+
+
+class TestHubStatusAPIKeyPrinterScope:
+    """T-004: ``GET /camera/hub-status`` honours an API key's ``printer_ids``
+    allowlist — a restricted key only sees the per-printer diagnostics of its
+    own printers, while the response shape and hub-wide fields are unchanged.
+    Unrestricted keys and JWT/no-auth callers (``api_key=None``) see every
+    printer exactly as before.
+    """
+
+    PID_ALLOWED = 7201
+    PID_OTHER = 7202
+
+    @staticmethod
+    def _scoped_key(printer_ids):
+        return TestGridStreamAPIKeyPrinterScope._scoped_key(printer_ids)
+
+    def _seeded_state(self):
+        import backend.app.api.routes.camera as cam
+
+        state = cam._StreamState()
+        a, b = self.PID_ALLOWED, self.PID_OTHER
+        far_future = time.monotonic() + 3600
+        state.spawned_ffmpeg_pids.update({41001: time.monotonic(), 41002: time.monotonic()})
+        state.watchdog_killed_printers.update({a, b})
+        state.per_printer_cooldown.update({a: far_future, b: far_future})
+        state.stderr_error_counts.update({f"{a}-aaaa0001": 2, f"{b}-ext-bbbb0002": 3, "snapshot-x": 1})
+        state.stderr_error_details.update(
+            {f"{a}-aaaa0001": {"fatal": 2}, f"{b}-ext-bbbb0002": {"generic_error": 3}, "snapshot-x": {"fatal": 1}}
+        )
+        state.stderr_recent_errors.update(
+            {f"{a}-aaaa0001": ["err a"], f"{b}-ext-bbbb0002": ["err b"], "snapshot-x": ["err x"]}
+        )
+        return state
+
+    def _grid_status(self):
+        producer = {"alive": True, "viewers": 1, "params": "p", "idle_seconds": 0.0, "frames_produced": 5}
+        return {
+            "producer_count": 2,
+            "producers": {self.PID_ALLOWED: dict(producer), self.PID_OTHER: dict(producer)},
+        }
+
+    async def _call(self, api_key):
+        import backend.app.api.routes.camera as cam
+
+        with (
+            patch.object(cam, "_state", self._seeded_state()),
+            patch.object(cam._hub, "status", return_value=self._grid_status()),
+        ):
+            return await cam.camera_hub_status(_=None, api_key=api_key)
+
+    def _assert_sees_everything(self, status):
+        a, b = self.PID_ALLOWED, self.PID_OTHER
+        assert set(status["grid"]["producers"]) == {a, b}
+        assert status["grid"]["producer_count"] == 2
+        assert status["watchdog_killed_printers"] == [a, b]
+        assert set(status["stderr_error_counts"]) == {f"{a}-aaaa0001", f"{b}-ext-bbbb0002", "snapshot-x"}
+        assert set(status["stderr_error_details"]) == {f"{a}-aaaa0001", f"{b}-ext-bbbb0002", "snapshot-x"}
+        assert set(status["stderr_recent_errors"]) == {f"{a}-aaaa0001", f"{b}-ext-bbbb0002", "snapshot-x"}
+        assert set(status["per_printer_status"]) == {str(a), str(b)}
+        assert len(status["ffmpeg_processes"]) == 2
+
+    @pytest.mark.asyncio
+    async def test_no_api_key_sees_every_printer(self):
+        """JWT / no-auth path (api_key=None) is unchanged."""
+        self._assert_sees_everything(await self._call(None))
+
+    @pytest.mark.asyncio
+    async def test_unrestricted_key_sees_every_printer(self):
+        self._assert_sees_everything(await self._call(self._scoped_key(None)))
+
+    @pytest.mark.asyncio
+    async def test_restricted_key_sees_only_its_printers(self):
+        a = self.PID_ALLOWED
+        status = await self._call(self._scoped_key([a]))
+
+        assert status["grid"]["producers"] == {a: self._grid_status()["producers"][a]}
+        assert status["watchdog_killed_printers"] == [a]
+        assert status["stderr_error_counts"] == {f"{a}-aaaa0001": 2}
+        assert status["stderr_error_details"] == {f"{a}-aaaa0001": {"fatal": 2}}
+        assert status["stderr_recent_errors"] == {f"{a}-aaaa0001": ["err a"]}
+        assert list(status["per_printer_status"]) == [str(a)]
+        assert status["per_printer_status"][str(a)]["error_counts"] == {"fatal": 2}
+        assert status["per_printer_status"][str(a)]["cooldown_remaining_s"] > 0
+
+        # Shape and hub-wide fields are unchanged.
+        assert set(status) == set(await self._call(None))
+        assert status["grid"]["producer_count"] == 2
+        assert len(status["ffmpeg_processes"]) == 2
+        assert "watchdog_thresholds" in status
+        assert "system_load" in status
+
+    @pytest.mark.asyncio
+    async def test_empty_allowlist_sees_no_printer(self):
+        status = await self._call(self._scoped_key([]))
+
+        assert status["grid"]["producers"] == {}
+        assert status["watchdog_killed_printers"] == []
+        assert status["stderr_error_counts"] == {}
+        assert status["stderr_error_details"] == {}
+        assert status["stderr_recent_errors"] == {}
+        assert status["per_printer_status"] == {}
 
 
 # ---------------------------------------------------------------------------

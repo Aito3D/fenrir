@@ -3281,13 +3281,41 @@ async def camera_status(
 @router.get("/camera/hub-status")
 async def camera_hub_status(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
+    api_key: APIKey | None = Depends(_grid_stream_api_key_if_auth_enabled),
 ):
     """Debug endpoint: return the state of all shared camera producers.
 
     Shows how many ffmpeg/chamber producers are running, their viewer
     counts, idle times, and frame counters.  Also includes FFmpeg process
     stats, system load, and circuit breaker status.
+
+    An API key restricted to a ``printer_ids`` allowlist only sees the
+    per-printer entries (grid producers, stderr summaries, per-printer status,
+    watchdog kills) of the printers it is scoped to — the same boundary
+    ``check_printer_access`` enforces on the grid stream. The response shape
+    and the hub-wide fields are unchanged; unrestricted keys and JWT/no-auth
+    callers see every printer exactly as before.
     """
+
+    def _printer_visible(printer_id: int) -> bool:
+        if api_key is None:
+            return True
+        try:
+            check_printer_access(api_key, printer_id)
+        except HTTPException:
+            return False
+        return True
+
+    def _stream_visible(stream_id: str) -> bool:
+        # stream_id format: "{printer_id}-{uuid}" or "{printer_id}-ext-{uuid}".
+        # An id that does not map to a printer is only shown to callers whose
+        # visibility is not restricted (no key, or a global key).
+        try:
+            printer_id = int(stream_id.split("-")[0])
+        except (ValueError, IndexError):
+            return api_key is None or api_key.printer_ids is None
+        return _printer_visible(printer_id)
+
     now = time.monotonic()
 
     # FFmpeg process details
@@ -3339,17 +3367,20 @@ async def camera_hub_status(
                 per_printer_status[printer_id] = {"error_counts": {}, "last_error_category": None}
             per_printer_status[printer_id]["cooldown_remaining_s"] = round(remaining, 1)
 
+    grid_status = _hub.status()
+    grid_status["producers"] = {pid: v for pid, v in grid_status["producers"].items() if _printer_visible(pid)}
+
     return {
-        "grid": _hub.status(),
+        "grid": grid_status,
         "ffmpeg_processes": ffmpeg_processes,
         "system_load": system_load,
         "cooldown_active": cooldown_active,
         "cooldown_remaining_s": round(cooldown_remaining, 1),
-        "watchdog_killed_printers": sorted(_state.watchdog_killed_printers),
-        "stderr_error_counts": dict(_state.stderr_error_counts),
-        "stderr_error_details": {k: dict(v) for k, v in _state.stderr_error_details.items()},
-        "stderr_recent_errors": {k: list(v) for k, v in _state.stderr_recent_errors.items()},
-        "per_printer_status": {str(k): v for k, v in sorted(per_printer_status.items())},
+        "watchdog_killed_printers": sorted(p for p in _state.watchdog_killed_printers if _printer_visible(p)),
+        "stderr_error_counts": {k: v for k, v in _state.stderr_error_counts.items() if _stream_visible(k)},
+        "stderr_error_details": {k: dict(v) for k, v in _state.stderr_error_details.items() if _stream_visible(k)},
+        "stderr_recent_errors": {k: list(v) for k, v in _state.stderr_recent_errors.items() if _stream_visible(k)},
+        "per_printer_status": {str(k): v for k, v in sorted(per_printer_status.items()) if _printer_visible(k)},
         "watchdog_thresholds": {
             "per_process_cpu_pct": _CPU_PCT_KILL_THRESHOLD,
             "fleet_cpu_pct": _FLEET_CPU_PCT_THRESHOLD,

@@ -289,3 +289,34 @@ and the cards view, which never used this boundary.
 
 - Golden probes re-recorded: none (13/13 match).
 - SURFACE.md sections regenerated: none (`bash tools/gen_surface_c22.sh | diff - SURFACE.md` is empty; the boundary is private to PrintersPage.tsx, which the surface only scans for page views, CamWallClock and CameraGrid props).
+
+## T-004 — camera hub-status diagnostics scoped to the API key's printer allowlist (user-approved 2026-09-29)
+
+Sanctions commit <this commit> "refactor(loop-7): T-004 scope camera hub-status
+diagnostics to the API key's printer allowlist (user-approved behavior
+change)". `GET /camera/hub-status` (`camera_hub_status` in
+`backend/app/api/routes/camera.py`) returned every printer's grid producers,
+ffmpeg stderr error lines and per-printer status to any caller holding
+CAMERA_VIEW, ignoring an API key's `printer_ids` allowlist. The route now
+resolves the caller's key through the same `_grid_stream_api_key_if_auth_enabled`
+dependency the grid stream and stream-token routes use (new
+`api_key: APIKey | None = Depends(_grid_stream_api_key_if_auth_enabled)`
+parameter) and, per printer, applies `check_printer_access`. For a key
+restricted to a `printer_ids` list, these printer-keyed fields keep only that
+key's printers: `grid.producers`, `watchdog_killed_printers`,
+`stderr_error_counts`, `stderr_error_details`, `stderr_recent_errors` (keyed by
+stream_id `"{printer_id}-…"`; a stream_id whose prefix is not an integer
+cannot be mapped to a printer and is hidden from restricted keys only) and
+`per_printer_status` (which already folds in `per_printer_cooldown`).
+Unchanged: the response shape (same keys and types); hub-wide fields —
+`grid.producer_count`, `ffmpeg_processes` (keyed by OS pid and carrying no
+printer id, so left unfiltered), `system_load`, `cooldown_active`,
+`cooldown_remaining_s`, `watchdog_thresholds`; the CAMERA_VIEW permission
+gate; and the full, unfiltered output for JWT users, auth-disabled callers and
+global keys (`printer_ids=None`). With auth disabled no key header is read, as
+on the grid stream.
+
+- Golden probes re-recorded: none (13/13 match; the new dependency adds no
+  OpenAPI parameters beyond the security/X-API-Key ones the route already had).
+- SURFACE.md sections regenerated: "Route signatures — grid stream, hub status,
+  stream token, stream, stop" (`camera_hub_status` gains the `api_key` line).

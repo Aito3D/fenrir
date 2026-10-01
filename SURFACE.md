@@ -163,6 +163,7 @@ api_key: APIKey | None = Depends(_grid_stream_api_key_if_auth_enabled),
 ):
 async def camera_hub_status(
 _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
+api_key: APIKey | None = Depends(_grid_stream_api_key_if_auth_enabled),
 ):
 async def create_stream_token(
 current_user: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
