@@ -205,6 +205,151 @@ describe('useStreamReconnect', () => {
     });
   });
 
+  describe('stall detection', () => {
+    const tick = (ms = 1000) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
+
+    it('does not reconnect after a single stalled read', async () => {
+      const onReconnect = vi.fn();
+      const checkStalled = vi.fn().mockResolvedValue(true);
+      const { result } = setup({ onReconnect, checkStalled, stallCheckInterval: 1000 });
+
+      await tick();
+      expect(checkStalled).toHaveBeenCalledTimes(1);
+      expect(result.current.isReconnecting).toBe(false);
+
+      await tick(500);
+      expect(onReconnect).not.toHaveBeenCalled();
+    });
+
+    it('starts a reconnect after two consecutive stalled reads and stops polling', async () => {
+      const onReconnect = vi.fn();
+      const checkStalled = vi.fn().mockResolvedValue(true);
+      const { result } = setup({ onReconnect, checkStalled, stallCheckInterval: 1000, initialDelay: 1000 });
+
+      await tick();
+      await tick();
+      expect(checkStalled).toHaveBeenCalledTimes(2);
+      expect(result.current.isReconnecting).toBe(true);
+      expect(result.current.reconnectCountdown).toBe(1);
+
+      // Interval is torn down while reconnecting: no further stall reads.
+      await tick(500);
+      expect(checkStalled).toHaveBeenCalledTimes(2);
+
+      await tick(600);
+      expect(onReconnect).toHaveBeenCalledTimes(1);
+      expect(result.current.reconnectAttempts).toBe(1);
+      expect(result.current.isReconnecting).toBe(false);
+    });
+
+    it('resets the strike counter when a read is not stalled', async () => {
+      const onReconnect = vi.fn();
+      const checkStalled = vi
+        .fn()
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce(false)
+        .mockResolvedValueOnce(true)
+        .mockResolvedValue(true);
+      const { result } = setup({ onReconnect, checkStalled, stallCheckInterval: 1000 });
+
+      await tick(); // stalled (strike 1)
+      await tick(); // healthy (reset)
+      await tick(); // stalled (strike 1 again)
+      expect(result.current.isReconnecting).toBe(false);
+
+      await tick(); // stalled (strike 2)
+      expect(result.current.isReconnecting).toBe(true);
+    });
+
+    it('ignores errors from checkStalled without clearing a strike', async () => {
+      const checkStalled = vi
+        .fn()
+        .mockResolvedValueOnce(true)
+        .mockRejectedValueOnce(new Error('boom'))
+        .mockResolvedValue(true);
+      const { result } = setup({ checkStalled, stallCheckInterval: 1000 });
+
+      await tick(); // strike 1
+      await tick(); // rejected, ignored
+      expect(result.current.isReconnecting).toBe(false);
+
+      await tick(); // strike 2
+      expect(result.current.isReconnecting).toBe(true);
+    });
+
+    it('skips a tick while the previous stall read is still in flight', async () => {
+      let resolveFirst: (v: boolean) => void = () => {};
+      const checkStalled = vi
+        .fn()
+        .mockImplementationOnce(() => new Promise<boolean>((r) => { resolveFirst = r; }))
+        .mockResolvedValue(false);
+      setup({ checkStalled, stallCheckInterval: 1000 });
+
+      await tick(3000);
+      expect(checkStalled).toHaveBeenCalledTimes(1);
+
+      await act(async () => { resolveFirst(false); });
+      await tick();
+      expect(checkStalled).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not poll while stallPaused, and resumes polling when unpaused', async () => {
+      const checkStalled = vi.fn().mockResolvedValue(false);
+      const onReconnect = vi.fn();
+      const { rerender } = renderHook(
+        ({ paused }: { paused: boolean }) =>
+          useStreamReconnect({ onReconnect, checkStalled, stallPaused: paused, stallCheckInterval: 1000 }),
+        { initialProps: { paused: true } }
+      );
+
+      await tick(5000);
+      expect(checkStalled).not.toHaveBeenCalled();
+
+      rerender({ paused: false });
+      await tick();
+      expect(checkStalled).toHaveBeenCalledTimes(1);
+
+      rerender({ paused: true });
+      await tick(5000);
+      expect(checkStalled).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not poll without a checkStalled callback', async () => {
+      const { result } = setup({ stallCheckInterval: 1000 });
+      await tick(5000);
+      expect(result.current.isReconnecting).toBe(false);
+    });
+
+    it('stops polling on unmount', async () => {
+      const checkStalled = vi.fn().mockResolvedValue(false);
+      const { unmount } = setup({ checkStalled, stallCheckInterval: 1000 });
+
+      await tick();
+      expect(checkStalled).toHaveBeenCalledTimes(1);
+
+      unmount();
+      await tick(5000);
+      expect(checkStalled).toHaveBeenCalledTimes(1);
+    });
+
+    it('starts with fresh strikes after a reconnect completes', async () => {
+      const checkStalled = vi.fn().mockResolvedValue(true);
+      const { result } = setup({ checkStalled, stallCheckInterval: 1000, initialDelay: 1000 });
+
+      await tick();
+      await tick();
+      expect(result.current.isReconnecting).toBe(true);
+      await tick(1100);
+      expect(result.current.isReconnecting).toBe(false);
+
+      // One stalled read after the restart is not enough on its own.
+      await tick();
+      expect(result.current.isReconnecting).toBe(false);
+      await tick();
+      expect(result.current.isReconnecting).toBe(true);
+    });
+  });
+
   describe('returned API', () => {
     it('returns all expected functions', () => {
       const { result } = setup();

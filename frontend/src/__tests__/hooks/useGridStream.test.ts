@@ -1422,6 +1422,61 @@ describe('useGridStream', () => {
     unmount();
   });
 
+  it('drops the connection and reconnects when buffered bytes exceed the 10 MB GrowingBuffer cap', async () => {
+    vi.useFakeTimers();
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    let controllerRef!: ReadableStreamDefaultController<Uint8Array>;
+    const cancelSpy = vi.fn();
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controllerRef = controller;
+      },
+      cancel: cancelSpy,
+    });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(fakeResponse(stream))
+      .mockReturnValue(new Promise(() => {}));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { result, unmount } = renderHook(() =>
+      useGridStream({ printerIdsKey: '1', gridParamsKey: '', restartKey: 0 }),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // A valid header declaring a 9 MB JPEG (under the parser's 10 MB sanity
+    // cap) keeps the frame incomplete, so every byte stays buffered.
+    const chunk = new Uint8Array(4 * 1024 * 1024);
+    const header = new DataView(chunk.buffer);
+    header.setUint32(0, 1, true);
+    header.setUint32(4, 9_000_000, true);
+    controllerRef.enqueue(chunk);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    // 4 MB buffered: still within the cap, connection untouched.
+    expect(result.current.reconnectingSet.size).toBe(0);
+    expect(cancelSpy).not.toHaveBeenCalled();
+
+    controllerRef.enqueue(new Uint8Array(4 * 1024 * 1024));
+    controllerRef.enqueue(new Uint8Array(4 * 1024 * 1024));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(errorSpy).toHaveBeenCalledWith('Grid stream: buffer exceeded limit, reconnecting');
+    expect(cancelSpy).toHaveBeenCalledTimes(1);
+    expect(result.current.reconnectingSet.has(1)).toBe(true);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(RECONNECT_BASE_DELAY_MS);
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    unmount();
+  });
+
   /** A fetch that never produces response headers but rejects like a real fetch once its signal aborts. */
   function hangingFetchUntilAbort() {
     return vi.fn((_url: string, init: { signal: AbortSignal }) => new Promise<Response>((_resolve, reject) => {

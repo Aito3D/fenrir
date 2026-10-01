@@ -261,3 +261,31 @@ and everything else `reset()`/unmount already cleared.
 
 - Golden probes re-recorded: none (13/13 match).
 - SURFACE.md sections regenerated: none (private names only).
+
+## T-019 — camera wall recovers from a render error instead of staying on the error text (user-approved 2026-09-29)
+
+Sanctions commit <this commit> "refactor(loop-6): T-019 give the camera wall a
+reset path after a render error (user-approved behavior change)". The camera
+wall (`pageView === 'camwall'` in `frontend/src/pages/PrintersPage.tsx`) was
+wrapped in the shared `components/ErrorBoundary.tsx`, which latches
+`hasError: true` with no reset path, so a single transient render exception in
+`CameraGrid` or any tile replaced the whole wall with the static
+`printers.cameraGridError` text until the page was reloaded — fatal for an
+unattended fullscreen kiosk wall. The wall now uses a wall-local boundary
+(`CamWallErrorBoundary`, plus its `CamWallErrorFallback`, both private to
+`PrintersPage.tsx`). Its fallback still shows the same
+`printers.cameraGridError` text in the same `text-center py-8 text-red-400`
+block, and adds a countdown line and a Retry button, both reusing existing
+keys the tiles already use (`printers.cameraGrid.reconnecting`, "Reconnecting
+in {{countdown}}s (attempt {{attempt}})", where attempt is the remount about to
+be made; and `printers.cameraGrid.retry`), so no locale file changes. After 20 s the boundary
+remounts the wall on its own; Retry remounts it immediately and cancels the
+pending auto-retry. Each reset bumps a `key`, so the wall mounts as a fresh
+subtree; if it throws again the fallback returns with a fresh 20 s countdown.
+Unchanged: the shared `components/ErrorBoundary.tsx` (not touched, so every
+other caller keeps its exact props and latching behaviour); `CameraGrid`'s
+props and everything the wall renders while healthy; the error text itself;
+and the cards view, which never used this boundary.
+
+- Golden probes re-recorded: none (13/13 match).
+- SURFACE.md sections regenerated: none (`bash tools/gen_surface_c22.sh | diff - SURFACE.md` is empty; the boundary is private to PrintersPage.tsx, which the surface only scans for page views, CamWallClock and CameraGrid props).
