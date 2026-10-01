@@ -266,12 +266,20 @@ def reset_aito_quote_sync_rate_limit_throttle():
     process/xdist worker, silently skipping ``run_sync_once`` work a later
     test's assertions expect to happen — the same order-dependent leak
     ``reset_shipping_catalogue_fail_cooldown`` above guards against for
-    ``zoho._shipping_fail_at``."""
-    from backend.app.services import aito_quote_sync
+    ``zoho._shipping_fail_at``.
 
-    aito_quote_sync._throttled_until = None
+    The sync worker's other process-local memos are reset here too, for the
+    same reason: the Books call meter on the ``zoho_service`` singleton."""
+    from backend.app.services import aito_quote_sync
+    from backend.app.services.zoho import zoho_service
+
+    def _reset() -> None:
+        aito_quote_sync._throttled_until = None
+        zoho_service.reset_call_meter()
+
+    _reset()
     yield
-    aito_quote_sync._throttled_until = None
+    _reset()
 
 
 @pytest.fixture(autouse=True)
