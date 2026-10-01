@@ -118,3 +118,79 @@ async def test_transfer_tells_the_story_on_both_timelines(async_client):
     assert out[0]["detail"] == {"task_count": 2, "target_id": target["id"], "split": False}
     inn = await _events_of_kind(async_client, target["id"], "task.transferred_in")
     assert len(inn) == 1 and inn[0]["subject_id"] == source["id"]
+
+
+@pytest.fixture
+def wakes(monkeypatch):
+    """Which sync-worker wake each transfer asks for."""
+    from backend.app.api.routes import aito as aito_routes
+
+    calls: list[str] = []
+    monkeypatch.setattr(aito_routes, "request_immediate_sync", lambda: calls.append("immediate"))
+    monkeypatch.setattr(aito_routes, "request_debounced_sync", lambda: calls.append("debounced"))
+    return calls
+
+
+@pytest.mark.asyncio
+async def test_a_split_wakes_the_worker_immediately_and_a_move_debounces(async_client, wakes):
+    """A split card is a brand-new card that owes Books an estimate — the same
+    latency case as create_project. A move is an edit, so it keeps the window."""
+    source = await _create_with_tasks(async_client, TASKS)
+    target = await _create_with_tasks(async_client, [])
+    ids = [t["id"] for t in await _tasks(async_client, source["id"])]
+
+    wakes.clear()
+    assert (await _transfer(async_client, source["id"], [ids[0]], None)).status_code == 200
+    assert wakes == ["immediate"]
+
+    wakes.clear()
+    assert (await _transfer(async_client, source["id"], [ids[1]], target["id"])).status_code == 200
+    assert wakes == ["debounced"]
+
+
+async def _tasks_as(client, project_id, headers):
+    resp = await client.get(f"/api/v1/aito/{project_id}/tasks", headers=headers)
+    assert resp.status_code == 200, resp.text
+    return resp.json()
+
+
+@pytest.mark.asyncio
+async def test_a_split_needs_aito_create(async_client, db_session):
+    """Splitting creates a card, so update alone is not enough; a move onto an
+    existing card creates nothing and is allowed with update alone."""
+    from backend.app.core.auth import create_access_token
+    from backend.app.models.settings import Settings
+    from backend.tests.unit.test_inbox_service import _user
+
+    source = await _create_with_tasks(async_client, TASKS)
+    target = await _create_with_tasks(async_client, [])
+    ids = [t["id"] for t in await _tasks(async_client, source["id"])]
+    editor = await _user(db_session, "editor", ("aito:read", "aito:update"))
+    db_session.add(Settings(key="auth_enabled", value="true"))
+    await db_session.commit()
+    headers = {"Authorization": f"Bearer {create_access_token(data={'sub': editor.username})}"}
+    url = f"/api/v1/aito/{source['id']}/tasks/transfer"
+
+    resp = await async_client.post(url, json={"task_ids": [ids[0]], "target_project_id": None}, headers=headers)
+    assert resp.status_code == 403, resp.text
+    assert "aito:create" in resp.json()["detail"]
+    assert [t["id"] for t in await _tasks_as(async_client, source["id"], headers)] == ids
+
+    resp = await async_client.post(url, json={"task_ids": [ids[0]], "target_project_id": target["id"]}, headers=headers)
+    assert resp.status_code == 200, resp.text
+
+
+@pytest.mark.asyncio
+async def test_a_trashed_card_on_either_side_is_a_404(async_client):
+    source = await _create_with_tasks(async_client, TASKS)
+    trashed_target = await _create_with_tasks(async_client, [{"title": "T", "scan_cost": 1}])
+    ids = [t["id"] for t in await _tasks(async_client, source["id"])]
+    assert (await async_client.delete(f"/api/v1/aito/{trashed_target['id']}")).status_code == 204
+    assert (await _transfer(async_client, source["id"], [ids[0]], trashed_target["id"])).status_code == 404
+    assert [t["id"] for t in await _tasks(async_client, source["id"])] == ids
+
+    live_target = await _create_with_tasks(async_client, [])
+    assert (await async_client.delete(f"/api/v1/aito/{source['id']}")).status_code == 204
+    assert (await _transfer(async_client, source["id"], [ids[0]], live_target["id"])).status_code == 404
+    assert (await _transfer(async_client, source["id"], [ids[0]], None)).status_code == 404
+    assert await _tasks(async_client, live_target["id"]) == []

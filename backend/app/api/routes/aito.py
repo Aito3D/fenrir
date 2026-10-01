@@ -863,6 +863,8 @@ def _wake_worker(queued: bool, immediate: bool = False) -> None:
     fixed, so the deadline still open at close time was set by the FIRST edit
     of the session (often the empty task POST that "+ Add task" fires) and
     would otherwise drain a half-typed card. See ``request_immediate_sync``.
+    ``transfer_tasks`` passes it for a split too: the split card is a new
+    card, so it gets creation's latency rather than an edit's window.
     """
     if queued:
         if immediate:
@@ -5271,7 +5273,9 @@ async def transfer_tasks(
     await _apply_rules(db, target, await _summary_for(db, target.id), actor=actor)
     source_queued = source.quote_sync_state == "pending"
     target_queued = target.quote_sync_state == "pending"
-    await _commit_and_wake(db, source_queued or target_queued, source.id if source_queued else None)
+    # A split is a card creation: the new card owes Books an estimate now,
+    # like create_project's, so it skips the edit window. A move is an edit.
+    await _commit_and_wake(db, source_queued or target_queued, source.id if source_queued else None, immediate=split)
     if target_queued:
         # The target's own requeue marker: _commit_and_wake bumped the
         # source's only, and the worker tracks the two separately.
