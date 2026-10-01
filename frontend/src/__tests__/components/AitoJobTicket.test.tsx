@@ -63,6 +63,7 @@ const tasks = [
     title: 'Aile avant',
     scan_cost: 3500,
     scan_quantity: 3,
+    scan_done: true,
     impression_cost: 12345,
     impression_printer_id: 1,
     impression_filament_id: 7,
@@ -130,7 +131,9 @@ describe('JobTicket', () => {
     expect(firstSteps[1]).toHaveTextContent('Weight 40 g');
     expect(firstSteps[1]).toHaveTextContent('Time 95 min');
     expect(firstSteps[1]).toHaveTextContent('Remplissage 30 %');
-    for (const step of firstSteps) expect(within(step).getByTestId('job-ticket-tick')).toBeInTheDocument();
+    // A step already done arrives ticked; the rest are empty boxes to fill.
+    expect(within(firstSteps[0]).getByTestId('job-ticket-tick')).toHaveTextContent('✓');
+    expect(within(firstSteps[1]).getByTestId('job-ticket-tick').textContent).toBe('');
 
     const secondSteps = within(blocks[1]).getAllByTestId('job-ticket-step');
     expect(secondSteps).toHaveLength(1);

@@ -45,10 +45,29 @@ export function useCardActions(project: AitoProject, tasks: TaskDraft[], currenc
     }
   };
 
+  /** Called straight from the menu row's click. The clipboard write must
+   *  START inside that click: WebKit (the shop's iPads) drops the user
+   *  activation across an await, so writing after the tracking-link request
+   *  is refused — both `writeText` and the `execCommand` fallback. Where
+   *  `ClipboardItem` exists the write is therefore issued synchronously with a
+   *  PROMISE of the text, which the browser waits on. Without it (older
+   *  browsers, plain HTTP, where the textarea fallback is the only route) the
+   *  text is awaited and then copied as before. */
   const copySummary = async () => {
-    const text = buildSummary(project, tasks, currency, await trackingUrl(), t);
-    if (await copyText(text)) showToast(t('aito.summaryCopied'), 'success');
-    else showToast(t('aito.summaryCopyFailed'), 'error');
+    const textPromise = trackingUrl().then((url) => buildSummary(project, tasks, currency, url, t));
+    const toast = (ok: boolean) =>
+      ok ? showToast(t('aito.summaryCopied'), 'success') : showToast(t('aito.summaryCopyFailed'), 'error');
+    if (typeof window.ClipboardItem === 'function' && typeof navigator.clipboard?.write === 'function') {
+      const blob = textPromise.then((text) => new Blob([text], { type: 'text/plain' }));
+      try {
+        await navigator.clipboard.write([new ClipboardItem({ 'text/plain': blob })]);
+        toast(true);
+        return;
+      } catch {
+        // Fall through: a browser that rejects the item may still take text.
+      }
+    }
+    toast(await copyText(await textPromise));
   };
 
   const printTicket = () =>

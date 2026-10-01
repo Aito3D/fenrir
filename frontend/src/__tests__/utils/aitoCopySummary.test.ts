@@ -100,7 +100,9 @@ describe('copyText', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
-    setExecCommand(undefined);
+    // Delete, not reassign: jsdom has no execCommand, and an own property set
+    // to undefined would still shadow whatever a later file installs.
+    delete (document as unknown as { execCommand?: unknown }).execCommand;
   });
 
   it('writes through navigator.clipboard when it is available', async () => {

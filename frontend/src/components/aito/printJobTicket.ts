@@ -34,6 +34,7 @@ body { font-family: -apple-system, 'Helvetica Neue', Arial, sans-serif; font-siz
 .step { padding: 1.5mm 0; break-inside: avoid; page-break-inside: avoid; }
 .step-row { display: flex; align-items: baseline; gap: 3mm; }
 .tick { flex: none; width: 4.5mm; height: 4.5mm; border: .4mm solid #111; border-radius: .6mm; transform: translateY(.6mm); }
+.tick.done { display: inline-flex; align-items: center; justify-content: center; font-size: 9pt; font-weight: 800; line-height: 1; }
 .step-name { font-weight: 700; min-width: 28mm; }
 .step-details { font-variant-numeric: tabular-nums; }
 .step-note { margin: .8mm 0 0 7.5mm; font-size: 10.5pt; white-space: pre-wrap; }

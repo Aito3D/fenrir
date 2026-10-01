@@ -4061,8 +4061,78 @@ describe('ProjectDetailPanel copy summary and job ticket', () => {
     };
   };
 
+  const { createObjectURL, revokeObjectURL } = URL;
   afterEach(() => {
     vi.restoreAllMocks();
+    URL.createObjectURL = createObjectURL;
+    URL.revokeObjectURL = revokeObjectURL;
+  });
+
+  it('writes through a ClipboardItem inside the click, before the tracking link has arrived', async () => {
+    // WebKit drops the click's user activation across an await, so a write
+    // made after the tracking request would be refused on the shop's iPads.
+    // The ClipboardItem is handed over synchronously with a PROMISE of the
+    // text, which WebKit accepts.
+    let releaseLink!: () => void;
+    const linkGate = new Promise<void>((resolve) => {
+      releaseLink = resolve;
+    });
+    let trackingRequested = false;
+    server.use(
+      http.get('/api/v1/aito/12/tasks', () => HttpResponse.json([mockTask, mockTask2])),
+      http.get('/api/v1/aito/12/tracking-link', async () => {
+        trackingRequested = true;
+        await linkGate;
+        return HttpResponse.json({ tracking_url: 'https://shop.example/t/tok' });
+      }),
+    );
+    class FakeClipboardItem {
+      constructor(public items: Record<string, Promise<Blob>>) {}
+    }
+    const write = vi.fn(async (items: FakeClipboardItem[]) => {
+      await items[0].items['text/plain'];
+    });
+    const writeText = vi.fn();
+    const clipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+    Object.defineProperty(navigator, 'clipboard', { value: { write, writeText }, configurable: true });
+    vi.stubGlobal('ClipboardItem', FakeClipboardItem);
+    try {
+      show({ quote_number: 'DEV26-2656', tracking_configured: true });
+      await screen.findByText('Second bracket');
+      fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Copy summary' }));
+      // Synchronous: in the same tick as the click, with the link still held.
+      expect(write).toHaveBeenCalledTimes(1);
+      expect(writeText).not.toHaveBeenCalled();
+      releaseLink();
+      const blob: Blob = await write.mock.calls[0][0][0].items['text/plain'];
+      expect(trackingRequested).toBe(true);
+      expect(blob.type).toBe('text/plain');
+      const text = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(reader.error);
+        reader.readAsText(blob);
+      });
+      expect(text).toBe(
+        [
+          '#12 · DEV26-2656 · ACME SARL',
+          'Support de caméra',
+          '',
+          `- Bracket mount — ${formatMoney(500, 'USD')}`,
+          `- Second bracket — ${formatMoney(500, 'USD')}`,
+          `Total ${formatMoney(1000, 'USD')}`,
+          '',
+          'https://shop.example/t/tok',
+        ].join('\n'),
+      );
+      expect(await screen.findByText('Summary copied')).toBeInTheDocument();
+    } finally {
+      releaseLink();
+      if (clipboard) Object.defineProperty(navigator, 'clipboard', clipboard);
+      else delete (navigator as unknown as { clipboard?: unknown }).clipboard;
+      vi.unstubAllGlobals();
+    }
   });
 
   it('copies the card as text, tracking link last, and says so', async () => {
@@ -4107,7 +4177,7 @@ describe('ProjectDetailPanel copy summary and job ticket', () => {
       expect(calls.n).toBe(0);
     } finally {
       restore();
-      (document as unknown as { execCommand: unknown }).execCommand = undefined;
+      delete (document as unknown as { execCommand?: unknown }).execCommand;
     }
   });
 

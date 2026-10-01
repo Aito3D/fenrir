@@ -101,13 +101,16 @@ export function JobTicket({ project, tasks, printers, filaments, trackingUrl, pr
         <section key={task.id ?? task.uid} className="task" data-testid="job-ticket-task">
           <h2 className="task-title">{task.title.trim() || '—'}</h2>
           <ul className="steps">
-            {taskSteps(task).map(({ service }) => {
+            {taskSteps(task).map(({ service, done }) => {
               const note = String(task[DESCRIPTION_KEYS[service]] ?? '').trim();
               const parts = details(task, service);
               return (
                 <li key={service} className="step" data-testid="job-ticket-step" data-service={service}>
                   <div className="step-row">
-                    <span className="tick" data-testid="job-ticket-tick" aria-hidden="true" />
+                    {/* Done already: pre-ticked, so nobody redoes finished work. */}
+                    <span className={done ? 'tick done' : 'tick'} data-testid="job-ticket-tick" aria-hidden="true">
+                      {done ? '✓' : ''}
+                    </span>
                     <span className="step-name">{t(AITO_SERVICE_LABEL_KEYS[service])}</span>
                     {parts.length > 0 && <span className="step-details">{parts.join(' — ')}</span>}
                   </div>
