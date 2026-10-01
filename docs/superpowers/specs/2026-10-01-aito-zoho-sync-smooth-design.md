@@ -125,6 +125,13 @@ Estimated steady load of the change pass: 3 list calls, 2 trickle cards and the 
 
 Assumption to verify during implementation, read-only, on a real estimate: a client viewing or accepting a quote moves the estimate's `last_modified_time`. The comments mirror already relies on this. If it does not hold, `TRICKLE_PER_PASS` is raised so the cycle is 15 minutes or less.
 
+**Checked 2026-10-01 (read-only), two results:**
+
+- *Acceptance: holds.* On the 25 most recent accepted estimates in Books, `last_modified_time` is on or after `accepted_date` in every case. (Day granularity: `accepted_date` is a calendar day.)
+- *Viewing: does not hold, and never did.* Production history shows it: of the last 40 `quote.viewed` events, 11 were recorded within 6 minutes of the view and 22 more than 70 minutes after it, with the 90th percentile at 4 hours — the comments mirror's own `COMMENT_REFRESH_INTERVAL`. A view that moved `last_modified_time` would have been picked up within one 5-minute tick. So a view is, today, noticed by the 4-hour comments refresh, not by the estimate changing.
+
+Decision: `TRICKLE_PER_PASS` stays at 2. Raising it would not make views arrive sooner — the comments read is gated by the 4-hour refresh, not by how often the card is reconciled — and would triple the background reads. View detection is therefore unchanged in kind: within 4 hours, plus up to one trickle cycle (about 40 minutes on the current board) where it used to be plus one 5-minute tick. Nothing else on the board depends on a view. Detecting views faster is possible (a shorter comments refresh, at one extra Books call per reconcile) and is left as a separate decision.
+
 ### 5. Rate limits
 
 - `_throttled_until` gates background work only: the change polls, queue reconciles, the invoice sweep and the invoice and contact polls. The pending drain no longer checks it.
