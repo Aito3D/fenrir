@@ -1448,6 +1448,11 @@ export function ProjectDetailPanel({
                     onDuplicate={onDuplicate && duplicate.start}
                     onDelete={onDelete && (() => setTrashing(true))}
                     shortcutKey="."
+                    // Off while any of the panel's own overlays is up: the
+                    // key must not open a menu behind the dialog in front.
+                    shortcutEnabled={
+                      !(merging || trashing || historyOpen || duplicate.confirming || editingClient)
+                    }
                   />
                 }
               >

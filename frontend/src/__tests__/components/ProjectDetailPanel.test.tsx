@@ -1902,6 +1902,39 @@ describe('ProjectDetailPanel quote row', () => {
     await waitFor(() => expect(onDuplicate).toHaveBeenCalledOnce());
     localStorage.clear();
   });
+
+  it('Escape on the replace-draft confirm closes only the confirm, not the panel behind it', async () => {
+    writeNewProjectDraft({
+      tasks: [{ ...emptyTaskDraft(), title: 'Un devis en cours' }],
+      client: null,
+      summaryText: '',
+      summaryEdited: false,
+      summarySignature: '',
+      shipping: null,
+      dueDate: '',
+    });
+    const onClose = vi.fn();
+    const onDuplicate = vi.fn();
+    render(
+      <ProjectDetailPanel
+        canCreate
+        canUpdate
+        canDelete
+        project={project}
+        onClose={onClose}
+        onDelete={vi.fn()}
+        onDuplicate={onDuplicate}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Duplicate' }));
+    expect(await screen.findByText('Replace the draft in progress?')).toBeInTheDocument();
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(screen.queryByText('Replace the draft in progress?')).not.toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(onDuplicate).not.toHaveBeenCalled();
+    localStorage.clear();
+  });
 });
 
 describe('ProjectDetailPanel left column cards', () => {
@@ -2564,6 +2597,30 @@ describe('ProjectDetailPanel delete', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(screen.queryByText('Move this card to the trash?')).not.toBeInTheDocument();
     expect(onDelete).not.toHaveBeenCalled();
+  });
+
+  it('Escape on the trash confirm closes only the confirm, not the panel behind it', () => {
+    const onClose = vi.fn();
+    const onDelete = vi.fn();
+    render(<ProjectDetailPanel canCreate canUpdate canDelete project={project} onClose={onClose} onDelete={onDelete} />);
+    fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Move to trash' }));
+    // On the body, not the window: a real key event targets an element, and
+    // the confirm claims it on the way down.
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(screen.queryByText('Move this card to the trash?')).not.toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(onDelete).not.toHaveBeenCalled();
+    expect(screen.getByTestId('panel-column-tasks')).toBeInTheDocument();
+  });
+
+  it('keeps "." from opening the menu behind the trash confirm', () => {
+    render(<ProjectDetailPanel canCreate canUpdate canDelete project={project} onClose={vi.fn()} onDelete={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Move to trash' }));
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    fireEvent.keyDown(document.body, { key: '.' });
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
   });
 
   it('separates the left column from the tasks on wide screens', () => {

@@ -37,6 +37,9 @@ interface ProjectActionsMenuProps {
   onDelete?: () => void;
   /** A bare key that opens the menu from anywhere on the panel (`.`). */
   shortcutKey?: string;
+  /** False while the host has an overlay up, so the key never opens the
+   *  menu behind it. Defaults to true. */
+  shortcutEnabled?: boolean;
 }
 
 /** Every row's `disabled` and `hint`, from one place: the card's state first
@@ -125,7 +128,11 @@ export function ProjectActionsMenu(props: ProjectActionsMenuProps) {
   const [open, setOpen] = useState(false);
   const anchorRef = useRef<HTMLButtonElement>(null);
   const label = t('aito.moreActions');
-  useMenuShortcut(props.shortcutKey ?? '', props.shortcutKey !== undefined, () => setOpen(true));
+  useMenuShortcut(
+    props.shortcutKey ?? '',
+    props.shortcutKey !== undefined && (props.shortcutEnabled ?? true),
+    () => setOpen(true),
+  );
 
   return (
     <>

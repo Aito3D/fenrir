@@ -28,6 +28,10 @@ interface ConfirmModalProps {
   // confirm that is a gesture rather than a click (Aito's hold-to-trash). The
   // control commits on its own; `onConfirm` is then never called by the modal.
   confirmControl?: ReactNode;
+  // Escape closes THIS modal only. For a confirm opened over another dialog
+  // that also closes on a window-level Escape (Aito's detail panel): without
+  // it, one press closes both. Wherever focus is — a confirm takes none.
+  isolateEscape?: boolean;
   // Optional extra content rendered between the message and the buttons —
   // used for opt-in checkboxes (e.g. the "Also remove from statistics"
   // toggle in the archive delete confirmation, #1343).
@@ -49,6 +53,7 @@ export function ConfirmModal({
   loadingText,
   confirmDisabled = false,
   confirmControl,
+  isolateEscape = false,
   children,
   onConfirm,
   onCancel,
@@ -60,11 +65,15 @@ export function ConfirmModal({
   // Close on Escape key (but not while loading)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !isLoading) onCancel();
+      if (e.key !== 'Escape') return;
+      // Claimed before anything else sees it: the window capture phase runs
+      // first, so the host's own bubble-phase Escape never fires.
+      if (isolateEscape) e.stopPropagation();
+      if (!isLoading) onCancel();
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onCancel, isLoading]);
+    window.addEventListener('keydown', handleKeyDown, isolateEscape);
+    return () => window.removeEventListener('keydown', handleKeyDown, isolateEscape);
+  }, [onCancel, isLoading, isolateEscape]);
 
   const variantStyles = {
     danger: {

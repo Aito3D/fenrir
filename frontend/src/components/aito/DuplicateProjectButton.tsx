@@ -15,6 +15,8 @@ export function DuplicateReplaceConfirm({ onConfirm, onCancel }: { onConfirm: ()
       message={t('aito.duplicateReplaceBody')}
       confirmText={t('aito.duplicateReplaceConfirm')}
       variant="warning"
+      // Asked over the detail panel, which closes on Escape too.
+      isolateEscape
       onConfirm={onConfirm}
       onCancel={onCancel}
     />

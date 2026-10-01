@@ -34,6 +34,19 @@ describe('ConfirmModal', () => {
       expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
     });
 
+    it('isolateEscape: cancels and keeps the key from a host listening on the window', () => {
+      const host = vi.fn();
+      window.addEventListener('keydown', host);
+      try {
+        render(<ConfirmModal {...defaultProps} isolateEscape />);
+        fireEvent.keyDown(document.body, { key: 'Escape' });
+        expect(defaultProps.onCancel).toHaveBeenCalledOnce();
+        expect(host).not.toHaveBeenCalled();
+      } finally {
+        window.removeEventListener('keydown', host);
+      }
+    });
+
     it('renders message', () => {
       render(<ConfirmModal {...defaultProps} />);
       expect(

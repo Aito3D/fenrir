@@ -18,6 +18,8 @@ export function TrashConfirmModal({ onTrash, onCancel }: { onTrash: () => void; 
       title={t('aito.trashConfirmTitle')}
       message={t('aito.trashConfirmBody')}
       variant="danger"
+      // Opened over the panel, which closes on Escape too.
+      isolateEscape
       onConfirm={onTrash}
       onCancel={onCancel}
       confirmControl={
