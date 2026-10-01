@@ -1264,8 +1264,22 @@ async def _update_quote(db: AsyncSession, project: AitoProject) -> None:
             # is even made. None of the three may cost the line-item push
             # below — an expiry is a nicety, the lines are the job.
             logger.warning("expiry_date not written on estimate %s", project.quote_id, exc_info=True)
+    # A card re-pointed at another contact (transfer-client) names a customer
+    # the estimate does not: push it with the lines, or the next sweep's
+    # _follow_customer reads the old customer back and undoes the transfer.
+    # Only on a disagreement — the common push stays a lines-only PUT, and a
+    # read that omits customer_id is no evidence of one (same rule as
+    # _follow_customer).
+    remote_customer = str(estimate.get("customer_id") or "")
+    customer_move: dict = {}
+    if project.client_id and remote_customer and remote_customer != project.client_id:
+        customer_move = {"customer_id": project.client_id, "contact_person_id": project.client_contact_person_id}
     updated = await zoho_service.update_estimate_lines(
-        db, project.quote_id, line_items, notes=await notes_with_tracking(db, project, estimate.get("notes"))
+        db,
+        project.quote_id,
+        line_items,
+        notes=await notes_with_tracking(db, project, estimate.get("notes")),
+        **customer_move,
     )
     await _write_back_rounded_costs(db, project.id, pushed_costs)
     # `project.quote_status` was loaded before this call's own get_estimate,
@@ -1324,6 +1338,13 @@ async def _follow_customer(db: AsyncSession, project: AitoProject, estimate: dic
     """
     remote_id = str(estimate.get("customer_id") or "")
     if not remote_id or remote_id == (project.client_id or ""):
+        return
+    if project.quote_sync_state in ("pending", "error"):
+        # The card holds an edit Books has not received yet — a transfer
+        # among them (_update_quote pushes the new customer). Here the card
+        # is the side that changed, so following Books would undo it. The
+        # sweep only reaches this for 'error' today (pending takes the push
+        # branch), but the guard names both states the card is ahead in.
         return
     try:
         contact = await zoho_service.get_contact(db, remote_id)

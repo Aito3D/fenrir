@@ -8,6 +8,8 @@ the record for WHO the quote belongs to: the sweep already reads the estimate
 every tick, and `customer_id` rides in that same response.
 """
 
+import json
+
 import httpx
 import pytest
 from sqlalchemy import select
@@ -239,3 +241,138 @@ async def test_no_contacted_cleared_event_when_there_was_no_stamp(db_session):
     kinds = [e.kind for e in await _events(db_session, project.id)]
     assert "project.client.changed" in kinds
     assert "project.contacted.cleared" not in kinds
+
+
+class _StatefulBooks:
+    """A one-estimate Books whose PUT really changes what the next GET reads,
+    so a push that leaves the customer out shows up as the next sweep
+    "following" Books straight back to the old one."""
+
+    def __init__(self, customer_id: str = "C1") -> None:
+        self.estimate = {
+            "estimate_id": "E1",
+            "estimate_number": "DEV26-9001",
+            "status": "sent",
+            "total": 1000,
+            "customer_id": customer_id,
+            "customer_name": "Client",
+            "is_transaction_created": False,
+            "invoiced_amount": 0,
+            "is_inclusive_tax": True,
+            "expiry_date": "2026-12-31",
+            "line_items": [],
+        }
+        self.puts: list[dict] = []
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        if "oauth" in request.url.path:
+            return httpx.Response(200, json={"access_token": "t", "expires_in": 3600})
+        path = request.url.path
+        if request.method == "GET" and path.endswith("/estimates/E1"):
+            return httpx.Response(200, json={"estimate": dict(self.estimate)})
+        if request.method == "PUT" and path.endswith("/estimates/E1"):
+            body = json.loads(request.content)
+            self.puts.append(body)
+            if "customer_id" in body:
+                self.estimate["customer_id"] = body["customer_id"]
+                self.estimate["customer_name"] = "PACIFIC MARINE"
+            if "line_items" in body:
+                self.estimate["line_items"] = body["line_items"]
+            return httpx.Response(200, json={"estimate": dict(self.estimate)})
+        if request.method == "GET" and path.endswith("/estimates/E1/comments"):
+            return httpx.Response(200, json={"comments": []})
+        return httpx.Response(404, json={"message": "no route"})
+
+
+async def _transferred_project(db, *, contact_person_id: str | None):
+    """The state transfer_client leaves behind: the card names the new
+    customer, Books still names the old one, and the card is pending."""
+    project = await _project_with_quote(db, impression_cost=1000)
+    project.quote_status = "sent"
+    project.client_id = "C2"
+    project.client_name = "PACIFIC MARINE"
+    project.client_contact_person_id = contact_person_id
+    project.quote_sync_state = "pending"
+    await db.commit()
+    await _configure_zoho(db)
+    return project
+
+
+@pytest.mark.asyncio
+async def test_a_transfer_is_pushed_to_books_and_survives_the_next_sweep(db_session):
+    project = await _transferred_project(db_session, contact_person_id="CP9")
+    books = _StatefulBooks("C1")
+    zoho_service.transport = httpx.MockTransport(books)
+    zoho_service.invalidate_token()
+    try:
+        await sync_project(db_session, project)  # the push
+        await db_session.commit()
+        assert project.quote_sync_state == "idle"
+        await sync_project(db_session, project)  # the next sweep
+        await db_session.commit()
+    finally:
+        zoho_service.transport = None
+
+    line_put = next(p for p in books.puts if "line_items" in p)
+    assert line_put["customer_id"] == "C2"
+    assert line_put["contact_persons"] == ["CP9"]
+    assert books.estimate["customer_id"] == "C2"
+    assert project.client_id == "C2"
+    assert project.client_name == "PACIFIC MARINE"
+    kinds = [e.kind for e in await _events(db_session, project.id)]
+    assert "project.client.changed" not in kinds
+
+
+@pytest.mark.asyncio
+async def test_a_push_names_no_contact_person_when_the_card_has_none(db_session):
+    project = await _transferred_project(db_session, contact_person_id=None)
+    books = _StatefulBooks("C1")
+    zoho_service.transport = httpx.MockTransport(books)
+    zoho_service.invalidate_token()
+    try:
+        await sync_project(db_session, project)
+        await db_session.commit()
+    finally:
+        zoho_service.transport = None
+
+    line_put = next(p for p in books.puts if "line_items" in p)
+    assert line_put["customer_id"] == "C2"
+    assert "contact_persons" not in line_put
+
+
+@pytest.mark.asyncio
+async def test_a_push_with_the_same_customer_still_sends_only_its_lines(db_session):
+    project = await _transferred_project(db_session, contact_person_id="CP9")
+    books = _StatefulBooks("C2")
+    zoho_service.transport = httpx.MockTransport(books)
+    zoho_service.invalidate_token()
+    try:
+        await sync_project(db_session, project)
+        await db_session.commit()
+    finally:
+        zoho_service.transport = None
+
+    line_put = next(p for p in books.puts if "line_items" in p)
+    assert "customer_id" not in line_put and "contact_persons" not in line_put
+
+
+@pytest.mark.asyncio
+async def test_a_card_whose_push_errored_does_not_follow_books_back(db_session):
+    """An 'error' card still holds edits Books never received — a transfer
+    among them. Following Books there would undo the operator's change."""
+    project = await _transferred_project(db_session, contact_person_id=None)
+    project.quote_sync_state = "error"
+    project.quote_sync_error = "Main d'oeuvre line has no description"
+    await db_session.commit()
+    books = _StatefulBooks("C1")
+    zoho_service.transport = httpx.MockTransport(books)
+    zoho_service.invalidate_token()
+    try:
+        await sync_project(db_session, project)
+        await db_session.commit()
+    finally:
+        zoho_service.transport = None
+
+    assert project.client_id == "C2"
+    kinds = [e.kind for e in await _events(db_session, project.id)]
+    assert "project.client.changed" not in kinds

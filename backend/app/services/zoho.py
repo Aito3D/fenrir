@@ -726,7 +726,14 @@ class ZohoService:
         return (await self._request(db, "POST", "/estimates", json=payload)).get("estimate", {})
 
     async def update_estimate_lines(
-        self, db: AsyncSession, estimate_id: str, line_items: list[dict], notes: str | None = None
+        self,
+        db: AsyncSession,
+        estimate_id: str,
+        line_items: list[dict],
+        notes: str | None = None,
+        *,
+        customer_id: str | None = None,
+        contact_person_id: str | None = None,
     ) -> dict:
         """Replace the line items and nothing else.
 
@@ -734,8 +741,19 @@ class ZohoService:
         reference_number, template and salesperson when they are absent from
         the body. Verified against the live org — do not "helpfully" resend
         them, that is how a hand-edited note gets clobbered.
+
+        ``customer_id`` is the one exception, and only when the caller passes
+        it: a card moved to another contact (transfer-client) must move its
+        estimate too, or the next sweep follows Books back to the old one.
+        ``contact_person_id`` rides with it as Books' ``contact_persons`` id
+        list (the estimate API's field for whom the quote is addressed to) —
+        the old customer's person cannot stay on the new customer's quote.
         """
         body: dict = {"line_items": line_items}
+        if customer_id is not None:
+            body["customer_id"] = customer_id
+            if contact_person_id:
+                body["contact_persons"] = [contact_person_id]
         if notes is not None:
             # Customer notes print on the estimate PDF Books emails — the
             # tracking link's only way into the quote. Omitted (not '') when
