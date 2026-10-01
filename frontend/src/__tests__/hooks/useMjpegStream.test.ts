@@ -53,7 +53,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { renderHook, waitFor } from '@testing-library/react';
+import { renderHook, waitFor, act } from '@testing-library/react';
 import { useMjpegStream } from '../../hooks/useMjpegStream';
 
 const MAX_CONSECUTIVE_DECODE_FAILURES = 20;
@@ -531,5 +531,221 @@ describe('useMjpegStream', () => {
     await vi.advanceTimersByTimeAsync(60_000);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  describe('T-046: buffer compaction and canvas draw', () => {
+    /** Plain-object canvas that records every width/height assignment. */
+    function makeCanvas(initial = { width: 0, height: 0 }, ctxAvailable = true) {
+      const widthSets: number[] = [];
+      const heightSets: number[] = [];
+      let width = initial.width;
+      let height = initial.height;
+      const canvas = {
+        get width() { return width; },
+        set width(v: number) { width = v; widthSets.push(v); },
+        get height() { return height; },
+        set height(v: number) { height = v; heightSets.push(v); },
+        getContext: vi.fn(),
+      };
+      const ctx = { canvas, drawImage: vi.fn() };
+      canvas.getContext.mockImplementation(() => (ctxAvailable ? ctx : null));
+      const ref = { current: canvas } as unknown as React.RefObject<HTMLCanvasElement | null>;
+      return { canvas, ctx, ref, widthSets, heightSets };
+    }
+
+    function sizedBitmap(width: number, height: number) {
+      return { width, height, close: vi.fn() } as unknown as ImageBitmap;
+    }
+
+    function decodedBlobSizes() {
+      return vi.mocked(createImageBitmap).mock.calls.map((c) => (c[0] as Blob).size);
+    }
+
+    it('treats a non-ok response as a stream failure and reports the error', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 502, body: null } as unknown as Response));
+      vi.stubGlobal('createImageBitmap', vi.fn());
+
+      const onError = vi.fn();
+      const { result, unmount } = renderHook(() =>
+        useMjpegStream({ url: '/printers/1/camera/stream', canvasRef: nullCanvasRef, onError }),
+      );
+
+      await waitFor(() => expect(result.current.hasError).toBe(true));
+      expect(result.current.isLoading).toBe(false);
+      expect(result.current.isConnected).toBe(false);
+      expect(onError).toHaveBeenCalledTimes(1);
+      expect(createImageBitmap).not.toHaveBeenCalled();
+
+      unmount();
+    });
+
+    it('drops leading garbage before the SOI marker and still decodes the frame', async () => {
+      const garbage = new Uint8Array([0x00, 0x11, 0x22, 0x33, 0x44]);
+      const stream = openStreamFromChunks([concatFrames([garbage, encodeJpegFrame(9)])]);
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(fakeResponse(stream)));
+      vi.stubGlobal('createImageBitmap', vi.fn().mockResolvedValue(fakeBitmap()));
+
+      const onFirstFrame = vi.fn();
+      const { unmount } = renderHook(() =>
+        useMjpegStream({ url: '/printers/1/camera/stream', canvasRef: nullCanvasRef, onFirstFrame }),
+      );
+
+      await waitFor(() => expect(onFirstFrame).toHaveBeenCalledTimes(1));
+      // Exactly one frame, with the garbage trimmed off (SOI + id + EOI = 5 bytes).
+      expect(decodedBlobSizes()).toEqual([5]);
+
+      unmount();
+    });
+
+    it('keeps the last byte when no SOI is found so a 0xFF split across reads still forms a marker', async () => {
+      // First read: 4 junk bytes ending in 0xFF (no SOI anywhere). The hook
+      // must retain that trailing 0xFF; the next read supplies its 0xD8.
+      const first = new Uint8Array([0x01, 0x02, 0x03, 0xff]);
+      const second = new Uint8Array([0xd8, 0x07, 0xff, 0xd9]);
+      const stream = openStreamFromChunks([first, second]);
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(fakeResponse(stream)));
+      vi.stubGlobal('createImageBitmap', vi.fn().mockResolvedValue(fakeBitmap()));
+
+      const onFirstFrame = vi.fn();
+      const { unmount } = renderHook(() =>
+        useMjpegStream({ url: '/printers/1/camera/stream', canvasRef: nullCanvasRef, onFirstFrame }),
+      );
+
+      await waitFor(() => expect(onFirstFrame).toHaveBeenCalledTimes(1));
+      expect(decodedBlobSizes()).toEqual([5]);
+
+      unmount();
+    });
+
+    it('draws the decoded bitmap, resizes the canvas to the bitmap, and reuses the cached context', async () => {
+      const { canvas, ctx, ref, widthSets, heightSets } = makeCanvas();
+      const bitmap = sizedBitmap(640, 480);
+      const stream = openStreamFromChunks([concatFrames([encodeJpegFrame(1), encodeJpegFrame(2)])]);
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(fakeResponse(stream)));
+      vi.stubGlobal('createImageBitmap', vi.fn().mockResolvedValue(bitmap));
+
+      const { unmount } = renderHook(() => useMjpegStream({ url: '/printers/1/camera/stream', canvasRef: ref }));
+
+      await waitFor(() => expect(ctx.drawImage).toHaveBeenCalledTimes(2));
+      expect(ctx.drawImage).toHaveBeenCalledWith(bitmap, 0, 0);
+      expect(canvas.width).toBe(640);
+      expect(canvas.height).toBe(480);
+      // Same size on the second frame: assigned once only, context fetched once.
+      expect(widthSets).toEqual([640]);
+      expect(heightSets).toEqual([480]);
+      expect(canvas.getContext).toHaveBeenCalledTimes(1);
+      expect(canvas.getContext).toHaveBeenCalledWith('2d');
+      expect(bitmap.close).toHaveBeenCalledTimes(2);
+
+      unmount();
+    });
+
+    it('does not resize a canvas that already matches the bitmap but still draws', async () => {
+      const { ctx, ref, widthSets, heightSets } = makeCanvas({ width: 320, height: 200 });
+      const bitmap = sizedBitmap(320, 200);
+      const stream = openStreamFromChunks([concatFrames([encodeJpegFrame(1)])]);
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(fakeResponse(stream)));
+      vi.stubGlobal('createImageBitmap', vi.fn().mockResolvedValue(bitmap));
+
+      const { unmount } = renderHook(() => useMjpegStream({ url: '/printers/1/camera/stream', canvasRef: ref }));
+
+      await waitFor(() => expect(ctx.drawImage).toHaveBeenCalledTimes(1));
+      expect(widthSets).toEqual([]);
+      expect(heightSets).toEqual([]);
+
+      unmount();
+    });
+
+    it('resizes again when the bitmap dimensions change between frames', async () => {
+      const { canvas, ctx, ref, widthSets, heightSets } = makeCanvas();
+      const stream = openStreamFromChunks([concatFrames([encodeJpegFrame(1), encodeJpegFrame(2)])]);
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(fakeResponse(stream)));
+      vi.stubGlobal(
+        'createImageBitmap',
+        vi.fn().mockResolvedValueOnce(sizedBitmap(640, 480)).mockResolvedValueOnce(sizedBitmap(1280, 720)),
+      );
+
+      const { unmount } = renderHook(() => useMjpegStream({ url: '/printers/1/camera/stream', canvasRef: ref }));
+
+      await waitFor(() => expect(ctx.drawImage).toHaveBeenCalledTimes(2));
+      expect(widthSets).toEqual([640, 1280]);
+      expect(heightSets).toEqual([480, 720]);
+      expect(canvas.width).toBe(1280);
+
+      unmount();
+    });
+
+    it('skips drawing when the canvas has no 2D context but still counts the frame as decoded', async () => {
+      const { canvas, ctx, ref, widthSets } = makeCanvas({ width: 0, height: 0 }, false);
+      const bitmap = sizedBitmap(640, 480);
+      const stream = openStreamFromChunks([concatFrames([encodeJpegFrame(1)])]);
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(fakeResponse(stream)));
+      vi.stubGlobal('createImageBitmap', vi.fn().mockResolvedValue(bitmap));
+
+      const onFirstFrame = vi.fn();
+      const { unmount } = renderHook(() =>
+        useMjpegStream({ url: '/printers/1/camera/stream', canvasRef: ref, onFirstFrame }),
+      );
+
+      await waitFor(() => expect(onFirstFrame).toHaveBeenCalledTimes(1));
+      expect(canvas.getContext).toHaveBeenCalledWith('2d');
+      expect(ctx.drawImage).not.toHaveBeenCalled();
+      expect(widthSets).toEqual([]);
+      expect(bitmap.close).toHaveBeenCalledTimes(1);
+
+      unmount();
+    });
+
+    it('restart() while a decode is in flight closes the stale bitmap without drawing or delivering a first frame', async () => {
+      const { ctx, ref } = makeCanvas();
+      const bitmap = sizedBitmap(640, 480);
+      let resolveBitmap: (b: ImageBitmap) => void = () => {};
+      const pending = new Promise<ImageBitmap>((r) => { resolveBitmap = r; });
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(fakeResponse(openStreamFromChunks([concatFrames([encodeJpegFrame(1)])])))
+        .mockResolvedValue(fakeResponse(openStreamFromChunks([])));
+      vi.stubGlobal('fetch', fetchMock);
+      vi.stubGlobal('createImageBitmap', vi.fn().mockReturnValueOnce(pending));
+
+      const onFirstFrame = vi.fn();
+      const { result, unmount } = renderHook(() =>
+        useMjpegStream({ url: '/printers/1/camera/stream', canvasRef: ref, onFirstFrame }),
+      );
+
+      await waitFor(() => expect(createImageBitmap).toHaveBeenCalledTimes(1));
+
+      act(() => result.current.restart());
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+
+      await act(async () => { resolveBitmap(bitmap); });
+      await waitFor(() => expect(bitmap.close).toHaveBeenCalledTimes(1));
+      expect(ctx.drawImage).not.toHaveBeenCalled();
+      expect(onFirstFrame).not.toHaveBeenCalled();
+
+      unmount();
+    });
+
+    it('does not fetch while disabled and clears isConnected when it becomes disabled', async () => {
+      const stream = openStreamFromChunks([concatFrames([encodeJpegFrame(1)])]);
+      const fetchMock = vi.fn().mockResolvedValue(fakeResponse(stream));
+      vi.stubGlobal('fetch', fetchMock);
+      vi.stubGlobal('createImageBitmap', vi.fn().mockResolvedValue(fakeBitmap()));
+
+      const { result, rerender, unmount } = renderHook(
+        ({ enabled }: { enabled: boolean }) =>
+          useMjpegStream({ url: '/printers/1/camera/stream', canvasRef: nullCanvasRef, enabled }),
+        { initialProps: { enabled: true } },
+      );
+
+      await waitFor(() => expect(result.current.isConnected).toBe(true));
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+
+      rerender({ enabled: false });
+      await waitFor(() => expect(result.current.isConnected).toBe(false));
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+
+      unmount();
+    });
   });
 });

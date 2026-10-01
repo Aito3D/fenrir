@@ -10,7 +10,7 @@
  */
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../../utils';
 import { CameraGridCard, SPOTLIGHT_CLICK_DELAY_MS } from '../../../components/cameraGrid/CameraGridCard';
@@ -381,6 +381,214 @@ describe('CameraGridCard', () => {
       render(<CameraGridCard {...baseProps({ hmsErrors: [err], dismissedErrorDesc: desc })} />);
 
       expect(screen.queryByText(desc)).not.toBeInTheDocument();
+    });
+  });
+  describe('keyboard activation (T-047)', () => {
+    const tile = () => screen.getByLabelText('Printer Twelve');
+    const props = (o: Partial<CameraGridCardProps> = {}) =>
+      baseProps({ printerId: 12, printerName: 'Printer Twelve', state: 'IDLE', ...o });
+
+    it('Enter on a connected tile expands it with (printerId, printerName) and prevents the default', () => {
+      const handlers = makeHandlers();
+      render(<CameraGridCard {...props({ handlers })} />);
+
+      // fireEvent returns false when the event was default-prevented.
+      expect(fireEvent.keyDown(tile(), { key: 'Enter' })).toBe(false);
+
+      expect(handlers.onExpand).toHaveBeenCalledTimes(1);
+      expect(handlers.onExpand).toHaveBeenCalledWith(12, 'Printer Twelve');
+      expect(handlers.onSpotlight).not.toHaveBeenCalled();
+    });
+
+    it('Enter on a disconnected tile does nothing and is not default-prevented', () => {
+      const handlers = makeHandlers();
+      render(<CameraGridCard {...props({ connected: false, handlers })} />);
+
+      expect(fireEvent.keyDown(tile(), { key: 'Enter' })).toBe(true);
+
+      expect(handlers.onExpand).not.toHaveBeenCalled();
+      expect(handlers.onSpotlight).not.toHaveBeenCalled();
+    });
+
+    it('Enter without an onExpand handler does nothing', () => {
+      const handlers = makeHandlers({ onExpand: undefined });
+      render(<CameraGridCard {...props({ handlers })} />);
+
+      expect(fireEvent.keyDown(tile(), { key: 'Enter' })).toBe(true);
+
+      expect(handlers.onSpotlight).not.toHaveBeenCalled();
+    });
+
+    it('Space toggles the spotlight immediately with printerId and prevents the default (page scroll)', () => {
+      const handlers = makeHandlers();
+      render(<CameraGridCard {...props({ handlers })} />);
+
+      expect(fireEvent.keyDown(tile(), { key: ' ' })).toBe(false);
+
+      expect(handlers.onSpotlight).toHaveBeenCalledTimes(1);
+      expect(handlers.onSpotlight).toHaveBeenCalledWith(12);
+      expect(handlers.onExpand).not.toHaveBeenCalled();
+    });
+
+    it('Space still spotlights a disconnected tile', () => {
+      const handlers = makeHandlers();
+      render(<CameraGridCard {...props({ connected: false, handlers })} />);
+
+      fireEvent.keyDown(tile(), { key: ' ' });
+
+      expect(handlers.onSpotlight).toHaveBeenCalledWith(12);
+    });
+
+    it('Space without an onSpotlight handler does nothing and is not default-prevented', () => {
+      const handlers = makeHandlers({ onSpotlight: undefined });
+      render(<CameraGridCard {...props({ handlers })} />);
+
+      expect(fireEvent.keyDown(tile(), { key: ' ' })).toBe(true);
+
+      expect(handlers.onExpand).not.toHaveBeenCalled();
+    });
+
+    it('ignores other keys', () => {
+      const handlers = makeHandlers();
+      render(<CameraGridCard {...props({ handlers })} />);
+
+      expect(fireEvent.keyDown(tile(), { key: 'a' })).toBe(true);
+
+      expect(handlers.onExpand).not.toHaveBeenCalled();
+      expect(handlers.onSpotlight).not.toHaveBeenCalled();
+    });
+
+    it('ignores a keydown that bubbles up from a child control', () => {
+      const handlers = makeHandlers();
+      render(<CameraGridCard {...props({ state: 'RUNNING', handlers })} />);
+      const pause = screen.getByRole('button', { name: 'Pause' });
+
+      expect(fireEvent.keyDown(pause, { key: 'Enter' })).toBe(true);
+      expect(fireEvent.keyDown(pause, { key: ' ' })).toBe(true);
+
+      expect(handlers.onExpand).not.toHaveBeenCalled();
+      expect(handlers.onSpotlight).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('visibility observer (T-047)', () => {
+    it('reports intersection changes with the printerId and disconnects on unmount', () => {
+      const observe = vi.fn();
+      const disconnect = vi.fn();
+      let callback: (entries: Array<{ isIntersecting: boolean }>) => void = () => {};
+      class FakeObserver {
+        constructor(cb: (entries: Array<{ isIntersecting: boolean }>) => void, public options: unknown) {
+          callback = cb;
+        }
+        observe = observe;
+        disconnect = disconnect;
+      }
+      vi.stubGlobal('IntersectionObserver', FakeObserver);
+      const onVisibilityChange = vi.fn();
+
+      const { unmount } = render(<CameraGridCard {...baseProps({ printerId: 31, onVisibilityChange })} />);
+
+      expect(observe).toHaveBeenCalledTimes(1);
+      callback([{ isIntersecting: true }]);
+      expect(onVisibilityChange).toHaveBeenLastCalledWith(31, true);
+      callback([{ isIntersecting: false }]);
+      expect(onVisibilityChange).toHaveBeenLastCalledWith(31, false);
+
+      unmount();
+      expect(disconnect).toHaveBeenCalledTimes(1);
+      vi.unstubAllGlobals();
+    });
+
+    it('does not create an observer without an onVisibilityChange callback', () => {
+      const ctor = vi.fn();
+      vi.stubGlobal('IntersectionObserver', ctor);
+
+      render(<CameraGridCard {...baseProps()} />);
+
+      expect(ctor).not.toHaveBeenCalled();
+      vi.unstubAllGlobals();
+    });
+  });
+
+  describe('media and status overlays (T-047)', () => {
+    it('renders a video element instead of a canvas when a videoRef is supplied, hidden while loading', () => {
+      const videoRef = { current: null } as React.RefObject<HTMLVideoElement | null>;
+      const { container, rerender } = render(<CameraGridCard {...baseProps({ videoRef, loading: true })} />);
+
+      const video = container.querySelector('video') as HTMLVideoElement;
+      expect(video).not.toBeNull();
+      expect(container.querySelector('canvas')).toBeNull();
+      expect(video.className).toContain('opacity-0');
+
+      rerender(<CameraGridCard {...baseProps({ videoRef, loading: false })} />);
+      expect(container.querySelector('video')!.className).toContain('opacity-100');
+    });
+
+    it('blurs the video when stale, and hides the canvas while disconnected', () => {
+      const videoRef = { current: null } as React.RefObject<HTMLVideoElement | null>;
+      const { container, rerender } = render(<CameraGridCard {...baseProps({ videoRef, stale: true })} />);
+      expect((container.querySelector('video') as HTMLVideoElement).style.filter).toBe('blur(3px)');
+
+      rerender(<CameraGridCard {...baseProps({ connected: false })} />);
+      expect((container.querySelector('canvas') as HTMLCanvasElement).className).toContain('opacity-0');
+    });
+
+    it('shows the loading spinner while connected and loading', () => {
+      const { container } = render(<CameraGridCard {...baseProps({ loading: true })} />);
+      expect(container.querySelector('.animate-spin')).not.toBeNull();
+    });
+
+    it('shows the reconnect overlay with countdown and attempt, and no spinner or error text', () => {
+      const { container } = render(<CameraGridCard {...baseProps({
+        loading: true,
+        error: true,
+        reconnecting: true,
+        reconnectCountdown: 4,
+        reconnectAttempt: 2,
+      })} />);
+
+      expect(screen.getAllByText('Connection lost').length).toBeGreaterThan(0);
+      expect(screen.getByText('Reconnecting in 4s (attempt 2)')).toBeInTheDocument();
+      expect(container.querySelector('.animate-spin')).toBeNull();
+      expect(screen.queryByText('Camera unavailable')).not.toBeInTheDocument();
+    });
+
+    it('shows the offline overlay only when disconnected, and no stream overlays then', () => {
+      const { rerender } = render(<CameraGridCard {...baseProps({ connected: false, loading: true, error: true })} />);
+      expect(screen.getAllByText('Offline').length).toBeGreaterThan(0);
+      expect(screen.queryByText('Camera unavailable')).not.toBeInTheDocument();
+
+      rerender(<CameraGridCard {...baseProps({ connected: true })} />);
+      expect(screen.queryByText('Offline')).not.toBeInTheDocument();
+    });
+
+    it('shows the paused badge only while paused', () => {
+      const { rerender } = render(<CameraGridCard {...baseProps({ state: 'PAUSE' })} />);
+      expect(screen.getAllByText(/paused/i).length).toBeGreaterThan(0);
+
+      rerender(<CameraGridCard {...baseProps({ state: 'RUNNING' })} />);
+      expect(screen.queryByText(/^paused$/i)).not.toBeInTheDocument();
+    });
+
+    it('the expand button calls onExpand only when connected, and is absent without a handler', async () => {
+      const user = userEvent.setup();
+      const handlers = makeHandlers();
+      const { rerender } = render(<CameraGridCard {...baseProps({ printerId: 5, printerName: 'Five', handlers })} />);
+
+      await user.click(screen.getByRole('button', { name: 'Expand' }));
+      expect(handlers.onExpand).toHaveBeenCalledWith(5, 'Five');
+      expect(handlers.onSpotlight).not.toHaveBeenCalled();
+
+      rerender(<CameraGridCard {...baseProps({ connected: false, handlers })} />);
+      expect(screen.queryByRole('button', { name: 'Expand' })).not.toBeInTheDocument();
+
+      rerender(<CameraGridCard {...baseProps({ handlers: makeHandlers({ onExpand: undefined }) })} />);
+      expect(screen.queryByRole('button', { name: 'Expand' })).not.toBeInTheDocument();
+    });
+
+    it('compact layout uses the smaller name text', () => {
+      render(<CameraGridCard {...baseProps({ layout: 'compact', printerName: 'Tiny' })} />);
+      expect(screen.getAllByText('Tiny').some((el) => el.className.includes('text-[11px]'))).toBe(true);
     });
   });
 });

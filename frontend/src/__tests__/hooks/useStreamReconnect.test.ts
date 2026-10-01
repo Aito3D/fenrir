@@ -350,6 +350,60 @@ describe('useStreamReconnect', () => {
     });
   });
 
+  describe('max-attempts give-up (T-045)', () => {
+    const tick = (ms = 1000) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
+
+    it('gives up from the stall path once maxAttempts reconnects were consumed, without scheduling another', async () => {
+      const onReconnect = vi.fn();
+      const onGiveUp = vi.fn();
+      const checkStalled = vi.fn().mockResolvedValue(true);
+      const { result } = setup({
+        onReconnect, onGiveUp, checkStalled, maxAttempts: 1, stallCheckInterval: 1000, initialDelay: 1000,
+      });
+
+      // First stall episode consumes the single allowed attempt.
+      await tick();
+      await tick();
+      expect(result.current.isReconnecting).toBe(true);
+      await tick(1100);
+      expect(onReconnect).toHaveBeenCalledTimes(1);
+      expect(result.current.reconnectAttempts).toBe(1);
+      expect(onGiveUp).not.toHaveBeenCalled();
+
+      // Second stall episode hits the max-attempts guard in attemptReconnect.
+      await tick();
+      await tick();
+      expect(onGiveUp).toHaveBeenCalledTimes(1);
+      expect(result.current.isReconnecting).toBe(false);
+
+      // No reconnect is scheduled and the stall poll stays stopped.
+      const reads = checkStalled.mock.calls.length;
+      await tick(10000);
+      expect(onReconnect).toHaveBeenCalledTimes(1);
+      expect(onGiveUp).toHaveBeenCalledTimes(1);
+      expect(checkStalled).toHaveBeenCalledTimes(reads);
+    });
+
+    it('calls onGiveUp from handleStreamError, not onReconnect, once attempts are exhausted after a connection', () => {
+      const onReconnect = vi.fn();
+      const onGiveUp = vi.fn();
+      const { result } = setup({ onReconnect, onGiveUp, maxAttempts: 1, initialDelay: 1000 });
+
+      act(() => result.current.handleStreamSuccess());
+      act(() => result.current.handleStreamError());
+      act(() => { vi.advanceTimersByTime(1100); });
+      expect(onReconnect).toHaveBeenCalledTimes(1);
+      expect(onGiveUp).not.toHaveBeenCalled();
+
+      act(() => result.current.handleStreamError());
+      expect(onGiveUp).toHaveBeenCalledTimes(1);
+      expect(result.current.isReconnecting).toBe(false);
+
+      act(() => { vi.advanceTimersByTime(10000); });
+      expect(onReconnect).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('returned API', () => {
     it('returns all expected functions', () => {
       const { result } = setup();
