@@ -4318,3 +4318,72 @@ describe('ProjectDetailPanel copy summary and job ticket', () => {
     expect(html).not.toContain(formatMoney(500, 'USD'));
   });
 });
+
+describe('ProjectDetailPanel footer: constant height and a status caption', () => {
+  const caption = () => screen.queryByTestId('panel-footer-caption');
+  const showWith = (overrides: Partial<AitoProject>, canUpdate = true) =>
+    render(
+      <ProjectDetailPanel
+        canCreate
+        canUpdate={canUpdate}
+        canDelete
+        project={{ ...project, ...overrides }}
+        onClose={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+
+  it('keeps the same min height with a button and without one', () => {
+    const { unmount } = showWith({ quote_status: null });
+    const withButton = screen.getByTestId('panel-footer');
+    expect(within(withButton).getByRole('button')).toBeInTheDocument();
+    expect(withButton.className).toMatch(/(^|\s)min-h-\[43px\](\s|$)/);
+    expect(withButton.className).toMatch(/(^|\s)items-center(\s|$)/);
+    expect(caption()).not.toBeInTheDocument();
+    unmount();
+
+    showWith({ column: 'print', quote_id: 'e1', quote_status: 'accepted' });
+    const empty = screen.getByTestId('panel-footer');
+    expect(within(empty).queryByRole('button')).not.toBeInTheDocument();
+    expect(empty.className).toMatch(/(^|\s)min-h-\[43px\](\s|$)/);
+  });
+
+  it('says the card is in the trash first', () => {
+    showWith({ status: 'deleted', quote_id: 'e1', quote_status: 'accepted', quote_invoiced: true, column: 'done' });
+    expect(caption()).toHaveTextContent('In the trash');
+  });
+
+  it('says the card is invoiced', () => {
+    showWith({ column: 'finish', quote_id: 'e1', quote_status: 'accepted', quote_invoiced: true });
+    expect(caption()).toHaveTextContent('Invoiced');
+  });
+
+  it('says the card is done', () => {
+    showWith({ column: 'done', quote_id: 'e1', quote_status: 'accepted' });
+    expect(caption()).toHaveTextContent('Done');
+  });
+
+  it('says read-only when the user cannot update', () => {
+    showWith({ quote_status: null }, false);
+    expect(caption()).toHaveTextContent('Read-only');
+  });
+
+  it('says there is no action at this stage otherwise', () => {
+    showWith({ column: 'print', quote_id: 'e1', quote_status: 'accepted' });
+    expect(caption()).toHaveTextContent('No action at this stage');
+    expect(caption()!.className).toMatch(/text-xs/);
+    expect(caption()!.className).toMatch(/text-bambu-gray(\s|$)/);
+  });
+
+  it('shows no caption while Create invoice renders', () => {
+    showWith({ column: 'finish', quote_id: 'e1', quote_status: 'accepted' });
+    expect(within(screen.getByTestId('panel-footer')).getByRole('button', { name: /invoice/i })).toBeInTheDocument();
+    expect(caption()).not.toBeInTheDocument();
+  });
+
+  it('shows no caption while Done renders', () => {
+    showWith({ column: 'finish', quote_status: null, client_contacted_at: '2026-09-01T00:00:00' }, false);
+    expect(within(screen.getByTestId('panel-footer')).getByRole('button')).toBeInTheDocument();
+    expect(caption()).not.toBeInTheDocument();
+  });
+});

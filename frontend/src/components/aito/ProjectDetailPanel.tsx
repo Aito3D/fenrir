@@ -16,6 +16,7 @@ import { PanelAgeStat } from './PanelAgeStat';
 import { UnacceptHoldPill } from './UnacceptHoldPill';
 import { eyebrowCls, headerPillCls } from './panelTypography';
 import { ProjectDoneAction } from './ProjectDoneAction';
+import { footerCaptionKey, footerHasAction } from './panelFooter';
 import { ProjectProgress } from './ProjectProgress';
 import { BillingCard } from './BillingCard';
 import { CreateInvoiceButton } from './CreateInvoiceButton';
@@ -1648,7 +1649,9 @@ export function ProjectDetailPanel({
           // footer sits on the canvas as a surface too, not a darker recess
           // of it. Blurred with the body while the contact sheet is open —
           // see the body's own comment.
-          className={`flex-shrink-0 flex items-center gap-2 px-4 py-2 border-t border-bambu-dark-tertiary bg-bambu-dark-secondary transition-[filter,opacity] duration-200 ${
+          // min-h-[43px]: the height the bar has with a button in it (42.6px
+          // measured), so it never jumps when the last action goes away.
+          className={`flex-shrink-0 flex min-h-[43px] items-center gap-2 px-4 py-2 border-t border-bambu-dark-tertiary bg-bambu-dark-secondary transition-[filter,opacity] duration-200 ${
             sheetOpen ? 'blur-[5px] opacity-60' : ''
           }`}
         >
@@ -1665,7 +1668,14 @@ export function ProjectDetailPanel({
               behind you, so finishing a project meant closing the panel and
               finding the card again. The two blocks are mutually exclusive by
               construction (see ProjectDoneAction), so this never crowds. */}
-          <span className="flex-1" />
+          {/* With nothing to offer, the bar says why instead of sitting empty. */}
+          {footerHasAction(project, canUpdate) ? (
+            <span className="flex-1" />
+          ) : (
+            <span data-testid="panel-footer-caption" className="flex-1 min-w-0 truncate text-xs text-bambu-gray">
+              {t(footerCaptionKey(project, canUpdate))}
+            </span>
+          )}
           {/* The one irreversible commitment on the panel: it raises a real
               invoice in Books and spends the client's deposits against it.
               It sat at the foot of the Quote card until that card moved
