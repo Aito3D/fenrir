@@ -61,6 +61,8 @@ export function WatchModal({ project, onClose }: { project: AitoProject; onClose
   });
 
   const ready = watch !== undefined && prefs !== undefined;
+  // Either read failing leaves nothing to tick: say so rather than spin.
+  const loadFailed = !ready && (watchQuery.isError || prefsQuery.isError);
   // In `available` order, so the server stores the same list whatever order the boxes were ticked in.
   const toSend = usable.filter((k) => ticked.includes(k));
 
@@ -115,7 +117,11 @@ export function WatchModal({ project, onClose }: { project: AitoProject; onClose
           </header>
 
           <div className="px-6 pb-4">
-            {!ready ? (
+            {loadFailed ? (
+              <p role="alert" className="py-6 text-center text-sm text-red-400">
+                {t('inbox.watchLoadFailed')}
+              </p>
+            ) : !ready ? (
               <div className="flex justify-center py-6">
                 <Loader2 className="h-5 w-5 animate-spin text-bambu-gray" aria-hidden="true" />
               </div>

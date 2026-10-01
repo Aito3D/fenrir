@@ -2039,6 +2039,10 @@ describe('ProjectDetailPanel left column cards', () => {
       await screen.findAllByRole('button', { name: /edit task/i });
       expect(seen).not.toHaveBeenCalled();
       expect(screen.queryByTitle('You watch this card')).not.toBeInTheDocument();
+      // Nor offers it: with nobody signed in there is no inbox to feed.
+      fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
+      expect(screen.getByRole('menuitem', { name: /^Duplicate/ })).toBeInTheDocument();
+      expect(screen.queryByRole('menuitem', { name: /^Watch/ })).not.toBeInTheDocument();
     });
 
     it('opens the watch dialog from the ⋯ menu, labelled by the current watch', async () => {
@@ -2046,7 +2050,7 @@ describe('ProjectDetailPanel left column cards', () => {
       show();
       await screen.findByTitle('You watch this card');
       fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
-      fireEvent.click(screen.getByRole('menuitem', { name: 'Watching ✓' }));
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Watching…' }));
       expect(await screen.findByRole('dialog', { name: 'Watch this card' })).toBeInTheDocument();
       expect(screen.getByTestId('panel-column-tasks')).toBeInTheDocument();
       // The "." shortcut must not open the menu behind the dialog.

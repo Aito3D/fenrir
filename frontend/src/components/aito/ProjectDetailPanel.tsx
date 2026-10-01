@@ -1216,10 +1216,11 @@ export function ProjectDetailPanel({
   const { user, authEnabled } = useAuth();
   // Per user: with auth off there is nobody to watch for (the server answers
   // `watching: false` anyway), so the request is not worth making.
+  const watchAvailable = authEnabled && !!user;
   const watchQuery = useQuery({
     queryKey: ['aito-watch', project.id],
     queryFn: () => api.getAitoWatch(project.id),
-    enabled: authEnabled && !!user,
+    enabled: watchAvailable,
   });
   const watching = watchQuery.data?.watching ?? false;
   const otherViewers = useAitoViewers(project.id).filter((name) => name !== (user?.username ?? ''));
@@ -1499,6 +1500,7 @@ export function ProjectDetailPanel({
                     onTransferClient={() => setTransferringClient(true)}
                     onWatch={() => setWatchOpen(true)}
                     watching={watching}
+                    watchAvailable={watchAvailable}
                     onDuplicate={onDuplicate && duplicate.start}
                     onDelete={onDelete && (() => setTrashing(true))}
                     shortcutKey="."

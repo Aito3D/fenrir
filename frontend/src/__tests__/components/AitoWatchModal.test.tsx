@@ -69,6 +69,15 @@ describe('WatchModal', () => {
     expect(screen.getAllByText('off in Settings')).toHaveLength(2);
   });
 
+  it('says the watch could not be loaded instead of spinning forever', async () => {
+    mockWatch({ watching: false, kinds: [] });
+    server.use(http.get('/api/v1/aito/:id/watch', () => HttpResponse.json({ detail: 'boom' }, { status: 500 })));
+    render(<WatchModal project={project} onClose={vi.fn()} />);
+    expect(await screen.findByText("Couldn't load this card's watch")).toBeInTheDocument();
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+  });
+
   it('pre-ticks the enabled Aito kinds on an unwatched card and offers no Stop', async () => {
     mockWatch({ watching: false, kinds: [] });
     render(<WatchModal project={project} onClose={vi.fn()} />);

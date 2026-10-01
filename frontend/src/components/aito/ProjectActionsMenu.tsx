@@ -36,6 +36,9 @@ interface ProjectActionsMenuProps {
   onWatch: () => void;
   /** Whether the signed-in user watches this card; only flips the row's label. */
   watching?: boolean;
+  /** A signed-in user to watch for. Without one (auth off) there is no inbox,
+   *  so the Watch row is left out rather than disabled. */
+  watchAvailable: boolean;
   /** Absent when the host has no drawer to open — the row is then disabled. */
   onDuplicate?: () => void;
   /** Absent for a card the host will not trash (see AitoPage) — disabled too. */
@@ -98,17 +101,21 @@ function rows(p: ProjectActionsMenuProps, t: TFunction): ActionMenuItem[] {
       { key: 'transfer', icon: UserRoundPen, label: t('aito.transferClient'), onSelect: p.onTransferClient },
       reason([trashed, hintTrashed], [invoiced, hintInvoiced], [!p.canUpdate, hintNoPermission]),
     ),
-    item(
-      {
-        key: 'watch',
-        icon: Eye,
-        label: p.watching ? t('aito.watchingCard') : t('aito.watchCard'),
-        onSelect: p.onWatch,
-      },
-      // PUT /{id}/watch rides AITO_UPDATE and 404s a trashed card; an
-      // invoiced job still pays and goes overdue, so it stays watchable.
-      reason([trashed, hintTrashed], [!p.canUpdate, hintNoPermission]),
-    ),
+    ...(p.watchAvailable
+      ? [
+          item(
+            {
+              key: 'watch',
+              icon: Eye,
+              label: p.watching ? t('aito.watchingCard') : t('aito.watchCard'),
+              onSelect: p.onWatch,
+            },
+            // PUT /{id}/watch rides AITO_UPDATE and 404s a trashed card; an
+            // invoiced job still pays and goes overdue, so it stays watchable.
+            reason([trashed, hintTrashed], [!p.canUpdate, hintNoPermission]),
+          ),
+        ]
+      : []),
     item(
       { key: 'duplicate', icon: CopyPlus, label: t('aito.duplicateProject'), onSelect: () => p.onDuplicate?.() },
       // Not gated on the card's state: "same thing again" is as valid for a

@@ -46,6 +46,7 @@ function renderMenu(overrides: Partial<Props> = {}) {
     canCreate: true,
     canUpdate: true,
     canDelete: true,
+    watchAvailable: true,
     ...cbs,
     ...overrides,
   };
@@ -163,12 +164,20 @@ describe('ProjectActionsMenu', () => {
     const user = userEvent.setup();
     const cbs = renderMenu({ watching: true });
     await user.click(screen.getByRole('button', { name: 'More actions' }));
-    const watching = screen.getByRole('menuitem', { name: 'Watching ✓' });
+    const watching = screen.getByRole('menuitem', { name: 'Watching…' });
     expect(screen.queryByRole('menuitem', { name: LABELS.watch })).not.toBeInTheDocument();
     // Still the way in: it reopens the dialog to change kinds or stop.
     expect(watching).not.toHaveAttribute('aria-disabled');
     await user.click(watching);
     expect(cbs.onWatch).toHaveBeenCalledOnce();
+  });
+
+  it('has no Watch row when there is no signed-in user to watch for', async () => {
+    const user = userEvent.setup();
+    renderMenu({ watchAvailable: false });
+    await user.click(screen.getByRole('button', { name: 'More actions' }));
+    const labels = screen.getAllByRole('menuitem').map((n) => n.textContent);
+    expect(labels).toEqual(ROWS.filter((r) => r !== 'watch').map((r) => LABELS[r]));
   });
 
   it('opens on its shortcut key, but not while the operator is typing', () => {
