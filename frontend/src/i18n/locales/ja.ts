@@ -597,7 +597,7 @@ export default {
     sync: '同期',
     syncPendingLabel: '保留中',
     syncError: '同期に失敗しました',
-    pdfSyncPending: '同期中 — ドキュメントはまだ最新ではありません',
+    syncNotConfirmed: 'Zohoが最新の変更をまだ確認していません。しばらくしてからもう一度お試しください',
     quoteLocked: '見積書は請求済みです',
     tasksLockedInvoiced: '請求済み — タスクは変更できません',
     quoteDeclinedNoDraft: 'Zohoでは見積書を下書きに戻すことはできません。',

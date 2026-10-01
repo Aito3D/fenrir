@@ -80,7 +80,6 @@ export function BillingCard({
   if (!project.quote_number && !hasQuoteMessage) return null;
 
   const statusLabel = (status: string | null): string => quoteStatusText(t, status);
-  const syncPending = project.quote_sync_state === 'pending';
   const quotePay = quoteDocument(project, depositPct, currency);
   const hasCredit = project.customer_credit_total != null && project.customer_credit_total > 0;
 
@@ -107,7 +106,7 @@ export function BillingCard({
             download={<QuoteDownloadButton project={project} variant="icon" />}
             send={canUpdate ? <SendQuoteButton project={project} variant="icon" /> : undefined}
           />
-          <RetainerRows project={project} canUpdate={canUpdate} syncPending={syncPending} currency={currency} />
+          <RetainerRows project={project} canUpdate={canUpdate} currency={currency} />
           <InvoiceCard project={project} canUpdate={canUpdate} />
         </div>
       )}
@@ -258,12 +257,10 @@ function CollectSection({ children }: { children: ReactNode }) {
 function RetainerRows({
   project,
   canUpdate,
-  syncPending,
   currency,
 }: {
   project: AitoProject;
   canUpdate: boolean;
-  syncPending: boolean;
   /** The shop currency — the fallback when a retainer carries no currency code. */
   currency: string;
 }) {
@@ -291,15 +288,12 @@ function RetainerRows({
             amount={formatMoney(r.total, r.currency_code || currency)}
             booksUrl={r.url || null}
             booksLabel={t('aito.invoiceOpenInZoho')}
-            print={
-              <RetainerPrintButton projectId={project.id} retainerId={r.id} disabled={syncPending} variant="icon" />
-            }
+            print={<RetainerPrintButton projectId={project.id} retainerId={r.id} variant="icon" />}
             download={
               <RetainerDownloadButton
                 projectId={project.id}
                 retainerId={r.id}
                 retainerNumber={r.number}
-                disabled={syncPending}
                 variant="icon"
               />
             }

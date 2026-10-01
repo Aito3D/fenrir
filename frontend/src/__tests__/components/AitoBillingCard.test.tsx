@@ -210,12 +210,13 @@ describe('BillingCard document rows', () => {
     expect(screen.getByRole('button', { name: 'Print quote' }).className).toContain('p-1 ');
   });
 
-  it('disables print and download on every row while the quote sync is pending', async () => {
+  it('keeps print and download enabled on every row while the quote sync is pending', async () => {
+    // The endpoints push the card first; nothing stale can come back.
     vi.spyOn(api, 'getAitoRetainers').mockResolvedValue([RETAINER]);
     renderCard(project({ quote_sync_state: 'pending', retainer_paid_total: 17500 }));
     await screen.findByTestId('doc-retainer-RET-B');
     for (const name of ['Print quote', 'Download quote', 'Print retainer invoice', 'Download retainer invoice']) {
-      expect(screen.getByRole('button', { name })).toBeDisabled();
+      expect(screen.getByRole('button', { name })).toBeEnabled();
     }
   });
 });

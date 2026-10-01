@@ -597,7 +597,7 @@ export default {
     sync: '同步',
     syncPendingLabel: '待處理',
     syncError: '同步失敗',
-    pdfSyncPending: '正在同步 — 文件尚未更新',
+    syncNotConfirmed: 'Zoho 尚未確認最新變更，請稍後再試',
     quoteLocked: '報價單已開立發票',
     tasksLockedInvoiced: '已開立發票 — 任務無法再變更',
     quoteDeclinedNoDraft: 'Zoho 不允許將報價單重新轉為草稿。',

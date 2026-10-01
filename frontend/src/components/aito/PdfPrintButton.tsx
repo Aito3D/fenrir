@@ -23,21 +23,11 @@ export function PdfPrintButton({
    *  QUOTE could not be fetched when they clicked Print on an invoice sends
    *  them to look at the wrong document. */
   failureMessage,
-  /** Externally forced off — the caller knows the PDF the endpoint would
-   *  return is outdated (a quote edit still on its way to Zoho). Distinct
-   *  from `busy`, which is the hook's own in-flight state. */
-  disabled = false,
-  /** Tooltip shown INSTEAD of `label` while `disabled` — the one place the
-   *  operator can learn why the button refuses. aria-label stays `label`
-   *  so the button keeps its accessible name (and test queries) either way. */
-  disabledTitle,
   variant = 'cell',
 }: {
   fetchPdf: () => Promise<Blob>;
   label: string;
   failureMessage: string;
-  disabled?: boolean;
-  disabledTitle?: string;
   variant?: ActionVariant;
 }) {
   // A blob URL is not "download.pdf" on its own — the browser has no path to
@@ -55,9 +45,9 @@ export function PdfPrintButton({
     <button
       type="button"
       onClick={() => print(fetchPdf)}
-      disabled={busy || disabled}
+      disabled={busy}
       aria-label={label}
-      title={disabled && disabledTitle ? disabledTitle : label}
+      title={label}
       className={variant === 'icon' ? DOC_ICON_BUTTON_CLS : ACTION_CELL}
     >
       {busy ? <Loader2 className={`${icon} animate-spin`} /> : <Printer className={icon} />}

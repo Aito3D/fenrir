@@ -597,7 +597,7 @@ export default {
     sync: 'Synchronisation',
     syncPendingLabel: 'En attente',
     syncError: 'Échec de la synchronisation',
-    pdfSyncPending: "Synchronisation en cours — le document n’est pas encore à jour",
+    syncNotConfirmed: 'Zoho n’a pas encore confirmé les dernières modifications — réessayez dans un instant',
     quoteLocked: 'Devis facturé',
     tasksLockedInvoiced: 'Facturé — les tâches ne peuvent plus être modifiées',
     quoteDeclinedNoDraft: 'Zoho ne permet pas de repasser un devis en brouillon.',

@@ -597,7 +597,7 @@ export default {
     sync: 'Sincronizzazione',
     syncPendingLabel: 'In attesa',
     syncError: 'Sincronizzazione non riuscita',
-    pdfSyncPending: 'Sincronizzazione in corso — il documento non è ancora aggiornato',
+    syncNotConfirmed: 'Zoho non ha ancora confermato le ultime modifiche: riprova tra un momento',
     quoteLocked: 'Preventivo fatturato',
     tasksLockedInvoiced: 'Fatturato — le attività non possono più essere modificate',
     quoteDeclinedNoDraft: 'Zoho non consente di riportare un preventivo in bozza.',

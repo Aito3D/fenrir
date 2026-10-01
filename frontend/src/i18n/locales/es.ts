@@ -597,7 +597,7 @@ export default {
     sync: 'Sincronización',
     syncPendingLabel: 'Pendiente',
     syncError: 'Error de sincronización',
-    pdfSyncPending: 'Sincronización en curso — el documento aún no está actualizado',
+    syncNotConfirmed: 'Zoho aún no ha confirmado los últimos cambios; inténtalo de nuevo en un momento',
     quoteLocked: 'Presupuesto facturado',
     tasksLockedInvoiced: 'Facturado — las tareas ya no se pueden modificar',
     quoteDeclinedNoDraft: 'Zoho no permite volver a convertir un presupuesto en borrador.',

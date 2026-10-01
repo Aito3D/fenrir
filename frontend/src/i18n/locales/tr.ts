@@ -597,7 +597,7 @@ export default {
     sync: 'Senkronizasyon',
     syncPendingLabel: 'Beklemede',
     syncError: 'Senkronizasyon başarısız',
-    pdfSyncPending: 'Eşitleme sürüyor — belge henüz güncel değil',
+    syncNotConfirmed: 'Zoho son değişiklikleri henüz onaylamadı — birazdan tekrar deneyin',
     quoteLocked: 'Teklif faturalandı',
     tasksLockedInvoiced: 'Faturalandı — görevler artık değiştirilemez',
     quoteDeclinedNoDraft: 'Zoho, bir teklifin yeniden taslağa döndürülmesine izin vermiyor.',

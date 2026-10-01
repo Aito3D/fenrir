@@ -8742,7 +8742,7 @@ export default {
     sync: 'Synchronisatie',
     syncPendingLabel: 'In behandeling',
     syncError: 'Synchronisatie mislukt',
-    pdfSyncPending: 'Synchronisatie bezig — het document is nog niet up-to-date',
+    syncNotConfirmed: 'Zoho heeft de laatste wijzigingen nog niet bevestigd — probeer het zo opnieuw',
     quoteLocked: 'Offerte gefactureerd',
     tasksLockedInvoiced: 'Gefactureerd — taken kunnen niet meer worden gewijzigd',
     quoteDeclinedNoDraft: 'Zoho staat niet toe een offerte terug te zetten naar concept.',

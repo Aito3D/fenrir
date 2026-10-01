@@ -601,7 +601,7 @@ export default {
     sync: 'Sync',
     syncPendingLabel: 'Pending',
     syncError: 'Sync failed',
-    pdfSyncPending: "Sync in progress — the document isn’t up to date yet",
+    syncNotConfirmed: 'Zoho has not confirmed the latest changes yet — try again in a moment',
     quoteLocked: 'Quote invoiced',
     tasksLockedInvoiced: 'Invoiced — tasks can no longer be changed',
     quoteDeclinedNoDraft: 'Zoho does not allow reverting a quote back to draft.',

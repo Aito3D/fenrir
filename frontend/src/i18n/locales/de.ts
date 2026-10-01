@@ -597,7 +597,7 @@ export default {
     sync: 'Synchronisierung',
     syncPendingLabel: 'Ausstehend',
     syncError: 'Synchronisierung fehlgeschlagen',
-    pdfSyncPending: 'Synchronisierung läuft — das Dokument ist noch nicht aktuell',
+    syncNotConfirmed: 'Zoho hat die letzten Änderungen noch nicht bestätigt – bitte gleich noch einmal versuchen',
     quoteLocked: 'Angebot fakturiert',
     tasksLockedInvoiced: 'Fakturiert — Aufgaben können nicht mehr geändert werden',
     quoteDeclinedNoDraft: 'Zoho erlaubt es nicht, ein Angebot wieder in einen Entwurf umzuwandeln.',

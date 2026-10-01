@@ -8742,7 +8742,7 @@ errors: {
     sync: 'Synka',
     syncPendingLabel: 'Väntar',
     syncError: 'Synkronisering misslyckades',
-    pdfSyncPending: 'Synkronisering pågår — dokumentet är inte uppdaterat än',
+    syncNotConfirmed: 'Zoho har inte bekräftat de senaste ändringarna än — försök igen om en stund',
     quoteLocked: 'Offert fakturerad',
     tasksLockedInvoiced: 'Fakturerad — uppgifter kan inte längre ändras',
     quoteDeclinedNoDraft: 'Zoho tillåter inte att en offert återställs till utkast.',
