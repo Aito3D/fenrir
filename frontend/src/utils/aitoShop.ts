@@ -2,8 +2,16 @@ import { AITO3D_SENDER } from './shippingLabel';
 
 /** The shop as a place, for the tracking page's "Nous trouver" panel. Every
  *  link is derived from `AITO3D_SENDER`, so the address, phone and handle
- *  are still edited in exactly one place. */
-const QUERY = encodeURIComponent(AITO3D_SENDER.addressLines.join(', '));
+ *  are still edited in exactly one place.
+ *
+ *  The search is led by the business name, with the printed address's
+ *  "Arue – Tahiti" split on the dash: Google's keyless embed cannot geocode
+ *  the bare street address (it usually finds nothing and shows the whole
+ *  world, and once returned a point 600 m off), while "Aito3D, <address>"
+ *  resolves to the shop's own Google Business pin in every language. */
+const QUERY = encodeURIComponent(
+  [AITO3D_SENDER.name, ...AITO3D_SENDER.addressLines.flatMap((line) => line.split(/\s+–\s+/))].join(', '),
+);
 
 export const SHOP_TEL_HREF = `tel:${AITO3D_SENDER.phone.replace(/[^\d+]/g, '')}`;
 export const SHOP_MAIL_HREF = `mailto:${AITO3D_SENDER.email}`;
