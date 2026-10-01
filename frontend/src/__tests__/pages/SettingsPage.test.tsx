@@ -732,6 +732,26 @@ describe('SettingsPage', () => {
       });
     });
 
+    it('shows the signed-in user their inbox preferences on the Notifications tab', async () => {
+      server.use(
+        http.get('/api/v1/auth/status', () => HttpResponse.json({ auth_enabled: true, requires_setup: false })),
+        http.get('/api/v1/inbox/preferences', () =>
+          HttpResponse.json({
+            kinds: ['aito.paid'],
+            sound_kinds: ['aito.paid'],
+            auto_watch: true,
+            available: [{ kind: 'aito.paid', family: 'aito', default_on: true, available: true }],
+          }),
+        ),
+      );
+      setAuthToken('test-token');
+      window.history.replaceState({}, '', '/?tab=notifications');
+      render(<SettingsPage />);
+
+      expect(await screen.findByRole('heading', { name: 'Inbox' })).toBeInTheDocument();
+      expect(await screen.findByRole('switch', { name: 'Payment received' })).toHaveAttribute('aria-checked', 'true');
+    });
+
     it('can switch to Filament tab', async () => {
       const user = userEvent.setup();
       render(<SettingsPage />);

@@ -611,6 +611,7 @@ const NL_COGNATES = [
   // that are the same word in Dutch.
   '{{n}} preset', '{{n}} presets', 'Menu', '+ H2S / H2D / H2C / X2D', 'SuperTack', 'nil', 'cal',
   'min', 'Prototype', 'Machine', '×{{value}}',
+  'Inbox', // inbox.settingsTitle: the usual Dutch word for a notification inbox
   'm(u) = M_MIN + (M_MAX − M_MIN) · K / (u + K)',
   '= {{mMin}} + {{delta}} · {{k}} / (u + {{k}})',
   'f(q) = Q_MIN + (1 − Q_MIN) · KQ / (q − 1 + KQ)',

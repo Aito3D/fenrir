@@ -39,6 +39,7 @@ import { NotificationProviderCard } from '../components/NotificationProviderCard
 import { AddNotificationModal } from '../components/AddNotificationModal';
 import { NotificationTemplateEditor } from '../components/NotificationTemplateEditor';
 import { NotificationLogViewer } from '../components/NotificationLogViewer';
+import { InboxPreferences } from '../components/settings/InboxPreferences';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { ApiKeyQRCodeModal } from '../components/ApiKeyQRCodeModal';
 import { CreateUserAdvancedAuthModal } from '../components/CreateUserAdvancedAuthModal';
@@ -4421,6 +4422,7 @@ export function SettingsPage() {
                 </CardContent>
               </Card>
             )}
+            <InboxPreferences />
           </div>
 
           {/* Right Column: Templates */}
