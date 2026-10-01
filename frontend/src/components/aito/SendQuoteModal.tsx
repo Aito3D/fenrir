@@ -5,7 +5,7 @@ import { Loader2 } from 'lucide-react';
 import { Card, CardContent } from '../Card';
 import { Button } from '../Button';
 import { inputCls, labelCls } from '../formStyles';
-import { api, type AitoProject } from '../../api/client';
+import { api, ApiError, type AitoProject } from '../../api/client';
 import { useDismissableDialog } from '../../hooks/useDismissableDialog';
 import { useSendQuoteMutation } from '../../hooks/useSendQuoteMutation';
 import { ZohoEmailPreview } from './ZohoEmailPreview';
@@ -113,9 +113,16 @@ export function SendQuoteModal({
               </div>
             )}
 
+            {/* A 409 is the server refusing for a stated reason — today, the
+                card's latest edit did not reach Zoho — and the operator needs
+                that reason, not a generic load failure they would retry. */}
             {isError && (
               <p className="text-status-error text-sm py-6">
-                {isSyncPendingError(error) ? t('aito.syncNotConfirmed') : t('aito.sendQuoteLoadFailed')}
+                {isSyncPendingError(error)
+                  ? t('aito.syncNotConfirmed')
+                  : error instanceof ApiError && error.status === 409 && error.message
+                    ? error.message
+                    : t('aito.sendQuoteLoadFailed')}
               </p>
             )}
 
