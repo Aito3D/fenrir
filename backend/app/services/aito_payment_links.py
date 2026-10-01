@@ -209,6 +209,12 @@ def _fields_match(row: AitoPaymentLink, wanted: Wanted, today: date) -> bool:
     detached row by hand."""
     if row.amount != wanted.amount:
         return False
+    if row.expires_on == wanted.expires_on:
+        # Exactly what was asked for. Checked before the clamp below, which
+        # floors at one day out and so can never equal a date already past:
+        # a link whose quote has expired would read as drift on every pass
+        # while the patch built from the raw dates has nothing in it.
+        return True
     reference = row.checked_at.date() if row.checked_at is not None else today
     target = reference + timedelta(days=expires_in_days(wanted.expires_on, reference))
     return row.expires_on == target.isoformat()
