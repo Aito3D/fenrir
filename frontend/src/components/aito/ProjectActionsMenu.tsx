@@ -5,6 +5,7 @@ import {
   ClipboardCopy,
   CopyPlus,
   Ellipsis,
+  Eye,
   Merge,
   MoveRight,
   Printer,
@@ -31,6 +32,10 @@ interface ProjectActionsMenuProps {
   onCopySummary: () => void;
   onPrintTicket: () => void;
   onTransferClient: () => void;
+  /** Opens the watch dialog — to start watching, or to change or stop it. */
+  onWatch: () => void;
+  /** Whether the signed-in user watches this card; only flips the row's label. */
+  watching?: boolean;
   /** Absent when the host has no drawer to open — the row is then disabled. */
   onDuplicate?: () => void;
   /** Absent for a card the host will not trash (see AitoPage) — disabled too. */
@@ -92,6 +97,17 @@ function rows(p: ProjectActionsMenuProps, t: TFunction): ActionMenuItem[] {
     item(
       { key: 'transfer', icon: UserRoundPen, label: t('aito.transferClient'), onSelect: p.onTransferClient },
       reason([trashed, hintTrashed], [invoiced, hintInvoiced], [!p.canUpdate, hintNoPermission]),
+    ),
+    item(
+      {
+        key: 'watch',
+        icon: Eye,
+        label: p.watching ? t('aito.watchingCard') : t('aito.watchCard'),
+        onSelect: p.onWatch,
+      },
+      // PUT /{id}/watch rides AITO_UPDATE and 404s a trashed card; an
+      // invoiced job still pays and goes overdue, so it stays watchable.
+      reason([trashed, hintTrashed], [!p.canUpdate, hintNoPermission]),
     ),
     item(
       { key: 'duplicate', icon: CopyPlus, label: t('aito.duplicateProject'), onSelect: () => p.onDuplicate?.() },

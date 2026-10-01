@@ -7,7 +7,7 @@ import type { AitoProject } from '../../api/client';
 
 const activeProject = { id: 12, status: 'active', quote_invoiced: false } as unknown as AitoProject;
 
-type Row = 'merge' | 'split' | 'move' | 'copy' | 'print' | 'transfer' | 'duplicate' | 'trash';
+type Row = 'merge' | 'split' | 'move' | 'copy' | 'print' | 'transfer' | 'watch' | 'duplicate' | 'trash';
 
 const LABELS: Record<Row, string> = {
   merge: 'Merge another card…',
@@ -16,6 +16,7 @@ const LABELS: Record<Row, string> = {
   copy: 'Copy summary',
   print: 'Print job ticket',
   transfer: 'Transfer to another client…',
+  watch: 'Watch this card…',
   duplicate: 'Duplicate',
   trash: 'Move to trash',
 };
@@ -29,6 +30,7 @@ function callbacks() {
     onCopySummary: vi.fn(),
     onPrintTicket: vi.fn(),
     onTransferClient: vi.fn(),
+    onWatch: vi.fn(),
     onDuplicate: vi.fn(),
     onDelete: vi.fn(),
   };
@@ -83,7 +85,14 @@ describe('ProjectActionsMenu', () => {
     [
       'a trashed card keeps only the read-only rows and Duplicate',
       { project: { ...activeProject, status: 'deleted' } },
-      { merge: 'In the trash', split: 'In the trash', move: 'In the trash', transfer: 'In the trash', trash: 'In the trash' },
+      {
+        merge: 'In the trash',
+        split: 'In the trash',
+        move: 'In the trash',
+        transfer: 'In the trash',
+        watch: 'In the trash',
+        trash: 'In the trash',
+      },
     ],
     ['without the delete permission, Merge (it trashes the other card) and Trash', { canDelete: false }, {
       merge: 'No permission',
@@ -94,6 +103,7 @@ describe('ProjectActionsMenu', () => {
       split: 'No permission',
       move: 'No permission',
       transfer: 'No permission',
+      watch: 'No permission',
     }],
     ['without the create permission, Split and Duplicate', { canCreate: false }, {
       split: 'No permission',
@@ -136,6 +146,7 @@ describe('ProjectActionsMenu', () => {
     ['copy', 'onCopySummary'],
     ['print', 'onPrintTicket'],
     ['transfer', 'onTransferClient'],
+    ['watch', 'onWatch'],
     ['duplicate', 'onDuplicate'],
     ['trash', 'onDelete'],
   ] as const)('the %s row fires %s once and closes the menu', async (r, cb) => {
@@ -146,6 +157,18 @@ describe('ProjectActionsMenu', () => {
     expect(cbs[cb]).toHaveBeenCalledOnce();
     for (const [name, fn] of Object.entries(cbs)) if (name !== cb) expect(fn).not.toHaveBeenCalled();
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+  });
+
+  it('labels the Watch row by whether this user already watches the card', async () => {
+    const user = userEvent.setup();
+    const cbs = renderMenu({ watching: true });
+    await user.click(screen.getByRole('button', { name: 'More actions' }));
+    const watching = screen.getByRole('menuitem', { name: 'Watching ✓' });
+    expect(screen.queryByRole('menuitem', { name: LABELS.watch })).not.toBeInTheDocument();
+    // Still the way in: it reopens the dialog to change kinds or stop.
+    expect(watching).not.toHaveAttribute('aria-disabled');
+    await user.click(watching);
+    expect(cbs.onWatch).toHaveBeenCalledOnce();
   });
 
   it('opens on its shortcut key, but not while the operator is typing', () => {

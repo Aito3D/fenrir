@@ -12,7 +12,7 @@ import { readNewProjectDraft, writeNewProjectDraft } from '../../hooks/useNewPro
 import { registerPresenceSender, setAitoPresenceState, __resetAitoPresence } from '../../hooks/useAitoPresence';
 import { AuthProvider } from '../../contexts/AuthContext';
 import { ToastProvider } from '../../contexts/ToastContext';
-import { api } from '../../api/client';
+import { api, setAuthToken } from '../../api/client';
 import type { AitoEvent, AitoProject, AitoTask } from '../../api/client';
 import { emptyTaskDraft, taskDraftToTaskCreate } from '../../utils/taskDraft';
 import { formatMoney } from '../../utils/pricing';
@@ -1972,6 +1972,87 @@ describe('ProjectDetailPanel left column cards', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: /^Transfer to another client…/ }));
     expect(await screen.findByRole('dialog', { name: 'Transfer to another client' })).toBeInTheDocument();
     expect(screen.getByTestId('panel-column-tasks')).toBeInTheDocument();
+  });
+
+  describe('watching', () => {
+    function signIn(watch: { watching: boolean; kinds: string[] }) {
+      server.use(
+        http.get('/api/v1/auth/status', () => HttpResponse.json({ auth_enabled: true, requires_setup: false })),
+        http.get('/api/v1/auth/me', () =>
+          HttpResponse.json({
+            id: 7,
+            username: 'ops',
+            role: 'user',
+            is_active: true,
+            is_admin: false,
+            groups: [],
+            permissions: [],
+            created_at: '2026-01-01T00:00:00Z',
+          }),
+        ),
+        http.get('/api/v1/aito/12/watch', () => HttpResponse.json(watch)),
+        http.get('/api/v1/inbox/preferences', () =>
+          HttpResponse.json({
+            kinds: ['aito.paid'],
+            sound_kinds: [],
+            auto_watch: true,
+            available: [{ kind: 'aito.paid', family: 'aito', default_on: true, available: true }],
+          }),
+        ),
+      );
+      setAuthToken('test-token');
+    }
+
+    afterEach(() => setAuthToken(null));
+
+    it('shows an eye beside the card number when the signed-in user watches the card', async () => {
+      signIn({ watching: true, kinds: ['aito.paid'] });
+      show();
+      const eye = await screen.findByTitle('You watch this card');
+      // Inline in the eyebrow row, so the masthead never grows a line for it.
+      expect(eye.parentElement).toContainElement(screen.getByText(/Project #12/));
+    });
+
+    it('shows no eye when the user does not watch the card', async () => {
+      const seen = vi.fn();
+      signIn({ watching: false, kinds: [] });
+      server.use(
+        http.get('/api/v1/aito/12/watch', () => {
+          seen();
+          return HttpResponse.json({ watching: false, kinds: [] });
+        }),
+      );
+      show();
+      await waitFor(() => expect(seen).toHaveBeenCalled());
+      expect(screen.queryByTitle('You watch this card')).not.toBeInTheDocument();
+    });
+
+    it('never asks for the watch with auth disabled', async () => {
+      const seen = vi.fn();
+      server.use(
+        http.get('/api/v1/aito/12/watch', () => {
+          seen();
+          return HttpResponse.json({ watching: true, kinds: [] });
+        }),
+      );
+      show();
+      await screen.findAllByRole('button', { name: /edit task/i });
+      expect(seen).not.toHaveBeenCalled();
+      expect(screen.queryByTitle('You watch this card')).not.toBeInTheDocument();
+    });
+
+    it('opens the watch dialog from the ⋯ menu, labelled by the current watch', async () => {
+      signIn({ watching: true, kinds: ['aito.paid'] });
+      show();
+      await screen.findByTitle('You watch this card');
+      fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Watching ✓' }));
+      expect(await screen.findByRole('dialog', { name: 'Watch this card' })).toBeInTheDocument();
+      expect(screen.getByTestId('panel-column-tasks')).toBeInTheDocument();
+      // The "." shortcut must not open the menu behind the dialog.
+      fireEvent.keyDown(window, { key: '.' });
+      expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    });
   });
 
   it('opens the split dialog from the ⋯ menu and swaps to the new card once the split lands', async () => {

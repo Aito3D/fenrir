@@ -5780,6 +5780,12 @@ export interface InboxPreferences extends InboxPreferencesUpdate {
   available: InboxKindInfo[];
 }
 
+/** The caller's own watch on one Aito card (GET/PUT /aito/{id}/watch). */
+export interface AitoWatch {
+  watching: boolean;
+  kinds: string[];
+}
+
 // API functions
 export const api = {
   // Authentication
@@ -8886,6 +8892,12 @@ export const api = {
       client_contact_person_id?: string | null;
     },
   ) => request<AitoProject>(`/aito/${id}/transfer-client`, { method: 'PUT', body: JSON.stringify(body) }),
+  /** Whether the caller watches card `id`, and for which `aito.*` inbox kinds. */
+  getAitoWatch: (id: number) => request<AitoWatch>(`/aito/${id}/watch`),
+  /** Replace the caller's watch on card `id`; `[]` stops watching. 422 for a
+   *  kind unknown or switched off in the caller's inbox preferences. */
+  setAitoWatch: (id: number, kinds: string[]) =>
+    request<AitoWatch>(`/aito/${id}/watch`, { method: 'PUT', body: JSON.stringify({ kinds }) }),
   getAitoTrash: () => request<AitoProject[]>('/aito/trash'),
   restoreAitoProject: (id: number) => request<AitoProject>(`/aito/${id}/restore`, { method: 'POST' }),
   refreshAitoPaymentLink: (id: number) => request<AitoProject>(`/aito/${id}/payment-link/refresh`, { method: 'POST' }),

@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Building2, Check, Copy, ExternalLink, History, Loader2, Lock, Mail, Pencil, Phone, Plane, RefreshCw, User } from 'lucide-react';
+import { Building2, Check, Copy, ExternalLink, Eye, History, Loader2, Lock, Mail, Pencil, Phone, Plane, RefreshCw, User } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { DuplicateReplaceConfirm } from './DuplicateProjectButton';
 import { MergeProjectModal } from './MergeProjectModal';
 import { TaskTransferModal } from './TaskTransferModal';
 import { TransferClientModal } from './TransferClientModal';
+import { WatchModal } from './WatchModal';
 import { useCardActions } from './useCardActions';
 import { ProjectActionsMenu } from './ProjectActionsMenu';
 import { TrashConfirmModal } from './TrashConfirmModal';
@@ -281,6 +282,7 @@ function PanelHeader({
   canUpdate,
   onUnaccepted,
   onOpenHistory,
+  watching,
 }: {
   project: AitoProject;
   currency: string;
@@ -323,6 +325,9 @@ function PanelHeader({
    *  known) — then the name is the plain span it always was and no History
    *  button renders. Not gated on canUpdate: reading needs aito:read only. */
   onOpenHistory: (() => void) | null;
+  /** The signed-in user watches this card: a small eye beside the card
+   *  number, inline in the eyebrow row so the masthead never grows a line. */
+  watching: boolean;
 }) {
   const { t } = useTranslation();
   // Empty id disables the query: a legacy card with no client has no rating
@@ -397,6 +402,16 @@ function PanelHeader({
             cannot drift apart. */}
         <div className="flex items-center gap-2 mb-0.5">
           <span className={`${eyebrowCls} text-bambu-gray`}>{t('aito.projectRef', { id: project.id })}</span>
+          {watching && (
+            <span
+              title={t('inbox.watching')}
+              aria-label={t('inbox.watching')}
+              role="img"
+              className="flex-shrink-0 inline-flex text-bambu-gray"
+            >
+              <Eye className="w-3.5 h-3.5" aria-hidden="true" />
+            </span>
+          )}
           {project.quote_number && (
             <>
               <span className={`${eyebrowCls} text-bambu-gray opacity-45`}>·</span>
@@ -880,6 +895,7 @@ export function ProjectDetailPanel({
   // what each row opens, so a dialog outlives the menu that launched it.
   const [merging, setMerging] = useState(false);
   const [transferringClient, setTransferringClient] = useState(false);
+  const [watchOpen, setWatchOpen] = useState(false);
   const [transferMode, setTransferMode] = useState<'split' | 'move' | null>(null);
   const [trashing, setTrashing] = useState(false);
   // Same seed path the Record card's Duplicate button used before it moved
@@ -1197,7 +1213,15 @@ export function ProjectDetailPanel({
     return () => sendAitoPresence(null);
   }, [project.id]);
 
-  const { user } = useAuth();
+  const { user, authEnabled } = useAuth();
+  // Per user: with auth off there is nobody to watch for (the server answers
+  // `watching: false` anyway), so the request is not worth making.
+  const watchQuery = useQuery({
+    queryKey: ['aito-watch', project.id],
+    queryFn: () => api.getAitoWatch(project.id),
+    enabled: authEnabled && !!user,
+  });
+  const watching = watchQuery.data?.watching ?? false;
   const otherViewers = useAitoViewers(project.id).filter((name) => name !== (user?.username ?? ''));
   const cardActions = useCardActions(project, tasks, currency, canUpdate);
 
@@ -1248,6 +1272,7 @@ export function ProjectDetailPanel({
           canUpdate={canUpdate}
           onUnaccepted={onClose}
           onOpenHistory={canShowHistory ? () => setHistoryOpen(true) : null}
+          watching={watching}
         />
         {/* The contact sheet's anchor: zero height, right under the band,
             stacked BELOW it (z-1 against the header's z-2) so the sheet slides
@@ -1271,6 +1296,7 @@ export function ProjectDetailPanel({
         {transferringClient && (
           <TransferClientModal project={project} onClose={() => setTransferringClient(false)} />
         )}
+        {watchOpen && <WatchModal project={project} onClose={() => setWatchOpen(false)} />}
         {transferMode && (
           <TaskTransferModal
             project={project}
@@ -1471,6 +1497,8 @@ export function ProjectDetailPanel({
                     onCopySummary={() => void cardActions.copySummary()}
                     onPrintTicket={() => void cardActions.printTicket()}
                     onTransferClient={() => setTransferringClient(true)}
+                    onWatch={() => setWatchOpen(true)}
+                    watching={watching}
                     onDuplicate={onDuplicate && duplicate.start}
                     onDelete={onDelete && (() => setTrashing(true))}
                     shortcutKey="."
@@ -1481,6 +1509,7 @@ export function ProjectDetailPanel({
                         merging ||
                         transferMode ||
                         transferringClient ||
+                        watchOpen ||
                         trashing ||
                         historyOpen ||
                         duplicate.confirming ||
