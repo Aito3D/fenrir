@@ -4,6 +4,7 @@ export default {
     title: 'Aito',
     cardInTrash: '此卡片在回收站中',
     cardGone: '此卡片已不存在',
+    cardLookupFailed: '无法查询此卡片',
     newProject: '项目',
     modalTitle: '新建项目',
     productDescription: '产品描述',

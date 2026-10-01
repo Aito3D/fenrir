@@ -64,4 +64,34 @@ describe('AitoPage ?card= deep link', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(window.location.search).not.toContain('card=');
   });
+
+  it('refetches a board that does not hold the card yet and opens it from the fresh data', async () => {
+    // The link names a card created a moment ago by someone else: the first
+    // board answer predates it, the refetch has it.
+    const fresh = makeProject({ id: 58, description: 'Brand new card', column: 'print' });
+    let boardCalls = 0;
+    server.use(
+      http.get('/api/v1/aito/', () => {
+        boardCalls += 1;
+        return HttpResponse.json(boardCalls === 1 ? [active] : [active, fresh]);
+      }),
+    );
+    renderAt('/aito?card=58');
+
+    const panel = await screen.findByRole('dialog');
+    expect(panel).toHaveTextContent('Brand new card');
+    expect(boardCalls).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByText('This card no longer exists')).not.toBeInTheDocument();
+    await waitFor(() => expect(window.location.search).not.toContain('card='));
+  });
+
+  it('says the lookup failed, not that the card is gone, when the trash cannot be read', async () => {
+    server.use(http.get('/api/v1/aito/trash', () => HttpResponse.json({ detail: 'boom' }, { status: 500 })));
+    renderAt('/aito?card=999');
+
+    expect(await screen.findByText("This card couldn't be looked up")).toBeInTheDocument();
+    expect(screen.queryByText('This card no longer exists')).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(window.location.search).not.toContain('card=');
+  });
 });

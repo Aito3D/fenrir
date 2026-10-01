@@ -4,6 +4,7 @@ export default {
     title: 'Aito',
     cardInTrash: 'Questa scheda è nel cestino',
     cardGone: 'Questa scheda non esiste più',
+    cardLookupFailed: 'Impossibile recuperare questa scheda',
     newProject: 'Progetto',
     modalTitle: 'Nuovo progetto',
     productDescription: 'Descrizione del prodotto',

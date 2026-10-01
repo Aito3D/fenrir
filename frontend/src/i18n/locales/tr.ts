@@ -4,6 +4,7 @@ export default {
     title: 'Aito',
     cardInTrash: 'Bu kart çöp kutusunda',
     cardGone: 'Bu kart artık mevcut değil',
+    cardLookupFailed: 'Bu kart sorgulanamadı',
     newProject: 'Proje',
     modalTitle: 'Yeni Proje',
     productDescription: 'Ürün açıklaması',

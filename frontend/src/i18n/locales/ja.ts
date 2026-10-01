@@ -4,6 +4,7 @@ export default {
     title: 'Aito',
     cardInTrash: 'このカードはゴミ箱にあります',
     cardGone: 'このカードはもう存在しません',
+    cardLookupFailed: 'このカードを確認できませんでした',
     newProject: 'プロジェクト',
     modalTitle: '新規プロジェクト',
     productDescription: '製品の説明',

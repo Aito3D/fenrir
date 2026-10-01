@@ -8146,6 +8146,7 @@ errors: {
     title: 'Aito',
     cardInTrash: 'Det här kortet ligger i papperskorgen',
     cardGone: 'Det här kortet finns inte längre',
+    cardLookupFailed: 'Det gick inte att slå upp det här kortet',
     newProject: 'Projekt',
     modalTitle: 'Nytt projekt',
     productDescription: 'Produktbeskrivning',

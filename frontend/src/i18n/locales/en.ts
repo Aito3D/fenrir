@@ -4,6 +4,7 @@ export default {
     title: 'Aito',
     cardInTrash: 'This card is in the trash',
     cardGone: 'This card no longer exists',
+    cardLookupFailed: 'This card couldn\'t be looked up',
     newProject: 'Project',
     modalTitle: 'New Project',
     productDescription: 'Product description',

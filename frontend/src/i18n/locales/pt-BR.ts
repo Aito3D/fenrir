@@ -4,6 +4,7 @@ export default {
     title: 'Aito',
     cardInTrash: 'Este cartão está na lixeira',
     cardGone: 'Este cartão não existe mais',
+    cardLookupFailed: 'Não foi possível consultar este cartão',
     newProject: 'Projeto',
     modalTitle: 'Novo projeto',
     productDescription: 'Descrição do produto',

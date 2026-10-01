@@ -4,6 +4,7 @@ export default {
     title: 'Aito',
     cardInTrash: 'Diese Karte liegt im Papierkorb',
     cardGone: 'Diese Karte existiert nicht mehr',
+    cardLookupFailed: 'Diese Karte konnte nicht abgerufen werden',
     newProject: 'Projekt',
     modalTitle: 'Neues Projekt',
     productDescription: 'Produktbeschreibung',

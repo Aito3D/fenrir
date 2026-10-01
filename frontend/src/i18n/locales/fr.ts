@@ -4,6 +4,7 @@ export default {
     title: 'Aito',
     cardInTrash: 'Cette carte est dans la corbeille',
     cardGone: 'Cette carte n\'existe plus',
+    cardLookupFailed: 'Impossible de retrouver cette carte',
     newProject: 'Projet',
     modalTitle: 'Nouveau projet',
     productDescription: 'Description du produit',

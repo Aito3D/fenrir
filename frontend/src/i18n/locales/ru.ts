@@ -4,6 +4,7 @@ export default {
     title: 'Aito',
     cardInTrash: 'Эта карточка в корзине',
     cardGone: 'Эта карточка больше не существует',
+    cardLookupFailed: 'Не удалось найти эту карточку',
     newProject: 'Проект',
     modalTitle: 'Новый проект',
     productDescription: 'Описание изделия',

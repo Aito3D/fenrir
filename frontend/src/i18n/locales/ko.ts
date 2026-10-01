@@ -4,6 +4,7 @@ export default {
     title: 'Aito',
     cardInTrash: '이 카드는 휴지통에 있습니다',
     cardGone: '이 카드는 더 이상 존재하지 않습니다',
+    cardLookupFailed: '이 카드를 조회할 수 없습니다',
     newProject: '프로젝트',
     modalTitle: '새 프로젝트',
     productDescription: '제품 설명',

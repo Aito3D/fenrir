@@ -5,6 +5,7 @@ export default {
     title: "Aito",
     cardInTrash: "Ця картка в кошику",
     cardGone: "Ця картка більше не існує",
+    cardLookupFailed: "Не вдалося знайти цю картку",
     newProject: "Проєкт",
     modalTitle: "Новий проєкт",
     productDescription: "Опис виробу",

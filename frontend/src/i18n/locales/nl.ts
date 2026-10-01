@@ -8146,6 +8146,7 @@ export default {
     title: 'Aito',
     cardInTrash: 'Deze kaart staat in de prullenbak',
     cardGone: 'Deze kaart bestaat niet meer',
+    cardLookupFailed: 'Deze kaart kon niet worden opgezocht',
     newProject: 'Nieuw',
     modalTitle: 'Nieuw project',
     productDescription: 'Productbeschrijving',

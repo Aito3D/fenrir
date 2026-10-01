@@ -204,6 +204,14 @@ export function AitoPage() {
     enabled: view === 'trash' || cardParam !== null,
   });
 
+  // The link the board was refetched for. A miss is never decided from the
+  // cached lists alone: an inbox link usually names a card someone else made a
+  // moment ago, which a board cache up to a minute old does not hold yet. So
+  // the first miss refetches both lists once, and the answer comes from that.
+  const cardRefetchedFor = useRef<string | null>(null);
+  const refetchBoard = aitoQuery.refetch;
+  const refetchTrash = trashQuery.refetch;
+
   // The plain `setExpandedId`, not `openCard`: the morph needs a source card
   // on screen, and a link arrives with nothing clicked.
   useEffect(() => {
@@ -216,11 +224,36 @@ export function AitoPage() {
       document.querySelector(`[data-column-id="${card.column}"]`)?.scrollIntoView({ block: 'nearest', inline: 'center' });
       return;
     }
-    if (trashQuery.isPending) return;
+    if (aitoQuery.isFetching || trashQuery.isFetching || trashQuery.isPending) return;
+    if (cardRefetchedFor.current !== cardParam) {
+      cardRefetchedFor.current = cardParam;
+      void refetchBoard();
+      void refetchTrash();
+      return;
+    }
     clearCardParam();
+    // A list that could not be read cannot say the card is gone.
+    if (aitoQuery.isError || trashQuery.isError) {
+      showToast(t('aito.cardLookupFailed'), 'error');
+      return;
+    }
     const inTrash = trashQuery.data?.some((p) => p.id === id) ?? false;
     showToast(t(inTrash ? 'aito.cardInTrash' : 'aito.cardGone'), inTrash ? 'info' : 'error');
-  }, [cardParam, aitoQuery.data, trashQuery.isPending, trashQuery.data, clearCardParam, showToast, t]);
+  }, [
+    cardParam,
+    aitoQuery.data,
+    aitoQuery.isFetching,
+    aitoQuery.isError,
+    trashQuery.isFetching,
+    trashQuery.isPending,
+    trashQuery.isError,
+    trashQuery.data,
+    refetchBoard,
+    refetchTrash,
+    clearCardParam,
+    showToast,
+    t,
+  ]);
 
   // Both lists, because a card opens the same detail panel from either. The
   // board query holds active rows only, so a trashed card looked up there
