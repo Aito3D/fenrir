@@ -1966,13 +1966,15 @@ class _FakeMonotonicClock:
 
 
 @pytest.mark.asyncio
-async def test_429_with_retry_after_short_circuits_the_wake_drain_until_it_elapses(db_session, monkeypatch):
-    """T-028: a 429's ``Retry-After`` must stop the debounced wake drain
-    (``request_debounced_sync`` -> ``run_sync_once(pending_only=True)``, fired
-    on every committed edit) from re-hitting the same throttled org before
-    the window Books asked for has actually passed. An immediate second call
-    attempts nothing and spends no Books request; once the clock passes the
-    window, the same project is drained normally and the throttle clears."""
+async def test_429_with_retry_after_holds_reconciles_but_not_pushes(db_session, monkeypatch):
+    """T-028, as revised 2026-10-01: a 429's ``Retry-After`` arms a hold on
+    BACKGROUND reads. It does not hold a push: before that revision a hold
+    earned by the sweep parked every creation and edit until Books'
+    Retry-After ran out (15 minutes at a time in production, while Books was
+    accepting writes). A wake drain inside the window still attempts the
+    pending card — one Books request, and if that is refused too the card
+    simply stays pending with no failure counted. A push that succeeds clears
+    the hold."""
     from backend.app.services import aito_quote_sync
 
     project = await _project_with_quote(db_session, scan_cost=5000)
@@ -2001,18 +2003,22 @@ async def test_429_with_retry_after_short_circuits_the_wake_drain_until_it_elaps
     assert aito_quote_sync._throttled_until == 130.0  # 100.0 + Retry-After: 30
 
     # The wake drain, fired immediately by an operator's next edit: still
-    # inside the 30s window, so it must attempt nothing and touch Books not
-    # at all.
-    assert await run_sync_once(db_session, pending_only=True) == 0
-    assert len(calls) == 1
+    # inside the 30s window, and the push is attempted all the same.
+    assert await run_sync_once(db_session, pending_only=True) == 1
+    assert len(calls) == 2
 
     await db_session.refresh(project)
     assert project.quote_sync_state == "pending"
     assert project.quote_sync_failures == 0
     assert project.quote_sync_error is None
 
-    # The window has elapsed: the same drain now proceeds normally and a
-    # successful sync clears the throttle memo.
+    # A full sweep inside the window is a push-only pass too: the pending
+    # card is tried again, nothing is reconciled.
+    assert await run_sync_once(db_session) == 1
+    assert len(calls) == 3
+
+    # Books answers again: the push lands and a successful sync clears the
+    # hold.
     monkeypatch.setattr(aito_quote_sync, "time", _FakeMonotonicClock([131.0]))
     seen: list = []
     zoho_service.transport = httpx.MockTransport(

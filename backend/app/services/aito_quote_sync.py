@@ -41,6 +41,7 @@ from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
 from backend.app.models.calculator import CalculatorFilament
+from backend.app.services import aito_change_poll
 from backend.app.services.aito_board_rules import AWAY_STATUSES
 from backend.app.services.aito_customer_credit import read_customer_credit
 from backend.app.services.aito_events import record, utc_now_naive
@@ -155,18 +156,14 @@ _DECIDED = frozenset({"accepted", "declined"})
 # was before this handler ran.
 _deferred_reasons: dict[int, str] = {}
 
-# T-028: how long ``run_sync_once`` short-circuits after Books returns a 429
-# (see the ``ZohoRateLimited`` handler in ``sync_project`` below), so the
-# wake drain (``request_debounced_sync`` -> ``run_sync_once(pending_only=True)``
-# every ``EDIT_DEBOUNCE_SECONDS``) does not spend one more request on an org
-# that just asked for backoff every time an operator keeps editing the board.
-# Used only when ``ZohoRateLimited.retry_after`` is missing or not a finite,
-# non-negative number (Books sent no ``Retry-After``, or T-025's malformed
-# header case). 60s: comfortably above ``EDIT_DEBOUNCE_SECONDS`` (10s), so a
-# burst of edits made while still throttled collapses into the one drain that
-# runs once the window clears, the same way the debounce window itself already
-# collapses a burst — and short enough that a real throttle clears within a
-# tick or two rather than leaving a card looking stuck.
+# T-028: how long background reads (reconciles, the change polls, the invoice
+# sweep and polls) stand down after Books returns a 429 — see the
+# ``ZohoRateLimited`` handler in ``sync_project`` below. Pushes are NOT held:
+# a creation or an edit goes out inside the window and gets its own short
+# retries if Books refuses it. Used only when ``ZohoRateLimited.retry_after``
+# is missing or not a finite, non-negative number (Books sent no
+# ``Retry-After``, or T-025's malformed header case). 60s is the length of
+# Books' per-minute window.
 _RATE_LIMIT_FALLBACK_SECONDS = 60.0
 
 # T-025 (triaged): an ``inf``/``nan``/negative ``Retry-After`` must not be
@@ -174,17 +171,23 @@ _RATE_LIMIT_FALLBACK_SECONDS = 60.0
 # back to ``_RATE_LIMIT_FALLBACK_SECONDS`` above instead (see the handler).
 # A very large but finite value is still capped here rather than trusted
 # outright, so a malformed-but-parseable header (or a legitimate but huge
-# one) cannot freeze the loop for longer than this.
-_RATE_LIMIT_MAX_RETRY_SECONDS = 15 * 60.0
+# one) cannot hold background reads for longer than this. Capped at one
+# minute: Books' per-minute limit is the one this worker meets, and its
+# ``Retry-After`` has been seen far above the time Books actually refused
+# calls (2026-10-01: a 15-minute hold while Books was accepting writes). The
+# hold only stops BACKGROUND reads, so coming back early costs one refused
+# call a minute at worst.
+_RATE_LIMIT_MAX_RETRY_SECONDS = 60.0
 
-# Process-local "do not attempt a sync before this ``time.monotonic()``
+# Process-local "no background read before this ``time.monotonic()``
 # instant" set by the ``ZohoRateLimited`` handler in ``sync_project`` and
-# read by ``run_sync_once``. Mirrors ``zoho._shipping_fail_at`` /
+# read by ``run_sync_once`` (which then pushes only) and ``run_change_pass``
+# (which then does nothing). Mirrors ``zoho._shipping_fail_at`` /
 # ``_SHIPPING_FAIL_COOLDOWN``'s shape (a process-local memo, cleared on the
 # next success, never persisted — a restart should not inherit a stale
 # throttle), in ``time.monotonic()`` terms rather than wall-clock because
-# this module's other process-local timer (``_debounce_deadline`` below)
-# already uses that clock. ``None`` means "not throttled".
+# this module's other process-local timers already use that clock. ``None``
+# means "not throttled".
 _throttled_until: float | None = None
 
 # Project id -> how many times an edit in routes/aito.py has actually landed
@@ -1507,6 +1510,12 @@ def _arm_rate_limit_throttle(e: ZohoRateLimited) -> None:
         window = min(retry_after, _RATE_LIMIT_MAX_RETRY_SECONDS)
     else:
         window = _RATE_LIMIT_FALLBACK_SECONDS
+    logger.warning(
+        "Zoho Books rate limit (code %s, Retry-After %r): holding background reads for %.0fs",
+        e.code,
+        e.retry_after_raw,
+        window,
+    )
     _throttled_until = time.monotonic() + window
 
 
@@ -2017,12 +2026,16 @@ async def sync_project(
         if _deferred_reasons.get(project_id) != message:
             logger.warning("Aito project %s deferred (Zoho Books rate limit): %s", project_id, e)
             _deferred_reasons[project_id] = message
-        # T-028: remember when it is safe to try Books again, so run_sync_once
-        # (both the periodic sweep and the debounced wake drain) can skip
-        # straight past every still-throttled tick instead of spending one
-        # more request on an org that just said back off — see
+        # T-028: remember when background reads may resume, so the sweep and
+        # the change pass skip straight past a still-throttled window instead
+        # of spending more requests on an org that just said back off — see
         # ``_throttled_until``'s own module-level comment for why this is
         # process-local and shaped like ``zoho._shipping_fail_at``.
+        if push_path:
+            # A push somebody may be waiting on: the hold armed below stops
+            # background reads only, and the loop retries this card on the
+            # fast schedule exactly as it does after a timeout.
+            _note_transient_push_failure()
         _arm_rate_limit_throttle(e)
         return True
     except ZohoUpstreamError as e:
@@ -2178,6 +2191,35 @@ def _sweep_predicate():
     )
 
 
+def _attention_predicate():
+    """Quoted cards that must be retried at the full tick's cadence whatever
+    Books reports as changed: a card in 'error' (a failed create, or a push
+    that spent its retry budget — the read that proves Books is back is what
+    clears it), and a terminal card whose status Books has not yet been seen
+    to agree with (T-026). Everything else is reached by the change pass."""
+    return and_(
+        AitoProject.status == "active",
+        AitoProject.quote_sync_state.not_in(("pending", "unmanaged", "locked")),
+        or_(
+            AitoProject.quote_sync_state == "error",
+            and_(
+                AitoProject.quote_id.is_not(None),
+                AitoProject.quote_status_confirmed.is_(False),
+                or_(
+                    AitoProject.board_column == "done",
+                    AitoProject.quote_status.in_(("declined", "expired")),
+                ),
+            ),
+        ),
+    )
+
+
+def _reconcile_predicate():
+    """What the change pass may reconcile: the sweep's cards, minus the ones a
+    push is already owed for."""
+    return and_(_sweep_predicate(), AitoProject.quote_sync_state != "pending")
+
+
 def _still_selected(project: AitoProject) -> bool:
     """Mirrors ``run_sync_once``'s SELECT predicate (``_sweep_predicate``) in
     Python, for the per-iteration re-check below.
@@ -2221,7 +2263,88 @@ def _still_selected(project: AitoProject) -> bool:
     return project.quote_sync_state == "error"
 
 
-async def run_sync_once(db: AsyncSession, pending_only: bool = False, *, fast_retry: bool = False) -> int:
+async def _commit_synced_project(db: AsyncSession, project_id: int) -> None:
+    """Persist one project's sync outcome and tell the board. Shared by
+    ``run_sync_once`` and the change pass's reconcile queue; the comments
+    below are the reasoning for doing it per project and inside one try."""
+    # Commit per project, not once after the loop. sync_project's own
+    # catch-all keeps it from raising, but a single end-of-batch commit
+    # would still make every project's durability depend on none of its
+    # neighbours failing first — the whole point of the catch-all is
+    # defeated if a skipped commit can still discard a sibling's already-
+    # written quote_id. Committing here means the next project's work
+    # never risks the previous one's write.
+    #
+    # Residual window: the process can still die between Zoho returning
+    # an estimate_id and this commit landing, in which case the next tick
+    # re-creates the quote. Closing that needs a distributed transaction
+    # (or an idempotency key Books doesn't offer); noted, not solved here.
+    #
+    # The commit itself can also fail (a DB hiccup, a lock timeout). Left
+    # unguarded, that exception would propagate out of this loop exactly
+    # like the pre-fix batch commit did: it aborts every remaining
+    # project for the tick, and leaves the session mid-transaction and
+    # unusable until something rolls it back. So this is caught too: roll
+    # back, log, move on. The rollback discards this project's in-memory
+    # changes, but its row was never written, so it is still `pending` —
+    # sync_project's "idle"/"error" update never made it to the DB — and
+    # the next tick retries it from scratch, same as any other transient
+    # failure. Projects already committed earlier in this loop are
+    # unaffected on disk, and projects still to come are unaffected in
+    # memory too: the rollback expires every instance in the session,
+    # including ones loaded earlier in this loop, but nothing from a
+    # previous iteration is still referenced here, and the next
+    # iteration re-fetches its project fresh via db.get() rather than
+    # reusing an expired one.
+    try:
+        # Recompute and store board_column here too, not just on request
+        # paths. sync_project can rewrite project.quote_status
+        # (_apply_estimate, the invoiced-lock and tax-exclusive-lock
+        # branches in _update_quote, and _reconcile_status) without
+        # touching board_column, and _to_response derives move_lock from
+        # the LIVE quote_status while returning the STORED board_column —
+        # so skipping this leaves a self-contradictory row (e.g. a card
+        # sitting in Printing but locked as "Waiting on the client").
+        # Inside this try so a failure here is handled exactly like a
+        # commit failure: roll back, log, leave the project pending, and
+        # retry next tick. Function-level import: routes/aito.py imports
+        # this module at module level (for request_immediate_sync), so a
+        # module-level import here WOULD be a cycle.
+        from backend.app.api.routes.aito import _apply_rules, _summary_for
+
+        # sync_project's own terminal handlers may have called
+        # _rollback_after_terminal_failure, which -- per that helper's
+        # own docstring -- expires every attribute on `project` still
+        # held in the identity map. A bare `project.id`/`project.
+        # board_column` read at that point, outside the greenlet context
+        # an awaited SQLAlchemy call runs inside, is exactly the "lazy
+        # reload outside a greenlet context" trap this loop's own
+        # comment above warns about: it raises MissingGreenlet, not a
+        # silent reload. Re-fetch through the awaited db.get() (safe --
+        # it runs inside a greenlet) using the loop's own `project_id`
+        # local rather than touching the possibly-expired instance, and
+        # feed the fresh instance to _apply_rules instead. `project` was
+        # already confirmed non-None at the top of this iteration and
+        # nothing since has deleted the row, so db.get() here is not
+        # expected to return None -- same assumption every caller of
+        # _apply_rules elsewhere in the codebase already makes.
+        project = await db.get(AitoProject, project_id)
+        await _apply_rules(db, project, await _summary_for(db, project_id))
+        await db.commit()
+        try:
+            await ws_manager.broadcast_aito(
+                {"type": "aito_changed", "action": "quote-sync", "project_id": project_id, "actor": None}
+            )
+        except Exception:
+            logger.warning("aito_changed broadcast failed for quote-sync", exc_info=True)
+    except Exception:
+        await db.rollback()
+        logger.exception("Aito quote sync failed to commit project %s", project_id)
+
+
+async def run_sync_once(
+    db: AsyncSession, pending_only: bool = False, *, fast_retry: bool = False, attention_only: bool = False
+) -> int:
     """Drain every pending project, and reconcile the status of every other
     non-terminal managed quote. Returns how many were actually attempted.
 
@@ -2266,24 +2389,23 @@ async def run_sync_once(db: AsyncSession, pending_only: bool = False, *, fast_re
     change. Serial by design — the board holds a handful of cards, and one
     request at a time keeps the failure accounting above trivial.
 
-    T-028: returns 0 without selecting or touching a single project — no
-    Zoho call, and (unlike the mid-batch ``break`` below) not even the DB
-    SELECT that picks candidates — while a previous tick's ``ZohoRateLimited``
-    has this process still inside its throttle window. This is what keeps the
-    wake drain (``pending_only=True``, fired by every committed edit) from
-    re-hitting a throttled org every ``EDIT_DEBOUNCE_SECONDS``: the project(s)
-    involved stay exactly as ``sync_project``'s own handler left them —
-    `pending`, no error, no failure count — and are attempted again on the
-    first tick or wake after the window clears, same as if this call had
-    simply not happened.
+    A Books rate-limit hold (``_throttled_until``) stops RECONCILES, never
+    pushes: inside the window any call of this function behaves as
+    ``pending_only``. Before 2026-10-01 the hold stopped pushes too, and a
+    429 earned by the sweep parked every creation and edit for the length of
+    Books' Retry-After — 15 minutes at a time on the production board.
+
+    ``attention_only`` is the periodic tick's selection: pending cards plus
+    ``_attention_predicate``'s. The tick no longer reads every quoted card;
+    ``run_change_pass`` re-reads the ones Books reports as changed.
     """
     if _throttled_until is not None and time.monotonic() < _throttled_until:
-        return 0
+        pending_only = True
     selected = AitoProject.quote_sync_state == "pending"
     if not pending_only:
         # See _sweep_predicate's own docstring for why this is a function
         # call and not an inline expression here (T-022).
-        selected = _sweep_predicate()
+        selected = or_(selected, _attention_predicate()) if attention_only else _sweep_predicate()
     pending_first = case((AitoProject.quote_sync_state == "pending", 0), else_=1)
     # The state at selection time rides along with the id: a card selected
     # as pending that is no longer pending when the loop reaches it was
@@ -2346,79 +2468,7 @@ async def run_sync_once(db: AsyncSession, pending_only: bool = False, *, fast_re
         rate_limited = await sync_project(
             db, project, credit_cache, retainer_cache, **({"fast_retry": True} if fast_retry else {})
         )
-        # Commit per project, not once after the loop. sync_project's own
-        # catch-all keeps it from raising, but a single end-of-batch commit
-        # would still make every project's durability depend on none of its
-        # neighbours failing first — the whole point of the catch-all is
-        # defeated if a skipped commit can still discard a sibling's already-
-        # written quote_id. Committing here means the next project's work
-        # never risks the previous one's write.
-        #
-        # Residual window: the process can still die between Zoho returning
-        # an estimate_id and this commit landing, in which case the next tick
-        # re-creates the quote. Closing that needs a distributed transaction
-        # (or an idempotency key Books doesn't offer); noted, not solved here.
-        #
-        # The commit itself can also fail (a DB hiccup, a lock timeout). Left
-        # unguarded, that exception would propagate out of this loop exactly
-        # like the pre-fix batch commit did: it aborts every remaining
-        # project for the tick, and leaves the session mid-transaction and
-        # unusable until something rolls it back. So this is caught too: roll
-        # back, log, move on. The rollback discards this project's in-memory
-        # changes, but its row was never written, so it is still `pending` —
-        # sync_project's "idle"/"error" update never made it to the DB — and
-        # the next tick retries it from scratch, same as any other transient
-        # failure. Projects already committed earlier in this loop are
-        # unaffected on disk, and projects still to come are unaffected in
-        # memory too: the rollback expires every instance in the session,
-        # including ones loaded earlier in this loop, but nothing from a
-        # previous iteration is still referenced here, and the next
-        # iteration re-fetches its project fresh via db.get() rather than
-        # reusing an expired one.
-        try:
-            # Recompute and store board_column here too, not just on request
-            # paths. sync_project can rewrite project.quote_status
-            # (_apply_estimate, the invoiced-lock and tax-exclusive-lock
-            # branches in _update_quote, and _reconcile_status) without
-            # touching board_column, and _to_response derives move_lock from
-            # the LIVE quote_status while returning the STORED board_column —
-            # so skipping this leaves a self-contradictory row (e.g. a card
-            # sitting in Printing but locked as "Waiting on the client").
-            # Inside this try so a failure here is handled exactly like a
-            # commit failure: roll back, log, leave the project pending, and
-            # retry next tick. Function-level import: routes/aito.py imports
-            # this module at module level (for request_immediate_sync), so a
-            # module-level import here WOULD be a cycle.
-            from backend.app.api.routes.aito import _apply_rules, _summary_for
-
-            # sync_project's own terminal handlers may have called
-            # _rollback_after_terminal_failure, which -- per that helper's
-            # own docstring -- expires every attribute on `project` still
-            # held in the identity map. A bare `project.id`/`project.
-            # board_column` read at that point, outside the greenlet context
-            # an awaited SQLAlchemy call runs inside, is exactly the "lazy
-            # reload outside a greenlet context" trap this loop's own
-            # comment above warns about: it raises MissingGreenlet, not a
-            # silent reload. Re-fetch through the awaited db.get() (safe --
-            # it runs inside a greenlet) using the loop's own `project_id`
-            # local rather than touching the possibly-expired instance, and
-            # feed the fresh instance to _apply_rules instead. `project` was
-            # already confirmed non-None at the top of this iteration and
-            # nothing since has deleted the row, so db.get() here is not
-            # expected to return None -- same assumption every caller of
-            # _apply_rules elsewhere in the codebase already makes.
-            project = await db.get(AitoProject, project_id)
-            await _apply_rules(db, project, await _summary_for(db, project_id))
-            await db.commit()
-            try:
-                await ws_manager.broadcast_aito(
-                    {"type": "aito_changed", "action": "quote-sync", "project_id": project_id, "actor": None}
-                )
-            except Exception:
-                logger.warning("aito_changed broadcast failed for quote-sync", exc_info=True)
-        except Exception:
-            await db.rollback()
-            logger.exception("Aito quote sync failed to commit project %s", project_id)
+        await _commit_synced_project(db, project_id)
         if rate_limited:
             # sync_project just deferred this project on a 429 rather than
             # failing it (see its own ZohoRateLimited handler above); its
@@ -2430,6 +2480,123 @@ async def run_sync_once(db: AsyncSession, pending_only: bool = False, *, fast_re
             # not counted in `attempted` below beyond this one.
             break
     return attempted
+
+
+# How many open cards each change pass re-reads whatever Books reported: the
+# safety net under the change polls. Two a minute walks a 77-card board in
+# about forty minutes.
+TRICKLE_PER_PASS = 2
+# Background reads stop for the pass once this many Books calls went out in
+# the last minute, from anyone in the process. Books refuses at 100; the
+# other half is left to pushes and to operators.
+BACKGROUND_CALL_CEILING = 50
+
+# Card ids owed a reconcile, in order, no duplicates. Memory only: a restart
+# empties it and the trickle re-covers every card within one cycle.
+_reconcile_queue: list[int] = []
+# The highest id the trickle has queued so far in this walk of the board.
+_trickle_cursor = 0
+
+
+def _enqueue_reconcile(project_ids: list[int]) -> None:
+    for project_id in project_ids:
+        if project_id not in _reconcile_queue:
+            _reconcile_queue.append(project_id)
+
+
+def _reset_change_pass_state() -> None:
+    """Test seam."""
+    global _trickle_cursor
+    _reconcile_queue.clear()
+    _trickle_cursor = 0
+
+
+async def _cards_for_changes(db: AsyncSession, changes: aito_change_poll.Changes) -> list[int]:
+    """The cards a pass's changes name: a changed estimate by its id, a
+    changed payment or retainer by its customer (every open card of that
+    customer — the deposit figures are per customer)."""
+    named = []
+    if changes.estimate_ids:
+        named.append(AitoProject.quote_id.in_(changes.estimate_ids))
+    if changes.customer_ids:
+        named.append(AitoProject.client_id.in_(changes.customer_ids))
+    if not named:
+        return []
+    result = await db.execute(
+        select(AitoProject.id).where(_reconcile_predicate(), or_(*named)).order_by(AitoProject.id)
+    )
+    return list(result.scalars().all())
+
+
+async def _next_trickle(db: AsyncSession) -> list[int]:
+    """The next ``TRICKLE_PER_PASS`` reconcilable cards after the cursor,
+    wrapping to the start of the board when the walk reaches its end."""
+    global _trickle_cursor
+    base = select(AitoProject.id).where(_reconcile_predicate()).order_by(AitoProject.id)
+    ids = list((await db.execute(base.where(AitoProject.id > _trickle_cursor).limit(TRICKLE_PER_PASS))).scalars())
+    if len(ids) < TRICKLE_PER_PASS:
+        wrapped = (await db.execute(base.limit(TRICKLE_PER_PASS - len(ids)))).scalars()
+        ids.extend(pid for pid in wrapped if pid not in ids)
+    if ids:
+        _trickle_cursor = ids[-1]
+    return ids
+
+
+async def _drain_reconcile_queue(db: AsyncSession) -> int:
+    """Reconcile queued cards until the queue is empty, a hold is armed or
+    the budget guard says stop. Whatever is left waits for the next pass."""
+    credit_cache: dict[str, float] = {}
+    retainer_cache: dict[str, list[dict]] = {}
+    reconciled = 0
+    while _reconcile_queue:
+        await _serve_wake_mid_tick(db)
+        if _throttled_until is not None and time.monotonic() < _throttled_until:
+            break
+        if zoho_service.calls_in_last_minute() >= BACKGROUND_CALL_CEILING:
+            break
+        project_id = _reconcile_queue.pop(0)
+        project = await db.get(AitoProject, project_id)
+        if project is None or project.quote_sync_state == "pending" or not _still_selected(project):
+            # Gone, settled, or owed a push: the push path will read it.
+            continue
+        rate_limited = await sync_project(db, project, credit_cache, retainer_cache)
+        await _commit_synced_project(db, project_id)
+        if rate_limited:
+            _reconcile_queue.insert(0, project_id)
+            break
+        reconciled += 1
+    return reconciled
+
+
+async def run_change_pass(db: AsyncSession) -> int:
+    """Ask Books what changed, reconcile the cards that names plus the
+    trickle. Returns how many cards were reconciled.
+
+    Costs three listings whatever the board's size; the per-card reads are
+    spent only on cards with a reason. Skipped whole inside a rate-limit
+    hold, and stopped by ``BACKGROUND_CALL_CEILING``."""
+    if _throttled_until is not None and time.monotonic() < _throttled_until:
+        return 0
+    started = time.monotonic()
+    calls_before = zoho_service.calls_total
+    changes = await aito_change_poll.poll_changes(db)
+    _enqueue_reconcile(await _cards_for_changes(db, changes))
+    if changes.rate_limited is not None:
+        _arm_rate_limit_throttle(changes.rate_limited)
+        return 0
+    _enqueue_reconcile(await _next_trickle(db))
+    reconciled = await _drain_reconcile_queue(db)
+    logger.log(
+        logging.INFO if reconciled else logging.DEBUG,
+        "Aito change pass: %d card(s) in %.1fs, %d Books call(s), %d in the last minute, daily remaining %s, queue %d",
+        reconciled,
+        time.monotonic() - started,
+        zoho_service.calls_total - calls_before,
+        zoho_service.calls_in_last_minute(),
+        zoho_service.daily_remaining,
+        len(_reconcile_queue),
+    )
+    return reconciled
 
 
 # 300s, not 60s: run_sync_once spends one Books call per active quoted
