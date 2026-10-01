@@ -127,6 +127,65 @@ class TestSharedStreamHubGetExisting:
         result = await hub.get_existing(1)
         assert result is None
 
+    @pytest.mark.asyncio
+    async def test_get_existing_returns_none_for_stale_entry(self):
+        """T-054: a live producer whose last frame is older than
+        STALE_PRODUCER_TIMEOUT is reported missing and left untouched, so the
+        caller falls through to get_or_start's stale-replacement path."""
+        from backend.app.api.routes.camera import SharedStreamHub, _SharedStream
+
+        hub = SharedStreamHub()
+        entry = _SharedStream()
+        entry.frame_seq = 7
+        entry.last_frame_produced = time.monotonic() - hub.STALE_PRODUCER_TIMEOUT - 5
+        accessed = entry.last_accessed - 10
+        entry.last_accessed = accessed
+        hub._streams[1] = entry
+
+        result = await hub.get_existing(1)
+        assert result is None
+        assert entry.alive is True
+        assert hub._streams[1] is entry
+        assert entry.last_accessed == accessed
+
+    @pytest.mark.asyncio
+    async def test_get_existing_returns_fresh_entry_with_frames(self):
+        from backend.app.api.routes.camera import SharedStreamHub, _SharedStream
+
+        hub = SharedStreamHub()
+        entry = _SharedStream()
+        entry.frame_seq = 7
+        entry.last_frame_produced = time.monotonic() - hub.STALE_PRODUCER_TIMEOUT + 5
+        hub._streams[1] = entry
+
+        assert await hub.get_existing(1) is entry
+
+    @pytest.mark.asyncio
+    async def test_get_existing_never_treats_a_connecting_producer_as_stale(self):
+        """frame_seq == 0 (still connecting) is never stale, however old."""
+        from backend.app.api.routes.camera import SharedStreamHub, _SharedStream
+
+        hub = SharedStreamHub()
+        entry = _SharedStream()
+        entry.frame_seq = 0
+        entry.last_frame_produced = time.monotonic() - hub.STALE_PRODUCER_TIMEOUT - 500
+        hub._streams[1] = entry
+
+        assert await hub.get_existing(1) is entry
+
+    @pytest.mark.asyncio
+    async def test_get_existing_honors_per_instance_stale_timeout(self):
+        from backend.app.api.routes.camera import SharedStreamHub, _SharedStream
+
+        hub = SharedStreamHub()
+        hub.STALE_PRODUCER_TIMEOUT = 10.0
+        entry = _SharedStream()
+        entry.frame_seq = 1
+        entry.last_frame_produced = time.monotonic() - 20.0
+        hub._streams[1] = entry
+
+        assert await hub.get_existing(1) is None
+
 
 # ---------------------------------------------------------------------------
 # TestSharedStreamHubGetExistingBatch
@@ -202,6 +261,27 @@ class TestSharedStreamHubGetExistingBatch:
         found, missing = await hub.get_existing_batch([1, 2])
         assert set(found.keys()) == {1, 2}
         assert missing == []
+
+    @pytest.mark.asyncio
+    async def test_batch_still_returns_stale_entries(self):
+        """T-054 pin: get_existing_batch stays stale-unaware. The grid stream's
+        own stuck-producer detection (30 s) kills such an entry and schedules a
+        backoff-governed restart; hiding it here would bypass that path."""
+        from backend.app.api.routes.camera import SharedStreamHub, _SharedStream
+
+        hub = SharedStreamHub()
+        stale = _SharedStream()
+        stale.frame_seq = 4
+        stale.last_frame_produced = time.monotonic() - hub.STALE_PRODUCER_TIMEOUT - 5
+        stale.last_accessed = time.monotonic() - 10
+        accessed = stale.last_accessed
+        hub._streams[1] = stale
+
+        found, missing = await hub.get_existing_batch([1])
+        assert found == {1: stale}
+        assert missing == []
+        assert stale.alive is True
+        assert stale.last_accessed > accessed
 
 
 # ---------------------------------------------------------------------------
@@ -357,6 +437,199 @@ class TestEnsureProducerDispatch:
             assert entry1.alive is False  # Old one should be dead
 
         await hub.stop_all()
+
+    @pytest.mark.asyncio
+    async def test_ensure_producer_replaces_a_stale_producer_on_the_fast_path(self):
+        """T-054: the non-forced fast path no longer hands out a frozen
+        producer. It falls through to get_or_start, which cancels the stale
+        producer, records its teardown and starts a NEW entry."""
+        import asyncio
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        import backend.app.api.routes.camera as cam
+        from backend.app.api.routes.camera import SharedStreamHub, _ensure_producer, _SharedStream
+
+        hub = SharedStreamHub()
+        stale = _SharedStream(params_key="old")
+        stale.frame_seq = 9
+        stale.last_frame_produced = time.monotonic() - hub.STALE_PRODUCER_TIMEOUT - 5
+        stale.task = asyncio.create_task(asyncio.Event().wait())
+        hub._streams[1] = stale
+
+        printer = MagicMock()
+        printer.id = 1
+        printer.model = "X1C"
+        printer.ip_address = "192.168.1.100"
+        printer.access_code = "12345678"
+        printer.external_camera_enabled = False
+        printer.external_camera_url = None
+
+        async def fake_stream(**kwargs):
+            while True:
+                yield b"\xff\xd8fake\xff\xd9"
+                await asyncio.sleep(0.1)
+
+        with (
+            patch("backend.app.api.routes.camera.generate_rtsp_mjpeg_stream", fake_stream),
+            patch("backend.app.api.routes.camera.is_chamber_image_model", return_value=False),
+            patch("backend.app.api.routes.camera._check_system_load", return_value=0.0),
+            patch("backend.app.api.routes.camera._track_teardown", wraps=cam._track_teardown) as track,
+            patch.dict(cam._state.stream_start_times, {}, clear=False),
+        ):
+            entry = await _ensure_producer(1, AsyncMock(), 5, 15, 0.5, printer=printer, hub=hub)
+
+        assert entry is not None
+        assert entry is not stale
+        assert entry.alive is True
+        assert hub._streams[1] is entry
+        assert stale.alive is False
+        assert stale.task.cancelled()
+        track.assert_any_call(hub._tearing_down, 1, stale.task)
+        await hub.stop_all()
+
+    @staticmethod
+    def _fake_printer(model="X1C"):
+        from unittest.mock import MagicMock
+
+        printer = MagicMock()
+        printer.id = 1
+        printer.model = model
+        printer.ip_address = "192.168.1.100"
+        printer.access_code = "12345678"
+        printer.external_camera_enabled = False
+        printer.external_camera_url = None
+        return printer
+
+    @staticmethod
+    def _capturing_hub():
+        """Real hub whose get_or_start records (printer_id, starter, params_key) instead of spawning."""
+        from unittest.mock import AsyncMock
+
+        from backend.app.api.routes.camera import SharedStreamHub
+
+        hub = SharedStreamHub()
+        hub.get_or_start = AsyncMock(return_value="entry")
+        return hub
+
+    @pytest.mark.asyncio
+    async def test_ensure_producer_unknown_printer_returns_none_and_registers_nothing(self):
+        """db lookup yields no row -> None, and no producer is started."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        import backend.app.api.routes.camera as cam
+        from backend.app.api.routes.camera import _ensure_producer
+
+        hub = self._capturing_hub()
+        db = AsyncMock()
+        result_obj = MagicMock()
+        result_obj.scalar_one_or_none.return_value = None
+        db.execute.return_value = result_obj
+
+        result = await _ensure_producer(42, db, 5, 15, 0.5, hub=hub)
+
+        assert result is None
+        db.execute.assert_awaited_once()
+        hub.get_or_start.assert_not_called()
+        assert hub._streams == {}
+        assert 42 not in cam._state.stream_start_times
+
+    @pytest.mark.asyncio
+    async def test_ensure_producer_looks_the_printer_up_via_db_when_not_passed(self):
+        """No printer passed -> the row from db.execute is used to start the producer."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        import backend.app.api.routes.camera as cam
+        from backend.app.api.routes.camera import _ensure_producer
+
+        hub = self._capturing_hub()
+        db = AsyncMock()
+        result_obj = MagicMock()
+        result_obj.scalar_one_or_none.return_value = self._fake_printer()
+        db.execute.return_value = result_obj
+
+        with (
+            patch("backend.app.api.routes.camera.is_chamber_image_model", return_value=False),
+            patch("backend.app.api.routes.camera._check_system_load", return_value=0.0),
+            patch.dict(cam._state.stream_start_times, {}, clear=False),
+        ):
+            result = await _ensure_producer(1, db, 5, 15, 0.5, hub=hub)
+
+        assert result == "entry"
+        db.execute.assert_awaited_once()
+        hub.get_or_start.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_ensure_producer_chamber_image_model_uses_chamber_generator_with_fps_capped_at_5(self):
+        from unittest.mock import patch
+
+        import backend.app.api.routes.camera as cam
+        from backend.app.api.routes.camera import _ensure_producer
+
+        hub = self._capturing_hub()
+        sentinel_calls = []
+
+        def fake_chamber(**kwargs):
+            sentinel_calls.append(kwargs)
+            return "chamber-stream"
+
+        with (
+            patch("backend.app.api.routes.camera.generate_chamber_mjpeg_stream", fake_chamber),
+            patch("backend.app.api.routes.camera.is_chamber_image_model", return_value=True),
+            patch("backend.app.api.routes.camera._check_system_load", return_value=0.0),
+            patch.dict(cam._state.stream_start_times, {}, clear=False),
+        ):
+            await _ensure_producer(1, None, 30, 15, 0.5, printer=self._fake_printer("A1"), hub=hub)
+            starter = hub.get_or_start.await_args.args[1]
+            assert starter() == "chamber-stream"
+
+        assert len(sentinel_calls) == 1
+        kwargs = sentinel_calls[0]
+        assert kwargs["fps"] == 5
+        assert kwargs["ip_address"] == "192.168.1.100"
+        assert kwargs["raw"] is True
+        for rtsp_only in ("model", "quality", "scale", "threads", "gpu_accel", "skip_frames", "read_timeout"):
+            assert rtsp_only not in kwargs
+        assert hub.get_or_start.await_args.kwargs["params_key"] == "5-15-0.5-0-False-False"
+
+    @pytest.mark.asyncio
+    async def test_ensure_producer_skip_frames_sets_rtsp_read_timeout(self):
+        from unittest.mock import patch
+
+        import backend.app.api.routes.camera as cam
+        from backend.app.api.routes.camera import _ensure_producer
+
+        hub = self._capturing_hub()
+        calls = []
+
+        def fake_rtsp(**kwargs):
+            calls.append(kwargs)
+            return "rtsp-stream"
+
+        with (
+            patch("backend.app.api.routes.camera.generate_rtsp_mjpeg_stream", fake_rtsp),
+            patch("backend.app.api.routes.camera.is_chamber_image_model", return_value=False),
+            patch("backend.app.api.routes.camera._check_system_load", return_value=0.0),
+            patch.dict(cam._state.stream_start_times, {}, clear=False),
+        ):
+            await _ensure_producer(1, None, 5, 15, 0.5, printer=self._fake_printer(), skip_frames=True, hub=hub)
+            hub.get_or_start.await_args.args[1]()
+            await _ensure_producer(1, None, 5, 15, 0.5, printer=self._fake_printer(), skip_frames=False, hub=hub)
+            hub.get_or_start.await_args.args[1]()
+
+        with_skip, without_skip = calls
+        assert with_skip["skip_frames"] is True
+        assert with_skip["read_timeout"] == 30.0
+        assert without_skip["skip_frames"] is False
+        assert "read_timeout" not in without_skip
+
+    @pytest.mark.asyncio
+    async def test_ensure_producer_without_printer_or_db_raises_value_error(self):
+        from backend.app.api.routes.camera import _ensure_producer
+
+        hub = self._capturing_hub()
+        with pytest.raises(ValueError, match="needs a db session"):
+            await _ensure_producer(1, None, 5, 15, 0.5, printer=None, hub=hub)
+        hub.get_or_start.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

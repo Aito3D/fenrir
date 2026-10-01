@@ -572,6 +572,16 @@ def _track_teardown(registry: dict[int, asyncio.Task], printer_id: int, task: as
     task.add_done_callback(_clear)
 
 
+def _producer_is_stale(entry: "_SharedStream", timeout: float) -> bool:
+    """True when *entry* delivered frames before but none for over *timeout* seconds.
+
+    A producer that has never produced a frame (``frame_seq == 0``, still
+    connecting) is never stale. Shared by the hub's get_or_start(), restart()
+    and get_existing() so every lookup applies the same predicate.
+    """
+    return entry.frame_seq > 0 and time.monotonic() - entry.last_frame_produced > timeout
+
+
 class SharedStreamHub:
     """One camera source per printer, shared across multiple viewers.
 
@@ -610,7 +620,7 @@ class SharedStreamHub:
             entry = self._streams.get(printer_id)
             if entry is not None and entry.alive:
                 # Detect stalled producers: if frames were flowing but stopped, treat as dead
-                if entry.frame_seq > 0 and time.monotonic() - entry.last_frame_produced > self.STALE_PRODUCER_TIMEOUT:
+                if _producer_is_stale(entry, self.STALE_PRODUCER_TIMEOUT):
                     logger.warning(
                         "Stale producer for printer %s (no frame for %.0fs), replacing",
                         printer_id,
@@ -664,7 +674,7 @@ class SharedStreamHub:
             if old is not None and old.alive:
                 if old.params_key == params_key:
                     # Same params — check if stalled before reusing
-                    if old.frame_seq > 0 and time.monotonic() - old.last_frame_produced > self.STALE_PRODUCER_TIMEOUT:
+                    if _producer_is_stale(old, self.STALE_PRODUCER_TIMEOUT):
                         logger.warning(
                             "Stale producer for printer %s during restart (no frame for %.0fs), replacing",
                             printer_id,
@@ -956,10 +966,18 @@ class SharedStreamHub:
         return None
 
     async def get_existing(self, printer_id: int) -> "_SharedStream | None":
-        """Return an alive producer for *printer_id*, or ``None``."""
+        """Return an alive, non-stale producer for *printer_id*, or ``None``.
+
+        A producer that delivered frames but none for over
+        STALE_PRODUCER_TIMEOUT is reported as missing (and left untouched), so
+        the caller falls through to get_or_start(), which replaces it, instead
+        of attaching a viewer to a frozen stream. get_existing_batch() keeps
+        returning such entries: the grid stream's own stuck-producer detection
+        kills them and schedules a backoff-governed restart.
+        """
         async with self._lock:
             entry = self._streams.get(printer_id)
-            if entry is not None and entry.alive:
+            if entry is not None and entry.alive and not _producer_is_stale(entry, self.STALE_PRODUCER_TIMEOUT):
                 entry.last_accessed = time.monotonic()
                 return entry
         return None

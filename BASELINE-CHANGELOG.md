@@ -369,3 +369,34 @@ own cancellation propagating.
 
 - Golden probes re-recorded: none (13/13 match).
 - SURFACE.md sections regenerated: none (`gen_surface_c22.sh` output identical).
+
+## T-054 — the fast lookup path treats a frozen producer as missing (user-approved 2026-10-01)
+
+Sanctions commit <this commit> "refactor(loop-11): T-054 treat a frozen
+producer as missing on the fast lookup path (user-approved behavior change)".
+`SharedStreamHub.get_existing` (`backend/app/api/routes/camera.py`) now returns
+`None` for an alive entry that has produced frames (`frame_seq > 0`) but none
+for over `STALE_PRODUCER_TIMEOUT` (45s, per-instance override honored), without
+touching the entry. `_ensure_producer`'s non-forced fast path (used by the
+single-camera `camera_stream`, the grid's background restart and the grid
+spawn loop) therefore falls through to `get_or_start`, whose existing
+stale-replacement branch cancels the frozen producer, records its teardown in
+`_tearing_down` and starts a new one. Before this change a viewer opening a
+camera whose producer had stalled (e.g. a chamber camera whose printer dropped
+off the network) was attached to the frozen entry and saw a frozen last frame
+or a black tile until the producer gave up on its own. Users may now see other
+viewers of that camera briefly interrupted while the shared producer restarts.
+The staleness test is one module-private helper, `_producer_is_stale`, now also
+used by `get_or_start` and `restart` (same predicate, same constant, same
+`frame_seq > 0` guard: a producer still connecting is never stale).
+Unchanged: `get_existing_batch` deliberately stays stale-unaware. The grid
+stream calls it once at connect time, and its generator loop's own
+stuck-producer detection (30s, kills the entry and schedules a restart under the
+existing backoff, recovery window and watchdog circuit breaker) handles a
+stale entry on its first pass; hiding the entry from the batch would route it
+around that backoff instead. Also unchanged: `get_or_start`/`restart`
+behavior, the reuse rules, every timeout, `/camera/stop`, hub status payload,
+the stream-token route, hub method names and signatures, and frame delivery.
+
+- Golden probes re-recorded: none (13/13 match).
+- SURFACE.md sections regenerated: none (`gen_surface_c22.sh` output identical).
