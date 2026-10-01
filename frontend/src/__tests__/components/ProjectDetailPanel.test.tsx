@@ -1966,6 +1966,14 @@ describe('ProjectDetailPanel left column cards', () => {
     expect(screen.getByTestId('panel-column-tasks')).toBeInTheDocument();
   });
 
+  it('opens the client-transfer dialog from the ⋯ menu over the panel', async () => {
+    show();
+    fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /^Transfer to another client…/ }));
+    expect(await screen.findByRole('dialog', { name: 'Transfer to another client' })).toBeInTheDocument();
+    expect(screen.getByTestId('panel-column-tasks')).toBeInTheDocument();
+  });
+
   it('opens the split dialog from the ⋯ menu and swaps to the new card once the split lands', async () => {
     const created = { ...project, id: 58 };
     server.use(

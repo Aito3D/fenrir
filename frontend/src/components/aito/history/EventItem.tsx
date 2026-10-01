@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { EVENT_LABEL_KEY, dotClass, detailText, formatValue, elapsedBucket } from './eventKinds';
+import { EVENT_LABEL_KEY, dotClass, detailText, formatValue, elapsedBucket, labelParams } from './eventKinds';
 import type { AitoEvent } from '../../../api/client';
 import { parseUTCDate } from '../../../utils/date';
 
@@ -53,7 +53,8 @@ export function EventItem({
   const [expanded, setExpanded] = useState(false);
 
   const labelKey = EVENT_LABEL_KEY[event.kind];
-  const label = labelKey ? t(labelKey) : event.kind;
+  const params = labelParams(event);
+  const label = labelKey ? t(labelKey, params ?? undefined) : event.kind;
   const at = parseUTCDate(event.occurred_at);
   const previousAt = previous ? parseUTCDate(previous.occurred_at) : null;
   const until = event.occurred_until ? parseUTCDate(event.occurred_until) : null;
@@ -76,7 +77,7 @@ export function EventItem({
       <div className="text-sm text-white">
         {event.actor_name && <span className="font-medium">{event.actor_name} </span>}
         <span className={event.actor_name ? 'text-bambu-gray-light' : ''}>{label}</span>
-        {event.subject_label && <span className="text-bambu-gray-light"> “{event.subject_label}”</span>}
+        {event.subject_label && !params && <span className="text-bambu-gray-light"> “{event.subject_label}”</span>}
         {hasMany && (
           <button
             type="button"

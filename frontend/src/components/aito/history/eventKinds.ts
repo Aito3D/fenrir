@@ -1,3 +1,5 @@
+import type { AitoEvent } from '../../../api/client';
+
 /** Presentation only. The BACKEND registry in services/aito_events.py remains
  *  the authority for which kinds a depth returns — this map decides how a kind
  *  looks once the server has decided to send it, and nothing else. A kind
@@ -61,7 +63,43 @@ export const EVENT_LABEL_KEY: Record<string, string> = {
   'payment.terminal.attention': 'aito.history.paymentTerminalAttention',
   'payment.manual.recorded': 'aito.history.paymentManualRecorded',
   'payment.manual.partial': 'aito.history.paymentManualPartial',
+  'project.merged': 'aito.history.projectMerged',
+  'task.transferred_out': 'aito.history.taskTransferredOut',
+  'task.transferred_in': 'aito.history.taskTransferredIn',
+  'client.transferred': 'aito.history.clientTransferred',
+  'project.due.overdue': 'aito.history.projectDueOverdue',
 };
+
+/** The values a label interpolates, for the kinds whose sentence names the
+ *  other side itself — the card a merge or a task transfer came from or went
+ *  to (`{{label}}`, plus `{{count}}` tasks), or the two clients of a transfer.
+ *  Those labels already carry the subject, so `EventItem` drops its trailing
+ *  quoted `subject_label` for them; `null` means a plain label, as before.
+ *
+ *  A card with no description still has a number, which is what the operator
+ *  would search the board for. */
+export function labelParams(
+  event: Pick<AitoEvent, 'kind' | 'subject_id' | 'subject_label' | 'detail'>,
+): Record<string, string | number> | null {
+  const detail = event.detail ?? {};
+  const text = (value: unknown) => (typeof value === 'string' && value ? value : null);
+
+  if (event.kind === 'project.merged' || event.kind === 'task.transferred_out' || event.kind === 'task.transferred_in') {
+    return {
+      label: text(event.subject_label) ?? `#${event.subject_id ?? '?'}`,
+      count: typeof detail.task_count === 'number' ? detail.task_count : 0,
+    };
+  }
+
+  if (event.kind === 'client.transferred') {
+    return {
+      from: text(detail.from_name) ?? '—',
+      to: text(detail.to_name) ?? text(event.subject_label) ?? '—',
+    };
+  }
+
+  return null;
+}
 
 /** Red overrides the actor colour: a failure is the one thing worth finding
  *  without reading, and its actor (always the system) says nothing useful. */

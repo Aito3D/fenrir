@@ -10,7 +10,9 @@ import { focusRingCls, inputCls, labelCls } from '../formStyles';
 export interface ClientComboboxProps {
   clientName: string;
   onSelect: (contact: ZohoContact) => void;
-  onCreateNew: () => void;
+  /** Omitted where a new contact is not on offer (the transfer dialog): the
+   *  dropdown then lists matches only. */
+  onCreateNew?: () => void;
   onReset: () => void;
   showReset: boolean;
   /** Rendered between the input and the reset button — the drawer puts the
@@ -158,17 +160,19 @@ export function ClientCombobox({ clientName, onSelect, onCreateNew, onReset, sho
                     )}
                   </button>
                 ))}
-              <button
-                type="button"
-                onClick={() => {
-                  onCreateNew();
-                  stopEditing();
-                }}
-                className={`w-full px-3 py-2 text-left text-sm text-bambu-green border-t border-bambu-dark-tertiary hover:bg-bambu-dark-tertiary transition-colors flex items-center gap-2 ${focusRingCls}`}
-              >
-                <Plus className="w-4 h-4" />
-                {t('aito.createClient')}
-              </button>
+              {onCreateNew && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onCreateNew();
+                    stopEditing();
+                  }}
+                  className={`w-full px-3 py-2 text-left text-sm text-bambu-green border-t border-bambu-dark-tertiary hover:bg-bambu-dark-tertiary transition-colors flex items-center gap-2 ${focusRingCls}`}
+                >
+                  <Plus className="w-4 h-4" />
+                  {t('aito.createClient')}
+                </button>
+              )}
             </div>
           )}
         </div>

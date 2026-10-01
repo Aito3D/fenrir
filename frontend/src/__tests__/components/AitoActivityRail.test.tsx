@@ -576,3 +576,52 @@ describe('ActivityRail', () => {
     });
   });
 });
+
+// The card-menu stories (merge, split/move, client transfer) and the hourly
+// overdue sweep write kinds whose sentence carries the other card or client
+// itself, so the trailing quoted subject is not repeated after it.
+describe('ActivityRail — menu and overdue kinds', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  const cases: [Partial<AitoEvent>, string][] = [
+    [
+      { kind: 'project.merged', subject_label: 'Pièce BMW', detail: { task_count: 2 } },
+      'merged “Pièce BMW” into this card',
+    ],
+    [
+      { kind: 'task.transferred_out', subject_label: 'Pièce BMW', detail: { task_count: 2, split: true } },
+      'moved 2 tasks to “Pièce BMW”',
+    ],
+    [
+      { kind: 'task.transferred_out', subject_label: 'Pièce BMW', detail: { task_count: 1, split: false } },
+      'moved 1 task to “Pièce BMW”',
+    ],
+    [
+      { kind: 'task.transferred_in', subject_label: 'Pièce BMW', detail: { task_count: 3, split: false } },
+      'moved 3 tasks here from “Pièce BMW”',
+    ],
+    [
+      {
+        kind: 'client.transferred',
+        subject_label: 'PACIFIC MARINE',
+        detail: { from_id: 'z1', from_name: 'ACME SARL', to_id: 'z9', to_name: 'PACIFIC MARINE' },
+      },
+      'transferred the card from ACME SARL to PACIFIC MARINE',
+    ],
+    [
+      { kind: 'project.due.overdue', actor_class: 'system', actor_name: null, subject_label: null, detail: null },
+      'Promised date passed',
+    ],
+  ];
+
+  it.each(cases)('labels %o', async (over, label) => {
+    vi.spyOn(api, 'getAitoEvents').mockResolvedValue({
+      events: [event({ subject_type: 'project', subject_id: 58, ...over })],
+      has_more: false,
+    });
+    render(<ActivityRail projectId={12} />);
+    const line = (await screen.findByText(label)).parentElement;
+    // The whole line is actor + label: no raw kind, no repeated subject.
+    expect(line?.textContent).toBe(over.actor_name === null ? label : `paul ${label}`);
+  });
+});

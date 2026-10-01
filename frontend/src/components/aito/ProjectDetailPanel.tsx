@@ -6,6 +6,7 @@ import type { LucideIcon } from 'lucide-react';
 import { DuplicateReplaceConfirm } from './DuplicateProjectButton';
 import { MergeProjectModal } from './MergeProjectModal';
 import { TaskTransferModal } from './TaskTransferModal';
+import { TransferClientModal } from './TransferClientModal';
 import { useCardActions } from './useCardActions';
 import { ProjectActionsMenu } from './ProjectActionsMenu';
 import { TrashConfirmModal } from './TrashConfirmModal';
@@ -878,6 +879,7 @@ export function ProjectDetailPanel({
   // rows are usable (see ProjectActionsMenu's `rows`); the panel only owns
   // what each row opens, so a dialog outlives the menu that launched it.
   const [merging, setMerging] = useState(false);
+  const [transferringClient, setTransferringClient] = useState(false);
   const [transferMode, setTransferMode] = useState<'split' | 'move' | null>(null);
   const [trashing, setTrashing] = useState(false);
   // Same seed path the Record card's Duplicate button used before it moved
@@ -1264,6 +1266,11 @@ export function ProjectDetailPanel({
           )}
         </div>
         {merging && <MergeProjectModal project={project} onClose={() => setMerging(false)} />}
+        {/* The new client reaches the header through the board cache the
+            modal writes on success — nothing to hand back here. */}
+        {transferringClient && (
+          <TransferClientModal project={project} onClose={() => setTransferringClient(false)} />
+        )}
         {transferMode && (
           <TaskTransferModal
             project={project}
@@ -1463,15 +1470,22 @@ export function ProjectDetailPanel({
                     onMoveTasks={() => setTransferMode('move')}
                     onCopySummary={() => void cardActions.copySummary()}
                     onPrintTicket={() => void cardActions.printTicket()}
-                    // wired in Task 10
-                    onTransferClient={() => {}}
+                    onTransferClient={() => setTransferringClient(true)}
                     onDuplicate={onDuplicate && duplicate.start}
                     onDelete={onDelete && (() => setTrashing(true))}
                     shortcutKey="."
                     // Off while any of the panel's own overlays is up: the
                     // key must not open a menu behind the dialog in front.
                     shortcutEnabled={
-                      !(merging || transferMode || trashing || historyOpen || duplicate.confirming || editingClient)
+                      !(
+                        merging ||
+                        transferMode ||
+                        transferringClient ||
+                        trashing ||
+                        historyOpen ||
+                        duplicate.confirming ||
+                        editingClient
+                      )
                     }
                   />
                 }

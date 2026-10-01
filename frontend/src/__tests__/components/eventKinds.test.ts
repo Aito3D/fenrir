@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { detailText, elapsedBucket, EVENT_LABEL_KEY, formatValue } from '../../components/aito/history/eventKinds';
+import {
+  detailText,
+  elapsedBucket,
+  EVENT_LABEL_KEY,
+  formatValue,
+  labelParams,
+} from '../../components/aito/history/eventKinds';
+import i18n from '../../i18n';
 
 describe('formatValue', () => {
   it('renders an em dash for null and undefined', () => {
@@ -254,5 +261,57 @@ describe('project.client.changed', () => {
 
   it('returns null when neither name is known', () => {
     expect(detailText('project.client.changed', { from_id: 'C1', to_id: 'C2' })).toBeNull();
+  });
+});
+
+describe('EVENT_LABEL_KEY', () => {
+  // A key with no English string renders as the dotted key itself — worse
+  // than the raw kind. Plural keys exist only as `_one`/`_other`, which
+  // `exists` resolves when given a count.
+  it('points every kind at a key that exists in English', () => {
+    const missing = Object.entries(EVENT_LABEL_KEY).filter(
+      ([, key]) => !i18n.exists(key, { lng: 'en' }) && !i18n.exists(key, { lng: 'en', count: 2 }),
+    );
+    expect(missing).toEqual([]);
+  });
+
+  it('labels the merge, transfer and overdue kinds', () => {
+    expect(EVENT_LABEL_KEY['project.merged']).toBe('aito.history.projectMerged');
+    expect(EVENT_LABEL_KEY['task.transferred_out']).toBe('aito.history.taskTransferredOut');
+    expect(EVENT_LABEL_KEY['task.transferred_in']).toBe('aito.history.taskTransferredIn');
+    expect(EVENT_LABEL_KEY['client.transferred']).toBe('aito.history.clientTransferred');
+    expect(EVENT_LABEL_KEY['project.due.overdue']).toBe('aito.history.projectDueOverdue');
+  });
+});
+
+describe('labelParams', () => {
+  const ev = (kind: string, subject_label: string | null, detail: Record<string, unknown> | null) => ({
+    kind,
+    subject_id: 58,
+    subject_label,
+    detail,
+  });
+
+  it('returns null for a kind whose label takes no values', () => {
+    expect(labelParams(ev('task.added', 'Socle', null))).toBeNull();
+  });
+
+  it('names the other card and the task count for the transfer kinds', () => {
+    expect(labelParams(ev('task.transferred_out', 'Pièce BMW', { task_count: 2, split: true }))).toEqual({
+      label: 'Pièce BMW',
+      count: 2,
+    });
+    expect(labelParams(ev('project.merged', 'Pièce BMW', { task_count: 1 }))).toEqual({ label: 'Pièce BMW', count: 1 });
+  });
+
+  it('falls back to the card number when the other card has no description', () => {
+    expect(labelParams(ev('task.transferred_in', '', { task_count: 1 }))).toEqual({ label: '#58', count: 1 });
+  });
+
+  it('reads both client names for client.transferred', () => {
+    expect(
+      labelParams(ev('client.transferred', 'PACIFIC MARINE', { from_name: 'ACME SARL', to_name: 'PACIFIC MARINE' })),
+    ).toEqual({ from: 'ACME SARL', to: 'PACIFIC MARINE' });
+    expect(labelParams(ev('client.transferred', 'PACIFIC MARINE', null))).toEqual({ from: '—', to: 'PACIFIC MARINE' });
   });
 });

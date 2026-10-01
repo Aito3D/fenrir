@@ -8828,6 +8828,19 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+  /** Hand the card to another Zoho contact (spec A5). 409 once invoiced; the
+   *  same client id is a silent no-op that still answers the card. */
+  transferAitoClient: (
+    id: number,
+    body: {
+      client_id: string;
+      client_name: string;
+      client_phone?: string | null;
+      client_email?: string | null;
+      client_is_company?: boolean | null;
+      client_contact_person_id?: string | null;
+    },
+  ) => request<AitoProject>(`/aito/${id}/transfer-client`, { method: 'PUT', body: JSON.stringify(body) }),
   getAitoTrash: () => request<AitoProject[]>('/aito/trash'),
   restoreAitoProject: (id: number) => request<AitoProject>(`/aito/${id}/restore`, { method: 'POST' }),
   refreshAitoPaymentLink: (id: number) => request<AitoProject>(`/aito/${id}/payment-link/refresh`, { method: 'POST' }),
