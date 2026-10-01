@@ -3333,10 +3333,14 @@ async def camera_hub_status(
     An API key restricted to a ``printer_ids`` allowlist only sees the
     per-printer entries (grid producers, stderr summaries, per-printer status,
     watchdog kills) of the printers it is scoped to — the same boundary
-    ``check_printer_access`` enforces on the grid stream. The response shape
-    and the hub-wide fields are unchanged; unrestricted keys and JWT/no-auth
-    callers see every printer exactly as before.
+    ``check_printer_access`` enforces on the grid stream. Such a key also gets
+    an empty ``ffmpeg_processes`` list (the tracked pids carry no printer id)
+    and a ``grid.producer_count`` covering only its visible producers. The
+    response shape and the host-wide fields are unchanged; unrestricted keys
+    and JWT/no-auth callers see every printer exactly as before.
     """
+
+    printer_restricted = api_key is not None and api_key.printer_ids is not None
 
     def _printer_visible(printer_id: int) -> bool:
         if api_key is None:
@@ -3360,8 +3364,10 @@ async def camera_hub_status(
     now = time.monotonic()
 
     # FFmpeg process details
+    # Fleet-wide and keyed by OS pid with no printer id, so a printer-restricted
+    # key sees none of them.
     ffmpeg_processes = []
-    for pid, spawn_ts in _state.spawned_ffmpeg_pids.items():
+    for pid, spawn_ts in () if printer_restricted else _state.spawned_ffmpeg_pids.items():
         entry: dict = {"pid": pid, "uptime_s": round(now - spawn_ts, 1)}
         sample = _state.ffmpeg_cpu_samples.get(pid)
         if sample is not None:
@@ -3410,6 +3416,8 @@ async def camera_hub_status(
 
     grid_status = _hub.status()
     grid_status["producers"] = {pid: v for pid, v in grid_status["producers"].items() if _printer_visible(pid)}
+    if printer_restricted:
+        grid_status["producer_count"] = len(grid_status["producers"])
 
     return {
         "grid": grid_status,

@@ -2945,7 +2945,9 @@ class TestGridStreamAPIKeyPrinterScope:
 class TestHubStatusAPIKeyPrinterScope:
     """T-004: ``GET /camera/hub-status`` honours an API key's ``printer_ids``
     allowlist — a restricted key only sees the per-printer diagnostics of its
-    own printers, while the response shape and hub-wide fields are unchanged.
+    own printers, while the response shape and host-wide fields are unchanged.
+    T-053: a restricted key also gets an empty ``ffmpeg_processes`` list and a
+    ``grid.producer_count`` recomputed from its visible producers.
     Unrestricted keys and JWT/no-auth callers (``api_key=None``) see every
     printer exactly as before.
     """
@@ -3025,10 +3027,15 @@ class TestHubStatusAPIKeyPrinterScope:
         assert status["per_printer_status"][str(a)]["error_counts"] == {"fatal": 2}
         assert status["per_printer_status"][str(a)]["cooldown_remaining_s"] > 0
 
-        # Shape and hub-wide fields are unchanged.
+        # T-053: the fleet-wide ffmpeg pid list is hidden and the producer
+        # count covers only the visible producers (PID_OTHER is hidden).
+        assert status["ffmpeg_processes"] == []
+        assert status["grid"]["producer_count"] == len(status["grid"]["producers"]) == 1
+
+        # Shape and host-wide fields are unchanged.
         assert set(status) == set(await self._call(None))
-        assert status["grid"]["producer_count"] == 2
-        assert len(status["ffmpeg_processes"]) == 2
+        assert set(status["grid"]) == {"producer_count", "producers"}
+        assert isinstance(status["ffmpeg_processes"], list)
         assert "watchdog_thresholds" in status
         assert "system_load" in status
 
@@ -3037,6 +3044,8 @@ class TestHubStatusAPIKeyPrinterScope:
         status = await self._call(self._scoped_key([]))
 
         assert status["grid"]["producers"] == {}
+        assert status["grid"]["producer_count"] == 0
+        assert status["ffmpeg_processes"] == []
         assert status["watchdog_killed_printers"] == []
         assert status["stderr_error_counts"] == {}
         assert status["stderr_error_details"] == {}

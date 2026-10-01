@@ -1452,6 +1452,86 @@ class TestWebRTCOfferAPIKeyPrinterScope:
         assert response.status_code == 200, response.text
         assert response.json() == self._ANSWER
 
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_success_returns_the_answer_unchanged(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory()
+
+        response, mock = await self._offer(async_client, printer.id)
+
+        assert response.status_code == 200, response.text
+        assert response.json() == self._ANSWER
+        mock.ensure_stream.assert_awaited_once()
+        assert mock.ensure_stream.await_args.args[0] == printer.id
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_go2rtc_not_ready_is_503(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory()
+        mock = self._go2rtc_mock()
+        mock.ready = False
+
+        with patch("backend.app.services.go2rtc.go2rtc_service", mock):
+            response = await async_client.post(
+                f"/api/v1/printers/{printer.id}/camera/webrtc", json={"sdp": "v=0-offer"}
+            )
+
+        assert response.status_code == 503
+        assert response.json()["detail"] == "go2rtc is not ready. It may still be starting up, or is not installed."
+        mock.ensure_stream.assert_not_awaited()
+        mock.webrtc_offer.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_non_rtsp_model_is_400(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory()
+        mock = self._go2rtc_mock()
+
+        with (
+            patch("backend.app.services.go2rtc.go2rtc_service", mock),
+            patch("backend.app.services.camera.supports_rtsp", return_value=False),
+        ):
+            response = await async_client.post(
+                f"/api/v1/printers/{printer.id}/camera/webrtc", json={"sdp": "v=0-offer"}
+            )
+
+        assert response.status_code == 400
+        assert response.json()["detail"] == "This printer model does not support RTSP/WebRTC (use MJPEG instead)"
+        mock.ensure_stream.assert_not_awaited()
+        mock.webrtc_offer.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_stream_registration_failure_is_503(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory()
+        mock = self._go2rtc_mock()
+        mock.ensure_stream = AsyncMock(return_value=False)
+
+        with patch("backend.app.services.go2rtc.go2rtc_service", mock):
+            response = await async_client.post(
+                f"/api/v1/printers/{printer.id}/camera/webrtc", json={"sdp": "v=0-offer"}
+            )
+
+        assert response.status_code == 503
+        assert response.json()["detail"] == "Failed to register stream with go2rtc"
+        mock.webrtc_offer.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_empty_answer_is_503(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory()
+        mock = self._go2rtc_mock()
+        mock.webrtc_offer = AsyncMock(return_value=None)
+
+        with patch("backend.app.services.go2rtc.go2rtc_service", mock):
+            response = await async_client.post(
+                f"/api/v1/printers/{printer.id}/camera/webrtc", json={"sdp": "v=0-offer"}
+            )
+
+        assert response.status_code == 503
+        assert response.json()["detail"] == "go2rtc failed to generate WebRTC answer"
+        mock.webrtc_offer.assert_awaited_once_with(f"printer_{printer.id}", "v=0-offer")
+
 
 class TestCameraStreamValidation:
     """Tests for single-stream scale validation at /{id}/camera/stream."""

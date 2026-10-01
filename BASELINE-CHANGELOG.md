@@ -400,3 +400,57 @@ the stream-token route, hub method names and signatures, and frame delivery.
 
 - Golden probes re-recorded: none (13/13 match).
 - SURFACE.md sections regenerated: none (`gen_surface_c22.sh` output identical).
+
+## T-053 — camera hub-status hides fleet-wide ffmpeg processes and producer count from printer-restricted API keys (user-approved 2026-10-01)
+
+Sanctions commit <this commit> "refactor(loop-12): T-053 hide fleet-wide ffmpeg
+processes and producer count from printer-restricted API keys (user-approved
+behavior change)". Completes the T-004 filter on `GET /camera/hub-status`
+(`camera_hub_status` in `backend/app/api/routes/camera.py`). For an API key
+restricted to a `printer_ids` allowlist (including an empty list):
+`ffmpeg_processes` is now `[]` — `_state.spawned_ffmpeg_pids` is keyed by OS
+pid and carries no printer or stream id, and only part of it could be mapped
+back through `active_streams`, so no new bookkeeping was added and the whole
+list is hidden; and `grid.producer_count` is recomputed as
+`len(grid.producers)` after the T-004 filter, so it counts only the key's
+visible producers instead of every producer in the hub. Other fields checked:
+`system_load` (host load average and CPU count) and
+`cooldown_active`/`cooldown_remaining_s` (the fleet CPU circuit breaker) are
+host-wide, not derived from per-printer data, and stay as is;
+`watchdog_thresholds` is constants; the per-printer fields were already
+filtered by T-004.
+Unchanged: the response shape (same keys and types); the CAMERA_VIEW
+permission gate; and byte-identical output for JWT users, auth-disabled
+callers and global keys (`printer_ids=None`), whose `producer_count` still comes
+straight from `_hub.status()` and whose `ffmpeg_processes` still lists every
+tracked pid.
+
+- Golden probes re-recorded: none (13/13 match).
+- SURFACE.md sections regenerated: none (`bash tools/gen_surface_c22.sh | diff - SURFACE.md` is empty; no signature change).
+
+## T-055 — camera wall backs off its automatic remount after repeated render errors (user-approved 2026-10-01)
+
+Sanctions commit <this commit> "refactor(loop-12): T-055 back off the camera
+wall's automatic remount after repeated render errors (user-approved behavior
+change)". Refines T-019. `CamWallErrorBoundary` in
+`frontend/src/pages/PrintersPage.tsx` used to remount an errored camera wall
+after a constant 20 s whatever had happened before, so a wall whose child
+threw on every mount reconnected the whole wall (a new `/camera/grid-stream`
+request and decoder worker) every 20 s for as long as the bad data lasted —
+about 4,300 times a day on an unattended kiosk. The automatic delay now grows
+with consecutive failed remounts: `min(20_000 * 2 ** failures, 300_000)`, so
+20 s, 40 s, 80 s, 160 s, then 300 s (5 min) from then on. Once a remounted
+wall has stayed up for 60 s (a timer started when the boundary leaves the
+error state, cleared if it errors again first or the boundary unmounts) the
+failure count resets and the next crash starts again at 20 s. The countdown
+line shows the actual delay in seconds. All new names (`CAM_WALL_AUTO_RETRY_MAX_MS`,
+`CAM_WALL_SETTLE_MS`, `camWallRetryDelayMs`) are module-private.
+Unchanged: the error text, the countdown string and its attempt number (still
+the monotonic count of remounts plus one), the Retry button (still remounts
+immediately and cancels the pending auto-retry), `role="alert"`, the remount
+`key` (a separate monotonic counter, never reset), no locale changes, the
+shared `components/ErrorBoundary.tsx`, and everything the wall renders while
+healthy.
+
+- Golden probes re-recorded: none (13/13 match).
+- SURFACE.md sections regenerated: none (`bash tools/gen_surface_c22.sh | diff - SURFACE.md` is empty; no new export).

@@ -8863,16 +8863,33 @@ function CamWallErrorFallback({ delayMs, attempt, onRetry }: { delayMs: number; 
   );
 }
 
-/* Delay before an errored camera wall remounts itself (T-019). */
+/* Delay before an errored camera wall remounts itself (T-019): 20 s after the
+   first error, doubling with each consecutive failed remount (T-055) up to
+   CAM_WALL_AUTO_RETRY_MAX_MS. */
 const CAM_WALL_AUTO_RETRY_MS = 20_000;
+const CAM_WALL_AUTO_RETRY_MAX_MS = 300_000;
+/* How long a remounted wall must stay up before the failure count resets. */
+const CAM_WALL_SETTLE_MS = 60_000;
+
+function camWallRetryDelayMs(failures: number): number {
+  return Math.min(CAM_WALL_AUTO_RETRY_MS * 2 ** failures, CAM_WALL_AUTO_RETRY_MAX_MS);
+}
 
 /* Error boundary for the camera wall. Unlike the shared ErrorBoundary it has a
    reset path, so one transient render error cannot leave an unattended kiosk
    wall stuck on the error text: it remounts its children automatically after
-   CAM_WALL_AUTO_RETRY_MS, or at once when Retry is pressed. Each reset bumps a
-   key so the wall mounts fresh instead of reusing the errored subtree. */
-class CamWallErrorBoundary extends Component<{ children: React.ReactNode }, { hasError: boolean; resetCount: number }> {
-  state = { hasError: false, resetCount: 0 };
+   camWallRetryDelayMs(failures), or at once when Retry is pressed. The delay
+   backs off while remounts keep failing, and the failure count resets once a
+   remounted wall has stayed up for CAM_WALL_SETTLE_MS. Each reset bumps a
+   monotonic key so the wall mounts fresh instead of reusing the errored
+   subtree. */
+class CamWallErrorBoundary extends Component<
+  { children: React.ReactNode },
+  { hasError: boolean; resetCount: number; failures: number }
+> {
+  state = { hasError: false, resetCount: 0, failures: 0 };
+
+  private settleTimer: ReturnType<typeof setTimeout> | null = null;
 
   static getDerivedStateFromError() {
     return { hasError: true };
@@ -8882,15 +8899,38 @@ class CamWallErrorBoundary extends Component<{ children: React.ReactNode }, { ha
     console.error('ErrorBoundary caught:', error);
   }
 
+  componentDidUpdate(_prevProps: unknown, prevState: { hasError: boolean }) {
+    if (this.state.hasError) {
+      this.clearSettleTimer();
+    } else if (prevState.hasError) {
+      this.clearSettleTimer();
+      this.settleTimer = setTimeout(() => {
+        this.settleTimer = null;
+        this.setState({ failures: 0 });
+      }, CAM_WALL_SETTLE_MS);
+    }
+  }
+
+  componentWillUnmount() {
+    this.clearSettleTimer();
+  }
+
+  private clearSettleTimer() {
+    if (this.settleTimer !== null) {
+      clearTimeout(this.settleTimer);
+      this.settleTimer = null;
+    }
+  }
+
   private reset = () => {
-    this.setState((s) => ({ hasError: false, resetCount: s.resetCount + 1 }));
+    this.setState((s) => ({ hasError: false, resetCount: s.resetCount + 1, failures: s.failures + 1 }));
   };
 
   render() {
     if (this.state.hasError) {
       return (
         <CamWallErrorFallback
-          delayMs={CAM_WALL_AUTO_RETRY_MS}
+          delayMs={camWallRetryDelayMs(this.state.failures)}
           attempt={this.state.resetCount + 1}
           onRetry={this.reset}
         />
