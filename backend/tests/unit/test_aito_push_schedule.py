@@ -104,3 +104,10 @@ async def test_a_discarded_waiter_is_forgotten_and_resolve_tolerates_it():
     schedule.resolve(7)  # nothing to resolve: must not raise
     waiter.cancel()
     schedule.discard_waiter(7, waiter)  # twice: must not raise
+
+
+@pytest.mark.asyncio
+async def test_waiting_ids_lists_the_cards_with_a_waiter():
+    schedule.add_waiter(7)
+    schedule.add_waiter(9)
+    assert sorted(schedule.waiting_ids()) == [7, 9]

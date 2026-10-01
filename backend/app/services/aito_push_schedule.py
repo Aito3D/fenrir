@@ -96,6 +96,12 @@ def has_waiter(project_id: int) -> bool:
     return bool(_waiters.get(project_id))
 
 
+def waiting_ids() -> list[int]:
+    """The cards somebody is waiting on, as a snapshot safe to iterate while
+    resolving."""
+    return list(_waiters)
+
+
 def resolve(project_id: int) -> None:
     """This card's push attempt has been committed, whatever it concluded."""
     for waiter in _waiters.pop(project_id, []):

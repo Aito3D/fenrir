@@ -84,7 +84,7 @@ from backend.app.schemas.aito import (
     AitoTrackingLinkResponse,
     AitoTrackingResponse,
 )
-from backend.app.services import aito_tracking as tracking_service
+from backend.app.services import aito_quote_sync, aito_tracking as tracking_service
 from backend.app.services.aito_board_rules import AWAY_STATUSES, SERVICES, TaskSummary, evaluate, summarise
 from backend.app.services.aito_client_history import compute_client_history
 from backend.app.services.aito_client_rating import read_client_rating
@@ -863,6 +863,54 @@ def _wake_worker(queued: bool, immediate: bool = False, project_id: int | None =
             request_immediate_sync(project_id)
         else:
             request_debounced_sync(project_id)
+
+
+# What a route answers when its card's push did not land in time. Structured
+# so the frontend picks its own wording (`aito.syncNotConfirmed`) by code.
+SYNC_PENDING_DETAIL = {
+    "code": "sync_pending",
+    "message": "Zoho has not confirmed the latest changes yet — try again in a moment",
+}
+
+
+async def ensure_pushed(db: AsyncSession, project: AitoProject) -> None:
+    """Make sure Books holds this card's latest state before a route reads a
+    document from it or bills it.
+
+    A card that is not pending returns at once. A pending one is pushed now
+    (``flush_and_wait``) and re-read; if it is still pending when the flush
+    timeout runs out the route answers 503 rather than serve or bill a
+    document that predates the operator's last edit. When no worker is
+    serving (sync disabled, Books not configured) nothing will ever push, so
+    there is nothing to wait for and the route behaves as it did before this
+    existed.
+
+    The drain is asked for once. A card still pending after that attempt (an
+    edit landed mid-push, Books refused the push) is waited on, not asked for
+    again: the worker's own next attempt — its fast retry, the window the
+    edit re-opened — is what the route joins.
+
+    The session's transaction is ended before waiting — the worker writes the
+    same row through its own session — and ``project`` is refreshed in place,
+    so callers keep using the instance they passed in.
+    """
+    if project.quote_sync_state != "pending" or not aito_quote_sync.can_flush():
+        return
+    project_id = project.id
+    await db.commit()
+    deadline = time.monotonic() + aito_quote_sync.FLUSH_TIMEOUT_SECONDS
+    request = True
+    while True:
+        remaining = deadline - time.monotonic()
+        completed = remaining > 0 and await aito_quote_sync.flush_and_wait(
+            project_id, timeout=remaining, request=request
+        )
+        request = False
+        await db.refresh(project)
+        if project.quote_sync_state != "pending":
+            return
+        if not completed:
+            raise HTTPException(status_code=503, detail=SYNC_PENDING_DETAIL)
 
 
 async def _commit_and_wake(
@@ -2157,6 +2205,7 @@ async def get_retainer_pdf(
     project = await db.get(AitoProject, project_id)
     if project is None or project.status == "deleted":
         raise HTTPException(status_code=404, detail="Project not found")
+    await ensure_pushed(db, project)
     if not project.quote_id:
         raise HTTPException(status_code=404, detail="This project has no Zoho quote")
     try:
@@ -2365,10 +2414,14 @@ async def _project_ready_to_invoice(db: AsyncSession, project_id: int) -> AitoPr
         # The rule the operator asked for: a job is billed when it is
         # finished, not while it is still on a printer.
         raise HTTPException(status_code=409, detail="Only a project in Finish can be invoiced")
+    # An edit still on its way to Books is pushed now, and waited for.
+    await ensure_pushed(db, project)
     if project.quote_sync_state == "pending":
-        # An edit is still on its way to Books. Billing now would invoice the
-        # lines as they were BEFORE that edit landed, and no amount of
-        # re-syncing afterwards would correct a document already issued.
+        # Reached only when no worker is serving (`ensure_pushed` waits
+        # otherwise, and answers 503 itself if the push does not land).
+        # Billing now would invoice the lines as they were BEFORE the edit,
+        # and no amount of re-syncing afterwards would correct a document
+        # already issued.
         raise HTTPException(status_code=409, detail="This quote has changes still syncing to Zoho")
     if project.quote_invoiced:
         # The last of the button's rules to be restated here, and the only
@@ -2699,6 +2752,7 @@ async def get_invoice_pdf(
     project = await db.get(AitoProject, project_id)
     if project is None or project.status == "deleted":
         raise HTTPException(status_code=404, detail="Project not found")
+    await ensure_pushed(db, project)
     if not project.quote_id:
         raise HTTPException(status_code=404, detail="This project has no Zoho quote")
     try:
@@ -3062,6 +3116,9 @@ async def get_quote_pdf(
     project = await db.get(AitoProject, project_id)
     if project is None or project.status == "deleted":
         raise HTTPException(status_code=404, detail="Project not found")
+    # Before the quote_id check: a card whose quote is still being created is
+    # pending too, and the wait is what gives it one.
+    await ensure_pushed(db, project)
     if not project.quote_id:
         raise HTTPException(status_code=404, detail="This project has no Zoho quote")
     try:
@@ -3165,6 +3222,7 @@ async def get_quote_email(
     project = await db.get(AitoProject, project_id)
     if project is None or project.status == "deleted":
         raise HTTPException(status_code=404, detail="Project not found")
+    await ensure_pushed(db, project)
     content, default_email = await _load_quote_email_content(db, project, project_id)
     return AitoQuoteEmailContent(
         subject=content["subject"],
@@ -3212,6 +3270,8 @@ async def send_quote_email(
     """
     _check_zoho_email_rate_limit(request, current_user)
     project = await _get_active_project_or_404(db, project_id)
+    # The quote that goes out must carry the card's latest lines.
+    await ensure_pushed(db, project)
     content, _ = await _load_quote_email_content(db, project, project_id, rollback_on_error=True)
 
     # Re-read rather than trust the request. An allowlist the caller supplies

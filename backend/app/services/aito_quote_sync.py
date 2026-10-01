@@ -2418,7 +2418,17 @@ async def run_sync_once(
     due_ids = {pid for pid in pending_ids if aito_push_schedule.is_due(pid, now)}
     for pid in due_ids:
         aito_push_schedule.take(pid)
-    project_ids = [row[0] for row in rows if row[1] != "pending" or row[0] in due_ids]
+    # A waiter whose card is not pending (settled by another drain, or never
+    # queued) would otherwise wait out its whole timeout.
+    for pid in aito_push_schedule.waiting_ids():
+        if pid not in pending_ids:
+            aito_push_schedule.resolve(pid)
+    # A card somebody is waiting on at a Print button goes first; after that,
+    # pending before reconciles and id order, as the SELECT returned them.
+    project_ids = sorted(
+        (row[0] for row in rows if row[1] != "pending" or row[0] in due_ids),
+        key=lambda pid: (not aito_push_schedule.has_waiter(pid), pid not in due_ids, pid),
+    )
     selected_as_pending = due_ids
     attempted = 0
     # One customer-credit memo for the whole tick, so the projects of one
@@ -2454,6 +2464,7 @@ async def run_sync_once(
             # Gone, or already handled by something else since the id was
             # selected above — nothing left to sync. Not counted below: it was
             # never actually attempted.
+            aito_push_schedule.resolve(project_id)
             continue
         if project_id in selected_as_pending and project.quote_sync_state != "pending":
             # Selected as pending but the state moved on before the loop got
@@ -2461,6 +2472,7 @@ async def run_sync_once(
             # through to sync_project's reconcile branch — an extra GET the
             # wake path promises never to spend, and one the full sweep has
             # no reason to spend on a quote it (or a Force sync) just wrote.
+            aito_push_schedule.resolve(project_id)
             continue
         attempted += 1
         # The kwarg only when set, for the same reason _drain_pending passes
@@ -2470,6 +2482,11 @@ async def run_sync_once(
             db, project, credit_cache, retainer_cache, **({"fast_retry": True} if fast_retry else {})
         )
         await _commit_synced_project(db, project_id)
+        # The attempt is committed, whatever it concluded: a route waiting on
+        # this card (flush_and_wait) re-reads the row and decides. Cards a 429
+        # break below never reaches keep their waiters; the fast retry that
+        # follows resolves them, well inside the flush timeout.
+        aito_push_schedule.resolve(project_id)
         if rate_limited:
             # sync_project just deferred this project on a 429 rather than
             # failing it (see its own ZohoRateLimited handler above); its
@@ -2944,6 +2961,45 @@ def change_pass_seconds() -> float:
     if remaining is not None and remaining < DAILY_BUDGET_FLOOR:
         return float("inf")
     return CHANGE_PASS_SECONDS
+
+
+# How long a route waits for its card's push before answering 503.
+FLUSH_TIMEOUT_SECONDS = 20.0
+
+
+def can_flush() -> bool:
+    """Whether a flush has anyone to serve it: the loop is running and its
+    last check found sync enabled and Books configured."""
+    return _serving
+
+
+async def flush_and_wait(project_id: int, timeout: float = FLUSH_TIMEOUT_SECONDS, *, request: bool = True) -> bool:
+    """Wait for this card's next push attempt to be committed, asking for it
+    now unless ``request`` is False.
+
+    Returns True once an attempt has completed (whatever it concluded — the
+    caller re-reads the row), False when none did within ``timeout`` or when
+    no worker is serving. The waiter is always removed, on timeout and on
+    cancellation alike.
+
+    ``request=False`` is for a caller whose card is still pending after an
+    attempt it already asked for: it joins the worker's own next attempt (a
+    fast retry, the window an edit re-opened) instead of ordering another.
+    Asking again on every lap would re-push a card Books just refused as fast
+    as the refusals come back, and spend ``SYNC_FAILURE_LIMIT`` in seconds.
+    """
+    if not can_flush():
+        return False
+    waiter = aito_push_schedule.add_waiter(project_id)
+    if request:
+        request_immediate_sync(project_id)
+    try:
+        await asyncio.wait_for(asyncio.shield(waiter), timeout=timeout)
+        return True
+    except asyncio.TimeoutError:
+        return False
+    finally:
+        aito_push_schedule.discard_waiter(project_id, waiter)
 
 
 async def run_sync_loop() -> None:
