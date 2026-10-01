@@ -15,7 +15,8 @@ const INBOX_KEY = ['inbox'];
 const PREFS_KEY = ['inbox-preferences'];
 /** The mobile top bar is h-14: a bell above this line opens its panel downwards. */
 const TOP_BAR_PX = 56;
-const PANEL_PX = 384;
+/** The panel is 24rem wide. The app's root rem is not 16px, so it is read, not assumed. */
+const panelPx = () => 24 * (parseFloat(getComputedStyle(document.documentElement).fontSize) || 16);
 
 /** The inbox bell. Rendered only for a signed-in user: with auth off there is no inbox. */
 export function NotificationBell() {
@@ -69,17 +70,32 @@ function SignedInBell() {
   const place = useCallback(() => {
     const r = buttonRef.current?.getBoundingClientRect();
     if (!r) return;
+    const width = panelPx();
     if (r.top < TOP_BAR_PX) {
       setPos({
         top: r.bottom + 8,
         right: Math.max(8, window.innerWidth - r.right),
-        width: Math.min(PANEL_PX, window.innerWidth - 16),
+        width: Math.min(width, window.innerWidth - 16),
       });
     } else {
-      // Beside the sidebar, bottom-aligned with the bell: nothing on the page is covered.
-      setPos({ left: r.right + 12, bottom: Math.max(8, window.innerHeight - r.bottom), width: PANEL_PX });
+      // Beside the sidebar, bottom-aligned with the bell. It floats over the
+      // left edge of the page, which the scrim keeps inert until it closes.
+      const left = r.right + 12;
+      setPos({
+        left,
+        bottom: Math.max(8, window.innerHeight - r.bottom),
+        width: Math.min(width, window.innerWidth - left - 8),
+      });
     }
   }, []);
+
+  // Focus goes into the panel on open (see NotificationPanel) and comes back
+  // to the bell on close, however it closed.
+  const wasOpen = useRef(false);
+  useEffect(() => {
+    if (wasOpen.current && !open) buttonRef.current?.focus();
+    wasOpen.current = open;
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -96,22 +112,30 @@ function SignedInBell() {
 
   const patchInbox = (fn: (page: InboxPage) => InboxPage) =>
     queryClient.setQueryData<InboxPage>(INBOX_KEY, (old) => (old ? fn(old) : old));
-  const resync = () => queryClient.invalidateQueries({ queryKey: INBOX_KEY });
+  // A failed write says so and takes the server's page back over the guess.
+  const writeFailed = () => {
+    showToast(t('inbox.markReadFailed'), 'error');
+    void queryClient.invalidateQueries({ queryKey: INBOX_KEY });
+  };
 
+  // Each optimistic write first cancels an inbox fetch in flight, which would
+  // otherwise land after the patch with the row still unread.
   const markRead = (item: InboxItem) => {
     if (item.read_at !== null) return;
     const now = new Date().toISOString();
+    void queryClient.cancelQueries({ queryKey: INBOX_KEY });
     patchInbox((page) => ({
       items: page.items.map((i) => (i.id === item.id ? { ...i, read_at: now } : i)),
       unread: Math.max(0, page.unread - 1),
     }));
-    api.markInboxRead(item.id).catch(resync);
+    api.markInboxRead(item.id).catch(writeFailed);
   };
 
   const markAllRead = () => {
     const now = new Date().toISOString();
+    void queryClient.cancelQueries({ queryKey: INBOX_KEY });
     patchInbox((page) => ({ items: page.items.map((i) => ({ ...i, read_at: i.read_at ?? now })), unread: 0 }));
-    api.markInboxAllRead().catch(resync);
+    api.markInboxAllRead().catch(writeFailed);
   };
 
   const openItem = (item: InboxItem) => {

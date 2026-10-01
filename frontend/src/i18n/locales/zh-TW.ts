@@ -9591,6 +9591,7 @@ export default {
     unread_other: '{{count}} 則未讀',
     markAllRead: '全部標為已讀',
     markRead: '標為已讀',
+    markReadFailed: '無法標為已讀',
     soundOn: '聲音開',
     soundOff: '聲音關',
     open: '開啟',

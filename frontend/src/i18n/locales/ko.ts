@@ -9225,6 +9225,7 @@ export default {
     unread_other: '읽지 않음 {{count}}개',
     markAllRead: '모두 읽음으로 표시',
     markRead: '읽음으로 표시',
+    markReadFailed: '읽음으로 표시하지 못했습니다',
     soundOn: '소리 켜짐',
     soundOff: '소리 꺼짐',
     open: '열기',

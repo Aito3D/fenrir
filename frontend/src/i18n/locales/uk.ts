@@ -9225,6 +9225,7 @@ export default {
     unread_other: 'Непрочитаних: {{count}}',
     markAllRead: 'Позначити все як прочитане',
     markRead: 'Позначити як прочитане',
+    markReadFailed: 'Не вдалося позначити як прочитане',
     soundOn: 'Звук увімкнено',
     soundOff: 'Звук вимкнено',
     open: 'Відкрити',

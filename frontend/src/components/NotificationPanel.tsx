@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { ChevronRight, Volume2, VolumeX, X } from 'lucide-react';
@@ -46,6 +46,11 @@ export function NotificationPanel({
   const { t } = useTranslation();
   const [filter, setFilter] = useState<Filter>('all');
   const showChips = families.length > 1;
+  // Focus moves in on open; the bell takes it back on close.
+  const closeRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    closeRef.current?.focus();
+  }, []);
   const visible = !showChips || filter === 'all' ? items : items.filter((i) => i.family === filter);
 
   return createPortal(
@@ -53,6 +58,7 @@ export function NotificationPanel({
       <div className="absolute inset-0" data-testid="notification-scrim" onClick={onClose} />
       <div
         role="dialog"
+        aria-modal="true"
         aria-label={t('inbox.title')}
         data-testid="notification-panel"
         style={style}
@@ -81,7 +87,13 @@ export function NotificationPanel({
           >
             {t('inbox.markAllRead')}
           </button>
-          <button type="button" onClick={onClose} aria-label={t('common.close')} className={iconButton}>
+          <button
+            ref={closeRef}
+            type="button"
+            onClick={onClose}
+            aria-label={t('common.close')}
+            className={iconButton}
+          >
             <X className="w-4 h-4" />
           </button>
         </header>

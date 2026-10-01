@@ -9632,6 +9632,7 @@ errors: {
     unread_other: '{{count}} olästa',
     markAllRead: 'Markera alla som lästa',
     markRead: 'Markera som läst',
+    markReadFailed: 'Det gick inte att markera som läst',
     soundOn: 'Ljud på',
     soundOff: 'Ljud av',
     open: 'Öppna',

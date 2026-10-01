@@ -9662,6 +9662,7 @@ export default {
     unread_other: '{{count}} unread',
     markAllRead: 'Mark all read',
     markRead: 'Mark as read',
+    markReadFailed: 'Couldn\'t mark it as read',
     soundOn: 'Sound on',
     soundOff: 'Sound off',
     open: 'Open',

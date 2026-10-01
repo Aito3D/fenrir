@@ -198,6 +198,53 @@ describe('NotificationBell', () => {
     expect(within(dialog).queryByTestId('notification-dot-12')).toBeNull();
   });
 
+  it('a failed mark-read says so and puts the row back from the server', async () => {
+    signIn();
+    let served = 0;
+    server.use(
+      http.get('/api/v1/inbox', () => {
+        served += 1;
+        return HttpResponse.json(inbox);
+      }),
+      http.post('/api/v1/inbox/:id/read', () => HttpResponse.json({ detail: 'nope' }, { status: 500 })),
+    );
+    render(<NotificationBell />);
+    const dialog = await openPanel();
+    await within(dialog).findByTestId('notification-dot-12');
+    const before = served;
+    fireEvent.click(within(dialog).getByTestId('notification-dot-12'));
+    expect(await screen.findByText("Couldn't mark it as read")).toBeInTheDocument();
+    await waitFor(() => expect(served).toBeGreaterThan(before));
+    // The refetch restores the server's truth: the row is unread again.
+    expect(await within(dialog).findByTestId('notification-dot-12')).toBeInTheDocument();
+    expect(screen.getByTestId('notification-badge')).toHaveTextContent('2');
+  });
+
+  it('is a modal dialog that takes focus on open and hands it back to the bell on close', async () => {
+    signIn();
+    render(<NotificationBell />);
+    const dialog = await openPanel();
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.activeElement).toBe(screen.getByTestId('notification-bell'));
+  });
+
+  it('is 24rem wide, from the root font size', async () => {
+    signIn();
+    const fontSize = document.documentElement.style.fontSize;
+    document.documentElement.style.fontSize = '14.4px';
+    try {
+      render(<NotificationBell />);
+      const dialog = await openPanel();
+      // 24 × 14.4px, the app's root rem: not a hard 384px.
+      expect(dialog.style.width).toBe(`${24 * 14.4}px`);
+    } finally {
+      document.documentElement.style.fontSize = fontSize;
+    }
+  });
+
   it('Mark all read clears every unread row', async () => {
     signIn();
     render(<NotificationBell />);

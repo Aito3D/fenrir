@@ -9607,6 +9607,7 @@ export default {
     unread_other: '未読 {{count}} 件',
     markAllRead: 'すべて既読にする',
     markRead: '既読にする',
+    markReadFailed: '既読にできませんでした',
     soundOn: 'サウンドオン',
     soundOff: 'サウンドオフ',
     open: '開く',

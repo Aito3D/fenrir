@@ -9593,6 +9593,7 @@ export default {
     unread_other: '{{count}} non lues',
     markAllRead: 'Tout marquer comme lu',
     markRead: 'Marquer comme lu',
+    markReadFailed: 'Impossible de marquer comme lu',
     soundOn: 'Son activé',
     soundOff: 'Son désactivé',
     open: 'Ouvrir',

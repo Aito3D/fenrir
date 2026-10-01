@@ -9593,6 +9593,7 @@ export default {
     unread_other: '{{count}} non lette',
     markAllRead: 'Segna tutte come lette',
     markRead: 'Segna come letta',
+    markReadFailed: 'Impossibile segnare come letta',
     soundOn: 'Audio attivo',
     soundOff: 'Audio disattivato',
     open: 'Apri',

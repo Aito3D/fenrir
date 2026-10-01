@@ -9533,6 +9533,7 @@ export default {
     unread_other: '{{count}} okunmamış',
     markAllRead: 'Tümünü okundu işaretle',
     markRead: 'Okundu işaretle',
+    markReadFailed: 'Okundu olarak işaretlenemedi',
     soundOn: 'Ses açık',
     soundOff: 'Ses kapalı',
     open: 'Aç',
