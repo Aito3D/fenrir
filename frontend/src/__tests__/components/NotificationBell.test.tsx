@@ -10,9 +10,9 @@ import { render } from '../utils';
 import { server } from '../mocks/server';
 import { setAuthToken, type InboxItem, type InboxPreferences } from '../../api/client';
 import { NotificationBell } from '../../components/NotificationBell';
-import { chime } from '../../utils/chime';
+import { chime, unlockChime } from '../../utils/chime';
 
-vi.mock('../../utils/chime', () => ({ chime: vi.fn() }));
+vi.mock('../../utils/chime', () => ({ chime: vi.fn(), unlockChime: vi.fn(() => () => {}) }));
 
 const ago = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
 
@@ -243,6 +243,56 @@ describe('NotificationBell', () => {
     } finally {
       document.documentElement.style.fontSize = fontSize;
     }
+  });
+
+  it('installs the chime unlock when it mounts', async () => {
+    signIn();
+    vi.mocked(unlockChime).mockClear();
+    render(<NotificationBell />);
+    await screen.findByTestId('notification-bell');
+    expect(unlockChime).toHaveBeenCalled();
+  });
+
+  describe('placement beside the sidebar', () => {
+    const rect = (r: { top: number; bottom: number; left: number; right: number }) =>
+      ({ ...r, x: r.left, y: r.top, width: r.right - r.left, height: r.bottom - r.top, toJSON: () => r }) as DOMRect;
+
+    function mockRects(asideRight: number) {
+      return vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+        if (this.tagName === 'ASIDE') return rect({ top: 0, bottom: 768, left: 0, right: asideRight });
+        if (this.dataset.testid === 'notification-bell') return rect({ top: 600, bottom: 640, left: 20, right: 60 });
+        return rect({ top: 0, bottom: 0, left: 0, right: 0 });
+      });
+    }
+
+    it("starts at the expanded sidebar's right edge, not the bell's", async () => {
+      signIn();
+      const spy = mockRects(256);
+      try {
+        render(
+          <aside>
+            <NotificationBell />
+          </aside>,
+        );
+        const dialog = await openPanel();
+        expect(dialog.style.left).toBe(`${256 + 12}px`);
+        expect(dialog.style.bottom).toBe(`${window.innerHeight - 640}px`);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it('keeps the bell anchor when the bell is not inside a sidebar', async () => {
+      signIn();
+      const spy = mockRects(256);
+      try {
+        render(<NotificationBell />);
+        const dialog = await openPanel();
+        expect(dialog.style.left).toBe(`${60 + 12}px`);
+      } finally {
+        spy.mockRestore();
+      }
+    });
   });
 
   it('Mark all read clears every unread row', async () => {

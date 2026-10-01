@@ -6,7 +6,7 @@ import { Bell, BellRing } from 'lucide-react';
 import { api, type InboxItem, type InboxPage, type InboxPreferences } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
-import { chime } from '../utils/chime';
+import { chime, unlockChime } from '../utils/chime';
 import { inboxTarget } from '../utils/inboxTarget';
 import { kindFamily } from './notificationKinds';
 import { NotificationPanel } from './NotificationPanel';
@@ -45,6 +45,10 @@ function SignedInBell() {
   const { data: prefs } = useQuery({ queryKey: PREFS_KEY, queryFn: api.getInboxPreferences });
   const unread = inbox?.unread ?? 0;
 
+  // WebKit (iPad) only lets the chime's AudioContext run when it is created
+  // or resumed inside a gesture: arm that on the first pointerdown/keydown.
+  useEffect(() => unlockChime(), []);
+
   // Arrival: the first page sets the baseline; a later page with a newer
   // unread row rings the bell, and chimes when that row's kind rings.
   const lastSeenRef = useRef<number | null>(null);
@@ -80,7 +84,10 @@ function SignedInBell() {
     } else {
       // Beside the sidebar, bottom-aligned with the bell. It floats over the
       // left edge of the page, which the scrim keeps inert until it closes.
-      const left = r.right + 12;
+      // Anchored to the sidebar's own right edge: in the EXPANDED sidebar the
+      // bell sits well inside it, and bell.right + 12 covered the nav.
+      const asideRight = buttonRef.current?.closest('aside')?.getBoundingClientRect().right;
+      const left = (asideRight ?? r.right) + 12;
       setPos({
         left,
         bottom: Math.max(8, window.innerHeight - r.bottom),
