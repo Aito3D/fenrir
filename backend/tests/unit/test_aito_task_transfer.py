@@ -125,9 +125,9 @@ def wakes(monkeypatch):
     """Which sync-worker wake each transfer asks for."""
     from backend.app.api.routes import aito as aito_routes
 
-    calls: list[str] = []
-    monkeypatch.setattr(aito_routes, "request_immediate_sync", lambda: calls.append("immediate"))
-    monkeypatch.setattr(aito_routes, "request_debounced_sync", lambda: calls.append("debounced"))
+    calls: list[tuple[str, int | None]] = []
+    monkeypatch.setattr(aito_routes, "request_immediate_sync", lambda pid=None: calls.append(("immediate", pid)))
+    monkeypatch.setattr(aito_routes, "request_debounced_sync", lambda pid: calls.append(("debounced", pid)))
     return calls
 
 
@@ -139,8 +139,8 @@ def markers_at_wake(monkeypatch):
 
     _requeue_marker.clear()
     seen: list[dict[int, int]] = []
-    monkeypatch.setattr(aito_routes, "request_immediate_sync", lambda: seen.append(dict(_requeue_marker)))
-    monkeypatch.setattr(aito_routes, "request_debounced_sync", lambda: seen.append(dict(_requeue_marker)))
+    monkeypatch.setattr(aito_routes, "request_immediate_sync", lambda _pid=None: seen.append(dict(_requeue_marker)))
+    monkeypatch.setattr(aito_routes, "request_debounced_sync", lambda _pid: seen.append(dict(_requeue_marker)))
     yield seen
     _requeue_marker.clear()
 
@@ -188,18 +188,24 @@ async def test_a_merges_source_marker_is_bumped_before_the_wake(async_client, db
 @pytest.mark.asyncio
 async def test_a_split_wakes_the_worker_immediately_and_a_move_debounces(async_client, wakes):
     """A split card is a brand-new card that owes Books an estimate — the same
-    latency case as create_project. A move is an edit, so it keeps the window."""
+    latency case as create_project. A move is an edit, so it keeps the window.
+    Push windows are per card, so each side that went pending gets its own
+    wake: the other side never rides on this card's window."""
     source = await _create_with_tasks(async_client, TASKS)
     target = await _create_with_tasks(async_client, [])
     ids = [t["id"] for t in await _tasks(async_client, source["id"])]
 
     wakes.clear()
-    assert (await _transfer(async_client, source["id"], [ids[0]], None)).status_code == 200
-    assert wakes == ["immediate"]
+    resp = await _transfer(async_client, source["id"], [ids[0]], None)
+    assert resp.status_code == 200
+    split_id = resp.json()["target"]["id"]
+    assert {kind for kind, _ in wakes} == {"immediate"}
+    assert ("immediate", split_id) in wakes
 
     wakes.clear()
     assert (await _transfer(async_client, source["id"], [ids[1]], target["id"])).status_code == 200
-    assert wakes == ["debounced"]
+    assert {kind for kind, _ in wakes} == {"debounced"}
+    assert ("debounced", target["id"]) in wakes
 
 
 async def _tasks_as(client, project_id, headers):

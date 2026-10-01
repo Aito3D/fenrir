@@ -280,7 +280,7 @@ async def test_a_failing_books_pass_still_purges_the_inbox(db_session, test_engi
         tick_done.set()
 
     monkeypatch.setattr(aito_quote_sync, "_wake", asyncio.Event())
-    monkeypatch.setattr(aito_quote_sync, "_debounce_deadline", None)
+    monkeypatch.setattr(aito_quote_sync, "run_change_pass", ok)
     monkeypatch.setattr(aito_quote_sync, "_throttled_until", None)
     monkeypatch.setattr(aito_invoice_sweep, "_last_inbox_run", 0.0)
     monkeypatch.setattr(
