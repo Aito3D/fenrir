@@ -70,7 +70,7 @@ def _recording(seen: list, contact: dict = SNP):
                     "contact_person": {
                         "contact_person_id": "cp9",
                         **body,
-                        "is_primary_contact": body["is_primary_contact"],
+                        "is_primary_contact": body.get("is_primary_contact", False),
                     }
                 },
             )
@@ -127,6 +127,9 @@ async def test_list_contact_persons_empty_when_books_has_none(async_client, db_s
 
 @pytest.mark.asyncio
 async def test_create_contact_person_posts_mobile_and_is_not_primary_when_others_exist(async_client, db_session):
+    """Books rejects a literal ``is_primary_contact: false`` on this endpoint
+    ("Invalid value passed for is_primary_contact"); a colleague is non-primary
+    by leaving the flag out, so the key must be ABSENT, not false."""
     await _configure(async_client)
     seen: list = []
     zoho_service.transport = _recording(seen)
@@ -141,8 +144,8 @@ async def test_create_contact_person_posts_mobile_and_is_not_primary_when_others
         "first_name": "Hina",
         "last_name": "LO",
         "mobile": "+689-87000000",
-        "is_primary_contact": False,
     }
+    assert person["is_primary"] is False
     assert person["contact_person_id"] == "cp9"
     assert person["name"] == "Hina LO"
     assert person["mobile"] == "+689-87000000"

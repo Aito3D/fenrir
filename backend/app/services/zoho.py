@@ -1025,14 +1025,20 @@ class ZohoService:
         """Add a person to an existing Books customer. The number lands in
         ``mobile`` like ``create_contact`` does; the new person is primary
         only when the account had none, so adding a colleague never demotes
-        the person Books already mirrors at contact level."""
+        the person Books already mirrors at contact level.
+
+        ``is_primary_contact`` is sent only when true: Books answers a literal
+        ``false`` on this endpoint with "Invalid value passed for
+        is_primary_contact" (its own validation, HTTP 400), and a person
+        created without the flag is non-primary anyway."""
         existing = await self._contact_persons_raw(db, contact_id)
         payload: dict = {
             "contact_id": contact_id,
             "first_name": first_name,
             "last_name": last_name,
-            "is_primary_contact": not existing,
         }
+        if not existing:
+            payload["is_primary_contact"] = True
         if email.strip():
             payload["email"] = email.strip()
         if phone.strip():
