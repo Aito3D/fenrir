@@ -205,7 +205,9 @@ async def test_a_change_pass_reconciles_only_changed_cards_plus_the_trickle(db_s
     seen: list = []
     changed = {
         "/estimates": [{"estimate_id": "E6", "customer_id": "C6", "last_modified_time": "2026-10-01T01:00:00-1000"}],
-        "/customerpayments": [{"payment_id": "P1", "customer_id": "C7", "last_modified_time": "2026-10-01T01:00:00-1000"}],
+        "/customerpayments": [
+            {"payment_id": "P1", "customer_id": "C7", "last_modified_time": "2026-10-01T01:00:00-1000"}
+        ],
     }
     zoho_service.transport = httpx.MockTransport(_books(seen, changed))
 
