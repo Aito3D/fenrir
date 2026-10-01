@@ -11,6 +11,7 @@ import json
 import logging
 import re
 import time
+from collections import deque
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from urllib.parse import quote as urlquote, urlparse
@@ -155,9 +156,20 @@ class ZohoRateLimited(ZohoUpstreamError):
     response is "stop attempting the rest of this tick", not a timed wait.
     """
 
-    def __init__(self, message: str, retry_after: float | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        retry_after: float | None = None,
+        code: int | None = None,
+        retry_after_raw: str | None = None,
+    ) -> None:
         super().__init__(message)
         self.retry_after = retry_after
+        # Books' own error code (44 per-minute, 45 daily, 1070 concurrent) and
+        # the header exactly as sent: logged by the sync worker so a limit can
+        # be told apart after the fact instead of guessed at.
+        self.code = code
+        self.retry_after_raw = retry_after_raw
 
 
 def _parse_retry_after(value: str | None) -> float | None:
@@ -309,6 +321,10 @@ _MAX_INVOICE_PAGES = 10
 # oldest first and flags a pass it cut short, so a Books bulk contact edit or
 # a long pause is caught up over several passes rather than skipped.
 _MAX_CONTACT_PAGES = 10
+# The three change listings the sync worker polls every minute. A minute of
+# changes is a handful of rows; five pages (1,000 rows) covers a Books bulk
+# edit, and a pass cut short is flagged and resumed like the other two polls.
+_MAX_CHANGE_PAGES = 5
 
 
 class ModifiedSinceRows(list):
@@ -385,6 +401,33 @@ class ZohoService:
         self._http_client: httpx.AsyncClient | None = None
         self._http_transport: httpx.AsyncBaseTransport | None = None
         self._http_loop: object | None = None
+        # Send times (time.monotonic()) of the Books calls of the last minute,
+        # and the daily budget Books last reported. Read by the sync worker's
+        # background guard; never used to hold a request.
+        self._sent_at: deque[float] = deque()
+        self.calls_total = 0
+        self.daily_remaining: int | None = None
+
+    def _note_call(self) -> None:
+        now = time.monotonic()
+        self._sent_at.append(now)
+        self.calls_total += 1
+        self._prune_calls(now)
+
+    def _prune_calls(self, now: float) -> None:
+        while self._sent_at and now - self._sent_at[0] >= 60.0:
+            self._sent_at.popleft()
+
+    def calls_in_last_minute(self) -> int:
+        """Books calls sent in the last 60 seconds, by anyone in this process."""
+        self._prune_calls(time.monotonic())
+        return len(self._sent_at)
+
+    def reset_call_meter(self) -> None:
+        """Test seam: the meter is process state on a module singleton."""
+        self._sent_at.clear()
+        self.calls_total = 0
+        self.daily_remaining = None
 
     def invalidate_token(self) -> None:
         self._access_token = None
@@ -497,6 +540,7 @@ class ZohoService:
             token = await self.get_access_token(db)
             try:
                 client = await self._http()
+                self._note_call()
                 response = await client.request(
                     method,
                     f"{config['zoho_base_url']}/books/v3{path}",
@@ -506,6 +550,10 @@ class ZohoService:
                 )
             except httpx.HTTPError as e:
                 raise ZohoUnreachable(f"Zoho Books unreachable: {e.__class__.__name__}") from e
+            remaining = response.headers.get("x-rate-limit-remaining")
+            if remaining is not None:
+                with contextlib.suppress(ValueError):
+                    self.daily_remaining = int(remaining)
             if response.status_code == 401 and attempt == 1:
                 self.invalidate_token()  # token revoked/expired early — refresh once
                 continue
@@ -523,9 +571,13 @@ class ZohoService:
         if response.status_code == 400:
             raise ZohoRequestRejected(payload.get("message") or "Zoho rejected the request")
         if response.status_code == 429:
+            raw = response.headers.get("Retry-After")
+            code = payload.get("code")
             raise ZohoRateLimited(
                 f"Zoho Books error (HTTP {response.status_code})",
-                retry_after=_parse_retry_after(response.headers.get("Retry-After")),
+                retry_after=_parse_retry_after(raw),
+                code=code if isinstance(code, int) else None,
+                retry_after_raw=raw,
             )
         if response.status_code >= 500:
             raise ZohoAmbiguous(f"Zoho Books error (HTTP {response.status_code})")
@@ -1203,6 +1255,54 @@ class ZohoService:
         else:
             rows.truncated = True
         return rows
+
+    async def _list_modified_since(self, db: AsyncSession, path: str, key: str, id_field: str, since: str):
+        """Rows of ``path`` touched since ``since``, oldest first, reduced to
+        what the change poll reads: the row's id, its customer and when Books
+        last touched it. Same paging and ``truncated`` contract as
+        ``list_invoices_modified_since``. ``since`` is Books' ``±HHMM``
+        spelling (see ``aito_poll_watermark``)."""
+        rows = ModifiedSinceRows()
+        for page in range(1, _MAX_CHANGE_PAGES + 1):
+            payload = await self._request(
+                db,
+                "GET",
+                path,
+                params={
+                    "last_modified_time": since,
+                    "sort_column": "last_modified_time",
+                    "sort_order": "A",
+                    "per_page": "200",
+                    "page": str(page),
+                },
+            )
+            rows.extend(
+                {
+                    "id": str(row.get(id_field) or ""),
+                    "customer_id": str(row.get("customer_id") or ""),
+                    "last_modified_time": row.get("last_modified_time", "") or "",
+                }
+                for row in payload.get(key) or []
+            )
+            if not (payload.get("page_context") or {}).get("has_more_page"):
+                break
+        else:
+            rows.truncated = True
+        return rows
+
+    async def list_estimates_modified_since(self, db: AsyncSession, since: str):
+        """Estimates Books has touched since ``since``. The filter is not in
+        Books' documentation for this listing; verified on the live org on
+        2026-10-01 (a one-day window returned 33 rows)."""
+        return await self._list_modified_since(db, "/estimates", "estimates", "estimate_id", since)
+
+    async def list_customer_payments_modified_since(self, db: AsyncSession, since: str):
+        """Customer payments touched since ``since`` (verified live, same day)."""
+        return await self._list_modified_since(db, "/customerpayments", "customerpayments", "payment_id", since)
+
+    async def list_retainers_modified_since(self, db: AsyncSession, since: str):
+        """Retainer invoices touched since ``since`` (verified live, same day)."""
+        return await self._list_modified_since(db, "/retainerinvoices", "retainerinvoices", "retainerinvoice_id", since)
 
     async def get_invoice_raw(self, db: AsyncSession, invoice_id: str) -> dict:
         """One invoice as Books states it, unmapped.

@@ -523,15 +523,16 @@ async def test_a_pass_resumed_after_a_429_starts_with_the_cut_off_tail(db_sessio
 
 
 @pytest.fixture
-def fresh_wake_event():
+def fresh_wake_event(monkeypatch):
     """``_wake`` is a module-level ``asyncio.Event`` that binds to the first
     event loop that awaits it, and every test gets a fresh loop -- mirrors
     the identically-named fixture in test_aito_quote_sync.py, needed here by
-    the two tests below that actually drive ``run_sync_loop``."""
+    the two tests below that actually drive ``run_sync_loop``. The tick's
+    change pass is stubbed for the same reason as there: these tests are
+    about the sweep, and nothing here answers the pass's Books listings."""
     aito_quote_sync._wake = asyncio.Event()
-    aito_quote_sync._debounce_deadline = None
+    monkeypatch.setattr(aito_quote_sync, "run_change_pass", lambda db: _immediate(0))
     yield
-    aito_quote_sync._debounce_deadline = None
 
 
 @pytest.mark.asyncio
@@ -547,7 +548,7 @@ async def test_run_sync_loop_arms_the_shared_throttle_on_a_sweep_side_429(
     monkeypatch.setattr(aito_quote_sync, "sync_enabled", lambda db: _immediate(True))
     monkeypatch.setattr(aito_quote_sync.zoho_service, "is_configured", lambda db: _immediate(True))
     monkeypatch.setattr(aito_quote_sync, "sync_interval_seconds", lambda db: _immediate(300))
-    monkeypatch.setattr(aito_quote_sync, "run_sync_once", lambda db, pending_only=False: _immediate(0))
+    monkeypatch.setattr(aito_quote_sync, "run_sync_once", lambda db, pending_only=False, **_kw: _immediate(0))
 
     async def _raise_once(db):
         raise ZohoRateLimited("Too many requests", retry_after=42.0)
@@ -579,7 +580,7 @@ async def test_run_sync_loop_skips_the_sweep_while_already_throttled(
     monkeypatch.setattr(aito_quote_sync, "sync_enabled", lambda db: _immediate(True))
     monkeypatch.setattr(aito_quote_sync.zoho_service, "is_configured", lambda db: _immediate(True))
     monkeypatch.setattr(aito_quote_sync, "sync_interval_seconds", lambda db: _immediate(300))
-    monkeypatch.setattr(aito_quote_sync, "run_sync_once", lambda db, pending_only=False: _immediate(0))
+    monkeypatch.setattr(aito_quote_sync, "run_sync_once", lambda db, pending_only=False, **_kw: _immediate(0))
 
     sweep_calls: list[None] = []
 

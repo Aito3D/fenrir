@@ -19,16 +19,11 @@ export function InvoiceDownloadButton({
    *  unfinalised draft has no number yet — which is still unique and still
    *  better than every download being called "invoice.pdf". */
   invoiceNumber,
-  /** True while the project's quote sync is pending — same contract as
-   *  InvoicePrintButton: the caller holds the project, so the caller
-   *  decides. */
-  disabled = false,
   variant = 'cell',
 }: {
   projectId: number;
   invoiceId: string;
   invoiceNumber?: string | null;
-  disabled?: boolean;
   variant?: ActionVariant;
 }) {
   const { t } = useTranslation();
@@ -39,8 +34,6 @@ export function InvoiceDownloadButton({
       label={t('aito.downloadInvoice')}
       filename={invoiceNumber || invoiceId}
       failureMessage={t('aito.invoicePrintFailed')}
-      disabled={disabled}
-      disabledTitle={t('aito.pdfSyncPending')}
       variant={variant}
     />
   );

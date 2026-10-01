@@ -1,0 +1,1 @@
+import{lt as e,ut as t}from"./index-Dv7eVIyP.js";function n(e){return!!e&&(t(e.extra_colors).length>0||!!e.effect_type)}function r(t,r=`table`){return n(t)?{...e({effectSize:r,rgba:t.rgba,extraColors:t.extra_colors,effectType:t.effect_type,subtype:t.subtype}),backgroundPosition:`center`}:null}export{r as n,n as t};

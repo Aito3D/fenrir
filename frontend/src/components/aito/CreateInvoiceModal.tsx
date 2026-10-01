@@ -6,6 +6,7 @@ import { Button } from '../Button';
 import { api } from '../../api/client';
 import { useDismissableDialog } from '../../hooks/useDismissableDialog';
 import { useCreateInvoiceMutation } from '../../hooks/useCreateInvoiceMutation';
+import { isSyncPendingError } from './syncPending';
 import { Money } from '../calculator/shared';
 
 /** A beat past .animate-modal-out's 150ms, same margin SendInvoiceModal gives it. */
@@ -90,7 +91,11 @@ export function CreateInvoiceModal({ projectId, onClose }: { projectId: number; 
                 would send the operator looking in the wrong place. */}
             {isError && (
               <p className="text-status-error text-sm py-6">
-                {error instanceof Error && error.message ? error.message : t('aito.createInvoiceLoadFailed')}
+                {isSyncPendingError(error)
+                  ? t('aito.syncNotConfirmed')
+                  : error instanceof Error && error.message
+                    ? error.message
+                    : t('aito.createInvoiceLoadFailed')}
               </p>
             )}
 

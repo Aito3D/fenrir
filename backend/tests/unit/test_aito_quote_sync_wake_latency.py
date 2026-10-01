@@ -26,7 +26,7 @@ import pytest
 
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
-from backend.app.services import aito_quote_sync
+from backend.app.services import aito_push_schedule, aito_quote_sync
 from backend.app.services.aito_quote_sync import run_sync_once, sync_project
 from backend.app.services.zoho import zoho_service
 from backend.tests.unit.test_aito_quote_sync import (  # noqa: F401 — fixtures register by name
@@ -34,6 +34,7 @@ from backend.tests.unit.test_aito_quote_sync import (  # noqa: F401 — fixtures
     _configure_zoho,
     _estimate_body,
     fresh_wake_event,
+    no_change_pass_in_loop_tests,
     reset_deferred_reasons,
     reset_requeue_marker,
     reset_zoho_service,
@@ -112,7 +113,7 @@ async def test_a_transient_failure_on_the_wake_drain_is_retried_within_seconds(m
     drains: list[float] = []
     second_drain = asyncio.Event()
 
-    async def fake_run_sync_once(db, pending_only=False, fast_retry=False):
+    async def fake_run_sync_once(db, pending_only=False, fast_retry=False, attention_only=False):
         if not pending_only:
             return 0
         drains.append(time.monotonic())
@@ -155,7 +156,7 @@ async def test_fast_retries_are_bounded_and_re_armed_by_the_next_wake(monkeypatc
     drains: list[float] = []
     drained = asyncio.Condition()
 
-    async def fake_run_sync_once(db, pending_only=False, fast_retry=False):
+    async def fake_run_sync_once(db, pending_only=False, fast_retry=False, attention_only=False):
         if not pending_only:
             return 0
         drains.append(time.monotonic())
@@ -268,7 +269,7 @@ async def test_a_wake_during_the_ticks_polls_is_served_between_passes(monkeypatc
     at_terminal_poll = asyncio.Event()
     release_end = asyncio.Event()
 
-    async def fake_run_sync_once(db, pending_only=False, fast_retry=False):
+    async def fake_run_sync_once(db, pending_only=False, fast_retry=False, attention_only=False):
         drains.append("pending" if pending_only else "full")
         return 0
 
@@ -320,8 +321,8 @@ async def test_a_wake_during_the_ticks_polls_is_served_between_passes(monkeypatc
 @pytest.mark.asyncio
 async def test_an_edits_window_is_still_honoured_mid_tick(monkeypatch):
     """A creation is served at the next pass boundary; an EDIT keeps its
-    debounce window, so a burst mid-tick is still absorbed into one drain
-    after the tick rather than split across pass boundaries."""
+    card's quiet period, so a burst mid-tick is still absorbed into one drain
+    once the card goes quiet rather than split across pass boundaries."""
     from backend.app.services import aito_contact_poll, aito_invoice_poll, aito_payment_links, aito_terminal_payments
 
     drains: list[str] = []
@@ -329,8 +330,10 @@ async def test_an_edits_window_is_still_honoured_mid_tick(monkeypatch):
     release_sweep = asyncio.Event()
     tick_done = asyncio.Event()
 
-    async def fake_run_sync_once(db, pending_only=False, fast_retry=False):
+    async def fake_run_sync_once(db, pending_only=False, fast_retry=False, attention_only=False):
         drains.append("pending" if pending_only else "full")
+        # What the real drain does with the windows it serves.
+        aito_push_schedule.drop_due_except(time.monotonic(), set())
         return 0
 
     async def fake_sweep(db):
@@ -351,7 +354,7 @@ async def test_an_edits_window_is_still_honoured_mid_tick(monkeypatch):
     monkeypatch.setattr(aito_quote_sync, "sync_enabled", _always(True))
     monkeypatch.setattr(aito_quote_sync.zoho_service, "is_configured", _always(True))
     monkeypatch.setattr(aito_quote_sync, "sync_interval_seconds", _always(300))
-    monkeypatch.setattr(aito_quote_sync, "EDIT_DEBOUNCE_SECONDS", 0.3)
+    monkeypatch.setattr(aito_push_schedule, "EDIT_QUIET_SECONDS", 0.3)
     monkeypatch.setattr(aito_quote_sync, "sweep_invoices", fake_sweep)
     monkeypatch.setattr(aito_quote_sync, "purge_tracking_views", noop)
     monkeypatch.setattr(aito_invoice_poll, "poll_invoices", noop)
@@ -362,7 +365,7 @@ async def test_an_edits_window_is_still_honoured_mid_tick(monkeypatch):
     loop_task = asyncio.create_task(aito_quote_sync.run_sync_loop())
     try:
         await asyncio.wait_for(in_sweep.wait(), timeout=5)
-        aito_quote_sync.request_debounced_sync()
+        aito_quote_sync.request_debounced_sync(7)
         release_sweep.set()
         await asyncio.wait_for(tick_done.wait(), timeout=5)
         assert drains == ["full", "sweep", "terminal"]
@@ -499,53 +502,22 @@ async def test_the_shared_client_is_rebuilt_on_a_new_event_loop():
 
 
 # --------------------------------------------------------------------------
-# 3. A rate-limit window ending re-drains on its own.
+# 3. A rate-limit hold never delays a push.
 # --------------------------------------------------------------------------
 
 
-@pytest.fixture(autouse=True)
-def reset_throttle():
-    """``_throttled_until`` is process-local module state like ``_wake``."""
-    aito_quote_sync._throttled_until = None
-    yield
-    aito_quote_sync._throttled_until = None
-
-
-def test_throttle_delay_reads_the_rate_limit_window():
-    assert aito_quote_sync._throttle_delay() is None
-    aito_quote_sync._throttled_until = time.monotonic() + 0.5
-    delay = aito_quote_sync._throttle_delay()
-    assert delay is not None and 0.3 < delay <= 0.5
-    aito_quote_sync._throttled_until = time.monotonic() - 1
-    assert aito_quote_sync._throttle_delay() == 0.0
-    aito_quote_sync._clear_expired_throttle()
-    assert aito_quote_sync._throttled_until is None
-    # A window still open is left alone.
-    aito_quote_sync._throttled_until = time.monotonic() + 60
-    aito_quote_sync._clear_expired_throttle()
-    assert aito_quote_sync._throttled_until is not None
-
-
 @pytest.mark.asyncio
-async def test_the_loop_re_drains_when_a_rate_limit_window_closes(monkeypatch):
-    """Books answering the create with a 429 used to park the card until the
-    next periodic tick: ``run_sync_once`` skips every drain inside the window
-    and nothing woke the loop when the window ended. The loop now treats the
-    window's end like a scheduled retry — one drain, then quiet."""
-    drains: list[float] = []
-    second_drain = asyncio.Event()
+async def test_a_creation_inside_a_rate_limit_hold_is_drained_at_once(monkeypatch):
+    """The hold stops background reads. Until 2026-10-01 it also stopped the
+    drain, and nothing re-woke the loop until the window closed: a card
+    created inside a hold waited out Books' whole Retry-After (15 minutes at a
+    time in production). The loop no longer waits on the hold at all."""
+    drains: list[tuple[str, float]] = []
 
-    async def fake_run_sync_once(db, pending_only=False, fast_retry=False):
-        if not pending_only:
-            return 0
-        drains.append(time.monotonic())
-        if len(drains) == 1:
-            # What sync_project's ZohoRateLimited handler does: arm the
-            # window and push nothing.
-            aito_quote_sync._throttled_until = time.monotonic() + 0.2
-            return 0
-        second_drain.set()
-        return 1
+    async def fake_run_sync_once(db, pending_only=False, fast_retry=False, attention_only=False):
+        drains.append(("pending" if pending_only else "full", time.monotonic()))
+        aito_push_schedule.drop_due_except(time.monotonic(), set())
+        return 0
 
     monkeypatch.setattr(aito_quote_sync, "async_session", _fake_session)
     monkeypatch.setattr(aito_quote_sync, "run_sync_once", fake_run_sync_once)
@@ -556,18 +528,14 @@ async def test_the_loop_re_drains_when_a_rate_limit_window_closes(monkeypatch):
 
     loop_task = asyncio.create_task(aito_quote_sync.run_sync_loop())
     try:
-        await asyncio.sleep(0.05)
-        woke_at = time.monotonic()
-        aito_quote_sync.request_immediate_sync()
-        await asyncio.wait_for(second_drain.wait(), timeout=5)
-        assert len(drains) == 2
-        # Not before the window closed, and nowhere near the interval.
-        assert drains[1] - drains[0] >= 0.2
-        assert drains[1] - woke_at < 3
-        # The closed window is forgotten: no busy loop of empty drains.
-        await asyncio.sleep(0.4)
-        assert len(drains) == 2
-        assert aito_quote_sync._throttled_until is None
+        await asyncio.sleep(0.05)  # the start-up tick
+        aito_quote_sync._throttled_until = time.monotonic() + 600
+        drains.clear()
+        asked_at = time.monotonic()
+        aito_quote_sync.request_immediate_sync(7)
+        await asyncio.sleep(0.2)
+        assert [kind for kind, _ in drains] == ["pending"]
+        assert drains[0][1] - asked_at < 0.2
     finally:
         loop_task.cancel()
         await asyncio.gather(loop_task, return_exceptions=True)

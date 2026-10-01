@@ -90,7 +90,7 @@ from backend.app.schemas.aito import (
     AitoWatchResponse,
     AitoWatchUpdate,
 )
-from backend.app.services import aito_tracking as tracking_service
+from backend.app.services import aito_quote_sync, aito_tracking as tracking_service
 from backend.app.services.aito_board_rules import AWAY_STATUSES, SERVICES, TaskSummary, evaluate, summarise
 from backend.app.services.aito_client_history import compute_client_history
 from backend.app.services.aito_client_rating import read_client_rating
@@ -848,8 +848,8 @@ def _mark_pending_if_ours(project: AitoProject) -> None:
         _mark_pending(project)
 
 
-def _wake_worker(queued: bool, immediate: bool = False) -> None:
-    """Ask the sync worker to drain, for an edit that left a project pending.
+def _wake_worker(queued: bool, immediate: bool = False, project_id: int | None = None) -> None:
+    """Ask the sync worker to push, for a write that left a project pending.
 
     Call AFTER the commit, never before — the worker reads through its own
     session, and a wake that fires ahead of the commit finds nothing (see
@@ -857,26 +857,97 @@ def _wake_worker(queued: bool, immediate: bool = False) -> None:
     the commit: ``expire_on_commit`` expires every attribute, so reading
     ``project.quote_sync_state`` afterwards is a lazy load on an async session.
 
-    Debounced, not immediate: an edit gets a bounded wait rather than the full
-    300s poll, while a burst of task ticks still collapses into one PUT.
-    Creation uses ``request_immediate_sync`` instead — see there.
+    Debounced per card: an edit restarts that card's quiet period
+    (``request_debounced_sync``), so a burst of task edits collapses into one
+    PUT once the operator stops, and one card's editing never delays
+    another's push. Creation uses ``request_immediate_sync`` instead.
 
-    ``immediate`` is for the one caller that is not itself an edit:
-    ``sync_project_now``, the push a detail panel owes Books when it closes.
-    An edit wants the window because more edits are likely coming; a close is
-    the proof that none are. It matters that this CANCELS the standing window
-    rather than merely bypassing it — ``request_debounced_sync``'s window is
-    fixed, so the deadline still open at close time was set by the FIRST edit
-    of the session (often the empty task POST that "+ Add task" fires) and
-    would otherwise drain a half-typed card. See ``request_immediate_sync``.
+    ``immediate`` is for the callers that are not edits with more edits
+    coming: ``sync_project_now`` (the push a detail panel owes Books when it
+    closes, and Force sync), a restore, a merge. It closes the card's window
+    on the spot — a window opened by the empty task POST that "+ Add task"
+    fires must not outlive the close that proves the card is finished.
+
+    Without a ``project_id`` there is no card to buffer for, so the drain is
+    simply asked for now.
+
     ``transfer_tasks`` passes it for a split too: the split card is a new
     card, so it gets creation's latency rather than an edit's window.
     """
     if queued:
-        if immediate:
-            request_immediate_sync()
+        if immediate or project_id is None:
+            request_immediate_sync(project_id)
         else:
-            request_debounced_sync()
+            request_debounced_sync(project_id)
+
+
+# What a route answers when its card's push did not land in time. Structured
+# so the frontend picks its own wording (`aito.syncNotConfirmed`) by code.
+SYNC_PENDING_DETAIL = {
+    "code": "sync_pending",
+    "message": "Zoho has not confirmed the latest changes yet — try again in a moment",
+}
+
+
+async def ensure_pushed(db: AsyncSession, project: AitoProject, *, strict: bool = False) -> None:
+    """Make sure Books holds this card's latest state before a route reads a
+    document from it or bills it.
+
+    ``strict`` is for the routes whose effect cannot be undone — raising an
+    invoice, emailing the quote to the client. There, a push that was
+    attempted for this very request and did NOT land (the card went from
+    pending to 'error' or 'locked') is a refusal, 409 with the reason: Books
+    still holds the lines as they were before the operator's edit, and
+    billing or sending those is the mistake the wait exists to prevent. The
+    read-only routes (the PDFs) proceed in that case, as they always did for
+    an 'error' card: the panel shows the failure with its retry, and the
+    document Books holds may still be the one wanted. A card that was not
+    pending on entry is never refused here, whatever its state.
+
+    A card that is not pending returns at once. A pending one is pushed now
+    (``flush_and_wait``) and re-read; if it is still pending when the flush
+    timeout runs out the route answers 503 rather than serve or bill a
+    document that predates the operator's last edit. When no worker is
+    serving (sync disabled, Books not configured) nothing will ever push, so
+    there is nothing to wait for and the route behaves as it did before this
+    existed.
+
+    The drain is asked for once. A card still pending after that attempt (an
+    edit landed mid-push, Books refused the push) is waited on, not asked for
+    again: the worker's own next attempt — its fast retry, the window the
+    edit re-opened — is what the route joins.
+
+    The session's transaction is ended before waiting — the worker writes the
+    same row through its own session — and ``project`` is refreshed in place,
+    so callers keep using the instance they passed in.
+    """
+    if project.quote_sync_state != "pending" or not aito_quote_sync.can_flush():
+        return
+    project_id = project.id
+    await db.commit()
+    deadline = time.monotonic() + aito_quote_sync.FLUSH_TIMEOUT_SECONDS
+    request = True
+    while True:
+        remaining = deadline - time.monotonic()
+        completed = remaining > 0 and await aito_quote_sync.flush_and_wait(
+            project_id, timeout=remaining, request=request
+        )
+        request = False
+        await db.refresh(project)
+        if project.quote_sync_state != "pending":
+            if strict and project.quote_sync_state == "error":
+                reason = project.quote_sync_error or "the sync failed"
+                raise HTTPException(
+                    status_code=409, detail=f"The latest changes did not reach Zoho ({reason}) — fix the sync first"
+                )
+            if strict and project.quote_sync_state == "locked":
+                raise HTTPException(
+                    status_code=409,
+                    detail="Zoho did not take the latest changes: the quote is locked there",
+                )
+            return
+        if not completed:
+            raise HTTPException(status_code=503, detail=SYNC_PENDING_DETAIL)
 
 
 async def _commit_and_wake(
@@ -927,10 +998,15 @@ async def _commit_and_wake(
     # A second card the same commit left pending (a task transfer's other
     # side, a merge's source): bumped here too, after the commit and BEFORE
     # the wake, so a worker woken by it can never capture that card's stale
-    # marker and settle it idle over the edit just committed.
+    # marker and settle it idle over the edit just committed. Each such card
+    # gets its own wake too: push windows are per card, so the other side
+    # must not be left riding on this card's window.
     for other_id in also_bump:
         _bump_requeue_marker(other_id)
-    _wake_worker(queued, immediate)
+    if project_id is not None or not also_bump:
+        _wake_worker(queued, immediate, project_id)
+    for other_id in also_bump:
+        _wake_worker(True, immediate, other_id)
     await broadcast_pending(db)  # inbox rows record() wrote during this request
 
 
@@ -1771,7 +1847,7 @@ async def create_project(
     # own-quote branch, as this once did, left an imported quote with no link
     # until the next full tick, up to `aito_quote_poll_seconds` later — which
     # the operator reads as "no payment link on an imported quote".
-    request_immediate_sync()
+    request_immediate_sync(project.id)
     await _broadcast_changed("create", project.id, _actor(current_user))
     await db.refresh(project)
     return await _project_response(db, project, summary)
@@ -2185,6 +2261,7 @@ async def get_retainer_pdf(
     project = await db.get(AitoProject, project_id)
     if project is None or project.status == "deleted":
         raise HTTPException(status_code=404, detail="Project not found")
+    await ensure_pushed(db, project)
     if not project.quote_id:
         raise HTTPException(status_code=404, detail="This project has no Zoho quote")
     try:
@@ -2393,10 +2470,15 @@ async def _project_ready_to_invoice(db: AsyncSession, project_id: int) -> AitoPr
         # The rule the operator asked for: a job is billed when it is
         # finished, not while it is still on a printer.
         raise HTTPException(status_code=409, detail="Only a project in Finish can be invoiced")
+    # An edit still on its way to Books is pushed now, and waited for. Strict:
+    # an invoice cannot be undone, so a push that fails is a refusal.
+    await ensure_pushed(db, project, strict=True)
     if project.quote_sync_state == "pending":
-        # An edit is still on its way to Books. Billing now would invoice the
-        # lines as they were BEFORE that edit landed, and no amount of
-        # re-syncing afterwards would correct a document already issued.
+        # Reached only when no worker is serving (`ensure_pushed` waits
+        # otherwise, and answers 503 itself if the push does not land).
+        # Billing now would invoice the lines as they were BEFORE the edit,
+        # and no amount of re-syncing afterwards would correct a document
+        # already issued.
         raise HTTPException(status_code=409, detail="This quote has changes still syncing to Zoho")
     if project.quote_invoiced:
         # The last of the button's rules to be restated here, and the only
@@ -2727,6 +2809,7 @@ async def get_invoice_pdf(
     project = await db.get(AitoProject, project_id)
     if project is None or project.status == "deleted":
         raise HTTPException(status_code=404, detail="Project not found")
+    await ensure_pushed(db, project)
     if not project.quote_id:
         raise HTTPException(status_code=404, detail="This project has no Zoho quote")
     try:
@@ -3090,6 +3173,9 @@ async def get_quote_pdf(
     project = await db.get(AitoProject, project_id)
     if project is None or project.status == "deleted":
         raise HTTPException(status_code=404, detail="Project not found")
+    # Before the quote_id check: a card whose quote is still being created is
+    # pending too, and the wait is what gives it one.
+    await ensure_pushed(db, project)
     if not project.quote_id:
         raise HTTPException(status_code=404, detail="This project has no Zoho quote")
     try:
@@ -3193,6 +3279,9 @@ async def get_quote_email(
     project = await db.get(AitoProject, project_id)
     if project is None or project.status == "deleted":
         raise HTTPException(status_code=404, detail="Project not found")
+    # Strict, like the send it previews: the dialog must not open on a quote
+    # Books refused the latest edit of.
+    await ensure_pushed(db, project, strict=True)
     content, default_email = await _load_quote_email_content(db, project, project_id)
     return AitoQuoteEmailContent(
         subject=content["subject"],
@@ -3240,6 +3329,9 @@ async def send_quote_email(
     """
     _check_zoho_email_rate_limit(request, current_user)
     project = await _get_active_project_or_404(db, project_id)
+    # The quote that goes out must carry the card's latest lines. Strict: an
+    # email cannot be recalled, so a push that fails is a refusal.
+    await ensure_pushed(db, project, strict=True)
     content, _ = await _load_quote_email_content(db, project, project_id, rollback_on_error=True)
 
     # Re-read rather than trust the request. An allowlist the caller supplies
@@ -5180,7 +5272,7 @@ async def restore_project(
         if _is_duplicate_active_quote_error(exc):
             raise HTTPException(status_code=409, detail=_DUPLICATE_QUOTE_DETAIL) from exc
         raise
-    _wake_worker(queued)
+    _wake_worker(queued, immediate=True, project_id=project.id)
     await broadcast_pending(db)
     await _broadcast_changed("restore", project.id, _actor(current_user))
     await db.refresh(project)
@@ -5420,7 +5512,7 @@ async def merge_project(
     # The worker tracks the two markers separately: the source's rides along.
     # Read before the commit, which expires it.
     source_pending = source.quote_sync_state == "pending"
-    await _commit_and_wake(db, queued, target.id, also_bump=[source.id] if source_pending else [])
+    await _commit_and_wake(db, queued, target.id, immediate=True, also_bump=[source.id] if source_pending else [])
     if not queued:
         # Same as delete_project: an imported source owes Books nothing, but
         # its payment link still has to be cancelled by the link reconciler.

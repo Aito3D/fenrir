@@ -26,10 +26,17 @@ describe('retainer PDF buttons', () => {
     expect(create).toHaveBeenCalled();
   });
 
-  it('print is disabled with the sync tooltip while the quote sync is pending', () => {
-    render(<RetainerPrintButton projectId={12} retainerId="RET-B" disabled />);
+  it('print fetches the retainer PDF pinned to the row', async () => {
+    const spy = vi.spyOn(api, 'getAitoRetainerPdf').mockResolvedValue(new Blob(['%PDF-'], { type: 'application/pdf' }));
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:x');
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    render(<RetainerPrintButton projectId={12} retainerId="RET-B" />);
+
     const button = screen.getByRole('button', { name: 'Print retainer invoice' });
-    expect(button).toBeDisabled();
-    expect(button).toHaveAttribute('title', "Sync in progress — the document isn’t up to date yet");
+    expect(button).toBeEnabled();
+    expect(button).toHaveAttribute('title', 'Print retainer invoice');
+    await userEvent.click(button);
+
+    await waitFor(() => expect(spy).toHaveBeenCalledWith(12, 'RET-B'));
   });
 });

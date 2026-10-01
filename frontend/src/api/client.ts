@@ -8707,10 +8707,10 @@ export const api = {
     const headers: Record<string, string> = {};
     if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
     const response = await fetch(`${API_BASE}/aito/${projectId}/quote.pdf`, { headers });
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      throw new Error(error.detail || `HTTP ${response.status}`);
-    }
+    // ApiError, not a bare Error: a 503 `sync_pending` (the server pushed the
+    // card's pending changes and Zoho did not confirm in time) is told apart
+    // by its code — see components/aito/syncPending.ts.
+    if (!response.ok) await throwApiError(response);
     return response.blob();
   },
   /** The invoice Books raised from this project's quote, or null when there
@@ -8765,10 +8765,10 @@ export const api = {
     if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
     const query = invoiceId ? `?invoice_id=${encodeURIComponent(invoiceId)}` : '';
     const response = await fetch(`${API_BASE}/aito/${projectId}/invoice.pdf${query}`, { headers });
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      throw new Error(error.detail || `HTTP ${response.status}`);
-    }
+    // ApiError, not a bare Error: a 503 `sync_pending` (the server pushed the
+    // card's pending changes and Zoho did not confirm in time) is told apart
+    // by its code — see components/aito/syncPending.ts.
+    if (!response.ok) await throwApiError(response);
     return response.blob();
   },
   /** This project's retainer (deposit) invoices, or `[]`. Hits Zoho twice
@@ -8783,10 +8783,10 @@ export const api = {
     if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
     const query = `?retainer_id=${encodeURIComponent(retainerId)}`;
     const response = await fetch(`${API_BASE}/aito/${projectId}/retainer.pdf${query}`, { headers });
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      throw new Error(error.detail || `HTTP ${response.status}`);
-    }
+    // ApiError, not a bare Error: a 503 `sync_pending` (the server pushed the
+    // card's pending changes and Zoho did not confirm in time) is told apart
+    // by its code — see components/aito/syncPending.ts.
+    if (!response.ok) await throwApiError(response);
     return response.blob();
   },
   /** What Books would send if this retainer invoice were emailed now — preview only. */

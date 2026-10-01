@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Download, Loader2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useToast } from '../../contexts/ToastContext';
+import { documentFailureMessage } from './syncPending';
 import { ACTION_CELL, type ActionVariant } from './quoteActionGroup';
 import { DOC_ICON_BUTTON_CLS, LINK_ICON_CLS } from './linkActionHelpers';
 
@@ -37,22 +39,15 @@ export function PdfDownloadButton({
    *  someone their QUOTE could not be fetched when they clicked Download on
    *  an invoice sends them to look at the wrong document. */
   failureMessage,
-  /** Externally forced off — see PdfPrintButton: the caller knows the PDF
-   *  the endpoint would return is outdated. */
-  disabled = false,
-  /** Tooltip shown instead of `label` while `disabled`; aria-label stays
-   *  `label` so the accessible name never changes. */
-  disabledTitle,
   variant = 'cell',
 }: {
   fetchPdf: () => Promise<Blob>;
   label: string;
   filename: string;
   failureMessage: string;
-  disabled?: boolean;
-  disabledTitle?: string;
   variant?: ActionVariant;
 }) {
+  const { t } = useTranslation();
   const { showToast } = useToast();
   const [busy, setBusy] = useState(false);
   const mountedRef = useRef(true);
@@ -86,8 +81,8 @@ export function PdfDownloadButton({
       window.setTimeout(() => {
         URL.revokeObjectURL(url);
       }, REVOKE_DELAY_MS);
-    } catch {
-      showToast(failureMessage, 'error');
+    } catch (error) {
+      showToast(documentFailureMessage(error, failureMessage, t), 'error');
     } finally {
       if (mountedRef.current) setBusy(false);
     }
@@ -98,9 +93,9 @@ export function PdfDownloadButton({
     <button
       type="button"
       onClick={download}
-      disabled={busy || disabled}
+      disabled={busy}
       aria-label={label}
-      title={disabled && disabledTitle ? disabledTitle : label}
+      title={label}
       className={variant === 'icon' ? DOC_ICON_BUTTON_CLS : ACTION_CELL}
     >
       {busy ? <Loader2 className={`${icon} animate-spin`} /> : <Download className={icon} />}

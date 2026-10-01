@@ -2240,7 +2240,7 @@ describe('ProjectDetailPanel sync row', () => {
 
   it('shows the pending label while the worker has not caught up yet', async () => {
     show({ quote_sync_state: 'pending' });
-    expect(await screen.findByText('Pending')).toBeInTheDocument();
+    expect(await screen.findByText('Syncing with Zoho…')).toBeInTheDocument();
   });
 
   it('shows the push error and a retry control', async () => {
@@ -2908,7 +2908,7 @@ describe('ProjectDetailPanel surfaces', () => {
     show({ quote_number: 'DEV26-2476', quote_sync_state: 'pending' });
     const quoteCard = (await screen.findAllByTestId('panel-card-heading'))
       .find((n) => /billing/i.test(n.textContent ?? ''))!.closest('section')!;
-    expect(quoteCard.textContent).toMatch(/pending/i);
+    expect(quoteCard.textContent).toMatch(/syncing with zoho/i);
   });
 
   it('still shows a sync message when the project has no quote number', async () => {

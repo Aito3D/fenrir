@@ -10,13 +10,10 @@ import type { ActionVariant } from './quoteActionGroup';
 export function RetainerPrintButton({
   projectId,
   retainerId,
-  disabled = false,
   variant = 'cell',
 }: {
   projectId: number;
   retainerId: string;
-  /** True while the quote sync is pending — same rule as the invoice. */
-  disabled?: boolean;
   variant?: ActionVariant;
 }) {
   const { t } = useTranslation();
@@ -25,8 +22,6 @@ export function RetainerPrintButton({
       fetchPdf={() => api.getAitoRetainerPdf(projectId, retainerId)}
       label={t('aito.printRetainer')}
       failureMessage={t('aito.retainerPrintFailed')}
-      disabled={disabled}
-      disabledTitle={t('aito.pdfSyncPending')}
       variant={variant}
     />
   );

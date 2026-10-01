@@ -69,11 +69,10 @@ describe('canCreateInvoice', () => {
     expect(canCreateInvoice(makeProject({ quote_invoiced: true }))).toBe(false);
   });
 
-  it('waits for a pending sync to land', () => {
-    // Billing now would issue a document for the lines as they were BEFORE
-    // the pending edit reaches Books, and no later sync corrects an issued
-    // invoice.
-    expect(canCreateInvoice(makeProject({ quote_sync_state: 'pending' }))).toBe(false);
+  it('does not wait on a pending sync: the server pushes first', () => {
+    // The invoice routes push the pending edit to Books and wait for it
+    // before reading or billing anything, and refuse if it does not land.
+    expect(canCreateInvoice(makeProject({ quote_sync_state: 'pending' }))).toBe(true);
   });
 });
 

@@ -359,6 +359,38 @@ def test_fields_match_tolerates_a_clamped_expiry():
     assert svc._fields_match(row, matching, TODAY) is True
 
 
+def _expired_link(amount: int = 5000) -> AitoPaymentLink:
+    return AitoPaymentLink(
+        project_id=1,
+        idempotency_key="k",
+        heimdall_id="h1",
+        reference="DEV-1",
+        amount=amount,
+        expires_on="2026-09-27",
+        status="pending",
+        checked_at=datetime(2026, 9, 30, 12, 0),
+    )
+
+
+def test_fields_match_accepts_a_link_whose_expiry_date_has_passed():
+    """A quote whose validity ran out: the link's expiry equals the quote's
+    and both are in the past. The clamped target (`expires_in_days` floors at
+    one day) can never equal a past date, so the comparison used to report
+    drift on every pass — while the patch builder, which compares the raw
+    dates, had nothing to send: an empty PATCH, a 400 "Nothing to update",
+    forever (seven production cards, ~290 warnings a day on 2026-10-01).
+    Heimdall expires the link by itself; there is nothing to change."""
+    today = date(2026, 10, 1)
+    wanted = Wanted("DEV-1", 5000, "2026-09-27")
+    assert svc._fields_match(_expired_link(), wanted, today) is True
+    assert svc.needs_action(_expired_link(), wanted, today) is False
+
+
+def test_fields_match_still_reports_a_changed_amount_on_such_a_link():
+    today = date(2026, 10, 1)
+    assert svc._fields_match(_expired_link(), Wanted("DEV-1", 6000, "2026-09-27"), today) is False
+
+
 def test_fields_match_freezes_the_clamp_ceiling_at_the_last_checked_day():
     """T-011's follow-on: once a row has actually been synced, the ceiling a
     clamped expiry is compared against is frozen at `row.checked_at`'s day,

@@ -9,6 +9,10 @@ import type { ActionVariant } from './quoteActionGroup';
  *  fallback — lives in `PdfPrintButton`, which the Invoice card's print
  *  button shares. This file is now only the quote-specific parts: the gate,
  *  the endpoint and the label.
+ *
+ *  Not gated on a pending sync: the endpoint pushes the card's changes to
+ *  Zoho first and answers once Zoho holds the latest lines, so the button
+ *  simply shows its spinner a little longer.
  */
 export function QuotePrintButton({
   project,
@@ -19,21 +23,16 @@ export function QuotePrintButton({
 }) {
   const { t } = useTranslation();
 
-  // A hand-made card has no quote to print. Unchanged from when this file
-  // owned the printing: the gate belongs to the quote, not to the printer.
-  if (!project.quote_id) return null;
+  // A hand-made card has no quote. A card whose quote is still being created
+  // has none YET: the endpoint waits for the creation, so the button is
+  // already useful.
+  if (!project.quote_id && project.quote_sync_state !== 'pending') return null;
 
   return (
     <PdfPrintButton
       fetchPdf={() => api.getAitoQuotePdf(project.id)}
       label={t('aito.printQuote')}
       failureMessage={t('aito.printFailed')}
-      // 'pending' = an edit the worker has not pushed to Zoho yet, so the
-      // PDF Books would return is the PRE-edit quote. Not 'error': the panel
-      // already surfaces that with a retry, and the stale PDF may still be
-      // wanted while it is sorted out.
-      disabled={project.quote_sync_state === 'pending'}
-      disabledTitle={t('aito.pdfSyncPending')}
       variant={variant}
     />
   );

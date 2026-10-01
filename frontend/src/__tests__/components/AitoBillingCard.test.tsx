@@ -210,12 +210,88 @@ describe('BillingCard document rows', () => {
     expect(screen.getByRole('button', { name: 'Print quote' }).className).toContain('p-1 ');
   });
 
-  it('disables print and download on every row while the quote sync is pending', async () => {
+  it('keeps print and download enabled on every row while the quote sync is pending', async () => {
+    // The endpoints push the card first; nothing stale can come back.
     vi.spyOn(api, 'getAitoRetainers').mockResolvedValue([RETAINER]);
     renderCard(project({ quote_sync_state: 'pending', retainer_paid_total: 17500 }));
     await screen.findByTestId('doc-retainer-RET-B');
     for (const name of ['Print quote', 'Download quote', 'Print retainer invoice', 'Download retainer invoice']) {
-      expect(screen.getByRole('button', { name })).toBeDisabled();
+      expect(screen.getByRole('button', { name })).toBeEnabled();
     }
+  });
+});
+describe('BillingCard sync line', () => {
+  it('reads "Syncing with Zoho…" while a push is pending', () => {
+    renderCard(project({ quote_sync_state: 'pending' }));
+    expect(screen.getByText('Syncing with Zoho…')).toBeInTheDocument();
+  });
+
+  it('says nothing about sync on a card that was idle all along', () => {
+    renderCard(project({ quote_sync_state: 'idle' }));
+    expect(screen.queryByText('Up to date in Zoho')).not.toBeInTheDocument();
+    expect(screen.queryByText('Syncing with Zoho…')).not.toBeInTheDocument();
+  });
+
+  it('confirms "Up to date in Zoho" once a pending push it showed has landed', () => {
+    const view = renderCard(project({ quote_sync_state: 'pending' }));
+    view.rerender(
+      <BillingCard
+        project={project({ quote_sync_state: 'idle' })}
+        canUpdate
+        onRetrySync={() => {}}
+        retryPending={false}
+        onForceSync={() => {}}
+        forcePending={false}
+        depositPct={0}
+        currency="XPF"
+        heimdallConfigured
+      />,
+    );
+    expect(screen.getByText('Up to date in Zoho')).toBeInTheDocument();
+  });
+
+  it('does not carry the confirmation over to another card', () => {
+    const view = renderCard(project({ id: 12, quote_sync_state: 'pending' }));
+    view.rerender(
+      <BillingCard
+        project={project({ id: 13, quote_sync_state: 'idle' })}
+        canUpdate
+        onRetrySync={() => {}}
+        retryPending={false}
+        onForceSync={() => {}}
+        forcePending={false}
+        depositPct={0}
+        currency="XPF"
+        heimdallConfigured
+      />,
+    );
+    expect(screen.queryByText('Up to date in Zoho')).not.toBeInTheDocument();
+  });
+});
+
+describe('BillingCard on a card whose quote is being created', () => {
+  const creating = () =>
+    project({ quote_id: null, quote_number: null, quote_status: null, quote_total: null, quote_sync_state: 'pending' });
+
+  it('shows the quote row with a placeholder number and working print and download', async () => {
+    const fetchPdf = vi.spyOn(api, 'getAitoQuotePdf').mockResolvedValue(new Blob(['%PDF']));
+    renderCard(creating());
+    const row = screen.getByTestId('doc-quote');
+    expect(within(row).getByText('Creating quote…')).toBeInTheDocument();
+    const print = within(row).getByRole('button', { name: /print quote/i });
+    expect(print).toBeEnabled();
+    expect(within(row).getByRole('button', { name: /download quote/i })).toBeEnabled();
+    await userEvent.click(print);
+    await waitFor(() => expect(fetchPdf).toHaveBeenCalledWith(12));
+  });
+
+  it('offers no send action before the quote exists', () => {
+    renderCard(creating());
+    expect(within(screen.getByTestId('doc-quote')).queryByRole('button', { name: /send/i })).not.toBeInTheDocument();
+  });
+
+  it('still shows no quote row on a hand-made card with no quote at all', () => {
+    renderCard(project({ quote_id: null, quote_number: null, quote_sync_state: 'unmanaged' }));
+    expect(screen.queryByTestId('doc-quote')).not.toBeInTheDocument();
   });
 });

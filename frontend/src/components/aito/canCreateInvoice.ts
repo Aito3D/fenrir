@@ -21,15 +21,12 @@ import type { AitoProject } from '../../api/client';
  *  for it is harmless, since the dialog's own preview refuses first, with the
  *  real reason.
  *
- *  The pending-sync clause is not cosmetic: billing while an edit is still on
- *  its way to Books would issue a document for the lines as they were BEFORE
- *  it landed, and no later sync corrects an issued invoice.
+ *  A pending sync is not a reason to hide the button. Billing while an edit
+ *  is still on its way to Books would issue a document for the lines as they
+ *  were BEFORE it landed — so the invoice routes push the card first and wait
+ *  for it (`ensure_pushed`), and refuse with `sync_pending` if it does not
+ *  land.
  */
 export function canCreateInvoice(project: AitoProject): boolean {
-  return (
-    project.column === 'finish' &&
-    Boolean(project.quote_id) &&
-    !project.quote_invoiced &&
-    project.quote_sync_state !== 'pending'
-  );
+  return project.column === 'finish' && Boolean(project.quote_id) && !project.quote_invoiced;
 }

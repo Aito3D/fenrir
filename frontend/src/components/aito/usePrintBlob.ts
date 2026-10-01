@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useToast } from '../../contexts/ToastContext';
+import { documentFailureMessage } from './syncPending';
 
 /** How long to wait for the hidden iframe to load the document before giving
  *  up on in-page printing. Generous: this is a local blob, so anything
@@ -215,8 +216,8 @@ export function usePrintBlob({
 
       element.src = objectUrl;
       document.body.appendChild(element);
-    } catch {
-      showToast(failureMessage, 'error');
+    } catch (error) {
+      showToast(documentFailureMessage(error, failureMessage, t), 'error');
       if (frame) frame.remove();
       if (url) {
         if (pendingUrlRef.current === url) pendingUrlRef.current = null;

@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { AitoProject } from '../../api/client';
 import { InvoiceCard } from './InvoiceCard';
@@ -77,21 +77,36 @@ export function BillingCard({
   // RetainerRows call the same hooks) — one cache entry each, one request.
   const invoice = useAitoInvoice(project).data;
 
-  if (!project.quote_number && !hasQuoteMessage) return null;
+  // "Up to date in Zoho" is a confirmation, not a status: it is shown only
+  // once this panel has watched a pending push land, and never on a card
+  // that was idle all along (a row saying so on every card would be noise).
+  const syncPending = project.quote_sync_state === 'pending';
+  // Which card this panel has seen pending. Adjusted during render (React's
+  // pattern for state derived from props) rather than in an effect, so the
+  // confirmation is there on the very render the push lands.
+  const [pendingSeenFor, setPendingSeenFor] = useState<number | null>(syncPending ? project.id : null);
+  if (syncPending && pendingSeenFor !== project.id) setPendingSeenFor(project.id);
+  const justSynced = pendingSeenFor === project.id && project.quote_sync_state === 'idle';
+  // A managed card whose quote Zoho has not created yet.
+  const creatingQuote = !project.quote_number && syncPending;
+
+  if (!project.quote_number && !hasQuoteMessage && !justSynced) return null;
 
   const statusLabel = (status: string | null): string => quoteStatusText(t, status);
-  const syncPending = project.quote_sync_state === 'pending';
   const quotePay = quoteDocument(project, depositPct, currency);
   const hasCredit = project.customer_credit_total != null && project.customer_credit_total > 0;
 
   return (
     <PanelCard title={t('aito.billingLabel')}>
-      {project.quote_number && (
+      {/* The quote row also renders while the quote is still being created:
+          Print and Download are already useful then — their endpoint waits
+          for the creation. */}
+      {(project.quote_number || creatingQuote) && (
         <div className="divide-y divide-bambu-dark-tertiary -mt-1.5">
           <DocumentRow
             testId="doc-quote"
             label={t('aito.quoteSearchLabel')}
-            number={project.quote_number}
+            number={project.quote_number ?? t('aito.quotePending')}
             numberTitle={project.quote_date ?? undefined}
             status={
               project.quote_status
@@ -105,9 +120,9 @@ export function BillingCard({
             booksLabel={t('aito.quoteOpenInZoho')}
             print={<QuotePrintButton project={project} variant="icon" />}
             download={<QuoteDownloadButton project={project} variant="icon" />}
-            send={canUpdate ? <SendQuoteButton project={project} variant="icon" /> : undefined}
+            send={canUpdate && project.quote_number ? <SendQuoteButton project={project} variant="icon" /> : undefined}
           />
-          <RetainerRows project={project} canUpdate={canUpdate} syncPending={syncPending} currency={currency} />
+          <RetainerRows project={project} canUpdate={canUpdate} currency={currency} />
           <InvoiceCard project={project} canUpdate={canUpdate} />
         </div>
       )}
@@ -158,9 +173,12 @@ export function BillingCard({
           colon is markup, so no locale string carries punctuation. The whole
           list renders only when there is something to say — a hairline over
           nothing, or a row reading "up to date" on every idle card, would be
-          noise, not information. */}
-      {hasQuoteMessage && (
-        <dl className={`space-y-2 text-sm ${project.quote_number ? 'mt-2 pt-2 border-t border-bambu-dark-tertiary' : ''}`}>
+          noise, not information. The one "up to date" it does show is the
+          confirmation of a push this panel watched land (`justSynced`). */}
+      {(hasQuoteMessage || justSynced) && (
+        <dl
+          className={`space-y-2 text-sm ${project.quote_number || creatingQuote ? 'mt-2 pt-2 border-t border-bambu-dark-tertiary' : ''}`}
+        >
           {syncLabelKey && (
             <div className="flex items-baseline justify-between gap-2">
               <dt className="text-bambu-gray flex-shrink-0">{t('aito.sync')}:</dt>
@@ -205,6 +223,12 @@ export function BillingCard({
                   </button>
                 )}
               </dd>
+            </div>
+          )}
+          {justSynced && !syncLabelKey && (
+            <div className="flex items-baseline justify-between gap-2">
+              <dt className="text-bambu-gray flex-shrink-0">{t('aito.sync')}:</dt>
+              <dd className="text-bambu-green min-w-0 text-right">{t('aito.syncUpToDate')}</dd>
             </div>
           )}
 
@@ -258,12 +282,10 @@ function CollectSection({ children }: { children: ReactNode }) {
 function RetainerRows({
   project,
   canUpdate,
-  syncPending,
   currency,
 }: {
   project: AitoProject;
   canUpdate: boolean;
-  syncPending: boolean;
   /** The shop currency — the fallback when a retainer carries no currency code. */
   currency: string;
 }) {
@@ -291,15 +313,12 @@ function RetainerRows({
             amount={formatMoney(r.total, r.currency_code || currency)}
             booksUrl={r.url || null}
             booksLabel={t('aito.invoiceOpenInZoho')}
-            print={
-              <RetainerPrintButton projectId={project.id} retainerId={r.id} disabled={syncPending} variant="icon" />
-            }
+            print={<RetainerPrintButton projectId={project.id} retainerId={r.id} variant="icon" />}
             download={
               <RetainerDownloadButton
                 projectId={project.id}
                 retainerId={r.id}
                 retainerNumber={r.number}
-                disabled={syncPending}
                 variant="icon"
               />
             }

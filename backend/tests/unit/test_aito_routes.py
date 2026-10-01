@@ -190,7 +190,6 @@ async def test_every_edit_that_touches_the_quote_wakes_the_worker(async_client):
 
     async def wakes(call):
         aito_quote_sync._wake.clear()
-        aito_quote_sync._debounce_deadline = None
         response = await call()
         assert response.status_code < 300, response.text
         return aito_quote_sync._wake.is_set()
@@ -211,12 +210,10 @@ async def test_trashing_and_restoring_wake_the_worker_too(async_client):
     project_id = (await _create(async_client)).json()["id"]
 
     aito_quote_sync._wake.clear()
-    aito_quote_sync._debounce_deadline = None
     assert (await async_client.delete(f"/api/v1/aito/{project_id}")).status_code == 204
     assert aito_quote_sync._wake.is_set()
 
     aito_quote_sync._wake.clear()
-    aito_quote_sync._debounce_deadline = None
     assert (await async_client.post(f"/api/v1/aito/{project_id}/restore")).status_code == 200
     assert aito_quote_sync._wake.is_set()
 
@@ -230,7 +227,6 @@ async def test_trashing_an_imported_quote_wakes_the_worker_for_its_payment_link(
 
     project_id = (await _create(async_client, quote_id="E77", quote_number="DEV26-1")).json()["id"]
     aito_quote_sync._wake.clear()
-    aito_quote_sync._debounce_deadline = None
     assert (await async_client.delete(f"/api/v1/aito/{project_id}")).status_code == 204
     assert aito_quote_sync._wake.is_set()
 
@@ -246,10 +242,11 @@ async def test_declining_a_quote_wakes_the_worker_for_its_payment_link(async_cli
     await async_client.post(f"/api/v1/aito/{project_id}/quote-status", json={"status": "sent"})
 
     aito_quote_sync._wake.clear()
-    aito_quote_sync._debounce_deadline = None
+    aito_quote_sync._drain_requested = False
     r = await async_client.post(f"/api/v1/aito/{project_id}/quote-status", json={"status": "declined"})
     assert r.status_code == 200, r.text
     assert aito_quote_sync._wake.is_set()
+    assert aito_quote_sync._drain_requested is True
 
 
 @pytest.mark.asyncio

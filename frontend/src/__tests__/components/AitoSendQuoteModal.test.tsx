@@ -3,7 +3,7 @@ import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { SendQuoteModal } from '../../components/aito/SendQuoteModal';
-import { api } from '../../api/client';
+import { api, ApiError } from '../../api/client';
 import type { AitoProject } from '../../api/client';
 
 const project = {
@@ -128,6 +128,26 @@ describe('SendQuoteModal', () => {
 
     expect(await screen.findByText(/could not load the email details/i)).toBeInTheDocument();
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('says why when the server refuses because the latest edit did not reach Zoho', async () => {
+    // A 409 here is a specific, actionable refusal (the push this click
+    // triggered failed), not a load failure: the operator needs the reason,
+    // or they will retry a send that can only be refused again.
+    vi.spyOn(api, 'getAitoQuoteEmail').mockRejectedValue(
+      new ApiError('The latest changes did not reach Zoho (Books said no) — fix the sync first', 409),
+    );
+    render(<SendQuoteModal project={project} onClose={vi.fn()} />);
+
+    expect(await screen.findByText(/did not reach zoho \(books said no\)/i)).toBeInTheDocument();
+    expect(screen.queryByText(/could not load the email details/i)).not.toBeInTheDocument();
+  });
+
+  it('says Zoho has not confirmed when the push does not land in time', async () => {
+    vi.spyOn(api, 'getAitoQuoteEmail').mockRejectedValue(new ApiError('not confirmed', 503, 'sync_pending'));
+    render(<SendQuoteModal project={project} onClose={vi.fn()} />);
+
+    expect(await screen.findByText(/zoho has not confirmed the latest changes yet/i)).toBeInTheDocument();
   });
 
   it('preselects the card’s contact person over the default address', async () => {

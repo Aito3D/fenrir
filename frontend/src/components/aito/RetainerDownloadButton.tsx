@@ -9,13 +9,11 @@ export function RetainerDownloadButton({
   projectId,
   retainerId,
   retainerNumber,
-  disabled = false,
   variant = 'cell',
 }: {
   projectId: number;
   retainerId: string;
   retainerNumber?: string | null;
-  disabled?: boolean;
   variant?: ActionVariant;
 }) {
   const { t } = useTranslation();
@@ -25,8 +23,6 @@ export function RetainerDownloadButton({
       label={t('aito.downloadRetainer')}
       filename={retainerNumber || retainerId}
       failureMessage={t('aito.retainerPrintFailed')}
-      disabled={disabled}
-      disabledTitle={t('aito.pdfSyncPending')}
       variant={variant}
     />
   );

@@ -32,7 +32,6 @@ export function InvoiceCard({ project, canUpdate }: { project: AitoProject; canU
   // The invoice's own currency, not the app's — Books states the amount in
   // the currency the client is billed in.
   const currency = invoice.currency_code || appCurrency;
-  const syncPending = project.quote_sync_state === 'pending';
   const dates = invoice.date
     ? t('aito.invoiceDatesTitle', { date: invoice.date, due: invoice.due_date || '—' })
     : undefined;
@@ -59,17 +58,14 @@ export function InvoiceCard({ project, canUpdate }: { project: AitoProject; canU
         // `url` can be "" after the send route's post-send degrade (see routes/aito.py); no link then.
         booksUrl={invoice.url || null}
         booksLabel={t('aito.invoiceOpenInZoho')}
-        // Both PDF buttons sit out a pending quote sync: until the edit lands,
-        // the PDF Books returns may not match the card.
-        print={
-          <InvoicePrintButton projectId={project.id} invoiceId={invoice.id} disabled={syncPending} variant="icon" />
-        }
+        // Neither PDF button waits on a pending quote sync here: the endpoint
+        // pushes the card first (`ensure_pushed`), then returns the PDF.
+        print={<InvoicePrintButton projectId={project.id} invoiceId={invoice.id} variant="icon" />}
         download={
           <InvoiceDownloadButton
             projectId={project.id}
             invoiceId={invoice.id}
             invoiceNumber={invoice.number}
-            disabled={syncPending}
             variant="icon"
           />
         }
