@@ -340,6 +340,7 @@ async def test_engine():
         kprofile_note,
         maintenance,
         notification,
+        notification_inbox,
         notification_template,
         oidc_provider,
         print_log,

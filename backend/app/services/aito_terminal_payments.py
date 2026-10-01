@@ -27,6 +27,7 @@ from backend.app.services.heimdall import (
     LinkView,
     heimdall_service,
 )
+from backend.app.services.inbox import broadcast_pending
 
 logger = logging.getLogger(__name__)
 
@@ -424,6 +425,7 @@ async def _settle_effects(db: AsyncSession, row: AitoTerminalPayment) -> None:
             if project is not None and project.status == "active":
                 await accept_quote(db, project, source="terminal", detail={"amount": amount, "reference": reference})
         await db.commit()
+        await broadcast_pending(db)
     except Exception:
         # Never leave a caller holding the cleared marker without the event
         # and acceptance it stands for: discard it, the marker stays set.

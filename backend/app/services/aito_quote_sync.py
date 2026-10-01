@@ -61,6 +61,7 @@ from backend.app.services.aito_quote_status import accept_quote, adopt_quote_sta
 from backend.app.services.aito_shipping import island_label
 from backend.app.services.aito_tracking import build_tracking_url, purge_tracking_views, with_tracking_notes
 from backend.app.services.aito_zoho_comments import mirror_comments, should_pull_comments
+from backend.app.services.inbox import broadcast_pending
 from backend.app.services.zoho import (
     ZohoAmbiguousReferenceError,
     ZohoNotConfiguredError,
@@ -2410,6 +2411,10 @@ async def run_sync_once(db: AsyncSession, pending_only: bool = False, *, fast_re
             project = await db.get(AitoProject, project_id)
             await _apply_rules(db, project, await _summary_for(db, project_id))
             await db.commit()
+            # Drains every inbox row this project's sync recorded (a quote
+            # decision mirrored from Books, a client comment) — including
+            # those an earlier mid-sync commit already landed.
+            await broadcast_pending(db)
             try:
                 await ws_manager.broadcast_aito(
                     {"type": "aito_changed", "action": "quote-sync", "project_id": project_id, "actor": None}

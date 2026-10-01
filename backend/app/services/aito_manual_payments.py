@@ -18,6 +18,7 @@ from backend.app.models.aito_project import AitoProject
 from backend.app.services.aito_events import record
 from backend.app.services.aito_payment_documents import PaymentDocument
 from backend.app.services.aito_send_guard import DuplicateSendGuard
+from backend.app.services.inbox import broadcast_pending
 from backend.app.services.zoho import (
     ZohoAmbiguous,
     ZohoNotConfiguredError,
@@ -283,6 +284,7 @@ async def record_manual_payment(
                 },
             )
             await db.commit()
+            await broadcast_pending(db)
         except Exception as exc:
             logger.error(
                 "manual payment %s is in Zoho Books (project %s, %s %s) but the local record failed: %s",

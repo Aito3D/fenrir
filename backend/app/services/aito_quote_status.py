@@ -17,6 +17,7 @@ from backend.app.models.aito_project import AitoProject
 from backend.app.schemas.aito import QUOTE_STATUS_VALUES
 from backend.app.services.aito_board_rules import AWAY_STATUSES
 from backend.app.services.aito_events import record, utc_now_naive
+from backend.app.services.inbox import broadcast_pending
 
 logger = logging.getLogger(__name__)
 
@@ -111,6 +112,7 @@ async def apply_quote_decision(
         detail={"source": source, **(detail or {})},
     )
     await db.commit()
+    await broadcast_pending(db)
     await _broadcast_changed("quote-status", project.id, actor_name)
     await db.refresh(project)
 

@@ -31,6 +31,7 @@ from backend.app.services.heimdall import (
     LinkView,
     heimdall_service,
 )
+from backend.app.services.inbox import broadcast_pending
 
 if TYPE_CHECKING:  # the runtime import stays function-level (import cycle)
     from backend.app.schemas.aito import AitoPaymentLinkView
@@ -371,6 +372,7 @@ async def _became_paid(db: AsyncSession, row: AitoPaymentLink, *, now: datetime)
                     db, project, source="payment_link", detail={"amount": amount, "reference": reference}
                 )
         await db.commit()
+        await broadcast_pending(db)
     except Exception:
         # Never let a caller commit the paid state without the acceptance it
         # triggers: discard both, so the link reads `pending` and is re-polled.

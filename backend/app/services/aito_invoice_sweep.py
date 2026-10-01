@@ -59,6 +59,7 @@ from backend.app.models.aito_project import AitoProject
 from backend.app.services import aito_events
 from backend.app.services.aito_events import utc_now_naive as _now
 from backend.app.services.aito_invoice_create import RetainerCredit, apply_retainers, customer_credits
+from backend.app.services.inbox import broadcast_pending, purge_old
 from backend.app.services.zoho import ZohoNotConfiguredError, ZohoRateLimited, ZohoUpstreamError, zoho_service
 
 logger = logging.getLogger(__name__)
@@ -166,6 +167,25 @@ async def settle_with_deposits(
         logger.warning("Invoice sweep applied deposits to %s but could not re-read it: %s", invoice_id, exc)
         fresh = None
     return (fresh or invoice), max(remaining - applied_total, 0.0)
+
+
+async def _purge_inbox(db: AsyncSession) -> None:
+    """The hourly sweep's sibling step: inbox rows past their retention
+    (services/inbox.py) go. Runs after a completed pass, so it shares the
+    hourly gate; best effort -- a failure is logged and the next hour
+    retries it."""
+    try:
+        purged = await purge_old(db, now=_now())
+        await db.commit()
+    except SQLAlchemyError as exc:
+        logger.warning("Invoice sweep could not purge old inbox rows: %s", exc)
+        try:
+            await db.rollback()
+        except SQLAlchemyError:
+            pass
+        return
+    if purged:
+        logger.info("Invoice sweep purged %d inbox row(s) past retention", purged)
 
 
 async def sweep_invoices(db: AsyncSession, *, force: bool = False) -> int:
@@ -296,6 +316,7 @@ async def sweep_invoices(db: AsyncSession, *, force: bool = False) -> int:
             # project still queued behind this one is still attempted.
             try:
                 await db.commit()
+                await broadcast_pending(db)
             except SQLAlchemyError as exc:
                 logger.warning("Invoice sweep could not commit project %s: %s", project_id, exc)
                 try:
@@ -321,4 +342,5 @@ async def sweep_invoices(db: AsyncSession, *, force: bool = False) -> int:
         raise
     else:
         _last_run = time.monotonic()
+    await _purge_inbox(db)
     return updated

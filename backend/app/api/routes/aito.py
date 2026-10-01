@@ -134,6 +134,7 @@ from backend.app.services.aito_tracking import (
     tracking_url,
     with_tracking_sms,
 )
+from backend.app.services.inbox import auto_watch, broadcast_pending
 from backend.app.services.openrouter import (
     OpenRouterNotConfiguredError,
     OpenRouterUpstreamError,
@@ -909,6 +910,7 @@ async def _commit_and_wake(
     if queued and project_id is not None:
         _bump_requeue_marker(project_id)
     _wake_worker(queued, immediate)
+    await broadcast_pending(db)  # inbox rows record() wrote during this request
 
 
 def _actor(user: User | None) -> str | None:
@@ -1718,6 +1720,9 @@ async def create_project(
     try:
         await db.flush()
         await _record_creation_events(db, project, payload, current_user)
+        # After the creation events, so importing a decided quote does not
+        # notify its own creator.
+        await auto_watch(db, project.id, current_user.id if current_user else None)
         new_tasks = [
             AitoTask(project_id=project.id, position=position, **task_payload.model_dump())
             for position, task_payload in enumerate(payload.tasks)
@@ -5063,6 +5068,7 @@ async def restore_project(
             raise HTTPException(status_code=409, detail=_DUPLICATE_QUOTE_DETAIL) from exc
         raise
     _wake_worker(queued)
+    await broadcast_pending(db)
     await _broadcast_changed("restore", project.id, _actor(current_user))
     await db.refresh(project)
     return await _project_response(db, project, summary)
@@ -5141,6 +5147,7 @@ async def transfer_tasks(
         _mark_pending(target)
         db.add(target)
         await db.flush()  # for target.id
+        await auto_watch(db, target.id, current_user.id if current_user else None)
     else:
         target = await _get_active_project_or_404(db, payload.target_project_id)
         if target.quote_invoiced:

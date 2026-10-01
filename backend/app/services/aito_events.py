@@ -312,4 +312,10 @@ async def record(
     )
     db.add(event)
     await db.flush()  # so callers get an id without committing
+    # Inbox fan-out rides the same session so a rolled-back event never
+    # leaves a notification behind (services/inbox.py). Only fresh events
+    # fan out: no inbox kind maps from a coalescing kind.
+    from backend.app.services.inbox import fan_out  # local: inbox imports the ws layer and models
+
+    await fan_out(db, event)
     return event
