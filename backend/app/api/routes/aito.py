@@ -44,6 +44,7 @@ from backend.app.schemas.aito import (
     AitoInvoiceEmailRequest,
     AitoInvoicePreview,
     AitoInvoiceResponse,
+    AitoMergeRequest,
     AitoNoteCreate,
     AitoPaymentLinkView,
     AitoPickupMessageResponse,
@@ -73,6 +74,7 @@ from backend.app.schemas.aito import (
     AitoStatsResponse,
     AitoSummarizeRequest,
     AitoSummarizeResponse,
+    AitoTaskBase,
     AitoTaskCreate,
     AitoTaskReorder,
     AitoTaskResponse,
@@ -5001,6 +5003,100 @@ async def restore_project(
     await _broadcast_changed("restore", project.id, _actor(current_user))
     await db.refresh(project)
     return await _project_response(db, project, summary)
+
+
+@router.post("/{project_id}/merge", response_model=AitoProjectResponse)
+async def merge_project(
+    project_id: int,
+    payload: AitoMergeRequest,
+    db: AsyncSession = Depends(get_db),
+    # Both, not either: this one request edits the target's quote (update)
+    # AND trashes the source (delete), so an operator who may do only one of
+    # the two must not get the other through here.
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE, Permission.AITO_DELETE),
+):
+    """Copy another active card's tasks onto this one, then trash that card.
+
+    Copies, never moves: the source keeps its rows, so restoring it from the
+    trash brings back the card exactly as it was. The copies land after the
+    target's last task, in the source's order, with every service column —
+    costs, quantities, discounts, the per-service "subtask" descriptions and
+    the printing details — carried over.
+
+    Done ticks travel only when the TARGET is accepted. That is the rule
+    every other task write follows (`_reject_ticks_without_acceptance`): a
+    tick on an unaccepted quote describes no authorised work. Rather than
+    refuse the whole merge for one stale tick, the ticks are cleared.
+
+    An invoiced card on either side is refused: the target's tasks are
+    frozen (same 409 as add/update/delete), and the source's lines are
+    accounting that must stay on the card that was billed.
+    """
+    target = await _get_active_project_or_404(db, project_id)
+    if payload.source_project_id == project_id:
+        raise HTTPException(status_code=409, detail="A project cannot be merged into itself")
+    _reject_task_change_if_invoiced(target)
+    source = await _get_active_project_or_404(db, payload.source_project_id)
+    if source.quote_invoiced:
+        raise HTTPException(status_code=409, detail="This project has been invoiced — its tasks stay on it")
+
+    stmt = select(AitoTask).where(AitoTask.project_id == source.id).order_by(AitoTask.position, AitoTask.id)
+    source_tasks = list((await db.execute(stmt)).scalars())
+    highest = await db.scalar(select(func.max(AitoTask.position)).where(AitoTask.project_id == project_id))
+    next_position = (highest + 1) if highest is not None else 0
+    keep_ticks = target.quote_status == "accepted"
+    copied_fields = list(AitoTaskBase.model_fields)
+    for offset, row in enumerate(source_tasks):
+        fields = {name: getattr(row, name) for name in copied_fields}
+        for service in SERVICES:
+            fields[f"{service}_done"] = getattr(row, f"{service}_done") if keep_ticks else False
+        db.add(AitoTask(project_id=project_id, position=next_position + offset, **fields))
+
+    was_pending = target.quote_sync_state == "pending"
+    _mark_pending_if_ours(target)
+    source.status = "deleted"
+    _mark_pending_if_ours(source)
+    await db.flush()  # so _summary_for's SELECT sees the copies
+    actor = _actor(current_user)
+    await record(
+        db,
+        target.id,
+        "project.merged",
+        actor_class="user",
+        actor_name=actor,
+        subject_type="project",
+        subject_id=source.id,
+        subject_label=source.description,
+        detail={"task_count": len(source_tasks)},
+    )
+    await record(
+        db,
+        source.id,
+        "project.trashed",
+        actor_class="user",
+        actor_name=actor,
+        subject_type="project",
+        subject_id=source.id,
+        detail={"merged_into": target.id},
+    )
+    if not was_pending and target.quote_sync_state == "pending":
+        await record(db, target.id, "sync.queued", actor_class="system")
+    summary = await _summary_for(db, project_id)
+    await _apply_rules(db, target, summary, actor=actor)
+    queued = target.quote_sync_state == "pending" or source.quote_sync_state == "pending"
+    await _commit_and_wake(db, queued, target.id)
+    if source.quote_sync_state == "pending":
+        # The source's own requeue marker: _commit_and_wake bumped the
+        # target's only, and the worker tracks the two separately.
+        _bump_requeue_marker(source.id)
+    if not queued:
+        # Same as delete_project: an imported source owes Books nothing, but
+        # its payment link still has to be cancelled by the link reconciler.
+        request_immediate_sync()
+    await _broadcast_changed("merge", target.id, actor)
+    await _broadcast_changed("delete", source.id, actor)
+    await db.refresh(target)
+    return await _project_response(db, target, await _summary_for(db, project_id))
 
 
 @router.delete("/{project_id}", status_code=204)

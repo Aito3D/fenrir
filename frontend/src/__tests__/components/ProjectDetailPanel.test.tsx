@@ -1890,6 +1890,32 @@ describe('ProjectDetailPanel left column cards', () => {
     expect(headings).toEqual(['Product description', 'Stage & work left', 'Record']);
   });
 
+  it('puts a ⋯ menu on the Stage card whose Merge item opens the merge dialog over the panel', async () => {
+    show();
+    const button = screen.getByRole('button', { name: 'More actions' });
+    expect(screen.getByText('Stage & work left').parentElement).toContainElement(button);
+    fireEvent.click(button);
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Merge another card…' }));
+    expect(await screen.findByTestId('merge-project-modal')).toBeInTheDocument();
+    // The panel is still underneath: merging never closes the card.
+    expect(screen.getByTestId('panel-column-tasks')).toBeInTheDocument();
+  });
+
+  it('hides the ⋯ menu without the delete permission, without the update permission, and on an invoiced card', () => {
+    const { unmount } = render(
+      <ProjectDetailPanel canCreate canUpdate canDelete={false} project={project} onClose={vi.fn()} />,
+    );
+    expect(screen.queryByRole('button', { name: 'More actions' })).not.toBeInTheDocument();
+    unmount();
+    const second = render(
+      <ProjectDetailPanel canCreate canUpdate={false} canDelete project={project} onClose={vi.fn()} onDelete={vi.fn()} />,
+    );
+    expect(screen.queryByRole('button', { name: 'More actions' })).not.toBeInTheDocument();
+    second.unmount();
+    show({ quote_invoiced: true });
+    expect(screen.queryByRole('button', { name: 'More actions' })).not.toBeInTheDocument();
+  });
+
   it('folds the creator into the created timestamp', async () => {
     show({ created_by: 'admin' });
     await waitFor(() => expect(screen.getByTestId('record-created')).toBeInTheDocument());

@@ -1,0 +1,189 @@
+"""POST /aito/{project_id}/merge: another card's tasks are copied onto this
+one and that card goes to the trash — one request, one timeline story."""
+
+import pytest
+from sqlalchemy import select
+
+from backend.app.models.aito_project import AitoProject
+from backend.app.models.aito_task import AitoTask
+
+
+async def _create_with_tasks(client, tasks, **overrides):
+    payload = {
+        "description": "Merge me",
+        "client_id": "z1",
+        "client_name": "ACME",
+        "client_phone": "+33 6 12 34 56 78",
+        "tasks": tasks,
+    }
+    payload.update(overrides)
+    resp = await client.post("/api/v1/aito/", json=payload)
+    assert resp.status_code == 201, resp.text
+    return resp.json()
+
+
+async def _tasks(client, project_id):
+    resp = await client.get(f"/api/v1/aito/{project_id}/tasks")
+    assert resp.status_code == 200, resp.text
+    return resp.json()
+
+
+async def _merge(client, target_id, source_id):
+    return await client.post(f"/api/v1/aito/{target_id}/merge", json={"source_project_id": source_id})
+
+
+async def _accept(client, project_id):
+    resp = await client.post(f"/api/v1/aito/{project_id}/quote-status", json={"status": "accepted"})
+    assert resp.status_code == 200, resp.text
+
+
+async def _set_invoiced(db_session, project_id):
+    project = (await db_session.execute(select(AitoProject).where(AitoProject.id == project_id))).scalar_one()
+    project.quote_invoiced = True
+    await db_session.commit()
+
+
+SOURCE_TASKS = [
+    {
+        "title": "Scan the part",
+        "scan_cost": 5000,
+        "scan_quantity": 2,
+        "scan_discount_pct": 10,
+        "scan_description": "Both halves",
+    },
+    {
+        "title": "Print it",
+        "impression_cost": 12000,
+        "impression_quantity": 3,
+        "impression_weight_g": 250,
+        "impression_time_min": 90,
+        "impression_color": "Noir",
+        "impression_description": "PETG",
+        "maindoeuvre_cost": 1500,
+        "maindoeuvre_description": "Post-processing",
+    },
+]
+
+
+@pytest.mark.asyncio
+async def test_merge_appends_the_source_tasks_with_every_service_field(async_client):
+    target = await _create_with_tasks(async_client, [{"title": "Existing", "usinage_cost": 800}])
+    source = await _create_with_tasks(async_client, SOURCE_TASKS, description="Source card")
+
+    resp = await _merge(async_client, target["id"], source["id"])
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["id"] == target["id"]
+    assert resp.json()["task_count"] == 3
+
+    tasks = await _tasks(async_client, target["id"])
+    assert [t["title"] for t in tasks] == ["Existing", "Scan the part", "Print it"]
+    assert [t["position"] for t in tasks] == [0, 1, 2]
+    scan, print_ = tasks[1], tasks[2]
+    assert scan["scan_cost"] == 5000
+    assert scan["scan_quantity"] == 2
+    assert scan["scan_discount_pct"] == 10
+    assert scan["scan_description"] == "Both halves"
+    assert print_["impression_cost"] == 12000
+    assert print_["impression_quantity"] == 3
+    assert print_["impression_weight_g"] == 250
+    assert print_["impression_time_min"] == 90
+    assert print_["impression_color"] == "Noir"
+    assert print_["impression_description"] == "PETG"
+    assert print_["maindoeuvre_cost"] == 1500
+    assert print_["maindoeuvre_description"] == "Post-processing"
+    # Copies, not moves: the rows belong to the target now.
+    assert {t["project_id"] for t in tasks} == {target["id"]}
+
+
+@pytest.mark.asyncio
+async def test_merge_trashes_the_source_and_keeps_its_own_tasks_for_the_record(async_client):
+    target = await _create_with_tasks(async_client, [])
+    source = await _create_with_tasks(async_client, SOURCE_TASKS)
+
+    assert (await _merge(async_client, target["id"], source["id"])).status_code == 200
+
+    board = (await async_client.get("/api/v1/aito/")).json()
+    assert source["id"] not in {p["id"] for p in board}
+    trash = (await async_client.get("/api/v1/aito/trash")).json()
+    assert source["id"] in {p["id"] for p in trash}
+    # The trashed row keeps its tasks: a restore brings back the card as it
+    # was, and the target's copies are independent rows.
+    assert len(await _tasks(async_client, source["id"])) == 2
+
+
+@pytest.mark.asyncio
+async def test_merge_keeps_done_ticks_only_when_the_target_is_accepted(async_client):
+    source = await _create_with_tasks(async_client, [{"title": "T", "scan_cost": 100}])
+    await _accept(async_client, source["id"])
+    task_id = (await _tasks(async_client, source["id"]))[0]["id"]
+    resp = await async_client.patch(f"/api/v1/aito/tasks/{task_id}", json={"scan_done": True})
+    assert resp.status_code == 200, resp.text
+
+    quoted_target = await _create_with_tasks(async_client, [])
+    assert (await _merge(async_client, quoted_target["id"], source["id"])).status_code == 200
+    assert (await _tasks(async_client, quoted_target["id"]))[0]["scan_done"] is False
+
+    source2 = await _create_with_tasks(async_client, [{"title": "T", "scan_cost": 100}])
+    await _accept(async_client, source2["id"])
+    task_id = (await _tasks(async_client, source2["id"]))[0]["id"]
+    assert (await async_client.patch(f"/api/v1/aito/tasks/{task_id}", json={"scan_done": True})).status_code == 200
+    accepted_target = await _create_with_tasks(async_client, [])
+    await _accept(async_client, accepted_target["id"])
+    assert (await _merge(async_client, accepted_target["id"], source2["id"])).status_code == 200
+    assert (await _tasks(async_client, accepted_target["id"]))[0]["scan_done"] is True
+
+
+@pytest.mark.asyncio
+async def test_merge_refuses_itself_and_missing_or_trashed_cards(async_client):
+    target = await _create_with_tasks(async_client, [])
+    source = await _create_with_tasks(async_client, SOURCE_TASKS)
+
+    assert (await _merge(async_client, target["id"], target["id"])).status_code == 409
+    assert (await _merge(async_client, target["id"], 999999)).status_code == 404
+    assert (await _merge(async_client, 999999, source["id"])).status_code == 404
+
+    assert (await async_client.delete(f"/api/v1/aito/{source['id']}")).status_code == 204
+    assert (await _merge(async_client, target["id"], source["id"])).status_code == 404
+    # Nothing was written by any refused attempt.
+    assert await _tasks(async_client, target["id"]) == []
+
+
+@pytest.mark.asyncio
+async def test_merge_refuses_an_invoiced_card_on_either_side(async_client, db_session):
+    target = await _create_with_tasks(async_client, [])
+    source = await _create_with_tasks(async_client, SOURCE_TASKS)
+
+    await _set_invoiced(db_session, source["id"])
+    assert (await _merge(async_client, target["id"], source["id"])).status_code == 409
+
+    fresh_source = await _create_with_tasks(async_client, SOURCE_TASKS)
+    await _set_invoiced(db_session, target["id"])
+    assert (await _merge(async_client, target["id"], fresh_source["id"])).status_code == 409
+
+    assert await _tasks(async_client, target["id"]) == []
+    board_ids = {p["id"] for p in (await async_client.get("/api/v1/aito/")).json()}
+    assert {source["id"], fresh_source["id"]} <= board_ids
+
+
+@pytest.mark.asyncio
+async def test_merge_tells_the_story_on_both_timelines(async_client, db_session):
+    target = await _create_with_tasks(async_client, [])
+    source = await _create_with_tasks(async_client, SOURCE_TASKS, description="Second half of the job")
+
+    assert (await _merge(async_client, target["id"], source["id"])).status_code == 200
+
+    target_events = (await async_client.get(f"/api/v1/aito/{target['id']}/events")).json()["events"]
+    merged = [e for e in target_events if e["kind"] == "project.merged"]
+    assert len(merged) == 1
+    assert merged[0]["subject_id"] == source["id"]
+    assert merged[0]["subject_label"] == "Second half of the job"
+    assert merged[0]["detail"] == {"task_count": 2}
+
+    source_events = (await async_client.get(f"/api/v1/aito/{source['id']}/events")).json()["events"]
+    trashed = [e for e in source_events if e["kind"] == "project.trashed"]
+    assert len(trashed) == 1
+    assert trashed[0]["detail"] == {"merged_into": target["id"]}
+
+    # The copied rows are real AitoTask rows on the target, not references.
+    rows = (await db_session.execute(select(AitoTask).where(AitoTask.project_id == target["id"]))).scalars().all()
+    assert len(rows) == 2

@@ -5,6 +5,8 @@ import { Building2, Check, Copy, ExternalLink, History, Loader2, Lock, Mail, Pen
 import type { LucideIcon } from 'lucide-react';
 import { DeleteHoldButton } from './DeleteHoldButton';
 import { DuplicateProjectButton } from './DuplicateProjectButton';
+import { MergeProjectModal } from './MergeProjectModal';
+import { ProjectActionsMenu } from './ProjectActionsMenu';
 import { ActivityRail } from './history/ActivityRail';
 import { PanelAgeStat } from './PanelAgeStat';
 import { UnacceptHoldPill } from './UnacceptHoldPill';
@@ -880,6 +882,13 @@ export function ProjectDetailPanel({
   // since a tab is otherwise the one place a failed sync could hide.
   const { needsAttention: billingNeedsAttention } = deriveQuoteSync(project);
   const [rightTab, setRightTab] = usePanelTab(RIGHT_TABS);
+  // The ⋯ on the Stage card. Both permissions, because POST /{id}/merge
+  // enforces both (it edits this card AND trashes another); never on an
+  // invoiced card, whose tasks are frozen; never on a trashed one, which the
+  // route 404s. Hidden rather than disabled: a menu with one dead item is
+  // worse than no menu.
+  const [merging, setMerging] = useState(false);
+  const canMerge = canUpdate && canDelete && !project.quote_invoiced && project.status === 'active';
   // The tab panel is keyed on `rightTab` below so a switch remounts its
   // content with .animate-calc-tab-in, the entrance the underline's 300ms
   // slide was missing a partner for. Never on the panel's own first paint,
@@ -1258,6 +1267,7 @@ export function ProjectDetailPanel({
             />
           )}
         </div>
+        {merging && <MergeProjectModal project={project} onClose={() => setMerging(false)} />}
         {historyOpen && (
           <ClientHistoryModal
             project={project}
@@ -1413,7 +1423,10 @@ export function ProjectDetailPanel({
                 )}
               </PanelCard>
 
-              <PanelCard title={t('aito.stageAndWorkLeft')}>
+              <PanelCard
+                title={t('aito.stageAndWorkLeft')}
+                action={canMerge ? <ProjectActionsMenu onMerge={() => setMerging(true)} /> : undefined}
+              >
                 <StageRail tasks={tasks} column={project.column} currency={currency} />
               </PanelCard>
             </div>

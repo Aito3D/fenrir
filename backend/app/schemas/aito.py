@@ -467,6 +467,15 @@ class AitoTaskReorder(BaseModel):
     task_ids: list[int] = Field(min_length=1, max_length=300)
 
 
+class AitoMergeRequest(BaseModel):
+    """The card whose tasks are copied onto the addressed one — and which goes
+    to the trash once they are. One id, nothing else: what is copied is the
+    whole task list, in its order, and the handler owns every rule about
+    which cards may take part."""
+
+    source_project_id: int
+
+
 class AitoProjectUpdate(AitoShippingInput, AitoClientSocialInput):
     """Content edits from the card detail panel. Ordering (column/position) is
     owned by the /move endpoint and deliberately not accepted here."""

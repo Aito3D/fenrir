@@ -81,6 +81,11 @@ KINDS: dict[str, str] = {
     "stage.changed": "story",
     "project.trashed": "story",
     "project.restored": "story",
+    # Another card's tasks were copied onto this one and that card was
+    # trashed (POST /{id}/merge). Story: it is the only local record of
+    # where half of this project's lines came from — the trashed card's own
+    # timeline carries the mirror (`project.trashed` with `merged_into`).
+    "project.merged": "story",
     "project.urgent.set": "story",
     "project.urgent.cleared": "story",
     "project.sav.set": "story",

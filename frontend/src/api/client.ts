@@ -8812,6 +8812,13 @@ export const api = {
     }),
   deleteAitoProject: (id: number) =>
     request<void>(`/aito/${id}`, { method: 'DELETE' }),
+  /** Copy `sourceId`'s tasks onto `id` and trash `sourceId` — one request,
+   *  so the two never land half-done. Enforces aito:update AND aito:delete. */
+  mergeAitoProject: (id: number, sourceId: number) =>
+    request<AitoProject>(`/aito/${id}/merge`, {
+      method: 'POST',
+      body: JSON.stringify({ source_project_id: sourceId }),
+    }),
   getAitoTrash: () => request<AitoProject[]>('/aito/trash'),
   restoreAitoProject: (id: number) => request<AitoProject>(`/aito/${id}/restore`, { method: 'POST' }),
   refreshAitoPaymentLink: (id: number) => request<AitoProject>(`/aito/${id}/payment-link/refresh`, { method: 'POST' }),
