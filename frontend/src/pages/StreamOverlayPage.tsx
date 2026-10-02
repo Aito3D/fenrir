@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -8,6 +8,7 @@ import { api, ApiError, withStreamToken } from '../api/client';
 import { useMjpegStream } from '../hooks/useMjpegStream';
 import { formatDuration, formatETA, type TimeFormat } from '../utils/date';
 import { mapModelCode } from '../utils/printerModel';
+import { useOverlayCameraRecovery } from '../hooks/useOverlayCameraRecovery';
 
 type TFunction = (key: string, options?: Record<string, unknown>) => string;
 
@@ -170,7 +171,6 @@ export function StreamOverlayPage() {
   const queryClient = useQueryClient();
   const id = parseInt(printerId || '0', 10);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [imageKey, setImageKey] = useState(Date.now());
 
   const config = useMemo(() => parseConfig(searchParams), [searchParams]);
   const sizes = getSizeClasses(config.size);
@@ -226,6 +226,7 @@ export function StreamOverlayPage() {
     config.showModel ? mapModelCode(printer?.model ?? null) : null,
   ].filter(Boolean).join(' · ');
   const status = kiosk ? overlay : statusData;
+  const { imageKey, handleStreamError } = useOverlayCameraRecovery(id > 0 && config.showCamera && status != null);
   const timeFormat: TimeFormat = (kiosk ? overlay?.time_format : settings?.time_format) || 'system';
 
   // WebSocket for real-time updates (JWT-authenticated; skipped in kiosk mode,
@@ -399,10 +400,9 @@ export function StreamOverlayPage() {
   // (#3183) draws its camera as a plain <img> in both modes, and an <img>
   // cannot carry the JWT, so its URL is signed the way upstream signs it:
   // the kiosk token when there is one, otherwise a stream token. A load
-  // error retries after 3 s by changing the URL.
-  const handleStreamError = () => {
-    setTimeout(() => setImageKey(Date.now()), 3000);
-  };
+  // error retries after 3 s by changing the URL, and a healthy connection is
+  // renewed every minute too, since an MJPEG <img> can stall without an
+  // error event (#3213) — both via useOverlayCameraRecovery above.
   const camPath = `/api/v1/printers/${id}/camera/stream?fps=${config.fps}&t=${imageKey}`;
   const overlayCameraUrl = kiosk && token ? `${camPath}&token=${encodeURIComponent(token)}` : withStreamToken(camPath);
 
@@ -433,8 +433,12 @@ export function StreamOverlayPage() {
           OBS browser can load the MJPEG stream; authed mode decodes to canvas. */}
       {config.showCamera && (
         kiosk ? (
+          // Keyed so a renewal (#3213) remounts the <img> on a fresh URL; the
+          // signed overlay URL carries the API prefix and the kiosk token.
           <img
-            src={streamUrl}
+            key={imageKey}
+            src={overlayCameraUrl}
+            onError={handleStreamError}
             alt="Camera stream"
             className="absolute inset-0 w-full h-full object-contain"
             style={printer?.camera_rotation ? { transform: `rotate(${printer.camera_rotation}deg)` } : undefined}

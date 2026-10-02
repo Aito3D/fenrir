@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
-import { Printer, Archive, ListOrdered, BarChart3, Calculator, Cloud, Settings, Sun, Moon, Monitor, ChevronLeft, ChevronRight, Keyboard, ArrowUpCircle, Wrench, FolderKanban, FolderOpen, Kanban, X, Menu, Info, Plug, Bug, LogOut, Key, Loader2, Disc3, Droplets, ShieldAlert, Globe, Bell, Receipt, type LucideIcon } from 'lucide-react';
+import { Printer, Archive, ListOrdered, BarChart3, Calculator, Cloud, Settings, Sun, Moon, Monitor, ChevronLeft, ChevronRight, Keyboard, ArrowUpCircle, Wrench, FolderKanban, FolderOpen, Kanban, X, Menu, Info, Plug, Bug, LogOut, Key, Loader2, Disc3, Droplets, ShieldAlert, Globe, Bell, Receipt, Megaphone, type LucideIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../contexts/ThemeContext';
 import { KeyboardShortcutsModal } from './KeyboardShortcutsModal';
@@ -23,6 +23,9 @@ import { AnimatedOutlet } from './AnimatedOutlet';
 import { parseUTCDate } from '../utils/date';
 import { Button } from './Button';
 import aito3dLogo from '../assets/aito3d_logo.png';
+import { AnnouncementsPanel } from './AnnouncementsPanel';
+import { AnnouncementBanner } from './AnnouncementBanner';
+import { useAnnouncements } from '../hooks/useAnnouncements';
 // Required by upstream's root-level mount adopted in this merge. The fork had
 // dropped both the mount and this import; taking the mount back without it is
 // a TS2304 at build time.
@@ -158,6 +161,25 @@ export function Layout() {
     queryFn: api.getUiFlags,
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
+
+  // Announcements from the Fenrir maintainers: the sidebar entry above System,
+  // the slide-over list, and the banner for unread important/critical ones. The
+  // entry is there for whoever may see announcements, also with none published.
+  const {
+    visible: announcementsVisible,
+    announcements,
+    unread: unreadAnnouncements,
+    bannerItems,
+    markRead: markAnnouncementRead,
+  } = useAnnouncements();
+  const [announcementsOpen, setAnnouncementsOpen] = useState(false);
+  const [announcementFocus, setAnnouncementFocus] = useState<string | null>(null);
+  const openAnnouncements = useCallback((focusId?: string) => {
+    setMobileDrawerOpen(false);
+    setAnnouncementFocus(focusId ?? null);
+    setAnnouncementsOpen(true);
+  }, []);
+  const closeAnnouncements = useCallback(() => setAnnouncementsOpen(false), []);
 
   // Unknown-spool prompt — surfaces a confirmation modal when the AMS reports a
   // tag with no inventory match (only when `auto_add_unknown_rfid` is off).
@@ -756,6 +778,25 @@ export function Layout() {
                     )}
                   </div>
                 )}
+                {announcementsVisible && (
+                  <button
+                    onClick={() => openAnnouncements()}
+                    className="relative p-2 rounded-lg hover:bg-bambu-dark-tertiary transition-colors text-bambu-gray-light hover:text-white"
+                    title={t('announcements.title')}
+                    aria-label={
+                      unreadAnnouncements.length > 0
+                        ? t('announcements.unread', { count: unreadAnnouncements.length })
+                        : t('announcements.title')
+                    }
+                  >
+                    <Megaphone className="w-5 h-5" />
+                    {unreadAnnouncements.length > 0 && (
+                      <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 flex items-center justify-center text-[10px] font-bold rounded-full bg-bambu-green text-white">
+                        {unreadAnnouncements.length}
+                      </span>
+                    )}
+                  </button>
+                )}
                 {hasPermission('system:read') ? (
                   <NavLink
                     to="/system"
@@ -853,6 +894,23 @@ export function Layout() {
                     <SwitchbarPopover onClose={() => setShowSwitchbar(false)} />
                   )}
                 </div>
+              )}
+              {announcementsVisible && (
+                <button
+                  onClick={() => openAnnouncements()}
+                  className="relative p-2 rounded-lg hover:bg-bambu-dark-tertiary transition-colors text-bambu-gray-light hover:text-white"
+                  title={t('announcements.title')}
+                  aria-label={
+                    unreadAnnouncements.length > 0
+                      ? t('announcements.unread', { count: unreadAnnouncements.length })
+                      : t('announcements.title')
+                  }
+                >
+                  <Megaphone className="w-5 h-5" />
+                  {unreadAnnouncements.length > 0 && (
+                    <span className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-bambu-green ring-2 ring-bambu-dark-secondary" />
+                  )}
+                </button>
               )}
               {hasPermission('system:read') ? (
                 <NavLink
@@ -968,6 +1026,7 @@ export function Layout() {
             </div>
           </div>
         )}
+        <AnnouncementBanner items={bannerItems} onOpen={openAnnouncements} markRead={markAnnouncementRead} />
         {/* Persistent update banner */}
         {!fullscreen && showUpdateBanner && (
           <div className="bg-bambu-green/20 border-b border-bambu-green/30 px-4 py-2 flex items-center justify-between">
@@ -999,6 +1058,13 @@ export function Layout() {
             the entrance — no blocking exit phase. See AnimatedOutlet. */}
         <AnimatedOutlet />
       </main>
+      <AnnouncementsPanel
+        open={announcementsOpen}
+        onClose={closeAnnouncements}
+        announcements={announcements}
+        markRead={markAnnouncementRead}
+        focusId={announcementFocus}
+      />
 
       <UnknownSpoolModal
         prompt={unknownSpool.prompt}

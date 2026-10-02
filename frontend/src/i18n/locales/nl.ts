@@ -35,6 +35,22 @@ export default {
   },
 
   // Common
+  announcements: {
+    title: 'Aankondigingen',
+    unread: 'Ongelezen aankondigingen: {{count}}',
+    empty: 'Op dit moment geen aankondigingen.',
+    earlier: 'Eerder ({{count}})',
+    new: 'Nieuw',
+    readMore: 'Meer lezen',
+    readMoreCount: 'Meer lezen (+{{count}})',
+    gotIt: 'Begrepen',
+    source: 'Van de Fenrir-ontwikkelaars, opgehaald van GitHub. Je kunt ze uitzetten in de instellingen.',
+    level: {
+      info: 'Mededeling',
+      important: 'Belangrijk',
+      critical: 'Kritiek',
+    },
+  },
   common: {
     plusNMore: '+{{count}} meer',
     save: 'Opslaan',
@@ -2302,6 +2318,11 @@ export default {
     checkPrinterFirmware: 'Printerfirmware controleren',
     includeBetaUpdates: 'Bètaversies opnemen',
     includeBetaUpdatesDesc: 'Melden over bèta- en prereleaseversies bij controle op updates',
+    announcementsEnabled: 'Aankondigingen ontvangen',
+    announcementsEnabledDesc: 'Berichten van de Bambuddy-ontwikkelaars, zoals beveiligingsfixes en incompatibele wijzigingen. Bambuddy haalt om de paar uur een ondertekend bestand op van GitHub; er wordt niets over deze installatie verstuurd.',
+    announcementsLearnMore: 'Meer informatie',
+    announcementsAllUsers: 'Tonen aan alle gebruikers',
+    announcementsAllUsersDesc: 'Uit: alleen beheerders zien ze. Heeft geen effect zolang authenticatie uit staat.',
     localLogin: {
       disable: 'Lokale login met gebruikersnaam/wachtwoord uitschakelen',
       disableHint: 'Wanneer ingeschakeld kunnen alleen SSO-providers inloggen. LDAP blijft onaangetast. Stel FENRIR_LOCAL_LOGIN=true in op de server om een herstelmogelijkheid te behouden.',
@@ -4060,6 +4081,22 @@ export default {
 
   // File manager
   fileManager: {
+    combine: {
+      action: 'Combineren tot 3MF',
+      tooltip: 'Combineer de geselecteerde STL\'s tot één 3MF om ze op één plaat te slicen',
+      title: 'Combineren tot 3MF',
+      description: 'Maakt één 3MF met alle onderstaande modellen, klaar om op één plaat te slicen. Zet automatisch schikken aan bij het slicen om ze over het bed te verdelen.',
+      nameLabel: 'Bestandsnaam',
+      defaultName: '{{name}} + {{count}} andere',
+      model: 'Model',
+      copies: 'Kopieën',
+      copiesFor: 'Kopieën van {{filename}}',
+      total: 'Objecten op de plaat: {{count}}',
+      tooMany: 'Maximaal {{max}} objecten per plaat',
+      sliceNext: 'Slicer openen na afloop',
+      submit: 'Combineren',
+      done: '{{filename}} gemaakt met {{count}} objecten',
+    },
     variants: {
       badge: '{{count}} versies',
       groupAction: 'Als versies groeperen',
@@ -6584,6 +6621,7 @@ export default {
     firstLayer: 'Eerste laag',
     quiet: 'Stil',
     digest: 'Samenvatting {{time}}',
+    noPhoto: 'Geen foto',
     // Event labels (expanded settings)
     printStarted: 'Afdruk gestart',
     plateNotEmpty: 'Plaat niet leeg',
@@ -6672,6 +6710,8 @@ export default {
     testConfiguration: 'Configuratie testen',
     printerFilter: 'Printerfilter',
     onlyFromPrinter: 'Alleen meldingen verzenden voor gebeurtenissen van deze printer',
+    attachPhotoLabel: 'Foto bijvoegen',
+    attachPhotoDescription: 'Een camera-momentopname meesturen met meldingen, als er een is gemaakt voor de gebeurtenis',
     quietHoursDnd: 'Stille uren (Niet storen)',
     quietStart: 'Start',
     quietEnd: 'Einde',
@@ -6701,6 +6741,7 @@ export default {
     nameRequired: 'Naam is verplicht',
     fieldRequired: '{{field}} is verplicht',
     haDataInvalid: 'Het veld Data moet een geldig JSON-object zijn, bijv. {"priority": "high", "ttl": 0}',
+    haServiceHelp: 'Optioneel — standaard een blijvende melding in de interface van Home Assistant. Stel een notify-service in (bijv. notify.mobile_app_myphone) om pushmeldingen op je telefoon te krijgen; daarbij wordt ook automatisch een camera-momentopname bijgevoegd als die er is en de Externe URL is ingesteld onder Instellingen → Netwerk.',
     // Config field labels
     phoneNumber: 'Telefoonnummer',
     apiKey: 'API-sleutel',
@@ -6752,6 +6793,10 @@ export default {
     enterTemplateContent: 'Voer sjablooninhoud in om een voorbeeld te zien',
     titlePreview: 'Titel:',
     bodyPreview: 'Inhoud:',
+    photoPreview: 'Foto:',
+    photoPreviewNote: 'Alleen een voorbeeld — providers die bijlagen ondersteunen (ntfy, Pushover, Telegram, Discord, Home Assistant, Bark, Slack webhook) voegen automatisch een camera-momentopname toe als er een is gemaakt, ongeacht wat er hierboven in de tekst staat.',
+    photoPreviewNoteWithEmail: 'Alleen een voorbeeld — wordt automatisch bijgevoegd bij ondersteunde providers (ntfy, Pushover, Telegram, Discord, Home Assistant, Bark, Slack webhook) als er een momentopname is gemaakt. Voeg voor e-mail {finish_photo_url} toe aan de tekst hierboven om de foto in te voegen.',
+    photoPreviewNoteEmailOnly: 'Alleen een voorbeeld — dit is altijd een e-mail. Voeg {finish_photo_url} toe aan de tekst hierboven om de foto in te voegen; zonder wordt alleen de tekst verzonden.',
     resetToDefault: 'Terugzetten naar standaard',
     titleRequired: 'Titel is verplicht',
     bodyRequired: 'Inhoud is verplicht',
@@ -7035,6 +7080,12 @@ export default {
     cancel: 'Annuleren',
     configuring: 'Configureren...',
     configureSlot: 'Sleuf configureren',
+    // Why an Orca profile went into the slot as the generic for its material (#3216)
+    orcaFallback: {
+      no_filament_id: 'Dit Orca-profiel heeft geen eigen filament-ID, dus OrcaSlicer ziet deze sleuf als Generic {{material}}.',
+      lookup_failed: 'De filament-ID van dit profiel kon niet uit Orca Cloud worden gelezen, dus OrcaSlicer ziet deze sleuf als Generic {{material}}. Probeer het zo opnieuw.',
+      no_permission: 'Je hebt geen toegang tot Orca Cloud, dus de filament-ID van dit profiel kon niet worden gelezen. OrcaSlicer ziet deze sleuf als Generic {{material}}.',
+    },
   },
 
   // Git Backup Settings

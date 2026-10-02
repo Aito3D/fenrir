@@ -14,6 +14,7 @@ import subprocess
 import sys
 import time
 import uuid
+import zlib
 from collections.abc import AsyncGenerator, Callable
 from dataclasses import field
 from typing import Annotated, Literal
@@ -108,6 +109,28 @@ _FFMPEG_TERM_TIMEOUT = 2.0
 # an active stream on its next pass.
 _FFMPEG_KILL_TIMEOUT = 2.0
 
+# How long an RTSP stream may keep emitting byte-identical JPEGs before the
+# ffmpeg behind it is restarted (#3218). A dead upstream can leave ffmpeg
+# repeating its last frame indefinitely: measured on a P2S, ~29 fps of one
+# frame for two hours with no socket to the printer left at all, while every
+# check that counts frames saw a healthy stream. A live camera practically
+# never repeats a frame byte for byte -- sensor noise changes every one (2262
+# of 2262 distinct on an idle X1C chamber, #3189) -- so a run this long means
+# the picture is frozen.
+_RTSP_FROZEN_SECONDS = 20.0
+# "Practically never" is not never: a dark, idle chamber can encode to the same
+# frame every time. When the first frame after such a restart is the frozen one
+# again, the camera really is showing that picture, and the stream only
+# re-checks at this much longer interval until the picture changes -- so a
+# still scene costs one reconnect every few minutes instead of every 20 s, and a
+# real freeze on it is still recovered.
+#
+# Here the RTSP session is a single ffmpeg under SharedStreamHub: a frozen
+# session ends itself and the hub's dead-producer restart spawns the next one,
+# so the frame it froze on is remembered per printer in _StreamState rather
+# than in a reconnect loop inside the generator.
+_RTSP_STILL_RECHECK_SECONDS = 300.0
+
 # Track active ffmpeg processes for cleanup
 _active_streams: dict[str, asyncio.subprocess.Process] = {}
 
@@ -147,6 +170,9 @@ class _StreamState:
     active_chamber_streams: dict[str, tuple] = field(default_factory=dict)
     last_frame_times: dict[int, float] = field(default_factory=dict)
     stream_start_times: dict[int, float] = field(default_factory=dict)
+    # CRC of the frame a printer's RTSP session froze on (#3218), kept across
+    # the hub restart so the next session can tell a still scene from a freeze.
+    frozen_frame_crc: dict[int, int] = field(default_factory=dict)
     active_external_streams: set[int] = field(default_factory=set)
     spawned_ffmpeg_pids: dict[int, float] = field(default_factory=dict)
     cleanup_task: asyncio.Task | None = None
@@ -1751,9 +1777,22 @@ async def _rtsp_mjpeg_frames(
         last_frame_yielded = time.monotonic()
         frame_watchdog_timeout = 30.0 if skip_frames else 15.0
 
+        # A frame that differs from the one before, not any frame, is what
+        # shows the picture is live: ffmpeg can repeat its last one forever
+        # (#3218). The frame the previous session froze on, if any, tells a
+        # still scene from a freeze (see _RTSP_STILL_RECHECK_SECONDS).
+        frozen_crc = _state.frozen_frame_crc.get(printer_id) if printer_id is not None else None
+        last_frame_crc: int | None = None
+        last_change = time.monotonic()
+        identical_frames = 0
+        still_scene = False
+        frozen = False
+
         while True:
             if disconnect_event and disconnect_event.is_set():
                 logger.info("Camera stream disconnect requested (stream_id=%s)", stream_id)
+                break
+            if frozen:
                 break
             try:
                 # Read chunk from ffmpeg — larger reads reduce syscalls
@@ -1801,9 +1840,39 @@ async def _rtsp_mjpeg_frames(
                     del buffer[: end_idx + 2]
 
                     # Track timestamp for stall detection
-                    last_frame_yielded = time.monotonic()
+                    now = time.monotonic()
+                    last_frame_yielded = now
                     if printer_id is not None:
-                        _state.last_frame_times[printer_id] = time.monotonic()
+                        _state.last_frame_times[printer_id] = now
+
+                    frame_crc = zlib.crc32(frame)
+                    if last_frame_crc is None:
+                        # First frame of this session. The same frame the
+                        # last session froze on means the camera really
+                        # shows that picture.
+                        still_scene = frozen_crc is not None and frame_crc == frozen_crc
+                        if still_scene:
+                            logger.info(
+                                "RTSP picture unchanged after restart for %s (stream_id=%s): "
+                                "treating it as a still scene, re-checking every %.0fs",
+                                ip_address,
+                                stream_id,
+                                _RTSP_STILL_RECHECK_SECONDS,
+                            )
+                        last_frame_crc = frame_crc
+                        last_change = now
+                    elif frame_crc != last_frame_crc:
+                        last_frame_crc = frame_crc
+                        last_change = now
+                        identical_frames = 0
+                        # The picture moves: back to the normal check.
+                        if still_scene or frozen_crc is not None:
+                            still_scene = False
+                            frozen_crc = None
+                            if printer_id is not None:
+                                _state.frozen_frame_crc.pop(printer_id, None)
+                    else:
+                        identical_frames += 1
 
                     if raw:
                         yield frame
@@ -1816,6 +1885,29 @@ async def _rtsp_mjpeg_frames(
                         )
                         yield frame
                         yield b"\r\n"
+
+                    if now - last_change > (_RTSP_STILL_RECHECK_SECONDS if still_scene else _RTSP_FROZEN_SECONDS):
+                        # End the session; the hub restarts the producer and the
+                        # next session checks its first frame against this one.
+                        if printer_id is not None:
+                            _state.frozen_frame_crc[printer_id] = last_frame_crc
+                        if still_scene:
+                            logger.info(
+                                "RTSP still-scene re-check for %s (stream_id=%s), restarting ffmpeg",
+                                ip_address,
+                                stream_id,
+                            )
+                        else:
+                            logger.warning(
+                                "RTSP output frozen for %s (stream_id=%s): %d identical frames over %.0fs, "
+                                "restarting ffmpeg",
+                                ip_address,
+                                stream_id,
+                                identical_frames,
+                                now - last_change,
+                            )
+                        frozen = True
+                        break
 
             except TimeoutError:
                 logger.warning("Camera stream read timeout")

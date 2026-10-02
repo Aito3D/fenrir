@@ -30,8 +30,9 @@ from backend.app.models.settings import Settings
 from backend.app.models.smart_plug import SmartPlug
 from backend.app.models.spool_assignment import SpoolAssignment
 from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
-from backend.app.services import drying_preflight, print_dispatch_context
+from backend.app.services import drying_preflight, print_dispatch_context, stock_forecast
 from backend.app.services.bambu_ftp import (
+    FtpFailureKind,
     FtpFailureReport,
     UploadCancelled,
     cache_3mf_download,
@@ -110,6 +111,17 @@ def _ams_slot_label(ams_id: int, tray_id: int) -> str:
 # interval: the fast path runs every 3 s while an upload is in flight, and a
 # low spool does not need answering at that resolution (#2913).
 _FILAMENT_LOW_MIN_INTERVAL = 30.0
+
+# Minimum seconds between stock forecast checks (#2955). The forecast is in whole
+# days, so a finer check would only repeat the same answer.
+_STOCK_FORECAST_MIN_INTERVAL = 3600.0
+
+# The settings row that holds which stock alerts have already been sent (#2955).
+_STOCK_ALERTS_SETTING_KEY = "stock_alerts_notified"
+
+# The Inventory page asks for this many usage records and the forecast panel
+# builds its rates from them; the alert reads the same window so the two agree.
+_STOCK_FORECAST_HISTORY_LIMIT = 5000
 
 
 def _remaining_percent(label_weight: int | float | None, weight_used: float | None) -> float | None:
@@ -338,6 +350,35 @@ _ACTIVE_PRINT_STATES: frozenset[str] = frozenset({"PREPARE", "SLICING", "RUNNING
 # a lost MQTT publish on a half-broken session (#887/#936) is fixed by the
 # force-reconnect on the very next attempt — while still bounding the loop.
 DISPATCH_MAX_ATTEMPTS = 3
+
+# Upload failures that mean the file never reached the printer's storage: the
+# file service refused or never answered (#3210). These put the item back in
+# the queue instead of failing it, because nothing about the job is wrong --
+# and failing it left the printer idle, so the next pass handed it the next
+# item, which failed the same way. One P2S whose file service was out of
+# connection slots ate 43 queued jobs in ten minutes that way.
+#
+# Not here: AUTH (a wrong access code needs the user), STORAGE (a full or
+# missing card does too), NOT_FOUND (a Fenrir-side path problem), UNKNOWN,
+# and an upload that overran its deadline -- each of those would fail the same
+# way on every retry.
+_UPLOAD_REQUEUE_KINDS: frozenset[FtpFailureKind] = frozenset(
+    {FtpFailureKind.HANDSHAKE, FtpFailureKind.COOLOFF, FtpFailureKind.TIMEOUT, FtpFailureKind.NETWORK}
+)
+
+# How long a printer whose upload was put back stays out of dispatch (#3210).
+# The first window matches the FTP client's own handshake cool-off, so the
+# retry lands after the client would talk to the printer again anyway. Each
+# further refusal in a row doubles it, up to the cap: #3210's printer refused
+# for some 40 hours, and every retry costs a preheat cycle where preheat is on,
+# five connection attempts and a page of log. A successful upload resets it.
+UPLOAD_FAILURE_BACKOFF_SECONDS = 300
+UPLOAD_FAILURE_BACKOFF_MAX_SECONDS = 3600
+
+
+def _upload_backoff_seconds(refusals: int) -> int:
+    """Backoff after the *refusals*-th refused upload in a row (1-based)."""
+    return min(UPLOAD_FAILURE_BACKOFF_SECONDS * 2 ** max(refusals - 1, 0), UPLOAD_FAILURE_BACKOFF_MAX_SECONDS)
 
 
 @dataclass(slots=True)
@@ -1042,6 +1083,20 @@ class PrintScheduler:
         # moment it connects.
         self._wake_failures: dict[int, float] = {}
         self._wake_failure_cooloff = 600  # seconds
+        # Printers whose last upload never reached them, mapped to the monotonic
+        # time they may be dispatched to again (#3210). Same expire-on-read shape
+        # as `_wake_failures`. Without it, a printer that cannot take files is
+        # idle on every pass, so it is picked on every pass.
+        self._upload_backoff: dict[int, float] = {}
+        # Refused uploads in a row per printer, which sets the next backoff
+        # window. Cleared by a successful upload to that printer.
+        self._upload_refusals: dict[int, int] = {}
+        # Printers whose current run of refusals has already sent its one
+        # "job waiting" notification. Each retry clears the item's waiting
+        # reason and the next refusal sets it again, which `hold_item` reads as
+        # a new reason; without this, every retry would notify. Cleared with
+        # `_upload_refusals`.
+        self._upload_refusal_notified: set[int] = set()
         # Track which printers are currently auto-drying (printer_id -> start timestamp)
         self._drying_in_progress: dict[int, float] = {}
         # Per-AMS memory of the auto-drying cycles WE armed, keyed by
@@ -1081,6 +1136,18 @@ class PrintScheduler:
         self._notified_filament_low: set[tuple[int, int, int, int]] = set()
         # Earliest monotonic time the next low-filament check may run (#2913).
         self._filament_low_next_check: float = 0.0
+        # SKU key -> (condition, events told) for a SKU that is alerting (#2955): the
+        # condition is "reorder" or "break", the events are those that had a
+        # subscriber when it was sent. Absent means not alerting. Cleared when the
+        # condition clears, so it can alert again, and when nobody wants either
+        # event. Mirrored to one settings row (_STOCK_ALERTS_SETTING_KEY), because the
+        # first check runs as soon as Fenrir starts and a restart would otherwise
+        # re-send one message per SKU that is still low.
+        self._notified_stock_alerts: dict[stock_forecast.SkuKey, tuple[str, frozenset[str]]] = {}
+        # The JSON last read from or written to that row; None until it has been read.
+        self._stock_alerts_persisted: str | None = None
+        # Earliest monotonic time the next stock forecast check may run (#2955).
+        self._stock_forecast_next_check: float = 0.0
         # Printers with a "running" scheduled drying row (#2638). Rebuilt from the
         # DB on every _check_scheduled_dryings call so route-side cancels show up.
         # Auto-drying's stop-all branches must not stop or untrack these printers;
@@ -1423,6 +1490,7 @@ class PrintScheduler:
                 inflight_printers = {pid for (_task, pid) in self._inflight.values() if pid is not None}
                 await self._check_auto_drying(db, [], inflight_printers)
                 await self._check_filament_low(db)
+                await self._check_stock_forecast(db)
                 return bool(self._inflight)
 
             logger.info(
@@ -1605,6 +1673,34 @@ class PrintScheduler:
             # generalises that workaround instead of repeating it per case.
             dispatching_printers: set[int] = set(busy_printers)
 
+            # Printers whose last upload never reached them (#3210). After the
+            # snapshot above on purpose: such a printer is idle, not about to
+            # print, and auto-drying must keep treating it as idle.
+            now_mono = time.monotonic()
+            # In backoff this pass. Kept apart from busy_printers so keep-warm
+            # can leave them out: there is no print to keep a bed warm for.
+            backoff_printers: set[int] = set()
+            # In backoff, and the "job waiting" notification for this run of
+            # refusals has gone out already. Their holds are written silently.
+            silent_hold_printers: set[int] = set()
+            for backoff_pid, retry_at in list(self._upload_backoff.items()):
+                if now_mono >= retry_at:
+                    del self._upload_backoff[backoff_pid]
+                    continue
+                backoff_printers.add(backoff_pid)
+                if backoff_pid in self._upload_refusal_notified:
+                    silent_hold_printers.add(backoff_pid)
+                else:
+                    self._upload_refusal_notified.add(backoff_pid)
+                mark_busy(
+                    backoff_pid,
+                    f"its file service refused the last upload; retrying in {retry_at - now_mono:.0f}s",
+                )
+                item_hold_reasons.setdefault(
+                    backoff_pid,
+                    f"{printer_label(backoff_pid)} is not accepting files — Fenrir will retry automatically",
+                )
+
             # Printers held by a Home Assistant sensor interlock (#1148) — an
             # enclosure door left open, say. The fixed-printer branch turns
             # this into a waiting_reason the user can act on; the model-based
@@ -1741,6 +1837,7 @@ class PrintScheduler:
                         await hold_item(
                             item,
                             item_hold_reasons.get(item.printer_id) or f"Busy: {printer_label(item.printer_id)}",
+                            notify=item.printer_id not in silent_hold_printers,
                         )
                         continue
 
@@ -2239,7 +2336,9 @@ class PrintScheduler:
             # auxiliary check wedge the queue. The bed simply stays wherever it
             # was, and the next tick tries again.
             try:
-                await self._apply_keep_warm(db, items, dispatch_ids, busy_printers, require_plate_clear)
+                await self._apply_keep_warm(
+                    db, items, dispatch_ids, busy_printers - backoff_printers, require_plate_clear
+                )
             except Exception as e:
                 logger.warning("Keep-warm pass failed, continuing with dispatch: %s", e, exc_info=True)
 
@@ -2271,6 +2370,10 @@ class PrintScheduler:
             # for the same reason auto-drying does — an empty queue does not mean
             # the spools in the printers stopped mattering.
             await self._check_filament_low(db)
+
+            # Stock forecast: alert when a filament SKU reaches its reorder point or
+            # is about to run out before a replenishment could arrive (#2955).
+            await self._check_stock_forecast(db)
 
             # Keep the loop on the fast interval while any upload is in flight so
             # a slot freed mid-tick refills within seconds rather than after the
@@ -2425,6 +2528,59 @@ class PrintScheduler:
                 # upload. A row left pending (e.g. busy-printer deferral) becomes
                 # dispatchable again on the next tick.
                 await self._clear_dispatch_claim(item_db, item_id)
+
+    async def _requeue_after_upload_refused(
+        self,
+        db: AsyncSession,
+        item: PrintQueueItem,
+        printer: Printer,
+        error_msg: str,
+        toast_uid: int | None,
+    ) -> None:
+        """Put an item back in the queue after its file never reached the printer (#3210).
+
+        The item keeps its printer. Its AMS mapping was computed against that
+        printer's trays, and nothing on the row says whether a mapping was
+        computed or set by the user, so moving it to a sibling could print from
+        the wrong slots. The printer goes into `_upload_backoff` instead, which
+        keeps every other item away from it; this one waits there and is the
+        only thing that knocks again, once per backoff window. The window
+        grows with each refusal in a row; see ``_upload_backoff_seconds``.
+
+        `dispatch_attempts` is not charged: that budget bounds a printer that
+        takes the file and then never starts, which this is not.
+        """
+        refusals = self._upload_refusals.get(printer.id, 0) + 1
+        self._upload_refusals[printer.id] = refusals
+        backoff = _upload_backoff_seconds(refusals)
+        self._upload_backoff[printer.id] = time.monotonic() + backoff
+        # The row is still `pending` -- it only moves to `printing` after a
+        # successful upload -- so there is no status to write back. Writing one
+        # anyway would undo a cancel that landed during the upload.
+        if item.error_message:
+            item.error_message = None
+            await db.commit()
+        logger.warning(
+            "Queue item %s: upload to printer %s (%s) never reached it — %s Kept in the queue; "
+            "refusal %d in a row, so the printer is out of dispatch for %ds.",
+            item.id,
+            printer.id,
+            printer.name,
+            error_msg,
+            refusals,
+            backoff,
+        )
+        try:
+            # Closes the dispatch toast for this attempt. Without it the toast
+            # keeps spinning on an upload that has ended.
+            await ws_manager.send_queue_item_failed(
+                user_id=toast_uid,
+                queue_item_id=item.id,
+                printer_id=item.printer_id,
+                reason="upload_failed",
+            )
+        except Exception:
+            pass  # toast is best-effort
 
     def _rollback_unconfirmed_expected_print(self, item_id: int) -> None:
         """Drop an expectation for a print command that was never sent.
@@ -4620,6 +4776,287 @@ class PrintScheduler:
                 )
             except Exception as e:
                 logger.warning("Low-filament notification failed for slot %s: %s", key, e)
+
+    async def _check_stock_forecast(self, db: AsyncSession) -> None:
+        """Alert when a filament SKU reaches its reorder point or is about to break (#2955).
+
+        ``on_stock_reorder_alert`` and ``on_stock_break_alert`` have had a column,
+        a schema field, a template and a UI toggle, and nothing that computes the
+        condition -- the Forecast panel does it in the browser, so with no page
+        open nothing could ever alert. This runs the same arithmetic
+        (``stock_forecast``) from the scheduler loop.
+
+        An alert is sent when a SKU *moves into* a condition, once, and again
+        after the condition has cleared. A SKU that worsens from reorder to break
+        alerts again as a break, because the panel treats the two as exclusive; one
+        that eases from break back to reorder does not alert again.
+        A SKU with alerts snoozed is treated as not alerting, so un-snoozing it
+        while it is still low tells you.
+
+        Time-gated to hourly for the reasons ``_check_filament_low`` is gated: the
+        loop runs every 3 s while an upload is in flight, and the whole spool
+        collection is read over HTTP in Spoolman mode. Both events default to off
+        on every provider, so nothing is read unless a provider wants one.
+        """
+        now = time.monotonic()
+        if now < self._stock_forecast_next_check:
+            return
+        self._stock_forecast_next_check = now + _STOCK_FORECAST_MIN_INTERVAL
+
+        try:
+            if self._stock_alerts_persisted is None:
+                await self._load_stock_alerts(db)
+            wanted = {
+                "reorder": bool(await notification_service._get_providers_for_event(db, "on_stock_reorder_alert")),
+                "break": bool(await notification_service._get_providers_for_event(db, "on_stock_break_alert")),
+            }
+            if not any(wanted.values()):
+                # Nobody wants either event. Forget what was sent, so whoever
+                # switches one on is told about the SKUs that are low now.
+                self._notified_stock_alerts.clear()
+                await self._save_stock_alerts(db)
+                return
+
+            forecasts = await self._stock_forecasts(db)
+            if forecasts is None:
+                # Spoolman unreachable. Deliberately not clearing the notified
+                # set: a brief outage would otherwise re-alert every SKU when it
+                # came back.
+                return
+
+            await self._emit_stock_alerts(db, forecasts, wanted)
+            await self._save_stock_alerts(db)
+        except Exception as e:
+            logger.warning("Stock forecast check failed: %s", e, exc_info=True)
+
+    def _serialize_stock_alerts(self) -> str:
+        """The notified set as JSON, in a fixed order so an unchanged set compares equal."""
+        rows = sorted([list(key), kind, sorted(events)] for key, (kind, events) in self._notified_stock_alerts.items())
+        return json.dumps(rows)
+
+    async def _load_stock_alerts(self, db: AsyncSession) -> None:
+        """Read the notified set saved by the last run, once per process.
+
+        A missing or unreadable row is an empty set: the worst that does is one
+        repeat of what a restart used to cause every time.
+        """
+        raw = (await db.execute(select(Settings).where(Settings.key == _STOCK_ALERTS_SETTING_KEY))).scalar_one_or_none()
+        loaded: dict[stock_forecast.SkuKey, tuple[str, frozenset[str]]] = {}
+        if raw and raw.value:
+            try:
+                for key, kind, events in json.loads(raw.value):
+                    if len(key) == 4 and kind in ("reorder", "break"):
+                        loaded[tuple(str(part) for part in key)] = (kind, frozenset(str(e) for e in events))
+            except (ValueError, TypeError):
+                logger.warning("Ignoring unreadable %s setting", _STOCK_ALERTS_SETTING_KEY)
+                loaded = {}
+        self._notified_stock_alerts = loaded
+        self._stock_alerts_persisted = self._serialize_stock_alerts()
+
+    async def _save_stock_alerts(self, db: AsyncSession) -> None:
+        """Write the notified set to its settings row if it changed since it was last read or written."""
+        serialized = self._serialize_stock_alerts()
+        if serialized == self._stock_alerts_persisted:
+            return
+        from backend.app.core.db_dialect import upsert_setting
+
+        await upsert_setting(db, Settings, _STOCK_ALERTS_SETTING_KEY, serialized)
+        await db.commit()
+        self._stock_alerts_persisted = serialized
+
+    async def _stock_forecasts(self, db: AsyncSession) -> stock_forecast.ForecastMap | None:
+        """Forecast every active SKU in whichever inventory mode is on. None if it cannot be read."""
+        from backend.app.models.filament_sku_settings import FilamentSkuSettings
+
+        global_lead_time = max(0, await self._get_int_setting(db, "forecast_global_lead_time_days", default=0))
+        sku_rows = (await db.execute(select(FilamentSkuSettings))).scalars().all()
+        sku_settings = {
+            stock_forecast.sku_key(row.material, row.subtype, row.brand, row.color_name): stock_forecast.SkuSettings(
+                lead_time_days=row.lead_time_days,
+                safety_margin_value=row.safety_margin_value,
+                safety_margin_unit=row.safety_margin_unit,
+                alerts_snoozed=bool(row.alerts_snoozed),
+            )
+            for row in sku_rows
+        }
+
+        if await self._get_bool_setting(db, "spoolman_enabled"):
+            spools = await self._stock_spools_spoolman()
+            if spools is None:
+                return None
+            # Spoolman owns the usage in this mode and Fenrir's own history
+            # table holds nothing for those spools, so the rate is always the
+            # delta rate. Fenrir's table is deliberately not consulted: its ids
+            # are local spool ids, and a Spoolman id that happens to match one
+            # (left over from before Spoolman was switched on) would borrow an
+            # unrelated spool's history.
+            history: dict[int, list[stock_forecast.UsageRecord]] = {}
+        else:
+            spools = await self._stock_spools_internal(db)
+            history = await self._stock_usage_history(db)
+
+        return stock_forecast.forecast_all(spools, history, sku_settings, global_lead_time, utcnow_naive())
+
+    async def _stock_spools_internal(self, db: AsyncSession) -> list[stock_forecast.StockSpool]:
+        from backend.app.models.spool import Spool
+
+        rows = (await db.execute(select(Spool).where(Spool.archived_at.is_(None)))).scalars().all()
+        return [
+            stock_forecast.StockSpool(
+                id=spool.id,
+                material=spool.material,
+                subtype=spool.subtype,
+                brand=spool.brand,
+                color_name=spool.color_name,
+                label_weight=float(spool.label_weight or 0),
+                weight_used=float(spool.weight_used or 0),
+                weight_used_baseline=float(spool.weight_used_baseline or 0),
+                created_at=spool.created_at,
+            )
+            for spool in rows
+        ]
+
+    async def _stock_usage_history(self, db: AsyncSession) -> dict[int, list[stock_forecast.UsageRecord]]:
+        from backend.app.models.spool_usage_history import SpoolUsageHistory
+
+        rows = (
+            await db.execute(
+                select(SpoolUsageHistory.spool_id, SpoolUsageHistory.created_at, SpoolUsageHistory.weight_used)
+                .order_by(SpoolUsageHistory.created_at.desc())
+                .limit(_STOCK_FORECAST_HISTORY_LIMIT)
+            )
+        ).all()
+        history: dict[int, list[stock_forecast.UsageRecord]] = {}
+        for spool_id, created_at, weight_used in rows:
+            if created_at is None:
+                continue
+            history.setdefault(spool_id, []).append(stock_forecast.UsageRecord(created_at, float(weight_used or 0)))
+        return history
+
+    async def _stock_spools_spoolman(self) -> list[stock_forecast.StockSpool] | None:
+        """Spoolman's spools in the forecast's shape, or None when Spoolman cannot be reached.
+
+        ``get_all_spools`` leaves archived spools out unless asked, which is the
+        exclusion the internal query applies explicitly. ``_map_spoolman_spool``
+        is the same mapping the Inventory page (and so the panel) reads.
+        """
+        from backend.app.api.routes._spoolman_helpers import _map_spoolman_spool
+        from backend.app.services.spoolman import SpoolmanUnavailableError, get_spoolman_client
+
+        client = await get_spoolman_client()
+        if client is None:
+            logger.debug("Stock forecast skipped, no Spoolman client (spoolman_enabled without a URL?)")
+            return None
+        try:
+            raw_spools = await client.get_all_spools()
+        except SpoolmanUnavailableError as e:
+            logger.debug("Stock forecast skipped, Spoolman unreachable: %s", e)
+            return None
+
+        spools: list[stock_forecast.StockSpool] = []
+        for raw in raw_spools:
+            try:
+                mapped = _map_spoolman_spool(raw)
+            except ValueError:
+                continue
+            created_at = None
+            if mapped.get("created_at"):
+                try:
+                    created_at = datetime.fromisoformat(str(mapped["created_at"]).replace("Z", "+00:00"))
+                except ValueError:
+                    created_at = None
+            spools.append(
+                stock_forecast.StockSpool(
+                    id=mapped["id"],
+                    material=mapped["material"],
+                    subtype=mapped.get("subtype"),
+                    brand=mapped.get("brand"),
+                    color_name=mapped.get("color_name"),
+                    label_weight=float(mapped.get("label_weight") or 0),
+                    weight_used=float(mapped.get("weight_used") or 0),
+                    weight_used_baseline=float(mapped.get("weight_used_baseline") or 0),
+                    created_at=created_at,
+                    color_name_is_synthesized=bool(mapped.get("color_name_is_synthesized")),
+                )
+            )
+        return spools
+
+    async def _emit_stock_alerts(
+        self,
+        db: AsyncSession,
+        forecasts: stock_forecast.ForecastMap,
+        wanted: dict[str, bool],
+    ) -> None:
+        """Send the notifications for each SKU that has moved into a stock alert condition.
+
+        A SKU in break has also reached its reorder point, so both events apply to
+        it: the break event goes to providers that have it on, and the reorder event
+        to the providers that have only that one on. A provider with both on gets the
+        break and no second message.
+
+        What is remembered per SKU is the condition and which events had a
+        subscriber when it was sent. An event with no subscriber is forgotten, so
+        switching it on later reports the SKUs already in that condition.
+        """
+        active_events = {event for event, on in wanted.items() if on}
+        for key, (forecast, spool) in forecasts.items():
+            kind: str | None = None
+            if not forecast.snoozed:
+                if forecast.stock_break_alert:
+                    kind = "break"
+                elif forecast.reorder_alert:
+                    kind = "reorder"
+            applicable = {"break": {"break", "reorder"}, "reorder": {"reorder"}}.get(kind or "", set())
+            events = applicable & active_events
+            if not events:
+                self._notified_stock_alerts.pop(key, None)
+                continue
+
+            previous = self._notified_stock_alerts.get(key)
+            told = (previous[1] & active_events) if previous else frozenset()
+            # Trimmed to the events this condition can send. That is what makes easing from
+            # break back to reorder silent (the reorder event was told with the break) and
+            # worsening again news again (the break event is no longer remembered).
+            self._notified_stock_alerts[key] = (kind, frozenset((told | events) & applicable))
+            # Recorded before sending, for the reason _emit_filament_low gives: a
+            # provider that is down should lose this alert, not repeat it every hour.
+            to_send = events - told
+
+            # Both flags imply a positive rate and so a day count.
+            days_left = forecast.days_remaining if forecast.days_remaining is not None else 0
+            rate = forecast.daily_rate_g if forecast.daily_rate_g is not None else 0.0
+            color = None if spool.color_name_is_synthesized else spool.color_name
+            try:
+                if "break" in to_send:
+                    await notification_service.on_stock_break_alert(
+                        spool.material,
+                        spool.brand,
+                        forecast.remaining_g,
+                        rate,
+                        days_left,
+                        forecast.effective_lead_time_days,
+                        db,
+                        subtype=spool.subtype,
+                        color=color,
+                    )
+                if "reorder" in to_send:
+                    await notification_service.on_stock_reorder_alert(
+                        spool.material,
+                        spool.brand,
+                        forecast.remaining_g,
+                        rate,
+                        days_left,
+                        db,
+                        subtype=spool.subtype,
+                        color=color,
+                        skip_break_subscribers=kind == "break",
+                    )
+            except Exception as e:
+                logger.warning("Stock %s notification failed for %s: %s", kind, key, e)
+
+        # A SKU with no spools left is no longer alerting.
+        for key in [k for k in self._notified_stock_alerts if k not in forecasts]:
+            del self._notified_stock_alerts[key]
 
     async def _check_auto_drying(
         self,
@@ -7493,6 +7930,10 @@ class PrintScheduler:
             # way to say so here, so the card got named even for a TLS
             # handshake that never reached the printer's filesystem (#2899).
             error_msg = upload_error or describe_upload_failure(upload_failure.failure)
+            failure = upload_failure.failure
+            if upload_error is None and failure is not None and failure.kind in _UPLOAD_REQUEUE_KINDS:
+                await self._requeue_after_upload_refused(db, item, printer, error_msg, toast_uid)
+                return
             item.status = "failed"
             item.error_message = error_msg
             item.completed_at = datetime.now(timezone.utc)
@@ -7523,6 +7964,11 @@ class PrintScheduler:
                 pass
             await self._power_off_if_needed(db, item)
             return
+
+        # The printer took a file, so any run of refused uploads is over: the
+        # next refusal starts again at the shortest backoff, and notifies (#3210).
+        self._upload_refusals.pop(printer.id, None)
+        self._upload_refusal_notified.discard(printer.id)
 
         # Parse AMS mapping if stored
         ams_mapping = None

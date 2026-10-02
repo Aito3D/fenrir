@@ -5516,7 +5516,7 @@ function PrinterCard({
                                 // Only trusted while it still describes what the printer reports in the
                                 // slot: the row survives a spool swap, and the display chain below puts
                                 // it ahead of the live filament id (see slotPresetDescribesTray).
-                                const slotPresetName = slotPresetDescribesTray(slotPreset?.preset_id, tray?.tray_info_idx)
+                                const slotPresetName = slotPresetDescribesTray(slotPreset?.preset_id, tray?.tray_info_idx, slotPreset?.tray_info_idx)
                                   ? slotPreset?.preset_name
                                   : undefined;
 
@@ -5766,7 +5766,7 @@ function PrinterCard({
                                             trayInfoIdx: tray?.tray_info_idx || undefined,
                                             extruderId: resolveSlotExtruder(ams.id, tray?.id ?? 0, amsExtruderMap, amsSwitchInlet),
                                             caliIdx: tray?.cali_idx,
-                                            savedPresetId: slotPreset?.preset_id,
+                                            savedPresetId: slotPresetDescribesTray(slotPreset?.preset_id, tray?.tray_info_idx, slotPreset?.tray_info_idx) ? slotPreset?.preset_id : undefined,
                                           }),
                                         }}
                                       >
@@ -5833,7 +5833,7 @@ function PrinterCard({
                       // Only trusted while it still describes what the printer reports in the
                       // slot: the row survives a spool swap, and the display chain below puts
                       // it ahead of the live filament id (see slotPresetDescribesTray).
-                      const slotPresetName = slotPresetDescribesTray(slotPreset?.preset_id, tray?.tray_info_idx)
+                      const slotPresetName = slotPresetDescribesTray(slotPreset?.preset_id, tray?.tray_info_idx, slotPreset?.tray_info_idx)
                         ? slotPreset?.preset_name
                         : undefined;
                       const htSlotId = tray?.id ?? 0;
@@ -6182,7 +6182,7 @@ function PrinterCard({
                                         trayInfoIdx: tray?.tray_info_idx || undefined,
                                         extruderId: resolveSlotExtruder(ams.id, tray?.id ?? 0, amsExtruderMap, amsSwitchInlet),
                                         caliIdx: tray?.cali_idx,
-                                        savedPresetId: slotPreset?.preset_id,
+                                        savedPresetId: slotPresetDescribesTray(slotPreset?.preset_id, tray?.tray_info_idx, slotPreset?.tray_info_idx) ? slotPreset?.preset_id : undefined,
                                       }),
                                     }}
                                   >
@@ -6283,7 +6283,7 @@ function PrinterCard({
                               // Only trusted while it still describes what the printer reports in the
                               // slot: the row survives a spool swap, and the display chain below puts
                               // it ahead of the live filament id (see slotPresetDescribesTray).
-                              const extSlotPresetName = slotPresetDescribesTray(extSlotPreset?.preset_id, extTray.tray_info_idx)
+                              const extSlotPresetName = slotPresetDescribesTray(extSlotPreset?.preset_id, extTray.tray_info_idx, extSlotPreset?.tray_info_idx)
                                 ? extSlotPreset?.preset_name
                                 : undefined;
 
@@ -6474,7 +6474,7 @@ function PrinterCard({
                                           trayInfoIdx: extTray.tray_info_idx || undefined,
                                           extruderId: isDualNozzle ? (extTrayId === 254 ? 1 : 0) : undefined,
                                           caliIdx: extTray.cali_idx,
-                                          savedPresetId: extSlotPreset?.preset_id,
+                                          savedPresetId: slotPresetDescribesTray(extSlotPreset?.preset_id, extTray.tray_info_idx, extSlotPreset?.tray_info_idx) ? extSlotPreset?.preset_id : undefined,
                                         }),
                                       }}
                                     >
@@ -9008,6 +9008,9 @@ export function PrintersPage() {
     queryKey: ['ui-preferences'],
     queryFn: api.getUiPreferences,
   });
+  // Only once the preferences are in: deciding on `undefined` meant a check
+  // switched off still went out once per printer on every page load.
+  const firmwareChecksOn = settings !== undefined && settings.check_printer_firmware !== false;
 
   // Parse user-configured temperature/fan presets once, with defensive fallback
   // to built-in defaults on parse failure (validators on the backend already
@@ -10176,7 +10179,7 @@ export function PrintersPage() {
                   timeFormat={settings?.time_format || 'system'}
                   cameraViewMode={settings?.camera_view_mode || 'window'}
                   onOpenEmbeddedCamera={(id, name) => setEmbeddedCameraPrinters(prev => new Map(prev).set(id, { id, name }))}
-                  checkPrinterFirmware={settings?.check_printer_firmware !== false}
+                  checkPrinterFirmware={firmwareChecksOn}
                   dryingPresets={effectiveDryingPresets}
                   nozzleTempPresets={effectiveNozzleTempPresets}
                   bedTempPresets={effectiveBedTempPresets}

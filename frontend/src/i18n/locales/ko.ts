@@ -1026,6 +1026,22 @@ export default {
     installApp: '앱 설치',
     installAppSuccess: 'Fenrir가 설치되었습니다'
   },
+  announcements: {
+    title: '공지사항',
+    unread: '읽지 않은 공지사항: {{count}}',
+    empty: '현재 공지사항이 없습니다.',
+    earlier: '이전 공지 ({{count}})',
+    new: '새 소식',
+    readMore: '자세히 보기',
+    readMoreCount: '자세히 보기 (+{{count}})',
+    gotIt: '확인',
+    source: 'Fenrir 개발자의 공지로, GitHub에서 가져옵니다. 설정에서 끌 수 있습니다.',
+    level: {
+      info: '정보',
+      important: '중요',
+      critical: '긴급',
+    },
+  },
   common: {
     plusNMore: '외 {{count}}개',
     save: '저장',
@@ -3173,6 +3189,11 @@ export default {
     checkPrinterFirmware: '프린터 펌웨어 확인',
     includeBetaUpdates: '베타 버전 포함',
     includeBetaUpdatesDesc: '업데이트 확인 시 베타 및 사전 릴리스 버전에 대해 알림',
+    announcementsEnabled: '공지사항 받기',
+    announcementsEnabledDesc: '보안 수정이나 호환되지 않는 변경 사항 등 Bambuddy 개발자의 메시지입니다. Bambuddy는 몇 시간마다 GitHub에서 서명된 파일을 가져오며, 이 설치에 관한 정보는 전송하지 않습니다.',
+    announcementsLearnMore: '자세히 알아보기',
+    announcementsAllUsers: '모든 사용자에게 표시',
+    announcementsAllUsersDesc: '꺼짐: 관리자만 볼 수 있습니다. 인증이 꺼져 있는 동안에는 효과가 없습니다.',
     localLogin: {
       disable: '로컬 사용자명/비밀번호 로그인 비활성화',
       disableHint: '활성화하면 SSO 공급자로만 로그인할 수 있습니다. LDAP는 영향을 받지 않습니다. 서버에서 FENRIR_LOCAL_LOGIN=true 를 설정하면 복구 경로가 유지됩니다.'
@@ -5034,6 +5055,22 @@ export default {
     bundleStepBuild: '지원 번들 ZIP 빌드 중'
   },
   fileManager: {
+    combine: {
+      action: '3MF로 결합',
+      tooltip: '선택한 STL을 하나의 3MF로 결합해 한 플레이트에서 슬라이스합니다',
+      title: '3MF로 결합',
+      description: '아래 모든 모델을 담은 3MF 하나를 만들어 한 플레이트에서 슬라이스할 수 있게 합니다. 슬라이스할 때 자동 배치를 켜면 베드 위에 배치됩니다.',
+      nameLabel: '파일 이름',
+      defaultName: '{{name}} 외 {{count}}개',
+      model: '모델',
+      copies: '개수',
+      copiesFor: '{{filename}} 개수',
+      total: '플레이트의 객체: {{count}}',
+      tooMany: '플레이트당 최대 {{max}}개 객체',
+      sliceNext: '완료 후 슬라이서 열기',
+      submit: '결합',
+      done: '{{filename}} 생성됨 (객체 {{count}}개)',
+    },
     variants: {
       badge: '버전 {{count}}개',
       groupAction: '버전으로 그룹화',
@@ -7491,6 +7528,7 @@ export default {
     firstLayer: '첫 번째 레이어',
     quiet: '방해 금지',
     digest: '요약 {{time}}',
+    noPhoto: '사진 없음',
     printStarted: '인쇄 시작됨',
     plateNotEmpty: '플레이트 비어 있지 않음',
     plateNotEmptyDescription: '인쇄 전 개체 감지됨',
@@ -7574,6 +7612,8 @@ export default {
     testConfiguration: '구성 테스트',
     printerFilter: '프린터 필터',
     onlyFromPrinter: '이 프린터의 이벤트에 대한 알림만 전송',
+    attachPhotoLabel: '사진 첨부',
+    attachPhotoDescription: '이벤트에 대해 카메라 스냅샷이 촬영된 경우 알림에 포함합니다',
     quietHoursDnd: '방해 금지 시간',
     quietStart: '시작',
     quietEnd: '종료',
@@ -7602,6 +7642,7 @@ export default {
     nameRequired: '이름이 필요합니다',
     fieldRequired: '{{field}}이(가) 필요합니다',
     haDataInvalid: 'Data 필드는 유효한 JSON 객체여야 합니다(예: {"priority": "high", "ttl": 0})',
+    haServiceHelp: '선택 사항 — 기본값은 Home Assistant UI의 지속 알림입니다. notify 서비스(예: notify.mobile_app_myphone)를 지정하면 휴대폰으로 푸시 알림을 받으며, 스냅샷이 있고 설정 → 네트워크에 외부 URL이 설정되어 있으면 카메라 스냅샷도 자동으로 첨부됩니다.',
     phoneNumber: '전화번호',
     apiKey: 'API 키',
     serverUrl: '서버 URL',
@@ -7651,6 +7692,10 @@ export default {
     enterTemplateContent: '미리보기를 보려면 템플릿 내용을 입력하세요',
     titlePreview: '제목:',
     bodyPreview: '본문:',
+    photoPreview: '사진:',
+    photoPreviewNote: '예시일 뿐입니다 — 첨부를 지원하는 제공자(ntfy, Pushover, Telegram, Discord, Home Assistant, Bark, Slack webhook)는 스냅샷이 촬영되면 위 본문 내용과 관계없이 카메라 스냅샷을 자동으로 포함합니다.',
+    photoPreviewNoteWithEmail: '예시일 뿐입니다 — 스냅샷이 촬영되면 지원되는 제공자(ntfy, Pushover, Telegram, Discord, Home Assistant, Bark, Slack webhook)에 자동으로 첨부됩니다. 이메일에서 인라인으로 포함하려면 위 본문에 {finish_photo_url}을(를) 추가하세요.',
+    photoPreviewNoteEmailOnly: '예시일 뿐입니다 — 이 알림은 항상 이메일입니다. 사진을 인라인으로 포함하려면 위 본문에 {finish_photo_url}을(를) 추가하세요. 없으면 텍스트만 전송됩니다.',
     resetToDefault: '기본값으로 초기화',
     titleRequired: '제목이 필요합니다',
     bodyRequired: '본문이 필요합니다',
@@ -7910,7 +7955,13 @@ export default {
     resetSlot: '슬롯 초기화',
     cancel: '취소',
     configuring: '구성 중...',
-    configureSlot: '슬롯 구성'
+    configureSlot: '슬롯 구성',
+    // Why an Orca profile went into the slot as the generic for its material (#3216)
+    orcaFallback: {
+      no_filament_id: '이 Orca 프로필에는 자체 필라멘트 ID가 없어 OrcaSlicer에서 이 슬롯이 Generic {{material}}(으)로 표시됩니다.',
+      lookup_failed: 'Orca Cloud에서 이 프로필의 필라멘트 ID를 읽지 못해 OrcaSlicer에서 이 슬롯이 Generic {{material}}(으)로 표시됩니다. 잠시 후 다시 시도하세요.',
+      no_permission: 'Orca Cloud 접근 권한이 없어 이 프로필의 필라멘트 ID를 읽을 수 없었습니다. OrcaSlicer에서 이 슬롯이 Generic {{material}}(으)로 표시됩니다.',
+    },
   },
   githubBackup: {
     title: 'Git 백업',

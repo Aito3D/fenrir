@@ -50,7 +50,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // doesn't linger in the address bar/history.
       const urlParams = new URLSearchParams(window.location.search);
       const hadStoredToken = !!getAuthToken();
-      const urlToken = urlParams.get('token');
+      // Streaming pages own their scoped URL tokens. Consuming one as a login
+      // token removes authentication on reload and can overwrite a user session.
+      const isStreamingPage = /^\/(?:overlay\/[^/]+|camwall)\/?$/i.test(window.location.pathname);
+      const urlToken = isStreamingPage ? null : urlParams.get('token');
       if (urlToken) {
         if (!hadStoredToken) {
           setAuthToken(urlToken, 'session'); // session-only until server confirms it's valid

@@ -35,6 +35,22 @@ export default {
   },
 
   // Common
+  announcements: {
+    title: 'Meddelanden',
+    unread: 'Olästa meddelanden: {{count}}',
+    empty: 'Inga meddelanden just nu.',
+    earlier: 'Tidigare ({{count}})',
+    new: 'Ny',
+    readMore: 'Läs mer',
+    readMoreCount: 'Läs mer (+{{count}})',
+    gotIt: 'Uppfattat',
+    source: 'Från Fenrirs utvecklare, hämtade från GitHub. Du kan stänga av dem i inställningarna.',
+    level: {
+      info: 'Information',
+      important: 'Viktigt',
+      critical: 'Kritiskt',
+    },
+  },
   common: {
     plusNMore: '+{{count}} till',
     save: 'Spara',
@@ -2301,6 +2317,11 @@ export default {
     checkPrinterFirmware: 'Kontrollera skrivarens firmware',
     includeBetaUpdates: 'Inkludera betaversioner',
     includeBetaUpdatesDesc: 'Notis om betaversioner och förhandsversioner vid sökning av uppdateringar',
+    announcementsEnabled: 'Ta emot meddelanden',
+    announcementsEnabledDesc: 'Meddelanden från Bambuddys utvecklare, till exempel säkerhetsrättningar och inkompatibla ändringar. Bambuddy hämtar en signerad fil från GitHub med några timmars mellanrum; ingenting om den här installationen skickas.',
+    announcementsLearnMore: 'Läs mer',
+    announcementsAllUsers: 'Visa för alla användare',
+    announcementsAllUsersDesc: 'Av: endast administratörer ser dem. Ingen effekt så länge autentisering är avstängd.',
     localLogin: {
       disable: 'Inaktivera lokal användarnamn/lösenordsinloggning',
       disableHint: 'När aktiverat kan endast SSO-leverantörer logga in. LDAP påverkas inte. Sätt BAMBUDDY_LOCAL_LOGIN=true på servern för att behålla en återställningsväg.',
@@ -4059,6 +4080,22 @@ errors: {
 
   // File manager
   fileManager: {
+    combine: {
+      action: 'Kombinera till 3MF',
+      tooltip: 'Kombinera de valda STL-filerna till en 3MF så att de kan slicas på en platta',
+      title: 'Kombinera till 3MF',
+      description: 'Skapar en 3MF med alla modeller nedan, redo att slicas på en platta. Slå på automatisk placering vid slicing för att fördela dem på bädden.',
+      nameLabel: 'Filnamn',
+      defaultName: '{{name}} + {{count}} till',
+      model: 'Modell',
+      copies: 'Kopior',
+      copiesFor: 'Kopior av {{filename}}',
+      total: 'Objekt på plattan: {{count}}',
+      tooMany: 'Högst {{max}} objekt per platta',
+      sliceNext: 'Öppna slicern när det är klart',
+      submit: 'Kombinera',
+      done: 'Skapade {{filename}} med {{count}} objekt',
+    },
     variants: {
       badge: '{{count}} versioner',
       groupAction: 'Gruppera som versioner',
@@ -6582,6 +6619,7 @@ errors: {
     firstLayer: 'Första skikt',
     quiet: 'Tyst',
     digest: 'Sammanfattning {{time}}',
+    noPhoto: 'Inget foto',
     // Event labels (expanded settings)
     printStarted: 'Utskrift startad',
     plateNotEmpty: 'Platta inte tom',
@@ -6670,6 +6708,8 @@ errors: {
     testConfiguration: 'Testa konfiguration',
     printerFilter: 'Skrivarfilter',
     onlyFromPrinter: 'Skicka notiser endast för händelser från denna skrivare',
+    attachPhotoLabel: 'Bifoga foto',
+    attachPhotoDescription: 'Skicka med en kamerabild i notiser när en har tagits för händelsen',
     quietHoursDnd: 'Tysta timmar (Stör ej)',
     quietStart: 'Start',
     quietEnd: 'Slut',
@@ -6699,6 +6739,7 @@ errors: {
     nameRequired: 'Namn krävs',
     fieldRequired: '{{field}} krävs',
     haDataInvalid: 'Data-fältet måste vara ett giltigt JSON-objekt, t.ex. {"priority": "high", "ttl": 0}',
+    haServiceHelp: 'Valfritt — som standard en beständig notis i Home Assistants gränssnitt. Ange en notify-tjänst (t.ex. notify.mobile_app_myphone) för att få push-notiser i telefonen; då bifogas också automatiskt en kamerabild när en finns och Extern URL är inställd under Inställningar → Nätverk.',
     // Config field labels
     phoneNumber: 'Telefonnummer',
     apiKey: 'API-nyckel',
@@ -6750,6 +6791,10 @@ errors: {
     enterTemplateContent: 'Ange mallinnehåll för att se förhandsvisning',
     titlePreview: 'Titel:',
     bodyPreview: 'Brödtext:',
+    photoPreview: 'Foto:',
+    photoPreviewNote: 'Endast ett exempel — tjänster som stöder bilagor (ntfy, Pushover, Telegram, Discord, Home Assistant, Bark, Slack webhook) bifogar automatiskt en kamerabild när en har tagits, oavsett vad texten ovan säger.',
+    photoPreviewNoteWithEmail: 'Endast ett exempel — bifogas automatiskt för tjänster som stöds (ntfy, Pushover, Telegram, Discord, Home Assistant, Bark, Slack webhook) när en bild har tagits. För e-post, lägg till {finish_photo_url} i texten ovan för att bädda in den.',
+    photoPreviewNoteEmailOnly: 'Endast ett exempel — detta är alltid ett e-postmeddelande. Lägg till {finish_photo_url} i texten ovan för att bädda in fotot; utan den skickas bara texten.',
     resetToDefault: 'Återställ till standard',
     titleRequired: 'Titel krävs',
     bodyRequired: 'Brödtext krävs',
@@ -7033,6 +7078,12 @@ errors: {
     cancel: 'Avbryt',
     configuring: 'Konfigurerar...',
     configureSlot: 'Konfigurera fack',
+    // Why an Orca profile went into the slot as the generic for its material (#3216)
+    orcaFallback: {
+      no_filament_id: 'Den här Orca-profilen har inget eget filament-ID, så OrcaSlicer kommer att se den här platsen som Generic {{material}}.',
+      lookup_failed: 'Det gick inte att läsa profilens filament-ID från Orca Cloud, så OrcaSlicer kommer att se den här platsen som Generic {{material}}. Försök igen om en stund.',
+      no_permission: 'Du har inte åtkomst till Orca Cloud, så profilens filament-ID kunde inte läsas. OrcaSlicer kommer att se den här platsen som Generic {{material}}.',
+    },
   },
 
   // Git Backup Settings

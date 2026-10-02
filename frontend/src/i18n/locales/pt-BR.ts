@@ -1029,6 +1029,22 @@ export default {
   },
 
   // Common
+  announcements: {
+    title: 'Anúncios',
+    unread: 'Anúncios não lidos: {{count}}',
+    empty: 'Nenhum anúncio no momento.',
+    earlier: 'Anteriores ({{count}})',
+    new: 'Novo',
+    readMore: 'Saiba mais',
+    readMoreCount: 'Saiba mais (+{{count}})',
+    gotIt: 'Entendi',
+    source: 'Dos desenvolvedores do Fenrir, obtidos do GitHub. Você pode desativá-los nas configurações.',
+    level: {
+      info: 'Aviso',
+      important: 'Importante',
+      critical: 'Crítico',
+    },
+  },
   common: {
     plusNMore: '+{{count}} outros',
     save: 'Salvar',
@@ -3231,6 +3247,11 @@ export default {
     checkPrinterFirmware: 'Verificar firmware da impressora',
     includeBetaUpdates: 'Incluir versões beta',
     includeBetaUpdatesDesc: 'Notificar sobre versões beta e pré-lançamento ao verificar atualizações',
+    announcementsEnabled: 'Receber anúncios',
+    announcementsEnabledDesc: 'Mensagens dos desenvolvedores do Bambuddy, como correções de segurança e mudanças incompatíveis. O Bambuddy baixa um arquivo assinado do GitHub a cada poucas horas; nada sobre esta instalação é enviado.',
+    announcementsLearnMore: 'Saiba mais',
+    announcementsAllUsers: 'Mostrar para todos os usuários',
+    announcementsAllUsersDesc: 'Desativado: apenas administradores os veem. Sem efeito enquanto a autenticação estiver desativada.',
     localLogin: {
       disable: 'Desativar login local com usuário/senha',
       disableHint: 'Quando ativado, somente provedores SSO podem fazer login. O LDAP não é afetado. Defina FENRIR_LOCAL_LOGIN=true no servidor para manter um caminho de recuperação.',
@@ -5212,6 +5233,22 @@ export default {
 
   // File manager
   fileManager: {
+    combine: {
+      action: 'Combinar em 3MF',
+      tooltip: 'Combina os STLs selecionados em um 3MF para fatiá-los em uma única placa',
+      title: 'Combinar em 3MF',
+      description: 'Cria um 3MF com todos os modelos abaixo, pronto para fatiar em uma única placa. Ative o arranjo automático ao fatiar para distribuí-los na mesa.',
+      nameLabel: 'Nome do arquivo',
+      defaultName: '{{name}} + {{count}} outros',
+      model: 'Modelo',
+      copies: 'Cópias',
+      copiesFor: 'Cópias de {{filename}}',
+      total: 'Objetos na placa: {{count}}',
+      tooMany: 'No máximo {{max}} objetos por placa',
+      sliceNext: 'Abrir o fatiador ao concluir',
+      submit: 'Combinar',
+      done: '{{filename}} criado com {{count}} objetos',
+    },
     variants: {
       badge: '{{count}} versões',
       groupAction: 'Agrupar como versões',
@@ -7763,6 +7800,7 @@ export default {
     firstLayer: 'Primeira camada',
     quiet: 'Silencioso',
     digest: 'Resumo {{time}}',
+    noPhoto: 'Sem foto',
     // Event labels (expanded settings)
     printStarted: 'Impressão Iniciada',
     plateNotEmpty: 'Mesa Não Vazia',
@@ -7853,6 +7891,8 @@ export default {
     testConfiguration: 'Testar Configuração',
     printerFilter: 'Filtro de Impressora',
     onlyFromPrinter: 'Enviar notificações apenas para eventos desta impressora',
+    attachPhotoLabel: 'Anexar foto',
+    attachPhotoDescription: 'Incluir uma captura da câmera nas notificações, quando uma tiver sido feita para o evento',
     quietHoursDnd: 'Horário de Silêncio (Não Perturbe)',
     quietStart: 'Início',
     quietEnd: 'Fim',
@@ -7882,6 +7922,7 @@ export default {
     nameRequired: 'Nome é obrigatório',
     fieldRequired: '{{field}} é obrigatório',
     haDataInvalid: 'O campo Data deve ser um objeto JSON válido, por ex. {"priority": "high", "ttl": 0}',
+    haServiceHelp: 'Opcional — por padrão, uma notificação persistente na interface do Home Assistant. Defina um serviço notify (ex.: notify.mobile_app_myphone) para receber notificações push no celular, que também anexam automaticamente uma captura da câmera quando houver uma e a URL externa estiver definida em Configurações → Rede.',
     // Config field labels
     phoneNumber: 'Número de Telefone',
     apiKey: 'Chave da API',
@@ -7933,6 +7974,10 @@ export default {
     enterTemplateContent: 'Insira o conteúdo do modelo para ver a pré-visualização',
     titlePreview: 'Título:',
     bodyPreview: 'Corpo:',
+    photoPreview: 'Foto:',
+    photoPreviewNote: 'Apenas um exemplo — provedores que aceitam anexos (ntfy, Pushover, Telegram, Discord, Home Assistant, Bark, Slack webhook) incluem automaticamente uma captura da câmera quando uma foi feita, independentemente do que diz o corpo acima.',
+    photoPreviewNoteWithEmail: 'Apenas um exemplo — anexada automaticamente nos provedores compatíveis (ntfy, Pushover, Telegram, Discord, Home Assistant, Bark, Slack webhook) quando uma captura foi feita. Para e-mail, adicione {finish_photo_url} ao corpo acima para incluí-la no corpo da mensagem.',
+    photoPreviewNoteEmailOnly: 'Apenas um exemplo — isto é sempre um e-mail. Adicione {finish_photo_url} ao corpo acima para incluir a foto na mensagem; sem isso, apenas o texto é enviado.',
     resetToDefault: 'Restaurar Padrão',
     titleRequired: 'Título é obrigatório',
     bodyRequired: 'Corpo é obrigatório',
@@ -8214,6 +8259,12 @@ export default {
     cancel: 'Cancelar',
     configuring: 'Configurando...',
     configureSlot: 'Configurar Slot',
+    // Why an Orca profile went into the slot as the generic for its material (#3216)
+    orcaFallback: {
+      no_filament_id: 'Este perfil do Orca não tem um ID de filamento próprio, então o OrcaSlicer verá este slot como Generic {{material}}.',
+      lookup_failed: 'Não foi possível ler o ID de filamento deste perfil no Orca Cloud, então o OrcaSlicer verá este slot como Generic {{material}}. Tente novamente em instantes.',
+      no_permission: 'Você não tem acesso ao Orca Cloud, então o ID de filamento deste perfil não pôde ser lido. O OrcaSlicer verá este slot como Generic {{material}}.',
+    },
   },
 
   // Git Backup Settings

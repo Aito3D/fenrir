@@ -1029,6 +1029,22 @@ export default {
   },
 
   // Common
+  announcements: {
+    title: 'Annonces',
+    unread: 'Annonces non lues : {{count}}',
+    empty: 'Aucune annonce pour le moment.',
+    earlier: 'Précédentes ({{count}})',
+    new: 'Nouveau',
+    readMore: 'En savoir plus',
+    readMoreCount: 'En savoir plus (+{{count}})',
+    gotIt: 'Compris',
+    source: 'Des développeurs de Fenrir, récupérées depuis GitHub. Vous pouvez les désactiver dans les paramètres.',
+    level: {
+      info: 'Information',
+      important: 'Importante',
+      critical: 'Critique',
+    },
+  },
   common: {
     plusNMore: '+{{count}} autres',
     save: 'Enregistrer',
@@ -3231,6 +3247,11 @@ export default {
     checkPrinterFirmware: 'Vérifier le firmware imprimante',
     includeBetaUpdates: 'Inclure les versions bêta',
     includeBetaUpdatesDesc: 'Notifier des versions bêta et préliminaires lors de la vérification des mises à jour',
+    announcementsEnabled: 'Recevoir les annonces',
+    announcementsEnabledDesc: "Messages des développeurs de Bambuddy, comme les correctifs de sécurité et les changements incompatibles. Bambuddy télécharge un fichier signé depuis GitHub toutes les quelques heures ; rien sur cette installation n'est envoyé.",
+    announcementsLearnMore: 'En savoir plus',
+    announcementsAllUsers: 'Afficher à tous les utilisateurs',
+    announcementsAllUsersDesc: "Désactivé : seuls les administrateurs les voient. Sans effet tant que l'authentification est désactivée.",
     localLogin: {
       disable: 'Désactiver la connexion locale par nom d\'utilisateur/mot de passe',
       disableHint: 'Quand activée, seuls les fournisseurs SSO peuvent se connecter. LDAP n\'est pas affecté. Définissez FENRIR_LOCAL_LOGIN=true sur le serveur pour conserver une voie de récupération.',
@@ -5213,6 +5234,22 @@ export default {
 
   // File manager
   fileManager: {
+    combine: {
+      action: 'Combiner en 3MF',
+      tooltip: 'Combiner les STL sélectionnés en un seul 3MF pour les trancher sur un seul plateau',
+      title: 'Combiner en 3MF',
+      description: 'Crée un 3MF contenant tous les modèles ci-dessous, prêt à être tranché sur un seul plateau. Activez l\'agencement automatique lors du tranchage pour les répartir sur le plateau.',
+      nameLabel: 'Nom du fichier',
+      defaultName: '{{name}} + {{count}} autres',
+      model: 'Modèle',
+      copies: 'Copies',
+      copiesFor: 'Copies de {{filename}}',
+      total: 'Objets sur le plateau : {{count}}',
+      tooMany: '{{max}} objets maximum par plateau',
+      sliceNext: 'Ouvrir le trancheur ensuite',
+      submit: 'Combiner',
+      done: '{{filename}} créé avec {{count}} objets',
+    },
     variants: {
       badge: 'Versions : {{count}}',
       groupAction: 'Grouper comme versions',
@@ -7764,6 +7801,7 @@ export default {
     firstLayer: 'Première couche',
     quiet: 'Silencieux',
     digest: 'Résumé {{time}}',
+    noPhoto: 'Pas de photo',
     // Event labels (expanded settings)
     printStarted: 'Impression démarrée',
     plateNotEmpty: 'Plateau non vide',
@@ -7854,6 +7892,8 @@ export default {
     testConfiguration: 'Tester la configuration',
     printerFilter: 'Filtre d\'imprimante',
     onlyFromPrinter: 'Envoyer uniquement les notifications pour les événements de cette imprimante',
+    attachPhotoLabel: 'Joindre une photo',
+    attachPhotoDescription: 'Inclure une capture de la caméra dans les notifications, lorsqu\'une capture a été prise pour l\'événement',
     quietHoursDnd: 'Heures silencieuses (Ne pas déranger)',
     quietStart: 'Début',
     quietEnd: 'Fin',
@@ -7883,6 +7923,7 @@ export default {
     nameRequired: 'Le nom est requis',
     fieldRequired: '{{field}} est requis',
     haDataInvalid: 'Le champ Data doit être un objet JSON valide, p. ex. {"priority": "high", "ttl": 0}',
+    haServiceHelp: 'Facultatif — par défaut, une notification persistante dans l\'interface de Home Assistant. Indiquez un service notify (p. ex. notify.mobile_app_myphone) pour recevoir des notifications push sur votre téléphone ; une capture de la caméra y est alors jointe automatiquement lorsqu\'elle est disponible et que l\'URL externe est définie dans Paramètres → Réseau.',
     // Config field labels
     phoneNumber: 'Numéro de téléphone',
     apiKey: 'Clé API',
@@ -7934,6 +7975,10 @@ export default {
     enterTemplateContent: 'Saisir le contenu du modèle pour voir l\'aperçu',
     titlePreview: 'Titre :',
     bodyPreview: 'Corps :',
+    photoPreview: 'Photo :',
+    photoPreviewNote: 'Exemple uniquement — les fournisseurs qui acceptent les pièces jointes (ntfy, Pushover, Telegram, Discord, Home Assistant, Bark, Slack webhook) incluent automatiquement une capture de la caméra lorsqu\'une capture a été prise, quel que soit le contenu du corps ci-dessus.',
+    photoPreviewNoteWithEmail: 'Exemple uniquement — jointe automatiquement pour les fournisseurs compatibles (ntfy, Pushover, Telegram, Discord, Home Assistant, Bark, Slack webhook) lorsqu\'une capture a été prise. Pour l\'e-mail, ajoutez {finish_photo_url} au corps ci-dessus pour l\'intégrer.',
+    photoPreviewNoteEmailOnly: 'Exemple uniquement — il s\'agit toujours d\'un e-mail. Ajoutez {finish_photo_url} au corps ci-dessus pour intégrer la photo ; sans cela, seul le texte est envoyé.',
     resetToDefault: 'Réinitialiser par défaut',
     titleRequired: 'Le titre est requis',
     bodyRequired: 'Le corps est requis',
@@ -8215,6 +8260,12 @@ export default {
     cancel: 'Annuler',
     configuring: 'Configuration...',
     configureSlot: 'Configurer le slot',
+    // Why an Orca profile went into the slot as the generic for its material (#3216)
+    orcaFallback: {
+      no_filament_id: 'Ce profil Orca n’a pas d’identifiant de filament propre : OrcaSlicer verra cet emplacement comme Generic {{material}}.',
+      lookup_failed: 'Impossible de lire l’identifiant de filament de ce profil depuis Orca Cloud : OrcaSlicer verra cet emplacement comme Generic {{material}}. Réessayez dans un instant.',
+      no_permission: 'Vous n’avez pas accès à Orca Cloud, l’identifiant de filament de ce profil n’a donc pas pu être lu. OrcaSlicer verra cet emplacement comme Generic {{material}}.',
+    },
   },
 
   // Git Backup Settings

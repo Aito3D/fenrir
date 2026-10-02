@@ -1029,6 +1029,22 @@ export default {
   },
 
   // Common
+  announcements: {
+    title: 'お知らせ',
+    unread: '未読のお知らせ: {{count}}',
+    empty: '現在お知らせはありません。',
+    earlier: '過去のお知らせ ({{count}})',
+    new: '新着',
+    readMore: '詳細を見る',
+    readMoreCount: '詳細を見る (+{{count}})',
+    gotIt: '了解',
+    source: 'Fenrir 開発者からのお知らせです（GitHub から取得）。設定でオフにできます。',
+    level: {
+      info: '情報',
+      important: '重要',
+      critical: '緊急',
+    },
+  },
   common: {
     plusNMore: '他{{count}}件',
     save: '保存',
@@ -3275,6 +3291,11 @@ export default {
     checkPrinterFirmware: 'プリンターファームウェアの確認',
     includeBetaUpdates: 'ベータ版を含める',
     includeBetaUpdatesDesc: 'アップデート確認時にベータ版およびプレリリース版を通知する',
+    announcementsEnabled: 'お知らせを受け取る',
+    announcementsEnabledDesc: 'セキュリティ修正や互換性のない変更など、Bambuddy 開発者からのメッセージです。Bambuddy は数時間ごとに GitHub から署名付きファイルを取得します。このインストールに関する情報は一切送信されません。',
+    announcementsLearnMore: '詳細',
+    announcementsAllUsers: 'すべてのユーザーに表示',
+    announcementsAllUsersDesc: 'オフ: 管理者のみに表示されます。認証がオフの間は効果がありません。',
     localLogin: {
       disable: 'ローカルのユーザー名／パスワードログインを無効化',
       disableHint: '有効にすると、SSOプロバイダーのみでサインインできます。LDAPには影響しません。復旧用のパスを残すには、サーバーで FENRIR_LOCAL_LOGIN=true を設定してください。',
@@ -5225,6 +5246,22 @@ export default {
 
   // File manager
   fileManager: {
+    combine: {
+      action: '3MFに結合',
+      tooltip: '選択したSTLを1つの3MFに結合し、1枚のプレートでスライスできるようにします',
+      title: '3MFに結合',
+      description: '下のすべてのモデルを含む3MFを1つ作成し、1枚のプレートでスライスできるようにします。スライス時に自動配置をオンにすると、ベッド上に並べられます。',
+      nameLabel: 'ファイル名',
+      defaultName: '{{name}} ほか{{count}}件',
+      model: 'モデル',
+      copies: '個数',
+      copiesFor: '{{filename}} の個数',
+      total: 'プレート上のオブジェクト: {{count}}',
+      tooMany: '1プレートあたり最大{{max}}オブジェクト',
+      sliceNext: '完了後にスライサーを開く',
+      submit: '結合',
+      done: '{{filename}} を作成しました（{{count}}オブジェクト）',
+    },
     variants: {
       badge: '{{count}}個のバージョン',
       groupAction: 'バージョンとしてグループ化',
@@ -7777,6 +7814,7 @@ export default {
     firstLayer: '第1層完了',
     quiet: '静音',
     digest: 'ダイジェスト {{time}}',
+    noPhoto: '写真なし',
     // Event labels (expanded settings)
     printStarted: '印刷開始',
     plateNotEmpty: 'プレートが空でない',
@@ -7867,6 +7905,8 @@ export default {
     testConfiguration: '設定をテスト',
     printerFilter: 'プリンターフィルター',
     onlyFromPrinter: 'このプリンターからのイベントのみ通知を送信',
+    attachPhotoLabel: '写真を添付',
+    attachPhotoDescription: 'イベントでカメラのスナップショットが撮影された場合、通知に添付します',
     quietHoursDnd: '静音時間（おやすみモード）',
     quietStart: '開始',
     quietEnd: '終了',
@@ -7896,6 +7936,7 @@ export default {
     nameRequired: '名前は必須です',
     fieldRequired: '{{field}}は必須です',
     haDataInvalid: 'Dataフィールドは有効なJSONオブジェクトである必要があります（例: {"priority": "high", "ttl": 0}）',
+    haServiceHelp: '任意 — 既定では Home Assistant の UI に永続通知として表示されます。notify サービス(例: notify.mobile_app_myphone)を指定するとスマートフォンにプッシュ通知が届き、スナップショットがあり 設定 → ネットワーク で外部URLが設定されていれば、カメラのスナップショットも自動で添付されます。',
     // Config field labels
     phoneNumber: '電話番号',
     apiKey: 'APIキー',
@@ -7947,6 +7988,10 @@ export default {
     enterTemplateContent: 'テンプレートの内容を入力するとプレビューが表示されます',
     titlePreview: 'タイトル:',
     bodyPreview: '本文:',
+    photoPreview: '写真:',
+    photoPreviewNote: '例のみ — 添付に対応したプロバイダー(ntfy, Pushover, Telegram, Discord, Home Assistant, Bark, Slack webhook)では、スナップショットが撮影されていれば、上の本文の内容にかかわらず自動で添付されます。',
+    photoPreviewNoteWithEmail: '例のみ — スナップショットが撮影されていれば、対応プロバイダー(ntfy, Pushover, Telegram, Discord, Home Assistant, Bark, Slack webhook)には自動で添付されます。メールでインライン表示するには、上の本文に {finish_photo_url} を追加してください。',
+    photoPreviewNoteEmailOnly: '例のみ — これは常にメールです。写真をインライン表示するには上の本文に {finish_photo_url} を追加してください。追加しない場合はテキストのみ送信されます。',
     resetToDefault: 'デフォルトにリセット',
     titleRequired: 'タイトルは必須です',
     bodyRequired: '本文は必須です',
@@ -8228,6 +8273,12 @@ export default {
     cancel: 'キャンセル',
     configuring: '設定中...',
     configureSlot: 'スロットを設定',
+    // Why an Orca profile went into the slot as the generic for its material (#3216)
+    orcaFallback: {
+      no_filament_id: 'このOrcaプロファイルには独自のフィラメントIDがないため、OrcaSlicerではこのスロットがGeneric {{material}}として表示されます。',
+      lookup_failed: 'Orca CloudからこのプロファイルのフィラメントIDを読み取れなかったため、OrcaSlicerではこのスロットがGeneric {{material}}として表示されます。しばらくしてから再試行してください。',
+      no_permission: 'Orca Cloudへのアクセス権がないため、このプロファイルのフィラメントIDを読み取れませんでした。OrcaSlicerではこのスロットがGeneric {{material}}として表示されます。',
+    },
   },
 
   // Git Backup Settings

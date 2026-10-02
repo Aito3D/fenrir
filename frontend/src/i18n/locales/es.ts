@@ -1029,6 +1029,22 @@ export default {
   },
 
   // Common
+  announcements: {
+    title: 'Anuncios',
+    unread: 'Anuncios sin leer: {{count}}',
+    empty: 'No hay anuncios por ahora.',
+    earlier: 'Anteriores ({{count}})',
+    new: 'Nuevo',
+    readMore: 'Leer más',
+    readMoreCount: 'Leer más (+{{count}})',
+    gotIt: 'Entendido',
+    source: 'De los desarrolladores de Fenrir, obtenidos de GitHub. Puedes desactivarlos en Ajustes.',
+    level: {
+      info: 'Aviso',
+      important: 'Importante',
+      critical: 'Crítico',
+    },
+  },
   common: {
     plusNMore: '+{{count}} más',
     save: 'Guardar',
@@ -3279,6 +3295,11 @@ export default {
     checkPrinterFirmware: 'Comprobar el firmware de la impresora',
     includeBetaUpdates: 'Incluir versiones beta',
     includeBetaUpdatesDesc: 'Notificar sobre versiones beta y preliminares al buscar actualizaciones',
+    announcementsEnabled: 'Recibir anuncios',
+    announcementsEnabledDesc: 'Mensajes de los desarrolladores de Bambuddy, como correcciones de seguridad y cambios incompatibles. Bambuddy descarga un archivo firmado de GitHub cada pocas horas; no se envía nada sobre esta instalación.',
+    announcementsLearnMore: 'Más información',
+    announcementsAllUsers: 'Mostrar a todos los usuarios',
+    announcementsAllUsersDesc: 'Desactivado: solo los administradores los ven. No tiene efecto mientras la autenticación esté desactivada.',
     localLogin: {
       disable: 'Deshabilitar el inicio de sesión local con usuario/contraseña',
       disableHint: 'Cuando se habilita, solo los proveedores SSO pueden iniciar sesión. LDAP no se ve afectado. Defina FENRIR_LOCAL_LOGIN=true en el servidor para mantener una vía de recuperación.',
@@ -5227,6 +5248,22 @@ export default {
 
   // File manager
   fileManager: {
+    combine: {
+      action: 'Combinar en 3MF',
+      tooltip: 'Combina los STL seleccionados en un 3MF para laminarlos en una sola placa',
+      title: 'Combinar en 3MF',
+      description: 'Crea un 3MF con todos los modelos de abajo, listo para laminar en una sola placa. Activa la organización automática al laminar para distribuirlos en la cama.',
+      nameLabel: 'Nombre del archivo',
+      defaultName: '{{name}} + {{count}} más',
+      model: 'Modelo',
+      copies: 'Copias',
+      copiesFor: 'Copias de {{filename}}',
+      total: 'Objetos en la placa: {{count}}',
+      tooMany: 'Como máximo {{max}} objetos por placa',
+      sliceNext: 'Abrir el laminador al terminar',
+      submit: 'Combinar',
+      done: 'Se creó {{filename}} con {{count}} objetos',
+    },
     variants: {
       badge: '{{count}} versiones',
       groupAction: 'Agrupar como versiones',
@@ -7784,6 +7821,7 @@ export default {
     firstLayer: 'Primera capa',
     quiet: 'Silencio',
     digest: 'Resumen {{time}}',
+    noPhoto: 'Sin foto',
     // Event labels (expanded settings)
     printStarted: 'Impresión iniciada',
     plateNotEmpty: 'Cama no vacía',
@@ -7874,6 +7912,8 @@ export default {
     testConfiguration: 'Probar configuración',
     printerFilter: 'Filtro de impresora',
     onlyFromPrinter: 'Enviar notificaciones solo para los eventos de esta impresora',
+    attachPhotoLabel: 'Adjuntar foto',
+    attachPhotoDescription: 'Incluir una captura de la cámara en las notificaciones, cuando se haya tomado una para el evento',
     quietHoursDnd: 'Horas de silencio (no molestar)',
     quietStart: 'Inicio',
     quietEnd: 'Fin',
@@ -7903,6 +7943,7 @@ export default {
     nameRequired: 'El nombre es obligatorio',
     fieldRequired: '{{field}} es obligatorio',
     haDataInvalid: 'El campo Data debe ser un objeto JSON válido, p. ej. {"priority": "high", "ttl": 0}',
+    haServiceHelp: 'Opcional: por defecto, una notificación persistente en la interfaz de Home Assistant. Indica un servicio notify (p. ej. notify.mobile_app_myphone) para recibir notificaciones push en el móvil, que además adjuntan automáticamente una captura de la cámara cuando la hay y se ha configurado la URL externa en Ajustes → Red.',
     // Config field labels
     phoneNumber: 'Número de teléfono',
     apiKey: 'Clave API',
@@ -7954,6 +7995,10 @@ export default {
     enterTemplateContent: 'Introduzca el contenido de la plantilla para ver la vista previa',
     titlePreview: 'Título:',
     bodyPreview: 'Cuerpo:',
+    photoPreview: 'Foto:',
+    photoPreviewNote: 'Solo es un ejemplo: los proveedores que admiten adjuntos (ntfy, Pushover, Telegram, Discord, Home Assistant, Bark, Slack webhook) incluyen automáticamente una captura de la cámara cuando se ha tomado una, diga lo que diga el cuerpo de arriba.',
+    photoPreviewNoteWithEmail: 'Solo es un ejemplo: se adjunta automáticamente en los proveedores compatibles (ntfy, Pushover, Telegram, Discord, Home Assistant, Bark, Slack webhook) cuando se ha tomado una captura. Para el correo electrónico, añade {finish_photo_url} al cuerpo de arriba para incluirla en línea.',
+    photoPreviewNoteEmailOnly: 'Solo es un ejemplo: esto siempre es un correo electrónico. Añade {finish_photo_url} al cuerpo de arriba para incluir la foto en línea; sin ella solo se envía el texto.',
     resetToDefault: 'Restablecer al valor predeterminado',
     titleRequired: 'El título es obligatorio',
     bodyRequired: 'El cuerpo es obligatorio',
@@ -8235,6 +8280,12 @@ export default {
     cancel: 'Cancelar',
     configuring: 'Configurando...',
     configureSlot: 'Configurar ranura',
+    // Why an Orca profile went into the slot as the generic for its material (#3216)
+    orcaFallback: {
+      no_filament_id: 'Este perfil de Orca no tiene un ID de filamento propio, así que OrcaSlicer verá esta ranura como Generic {{material}}.',
+      lookup_failed: 'No se pudo leer el ID de filamento de este perfil desde Orca Cloud, así que OrcaSlicer verá esta ranura como Generic {{material}}. Inténtalo de nuevo en un momento.',
+      no_permission: 'No tienes acceso a Orca Cloud, así que no se pudo leer el ID de filamento de este perfil. OrcaSlicer verá esta ranura como Generic {{material}}.',
+    },
   },
 
   // Git Backup Settings

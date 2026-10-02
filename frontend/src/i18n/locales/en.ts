@@ -1033,6 +1033,22 @@ export default {
   },
 
   // Common
+  announcements: {
+    title: 'Announcements',
+    unread: 'Unread announcements: {{count}}',
+    empty: 'No announcements right now.',
+    earlier: 'Earlier ({{count}})',
+    new: 'New',
+    readMore: 'Read more',
+    readMoreCount: 'Read more (+{{count}})',
+    gotIt: 'Got it',
+    source: 'From the Fenrir maintainers, fetched from GitHub. You can turn them off in Settings.',
+    level: {
+      info: 'Info',
+      important: 'Important',
+      critical: 'Critical',
+    },
+  },
   common: {
     plusNMore: '+{{count}} more',
     save: 'Save',
@@ -3300,6 +3316,11 @@ export default {
     checkPrinterFirmware: 'Check printer firmware',
     includeBetaUpdates: 'Include beta versions',
     includeBetaUpdatesDesc: 'Notify about beta and prerelease versions when checking for updates',
+    announcementsEnabled: 'Receive announcements',
+    announcementsEnabledDesc: 'Messages from the Bambuddy maintainers, such as security fixes and breaking changes. Bambuddy fetches a signed file from GitHub every few hours; nothing about this install is sent.',
+    announcementsLearnMore: 'Learn more',
+    announcementsAllUsers: 'Show to all users',
+    announcementsAllUsersDesc: 'Off: only administrators see them. Has no effect while authentication is off.',
     localLogin: {
       disable: 'Disable local username/password login',
       disableHint: 'When enabled, only SSO providers can sign in. LDAP is unaffected. Set FENRIR_LOCAL_LOGIN=true on the server to keep a recovery path.',
@@ -5259,6 +5280,22 @@ export default {
 
   // File manager
   fileManager: {
+    combine: {
+      action: 'Combine to 3MF',
+      tooltip: 'Combine the selected STLs into one 3MF so they can be sliced on a single plate',
+      title: 'Combine to 3MF',
+      description: 'Builds one 3MF with every model below, ready to slice on a single plate. Turn on auto-arrange when slicing to lay them out on the bed.',
+      nameLabel: 'File name',
+      defaultName: '{{name}} + {{count}} more',
+      model: 'Model',
+      copies: 'Copies',
+      copiesFor: 'Copies of {{filename}}',
+      total: 'Objects on the plate: {{count}}',
+      tooMany: 'At most {{max}} objects per plate',
+      sliceNext: 'Open the slicer when done',
+      submit: 'Combine',
+      done: 'Created {{filename}} with {{count}} objects',
+    },
     variants: {
       badge: '{{count}} versions',
       groupAction: 'Group as versions',
@@ -7831,6 +7868,7 @@ export default {
     firstLayer: 'First Layer',
     quiet: 'Quiet',
     digest: 'Digest {{time}}',
+    noPhoto: 'No Photo',
     // Event labels (expanded settings)
     printStarted: 'Print Started',
     plateNotEmpty: 'Plate Not Empty',
@@ -7921,6 +7959,8 @@ export default {
     testConfiguration: 'Test Configuration',
     printerFilter: 'Printer Filter',
     onlyFromPrinter: 'Only send notifications for events from this printer',
+    attachPhotoLabel: 'Attach Photo',
+    attachPhotoDescription: 'Include a camera snapshot with notifications, when one was captured for the event',
     quietHoursDnd: 'Quiet Hours (Do Not Disturb)',
     quietStart: 'Start',
     quietEnd: 'End',
@@ -7950,6 +7990,7 @@ export default {
     nameRequired: 'Name is required',
     fieldRequired: '{{field}} is required',
     haDataInvalid: 'The Data field must be a valid JSON object, e.g. {"priority": "high", "ttl": 0}',
+    haServiceHelp: "Optional — defaults to a persistent notification in Home Assistant's UI. Set a notify service (e.g. notify.mobile_app_myphone) to get push notifications on your phone, which also attaches a camera snapshot automatically when one is available and External URL is set in Settings → Network.",
     // Config field labels
     phoneNumber: 'Phone Number',
     apiKey: 'API Key',
@@ -8001,6 +8042,10 @@ export default {
     enterTemplateContent: 'Enter template content to see preview',
     titlePreview: 'Title:',
     bodyPreview: 'Body:',
+    photoPreview: 'Photo:',
+    photoPreviewNote: 'Example only — providers that support attachments (ntfy, Pushover, Telegram, Discord, Home Assistant, Bark, Slack webhook) include a camera snapshot automatically when one was captured, regardless of what the body above says.',
+    photoPreviewNoteWithEmail: 'Example only — attached automatically for supported providers (ntfy, Pushover, Telegram, Discord, Home Assistant, Bark, Slack webhook) when a snapshot was captured. For Email, add {finish_photo_url} to the body above to include it inline.',
+    photoPreviewNoteEmailOnly: 'Example only — this is always an email. Add {finish_photo_url} to the body above to include the photo inline; without it, only the text is sent.',
     resetToDefault: 'Reset to Default',
     titleRequired: 'Title is required',
     bodyRequired: 'Body is required',
@@ -8282,6 +8327,12 @@ export default {
     cancel: 'Cancel',
     configuring: 'Configuring...',
     configureSlot: 'Configure Slot',
+    // Why an Orca profile went into the slot as the generic for its material (#3216)
+    orcaFallback: {
+      no_filament_id: 'This Orca profile has no filament ID of its own, so OrcaSlicer will see this slot as Generic {{material}}.',
+      lookup_failed: 'Couldn\'t read this profile\'s filament ID from Orca Cloud, so OrcaSlicer will see this slot as Generic {{material}}. Try again in a moment.',
+      no_permission: 'You don\'t have Orca Cloud access, so this profile\'s filament ID couldn\'t be read. OrcaSlicer will see this slot as Generic {{material}}.',
+    },
   },
 
   // Git Backup Settings

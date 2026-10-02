@@ -7,6 +7,7 @@ from backend.app.models.aito_terminal_payment import AitoTerminalPayment
 from backend.app.models.aito_tracking_view import AitoTrackingView
 from backend.app.models.ams_history import AMSSensorHistory
 from backend.app.models.ams_label import AmsLabel
+from backend.app.models.announcement import Announcement, AnnouncementRead
 from backend.app.models.api_key import APIKey
 from backend.app.models.archive import PrintArchive
 from backend.app.models.auth_ephemeral import AuthEphemeralToken, AuthRateLimitEvent
@@ -119,6 +120,8 @@ __all__ = [
     "ColorCatalogEntry",
     "SpoolBuddyDevice",
     "SponsorToastState",
+    "Announcement",
+    "AnnouncementRead",
     "UserEmailPreference",
     "UserOTPCode",
     "UserTOTP",

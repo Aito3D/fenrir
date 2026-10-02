@@ -1029,6 +1029,22 @@ export default {
   },
 
   // Common
+  announcements: {
+    title: '公告',
+    unread: '未讀公告：{{count}}',
+    empty: '目前沒有公告。',
+    earlier: '更早 ({{count}})',
+    new: '新',
+    readMore: '了解更多',
+    readMoreCount: '了解更多 (+{{count}})',
+    gotIt: '知道了',
+    source: '來自 Fenrir 開發者，從 GitHub 取得。可在設定中關閉。',
+    level: {
+      info: '資訊',
+      important: '重要',
+      critical: '緊急',
+    },
+  },
   common: {
     plusNMore: '另 {{count}} 個',
     save: '儲存',
@@ -3276,6 +3292,11 @@ export default {
     checkPrinterFirmware: '檢查印表機韌體',
     includeBetaUpdates: '包含測試版本',
     includeBetaUpdatesDesc: '檢查更新時通知測試版和預發布版本',
+    announcementsEnabled: '接收公告',
+    announcementsEnabledDesc: '來自 Bambuddy 開發者的訊息，例如安全性修正和不相容的變更。Bambuddy 每隔幾小時從 GitHub 取得一個已簽署的檔案；不會傳送有關此安裝的任何資訊。',
+    announcementsLearnMore: '了解更多',
+    announcementsAllUsers: '向所有使用者顯示',
+    announcementsAllUsersDesc: '關閉：僅管理員可見。驗證關閉時無效。',
     localLogin: {
       disable: '停用本機使用者名稱／密碼登入',
       disableHint: '啟用後，只能透過SSO提供者登入。LDAP不受影響。在伺服器上設定 FENRIR_LOCAL_LOGIN=true 可保留復原途徑。',
@@ -5212,6 +5233,22 @@ export default {
 
   // File manager
   fileManager: {
+    combine: {
+      action: '合併為 3MF',
+      tooltip: '將所選 STL 合併為一個 3MF，以便在同一個盤上切片',
+      title: '合併為 3MF',
+      description: '建立一個包含下方所有模型的 3MF，可直接在同一個盤上切片。切片時開啟自動排列即可將它們擺放在熱床上。',
+      nameLabel: '檔案名稱',
+      defaultName: '{{name}} 等 {{count}} 個',
+      model: '模型',
+      copies: '數量',
+      copiesFor: '{{filename}} 的數量',
+      total: '盤上物件：{{count}}',
+      tooMany: '每個盤最多 {{max}} 個物件',
+      sliceNext: '完成後開啟切片器',
+      submit: '合併',
+      done: '已建立 {{filename}}，共 {{count}} 個物件',
+    },
     variants: {
       badge: '{{count}} 個版本',
       groupAction: '歸為版本群組',
@@ -7762,6 +7799,7 @@ export default {
     firstLayer: '首層完成',
     quiet: '免打擾',
     digest: '摘要 {{time}}',
+    noPhoto: '無照片',
     // Event labels (expanded settings)
     printStarted: '列印已開始',
     plateNotEmpty: '熱床非空',
@@ -7852,6 +7890,8 @@ export default {
     testConfiguration: '測試設定',
     printerFilter: '印表機篩選',
     onlyFromPrinter: '僅傳送來自此印表機的事件通知',
+    attachPhotoLabel: '附加照片',
+    attachPhotoDescription: '若事件拍攝了攝影機快照，則隨通知一併傳送',
     quietHoursDnd: '免打擾時段',
     quietStart: '開始',
     quietEnd: '結束',
@@ -7881,6 +7921,7 @@ export default {
     nameRequired: '名稱為必填項',
     fieldRequired: '{{field}}為必填項',
     haDataInvalid: 'Data 欄位必須是有效的 JSON 物件，例如 {"priority": "high", "ttl": 0}',
+    haServiceHelp: '選填 — 預設在 Home Assistant 介面中顯示持續通知。設定 notify 服務（例如 notify.mobile_app_myphone）即可在手機上接收推播通知；若有快照且已在 設定 → 網路 中設定外部URL，還會自動附加攝影機快照。',
     // Config field labels
     phoneNumber: '電話號碼',
     apiKey: 'API 金鑰',
@@ -7932,6 +7973,10 @@ export default {
     enterTemplateContent: '輸入範本內容以檢視預覽',
     titlePreview: '標題：',
     bodyPreview: '正文：',
+    photoPreview: '照片：',
+    photoPreviewNote: '僅為範例 — 支援附件的服務（ntfy, Pushover, Telegram, Discord, Home Assistant, Bark, Slack webhook）在拍攝了快照時會自動附加攝影機快照，與上方內文內容無關。',
+    photoPreviewNoteWithEmail: '僅為範例 — 拍攝了快照時會自動附加到支援的服務（ntfy, Pushover, Telegram, Discord, Home Assistant, Bark, Slack webhook）。若為電子郵件，請在上方內文中加入 {finish_photo_url} 以內嵌照片。',
+    photoPreviewNoteEmailOnly: '僅為範例 — 此通知一律為電子郵件。在上方內文中加入 {finish_photo_url} 即可內嵌照片；否則僅傳送文字。',
     resetToDefault: '恢復預設',
     titleRequired: '標題為必填項',
     bodyRequired: '正文為必填項',
@@ -8212,6 +8257,12 @@ export default {
     cancel: '取消',
     configuring: '設定中...',
     configureSlot: '設定槽位',
+    // Why an Orca profile went into the slot as the generic for its material (#3216)
+    orcaFallback: {
+      no_filament_id: '此 Orca 設定檔沒有自己的線材 ID，因此 OrcaSlicer 會將此槽位識別為 Generic {{material}}。',
+      lookup_failed: '無法從 Orca Cloud 讀取此設定檔的線材 ID，因此 OrcaSlicer 會將此槽位識別為 Generic {{material}}。請稍後再試。',
+      no_permission: '你沒有 Orca Cloud 存取權限，因此無法讀取此設定檔的線材 ID。OrcaSlicer 會將此槽位識別為 Generic {{material}}。',
+    },
   },
 
   // Git Backup Settings

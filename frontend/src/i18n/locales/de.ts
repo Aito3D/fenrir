@@ -1029,6 +1029,22 @@ export default {
   },
 
   // Common
+  announcements: {
+    title: 'Ankündigungen',
+    unread: 'Ungelesene Ankündigungen: {{count}}',
+    empty: 'Derzeit keine Ankündigungen.',
+    earlier: 'Frühere ({{count}})',
+    new: 'Neu',
+    readMore: 'Mehr erfahren',
+    readMoreCount: 'Mehr erfahren (+{{count}})',
+    gotIt: 'Verstanden',
+    source: 'Von den Fenrir-Entwicklern, abgerufen von GitHub. Du kannst sie in den Einstellungen abschalten.',
+    level: {
+      info: 'Hinweis',
+      important: 'Wichtig',
+      critical: 'Kritisch',
+    },
+  },
   common: {
     plusNMore: '+{{count}} weitere',
     save: 'Speichern',
@@ -3276,6 +3292,11 @@ export default {
     checkPrinterFirmware: 'Drucker-Firmware prüfen',
     includeBetaUpdates: 'Beta-Versionen einschließen',
     includeBetaUpdatesDesc: 'Über Beta- und Vorabversionen bei der Updateprüfung benachrichtigen',
+    announcementsEnabled: 'Ankündigungen empfangen',
+    announcementsEnabledDesc: 'Nachrichten der Bambuddy-Entwickler, etwa zu Sicherheitskorrekturen und inkompatiblen Änderungen. Bambuddy lädt alle paar Stunden eine signierte Datei von GitHub; über diese Installation wird nichts gesendet.',
+    announcementsLearnMore: 'Mehr dazu',
+    announcementsAllUsers: 'Allen Benutzern anzeigen',
+    announcementsAllUsersDesc: 'Aus: Nur Administratoren sehen sie. Ohne Wirkung, solange die Authentifizierung aus ist.',
     localLogin: {
       disable: 'Lokale Benutzername-/Passwort-Anmeldung deaktivieren',
       disableHint: 'Wenn aktiviert, ist nur die Anmeldung über SSO möglich. LDAP ist davon nicht betroffen. Setzen Sie FENRIR_LOCAL_LOGIN=true auf dem Server, um einen Wiederherstellungsweg offen zu halten.',
@@ -5225,6 +5246,22 @@ export default {
 
   // File manager
   fileManager: {
+    combine: {
+      action: 'Zu 3MF kombinieren',
+      tooltip: 'Die ausgewählten STLs zu einer 3MF kombinieren, um sie auf einer Platte zu slicen',
+      title: 'Zu 3MF kombinieren',
+      description: 'Erstellt eine 3MF mit allen unten aufgeführten Modellen, bereit zum Slicen auf einer Platte. Aktiviere beim Slicen das automatische Anordnen, um sie auf dem Druckbett zu verteilen.',
+      nameLabel: 'Dateiname',
+      defaultName: '{{name}} + {{count}} weitere',
+      model: 'Modell',
+      copies: 'Kopien',
+      copiesFor: 'Kopien von {{filename}}',
+      total: 'Objekte auf der Platte: {{count}}',
+      tooMany: 'Höchstens {{max}} Objekte pro Platte',
+      sliceNext: 'Danach den Slicer öffnen',
+      submit: 'Kombinieren',
+      done: '{{filename}} mit {{count}} Objekten erstellt',
+    },
     variants: {
       badge: '{{count}} Versionen',
       groupAction: 'Als Versionen gruppieren',
@@ -7776,6 +7813,7 @@ export default {
     firstLayer: 'Erste Schicht',
     quiet: 'Ruhe',
     digest: 'Zusammenfassung {{time}}',
+    noPhoto: 'Kein Foto',
     // Event labels (expanded settings)
     printStarted: 'Druck gestartet',
     plateNotEmpty: 'Platte nicht leer',
@@ -7866,6 +7904,8 @@ export default {
     testConfiguration: 'Konfiguration testen',
     printerFilter: 'Druckerfilter',
     onlyFromPrinter: 'Nur Benachrichtigungen für Ereignisse von diesem Drucker senden',
+    attachPhotoLabel: 'Foto anhängen',
+    attachPhotoDescription: 'Einen Kamera-Schnappschuss mitsenden, sofern für das Ereignis einer aufgenommen wurde',
     quietHoursDnd: 'Ruhezeiten (Nicht stören)',
     quietStart: 'Start',
     quietEnd: 'Ende',
@@ -7895,6 +7935,7 @@ export default {
     nameRequired: 'Name ist erforderlich',
     fieldRequired: '{{field}} ist erforderlich',
     haDataInvalid: 'Das Datenfeld muss ein gültiges JSON-Objekt sein, z. B. {"priority": "high", "ttl": 0}',
+    haServiceHelp: 'Optional — standardmäßig eine dauerhafte Benachrichtigung in der Home-Assistant-Oberfläche. Lege einen Notify-Dienst fest (z. B. notify.mobile_app_myphone), um Push-Benachrichtigungen auf dem Handy zu erhalten; dann wird automatisch ein Kamera-Schnappschuss angehängt, sofern einer vorhanden ist und unter Einstellungen → Netzwerk eine Externe URL eingetragen ist.',
     // Config field labels
     phoneNumber: 'Telefonnummer',
     apiKey: 'API-Schlüssel',
@@ -7946,6 +7987,10 @@ export default {
     enterTemplateContent: 'Vorlageninhalt eingeben, um Vorschau zu sehen',
     titlePreview: 'Titel:',
     bodyPreview: 'Inhalt:',
+    photoPreview: 'Foto:',
+    photoPreviewNote: 'Nur ein Beispiel — Dienste, die Anhänge unterstützen (ntfy, Pushover, Telegram, Discord, Home Assistant, Bark, Slack webhook), fügen automatisch einen Kamera-Schnappschuss hinzu, wenn einer aufgenommen wurde, unabhängig vom Text oben.',
+    photoPreviewNoteWithEmail: 'Nur ein Beispiel — wird bei unterstützten Diensten (ntfy, Pushover, Telegram, Discord, Home Assistant, Bark, Slack webhook) automatisch angehängt, wenn ein Schnappschuss aufgenommen wurde. Für E-Mail füge {finish_photo_url} in den Text oben ein, um das Foto eingebettet zu senden.',
+    photoPreviewNoteEmailOnly: 'Nur ein Beispiel — dies ist immer eine E-Mail. Füge {finish_photo_url} in den Text oben ein, um das Foto eingebettet zu senden; ohne die Variable wird nur der Text verschickt.',
     resetToDefault: 'Auf Standard zurücksetzen',
     titleRequired: 'Titel ist erforderlich',
     bodyRequired: 'Inhalt ist erforderlich',
@@ -8227,6 +8272,12 @@ export default {
     cancel: 'Abbrechen',
     configuring: 'Wird konfiguriert...',
     configureSlot: 'Slot konfigurieren',
+    // Why an Orca profile went into the slot as the generic for its material (#3216)
+    orcaFallback: {
+      no_filament_id: 'Dieses Orca-Profil hat keine eigene Filament-ID, daher sieht OrcaSlicer diesen Slot als Generic {{material}}.',
+      lookup_failed: 'Die Filament-ID dieses Profils konnte nicht aus der Orca Cloud gelesen werden, daher sieht OrcaSlicer diesen Slot als Generic {{material}}. Versuche es gleich noch einmal.',
+      no_permission: 'Du hast keinen Zugriff auf die Orca Cloud, daher konnte die Filament-ID dieses Profils nicht gelesen werden. OrcaSlicer sieht diesen Slot als Generic {{material}}.',
+    },
   },
 
   // Git Backup Settings

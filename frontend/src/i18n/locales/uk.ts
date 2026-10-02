@@ -1027,6 +1027,24 @@ export default {
     installApp: "Встановити додаток",
     installAppSuccess: "Fenrir встановлено",
   },
+
+  // Common
+  announcements: {
+    title: 'Оголошення',
+    unread: 'Непрочитані оголошення: {{count}}',
+    empty: 'Наразі оголошень немає.',
+    earlier: 'Раніше ({{count}})',
+    new: 'Нове',
+    readMore: 'Докладніше',
+    readMoreCount: 'Докладніше (+{{count}})',
+    gotIt: 'Зрозуміло',
+    source: 'Від розробників Bambuddy, завантажуються з GitHub. Їх можна вимкнути в налаштуваннях.',
+    level: {
+      info: 'Інформація',
+      important: 'Важливо',
+      critical: 'Критично',
+    },
+  },
   common: {
     plusNMore: 'ще {{count}}',
     save: "Зберегти",
@@ -3175,6 +3193,11 @@ export default {
     checkPrinterFirmware: "Перевірити прошивку принтера",
     includeBetaUpdates: "Включати бета-версії",
     includeBetaUpdatesDesc: "Повідомляти про бета-версії та попередні версії під час перевірки оновлень",
+    announcementsEnabled: 'Отримувати оголошення',
+    announcementsEnabledDesc: 'Повідомлення від розробників Bambuddy, наприклад про виправлення безпеки та несумісні зміни. Bambuddy раз на кілька годин завантажує підписаний файл із GitHub; жодних даних про цю інсталяцію не надсилається.',
+    announcementsLearnMore: 'Докладніше',
+    announcementsAllUsers: 'Показувати всім користувачам',
+    announcementsAllUsersDesc: 'Вимк.: бачать лише адміністратори. Не діє, поки автентифікацію вимкнено.',
     localLogin: {
       disable: "Вимкнути локальний вхід за іменем користувача й паролем",
       disableHint: "Якщо ввімкнено, увійти можна буде лише через постачальників SSO. На LDAP це не впливає. Щоб зберегти резервний спосіб входу, установіть на сервері FENRIR_LOCAL_LOGIN=true.",
@@ -5031,6 +5054,22 @@ export default {
     bundleStepBuild: "Створення ZIP-пакета підтримки",
   },
   fileManager: {
+    combine: {
+      action: 'Об\'єднати в 3MF',
+      tooltip: 'Об\'єднати вибрані STL в один 3MF, щоб нарізати їх на одній пластині',
+      title: 'Об\'єднати в 3MF',
+      description: 'Створює один 3MF з усіма моделями нижче, готовий до нарізки на одній пластині. Увімкніть авторозстановку під час нарізки, щоб розмістити їх на столі.',
+      nameLabel: 'Назва файлу',
+      defaultName: '{{name}} і ще {{count}}',
+      model: 'Модель',
+      copies: 'Копії',
+      copiesFor: 'Копії {{filename}}',
+      total: 'Об\'єктів на пластині: {{count}}',
+      tooMany: 'Не більше {{max}} об\'єктів на пластину',
+      sliceNext: 'Відкрити слайсер після об\'єднання',
+      submit: 'Об\'єднати',
+      done: 'Створено {{filename}}, об\'єктів: {{count}}',
+    },
     variants: {
       badge: 'Версій: {{count}}',
       groupAction: 'Згрупувати як версії',
@@ -7496,6 +7535,8 @@ export default {
     firstLayer: "Перший шар",
     quiet: "Тихо",
     digest: "Дайджест {{time}}",
+    noPhoto: "Без фото",
+    // Event labels (expanded settings)
     printStarted: "Друк розпочато",
     plateNotEmpty: "Друкарська пластина не порожня",
     plateNotEmptyDescription: "Перед друком виявлено об’єкти",
@@ -7579,6 +7620,8 @@ export default {
     testConfiguration: "Перевірити конфігурацію",
     printerFilter: "Фільтр принтера",
     onlyFromPrinter: "Надсилати лише сповіщення про події з цього принтера",
+    attachPhotoLabel: "Додавати фото",
+    attachPhotoDescription: "Додавати знімок з камери до сповіщень, якщо його було зроблено для події",
     quietHoursDnd: "Тихі години (не турбувати)",
     quietStart: "Початок",
     quietEnd: "Кінець",
@@ -7608,6 +7651,8 @@ export default {
     nameRequired: "Необхідно вказати ім’я",
     fieldRequired: "{{field}} — обов’язкове поле.",
     haDataInvalid: "Поле «Дані» має містити дійсний об’єкт JSON, наприклад {\"priority\": \"high\", \"ttl\": 0}",
+    haServiceHelp: "Необов'язково — за замовчуванням постійне сповіщення в інтерфейсі Home Assistant. Вкажіть службу notify (наприклад, notify.mobile_app_myphone), щоб отримувати push-сповіщення на телефон; до них також автоматично додається знімок з камери, якщо він є і в Налаштування → Мережа задано зовнішній URL.",
+    // Config field labels
     phoneNumber: "Номер телефону",
     apiKey: "Ключ API",
     serverUrl: "Сервер URL",
@@ -7657,6 +7702,10 @@ export default {
     enterTemplateContent: "Введіть вміст шаблону, щоб побачити попередній перегляд",
     titlePreview: "Назва:",
     bodyPreview: "Текст:",
+    photoPreview: "Фото:",
+    photoPreviewNote: "Лише приклад — провайдери, що підтримують вкладення (ntfy, Pushover, Telegram, Discord, Home Assistant, Bark, Slack webhook), автоматично додають знімок з камери, якщо його було зроблено, незалежно від тексту вище.",
+    photoPreviewNoteWithEmail: "Лише приклад — автоматично додається для підтримуваних провайдерів (ntfy, Pushover, Telegram, Discord, Home Assistant, Bark, Slack webhook), якщо знімок було зроблено. Для електронної пошти додайте {finish_photo_url} у текст вище, щоб вбудувати фото в лист.",
+    photoPreviewNoteEmailOnly: "Лише приклад — це завжди електронний лист. Додайте {finish_photo_url} у текст вище, щоб вбудувати фото; без цього надсилається лише текст.",
     resetToDefault: "Відновити типові значення",
     titleRequired: "Необхідно вказати назву",
     bodyRequired: "Текст є обов’язковим",
@@ -7917,6 +7966,12 @@ export default {
     cancel: "Скасувати",
     configuring: "Налаштування...",
     configureSlot: "Налаштувати слот",
+    // Why an Orca profile went into the slot as the generic for its material (#3216)
+    orcaFallback: {
+      no_filament_id: 'Цей профіль Orca не має власного ID філаменту, тому OrcaSlicer бачитиме цей слот як Generic {{material}}.',
+      lookup_failed: 'Не вдалося прочитати ID філаменту цього профілю з Orca Cloud, тому OrcaSlicer бачитиме цей слот як Generic {{material}}. Спробуйте ще раз за хвилину.',
+      no_permission: 'У вас немає доступу до Orca Cloud, тому ID філаменту цього профілю не вдалося прочитати. OrcaSlicer бачитиме цей слот як Generic {{material}}.',
+    },
   },
   githubBackup: {
     title: "Резервне копіювання Git",

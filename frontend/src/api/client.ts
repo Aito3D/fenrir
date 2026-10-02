@@ -1403,6 +1403,9 @@ export interface AppSettings {
   check_updates: boolean;
   check_printer_firmware: boolean;
   include_beta_updates: boolean;
+  // Announcements from the Bambuddy maintainers (a signed file on GitHub).
+  announcements_enabled?: boolean;
+  announcements_all_users?: boolean;
   // #1589: false hides the local username/password form on the login page;
   // FENRIR_LOCAL_LOGIN=true on the server flips the reported value back to
   // true so the env-var recovery path is visible to the SPA.
@@ -3060,6 +3063,9 @@ export interface SlotPresetMapping {
   tray_id: number;
   preset_id: string;
   preset_name: string;
+  // Filament id the slot was configured with alongside this preset; null for
+  // rows that predate it or whose writer did not know it (#3216).
+  tray_info_idx?: string | null;
 }
 
 // Filament types
@@ -3093,6 +3099,7 @@ export interface NotificationProvider {
   provider_type: ProviderType;
   enabled: boolean;
   config: Record<string, unknown>;
+  attach_photo: boolean;
   // Print lifecycle events
   on_print_start: boolean;
   on_print_complete: boolean;
@@ -3162,6 +3169,7 @@ export interface NotificationProviderCreate {
   provider_type: ProviderType;
   enabled?: boolean;
   config: Record<string, unknown>;
+  attach_photo?: boolean;
   // Print lifecycle events
   on_print_start?: boolean;
   on_print_complete?: boolean;
@@ -3224,6 +3232,7 @@ export interface NotificationProviderUpdate {
   provider_type?: ProviderType;
   enabled?: boolean;
   config?: Record<string, unknown>;
+  attach_photo?: boolean;
   // Print lifecycle events
   on_print_start?: boolean;
   on_print_complete?: boolean;
@@ -3538,6 +3547,7 @@ export interface GitHubBackupTriggerResponse {
 export interface NotificationTestRequest {
   provider_type: ProviderType;
   config: Record<string, unknown>;
+  attach_photo?: boolean;
 }
 
 export interface NotificationTestResponse {
@@ -3599,6 +3609,7 @@ export interface EventVariablesResponse {
   event_type: string;
   event_name: string;
   variables: string[];
+  supports_photo: boolean;
 }
 
 export interface TemplatePreviewRequest {
@@ -7634,8 +7645,8 @@ export const api = {
     request<Record<number, SlotPresetMapping>>(`/printers/${printerId}/slot-presets`),
   getSlotPreset: (printerId: number, amsId: number, trayId: number) =>
     request<SlotPresetMapping | null>(`/printers/${printerId}/slot-presets/${amsId}/${trayId}`),
-  saveSlotPreset: (printerId: number, amsId: number, trayId: number, presetId: string, presetName: string, presetSource = 'cloud') =>
-    request<SlotPresetMapping>(`/printers/${printerId}/slot-presets/${amsId}/${trayId}?preset_id=${encodeURIComponent(presetId)}&preset_name=${encodeURIComponent(presetName)}&preset_source=${encodeURIComponent(presetSource)}`, {
+  saveSlotPreset: (printerId: number, amsId: number, trayId: number, presetId: string, presetName: string, presetSource = 'cloud', trayInfoIdx?: string) =>
+    request<SlotPresetMapping>(`/printers/${printerId}/slot-presets/${amsId}/${trayId}?preset_id=${encodeURIComponent(presetId)}&preset_name=${encodeURIComponent(presetName)}&preset_source=${encodeURIComponent(presetSource)}${trayInfoIdx ? `&tray_info_idx=${encodeURIComponent(trayInfoIdx)}` : ''}`, {
       method: 'PUT',
     }),
   deleteSlotPreset: (printerId: number, amsId: number, trayId: number) =>
@@ -7676,6 +7687,9 @@ export const api = {
       kprofile_filament_id?: string;
       kprofile_setting_id?: string;
       k_value?: number;
+      // Orca Cloud profile the slot is set to; the backend looks up its
+      // filament id when tray_info_idx is empty (#3216).
+      orca_profile_id?: string;
     }
   ) => {
     const params = new URLSearchParams({
@@ -7700,7 +7714,17 @@ export const api = {
     if (config.k_value !== undefined && config.k_value > 0) {
       params.set('k_value', config.k_value.toString());
     }
-    return request<{ success: boolean; message: string }>(
+    if (config.orca_profile_id) {
+      params.set('orca_profile_id', config.orca_profile_id);
+    }
+    return request<{
+      success: boolean;
+      message: string;
+      // The filament id the slot was actually given.
+      tray_info_idx?: string;
+      // Why an Orca profile went out as the generic for its material, or "".
+      orca_fallback_reason?: '' | 'no_filament_id' | 'lookup_failed' | 'no_permission';
+    }>(
       `/printers/${printerId}/slots/${amsId}/${trayId}/configure?${params}`,
       { method: 'POST' }
     );
@@ -9575,6 +9599,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(options),
     }),
+  combineLibraryFiles: (items: { file_id: number; copies: number }[], filename: string, folderId: number | null) =>
+    request<LibraryFileUploadResponse>('/library/files/combine', {
+      method: 'POST',
+      body: JSON.stringify({ items, filename, folder_id: folderId }),
+    }),
   addLibraryFilesToQueue: (fileIds: number[]) =>
     request<AddToQueueResponse>('/library/files/add-to-queue', {
       method: 'POST',
@@ -11019,6 +11048,42 @@ export const bugReportApi = {
     request<{ logs: string }>(`/bug-report/stop-logging?was_debug=${wasDebug}`, {
       method: 'POST',
     }),
+};
+
+export type AnnouncementLevel = 'info' | 'important' | 'critical';
+
+export interface AnnouncementText {
+  title: string;
+  body: string;
+  link_label?: string;
+}
+
+// One message from the Fenrir maintainers. `texts` holds every language the
+// message was written in; English is always there.
+export interface Announcement {
+  id: string;
+  level: AnnouncementLevel;
+  texts: Record<string, AnnouncementText>;
+  link_url: string | null;
+  published_at: string | null;
+  expires_at: string | null;
+  // Past its expiry: kept as history, listed under "Earlier", never unread.
+  archived: boolean;
+  read: boolean;
+}
+
+// `visible` says whether this user may see announcements at all (switched on,
+// and admin or "show to all users"); it keeps the sidebar entry while nothing
+// is published.
+export interface AnnouncementList {
+  visible: boolean;
+  announcements: Announcement[];
+}
+
+export const announcementsApi = {
+  list: () => request<AnnouncementList>('/announcements'),
+  markRead: (id: string) =>
+    request<void>(`/announcements/${encodeURIComponent(id)}/read`, { method: 'POST' }),
 };
 
 export interface SponsorPromptCheckResponse {

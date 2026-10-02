@@ -1029,6 +1029,22 @@ export default {
   },
 
   // Ortak
+  announcements: {
+    title: 'Duyurular',
+    unread: 'Okunmamış duyurular: {{count}}',
+    empty: 'Şu anda duyuru yok.',
+    earlier: 'Önceki ({{count}})',
+    new: 'Yeni',
+    readMore: 'Devamını oku',
+    readMoreCount: 'Devamını oku (+{{count}})',
+    gotIt: 'Anladım',
+    source: "Fenrir geliştiricilerinden, GitHub'dan alınır. Ayarlardan kapatabilirsiniz.",
+    level: {
+      info: 'Bilgi',
+      important: 'Önemli',
+      critical: 'Kritik',
+    },
+  },
   common: {
     plusNMore: '+{{count}} tane daha',
     save: 'Kaydet',
@@ -3279,6 +3295,11 @@ export default {
     checkPrinterFirmware: 'Yazıcı firmware\'ini kontrol et',
     includeBetaUpdates: 'Beta sürümleri dahil et',
     includeBetaUpdatesDesc: 'Güncellemeleri kontrol ederken beta ve önyayım sürümleri hakkında bildir',
+    announcementsEnabled: 'Duyuruları al',
+    announcementsEnabledDesc: "Güvenlik düzeltmeleri ve uyumsuz değişiklikler gibi Bambuddy geliştiricilerinden gelen mesajlar. Bambuddy birkaç saatte bir GitHub'dan imzalı bir dosya indirir; bu kurulum hakkında hiçbir şey gönderilmez.",
+    announcementsLearnMore: 'Daha fazla bilgi',
+    announcementsAllUsers: 'Tüm kullanıcılara göster',
+    announcementsAllUsersDesc: 'Kapalı: yalnızca yöneticiler görür. Kimlik doğrulama kapalıyken etkisi yoktur.',
     localLogin: {
       disable: 'Yerel kullanıcı adı/şifre ile oturum açmayı devre dışı bırak',
       disableHint: 'Etkinleştirildiğinde yalnızca SSO sağlayıcıları ile oturum açılabilir. LDAP etkilenmez. Bir kurtarma yolu açık tutmak için sunucuda FENRIR_LOCAL_LOGIN=true ayarlayın.',
@@ -5219,6 +5240,22 @@ export default {
 
   // Dosya yöneticisi
   fileManager: {
+    combine: {
+      action: '3MF olarak birleştir',
+      tooltip: 'Seçili STL dosyalarını tek bir plakada dilimlemek için tek bir 3MF\'de birleştirin',
+      title: '3MF olarak birleştir',
+      description: 'Aşağıdaki tüm modelleri içeren, tek plakada dilimlenmeye hazır bir 3MF oluşturur. Tablaya yerleştirmek için dilimlerken otomatik yerleştirmeyi açın.',
+      nameLabel: 'Dosya adı',
+      defaultName: '{{name}} + {{count}} tane daha',
+      model: 'Model',
+      copies: 'Kopya',
+      copiesFor: '{{filename}} kopya sayısı',
+      total: 'Plakadaki nesneler: {{count}}',
+      tooMany: 'Plaka başına en fazla {{max}} nesne',
+      sliceNext: 'Bitince dilimleyiciyi aç',
+      submit: 'Birleştir',
+      done: '{{filename}} oluşturuldu ({{count}} nesne)',
+    },
     variants: {
       badge: '{{count}} sürüm',
       groupAction: 'Sürüm olarak grupla',
@@ -7731,6 +7768,7 @@ export default {
     firstLayer: 'İlk Katman',
     quiet: 'Sessiz',
     digest: 'Özet {{time}}',
+    noPhoto: 'Fotoğraf yok',
     printStarted: 'Baskı Başladı',
     plateNotEmpty: 'Plaka Boş Değil',
     plateNotEmptyDescription: 'Baskıdan önce nesneler algılandı',
@@ -7814,6 +7852,8 @@ export default {
     testConfiguration: 'Yapılandırmayı Test Et',
     printerFilter: 'Yazıcı Filtresi',
     onlyFromPrinter: 'Yalnızca bu yazıcının olayları için bildirim gönder',
+    attachPhotoLabel: 'Fotoğraf ekle',
+    attachPhotoDescription: 'Olay için bir kamera görüntüsü alındıysa bildirimlere ekle',
     quietHoursDnd: 'Sessiz Saatler (Rahatsız Etme)',
     quietStart: 'Başlangıç',
     quietEnd: 'Bitiş',
@@ -7842,6 +7882,7 @@ export default {
     nameRequired: 'Ad gerekli',
     fieldRequired: '{{field}} gerekli',
     haDataInvalid: 'Data alanı geçerli bir JSON nesnesi olmalıdır, örn. {"priority": "high", "ttl": 0}',
+    haServiceHelp: 'İsteğe bağlı — varsayılan olarak Home Assistant arayüzünde kalıcı bir bildirim. Telefonunuza anlık bildirim almak için bir notify servisi (ör. notify.mobile_app_myphone) belirleyin; görüntü mevcutsa ve Ayarlar → Ağ bölümünde Harici URL ayarlıysa kamera görüntüsü de otomatik olarak eklenir.',
     phoneNumber: 'Telefon Numarası',
     apiKey: 'API Anahtarı',
     serverUrl: 'Sunucu URL',
@@ -7891,6 +7932,10 @@ export default {
     enterTemplateContent: 'Önizlemeyi görmek için şablon içeriğini girin',
     titlePreview: 'Başlık:',
     bodyPreview: 'Gövde:',
+    photoPreview: 'Fotoğraf:',
+    photoPreviewNote: 'Yalnızca örnek — ek destekleyen sağlayıcılar (ntfy, Pushover, Telegram, Discord, Home Assistant, Bark, Slack webhook), bir kamera görüntüsü alındıysa yukarıdaki metinden bağımsız olarak bunu otomatik ekler.',
+    photoPreviewNoteWithEmail: 'Yalnızca örnek — bir görüntü alındıysa desteklenen sağlayıcılara (ntfy, Pushover, Telegram, Discord, Home Assistant, Bark, Slack webhook) otomatik eklenir. E-postada satır içi göstermek için yukarıdaki metne {finish_photo_url} ekleyin.',
+    photoPreviewNoteEmailOnly: 'Yalnızca örnek — bu her zaman bir e-postadır. Fotoğrafı satır içi göstermek için yukarıdaki metne {finish_photo_url} ekleyin; eklenmezse yalnızca metin gönderilir.',
     resetToDefault: 'Varsayılana Sıfırla',
     titleRequired: 'Başlık gerekli',
     bodyRequired: 'Gövde gerekli',
@@ -8169,6 +8214,12 @@ export default {
     cancel: 'İptal',
     configuring: 'Yapılandırılıyor...',
     configureSlot: 'Yuvayı Yapılandır',
+    // Why an Orca profile went into the slot as the generic for its material (#3216)
+    orcaFallback: {
+      no_filament_id: 'Bu Orca profilinin kendine ait bir filament kimliği yok, bu yüzden OrcaSlicer bu yuvayı Generic {{material}} olarak görecek.',
+      lookup_failed: 'Bu profilin filament kimliği Orca Cloud\'dan okunamadı, bu yüzden OrcaSlicer bu yuvayı Generic {{material}} olarak görecek. Birazdan tekrar deneyin.',
+      no_permission: 'Orca Cloud erişiminiz yok, bu yüzden bu profilin filament kimliği okunamadı. OrcaSlicer bu yuvayı Generic {{material}} olarak görecek.',
+    },
   },
 
   // Git Yedekleme Ayarları

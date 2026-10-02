@@ -295,6 +295,7 @@ async def init_db():
         aito_tracking_view,
         ams_history,
         ams_label,
+        announcement,
         api_key,
         archive,
         auth_ephemeral,
@@ -6120,6 +6121,12 @@ async def run_migrations(conn):
     # on fresh installs only — this covers databases whose table predates it.
     await _migrate_location_ha_sensor_unique_binding(conn)
 
+    # Migration: the stock alert templates name the colour and subtype (#2955).
+    # The forecast groups by colour, so two colours of one product would
+    # otherwise send the same message. A plain UPDATE guarded on the old text, so
+    # a template an admin has edited is left alone.
+    await _migrate_stock_alert_template_sku_variables(conn)
+
     # Migration: supplier master list + spool assignments (#2988).
     # create_all() covers fresh installs; this covers upgrades.
     await _migrate_create_supplier_tables(conn)
@@ -6200,6 +6207,21 @@ async def run_migrations(conn):
     # the reason in the user's language. Nullable: rows that failed before this
     # keep showing their English error_message.
     await _safe_execute(conn, "ALTER TABLE scheduled_dryings ADD COLUMN error_code VARCHAR(32)")
+
+    # Migration: per-provider photo attachment opt-out. Defaults TRUE so
+    # existing providers keep attaching snapshots exactly as before. The
+    # backfill covers a table create_all() already gave the column (the ALTER
+    # is then swallowed and existing rows keep NULL, which reads as off).
+    await _safe_execute(conn, "ALTER TABLE notification_providers ADD COLUMN attach_photo BOOLEAN DEFAULT TRUE")
+    async with conn.begin_nested():
+        await conn.execute(
+            text("UPDATE notification_providers SET attach_photo = :on WHERE attach_photo IS NULL"), {"on": True}
+        )
+
+    # Migration: the filament id a slot preset was written with, so the slot
+    # card can tell when something else re-configured the slot (#3216).
+    # Nullable: existing rows have none and keep being shown as before.
+    await _safe_execute(conn, "ALTER TABLE slot_preset_mappings ADD COLUMN tray_info_idx VARCHAR(32)")
 
 
 async def _migrate_unlock_retainer_locked_quotes(conn) -> None:
@@ -6486,6 +6508,35 @@ async def _migrate_rename_ha_sensor_alert_template(conn) -> None:
         text("UPDATE notification_templates SET name = :new WHERE event_type = :et AND name = :old"),
         {"new": "Printer Sensor Alert", "et": "ha_sensor_alert", "old": "Home Assistant Sensor Alert"},
     )
+
+
+_STOCK_ALERT_TEMPLATE_BODIES = {
+    "stock_reorder_alert": (
+        "{material} ({brand}) has reached the reorder point.\nStock: {stock_g}g | Rate: {rate_g_day}g/day | Days left: {days_left}d\nReorder now to avoid a stock break.",
+        "{material} {subtype} {color} ({brand}) has reached the reorder point.\nStock: {stock_g}g | Rate: {rate_g_day}g/day | Days left: {days_left}d\nReorder now to avoid a stock break.",
+    ),
+    "stock_break_alert": (
+        "{material} ({brand}) will run out before replenishment arrives.\nStock: {stock_g}g | Rate: {rate_g_day}g/day | Lead time: {lead_time_days}d\nOnly {days_left}d of stock remaining — order immediately.",
+        "{material} {subtype} {color} ({brand}) will run out before replenishment arrives.\nStock: {stock_g}g | Rate: {rate_g_day}g/day | Lead time: {lead_time_days}d\nOnly {days_left}d of stock remaining — order immediately.",
+    ),
+}
+
+
+async def _migrate_stock_alert_template_sku_variables(conn) -> None:
+    """Give the stock alert templates {subtype} and {color} (#2955).
+
+    Updates a body only while it is still the shipped default, so an admin's own
+    wording is kept.
+    """
+    from sqlalchemy import text
+
+    for event_type, (old, new) in _STOCK_ALERT_TEMPLATE_BODIES.items():
+        await conn.execute(
+            text(
+                "UPDATE notification_templates SET body_template = :new WHERE event_type = :et AND body_template = :old"
+            ),
+            {"new": new, "et": event_type, "old": old},
+        )
 
 
 async def _migrate_location_ha_sensor_unique_binding(conn) -> None:
