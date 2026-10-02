@@ -1,7 +1,6 @@
 import { Trans, useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { Building2, Loader2, User, X } from 'lucide-react';
-import { Card, CardContent } from '../Card';
 import { Button } from '../Button';
 import { api } from '../../api/client';
 import type { AitoClientHistoryCard, AitoProject } from '../../api/client';
@@ -10,6 +9,7 @@ import { useCurrency } from '../../hooks/useCurrency';
 import { formatMoney } from '../../utils/pricing';
 import { formatDate } from '../../utils/date';
 import { focusRingCls } from '../formStyles';
+import { AitoDialogShell } from './AitoDialogShell';
 import { ALL_COLUMNS } from './columns';
 import { CLIENT_TIMELINE_LIMIT, summariseTimeline, timelineItems } from './clientHistoryTimeline';
 
@@ -83,135 +83,109 @@ export function ClientHistoryModal({
   const statFigure = <b className="text-[.88rem] font-semibold tabular-nums text-white" />;
 
   return (
-    // z-[110], not z-50: the panel's own backdrop is z-50, so a lower overlay
-    // renders behind the panel that opened this.
-    <div
-      className={`fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-[110] ${
-        closing ? 'animate-overlay-out pointer-events-none' : 'animate-overlay-in'
-      }`}
-      onClick={requestClose}
-      // The panel's own window-level Escape listener (useDismissableDialog,
-      // in ProjectDetailPanel) is still mounted while this dialog is open, so
-      // one Escape would otherwise fire both: this dialog closes AND the
-      // panel closes back to the board. Stopping propagation here — in a
-      // React onKeyDown, before the event reaches window — is what keeps it
-      // from reaching that listener. Focus is inside the dialog on mount
-      // (`dialogRef.focus()`), so this fires; ClientEditor's Escape handler
-      // uses the same trick for the same reason.
-      onKeyDown={(e) => {
-        if (e.key !== 'Escape') return;
-        e.stopPropagation();
-        if (!closing) requestClose();
-      }}
-    >
-      <Card
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-label={t('aito.clientHistory')}
-        aria-busy={history.isPending && hasClient ? 'true' : undefined}
-        data-testid="client-history-modal"
-        tabIndex={-1}
-        className={`w-full max-w-[600px] max-h-[88vh] flex flex-col focus:outline-none ${
-          closing ? 'animate-modal-out' : 'animate-modal-in'
-        }`}
-        onClick={(e: React.MouseEvent) => e.stopPropagation()}
-      >
-        <CardContent className="p-0 flex flex-col min-h-0">
-          <header className={`grid grid-cols-[36px_1fr_auto] items-center gap-x-3 ${INSET} pt-5 pb-4`}>
-            <span
-              aria-hidden="true"
-              className="grid h-9 w-9 place-items-center rounded-[9px] bg-bambu-dark-tertiary text-bambu-gray-light"
-            >
-              <ClientGlyph className="h-[17px] w-[17px]" strokeWidth={2.2} />
-            </span>
-            <div className="min-w-0">
-              <h3 className="truncate text-[1.15rem] font-semibold leading-tight tracking-[-0.012em] text-white">
-                {project.client_name ?? t('aito.noClient')}
-              </h3>
-              <p className="mt-0.5 text-[.82rem] text-bambu-gray">{t('aito.clientHistory')}</p>
-            </div>
-            <button
-              type="button"
-              onClick={requestClose}
-              aria-label={t('common.close')}
-              className={`self-start rounded-lg p-1.5 text-bambu-gray hover:bg-bambu-dark-tertiary hover:text-white ${focusRingCls}`}
-            >
-              <X className="h-4.5 w-4.5" aria-hidden="true" />
-            </button>
-          </header>
-
-          {cards.length > 0 && (
-            <div data-testid="client-history-summary" className={`flex flex-wrap items-center gap-1.5 ${INSET} pb-3.5`}>
-              <span className={STAT_CLS}>
-                <Trans i18nKey="aito.clientHistoryProjects" count={summary.count} components={{ b: statFigure }}>
-                  {'<b>{{count}}</b> projects'}
-                </Trans>
-              </span>
-              <span className={STAT_CLS}>
-                <b className="text-[.88rem] font-semibold tabular-nums text-white">{formatMoney(summary.total, currency)}</b>
-              </span>
-              <span className={STAT_CLS}>
-                <Trans
-                  i18nKey="aito.clientHistorySince"
-                  values={{ date: formatDate(summary.since, { month: 'short', year: 'numeric' }) }}
-                  components={{ b: statFigure }}
-                >
-                  {'since <b>{{date}}</b>'}
-                </Trans>
-              </span>
-            </div>
-          )}
-
-          <div className={`overflow-y-auto flex-1 min-h-0 border-t border-aito-line ${INSET} pt-3.5 pb-5`}>
-            {history.isPending && hasClient && (
-              <div className="flex items-center gap-2 py-8 text-sm text-bambu-gray">
-                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                {t('common.loading')}
-              </div>
-            )}
-            {history.isError && (
-              <div className="flex items-center justify-between gap-3 py-8 text-sm">
-                <p className="text-status-error">{t('aito.clientHistoryError')}</p>
-                <Button variant="secondary" size="sm" onClick={() => history.refetch()}>
-                  {t('common.retry')}
-                </Button>
-              </div>
-            )}
-            {(history.isSuccess || !hasClient) && cards.length === 0 && (
-              <p className="py-8 text-sm text-bambu-gray">{t('aito.clientHistoryEmpty')}</p>
-            )}
-            {cards.length > 0 && (
-              // The rail is a pseudo-element on the list so it spans year
-              // markers and rows alike; it sits 5px inside the inset and the
-              // list's padding (pl-5) is the room the dots and markers need.
-              <ol className="relative pl-5 before:absolute before:left-[5px] before:top-2 before:bottom-2 before:w-0.5 before:rounded-full before:bg-bambu-dark-tertiary">
-                {items.map((item) =>
-                  item.kind === 'year' ? (
-                    <li
-                      key={`year-${item.year}`}
-                      data-testid="client-history-year"
-                      className="relative mt-3 mb-1.5 text-[.74rem] font-semibold leading-5 tracking-[.04em] text-bambu-gray first:mt-0 before:absolute before:-left-[18px] before:top-[7px] before:h-[7px] before:w-[7px] before:rotate-45 before:rounded-[1.5px] before:bg-bambu-gray-dark"
-                    >
-                      {item.year}
-                    </li>
-                  ) : (
-                    <TimelineRow
-                      key={item.card.id}
-                      card={item.card}
-                      current={item.card.id === project.id}
-                      stage={stageLabel(item.card)}
-                      currency={currency}
-                      onOpen={onOpenCard}
-                    />
-                  ),
-                )}
-              </ol>
-            )}
+    <AitoDialogShell
+      label={t('aito.clientHistory')}
+      testId="client-history-modal"
+      header={
+        <header className={`grid grid-cols-[36px_1fr_auto] items-center gap-x-3 ${INSET} pt-5 pb-4`}>
+          <span
+            aria-hidden="true"
+            className="grid h-9 w-9 place-items-center rounded-[9px] bg-bambu-dark-tertiary text-bambu-gray-light"
+          >
+            <ClientGlyph className="h-[17px] w-[17px]" strokeWidth={2.2} />
+          </span>
+          <div className="min-w-0">
+            <h3 className="truncate text-[1.15rem] font-semibold leading-tight tracking-[-0.012em] text-white">
+              {project.client_name ?? t('aito.noClient')}
+            </h3>
+            <p className="mt-0.5 text-[.82rem] text-bambu-gray">{t('aito.clientHistory')}</p>
           </div>
-        </CardContent>
-      </Card>
-    </div>
+          <button
+            type="button"
+            onClick={requestClose}
+            aria-label={t('common.close')}
+            className={`self-start rounded-lg p-1.5 text-bambu-gray hover:bg-bambu-dark-tertiary hover:text-white ${focusRingCls}`}
+          >
+            <X className="h-4.5 w-4.5" aria-hidden="true" />
+          </button>
+        </header>
+      }
+      closing={closing}
+      requestClose={requestClose}
+      dialogRef={dialogRef}
+      ariaBusy={history.isPending && hasClient}
+      maxWidthCls="max-w-[600px]"
+      capHeight
+    >
+      {cards.length > 0 && (
+        <div data-testid="client-history-summary" className={`flex flex-wrap items-center gap-1.5 ${INSET} pb-3.5`}>
+          <span className={STAT_CLS}>
+            <Trans i18nKey="aito.clientHistoryProjects" count={summary.count} components={{ b: statFigure }}>
+              {'<b>{{count}}</b> projects'}
+            </Trans>
+          </span>
+          <span className={STAT_CLS}>
+            <b className="text-[.88rem] font-semibold tabular-nums text-white">{formatMoney(summary.total, currency)}</b>
+          </span>
+          <span className={STAT_CLS}>
+            <Trans
+              i18nKey="aito.clientHistorySince"
+              values={{ date: formatDate(summary.since, { month: 'short', year: 'numeric' }) }}
+              components={{ b: statFigure }}
+            >
+              {'since <b>{{date}}</b>'}
+            </Trans>
+          </span>
+        </div>
+      )}
+
+      <div className={`overflow-y-auto flex-1 min-h-0 border-t border-aito-line ${INSET} pt-3.5 pb-5`}>
+        {history.isPending && hasClient && (
+          <div className="flex items-center gap-2 py-8 text-sm text-bambu-gray">
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+            {t('common.loading')}
+          </div>
+        )}
+        {history.isError && (
+          <div className="flex items-center justify-between gap-3 py-8 text-sm">
+            <p className="text-status-error">{t('aito.clientHistoryError')}</p>
+            <Button variant="secondary" size="sm" onClick={() => history.refetch()}>
+              {t('common.retry')}
+            </Button>
+          </div>
+        )}
+        {(history.isSuccess || !hasClient) && cards.length === 0 && (
+          <p className="py-8 text-sm text-bambu-gray">{t('aito.clientHistoryEmpty')}</p>
+        )}
+        {cards.length > 0 && (
+          // The rail is a pseudo-element on the list so it spans year
+          // markers and rows alike; it sits 5px inside the inset and the
+          // list's padding (pl-5) is the room the dots and markers need.
+          <ol className="relative pl-5 before:absolute before:left-[5px] before:top-2 before:bottom-2 before:w-0.5 before:rounded-full before:bg-bambu-dark-tertiary">
+            {items.map((item) =>
+              item.kind === 'year' ? (
+                <li
+                  key={`year-${item.year}`}
+                  data-testid="client-history-year"
+                  className="relative mt-3 mb-1.5 text-[.74rem] font-semibold leading-5 tracking-[.04em] text-bambu-gray first:mt-0 before:absolute before:-left-[18px] before:top-[7px] before:h-[7px] before:w-[7px] before:rotate-45 before:rounded-[1.5px] before:bg-bambu-gray-dark"
+                >
+                  {item.year}
+                </li>
+              ) : (
+                <TimelineRow
+                  key={item.card.id}
+                  card={item.card}
+                  current={item.card.id === project.id}
+                  stage={stageLabel(item.card)}
+                  currency={currency}
+                  onOpen={onOpenCard}
+                />
+              ),
+            )}
+          </ol>
+        )}
+      </div>
+    </AitoDialogShell>
   );
 }
 

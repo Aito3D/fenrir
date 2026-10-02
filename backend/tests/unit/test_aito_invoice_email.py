@@ -450,3 +450,102 @@ async def test_a_record_commit_failure_after_a_real_send_does_not_500(async_clie
     # local record of it. See send_invoice_email's docstring on why a 500
     # here (inviting a retry that sends a second real invoice) is worse.
     assert "invoice.emailed" not in await _events(async_client, project["id"])
+
+
+@pytest.fixture
+def broadcasts(monkeypatch):
+    seen: list[tuple] = []
+
+    async def fake(*args):
+        seen.append(args)
+
+    monkeypatch.setattr("backend.app.api.routes.aito._broadcast_changed", fake)
+    return seen
+
+
+def _break_rollback(monkeypatch):
+    async def boom(self):
+        raise RuntimeError("connection already closed")
+
+    monkeypatch.setattr(AsyncSession, "rollback", boom)
+
+
+async def _send(async_client, project):
+    return await async_client.post(
+        f"/api/v1/aito/{project['id']}/invoice-email",
+        json={"to": "contact@example.pf", "invoice_id": "INV-7"},
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_failing_trailing_rollback_after_a_real_send_still_returns_200_and_broadcasts(
+    async_client, books_invoice_email, broadcasts, monkeypatch
+):
+    project = await _create(async_client)
+    _break_rollback(monkeypatch)
+
+    response = await _send(async_client, project)
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "sent"
+    assert books_invoice_email == [("INV-7", ["contact@example.pf"])]
+    assert [b[0] for b in broadcasts][-1:] == ["invoice-email"]
+
+
+@pytest.mark.asyncio
+async def test_failing_rollbacks_after_a_commit_failure_and_a_re_read_failure_still_return_200(
+    async_client, books_invoice_email, broadcasts, monkeypatch
+):
+    project = await _create(async_client)
+    real_commit = AsyncSession.commit
+    calls = {"commit": 0, "list": 0}
+
+    async def flaky_commit(self):
+        calls["commit"] += 1
+        if calls["commit"] == 1:
+            raise SQLAlchemyError("database is locked")
+        return await real_commit(self)
+
+    async def flaky_list(db, estimate_id, customer_id):
+        calls["list"] += 1
+        if calls["list"] > 1:
+            raise ZohoUpstreamError("Zoho Books unreachable: ConnectError")
+        return [dict(INVOICE)]
+
+    monkeypatch.setattr(AsyncSession, "commit", flaky_commit)
+    monkeypatch.setattr(zoho_service, "list_project_invoices", flaky_list)
+    _break_rollback(monkeypatch)
+
+    response = await _send(async_client, project)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "draft"
+    assert body["url"] == ""
+    assert books_invoice_email == [("INV-7", ["contact@example.pf"])]
+    assert [b[0] for b in broadcasts][-1:] == ["invoice-email"]
+
+
+@pytest.mark.asyncio
+async def test_a_send_prefill_failure_rolls_back_before_mapping_the_error(
+    async_client, books_invoice_email, monkeypatch
+):
+    project = await _create(async_client)
+    rolled_back = {"n": 0}
+    real_rollback = AsyncSession.rollback
+
+    async def counting(self):
+        rolled_back["n"] += 1
+        return await real_rollback(self)
+
+    async def down(db, invoice_id):
+        raise ZohoUpstreamError("Zoho Books unreachable: ConnectError")
+
+    monkeypatch.setattr(zoho_service, "get_invoice_email_content", down)
+    monkeypatch.setattr(AsyncSession, "rollback", counting)
+
+    response = await _send(async_client, project)
+
+    assert response.status_code == 502
+    assert rolled_back["n"] >= 1
+    assert books_invoice_email == []

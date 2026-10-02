@@ -10,6 +10,11 @@ the worker then re-reads only the cards those rows name.
 
 It returns WHAT changed and nothing else. Which cards that means, and what a
 reconcile does, stays in ``aito_quote_sync``; this module does not import it.
+
+Nothing a pass learns is kept until every listing has been read: the
+watermarks are committed and ``_seen`` updated only after the loop, so a pass
+that raises part-way leaves both where they were and the next pass reports
+the same rows again. ``_seen`` is never ahead of the committed watermarks.
 """
 
 from __future__ import annotations
@@ -58,6 +63,9 @@ class Changes:
 
 async def poll_changes(db: AsyncSession) -> Changes:
     changes = Changes()
+    # Held back until every listing has been read; see the module docstring.
+    windows: dict[str, dict[str, str]] = {}
+    advances: list[tuple[str, str, list[dict], datetime | None]] = []
     for name, setting, lister in _POLLS:
         try:
             since = await read_since(db, setting, BACKFILL_DAYS)
@@ -88,7 +96,9 @@ async def poll_changes(db: AsyncSession) -> Changes:
                 changes.estimate_ids.add(row_id)
             elif row.get("customer_id"):
                 changes.customer_ids.add(str(row["customer_id"]))
-        _seen[name] = window
+        windows[name] = window
+        advances.append((setting, since, rows, newest))
+    for setting, since, rows, newest in advances:
         await advance_watermark(
             db,
             setting,
@@ -99,6 +109,7 @@ async def poll_changes(db: AsyncSession) -> Changes:
             overlap_seconds=OVERLAP_SECONDS,
             truncated_overlap_seconds=TRUNCATED_OVERLAP_SECONDS,
         )
+    _seen.update(windows)
     return changes
 
 

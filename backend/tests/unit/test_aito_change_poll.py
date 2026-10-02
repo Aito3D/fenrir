@@ -167,3 +167,61 @@ async def test_a_row_with_a_mangled_timestamp_or_no_id_does_not_break_the_pass(d
 
     assert changes.estimate_ids == {"E1"}  # still reported; only its timestamp is ignored
     assert changes.customer_ids == set()  # a payment with no customer names no card
+
+
+@pytest.mark.asyncio
+async def test_a_pass_that_raises_part_way_reports_the_same_rows_again(db_session, monkeypatch):
+    # A non-Zoho failure (say SQLite "database is locked") escapes the pass,
+    # so the caller never enqueues what it read. Neither the memo nor the
+    # watermark may move, or those rows would be skipped as already reported.
+    await _configure_zoho(db_session)
+    rows = {"/estimates": [("E1", "C1", stamp(10))]}
+    zoho_service.transport = httpx.MockTransport(_books(rows))
+    assert (await aito_change_poll.poll_changes(db_session)).estimate_ids == {"E1"}
+    watermark = await get_setting(db_session, "aito_estimate_poll_since")
+    seen_before = {name: dict(window) for name, window in aito_change_poll._seen.items()}
+
+    rows["/estimates"] = [("E1", "C1", stamp(1)), ("E2", "C2", stamp(2))]
+
+    async def locked(_db, _since):
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr(zoho_service, "list_customer_payments_modified_since", locked)
+    with pytest.raises(RuntimeError):
+        await aito_change_poll.poll_changes(db_session)
+
+    assert aito_change_poll._seen == seen_before
+    assert await get_setting(db_session, "aito_estimate_poll_since") == watermark
+
+    monkeypatch.undo()
+    again = await aito_change_poll.poll_changes(db_session)
+    assert again.estimate_ids == {"E1", "E2"}
+
+
+@pytest.mark.asyncio
+async def test_a_watermark_write_that_raises_leaves_the_memo_alone(db_session, monkeypatch):
+    await _configure_zoho(db_session)
+    zoho_service.transport = httpx.MockTransport(
+        _books(
+            {
+                "/estimates": [("E1", "C1", stamp(10))],
+                "/customerpayments": [("P1", "C2", stamp(5))],
+            }
+        )
+    )
+    real_advance = aito_change_poll.advance_watermark
+
+    async def advance_then_lock(db, setting, *args, **kwargs):
+        if setting == "aito_payment_poll_since":
+            raise RuntimeError("database is locked")
+        await real_advance(db, setting, *args, **kwargs)
+
+    monkeypatch.setattr(aito_change_poll, "advance_watermark", advance_then_lock)
+    with pytest.raises(RuntimeError):
+        await aito_change_poll.poll_changes(db_session)
+    assert aito_change_poll._seen == {name: {} for name in aito_change_poll._seen}
+
+    monkeypatch.undo()
+    again = await aito_change_poll.poll_changes(db_session)
+    assert again.estimate_ids == {"E1"}
+    assert again.customer_ids == {"C2"}

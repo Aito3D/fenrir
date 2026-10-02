@@ -1,13 +1,12 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Merge, Search, X } from 'lucide-react';
-import { Card, CardContent } from '../Card';
+import { Loader2, Merge, Search } from 'lucide-react';
 import { Button } from '../Button';
 import { api, ApiError, type AitoProject } from '../../api/client';
 import { useDismissableDialog } from '../../hooks/useDismissableDialog';
 import { useToast } from '../../contexts/ToastContext';
-import { focusRingCls } from '../formStyles';
+import { AitoDialogShell } from './AitoDialogShell';
 import { CandidateList } from './CandidateList';
 import { mergeCandidates } from './mergeCandidates';
 
@@ -54,107 +53,70 @@ export function MergeProjectModal({ project, onClose }: { project: AitoProject; 
   });
 
   return (
-    <div
-      className={`fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-[110] ${
-        closing ? 'animate-overlay-out pointer-events-none' : 'animate-overlay-in'
-      }`}
-      onClick={requestClose}
-      // The panel's own window-level Escape listener is still mounted while
-      // this dialog is open — stop the key here or one Escape closes both.
-      // Same trick as ClientHistoryModal, for the same reason.
-      onKeyDown={(e) => {
-        if (e.key !== 'Escape') return;
-        e.stopPropagation();
-        if (!closing && !merge.isPending) requestClose();
-      }}
+    <AitoDialogShell
+      label={t('aito.mergeTitle')}
+      testId="merge-project-modal"
+      icon={Merge}
+      subtitle={t('aito.mergeBody')}
+      closing={closing}
+      requestClose={requestClose}
+      dialogRef={dialogRef}
+      busy={merge.isPending}
+      ariaBusy={board.isPending}
+      maxWidthCls="max-w-[560px]"
+      capHeight
     >
-      <Card
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
+
+      <div className="px-6 pb-3">
+        <label className="flex h-9 items-center gap-2 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark pl-3 pr-2 focus-within:border-bambu-green/50">
+          <Search className="h-4 w-4 flex-none text-bambu-gray" aria-hidden="true" />
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={t('aito.mergeSearch')}
+            aria-label={t('aito.mergeSearch')}
+            autoFocus
+            className="min-w-0 flex-1 bg-transparent text-sm text-white placeholder:text-bambu-gray focus:outline-none"
+          />
+        </label>
+      </div>
+
+      <div
+        role="radiogroup"
         aria-label={t('aito.mergeTitle')}
-        aria-busy={board.isPending ? 'true' : undefined}
-        data-testid="merge-project-modal"
-        tabIndex={-1}
-        className={`w-full max-w-[560px] max-h-[88vh] flex flex-col focus:outline-none ${
-          closing ? 'animate-modal-out' : 'animate-modal-in'
-        }`}
-        onClick={(e: React.MouseEvent) => e.stopPropagation()}
+        className="min-h-0 flex-1 overflow-y-auto scrollbar-hide px-6 pb-2"
       >
-        <CardContent className="p-0 flex flex-col min-h-0">
-          <header className="grid grid-cols-[36px_1fr_auto] items-center gap-x-3 px-6 pt-5 pb-4">
-            <span
-              aria-hidden="true"
-              className="grid h-9 w-9 place-items-center rounded-[9px] bg-bambu-dark-tertiary text-bambu-gray-light"
-            >
-              <Merge className="h-[18px] w-[18px]" />
-            </span>
-            <div className="min-w-0">
-              <h2 className="text-[1.05rem] font-semibold leading-tight text-white truncate">{t('aito.mergeTitle')}</h2>
-              <p className="mt-0.5 text-xs text-bambu-gray leading-snug">{t('aito.mergeBody')}</p>
-            </div>
-            <button
-              type="button"
-              onClick={requestClose}
-              aria-label={t('common.close')}
-              className={`grid h-8 w-8 place-items-center rounded-md text-bambu-gray transition-colors hover:bg-bambu-dark-tertiary hover:text-white ${focusRingCls}`}
-            >
-              <X className="h-4 w-4" aria-hidden="true" />
-            </button>
-          </header>
+        <CandidateList
+          project={project}
+          selectedId={selectedId}
+          query={query}
+          onSelect={(id) => {
+            setSelectedId(id);
+            setError(null);
+          }}
+        />
+      </div>
 
-          <div className="px-6 pb-3">
-            <label className="flex h-9 items-center gap-2 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark pl-3 pr-2 focus-within:border-bambu-green/50">
-              <Search className="h-4 w-4 flex-none text-bambu-gray" aria-hidden="true" />
-              <input
-                type="search"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder={t('aito.mergeSearch')}
-                aria-label={t('aito.mergeSearch')}
-                autoFocus
-                className="min-w-0 flex-1 bg-transparent text-sm text-white placeholder:text-bambu-gray focus:outline-none"
-              />
-            </label>
-          </div>
-
-          <div
-            role="radiogroup"
-            aria-label={t('aito.mergeTitle')}
-            className="min-h-0 flex-1 overflow-y-auto scrollbar-hide px-6 pb-2"
+      <footer className="flex items-center justify-between gap-3 border-t border-bambu-dark-tertiary px-6 py-3">
+        <p role="alert" className="min-w-0 truncate text-xs text-red-400">
+          {error}
+        </p>
+        <div className="flex flex-none items-center gap-2">
+          <Button variant="secondary" size="sm" onClick={requestClose} disabled={merge.isPending}>
+            {t('common.cancel')}
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            disabled={selected === null || merge.isPending}
+            onClick={() => selected && merge.mutate(selected.id)}
           >
-            <CandidateList
-              project={project}
-              selectedId={selectedId}
-              query={query}
-              onSelect={(id) => {
-                setSelectedId(id);
-                setError(null);
-              }}
-            />
-          </div>
-
-          <footer className="flex items-center justify-between gap-3 border-t border-bambu-dark-tertiary px-6 py-3">
-            <p role="alert" className="min-w-0 truncate text-xs text-red-400">
-              {error}
-            </p>
-            <div className="flex flex-none items-center gap-2">
-              <Button variant="secondary" size="sm" onClick={requestClose} disabled={merge.isPending}>
-                {t('common.cancel')}
-              </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                disabled={selected === null || merge.isPending}
-                onClick={() => selected && merge.mutate(selected.id)}
-              >
-                {merge.isPending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
-                {t('aito.mergeConfirm')}
-              </Button>
-            </div>
-          </footer>
-        </CardContent>
-      </Card>
-    </div>
+            {merge.isPending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
+            {t('aito.mergeConfirm')}
+          </Button>
+        </div>
+      </footer>
+    </AitoDialogShell>
   );
 }

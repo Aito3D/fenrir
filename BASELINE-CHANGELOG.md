@@ -454,3 +454,25 @@ healthy.
 
 - Golden probes re-recorded: none (13/13 match).
 - SURFACE.md sections regenerated: none (`bash tools/gen_surface_c22.sh | diff - SURFACE.md` is empty; no new export).
+
+## 2026-10-01 — campaign 23, T-104: additive internal export AitoDialogShell (sanctioned re-baseline, not a behavior change)
+
+Sanctions commit <this commit> "refactor(loop-3): T-104 extract AitoDialogShell
+from the five copy-pasted Aito dialogs". The frame the panel's stacked dialogs
+copied line for line — the z-[110] backdrop with its overlay in/out animation
+and click-to-close, the Escape trap (stopPropagation, then close unless already
+closing or a mutation is in flight), the role=dialog Card with its modal in/out
+animation, max width and optional 88vh cap, and the 36px icon tile + h2 +
+subtitle + close-X header — now lives in the new
+`frontend/src/components/aito/AitoDialogShell.tsx`. MergeProjectModal,
+TransferClientModal, TaskTransferModal and WatchModal use the standard header;
+ClientHistoryModal keeps its own h3 masthead (different inset, glyph size and
+close button) and passes it to the shell as a custom header. Bodies, footers,
+the `useDismissableDialog` call and MODAL_OUT_MS (170) stay in each dialog,
+since the footers differ. The rendered DOM of all five dialogs is unchanged:
+old and new versions were rendered side by side (open, settled, and after
+Escape) and their HTML compared byte for byte; every class string, role, aria
+attribute, data-testid and i18n key is the same. No locale changes.
+
+- SURFACE.md sections regenerated: "Frontend exported symbols" (+1 line, additions only).
+- Golden probes re-recorded: none (35/35 match).
