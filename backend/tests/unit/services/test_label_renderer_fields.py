@@ -53,7 +53,9 @@ def _data(**overrides) -> LabelData:
 def _text(template: str, data: LabelData, fields=DEFAULT_LABEL_FIELDS) -> bytes:
     w_mm, h_mm = label_size_mm(template)
     buf = io.BytesIO()
-    c = rl_canvas.Canvas(buf, pagesize=(w_mm * mm, h_mm * mm), pageCompression=0)
+    # invariant=1 pins the document /ID and dates: a random /ID is hex and
+    # sometimes contains "230", which failed the "max temp left out" check.
+    c = rl_canvas.Canvas(buf, pagesize=(w_mm * mm, h_mm * mm), pageCompression=0, invariant=1)
     _draw_label(c, 0, 0, w_mm * mm, h_mm * mm, data, False, fields)
     c.showPage()
     c.save()
