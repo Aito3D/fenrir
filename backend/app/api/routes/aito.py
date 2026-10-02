@@ -2265,6 +2265,41 @@ async def _resolve_project_retainer(db: AsyncSession, project: AitoProject, reta
     return row
 
 
+async def _load_project_with_quote_or_404(db: AsyncSession, project_id: int) -> AitoProject:
+    """The shared prologue of the three document-PDF routes: a live card,
+    pushed, that has a Zoho quote — else the matching 404."""
+    project = await db.get(AitoProject, project_id)
+    if project is None or project.status == "deleted":
+        raise HTTPException(status_code=404, detail="Project not found")
+    # Before the quote_id check: a card whose quote is still being created is
+    # pending too, and the wait is what gives it one.
+    await ensure_pushed(db, project)
+    if not project.quote_id:
+        raise HTTPException(status_code=404, detail="This project has no Zoho quote")
+    return project
+
+
+def _pdf_response(pdf: bytes, number_or_id: str) -> Response:
+    """The shared response tail of the three document-PDF routes.
+
+    inline, not attachment: the browser fetches this into a blob to drive its
+    own print dialog, and a download prompt would defeat that. Built with the
+    shared header helper rather than a hand-written header: the document
+    number is client-supplied (quote_number) or upstream text (invoice and
+    retainer numbers), and Starlette encodes response headers as latin-1 — a
+    curly quote, em dash, or any other non-Latin-1 character in it would raise
+    UnicodeEncodeError and turn this into an unhandled 500. Control characters
+    are stripped first (_CONTROL_CHARS_RE): they are ASCII, so the helper's own
+    non-ASCII stripping never touches them.
+    """
+    filename = _CONTROL_CHARS_RE.sub("", f"{number_or_id}.pdf")
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": build_content_disposition(filename, disposition="inline")},
+    )
+
+
 @router.get("/{project_id}/retainer.pdf")
 async def get_retainer_pdf(
     project_id: int,
@@ -2278,24 +2313,14 @@ async def get_retainer_pdf(
     ``retainer_id`` is required: unlike the invoice there is no "newest"
     default worth having, since the card always knows which row was clicked.
     """
-    project = await db.get(AitoProject, project_id)
-    if project is None or project.status == "deleted":
-        raise HTTPException(status_code=404, detail="Project not found")
-    await ensure_pushed(db, project)
-    if not project.quote_id:
-        raise HTTPException(status_code=404, detail="This project has no Zoho quote")
+    project = await _load_project_with_quote_or_404(db, project_id)
     try:
         retainer = await _resolve_project_retainer(db, project, retainer_id)
         pdf = await zoho_service.get_retainer_invoice_pdf(db, retainer["id"])
     except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
         logger.warning("Aito retainer PDF failed for project %s: %s", project_id, e)
         raise HTTPException(status_code=502, detail=str(e)) from e
-    filename = _CONTROL_CHARS_RE.sub("", f"{retainer['number'] or retainer['id']}.pdf")
-    return Response(
-        content=pdf,
-        media_type="application/pdf",
-        headers={"Content-Disposition": build_content_disposition(filename, disposition="inline")},
-    )
+    return _pdf_response(pdf, retainer["number"] or retainer["id"])
 
 
 async def _load_retainer_email_content(
@@ -2826,31 +2851,14 @@ async def get_invoice_pdf(
     whose number the operator never saw. Omitting it keeps the previous
     behaviour — newest invoice — so existing callers are unaffected.
     """
-    project = await db.get(AitoProject, project_id)
-    if project is None or project.status == "deleted":
-        raise HTTPException(status_code=404, detail="Project not found")
-    await ensure_pushed(db, project)
-    if not project.quote_id:
-        raise HTTPException(status_code=404, detail="This project has no Zoho quote")
+    project = await _load_project_with_quote_or_404(db, project_id)
     try:
         invoice, _count = await _resolve_project_invoice(db, project, invoice_id)
         pdf = await zoho_service.get_invoice_pdf(db, invoice["id"])
     except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
         logger.warning("Aito invoice PDF failed for project %s: %s", project_id, e)
         raise HTTPException(status_code=502, detail=str(e)) from e
-    filename = f"{invoice['number'] or invoice['id']}.pdf"
-    filename = _CONTROL_CHARS_RE.sub("", filename)
-    return Response(
-        content=pdf,
-        media_type="application/pdf",
-        # inline + the shared header helper, for the reasons on get_quote_pdf:
-        # the browser prints this from a blob, and invoice_number is upstream
-        # text that Starlette would fail to latin-1 encode if it contained an
-        # em dash or a curly quote. Control characters are stripped above for
-        # the same reason as get_quote_pdf: they survive build_content_disposition's
-        # own stripping (it only drops non-ASCII, quotes, and backslashes).
-        headers={"Content-Disposition": build_content_disposition(filename, disposition="inline")},
-    )
+    return _pdf_response(pdf, invoice["number"] or invoice["id"])
 
 
 async def _load_invoice_email_content(
@@ -3190,14 +3198,7 @@ async def get_quote_pdf(
     but a harder failure mode: a mid-stream Zoho error becomes a truncated
     PDF the browser renders as a blank print dialog, instead of the 502 below.
     """
-    project = await db.get(AitoProject, project_id)
-    if project is None or project.status == "deleted":
-        raise HTTPException(status_code=404, detail="Project not found")
-    # Before the quote_id check: a card whose quote is still being created is
-    # pending too, and the wait is what gives it one.
-    await ensure_pushed(db, project)
-    if not project.quote_id:
-        raise HTTPException(status_code=404, detail="This project has no Zoho quote")
+    project = await _load_project_with_quote_or_404(db, project_id)
     try:
         pdf = await zoho_service.get_estimate_pdf(db, project.quote_id)
     except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
@@ -3205,22 +3206,7 @@ async def get_quote_pdf(
         # tells the operator to check Zoho rather than the app's own logs.
         logger.warning("Aito quote PDF failed for project %s: %s", project_id, e)
         raise HTTPException(status_code=502, detail=str(e)) from e
-    filename = f"{project.quote_number or project.quote_id}.pdf"
-    filename = _CONTROL_CHARS_RE.sub("", filename)
-    return Response(
-        content=pdf,
-        media_type="application/pdf",
-        # inline, not attachment: the browser fetches this into a blob to
-        # drive its own print dialog, and a download prompt would defeat that.
-        # Built with the shared helper rather than a hand-written header:
-        # quote_number is client-supplied and unrestricted, and Starlette
-        # encodes response headers as latin-1 — a curly quote, em dash, or any
-        # other non-Latin-1 character in it would raise UnicodeEncodeError and
-        # turn this into an unhandled 500. Control characters are stripped
-        # above (_CONTROL_CHARS_RE) rather than here: they are ASCII, so the
-        # helper's own non-ASCII stripping never touches them.
-        headers={"Content-Disposition": build_content_disposition(filename, disposition="inline")},
-    )
+    return _pdf_response(pdf, project.quote_number or project.quote_id)
 
 
 async def _quote_email_content(db: AsyncSession, project: AitoProject) -> tuple[dict, str | None]:
@@ -4244,6 +4230,120 @@ async def transfer_client(
     return await _project_response(db, project)
 
 
+def _apply_patch(target: AitoProject, patch: dict) -> list[dict]:
+    """Diff ``patch`` against ``target`` (before writing, as ``diff_fields``
+    requires), then write it. Returns the changes for the event."""
+    changes = diff_fields(target, patch)
+    for key, value in patch.items():
+        setattr(target, key, value)
+    return changes
+
+
+async def _push_contact_to_books(
+    db: AsyncSession,
+    client_id: str,
+    *,
+    company: str,
+    is_company: bool,
+    first: str,
+    last: str,
+    email: str,
+    phone: str,
+    phone_field: str,
+    target_person_id: str | None,
+) -> str:
+    """``edit_project_client``'s Books write and its error ladder. Returns the
+    name Books settled on. Takes plain values only: it runs after the claim
+    has committed, so it must not read the (now stale) card row."""
+    try:
+        return await zoho_service.update_contact(
+            db,
+            client_id,
+            company_name=company if is_company else None,
+            first_name=None if is_company else first,
+            last_name=None if is_company else last,
+            email=email,
+            phone=phone,
+            phone_field=phone_field,
+            contact_person_id=target_person_id,
+        )
+    except ZohoNotConfiguredError:
+        raise HTTPException(status_code=409, detail="Zoho is not configured") from None
+    except ZohoNotFound as e:
+        # A 404 here means Books rejected the request; that's only ever
+        # a stale contact_person_id (deleted between page-load and save).
+        # A person card and a card-less company edit never send one, so
+        # for those the 404 is some other kind of "not found" upstream —
+        # surfaced as the pre-existing 502, not the person-specific 409.
+        if target_person_id is not None:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "contact_person_gone",
+                    "message": "This contact person no longer exists in Zoho Books",
+                },
+            ) from None
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    except ZohoRequestRejected as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    except ZohoUpstreamError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+
+
+async def _fan_out_client_edit(
+    db: AsyncSession,
+    project: AitoProject,
+    *,
+    is_zoho_contact: bool,
+    name: str,
+    phone: str,
+    email: str,
+    target_person_id: str | None,
+    own_changes: list[dict],
+    current_user: User | None,
+) -> None:
+    """``edit_project_client``'s card writes: the edited card, then (for a
+    real Books contact) every active sibling, each with its own
+    ``project.updated`` event. ``own_changes`` (the card-only social and
+    person changes already applied) lead the edited card's event."""
+    # The company name is contact-level and reaches every active sibling of
+    # the client; the coordinates are person-level and reach only siblings
+    # whose contact person matches the one this edit targets (both `None`
+    # counts as a match — a person-less sibling agrees with a person-less
+    # edit).
+    name_snapshot = {"client_name": name}
+    coords_snapshot = {"client_phone": phone or None, "client_email": email or None}
+    all_siblings: list[AitoProject] = []
+    if is_zoho_contact:
+        all_siblings = list(
+            (
+                await db.execute(
+                    select(AitoProject).where(
+                        AitoProject.client_id == project.client_id,
+                        AitoProject.status == "active",
+                        AitoProject.id != project.id,
+                    )
+                )
+            ).scalars()
+        )
+    for target in [project, *all_siblings]:
+        same_person = target is project or target.client_contact_person_id == target_person_id
+        patch = {**name_snapshot, **(coords_snapshot if same_person else {})}
+        changes = _apply_patch(target, patch)
+        if target is project:
+            changes = own_changes + changes
+        await record(
+            db,
+            target.id,
+            "project.updated",
+            actor_class="user",
+            actor_name=_actor(current_user),
+            subject_type="project",
+            subject_id=target.id,
+            changes=changes,
+        )
+
+
 @router.put("/{project_id}/client", response_model=AitoProjectResponse)
 async def edit_project_client(
     project_id: int,
@@ -4358,39 +4458,18 @@ async def edit_project_client(
         claimed_version = payload.expected_version + 1
 
     if is_zoho_contact:
-        try:
-            name = await zoho_service.update_contact(
-                db,
-                client_id,
-                company_name=company if is_company else None,
-                first_name=None if is_company else first,
-                last_name=None if is_company else last,
-                email=email,
-                phone=phone,
-                phone_field=payload.phone_field,
-                contact_person_id=target_person_id,
-            )
-        except ZohoNotConfiguredError:
-            raise HTTPException(status_code=409, detail="Zoho is not configured") from None
-        except ZohoNotFound as e:
-            # A 404 here means Books rejected the request; that's only ever
-            # a stale contact_person_id (deleted between page-load and save).
-            # A person card and a card-less company edit never send one, so
-            # for those the 404 is some other kind of "not found" upstream —
-            # surfaced as the pre-existing 502, not the person-specific 409.
-            if target_person_id is not None:
-                raise HTTPException(
-                    status_code=409,
-                    detail={
-                        "code": "contact_person_gone",
-                        "message": "This contact person no longer exists in Zoho Books",
-                    },
-                ) from None
-            raise HTTPException(status_code=502, detail=str(e)) from e
-        except ZohoRequestRejected as e:
-            raise HTTPException(status_code=409, detail=str(e)) from e
-        except ZohoUpstreamError as e:
-            raise HTTPException(status_code=502, detail=str(e)) from e
+        name = await _push_contact_to_books(
+            db,
+            client_id,
+            company=company,
+            is_company=is_company,
+            first=first,
+            last=last,
+            email=email,
+            phone=phone,
+            phone_field=payload.phone_field,
+            target_person_id=target_person_id,
+        )
     else:
         name = company if is_company else normalize_display_name(first, last)
 
@@ -4413,60 +4492,33 @@ async def edit_project_client(
     # Books does not hold it, so a sibling card has no record to agree with.
     social_changes: list[dict] = []
     if social_mentioned:
-        social_patch = {
-            "client_social_network": payload.client_social_network,
-            "client_social_handle": payload.client_social_handle,
-        }
-        social_changes = diff_fields(project, social_patch)
-        for key, value in social_patch.items():
-            setattr(project, key, value)
+        social_changes = _apply_patch(
+            project,
+            {
+                "client_social_network": payload.client_social_network,
+                "client_social_handle": payload.client_social_handle,
+            },
+        )
     person_changes: list[dict] = []
     if person_mentioned:
-        person_patch = {
-            "client_contact_person_id": target_person_id,
-            "client_contact_name": target_person_name,
-        }
-        person_changes = diff_fields(project, person_patch)
-        for key, value in person_patch.items():
-            setattr(project, key, value)
-    # The company name is contact-level and reaches every active sibling of
-    # the client; the coordinates are person-level and reach only siblings
-    # whose contact person matches the one this edit targets (both `None`
-    # counts as a match — a person-less sibling agrees with a person-less
-    # edit).
-    name_snapshot = {"client_name": name}
-    coords_snapshot = {"client_phone": phone or None, "client_email": email or None}
-    all_siblings: list[AitoProject] = []
-    if is_zoho_contact:
-        all_siblings = list(
-            (
-                await db.execute(
-                    select(AitoProject).where(
-                        AitoProject.client_id == project.client_id,
-                        AitoProject.status == "active",
-                        AitoProject.id != project.id,
-                    )
-                )
-            ).scalars()
+        person_changes = _apply_patch(
+            project,
+            {
+                "client_contact_person_id": target_person_id,
+                "client_contact_name": target_person_name,
+            },
         )
-    for target in [project, *all_siblings]:
-        same_person = target is project or target.client_contact_person_id == target_person_id
-        patch = {**name_snapshot, **(coords_snapshot if same_person else {})}
-        changes = diff_fields(target, patch)
-        if target is project:
-            changes = social_changes + person_changes + changes
-        for key, value in patch.items():
-            setattr(target, key, value)
-        await record(
-            db,
-            target.id,
-            "project.updated",
-            actor_class="user",
-            actor_name=_actor(current_user),
-            subject_type="project",
-            subject_id=target.id,
-            changes=changes,
-        )
+    await _fan_out_client_edit(
+        db,
+        project,
+        is_zoho_contact=is_zoho_contact,
+        name=name,
+        phone=phone,
+        email=email,
+        target_person_id=target_person_id,
+        own_changes=social_changes + person_changes,
+        current_user=current_user,
+    )
     if claimed_version is not None:
         # The claim already spent this edit's bump. The field writes above
         # would earn a SECOND one from `_bump_version_on_content_change`, so
