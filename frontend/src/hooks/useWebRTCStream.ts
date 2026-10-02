@@ -287,8 +287,12 @@ export function useWebRTCStream({ printerId, enabled, videoRef, onStats, restart
       return true;
     };
 
+    // Hoisted so the catch block below can tell a stale/superseded attempt's
+    // rejection (pcRef.current no longer points at this pc) apart from the
+    // current attempt's own failure.
+    let pc: RTCPeerConnection | null = null;
     try {
-      const pc = new RTCPeerConnection({
+      pc = new RTCPeerConnection({
         iceServers: [], // host candidates only; off-LAN viewers fall back to MSE
       });
       pcRef.current = pc;
@@ -343,11 +347,14 @@ export function useWebRTCStream({ printerId, enabled, videoRef, onStats, restart
       // catch genuinely dead streams.
       pc.oniceconnectionstatechange = () => {
         if (!mountedRef.current) return;
-        const state = pc.iceConnectionState;
+        // Non-null: this handler is only ever assigned once, right after pc
+        // is created, and this connect() invocation's local pc is never
+        // reassigned afterwards.
+        const state = pc!.iceConnectionState;
         if (state === 'connected' || state === 'completed') {
           iceConnected = true;
         } else if (state === 'failed' || state === 'closed') {
-          if (fallBackToMse(pc)) return;
+          if (fallBackToMse(pc!)) return;
           setIsConnected(false);
           setHasError(true);
           setIsLoading(false);
@@ -364,8 +371,8 @@ export function useWebRTCStream({ printerId, enabled, videoRef, onStats, restart
       // error and enters backoff retry instead of hanging the tile forever.
       // The timer is cleared unconditionally by cleanup() at the top of the
       // next connect() call, so a superseded/stale attempt's timer can never
-      // fire against a fresher connection (see T-054 for the catch block's
-      // own generation-guard gap, which this does not touch).
+      // fire against a fresher connection. The catch block below applies the
+      // same pcRef.current !== pc guard for the same reason.
       const answer = await Promise.race([
         api.webrtcOffer(printerId, offer.sdp!),
         new Promise<never>((_resolve, reject) => {
@@ -390,12 +397,14 @@ export function useWebRTCStream({ printerId, enabled, videoRef, onStats, restart
       if (!iceConnected) {
         iceTimeoutRef.current = setTimeout(() => {
           iceTimeoutRef.current = null;
-          if (mountedRef.current) fallBackToMse(pc);
+          if (mountedRef.current) fallBackToMse(pc!);
         }, ICE_CONNECT_TIMEOUT_MS);
       }
       armConnectionTimeout();
     } catch {
-      if (!mountedRef.current) return;
+      // A superseded attempt's rejection (e.g. cleanup() closed this pc and a
+      // newer attempt started) must not tear down the live connection.
+      if (!mountedRef.current || pcRef.current !== pc) return;
       setIsLoading(false);
       setHasError(true);
       setIsConnected(false);

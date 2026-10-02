@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react';
+import { Component, Fragment, useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { compareFwVersions } from '../utils/firmwareVersion';
 import { mapModelCode } from '../utils/printerModel';
@@ -170,7 +170,6 @@ import { FileManagerModal } from '../components/FileManagerModal';
 import { EmbeddedCameraViewer } from '../components/EmbeddedCameraViewer';
 import { CameraGrid } from '../components/CameraGrid';
 import { type GridLayout, GRID_LAYOUT_ICONS } from '../components/cameraGridLayout';
-import { ErrorBoundary } from '../components/ErrorBoundary';
 import { useFlipReorder } from '../hooks/useFlipReorder';
 import { MQTTDebugModal } from '../components/MQTTDebugModal';
 import { HMSErrorModal, filterKnownHMSErrors, isSevereHMSError } from '../components/HMSErrorModal';
@@ -8761,6 +8760,121 @@ function CamWallClock() {
   );
 }
 
+/* Camera-wall error fallback: the wall's error text, a countdown to the
+   automatic remount (reusing the tiles' "Reconnecting in Ns (attempt N)"
+   string; attempt = the remount about to be made), and a Retry button. The
+   timer lives here so it starts fresh each time the boundary enters the error
+   state and is cleared when the fallback unmounts (retry, or leaving the
+   camera wall). */
+function CamWallErrorFallback({ delayMs, attempt, onRetry }: { delayMs: number; attempt: number; onRetry: () => void }) {
+  const { t } = useTranslation();
+  const [remainingMs, setRemainingMs] = useState(delayMs);
+  useEffect(() => {
+    const startedAt = Date.now();
+    const retryTimer = setTimeout(onRetry, delayMs);
+    const tick = setInterval(() => {
+      setRemainingMs(Math.max(0, delayMs - (Date.now() - startedAt)));
+    }, 1000);
+    return () => {
+      clearTimeout(retryTimer);
+      clearInterval(tick);
+    };
+  }, [delayMs, onRetry]);
+  return (
+    <div className="text-center py-8 text-red-400" role="alert">
+      <div>{t('printers.cameraGridError')}</div>
+      <div className="mt-2 text-sm text-bambu-gray">
+        {t('printers.cameraGrid.reconnecting', { countdown: Math.ceil(remainingMs / 1000), attempt })}
+      </div>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-white/10 hover:bg-white/20 transition-colors text-sm text-white/70 hover:text-white"
+      >
+        <RefreshCw className="w-4 h-4" />
+        {t('printers.cameraGrid.retry')}
+      </button>
+    </div>
+  );
+}
+
+/* Delay before an errored camera wall remounts itself (T-019): 20 s after the
+   first error, doubling with each consecutive failed remount (T-055) up to
+   CAM_WALL_AUTO_RETRY_MAX_MS. */
+const CAM_WALL_AUTO_RETRY_MS = 20_000;
+const CAM_WALL_AUTO_RETRY_MAX_MS = 300_000;
+/* How long a remounted wall must stay up before the failure count resets. */
+const CAM_WALL_SETTLE_MS = 60_000;
+
+function camWallRetryDelayMs(failures: number): number {
+  return Math.min(CAM_WALL_AUTO_RETRY_MS * 2 ** failures, CAM_WALL_AUTO_RETRY_MAX_MS);
+}
+
+/* Error boundary for the camera wall. Unlike the shared ErrorBoundary it has a
+   reset path, so one transient render error cannot leave an unattended kiosk
+   wall stuck on the error text: it remounts its children automatically after
+   camWallRetryDelayMs(failures), or at once when Retry is pressed. The delay
+   backs off while remounts keep failing, and the failure count resets once a
+   remounted wall has stayed up for CAM_WALL_SETTLE_MS. Each reset bumps a
+   monotonic key so the wall mounts fresh instead of reusing the errored
+   subtree. */
+class CamWallErrorBoundary extends Component<
+  { children: React.ReactNode },
+  { hasError: boolean; resetCount: number; failures: number }
+> {
+  state = { hasError: false, resetCount: 0, failures: 0 };
+
+  private settleTimer: ReturnType<typeof setTimeout> | null = null;
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error) {
+    console.error('ErrorBoundary caught:', error);
+  }
+
+  componentDidUpdate(_prevProps: unknown, prevState: { hasError: boolean }) {
+    if (this.state.hasError) {
+      this.clearSettleTimer();
+    } else if (prevState.hasError) {
+      this.clearSettleTimer();
+      this.settleTimer = setTimeout(() => {
+        this.settleTimer = null;
+        this.setState({ failures: 0 });
+      }, CAM_WALL_SETTLE_MS);
+    }
+  }
+
+  componentWillUnmount() {
+    this.clearSettleTimer();
+  }
+
+  private clearSettleTimer() {
+    if (this.settleTimer !== null) {
+      clearTimeout(this.settleTimer);
+      this.settleTimer = null;
+    }
+  }
+
+  private reset = () => {
+    this.setState((s) => ({ hasError: false, resetCount: s.resetCount + 1, failures: s.failures + 1 }));
+  };
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <CamWallErrorFallback
+          delayMs={camWallRetryDelayMs(this.state.failures)}
+          attempt={this.state.resetCount + 1}
+          onRetry={this.reset}
+        />
+      );
+    }
+    return <Fragment key={this.state.resetCount}>{this.props.children}</Fragment>;
+  }
+}
+
 export function PrintersPage() {
   const { t } = useTranslation();
   const { fullscreen, toggleFullscreen } = useFullscreen();
@@ -9965,7 +10079,7 @@ export function PrintersPage() {
         </Card>
       ) : pageView === 'camwall' ? (
         /* Camera grid view — single multiplexed connection for all cameras */
-        <ErrorBoundary fallback={<div className="text-center py-8 text-red-400">{t('printers.cameraGridError')}</div>}>
+        <CamWallErrorBoundary>
           <CameraGrid
             layout={cameraGridLayout}
             timeFormat={settings?.time_format || 'system'}
@@ -9973,7 +10087,7 @@ export function PrintersPage() {
             onExpand={hasPermission('camera:view') ? handleGridExpand : undefined}
             fullscreen={fullscreen}
           />
-        </ErrorBoundary>
+        </CamWallErrorBoundary>
       ) : (
         /* Fleet grid — single container shared by grouped and flat views
            (fleetRows/fleetGridRef above) so PrinterCard instances keep their

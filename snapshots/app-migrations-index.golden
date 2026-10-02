@@ -250,13 +250,19 @@
    248	# Migration: Home Assistant sensor alerts (#1148). The printer_ha_sensors
    249	# Migration: auto-drying-suspended notification opt-in (#2770). Defaults ON:
    250	# Migration: brand(s) a 3MF was sliced with, so the pricing calculator can
-   251	# Migration: storage location sensor alerts (#2824), own column rather than
-   252	# Migration: rename the ha_sensor_alert template (#2824). "Home Assistant
-   253	# Migration: back the one-binding-per-(location, entity) rule with a unique
-   254	# Migration: repair the tare of spools the RFID auto-add gave the wrong
-   255	# Migration: drop the AMS slot markers an older Fenrir wrote into
-   256	# Migration: whether Books has been directly observed to agree with an
-   257	# Migration: a settled terminal charge whose event/acceptance failed is
+   251	# Migration: user link + photos on library files (#3077), the same trio
+   252	# Migration: storage location sensor alerts (#2824), own column rather than
+   253	# Migration: post-print outcome confirmation (#1898). VARCHAR and the
+   254	# Migration: take the capability URLs out of the outcome prompt's body
+   255	# Migration: rename the ha_sensor_alert template (#2824). "Home Assistant
+   256	# Migration: back the one-binding-per-(location, entity) rule with a unique
+   257	# Migration: repair the tare of spools the RFID auto-add gave the wrong
+   258	# Migration: drop the AMS slot markers an older Fenrir wrote into
+   259	# Migration: whether Books has been directly observed to agree with an
+   260	# Migration: a settled terminal charge whose event/acceptance failed is
+   261	# Migration: link a batch to the external record that asked for it (a shop
+   262	# Migration: messages from other applications through the notification
+   263	# Migration: a code for why a scheduled drying failed, so the card can show
 
 ### stderr:
 

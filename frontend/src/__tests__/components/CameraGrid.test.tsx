@@ -10,7 +10,7 @@
  * dismissal, go2rtc stream-type routing) in isolation.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, screen, within, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
@@ -372,6 +372,53 @@ describe('CameraGrid rendering', () => {
       // Printer 2's identical-looking banner must be untouched by printer 1's dismissal.
       expect(within(card2).getByText(desc)).toBeInTheDocument();
     });
+
+    it('a dismissal only mutes the current occurrence: once the error clears, the same error shows again', async () => {
+      const user = userEvent.setup();
+      const { container, rerender } = render(
+        <CameraGrid printers={[makePrinter({ id: 1, hmsErrors: [err] })]} layout="default" />,
+      );
+      const card = () => container.querySelector('[data-flip-key="1"]') as HTMLElement;
+
+      await waitFor(() => expect(within(card()).getByText(desc)).toBeInTheDocument());
+      await user.click(within(card()).getByText(desc));
+      await waitFor(() => expect(within(card()).queryByText(desc)).not.toBeInTheDocument());
+
+      // Error list clears -> dismissal is pruned.
+      rerender(<CameraGrid printers={[makePrinter({ id: 1, hmsErrors: [] })]} layout="default" />);
+      // Same error recurs -> banner surfaces again.
+      rerender(<CameraGrid printers={[makePrinter({ id: 1, hmsErrors: [err] })]} layout="default" />);
+      await waitFor(() => expect(within(card()).getByText(desc)).toBeInTheDocument());
+    });
+
+    it('keeps a dismissal while the printer still reports errors across re-renders', async () => {
+      const user = userEvent.setup();
+      const { container, rerender } = render(
+        <CameraGrid printers={[makePrinter({ id: 1, hmsErrors: [err] })]} layout="default" />,
+      );
+      const card = () => container.querySelector('[data-flip-key="1"]') as HTMLElement;
+      await waitFor(() => expect(within(card()).getByText(desc)).toBeInTheDocument());
+      await user.click(within(card()).getByText(desc));
+      await waitFor(() => expect(within(card()).queryByText(desc)).not.toBeInTheDocument());
+
+      rerender(<CameraGrid printers={[makePrinter({ id: 1, hmsErrors: [err], progress: 5 })]} layout="default" />);
+      expect(within(card()).queryByText(desc)).not.toBeInTheDocument();
+    });
+
+    it('drops the dismissal when the printer leaves the wall and later returns', async () => {
+      const user = userEvent.setup();
+      const p1 = makePrinter({ id: 1, hmsErrors: [err] });
+      const p2 = makePrinter({ id: 2, name: 'Printer 2' });
+      const { container, rerender } = render(<CameraGrid printers={[p1, p2]} layout="default" />);
+      const card = () => container.querySelector('[data-flip-key="1"]') as HTMLElement;
+      await waitFor(() => expect(within(card()).getByText(desc)).toBeInTheDocument());
+      await user.click(within(card()).getByText(desc));
+      await waitFor(() => expect(within(card()).queryByText(desc)).not.toBeInTheDocument());
+
+      rerender(<CameraGrid printers={[p2]} layout="default" />);
+      rerender(<CameraGrid printers={[p1, p2]} layout="default" />);
+      await waitFor(() => expect(within(card()).getByText(desc)).toBeInTheDocument());
+    });
   });
 
   describe('go2rtc stream-type split', () => {
@@ -456,6 +503,112 @@ describe('CameraGrid rendering', () => {
       } finally {
         delete (document as unknown as { hidden?: boolean }).hidden;
       }
+    });
+  });
+
+  describe('hidden-tab suspend / resume', () => {
+    // Literals mirror HIDDEN_SUSPEND_DELAY_MS (15 s) and IDS_DEBOUNCE_MS (2 s) in
+    // CameraGrid.tsx, which are module-private.
+    const HIDE_DELAY = 15_000;
+    const DEBOUNCE = 2_000;
+    let hidden = false;
+    const origHidden = Object.getOwnPropertyDescriptor(document, 'hidden');
+
+    const lastIds = () => vi.mocked(useGridStream).mock.calls.at(-1)?.[0].printerIdsKey;
+    const setHidden = (value: boolean) => {
+      hidden = value;
+      act(() => { document.dispatchEvent(new Event('visibilitychange')); });
+    };
+
+    beforeEach(() => {
+      hidden = false;
+      vi.mocked(useGridStream).mockClear();
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+      if (origHidden) Object.defineProperty(document, 'hidden', origHidden);
+      else delete (document as unknown as { hidden?: boolean }).hidden;
+    });
+
+    const twoPrinters = [makePrinter({ id: 1 }), makePrinter({ id: 2 })];
+
+    it('suspends the stream only after the tab has been hidden for the delay, then resumes immediately on return', () => {
+      render(<CameraGrid printers={twoPrinters} layout="default" />);
+      expect(lastIds()).toBe('1,2');
+
+      setHidden(true);
+      act(() => { vi.advanceTimersByTime(HIDE_DELAY - 1); });
+      expect(lastIds()).toBe('1,2');
+      // Delay elapsed -> suspended; the empty id set then lands after the debounce.
+      act(() => { vi.advanceTimersByTime(1); });
+      act(() => { vi.advanceTimersByTime(DEBOUNCE); });
+      expect(lastIds()).toBe('');
+
+      // Back in view: the '' -> non-empty fast path skips the debounce.
+      setHidden(false);
+      expect(lastIds()).toBe('1,2');
+    });
+
+    it('never suspends when the tab is shown again before the delay elapses', () => {
+      render(<CameraGrid printers={twoPrinters} layout="default" />);
+
+      setHidden(true);
+      act(() => { vi.advanceTimersByTime(HIDE_DELAY - 1_000); });
+      setHidden(false);
+      // The pending hide timer was cleared: running well past it changes nothing.
+      act(() => { vi.advanceTimersByTime(HIDE_DELAY + DEBOUNCE + 1_000); });
+
+      expect(lastIds()).toBe('1,2');
+      expect(vi.mocked(useGridStream).mock.calls.some(([args]) => args.printerIdsKey === '')).toBe(false);
+    });
+
+    it('does not suspend after unmount even if the tab was hidden (cleanup clears the timer and listener)', () => {
+      const { unmount } = render(<CameraGrid printers={twoPrinters} layout="default" />);
+      setHidden(true);
+      unmount();
+      vi.mocked(useGridStream).mockClear();
+
+      act(() => { vi.advanceTimersByTime(HIDE_DELAY + DEBOUNCE + 1_000); });
+      setHidden(false);
+
+      expect(vi.mocked(useGridStream)).not.toHaveBeenCalled();
+    });
+
+    it('debounces a shrinking printer list by 2 s so transient changes do not tear the stream down', () => {
+      const { rerender } = render(<CameraGrid printers={twoPrinters} layout="default" />);
+      expect(lastIds()).toBe('1,2');
+
+      rerender(<CameraGrid printers={[makePrinter({ id: 1 })]} layout="default" />);
+      expect(lastIds()).toBe('1,2');
+      act(() => { vi.advanceTimersByTime(DEBOUNCE - 1); });
+      expect(lastIds()).toBe('1,2');
+      act(() => { vi.advanceTimersByTime(1); });
+      expect(lastIds()).toBe('1');
+    });
+  });
+
+  describe('wall ordering', () => {
+    it('orders active prints by soonest ETA, ahead of idle ones, with name as the tie-break', () => {
+      const printers = [
+        makePrinter({ id: 1, name: 'Idle', state: 'IDLE' }),
+        makePrinter({ id: 2, name: 'Slow', state: 'RUNNING', remainingTime: 90 }),
+        makePrinter({ id: 3, name: 'Fast', state: 'RUNNING', remainingTime: 10 }),
+        makePrinter({ id: 4, name: 'Also Fast', state: 'RUNNING', remainingTime: 10 }),
+      ];
+      const { container } = render(<CameraGrid printers={printers} layout="default" />);
+      const order = Array.from(container.querySelectorAll('[data-flip-key]')).map(el => el.getAttribute('data-flip-key'));
+      expect(order).toEqual(['4', '3', '2', '1']);
+    });
+  });
+
+  describe('empty wall', () => {
+    it('shows the no-printers message instead of a grid', () => {
+      const { container } = render(<CameraGrid printers={[]} layout="default" />);
+      expect(screen.getByText(/no printers/i)).toBeInTheDocument();
+      expect(container.querySelector('[data-flip-key]')).toBeNull();
     });
   });
 

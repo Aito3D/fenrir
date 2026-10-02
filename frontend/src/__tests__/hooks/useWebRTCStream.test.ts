@@ -19,7 +19,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { useWebRTCStream } from '../../hooks/useWebRTCStream';
 import { api } from '../../api/client';
-import { RECONNECT_BASE_DELAY_MS } from '../../utils/streamConstants';
+import { RECONNECT_BASE_DELAY_MS, STREAM_STALE_MS, STREAM_DEGRADED_MS, STREAM_ERROR_MS } from '../../utils/streamConstants';
 
 vi.mock('../../api/client', () => ({
   api: { webrtcOffer: vi.fn().mockResolvedValue({ type: 'answer', sdp: 'v=0' }) },
@@ -57,7 +57,12 @@ class FakePeerConnection {
 
 function renderStream() {
   const videoRef = { current: document.createElement('video') };
-  return renderHook(() => useWebRTCStream({ printerId: 1, enabled: true, videoRef }));
+  // jsdom's HTMLMediaElement.play() is unimplemented and logs a console error;
+  // stub it like the MSE-fallback suite does so pc.ontrack's video.play() call
+  // (T-022 tests below) is silent and inert.
+  videoRef.current.play = vi.fn().mockResolvedValue(undefined);
+  const rendered = renderHook(() => useWebRTCStream({ printerId: 1, enabled: true, videoRef }));
+  return { ...rendered, videoRef };
 }
 
 /**
@@ -204,5 +209,270 @@ describe('useWebRTCStream negotiation timeout (T-053)', () => {
 
     expect(vi.mocked(api.webrtcOffer).mock.calls.length).toBe(callsBeforeUnmount);
     expect(result.current).toEqual(stateBeforeUnmount);
+  });
+});
+
+/**
+ * T-022: pc.ontrack's success path and startFrameMonitor's stale/degraded/
+ * error thresholds (STREAM_STALE_MS/STREAM_DEGRADED_MS/STREAM_ERROR_MS from
+ * streamConstants.ts) had no coverage — every existing test above stops at
+ * ICE/negotiation state changes and never fires ontrack, so isConnected,
+ * isLoading, and the frame-staleness state machine were never exercised.
+ */
+describe('useWebRTCStream frame monitor thresholds and connection timeout (T-022)', () => {
+  // Mirror the hook's own (unexported) internal constants — same convention
+  // as NEGOTIATION_TIMEOUT_MS above.
+  const FRAME_CHECK_INTERVAL_MS = 1_000;
+  const CONNECTION_TIMEOUT_MS = 30_000;
+
+  beforeEach(() => {
+    lastPc = null;
+    vi.stubGlobal('RTCPeerConnection', FakePeerConnection);
+    vi.mocked(api.webrtcOffer).mockReset();
+    vi.mocked(api.webrtcOffer).mockResolvedValue({ type: 'answer', sdp: 'v=0' });
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  // The frame monitor's state updates (onFirstFrame, the stale/degraded/error
+  // evaluator, armConnectionTimeout's callback) run inside raw setInterval/
+  // setTimeout callbacks fired by the fake-timer clock, not inside an
+  // explicit `act()`. React applies them, but `result.current` (a snapshot
+  // testing-library refreshes on render) only picks them up once React gets
+  // a chance to flush — hence the trailing `act(async () => {})` after every
+  // advance whose effect on `result.current` we assert on.
+  async function advanceAndFlush(ms: number) {
+    await vi.advanceTimersByTimeAsync(ms);
+    await act(async () => {});
+  }
+
+  it('pc.ontrack marks the stream connected, and the currentTime-poll fallback (jsdom has no requestVideoFrameCallback) clears isLoading once a frame decodes', async () => {
+    const { result, videoRef, unmount } = renderStream();
+    await pollUntil(() => lastPc?.ontrack != null);
+
+    act(() => {
+      lastPc!.ontrack!({ streams: [{} as MediaStream] });
+    });
+
+    expect(result.current.isConnected).toBe(true);
+    expect(result.current.isLoading).toBe(true); // no decoded frame yet
+
+    // A tick with no currentTime change: still loading (lastFrameTimeRef is
+    // still 0, so the stale/degraded/error evaluator does not run yet).
+    await advanceAndFlush(FRAME_CHECK_INTERVAL_MS);
+    expect(result.current.isLoading).toBe(true);
+
+    // Simulate a decoded frame via the currentTime poll.
+    videoRef.current.currentTime = 1;
+    await advanceAndFlush(FRAME_CHECK_INTERVAL_MS);
+
+    expect(result.current.isLoading).toBe(false);
+    expect(result.current.stale).toBe(false);
+    expect(result.current.degraded).toBe(false);
+    expect(result.current.reconnectAttempt).toBe(0);
+    unmount();
+  });
+
+  it('uses requestVideoFrameCallback for frame detection when the video element exposes it, and re-arms itself on every frame', async () => {
+    const video = document.createElement('video');
+    video.play = vi.fn().mockResolvedValue(undefined);
+    const frameCallbacks: Array<() => void> = [];
+    let nextHandle = 1;
+    (video as unknown as { requestVideoFrameCallback: (cb: () => void) => number }).requestVideoFrameCallback = vi.fn(
+      (cb: () => void) => {
+        frameCallbacks.push(cb);
+        return nextHandle++;
+      },
+    );
+    (video as unknown as { cancelVideoFrameCallback: (h: number) => void }).cancelVideoFrameCallback = vi.fn();
+    const videoRef = { current: video };
+    const { result, unmount } = renderHook(() => useWebRTCStream({ printerId: 1, enabled: true, videoRef }));
+    await pollUntil(() => lastPc?.ontrack != null);
+
+    act(() => {
+      lastPc!.ontrack!({ streams: [{} as MediaStream] });
+    });
+
+    // Mutation proof: if startFrameMonitor did not branch on rVFC, this call
+    // would never happen and the assertions below would see isLoading stuck.
+    expect(video.requestVideoFrameCallback).toHaveBeenCalledTimes(1);
+    expect(result.current.isLoading).toBe(true);
+
+    act(() => {
+      frameCallbacks[0]();
+    });
+
+    expect(result.current.isLoading).toBe(false);
+    // onFrame re-requests itself so the next decoded frame is also caught.
+    expect(video.requestVideoFrameCallback).toHaveBeenCalledTimes(2);
+    unmount();
+  });
+
+  it('armConnectionTimeout errors and schedules a reconnect if no frame ever arrives after the offer is answered', async () => {
+    const { result, unmount } = renderStream();
+    await pollUntil(() => lastPc !== null && lastPc.setRemoteDescription.mock.calls.length > 0);
+
+    // Mutation proof: without the watchdog this predicate never flips and the
+    // stream spins on isLoading forever.
+    await advanceAndFlush(CONNECTION_TIMEOUT_MS);
+
+    expect(result.current.isLoading).toBe(false);
+    expect(result.current.hasError).toBe(true);
+    expect(result.current.isConnected).toBe(false);
+    expect(result.current.isReconnecting).toBe(true);
+    expect(result.current.reconnectAttempt).toBe(1);
+    unmount();
+  });
+
+  it('the frame monitor escalates stale -> degraded -> error at STREAM_STALE_MS / STREAM_DEGRADED_MS / STREAM_ERROR_MS, and the error threshold schedules a reconnect', async () => {
+    const { result, videoRef, unmount } = renderStream();
+    await pollUntil(() => lastPc?.ontrack != null);
+    act(() => {
+      lastPc!.ontrack!({ streams: [{} as MediaStream] });
+    });
+    videoRef.current.currentTime = 1;
+    await advanceAndFlush(FRAME_CHECK_INTERVAL_MS);
+    expect(result.current.isLoading).toBe(false); // frame decoded, staleness clock starts now
+
+    await advanceAndFlush(STREAM_STALE_MS);
+    expect(result.current.stale).toBe(true);
+    expect(result.current.degraded).toBe(false);
+    expect(result.current.hasError).toBe(false);
+
+    await advanceAndFlush(STREAM_DEGRADED_MS - STREAM_STALE_MS);
+    expect(result.current.stale).toBe(true);
+    expect(result.current.degraded).toBe(true);
+    expect(result.current.hasError).toBe(false);
+
+    await advanceAndFlush(STREAM_ERROR_MS - STREAM_DEGRADED_MS);
+    expect(result.current.hasError).toBe(true);
+    expect(result.current.isConnected).toBe(false);
+    expect(result.current.isReconnecting).toBe(true);
+    expect(result.current.reconnectAttempt).toBe(1);
+    unmount();
+  });
+
+  it('a fresh frame after staleness clears stale/degraded before the error threshold is reached', async () => {
+    const { result, videoRef, unmount } = renderStream();
+    await pollUntil(() => lastPc?.ontrack != null);
+    act(() => {
+      lastPc!.ontrack!({ streams: [{} as MediaStream] });
+    });
+    videoRef.current.currentTime = 1;
+    await advanceAndFlush(FRAME_CHECK_INTERVAL_MS);
+
+    await advanceAndFlush(STREAM_STALE_MS);
+    expect(result.current.stale).toBe(true);
+
+    videoRef.current.currentTime = 2;
+    await advanceAndFlush(FRAME_CHECK_INTERVAL_MS);
+
+    expect(result.current.stale).toBe(false);
+    expect(result.current.degraded).toBe(false);
+    expect(result.current.hasError).toBe(false);
+    unmount();
+  });
+});
+
+/**
+ * T-017: the catch block had no attempt guard, so a superseded attempt's
+ * rejection could tear down the live connection it had already been replaced
+ * by (e.g. the grid Restart button firing while the old attempt is still
+ * awaiting the offer). connect() now hoists `pc` out of the try so the catch
+ * block can compare it against pcRef.current, the same guard already used
+ * after the webrtcOffer await.
+ */
+describe('useWebRTCStream stale-attempt supersede guard (T-017)', () => {
+  beforeEach(() => {
+    lastPc = null;
+    vi.stubGlobal('RTCPeerConnection', FakePeerConnection);
+    vi.mocked(api.webrtcOffer).mockReset();
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  function renderRestartable(initialRestartKey: number) {
+    const videoRef = { current: document.createElement('video') };
+    videoRef.current.play = vi.fn().mockResolvedValue(undefined);
+    const rendered = renderHook(
+      ({ restartKey }: { restartKey: number }) => useWebRTCStream({ printerId: 1, enabled: true, videoRef, restartKey }),
+      { initialProps: { restartKey: initialRestartKey } },
+    );
+    return { ...rendered, videoRef };
+  }
+
+  it("a superseded attempt's later rejection does not error, reconnect, or close the new connection", async () => {
+    let rejectFirstOffer: ((reason: unknown) => void) | null = null;
+    let offerCalls = 0;
+    vi.mocked(api.webrtcOffer).mockImplementation(() => {
+      offerCalls += 1;
+      if (offerCalls === 1) {
+        // Attempt 1's offer hangs — never resolves on its own, giving the
+        // test control over exactly when it rejects (mirrors an
+        // InvalidStateError on a since-closed pc, or an HTTP failure).
+        return new Promise((_resolve, reject) => {
+          rejectFirstOffer = reject;
+        });
+      }
+      return Promise.resolve({ type: 'answer', sdp: 'v=0' });
+    });
+
+    const { result, rerender, unmount } = renderRestartable(0);
+
+    // Attempt 1 reaches the hung offer await.
+    await pollUntil(() => offerCalls >= 1);
+    const pc1 = lastPc!;
+
+    // Supersede attempt 1 (e.g. the grid Restart button, or a suspend/
+    // resume) while it is still awaiting the offer: the effect cleanup
+    // closes pc1 and a fresh attempt (pc2) starts.
+    rerender({ restartKey: 1 });
+    await pollUntil(() => offerCalls >= 2 && lastPc !== pc1);
+    const pc2 = lastPc!;
+    const pc2CloseSpy = vi.spyOn(pc2, 'close');
+
+    // Attempt 1's stale await now rejects — must not affect the now-live pc2.
+    await act(async () => {
+      rejectFirstOffer!(new Error('stale attempt rejected'));
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(result.current.hasError).toBe(false);
+    expect(result.current.isReconnecting).toBe(false);
+    expect(result.current.reconnectAttempt).toBe(0);
+    expect(pc2CloseSpy).not.toHaveBeenCalled();
+
+    // No stray reconnect was scheduled either: advancing well past a full
+    // backoff cycle triggers no additional offer and leaves pc2 alone. Prior
+    // to the fix, the backoff's connect() call would have closed the live
+    // pc2 and started a third attempt.
+    await vi.advanceTimersByTimeAsync(RECONNECT_BASE_DELAY_MS * 8);
+    expect(offerCalls).toBe(2);
+    expect(pc2CloseSpy).not.toHaveBeenCalled();
+    expect(result.current.hasError).toBe(false);
+
+    unmount();
+  });
+
+  it("the current (non-superseded) attempt's rejection still errors and schedules a reconnect", async () => {
+    vi.mocked(api.webrtcOffer).mockRejectedValue(new Error('network error'));
+
+    const { result, unmount } = renderRestartable(0);
+
+    await pollUntil(() => result.current.hasError === true);
+
+    expect(result.current.isLoading).toBe(false);
+    expect(result.current.isConnected).toBe(false);
+    expect(result.current.isReconnecting).toBe(true);
+    expect(result.current.reconnectAttempt).toBe(1);
+    unmount();
   });
 });
