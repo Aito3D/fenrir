@@ -50,16 +50,21 @@ export interface CardViewProps {
  *
  *  Not `FLAG_HALO_CLS` any more: pause has no halo, by design. It recedes
  *  instead, and restores to full opacity on hover because a set-aside card is
- *  still one someone will want to read when they deliberately point at it. */
+ *  still one someone will want to read when they deliberately point at it.
+ *  Fiverr is the same gesture — the job is on standby until an outside
+ *  operator sends the part — with its own edge colour so the two standby
+ *  reasons stay tellable apart in a column. */
 const FLAG_CARD_CLS: Record<AitoFlag, string> = {
   urgent: 'animate-flag-halo flag-urgent',
   sav: 'animate-flag-halo flag-sav',
   pause: 'opacity-60 hover:opacity-100 focus-within:opacity-100 flag-pause-edge',
+  fiverr: 'opacity-60 hover:opacity-100 focus-within:opacity-100 flag-fiverr-edge',
 };
 const FLAG_LABEL_KEY: Record<AitoFlag, string> = {
   urgent: 'aito.urgent',
   sav: 'aito.sav',
   pause: 'aito.pause',
+  fiverr: 'aito.fiverr',
 };
 
 /** Presentational card, shared by the in-column sortable wrapper and the

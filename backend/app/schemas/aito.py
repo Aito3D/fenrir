@@ -576,7 +576,7 @@ class AitoProjectUpdate(AitoShippingInput, AitoClientSocialInput):
         return value if value is None else _check_phone(value)
 
 
-AitoFlag = Literal["urgent", "sav", "pause"]
+AitoFlag = Literal["urgent", "sav", "pause", "fiverr"]
 
 
 class AitoClientEdit(AitoClientSocialInput):

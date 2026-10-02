@@ -54,7 +54,7 @@ export function needsClientContact(project: Pick<AitoProject, 'column' | 'client
  *  type error here rather than a card that silently ranks as unflagged. The
  *  backend mirrors this in `_FLAG_RANK` / `_flag_rank` (routes/aito.py) and
  *  the two must not drift. */
-const FLAG_RANK: Record<AitoFlag, number> = { urgent: 0, sav: 0, pause: 2 };
+const FLAG_RANK: Record<AitoFlag, number> = { urgent: 0, sav: 0, pause: 2, fiverr: 2 };
 const UNFLAGGED_RANK = 1;
 
 export function flagRank(flag: AitoFlag | null): number {

@@ -223,22 +223,26 @@ _FLAG_SET_EVENT: dict[str, str] = {
     "urgent": "project.urgent.set",
     "sav": "project.sav.set",
     "pause": "project.pause.set",
+    "fiverr": "project.fiverr.set",
 }
 _FLAG_CLEARED_EVENT: dict[str, str] = {
     "urgent": "project.urgent.cleared",
     "sav": "project.sav.cleared",
     "pause": "project.pause.cleared",
+    "fiverr": "project.fiverr.cleared",
 }
 
 # Display rank for the board. Urgent and SAV mean "look at this" and rise;
-# pause means the opposite and sinks; unflagged sits between them. Stored
-# `position` breaks ties inside each tier, exactly as before.
+# pause and fiverr mean the opposite and sink — a card on standby for a
+# Fiverr operator's part is one nobody here can act on either; unflagged sits
+# between them. Stored `position` breaks ties inside each tier, exactly as
+# before.
 #
 # ONE dict, three consumers — the SQL `case` below, the Python sort in the
 # reorder handler, and (mirrored) `flagRank` in frontend/src/utils/aitoBoard.ts.
 # Open-coding the comparison at each site is how the board starts saying one
 # thing in SQL and another in the client.
-_FLAG_RANK: dict[str, int] = {"urgent": 0, "sav": 0, "pause": 2}
+_FLAG_RANK: dict[str, int] = {"urgent": 0, "sav": 0, "pause": 2, "fiverr": 2}
 _UNFLAGGED_RANK = 1
 
 
@@ -4482,7 +4486,7 @@ async def set_project_flag(
     db: AsyncSession = Depends(get_db),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
-    """Set a project's board flag — 'urgent', 'sav', 'pause' — or clear it.
+    """Set a project's board flag — 'urgent', 'sav', 'pause', 'fiverr' — or clear it.
 
     Its own route rather than a field on `AitoProjectUpdate`, and the reason is
     the last thing `update_project` does: `_mark_pending_if_ours` runs

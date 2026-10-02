@@ -136,12 +136,13 @@ class AitoProject(Base):
     # this app raised the invoice. Background fact like the one above —
     # never edited in the panel, not versioned.
     customer_credit_total: Mapped[float | None] = mapped_column(Float, nullable=True)
-    # A local board signal with four states: NULL, 'urgent' ("this job is late
+    # A local board signal with five states: NULL, 'urgent' ("this job is late
     # / promised / on fire"), 'sav' ("it came back and needs handling again"),
-    # or 'pause' ("set this aside for now"). Mutually exclusive by
-    # construction — that is why this is one nullable column and not three
-    # booleans. Urgent and sav rise to the top of their column; pause sinks
-    # to the bottom instead — see the board's rank comparator. Zoho has no
+    # 'pause' ("set this aside for now"), or 'fiverr' ("on standby until the
+    # Fiverr operator sends the part"). Mutually exclusive by construction —
+    # that is why this is one nullable column and not four booleans. Urgent
+    # and sav rise to the top of their column; pause and fiverr sink to the
+    # bottom instead — see the board's rank comparator. Zoho has no
     # field for any of them and must never be told, which is why it is
     # written by its own route rather than by update_project — that one ends
     # with an unconditional

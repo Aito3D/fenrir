@@ -2173,6 +2173,11 @@ html[data-vt='aito-card-exit']::view-transition-group(aito-card) {
    teal-500, literal and never a token: a fixed semantic that must not follow
    the user's accent colour, exactly like amber and rose above. */
 .flag-pause-edge { border-color: #14b8a6; }
+/* Fiverr: the same recede-and-edge treatment as pause — the job is on standby
+   until an outside operator sends the part, so nobody here can act on it
+   either — in lime-400 so the two standby reasons stay tellable apart.
+   Literal, never a token, for the same reason as the teal above. */
+.flag-fiverr-edge { border-color: #a3e635; }
 /* A finished job nobody has rung the client about. Reuses the flag halo's own
    keyframes — same gesture, same restraint — because it is the same statement:
    "this one wants you". It cannot collide with any flag, because a card paints

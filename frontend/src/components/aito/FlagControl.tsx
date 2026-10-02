@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { AlertTriangle, Flag, Pause, RotateCcw, type LucideIcon } from 'lucide-react';
+import { AlertTriangle, Flag, Hourglass, Pause, RotateCcw, type LucideIcon } from 'lucide-react';
 import { HoldButton } from './HoldButton';
 import { headerPillRadiusCls } from './panelTypography';
 import { useFlagMutation } from '../../hooks/useFlagMutation';
@@ -9,7 +9,10 @@ import { type AitoFlag, type AitoProject } from '../../api/client';
 /** Per-flag styling, spelled out in full rather than composed, because
  *  Tailwind cannot see a constructed class name and because the tones are
  *  fixed semantics — amber for urgency, rose for a returned job, teal for a
- *  paused job — that must not shift when the user changes accent colour. Red
+ *  paused job, lime for a job on standby with a Fiverr operator — that must
+ *  not shift when the user changes accent colour. Lime rather than Fiverr's
+ *  own green because the board's accent defaults to green too, and a flag
+ *  that disappears into the card's hover border is no flag. Red
  *  is the destructive colour on this board and lives on the footer bar; rose
  *  never shares a strip with it. */
 const TONE: Record<AitoFlag, { on: string; off: string; bar: string; ring: string }> = {
@@ -30,6 +33,12 @@ const TONE: Record<AitoFlag, { on: string; off: string; bar: string; ring: strin
     off: 'text-bambu-gray hover:text-teal-400',
     bar: 'bg-teal-400/25',
     ring: 'focus-visible:ring-teal-400/40',
+  },
+  fiverr: {
+    on: 'text-lime-400',
+    off: 'text-bambu-gray hover:text-lime-400',
+    bar: 'bg-lime-400/25',
+    ring: 'focus-visible:ring-lime-400/40',
   },
 };
 
@@ -58,9 +67,20 @@ const COPY: Record<AitoFlag, { mark: string; clear: string; holdMark: string; ho
     holdMark: 'aito.holdToMarkPause',
     holdClear: 'aito.holdToClearPause',
   },
+  fiverr: {
+    mark: 'aito.markFiverr',
+    clear: 'aito.clearFiverr',
+    holdMark: 'aito.holdToMarkFiverr',
+    holdClear: 'aito.holdToClearFiverr',
+  },
 };
-const GLYPH: Record<AitoFlag, LucideIcon> = { urgent: AlertTriangle, sav: RotateCcw, pause: Pause };
-const LABEL_KEY: Record<AitoFlag, string> = { urgent: 'aito.urgent', sav: 'aito.sav', pause: 'aito.pause' };
+const GLYPH: Record<AitoFlag, LucideIcon> = { urgent: AlertTriangle, sav: RotateCcw, pause: Pause, fiverr: Hourglass };
+const LABEL_KEY: Record<AitoFlag, string> = {
+  urgent: 'aito.urgent',
+  sav: 'aito.sav',
+  pause: 'aito.pause',
+  fiverr: 'aito.fiverr',
+};
 
 /** The container's own skin once a flag is live — this is the moment the
  *  control stops being a control and becomes a status pill, matched to the
@@ -69,9 +89,10 @@ const CONTAINER_TONE: Record<AitoFlag, string> = {
   urgent: 'border-amber-400/30 bg-amber-400/[0.14]',
   sav: 'border-rose-400/30 bg-rose-400/[0.14]',
   pause: 'border-teal-400/30 bg-teal-400/[0.14]',
+  fiverr: 'border-lime-400/30 bg-lime-400/[0.14]',
 };
 
-const ORDER: AitoFlag[] = ['urgent', 'sav', 'pause'];
+const ORDER: AitoFlag[] = ['urgent', 'sav', 'pause', 'fiverr'];
 
 /** One object for all board flags, because they are mutually exclusive and a
  *  person picks between them rather than toggling each.

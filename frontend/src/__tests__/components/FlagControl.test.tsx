@@ -90,7 +90,7 @@ const openControl = () => {
 // their target). `within(...).getByRole('button')` scopes to the segment
 // and finds the actionable element inside it, which is what a real pointer
 // press — hit-testing whatever is visually on top — would actually reach.
-const segment = (kind: 'urgent' | 'sav' | 'pause') =>
+const segment = (kind: 'urgent' | 'sav' | 'pause' | 'fiverr') =>
   within(screen.getByTestId(`flag-segment-${kind}`)).getByRole('button');
 
 describe('FlagControl', () => {
@@ -207,6 +207,36 @@ describe('FlagControl', () => {
 
     expect(setFlag).toHaveBeenCalledTimes(1);
     expect(setFlag).toHaveBeenCalledWith(baseProject.id, 'pause');
+  });
+
+  it('offers a fiverr segment that holds to set', async () => {
+    vi.useFakeTimers();
+    const setFlag = vi.spyOn(api, 'setAitoProjectFlag').mockResolvedValue({} as AitoProject);
+    render(<FlagControl project={{ ...baseProject, flag: null }} />);
+
+    fireEvent.focus(screen.getByTestId('flag-control'));
+    fireEvent.pointerDown(segment('fiverr'));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+    });
+
+    expect(setFlag).toHaveBeenCalledWith(baseProject.id, 'fiverr');
+  });
+
+  it('holding the live fiverr segment clears it', async () => {
+    vi.useFakeTimers();
+    const setFlag = vi.spyOn(api, 'setAitoProjectFlag').mockResolvedValue({} as AitoProject);
+    render(<FlagControl project={{ ...baseProject, flag: 'fiverr' }} />);
+
+    fireEvent.focus(screen.getByTestId('flag-control'));
+    expect(segment('fiverr')).toHaveAttribute('aria-pressed', 'true');
+
+    fireEvent.pointerDown(segment('fiverr'));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+    });
+
+    expect(setFlag).toHaveBeenCalledWith(baseProject.id, null);
   });
 
   it('does not fire on a short tap', async () => {

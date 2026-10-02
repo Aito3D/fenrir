@@ -98,6 +98,8 @@ KINDS: dict[str, str] = {
     "project.sav.cleared": "story",
     "project.pause.set": "story",
     "project.pause.cleared": "story",
+    "project.fiverr.set": "story",
+    "project.fiverr.cleared": "story",
     # The promise made to the client, and its withdrawal. Story for the same
     # reason the contacted pair is: it is the audit trail of a commitment.
     "project.due.set": "story",

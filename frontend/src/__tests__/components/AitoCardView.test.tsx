@@ -519,6 +519,21 @@ describe('CardView', () => {
     expect(screen.getByTestId('aito-card-flag')).toHaveTextContent('Paused');
   });
 
+  it('recedes a fiverr card with its own tinted edge and never gives it a halo', () => {
+    render(<CardView project={{ ...project, flag: 'fiverr' }} onExpand={vi.fn()} />);
+
+    const card = document.querySelector('[data-aito-card]') as HTMLElement;
+    expect(card.className).toContain('flag-fiverr-edge');
+    expect(card.className).toContain('opacity-60');
+    expect(card.className).not.toContain('flag-pause-edge');
+    expect(card.className).not.toContain('animate-flag-halo');
+  });
+
+  it('names the fiverr flag for assistive tech', () => {
+    render(<CardView project={{ ...project, flag: 'fiverr' }} onExpand={vi.fn()} />);
+    expect(screen.getByTestId('aito-card-flag')).toHaveTextContent('Fiverr');
+  });
+
   describe('due date badge', () => {
     beforeEach(() => {
       vi.useFakeTimers();

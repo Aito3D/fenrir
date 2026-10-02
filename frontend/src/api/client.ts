@@ -4663,7 +4663,7 @@ export interface HeimdallStatus {
   error: 'unauthorized' | 'forbidden' | 'unreachable' | null;
 }
 
-export type AitoFlag = 'urgent' | 'sav' | 'pause';
+export type AitoFlag = 'urgent' | 'sav' | 'pause' | 'fiverr';
 
 export interface AitoProject {
   id: number;

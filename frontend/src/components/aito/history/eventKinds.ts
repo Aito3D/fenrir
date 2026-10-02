@@ -45,6 +45,8 @@ export const EVENT_LABEL_KEY: Record<string, string> = {
   'project.sav.cleared': 'aito.history.projectSavCleared',
   'project.pause.set': 'aito.history.projectPauseSet',
   'project.pause.cleared': 'aito.history.projectPauseCleared',
+  'project.fiverr.set': 'aito.history.projectFiverrSet',
+  'project.fiverr.cleared': 'aito.history.projectFiverrCleared',
   'project.due.set': 'aito.history.projectDueSet',
   'project.due.cleared': 'aito.history.projectDueCleared',
   'project.contacted.set': 'aito.history.projectContactedSet',

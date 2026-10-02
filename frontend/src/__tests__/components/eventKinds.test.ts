@@ -239,6 +239,8 @@ describe('EVENT_LABEL_KEY', () => {
 
 describe('project.contacted.set / project.contacted.cleared', () => {
   it('labels both kinds', () => {
+    expect(EVENT_LABEL_KEY['project.fiverr.set']).toBe('aito.history.projectFiverrSet');
+    expect(EVENT_LABEL_KEY['project.fiverr.cleared']).toBe('aito.history.projectFiverrCleared');
     expect(EVENT_LABEL_KEY['project.contacted.set']).toBe('aito.history.projectContactedSet');
     expect(EVENT_LABEL_KEY['project.contacted.cleared']).toBe('aito.history.projectContactedCleared');
   });

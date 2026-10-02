@@ -125,6 +125,13 @@ describe('buildBoard', () => {
     expect(flagRank('urgent')).toBeLessThan(flagRank(null));
     expect(flagRank(null)).toBeLessThan(flagRank('pause'));
   });
+
+  it('sinks a fiverr card into the same bottom tier as a paused one', () => {
+    // On standby for an outside operator's part: nobody here can act on it,
+    // so it recedes exactly like pause and position breaks the tie.
+    expect(flagRank('fiverr')).toBe(flagRank('pause'));
+    expect(flagRank(null)).toBeLessThan(flagRank('fiverr'));
+  });
 });
 
 describe('findColumn', () => {

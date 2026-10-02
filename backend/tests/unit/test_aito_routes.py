@@ -3194,6 +3194,82 @@ async def test_switching_urgent_to_pause_records_the_clear_and_the_set(async_cli
 
 
 @pytest.mark.asyncio
+async def test_board_sinks_fiverr_cards_below_unflagged_ones(async_client):
+    """A card on standby for a Fiverr operator's part is one nobody here can
+    act on, exactly like a paused one — so it sinks into the same bottom tier
+    and `position` still breaks ties inside it."""
+    a = (await _create(async_client, description="a")).json()
+    await _create(async_client, description="b")
+    c = (await _create(async_client, description="c")).json()
+    d = (await _create(async_client, description="d")).json()
+    # Stored devis order is now d(0), c(1), b(2), a(3).
+
+    await async_client.patch(f"/api/v1/aito/{d['id']}/flag", json={"flag": "fiverr"})
+    await async_client.patch(f"/api/v1/aito/{c['id']}/flag", json={"flag": "pause"})
+    await async_client.patch(f"/api/v1/aito/{a['id']}/flag", json={"flag": "urgent"})
+
+    board = (await async_client.get("/api/v1/aito/")).json()
+
+    # `a` rose, `d` and `c` both sank and kept their stored order between them.
+    assert _devis_order(board) == ["a", "b", "d", "c"]
+    assert [p["flag"] for p in board if p["column"] == "devis"] == ["urgent", None, "fiverr", "pause"]
+
+
+@pytest.mark.asyncio
+async def test_fiverr_flag_sets_and_clears_with_one_event_each(async_client):
+    """Fiverr is a first-class flag value: same route, same one-event-per-real-
+    change timeline as the other three, including the no-op on a repeat."""
+    project_id = (await _create(async_client)).json()["id"]
+
+    r = await async_client.patch(f"/api/v1/aito/{project_id}/flag", json={"flag": "fiverr"})
+    assert r.status_code == 200
+    assert r.json()["flag"] == "fiverr"
+
+    await async_client.patch(f"/api/v1/aito/{project_id}/flag", json={"flag": "fiverr"})  # no-op
+
+    r = await async_client.patch(f"/api/v1/aito/{project_id}/flag", json={"flag": None})
+    assert r.status_code == 200
+    assert r.json()["flag"] is None
+
+    events = (await async_client.get(f"/api/v1/aito/{project_id}/events?depth=story")).json()["events"]
+    kinds = [e["kind"] for e in events]
+    assert kinds.count("project.fiverr.set") == 1
+    assert kinds.count("project.fiverr.cleared") == 1
+
+
+@pytest.mark.asyncio
+async def test_switching_pause_to_fiverr_records_the_clear_and_the_set(async_client):
+    project_id = (await _create(async_client)).json()["id"]
+
+    await async_client.patch(f"/api/v1/aito/{project_id}/flag", json={"flag": "pause"})
+    await async_client.patch(f"/api/v1/aito/{project_id}/flag", json={"flag": "fiverr"})
+
+    events = (await async_client.get(f"/api/v1/aito/{project_id}/events?depth=story")).json()["events"]
+    kinds = [e["kind"] for e in events]
+    assert kinds.count("project.pause.set") == 1
+    assert kinds.count("project.pause.cleared") == 1
+    assert kinds.count("project.fiverr.set") == 1
+
+
+@pytest.mark.asyncio
+async def test_fiverr_flag_never_queues_a_zoho_push(async_client, db_session):
+    """Zoho has no field for the flag, so setting it must leave the sync
+    outbox exactly as it was — the guarantee the other three values carry."""
+    project_id = (await _create(async_client)).json()["id"]
+    before = (await db_session.execute(select(AitoProject).where(AitoProject.id == project_id))).scalar_one()
+    sync_state_before = before.quote_sync_state
+    failures_before = before.quote_sync_failures
+
+    r = await async_client.patch(f"/api/v1/aito/{project_id}/flag", json={"flag": "fiverr"})
+    assert r.status_code == 200
+
+    db_session.expire_all()
+    after = (await db_session.execute(select(AitoProject).where(AitoProject.id == project_id))).scalar_one()
+    assert after.quote_sync_state == sync_state_before
+    assert after.quote_sync_failures == failures_before
+
+
+@pytest.mark.asyncio
 async def test_flag_rejects_an_unknown_value(async_client):
     project_id = (await _create(async_client)).json()["id"]
 
