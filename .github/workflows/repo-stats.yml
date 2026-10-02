@@ -12,6 +12,10 @@ jobs:
   repo-stats:
     name: repo-stats
     runs-on: ubuntu-latest
+    # Upstream-only: the stats target maziggy/bambuddy and need the
+    # GHRS_GITHUB_API_TOKEN secret, which forks do not carry. Without this
+    # guard the schedule fails every night on Aito3D/fenrir.
+    if: github.repository == 'maziggy/bambuddy'
     steps:
       - name: run-ghrs
         uses: jgehrcke/github-repo-stats@v1.4.2
