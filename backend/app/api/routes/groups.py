@@ -12,9 +12,9 @@ from backend.app.core.permissions import (
     PERMISSION_CATEGORIES,
     Permission,
 )
-from backend.app.core.printer_scope import group_printer_ids
+from backend.app.core.printer_scope import group_location_names, group_printer_ids
 from backend.app.core.websocket import ws_manager
-from backend.app.models.group import Group, group_printers
+from backend.app.models.group import Group, group_locations, group_printers
 from backend.app.models.printer import Printer
 from backend.app.models.user import User
 from backend.app.schemas.group import (
@@ -62,8 +62,31 @@ async def _printer_ids_by_group(db: AsyncSession) -> dict[int, list[int]]:
     return {gid: sorted(pids) for gid, pids in by_group.items()}
 
 
+async def _locations_by_group(db: AsyncSession) -> dict[int, list[str]]:
+    result = await db.execute(select(group_locations.c.group_id, group_locations.c.location))
+    by_group: dict[int, list[str]] = {}
+    for group_id, location in result.all():
+        by_group.setdefault(group_id, []).append(location)
+    return {gid: sorted(locs) for gid, locs in by_group.items()}
+
+
+def _clean_locations(locations: list[str]) -> set[str]:
+    """Trimmed, non-empty location names; refuses ones too long to ever match a printer."""
+    cleaned = {loc.strip() for loc in locations if loc and loc.strip()}
+    if any(len(loc) > 100 for loc in cleaned):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Location names are at most 100 characters",
+        )
+    return cleaned
+
+
 async def _apply_printer_scope(
-    db: AsyncSession, group: Group, restrict_printers: bool | None, printer_ids: list[int] | None
+    db: AsyncSession,
+    group: Group,
+    restrict_printers: bool | None,
+    printer_ids: list[int] | None,
+    locations: list[str] | None = None,
 ) -> bool:
     """Validate and store a group's printer scope (#1727). Returns whether it changed.
 
@@ -99,10 +122,25 @@ async def _apply_printer_scope(
                     insert(group_printers), [{"group_id": group.id, "printer_id": pid} for pid in sorted(wanted)]
                 )
             changed = True
+    if locations is not None:
+        # Not checked against existing printers: a location can be granted
+        # before its first printer is added there.
+        wanted_locations = _clean_locations(locations)
+        current_locations = set(await group_location_names(db, group.id)) if group.id is not None else set()
+        if wanted_locations != current_locations:
+            if group.id is None:
+                await db.flush()
+            await db.execute(delete(group_locations).where(group_locations.c.group_id == group.id))
+            if wanted_locations:
+                await db.execute(
+                    insert(group_locations),
+                    [{"group_id": group.id, "location": loc} for loc in sorted(wanted_locations)],
+                )
+            changed = True
     return changed
 
 
-def _group_response(group: Group, printer_ids: list[int], user_count: int) -> GroupResponse:
+def _group_response(group: Group, printer_ids: list[int], locations: list[str], user_count: int) -> GroupResponse:
     return GroupResponse(
         id=group.id,
         name=group.name,
@@ -111,6 +149,7 @@ def _group_response(group: Group, printer_ids: list[int], user_count: int) -> Gr
         is_system=group.is_system,
         restrict_printers=bool(group.restrict_printers),
         printer_ids=printer_ids,
+        locations=locations,
         user_count=user_count,
         created_at=group.created_at,
         updated_at=group.updated_at,
@@ -146,7 +185,13 @@ async def list_groups(
     result = await db.execute(select(Group).options(selectinload(Group.users)).order_by(Group.name))
     groups = result.scalars().all()
     printers_by_group = await _printer_ids_by_group(db)
-    return [_group_response(group, printers_by_group.get(group.id, []), len(group.users)) for group in groups]
+    locations_by_group = await _locations_by_group(db)
+    return [
+        _group_response(
+            group, printers_by_group.get(group.id, []), locations_by_group.get(group.id, []), len(group.users)
+        )
+        for group in groups
+    ]
 
 
 @router.post("", response_model=GroupResponse, status_code=status.HTTP_201_CREATED)
@@ -183,11 +228,11 @@ async def create_group(
     )
     db.add(group)
     await db.flush()
-    await _apply_printer_scope(db, group, group_data.restrict_printers, group_data.printer_ids)
+    await _apply_printer_scope(db, group, group_data.restrict_printers, group_data.printer_ids, group_data.locations)
     await db.commit()
     await db.refresh(group)
 
-    return _group_response(group, await group_printer_ids(db, group.id), 0)
+    return _group_response(group, await group_printer_ids(db, group.id), await group_location_names(db, group.id), 0)
 
 
 @router.get("/{group_id}", response_model=GroupDetailResponse)
@@ -214,6 +259,7 @@ async def get_group(
         is_system=group.is_system,
         restrict_printers=bool(group.restrict_printers),
         printer_ids=await group_printer_ids(db, group.id),
+        locations=await group_location_names(db, group.id),
         user_count=len(group.users),
         created_at=group.created_at,
         updated_at=group.updated_at,
@@ -277,14 +323,18 @@ async def update_group(
             )
         group.permissions = group_data.permissions
 
-    scope_changed = await _apply_printer_scope(db, group, group_data.restrict_printers, group_data.printer_ids)
+    scope_changed = await _apply_printer_scope(
+        db, group, group_data.restrict_printers, group_data.printer_ids, group_data.locations
+    )
 
     await db.commit()
     await db.refresh(group)
     if scope_changed:
         await ws_manager.refresh_printer_scopes()
 
-    return _group_response(group, await group_printer_ids(db, group.id), len(group.users))
+    return _group_response(
+        group, await group_printer_ids(db, group.id), await group_location_names(db, group.id), len(group.users)
+    )
 
 
 @router.delete("/{group_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -312,6 +362,7 @@ async def delete_group(
     restricted = bool(group.restrict_printers)
     # SQLite doesn't enforce the FK cascade
     await db.execute(delete(group_printers).where(group_printers.c.group_id == group_id))
+    await db.execute(delete(group_locations).where(group_locations.c.group_id == group_id))
     await db.delete(group)
     await db.commit()
     if restricted:

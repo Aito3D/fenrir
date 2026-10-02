@@ -283,10 +283,7 @@ describe('GroupEditPage', () => {
 });
 
 describe('GroupEditPage printer access (#1727)', () => {
-  const printers = [
-    { id: 1, name: 'Lab X1C' },
-    { id: 2, name: 'Training P1S' },
-  ];
+  // Printer access is edited on its own page; the editor only summarises it
   let posted: Record<string, unknown> | null;
   let patched: Record<string, unknown> | null;
 
@@ -295,7 +292,6 @@ describe('GroupEditPage printer access (#1727)', () => {
     patched = null;
     server.use(
       http.get('/api/v1/groups/permissions', () => HttpResponse.json(mockPermissions)),
-      http.get('/api/v1/printers/', () => HttpResponse.json(printers)),
       http.get('/api/v1/groups/:id', () => HttpResponse.json(group)),
       http.post('/api/v1/groups/', async ({ request }) => {
         posted = (await request.json()) as Record<string, unknown>;
@@ -334,59 +330,55 @@ describe('GroupEditPage printer access (#1727)', () => {
     );
   };
 
-  it('sends the selected printers when creating a restricted group', async () => {
-    setup({});
-    const user = userEvent.setup();
-    render(<GroupEditPage />);
+  it('summarises a limited group and links to its printer access', async () => {
+    setup({ ...mockGroup, restrict_printers: true, printer_ids: [2, 3], locations: ['Lab A'] });
+    await renderEdit();
 
-    await waitFor(() => expect(screen.getByText('Printer access')).toBeInTheDocument());
-    await user.type(screen.getByPlaceholderText(/group name/i), 'Team A');
-    await user.click(screen.getByRole('switch'));
-    await user.click(await screen.findByLabelText('Lab X1C'));
-    await user.click(screen.getByText('Save'));
-
-    await waitFor(() => expect(posted).not.toBeNull());
-    expect(posted).toMatchObject({ name: 'Team A', restrict_printers: true, printer_ids: [1] });
+    await waitFor(() => expect(screen.getByDisplayValue('Operators')).toBeInTheDocument());
+    expect(screen.getByText('Limited: 2 printers picked, 1 locations')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Manage printer access' })).toHaveAttribute(
+      'href',
+      '/settings?tab=users&sub=printer-access&group=2'
+    );
+    expect(screen.queryByRole('switch')).not.toBeInTheDocument();
   });
 
-  it('warns when a restricted group has no printers', async () => {
-    setup({});
-    const user = userEvent.setup();
-    render(<GroupEditPage />);
-
-    await waitFor(() => expect(screen.getByText('Printer access')).toBeInTheDocument());
-    expect(screen.queryByText(/won't see any printer/)).not.toBeInTheDocument();
-    await user.click(screen.getByRole('switch'));
-    expect(await screen.findByText(/won't see any printer/)).toBeInTheDocument();
-  });
-
-  it('saves printer access on a system group without resending its permissions', async () => {
-    setup({ ...mockGroup, restrict_printers: true, printer_ids: [2] });
+  it('never sends printer access, so saving here cannot undo the access page', async () => {
+    setup({ ...mockGroup, restrict_printers: true, printer_ids: [2], locations: ['Lab A'] });
     const user = userEvent.setup();
     await renderEdit();
 
     await waitFor(() => expect(screen.getByDisplayValue('Operators')).toBeInTheDocument());
-    expect(screen.getByLabelText('Training P1S')).toBeChecked();
-    await user.click(screen.getByLabelText('Lab X1C'));
-    await user.click(screen.getByText('Save'));
-
-    await waitFor(() => expect(patched).not.toBeNull());
-    expect(patched).toMatchObject({ restrict_printers: true, printer_ids: [2, 1] });
-    expect(patched).not.toHaveProperty('permissions');
-  });
-
-  it('explains that Administrators always see every printer', async () => {
-    setup({ ...mockGroup, id: 1, name: 'Administrators', restrict_printers: false, printer_ids: [] });
-    const user = userEvent.setup();
-    await renderEdit();
-
-    await waitFor(() => expect(screen.getByDisplayValue('Administrators')).toBeInTheDocument());
-    expect(screen.getByText('Administrators always see every printer.')).toBeInTheDocument();
-    expect(screen.queryByRole('switch')).not.toBeInTheDocument();
     await user.click(screen.getByText('Save'));
 
     await waitFor(() => expect(patched).not.toBeNull());
     expect(patched).not.toHaveProperty('restrict_printers');
     expect(patched).not.toHaveProperty('printer_ids');
+    expect(patched).not.toHaveProperty('locations');
+    // System group: unchanged permissions aren't resent either
+    expect(patched).not.toHaveProperty('permissions');
+  });
+
+  it('points a new group to the access page', async () => {
+    setup({});
+    const user = userEvent.setup();
+    render(<GroupEditPage />);
+
+    await waitFor(() => expect(screen.getByText('Printer access')).toBeInTheDocument());
+    expect(screen.getByText(/Once the group is created/)).toBeInTheDocument();
+    await user.type(screen.getByPlaceholderText(/group name/i), 'Team A');
+    await user.click(screen.getByText('Save'));
+
+    await waitFor(() => expect(posted).not.toBeNull());
+    expect(posted).not.toHaveProperty('restrict_printers');
+  });
+
+  it('explains that Administrators always see every printer', async () => {
+    setup({ ...mockGroup, id: 1, name: 'Administrators', restrict_printers: false, printer_ids: [], locations: [] });
+    await renderEdit();
+
+    await waitFor(() => expect(screen.getByDisplayValue('Administrators')).toBeInTheDocument());
+    expect(screen.getByText('Administrators always see every printer.')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Manage printer access' })).not.toBeInTheDocument();
   });
 });

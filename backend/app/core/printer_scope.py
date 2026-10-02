@@ -8,7 +8,8 @@ How a scope is derived:
 
 * Auth disabled, or an admin user: every printer.
 * A user: the union of the printers of each of their groups that has
-  ``restrict_printers`` set. A user in no such group sees every printer, so
+  ``restrict_printers`` set, a group's printers being the ones picked for it
+  plus every printer whose location it was given. A user in no such group sees every printer, so
   installs that never configure this behave exactly as before. A group
   without the flag doesn't contribute, so permission groups (Operators,
   Viewers) combine with team groups without widening them.
@@ -28,7 +29,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.models.group import Group, group_printers
+from backend.app.models.group import Group, group_locations, group_printers
 
 
 @dataclass(frozen=True)
@@ -108,6 +109,32 @@ async def group_printer_ids(db: AsyncSession, group_id: int) -> list[int]:
     return list(result.scalars().all())
 
 
+async def group_location_names(db: AsyncSession, group_id: int) -> list[str]:
+    result = await db.execute(
+        select(group_locations.c.location)
+        .where(group_locations.c.group_id == group_id)
+        .order_by(group_locations.c.location)
+    )
+    return list(result.scalars().all())
+
+
+async def groups_printer_ids(db: AsyncSession, group_ids: Iterable[int]) -> frozenset[int]:
+    """Every printer the given groups reach, picked or through a location."""
+    from backend.app.models.printer import Printer
+
+    ids = list(group_ids)
+    if not ids:
+        return frozenset()
+    picked = select(group_printers.c.printer_id).where(group_printers.c.group_id.in_(ids))
+    located = (
+        select(Printer.id)
+        .join(group_locations, group_locations.c.location == Printer.location)
+        .where(group_locations.c.group_id.in_(ids))
+    )
+    result = await db.execute(picked.union(located))
+    return frozenset(result.scalars().all())
+
+
 async def resolve_user_printer_scope(db: AsyncSession, user) -> PrinterScope:
     """Scope of a loaded ``User`` (``groups`` must already be loaded)."""
     if user.is_admin:
@@ -115,8 +142,25 @@ async def resolve_user_printer_scope(db: AsyncSession, user) -> PrinterScope:
     restricted = [g.id for g in user.groups if g.restrict_printers]
     if not restricted:
         return ALL_PRINTERS
-    result = await db.execute(select(group_printers.c.printer_id).where(group_printers.c.group_id.in_(restricted)))
-    return PrinterScope(frozenset(result.scalars().all()))
+    return PrinterScope(await groups_printer_ids(db, restricted))
+
+
+async def location_grantees(db: AsyncSession, locations: Iterable[str | None]) -> list[str]:
+    """Names of the restricted groups granted any of ``locations``.
+
+    A printer moving between these locations changes who can reach it.
+    """
+    names = [loc for loc in locations if loc]
+    if not names:
+        return []
+    result = await db.execute(
+        select(Group.name)
+        .join(group_locations, group_locations.c.group_id == Group.id)
+        .where(group_locations.c.location.in_(names), Group.restrict_printers.is_(True))
+        .distinct()
+        .order_by(Group.name)
+    )
+    return list(result.scalars().all())
 
 
 async def resolve_user_id_printer_scope(db: AsyncSession, user_id: int | None) -> PrinterScope:

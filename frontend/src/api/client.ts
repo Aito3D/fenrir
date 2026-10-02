@@ -731,7 +731,7 @@ export interface PrinterCreate {
   ip_address: string;
   access_code: string;
   model?: string;
-  location?: string;
+  location?: string | null;
   auto_archive?: boolean;
   // Maintenance Mode flag (#1476). Backend already gates MQTT, queue dispatch,
   // scheduler, metrics and the print picker on this; toggling via PATCH
@@ -4298,9 +4298,11 @@ export interface Group {
   description: string | null;
   permissions: Permission[];
   is_system: boolean;
-  /** Members only see the printers in printer_ids (#1727) */
+  /** Members only see the printers in printer_ids plus every printer in locations (#1727) */
   restrict_printers: boolean;
   printer_ids: number[];
+  /** Matched against Printer.location, so printers added there later are included */
+  locations: string[];
   user_count: number;
   created_at: string;
   updated_at: string;
@@ -4316,6 +4318,7 @@ export interface GroupCreate {
   permissions: Permission[];
   restrict_printers?: boolean;
   printer_ids?: number[];
+  locations?: string[];
 }
 
 export interface GroupUpdate {
@@ -4324,6 +4327,7 @@ export interface GroupUpdate {
   permissions?: Permission[];
   restrict_printers?: boolean;
   printer_ids?: number[];
+  locations?: string[];
 }
 
 export interface PermissionInfo {

@@ -557,3 +557,183 @@ class TestByIdAndMedia:
 
         left = (await db_session.execute(select(PrintLogEntry.printer_id))).scalars().all()
         assert left == [b.id]
+
+
+async def _location_team(
+    async_client: AsyncClient,
+    admin_jwt: str,
+    username: str,
+    locations: list[str],
+    *,
+    printer_ids: list[int] | None = None,
+    permissions: list[str] | None = None,
+):
+    """A member of a team group given *locations* (and optionally single printers)."""
+    perms = await _group(async_client, admin_jwt, f"perms_{username}", permissions=permissions or TEAM_PERMISSIONS)
+    response = await async_client.post(
+        "/api/v1/groups/",
+        headers=_auth(admin_jwt),
+        json={
+            "name": f"team_{username}",
+            "restrict_printers": True,
+            "printer_ids": printer_ids or [],
+            "locations": locations,
+        },
+    )
+    assert response.status_code == 201, response.text
+    team = response.json()["id"]
+    jwt, _ = await _user(async_client, admin_jwt, username, [perms, team])
+    return jwt, team
+
+
+class TestLocations:
+    async def test_location_grants_its_printers_plus_picked_ones(self, async_client, printer_factory):
+        lab_1 = await printer_factory(name="L1", location="Lab A")
+        lab_2 = await printer_factory(name="L2", location="Lab A")
+        picked = await printer_factory(name="P", location="Lab B")
+        await printer_factory(name="Other", location="Lab B")
+        await printer_factory(name="Nowhere")
+        admin = await _admin_token(async_client)
+        jwt, _ = await _location_team(async_client, admin, "lab", ["Lab A"], printer_ids=[picked.id])
+
+        assert await _listed_ids(async_client, _auth(jwt)) == {lab_1.id, lab_2.id, picked.id}
+
+    async def test_printer_added_to_a_location_is_reached_without_ticking_it(self, async_client, printer_factory):
+        await printer_factory(name="L1", location="Lab A")
+        admin = await _admin_token(async_client)
+        jwt, _ = await _location_team(async_client, admin, "lab", ["Lab A"])
+
+        later = await printer_factory(name="L2", location="Lab A")
+        assert later.id in await _listed_ids(async_client, _auth(jwt))
+
+    async def test_location_no_printer_has_grants_nothing(self, async_client, printer_factory):
+        await printer_factory(name="A", location="Lab A")
+        admin = await _admin_token(async_client)
+        jwt, _ = await _location_team(async_client, admin, "lab", ["Basement"])
+
+        assert await _listed_ids(async_client, _auth(jwt)) == set()
+
+    async def test_locations_ignored_while_the_group_is_not_restricted(self, async_client, printer_factory):
+        a = await printer_factory(name="A", location="Lab A")
+        b = await printer_factory(name="B", location="Lab B")
+        admin = await _admin_token(async_client)
+        jwt, team = await _location_team(async_client, admin, "lab", ["Lab A"])
+        off = await async_client.patch(
+            f"/api/v1/groups/{team}", headers=_auth(admin), json={"restrict_printers": False}
+        )
+        assert off.json()["locations"] == ["Lab A"]
+
+        assert await _listed_ids(async_client, _auth(jwt)) == {a.id, b.id}
+
+    async def test_round_trip_trims_and_dedupes(self, async_client):
+        admin = await _admin_token(async_client)
+        created = await async_client.post(
+            "/api/v1/groups/",
+            headers=_auth(admin),
+            json={"name": "team", "restrict_printers": True, "locations": [" Lab A ", "Lab A", "", "Lab B"]},
+        )
+        assert created.status_code == 201, created.text
+        group_id = created.json()["id"]
+        assert created.json()["locations"] == ["Lab A", "Lab B"]
+
+        patched = await async_client.patch(
+            f"/api/v1/groups/{group_id}", headers=_auth(admin), json={"locations": ["Lab C"]}
+        )
+        assert patched.json()["locations"] == ["Lab C"]
+        detail = (await async_client.get(f"/api/v1/groups/{group_id}", headers=_auth(admin))).json()
+        assert detail["locations"] == ["Lab C"]
+        listed = (await async_client.get("/api/v1/groups/", headers=_auth(admin))).json()
+        assert next(g for g in listed if g["id"] == group_id)["locations"] == ["Lab C"]
+
+        # Leaving the field out keeps it
+        untouched = await async_client.patch(
+            f"/api/v1/groups/{group_id}", headers=_auth(admin), json={"description": "x"}
+        )
+        assert untouched.json()["locations"] == ["Lab C"]
+
+    async def test_overlong_location_is_rejected(self, async_client):
+        admin = await _admin_token(async_client)
+        response = await async_client.post(
+            "/api/v1/groups/",
+            headers=_auth(admin),
+            json={"name": "team", "restrict_printers": True, "locations": ["x" * 101]},
+        )
+        assert response.status_code == 400
+
+    async def test_deleting_a_group_drops_its_location_rows(self, async_client, db_session):
+        from sqlalchemy import select
+
+        from backend.app.models.group import group_locations
+
+        admin = await _admin_token(async_client)
+        _, team = await _location_team(async_client, admin, "lab", ["Lab A"])
+        assert (await async_client.delete(f"/api/v1/groups/{team}", headers=_auth(admin))).status_code == 204
+
+        rows = await db_session.execute(select(group_locations).where(group_locations.c.group_id == team))
+        assert rows.first() is None
+
+
+class TestMovingPrinters:
+    """A location grant turns a printer's location into an access setting."""
+
+    async def test_non_admin_cannot_move_a_printer_out_of_a_granted_location(self, async_client, printer_factory):
+        a = await printer_factory(name="A", location="Lab A")
+        admin = await _admin_token(async_client)
+        jwt, _ = await _location_team(
+            async_client, admin, "lab", ["Lab A"], permissions=[*TEAM_PERMISSIONS, "printers:update"]
+        )
+
+        response = await async_client.patch(f"/api/v1/printers/{a.id}", headers=_auth(jwt), json={"location": "Lab B"})
+        assert response.status_code == 403
+        assert (await async_client.get(f"/api/v1/printers/{a.id}", headers=_auth(admin))).json()["location"] == "Lab A"
+
+    async def test_non_admin_cannot_move_a_printer_into_a_granted_location(self, async_client, printer_factory):
+        a = await printer_factory(name="A", location="Lab B")
+        admin = await _admin_token(async_client)
+        await _location_team(async_client, admin, "lab", ["Lab A"])
+        perms = await _group(async_client, admin, "editors", permissions=["printers:read", "printers:update"])
+        jwt, _ = await _user(async_client, admin, "editor", [perms])
+
+        response = await async_client.patch(f"/api/v1/printers/{a.id}", headers=_auth(jwt), json={"location": "Lab A"})
+        assert response.status_code == 403
+
+    async def test_non_admin_may_move_between_locations_no_group_was_given(self, async_client, printer_factory):
+        a = await printer_factory(name="A", location="Shelf 1")
+        admin = await _admin_token(async_client)
+        await _location_team(async_client, admin, "lab", ["Lab A"])
+        perms = await _group(async_client, admin, "editors", permissions=["printers:read", "printers:update"])
+        jwt, _ = await _user(async_client, admin, "editor", [perms])
+
+        response = await async_client.patch(
+            f"/api/v1/printers/{a.id}", headers=_auth(jwt), json={"location": " Shelf 2 "}
+        )
+        assert response.status_code == 200, response.text
+        # Trimmed, so it can match a location given to a group later
+        assert response.json()["location"] == "Shelf 2"
+
+    async def test_admin_move_rescopes_members_and_open_sockets(self, async_client, printer_factory):
+        from types import SimpleNamespace
+
+        from backend.app.core.printer_scope import ALL_PRINTERS
+        from backend.app.core.websocket import ws_manager
+
+        a = await printer_factory(name="A", location="Lab A")
+        b = await printer_factory(name="B", location="Lab B")
+        admin = await _admin_token(async_client)
+        jwt, _ = await _location_team(async_client, admin, "lab", ["Lab A"])
+
+        socket = SimpleNamespace(
+            state=SimpleNamespace(bambuddy_printer_scope=ALL_PRINTERS, bambuddy_scope_principal=("lab", None)),
+            send_text=AsyncMock(),
+        )
+        ws_manager.active_connections.append(socket)
+        try:
+            moved = await async_client.patch(
+                f"/api/v1/printers/{b.id}", headers=_auth(admin), json={"location": "Lab A"}
+            )
+            assert moved.status_code == 200, moved.text
+            assert socket.state.bambuddy_printer_scope.printer_ids == frozenset({a.id, b.id})
+        finally:
+            ws_manager.active_connections.remove(socket)
+
+        assert await _listed_ids(async_client, _auth(jwt)) == {a.id, b.id}

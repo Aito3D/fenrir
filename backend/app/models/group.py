@@ -34,6 +34,18 @@ group_printers = Table(
     Column("printer_id", Integer, ForeignKey("printers.id", ondelete="CASCADE"), primary_key=True),
 )
 
+# Locations a restricted group may use (#1727): every printer whose
+# ``location`` matches, now or later, so a printer added to "Lab A" reaches
+# the Lab A team without anyone ticking it. Matched exactly against
+# ``printers.location``; a name no printer carries any more simply grants
+# nothing. Like ``group_printers``, kept while the flag is off.
+group_locations = Table(
+    "group_locations",
+    Base.metadata,
+    Column("group_id", Integer, ForeignKey("groups.id", ondelete="CASCADE"), primary_key=True),
+    Column("location", String(100), primary_key=True),
+)
+
 
 class Group(Base):
     """Group model for organizing users and assigning permissions.

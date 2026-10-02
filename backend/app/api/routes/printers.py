@@ -23,8 +23,9 @@ from backend.app.core.auth import (
 from backend.app.core.config import settings
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
-from backend.app.core.printer_scope import PrinterScope
+from backend.app.core.printer_scope import PrinterScope, location_grantees
 from backend.app.core.tasks import spawn_background_task
+from backend.app.core.websocket import ws_manager
 from backend.app.models.ams_label import AmsLabel
 from backend.app.models.printer import Printer
 from backend.app.models.slot_preset import SlotPresetMapping
@@ -201,6 +202,10 @@ async def create_printer(
     db.add(printer)
     await db.commit()
     await db.refresh(printer)
+
+    # A group given this location reaches the new printer straight away (#1727)
+    if await location_grantees(db, [printer.location]):
+        await ws_manager.refresh_printer_scopes()
 
     # Connect to the printer
     if printer.is_active:
@@ -381,7 +386,7 @@ async def get_printer(
 async def update_printer(
     printer_id: int,
     printer_data: PrinterUpdate,
-    _=RequirePrinterPermissionIfAuthEnabled(Permission.PRINTERS_UPDATE),
+    user: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.PRINTERS_UPDATE),
     db: AsyncSession = Depends(get_db),
 ):
     """Update a printer."""
@@ -391,6 +396,18 @@ async def update_printer(
         raise HTTPException(404, "Printer not found")
 
     update_data = printer_data.model_dump(exclude_unset=True)
+
+    # Groups can be given a location (#1727), so moving a printer between
+    # locations changes who can reach it. That is an access change and only an
+    # admin may make it; an API key never counts as one.
+    access_moved = False
+    if "location" in update_data and update_data["location"] != printer.location:
+        access_moved = bool(await location_grantees(db, [printer.location, update_data["location"]]))
+        if access_moved and await is_auth_enabled(db) and not (user is not None and user.is_admin):
+            raise HTTPException(
+                403,
+                "Moving this printer to another location changes which groups can access it. Only an admin can do that.",
+            )
 
     # Handle nested ROI object - flatten to individual columns
     if "plate_detection_roi" in update_data:
@@ -412,6 +429,9 @@ async def update_printer(
 
     await db.commit()
     await db.refresh(printer)
+
+    if access_moved:
+        await ws_manager.refresh_printer_scopes()
 
     # Reconnect if connection settings changed
     if any(k in update_data for k in ["ip_address", "access_code", "is_active"]):

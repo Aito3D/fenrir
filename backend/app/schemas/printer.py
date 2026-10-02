@@ -5,6 +5,17 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from backend.app.utils.printer_models import supports_nozzle_flow_type
 
 
+def _normalize_location(v: str | None) -> str | None:
+    """Trim the location; blank means none.
+
+    Groups can be given a location (#1727), matched exactly against this
+    field, so stray whitespace would quietly keep a printer out of it.
+    """
+    if v is None:
+        return None
+    return v.strip() or None
+
+
 class PrinterBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     serial_number: str = Field(..., min_length=1, max_length=50)
@@ -47,6 +58,8 @@ class PrinterCreate(PrinterBase):
     # connect to the printer's MQTT and bypass Bambuddy's RBAC.
     access_code: str = Field(..., min_length=1, max_length=20)
 
+    _location = field_validator("location")(_normalize_location)
+
 
 class PlateDetectionROI(BaseModel):
     """Region of interest for plate detection (percentages 0.0-1.0)."""
@@ -77,6 +90,8 @@ class PrinterUpdate(BaseModel):
     camera_rotation: int | None = None  # 0, 90, 180, 270 degrees
     plate_detection_enabled: bool | None = None
     plate_detection_roi: PlateDetectionROI | None = None
+
+    _location = field_validator("location")(_normalize_location)
 
 
 class PrinterResponse(PrinterBase):
