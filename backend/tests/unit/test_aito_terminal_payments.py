@@ -400,6 +400,50 @@ async def test_refresh_marks_an_open_row_failed_when_heimdall_reports_404(db_ses
 
 
 @pytest.mark.asyncio
+async def test_refresh_404_event_failure_leaves_the_open_row_open(db_session, monkeypatch):
+    """The 404 write-off and its `payment.terminal.failed` event share one
+    commit: if the event write raises, the caller's rollback leaves the row
+    open (re-selected by the poll) instead of failed with no timeline entry,
+    and a later refresh closes it with exactly one event."""
+    p = await _project(db_session)
+    pid = p.id
+    row = AitoTerminalPayment(
+        project_id=pid,
+        document_kind="invoice",
+        document_id="inv-1",
+        document_number="FA",
+        idempotency_key="k-nf",
+        heimdall_id="h-gone-nf",
+        amount=1,
+        status="processing",
+        created_at=NOW,
+    )
+    db_session.add(row)
+    await db_session.commit()
+    row_id = row.id
+    heimdall_service._transport = httpx.MockTransport(
+        lambda r: httpx.Response(404, json={"error": {"code": "not_found", "message": "no such payment"}})
+    )
+    real_record = svc.record
+
+    async def failing_record(*args, **kwargs):
+        raise RuntimeError("event write failed")
+
+    monkeypatch.setattr(svc, "record", failing_record)
+    with pytest.raises(RuntimeError):
+        await svc.refresh_terminal_payment(db_session, row, now=NOW + timedelta(seconds=10))
+    await db_session.rollback()
+    row = await db_session.get(AitoTerminalPayment, row_id)
+    assert row.status == "processing" and row.settled_at is None
+    assert await _events(db_session, pid, "payment.terminal.failed") == []
+    monkeypatch.setattr(svc, "record", real_record)
+    await svc.refresh_terminal_payment(db_session, row, now=NOW + timedelta(seconds=20), force=True)
+    assert row.status == "failed" and row.settled_at == NOW + timedelta(seconds=20)
+    failed = await _events(db_session, pid, "payment.terminal.failed")
+    assert len(failed) == 1 and failed[0].detail["reason"] == "not_found"
+
+
+@pytest.mark.asyncio
 async def test_refresh_404_leaves_a_paid_row_paid(db_session, monkeypatch):
     """A paid row whose Zoho booking is still pending is deliberately kept in
     the poll (`open_row`), so a 404 — repointed base URL, rotated key, lost
@@ -903,10 +947,14 @@ async def test_the_sweep_ages_out_an_abandoned_reservation_without_calling_heimd
 @pytest.mark.asyncio
 async def test_one_failing_reservation_does_not_end_the_abandoned_sweep(db_session, monkeypatch):
     """Per-row isolation: the event write for the first stale reservation
-    raises, the pass rolls back and still ages out the second one."""
+    raises, the pass rolls back and still ages out the second one. The
+    write-off and its event share one commit, so the failing row is left
+    `pending` (re-selected by the next pass) rather than written off without
+    the abandoned event that tells the operator to check the paper roll."""
     p = await _project(db_session)
-    first = _reservation(p.id, idempotency_key="k-1", created_at=NOW)
-    second = _reservation(p.id, idempotency_key="k-2", created_at=NOW)
+    pid = p.id
+    first = _reservation(pid, idempotency_key="k-1", created_at=NOW)
+    second = _reservation(pid, idempotency_key="k-2", created_at=NOW)
     db_session.add_all([first, second])
     await db_session.commit()
     first_id, second_id = first.id, second.id
@@ -923,12 +971,19 @@ async def test_one_failing_reservation_does_not_end_the_abandoned_sweep(db_sessi
     later = NOW + timedelta(minutes=11)
     assert await svc._age_out_abandoned_reservations(db_session, now=later, limit=10) == 1
     assert len(seen) == 2
-    # The first row's status commit landed before the event write failed.
+    # The first row's write-off rolled back with its event: still pending.
     one = await db_session.get(AitoTerminalPayment, first_id)
     two = await db_session.get(AitoTerminalPayment, second_id)
-    assert one.status == "failed" and two.status == "failed"
+    assert one.status == "pending" and one.settled_at is None and one.sync_error is None
+    assert two.status == "failed"
     assert two.sync_error == "reservation abandoned" and two.settled_at == later
-    assert len(await _events(db_session, p.id, "payment.terminal.failed")) == 1
+    assert len(await _events(db_session, pid, "payment.terminal.failed")) == 1
+    # The next pass re-selects the first row and writes it off with its event.
+    monkeypatch.setattr(svc, "record", real_record)
+    assert await svc._age_out_abandoned_reservations(db_session, now=later, limit=10) == 1
+    one = await db_session.get(AitoTerminalPayment, first_id)
+    assert one.status == "failed" and one.sync_error == "reservation abandoned" and one.settled_at == later
+    assert len(await _events(db_session, pid, "payment.terminal.failed")) == 2
 
 
 @pytest.mark.asyncio

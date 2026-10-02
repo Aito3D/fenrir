@@ -584,10 +584,12 @@ async def _refresh_terminal_payment(db: AsyncSession, row: AitoTerminalPayment, 
         # so the operator can charge again. Unlike every other close this one
         # is decided here rather than in `apply_terminal_state` (which never
         # runs — there is no view), so the timeline event is recorded by hand,
-        # in the same shape `_age_out_abandoned_reservations` uses.
+        # in the same shape `_age_out_abandoned_reservations` uses. The status
+        # flip and its event share ONE commit: if the event write fails, the
+        # row stays open (the caller rolls back) and the next poll retries it,
+        # instead of a failed row with no timeline entry nothing re-selects.
         row.status = "failed"
         row.settled_at = now
-        await db.commit()
         await record(
             db,
             row.project_id,
@@ -649,7 +651,9 @@ async def _age_out_abandoned_reservations(db: AsyncSession, *, now: datetime, li
             row.sync_error = "reservation abandoned"
             row.checked_at = now
             row.settled_at = now
-            await db.commit()
+            # The write-off and its event share ONE commit: a failed event
+            # write rolls the row back to `pending`, so the next pass ages it
+            # out again rather than leaving a failed row with no event.
             await record(
                 db,
                 row.project_id,
