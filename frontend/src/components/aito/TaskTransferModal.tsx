@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, MoveRight, Search, Split } from 'lucide-react';
+import { Loader2, MoveRight, Split } from 'lucide-react';
 import { Button } from '../Button';
 import { api, ApiError, type AitoProject } from '../../api/client';
 import { useDismissableDialog } from '../../hooks/useDismissableDialog';
@@ -12,7 +12,7 @@ import { replaceProject } from '../../utils/aitoOptimistic';
 import { taskTotal, type TaskDraft } from '../../utils/taskDraft';
 import { focusRingCls } from '../formStyles';
 import { AitoDialogShell } from './AitoDialogShell';
-import { CandidateList } from './CandidateList';
+import { CandidatePicker } from './CandidatePicker';
 import { AITO_SERVICE_LABEL_KEYS, serviceDotCls, taskSteps } from './services';
 
 /** A beat past .animate-modal-out's 150ms — the margin ClientHistoryModal gives. */
@@ -206,37 +206,17 @@ export function TaskTransferModal({
           {note && <p className="px-6 pb-3 text-xs text-bambu-gray leading-snug">{note}</p>}
         </>
       ) : (
-        <>
-          <div className="px-6 pb-3">
-            <label className="flex h-9 items-center gap-2 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark pl-3 pr-2 focus-within:border-bambu-green/50">
-              <Search className="h-4 w-4 flex-none text-bambu-gray" aria-hidden="true" />
-              <input
-                type="search"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder={t('aito.mergeSearch')}
-                aria-label={t('aito.mergeSearch')}
-                autoFocus
-                className="min-w-0 flex-1 bg-transparent text-sm text-white placeholder:text-bambu-gray focus:outline-none"
-              />
-            </label>
-          </div>
-          <div
-            role="radiogroup"
-            aria-label={title}
-            className="min-h-0 flex-1 overflow-y-auto scrollbar-hide px-6 pb-2"
-          >
-            <CandidateList
-              project={project}
-              selectedId={targetId}
-              query={query}
-              onSelect={(id) => {
-                setTargetId(id);
-                setError(null);
-              }}
-            />
-          </div>
-        </>
+        <CandidatePicker
+          project={project}
+          selectedId={targetId}
+          query={query}
+          onQueryChange={setQuery}
+          ariaLabel={title}
+          onSelect={(id) => {
+            setTargetId(id);
+            setError(null);
+          }}
+        />
       )}
 
       <footer className="flex items-center justify-between gap-3 border-t border-bambu-dark-tertiary px-6 py-3">

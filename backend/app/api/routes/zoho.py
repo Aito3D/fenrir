@@ -2,7 +2,7 @@
 
 import logging
 import re
-from typing import Literal
+from typing import Literal, NoReturn
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -27,6 +27,33 @@ from backend.app.services.zoho import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/zoho", tags=["zoho"])
+
+
+def _raise_zoho_http_error(
+    e: ZohoNotConfiguredError | ZohoUpstreamError,
+    *,
+    not_found_detail: str | None = None,
+    rejected: bool = False,
+) -> NoReturn:
+    """Raise the HTTP answer for a Books failure caught by a route as
+    ``except (ZohoNotConfiguredError, ZohoUpstreamError) as e``.
+
+    First match wins, in this order: not configured is a 409; a
+    ``ZohoNotFound`` is a 404 with ``not_found_detail`` when the route passes
+    one; a ``ZohoRequestRejected`` is a 409 carrying Books' own message when
+    the route passes ``rejected=True``; anything else from the
+    ``ZohoUpstreamError`` family (both of those included, on a route that does
+    not opt in) is a 502 with the error's message. Not configured and not
+    found are raised ``from None``, the others ``from e``. Must be called from
+    inside the ``except`` block, so the context is still the caught error.
+    """
+    if isinstance(e, ZohoNotConfiguredError):
+        raise HTTPException(status_code=409, detail="Zoho is not configured") from None
+    if not_found_detail is not None and isinstance(e, ZohoNotFound):
+        raise HTTPException(status_code=404, detail=not_found_detail) from None
+    if rejected and isinstance(e, ZohoRequestRejected):
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    raise HTTPException(status_code=502, detail=str(e)) from e
 
 
 class ZohoStatus(BaseModel):
@@ -104,10 +131,8 @@ async def search_contacts(
 ):
     try:
         return await zoho_service.search_contacts(db, q)
-    except ZohoNotConfiguredError:
-        raise HTTPException(status_code=409, detail="Zoho is not configured") from None
-    except ZohoUpstreamError as e:
-        raise HTTPException(status_code=502, detail=str(e)) from e
+    except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
+        _raise_zoho_http_error(e)
 
 
 # Mirrors the frontend rules in utils/clientDraft.ts. These endpoints are
@@ -231,12 +256,8 @@ async def get_contact(
     (aito:create): this is "may edit a card", not "may create one"."""
     try:
         return await zoho_service.get_contact(db, contact_id)
-    except ZohoNotConfiguredError:
-        raise HTTPException(status_code=409, detail="Zoho is not configured") from None
-    except ZohoNotFound:
-        raise HTTPException(status_code=404, detail="Contact not found in Zoho Books") from None
-    except ZohoUpstreamError as e:
-        raise HTTPException(status_code=502, detail=str(e)) from e
+    except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
+        _raise_zoho_http_error(e, not_found_detail="Contact not found in Zoho Books")
 
 
 @router.post("/contacts", response_model=ZohoContact, status_code=201)
@@ -254,13 +275,9 @@ async def create_contact(
             email=payload.email,
             phone=payload.phone,
         )
-    except ZohoNotConfiguredError:
-        raise HTTPException(status_code=409, detail="Zoho is not configured") from None
-    except ZohoRequestRejected as e:
+    except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
         # Zoho's own validation message (duplicate name, bad email, …) — actionable inline.
-        raise HTTPException(status_code=409, detail=str(e)) from e
-    except ZohoUpstreamError as e:
-        raise HTTPException(status_code=502, detail=str(e)) from e
+        _raise_zoho_http_error(e, rejected=True)
 
 
 class ZohoContactPatch(BaseModel):
@@ -326,10 +343,8 @@ async def patch_contact(
         await zoho_service.update_contact_person(
             db, contact_id, email=payload.email, phone=payload.phone, phone_field=payload.phone_field
         )
-    except ZohoNotConfiguredError:
-        raise HTTPException(status_code=409, detail="Zoho is not configured") from None
-    except ZohoUpstreamError as e:
-        raise HTTPException(status_code=502, detail=str(e)) from e
+    except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
+        _raise_zoho_http_error(e)
 
 
 @router.get("/contacts/{contact_id}/persons", response_model=list[ZohoContactPerson])
@@ -348,12 +363,8 @@ async def list_contact_persons(
         return []
     try:
         return await zoho_service.list_contact_persons(db, contact_id)
-    except ZohoNotConfiguredError:
-        raise HTTPException(status_code=409, detail="Zoho is not configured") from None
-    except ZohoNotFound:
-        raise HTTPException(status_code=404, detail="Contact not found in Zoho Books") from None
-    except ZohoUpstreamError as e:
-        raise HTTPException(status_code=502, detail=str(e)) from e
+    except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
+        _raise_zoho_http_error(e, not_found_detail="Contact not found in Zoho Books")
 
 
 @router.post("/contacts/{contact_id}/persons", response_model=ZohoContactPerson, status_code=201)
@@ -386,13 +397,9 @@ async def create_contact_person(
             email=payload.email,
             phone=payload.phone,
         )
-    except ZohoNotConfiguredError:
-        raise HTTPException(status_code=409, detail="Zoho is not configured") from None
-    except ZohoRequestRejected as e:
+    except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
         # Zoho's own validation message (duplicate email, …) — actionable inline.
-        raise HTTPException(status_code=409, detail=str(e)) from e
-    except ZohoUpstreamError as e:
-        raise HTTPException(status_code=502, detail=str(e)) from e
+        _raise_zoho_http_error(e, rejected=True)
 
 
 class ZohoEstimateSummary(BaseModel):
@@ -474,10 +481,8 @@ async def search_estimates(
     """Quotes for the import picker. An empty ``q`` lists the most recent."""
     try:
         return await zoho_service.search_estimates(db, q.strip())
-    except ZohoNotConfiguredError:
-        raise HTTPException(status_code=409, detail="Zoho is not configured") from None
-    except ZohoUpstreamError as e:
-        raise HTTPException(status_code=502, detail=str(e)) from e
+    except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
+        _raise_zoho_http_error(e)
 
 
 @router.get("/estimates/{estimate_id}/preview", response_model=ZohoQuotePreview)
@@ -489,10 +494,8 @@ async def preview_estimate(
     try:
         estimate = await zoho_service.get_estimate(db, estimate_id)
         quote_url = await zoho_service.books_app_url(db, estimate_id)
-    except ZohoNotConfiguredError:
-        raise HTTPException(status_code=409, detail="Zoho is not configured") from None
-    except ZohoUpstreamError as e:
-        raise HTTPException(status_code=502, detail=str(e)) from e
+    except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
+        _raise_zoho_http_error(e)
 
     # The contact enriches the client snapshot with a phone and an email. It is
     # a second round trip and a second thing that can fail — a failure here

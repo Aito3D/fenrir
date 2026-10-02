@@ -501,3 +501,24 @@ counters. No query keys, i18n keys or locale changes.
 
 - SURFACE.md sections regenerated: "Frontend exported symbols" (+2 lines, additions only).
 - Golden probes re-recorded: none (35/35 match).
+
+## 2026-10-02 — campaign 23, T-128: additive internal export CandidatePicker (sanctioned re-baseline, not a behavior change)
+
+Sanctions commit <this commit> "refactor(loop-8): T-128 share the candidate
+search picker between the merge and transfer dialogs". The search box and the
+radiogroup scroll wrapper around CandidateList, copied verbatim in
+MergeProjectModal and TaskTransferModal's pick-target step, moved into the new
+component `frontend/src/components/aito/CandidatePicker.tsx` (a fragment of the
+same two divs). It is controlled: `query` and the selection stay in each
+dialog, so the transfer dialog still keeps the typed query and the picked card
+across Back / Next exactly as before (the step unmounts the picker). The
+radiogroup's aria-label is passed in (the merge title / the transfer title).
+Old and new versions of both dialogs were rendered side by side (merge: open,
+loaded, type, pick, no-match; transfer split; transfer move: tick, Next, type,
+pick, Back, Next again, type) and their HTML plus the focused element compared
+equal after normalising useId counters; every class string, role, aria
+attribute, placeholder, autoFocus, data-testid and i18n key is the same. No
+locale changes.
+
+- SURFACE.md sections regenerated: "Frontend exported symbols" (+1 line, additions only).
+- Golden probes re-recorded: none (35/35 match).
