@@ -1509,6 +1509,7 @@ export default {
     },
     // Badges
     badges: {
+      awaitingReview: '等待审核',
       staged: '已暂存',
       requiresPrevious: '需要前一个成功',
       autoPowerOff: '自动关机',
@@ -1646,6 +1647,7 @@ export default {
     permissions: {
       noStopPrint: '您没有停止打印的权限',
       noStartPrint: '您没有开始打印的权限',
+      awaitingReview: '等待审核：由管理队列的人启动此任务',
       noEdit: '您没有编辑此队列项目的权限',
       noCancel: '您没有取消此队列项目的权限',
       noRequeue: '您没有重新排队的权限',
@@ -5330,6 +5332,7 @@ export default {
     invalidDateTime: '请输入有效的日期和时间',
     openCalendar: '打开日历',
     requireManualStart: '要求手动开始',
+    awaitingReviewNote: '你的打印正在等待审核：管理队列的人启动后才会开始。',
     requirePreviousSuccess: '仅在上一次打印成功后开始',
     autoOffAfter: '完成后关闭打印机',
     helpAsap: '打印将添加到队列顶部，并在符合条件的打印机空闲后立即开始。',

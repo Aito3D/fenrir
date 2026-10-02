@@ -5876,6 +5876,13 @@ async def seed_notification_templates():
         await session.commit()
 
 
+# Groups holding any of these before #1620 could queue, start or run jobs that
+# went ahead on their own, so the upgrade lets them keep doing that.
+_QUEUE_REVIEW_BACKFILL_FROM = frozenset(
+    {"queue:create", "queue:update_own", "queue:update_all", "printers:control", "pipelines:run"}
+)
+
+
 async def seed_default_groups():
     """Seed default groups and migrate existing users to appropriate groups.
 
@@ -6172,6 +6179,26 @@ async def seed_default_groups():
             if changed:
                 group.permissions = perms
         await session.commit()
+
+        # queue:start_unreviewed (#1620): jobs of users without it wait for
+        # someone to start them. Granted once to every group that could queue,
+        # start or run jobs before it existed, so nothing changes on upgrade. Once
+        # only, unlike the backfills above: an admin removing it from a group is
+        # the whole point, and a per-boot backfill would hand it straight back.
+        from backend.app.models.settings import Settings
+
+        review_flag = "_backfill_1620_queue_start_unreviewed_done"
+        if (await session.execute(select(Settings).where(Settings.key == review_flag))).scalar_one_or_none() is None:
+            result = await session.execute(select(Group))
+            for group in result.scalars().all():
+                perms = list(group.permissions or [])
+                if "queue:start_unreviewed" in perms:
+                    continue
+                if _QUEUE_REVIEW_BACKFILL_FROM.intersection(perms):
+                    group.permissions = [*perms, "queue:start_unreviewed"]
+                    logger.info("Added queue:start_unreviewed to group '%s' (#1620)", group.name)
+            session.add(Settings(key=review_flag, value="true"))
+            await session.commit()
 
         # Migrate existing users to groups if they're not already in any group
         if groups_created:

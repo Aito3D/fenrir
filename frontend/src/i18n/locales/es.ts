@@ -1509,6 +1509,7 @@ export default {
     },
     // Badges
     badges: {
+      awaitingReview: 'Esperando revisión',
       staged: 'Preparado',
       requiresPrevious: 'Requiere éxito previo',
       autoPowerOff: 'Apagado automático',
@@ -1646,6 +1647,7 @@ export default {
     permissions: {
       noStopPrint: 'No tiene permiso para detener impresiones',
       noStartPrint: 'No tiene permiso para iniciar impresiones',
+      awaitingReview: 'Esperando revisión: alguien que gestiona la cola inicia este trabajo',
       noEdit: 'No tiene permiso para editar este elemento de la cola',
       noCancel: 'No tiene permiso para cancelar este elemento de la cola',
       noRequeue: 'No tiene permiso para volver a encolar elementos',
@@ -5351,6 +5353,7 @@ export default {
     invalidDateTime: 'Introduzca una fecha y hora válidas',
     openCalendar: 'Abrir calendario',
     requireManualStart: 'Requerir inicio manual',
+    awaitingReviewNote: 'Tu impresión espera revisión: empieza cuando alguien que gestiona la cola la inicie.',
     requirePreviousSuccess: 'Iniciar solo si la impresión anterior se completó correctamente',
     autoOffAfter: 'Apagar la impresora al terminar',
     helpAsap: 'La impresión se añadirá al principio de la cola y comenzará en cuanto haya una impresora elegible inactiva.',

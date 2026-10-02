@@ -141,6 +141,7 @@ _APIKEY_SCOPE_BY_PERMISSION: dict[Permission, str | tuple[str, ...]] = {
     Permission.QUEUE_DELETE_OWN: "can_queue",
     Permission.QUEUE_DELETE_ALL: "can_queue",
     Permission.QUEUE_REORDER: "can_queue",
+    Permission.QUEUE_START_UNREVIEWED: "can_queue",
     Permission.ARCHIVES_REPRINT_OWN: "can_queue",
     Permission.ARCHIVES_REPRINT_ALL: "can_queue",
     # can_control_printer — physical-world side effects on hardware
@@ -1946,6 +1947,67 @@ async def get_printer_scope_if_auth_enabled(
 
 
 RequestPrinterScope = Depends(get_printer_scope_if_auth_enabled)
+
+
+def queue_review_required_for(user: User | None) -> bool:
+    """Whether jobs ``user`` queues must wait for someone to start them (#1620).
+
+    None is auth-off or a legacy ownerless API key, neither of which has a
+    reviewer above it. Whoever may start every job (queue:update_all) is the
+    reviewer, so their own jobs don't wait either.
+    """
+    return (
+        user is not None
+        and not user.has_permission(Permission.QUEUE_START_UNREVIEWED.value)
+        and not user.has_permission(Permission.QUEUE_UPDATE_ALL.value)
+    )
+
+
+def may_start_queue_item(user: User | None, can_modify_all: bool, created_by_id: int | None) -> bool:
+    """Whether the caller may start a waiting queue item (#1620).
+
+    ``can_modify_all`` is what ``require_ownership_permission`` answered for
+    queue:update_all; an API key only gets it when its owner holds that. Anyone
+    else needs to be allowed to print without review, and the item must be
+    theirs or have no owner yet (a virtual-printer upload, claimed by starting
+    it, #1670).
+    """
+    if can_modify_all or user is None:
+        return True
+    if queue_review_required_for(user):
+        return False
+    return created_by_id is None or created_by_id == user.id
+
+
+async def get_queue_review_required(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)] = None,
+    x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
+) -> bool:
+    """FastAPI dependency: must the caller's new queue items wait for review (#1620)?
+
+    Permission dependencies answer API-key requests with no user, so the key's
+    owner decides here. Declare it after the permission dependency. With auth
+    on and no usable principal it answers True.
+    """
+    async with async_session() as db:
+        if not await is_auth_enabled(db):
+            return False
+        api_key = await validated_api_key_from_request(credentials, x_api_key)
+        if api_key is not None:
+            return queue_review_required_for(await resolve_apikey_owner(db, api_key))
+        if credentials is None:
+            return True
+        cached = _authenticated_user.get()
+        if cached is not None and cached[0] == credentials.credentials:
+            user = cached[1]
+        else:
+            user = await get_current_user_optional(credentials)
+            if user is None:
+                return True
+        return queue_review_required_for(user)
+
+
+QueueReviewRequired = Depends(get_queue_review_required)
 
 
 async def get_media_or_request_printer_scope(

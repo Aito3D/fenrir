@@ -1440,6 +1440,7 @@ export default {
       descendingNewest: '내림차순 (최신 것 먼저)'
     },
     badges: {
+      awaitingReview: '검토 대기 중',
       staged: '준비됨',
       requiresPrevious: '이전 성공 필요',
       autoPowerOff: '자동 전원 끄기',
@@ -1569,6 +1570,7 @@ export default {
     permissions: {
       noStopPrint: '인쇄를 정지할 권한이 없습니다',
       noStartPrint: '인쇄를 시작할 권한이 없습니다',
+      awaitingReview: '검토 대기 중: 대기열을 관리하는 사람이 이 작업을 시작합니다',
       noEdit: '이 대기열 항목을 편집할 권한이 없습니다',
       noCancel: '이 대기열 항목을 취소할 권한이 없습니다',
       noRequeue: '항목을 재대기할 권한이 없습니다',
@@ -5113,6 +5115,7 @@ export default {
     invalidDateTime: '유효한 날짜와 시간을 입력하세요',
     openCalendar: '달력 열기',
     requireManualStart: '수동 시작 필요',
+    awaitingReviewNote: '이 출력은 검토를 기다립니다. 대기열을 관리하는 사람이 시작하면 출력이 시작됩니다.',
     requirePreviousSuccess: '이전 인쇄가 성공한 경우에만 시작',
     autoOffAfter: '완료 후 프린터 전원 끄기',
     helpAsap: '인쇄가 대기열 맨 앞에 추가되고 적합한 프린터가 유휴 상태가 되는 즉시 시작됩니다.',

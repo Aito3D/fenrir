@@ -1509,6 +1509,7 @@ export default {
     },
     // Badges
     badges: {
+      awaitingReview: 'En attente de validation',
       staged: 'Préparé',
       requiresPrevious: 'Nécessite succès précédent',
       autoPowerOff: 'Extinction auto',
@@ -1646,6 +1647,7 @@ export default {
     permissions: {
       noStopPrint: 'Pas d\'autorisation d\'arrêt',
       noStartPrint: 'Pas d\'autorisation de démarrage',
+      awaitingReview: 'En attente de validation : une personne qui gère la file lance ce travail',
       noEdit: 'Pas d\'autorisation de modification',
       noCancel: 'Pas d\'autorisation d\'annulation',
       noRequeue: 'Pas d\'autorisation de remise en file',
@@ -5331,6 +5333,7 @@ export default {
     invalidDateTime: 'Veuillez saisir une date et une heure valides',
     openCalendar: 'Ouvrir calendrier',
     requireManualStart: 'Démarrage manuel requis',
+    awaitingReviewNote: 'Votre impression attend une validation : elle démarre quand une personne qui gère la file la lance.',
     requirePreviousSuccess: 'Démarrer seulement si l\'impression précédente a réussi',
     autoOffAfter: 'Éteindre l\'imprimante à la fin',
     helpAsap: 'L\'impression sera ajoutée en haut de la file et démarrera dès qu\'une imprimante éligible sera inactive.',

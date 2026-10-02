@@ -1508,6 +1508,7 @@ export default {
     },
     // Badges
     badges: {
+      awaitingReview: 'レビュー待ち',
       staged: 'ステージ済み',
       requiresPrevious: '前の成功が必要',
       autoPowerOff: '自動電源オフ',
@@ -1645,6 +1646,7 @@ export default {
     permissions: {
       noStopPrint: '印刷を停止する権限がありません',
       noStartPrint: '印刷を開始する権限がありません',
+      awaitingReview: 'レビュー待ち：キューを管理する人がこのジョブを開始します',
       noEdit: 'このキューアイテムを編集する権限がありません',
       noCancel: 'このキューアイテムをキャンセルする権限がありません',
       noRequeue: 'アイテムを再キューする権限がありません',
@@ -5344,6 +5346,7 @@ export default {
     invalidDateTime: '有効な日時を入力してください',
     openCalendar: 'カレンダーを開く',
     requireManualStart: '手動開始を要求',
+    awaitingReviewNote: 'この印刷はレビュー待ちです。キューを管理する人が開始すると印刷が始まります。',
     requirePreviousSuccess: '前の印刷が成功した場合のみ開始',
     autoOffAfter: '完了後にプリンターの電源を切る',
     helpAsap: '印刷はキューの先頭に追加され、対象プリンターがアイドルになるとすぐに開始します。',

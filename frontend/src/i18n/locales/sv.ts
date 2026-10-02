@@ -1525,6 +1525,7 @@ export default {
     },
     // Badges
     badges: {
+      awaitingReview: 'Väntar på granskning',
       staged: 'Förberedd',
       requiresPrevious: 'Kräver tidigare framgång',
       autoPowerOff: 'Auto-avstängning',
@@ -1663,6 +1664,7 @@ export default {
     permissions: {
       noStopPrint: 'Du har inte behörighet att stoppa utskrifter',
       noStartPrint: 'Du har inte behörighet att starta utskrifter',
+      awaitingReview: 'Väntar på granskning: någon som hanterar kön startar det här jobbet',
       noEdit: 'Du har inte behörighet att redigera denna köpost',
       noCancel: 'Du har inte behörighet att avbryta denna köpost',
       noRequeue: 'Du har inte behörighet att lägga tillbaka poster i kön',
@@ -5387,6 +5389,7 @@ errors: {
     invalidDateTime: 'Ange ett giltigt datum och tid',
     openCalendar: 'Öppna kalender',
     requireManualStart: 'Kräv manuell start',
+    awaitingReviewNote: 'Din utskrift väntar på granskning: den börjar när någon som hanterar kön startar den.',
     requirePreviousSuccess: 'Starta endast om föregående utskrift lyckades',
     autoOffAfter: 'Stäng av skrivaren när den är klar',
     helpAsap: 'Utskriften kommer att läggas till i toppen av kön och starta så snart en lämplig skrivare är ledig.',

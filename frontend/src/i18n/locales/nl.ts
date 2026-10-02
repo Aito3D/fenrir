@@ -1525,6 +1525,7 @@ export default {
     },
     // Badges
     badges: {
+      awaitingReview: 'Wacht op beoordeling',
       staged: 'Gereed voor handmatige start',
       requiresPrevious: 'Vereist dat vorige taak slaagt',
       autoPowerOff: 'Automatisch uitschakelen',
@@ -1663,6 +1664,7 @@ export default {
     permissions: {
       noStopPrint: 'Je hebt geen toestemming om afdrukken te stoppen',
       noStartPrint: 'Je hebt geen toestemming om afdrukken te starten',
+      awaitingReview: 'Wacht op beoordeling: iemand die de wachtrij beheert start deze taak',
       noEdit: 'Je hebt geen toestemming om dit wachtrij-item te bewerken',
       noCancel: 'Je hebt geen toestemming om dit wachtrij-item te annuleren',
       noRequeue: 'Je hebt geen toestemming om items opnieuw in de wachtrij te plaatsen',
@@ -5389,6 +5391,7 @@ export default {
     invalidDateTime: 'Voer een geldige datum en tijd in',
     openCalendar: 'Kalender openen',
     requireManualStart: 'Handmatige start vereisen',
+    awaitingReviewNote: 'Je afdruk wacht op beoordeling: hij begint zodra iemand die de wachtrij beheert hem start.',
     requirePreviousSuccess: 'Alleen starten als vorige afdruk is geslaagd',
     autoOffAfter: 'Printer uitschakelen wanneer klaar',
     helpAsap: 'Afdruk wordt bovenaan de wachtrij geplaatst en start zodra een geschikte printer inactief is.',

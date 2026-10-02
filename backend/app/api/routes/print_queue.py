@@ -15,9 +15,11 @@ from sqlalchemy.orm import selectinload
 
 from backend.app.api.routes.library_variants import normalize_model_name, resolve_variant_model
 from backend.app.core.auth import (
+    QueueReviewRequired,
     RequestPrinterScope,
     RequirePermissionIfAuthEnabled,
     RequirePrinterPermissionIfAuthEnabled,
+    may_start_queue_item,
     require_ownership_permission,
 )
 from backend.app.core.config import settings
@@ -72,6 +74,9 @@ from backend.app.utils.threemf_tools import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/queue", tags=["queue"])
+
+# Answer to a caller who may not start a job that waits for review (#1620)
+_AWAITING_REVIEW = "This job waits for review: someone who can manage all queue jobs has to start it"
 
 
 def _variant_summaries(item: PrintQueueItem) -> list[QueueVariantSummary]:
@@ -821,6 +826,7 @@ async def add_to_queue(
     db: AsyncSession = Depends(get_db),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_CREATE),
     printer_scope: PrinterScope = RequestPrinterScope,
+    review_required: bool = QueueReviewRequired,
 ):
     """Add an item to the print queue."""
     # Normalize target_model (e.g., "Bambu Lab X1E" / "C13" -> "X1E").
@@ -1167,7 +1173,9 @@ async def add_to_queue(
             scheduled_time=data.scheduled_time,
             require_previous_success=data.require_previous_success,
             auto_off_after=data.auto_off_after,
-            manual_start=data.manual_start,
+            # Without queue:start_unreviewed the job waits for someone to
+            # start it, whatever the request asked for (#1620)
+            manual_start=data.manual_start or review_required,
             skip_filament_check=data.skip_filament_check,
             ams_mapping=ams_mapping_json,
             nozzle_rack_choice=nozzle_rack_choice_json,
@@ -1315,6 +1323,17 @@ async def bulk_update_queue_items(
 
         # Ownership check
         if not can_modify_all and item.created_by_id != user.id:
+            skipped_count += 1
+            continue
+
+        # Clearing "wait for manual start" starts the job, which needs the
+        # same right as the start button (#1620)
+        if (
+            item.manual_start
+            and "manual_start" in update_data
+            and not update_data["manual_start"]
+            and not may_start_queue_item(user, can_modify_all, item.created_by_id)
+        ):
             skipped_count += 1
             continue
 
@@ -1612,6 +1631,7 @@ async def dispatch_batch(
     db: AsyncSession = Depends(get_db),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_CREATE),
     printer_scope: PrinterScope = RequestPrinterScope,
+    review_required: bool = QueueReviewRequired,
 ):
     """Queue the runs this order still owes (#342).
 
@@ -1648,6 +1668,11 @@ async def dispatch_batch(
     except HTTPException:
         await db.rollback()
         raise
+    # A clone copies its template's "wait for manual start", which is off once
+    # staff started the template; the dispatcher's own jobs still wait (#1620)
+    if review_required:
+        for item in created:
+            item.manual_start = True
 
     await db.commit()
     await db.refresh(batch)
@@ -1983,6 +2008,16 @@ async def update_queue_item(
         raise HTTPException(409, "Item is being dispatched — cancel it first to make changes")
 
     update_data = data.model_dump(exclude_unset=True)
+
+    # Clearing "wait for manual start" starts the job, which needs the same
+    # right as the start button (#1620)
+    if (
+        item.manual_start
+        and "manual_start" in update_data
+        and not update_data["manual_start"]
+        and not may_start_queue_item(user, can_modify_all, item.created_by_id)
+    ):
+        raise HTTPException(403, _AWAITING_REVIEW)
 
     # Normalize target_model if being updated (see add_to_queue for why the
     # code map has to run first).
@@ -2467,6 +2502,8 @@ async def start_queue_item(
     if not can_modify_all and user is not None:
         if item.created_by_id is not None and item.created_by_id != user.id:
             raise HTTPException(403, "You can only start your own queue items")
+    if not may_start_queue_item(user, can_modify_all, item.created_by_id):
+        raise HTTPException(403, _AWAITING_REVIEW)
 
     if item.status != "pending":
         raise HTTPException(400, f"Can only start pending items, current status: '{item.status}'")

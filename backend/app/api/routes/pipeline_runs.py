@@ -34,7 +34,7 @@ from sqlalchemy import delete, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.routes.cloud import resolve_api_key_cloud_owner
-from backend.app.core.auth import RequestPrinterScope, RequirePermissionIfAuthEnabled
+from backend.app.core.auth import QueueReviewRequired, RequestPrinterScope, RequirePermissionIfAuthEnabled
 from backend.app.core.config import settings as app_settings
 from backend.app.core.database import async_session, get_db
 from backend.app.core.permissions import Permission
@@ -477,6 +477,7 @@ def _make_orchestration_callable(
     creator_user_id: int | None,
     copies: int,
     printer_scope: PrinterScope = ALL_PRINTERS,
+    review_required: bool = False,
 ):
     """Returns the async callable that ``slice_dispatch.enqueue`` runs as the
     background slice job. Wraps slice + multi-copy enqueue + state update."""
@@ -589,6 +590,8 @@ def _make_orchestration_callable(
                     created_by_id=creator_user_id,
                     status="pending",
                     confirm_outcome=confirm_outcome,
+                    # The copies wait for review like any other job of theirs (#1620)
+                    manual_start=review_required,
                 )
                 session.add(queue_item)
                 await session.flush()
@@ -680,6 +683,7 @@ async def run_pipeline(
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.PIPELINES_RUN),
     api_key_cloud_owner: User | None = Depends(resolve_api_key_cloud_owner),
     printer_scope: PrinterScope = RequestPrinterScope,
+    review_required: bool = QueueReviewRequired,
     db: AsyncSession = Depends(get_db),
 ):
     from backend.app.api.routes.settings import get_setting
@@ -779,6 +783,7 @@ async def run_pipeline(
         creator_user_id=creator.id if creator else None,
         copies=body.copies,
         printer_scope=printer_scope,
+        review_required=review_required,
     )
     slice_job = await slice_dispatch.enqueue(
         kind="library_file" if src_kind == "library_file" else "archive",
@@ -986,6 +991,7 @@ async def retry_failed(
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.PIPELINES_RUN),
     api_key_cloud_owner: User | None = Depends(resolve_api_key_cloud_owner),
     printer_scope: PrinterScope = RequestPrinterScope,
+    review_required: bool = QueueReviewRequired,
     db: AsyncSession = Depends(get_db),
 ):
     """Create a new run with copies = (failed + cancelled count) from the
@@ -1034,6 +1040,7 @@ async def retry_failed(
         current_user=current_user,
         api_key_cloud_owner=api_key_cloud_owner,
         printer_scope=printer_scope,
+        review_required=review_required,
         db=db,
     )
 

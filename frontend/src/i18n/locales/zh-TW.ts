@@ -1509,6 +1509,7 @@ export default {
     },
     // Badges
     badges: {
+      awaitingReview: '等待審核',
       staged: '已暫存',
       requiresPrevious: '需要前一個成功',
       autoPowerOff: '自動關機',
@@ -1646,6 +1647,7 @@ export default {
     permissions: {
       noStopPrint: '您沒有停止列印的權限',
       noStartPrint: '您沒有開始列印的權限',
+      awaitingReview: '等待審核：由管理佇列的人啟動此工作',
       noEdit: '您沒有編輯此佇列項目的權限',
       noCancel: '您沒有取消此佇列項目的權限',
       noRequeue: '您沒有重新佇列的權限',
@@ -5330,6 +5332,7 @@ export default {
     invalidDateTime: '請輸入有效的日期和時間',
     openCalendar: '開啟日曆',
     requireManualStart: '要求手動開始',
+    awaitingReviewNote: '你的列印正在等待審核：管理佇列的人啟動後才會開始。',
     requirePreviousSuccess: '僅在上一次列印成功後開始',
     autoOffAfter: '完成後關閉印表機',
     helpAsap: '列印將新增到佇列頂端，並在符合條件的印表機閒置後立即開始。',

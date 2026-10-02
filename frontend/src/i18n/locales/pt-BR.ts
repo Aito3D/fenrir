@@ -1509,6 +1509,7 @@ export default {
     },
     // Badges
     badges: {
+      awaitingReview: 'Aguardando revisão',
       staged: 'Preparado (início manual)',
       requiresPrevious: 'Requer sucesso anterior',
       autoPowerOff: 'Desligamento automático',
@@ -1646,6 +1647,7 @@ export default {
     permissions: {
       noStopPrint: 'Você não tem permissão para parar impressões',
       noStartPrint: 'Você não tem permissão para iniciar impressões',
+      awaitingReview: 'Aguardando revisão: alguém que gerencia a fila inicia este trabalho',
       noEdit: 'Você não tem permissão para editar este item da fila',
       noCancel: 'Você não tem permissão para cancelar este item da fila',
       noRequeue: 'Você não tem permissão para reenfileirar itens',
@@ -5330,6 +5332,7 @@ export default {
     invalidDateTime: 'Digite uma data e hora válidas',
     openCalendar: 'Abrir calendário',
     requireManualStart: 'Exigir início manual',
+    awaitingReviewNote: 'Sua impressão aguarda revisão: ela começa quando alguém que gerencia a fila a iniciar.',
     requirePreviousSuccess: 'Iniciar somente se a impressão anterior foi concluída com sucesso',
     autoOffAfter: 'Desligar impressora ao finalizar',
     helpAsap: 'A impressão será adicionada ao topo da fila e começará assim que uma impressora elegível estiver ociosa.',

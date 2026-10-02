@@ -1509,6 +1509,7 @@ export default {
     },
     // Rozetler
     badges: {
+      awaitingReview: 'İnceleme bekliyor',
       staged: 'Hazırlandı',
       requiresPrevious: 'Önceki başarı gerekli',
       autoPowerOff: 'Otomatik kapanma',
@@ -1646,6 +1647,7 @@ export default {
     permissions: {
       noStopPrint: 'Baskıları durdurma izniniz yok',
       noStartPrint: 'Baskıları başlatma izniniz yok',
+      awaitingReview: 'İnceleme bekliyor: bu işi kuyruğu yöneten biri başlatır',
       noEdit: 'Bu kuyruk öğesini düzenleme izniniz yok',
       noCancel: 'Bu kuyruk öğesini iptal etme izniniz yok',
       noRequeue: 'Öğeleri yeniden kuyruklama izniniz yok',
@@ -5319,6 +5321,7 @@ export default {
     invalidDateTime: 'Lütfen geçerli bir tarih ve saat girin',
     openCalendar: 'Takvimi aç',
     requireManualStart: 'Manuel başlatma gerektir',
+    awaitingReviewNote: 'Baskınız incelemeyi bekliyor: kuyruğu yöneten biri başlattığında başlar.',
     requirePreviousSuccess: 'Yalnızca önceki baskı başarılıysa başlat',
     autoOffAfter: 'Bittiğinde yazıcıyı kapat',
     helpAsap: 'Baskı kuyruğun en üstüne eklenir ve uygun bir yazıcı boştaysa başlar.',

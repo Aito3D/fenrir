@@ -10,6 +10,9 @@ from backend.app.core.auth import (
     check_webhook_permission,
     ensure_api_key_printer_access,
     get_api_key,
+    is_auth_enabled,
+    queue_review_required_for,
+    resolve_apikey_owner,
 )
 from backend.app.core.database import get_db
 from backend.app.models.api_key import APIKey
@@ -150,6 +153,8 @@ async def webhook_add_to_queue(
         # for the person whose key it is. Legacy keys predating per-user ownership
         # have no `user_id`, and those rows stay ownerless.
         created_by_id=api_key.user_id,
+        # Waits for someone to start it unless the owner may print without review (#1620)
+        manual_start=await is_auth_enabled(db) and queue_review_required_for(await resolve_apikey_owner(db, api_key)),
     )
     db.add(queue_item)
     await db.flush()
@@ -206,6 +211,18 @@ async def webhook_start_print(
     queue_item = result.scalar_one_or_none()
     if not queue_item:
         raise HTTPException(status_code=404, detail="No pending prints in queue")
+
+    # Starting a waiting job is a review decision (#1620): a key whose owner
+    # needs review for their own jobs can't make one for anybody's
+    if (
+        queue_item.manual_start
+        and await is_auth_enabled(db)
+        and queue_review_required_for(await resolve_apikey_owner(db, api_key))
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="The next job waits for review: someone who can manage all queue jobs has to start it",
+        )
 
     # Clear manual_start so the scheduler will dispatch. If the item was
     # already auto-dispatchable this is a no-op; the scheduler will still

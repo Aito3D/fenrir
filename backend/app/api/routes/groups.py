@@ -37,6 +37,8 @@ router = APIRouter(prefix="/groups", tags=["groups"])
 # box in the group editor has nothing else to go on (#1894).
 _PERMISSION_LABEL_OVERRIDES: dict[Permission, str] = {
     Permission.USERS_READ_SLIM: "List User Names (id + username only)",
+    # "Start Unreviewed Queue" says nothing about what happens without it (#1620)
+    Permission.QUEUE_START_UNREVIEWED: "Print Without Review (else jobs wait for someone to start them)",
 }
 
 

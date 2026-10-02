@@ -1509,6 +1509,7 @@ export default {
     },
     // Badges
     badges: {
+      awaitingReview: 'Wartet auf Freigabe',
       staged: 'Bereitgestellt',
       requiresPrevious: 'Erfordert vorherigen Erfolg',
       autoPowerOff: 'Automatisch ausschalten',
@@ -1646,6 +1647,7 @@ export default {
     permissions: {
       noStopPrint: 'Sie haben keine Berechtigung, Drucke zu stoppen',
       noStartPrint: 'Sie haben keine Berechtigung, Drucke zu starten',
+      awaitingReview: 'Wartet auf Freigabe: Jemand, der die Warteschlange verwaltet, startet diesen Auftrag',
       noEdit: 'Sie haben keine Berechtigung, dieses Warteschlangenelement zu bearbeiten',
       noCancel: 'Sie haben keine Berechtigung, dieses Warteschlangenelement abzubrechen',
       noRequeue: 'Sie haben keine Berechtigung, Elemente erneut einzureihen',
@@ -5344,6 +5346,7 @@ export default {
     invalidDateTime: 'Bitte ein gültiges Datum und eine gültige Uhrzeit eingeben',
     openCalendar: 'Kalender öffnen',
     requireManualStart: 'Manuellen Start erfordern',
+    awaitingReviewNote: 'Dein Druck wartet auf Freigabe: Er beginnt, sobald jemand, der die Warteschlange verwaltet, ihn startet.',
     requirePreviousSuccess: 'Nur starten, wenn der vorherige Druck erfolgreich war',
     autoOffAfter: 'Drucker nach Abschluss ausschalten',
     helpAsap: 'Der Druck wird oben in die Warteschlange eingefügt und startet, sobald ein geeigneter Drucker im Leerlauf ist.',

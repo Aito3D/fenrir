@@ -1525,6 +1525,7 @@ export default {
     },
     // Badges
     badges: {
+      awaitingReview: 'Waiting for review',
       staged: 'Staged',
       requiresPrevious: 'Requires previous success',
       autoPowerOff: 'Auto power off',
@@ -1663,6 +1664,7 @@ export default {
     permissions: {
       noStopPrint: 'You do not have permission to stop prints',
       noStartPrint: 'You do not have permission to start prints',
+      awaitingReview: 'Waiting for review: someone who manages the queue starts this job',
       noEdit: 'You do not have permission to edit this queue item',
       noCancel: 'You do not have permission to cancel this queue item',
       noRequeue: 'You do not have permission to re-queue items',
@@ -5389,6 +5391,7 @@ export default {
     invalidDateTime: 'Please enter a valid date and time',
     openCalendar: 'Open calendar',
     requireManualStart: 'Require manual start',
+    awaitingReviewNote: 'Your print waits for review: it starts once someone who manages the queue starts it.',
     requirePreviousSuccess: 'Only start if previous print succeeded',
     autoOffAfter: 'Power off printer when done',
     helpAsap: 'Print will be added to the top of the queue and start as soon as an eligible printer is idle.',

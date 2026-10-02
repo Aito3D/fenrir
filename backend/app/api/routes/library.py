@@ -25,6 +25,7 @@ from backend.app.api.routes.cloud import resolve_api_key_cloud_owner
 from backend.app.api.routes.library_variants import normalize_model_name, resolve_variant_model
 from backend.app.api.routes.print_queue import _extract_filament_types_from_3mf
 from backend.app.core.auth import (
+    QueueReviewRequired,
     RequestPrinterScope,
     require_media_token_ownership,
     require_ownership_permission,
@@ -3012,6 +3013,7 @@ async def add_files_to_queue(
     db: AsyncSession = Depends(get_db),
     current_user: User | None = Depends(require_permission_if_auth_enabled(Permission.QUEUE_CREATE)),
     printer_scope: PrinterScope = RequestPrinterScope,
+    review_required: bool = QueueReviewRequired,
 ):
     """Add library files to the print queue.
 
@@ -3193,6 +3195,8 @@ async def add_files_to_queue(
                 # on `created_by_id` — so the user who queued the file could not
                 # see it in their own queue.
                 created_by_id=current_user.id if current_user else None,
+                # Waits for someone to start it unless they may print without review (#1620)
+                manual_start=review_required,
             )
             db.add(queue_item)
 

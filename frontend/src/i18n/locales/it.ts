@@ -1509,6 +1509,7 @@ export default {
     },
     // Badges
     badges: {
+      awaitingReview: 'In attesa di revisione',
       staged: 'In staging',
       requiresPrevious: 'Richiede successo precedente',
       autoPowerOff: 'Spegnimento automatico',
@@ -1646,6 +1647,7 @@ export default {
     permissions: {
       noStopPrint: 'Non hai il permesso di fermare stampe',
       noStartPrint: 'Non hai il permesso di avviare stampe',
+      awaitingReview: 'In attesa di revisione: qualcuno che gestisce la coda avvia questo lavoro',
       noEdit: 'Non hai il permesso di modificare questo elemento coda',
       noCancel: 'Non hai il permesso di annullare questo elemento coda',
       noRequeue: 'Non hai il permesso di rimettere in coda elementi',
@@ -5330,6 +5332,7 @@ export default {
     invalidDateTime: 'Inserisci data e ora valide',
     openCalendar: 'Apri calendario',
     requireManualStart: 'Richiedi avvio manuale',
+    awaitingReviewNote: 'La tua stampa attende la revisione: parte quando qualcuno che gestisce la coda la avvia.',
     requirePreviousSuccess: 'Avvia solo se la stampa precedente è riuscita',
     autoOffAfter: 'Spegni la stampante al termine',
     helpAsap: 'La stampa verrà aggiunta in cima alla coda e partirà appena una stampante idonea è inattiva.',
