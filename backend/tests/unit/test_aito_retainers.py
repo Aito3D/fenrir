@@ -343,3 +343,99 @@ async def test_an_unreachable_books_keeps_the_guard_armed(async_client, books_re
     assert attempts == ["RET-B"]
     assert delivered == []
     _reset_recent_emails()
+
+
+@pytest.mark.asyncio
+async def test_retainer_pdf_failure_from_books_is_502(async_client, books_retainers, monkeypatch):
+    async def pdf(db, retainer_id):
+        raise ZohoUpstreamError("Books is down")
+
+    monkeypatch.setattr(zoho_service, "get_retainer_invoice_pdf", pdf)
+    project = await _create(async_client)
+
+    response = await async_client.get(f"/api/v1/aito/{project['id']}/retainer.pdf", params={"retainer_id": "RET-A"})
+
+    assert response.status_code == 502
+    assert "Books is down" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_retainer_pdf_filename_drops_control_characters(async_client, books_retainers, monkeypatch):
+    async def pdf(db, retainer_id):
+        return b"%PDF"
+
+    monkeypatch.setattr(zoho_service, "get_retainer_invoice_pdf", pdf)
+    books_retainers[1]["number"] = "AC-26\r\n-0001"
+    project = await _create(async_client)
+
+    response = await async_client.get(f"/api/v1/aito/{project['id']}/retainer.pdf", params={"retainer_id": "RET-A"})
+
+    assert response.status_code == 200
+    assert response.headers["content-disposition"] == build_content_disposition("AC-26-0001.pdf", disposition="inline")
+
+
+@pytest.mark.asyncio
+async def test_email_prefill_failure_maps_books_errors_to_http(async_client, books_retainer_email, monkeypatch):
+    async def content(db, retainer_id):
+        raise ZohoUpstreamError("Books is down")
+
+    monkeypatch.setattr(zoho_service, "get_retainer_email_content", content)
+    project = await _create(async_client)
+
+    response = await async_client.get(f"/api/v1/aito/{project['id']}/retainer-email", params={"retainer_id": "RET-B"})
+
+    assert response.status_code == 502
+    assert "Books is down" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_send_prefill_failure_is_an_error_and_sends_nothing(async_client, books_retainer_email, monkeypatch):
+    async def content(db, retainer_id):
+        raise ZohoRequestRejected("No email address for this contact")
+
+    monkeypatch.setattr(zoho_service, "get_retainer_email_content", content)
+    project = await _create(async_client)
+
+    response = await async_client.post(
+        f"/api/v1/aito/{project['id']}/retainer-email", json={"to": "contact@example.pf", "retainer_id": "RET-B"}
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "No email address for this contact"
+    assert books_retainer_email == []
+    # The session was rolled back and is still usable.
+    assert (await async_client.get(f"/api/v1/aito/{project['id']}/retainers")).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_a_sent_mail_whose_event_cannot_be_recorded_still_returns_200_and_keeps_the_guard(
+    async_client, books_retainer_email, monkeypatch, caplog
+):
+    import logging
+
+    from sqlalchemy.exc import SQLAlchemyError
+
+    from backend.app.api.routes.aito import _reset_recent_emails
+
+    _reset_recent_emails()
+    project = await _create(async_client)
+
+    async def broken_record(*args, **kwargs):
+        raise SQLAlchemyError("disk full")
+
+    monkeypatch.setattr("backend.app.api.routes.aito.record", broken_record)
+    payload = {"to": "contact@example.pf", "retainer_id": "RET-B"}
+
+    with caplog.at_level(logging.ERROR):
+        first = await async_client.post(f"/api/v1/aito/{project['id']}/retainer-email", json=payload)
+    second = await async_client.post(f"/api/v1/aito/{project['id']}/retainer-email", json=payload)
+
+    assert first.status_code == 200, first.text
+    assert first.json()["status"] == "sent"
+    assert any("WAS SENT" in r.getMessage() and r.levelno == logging.ERROR for r in caplog.records)
+    assert second.status_code == 409
+    assert len(books_retainer_email) == 1
+    monkeypatch.undo()
+    events = await _events(async_client, project["id"])
+    assert [e for e in events if e["kind"] == "retainer.emailed"] == []
+    _reset_recent_emails()

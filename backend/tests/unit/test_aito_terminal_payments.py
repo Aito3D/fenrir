@@ -900,6 +900,62 @@ async def test_the_sweep_ages_out_an_abandoned_reservation_without_calling_heimd
     assert len(failed) == 1 and failed[0].detail["reason"] == "abandoned"
 
 
+@pytest.mark.asyncio
+async def test_one_failing_reservation_does_not_end_the_abandoned_sweep(db_session, monkeypatch):
+    """Per-row isolation: the event write for the first stale reservation
+    raises, the pass rolls back and still ages out the second one."""
+    p = await _project(db_session)
+    first = _reservation(p.id, idempotency_key="k-1", created_at=NOW)
+    second = _reservation(p.id, idempotency_key="k-2", created_at=NOW)
+    db_session.add_all([first, second])
+    await db_session.commit()
+    first_id, second_id = first.id, second.id
+    real_record = svc.record
+    seen = []
+
+    async def flaky_record(db, project_id, *args, **kwargs):
+        seen.append(project_id)
+        if len(seen) == 1:
+            raise RuntimeError("event write failed")
+        return await real_record(db, project_id, *args, **kwargs)
+
+    monkeypatch.setattr(svc, "record", flaky_record)
+    later = NOW + timedelta(minutes=11)
+    assert await svc._age_out_abandoned_reservations(db_session, now=later, limit=10) == 1
+    assert len(seen) == 2
+    # The first row's status commit landed before the event write failed.
+    one = await db_session.get(AitoTerminalPayment, first_id)
+    two = await db_session.get(AitoTerminalPayment, second_id)
+    assert one.status == "failed" and two.status == "failed"
+    assert two.sync_error == "reservation abandoned" and two.settled_at == later
+    assert len(await _events(db_session, p.id, "payment.terminal.failed")) == 1
+
+
+@pytest.mark.asyncio
+async def test_the_abandoned_sweep_skips_a_reservation_that_vanished(db_session, monkeypatch):
+    """A row deleted between the id listing and the per-row fetch is skipped,
+    not counted, and does not stop the pass."""
+    p = await _project(db_session)
+    gone = _reservation(p.id, idempotency_key="k-gone", created_at=NOW)
+    kept = _reservation(p.id, idempotency_key="k-kept", created_at=NOW)
+    db_session.add_all([gone, kept])
+    await db_session.commit()
+    gone_id, kept_id = gone.id, kept.id
+    real_get = db_session.get
+
+    async def get(entity, ident, *args, **kwargs):
+        if ident == gone_id:
+            return None
+        return await real_get(entity, ident, *args, **kwargs)
+
+    monkeypatch.setattr(db_session, "get", get)
+    later = NOW + timedelta(minutes=11)
+    assert await svc._age_out_abandoned_reservations(db_session, now=later, limit=10) == 1
+    monkeypatch.undo()
+    assert (await db_session.get(AitoTerminalPayment, gone_id)).status == "pending"
+    assert (await db_session.get(AitoTerminalPayment, kept_id)).status == "failed"
+
+
 # --- transport faults (T-011) ------------------------------------------------
 
 

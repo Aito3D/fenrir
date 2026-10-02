@@ -237,6 +237,60 @@ async def test_the_hourly_inbox_sweep_purges_old_rows(db_session):
 
 
 @pytest.mark.asyncio
+async def test_a_failing_inbox_sweep_rolls_back_and_skips_the_broadcast(db_session, monkeypatch):
+    """A database error in the overdue/purge step is logged and rolled back so
+    the session stays usable for the next sync step; nothing is broadcast."""
+    from sqlalchemy.exc import SQLAlchemyError
+
+    from backend.app.services import aito_invoice_sweep
+
+    async def boom(*_a, **_k):
+        raise SQLAlchemyError("overdue failed")
+
+    broadcast = []
+
+    async def fake_broadcast(*_a, **_k):
+        broadcast.append(1)
+
+    monkeypatch.setattr(aito_invoice_sweep, "_record_overdue", boom)
+    monkeypatch.setattr(aito_invoice_sweep, "broadcast_pending", fake_broadcast)
+    await db_session.execute(select(Notification))  # open a transaction
+    assert db_session.in_transaction()
+
+    await aito_invoice_sweep.sweep_inbox(db_session, force=True)
+
+    assert not db_session.in_transaction()
+    assert broadcast == []
+    assert (await db_session.execute(select(Notification))).scalars().first() is None
+
+
+@pytest.mark.asyncio
+async def test_a_failing_rollback_in_the_inbox_sweep_is_swallowed(db_session, monkeypatch):
+    from sqlalchemy.exc import SQLAlchemyError
+
+    from backend.app.services import aito_invoice_sweep
+
+    async def boom(*_a, **_k):
+        raise SQLAlchemyError("overdue failed")
+
+    async def bad_rollback():
+        raise SQLAlchemyError("rollback failed")
+
+    broadcast = []
+
+    async def fake_broadcast(*_a, **_k):
+        broadcast.append(1)
+
+    monkeypatch.setattr(aito_invoice_sweep, "_record_overdue", boom)
+    monkeypatch.setattr(aito_invoice_sweep, "broadcast_pending", fake_broadcast)
+    monkeypatch.setattr(db_session, "rollback", bad_rollback)
+
+    await aito_invoice_sweep.sweep_inbox(db_session, force=True)
+
+    assert broadcast == []
+
+
+@pytest.mark.asyncio
 async def test_a_failing_books_pass_still_purges_the_inbox(db_session, test_engine, monkeypatch):
     """The purge is its own step of the sync tick: a Books outage that makes
     the invoice sweep raise does not keep 30-day-old rows around."""
