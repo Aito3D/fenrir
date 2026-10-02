@@ -76,10 +76,10 @@ function setup(overrides: Partial<ShippingDraft> = {}) {
 // `getByLabelText(/rate/i)` is ambiguous once the reset button is on screen:
 // its accessible name is "Back to the Zoho rate", which also matches /rate/i.
 // The old, uncontrolled test never rendered that button mid-interaction, so
-// the ambiguity stayed hidden. A `type=number` input has an implicit
-// `spinbutton` role, which the button does not share, so this stays
-// unambiguous under the controlled harness.
-const getRateInput = () => screen.getByRole('spinbutton', { name: 'Rate' });
+// the ambiguity stayed hidden. The rate is a text CalcInput (role
+// `textbox`), which neither the reset button nor the calculator-keyboard
+// button shares, and the exact name 'Rate' keeps it unambiguous.
+const getRateInput = () => screen.getByRole('textbox', { name: 'Rate' });
 
 describe('ShippingFields', () => {
   it('resolves the service and seeds the price when an island is picked', async () => {
@@ -105,7 +105,7 @@ describe('ShippingFields', () => {
     // Both halves matter: the reported service and the rendered price must
     // agree, or the screen and the payload tell two different stories.
     expect(screen.getByText('Livraison Avion Australes')).toBeInTheDocument();
-    expect(getRateInput()).toHaveValue(4100);
+    expect(getRateInput()).toHaveValue('4100');
   });
 
   it('keeps a hand-typed price when the island crosses a service boundary, but still updates the matched service', async () => {
@@ -119,13 +119,13 @@ describe('ShippingFields', () => {
       expect.objectContaining({ island: 'rurutu', service: 'australes', price: 9999, priceEdited: true }),
     );
     expect(screen.getByText('Livraison Avion Australes')).toBeInTheDocument();
-    expect(getRateInput()).toHaveValue(9999);
+    expect(getRateInput()).toHaveValue('9999');
   });
 
   it('shows the matched service and its rate', () => {
     setup({ island: 'rangiroa', service: 'tuamotu', price: 3200 });
     expect(screen.getByText('Livraison Avion Tuamotu')).toBeInTheDocument();
-    expect(getRateInput()).toHaveValue(3200);
+    expect(getRateInput()).toHaveValue('3200');
   });
 
   // The Zoho rate line must follow the app's own language, like every other
@@ -199,7 +199,7 @@ describe('ShippingFields', () => {
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ price: 3200, priceEdited: false }));
     // The harness feeds the update back in, so the rendered field itself
     // must now show the restored value, not just the onChange payload.
-    expect(getRateInput()).toHaveValue(3200);
+    expect(getRateInput()).toHaveValue('3200');
   });
 
   it('asks for a price when Zoho gave none', () => {
@@ -276,12 +276,8 @@ describe('ShippingFields', () => {
       price: 3200,
       blurred: { island: true, firstName: false, lastName: false, phone: false },
     });
-    // fireEvent.change, not userEvent.type: a `type="number"` input's value
-    // sanitization runs per keystroke in jsdom, and typing "-" then "5" then
-    // "0" character-by-character (userEvent.type's usual idiom) leaves the
-    // DOM value empty mid-sequence — this sets the full string in one React
-    // change event, the same as a paste, which is what an operator hand-
-    // editing a figure this small (one or two digits) would realistically do.
+    // fireEvent.change sets the full string in one React change event, the
+    // same as a paste; a plain number (signed or not) reaches the owner live.
     fireEvent.change(getRateInput(), { target: { value: '-50' } });
     expect(await screen.findByText(/cannot be negative/i)).toBeInTheDocument();
     expect(getRateInput()).toHaveAttribute('aria-invalid', 'true');

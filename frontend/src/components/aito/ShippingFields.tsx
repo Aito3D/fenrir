@@ -8,6 +8,7 @@ import type { ShippingDraft } from '../../utils/shippingDraft';
 import type { AitoShippingService } from '../../api/client';
 import { titleCaseSegments } from '../../utils/clientDraft';
 import { focusRingCls, inputCls, inputErrorCls, labelCls } from '../formStyles';
+import { CalcInput } from '../CalcInput';
 
 export interface ShippingFieldsProps {
   value: ShippingDraft;
@@ -91,18 +92,16 @@ export function ShippingFields({ value, onChange, services, catalogueResolved, c
                 AFTER `.w-28` in the sheet, so the narrow class silently lost and
                 the field stretched to its intrinsic `type=number` size — which
                 is what painted it over the rate text. */}
-            <div className="w-24">
-              <input
+            <div className="w-28">
+              <CalcInput
                 id="aito-shipping-rate"
-                type="number"
-                min={0}
                 inputMode="numeric"
-                autoComplete="off"
                 value={value.price ?? ''}
-                onChange={(e) =>
+                normalize={(n) => Math.max(0, Math.round(n * 100) / 100)}
+                onValueChange={(raw) =>
                   onChange({
                     ...value,
-                    price: e.target.value === '' ? null : Number(e.target.value),
+                    price: raw === '' ? null : Number(raw),
                     // Sticky: once the operator has taken the price over, a later
                     // island change must not quietly overwrite it.
                     priceEdited: true,

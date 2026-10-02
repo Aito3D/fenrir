@@ -1050,6 +1050,8 @@ export default {
     },
   },
   common: {
+    calcKeyboard: 'Calculator keyboard (+ − × ÷)',
+    calcInvalid: 'Invalid calculation',
     plusNMore: '+{{count}} more',
     save: 'Save',
     saving: 'Saving...',

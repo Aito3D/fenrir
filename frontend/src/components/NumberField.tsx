@@ -1,5 +1,6 @@
 import { Info } from 'lucide-react';
 import { Tooltip } from './Tooltip';
+import { CalcInput } from './CalcInput';
 import { inputCls, inputErrorCls, labelCls } from './formStyles';
 
 interface NumberFieldProps {
@@ -22,6 +23,8 @@ interface NumberFieldProps {
   /** Unit suffix rendered inside the field ("g", "min", "$"), so the unit
    *  stays in eyeline while typing instead of living in the label. */
   unit?: string;
+  /** Accept a calculation ("4/2") that resolves when the field is left. */
+  calc?: boolean;
 }
 
 /** Labeled numeric input with optional validation error, an accessible
@@ -42,6 +45,7 @@ export function NumberField({
   required,
   readOnly,
   unit,
+  calc,
 }: NumberFieldProps) {
   const inputProps = {
     id,
@@ -58,6 +62,22 @@ export function NumberField({
     onChange: (e: React.ChangeEvent<HTMLInputElement>) => onChange(e.target.value),
     'aria-invalid': !!error,
   };
+  const renderInput = (className: string, wrapperClassName = '') =>
+    calc ? (
+      <CalcInput
+        id={id}
+        required={required}
+        readOnly={readOnly}
+        value={value}
+        placeholder={placeholder}
+        onValueChange={onChange}
+        aria-invalid={!!error}
+        className={className}
+        wrapperClassName={wrapperClassName}
+      />
+    ) : (
+      <input {...inputProps} className={className} />
+    );
   return (
     <div>
       <label htmlFor={id} className={`${labelCls} flex items-center gap-1`}>
@@ -76,19 +96,16 @@ export function NumberField({
               : 'border-bambu-dark-tertiary focus-within:border-bambu-green focus-within:ring-bambu-green/20'
           }`}
         >
-          <input
-            {...inputProps}
-            className={`w-full min-w-0 px-3 py-2 bg-transparent text-white placeholder-bambu-gray no-spinner focus:outline-none ${
+          {renderInput(
+            `w-full min-w-0 px-3 py-2 bg-transparent text-white placeholder-bambu-gray no-spinner focus:outline-none ${
               readOnly ? 'opacity-70 cursor-default' : ''
-            }`}
-          />
+            }`,
+            'flex-1 min-w-0',
+          )}
           <span className="select-none pr-3 text-xs text-bambu-gray whitespace-nowrap">{unit}</span>
         </div>
       ) : (
-        <input
-          {...inputProps}
-          className={`${error ? inputErrorCls : inputCls} ${readOnly ? 'opacity-70 cursor-default' : ''}`}
-        />
+        renderInput(`${error ? inputErrorCls : inputCls} ${readOnly ? 'opacity-70 cursor-default' : ''}`)
       )}
       {error && <p className="text-xs text-status-error mt-1">{error}</p>}
       {!error && warning && (

@@ -1046,6 +1046,8 @@ export default {
     },
   },
   common: {
+    calcKeyboard: '電卓キーボード (+ − × ÷)',
+    calcInvalid: '無効な計算式',
     plusNMore: '他{{count}}件',
     save: '保存',
     saving: '保存中...',

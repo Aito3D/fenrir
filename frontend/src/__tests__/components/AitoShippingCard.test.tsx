@@ -185,7 +185,7 @@ describe('ShippingCard', () => {
     render(<ShippingCard project={bespoke} currency="XPF" />);
     await userEvent.click(screen.getByRole('button', { name: /edit shipping/i }));
     await screen.findByText('Livraison Avion Tuamotu');
-    expect(screen.getByRole('spinbutton', { name: 'Rate' })).toHaveValue(5000);
+    expect(screen.getByRole('textbox', { name: 'Rate' })).toHaveValue('5000');
     expect(screen.getByRole('button', { name: /back to the zoho rate/i })).toBeInTheDocument();
   });
 
@@ -359,7 +359,7 @@ describe('ShippingCard — Save', () => {
 
     await userEvent.click(screen.getByRole('button', { name: /edit shipping/i }));
     await screen.findByText('Livraison Avion Tuamotu');
-    const rate = screen.getByRole('spinbutton', { name: 'Rate' });
+    const rate = screen.getByRole('textbox', { name: 'Rate' });
     await userEvent.clear(rate);
     await userEvent.type(rate, '4100');
     await userEvent.click(screen.getByRole('button', { name: /^save$/i }));

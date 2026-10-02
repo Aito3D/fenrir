@@ -2553,40 +2553,42 @@ export function SettingsPage() {
                 <label className="block text-sm text-bambu-gray mb-1">
                   {t('settings.defaultFilamentCost')}
                 </label>
+                {/* Currency on the right: the left edge holds the calculator icon. */}
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-bambu-gray text-sm pointer-events-none">
-                    {getCurrencySymbol(localSettings.currency)}
-                  </span>
                   <NumberInput
-                    step="0.01"
+                    calc
                     min={0}
                     value={localSettings.default_filament_cost}
                     onChange={(v) => updateSetting('default_filament_cost', v)}
                     integer={false}
                     fallback={0}
-                    style={{ paddingLeft: `${Math.max(2, getCurrencySymbol(localSettings.currency).length * 0.6 + 1)}rem` }}
-                    className="w-full pr-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                    style={{ paddingRight: `${Math.max(2, getCurrencySymbol(localSettings.currency).length * 0.6 + 1)}rem` }}
+                    className="w-full py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                   />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-bambu-gray text-sm pointer-events-none">
+                    {getCurrencySymbol(localSettings.currency)}
+                  </span>
                 </div>
               </div>
               <div>
                 <label className="block text-sm text-bambu-gray mb-1">
                   {t('settings.electricityCost')}
                 </label>
+                {/* Currency on the right: the left edge holds the calculator icon. */}
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-bambu-gray text-sm pointer-events-none">
-                    {getCurrencySymbol(localSettings.currency)}
-                  </span>
                   <NumberInput
-                    step="0.001"
+                    calc
                     min={0}
                     value={localSettings.energy_cost_per_kwh}
                     onChange={(v) => updateSetting('energy_cost_per_kwh', v)}
                     integer={false}
                     fallback={0}
-                    style={{ paddingLeft: `${Math.max(2, getCurrencySymbol(localSettings.currency).length * 0.6 + 1)}rem` }}
-                    className="w-full pr-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                    style={{ paddingRight: `${Math.max(2, getCurrencySymbol(localSettings.currency).length * 0.6 + 1)}rem` }}
+                    className="w-full py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                   />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-bambu-gray text-sm pointer-events-none">
+                    {getCurrencySymbol(localSettings.currency)}
+                  </span>
                 </div>
               </div>
               <div>

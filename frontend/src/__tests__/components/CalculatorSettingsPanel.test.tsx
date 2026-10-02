@@ -50,14 +50,14 @@ describe('CalculatorSettingsPanel', () => {
   it('renders all four sections seeded from the server, with a live curve preview', async () => {
     serveDefaults();
     render(<CalculatorSettingsPanel canUpdate />);
-    expect(await screen.findByLabelText(/Electricity tariff/)).toHaveValue(120);
+    expect(await screen.findByLabelText(/Electricity tariff/)).toHaveValue('120');
     expect(screen.getByLabelText(/Failure rate/)).toHaveValue(30);
     expect(screen.getByLabelText(/M_MIN/)).toHaveValue(1.15);
     expect(screen.getByLabelText(/M_MAX/)).toHaveValue(1.6);
     expect(screen.getByLabelText(/K,/)).toHaveValue(33);
     expect(screen.getByLabelText(/Q_MIN/)).toHaveValue(0.4);
     expect(screen.getByLabelText(/KQ/)).toHaveValue(5);
-    expect(screen.getByLabelText(/Minimum price per task/)).toHaveValue(12);
+    expect(screen.getByLabelText(/Minimum price per task/)).toHaveValue('12');
     expect(screen.getByLabelText(/Default difficulty/)).toHaveValue(100);
     expect(screen.getByRole('heading', { name: 'Rates' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Provisions & overhead' })).toBeInTheDocument();
@@ -103,7 +103,7 @@ describe('CalculatorSettingsPanel', () => {
     // The bar stays mounted so it can slide back out; closed, it is
     // aria-hidden and its controls leave the accessibility tree.
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Discard' })).not.toBeInTheDocument());
-    expect(tariff).toHaveValue(120);
+    expect(tariff).toHaveValue('120');
   });
 
   it('PATCHes only the changed keys, toasts, and hides the bar again', async () => {
@@ -172,7 +172,7 @@ describe('CalculatorSettingsPanel', () => {
 
     // The in-flight edit survives instead of being silently reverted to the
     // pre-edit server row...
-    expect(tariff).toHaveValue(150);
+    expect(tariff).toHaveValue('150');
     // ...and stays flagged as unsaved so the operator knows to save it too.
     expect(await screen.findByText('1 unsaved change')).toBeInTheDocument();
     // The key this save actually submitted (margin_k) re-seeds from the
@@ -197,7 +197,7 @@ describe('CalculatorSettingsPanel', () => {
     // operator's change is not silently discarded.
     expect(screen.getByText('1 unsaved change')).toBeInTheDocument();
     expect(saveButton()).toBeInTheDocument();
-    expect(tariff).toHaveValue(150);
+    expect(tariff).toHaveValue('150');
   });
 
   it('blocks save when M_MAX < M_MIN and names the problem in the bar', async () => {
@@ -224,7 +224,7 @@ describe('CalculatorSettingsPanel', () => {
     await user.type(tax, '150');
     expect(await screen.findByText('Must be between 0 and 100')).toBeInTheDocument();
     expect(saveButton()).toBeDisabled();
-    expect(tariff).toHaveValue(150);
+    expect(tariff).toHaveValue('150');
 
     await user.clear(tax);
     await user.type(tax, '15');
@@ -308,7 +308,7 @@ describe('CalculatorSettingsPanel', () => {
     );
     const user = userEvent.setup();
     render(<CalculatorSettingsPanel canUpdate />);
-    expect(await screen.findByLabelText(/Labor rate/)).toHaveValue(3000);
+    expect(await screen.findByLabelText(/Labor rate/)).toHaveValue('3000');
     // Dirty another field so the bar (and its Save) exists to be judged.
     const labor = screen.getByLabelText(/Labor rate/);
     await user.clear(labor);
@@ -328,7 +328,7 @@ describe('CalculatorSettingsPanel', () => {
     const user = userEvent.setup();
     const { container } = render(<CalculatorSettingsPanel canUpdate={false} />);
     const tariff = await screen.findByLabelText(/Electricity tariff/);
-    expect(tariff).toHaveValue(120);
+    expect(tariff).toHaveValue('120');
     await user.clear(tariff);
     await user.type(tariff, '150');
     expect(screen.queryByRole('button', { name: 'Save settings' })).not.toBeInTheDocument();
@@ -351,12 +351,12 @@ describe('CalculatorSettingsPanel', () => {
       </>,
     );
     const labor = await screen.findByLabelText(/Labor rate/);
-    expect(labor).toHaveValue(3000);
+    expect(labor).toHaveValue('3000');
 
     // Untouched: another session's save flows into the form.
     row = { ...row, labor_rate_per_hour: 3500, updated_at: '2026-08-28T00:00:00Z' };
     await user.click(screen.getByRole('button', { name: 'simulate background refetch' }));
-    await waitFor(() => expect(labor).toHaveValue(3500));
+    await waitFor(() => expect(labor).toHaveValue('3500'));
 
     // Dirty: a refetch must not overwrite the typing.
     const tariff = screen.getByLabelText(/Electricity tariff/);
@@ -365,7 +365,7 @@ describe('CalculatorSettingsPanel', () => {
     row = { ...row, electricity_tariff: 999, updated_at: '2026-08-28T00:01:00Z' };
     await user.click(screen.getByRole('button', { name: 'simulate background refetch' }));
     await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(tariff).toHaveValue(150);
+    expect(tariff).toHaveValue('150');
     expect(await screen.findByText('1 unsaved change')).toBeInTheDocument();
   });
 
@@ -375,7 +375,7 @@ describe('CalculatorSettingsPanel', () => {
     render(<CalculatorSettingsPanel canUpdate />);
     // Defaults: K = 33 → example unit cost seeds to 33, quantity 1.
     const cost = await screen.findByLabelText(/Example unit cost/);
-    expect(cost).toHaveValue(33);
+    expect(cost).toHaveValue('33');
     expect(screen.getByLabelText(/Example quantity/)).toHaveValue(1);
     // sizeMargin(33) with M 1.15/1.6, K 33 = 1.375; qty factor at 1 = 1.
     expect(screen.getByText('×1.375 size margin · ×1.000 quantity factor → ×1.375 on cost')).toBeInTheDocument();

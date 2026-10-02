@@ -52,6 +52,8 @@ export default {
     },
   },
   common: {
+    calcKeyboard: 'Rekenmachinetoetsenbord (+ − × ÷)',
+    calcInvalid: 'Ongeldige berekening',
     plusNMore: '+{{count}} meer',
     save: 'Opslaan',
     saving: 'Opslaan...',

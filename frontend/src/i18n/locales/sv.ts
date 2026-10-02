@@ -52,6 +52,8 @@ export default {
     },
   },
   common: {
+    calcKeyboard: 'Kalkylatortangentbord (+ − × ÷)',
+    calcInvalid: 'Ogiltig beräkning',
     plusNMore: '+{{count}} till',
     save: 'Spara',
     saving: 'Sparar...',

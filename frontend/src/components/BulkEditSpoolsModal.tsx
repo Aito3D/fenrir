@@ -5,6 +5,7 @@ import { X, Loader2 } from 'lucide-react';
 import { api } from '../api/client';
 import type { InventorySpool } from '../api/client';
 import { Button } from './Button';
+import { CalcInput } from './CalcInput';
 import { SearchableSelect, type SearchableSelectOption as Option } from './SearchableSelect';
 import { MATERIALS, DEFAULT_BRANDS, KNOWN_VARIANTS } from './spool-form/constants';
 import { buildFilamentOptions } from './spool-form/utils';
@@ -50,6 +51,8 @@ type FieldSpec = {
    *  the route answers 400 "update must include at least one field". Offering
    *  it in Spoolman mode is offering a button that cannot work. */
   internalOnly?: boolean;
+  /** Accept a calculation ("1247-250"), resolved when the field is left. */
+  calc?: boolean;
 };
 
 const FIELDS: FieldSpec[] = [
@@ -61,10 +64,10 @@ const FIELDS: FieldSpec[] = [
   { id: 'location_id', type: 'searchableClosed', labelKey: 'inventory.storageLocation' },
   { id: 'slicer_filament_name', type: 'searchable', labelKey: 'inventory.slicerFilamentName' },
   { id: 'slicer_filament', type: 'searchable', labelKey: 'inventory.slicerFilament' },
-  { id: 'cost_per_kg', type: 'number', labelKey: 'inventory.costPerKg', min: 0, step: 0.01 },
+  { id: 'cost_per_kg', type: 'number', labelKey: 'inventory.costPerKg', min: 0, step: 0.01, calc: true },
   { id: 'note', type: 'textarea', labelKey: 'inventory.note' },
-  { id: 'label_weight', type: 'number', labelKey: 'inventory.labelWeight', min: 1, step: 1 },
-  { id: 'core_weight', type: 'number', labelKey: 'inventory.coreWeight', min: 0, step: 1 },
+  { id: 'label_weight', type: 'number', labelKey: 'inventory.labelWeight', min: 1, step: 1, calc: true },
+  { id: 'core_weight', type: 'number', labelKey: 'inventory.coreWeight', min: 0, step: 1, calc: true },
   { id: 'category', type: 'searchable', labelKey: 'inventory.category', internalOnly: true },
   { id: 'low_stock_threshold_pct', type: 'number', labelKey: 'inventory.lowStockThresholdOverride', min: 1, max: 99, step: 1, internalOnly: true },
   // Internal material / article number (#2870) — bulk-assigning it is the
@@ -323,6 +326,19 @@ export function BulkEditSpoolsModal({
             <p className="mt-1 text-xs text-red-600 dark:text-red-400">{t('inventory.bulk.invalidHex')}</p>
           )}
         </div>
+      );
+    }
+
+    if (f.calc) {
+      const decimals = f.step === 1 ? 0 : 2;
+      return (
+        <CalcInput
+          disabled={isPending}
+          value={value}
+          onValueChange={(raw) => setField(f.id, raw)}
+          normalize={(n) => Math.max(f.min ?? 0, Number(n.toFixed(decimals)))}
+          className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray/50 focus:border-bambu-green focus:outline-none"
+        />
       );
     }
 

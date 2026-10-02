@@ -1043,6 +1043,8 @@ export default {
     },
   },
   common: {
+    calcKeyboard: '계산기 키보드 (+ − × ÷)',
+    calcInvalid: '잘못된 계산식',
     plusNMore: '외 {{count}}개',
     save: '저장',
     saving: '저장 중...',

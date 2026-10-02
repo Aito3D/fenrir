@@ -132,6 +132,7 @@ export function MarginCurvePreview({
         <div className="grid grid-cols-2 gap-3">
           <NumberField
             id="calc-curve-example-cost"
+            calc
             label={t('calculator.exampleUnitCost', { currency: getCurrencySymbol(currency) })}
             value={example.unitCost}
             onChange={(v) => onExampleChange({ unitCost: v })}

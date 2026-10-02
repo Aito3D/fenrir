@@ -297,7 +297,7 @@ describe('CalculatorFilamentsPanel', () => {
     await user.click(await screen.findByRole('button', { name: 'Edit filament' }));
     // Form seeded from the existing filament: margin comes from its column.
     const cost = screen.getByLabelText(/^Cost per kg/);
-    expect(cost).toHaveValue(20);
+    expect(cost).toHaveValue('20');
     await user.clear(cost);
     await user.type(cost, '22');
 
@@ -398,7 +398,7 @@ describe('CalculatorFilamentsPanel', () => {
     // Form stays open with the typed values intact — onSaved (which would
     // clear `editing` and return to the list) never ran.
     expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument();
-    expect(screen.getByLabelText(/^Cost per kg/)).toHaveValue(25);
+    expect(screen.getByLabelText(/^Cost per kg/)).toHaveValue('25');
     expect(screen.queryByRole('button', { name: 'Add filament' })).not.toBeInTheDocument();
   });
 
@@ -423,7 +423,7 @@ describe('CalculatorFilamentsPanel', () => {
 
     expect(await screen.findByText('Update failed')).toBeInTheDocument();
     // Still the edit form, still holding the edited (unsaved) value.
-    expect(screen.getByLabelText(/^Cost per kg/)).toHaveValue(22);
+    expect(screen.getByLabelText(/^Cost per kg/)).toHaveValue('22');
     expect(screen.getByLabelText('Brand')).toHaveValue('Sunlu');
     expect(screen.queryByRole('button', { name: 'Add filament' })).not.toBeInTheDocument();
   });
@@ -561,7 +561,7 @@ describe('CalculatorFilamentsPanel', () => {
     // form shows the unedited value — Cancel discarded the '22' typed
     // earlier, and the still-pending save hasn't landed yet.
     await userEvent.click(await screen.findByRole('button', { name: 'Edit filament' }));
-    expect(screen.getByLabelText(/^Cost per kg/)).toHaveValue(20);
+    expect(screen.getByLabelText(/^Cost per kg/)).toHaveValue('20');
 
     // The stale save for that same row now lands.
     releaseUpdate({ ...baseFilament, cost_per_kg: 22 });
@@ -795,10 +795,8 @@ describe('CalculatorFilamentsPanel filament form (Zoho link)', () => {
     await userEvent.clear(weight);
     await userEvent.type(weight, '0');
 
-    // `min` is also the step base, so it has to stay on the 0.05 grid the
-    // step uses — otherwise an ordinary 1 kg spool becomes a step mismatch.
-    expect(weight).toHaveAttribute('min', '0.05');
-    expect(weight).toHaveAttribute('step', '0.05');
+    // The weight is a text CalcInput now (no native min/step), so the > 0
+    // bound lives only in the form's own validation, which disables Save.
     expect(screen.getByRole('button', { name: /save/i })).toBeDisabled();
     await userEvent.click(screen.getByRole('button', { name: /save/i }));
     expect(onSubmit).not.toHaveBeenCalled();

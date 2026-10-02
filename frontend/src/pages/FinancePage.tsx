@@ -9,6 +9,7 @@ import { ConfirmModal } from '../components/ConfirmModal';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { getCurrencySymbol } from '../utils/currency';
+import { CalcInput } from '../components/CalcInput';
 import { parseUTCDate } from '../utils/date';
 
 type PartialPrintStatus = 'aborted' | 'failed' | 'cancelled';
@@ -807,11 +808,10 @@ export function FinancePage() {
                 <label className={labelClass}>
                   {newCenterBudgetMode === 'monthly' ? t('finance.monthlyBudget', 'Monthly budget') : t('finance.totalBudget', 'Total budget')}
                 </label>
-                <input
-                  type="number"
-                  step="0.01"
+                <CalcInput
                   value={newCenterBudgetValue}
-                  onChange={(e) => setNewCenterBudgetValue(e.target.value)}
+                  onValueChange={setNewCenterBudgetValue}
+                  normalize={(n) => Math.round(n * 100) / 100}
                   placeholder="0.00"
                   className={fieldClass}
                 />
@@ -855,12 +855,10 @@ export function FinancePage() {
 
               <div>
                 <label className={labelClass}>{t('finance.amount', 'Amount')}</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
+                <CalcInput
                   value={adjustmentAmount}
-                  onChange={(e) => setAdjustmentAmount(e.target.value)}
+                  onValueChange={setAdjustmentAmount}
+                  normalize={(n) => Math.max(0, Math.round(n * 100) / 100)}
                   placeholder="0.00"
                   className={fieldClass}
                 />
@@ -1028,11 +1026,10 @@ export function FinancePage() {
                 <label className={labelClass}>
                   {editCenterBudgetMode === 'monthly' ? t('finance.monthlyBudget', 'Monthly budget') : t('finance.totalBudget', 'Total budget')}
                 </label>
-                <input
-                  type="number"
-                  step="0.01"
+                <CalcInput
                   value={editCenterBudgetValue}
-                  onChange={(e) => setEditCenterBudgetValue(e.target.value)}
+                  onValueChange={setEditCenterBudgetValue}
+                  normalize={(n) => Math.round(n * 100) / 100}
                   placeholder="0.00"
                   className={fieldClass}
                   disabled={!canUpdateBudgets}
@@ -1355,12 +1352,11 @@ export function FinancePage() {
 
               <div>
                 <label className={labelClass}>{t('finance.amount', 'Amount')}</label>
-                <input
-                  type="number"
-                  step="0.01"
+                <CalcInput
                   className={fieldClass}
                   value={editTransactionAmount}
-                  onChange={(e) => setEditTransactionAmount(e.target.value)}
+                  onValueChange={setEditTransactionAmount}
+                  normalize={(n) => Math.round(n * 100) / 100}
                   placeholder={t('finance.amountExample', 'e.g., 10.50')}
                 />
               </div>
@@ -1431,12 +1427,11 @@ export function FinancePage() {
 
               <div>
                 <label className={labelClass}>{t('finance.amount', 'Amount')}</label>
-                <input
-                  type="number"
-                  step="0.01"
+                <CalcInput
                   className={fieldClass}
                   value={manualPrintAmount}
-                  onChange={(e) => setManualPrintAmount(e.target.value)}
+                  onValueChange={setManualPrintAmount}
+                  normalize={(n) => Math.round(n * 100) / 100}
                   placeholder={t('finance.amountExample', 'e.g., 4.00')}
                 />
               </div>

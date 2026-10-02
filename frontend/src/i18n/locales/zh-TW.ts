@@ -1046,6 +1046,8 @@ export default {
     },
   },
   common: {
+    calcKeyboard: '計算機鍵盤 (+ − × ÷)',
+    calcInvalid: '無效的算式',
     plusNMore: '另 {{count}} 個',
     save: '儲存',
     saving: '儲存中...',

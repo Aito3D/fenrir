@@ -737,7 +737,7 @@ describe('ProjectDetailPanel tasks', () => {
     // Description is per-service now — mockTask's note lives on the scan
     // block (scan is its only priced step), not a task-level field.
     expect(screen.getByDisplayValue('Print in PA6-CF')).toBeInTheDocument();
-    expect(screen.getByLabelText('Scan Cost')).toHaveValue(500);
+    expect(screen.getByLabelText('Scan Cost')).toHaveValue('500');
   });
 
   it('editing a service cost issues PATCH /aito/tasks/{id} with only that field in the body', async () => {
@@ -1138,7 +1138,7 @@ describe('ProjectDetailPanel tasks', () => {
     // cost input — enabling must not itself invent a price.
     await userEvent.click(await screen.findByRole('button', { name: 'Add Scan' }));
     const scanInput = await screen.findByLabelText('Scan Cost');
-    expect(scanInput).toHaveValue(null);
+    expect(scanInput).toHaveValue('');
 
     fireEvent.change(scanInput, { target: { value: '0' } });
     await waitFor(() => expect(bodies).toHaveLength(1));
@@ -1186,7 +1186,7 @@ describe('ProjectDetailPanel tasks', () => {
 
     // Row 101: edit, PATCH fires but hangs (resolved at the end of the test).
     fireEvent.change(scan101, { target: { value: '900' } });
-    expect(scan101).toHaveValue(900);
+    expect(scan101).toHaveValue('900');
 
     // Row 102: edit, PATCH fires and resolves immediately. Opening it closes
     // row 101's form, leaving 101's edit in flight and unpersisted.
@@ -1199,17 +1199,17 @@ describe('ProjectDetailPanel tasks', () => {
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 50));
     });
-    expect(scan102).toHaveValue(700);
+    expect(scan102).toHaveValue('700');
 
     // Row 101's typed-but-unsaved value must have survived row 102's resync.
     await editTask(0);
-    expect(await screen.findByLabelText('Scan Cost')).toHaveValue(900);
+    expect(await screen.findByLabelText('Scan Cost')).toHaveValue('900');
 
     resolvePatch101({ ...mockTask, scan_cost: 900 });
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 50));
     });
-    expect(await screen.findByLabelText('Scan Cost')).toHaveValue(900);
+    expect(await screen.findByLabelText('Scan Cost')).toHaveValue('900');
   });
 
   it('editing the title issues a PATCH with only title, sending null (not empty string) when blank', async () => {
@@ -1332,7 +1332,7 @@ describe('ProjectDetailPanel tasks', () => {
 
     // The edited value stays on screen (not rolled back), and the rest of the
     // panel — the client details rendered outside TaskEditor — is untouched.
-    expect(screen.getByLabelText('Scan Cost')).toHaveValue(700);
+    expect(screen.getByLabelText('Scan Cost')).toHaveValue('700');
     expect(screen.getByText('ACME SARL')).toBeInTheDocument();
   });
 
@@ -1544,7 +1544,7 @@ describe('ProjectDetailPanel tasks', () => {
     // this test about that edge case instead of the everything-has-landed
     // path it is meant to cover.
     await user.type(scan, '700');
-    await waitFor(() => expect(screen.getByLabelText('Scan Cost')).toHaveValue(700));
+    await waitFor(() => expect(screen.getByLabelText('Scan Cost')).toHaveValue('700'));
 
     // Await the write, not just the input's value: the value is local state
     // and is set before the PATCH it triggers has been sent, let alone
@@ -1738,7 +1738,7 @@ describe('ProjectDetailPanel tasks', () => {
     // only ['aito-projects'], the tasks entry would stay fresh for the whole
     // 60s staleTime, no GET would ever be issued, and the value would sit at
     // 500 until this times out.
-    await waitFor(() => expect(screen.getByLabelText('Scan Cost')).toHaveValue(700));
+    await waitFor(() => expect(screen.getByLabelText('Scan Cost')).toHaveValue('700'));
   });
 
   it('does NOT refresh the board on close when no task was edited', async () => {

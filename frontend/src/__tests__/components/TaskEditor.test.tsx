@@ -259,7 +259,7 @@ describe('TaskEditor', () => {
     expect(screen.queryByLabelText(/Scan.*cost/i)).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Add Scan' }));
     const input = screen.getByLabelText(/Scan.*cost/i);
-    expect(input).toHaveValue(null); // enabling does NOT invent a price
+    expect(input).toHaveValue(''); // enabling does NOT invent a price
   });
 
   it('disabling a chip clears the cost to null', async () => {
@@ -953,8 +953,10 @@ describe('TaskRow', () => {
 
     // Positive evidence first: the field itself settles on the clamped value
     // (the parent state ImpressionFields is controlled by), not the typed
-    // negative one.
-    await waitFor(() => expect(weightInput).toHaveValue(0));
+    // negative one. The weight is a CalcInput, which keeps what was typed as
+    // a local draft until the field is left, so settle it with a blur.
+    fireEvent.blur(weightInput);
+    await waitFor(() => expect(weightInput).toHaveValue('0'));
 
     const lastTask = onChangeSpy.mock.calls.at(-1)?.[0] as TaskDraft;
     expect(lastTask.impression?.weightG).toBe(0);

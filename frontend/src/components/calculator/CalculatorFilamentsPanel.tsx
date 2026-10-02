@@ -287,6 +287,7 @@ function FilamentForm({
         {linked && (
           <NumberField
             id="calc-fil-spool-weight"
+            calc
             label={t('calculator.spoolWeightKg')}
             value={form.spoolWeight}
             onChange={setSpoolWeight}
@@ -304,6 +305,7 @@ function FilamentForm({
         )}
         <NumberField
           id="calc-fil-cost"
+          calc
           label={t('calculator.costPerKg', { currency: currencySymbol })}
           value={form.cost}
           onChange={(v) => setForm((f) => ({ ...f, cost: v }))}
@@ -340,6 +342,7 @@ function FilamentForm({
         </div>
         <NumberField
           id="calc-fil-printing-cost"
+          calc
           label={t('calculator.printingCostPerKg', { currency: currencySymbol })}
           value={printingCost === null ? '' : String(printingCost)}
           onChange={() => {}}

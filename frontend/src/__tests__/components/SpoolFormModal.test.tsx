@@ -1706,8 +1706,11 @@ describe('SpoolFormModal — per-spool tare in Spoolman mode (#2908)', () => {
     });
     openColorAndCostTab();
 
-    const tareInput = screen.getAllByRole('spinbutton').find((el) => el.getAttribute('max') === '2000');
-    expect(tareInput).toHaveValue(0);
+    // The tare field is the numeric CalcInput beside the spool-weight search
+    // box (no native max="2000" to find it by any more).
+    const picker = screen.getByPlaceholderText('Search spool weight...').closest('.flex.gap-2');
+    const tareInput = picker?.querySelector('input[inputmode="numeric"]');
+    expect(tareInput).toHaveValue('0');
   });
 
   async function copiedPayload(source: InventorySpool) {

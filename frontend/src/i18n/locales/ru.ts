@@ -1043,6 +1043,8 @@ export default {
     },
   },
   common: {
+    calcKeyboard: 'Клавиатура калькулятора (+ − × ÷)',
+    calcInvalid: 'Неверное вычисление',
     plusNMore: 'ещё {{count}}',
     save: "Сохранить",
     saving: "Сохранение...",

@@ -1046,6 +1046,8 @@ export default {
     },
   },
   common: {
+    calcKeyboard: 'Hesap makinesi klavyesi (+ − × ÷)',
+    calcInvalid: 'Geçersiz hesaplama',
     plusNMore: '+{{count}} tane daha',
     save: 'Kaydet',
     saving: 'Kaydediliyor...',

@@ -176,6 +176,7 @@ export function CalculatorInputsCard({
         <div className="grid grid-cols-2 gap-3">
           <NumberField
             id="calc-weight"
+            calc
             label={t('calculator.weight')}
             unit="g"
             value={state.weight}

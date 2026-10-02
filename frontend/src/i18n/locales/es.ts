@@ -1046,6 +1046,8 @@ export default {
     },
   },
   common: {
+    calcKeyboard: 'Teclado de calculadora (+ − × ÷)',
+    calcInvalid: 'Cálculo no válido',
     plusNMore: '+{{count}} más',
     save: 'Guardar',
     saving: 'Guardando...',

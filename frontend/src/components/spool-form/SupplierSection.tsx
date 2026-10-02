@@ -6,6 +6,7 @@ import { api, ApiError } from '../../api/client';
 import type { Supplier } from '../../api/client';
 import { useToast } from '../../contexts/ToastContext';
 import { inventorySuppliersQueryKey, invalidateInventorySuppliers } from '../../utils/inventoryQueries';
+import { CalcInput } from '../CalcInput';
 
 // One editable supplier assignment as the form holds it (#2988). Mirrors
 // SpoolSupplierLinkInput but keeps the name so chips render without lookups.
@@ -159,23 +160,21 @@ export function SupplierSection({ links, onChange, currencySymbol }: SupplierSec
                   onChange={(e) => updateLink(link.supplier_id, { supplier_article_number: e.target.value })}
                 />
                 <div className="relative w-28">
-                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-bambu-gray pointer-events-none">
-                    {currencySymbol}
-                  </span>
-                  <input
-                    type="number"
-                    className="w-full pl-6 pr-2 py-1.5 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-white text-xs text-right placeholder:text-bambu-gray/50 focus:outline-none focus:border-bambu-green"
+                  <CalcInput
+                    className="w-full pr-6 py-1.5 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-white text-xs text-right placeholder:text-bambu-gray/50 focus:outline-none focus:border-bambu-green"
                     placeholder={t('inventory.suppliers.pricePlaceholder')}
                     title={t('inventory.suppliers.priceHelp')}
-                    min={0}
-                    step={0.01}
                     value={link.quoted_price_per_kg ?? ''}
-                    onChange={(e) =>
+                    normalize={(n) => Math.max(0, Math.round(n * 100) / 100)}
+                    onValueChange={(raw) =>
                       updateLink(link.supplier_id, {
-                        quoted_price_per_kg: e.target.value === '' ? null : parseFloat(e.target.value),
+                        quoted_price_per_kg: raw === '' ? null : parseFloat(raw),
                       })
                     }
                   />
+                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-bambu-gray pointer-events-none">
+                    {currencySymbol}
+                  </span>
                 </div>
               </div>
             </div>

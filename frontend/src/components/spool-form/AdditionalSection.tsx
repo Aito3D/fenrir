@@ -3,6 +3,7 @@ import { Scale } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useToast } from '../../contexts/ToastContext';
 import type { AdditionalSectionProps } from './types';
+import { CalcInput } from '../CalcInput';
 
 function SpoolWeightPicker({
   catalog,
@@ -150,14 +151,14 @@ function SpoolWeightPicker({
           )}
         </div>
         <div className="flex items-center gap-1 shrink-0">
-          <input
-            type="number"
-            className="w-16 px-2 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm text-center font-mono focus:outline-none focus:border-bambu-green"
+          <CalcInput
+            inputMode="numeric"
+            wrapperClassName="w-24"
+            className="w-full px-2 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm text-center font-mono focus:outline-none focus:border-bambu-green"
             value={value}
-            min={0}
-            max={2000}
-            onChange={(e) => {
-              const val = parseInt(e.target.value);
+            normalize={(n) => Math.min(2000, Math.max(0, Math.round(n)))}
+            onValueChange={(raw) => {
+              const val = parseInt(raw);
               if (!isNaN(val) && val >= 0) onChange(val);
             }}
           />
@@ -229,15 +230,10 @@ export function AdditionalSection({
         <label className="block text-sm font-medium text-bambu-gray mb-1">{t('inventory.currentWeight')}</label>
         <div className="flex items-center gap-2">
           <div className="relative flex-1">
-            <input
-              type="number"
+            <CalcInput
               value={remainingInput}
-              min={0}
-              max={formData.label_weight}
               onFocus={() => setIsRemainingFocused(true)}
-              onChange={(e) => {
-                setRemainingInput(e.target.value);
-              }}
+              onValueChange={setRemainingInput}
               onBlur={() => {
                 setIsRemainingFocused(false);
                 const raw = remainingInput.trim();
@@ -263,14 +259,10 @@ export function AdditionalSection({
         <label className="block text-sm font-medium text-bambu-gray mb-1">{t('inventory.measuredWeight')}</label>
         <div className="flex items-center gap-2">
           <div className="relative flex-1">
-            <input
-              type="number"
+            <CalcInput
               value={measuredInput}
-              min={0}
               onFocus={() => setIsMeasuredFocused(true)}
-              onChange={(e) => {
-                setMeasuredInput(e.target.value);
-              }}
+              onValueChange={setMeasuredInput}
               onBlur={() => {
                 setIsMeasuredFocused(false);
                 const raw = measuredInput.trim();
@@ -302,20 +294,19 @@ export function AdditionalSection({
         <label className="block text-sm font-medium text-bambu-gray mb-1">{t('inventory.costPerKg', 'Cost per kg')}</label>
         <div className="flex items-center gap-2">
           <div className="relative flex-1">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-bambu-gray text-sm pointer-events-none">{currencySymbol}</span>
-            <input
-              type="number"
+            {/* Currency on the right: the left edge holds the calculator icon. */}
+            <CalcInput
               value={formData.cost_per_kg ?? ''}
-              min={0}
-              step={0.01}
               placeholder="0.00"
-              onChange={(e) => {
-                const value = e.target.value === '' ? null : parseFloat(e.target.value);
+              normalize={(n) => Math.max(0, Math.round(n * 100) / 100)}
+              onValueChange={(raw) => {
+                const value = raw === '' ? null : parseFloat(raw);
                 updateField('cost_per_kg', value);
               }}
-              style={{ paddingLeft: `${Math.max(2, currencySymbol.length * 0.6 + 1)}rem` }}
-              className="w-full py-2 pr-3 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:outline-none focus:border-bambu-green"
+              style={{ paddingRight: `${Math.max(2, currencySymbol.length * 0.6 + 1)}rem` }}
+              className="w-full py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:outline-none focus:border-bambu-green"
             />
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-bambu-gray text-sm pointer-events-none">{currencySymbol}</span>
           </div>
         </div>
       </div>

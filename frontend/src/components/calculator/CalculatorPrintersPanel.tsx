@@ -77,9 +77,10 @@ function PrinterForm({
   const repPerHour =
     purchase !== null && repair !== null && lifetimeHours ? (purchase * repair) / 100 / lifetimeHours : null;
 
-  const field = (id: string, label: string, key: keyof PrinterFormState, max?: string) => (
+  const field = (id: string, label: string, key: keyof PrinterFormState, max?: string, calc?: boolean) => (
     <NumberField
       id={id}
+      calc={calc}
       label={label}
       value={form[key]}
       onChange={(v) => setForm((f) => ({ ...f, [key]: v }))}
@@ -117,7 +118,7 @@ function PrinterForm({
         />
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {field('calc-prn-price', t('calculator.purchasePrice', { currency: currencySymbol }), 'purchase')}
+        {field('calc-prn-price', t('calculator.purchasePrice', { currency: currencySymbol }), 'purchase', undefined, true)}
         {field('calc-prn-years', t('calculator.lifetimeYears'), 'years')}
         {field('calc-prn-daily', t('calculator.dailyUsage'), 'daily', '24')}
         {field('calc-prn-watts', t('calculator.powerWatts'), 'watts')}

@@ -176,6 +176,7 @@ export function CalculatorTotalsCard({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
             <NumberField
               id="calc-target-price"
+              calc
               label={t('calculator.targetPriceLabel')}
               unit={getCurrencySymbol(currency)}
               value={targetPrice}

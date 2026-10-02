@@ -1148,7 +1148,7 @@ describe('CalculatorPage', () => {
 
     const weight = await screen.findByLabelText('Object weight');
     await user.type(weight, '40');
-    expect(weight).toHaveValue(40);
+    expect(weight).toHaveValue('40');
 
     await user.click(screen.getByRole('button', { name: 'Reset' }));
 
@@ -1160,7 +1160,7 @@ describe('CalculatorPage', () => {
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
 
     expect(screen.queryByText('Reset inputs')).not.toBeInTheDocument();
-    expect(weight).toHaveValue(40);
+    expect(weight).toHaveValue('40');
     expect(localStorage.removeItem).not.toHaveBeenCalledWith('calculator-state');
   });
 
@@ -1172,14 +1172,14 @@ describe('CalculatorPage', () => {
     const hours = screen.getByLabelText('Hours');
     await user.type(weight, '40');
     await user.type(hours, '2');
-    expect(weight).toHaveValue(40);
+    expect(weight).toHaveValue('40');
     expect(hours).toHaveValue(2);
 
     await user.click(screen.getByRole('button', { name: 'Reset' }));
     await user.click(screen.getByRole('button', { name: 'Confirm' }));
 
     expect(screen.queryByText('Reset inputs')).not.toBeInTheDocument();
-    expect(screen.getByLabelText('Object weight')).toHaveValue(null);
+    expect(screen.getByLabelText('Object weight')).toHaveValue('');
     expect(screen.getByLabelText('Hours')).toHaveValue(null);
     expect(localStorage.removeItem).toHaveBeenCalledWith('calculator-state');
   });
@@ -1271,7 +1271,7 @@ describe('CalculatorPage', () => {
       render(<CalculatorPage />);
 
       const weight = await screen.findByLabelText('Object weight');
-      expect(weight).toHaveValue(15.5);
+      expect(weight).toHaveValue('15.5');
       // Decimal hours from the URL are split into hour + minute fields
       expect(screen.getByLabelText('Hours')).toHaveValue(1);
       expect(screen.getByLabelText('Minutes')).toHaveValue(15);
@@ -1279,7 +1279,7 @@ describe('CalculatorPage', () => {
       // The printer from the URL is selected instead of the default first one
       expect(screen.getByLabelText('Printer')).toHaveValue('A1 Mini');
       // Labor fields from the saved state survive the prefill
-      expect(screen.getByLabelText('Working hours')).toHaveValue(3);
+      expect(screen.getByLabelText('Working hours')).toHaveValue('3');
       // Params are consumed and removed from the URL
       await waitFor(() => {
         expect(window.location.search).toBe('');
@@ -1299,7 +1299,7 @@ describe('CalculatorPage', () => {
       render(<CalculatorPage />);
 
       const weight = await screen.findByLabelText('Object weight');
-      expect(weight).toHaveValue(40);
+      expect(weight).toHaveValue('40');
       // Saved legacy time '2' survives the invalid prefill, migrated to hours
       expect(screen.getByLabelText('Hours')).toHaveValue(2);
       await waitFor(() => {

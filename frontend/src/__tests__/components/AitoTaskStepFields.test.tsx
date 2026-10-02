@@ -54,6 +54,31 @@ describe('TaskStepFields', () => {
     expect(onChange.mock.calls.at(-1)?.[0].scanCost).toBeNull();
   });
 
+  it('a cost takes a calculation and resolves it to two decimals on blur', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(<ControlledTaskStepFields initial={{ ...emptyTaskDraft(), scanCost: 1200 }} onChangeSpy={onChange} />);
+
+    const cost = screen.getByLabelText(/scan cost/i);
+    await user.clear(cost);
+    await user.type(cost, '100/3');
+    await user.tab();
+    expect(onChange.mock.calls.at(-1)?.[0].scanCost).toBe(33.33);
+  });
+
+  it('an invalid calculation in a cost never switches the service off', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(<ControlledTaskStepFields initial={{ ...emptyTaskDraft(), scanCost: 1200 }} onChangeSpy={onChange} />);
+
+    const cost = screen.getByLabelText(/scan cost/i);
+    await user.type(cost, '*');
+    await user.tab();
+    expect(onChange).not.toHaveBeenCalled();
+    expect(cost).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByRole('button', { name: 'Remove Scan' })).toBeInTheDocument();
+  });
+
   it('switching a chip off emits null for that service, not zero — the service stops existing', async () => {
     // Same null-vs-0 rule the clear-a-cost test above pins, but through the
     // chip: toggling a priced service off must report its cost as null, the
@@ -106,7 +131,7 @@ describe('TaskStepFields', () => {
     );
     // Stored total 1000 across 2 units reads back as 500 apiece.
     const cost = screen.getByLabelText(/printing cost/i);
-    expect(cost).toHaveValue(500);
+    expect(cost).toHaveValue('500');
     // Typing a new unit price stores the multiplied total.
     fireEvent.change(cost, { target: { value: '250' } });
     expect(onChange.mock.calls.at(-1)?.[0].impressionCost).toBe(500);

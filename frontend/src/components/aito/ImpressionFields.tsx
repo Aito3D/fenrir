@@ -7,6 +7,7 @@ import { DurationInput } from './DurationInput';
 import { ImpressionCostBand } from './ImpressionCostBand';
 import { Money } from '../calculator/shared';
 import { inputCls, focusRingCls } from '../formStyles';
+import { CalcInput } from '../CalcInput';
 import { useCurrency } from '../../hooks/useCurrency';
 import { computeImpressionCost, roundUpTo50 } from '../../utils/taskDraft';
 import type { ImpressionDraft } from '../../utils/taskDraft';
@@ -346,18 +347,16 @@ export function ImpressionFields({
         </GridRow>
 
         <GridRow side="part" htmlFor={`${reactId}-weight`} label={t('aito.weightG')}>
-          <input
+          <CalcInput
             id={`${reactId}-weight`}
-            type="number"
-            min={0}
-            inputMode="decimal"
             value={value.weightG ?? ''}
-            onChange={(e) =>
+            onValueChange={(raw) =>
               handleChange({
                 ...value,
-                weightG: e.target.value === '' ? null : Math.max(0, Number(e.target.value)),
+                weightG: raw === '' ? null : Math.max(0, Number(raw)),
               })
             }
+            normalize={(n) => Math.max(0, Math.round(n * 100) / 100)}
             className={inputCls}
           />
         </GridRow>

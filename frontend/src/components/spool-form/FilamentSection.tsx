@@ -6,6 +6,7 @@ import { KNOWN_VARIANTS } from './constants';
 import { parsePresetName } from './utils';
 import { PresetSourceBadge } from './PresetPicker';
 import { NumberInput } from '../NumberInput';
+import { CalcInput } from '../CalcInput';
 
 // The identity fields a slicer preset can auto-fill.
 type PresetFilledField = 'material' | 'brand' | 'subtype';
@@ -494,13 +495,11 @@ export function FilamentSection({
       <div>
         <label className="block text-sm font-medium text-bambu-gray mb-1">{t('inventory.labelWeight')}</label>
         <div className="relative">
-          <input
-            type="number"
+          <CalcInput
             className="w-full px-3 py-2 pr-7 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:outline-none focus:border-bambu-green"
             value={labelInput}
-            min={0}
             onFocus={() => setIsLabelFocused(true)}
-            onChange={(e) => setLabelInput(e.target.value)}
+            onValueChange={setLabelInput}
             onBlur={() => {
               setIsLabelFocused(false);
               const raw = labelInput.trim();

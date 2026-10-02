@@ -7,6 +7,7 @@ import { ImpressionFields } from './ImpressionFields';
 import { rowLabelCls, DiscountSelect, QuantityInput, ServicePriceFooter } from './servicePriceFields';
 import { Money } from '../calculator/shared';
 import { inputCls, focusRingCls } from '../formStyles';
+import { CalcInput } from '../CalcInput';
 import { useCurrency } from '../../hooks/useCurrency';
 import { taskTotal } from '../../utils/taskDraft';
 import type { TaskDraft } from '../../utils/taskDraft';
@@ -31,15 +32,12 @@ function CostInput({
 }) {
   const { t } = useTranslation();
   return (
-    <input
+    <CalcInput
       id={id}
       aria-label={`${label} ${t('aito.serviceCost')}`}
-      type="number"
-      min={0}
-      step="0.01"
-      inputMode="decimal"
       value={value ?? ''}
-      onChange={(e) => onChange(e.target.value === '' ? null : Number(e.target.value))}
+      onValueChange={(raw) => onChange(raw === '' ? null : Number(raw))}
+      normalize={(n) => Math.max(0, Math.round(n * 100) / 100)}
       placeholder={t('aito.serviceCost')}
       autoFocus={autoFocus}
       className={inputCls}

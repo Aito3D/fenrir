@@ -368,9 +368,9 @@ describe('FinancePage — editing a wallet transaction', () => {
     await user.click(rowButtons[0]); // Pencil (edit) is the first action button
 
     const modal = await waitFor(() => modalFor('Edit Transaction'), { timeout: 5000 });
-    expect(within(modal).getByRole('spinbutton')).toHaveValue(-4.25);
+    expect(within(modal).getByPlaceholderText('e.g., 4.00')).toHaveValue('-4.25');
     // The description textarea keeps the full raw string, tag included.
-    expect(within(modal).getByRole('textbox')).toHaveValue('Benchy [aborted: nozzle jam]');
+    expect(within(modal).getByPlaceholderText('e.g., Manual adjustment')).toHaveValue('Benchy [aborted: nozzle jam]');
     const [userSelect] = within(modal).getAllByRole('combobox');
     expect(userSelect).toHaveValue('1');
   });
@@ -403,7 +403,7 @@ describe('FinancePage — editing a wallet transaction', () => {
     await user.click(within(row).getAllByRole('button')[0]);
 
     const modal = await waitFor(() => modalFor('Edit Transaction'), { timeout: 5000 });
-    const amountInput = within(modal).getByRole('spinbutton');
+    const amountInput = within(modal).getByPlaceholderText('e.g., 4.00');
     await user.clear(amountInput);
     await user.type(amountInput, '12.34');
     await user.click(within(modal).getByRole('button', { name: 'Save' }));
@@ -454,7 +454,7 @@ describe('FinancePage — editing a wallet transaction', () => {
     await user.click(within(row).getAllByRole('button')[0]);
 
     const modal = await waitFor(() => modalFor('Edit Transaction'), { timeout: 5000 });
-    const amountInput = within(modal).getByRole('spinbutton');
+    const amountInput = within(modal).getByPlaceholderText('e.g., 4.00');
     await user.clear(amountInput);
     await user.type(amountInput, '-10');
     await user.click(within(modal).getByRole('button', { name: 'Save' }));
@@ -495,7 +495,7 @@ describe('FinancePage — editing a wallet transaction', () => {
     await user.click(within(row).getAllByRole('button')[0]);
 
     const modal = await waitFor(() => modalFor('Edit Transaction'), { timeout: 5000 });
-    const descriptionBox = within(modal).getByRole('textbox');
+    const descriptionBox = within(modal).getByPlaceholderText('e.g., Manual adjustment');
     await user.clear(descriptionBox);
     await user.click(within(modal).getByRole('button', { name: 'Save' }));
 
@@ -539,7 +539,7 @@ describe('FinancePage — editing a wallet transaction', () => {
     await user.click(within(row).getAllByRole('button')[0]);
 
     const modal = await waitFor(() => modalFor('Edit Transaction'), { timeout: 5000 });
-    const amountInput = within(modal).getByRole('spinbutton');
+    const amountInput = within(modal).getByPlaceholderText('e.g., 4.00');
     await user.clear(amountInput);
     await user.type(amountInput, '999');
     await user.click(within(modal).getByRole('button', { name: 'Cancel' }));
@@ -672,8 +672,8 @@ describe('FinancePage — budget value parsing (create cost center)', () => {
     await user.click(await screen.findByRole('button', { name: 'Create cost center' }, { timeout: 5000 }));
 
     const modal = await waitFor(() => modalFor('Create cost center'), { timeout: 5000 });
-    await user.type(within(modal).getByRole('textbox'), 'R&D Lab');
-    await user.type(within(modal).getByRole('spinbutton'), '150.5');
+    await user.type(within(modal).getByPlaceholderText('Name'), 'R&D Lab');
+    await user.type(within(modal).getByPlaceholderText('0.00'), '150.5');
     await user.click(within(modal).getByRole('button', { name: 'Create' }));
 
     await waitFor(
@@ -697,9 +697,9 @@ describe('FinancePage — budget value parsing (create cost center)', () => {
     await user.click(await screen.findByRole('button', { name: 'Create cost center' }, { timeout: 5000 }));
 
     const modal = await waitFor(() => modalFor('Create cost center'), { timeout: 5000 });
-    await user.type(within(modal).getByRole('textbox'), 'Total Budget Center');
+    await user.type(within(modal).getByPlaceholderText('Name'), 'Total Budget Center');
     await user.selectOptions(within(modal).getByRole('combobox'), 'total');
-    await user.type(within(modal).getByRole('spinbutton'), '300');
+    await user.type(within(modal).getByPlaceholderText('0.00'), '300');
     await user.click(within(modal).getByRole('button', { name: 'Create' }));
 
     await waitFor(
@@ -723,7 +723,7 @@ describe('FinancePage — budget value parsing (create cost center)', () => {
     await user.click(await screen.findByRole('button', { name: 'Create cost center' }, { timeout: 5000 }));
 
     const modal = await waitFor(() => modalFor('Create cost center'), { timeout: 5000 });
-    await user.type(within(modal).getByRole('textbox'), 'No Budget Center');
+    await user.type(within(modal).getByPlaceholderText('Name'), 'No Budget Center');
     // Budget field left untouched (empty string).
     await user.click(within(modal).getByRole('button', { name: 'Create' }));
 
@@ -748,8 +748,8 @@ describe('FinancePage — budget value parsing (create cost center)', () => {
     await user.click(await screen.findByRole('button', { name: 'Create cost center' }, { timeout: 5000 }));
 
     const modal = await waitFor(() => modalFor('Create cost center'), { timeout: 5000 });
-    await user.type(within(modal).getByRole('textbox'), 'Negative Budget Center');
-    await user.type(within(modal).getByRole('spinbutton'), '-25');
+    await user.type(within(modal).getByPlaceholderText('Name'), 'Negative Budget Center');
+    await user.type(within(modal).getByPlaceholderText('0.00'), '-25');
     await user.click(within(modal).getByRole('button', { name: 'Create' }));
 
     await waitFor(
@@ -764,7 +764,7 @@ describe('FinancePage — budget value parsing (create cost center)', () => {
     );
   });
 
-  it("a comma decimal separator never reaches parseBudgetValue: the browser's <input type=number> sanitizes it to empty first", async () => {
+  it('a comma decimal separator is read as a decimal point (CalcInput canonicalises "12,5" to "12.5")', async () => {
     let captured: Record<string, unknown> | null = null;
     server.use(...createHandlers((body) => (captured = body)));
     const user = userEvent.setup();
@@ -773,16 +773,13 @@ describe('FinancePage — budget value parsing (create cost center)', () => {
     await user.click(await screen.findByRole('button', { name: 'Create cost center' }, { timeout: 5000 }));
 
     const modal = await waitFor(() => modalFor('Create cost center'), { timeout: 5000 });
-    await user.type(within(modal).getByRole('textbox'), 'Comma Budget Center');
-    const budgetInput = within(modal).getByRole('spinbutton') as HTMLInputElement;
-    // A real browser (and jsdom, which mirrors the HTML5 number-input
-    // sanitization algorithm) rejects "12,5" outright and leaves the value
-    // empty — Number.parseFloat's own comma-truncating behavior
-    // (parseFloat('12,5') === 12) is therefore unreachable through this
-    // control; parseBudgetValue only ever sees '' here, so the result is
-    // null, not 12.
+    await user.type(within(modal).getByPlaceholderText('Name'), 'Comma Budget Center');
+    const budgetInput = within(modal).getByPlaceholderText('0.00') as HTMLInputElement;
+    // The budget field is a text CalcInput: it keeps "12,5" on screen while
+    // typing but hands the owner the canonical "12.5", so parseBudgetValue
+    // never sees the comma (parseFloat('12,5') would truncate to 12).
     fireEvent.change(budgetInput, { target: { value: '12,5' } });
-    expect(budgetInput.value).toBe('');
+    expect(budgetInput.value).toBe('12,5');
     await user.click(within(modal).getByRole('button', { name: 'Create' }));
 
     await waitFor(
@@ -790,7 +787,7 @@ describe('FinancePage — budget value parsing (create cost center)', () => {
         expect(captured).toEqual({
           name: 'Comma Budget Center',
           total_budget: null,
-          monthly_budget: null,
+          monthly_budget: 12.5,
           is_active: true,
         }),
       { timeout: 5000 }
@@ -806,7 +803,7 @@ describe('FinancePage — budget value parsing (create cost center)', () => {
     await user.click(await screen.findByRole('button', { name: 'Create cost center' }, { timeout: 5000 }));
 
     const modal = await waitFor(() => modalFor('Create cost center'), { timeout: 5000 });
-    await user.type(within(modal).getByRole('spinbutton'), '50');
+    await user.type(within(modal).getByPlaceholderText('0.00'), '50');
     await user.click(within(modal).getByRole('button', { name: 'Create' }));
 
     expect(

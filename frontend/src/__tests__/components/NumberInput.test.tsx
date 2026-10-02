@@ -20,6 +20,7 @@ function Harness({
   max?: number;
   fallback?: number;
   integer?: boolean;
+  calc?: boolean;
 }) {
   const [value, setValue] = useState(initial);
   return (
@@ -147,5 +148,42 @@ describe('NumberInput', () => {
     await user.click(input());
     await user.tab();
     expect(onBlur).toHaveBeenCalledTimes(1);
+  });
+
+  describe('calc', () => {
+    it('resolves a calculation on blur, clamped into range', async () => {
+      const user = userEvent.setup();
+      render(<Harness initial={5} min={0} max={10} integer={false} calc />);
+      const field = screen.getByRole('textbox', { name: 'qty' });
+
+      await user.clear(field);
+      await user.type(field, '3*1,5');
+      await user.tab();
+      expect(screen.getByTestId('committed')).toHaveTextContent('4.5');
+
+      await user.clear(field);
+      await user.type(field, '6*3');
+      await user.tab();
+      expect(screen.getByTestId('committed')).toHaveTextContent('10');
+    });
+
+    it('settles a plain out-of-range number on blur like the number field does', async () => {
+      const user = userEvent.setup();
+      render(<Harness initial={60} min={45} max={600} calc />);
+      const field = screen.getByRole('textbox', { name: 'qty' });
+
+      await user.clear(field);
+      await user.type(field, '6');
+      await user.tab();
+      expect(screen.getByTestId('committed')).toHaveTextContent('45');
+    });
+
+    it('commits the fallback when left empty', async () => {
+      const user = userEvent.setup();
+      render(<Harness initial={5} fallback={0} calc />);
+      await user.clear(screen.getByRole('textbox', { name: 'qty' }));
+      await user.tab();
+      expect(screen.getByTestId('committed')).toHaveTextContent('0');
+    });
   });
 });

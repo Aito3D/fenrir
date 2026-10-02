@@ -33,6 +33,8 @@ type Field = {
    *  each rendered input to its bound. `exclusiveMin` marks a `gt` bound. */
   min: number;
   max: number;
+  /** Money fields accept a calculation ("4/2"); bounds stay on the result. */
+  calc?: boolean;
   exclusiveMin?: boolean;
 };
 
@@ -47,10 +49,10 @@ const CURVE_KEYS = new Set<FieldKey>(['margin_min_mult', 'margin_max_mult', 'mar
 const inputId = (key: FieldKey) => `${CURVE_KEYS.has(key) ? 'calc-curve' : 'calc-def'}-${key}`;
 
 const RATES: Field[] = [
-  { key: 'electricity_tariff', labelKey: 'calculator.electricityTariff', min: 0, max: MONEY_CEILING },
-  { key: 'labor_rate_per_hour', labelKey: 'calculator.laborRate', min: 0, max: MONEY_CEILING },
-  { key: 'consumables_packaging_flat', labelKey: 'calculator.consumablesFlat', min: 0, max: MONEY_CEILING },
-  { key: 'base_fee_flat', labelKey: 'calculator.baseFee', min: 0, max: MONEY_CEILING },
+  { key: 'electricity_tariff', labelKey: 'calculator.electricityTariff', min: 0, max: MONEY_CEILING, calc: true },
+  { key: 'labor_rate_per_hour', labelKey: 'calculator.laborRate', min: 0, max: MONEY_CEILING, calc: true },
+  { key: 'consumables_packaging_flat', labelKey: 'calculator.consumablesFlat', min: 0, max: MONEY_CEILING, calc: true },
+  { key: 'base_fee_flat', labelKey: 'calculator.baseFee', min: 0, max: MONEY_CEILING, calc: true },
   { key: 'tax_pct', labelKey: 'calculator.taxPct', min: 0, max: 100 },
 ];
 
@@ -80,7 +82,7 @@ const MARGIN_GROUPS: Array<{ labelKey: string; fields: Field[] }> = [
   },
   {
     labelKey: 'calculator.floorGroup',
-    fields: [{ key: 'min_task_price', labelKey: 'calculator.minTaskPrice', min: 0, max: MONEY_CEILING }],
+    fields: [{ key: 'min_task_price', labelKey: 'calculator.minTaskPrice', min: 0, max: MONEY_CEILING, calc: true }],
   },
 ];
 const MARGIN: Field[] = MARGIN_GROUPS.flatMap((g) => g.fields);
@@ -281,10 +283,11 @@ function SettingsForm({
     };
   }, []);
 
-  const field = ({ key, labelKey }: Field, after?: ReactNode) => (
+  const field = ({ key, labelKey, calc }: Field, after?: ReactNode) => (
     <div key={key}>
       <NumberField
         id={inputId(key)}
+        calc={calc}
         label={t(labelKey, { currency: currencySymbol })}
         value={form[key]}
         onChange={(v) => setField(key, v)}
