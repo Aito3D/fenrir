@@ -18,6 +18,7 @@ import { render } from '../utils';
 import { StatsPage } from '../../pages/StatsPage';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
+import { localDateKey } from '../../utils/date';
 
 const EMPTY_STATS = {
   total_prints: 0,
@@ -102,10 +103,13 @@ describe('StatsPage material-number widget', () => {
       expect(materialNumberRequests.length).toBeGreaterThan(0);
     });
 
+    // The timeframe is the user's LOCAL calendar days (computeDateRange uses
+    // localDateKey), so the expectation must be built the same way: a UTC
+    // "today" is a day ahead for ten hours of every day west of Greenwich.
     const today = new Date();
-    const from = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - 29));
-    expect(materialNumberRequests[0].searchParams.get('date_from')).toBe(from.toISOString().split('T')[0]);
-    expect(materialNumberRequests[0].searchParams.get('date_to')).toBe(today.toISOString().split('T')[0]);
+    const from = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 29);
+    expect(materialNumberRequests[0].searchParams.get('date_from')).toBe(localDateKey(from));
+    expect(materialNumberRequests[0].searchParams.get('date_to')).toBe(localDateKey(today));
   });
 
   it('asks for lifetime totals when the timeframe is all time', async () => {
