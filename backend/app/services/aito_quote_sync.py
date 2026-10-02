@@ -2366,6 +2366,87 @@ async def _commit_synced_project(db: AsyncSession, project_id: int) -> None:
         logger.exception("Aito quote sync failed to commit project %s", project_id)
 
 
+async def _reconcile_one(
+    db: AsyncSession,
+    project_id: int,
+    credit_cache: dict[str, float],
+    retainer_cache: dict[str, list[dict]],
+    *,
+    must_be_pending: bool = False,
+    skip_if_pending: bool = False,
+    fast_retry: bool = False,
+) -> bool | None:
+    """One card of a sync loop: re-fetch it, sync it, commit it. Shared by
+    ``run_sync_once`` and the change pass's reconcile queue.
+
+    Returns None when the card was skipped (gone, no longer selected, or its
+    pending state ruled out by ``must_be_pending`` / ``skip_if_pending``) and
+    sync_project was never called; otherwise whether it was rate limited.
+    """
+    # Re-fetched fresh on every iteration of the caller's loop rather than
+    # loaded once as a list of instances before it. This looks like it trades
+    # away a single SELECT for N of them, but that trade is load-bearing, not
+    # an accident: SQLAlchemy's rollback() expires every object in the
+    # session's identity map, not just the one whose commit failed —
+    # regardless of expire_on_commit, which only governs commit(). If a
+    # sibling project's instance were held from before the loop, the
+    # commit-failure guard in _commit_synced_project would expire it, and the next attribute
+    # touch on it (e.g. `if not project.quote_id:` in sync_project) would
+    # try to lazily reload outside a greenlet context and raise
+    # MissingGreenlet — crashing the whole tick, which is exactly the
+    # "one failure aborts the batch" failure mode this guard exists to
+    # prevent. Holding ids instead of instances closes that hole: nothing
+    # from before the loop survives a rollback for us to accidentally
+    # touch, because we ask for it again afterwards. Do not "optimise"
+    # this back into a single select of full rows — the board holds a
+    # handful of cards, and correctness beats saving a few primary-key
+    # lookups.
+    #
+    # ``populate_existing``: read the ROW, not this session's memory of
+    # it. The worker's sessions do not expire on commit, and a drain
+    # served mid-tick (``_serve_due_pushes``) runs on a session that has
+    # already loaded most of the board — the link reconciler and the
+    # reconciles before it see to that. A card it read as 'idle' and that
+    # a request handler has since committed 'pending' would otherwise
+    # still read 'idle' here, be taken for "pushed by someone else"
+    # below, and be skipped with its window spent and its waiter
+    # released: pending, and nothing left to push it before the next
+    # tick.
+    project = await db.get(AitoProject, project_id, populate_existing=True)
+    if project is None or not _still_selected(project):
+        return None
+    pending = project.quote_sync_state == "pending"
+    if (must_be_pending and not pending) or (skip_if_pending and pending):
+        return None
+    # The kwarg only when set, for the same reason _drain_pending passes
+    # its own only when set: tests fake sync_project with the positional
+    # signature.
+    rate_limited = await sync_project(
+        db, project, credit_cache, retainer_cache, **({"fast_retry": True} if fast_retry else {})
+    )
+    await _commit_synced_project(db, project_id)
+    return bool(rate_limited)
+
+
+def _sync_selection(*, pending_only: bool, attention_only: bool):
+    """The WHERE clause of ``run_sync_once``'s id selection, one per mode:
+
+    - ``pending_only`` (the wake drain, and any call inside a rate-limit
+      hold): pending cards only. Wins over ``attention_only``.
+    - ``attention_only`` (the periodic tick): pending cards plus
+      ``_attention_predicate``'s.
+    - neither (full sweep): ``_sweep_predicate``, which already includes
+      pending cards. A test seam: no production caller since the
+      two-cadence loop.
+    """
+    selected = AitoProject.quote_sync_state == "pending"
+    if not pending_only:
+        # See _sweep_predicate's own docstring for why this is a function
+        # call and not an inline expression here (T-022).
+        selected = or_(selected, _attention_predicate()) if attention_only else _sweep_predicate()
+    return selected
+
+
 async def run_sync_once(
     db: AsyncSession, pending_only: bool = False, *, fast_retry: bool = False, attention_only: bool = False
 ) -> int:
@@ -2426,14 +2507,16 @@ async def run_sync_once(
     ``attention_only`` is the periodic tick's selection: pending cards plus
     ``_attention_predicate``'s. The tick no longer reads every quoted card;
     ``run_change_pass`` re-reads the ones Books reports as changed.
+
+    Neither flag set is the full sweep (``_sweep_predicate``). It has no
+    production caller since the two-cadence loop — the wake drain passes
+    ``pending_only``, the tick ``attention_only`` — and stays as the test
+    seam the sync_project tests drive a whole pass through. See
+    ``_sync_selection`` for the three modes side by side.
     """
     if _throttled_until is not None and time.monotonic() < _throttled_until:
         pending_only = True
-    selected = AitoProject.quote_sync_state == "pending"
-    if not pending_only:
-        # See _sweep_predicate's own docstring for why this is a function
-        # call and not an inline expression here (T-022).
-        selected = or_(selected, _attention_predicate()) if attention_only else _sweep_predicate()
+    selected = _sync_selection(pending_only=pending_only, attention_only=attention_only)
     pending_first = case((AitoProject.quote_sync_state == "pending", 0), else_=1)
     # The state at selection time rides along with the id: a card selected
     # as pending that is no longer pending when the loop reaches it was
@@ -2481,58 +2564,26 @@ async def run_sync_once(
     for project_id in project_ids:
         if not pending_only:
             attempted += await _serve_due_pushes(db)
-        # Re-fetched fresh on every iteration rather than loaded once as a
-        # list of instances before the loop. This looks like it trades away a
-        # single SELECT for N of them, but that trade is load-bearing, not an
-        # accident: SQLAlchemy's rollback() expires every object in the
-        # session's identity map, not just the one whose commit failed —
-        # regardless of expire_on_commit, which only governs commit(). If a
-        # sibling project's instance were held from before the loop, the
-        # commit-failure guard below would expire it, and the next attribute
-        # touch on it (e.g. `if not project.quote_id:` in sync_project) would
-        # try to lazily reload outside a greenlet context and raise
-        # MissingGreenlet — crashing the whole tick, which is exactly the
-        # "one failure aborts the batch" failure mode this guard exists to
-        # prevent. Holding ids instead of instances closes that hole: nothing
-        # from before the loop survives a rollback for us to accidentally
-        # touch, because we ask for it again afterwards. Do not "optimise"
-        # this back into a single select of full rows — the board holds a
-        # handful of cards, and correctness beats saving a few primary-key
-        # lookups.
-        #
-        # ``populate_existing``: read the ROW, not this session's memory of
-        # it. The worker's sessions do not expire on commit, and a drain
-        # served mid-tick (``_serve_due_pushes``) runs on a session that has
-        # already loaded most of the board — the link reconciler and the
-        # reconciles before it see to that. A card it read as 'idle' and that
-        # a request handler has since committed 'pending' would otherwise
-        # still read 'idle' here, be taken for "pushed by someone else"
-        # below, and be skipped with its window spent and its waiter
-        # released: pending, and nothing left to push it before the next
-        # tick.
-        project = await db.get(AitoProject, project_id, populate_existing=True)
-        if project is None or not _still_selected(project):
-            # Gone, or already handled by something else since the id was
-            # selected above — nothing left to sync. Not counted below: it was
-            # never actually attempted.
-            aito_push_schedule.resolve(project_id)
-            continue
-        if project_id in selected_as_pending and project.quote_sync_state != "pending":
-            # Selected as pending but the state moved on before the loop got
-            # here. _still_selected alone would wave a now-reconcilable row
-            # through to sync_project's reconcile branch — an extra GET the
-            # wake path promises never to spend, and one the full sweep has
-            # no reason to spend on a quote it (or a Force sync) just wrote.
+        # Skipped (None) when gone or already handled by something else since
+        # the id was selected above — nothing left to sync. Not counted below:
+        # it was never actually attempted. `must_be_pending`: selected as
+        # pending but the state moved on before the loop got here.
+        # _still_selected alone would wave a now-reconcilable row through to
+        # sync_project's reconcile branch — an extra GET the wake path
+        # promises never to spend, and one the full sweep has no reason to
+        # spend on a quote it (or a Force sync) just wrote.
+        rate_limited = await _reconcile_one(
+            db,
+            project_id,
+            credit_cache,
+            retainer_cache,
+            must_be_pending=project_id in selected_as_pending,
+            fast_retry=fast_retry,
+        )
+        if rate_limited is None:
             aito_push_schedule.resolve(project_id)
             continue
         attempted += 1
-        # The kwarg only when set, for the same reason _drain_pending passes
-        # its own only when set: tests fake sync_project with the positional
-        # signature.
-        rate_limited = await sync_project(
-            db, project, credit_cache, retainer_cache, **({"fast_retry": True} if fast_retry else {})
-        )
-        await _commit_synced_project(db, project_id)
         # The attempt is committed, whatever it concluded: a route waiting on
         # this card (flush_and_wait) re-reads the row and decides. Cards a 429
         # break below never reaches keep their waiters; the fast retry that
@@ -2624,15 +2675,13 @@ async def _drain_reconcile_queue(db: AsyncSession) -> int:
         if zoho_service.calls_in_last_minute() >= BACKGROUND_CALL_CEILING:
             break
         project_id = _reconcile_queue.pop(0)
-        # The row, not this session's memory of it — same reason as in
-        # run_sync_once: a card queued here may have been made pending by a
-        # request handler since this session last read it.
-        project = await db.get(AitoProject, project_id, populate_existing=True)
-        if project is None or project.quote_sync_state == "pending" or not _still_selected(project):
-            # Gone, settled, or owed a push: the push path will read it.
+        # Skipped when gone, settled, or owed a push: the push path will read
+        # it. _reconcile_one reads the row, not this session's memory of it: a
+        # card queued here may have been made pending by a request handler
+        # since this session last read it.
+        rate_limited = await _reconcile_one(db, project_id, credit_cache, retainer_cache, skip_if_pending=True)
+        if rate_limited is None:
             continue
-        rate_limited = await sync_project(db, project, credit_cache, retainer_cache)
-        await _commit_synced_project(db, project_id)
         if rate_limited:
             _reconcile_queue.insert(0, project_id)
             break

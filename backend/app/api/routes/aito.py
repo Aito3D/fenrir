@@ -1063,6 +1063,24 @@ def _reject_task_change_if_invoiced(project: AitoProject | None, fields: dict | 
     raise HTTPException(status_code=409, detail="This project has been invoiced — its tasks can no longer be changed")
 
 
+def _mark_pending_if_ours_noting(project: AitoProject) -> bool:
+    """``_mark_pending_if_ours``, returning whether the project was ALREADY
+    pending before the mark. The mark is unconditional and idempotent, so the
+    prior state has to be captured first for ``_record_sync_queued_on_transition``
+    to tell a genuine transition into 'pending' from a re-mark."""
+    was_pending = project.quote_sync_state == "pending"
+    _mark_pending_if_ours(project)
+    return was_pending
+
+
+async def _record_sync_queued_on_transition(db: AsyncSession, project: AitoProject, was_pending: bool) -> None:
+    """Record ``sync.queued`` only when the project moved into 'pending' since
+    ``was_pending`` was captured. Kept separate from the mark so each caller
+    records it at the same point in its event sequence as before."""
+    if not was_pending and project.quote_sync_state == "pending":
+        await record(db, project.id, "sync.queued", actor_class="system")
+
+
 async def _mark_project_pending_for_task(db: AsyncSession, project_id: int) -> tuple[AitoProject | None, bool]:
     """Task endpoints address a task, not a project, so the parent has to be
     loaded to be marked. A missing parent is not an error here: the task's own
@@ -1081,9 +1099,7 @@ async def _mark_project_pending_for_task(db: AsyncSession, project_id: int) -> t
     project = (await db.execute(select(AitoProject).where(AitoProject.id == project_id))).scalar_one_or_none()
     if project is None:
         return None, False
-    was_pending = project.quote_sync_state == "pending"
-    _mark_pending_if_ours(project)
-    return project, was_pending
+    return project, _mark_pending_if_ours_noting(project)
 
 
 def _imported_created_at(quote_id: str | None, quote_date: str | None) -> datetime | None:
@@ -3554,8 +3570,7 @@ async def add_task(
     # Captured before the mark: it is unconditional and idempotent, so
     # checking the post-mark state alone would fire sync.queued on every task
     # added to an already-pending project, not just the transition into it.
-    was_pending = project.quote_sync_state == "pending"
-    _mark_pending_if_ours(project)
+    was_pending = _mark_pending_if_ours_noting(project)
     highest = await db.scalar(select(func.max(AitoTask.position)).where(AitoTask.project_id == project_id))
     task = AitoTask(project_id=project_id, position=(highest + 1) if highest is not None else 0, **task_fields)
     db.add(task)
@@ -3570,8 +3585,7 @@ async def add_task(
         subject_id=task.id,
         subject_label=task.title,
     )
-    if not was_pending and project.quote_sync_state == "pending":
-        await record(db, project.id, "sync.queued", actor_class="system")
+    await _record_sync_queued_on_transition(db, project, was_pending)
     await _apply_rules(db, project, await _summary_for(db, project_id), actor=_actor(current_user))
     queued = project.quote_sync_state == "pending"
     await _commit_and_wake(db, queued, project.id)
@@ -3666,8 +3680,8 @@ async def update_task(
             subject_label=task.title,
             detail={"service": change["field"].removesuffix("_done")},
         )
-    if project is not None and not was_pending and project.quote_sync_state == "pending":
-        await record(db, project.id, "sync.queued", actor_class="system")
+    if project is not None:
+        await _record_sync_queued_on_transition(db, project, was_pending)
     if project:
         await _apply_rules(db, project, await _summary_for(db, task.project_id), actor=_actor(current_user))
     queued = project is not None and project.quote_sync_state == "pending"
@@ -3741,8 +3755,7 @@ async def reorder_tasks(
         return [_task_to_response(t) for t in tasks]
     for index, task_id in enumerate(payload.task_ids):
         by_id[task_id].position = index
-    was_pending = project.quote_sync_state == "pending"
-    _mark_pending_if_ours(project)
+    was_pending = _mark_pending_if_ours_noting(project)
     await record(
         db,
         project.id,
@@ -3752,8 +3765,7 @@ async def reorder_tasks(
         subject_type="project",
         subject_id=project.id,
     )
-    if not was_pending and project.quote_sync_state == "pending":
-        await record(db, project.id, "sync.queued", actor_class="system")
+    await _record_sync_queued_on_transition(db, project, was_pending)
     queued = project.quote_sync_state == "pending"
     await _commit_and_wake(db, queued, project.id)
     await _broadcast_changed("task", project.id, _actor(current_user))
@@ -4146,8 +4158,7 @@ async def update_project(
         subject_id=project.id,
         changes=changes,
     )
-    if not was_pending and project.quote_sync_state == "pending":
-        await record(db, project.id, "sync.queued", actor_class="system")
+    await _record_sync_queued_on_transition(db, project, was_pending)
     queued = project.quote_sync_state == "pending"
     await _commit_and_wake(db, queued, project.id)
     # Same no-op silence `set_project_flag` and `set_quote_status` already
@@ -4205,8 +4216,7 @@ async def transfer_client(
     project.client_contact_name = None
     project.client_social_network = None
     project.client_social_handle = None
-    was_pending = project.quote_sync_state == "pending"
-    _mark_pending_if_ours(project)
+    was_pending = _mark_pending_if_ours_noting(project)
     # The estimate's customer is now the card's to push (see
     # AitoProject.client_push_pending): without it the sync would read Books'
     # old customer as a reassignment made in Books and follow it back. Only
@@ -4226,8 +4236,7 @@ async def transfer_client(
         subject_label=payload.client_name,
         detail=detail,
     )
-    if not was_pending and project.quote_sync_state == "pending":
-        await record(db, project.id, "sync.queued", actor_class="system")
+    await _record_sync_queued_on_transition(db, project, was_pending)
     queued = project.quote_sync_state == "pending"
     await _commit_and_wake(db, queued, project.id)
     await _broadcast_changed("project", project.id, actor)
@@ -5127,10 +5136,8 @@ async def sync_project_now(
     # Captured before the mark, same as the task endpoints: the mark is
     # unconditional and idempotent, so recording off the post-mark state alone
     # would put a `sync.queued` row on the timeline every time a panel closed.
-    was_pending = project.quote_sync_state == "pending"
-    _mark_pending_if_ours(project)
-    if not was_pending and project.quote_sync_state == "pending":
-        await record(db, project.id, "sync.queued", actor_class="system")
+    was_pending = _mark_pending_if_ours_noting(project)
+    await _record_sync_queued_on_transition(db, project, was_pending)
 
     queued = project.quote_sync_state == "pending"
     await _commit_and_wake(db, queued, project.id, immediate=True)
@@ -5376,10 +5383,8 @@ async def transfer_tasks(
     for index, task in enumerate(staying):
         task.position = index
 
-    source_was_pending = source.quote_sync_state == "pending"
-    target_was_pending = target.quote_sync_state == "pending"
-    _mark_pending_if_ours(source)
-    _mark_pending_if_ours(target)
+    source_was_pending = _mark_pending_if_ours_noting(source)
+    target_was_pending = _mark_pending_if_ours_noting(target)
     await db.flush()  # so _summary_for's SELECTs see the moved rows
     detail = {"task_count": len(moving), "target_id": target.id, "split": split}
     await record(
@@ -5404,10 +5409,8 @@ async def transfer_tasks(
         subject_label=source.description,
         detail=detail,
     )
-    if not source_was_pending and source.quote_sync_state == "pending":
-        await record(db, source.id, "sync.queued", actor_class="system")
-    if not target_was_pending and target.quote_sync_state == "pending":
-        await record(db, target.id, "sync.queued", actor_class="system")
+    await _record_sync_queued_on_transition(db, source, source_was_pending)
+    await _record_sync_queued_on_transition(db, target, target_was_pending)
     # Both columns may move: the source can step back (its ticked work left),
     # the target forward.
     await _apply_rules(db, source, await _summary_for(db, source.id), actor=actor)
@@ -5481,8 +5484,7 @@ async def merge_project(
             fields[f"{service}_done"] = getattr(row, f"{service}_done") if keep_ticks else False
         db.add(AitoTask(project_id=project_id, position=next_position + offset, **fields))
 
-    was_pending = target.quote_sync_state == "pending"
-    _mark_pending_if_ours(target)
+    was_pending = _mark_pending_if_ours_noting(target)
     source.status = "deleted"
     _mark_pending_if_ours(source)
     await db.flush()  # so _summary_for's SELECT sees the copies
@@ -5508,8 +5510,7 @@ async def merge_project(
         subject_id=source.id,
         detail={"merged_into": target.id},
     )
-    if not was_pending and target.quote_sync_state == "pending":
-        await record(db, target.id, "sync.queued", actor_class="system")
+    await _record_sync_queued_on_transition(db, target, was_pending)
     summary = await _summary_for(db, project_id)
     await _apply_rules(db, target, summary, actor=actor)
     queued = target.quote_sync_state == "pending" or source.quote_sync_state == "pending"
