@@ -412,6 +412,8 @@ export default {
         workingSub: '현재 부품을 제작하고 있습니다.',
         finishTitle: '주문이 준비되었습니다',
         finishSub: '매장에서 수령하실 수 있습니다. 시간 약속은 메시지에 답장해 주세요.',
+        toShipTitle: '주문이 발송될 예정입니다',
+        toShipSub: '{{service}} 편으로 {{island}} 행. 화물 접수 즉시 항공화물운송장 번호가 여기에 표시됩니다.',
         shippedTitle: '발송됨',
         shippedSub: '{{service}} 편으로 {{island}} 행.',
         shippedLta: '항공화물운송장 번호 {{lta}}.',

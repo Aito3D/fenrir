@@ -63,13 +63,27 @@ export function updatedAt(isoUtc: string, t: TFunction, lng: string, now: Date =
   return t('aito.track.updatedOn', { date, time });
 }
 
+/** The stage the page shows, which is the board column except for a
+ *  shipping order that is ready: there the waybill decides, not the column.
+ *  Typing the LTA on the shipping card IS the moment the parcel leaves (the
+ *  number is what the client hands over at the Air Tahiti freight counter),
+ *  so Finish + LTA already stands on the last node, and Done without one
+ *  still stands on "Prête" — the card being dragged is not the shipment
+ *  going. An LTA typed while the parts are still being made changes
+ *  nothing. */
+export function trackingStage(data: AitoTracking): AitoColumnId {
+  if (data.shipping && (data.column === 'finish' || data.column === 'done')) return data.shipping.lta ? 'done' : 'finish';
+  return data.column;
+}
+
 /** Titles are SHORT: the client scans "En fabrication" faster than a
- *  sentence; the sub-line carries the human voice. The waybill number is
- *  quoted verbatim once it exists — it is what the client hands over at
- *  the Air Tahiti freight counter. */
+ *  sentence; the sub-line carries the human voice. Keyed on the stage
+ *  (`trackingStage`), not the raw column, so a shipping order never says
+ *  "collect it from the shop" and is only "Expédiée" once its waybill is
+ *  quoted. */
 export function statusCopy(data: AitoTracking, t: TFunction, lng: string): { title: string; sub: string } {
   const pair = (key: string) => ({ title: t(`aito.track.status.${key}Title`), sub: t(`aito.track.status.${key}Sub`) });
-  switch (data.column) {
+  switch (trackingStage(data)) {
     case 'devis':
       // The backend hides a pending payment link while the quote is a draft
       // (aito_tracking.PAYABLE_QUOTE_STATUSES, 2026-09-23), so this card never
@@ -81,12 +95,20 @@ export function statusCopy(data: AitoTracking, t: TFunction, lng: string): { tit
       // "Acompte reçu".
       return data.accepted ? pair('accepted') : pair('waiting');
     case 'finish':
+      if (data.shipping) {
+        const { island, service } = data.shipping;
+        return { title: t('aito.track.status.toShipTitle'), sub: t('aito.track.status.toShipSub', { island, service }) };
+      }
       return pair('finish');
     case 'done':
       if (data.shipping) {
+        // Only reached with a waybill (trackingStage), so the LTA line is
+        // always there to quote.
         const { island, service, lta } = data.shipping;
-        const sub = t('aito.track.status.shippedSub', { island, service });
-        return { title: t('aito.track.status.shippedTitle'), sub: lta ? `${sub} ${t('aito.track.status.shippedLta', { lta })}` : sub };
+        return {
+          title: t('aito.track.status.shippedTitle'),
+          sub: `${t('aito.track.status.shippedSub', { island, service })} ${t('aito.track.status.shippedLta', { lta })}`,
+        };
       }
       if (data.done_at) {
         return { title: t('aito.track.status.pickedUpTitle'), sub: t('aito.track.status.pickedUpSub', { date: longDate(data.done_at, lng) }) };

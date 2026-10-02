@@ -8553,6 +8553,8 @@ errors: {
         workingSub: 'Vi förbereder just nu dina delar.',
         finishTitle: 'Din order är klar',
         finishSub: 'Du kan hämta den i butiken; svara på vårt meddelande för att boka en tid.',
+        toShipTitle: 'Din beställning kommer att skickas',
+        toShipSub: 'Till {{island}} med {{service}}. Fraktsedelnumret visas här så snart försändelsen lämnats in.',
         shippedTitle: 'Skickad',
         shippedSub: 'Till {{island}} med {{service}}.',
         shippedLta: 'Fraktsedel nr {{lta}}.',

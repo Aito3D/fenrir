@@ -135,13 +135,19 @@ describe('AitoTrackPage', () => {
     expect(screen.queryByText('Disponibilité estimée')).not.toBeInTheDocument();
   });
 
-  it('shows the shipped and picked-up variants, naming the last stage accordingly', async () => {
+  it('shows the to-be-shipped and picked-up variants, naming the last stage accordingly', async () => {
+    // A shipping order in Done WITHOUT a waybill has not left yet as far as
+    // the client can tell: the rail stays on "Prête" and the card promises
+    // the shipment rather than claiming it.
     mockTrack({ ...FIXTURE, column: 'done', due_date: null, shipping: { island: 'Rangiroa', service: 'Livraison Avion Tuamotu', lta: null } });
     const { unmount } = renderAt('a');
-    expect(await screen.findByRole('heading', { level: 2, name: 'Expédiée' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 2, name: 'Votre commande va être expédiée' })).toBeInTheDocument();
     expect(screen.getByTestId('track-stage-done')).toHaveTextContent('Expédiée');
-    expect(screen.getByText('Vers Rangiroa par Livraison Avion Tuamotu.')).toBeInTheDocument();
-    expect(screen.queryByText(/N° LTA/)).not.toBeInTheDocument();
+    expect(screen.getByTestId('track-stage-done')).toHaveAttribute('data-state', 'todo');
+    expect(screen.getByTestId('track-stage-finish')).toHaveAttribute('aria-current', 'step');
+    expect(screen.getByText('Étape 6 sur 7')).toBeInTheDocument();
+    expect(screen.getByText("Vers Rangiroa par Livraison Avion Tuamotu. Le n° LTA s'affichera ici dès le dépôt.")).toBeInTheDocument();
+    expect(screen.queryByText(/N° LTA \d/)).not.toBeInTheDocument();
     unmount();
     mockTrack({ ...FIXTURE, column: 'done', due_date: null, done_at: '2026-09-01T18:20:00' });
     renderAt('b');
@@ -149,19 +155,31 @@ describe('AitoTrackPage', () => {
     expect(screen.getByText(/Le 1 septembre 2026/)).toBeInTheDocument();
   });
 
+  it('a ready order with a shipment never tells the client to collect it from the shop', async () => {
+    mockTrack({ ...FIXTURE, column: 'finish', due_date: null, shipping: { island: 'Rangiroa', service: 'Livraison Avion Tuamotu', lta: null } });
+    renderAt('ready-ship');
+    expect(await screen.findByRole('heading', { level: 2, name: 'Votre commande va être expédiée' })).toBeInTheDocument();
+    expect(screen.queryByText(/récupérer au magasin/)).not.toBeInTheDocument();
+  });
+
   // The waybill number is the one thing the client needs at the Air Tahiti
-  // freight counter, so once it exists it is quoted verbatim in the shipped
-  // line — and while the parcel is still being made it is shown nowhere.
-  it('quotes the LTA number in the shipped line once it exists', async () => {
-    mockTrack({
-      ...FIXTURE,
-      column: 'done',
-      due_date: null,
-      shipping: { island: 'Rangiroa', service: 'Livraison Avion Tuamotu', lta: '123-4567 8901' },
-    });
-    renderAt('a');
+  // freight counter — and typing it is what makes the order "shipped": the
+  // rail reaches its last node even while the card still sits in Finish.
+  it('the LTA number makes the order shipped and is quoted verbatim, whichever column the card is in', async () => {
+    const shipping = { island: 'Rangiroa', service: 'Livraison Avion Tuamotu', lta: '123-4567 8901' };
+    mockTrack({ ...FIXTURE, column: 'finish', due_date: null, shipping });
+    const { unmount } = renderAt('a');
     expect(await screen.findByRole('heading', { level: 2, name: 'Expédiée' })).toBeInTheDocument();
     expect(screen.getByText('Vers Rangiroa par Livraison Avion Tuamotu. N° LTA 123-4567 8901.')).toBeInTheDocument();
+    expect(screen.getByTestId('track-stage-done')).toHaveAttribute('aria-current', 'step');
+    expect(screen.getByText('Étape 7 sur 7')).toBeInTheDocument();
+    expect(screen.getByTestId('track-check')).toHaveClass('animate-track-check');
+    expect(screen.getByTestId('track-state')).toHaveClass('animate-track-halo');
+    unmount();
+    mockTrack({ ...FIXTURE, column: 'done', due_date: null, shipping });
+    renderAt('b');
+    expect(await screen.findByRole('heading', { level: 2, name: 'Expédiée' })).toBeInTheDocument();
+    expect(screen.getByTestId('track-stage-done')).toHaveAttribute('aria-current', 'step');
   });
 
   it('shows the payment card without any amount, with terms behind its button', async () => {
@@ -522,6 +540,29 @@ describe('AitoTrackPage first-load choreography', () => {
     await screen.findByRole('heading', { level: 2, name: 'En fabrication' });
     expect(screen.getByTestId('track-state')).not.toHaveClass('animate-rise');
     expect(screen.getByTestId('track-stage-model').querySelector('[class*="animate-track"]')).toBeNull();
+  });
+
+  it('a waybill arriving while the page is open walks the rail from Prête to Expédiée and fires the halo', async () => {
+    let lta: string | null = null;
+    server.use(
+      http.get('/api/v1/aito/track/:token', () =>
+        HttpResponse.json({ ...FIXTURE, column: 'finish', due_date: null, shipping: { island: 'Rangiroa', service: 'Livraison Avion Tuamotu', lta } }),
+      ),
+    );
+    const { queryClient } = renderAt('lta-adv');
+    await screen.findByRole('heading', { level: 2, name: 'Votre commande va être expédiée' });
+    // The operator types the LTA on the shipping card; the column does not move.
+    lta = '123-4567 8901';
+    await queryClient.refetchQueries({ queryKey: ['aito-track', 'lta-adv'] });
+    await screen.findByRole('heading', { level: 2, name: 'Expédiée' });
+    expect(screen.getByTestId('track-stage-finish').querySelector('.animate-track-pop')).not.toBeNull();
+    expect(screen.getByTestId('track-stage-done').querySelector('.animate-track-land')).not.toBeNull();
+    expect(screen.getByTestId('track-stage-print').querySelector('[class*="animate-track"]')).toBeNull();
+    const state = screen.getByTestId('track-state');
+    expect(state).toHaveClass('animate-rise');
+    expect(state).toHaveClass('animate-track-halo');
+    expect(state.style.getPropertyValue('--track-halo-delay')).toBe(`${80 + 1 * 90 + 260 + 280}ms`);
+    expect(screen.getByTestId('track-check')).toHaveClass('animate-track-check');
   });
 
   it('fires the halo when the advance lands on done', async () => {

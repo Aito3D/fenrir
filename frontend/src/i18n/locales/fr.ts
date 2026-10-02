@@ -412,6 +412,8 @@ export default {
         workingSub: 'Nous préparons actuellement vos pièces.',
         finishTitle: 'Votre commande est prête',
         finishSub: "Vous pouvez venir la récupérer au magasin ; répondez à notre message pour convenir d'un horaire.",
+        toShipTitle: 'Votre commande va être expédiée',
+        toShipSub: "Vers {{island}} par {{service}}. Le n° LTA s'affichera ici dès le dépôt.",
         shippedTitle: 'Expédiée',
         shippedSub: 'Vers {{island}} par {{service}}.',
         shippedLta: 'N° LTA {{lta}}.',

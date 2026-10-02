@@ -412,6 +412,8 @@ export default {
         workingSub: 'Parçalarınızı şu anda hazırlıyoruz.',
         finishTitle: 'Siparişiniz hazır',
         finishSub: 'Mağazadan teslim alabilirsiniz; saat belirlemek için mesajımızı yanıtlayın.',
+        toShipTitle: 'Siparişiniz gönderilecek',
+        toShipSub: '{{service}} ile {{island}} adresine. Konşimento numarası, kargo teslim edilir edilmez burada görünecektir.',
         shippedTitle: 'Gönderildi',
         shippedSub: '{{service}} ile {{island}} adresine.',
         shippedLta: 'Konşimento No. {{lta}}.',

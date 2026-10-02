@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import i18n from '../../i18n';
-import { etaCopy, longDate, statusCopy, trackStages, trackingDefaultLanguage, updatedAt } from '../../utils/aitoTracking';
+import { etaCopy, longDate, statusCopy, trackStages, trackingDefaultLanguage, trackingStage, updatedAt } from '../../utils/aitoTracking';
 import type { AitoTracking } from '../../api/client';
 import type { TFunction } from 'i18next';
 
@@ -45,18 +45,61 @@ describe('aitoTracking', () => {
     expect(statusCopy({ ...base, column: 'waiting' }, fr, 'fr').title).toBe('En attente de votre accord');
     for (const column of ['scan', 'model', 'print'] as const) expect(statusCopy({ ...base, column }, fr, 'fr').title).toBe('En fabrication');
     expect(statusCopy({ ...base, column: 'finish' }, fr, 'fr').title).toBe('Votre commande est prête');
-    expect(statusCopy({ ...base, column: 'done', shipping: { island: 'Rangiroa', service: 'Livraison Avion Tuamotu', lta: null } }, fr, 'fr')).toEqual({
-      title: 'Expédiée',
-      sub: 'Vers Rangiroa par Livraison Avion Tuamotu.',
+    expect(statusCopy({ ...base, column: 'done', shipping: { island: 'Rangiroa', service: 'Livraison Avion Tuamotu', lta: '123-4567 8901' } }, en, 'en')).toEqual({
+      title: 'Shipped',
+      sub: 'To Rangiroa by Livraison Avion Tuamotu. Waybill no. 123-4567 8901.',
     });
-    expect(statusCopy({ ...base, column: 'done', shipping: { island: 'Rangiroa', service: 'Livraison Avion Tuamotu', lta: '123-4567 8901' } }, en, 'en').sub).toBe(
-      'To Rangiroa by Livraison Avion Tuamotu. Waybill no. 123-4567 8901.',
-    );
     expect(statusCopy({ ...base, column: 'done', done_at: '2026-09-01T18:20:00' }, fr, 'fr')).toEqual({
       title: 'Récupérée',
       sub: 'Le 1 septembre 2026. Merci pour votre confiance !',
     });
     expect(statusCopy({ ...base, column: 'done' }, fr, 'fr')).toEqual({ title: 'Terminée', sub: 'Merci pour votre confiance !' });
+  });
+
+  // A shipped order is "shipped" when the waybill exists, not when the card
+  // is dragged to Done: the LTA is what the client hands over at the freight
+  // counter, and typing it is the moment the parcel has actually left.
+  describe('shipping orders', () => {
+    const toShip = { island: 'Rangiroa', service: 'Livraison Avion Tuamotu', lta: null };
+    const shipped = { ...toShip, lta: '123-4567 8901' };
+    const prepared = {
+      title: 'Votre commande va être expédiée',
+      sub: "Vers Rangiroa par Livraison Avion Tuamotu. Le n° LTA s'affichera ici dès le dépôt.",
+    };
+
+    it('a ready order with a shipment says it will be shipped, never "collect it from the shop"', () => {
+      expect(statusCopy({ ...base, column: 'finish', shipping: toShip }, fr, 'fr')).toEqual(prepared);
+      expect(statusCopy({ ...base, column: 'finish', shipping: toShip }, en, 'en')).toEqual({
+        title: 'Your order will be shipped',
+        sub: 'To Rangiroa by Livraison Avion Tuamotu. The waybill number will appear here once it is dropped off.',
+      });
+    });
+
+    it('Done without a waybill is still "will be shipped", not "shipped"', () => {
+      expect(statusCopy({ ...base, column: 'done', shipping: toShip }, fr, 'fr')).toEqual(prepared);
+    });
+
+    it('the waybill flips a ready order to shipped before the card moves to Done', () => {
+      expect(statusCopy({ ...base, column: 'finish', shipping: shipped }, fr, 'fr')).toEqual({
+        title: 'Expédiée',
+        sub: 'Vers Rangiroa par Livraison Avion Tuamotu. N° LTA 123-4567 8901.',
+      });
+    });
+
+    it('a waybill typed while the parts are still being made changes nothing', () => {
+      expect(statusCopy({ ...base, column: 'print', shipping: shipped }, fr, 'fr').title).toBe('En fabrication');
+    });
+
+    it('trackingStage: the rail node is the LTA, not the column, once the order is ready', () => {
+      expect(trackingStage({ ...base, column: 'finish', shipping: toShip })).toBe('finish');
+      expect(trackingStage({ ...base, column: 'done', shipping: toShip })).toBe('finish');
+      expect(trackingStage({ ...base, column: 'finish', shipping: shipped })).toBe('done');
+      expect(trackingStage({ ...base, column: 'done', shipping: shipped })).toBe('done');
+      expect(trackingStage({ ...base, column: 'print', shipping: shipped })).toBe('print');
+      // No shipment: the column is the stage, as before.
+      expect(trackingStage({ ...base, column: 'finish' })).toBe('finish');
+      expect(trackingStage({ ...base, column: 'done' })).toBe('done');
+    });
   });
 
   it('devis keeps the plain "by e-mail" line even if a payment link slipped through', () => {

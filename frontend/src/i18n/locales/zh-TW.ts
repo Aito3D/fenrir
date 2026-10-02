@@ -412,6 +412,8 @@ export default {
         workingSub: '我們正在製作您的零件。',
         finishTitle: '您的訂單已就緒',
         finishSub: '您可以到店取貨；請回覆我們的訊息約定時間。',
+        toShipTitle: '您的訂單即將出貨',
+        toShipSub: '透過{{service}}寄往{{island}}。貨物交運後，航空貨運單號將顯示於此。',
         shippedTitle: '已出貨',
         shippedSub: '透過{{service}}寄往{{island}}。',
         shippedLta: '航空貨運單號 {{lta}}。',

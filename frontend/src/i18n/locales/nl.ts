@@ -8553,6 +8553,8 @@ export default {
         workingSub: 'We bereiden momenteel je onderdelen voor.',
         finishTitle: 'Je bestelling is klaar',
         finishSub: 'Je kunt hem ophalen in de winkel; beantwoord ons bericht om een tijdstip af te spreken.',
+        toShipTitle: 'Je bestelling wordt verzonden',
+        toShipSub: 'Naar {{island}} per {{service}}. Het vrachtbriefnummer verschijnt hier zodra de zending is afgegeven.',
         shippedTitle: 'Verzonden',
         shippedSub: 'Naar {{island}} per {{service}}.',
         shippedLta: 'Vrachtbrief nr. {{lta}}.',

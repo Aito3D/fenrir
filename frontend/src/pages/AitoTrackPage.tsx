@@ -15,7 +15,7 @@ import { useTrackingLanguage } from '../hooks/useTrackingLanguage';
 import { useTrackingPanel } from '../hooks/useTrackingPanel';
 import { prefersReducedMotion } from '../utils/motion';
 import { CARD, FOCUS, I18N_SETTLE_TIMEOUT_MS, PAGE, PRESS, delayAt } from '../utils/trackingShell';
-import { TRACK_MOTION, etaCopy, statusCopy, trackStageIndex, trackStateDelay, updatedAt } from '../utils/aitoTracking';
+import { TRACK_MOTION, etaCopy, statusCopy, trackStageIndex, trackStateDelay, trackingStage, updatedAt } from '../utils/aitoTracking';
 import type { AitoColumnId } from '../api/client';
 
 // Above this many parts, fold to the first six behind a "Voir les n pièces"
@@ -99,15 +99,18 @@ export function AitoTrackPage() {
   // not change and stay still. Same render-time ref gate as `firstData`, so
   // React's double render in dev sees the same answer twice. A column that
   // went BACK (a step re-opened) simply re-renders: nothing to celebrate.
-  const lastColumn = useRef<AitoColumnId | undefined>(undefined);
+  // Compared on the STAGE, not the raw column: a shipping order advances
+  // when its waybill is typed, with the card not moving at all.
+  const stage = data ? trackingStage(data) : undefined;
+  const lastStage = useRef<AitoColumnId | undefined>(undefined);
   const advanceRef = useRef<{ from: number; seq: number } | null>(null);
-  if (data && settled) {
-    if (lastColumn.current === undefined) lastColumn.current = data.column;
-    else if (lastColumn.current !== data.column) {
-      const from = trackStageIndex(lastColumn.current);
-      const to = trackStageIndex(data.column);
+  if (stage && settled) {
+    if (lastStage.current === undefined) lastStage.current = stage;
+    else if (lastStage.current !== stage) {
+      const from = trackStageIndex(lastStage.current);
+      const to = trackStageIndex(stage);
       advanceRef.current = to > from ? { from, seq: (advanceRef.current?.seq ?? 0) + 1 } : null;
-      lastColumn.current = data.column;
+      lastStage.current = stage;
     }
   }
   const advance = entrance ? null : advanceRef.current;
@@ -163,10 +166,10 @@ export function AitoTrackPage() {
   const copy = data ? statusCopy(data, t, lng) : null;
   const eta = data ? etaCopy(data, t, lng) : null;
   const preOrder = data?.column === 'devis' || data?.column === 'waiting';
-  const finished = data?.column === 'done';
+  const finished = stage === 'done';
   // The current node's index on the rail — the same board order TrackingRail
   // lays out, without building its labelled stage list just to count it.
-  const current = data ? trackStageIndex(data.column) : 0;
+  const current = stage ? trackStageIndex(stage) : 0;
   // Where the rail's choreography starts: node 0 on the first data, the old
   // current node on an advance, nowhere otherwise.
   const origin = entrance ? 0 : advance?.from;
@@ -289,7 +292,7 @@ export function AitoTrackPage() {
             {showContent && (
               <div className={entrance ? 'animate-track-fade' : undefined} data-testid="track-content" data-entrance={entrance || undefined}>
                 <div className="mt-[32px]">
-                  <TrackingRail column={data.column} shipped={data.shipping !== null} animateFrom={origin} />
+                  <TrackingRail column={stage ?? data.column} shipped={data.shipping !== null} animateFrom={origin} />
                 </div>
                 {/* Keyed on the advance, so the card remounts and rises again
                     for each new stage — the classes alone would not replay. */}

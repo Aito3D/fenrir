@@ -412,6 +412,8 @@ export default {
         workingSub: 'Stiamo preparando i suoi pezzi.',
         finishTitle: 'Il suo ordine è pronto',
         finishSub: 'Può ritirarlo in negozio; risponda al nostro messaggio per concordare un orario.',
+        toShipTitle: 'Il suo ordine sarà spedito',
+        toShipSub: 'Verso {{island}} con {{service}}. Il numero della lettera di vettura apparirà qui appena il pacco sarà consegnato al corriere.',
         shippedTitle: 'Spedito',
         shippedSub: 'Verso {{island}} con {{service}}.',
         shippedLta: 'N. lettera di vettura {{lta}}.',

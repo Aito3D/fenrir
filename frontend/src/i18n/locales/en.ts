@@ -415,6 +415,8 @@ export default {
         workingSub: 'We are currently preparing your parts.',
         finishTitle: 'Your order is ready',
         finishSub: 'You can collect it from the shop; reply to our message to arrange a time.',
+        toShipTitle: 'Your order will be shipped',
+        toShipSub: 'To {{island}} by {{service}}. The waybill number will appear here once it is dropped off.',
         shippedTitle: 'Shipped',
         shippedSub: 'To {{island}} by {{service}}.',
         shippedLta: 'Waybill no. {{lta}}.',

@@ -412,6 +412,8 @@ export default {
         workingSub: 'Wir bereiten gerade Ihre Teile vor.',
         finishTitle: 'Ihre Bestellung ist bereit',
         finishSub: 'Sie können sie im Geschäft abholen; antworten Sie auf unsere Nachricht, um einen Termin zu vereinbaren.',
+        toShipTitle: 'Ihre Bestellung wird versendet',
+        toShipSub: 'Nach {{island}} per {{service}}. Die Frachtbriefnummer erscheint hier, sobald die Sendung aufgegeben ist.',
         shippedTitle: 'Versendet',
         shippedSub: 'Nach {{island}} per {{service}}.',
         shippedLta: 'Frachtbrief Nr. {{lta}}.',

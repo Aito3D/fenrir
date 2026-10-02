@@ -412,6 +412,8 @@ export default {
         workingSub: 'Estamos preparando suas peças.',
         finishTitle: 'Seu pedido está pronto',
         finishSub: 'Você pode retirá-lo na loja; responda à nossa mensagem para combinar um horário.',
+        toShipTitle: 'Seu pedido será enviado',
+        toShipSub: 'Para {{island}} por {{service}}. O número do conhecimento aéreo aparecerá aqui assim que a encomenda for despachada.',
         shippedTitle: 'Enviado',
         shippedSub: 'Para {{island}} por {{service}}.',
         shippedLta: 'Conhecimento aéreo nº {{lta}}.',

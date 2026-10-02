@@ -412,6 +412,8 @@ export default {
         workingSub: 'Estamos preparando sus piezas.',
         finishTitle: 'Su pedido está listo',
         finishSub: 'Puede recogerlo en la tienda; responda a nuestro mensaje para acordar una hora.',
+        toShipTitle: 'Su pedido será enviado',
+        toShipSub: 'Hacia {{island}} por {{service}}. El número de carta de porte aparecerá aquí en cuanto se entregue el envío.',
         shippedTitle: 'Enviado',
         shippedSub: 'Hacia {{island}} por {{service}}.',
         shippedLta: 'N.º de carta de porte {{lta}}.',
