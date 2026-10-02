@@ -2775,3 +2775,110 @@ async def test_a_rate_limited_poll_still_arms_the_throttle_past_the_new_catch(db
     await reconcile_payment_links(db_session, now=NOW + timedelta(minutes=1), today=TODAY)
     assert [c[1] for c in fake.calls if c[0] == "get"] == ["L1"]
     assert svc._throttled_until is not None
+
+
+def _abandoned_invoice_reservation(project_id: int, key: str, created_at: datetime) -> AitoPaymentLink:
+    return AitoPaymentLink(
+        project_id=project_id,
+        idempotency_key=key,
+        reference="FA-26-0006",
+        amount=1000,
+        expires_on="2026-12-31",
+        status="pending",
+        document_kind="invoice",
+        document_number="FA-26-0006",
+        created_at=created_at,
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_db_error_ageing_out_one_reservation_does_not_stop_the_sweep(db_session, monkeypatch):
+    p = await _project(db_session, quote_sync_state="unmanaged")
+    first = _abandoned_invoice_reservation(p.id, "aito:abandoned:1", NOW)
+    second = _abandoned_invoice_reservation(p.id, "aito:abandoned:2", NOW)
+    db_session.add_all([first, second])
+    await db_session.commit()
+    first_id, second_id = first.id, second.id
+
+    real_commit = db_session.commit
+    commits = 0
+
+    async def commit_failing_once():
+        nonlocal commits
+        commits += 1
+        if commits == 1:
+            raise SQLAlchemyError("disk I/O error")
+        await real_commit()
+
+    monkeypatch.setattr(db_session, "commit", commit_failing_once)
+    aged = await svc._age_out_abandoned_invoice_reservations(db_session, now=NOW + timedelta(minutes=11))
+    monkeypatch.undo()
+
+    assert aged == 1
+    # Re-read by id: the rollback expired every tracked ORM object.
+    by_id = {r.id: r for r in (await db_session.execute(select(AitoPaymentLink))).scalars()}
+    assert by_id[first_id].status == "pending" and by_id[first_id].sync_error is None
+    assert by_id[second_id].status == "failed" and by_id[second_id].sync_error == "reservation abandoned"
+
+
+@pytest.mark.asyncio
+async def test_a_db_error_reconciling_one_project_does_not_stop_the_pass(db_session, fake, monkeypatch):
+    a = await _project(db_session, quote_number="DEV-A")
+    b = await _project(db_session, quote_number="DEV-B")
+    aid, bid = a.id, b.id
+    real = svc.reconcile_project
+    seen: list[int] = []
+
+    async def flaky(db, project, **kw):
+        seen.append(project.id)
+        if project.id == aid:
+            raise SQLAlchemyError("database is locked")
+        return await real(db, project, **kw)
+
+    monkeypatch.setattr(svc, "reconcile_project", flaky)
+    n = await reconcile_payment_links(db_session, now=NOW, today=TODAY)
+
+    assert n == 2 and seen == [aid, bid]
+    assert await current_link(db_session, aid) is None
+    assert (await current_link(db_session, bid)).heimdall_id == "L1"
+
+
+@pytest.mark.asyncio
+async def test_a_lost_invoice_link_whose_row_vanished_before_the_reread_does_not_end_the_pass(
+    db_session, fake, monkeypatch
+):
+    p = await _project(db_session, quote_status="declined")
+    project_id = p.id
+    invoice_row = AitoPaymentLink(
+        project_id=project_id,
+        idempotency_key=f"aito:{project_id}:1",
+        reference="FA-1",
+        amount=50,
+        expires_on="2026-12-31",
+        heimdall_id="ghost-1",  # never registered with `fake` — a bare 404
+        status="pending",
+        document_kind="invoice",
+        document_number="FA-1",
+    )
+    db_session.add(invoice_row)
+    await db_session.commit()
+    row_id = invoice_row.id
+
+    real_get = db_session.get
+    link_gets = 0
+
+    async def get_none_on_the_reread(entity, ident, *a, **kw):
+        nonlocal link_gets
+        if entity is AitoPaymentLink:
+            link_gets += 1
+            if link_gets == 2:  # the re-read after the 404's rollback
+                return None
+        return await real_get(entity, ident, *a, **kw)
+
+    monkeypatch.setattr(db_session, "get", get_none_on_the_reread)
+    visited = await reconcile_payment_links(db_session, now=NOW, today=TODAY, only_project_id=project_id, force=True)
+    monkeypatch.undo()
+
+    assert visited == 1 and link_gets == 2
+    (row,) = [r for r in await _rows(db_session, project_id) if r.id == row_id]
+    assert row.status == "pending"  # nothing was marked failed: the re-read found no row

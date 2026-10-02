@@ -563,3 +563,49 @@ async def test_an_explicit_watch_keeps_its_own_list_within_settings(async_client
     await record(db_session, p["id"], "quote.declined", actor_class="client")  # enabled, but not on this watch
     await db_session.commit()
     assert (await db_session.execute(select(Notification))).scalars().first() is None
+
+
+@pytest.mark.asyncio
+async def test_a_failing_push_is_logged_and_the_other_recipients_are_still_nudged(db_session, monkeypatch, caplog):
+    sent: list[int] = []
+
+    async def flaky_broadcast_to_user(user_id, message):
+        if user_id == 1:
+            raise RuntimeError("socket gone")
+        sent.append(user_id)
+
+    monkeypatch.setattr(inbox.ws_manager, "broadcast_to_user", flaky_broadcast_to_user)
+    db_session.info["inbox_users"] = {1, 2}
+
+    with caplog.at_level("WARNING"):
+        await inbox.broadcast_pending(db_session)
+
+    assert sent == [2]
+    assert "inbox_changed push failed for user 1" in caplog.text
+    assert not db_session.info.get("inbox_users")
+
+
+def test_retention_is_thirty_days():
+    assert inbox.RETENTION_DAYS == 30
+
+
+@pytest.mark.asyncio
+async def test_purge_old_deletes_only_rows_strictly_older_than_the_retention_window(async_client, db_session):
+    alice = await _user(db_session, "alice")
+    now = datetime(2026, 6, 15, 12, 0, 0)
+    window = timedelta(days=inbox.RETENTION_DAYS)
+    for title, age in (
+        ("exactly", window),
+        ("just-inside", window - timedelta(seconds=1)),
+        ("just-outside", window + timedelta(seconds=1)),
+    ):
+        db_session.add(
+            Notification(user_id=alice.id, kind="aito.paid", family="aito", title=title, body="y", created_at=now - age)
+        )
+    await db_session.commit()
+
+    assert await inbox.purge_old(db_session, now=now) == 1
+    await db_session.commit()
+
+    titles = {r.title for r in (await db_session.execute(select(Notification))).scalars()}
+    assert titles == {"exactly", "just-inside"}
