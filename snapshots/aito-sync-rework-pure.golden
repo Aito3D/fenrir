@@ -1,0 +1,355 @@
+### exit: 0
+### stdout:
+{
+ "change_poll": {
+  "BACKFILL_DAYS": 1,
+  "OVERLAP_SECONDS": 2,
+  "TRUNCATED_OVERLAP_SECONDS": 1,
+  "changes_fields": [
+   "customer_ids",
+   "estimate_ids",
+   "rate_limited"
+  ],
+  "polls": [
+   [
+    "estimates",
+    "aito_estimate_poll_since",
+    "list_estimates_modified_since"
+   ],
+   [
+    "payments",
+    "aito_payment_poll_since",
+    "list_customer_payments_modified_since"
+   ],
+   [
+    "retainers",
+    "aito_retainer_poll_since",
+    "list_retainers_modified_since"
+   ]
+  ]
+ },
+ "inbox": {
+  "DEFAULT_KINDS": [
+   "aito.quote_viewed",
+   "aito.quote_accepted",
+   "aito.quote_declined",
+   "aito.paid"
+  ],
+  "KINDS": {
+   "aito.overdue": {
+    "default_on": false,
+    "events": [
+     "project.due.overdue"
+    ],
+    "family": "aito"
+   },
+   "aito.paid": {
+    "default_on": true,
+    "events": [
+     "payment_link.paid",
+     "payment.terminal.paid",
+     "payment.manual.recorded"
+    ],
+    "family": "aito"
+   },
+   "aito.quote_accepted": {
+    "default_on": true,
+    "events": [
+     "quote.accepted"
+    ],
+    "family": "aito"
+   },
+   "aito.quote_declined": {
+    "default_on": true,
+    "events": [
+     "quote.declined"
+    ],
+    "family": "aito"
+   },
+   "aito.quote_viewed": {
+    "default_on": true,
+    "events": [
+     "quote.viewed"
+    ],
+    "family": "aito"
+   },
+   "printer.failed": {
+    "default_on": false,
+    "events": [],
+    "family": "printer"
+   },
+   "printer.finished": {
+    "default_on": false,
+    "events": [],
+    "family": "printer"
+   },
+   "printer.job_sent": {
+    "default_on": false,
+    "events": [],
+    "family": "printer"
+   }
+  },
+  "RETENTION_DAYS": 30,
+  "effective_watch_kinds": {
+   "auto_watch(None)": [
+    "aito.paid",
+    "aito.quote_viewed"
+   ],
+   "explicit empty": [],
+   "explicit subset": [
+    "aito.paid"
+   ]
+  },
+  "event_to_kind": {
+   "client.transferred": null,
+   "invoice.created": null,
+   "invoice.deposit_applied": null,
+   "invoice.detected": null,
+   "invoice.emailed": null,
+   "note.added": null,
+   "payment.manual.partial": null,
+   "payment.manual.recorded": "aito.paid",
+   "payment.terminal.attention": null,
+   "payment.terminal.failed": null,
+   "payment.terminal.paid": "aito.paid",
+   "payment.terminal.started": null,
+   "payment_link.cancelled": null,
+   "payment_link.created": null,
+   "payment_link.paid": "aito.paid",
+   "payment_link.replaced": null,
+   "payment_link.updated": null,
+   "poll.reconciled": null,
+   "project.client.changed": null,
+   "project.contacted.cleared": null,
+   "project.contacted.set": null,
+   "project.created": null,
+   "project.due.cleared": null,
+   "project.due.overdue": "aito.overdue",
+   "project.due.set": null,
+   "project.fiverr.cleared": null,
+   "project.fiverr.set": null,
+   "project.merged": null,
+   "project.pause.cleared": null,
+   "project.pause.set": null,
+   "project.restored": null,
+   "project.sav.cleared": null,
+   "project.sav.set": null,
+   "project.sms.sent": null,
+   "project.trashed": null,
+   "project.updated": null,
+   "project.urgent.cleared": null,
+   "project.urgent.set": null,
+   "quote.accepted": "aito.quote_accepted",
+   "quote.created": null,
+   "quote.declined": "aito.quote_declined",
+   "quote.emailed": null,
+   "quote.expired": null,
+   "quote.sent": null,
+   "quote.unaccepted": null,
+   "quote.viewed": "aito.quote_viewed",
+   "retainer.emailed": null,
+   "stage.changed": null,
+   "sync.conflict": null,
+   "sync.failed": null,
+   "sync.locked": null,
+   "sync.pushed": null,
+   "sync.queued": null,
+   "sync.status_rejected": null,
+   "task.added": null,
+   "task.removed": null,
+   "task.reordered": null,
+   "task.step.ticked": null,
+   "task.step.unticked": null,
+   "task.transferred_in": null,
+   "task.transferred_out": null,
+   "task.updated": null,
+   "tracking.regenerated": null,
+   "zoho.comment": null
+  }
+ },
+ "push_schedule": {
+  "constants": {
+   "EDIT_MAX_WAIT_SECONDS": 45.0,
+   "EDIT_QUIET_SECONDS": 10.0
+  },
+  "steps": [
+   {
+    "any_due": false,
+    "due_1": true,
+    "due_2": true,
+    "next_due": null,
+    "now": 0.0,
+    "step": "empty",
+    "windows": {}
+   },
+   {
+    "any_due": false,
+    "due_1": false,
+    "due_2": true,
+    "next_due": 10.0,
+    "now": 0.0,
+    "step": "edit#1@0",
+    "windows": {
+     "1": [
+      0.0,
+      10.0,
+      false
+     ]
+    }
+   },
+   {
+    "any_due": false,
+    "due_1": false,
+    "due_2": true,
+    "next_due": 10.0,
+    "now": 5.0,
+    "step": "edit#1@5 (quiet extends)",
+    "windows": {
+     "1": [
+      0.0,
+      15.0,
+      false
+     ]
+    }
+   },
+   {
+    "any_due": false,
+    "due_1": false,
+    "due_2": true,
+    "next_due": 0.09999999999999964,
+    "now": 14.9,
+    "step": "tick@14.9",
+    "windows": {
+     "1": [
+      0.0,
+      15.0,
+      false
+     ]
+    }
+   },
+   {
+    "any_due": true,
+    "due_1": true,
+    "due_2": true,
+    "next_due": 0.0,
+    "now": 15.0,
+    "step": "tick@15",
+    "windows": {
+     "1": [
+      0.0,
+      15.0,
+      false
+     ]
+    }
+   },
+   {
+    "any_due": true,
+    "due_1": true,
+    "due_2": true,
+    "next_due": 0.0,
+    "now": 52.0,
+    "step": "edits every 8s -> capped at opened+45",
+    "windows": {
+     "1": [
+      0.0,
+      45.0,
+      false
+     ]
+    }
+   },
+   {
+    "any_due": true,
+    "due_1": true,
+    "due_2": true,
+    "next_due": 0.0,
+    "now": 53.0,
+    "step": "card 2 immediate",
+    "windows": {
+     "1": [
+      0.0,
+      45.0,
+      false
+     ],
+     "2": [
+      52.0,
+      53.0,
+      true
+     ]
+    }
+   },
+   {
+    "any_due": true,
+    "due_1": true,
+    "due_2": true,
+    "next_due": 0.0,
+    "now": 54.0,
+    "step": "edit after immediate does not push due out",
+    "windows": {
+     "1": [
+      0.0,
+      45.0,
+      false
+     ],
+     "2": [
+      52.0,
+      53.0,
+      true
+     ]
+    }
+   },
+   {
+    "any_due": true,
+    "due_1": true,
+    "due_2": true,
+    "next_due": 0.0,
+    "now": 54.0,
+    "step": "take(1)",
+    "windows": {
+     "2": [
+      52.0,
+      53.0,
+      true
+     ]
+    }
+   },
+   {
+    "any_due": true,
+    "due_1": true,
+    "due_2": true,
+    "next_due": 0.0,
+    "now": 70.0,
+    "step": "drop_due_except(70, keep={1})",
+    "windows": {
+     "1": [
+      54.0,
+      64.0,
+      false
+     ]
+    }
+   },
+   {
+    "any_due": true,
+    "due_1": true,
+    "due_2": true,
+    "next_due": 0.0,
+    "now": 70.0,
+    "step": "immediate on a fresh card",
+    "windows": {
+     "1": [
+      54.0,
+      64.0,
+      false
+     ],
+     "3": [
+      70.0,
+      70.0,
+      true
+     ]
+    }
+   }
+  ]
+ }
+}
+
+### stderr:
+

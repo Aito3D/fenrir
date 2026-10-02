@@ -72,6 +72,7 @@ CREATE TABLE aito_projects (
 	client_social_handle VARCHAR(100), 
 	client_contact_person_id VARCHAR(50), 
 	client_contact_name VARCHAR(200), 
+	client_push_pending BOOLEAN DEFAULT '0' NOT NULL, 
 	tracking_token VARCHAR(64), 
 	quote_id VARCHAR(50), 
 	quote_number VARCHAR(50), 
@@ -185,6 +186,16 @@ CREATE TABLE aito_tracking_views (
 	project_id INTEGER NOT NULL, 
 	viewed_at DATETIME NOT NULL, 
 	PRIMARY KEY (id)
+);
+CREATE TABLE aito_watches (
+	id INTEGER NOT NULL, 
+	user_id INTEGER NOT NULL, 
+	project_id INTEGER NOT NULL, 
+	kinds_json JSON, 
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	PRIMARY KEY (id), 
+	CONSTRAINT uq_aito_watch_user_project UNIQUE (user_id, project_id), 
+	FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE CASCADE
 );
 CREATE TABLE ams_labels (
 	id INTEGER NOT NULL, 
@@ -727,6 +738,7 @@ CREATE TABLE notification_providers (
 	on_plate_not_empty BOOLEAN, 
 	on_plate_clear_required BOOLEAN, 
 	on_print_confirm_request BOOLEAN, 
+	telegram_verdict_mode VARCHAR(16), 
 	on_bed_cooled BOOLEAN, 
 	on_first_layer_complete BOOLEAN, 
 	on_app_message BOOLEAN, 
@@ -765,6 +777,20 @@ CREATE TABLE notification_templates (
 	PRIMARY KEY (id), 
 	UNIQUE (event_type)
 );
+CREATE TABLE notifications (
+	id INTEGER NOT NULL, 
+	user_id INTEGER NOT NULL, 
+	kind VARCHAR(40) NOT NULL, 
+	family VARCHAR(16) NOT NULL, 
+	title VARCHAR(200) NOT NULL, 
+	body VARCHAR(500) NOT NULL, 
+	target_type VARCHAR(32), 
+	target_id INTEGER, 
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	read_at DATETIME, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE CASCADE
+);
 CREATE TABLE oidc_providers (
 	id INTEGER NOT NULL, 
 	name VARCHAR(100) NOT NULL, 
@@ -778,6 +804,8 @@ CREATE TABLE oidc_providers (
 	email_claim VARCHAR(64) NOT NULL, 
 	require_email_verified BOOLEAN NOT NULL, 
 	default_group_id INTEGER, 
+	group_claim VARCHAR(64) DEFAULT 'groups' NOT NULL, 
+	group_mapping JSON DEFAULT '{}' NOT NULL, 
 	icon_url TEXT, 
 	icon_data BLOB, 
 	icon_content_type VARCHAR(20), 
@@ -1362,6 +1390,7 @@ CREATE TABLE spool (
 	added_full BOOLEAN, 
 	category VARCHAR(50), 
 	low_stock_threshold_pct INTEGER, 
+	material_number VARCHAR(64), 
 	cost_per_kg FLOAT, 
 	storage_location VARCHAR(255), 
 	location_id INTEGER, 
@@ -1426,6 +1455,19 @@ CREATE TABLE spool_k_profile (
 	PRIMARY KEY (id), 
 	FOREIGN KEY(spool_id) REFERENCES spool (id) ON DELETE CASCADE, 
 	FOREIGN KEY(printer_id) REFERENCES printers (id) ON DELETE CASCADE
+);
+CREATE TABLE spool_suppliers (
+	id INTEGER NOT NULL, 
+	spool_id INTEGER NOT NULL, 
+	supplier_id INTEGER NOT NULL, 
+	supplier_article_number VARCHAR(100), 
+	quoted_price_per_kg FLOAT, 
+	is_purchase_source BOOLEAN NOT NULL, 
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	PRIMARY KEY (id), 
+	CONSTRAINT uq_spool_suppliers_spool_supplier UNIQUE (spool_id, supplier_id), 
+	FOREIGN KEY(spool_id) REFERENCES spool (id) ON DELETE CASCADE, 
+	FOREIGN KEY(supplier_id) REFERENCES suppliers (id)
 );
 CREATE TABLE spool_usage_history (
 	id INTEGER NOT NULL, 
@@ -1516,6 +1558,43 @@ CREATE TABLE spoolman_slot_assignments (
 	CONSTRAINT ck_tray_id_range CHECK (tray_id >= 0 AND tray_id <= 3), 
 	FOREIGN KEY(printer_id) REFERENCES printers (id) ON DELETE CASCADE
 );
+CREATE TABLE spoolman_spool_suppliers (
+	id INTEGER NOT NULL, 
+	spoolman_spool_id INTEGER NOT NULL, 
+	supplier_id INTEGER NOT NULL, 
+	supplier_article_number VARCHAR(100), 
+	quoted_price_per_kg FLOAT, 
+	is_purchase_source BOOLEAN NOT NULL, 
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	PRIMARY KEY (id), 
+	CONSTRAINT uq_spoolman_spool_suppliers_pair UNIQUE (spoolman_spool_id, supplier_id), 
+	FOREIGN KEY(supplier_id) REFERENCES suppliers (id)
+);
+CREATE TABLE suppliers (
+	id INTEGER NOT NULL, 
+	name VARCHAR(200) NOT NULL, 
+	name_key VARCHAR(200) NOT NULL, 
+	website VARCHAR(500), 
+	customer_number VARCHAR(100), 
+	note VARCHAR(500), 
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	PRIMARY KEY (id)
+);
+CREATE TABLE telegram_pending_verdicts (
+	id INTEGER NOT NULL, 
+	provider_id INTEGER NOT NULL, 
+	chat_id VARCHAR(64) NOT NULL, 
+	message_id INTEGER NOT NULL, 
+	archive_id INTEGER NOT NULL, 
+	confirm_token VARCHAR(64), 
+	has_caption BOOLEAN, 
+	message_text TEXT, 
+	created_at DATETIME, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(provider_id) REFERENCES notification_providers (id) ON DELETE CASCADE, 
+	FOREIGN KEY(archive_id) REFERENCES print_archives (id) ON DELETE CASCADE
+);
 CREATE TABLE user_email_preferences (
 	id INTEGER NOT NULL, 
 	user_id INTEGER NOT NULL, 
@@ -1534,6 +1613,18 @@ CREATE TABLE user_groups (
 	PRIMARY KEY (user_id, group_id), 
 	FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE CASCADE, 
 	FOREIGN KEY(group_id) REFERENCES groups (id) ON DELETE CASCADE
+);
+CREATE TABLE user_inbox_preferences (
+	id INTEGER NOT NULL, 
+	user_id INTEGER NOT NULL, 
+	kinds_json JSON NOT NULL, 
+	sound_kinds_json JSON NOT NULL, 
+	auto_watch BOOLEAN NOT NULL, 
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	PRIMARY KEY (id), 
+	UNIQUE (user_id), 
+	FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE CASCADE
 );
 CREATE TABLE user_oidc_links (
 	id INTEGER NOT NULL, 
