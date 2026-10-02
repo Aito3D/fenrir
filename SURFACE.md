@@ -1853,6 +1853,7 @@ os.environ.get("AITO_TRACK_COLLAPSED_PROXY"
 1 export function Panel
 1 export function PanelAgeStat
 1 export function PanelCard
+1 export function PanelMenuModals
 1 export function PanelReveal
 1 export function PanelTabs
 1 export function parseAmount
@@ -1973,6 +1974,7 @@ os.environ.get("AITO_TRACK_COLLAPSED_PROXY"
 1 export function useClientRating
 1 export function useContactFields
 1 export function useCopiedFlash
+1 export function useDescriptionEditor
 1 export function usePrintBlob
 1 export function useProjectPatchMutation
 1 export function useStatsFormat

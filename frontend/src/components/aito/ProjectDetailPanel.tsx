@@ -1,13 +1,11 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Building2, Check, Copy, ExternalLink, Eye, History, Loader2, Lock, Mail, Pencil, Phone, Plane, RefreshCw, User } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { DuplicateReplaceConfirm } from './DuplicateReplaceConfirm';
-import { MergeProjectModal } from './MergeProjectModal';
-import { TaskTransferModal } from './TaskTransferModal';
-import { TransferClientModal } from './TransferClientModal';
-import { WatchModal } from './WatchModal';
+import { PanelMenuModals } from './PanelMenuModals';
+import { useDescriptionEditor } from './useDescriptionEditor';
 import { useCardActions } from './useCardActions';
 import { ProjectActionsMenu } from './ProjectActionsMenu';
 import { TrashConfirmModal } from './TrashConfirmModal';
@@ -56,7 +54,7 @@ import { useLatestProjectEvent } from '../../hooks/useLatestProjectEvent';
 import { usePanelTab } from '../../hooks/usePanelTab';
 import { useProjectTasks } from '../../hooks/useProjectTasks';
 import { useDuplicateProject } from '../../hooks/useDuplicateProject';
-import { api, ApiError, type AitoEvent, type AitoProject, type AitoProjectUpdate } from '../../api/client';
+import { api, type AitoEvent, type AitoProject, type AitoProjectUpdate } from '../../api/client';
 import { Money } from '../calculator/shared';
 import { ageAnchor, agingColorCls } from '../../utils/aitoAging';
 import { isFinished } from '../../utils/aitoBoard';
@@ -66,7 +64,6 @@ import { formatMoney } from '../../utils/pricing';
 import { applyDescription, applySyncState, replaceProject } from '../../utils/aitoOptimistic';
 import { contactNameStandsOut, formatPhoneDisplay, isSocialNetwork } from '../../utils/clientDraft';
 import { islandLabel } from '../../utils/shippingDraft';
-import { taskDraftToTaskCreate } from '../../utils/taskDraft';
 import { focusRingCls, inputCls } from '../formStyles';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
@@ -108,10 +105,47 @@ interface ProjectDetailPanelProps {
   onOpenCard?: (id: number) => void;
 }
 
-// 'leaving' is the last 150ms of 'saved': the acknowledgement faded in, so
-// it fades out on the same beat (.animate-fade-out-sm) rather than vanishing
-// between two frames when its timer fires.
-type SaveState = 'idle' | 'saving' | 'saved' | 'leaving';
+// Owned by the description editor — see useDescriptionEditor's own doc.
+type SaveState = ReturnType<typeof useDescriptionEditor>['descState'];
+
+/** The open flags for the dialogs the Stage card's ⋯ menu opens. Plain state
+ *  in the panel (a hook, not a child component), so the flags live exactly as
+ *  long as the panel and survive the menu that set them. */
+function usePanelMenuModals() {
+  const [merging, setMerging] = useState(false);
+  const [transferringClient, setTransferringClient] = useState(false);
+  const [watchOpen, setWatchOpen] = useState(false);
+  const [transferMode, setTransferMode] = useState<'split' | 'move' | null>(null);
+  const [trashing, setTrashing] = useState(false);
+  return {
+    merging,
+    setMerging,
+    transferringClient,
+    setTransferringClient,
+    watchOpen,
+    setWatchOpen,
+    transferMode,
+    setTransferMode,
+    trashing,
+    setTrashing,
+  };
+}
+
+/** Whether the signed-in user watches this card, for the header's eye and the
+ *  menu's Watch row. Also hands back `user`, which the presence filter reads. */
+function useProjectWatch(projectId: number) {
+  const { user, authEnabled } = useAuth();
+  // Per user: with auth off there is nobody to watch for (the server answers
+  // `watching: false` anyway), so the request is not worth making.
+  const watchAvailable = authEnabled && !!user;
+  const watchQuery = useQuery({
+    queryKey: ['aito-watch', projectId],
+    queryFn: () => api.getAitoWatch(projectId),
+    enabled: watchAvailable,
+  });
+  const watching = watchQuery.data?.watching ?? false;
+  return { user, watchAvailable, watching };
+}
 
 /** A contact detail that copies itself.
  *
@@ -894,11 +928,9 @@ export function ProjectDetailPanel({
   // The dialogs the Stage card's ⋯ menu opens. The menu decides which of its
   // rows are usable (see ProjectActionsMenu's `rows`); the panel only owns
   // what each row opens, so a dialog outlives the menu that launched it.
-  const [merging, setMerging] = useState(false);
-  const [transferringClient, setTransferringClient] = useState(false);
-  const [watchOpen, setWatchOpen] = useState(false);
-  const [transferMode, setTransferMode] = useState<'split' | 'move' | null>(null);
-  const [trashing, setTrashing] = useState(false);
+  const menuModals = usePanelMenuModals();
+  const { merging, setMerging, transferringClient, setTransferringClient, watchOpen, setWatchOpen } = menuModals;
+  const { transferMode, setTransferMode, trashing, setTrashing } = menuModals;
   // Same seed path the Record card's Duplicate button used before it moved
   // into the menu; the hook is inert until `start()`, and its queries share
   // keys this panel already holds.
@@ -1068,129 +1100,27 @@ export function ProjectDetailPanel({
   // rather than let the operator start a charge Heimdall can never process.
   const heimdallConfigured = Boolean(settingsQuery.data?.heimdall_base_url);
 
-  const [editingDesc, setEditingDesc] = useState(false);
-  const [draft, setDraft] = useState(project.description);
-  // Six lines at rest, the whole text on request. The left column is the
-  // panel's shortest now that the reference cards sit behind a tab, and a
-  // long description is the one thing that can still make it outgrow the
-  // task list. Overflow is measured, not guessed from a character count:
-  // the clamp is CSS, so only the element knows whether it clipped anything.
-  const [descExpanded, setDescExpanded] = useState(false);
-  const [descOverflows, setDescOverflows] = useState(false);
-  const descRef = useRef<HTMLParagraphElement>(null);
-  useLayoutEffect(() => {
-    // Measured while clamped only: once expanded there is nothing to clip,
-    // and the "Show less" affordance keeps the answer from the last clamp.
-    if (editingDesc || descExpanded) return;
-    const el = descRef.current;
-    if (el) setDescOverflows(el.scrollHeight > el.clientHeight);
-  }, [project.description, editingDesc, descExpanded]);
-  const [descState, setDescState] = useState<SaveState>('idle');
-
-  // The version this edit session is BASED ON, captured once when the
-  // textarea opens (see the two `setEditingDesc(true)` call sites below) —
-  // see useProjectPatchMutation's doc for why this beats re-reading
-  // `project.version` at save time. `undefined` means "no session-captured
-  // version" and falls back to the pre-existing latestProjectVersion
-  // behaviour — used for the regenerate action below (never opens the
-  // textarea) and for a retry after THIS session's own save already failed
-  // once (cleared in `saveDescription`'s `onError`, so a second attempt does
-  // not keep re-fighting the same now-stale capture forever).
-  const descEditVersionRef = useRef<number | undefined>(undefined);
-
-  // Shared by the paragraph's click and keyboard (Enter/Space) activation
-  // below — one place that captures the session's version, not two copies
-  // that could drift.
-  const beginEditDescription = () => {
-    descEditVersionRef.current = project.version;
-    setEditingDesc(true);
-  };
-
-  // Follow the server value while idle; never clobber text being typed.
-  useEffect(() => {
-    if (!editingDesc) setDraft(project.description);
-  }, [project.description, editingDesc]);
-
-  // 'saved' is a transient acknowledgement, not a state to sit in: 1500ms,
-  // then the 150ms exit fade ('leaving', matching .animate-fade-out-sm), then
-  // gone.
-  useEffect(() => {
-    if (descState !== 'saved' && descState !== 'leaving') return;
-    const id = setTimeout(
-      () => setDescState(descState === 'saved' ? 'leaving' : 'idle'),
-      descState === 'saved' ? 1500 : 150,
-    );
-    return () => clearTimeout(id);
-  }, [descState]);
-
-  const saveDescription = () => {
-    setEditingDesc(false);
-    const next = draft.trim();
-    // Blank is rejected by the backend (min_length=1) and is almost always an
-    // accidental select-all-delete, so revert rather than round-trip an error.
-    if (!next || next === project.description) {
-      setDraft(project.description);
-      return;
-    }
-    setDescState('saving');
-    markExternalWrite();
-    updateMutation.mutate(
-      { description: next, expected_version: descEditVersionRef.current },
-      {
-        onSuccess: () => setDescState('saved'),
-        onError: (error) => {
-          setDescState('idle');
-          // A retry (of any failure, not just a conflict) should not keep
-          // resending this session's now-stale capture — see the ref's own
-          // doc.
-          descEditVersionRef.current = undefined;
-          // The spec's error-handling table promises the operator's typed
-          // text survives a version conflict (someone else saved first):
-          // reopen the editor with exactly what they typed rather than the
-          // revert-to-server behaviour every other failure gets, so a retry
-          // after the board refresh doesn't cost them the edit. `next`, not
-          // `draft` — `draft` may already have been reset to the (now
-          // stale) `project.description` by the effect above, which fires
-          // the instant `setEditingDesc(false)` above lands.
-          if (error instanceof ApiError && error.code === 'version_conflict') {
-            setDraft(next);
-            setEditingDesc(true);
-            return;
-          }
-          setDraft(project.description);
-        },
-      },
-    );
-  };
-
-  // Regenerates the description from the live tasks through the same
-  // stateless /aito/summarize endpoint the creation drawer uses, then saves
-  // immediately through the manual-edit path so the descState indicator and
-  // the optimistic board update behave identically. A failed generation only
-  // toasts — unlike the drawer, this panel always has a real description, and
-  // buildFallbackSummary would replace it with a worse one.
-  const regenerateMutation = useMutation({
-    mutationFn: () => api.summarizeAitoProject(tasks.map(taskDraftToTaskCreate)),
-    onSuccess: ({ summary }) => {
-      const next = summary.trim();
-      if (!next || next === project.description) {
-        setDescState('saved');
-        return;
-      }
-      setDescState('saving');
-      markExternalWrite();
-      updateMutation.mutate(
-        { description: next },
-        {
-          onSuccess: () => setDescState('saved'),
-          onError: () => {
-            setDescState('idle');
-            setDraft(project.description);
-          },
-        },
-      );
-    },
-    onError: () => showToast(t('aito.summaryFallback'), 'error'),
+  // The description card's editor: draft, edit session, clamp measurement,
+  // save indicator and the regenerate action — see the hook's own doc.
+  const {
+    editingDesc,
+    setEditingDesc,
+    draft,
+    setDraft,
+    descExpanded,
+    setDescExpanded,
+    descOverflows,
+    descRef,
+    descState,
+    beginEditDescription,
+    saveDescription,
+    regenerateMutation,
+  } = useDescriptionEditor({
+    project,
+    tasks,
+    updateMutation,
+    markExternalWrite,
+    onRegenerateError: () => showToast(t('aito.summaryFallback'), 'error'),
   });
 
   const editingRef = useRef(false);
@@ -1215,16 +1145,7 @@ export function ProjectDetailPanel({
     return () => sendAitoPresence(null);
   }, [project.id]);
 
-  const { user, authEnabled } = useAuth();
-  // Per user: with auth off there is nobody to watch for (the server answers
-  // `watching: false` anyway), so the request is not worth making.
-  const watchAvailable = authEnabled && !!user;
-  const watchQuery = useQuery({
-    queryKey: ['aito-watch', project.id],
-    queryFn: () => api.getAitoWatch(project.id),
-    enabled: watchAvailable,
-  });
-  const watching = watchQuery.data?.watching ?? false;
+  const { user, watchAvailable, watching } = useProjectWatch(project.id);
   const otherViewers = useAitoViewers(project.id).filter((name) => name !== (user?.username ?? ''));
   const cardActions = useCardActions(project, tasks, currency, canUpdate);
 
@@ -1293,30 +1214,14 @@ export function ProjectDetailPanel({
             />
           )}
         </div>
-        {merging && <MergeProjectModal project={project} onClose={() => setMerging(false)} />}
-        {/* The new client reaches the header through the board cache the
-            modal writes on success — nothing to hand back here. */}
-        {transferringClient && (
-          <TransferClientModal project={project} onClose={() => setTransferringClient(false)} />
-        )}
-        {watchOpen && <WatchModal project={project} onClose={() => setWatchOpen(false)} />}
-        {transferMode && (
-          <TaskTransferModal
-            project={project}
-            tasks={tasks}
-            mode={transferMode}
-            // A row still being created, or an edit not yet saved (debounced or in flight).
-            savesPending={pendingTaskUids.size > 0 || hasPendingSaves}
-            onClose={() => setTransferMode(null)}
-            onDone={({ target }) => {
-              // A split hands the operator the card it just made (the host
-              // swaps the panel to it); a move keeps them on this one, where
-              // the task list's resync drops the rows that left.
-              setTransferMode(null);
-              if (transferMode === 'split') onOpenCard?.(target.id);
-            }}
-          />
-        )}
+        <PanelMenuModals
+          project={project}
+          modals={menuModals}
+          tasks={tasks}
+          // A row still being created, or an edit not yet saved (debounced or in flight).
+          savesPending={pendingTaskUids.size > 0 || hasPendingSaves}
+          onOpenCard={onOpenCard}
+        />
         {duplicate.confirming && (
           <DuplicateReplaceConfirm onConfirm={duplicate.confirmReplace} onCancel={duplicate.cancelReplace} />
         )}

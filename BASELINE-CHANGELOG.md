@@ -476,3 +476,28 @@ attribute, data-testid and i18n key is the same. No locale changes.
 
 - SURFACE.md sections regenerated: "Frontend exported symbols" (+1 line, additions only).
 - Golden probes re-recorded: none (35/35 match).
+
+## 2026-10-01 — campaign 23, T-112: additive internal exports PanelMenuModals, useDescriptionEditor (sanctioned re-baseline, not a behavior change)
+
+Sanctions commit <this commit> "refactor(loop-5): T-112 move the detail panel's
+menu-modal state, description editor and watch query into hooks". The
+description card's editor state (draft, edit session and its captured version,
+clamp measurement, save indicator, regenerate mutation, and their layout
+effect and two effects) moved verbatim into the new hook
+`frontend/src/components/aito/useDescriptionEditor.ts`, called at the exact
+position the block occupied, so hook and effect order are unchanged. The four
+⋯-menu dialogs (merge, client transfer, watch, split/move) now render through
+the new pure component `frontend/src/components/aito/PanelMenuModals.tsx`; the
+five open flags stay in ProjectDetailPanel through a file-local
+`usePanelMenuModals` hook, and the watch query through a file-local
+`useProjectWatch`, both at their original positions — so every piece of state
+still lives and resets exactly as long as the panel does. The client edit /
+close animation state and the tabs were not touched. The panel's rendered DOM
+is unchanged: old and new versions were rendered side by side (settled, menu
+open, each dialog opened from the menu, trash confirm, watch with auth on and
+the "." shortcut, description edit start / Escape / blur-save) and their HTML
+compared byte for byte after normalising the global useId / dnd-kit id
+counters. No query keys, i18n keys or locale changes.
+
+- SURFACE.md sections regenerated: "Frontend exported symbols" (+2 lines, additions only).
+- Golden probes re-recorded: none (35/35 match).

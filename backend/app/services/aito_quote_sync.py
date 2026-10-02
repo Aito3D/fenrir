@@ -36,6 +36,7 @@ import contextlib
 import logging
 import math
 import time
+from dataclasses import dataclass
 from datetime import datetime
 
 from sqlalchemy import and_, case, or_, select, update
@@ -1551,6 +1552,27 @@ def _arm_rate_limit_throttle(e: ZohoRateLimited) -> None:
     _throttled_until = time.monotonic() + window
 
 
+@dataclass
+class _SyncAttempt:
+    """What ``sync_project`` snapshots about one project before touching it.
+
+    Every field but ``project`` is captured once at the top of
+    ``sync_project`` and never changes afterwards (see the comments there for
+    why each one must be a snapshot rather than a later read of the row).
+    ``project`` is the instance every later step and every exception handler
+    works on: ``_apply_deposit_trigger`` replaces it with the re-fetched row
+    after a successful retainer acceptance, exactly as the local variable used
+    to be rebound when all of this was one function.
+    """
+
+    project: AitoProject
+    project_id: int
+    already_in_error: bool
+    previous_sync_error: str | None
+    sync_failures_before: int
+    push_path: bool
+
+
 async def sync_project(
     db: AsyncSession,
     project: AitoProject,
@@ -1581,7 +1603,6 @@ async def sync_project(
     or otherwise, returns None (falsy), same as before this return value
     existed.
     """
-    global _throttled_until
     # Captured before anything below can touch the row, and read from these
     # locals everywhere a terminal branch or the comment-mirror recovery code
     # needs "was this already the state before this attempt" -- never by
@@ -1608,6 +1629,14 @@ async def sync_project(
     # and every terminal handler rolls back first). The id cannot change for
     # an already-persisted row, so a snapshot taken here is always accurate.
     project_id = project.id
+    attempt = _SyncAttempt(
+        project=project,
+        project_id=project_id,
+        already_in_error=already_in_error,
+        previous_sync_error=previous_sync_error,
+        sync_failures_before=sync_failures_before,
+        push_path=push_path,
+    )
     try:
         # Swept, not pending: reconcile status and nothing else. Emphatically
         # NOT _update_quote, which rebuilds the entire line_items array —
@@ -1624,375 +1653,15 @@ async def sync_project(
         # `not project.quote_id` branch below and retry the CREATE instead,
         # exactly like a fresh 'pending' project with no quote yet.
         if project.quote_sync_state != "pending" and project.quote_id is not None:
-            estimate = await zoho_service.get_estimate(db, project.quote_id)
-            # T-028: a read that reaches this point succeeded — Books is
-            # reachable, so any throttle recorded by a past ZohoRateLimited is
-            # stale. Same "a successful call clears the memo" shape as
-            # zoho._shipping_fail_at being cleared on a successful refresh.
-            _throttled_until = None
-            if _is_locked(estimate):
-                # Re-checked here from the estimate already in hand, not
-                # trusted from whatever quote_sync_state this project last
-                # settled into. Remembered state alone would miss an estimate
-                # invoiced in Books since the last pending sync: it would
-                # still read e.g. 'idle' and get a status POSTed onto it —
-                # exactly the write the exclusion list on run_sync_once's
-                # SELECT calls out as "no safer than a line-item write". No
-                # extra API call: this reuses the read the sweep already did.
-                #
-                # Deliberately NOT mirroring _update_quote's own lock branch
-                # any further than the state flip: that branch is reachable
-                # at most once, only from the pending path, before the
-                # project settles into 'idle' or stays 'pending' — adopting
-                # Books' status there is a one-time snapshot. This branch
-                # runs on EVERY quoted project EVERY tick, so adopting
-                # `estimate["status"]` here would silently replace a local
-                # DECIDED status (e.g. 'accepted') with whatever Books
-                # happens to report mid-invoicing (often still 'draft' or
-                # 'sent') on the very first sweep after the estimate is
-                # invoiced — which then feeds _apply_rules below and can move
-                # the card's board column too. Overwriting a board decision
-                # is exactly what this whole module exists to never do
-                # outside a deliberate push. Nothing is lost by leaving
-                # quote_status and quote_sync_error alone: 'locked' is
-                # excluded from every later sweep, so there is no ongoing
-                # status to keep in sync, and no error to clear away either.
-                # Sticky, same as _update_quote's lock branch above: Books
-                # does not practically un-invoice.
-                #
-                # quote_status and quote_sync_error are deliberately left
-                # alone (above), but a recorded block is neither: 'locked'
-                # leaves the sweep for good, so a block kept here would render
-                # "Books refused to change this quote to ..." beside "Quote
-                # invoiced" forever, describing a push this module will never
-                # attempt again.
-                #
-                # (The state flip described above is unconditional inside
-                # `_lock_project` itself; the invoiced stamp, block clear and
-                # failure reset described above are its invoiced=/clear_block=/
-                # reset_failures= kwargs below -- each used to be its own
-                # assignment here before `_lock_project` consolidated all four
-                # lock sites into one helper. The rationale above still applies
-                # unchanged to each of them.)
-                await _lock_project(db, project, project_id, invoiced=True, clear_block=True, reset_failures=True)
-                return
-            await reconcile_quote_status(db, project, estimate)
-            await _follow_customer(db, project, estimate)
-
-            # The estimate's own total, adopted from the read the reconcile
-            # above already paid for. Before this, `quote_total` was written
-            # ONLY by `_apply_estimate` — i.e. only on a push — so a quote
-            # whose price was edited in Books kept reporting the figure it had
-            # at our last push, for as long as nobody edited the project.
-            #
-            # Guarded on the key being present rather than coerced with
-            # `or 0` the way `_apply_estimate` does it. That coercion is right
-            # there and wrong here: it reads back the response to a write it
-            # just made, where an absent total genuinely means "this quote has
-            # no lines". This reads an estimate that already exists, so a
-            # partial payload would zero a real quote's total instead.
-            #
-            # Done BEFORE Trigger B below on purpose: that block's money math
-            # must read the total Books just reported, never the stale cached
-            # figure from our last push — a total edited directly in Books
-            # would otherwise feed the auto-accept threshold from a value
-            # already known to be wrong.
-            if estimate.get("total") is not None:
-                project.quote_total = float(estimate["total"])
-
-            # Trigger B (spec §6.3): paid retainers that cover the required
-            # amount are the client's go-ahead. The estimate's own
-            # `retainerinvoices` list is read off the reconcile above — zero
-            # extra Books calls — and covers every deposit Books attached to
-            # the quote. Uses `project.quote_total` as just refreshed above,
-            # not a value from before this tick's read.
-            paid = _paid_retainer_total(estimate)
-            # The estimate's customer, not the row's client_id, for the same
-            # reason plan_invoice bills the estimate's customer.
-            customer_id = str(estimate.get("customer_id") or project.client_id or "")
-            needed = required_amount(project.quote_total, await deposit_pct(db))
-            # T-010 (loop-20, user-approved 2026-09-23): the attached list is
-            # NOT the whole story. A deposit taken at the counter (cash,
-            # cheque, terminal — aito_manual_payments) and every deposit
-            # Heimdall books for a paid link are raised as retainer invoices
-            # that carry the QUOTE NUMBER in `reference_number` and are never
-            # attached to the estimate (live DEV26-2684 / RET26-00295, see
-            # aito_invoice_sweep.linked_credits). Counting only the attached
-            # ones left `retainer_paid_total` at 0 for a fully paid deposit —
-            # so the online link stayed live and the public tracking page
-            # kept offering it, the panel's Encaissement block kept showing
-            # the money as due, and the card never auto-accepted. Same
-            # per-quote rule as the sweep's (`_same_reference`): a deposit
-            # for a SIBLING job of the same customer still counts for
-            # nothing here.
-            #
-            # Budget: one extra Books call per distinct customer per tick,
-            # memoed in `retainer_cache` exactly like `credit_cache` below,
-            # and skipped entirely when there is nothing to find — no deposit
-            # required, the attached retainers already cover it, or no quote
-            # number to match against. Best-effort: a Books hiccup leaves the
-            # attached-only figure in place (what this line computed before
-            # the fix), never a sync error; only a 429 escapes, for the same
-            # reason it does out of read_customer_credit below.
-            #
-            # T-046 (loop-21, user-approved 2026-09-26): that 429 is held, not
-            # raised on the spot. Raised here it skipped the credit read just
-            # below, so one throttled retainer listing left BOTH deposit
-            # figures stale for the tick. Now a throttled listing keeps the
-            # previously stored `retainer_paid_total` (a partial,
-            # attached-only figure is not written over it, and nothing below
-            # may auto-accept on it), the credit read still runs, and the
-            # held 429 is re-raised right after it — so sync_project's
-            # ZohoRateLimited handler, the tick's stand-down and the retry
-            # budget behave exactly as before.
-            retainer_throttle: ZohoRateLimited | None = None
-            if needed is not None and paid < needed and project.quote_number:
-                try:
-                    retainers = await _customer_retainers(db, customer_id, retainer_cache)
-                except ZohoRateLimited as e:
-                    retainer_throttle = e
-                else:
-                    if retainers:
-                        paid += _referenced_retainer_total(estimate, retainers, project.quote_number)
-            if retainer_throttle is None:
-                project.retainer_paid_total = paid
-            # Beside it, the CUSTOMER's unspent deposits — a different figure
-            # with a different meaning (see aito_customer_credit): what they
-            # still have on account across every retainer, quote-linked or
-            # raised by hand, which is what the panel shows as "deposit
-            # available". One extra Books call per customer per tick, memoed
-            # in `credit_cache`; best-effort, so None leaves the stored
-            # figure alone. Its own 429 propagates as always — unless the
-            # retainer listing's 429 is already held, which is then the one
-            # reported (the credit figure simply stays as stored).
-            try:
-                credit = await read_customer_credit(db, customer_id, credit_cache)
-            except ZohoRateLimited:
-                if retainer_throttle is None:
-                    raise
-                credit = None
-            if credit is not None:
-                project.customer_credit_total = credit
-            if retainer_throttle is not None:
-                raise retainer_throttle
-            if needed is not None and paid >= needed and project.quote_status != "accepted":
-                accepted = await accept_quote(
-                    db, project, source="retainer", detail={"amount": paid, "reference": project.quote_number}
-                )
-                if accepted:
-                    # `accept_quote`'s Books push is best-effort, and a FAILED
-                    # push rolls the session back — which expires every ORM
-                    # object it tracks, `project` included. The very next bare
-                    # attribute read (should_pull_comments, just below) would
-                    # then raise MissingGreenlet, get caught by sync_project's
-                    # catch-all, and flip the card to quote_sync_state='error'
-                    # for a tick in which the acceptance actually SUCCEEDED.
-                    # Re-fetch by id (an awaited load, so no lazy IO off the
-                    # greenlet) before anything reads the project again. A None
-                    # here means the row vanished under us — fall through with
-                    # what we have rather than inventing a failure.
-                    refreshed = await db.get(AitoProject, project_id)
-                    if refreshed is not None:
-                        project = refreshed
-
-            now = datetime.utcnow()
-            if should_pull_comments(project, estimate, now):
-                try:
-                    comments = await zoho_service.list_estimate_comments(db, project.quote_id)
-                    await mirror_comments(db, project, comments)
-                    project.zoho_comments_watermark = estimate.get("last_modified_time")
-                    project.zoho_comments_checked_at = now
-                except Exception:
-                    # The try covers the fetch AND mirror_comments AND the two
-                    # watermark writes, not just the network call. AitoEvent's
-                    # zoho_comment_id is a UNIQUE column, so mirror_comments'
-                    # own write path can raise (IntegrityError from two
-                    # overlapping ticks racing the same comment_id) just as
-                    # easily as the fetch can, and any other bug in the
-                    # mapping or write path deserves the same containment. A
-                    # failed comment pull must never fail the sync: the
-                    # line-item and status work above is what the board
-                    # depends on, and history that arrives one tick late costs
-                    # nothing. Anything that escaped this block would instead
-                    # reach sync_project's own outer catch-all below, which
-                    # flips quote_sync_state to 'error' and overwrites
-                    # quote_sync_error -- discarding this tick's
-                    # already-successful reconcile_quote_status result and
-                    # surfacing a misleading "sync error" for what is only a
-                    # history-mirroring problem. Keeping the watermark writes
-                    # inside the try is also what keeps them from advancing on
-                    # a tick where mirror_comments raised: an exception here
-                    # skips them, so the watermark still only moves once the
-                    # pull has fully succeeded.
-                    #
-                    # The rollback is the same containment as every terminal
-                    # handler below, and for the same reason: the IntegrityError
-                    # this block exists to catch leaves the session's
-                    # transaction aborted, and without an explicit rollback that
-                    # poisoning survives this block -- surfacing two ticks later
-                    # as _apply_rules or run_sync_once's own end-of-loop
-                    # db.commit() failing and getting logged as "failed to
-                    # commit project", which is the comment mirror's failure
-                    # wearing a misleading name. It does mean any of
-                    # reconcile_quote_status's writes still pending from just
-                    # above are discarded along with the failed mirror attempt
-                    # -- accepted here the same way a missed tick is accepted
-                    # everywhere else in this module: the next sweep reconciles
-                    # status again from scratch and costs nothing by being a
-                    # tick late.
-                    await _rollback_after_terminal_failure(db)
-                    logger.warning("Aito comment mirror failed for project %s", project_id, exc_info=True)
-
-            # A read that reaches this point succeeded, whatever
-            # reconcile_quote_status went on to do with it — proof Books is
-            # reachable right now. Reset the failure counter so a run of past
-            # transient outages does not keep accumulating toward
-            # SYNC_FAILURE_LIMIT and eventually strand an otherwise-healthy
-            # project in 'error' with no way back except a user edit (I2).
-            #
-            # A counter still AT the limit is a stored fact identifying the
-            # error below as sync_project's own ZohoUpstreamError escalation
-            # and nothing else. That holds because EVERY other path that sets
-            # 'error' resets this counter to 0 in the same breath — the
-            # no-priced-service guards in _create_quote/_update_quote, the
-            # missing-maindoeuvre-description guards in the same two
-            # functions, and all four terminal exception handlers below
-            # (ZohoRequestRejected, ZohoAmbiguousReferenceError, ZohoNotFound
-            # and the catch-all).
-            # Keep that true if you ever add another: an 'error' that inherits
-            # a count it did not earn would have its diagnostic erased here by
-            # the next successful read. The ZohoUpstreamError handler for its
-            # part always overwrites quote_sync_error with its own message
-            # when it increments, so the message cleared here is guaranteed to
-            # be the one that handler wrote — no other subsystem's diagnostic
-            # can be destroyed, and no string has to be inspected to know it.
-            #
-            # Read from the snapshot taken at the top of this function, not
-            # from `project` directly: the comment-mirror block just above can
-            # have rolled the session back (see _rollback_after_terminal_failure),
-            # which expires every attribute, and a bare read here would be the
-            # same async-unsafe lazy reload that helper's own docstring warns
-            # against. Neither column changes between that snapshot and here on
-            # any path that reaches this line, so it is still accurate.
-            if already_in_error and sync_failures_before >= SYNC_FAILURE_LIMIT:
-                # A card that still owes Books its customer (a transfer whose
-                # push escalated) goes back to pending so the push is retried;
-                # settling it idle would let the next sweep follow Books back
-                # to the old customer.
-                project.quote_sync_state = "pending" if project.client_push_pending else "idle"
-                project.quote_sync_error = None
-            project.quote_sync_failures = 0
+            await _sync_reconcile(db, attempt, credit_cache, retainer_cache)
             return
-        if not project.quote_id:
-            if project.status == "deleted":
-                # Trashed before it was ever quoted. Nothing to create, nothing
-                # to decline; drop it from the queue without a Zoho call.
-                #
-                # Deliberately 'idle', NOT 'unmanaged': this project WAS
-                # created (and marked pending) by this feature — it just
-                # never got as far as a quote before being trashed. 'idle'
-                # carries no special meaning to the ownership guard
-                # (routes/aito.py:_mark_pending_if_ours checks only for
-                # 'unmanaged'), so restoring — or any later edit — re-enqueues
-                # it normally. 'unmanaged' is reserved exclusively for
-                # legacy/imported cards this feature must never touch again
-                # (see import_legacy_projects); using it here too would make
-                # this project indistinguishable from one of those and
-                # permanently block it from ever being marked pending again —
-                # which is exactly Critical 1's bug (a trashed, never-quoted
-                # project going 'idle' under the OLD, inferred-ownership
-                # guard), reproduced under a new name instead of fixed.
-                project.quote_sync_state = "idle"
-                # Same hygiene as the pop below on the normal-return path:
-                # this tick never reached _create_quote/_update_quote, so
-                # that pop never ran, and a stale deferral reason from before
-                # the project was trashed would otherwise sit in the dict
-                # forever. Safe for the same reason as everywhere else this
-                # dict is touched -- it only gates the log line in the
-                # ShippingCatalogueUnavailable handler below, never a DB
-                # write -- so if this project is later restored and defers
-                # again, it just logs once fresh instead of staying
-                # suppressed by a reason that belongs to before the trash.
-                _deferred_reasons.pop(project_id, None)
-                return
-            await _create_quote(db, project)
-            if project.quote_id is not None and project.quote_sync_state == "pending":
-                # _create_quote found and adopted an orphan (a POST that
-                # reached Books but whose response or commit never landed):
-                # identity only, lines unverified — see its own comment. Or
-                # _apply_estimate's requeue guard saw an edit land mid-POST.
-                # Either way the card now shows a quote number with the
-                # print button disabled, and "the next tick" is up to a poll
-                # interval away while the operator waits at the printer.
-                # Finish the job in this same pass: the exact call the next
-                # tick would have made, with a failure handled exactly as one
-                # there would be.
-                await _update_quote(db, project)
-        else:
-            await _update_quote(db, project)
-        # Reached only when _create_quote/_update_quote returned WITHOUT
-        # raising ShippingCatalogueUnavailable — this tick's push (or one of
-        # their own terminal-error branches) completed normally. Drop any
-        # stale deferral memory for this project so a later recurrence of the
-        # same reason logs afresh rather than staying suppressed forever by a
-        # dict entry from before whatever changed.
-        _deferred_reasons.pop(project_id, None)
-        # T-028: same "reached without a 429" signal as the reconcile branch's
-        # own clear above.
-        _throttled_until = None
+        await _sync_push(db, project, project_id)
     except ZohoNotConfiguredError:
         # Not a failure: sync is simply off. Leave the project pending so it
         # syncs the moment credentials are entered.
         return
     except ShippingCatalogueUnavailable as e:
-        # Not an error state: nothing is wrong with the project, the catalogue
-        # simply has not resolved yet. Stay `pending` and retry next tick
-        # rather than burning a failure and eventually going to 'error' — see
-        # the exception's own docstring, and Catalogue.shipping_item_id's, for
-        # why a terminal state here would be the opposite of what this
-        # situation calls for.
-        #
-        # get_catalogue's own shipping read is always refresh=False (see the
-        # comment above that call), so it is never what warms the cache. The
-        # drawer's GET /aito/shipping/services endpoint (Task 7) warms it on
-        # the happy path — it is the only other refresh=True caller now that
-        # the board list's `_shipping_names` (aito.py) reads cache-only, since
-        # a display name never needs a fresh rate. But that endpoint only
-        # runs when someone has the drawer open. For a project that gained
-        # shipping without going through it (an importer path, a wiped
-        # settings row, first boot with Books down), nothing else would ever
-        # fetch a resolution. Warm it here too, once, so the NEXT tick has a
-        # chance even if this one still has to defer.
-        message = str(e)
-        # Logged only on the tick this exact deferral reason first appears,
-        # via _deferred_reasons rather than any column on the project. This is
-        # log-spam suppression, not a fact about the row, so a permanently
-        # unresolvable service (e.g. Books' catalogue item was renamed) logs
-        # once per process instead of one WARNING per tick forever — and
-        # project.quote_sync_error is left untouched: a deferral is not an
-        # error and must leave no trace on the row (see _deferred_reasons'
-        # own comment for why this is deliberately NOT the same pattern as
-        # the sync.failed handlers below, which do own that column).
-        if _deferred_reasons.get(project_id) != message:
-            logger.warning("Aito project %s deferred: %s", project_id, e)
-            _deferred_reasons[project_id] = message
-        try:
-            await zoho_service.get_shipping_catalogue(db, refresh=True)
-        except Exception:
-            # Best-effort, and must stay that way: get_shipping_catalogue
-            # already swallows ZohoNotConfiguredError/ZohoUpstreamError from
-            # its own list_items call (see its docstring), but a DB error
-            # from its get_setting/set_setting calls, or a bug in
-            # merge_shipping_catalogue on a pathological /items payload,
-            # would otherwise escape uncaught. Because this call sits INSIDE
-            # an except block, no sibling handler in this same function would
-            # catch that — it would escape sync_project entirely, breaking
-            # its own "never raises" promise, and since run_sync_once calls
-            # sync_project outside its own try, it would abort the whole tick
-            # for every project still left in the batch. A failed warm-up
-            # changes nothing about this tick's outcome: the project was
-            # already deferring, and next tick tries the warm-up again.
-            logger.warning("Aito shipping catalogue warm-up failed for project %s", project_id, exc_info=True)
+        await _defer_on_catalogue(db, project_id, e)
         return
     except ZohoRequestRejected as e:
         # Books rejected the payload. Retrying an identical body cannot help.
@@ -2002,7 +1671,7 @@ async def sync_project(
         # here -- the exception just caught can itself be a failed flush, and
         # _terminal_error's own rollback can expire the object's attributes
         # before this handler ever runs (see its docstring).
-        await _terminal_error(db, project, project_id, str(e), already_in_error, previous_sync_error)
+        await _terminal_error(db, attempt.project, project_id, str(e), already_in_error, previous_sync_error)
     except ZohoAmbiguousReferenceError as e:
         # find_estimate_by_reference found more than one plausible match, or
         # the lone survivor belongs to a different customer. Like a rejected
@@ -2010,89 +1679,21 @@ async def sync_project(
         # a human to sort out the duplicate/mismatched estimate in Books —
         # and it must never be treated as "create anyway", which is exactly
         # how a real customer's estimate would get adopted and overwritten.
-        await _terminal_error(db, project, project_id, str(e), already_in_error, previous_sync_error)
+        await _terminal_error(db, attempt.project, project_id, str(e), already_in_error, previous_sync_error)
     except ZohoNotFound:
         await _terminal_error(
             db,
-            project,
+            attempt.project,
             project_id,
             "The quote no longer exists in Zoho Books",
             already_in_error,
             previous_sync_error,
         )
     except ZohoRateLimited as e:
-        # Books is throttling this org (HTTP 429). Like
-        # ShippingCatalogueUnavailable above, this is not evidence anything
-        # is wrong with the project or its data -- retrying the identical
-        # request will simply work once the window clears -- so it must not
-        # spend a slot of SYNC_FAILURE_LIMIT's retry budget the way the plain
-        # ZohoUpstreamError handler just below does. Stay `pending`, leave
-        # quote_sync_error and quote_sync_failures exactly as they were, and
-        # tell run_sync_once (via the return value) to stop attempting the
-        # rest of this tick's projects rather than turning one throttled call
-        # into one-per-remaining-card, deepening it further.
-        #
-        # Reuses _deferred_reasons the same way the ShippingCatalogueUnavailable
-        # handler does: log-spam suppression only, no DB write, so a
-        # sustained throttle logs once per process instead of once per tick.
-        message = str(e)
-        if _deferred_reasons.get(project_id) != message:
-            logger.warning("Aito project %s deferred (Zoho Books rate limit): %s", project_id, e)
-            _deferred_reasons[project_id] = message
-        # T-028: remember when background reads may resume, so the sweep and
-        # the change pass skip straight past a still-throttled window instead
-        # of spending more requests on an org that just said back off — see
-        # ``_throttled_until``'s own module-level comment for why this is
-        # process-local and shaped like ``zoho._shipping_fail_at``.
-        if push_path:
-            # A push somebody may be waiting on: the hold armed below stops
-            # background reads only, and the loop retries this card on the
-            # fast schedule exactly as it does after a timeout.
-            _note_transient_push_failure()
-        _arm_rate_limit_throttle(e)
+        _defer_on_rate_limit(project_id, e, push_path)
         return True
     except ZohoUpstreamError as e:
-        # Below the limit, this is a plain in-memory write, no flush -- so
-        # there is nothing here for a poisoned session to break, and no
-        # rollback is needed unless the escalation branch below is taken.
-        #
-        # A fast retry (see FAST_RETRY_DELAYS) records the message but not
-        # the failure: the budget counts ticks, not the extra tries squeezed
-        # in between them.
-        failures = sync_failures_before if fast_retry else sync_failures_before + 1
-        project.quote_sync_failures = failures
-        project.quote_sync_error = str(e)
-        if push_path and failures < SYNC_FAILURE_LIMIT:
-            # Still pending, and for a reason a retry in a few seconds can
-            # fix. The loop reads this right after the drain.
-            _note_transient_push_failure()
-        if failures >= SYNC_FAILURE_LIMIT:
-            await _rollback_after_terminal_failure(db)
-            project.quote_sync_failures = failures
-            project.quote_sync_error = str(e)
-            project.quote_sync_state = "error"
-            # Recorded only once the retry budget is actually spent, AND only
-            # on the tick that first spends it (or whose message genuinely
-            # changes): every tick below the limit is a transient blip
-            # _apply_estimate's own caller will simply retry, and — this is
-            # the bug this guard fixes — an escalated project stays selected
-            # by the sweep for as long as Books stays down (the escalation
-            # does not stop it being polled, see the module-level comment on
-            # SYNC_FAILURE_LIMIT), so without the guard a single outage wrote
-            # one row per 300s tick for its entire duration instead of the one
-            # row that matters: the moment this project actually stopped
-            # retrying and surfaced on the card.
-            if not already_in_error or previous_sync_error != project.quote_sync_error:
-                await record(
-                    db,
-                    project_id,
-                    "sync.failed",
-                    actor_class="system",
-                    subject_type="project",
-                    subject_id=project_id,
-                    detail={"error": project.quote_sync_error, "failures": project.quote_sync_failures},
-                )
-        logger.warning("Aito quote sync failed for project %s: %s", project_id, e)
+        await _escalate(db, attempt, e, fast_retry=fast_retry)
     except Exception as e:
         # Anything not already handled above: a DB error, a bug in
         # build_line_items, an AttributeError on unexpected Zoho data. The
@@ -2121,13 +1722,505 @@ async def sync_project(
         # detail stays in the logger.exception call below.
         await _terminal_error(
             db,
-            project,
+            attempt.project,
             project_id,
             f"Unexpected sync error ({e.__class__.__name__})",
             already_in_error,
             previous_sync_error,
         )
         logger.exception("Aito quote sync hit an unexpected error for project %s", project_id)
+
+
+async def _sync_reconcile(
+    db: AsyncSession,
+    attempt: _SyncAttempt,
+    credit_cache: dict[str, float] | None,
+    retainer_cache: dict[str, list[dict]] | None,
+) -> None:
+    """``sync_project``'s swept route: a project already quoted and not pending.
+
+    Reads the estimate and reconciles status, customer, total, deposits and
+    comments from it -- never a line-item write. Exceptions propagate to
+    ``sync_project``'s handlers unchanged.
+    """
+    global _throttled_until
+    project = attempt.project
+    project_id = attempt.project_id
+    estimate = await zoho_service.get_estimate(db, project.quote_id)
+    # T-028: a read that reaches this point succeeded — Books is
+    # reachable, so any throttle recorded by a past ZohoRateLimited is
+    # stale. Same "a successful call clears the memo" shape as
+    # zoho._shipping_fail_at being cleared on a successful refresh.
+    _throttled_until = None
+    if _is_locked(estimate):
+        # Re-checked here from the estimate already in hand, not
+        # trusted from whatever quote_sync_state this project last
+        # settled into. Remembered state alone would miss an estimate
+        # invoiced in Books since the last pending sync: it would
+        # still read e.g. 'idle' and get a status POSTed onto it —
+        # exactly the write the exclusion list on run_sync_once's
+        # SELECT calls out as "no safer than a line-item write". No
+        # extra API call: this reuses the read the sweep already did.
+        #
+        # Deliberately NOT mirroring _update_quote's own lock branch
+        # any further than the state flip: that branch is reachable
+        # at most once, only from the pending path, before the
+        # project settles into 'idle' or stays 'pending' — adopting
+        # Books' status there is a one-time snapshot. This branch
+        # runs on EVERY quoted project EVERY tick, so adopting
+        # `estimate["status"]` here would silently replace a local
+        # DECIDED status (e.g. 'accepted') with whatever Books
+        # happens to report mid-invoicing (often still 'draft' or
+        # 'sent') on the very first sweep after the estimate is
+        # invoiced — which then feeds _apply_rules below and can move
+        # the card's board column too. Overwriting a board decision
+        # is exactly what this whole module exists to never do
+        # outside a deliberate push. Nothing is lost by leaving
+        # quote_status and quote_sync_error alone: 'locked' is
+        # excluded from every later sweep, so there is no ongoing
+        # status to keep in sync, and no error to clear away either.
+        # Sticky, same as _update_quote's lock branch above: Books
+        # does not practically un-invoice.
+        #
+        # quote_status and quote_sync_error are deliberately left
+        # alone (above), but a recorded block is neither: 'locked'
+        # leaves the sweep for good, so a block kept here would render
+        # "Books refused to change this quote to ..." beside "Quote
+        # invoiced" forever, describing a push this module will never
+        # attempt again.
+        #
+        # (The state flip described above is unconditional inside
+        # `_lock_project` itself; the invoiced stamp, block clear and
+        # failure reset described above are its invoiced=/clear_block=/
+        # reset_failures= kwargs below -- each used to be its own
+        # assignment here before `_lock_project` consolidated all four
+        # lock sites into one helper. The rationale above still applies
+        # unchanged to each of them.)
+        await _lock_project(db, project, project_id, invoiced=True, clear_block=True, reset_failures=True)
+        return
+    await reconcile_quote_status(db, project, estimate)
+    await _follow_customer(db, project, estimate)
+
+    # The estimate's own total, adopted from the read the reconcile
+    # above already paid for. Before this, `quote_total` was written
+    # ONLY by `_apply_estimate` — i.e. only on a push — so a quote
+    # whose price was edited in Books kept reporting the figure it had
+    # at our last push, for as long as nobody edited the project.
+    #
+    # Guarded on the key being present rather than coerced with
+    # `or 0` the way `_apply_estimate` does it. That coercion is right
+    # there and wrong here: it reads back the response to a write it
+    # just made, where an absent total genuinely means "this quote has
+    # no lines". This reads an estimate that already exists, so a
+    # partial payload would zero a real quote's total instead.
+    #
+    # Done BEFORE Trigger B below on purpose: that block's money math
+    # must read the total Books just reported, never the stale cached
+    # figure from our last push — a total edited directly in Books
+    # would otherwise feed the auto-accept threshold from a value
+    # already known to be wrong.
+    if estimate.get("total") is not None:
+        project.quote_total = float(estimate["total"])
+
+    await _apply_deposit_trigger(db, attempt, estimate, credit_cache, retainer_cache)
+    # `_apply_deposit_trigger` may have swapped in a re-fetched row.
+    project = attempt.project
+
+    await _pull_comments(db, project, project_id, estimate)
+
+    # A read that reaches this point succeeded, whatever
+    # reconcile_quote_status went on to do with it — proof Books is
+    # reachable right now. Reset the failure counter so a run of past
+    # transient outages does not keep accumulating toward
+    # SYNC_FAILURE_LIMIT and eventually strand an otherwise-healthy
+    # project in 'error' with no way back except a user edit (I2).
+    #
+    # A counter still AT the limit is a stored fact identifying the
+    # error below as sync_project's own ZohoUpstreamError escalation
+    # and nothing else. That holds because EVERY other path that sets
+    # 'error' resets this counter to 0 in the same breath — the
+    # no-priced-service guards in _create_quote/_update_quote, the
+    # missing-maindoeuvre-description guards in the same two
+    # functions, and all four terminal exception handlers below
+    # (ZohoRequestRejected, ZohoAmbiguousReferenceError, ZohoNotFound
+    # and the catch-all).
+    # Keep that true if you ever add another: an 'error' that inherits
+    # a count it did not earn would have its diagnostic erased here by
+    # the next successful read. The ZohoUpstreamError handler for its
+    # part always overwrites quote_sync_error with its own message
+    # when it increments, so the message cleared here is guaranteed to
+    # be the one that handler wrote — no other subsystem's diagnostic
+    # can be destroyed, and no string has to be inspected to know it.
+    #
+    # Read from the snapshot taken at the top of sync_project, not
+    # from `project` directly: the comment-mirror block just above can
+    # have rolled the session back (see _rollback_after_terminal_failure),
+    # which expires every attribute, and a bare read here would be the
+    # same async-unsafe lazy reload that helper's own docstring warns
+    # against. Neither column changes between that snapshot and here on
+    # any path that reaches this line, so it is still accurate.
+    if attempt.already_in_error and attempt.sync_failures_before >= SYNC_FAILURE_LIMIT:
+        # A card that still owes Books its customer (a transfer whose
+        # push escalated) goes back to pending so the push is retried;
+        # settling it idle would let the next sweep follow Books back
+        # to the old customer.
+        project.quote_sync_state = "pending" if project.client_push_pending else "idle"
+        project.quote_sync_error = None
+    project.quote_sync_failures = 0
+
+
+async def _apply_deposit_trigger(
+    db: AsyncSession,
+    attempt: _SyncAttempt,
+    estimate: dict,
+    credit_cache: dict[str, float] | None,
+    retainer_cache: dict[str, list[dict]] | None,
+) -> None:
+    """The deposit side of ``_sync_reconcile``: retainer and credit figures, and Trigger B."""
+    project = attempt.project
+    project_id = attempt.project_id
+    # Trigger B (spec §6.3): paid retainers that cover the required
+    # amount are the client's go-ahead. The estimate's own
+    # `retainerinvoices` list is read off the reconcile above — zero
+    # extra Books calls — and covers every deposit Books attached to
+    # the quote. Uses `project.quote_total` as just refreshed above,
+    # not a value from before this tick's read.
+    paid = _paid_retainer_total(estimate)
+    # The estimate's customer, not the row's client_id, for the same
+    # reason plan_invoice bills the estimate's customer.
+    customer_id = str(estimate.get("customer_id") or project.client_id or "")
+    needed = required_amount(project.quote_total, await deposit_pct(db))
+    # T-010 (loop-20, user-approved 2026-09-23): the attached list is
+    # NOT the whole story. A deposit taken at the counter (cash,
+    # cheque, terminal — aito_manual_payments) and every deposit
+    # Heimdall books for a paid link are raised as retainer invoices
+    # that carry the QUOTE NUMBER in `reference_number` and are never
+    # attached to the estimate (live DEV26-2684 / RET26-00295, see
+    # aito_invoice_sweep.linked_credits). Counting only the attached
+    # ones left `retainer_paid_total` at 0 for a fully paid deposit —
+    # so the online link stayed live and the public tracking page
+    # kept offering it, the panel's Encaissement block kept showing
+    # the money as due, and the card never auto-accepted. Same
+    # per-quote rule as the sweep's (`_same_reference`): a deposit
+    # for a SIBLING job of the same customer still counts for
+    # nothing here.
+    #
+    # Budget: one extra Books call per distinct customer per tick,
+    # memoed in `retainer_cache` exactly like `credit_cache` below,
+    # and skipped entirely when there is nothing to find — no deposit
+    # required, the attached retainers already cover it, or no quote
+    # number to match against. Best-effort: a Books hiccup leaves the
+    # attached-only figure in place (what this line computed before
+    # the fix), never a sync error; only a 429 escapes, for the same
+    # reason it does out of read_customer_credit below.
+    #
+    # T-046 (loop-21, user-approved 2026-09-26): that 429 is held, not
+    # raised on the spot. Raised here it skipped the credit read just
+    # below, so one throttled retainer listing left BOTH deposit
+    # figures stale for the tick. Now a throttled listing keeps the
+    # previously stored `retainer_paid_total` (a partial,
+    # attached-only figure is not written over it, and nothing below
+    # may auto-accept on it), the credit read still runs, and the
+    # held 429 is re-raised right after it — so sync_project's
+    # ZohoRateLimited handler, the tick's stand-down and the retry
+    # budget behave exactly as before.
+    retainer_throttle: ZohoRateLimited | None = None
+    if needed is not None and paid < needed and project.quote_number:
+        try:
+            retainers = await _customer_retainers(db, customer_id, retainer_cache)
+        except ZohoRateLimited as e:
+            retainer_throttle = e
+        else:
+            if retainers:
+                paid += _referenced_retainer_total(estimate, retainers, project.quote_number)
+    if retainer_throttle is None:
+        project.retainer_paid_total = paid
+    # Beside it, the CUSTOMER's unspent deposits — a different figure
+    # with a different meaning (see aito_customer_credit): what they
+    # still have on account across every retainer, quote-linked or
+    # raised by hand, which is what the panel shows as "deposit
+    # available". One extra Books call per customer per tick, memoed
+    # in `credit_cache`; best-effort, so None leaves the stored
+    # figure alone. Its own 429 propagates as always — unless the
+    # retainer listing's 429 is already held, which is then the one
+    # reported (the credit figure simply stays as stored).
+    try:
+        credit = await read_customer_credit(db, customer_id, credit_cache)
+    except ZohoRateLimited:
+        if retainer_throttle is None:
+            raise
+        credit = None
+    if credit is not None:
+        project.customer_credit_total = credit
+    if retainer_throttle is not None:
+        raise retainer_throttle
+    if needed is not None and paid >= needed and project.quote_status != "accepted":
+        accepted = await accept_quote(
+            db, project, source="retainer", detail={"amount": paid, "reference": project.quote_number}
+        )
+        if accepted:
+            # `accept_quote`'s Books push is best-effort, and a FAILED
+            # push rolls the session back — which expires every ORM
+            # object it tracks, `project` included. The very next bare
+            # attribute read (should_pull_comments, just below) would
+            # then raise MissingGreenlet, get caught by sync_project's
+            # catch-all, and flip the card to quote_sync_state='error'
+            # for a tick in which the acceptance actually SUCCEEDED.
+            # Re-fetch by id (an awaited load, so no lazy IO off the
+            # greenlet) before anything reads the project again. A None
+            # here means the row vanished under us — fall through with
+            # what we have rather than inventing a failure.
+            refreshed = await db.get(AitoProject, project_id)
+            if refreshed is not None:
+                attempt.project = refreshed
+
+
+async def _pull_comments(db: AsyncSession, project: AitoProject, project_id: int, estimate: dict) -> None:
+    """The comment-mirror step of ``_sync_reconcile``; never raises."""
+    now = datetime.utcnow()
+    if should_pull_comments(project, estimate, now):
+        try:
+            comments = await zoho_service.list_estimate_comments(db, project.quote_id)
+            await mirror_comments(db, project, comments)
+            project.zoho_comments_watermark = estimate.get("last_modified_time")
+            project.zoho_comments_checked_at = now
+        except Exception:
+            # The try covers the fetch AND mirror_comments AND the two
+            # watermark writes, not just the network call. AitoEvent's
+            # zoho_comment_id is a UNIQUE column, so mirror_comments'
+            # own write path can raise (IntegrityError from two
+            # overlapping ticks racing the same comment_id) just as
+            # easily as the fetch can, and any other bug in the
+            # mapping or write path deserves the same containment. A
+            # failed comment pull must never fail the sync: the
+            # line-item and status work above is what the board
+            # depends on, and history that arrives one tick late costs
+            # nothing. Anything that escaped this block would instead
+            # reach sync_project's own outer catch-all below, which
+            # flips quote_sync_state to 'error' and overwrites
+            # quote_sync_error -- discarding this tick's
+            # already-successful reconcile_quote_status result and
+            # surfacing a misleading "sync error" for what is only a
+            # history-mirroring problem. Keeping the watermark writes
+            # inside the try is also what keeps them from advancing on
+            # a tick where mirror_comments raised: an exception here
+            # skips them, so the watermark still only moves once the
+            # pull has fully succeeded.
+            #
+            # The rollback is the same containment as every terminal
+            # handler below, and for the same reason: the IntegrityError
+            # this block exists to catch leaves the session's
+            # transaction aborted, and without an explicit rollback that
+            # poisoning survives this block -- surfacing two ticks later
+            # as _apply_rules or run_sync_once's own end-of-loop
+            # db.commit() failing and getting logged as "failed to
+            # commit project", which is the comment mirror's failure
+            # wearing a misleading name. It does mean any of
+            # reconcile_quote_status's writes still pending from just
+            # above are discarded along with the failed mirror attempt
+            # -- accepted here the same way a missed tick is accepted
+            # everywhere else in this module: the next sweep reconciles
+            # status again from scratch and costs nothing by being a
+            # tick late.
+            await _rollback_after_terminal_failure(db)
+            logger.warning("Aito comment mirror failed for project %s", project_id, exc_info=True)
+
+
+async def _sync_push(db: AsyncSession, project: AitoProject, project_id: int) -> None:
+    """``sync_project``'s push route: create the quote, or push a pending update.
+
+    Exceptions propagate to ``sync_project``'s handlers unchanged.
+    """
+    global _throttled_until
+    if not project.quote_id:
+        if project.status == "deleted":
+            # Trashed before it was ever quoted. Nothing to create, nothing
+            # to decline; drop it from the queue without a Zoho call.
+            #
+            # Deliberately 'idle', NOT 'unmanaged': this project WAS
+            # created (and marked pending) by this feature — it just
+            # never got as far as a quote before being trashed. 'idle'
+            # carries no special meaning to the ownership guard
+            # (routes/aito.py:_mark_pending_if_ours checks only for
+            # 'unmanaged'), so restoring — or any later edit — re-enqueues
+            # it normally. 'unmanaged' is reserved exclusively for
+            # legacy/imported cards this feature must never touch again
+            # (see import_legacy_projects); using it here too would make
+            # this project indistinguishable from one of those and
+            # permanently block it from ever being marked pending again —
+            # which is exactly Critical 1's bug (a trashed, never-quoted
+            # project going 'idle' under the OLD, inferred-ownership
+            # guard), reproduced under a new name instead of fixed.
+            project.quote_sync_state = "idle"
+            # Same hygiene as the pop below on the normal-return path:
+            # this tick never reached _create_quote/_update_quote, so
+            # that pop never ran, and a stale deferral reason from before
+            # the project was trashed would otherwise sit in the dict
+            # forever. Safe for the same reason as everywhere else this
+            # dict is touched -- it only gates the log line in the
+            # ShippingCatalogueUnavailable handler below, never a DB
+            # write -- so if this project is later restored and defers
+            # again, it just logs once fresh instead of staying
+            # suppressed by a reason that belongs to before the trash.
+            _deferred_reasons.pop(project_id, None)
+            return
+        await _create_quote(db, project)
+        if project.quote_id is not None and project.quote_sync_state == "pending":
+            # _create_quote found and adopted an orphan (a POST that
+            # reached Books but whose response or commit never landed):
+            # identity only, lines unverified — see its own comment. Or
+            # _apply_estimate's requeue guard saw an edit land mid-POST.
+            # Either way the card now shows a quote number with the
+            # print button disabled, and "the next tick" is up to a poll
+            # interval away while the operator waits at the printer.
+            # Finish the job in this same pass: the exact call the next
+            # tick would have made, with a failure handled exactly as one
+            # there would be.
+            await _update_quote(db, project)
+    else:
+        await _update_quote(db, project)
+    # Reached only when _create_quote/_update_quote returned WITHOUT
+    # raising ShippingCatalogueUnavailable — this tick's push (or one of
+    # their own terminal-error branches) completed normally. Drop any
+    # stale deferral memory for this project so a later recurrence of the
+    # same reason logs afresh rather than staying suppressed forever by a
+    # dict entry from before whatever changed.
+    _deferred_reasons.pop(project_id, None)
+    # T-028: same "reached without a 429" signal as the reconcile branch's
+    # own clear above.
+    _throttled_until = None
+
+
+async def _defer_on_catalogue(db: AsyncSession, project_id: int, e: ShippingCatalogueUnavailable) -> None:
+    """``sync_project``'s ShippingCatalogueUnavailable handler body; never raises."""
+    # Not an error state: nothing is wrong with the project, the catalogue
+    # simply has not resolved yet. Stay `pending` and retry next tick
+    # rather than burning a failure and eventually going to 'error' — see
+    # the exception's own docstring, and Catalogue.shipping_item_id's, for
+    # why a terminal state here would be the opposite of what this
+    # situation calls for.
+    #
+    # get_catalogue's own shipping read is always refresh=False (see the
+    # comment above that call), so it is never what warms the cache. The
+    # drawer's GET /aito/shipping/services endpoint (Task 7) warms it on
+    # the happy path — it is the only other refresh=True caller now that
+    # the board list's `_shipping_names` (aito.py) reads cache-only, since
+    # a display name never needs a fresh rate. But that endpoint only
+    # runs when someone has the drawer open. For a project that gained
+    # shipping without going through it (an importer path, a wiped
+    # settings row, first boot with Books down), nothing else would ever
+    # fetch a resolution. Warm it here too, once, so the NEXT tick has a
+    # chance even if this one still has to defer.
+    message = str(e)
+    # Logged only on the tick this exact deferral reason first appears,
+    # via _deferred_reasons rather than any column on the project. This is
+    # log-spam suppression, not a fact about the row, so a permanently
+    # unresolvable service (e.g. Books' catalogue item was renamed) logs
+    # once per process instead of one WARNING per tick forever — and
+    # project.quote_sync_error is left untouched: a deferral is not an
+    # error and must leave no trace on the row (see _deferred_reasons'
+    # own comment for why this is deliberately NOT the same pattern as
+    # the sync.failed handlers below, which do own that column).
+    if _deferred_reasons.get(project_id) != message:
+        logger.warning("Aito project %s deferred: %s", project_id, e)
+        _deferred_reasons[project_id] = message
+    try:
+        await zoho_service.get_shipping_catalogue(db, refresh=True)
+    except Exception:
+        # Best-effort, and must stay that way: get_shipping_catalogue
+        # already swallows ZohoNotConfiguredError/ZohoUpstreamError from
+        # its own list_items call (see its docstring), but a DB error
+        # from its get_setting/set_setting calls, or a bug in
+        # merge_shipping_catalogue on a pathological /items payload,
+        # would otherwise escape uncaught. Because this call sits INSIDE
+        # an except block, no sibling handler in this same function would
+        # catch that — it would escape sync_project entirely, breaking
+        # its own "never raises" promise, and since run_sync_once calls
+        # sync_project outside its own try, it would abort the whole tick
+        # for every project still left in the batch. A failed warm-up
+        # changes nothing about this tick's outcome: the project was
+        # already deferring, and next tick tries the warm-up again.
+        logger.warning("Aito shipping catalogue warm-up failed for project %s", project_id, exc_info=True)
+
+
+def _defer_on_rate_limit(project_id: int, e: ZohoRateLimited, push_path: bool) -> None:
+    """``sync_project``'s ZohoRateLimited handler body (the caller returns True)."""
+    # Books is throttling this org (HTTP 429). Like
+    # ShippingCatalogueUnavailable above, this is not evidence anything
+    # is wrong with the project or its data -- retrying the identical
+    # request will simply work once the window clears -- so it must not
+    # spend a slot of SYNC_FAILURE_LIMIT's retry budget the way the plain
+    # ZohoUpstreamError handler just below does. Stay `pending`, leave
+    # quote_sync_error and quote_sync_failures exactly as they were, and
+    # tell run_sync_once (via the return value) to stop attempting the
+    # rest of this tick's projects rather than turning one throttled call
+    # into one-per-remaining-card, deepening it further.
+    #
+    # Reuses _deferred_reasons the same way the ShippingCatalogueUnavailable
+    # handler does: log-spam suppression only, no DB write, so a
+    # sustained throttle logs once per process instead of once per tick.
+    message = str(e)
+    if _deferred_reasons.get(project_id) != message:
+        logger.warning("Aito project %s deferred (Zoho Books rate limit): %s", project_id, e)
+        _deferred_reasons[project_id] = message
+    # T-028: remember when background reads may resume, so the sweep and
+    # the change pass skip straight past a still-throttled window instead
+    # of spending more requests on an org that just said back off — see
+    # ``_throttled_until``'s own module-level comment for why this is
+    # process-local and shaped like ``zoho._shipping_fail_at``.
+    if push_path:
+        # A push somebody may be waiting on: the hold armed below stops
+        # background reads only, and the loop retries this card on the
+        # fast schedule exactly as it does after a timeout.
+        _note_transient_push_failure()
+    _arm_rate_limit_throttle(e)
+
+
+async def _escalate(db: AsyncSession, attempt: _SyncAttempt, e: ZohoUpstreamError, *, fast_retry: bool) -> None:
+    """``sync_project``'s ZohoUpstreamError handler body: count the failure, escalate at the limit."""
+    project = attempt.project
+    project_id = attempt.project_id
+    # Below the limit, this is a plain in-memory write, no flush -- so
+    # there is nothing here for a poisoned session to break, and no
+    # rollback is needed unless the escalation branch below is taken.
+    #
+    # A fast retry (see FAST_RETRY_DELAYS) records the message but not
+    # the failure: the budget counts ticks, not the extra tries squeezed
+    # in between them.
+    failures = attempt.sync_failures_before if fast_retry else attempt.sync_failures_before + 1
+    project.quote_sync_failures = failures
+    project.quote_sync_error = str(e)
+    if attempt.push_path and failures < SYNC_FAILURE_LIMIT:
+        # Still pending, and for a reason a retry in a few seconds can
+        # fix. The loop reads this right after the drain.
+        _note_transient_push_failure()
+    if failures >= SYNC_FAILURE_LIMIT:
+        await _rollback_after_terminal_failure(db)
+        project.quote_sync_failures = failures
+        project.quote_sync_error = str(e)
+        project.quote_sync_state = "error"
+        # Recorded only once the retry budget is actually spent, AND only
+        # on the tick that first spends it (or whose message genuinely
+        # changes): every tick below the limit is a transient blip
+        # _apply_estimate's own caller will simply retry, and — this is
+        # the bug this guard fixes — an escalated project stays selected
+        # by the sweep for as long as Books stays down (the escalation
+        # does not stop it being polled, see the module-level comment on
+        # SYNC_FAILURE_LIMIT), so without the guard a single outage wrote
+        # one row per 300s tick for its entire duration instead of the one
+        # row that matters: the moment this project actually stopped
+        # retrying and surfaced on the card.
+        if not attempt.already_in_error or attempt.previous_sync_error != project.quote_sync_error:
+            await record(
+                db,
+                project_id,
+                "sync.failed",
+                actor_class="system",
+                subject_type="project",
+                subject_id=project_id,
+                detail={"error": project.quote_sync_error, "failures": project.quote_sync_failures},
+            )
+    logger.warning("Aito quote sync failed for project %s: %s", project_id, e)
 
 
 def _sweep_predicate():
