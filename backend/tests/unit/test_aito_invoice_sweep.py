@@ -897,6 +897,56 @@ async def test_deposit_read_failure_still_refreshes_the_invoice(db_session, monk
 
 
 @pytest.mark.asyncio
+async def test_a_failed_reread_after_applying_keeps_the_stale_invoice_and_reduces_the_credit(db_session, monkeypatch):
+    p = await _project(db_session, quote_id="EST1", customer_credit_total=0.0)
+    p_id = p.id
+    books = _Books(
+        monkeypatch,
+        invoices={"EST1": [_invoice(4000.0, "overdue")]},
+        estimate=_estimate("RET1"),
+        payments=[_payment("P1", "RET1", 5000.0)],
+    )
+
+    async def failing_get_invoice(db, invoice_id):
+        books.reread.append(invoice_id)
+        raise ZohoUpstreamError("boom")
+
+    monkeypatch.setattr(zoho_service, "get_invoice", failing_get_invoice)
+
+    updated = await sweep_invoices(db_session, force=True)
+
+    assert updated == 1
+    assert books.applied == [("INV1", [{"payment_id": "P1", "amount_applied": 4000.0}])]
+    assert books.reread == ["INV1"]
+    db_session.expire_all()
+    row = await db_session.get(AitoProject, p_id)
+    # The row in hand, read before the deposit landed; credit is 5000 - 4000.
+    assert (row.invoice_status, row.invoice_balance) == ("overdue", 4000.0)
+    assert row.customer_credit_total == 1000.0
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_during_the_reread_after_applying_propagates(db_session, monkeypatch):
+    await _project(db_session, quote_id="EST1")
+    books = _Books(
+        monkeypatch,
+        invoices={"EST1": [_invoice(4000.0, "overdue")]},
+        estimate=_estimate("RET1"),
+        payments=[_payment("P1", "RET1", 4000.0)],
+    )
+
+    async def limited_get_invoice(db, invoice_id):
+        raise ZohoRateLimited("Too many requests", retry_after=5.0)
+
+    monkeypatch.setattr(zoho_service, "get_invoice", limited_get_invoice)
+
+    with pytest.raises(ZohoRateLimited):
+        await sweep_invoices(db_session, force=True)
+
+    assert len(books.applied) == 1
+
+
+@pytest.mark.asyncio
 async def test_paid_invoice_costs_no_deposit_reads(db_session, monkeypatch):
     await _project(db_session, quote_id="EST1")
     books = _Books(

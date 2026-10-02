@@ -914,6 +914,49 @@ async def test_cancel_conflict_with_a_paid_link_credits_instead_of_cancelling(db
 
 
 @pytest.mark.asyncio
+async def test_cancel_conflict_on_a_row_already_paid_returns_true_commits_and_records_no_cancel(db_session, fake):
+    """The `was == "paid"` half of the money-wins branch. Unreachable through
+    the pass today, so it is driven directly: the row is paid in the ledger,
+    Heimdall refuses the cancel, and the cancel must still report money."""
+    p = await _project(db_session)
+    pid = p.id
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    fake.set_status("L1", "paid")
+    (row,) = await _rows(db_session, pid)
+    row_id = row.id
+    row.status = "paid"
+    await db_session.commit()
+
+    assert await svc._cancel(db_session, p, row, now=NOW, reason="operator") is True
+
+    assert fake.calls[-2:] == [("cancel", "L1"), ("get", "L1")]
+    db_session.expire_all()
+    stored = await db_session.get(AitoPaymentLink, row_id)
+    assert stored.status == "paid"
+    # Already paid, so the credit was not (re)run and no cancellation was told.
+    kinds = await _kinds(db_session, pid)
+    assert "payment_link.cancelled" not in kinds
+    assert "payment_link.paid" not in kinds
+
+
+@pytest.mark.asyncio
+async def test_a_quote_with_nothing_left_to_pay_cancels_its_link_as_nothing_to_pay(db_session, fake):
+    p = await _project(db_session)
+    pid = p.id
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    p.quote_total = 0.0
+    await db_session.commit()
+
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+
+    (r,) = await _rows(db_session, pid)
+    assert r.status == "cancelled" and fake.calls[-1] == ("cancel", "L1")
+    assert await _details(db_session, pid, "payment_link.cancelled") == [
+        {"reference": r.reference, "reason": "nothing_to_pay", "heimdall_id": "L1"}
+    ]
+
+
+@pytest.mark.asyncio
 async def test_a_retried_reservation_replays_the_same_expiry(db_session, fake):
     """A retry days later must send the SAME body under the same
     idempotency key, or Heimdall answers 409 idempotency_conflict forever
