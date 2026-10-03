@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
-import { SmsPickupButton } from '../../components/aito/SmsPickupButton';
+import { SmsPickupButton, SMS_PICKUP_ENABLED } from '../../components/aito/SmsPickupButton';
 import { SmsPickupModal } from '../../components/aito/SmsPickupModal';
 import { api, ApiError } from '../../api/client';
 import type { AitoProject } from '../../api/client';
@@ -31,7 +31,12 @@ describe('SmsPickupButton', () => {
     expect(button).toHaveAttribute('title', 'This client has no phone number');
   });
 
-  it('opens the modal, which generates a draft on mount', async () => {
+  it.runIf(!SMS_PICKUP_ENABLED)('is disabled for every card while the kill switch is off', () => {
+    render(<SmsPickupButton project={project} />);
+    expect(screen.getByRole('button', { name: /pickup sms/i })).toBeDisabled();
+  });
+
+  it.runIf(SMS_PICKUP_ENABLED)('opens the modal, which generates a draft on mount', async () => {
     const generate = vi.spyOn(api, 'generateAitoPickupMessage').mockResolvedValue(DRAFT);
     const user = userEvent.setup();
     render(<SmsPickupButton project={project} />);

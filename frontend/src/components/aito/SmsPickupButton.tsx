@@ -5,6 +5,10 @@ import { type AitoProject } from '../../api/client';
 import { headerPillRadiusCls } from './panelTypography';
 import { SmsPickupModal } from './SmsPickupModal';
 
+/** Temporary kill switch: while false the pill still shows but is disabled
+ *  for every card. Flip back to true to re-enable sending pickup SMS. */
+export const SMS_PICKUP_ENABLED = false;
+
 /** Open the pickup-SMS modal, from the panel header's fact row.
  *
  *  Offered only while the contact is still OWED — Finish column, contacted
@@ -24,19 +28,20 @@ export function SmsPickupButton({ project }: { project: AitoProject }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const hasPhone = (project.client_phone ?? '').trim() !== '';
+  const enabled = SMS_PICKUP_ENABLED && hasPhone;
 
   return (
     <>
       <button
         type="button"
         onClick={() => setOpen(true)}
-        disabled={!hasPhone}
+        disabled={!enabled}
         aria-label={t('aito.smsPickup')}
         title={t(hasPhone ? 'aito.smsPickup' : 'aito.smsNoPhone')}
         // Same pill anatomy as ContactedControl beside it — padding, border
         // width and colour in full — so the row stays one line of pills.
         className={`${headerPillRadiusCls} inline-flex items-center gap-1 whitespace-nowrap border px-2 py-0.5 text-[11px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 ${
-          hasPhone
+          enabled
             ? 'border-violet-400/30 bg-violet-400/[0.14] text-violet-400 hover:bg-violet-400/25 focus-visible:ring-violet-400/40'
             : 'border-bambu-dark-tertiary bg-bambu-dark text-bambu-gray cursor-not-allowed'
         }`}
