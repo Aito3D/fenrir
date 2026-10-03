@@ -3020,6 +3020,9 @@ type Collection = 'all' | 'recent' | 'this-week' | 'this-month' | 'favorites' | 
 
 // status values that indicate a print attempt was sent to a printer, including one
 // still running. `archived` is the only status that means "uploaded but never printed."
+/** Smallest newest-first "head" fetched before the full archive list. */
+const ARCHIVE_HEAD_MIN = 50;
+
 const PRINTED_STATUSES = ['printing', 'completed', 'failed', 'aborted', 'cancelled', 'stopped'] as const;
 
 const collections: { id: Collection; label: string; icon: React.ReactNode }[] = [
@@ -3199,6 +3202,28 @@ export function ArchivesPage() {
     [logColumns],
   );
 
+  // Newest-first head + full list in parallel. Most lookups are for recent
+  // prints, so the head (one page, a few KB) paints page 1 right away while
+  // the full list — needed for search, filters and later pages — loads
+  // behind it. Both keys sit under ['archives'] so every existing
+  // invalidateQueries({ queryKey: ['archives'] }) refreshes both.
+  const headSize = Math.max(pageSize, ARCHIVE_HEAD_MIN);
+  const headQuery = useQuery({
+    queryKey: ['archives', filterPrinter, 'head', headSize],
+    queryFn: () => api.getArchives(filterPrinter || undefined, undefined, headSize),
+    enabled: pageSize !== -1,
+  });
+  const fullQuery = useQuery({
+    queryKey: ['archives', filterPrinter],
+    queryFn: () => api.getArchives(filterPrinter || undefined),
+  });
+  const archives = fullQuery.data ?? headQuery.data;
+  // Only the newest rows are loaded. Any order other than newest-first, or
+  // "show all", would be misleading over them, so those keep the skeleton.
+  const isPartial = !fullQuery.data && !!headQuery.data;
+  const isLoading = fullQuery.isLoading && (!headQuery.data || sortBy !== 'date-desc');
+  const showLoadingOlder = isPartial && !fullQuery.isError;
+
   const handleNavigateToArchive = useCallback((archiveId: number) => {
     setPendingNavigationArchiveId(archiveId);
     setHighlightedArchiveId(archiveId);
@@ -3212,10 +3237,13 @@ export function ArchivesPage() {
         const element = document.querySelector(`[data-archive-id="${highlightedArchiveId}"]`);
         if (element) {
           element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        } else if (pendingNavigationArchiveId === highlightedArchiveId) {
+        } else if (pendingNavigationArchiveId === highlightedArchiveId && !isPartial) {
           showToast(t('archives.originalPrintNotVisible'), 'warning');
         }
-        if (pendingNavigationArchiveId === highlightedArchiveId) {
+        // While only the head is loaded the original may simply not be here
+        // yet: keep the navigation pending so this effect retries when the
+        // full list arrives (isPartial flips).
+        if (pendingNavigationArchiveId === highlightedArchiveId && !isPartial) {
           setPendingNavigationArchiveId(null);
         }
       }, 100);
@@ -3227,12 +3255,7 @@ export function ArchivesPage() {
         clearTimeout(clearTimer);
       };
     }
-  }, [highlightedArchiveId, pendingNavigationArchiveId, showToast, t]);
-
-  const { data: archives, isLoading } = useQuery({
-    queryKey: ['archives', filterPrinter],
-    queryFn: () => api.getArchives(filterPrinter || undefined),
-  });
+  }, [highlightedArchiveId, pendingNavigationArchiveId, showToast, t, isPartial]);
 
   const { data: printers } = useQuery({
     queryKey: ['printers'],
@@ -4460,6 +4483,17 @@ export function ArchivesPage() {
 
       {/* Pending Uploads Panel (visible when in queue mode with pending files) */}
       <PendingUploadsPanel />
+
+      {!isLoading && showLoadingOlder && viewMode !== 'log' && (
+        <div
+          data-testid="archives-loading-older"
+          role="status"
+          className="flex items-center gap-2 mb-3 text-sm text-bambu-gray"
+        >
+          <Loader2 className="w-4 h-4 animate-spin" />
+          {t('archives.loadingOlder')}
+        </div>
+      )}
 
       {/* Archives */}
       {isLoading ? (

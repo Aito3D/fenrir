@@ -1872,6 +1872,7 @@ export default {
     dropToQueue: "Перетащите файл в очередь",
   },
   archives: {
+    loadingOlder: 'Загрузка более старых архивов…',
     media: {
       title: 'Видео печати',
       download: 'Скачать видео печати',

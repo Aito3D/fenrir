@@ -1877,6 +1877,7 @@ export default {
     dropToQueue: "Відпустіть, щоб додати в чергу",
   },
   archives: {
+    loadingOlder: 'Завантаження старіших архівів…',
     media: {
       title: 'Відео друку',
       download: 'Завантажити відео друку',

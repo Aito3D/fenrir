@@ -927,6 +927,7 @@ export default {
 
   // Archives page
   archives: {
+    loadingOlder: 'Läser in äldre arkivposter…',
     media: {
       title: 'Skrivarvideor',
       download: 'Ladda ner skrivarvideor',

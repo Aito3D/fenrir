@@ -1916,6 +1916,7 @@ export default {
 
   // Archives page
   archives: {
+    loadingOlder: 'Cargando archivos más antiguos…',
     media: {
       title: 'Vídeos de la impresión',
       download: 'Descargar vídeos de la impresión',

@@ -927,6 +927,7 @@ export default {
 
   // Archives page
   archives: {
+    loadingOlder: 'Oudere archieven laden…',
     media: {
       title: 'Afdrukvideo\'s',
       download: 'Afdrukvideo\'s downloaden',

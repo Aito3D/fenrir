@@ -1916,6 +1916,7 @@ export default {
 
   // Archives page
   archives: {
+    loadingOlder: 'Ältere Archiveinträge werden geladen…',
     media: {
       title: 'Druckvideos',
       download: 'Druckvideos herunterladen',

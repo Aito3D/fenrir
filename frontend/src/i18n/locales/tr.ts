@@ -1916,6 +1916,7 @@ export default {
 
   // Arşivler sayfası
   archives: {
+    loadingOlder: 'Eski arşivler yükleniyor…',
     media: {
       title: 'Baskı videoları',
       download: 'Baskı videolarını indir',
