@@ -4044,6 +4044,12 @@ async def run_migrations(conn):
         conn,
         "CREATE INDEX IF NOT EXISTS ix_print_archives_deleted_at ON print_archives (deleted_at)",
     )
+    # Composite index for the archive listing (WHERE deleted_at IS NULL ORDER BY
+    # created_at DESC); without it SQLite sorts every row in a temp B-tree.
+    await _safe_execute(
+        conn,
+        "CREATE INDEX IF NOT EXISTS ix_print_archives_deleted_created ON print_archives (deleted_at, created_at)",
+    )
 
     # Migration: Add fenrir_forced_timelapse to print_archives (#1397)
     # Tracks prints where Fenrir forced the firmware to record a timelapse

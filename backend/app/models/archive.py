@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.core.database import Base
@@ -8,6 +8,8 @@ from backend.app.core.database import Base
 
 class PrintArchive(Base):
     __tablename__ = "print_archives"
+    # Serves the archive listing: WHERE deleted_at IS NULL ORDER BY created_at DESC.
+    __table_args__ = (Index("ix_print_archives_deleted_created", "deleted_at", "created_at"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     printer_id: Mapped[int | None] = mapped_column(ForeignKey("printers.id"), nullable=True)
