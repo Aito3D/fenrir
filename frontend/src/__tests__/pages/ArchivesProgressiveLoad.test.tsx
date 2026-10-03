@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { screen, waitFor, fireEvent } from '@testing-library/react';
+import { screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { render } from '../utils';
 import { ArchivesPage } from '../../pages/ArchivesPage';
 import { http, HttpResponse } from 'msw';
@@ -101,19 +101,69 @@ describe('ArchivesPage progressive load', () => {
     await waitFor(() => expect(screen.getByText('Newest Benchy')).toBeInTheDocument(), { timeout: 5000 });
   });
 
-  it('stops showing the hint when the full list fails', async () => {
+  it('replaces the hint with a retryable error when the full list fails', async () => {
     installHandlers([newest]);
     render(<ArchivesPage />);
 
     await waitFor(() => expect(screen.getByTestId('archives-loading-older')).toBeInTheDocument(), { timeout: 5000 });
     releaseFull('error');
 
-    await waitFor(
-      () => expect(screen.queryByTestId('archives-loading-older')).not.toBeInTheDocument(),
-      { timeout: 10000 },
-    );
+    const error = await screen.findByTestId('archives-load-error', {}, { timeout: 10000 });
+    expect(error).toHaveTextContent("Couldn't load older archives.");
+    expect(screen.queryByTestId('archives-loading-older')).not.toBeInTheDocument();
     expect(screen.getByText('Newest Benchy')).toBeInTheDocument();
+
+    // Retry reaches the server again; this time it answers.
+    server.use(http.get('/api/v1/archives/', () => HttpResponse.json([newest, older])));
+    fireEvent.click(within(error).getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(screen.getByText('Older Bracket')).toBeInTheDocument(), { timeout: 5000 });
+    expect(screen.queryByTestId('archives-load-error')).not.toBeInTheDocument();
   });
+
+  it('never shows head rows under a non-date sort, even when the full list fails', async () => {
+    localStorage.setItem('archiveSortBy', 'name-asc');
+    installHandlers([newest]);
+    render(<ArchivesPage />);
+
+    releaseFull('error');
+    await screen.findByTestId('archives-load-error', {}, { timeout: 10000 });
+    expect(screen.queryByText('Newest Benchy')).not.toBeInTheDocument();
+  });
+
+  it('switching to "All" while the full list loads does not show the cached head', async () => {
+    localStorage.setItem('archivePageSize', '25');
+    const head = Array.from({ length: 30 }, (_, i) =>
+      archive(100 + i, `Recent ${i}`, `2026-09-${String(30 - (i % 28)).padStart(2, '0')}T10:00:00Z`));
+    installHandlers(head);
+    render(<ArchivesPage />);
+
+    await waitFor(() => expect(screen.getByText('Recent 0')).toBeInTheDocument(), { timeout: 5000 });
+    const pageSizeSelect = screen.getAllByRole('combobox').find(
+      (el) => Array.from((el as HTMLSelectElement).options).some((o) => o.value === '-1'),
+    ) as HTMLSelectElement;
+    fireEvent.change(pageSizeSelect, { target: { value: '-1' } });
+
+    await waitFor(() => expect(screen.queryByText('Recent 0')).not.toBeInTheDocument(), { timeout: 5000 });
+
+    releaseFull([...head, older]);
+    await waitFor(() => expect(screen.getByText('Older Bracket')).toBeInTheDocument(), { timeout: 5000 });
+  });
+
+  it('keeps a pending jump to the original alive when the full list is slow', async () => {
+    const dup = archive(3, 'Reprint', '2026-10-02T10:00:00Z', {
+      content_hash: 'h', duplicate_count: 1, duplicate_sequence: 1, original_archive_id: 1,
+    });
+    installHandlers([dup]);
+    render(<ArchivesPage />);
+
+    fireEvent.click(await screen.findByTitle('Click to view original print (#1)', {}, { timeout: 5000 }));
+    // Longer than the 5 s highlight window.
+    await new Promise((r) => setTimeout(r, 5500));
+
+    releaseFull([dup, { ...older, content_hash: 'h', duplicate_count: 1 }]);
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalled(), { timeout: 5000 });
+    expect(screen.queryByText('Original print not visible - try clearing filters')).not.toBeInTheDocument();
+  }, 20000);
 
   it('does not report the original as missing while only the head is loaded', async () => {
     const dup = archive(3, 'Reprint', '2026-10-02T10:00:00Z', {

@@ -1926,6 +1926,7 @@ export default {
   // Archives page
   archives: {
     loadingOlder: 'Loading older archives…',
+    loadError: 'Couldn\'t load older archives.',
     media: {
       title: 'Print videos',
       download: 'Download print videos',

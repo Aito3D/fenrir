@@ -928,6 +928,7 @@ export default {
   // Archives page
   archives: {
     loadingOlder: 'Oudere archieven laden…',
+    loadError: 'Oudere archieven konden niet worden geladen.',
     media: {
       title: 'Afdrukvideo\'s',
       download: 'Afdrukvideo\'s downloaden',

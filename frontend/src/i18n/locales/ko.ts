@@ -1873,6 +1873,7 @@ export default {
   },
   archives: {
     loadingOlder: '이전 아카이브를 불러오는 중…',
+    loadError: '이전 아카이브를 불러오지 못했습니다.',
     media: {
       title: '출력 동영상',
       download: '출력 동영상 다운로드',

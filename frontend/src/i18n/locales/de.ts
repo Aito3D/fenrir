@@ -1917,6 +1917,7 @@ export default {
   // Archives page
   archives: {
     loadingOlder: 'Ältere Archiveinträge werden geladen…',
+    loadError: 'Ältere Archiveinträge konnten nicht geladen werden.',
     media: {
       title: 'Druckvideos',
       download: 'Druckvideos herunterladen',

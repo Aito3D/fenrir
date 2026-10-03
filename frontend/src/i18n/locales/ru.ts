@@ -1873,6 +1873,7 @@ export default {
   },
   archives: {
     loadingOlder: 'Загрузка более старых архивов…',
+    loadError: 'Не удалось загрузить более старые архивы.',
     media: {
       title: 'Видео печати',
       download: 'Скачать видео печати',

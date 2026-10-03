@@ -1917,6 +1917,7 @@ export default {
   // Archives page
   archives: {
     loadingOlder: 'Caricamento degli archivi meno recenti…',
+    loadError: 'Impossibile caricare gli archivi meno recenti.',
     media: {
       title: 'Video della stampa',
       download: 'Scarica i video della stampa',

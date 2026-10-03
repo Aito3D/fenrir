@@ -3217,12 +3217,16 @@ export function ArchivesPage() {
     queryKey: ['archives', filterPrinter],
     queryFn: () => api.getArchives(filterPrinter || undefined),
   });
-  const archives = fullQuery.data ?? headQuery.data;
-  // Only the newest rows are loaded. Any order other than newest-first, or
-  // "show all", would be misleading over them, so those keep the skeleton.
-  const isPartial = !fullQuery.data && !!headQuery.data;
-  const isLoading = fullQuery.isLoading && (!headQuery.data || sortBy !== 'date-desc');
+  // The head holds only the newest rows. Any order other than newest-first,
+  // or "show all", would be misleading over them, so those never show it —
+  // not even a cached head after switching page size, nor after the full
+  // list failed.
+  const headData = pageSize !== -1 && sortBy === 'date-desc' ? headQuery.data : undefined;
+  const archives = fullQuery.data ?? headData;
+  const isPartial = !fullQuery.data && !!headData;
+  const isLoading = fullQuery.isLoading && !isPartial;
   const showLoadingOlder = isPartial && !fullQuery.isError;
+  const fullLoadFailed = !fullQuery.data && fullQuery.isError;
 
   const handleNavigateToArchive = useCallback((archiveId: number) => {
     setPendingNavigationArchiveId(archiveId);
@@ -3248,11 +3252,13 @@ export function ArchivesPage() {
         }
       }, 100);
 
-      // Clear highlight after 5 seconds
-      const clearTimer = setTimeout(() => setHighlightedArchiveId(null), 5000);
+      // Clear highlight after 5 seconds — but not while a jump is still
+      // waiting for the full list, or a slow load would silently drop it.
+      const waitingForFull = isPartial && pendingNavigationArchiveId === highlightedArchiveId;
+      const clearTimer = waitingForFull ? undefined : setTimeout(() => setHighlightedArchiveId(null), 5000);
       return () => {
         clearTimeout(scrollTimer);
-        clearTimeout(clearTimer);
+        if (clearTimer) clearTimeout(clearTimer);
       };
     }
   }, [highlightedArchiveId, pendingNavigationArchiveId, showToast, t, isPartial]);
@@ -3862,8 +3868,9 @@ export function ArchivesPage() {
         if (targetPage !== pageIndex) setPageIndex(targetPage);
       }
     }
+  // Re-run when the full list replaces the head: the target may only exist there.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [highlightedArchiveId]);
+  }, [highlightedArchiveId, isPartial]);
 
   const selectionMode = isSelectionMode || selectedIds.size > 0;
 
@@ -4492,6 +4499,24 @@ export function ArchivesPage() {
         >
           <Loader2 className="w-4 h-4 animate-spin" />
           {t('archives.loadingOlder')}
+        </div>
+      )}
+      {fullLoadFailed && viewMode !== 'log' && (
+        <div
+          data-testid="archives-load-error"
+          role="alert"
+          className="flex items-center gap-2 mb-3 text-sm text-yellow-400"
+        >
+          <AlertCircle className="w-4 h-4" />
+          {t('archives.loadError')}
+          <button
+            type="button"
+            onClick={() => fullQuery.refetch()}
+            disabled={fullQuery.isFetching}
+            className="underline hover:text-white disabled:opacity-50"
+          >
+            {t('common.retry')}
+          </button>
         </div>
       )}
 

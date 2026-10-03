@@ -1917,6 +1917,7 @@ export default {
   // Archives page
   archives: {
     loadingOlder: '正在加载更早的归档…',
+    loadError: '无法加载更早的归档。',
     media: {
       title: '打印视频',
       download: '下载打印视频',

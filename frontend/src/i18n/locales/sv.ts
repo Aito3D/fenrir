@@ -928,6 +928,7 @@ export default {
   // Archives page
   archives: {
     loadingOlder: 'Läser in äldre arkivposter…',
+    loadError: 'Det gick inte att läsa in äldre arkivposter.',
     media: {
       title: 'Skrivarvideor',
       download: 'Ladda ner skrivarvideor',

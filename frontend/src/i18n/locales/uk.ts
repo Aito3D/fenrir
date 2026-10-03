@@ -1878,6 +1878,7 @@ export default {
   },
   archives: {
     loadingOlder: 'Завантаження старіших архівів…',
+    loadError: 'Не вдалося завантажити старіші архіви.',
     media: {
       title: 'Відео друку',
       download: 'Завантажити відео друку',

@@ -1916,6 +1916,7 @@ export default {
   // Archives page
   archives: {
     loadingOlder: '古いアーカイブを読み込み中…',
+    loadError: '古いアーカイブを読み込めませんでした。',
     media: {
       title: '印刷動画',
       download: '印刷動画をダウンロード',

@@ -1917,6 +1917,7 @@ export default {
   // Archives page
   archives: {
     loadingOlder: '正在載入更早的歸檔…',
+    loadError: '無法載入更早的歸檔。',
     media: {
       title: '列印影片',
       download: '下載列印影片',

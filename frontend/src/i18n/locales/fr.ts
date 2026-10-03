@@ -1917,6 +1917,7 @@ export default {
   // Archives page
   archives: {
     loadingOlder: 'Chargement des archives plus anciennes…',
+    loadError: 'Impossible de charger les archives plus anciennes.',
     media: {
       title: 'Vidéos d’impression',
       download: 'Télécharger les vidéos d’impression',
