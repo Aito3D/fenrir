@@ -322,6 +322,19 @@ async def _load_run_aggregates(db: AsyncSession, archive_ids: list[int]) -> dict
     return aggregates
 
 
+def _list_extra_data(extra_data: dict | None) -> dict | None:
+    """extra_data for list responses: everything except `_print_data`.
+
+    `_print_data` is a raw diagnostic snapshot (~9 KB per archive) that only
+    backend services read, from the ORM row. Shipping it in the archive list
+    made the Archives page download ~31 MB for 3k archives. Returns a shallow
+    copy so the ORM object is never mutated.
+    """
+    if not extra_data or "_print_data" not in extra_data:
+        return extra_data
+    return {k: v for k, v in extra_data.items() if k != "_print_data"}
+
+
 def archive_to_response(
     archive: PrintArchive,
     duplicates: list[dict] | None = None,
@@ -329,6 +342,7 @@ def archive_to_response(
     duplicate_sequence: int = 0,
     original_archive_id: int | None = None,
     run_aggregate: dict | None = None,
+    include_print_data: bool = True,
 ) -> dict:
     """Convert archive model to response dict with computed fields."""
     data = {
@@ -365,7 +379,7 @@ def archive_to_response(
         "status": archive.status,
         "started_at": archive.started_at,
         "completed_at": archive.completed_at,
-        "extra_data": archive.extra_data,
+        "extra_data": archive.extra_data if include_print_data else _list_extra_data(archive.extra_data),
         "makerworld_url": archive.makerworld_url,
         "designer": archive.designer,
         "external_url": archive.external_url,
@@ -533,6 +547,7 @@ async def list_archives(
                 duplicate_sequence=duplicate_sequence,
                 original_archive_id=original_archive_id,
                 run_aggregate=run_aggregates.get(a.id),
+                include_print_data=False,
             )
         )
     return result
@@ -848,7 +863,9 @@ async def search_archives(
         # Load run aggregates so multi-run archives' time/accuracy badge is
         # suppressed consistently with the main list endpoint (#1608).
         run_aggregates = await _load_run_aggregates(db, [a.id for a in archives])
-        return [archive_to_response(a, run_aggregate=run_aggregates.get(a.id)) for a in archives]
+        return [
+            archive_to_response(a, run_aggregate=run_aggregates.get(a.id), include_print_data=False) for a in archives
+        ]
 
     if not matched_ids:
         return []
@@ -880,7 +897,7 @@ async def search_archives(
     # Load run aggregates so multi-run archives' time/accuracy badge is
     # suppressed consistently with the main list endpoint (#1608).
     run_aggregates = await _load_run_aggregates(db, [a.id for a in paginated])
-    return [archive_to_response(a, run_aggregate=run_aggregates.get(a.id)) for a in paginated]
+    return [archive_to_response(a, run_aggregate=run_aggregates.get(a.id), include_print_data=False) for a in paginated]
 
 
 @router.post("/search/rebuild-index")

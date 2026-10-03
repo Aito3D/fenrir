@@ -201,6 +201,64 @@ class TestArchivesAPI:
         data = response.json()
         assert all(a["printer_id"] == printer1.id for a in data)
 
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_list_archives_omits_print_data_but_keeps_other_extra_data(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """The list ships every archive at once; `_print_data` is a ~9 KB
+        diagnostic snapshot per row that no list consumer reads (it was 95 % of
+        a 31 MB response). The list drops it; the detail route and the DB row
+        keep it, and the other extra_data keys the page reads stay."""
+        printer = await printer_factory()
+        mapping = {"mapping": [0, 2], "printer_id": printer.id}
+        archive = await archive_factory(
+            printer.id,
+            print_name="PrintDataCarrier",
+            extra_data={"_print_data": {"gcode_state": "FINISH", "mc_percent": 42}, "slicer_ams_mapping": mapping},
+        )
+
+        response = await async_client.get("/api/v1/archives/")
+        assert response.status_code == 200
+        row = next(a for a in response.json() if a["id"] == archive.id)
+        assert "_print_data" not in row["extra_data"]
+        assert row["extra_data"]["slicer_ams_mapping"] == mapping
+
+        detail = await async_client.get(f"/api/v1/archives/{archive.id}")
+        assert detail.status_code == 200
+        assert detail.json()["extra_data"]["_print_data"]["mc_percent"] == 42
+
+        await db_session.refresh(archive)
+        assert archive.extra_data["_print_data"]["mc_percent"] == 42
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_search_archives_omits_print_data(self, async_client: AsyncClient, archive_factory, printer_factory):
+        printer = await printer_factory()
+        archive = await archive_factory(
+            printer.id,
+            print_name="SearchablePrintDataCarrier",
+            extra_data={"_print_data": {"mc_percent": 7}, "bed_type": "Textured PEI Plate"},
+        )
+
+        response = await async_client.get("/api/v1/archives/search?q=SearchablePrintDataCarrier")
+        assert response.status_code == 200
+        rows = [a for a in response.json() if a["id"] == archive.id]
+        assert rows, "search must find the archive"
+        assert "_print_data" not in rows[0]["extra_data"]
+        assert rows[0]["extra_data"]["bed_type"] == "Textured PEI Plate"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_list_archives_handles_null_extra_data(
+        self, async_client: AsyncClient, archive_factory, printer_factory
+    ):
+        printer = await printer_factory()
+        archive = await archive_factory(printer.id, extra_data=None)
+        response = await async_client.get("/api/v1/archives/")
+        row = next(a for a in response.json() if a["id"] == archive.id)
+        assert row["extra_data"] is None
+
     # ========================================================================
     # Get single endpoint
     # ========================================================================
