@@ -80,9 +80,10 @@ The page's data is `full ?? head`. A flag `isPartial = !full && !!head`.
 Behaviour while `isPartial`:
 
 - The loading skeleton shows only until head arrives (today: until full).
-- Page 1 renders from head. Pagination shows a small "Loading older
-  archives…" hint in place of the page count, and moving past page 1 is
-  disabled.
+- Page 1 renders from head. A small "Loading older archives…" hint (spinner
+  + text) shows above the grid/list. Pagination needs no change: it only
+  counts head rows, so it naturally offers just the head's pages (usually
+  one, in which case the bar hides itself) until full arrives.
 - If `sortBy !== 'date-desc'`, the page waits for full exactly as today
   (skeleton), because head holds the newest rows only and any other order
   over it would be misleading.
