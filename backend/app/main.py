@@ -95,6 +95,7 @@ from backend.app.api.routes.maintenance import _get_printer_maintenance_internal
 from backend.app.api.routes.support import init_debug_logging
 from backend.app.core.config import APP_VERSION, settings as app_settings
 from backend.app.core.database import async_session, engine, init_db
+from backend.app.core.json_gzip import JsonGZipMiddleware
 from backend.app.core.tasks import spawn_background_task
 from backend.app.core.websocket import ws_manager
 from backend.app.services import print_dispatch_context, slot_unlink_grace
@@ -10901,6 +10902,12 @@ async def trace_id_middleware(request, call_next):
 
     response.headers["X-Trace-Id"] = trace_id
     return response
+
+
+# Registered after the @app.middleware decorators so it is the outermost layer
+# and compresses the final JSON body, headers included. JSON only: streamed
+# camera/file responses pass through untouched (archive list fast load).
+app.add_middleware(JsonGZipMiddleware)
 
 
 # API routes

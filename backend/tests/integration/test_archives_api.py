@@ -203,6 +203,21 @@ class TestArchivesAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_list_archives_is_gzipped_for_gzip_clients(
+        self, async_client: AsyncClient, archive_factory, printer_factory
+    ):
+        printer = await printer_factory()
+        for i in range(5):
+            await archive_factory(printer.id, print_name=f"Gzip Archive {i}")
+
+        response = await async_client.get("/api/v1/archives/", headers={"Accept-Encoding": "gzip"})
+
+        assert response.status_code == 200
+        assert response.headers.get("content-encoding") == "gzip"
+        assert len(response.json()) == 5
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_list_archives_omits_print_data_but_keeps_other_extra_data(
         self, async_client: AsyncClient, archive_factory, printer_factory, db_session
     ):
