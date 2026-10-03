@@ -218,13 +218,17 @@ async def test_a_429_on_a_push_arms_a_fast_retry_and_a_hold_of_at_most_a_minute(
 
     zoho_service.transport = httpx.MockTransport(handler)
     aito_quote_sync._reset_fast_retry_state()
-    before = time.monotonic()
-
     await run_sync_once(db_session, pending_only=True)
+    # The hold is armed as "now + window" when the 429 is handled, which is
+    # before this point, so measuring from here bounds the window however long
+    # the setup, token and push round-trip took (a 0.5 s slack measured from
+    # before the call flaked on a loaded CI runner: 60.8 s).
+    after = time.monotonic()
 
     assert aito_quote_sync._take_transient_push_failure() is True
     assert aito_quote_sync._throttled_until is not None
-    assert aito_quote_sync._throttled_until - before <= 60.5
+    # At most a minute, not the 900 s the Retry-After asked for.
+    assert aito_quote_sync._throttled_until <= after + 60.0
 
 
 @pytest.mark.asyncio
