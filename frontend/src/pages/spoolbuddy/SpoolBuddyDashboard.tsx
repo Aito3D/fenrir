@@ -366,13 +366,12 @@ export function SpoolBuddyDashboard() {
       if (spoolmanMode) {
         // The tray UUID wins when both are sent: it is what the AMS stores in
         // extra.tag, and the same on both tags of a Bambu spool (#984).
-        const tag_uid = sbState.unknownTagUid || undefined;
-        const tray_uuid = displayedTrayUuid || undefined;
-        if (!tag_uid && !tray_uuid) {
-          showToast(t('spoolman.linkFailed'), 'error');
-          return;
-        }
-        const raw = await api.linkTagToSpoolmanSpool(spool.id, { tray_uuid, tag_uid });
+        // Both come from the card, not the reader: the live tag state is
+        // cleared when the spool is lifted while the dialog is open.
+        const raw = await api.linkTagToSpoolmanSpool(spool.id, {
+          tag_uid: displayedTagId,
+          tray_uuid: displayedTrayUuid || undefined,
+        });
         const updated = raw as InventorySpool | undefined;
         if (!updated) {
           showToast(t('spoolman.linkFailed'), 'error');
@@ -463,7 +462,7 @@ export function SpoolBuddyDashboard() {
           low_stock_threshold_pct: null,
         } as Parameters<typeof api.createSpoolmanInventorySpool>[0]);
         await api.linkTagToSpoolmanSpool(created.id, {
-          tag_uid: sbState.unknownTagUid || undefined,
+          tag_uid: displayedTagId,
           tray_uuid: displayedTrayUuid || undefined,
         });
       } else {

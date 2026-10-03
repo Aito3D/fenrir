@@ -846,6 +846,83 @@ describe('SpoolBuddyDashboard', () => {
     });
   });
 
+  describe('Spoolman mode, spool lifted while a dialog is open', () => {
+    // The reader state is cleared when the tag leaves the reader; the card and
+    // its dialogs stay. Linking must use the tag the card shows.
+    function renderLiftable() {
+      const setterRef: { current: React.Dispatch<React.SetStateAction<typeof mockOutletContext.sbState>> | null } = { current: null };
+      function DynWrapper() {
+        const [sbState, setSbState] = React.useState({ ...mockOutletContext.sbState, unknownTagUid: 'AABB1122334455FF' });
+        setterRef.current = setSbState;
+        return <Outlet context={{ ...mockOutletContext, sbState }} />;
+      }
+      const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+      render(
+        <ToastProvider>
+          <QueryClientProvider client={qc}>
+            <MemoryRouter initialEntries={['/spoolbuddy']}>
+              <Routes>
+                <Route element={<DynWrapper />}>
+                  <Route path="spoolbuddy" element={<SpoolBuddyDashboard />} />
+                </Route>
+              </Routes>
+            </MemoryRouter>
+          </QueryClientProvider>
+        </ToastProvider>
+      );
+      return () => act(() => setterRef.current!((prev) => ({ ...prev, unknownTagUid: null, unknownTrayUuid: null })));
+    }
+
+    beforeEach(async () => {
+      const { api } = await import('../../api/client');
+      (api.getSpoolmanSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+        spoolman_enabled: 'true',
+        spoolman_url: 'http://localhost:7912',
+        spoolman_sync_mode: 'off',
+        spoolman_disable_weight_sync: 'false',
+        spoolman_report_partial_usage: 'false',
+      });
+      (api.getSpoolmanInventorySpools as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { id: 30, material: 'TPU', brand: 'Polymaker', tag_uid: null, tray_uuid: null, archived_at: null, color_name: 'Orange', rgba: 'FF6600FF', subtype: null, label_weight: 1000, core_weight: 250, weight_used: 0 },
+      ]);
+    });
+
+    it('links the tag shown on the card', async () => {
+      const { api } = await import('../../api/client');
+      const lift = renderLiftable();
+
+      fireEvent.click(await waitFor(() => screen.getByText('Assign Spool')));
+      fireEvent.click(await waitFor(() => screen.getByText('Orange')));
+      await waitFor(() => screen.getByText('Link Tag'));
+      lift();
+      fireEvent.click(screen.getByText('Link Tag'));
+
+      await waitFor(() => {
+        expect(api.linkTagToSpoolmanSpool).toHaveBeenCalledWith(30, {
+          tag_uid: 'AABB1122334455FF',
+          tray_uuid: undefined,
+        });
+      });
+    });
+
+    it('quick-adds the spool with the tag shown on the card', async () => {
+      const { api } = await import('../../api/client');
+      const lift = renderLiftable();
+
+      fireEvent.click(await waitFor(() => screen.getAllByText('Add to Inventory')[0]));
+      await waitFor(() => screen.getByText('Add Anyway'));
+      lift();
+      fireEvent.click(screen.getByText('Add Anyway'));
+
+      await waitFor(() => {
+        expect(api.linkTagToSpoolmanSpool).toHaveBeenCalledWith(4, {
+          tag_uid: 'AABB1122334455FF',
+          tray_uuid: undefined,
+        });
+      });
+    });
+  });
+
   describe('Spoolman mode', () => {
     const SPOOLMAN_SPOOL = {
       id: 42, material: 'PLA', subtype: null, brand: 'Bambu',
