@@ -65,6 +65,8 @@ export function makeProject(overrides: Partial<AitoProject> = {}): AitoProject {
     shipping_lta: null,
     shipping_service_name: null,
     tracking_configured: false,
+    search_text: '',
+    document_numbers: [],
     quote_expiry_date: null,
     retainer_paid_total: null,
     customer_credit_total: null,

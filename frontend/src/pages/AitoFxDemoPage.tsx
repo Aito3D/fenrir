@@ -122,6 +122,8 @@ function demoProject(card: (typeof DEMO_CARDS)[number]): AitoProject {
     shipping_lta: null,
     shipping_service_name: null,
     tracking_configured: false,
+    search_text: '',
+    document_numbers: [],
     version: 1,
     created_at: '2026-08-14T09:00:00',
     updated_at: '2026-08-19T09:00:00',
