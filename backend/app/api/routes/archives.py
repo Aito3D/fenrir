@@ -4681,6 +4681,7 @@ async def get_archive_plates(
 async def get_plate_thumbnail(
     archive_id: int,
     plate_index: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     auth_result: tuple[User | None, bool] = Depends(
         require_media_token_ownership(
@@ -4702,12 +4703,27 @@ async def get_plate_thumbnail(
     if not file_path.is_file():
         raise HTTPException(404, "Archive file not found")
 
-    try:
+    # Revalidated by ETag (the 3MF's mtime and size, and the plate): hovering a
+    # card or switching plates re-requests the image, and each request used to
+    # reopen the zip on the event loop. "no-cache" because a 3MF filled in
+    # later can replace the file behind the same URL.
+    stat = file_path.stat()
+    etag = f'"{stat.st_mtime_ns:x}-{stat.st_size:x}-{plate_index}"'
+    cache_headers = {"ETag": etag, "Cache-Control": "private, no-cache"}
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers=cache_headers)
+
+    def _read_plate_png() -> bytes | None:
         with zipfile.ZipFile(file_path, "r") as zf:
             thumb_path = f"Metadata/plate_{plate_index}.png"
             if thumb_path in zf.namelist():
-                data = zf.read(thumb_path)
-                return Response(content=data, media_type="image/png")
+                return zf.read(thumb_path)
+        return None
+
+    try:
+        data = await asyncio.to_thread(_read_plate_png)
+        if data is not None:
+            return Response(content=data, media_type="image/png", headers=cache_headers)
     except Exception:
         pass  # Fall through to 404 if archive is unreadable or thumbnail missing
 
