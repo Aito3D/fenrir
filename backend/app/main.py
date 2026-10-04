@@ -146,6 +146,7 @@ from backend.app.services.print_storage import (
     print_file_reachable_over_ftp,
     probe_filenames,
 )
+from backend.app.services.printer_hours import printer_hours_service
 from backend.app.services.printer_manager import (
     init_printer_connections,
     parse_plate_id,
@@ -10325,6 +10326,9 @@ async def lifespan(app: FastAPI):
     # Start the archive auto-purge sweeper (#1008 follow-up)
     await archive_purge_service.start_scheduler()
 
+    # Snapshot each printer's hour counter daily for the Maintenance → Hours tab
+    await printer_hours_service.start_scheduler()
+
     # Start AMS history recording
     start_ams_history_recording()
 
@@ -10424,6 +10428,7 @@ async def lifespan(app: FastAPI):
     local_backup_service.stop_scheduler()
     library_trash_service.stop_scheduler()
     archive_purge_service.stop_scheduler()
+    printer_hours_service.stop_scheduler()
     obico_detection_service.stop()
     stop_ams_history_recording()
     stop_printer_sensor_history_recording()

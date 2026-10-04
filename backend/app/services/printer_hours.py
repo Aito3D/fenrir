@@ -6,6 +6,7 @@ A manual reading dated today also recalibrates the printer's counter — that
 rule lives in the route, this module provides the pieces.
 """
 
+import asyncio
 import logging
 from datetime import date
 
@@ -13,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.core import database as _database
 from backend.app.models.maintenance import HourMachine, HourReading
 from backend.app.models.printer import Printer
 
@@ -111,3 +113,41 @@ async def snapshot_today(db: AsyncSession, today: date | None = None) -> int:
         written += 1
     await db.commit()
     return written
+
+
+class PrinterHoursService:
+    """Hourly sweep writing today's auto reading. Hourly, not at midnight, so a restart never loses a day."""
+
+    def __init__(self):
+        self._scheduler_task: asyncio.Task | None = None
+        self._startup_delay = 60
+        self._check_interval = 3600
+
+    async def start_scheduler(self):
+        if self._scheduler_task is not None:
+            return
+        logger.info("Starting printer hours snapshot sweeper")
+        self._scheduler_task = asyncio.create_task(self._scheduler_loop())
+
+    def stop_scheduler(self):
+        if self._scheduler_task:
+            self._scheduler_task.cancel()
+            self._scheduler_task = None
+            logger.info("Stopped printer hours snapshot sweeper")
+
+    async def _scheduler_loop(self):
+        delay = self._startup_delay
+        while True:
+            try:
+                await asyncio.sleep(delay)
+                delay = self._check_interval
+                async with _database.async_session() as db:
+                    written = await snapshot_today(db)
+                logger.debug("Printer hours snapshot: %s machines", written)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.warning("Printer hours snapshot failed: %s", e)
+
+
+printer_hours_service = PrinterHoursService()

@@ -129,3 +129,33 @@ async def test_snapshot_today_is_idempotent_and_skips_retired(db_session, printe
 
     rows = (await db_session.execute(select(HourReading))).scalars().all()
     assert [(r.reading_date, r.source, r.hours) for r in rows] == [(today, "auto", 112.0)]
+
+
+@pytest.mark.asyncio
+async def test_scheduler_snapshots_and_survives_errors(monkeypatch):
+    import asyncio
+    from contextlib import asynccontextmanager
+
+    from backend.app.core import database as _database
+
+    calls: list[str] = []
+
+    async def fake_snapshot(_db):
+        calls.append("snap")
+        if len(calls) == 1:
+            raise RuntimeError("transient")
+        return 3
+
+    @asynccontextmanager
+    async def fake_session():
+        yield object()
+
+    monkeypatch.setattr(printer_hours, "snapshot_today", fake_snapshot)
+    monkeypatch.setattr(_database, "async_session", fake_session)
+    service = printer_hours.PrinterHoursService()
+    service._startup_delay = 0
+    service._check_interval = 0.01
+    await service.start_scheduler()
+    await asyncio.sleep(0.1)
+    service.stop_scheduler()
+    assert len(calls) >= 2  # the first failure did not kill the loop
