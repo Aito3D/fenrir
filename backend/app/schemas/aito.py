@@ -1050,6 +1050,34 @@ class AitoInvoiceResponse(BaseModel):
     invoice_count: int
 
 
+class AitoDepositCredit(BaseModel):
+    id: str
+    number: str
+    applicable: float
+    total: float
+
+
+class AitoInvoiceDepositsInvoice(BaseModel):
+    id: str
+    number: str
+    balance: float
+    currency_code: str
+
+
+class AitoInvoiceDepositsResponse(BaseModel):
+    """This quote's own unspent deposits and the invoice they could go on.
+    `invoice` is null when the card has no open invoice to pay."""
+
+    invoice: AitoInvoiceDepositsInvoice | None
+    deposits: list[AitoDepositCredit]
+
+
+class AitoApplyDepositRequest(BaseModel):
+    invoice_id: str = Field(min_length=1, max_length=64)
+    retainer_id: str = Field(min_length=1, max_length=64)
+    amount: float = Field(gt=0)
+
+
 class AitoRetainerInvoiceResponse(BaseModel):
     """One retainer (deposit) invoice of this project, read live from Books
     on panel open — for the same reason ``AitoInvoiceResponse`` is: its

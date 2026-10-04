@@ -32,16 +32,20 @@ from backend.app.models.aito_task import AitoTask
 from backend.app.models.notification_inbox import AitoWatch
 from backend.app.models.user import User
 from backend.app.schemas.aito import (
+    AitoApplyDepositRequest,
     AitoClientEdit,
     AitoClientHistoryResponse,
     AitoClientRatingResponse,
     AitoClientTransfer,
     AitoContactedUpdate,
+    AitoDepositCredit,
     AitoDueDateUpdate,
     AitoEventPage,
     AitoEventResponse,
     AitoFlagUpdate,
     AitoInvoiceCreatedResponse,
+    AitoInvoiceDepositsInvoice,
+    AitoInvoiceDepositsResponse,
     AitoInvoiceEmailContent,
     AitoInvoiceEmailRequest,
     AitoInvoicePreview,
@@ -95,6 +99,12 @@ from backend.app.services.aito_board_rules import AWAY_STATUSES, SERVICES, TaskS
 from backend.app.services.aito_client_history import compute_client_history
 from backend.app.services.aito_client_rating import read_client_rating
 from backend.app.services.aito_customer_credit import read_customer_credit
+from backend.app.services.aito_deposit_apply import (
+    DepositAmountTooHigh,
+    DepositNotFound,
+    apply_deposit,
+    project_deposits,
+)
 from backend.app.services.aito_events import diff_fields, kinds_for_depth, record, utc_now_naive
 from backend.app.services.aito_invoice_create import (
     apply_retainers,
@@ -160,6 +170,7 @@ from backend.app.services.pushcut import (
 from backend.app.services.zoho import (
     ZohoNotConfiguredError,
     ZohoNotFound,
+    ZohoRateLimited,
     ZohoRequestRejected,
     ZohoUnreachable,
     ZohoUpstreamError,
@@ -2231,6 +2242,68 @@ async def get_retainers(
     except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
         logger.warning("Aito retainer lookup failed for project %s: %s", project_id, e)
         raise HTTPException(status_code=502, detail=str(e)) from e
+
+
+@router.get("/{project_id}/invoice-deposits", response_model=AitoInvoiceDepositsResponse)
+async def get_invoice_deposits(
+    project_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
+) -> AitoInvoiceDepositsResponse:
+    """What the invoice row's Apply-deposit button offers: this quote's own
+    unspent deposits and the open invoice. Live, like get_invoice."""
+    project = await _get_active_project_or_404(db, project_id)
+    try:
+        invoice, credits = await project_deposits(db, project)
+    except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
+        logger.warning("Aito deposit lookup failed for project %s: %s", project_id, e)
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    return AitoInvoiceDepositsResponse(
+        invoice=None
+        if invoice is None
+        else AitoInvoiceDepositsInvoice(
+            id=str(invoice["id"]),
+            number=str(invoice.get("number") or invoice["id"]),
+            balance=float(invoice.get("balance") or 0),
+            currency_code=str(invoice.get("currency_code") or ""),
+        ),
+        deposits=[AitoDepositCredit(id=c.id, number=c.number, applicable=c.applicable, total=c.total) for c in credits],
+    )
+
+
+@router.post("/{project_id}/invoice-deposits/apply", response_model=AitoInvoiceResponse)
+async def apply_invoice_deposit(
+    project_id: int,
+    payload: AitoApplyDepositRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
+) -> AitoInvoiceResponse:
+    """Spend part or all of one of this quote's deposits on its open invoice.
+    Every figure is re-read from Books; see aito_deposit_apply."""
+    project = await _get_active_project_or_404(db, project_id)
+    try:
+        fresh = await apply_deposit(
+            db,
+            project,
+            invoice_id=payload.invoice_id,
+            retainer_id=payload.retainer_id,
+            amount=payload.amount,
+            actor_name=_actor(current_user),
+        )
+        invoices = await zoho_service.list_project_invoices(db, project.quote_id or "", project.client_id or "")
+        url = await zoho_service.books_invoice_url(db, payload.invoice_id)
+    except DepositNotFound as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except DepositAmountTooHigh as e:
+        raise HTTPException(
+            status_code=409, detail={"code": "amount_too_high", "message": str(e), "cap": round(e.cap, 2)}
+        ) from e
+    except ZohoRateLimited as e:
+        raise HTTPException(status_code=429, detail=str(e)) from e
+    except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
+        logger.warning("Aito deposit apply failed for project %s: %s", project_id, e)
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    return AitoInvoiceResponse(**fresh, url=url, invoice_count=len(invoices) or 1)
 
 
 async def _resolve_project_retainer(db: AsyncSession, project: AitoProject, retainer_id: str) -> dict:
