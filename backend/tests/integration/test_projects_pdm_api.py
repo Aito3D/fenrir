@@ -90,3 +90,32 @@ async def test_template_copy_carries_tags(async_client: AsyncClient):
     assert copy["code"] not in (created["code"], template["code"])
     body = (await async_client.get(f"/api/v1/projects/{copy['id']}")).json()
     assert [t["name"] for t in body["tag_list"]] == ["gabarit"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_patch_new_names_only_keeps_existing_tags(async_client: AsyncClient):
+    created = (await async_client.post("/api/v1/projects/", json={"name": "K", "new_tag_names": ["un"]})).json()
+    body = (await async_client.patch(f"/api/v1/projects/{created['id']}", json={"new_tag_names": ["deux"]})).json()
+    assert [t["name"] for t in body["tag_list"]] == ["deux", "un"]
+    assert body["tags"] == "deux, un"
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_patch_empty_tag_ids_clears_tags(async_client: AsyncClient):
+    created = (await async_client.post("/api/v1/projects/", json={"name": "C", "new_tag_names": ["un"]})).json()
+    body = (await async_client.patch(f"/api/v1/projects/{created['id']}", json={"tag_ids": []})).json()
+    assert body["tag_list"] == []
+    assert not body["tags"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_patch_unknown_tag_id_leaves_tags_unchanged(async_client: AsyncClient):
+    created = (await async_client.post("/api/v1/projects/", json={"name": "U", "new_tag_names": ["un"]})).json()
+    response = await async_client.patch(f"/api/v1/projects/{created['id']}", json={"tag_ids": [4242]})
+    assert response.status_code == 400
+    body = (await async_client.get(f"/api/v1/projects/{created['id']}")).json()
+    assert [t["name"] for t in body["tag_list"]] == ["un"]
+    assert body["tags"] == "un"

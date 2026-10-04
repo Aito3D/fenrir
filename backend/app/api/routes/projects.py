@@ -404,9 +404,11 @@ async def _write_project_tags(db: AsyncSession, project: Project, data, *, legac
     converted into rows."""
     try:
         if data.tag_ids is not None or data.new_tag_names:
-            await apply_project_tag_input(
-                db, project, tag_ids=data.tag_ids or [], new_tag_names=data.new_tag_names or []
-            )
+            tag_ids = data.tag_ids
+            if tag_ids is None:
+                # new names only: add to the current set instead of replacing it
+                tag_ids = [ref.id for ref in await _tag_list(db, project.id)]
+            await apply_project_tag_input(db, project, tag_ids=tag_ids, new_tag_names=data.new_tag_names or [])
         elif legacy_sent:
             await sync_project_tags_from_string(db, project)
     except UnknownTagError as exc:
