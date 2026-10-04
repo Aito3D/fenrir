@@ -6668,6 +6668,30 @@ def _is_active_archive_stale(archive, state) -> tuple[bool, str]:
     return False, ""
 
 
+def _reconciled_status(archive, state) -> str:
+    """The outcome to record for a stale archive's synthesised completion.
+
+    "aborted" was hard-coded, so a print that finished normally while Fenrir
+    was restarting or disconnected became a failure in the stats, Failure
+    Analysis and billing. A FINISH or FAILED that still names *this* job --
+    the same subtask_id, or the same name when no ids are known -- is proof of
+    how it ended. Anything else (another job since, IDLE, nothing named) is not
+    evidence either way and stays "aborted".
+    """
+    current_state = (state.state or "").upper()
+    if current_state not in ("FINISH", "FAILED"):
+        return "aborted"
+    current_id = (state.subtask_id or "").strip()
+    if archive.subtask_id and current_id:
+        same_job = archive.subtask_id == current_id
+    else:
+        current_name = (state.subtask_name or "").strip()
+        same_job = bool(current_name) and current_name == (archive.print_name or "").strip()
+    if not same_job:
+        return "aborted"
+    return "completed" if current_state == "FINISH" else "failed"
+
+
 async def prime_kprofile_table(printer_id: int) -> int:
     """Read the printer's calibration table once per connection.
 
@@ -6736,10 +6760,10 @@ async def reconcile_stale_active_prints(printer_id: int) -> int:
     cleanup chain handles SD-file deletion, status updates, usage tracking,
     and notifications.
 
-    Synthesised ``status="aborted"`` is the conservative label: we have no
-    proof the print finished successfully (and no progress evidence to
-    promote to ``"completed"``). The real PRINT COMPLETE callback, if it
-    fires later, overwrites the status with the correct value.
+    The synthesised status comes from :func:`_reconciled_status`: a FINISH or
+    FAILED that still names this job is recorded as such, and anything else
+    gets the conservative ``"aborted"`` -- there is no proof how it ended, and
+    no later PRINT COMPLETE will correct it (``_active_prints`` is cleared here).
 
     Returns the number of archives reconciled.
     """
@@ -6785,10 +6809,14 @@ async def reconcile_stale_active_prints(printer_id: int) -> int:
         # the usage tracker can compare end-of-print remain% against the
         # captured start values.
         try:
+            status = _reconciled_status(archive, state)
             await on_print_complete(
                 printer_id,
                 {
-                    "status": "aborted",
+                    "status": status,
+                    # A finished job ran to the end; without this a partial-run
+                    # scale would zero its filament and cost.
+                    **({"progress": 100} if status == "completed" else {}),
                     "filename": archive.filename,
                     "subtask_name": archive.print_name or "",
                     "subtask_id": archive.subtask_id or "",
