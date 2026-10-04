@@ -1495,246 +1495,258 @@ class ArchiveService:
                 suffix += 1
                 archive_dir = archive_dir.with_name(f"{base_dir_name}_{suffix}")
 
-        # Copy 3MF file with an explicit fsync'd loop (avoids a sendfile
-        # short-read quirk that silently truncated 3MF archives on some
-        # platforms — see _copy_and_fsync and #1032).
-        dest_file = archive_dir / source_file.name
-        _copy_and_fsync(source_file, dest_file)
+        # From here on the folder is this call's own (created exclusively above).
+        # Any failure -- a commit refused with "database is locked", a full disk
+        # mid-copy -- rolls the session back for the caller and removes the
+        # folder, instead of leaving an orphan with no row and a session stuck
+        # in a failed transaction.
+        try:
+            # Copy 3MF file with an explicit fsync'd loop (avoids a sendfile
+            # short-read quirk that silently truncated 3MF archives on some
+            # platforms — see _copy_and_fsync and #1032).
+            dest_file = archive_dir / source_file.name
+            _copy_and_fsync(source_file, dest_file)
 
-        # If we just archived a 3MF, verify the dest is a valid ZIP before
-        # going any further. Staying quiet here is how #1032 escaped review —
-        # the archive row was written but every later zipfile.ZipFile() call
-        # on the dest failed with "File is not a zip file".
-        if (
-            source_file.suffix.lower() == ".3mf"
-            and zipfile.is_zipfile(source_file)
-            and not zipfile.is_zipfile(dest_file)
-        ):
-            try:
-                src_size = source_file.stat().st_size
-                dst_size = dest_file.stat().st_size
-            except OSError:
-                src_size = dst_size = -1
-            logger.error(
-                "Archive copy corrupted 3MF: src=%s (%s bytes, valid ZIP) -> dst=%s (%s bytes, NOT a ZIP). Refusing to create archive row.",
-                source_file,
-                src_size,
-                dest_file,
-                dst_size,
-            )
-            # Narrow cleanup: remove only the truncated file and the archive
-            # directory if it's now empty. The directory is this call's own
-            # (created exclusively above), but the narrow form costs nothing.
-            try:
-                dest_file.unlink()
-            except OSError:
-                pass
-            try:
-                archive_dir.rmdir()
-            except OSError:
-                pass  # directory not empty — leave untouched
-            return None
-
-        # Compute content hash for duplicate detection
-        content_hash = self.compute_file_hash(dest_file)
-
-        # Extract plate number from filename (e.g., "plate_5" from "/data/Metadata/plate_5.gcode")
-        plate_number = None
-        if print_data:
-            filename = print_data.get("filename", "")
-            match = re.search(r"plate_(\d+)", filename)
-            if match:
-                plate_number = int(match.group(1))
-
-        # Parse 3MF metadata
-        parser = ThreeMFParser(dest_file, plate_number=plate_number)
-        metadata = parser.parse()
-
-        # Save thumbnail if present
-        thumbnail_path = None
-        if "_thumbnail_data" in metadata:
-            thumb_file = archive_dir / f"thumbnail{metadata['_thumbnail_ext']}"
-            thumb_file.write_bytes(metadata["_thumbnail_data"])
-            thumbnail_path = str(thumb_file.relative_to(settings.base_dir))
-            del metadata["_thumbnail_data"]
-            del metadata["_thumbnail_ext"]
-
-        # Merge with print data from MQTT
-        if print_data:
-            metadata["_print_data"] = print_data
-
-        # Promote the slicer's own live-resolved AMS-slot pick, when the caller
-        # explicitly opted in (see the `slicer_ams_mapping` param docstring for
-        # why this is NOT read off `print_data["ams_mapping"]`), to a stable
-        # top-level extra_data key. Lets a later reprint reuse the exact tray
-        # the user picked/BambuStudio auto-matched at slice time instead of the
-        # scheduler re-deriving one from just the file's static type/color,
-        # which can land on the wrong physical spool when that match isn't
-        # unique. Top-level (not nested under the `_print_data` diagnostic bag)
-        # so API consumers have a single stable path:
-        # `archive.extra_data.slicer_ams_mapping`. Stored together with the
-        # printer it was resolved against — see `slicer_ams_mapping_printer_id`
-        # param docstring — so a later reprint can tell whether it's even
-        # applicable before trying to reuse it.
-        if slicer_ams_mapping and slicer_ams_mapping_printer_id is not None:
-            metadata["slicer_ams_mapping"] = {
-                "mapping": slicer_ams_mapping,
-                "printer_id": slicer_ams_mapping_printer_id,
-            }
-
-        # Determine status and timestamps
-        status = print_data.get("status", "completed") if print_data else "archived"
-        started_at = datetime.now(timezone.utc) if status == "printing" else None
-        completed_at = datetime.now(timezone.utc) if status in ("completed", "failed", "archived") else None
-
-        # Calculate cost based on filament usage and type
-        cost = None
-        filament_grams = metadata.get("filament_used_grams")
-        filament_type = metadata.get("filament_type")
-        if filament_grams and filament_type:
-            # For multi-material prints, use the first filament type for cost calculation
-            primary_type = filament_type.split(",")[0].strip()
-            # Look up filament cost_per_kg from database
-            filament_result = await self.db.execute(select(Filament).where(Filament.type == primary_type).limit(1))
-            filament = filament_result.scalar_one_or_none()
-            if filament:
-                cost = round((filament_grams / 1000) * filament.cost_per_kg, 2)
-            else:
-                # Use default filament cost from settings
-                from backend.app.api.routes.settings import get_setting
-
-                default_cost_setting = await get_setting(self.db, "default_filament_cost")
-                default_cost_per_kg = float(default_cost_setting) if default_cost_setting else 25.0
-                cost = round((filament_grams / 1000) * default_cost_per_kg, 2)
-
-        # Calculate quantity from printable objects count
-        # printable_objects is a dict of {identify_id: name} for non-skipped objects
-        quantity = 1  # Default to 1
-        printable_objects = metadata.get("printable_objects")
-        if printable_objects and isinstance(printable_objects, dict):
-            quantity = len(printable_objects)
-            logger.debug("Auto-detected %s parts from 3MF printable objects", quantity)
-
-        # Recovery of an existing fallback row: assign the freshly-parsed values
-        # onto it rather than adding a second archive for the same print (#2957).
-        if update_archive_id is not None:
-            existing = await self.db.get(PrintArchive, update_archive_id)
-            if existing is None:
-                logger.warning("archive_print: archive %s to update no longer exists", update_archive_id)
-                return None
-            # `metadata` is freshly parsed from the 3MF, so assigning it drops
-            # the row's `no_3mf_available` / `no_3mf_reason` markers as a side
-            # effect — which is correct, the archive is no longer a fallback,
-            # and it is what stops the Archives banner counting it.
-            # `_print_data` is diagnostic history rather than something the 3MF
-            # knows about: keep the row's copy for a caller that passed no
-            # print_data of its own.
-            merged = dict(metadata)
-            preserved = (existing.extra_data or {}).get("_print_data")
-            if preserved is not None and "_print_data" not in merged:
-                merged["_print_data"] = preserved
-            # A record that this row started life without a 3MF, which the
-            # dropped markers no longer say.
-            merged["recovered_no_3mf"] = True
-            existing.filename = original_filename or source_file.name
-            existing.file_path = str(dest_file.relative_to(settings.base_dir))
-            existing.file_size = dest_file.stat().st_size
-            existing.content_hash = content_hash
-            existing.thumbnail_path = thumbnail_path
-            existing.print_name = (
-                clean_display_name(display_stem)
-                if prefer_filename_for_name
-                else (clean_display_name(metadata.get("print_name")) or clean_display_name(display_stem))
-            )
-            # Only overwrite what the 3MF actually knows. A fallback archive
-            # recovered mid-print has a real print_time_seconds from MQTT and a
-            # filament type/colour from the AMS; a 3MF that omits a field must
-            # not blank them back out.
-            for field in (
-                "print_time_seconds",
-                "filament_used_grams",
-                "filament_type",
-                "filament_color",
-                "layer_height",
-                "total_layers",
-                "nozzle_diameter",
-                "bed_temperature",
-                "bed_type",
-                "nozzle_temperature",
-                "sliced_for_model",
-                "makerworld_url",
-                "designer",
+            # If we just archived a 3MF, verify the dest is a valid ZIP before
+            # going any further. Staying quiet here is how #1032 escaped review —
+            # the archive row was written but every later zipfile.ZipFile() call
+            # on the dest failed with "File is not a zip file".
+            if (
+                source_file.suffix.lower() == ".3mf"
+                and zipfile.is_zipfile(source_file)
+                and not zipfile.is_zipfile(dest_file)
             ):
-                value = metadata.get(field)
-                if value is not None:
-                    setattr(existing, field, value)
-            if cost is not None:
-                existing.cost = cost
-            existing.quantity = quantity
-            existing.extra_data = merged
-            if content_verified is not None:
-                existing.content_verified = content_verified
-            if plate_id is not None:
-                existing.plate_id = plate_id
-            if library_file_id is not None:
-                existing.library_file_id = library_file_id
+                try:
+                    src_size = source_file.stat().st_size
+                    dst_size = dest_file.stat().st_size
+                except OSError:
+                    src_size = dst_size = -1
+                logger.error(
+                    "Archive copy corrupted 3MF: src=%s (%s bytes, valid ZIP) -> dst=%s (%s bytes, NOT a ZIP). Refusing to create archive row.",
+                    source_file,
+                    src_size,
+                    dest_file,
+                    dst_size,
+                )
+                # Narrow cleanup: remove only the truncated file and the archive
+                # directory if it's now empty. The directory is this call's own
+                # (created exclusively above), but the narrow form costs nothing.
+                try:
+                    dest_file.unlink()
+                except OSError:
+                    pass
+                try:
+                    archive_dir.rmdir()
+                except OSError:
+                    pass  # directory not empty — leave untouched
+                return None
+
+            # Compute content hash for duplicate detection
+            content_hash = self.compute_file_hash(dest_file)
+
+            # Extract plate number from filename (e.g., "plate_5" from "/data/Metadata/plate_5.gcode")
+            plate_number = None
+            if print_data:
+                filename = print_data.get("filename", "")
+                match = re.search(r"plate_(\d+)", filename)
+                if match:
+                    plate_number = int(match.group(1))
+
+            # Parse 3MF metadata
+            parser = ThreeMFParser(dest_file, plate_number=plate_number)
+            metadata = parser.parse()
+
+            # Save thumbnail if present
+            thumbnail_path = None
+            if "_thumbnail_data" in metadata:
+                thumb_file = archive_dir / f"thumbnail{metadata['_thumbnail_ext']}"
+                thumb_file.write_bytes(metadata["_thumbnail_data"])
+                thumbnail_path = str(thumb_file.relative_to(settings.base_dir))
+                del metadata["_thumbnail_data"]
+                del metadata["_thumbnail_ext"]
+
+            # Merge with print data from MQTT
+            if print_data:
+                metadata["_print_data"] = print_data
+
+            # Promote the slicer's own live-resolved AMS-slot pick, when the caller
+            # explicitly opted in (see the `slicer_ams_mapping` param docstring for
+            # why this is NOT read off `print_data["ams_mapping"]`), to a stable
+            # top-level extra_data key. Lets a later reprint reuse the exact tray
+            # the user picked/BambuStudio auto-matched at slice time instead of the
+            # scheduler re-deriving one from just the file's static type/color,
+            # which can land on the wrong physical spool when that match isn't
+            # unique. Top-level (not nested under the `_print_data` diagnostic bag)
+            # so API consumers have a single stable path:
+            # `archive.extra_data.slicer_ams_mapping`. Stored together with the
+            # printer it was resolved against — see `slicer_ams_mapping_printer_id`
+            # param docstring — so a later reprint can tell whether it's even
+            # applicable before trying to reuse it.
+            if slicer_ams_mapping and slicer_ams_mapping_printer_id is not None:
+                metadata["slicer_ams_mapping"] = {
+                    "mapping": slicer_ams_mapping,
+                    "printer_id": slicer_ams_mapping_printer_id,
+                }
+
+            # Determine status and timestamps
+            status = print_data.get("status", "completed") if print_data else "archived"
+            started_at = datetime.now(timezone.utc) if status == "printing" else None
+            completed_at = datetime.now(timezone.utc) if status in ("completed", "failed", "archived") else None
+
+            # Calculate cost based on filament usage and type
+            cost = None
+            filament_grams = metadata.get("filament_used_grams")
+            filament_type = metadata.get("filament_type")
+            if filament_grams and filament_type:
+                # For multi-material prints, use the first filament type for cost calculation
+                primary_type = filament_type.split(",")[0].strip()
+                # Look up filament cost_per_kg from database
+                filament_result = await self.db.execute(select(Filament).where(Filament.type == primary_type).limit(1))
+                filament = filament_result.scalar_one_or_none()
+                if filament:
+                    cost = round((filament_grams / 1000) * filament.cost_per_kg, 2)
+                else:
+                    # Use default filament cost from settings
+                    from backend.app.api.routes.settings import get_setting
+
+                    default_cost_setting = await get_setting(self.db, "default_filament_cost")
+                    default_cost_per_kg = float(default_cost_setting) if default_cost_setting else 25.0
+                    cost = round((filament_grams / 1000) * default_cost_per_kg, 2)
+
+            # Calculate quantity from printable objects count
+            # printable_objects is a dict of {identify_id: name} for non-skipped objects
+            quantity = 1  # Default to 1
+            printable_objects = metadata.get("printable_objects")
+            if printable_objects and isinstance(printable_objects, dict):
+                quantity = len(printable_objects)
+                logger.debug("Auto-detected %s parts from 3MF printable objects", quantity)
+
+            # Recovery of an existing fallback row: assign the freshly-parsed values
+            # onto it rather than adding a second archive for the same print (#2957).
+            if update_archive_id is not None:
+                existing = await self.db.get(PrintArchive, update_archive_id)
+                if existing is None:
+                    logger.warning("archive_print: archive %s to update no longer exists", update_archive_id)
+                    return None
+                # `metadata` is freshly parsed from the 3MF, so assigning it drops
+                # the row's `no_3mf_available` / `no_3mf_reason` markers as a side
+                # effect — which is correct, the archive is no longer a fallback,
+                # and it is what stops the Archives banner counting it.
+                # `_print_data` is diagnostic history rather than something the 3MF
+                # knows about: keep the row's copy for a caller that passed no
+                # print_data of its own.
+                merged = dict(metadata)
+                preserved = (existing.extra_data or {}).get("_print_data")
+                if preserved is not None and "_print_data" not in merged:
+                    merged["_print_data"] = preserved
+                # A record that this row started life without a 3MF, which the
+                # dropped markers no longer say.
+                merged["recovered_no_3mf"] = True
+                existing.filename = original_filename or source_file.name
+                existing.file_path = str(dest_file.relative_to(settings.base_dir))
+                existing.file_size = dest_file.stat().st_size
+                existing.content_hash = content_hash
+                existing.thumbnail_path = thumbnail_path
+                existing.print_name = (
+                    clean_display_name(display_stem)
+                    if prefer_filename_for_name
+                    else (clean_display_name(metadata.get("print_name")) or clean_display_name(display_stem))
+                )
+                # Only overwrite what the 3MF actually knows. A fallback archive
+                # recovered mid-print has a real print_time_seconds from MQTT and a
+                # filament type/colour from the AMS; a 3MF that omits a field must
+                # not blank them back out.
+                for field in (
+                    "print_time_seconds",
+                    "filament_used_grams",
+                    "filament_type",
+                    "filament_color",
+                    "layer_height",
+                    "total_layers",
+                    "nozzle_diameter",
+                    "bed_temperature",
+                    "bed_type",
+                    "nozzle_temperature",
+                    "sliced_for_model",
+                    "makerworld_url",
+                    "designer",
+                ):
+                    value = metadata.get(field)
+                    if value is not None:
+                        setattr(existing, field, value)
+                if cost is not None:
+                    existing.cost = cost
+                existing.quantity = quantity
+                existing.extra_data = merged
+                if content_verified is not None:
+                    existing.content_verified = content_verified
+                if plate_id is not None:
+                    existing.plate_id = plate_id
+                if library_file_id is not None:
+                    existing.library_file_id = library_file_id
+                await self.db.commit()
+                await self.db.refresh(existing)
+                return existing
+
+            # Create archive record
+            archive = PrintArchive(
+                printer_id=printer_id,
+                filename=original_filename or source_file.name,
+                file_path=str(dest_file.relative_to(settings.base_dir)),
+                file_size=dest_file.stat().st_size,
+                content_hash=content_hash,
+                thumbnail_path=thumbnail_path,
+                # clean_display_name because the 3MF's own metadata reaches this
+                # verbatim, and a control character in it renders nowhere and
+                # truncates somewhere (#2832). The schema does the same for names
+                # arriving over the API. Cleaned before the fallback rather than
+                # after it, so an embedded name that is only whitespace still falls
+                # through to the filename instead of leaving the archive nameless.
+                print_name=(
+                    clean_display_name(display_stem)
+                    if prefer_filename_for_name
+                    else (clean_display_name(metadata.get("print_name")) or clean_display_name(display_stem))
+                ),
+                print_time_seconds=metadata.get("print_time_seconds"),
+                filament_used_grams=metadata.get("filament_used_grams"),
+                filament_type=metadata.get("filament_type"),
+                filament_color=metadata.get("filament_color"),
+                filament_vendor=metadata.get("filament_vendor"),
+                layer_height=metadata.get("layer_height"),
+                total_layers=metadata.get("total_layers"),
+                nozzle_diameter=metadata.get("nozzle_diameter"),
+                bed_temperature=metadata.get("bed_temperature"),
+                bed_type=metadata.get("bed_type"),
+                nozzle_temperature=metadata.get("nozzle_temperature"),
+                sliced_for_model=metadata.get("sliced_for_model"),
+                makerworld_url=metadata.get("makerworld_url"),
+                designer=metadata.get("designer"),
+                status=status,
+                started_at=started_at,
+                completed_at=completed_at,
+                cost=cost,
+                quantity=quantity,
+                extra_data=metadata,
+                created_by_id=created_by_id,
+                project_id=project_id,
+                library_file_id=library_file_id,
+                cost_center_id=cost_center_id,
+                subtask_id=subtask_id,
+                content_verified=content_verified,
+                plate_id=plate_id,
+            )
+
+            self.db.add(archive)
             await self.db.commit()
-            await self.db.refresh(existing)
-            return existing
+            await self.db.refresh(archive)
 
-        # Create archive record
-        archive = PrintArchive(
-            printer_id=printer_id,
-            filename=original_filename or source_file.name,
-            file_path=str(dest_file.relative_to(settings.base_dir)),
-            file_size=dest_file.stat().st_size,
-            content_hash=content_hash,
-            thumbnail_path=thumbnail_path,
-            # clean_display_name because the 3MF's own metadata reaches this
-            # verbatim, and a control character in it renders nowhere and
-            # truncates somewhere (#2832). The schema does the same for names
-            # arriving over the API. Cleaned before the fallback rather than
-            # after it, so an embedded name that is only whitespace still falls
-            # through to the filename instead of leaving the archive nameless.
-            print_name=(
-                clean_display_name(display_stem)
-                if prefer_filename_for_name
-                else (clean_display_name(metadata.get("print_name")) or clean_display_name(display_stem))
-            ),
-            print_time_seconds=metadata.get("print_time_seconds"),
-            filament_used_grams=metadata.get("filament_used_grams"),
-            filament_type=metadata.get("filament_type"),
-            filament_color=metadata.get("filament_color"),
-            filament_vendor=metadata.get("filament_vendor"),
-            layer_height=metadata.get("layer_height"),
-            total_layers=metadata.get("total_layers"),
-            nozzle_diameter=metadata.get("nozzle_diameter"),
-            bed_temperature=metadata.get("bed_temperature"),
-            bed_type=metadata.get("bed_type"),
-            nozzle_temperature=metadata.get("nozzle_temperature"),
-            sliced_for_model=metadata.get("sliced_for_model"),
-            makerworld_url=metadata.get("makerworld_url"),
-            designer=metadata.get("designer"),
-            status=status,
-            started_at=started_at,
-            completed_at=completed_at,
-            cost=cost,
-            quantity=quantity,
-            extra_data=metadata,
-            created_by_id=created_by_id,
-            project_id=project_id,
-            library_file_id=library_file_id,
-            cost_center_id=cost_center_id,
-            subtask_id=subtask_id,
-            content_verified=content_verified,
-            plate_id=plate_id,
-        )
-
-        self.db.add(archive)
-        await self.db.commit()
-        await self.db.refresh(archive)
-
-        return archive
+            return archive
+        except BaseException:
+            try:
+                await self.db.rollback()
+            finally:
+                shutil.rmtree(archive_dir, ignore_errors=True)
+            raise
 
     async def get_archive(self, archive_id: int) -> PrintArchive | None:
         """Get an archive by ID with relationships loaded."""

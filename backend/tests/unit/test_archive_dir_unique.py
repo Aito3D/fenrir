@@ -55,3 +55,36 @@ async def test_same_second_same_name_gets_two_folders(db_session, tmp_path):
     finally:
         for folder in made:
             shutil.rmtree(folder, ignore_errors=True)
+
+
+async def test_a_failed_commit_removes_the_folder_and_rolls_back(db_session, tmp_path):
+    """A commit that fails (SQLite 'database is locked' after the busy
+    timeout, a full disk) left the copied folder with no row, and the session
+    in a failed transaction for the caller's next statement."""
+    from sqlalchemy import select
+    from sqlalchemy.exc import OperationalError
+
+    from backend.app.models.archive import PrintArchive
+    from backend.app.services.archive import ArchiveService
+
+    source = _3mf(tmp_path / "c" / "locked.3mf", "c")
+    service = ArchiveService(db_session)
+    created: list[Path] = []
+    real_mkdir = Path.mkdir
+
+    def _track(self, *args, **kwargs):
+        real_mkdir(self, *args, **kwargs)
+        if self.name.endswith("_locked"):
+            created.append(self)
+
+    async def _locked():
+        raise OperationalError("COMMIT", {}, Exception("database is locked"))
+
+    with patch.object(Path, "mkdir", _track), patch.object(db_session, "commit", _locked):
+        with pytest.raises(OperationalError):
+            await service.archive_print(printer_id=None, source_file=source)
+
+    assert created, "archive_print never made its folder"
+    assert not created[0].exists(), "the folder of the failed archive was left behind"
+    # The session is usable again.
+    await db_session.execute(select(PrintArchive.id).limit(1))
