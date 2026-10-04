@@ -1989,6 +1989,7 @@ export default {
       queueDispatch: 'Kö och utskick',
       queuePipelines: 'Pipelines',
       filament: 'Filament',
+      camera: 'Kamera',
       network: 'Nätverk',
       apiKeys: 'API-nycklar',
       virtualPrinter: 'Virtuell skrivare',

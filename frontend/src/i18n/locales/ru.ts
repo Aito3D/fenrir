@@ -1881,6 +1881,7 @@ export default {
       queueDispatch: "Очередь и отправка",
       queuePipelines: "Конвейеры",
       filament: "Филамент",
+      camera: 'Камера',
       network: "Сеть",
       apiKeys: "Ключи API",
       virtualPrinter: "Виртуальный принтер",

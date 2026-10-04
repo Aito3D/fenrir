@@ -1971,6 +1971,7 @@ export default {
       queueDispatch: 'File & Distribution',
       queuePipelines: 'Pipelines',
       filament: 'Filament',
+      camera: 'Caméra',
       network: 'Réseau',
       apiKeys: 'Clés API',
       virtualPrinter: 'Imprimante virtuelle',

@@ -1884,6 +1884,7 @@ export default {
       queueDispatch: '큐 및 디스패치',
       queuePipelines: '파이프라인',
       filament: '필라멘트',
+      camera: '카메라',
       network: '네트워크',
       apiKeys: 'API 키',
       virtualPrinter: '가상 프린터',

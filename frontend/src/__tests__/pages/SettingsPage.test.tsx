@@ -198,6 +198,7 @@ describe('SettingsPage', () => {
       // choice is made per stream rather than once for the whole install. The
       // External Cameras section is still here, which is what keeps this from
       // passing merely because the Camera card failed to render.
+      window.history.replaceState({}, '', '/?tab=camera');
       render(<SettingsPage />);
 
       await waitFor(() => {
@@ -1518,6 +1519,76 @@ describe('SettingsPage', () => {
     });
   });
 
+  describe('Camera tab and menu order', () => {
+    const tabLabels = () => Array.from(document.querySelectorAll('nav button')).map((button) => button.textContent?.trim() ?? '');
+
+    it('lists General first and the other tabs alphabetically', async () => {
+      render(<SettingsPage />);
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Camera' })).toBeInTheDocument());
+      const labels = tabLabels().map((label) => label.replace(/\d+$/, ''));
+      expect(labels[0]).toBe('General');
+      const rest = labels.slice(1);
+      expect(rest).toEqual([...rest].sort((a, b) => a.localeCompare(b, 'en')));
+      expect(rest).toContain('Camera');
+    });
+
+    it('holds external cameras, camera tokens and the streaming overlay', async () => {
+      window.history.replaceState({}, '', '/?tab=camera');
+      render(<SettingsPage />);
+      await waitFor(() => expect(screen.getByText('External Cameras')).toBeInTheDocument());
+      expect(document.getElementById('card-camera-tokens')).not.toBeNull();
+      expect(document.getElementById('card-stream-overlay')).not.toBeNull();
+    });
+
+    it('no longer shows camera settings on General or API Keys', async () => {
+      const user = userEvent.setup();
+      render(<SettingsPage />);
+      await waitFor(() => expect(screen.getByText('Default Printer')).toBeInTheDocument());
+      expect(screen.queryByText('External Cameras')).toBeNull();
+      await user.click(screen.getByRole('button', { name: /^API Keys/ }));
+      await waitFor(() => expect(document.getElementById('card-createapi')).not.toBeNull());
+      expect(document.getElementById('card-camera-tokens')).toBeNull();
+      expect(document.getElementById('card-stream-overlay')).toBeNull();
+    });
+
+    const signInWith = (permissions: string[]) => {
+      server.use(
+        http.get('/api/v1/auth/status', () => HttpResponse.json({ auth_enabled: true, requires_setup: false })),
+        http.get('/api/v1/auth/me', () => HttpResponse.json({
+          id: 2, username: 'viewer', role: 'user', is_active: true, is_admin: false,
+          groups: [{ id: 2, name: 'Viewers' }], permissions, created_at: '2026-01-01T00:00:00Z',
+        })),
+      );
+      setAuthToken('test-token');
+    };
+
+    it('hides API Keys from a user who may see nothing on it, but keeps Camera', async () => {
+      signInWith(['settings:read', 'camera:view']);
+      render(<SettingsPage />);
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Camera' })).toBeInTheDocument());
+      expect(screen.queryByRole('button', { name: /^API Keys/ })).toBeNull();
+    });
+
+    it('sends an API Keys link to the Camera tab for a user who cannot see API Keys', async () => {
+      signInWith(['settings:read', 'camera:view']);
+      window.history.replaceState({}, '', '/?tab=apikeys');
+      render(<SettingsPage />);
+      await waitFor(() => expect(screen.getByText('External Cameras')).toBeInTheDocument());
+    });
+
+    it.each([['api_keys:read'], ['settings:update']])('shows API Keys to a user with %s', async (permission) => {
+      signInWith(['settings:read', permission]);
+      render(<SettingsPage />);
+      await waitFor(() => expect(screen.getByRole('button', { name: /^API Keys/ })).toBeInTheDocument());
+    });
+
+    it.each(['#card-camera-tokens', '#card-stream-overlay'])('opens the Camera tab for an old API Keys link to %s', async (hash) => {
+      window.history.replaceState({}, '', `/?tab=apikeys${hash}`);
+      render(<SettingsPage />);
+      await waitFor(() => expect(screen.getByText('External Cameras')).toBeInTheDocument());
+    });
+  });
+
   describe('external camera snapshot URL override (#1177)', () => {
     /**
      * The snapshot URL input only appears for stream camera types where the
@@ -1545,6 +1616,11 @@ describe('SettingsPage', () => {
       created_at: '2026-01-01T00:00:00Z',
       updated_at: '2026-01-01T00:00:00Z',
     };
+
+    // External cameras live on the Camera tab.
+    beforeEach(() => {
+      window.history.replaceState({}, '', '/?tab=camera');
+    });
 
     it('renders the snapshot URL input when camera_type is mjpeg', async () => {
       server.use(

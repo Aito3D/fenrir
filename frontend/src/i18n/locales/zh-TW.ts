@@ -1971,6 +1971,7 @@ export default {
       queueDispatch: '佇列與分派',
       queuePipelines: '管線',
       filament: '耗材',
+      camera: '攝影機',
       network: '網路',
       apiKeys: 'API 金鑰',
       virtualPrinter: '虛擬印表機',

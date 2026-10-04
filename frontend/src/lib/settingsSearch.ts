@@ -15,6 +15,7 @@ export type SettingsSearchTab =
   | 'notifications'
   | 'queue'
   | 'filament'
+  | 'camera'
   | 'network'
   | 'apikeys'
   | 'virtual-printer'

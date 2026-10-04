@@ -59,15 +59,16 @@ import { defaultNavItems, getDefaultView, setDefaultView } from '../components/L
 import { availableLanguages } from '../i18n';
 import { useToast } from '../contexts/ToastContext';
 import { useTheme, type ThemeStyle, type DarkBackground, type LightBackground, type ThemeAccent } from '../contexts/ThemeContext';
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Gauge, Link2, Palette } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback, useMemo, type ReactNode } from 'react';
+import { Gauge, Link2, Palette, type LucideIcon } from 'lucide-react';
 import { registerSettingsSearch, getSettingsSearchEntries } from '../lib/settingsSearch';
 import type { UsersSubTab } from '../lib/settingsSearch';
 import { availableEngines, hasEngineChoice, resolveEngine, type SliceEngineId } from '../lib/sliceEngines';
 import { NumberInput } from '../components/NumberInput';
 
-const validTabs = ['general', 'plugs', 'sensors', 'notifications', 'queue', 'filament', 'network', 'apikeys', 'virtual-printer', 'spoolbuddy', 'failure-detection', 'users', 'backup'] as const;
+const validTabs = ['general', 'plugs', 'sensors', 'notifications', 'queue', 'filament', 'camera', 'network', 'apikeys', 'virtual-printer', 'spoolbuddy', 'failure-detection', 'users', 'backup'] as const;
 type TabType = typeof validTabs[number];
+interface SettingsTabEntry { tab: TabType; icon: LucideIcon; label: string; extra?: ReactNode }
 
 // Cross-tab search registrations for cards rendered inline in this file.
 // Adding a new settings card? Register it here (or, if the card lives in its
@@ -75,7 +76,7 @@ type TabType = typeof validTabs[number];
 registerSettingsSearch({ labelKey: 'settings.general', tab: 'general', keywords: 'language date time format printer model printers cards', anchor: 'card-general' });
 registerSettingsSearch({ labelKey: 'settings.appearance', tab: 'general', keywords: 'theme dark light mode colors', anchor: 'card-appearance' });
 registerSettingsSearch({ labelKey: 'settings.archiveSettings', tab: 'general', keywords: 'archive auto save thumbnails captures', anchor: 'card-archive' });
-registerSettingsSearch({ labelKey: 'settings.camera', tab: 'general', keywords: 'camera external video stream', anchor: 'card-camera' });
+registerSettingsSearch({ labelKey: 'settings.camera', tab: 'camera', keywords: 'camera external video stream rtsp mjpeg usb snapshot rotation', anchor: 'card-camera' });
 registerSettingsSearch({ labelKey: 'settings.costTracking', tab: 'general', keywords: 'currency filament cost energy kwh price', anchor: 'card-cost' });
 registerSettingsSearch({ labelKey: 'settings.fileManager', tab: 'general', keywords: 'file manager archive mode disk warning storage', anchor: 'card-filemanager' });
 registerSettingsSearch({ labelKey: 'settings.updates', tab: 'general', keywords: 'updates version firmware beta check', anchor: 'card-updates' });
@@ -105,7 +106,8 @@ registerSettingsSearch({ labelKey: 'settings.createNewApiKey', tab: 'apikeys', k
 registerSettingsSearch({ labelKey: 'settings.webhookEndpoints', tab: 'apikeys', keywords: 'webhook endpoint post http', anchor: 'card-webhooks' });
 registerSettingsSearch({ labelKey: 'settings.apiBrowser', tab: 'apikeys', keywords: 'api browser endpoint documentation test', anchor: 'card-apibrowser' });
 registerSettingsSearch({ labelKey: 'connectedApps.title', tab: 'apikeys', keywords: 'connected app sign in single sign-on sso oauth login orders', anchor: 'card-connected-apps' });
-registerSettingsSearch({ labelKey: 'cameraTokens.title', tab: 'apikeys', keywords: 'camera token long-lived home assistant frigate kiosk stream', anchor: 'card-camera-tokens' });
+registerSettingsSearch({ labelKey: 'cameraTokens.title', tab: 'camera', keywords: 'camera token long-lived home assistant frigate kiosk stream cam wall', anchor: 'card-camera-tokens' });
+registerSettingsSearch({ labelKey: 'streamOverlay.builder.title', labelFallback: 'Streaming Overlay', tab: 'camera', keywords: 'streaming overlay obs browser source stream url token', anchor: 'card-stream-overlay' });
 registerSettingsSearch({ labelKey: 'settings.tabs.virtualPrinter', tab: 'virtual-printer', keywords: 'virtual printer proxy archive slicer bambustudio orcaslicer ip bind', anchor: 'card-vp' });
 registerSettingsSearch({ labelKey: 'settings.tabs.spoolbuddy', tab: 'spoolbuddy', keywords: 'spoolbuddy device scale nfc rfid kiosk unregister', anchor: 'card-spoolbuddy' });
 registerSettingsSearch({ labelKey: 'settings.currentUser', tab: 'users', subTab: 'users', keywords: 'current user profile password change', anchor: 'card-currentuser' });
@@ -205,7 +207,7 @@ export function SettingsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { t, i18n } = useTranslation();
   const { showToast } = useToast();
-  const { authEnabled, user, isAdmin, refreshAuth, hasPermission } = useAuth();
+  const { authEnabled, user, isAdmin, refreshAuth, hasPermission, loading: authLoading } = useAuth();
   const {
     mode, resolvedMode,
     darkStyle, darkBackground, darkAccent,
@@ -256,7 +258,14 @@ export function SettingsPage() {
   // Initialize tab from URL params (handle legacy ?tab=email → users tab + email sub-tab)
   const tabParam = searchParams.get('tab');
   const isLegacyEmailTab = tabParam === 'email';
-  const initialTab = isLegacyEmailTab ? 'users' : (tabParam && validTabs.includes(tabParam as TabType) ? tabParam as TabType : 'general');
+  // Camera tokens and the overlay builder used to live under API Keys; links
+  // to them (bookmarks, the wiki, /camera-tokens) open the Camera tab instead.
+  const canSeeApiKeysTab = hasPermission('api_keys:read') || hasPermission('settings:update');
+  const isLegacyCameraLink = tabParam === 'apikeys'
+    && ['#card-camera-tokens', '#card-stream-overlay'].includes(window.location.hash);
+  const initialTab = isLegacyEmailTab ? 'users'
+    : isLegacyCameraLink ? 'camera'
+    : (tabParam && validTabs.includes(tabParam as TabType) ? tabParam as TabType : 'general');
   const [activeTab, setActiveTab] = useState<TabType>(initialTab);
   const [usersSubTab, setUsersSubTab] = useState<UsersSubTab>(isLegacyEmailTab ? 'email' : 'users');
   // Workflow tab sub-tabs (#1425): 'dispatch' = current Workflow content,
@@ -282,6 +291,14 @@ export function SettingsPage() {
     }
     setSearchParams(searchParams, { replace: true });
   };
+
+  // Any other API Keys link, for a user who cannot see that tab, opens Camera:
+  // the camera tokens were the only thing such a user ever went there for.
+  // Waits for the session so a permission not loaded yet doesn't count as none.
+  useEffect(() => {
+    if (!authLoading && activeTab === 'apikeys' && !canSeeApiKeysTab) handleTabChange('camera');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authLoading, activeTab, canSeeApiKeysTab]);
 
   // Switch the Workflow tab's sub-tab and reflect it in the URL so deep-links work.
   const handleQueueSubTabChange = (sub: 'dispatch' | 'pipelines') => {
@@ -1539,6 +1556,36 @@ export function SettingsPage() {
     ? `cd ${/\s/.test(composeDir) ? `"${composeDir}"` : composeDir} && docker compose pull && docker compose up -d`
     : 'docker compose pull && docker compose up -d';
 
+  const countBadge = (count: number) => count > 0 && (
+    <span className="text-xs bg-bambu-dark-tertiary px-1.5 py-0.5 rounded-full shrink-0">{count}</span>
+  );
+  const statusDot = (on: boolean) => (
+    <span className={`w-2 h-2 rounded-full shrink-0 ${on ? 'bg-green-400' : 'bg-gray-500'}`} />
+  );
+  const haSensorCount = (haSensors?.length ?? 0) + (locationHaSensors?.length ?? 0);
+  // General stays first, where most visits start; the rest are sorted by their
+  // label in the current language so each language reads alphabetically.
+  const generalTab: SettingsTabEntry = { tab: 'general', icon: SettingsIcon, label: t('settings.tabs.general') };
+  const otherTabs = ([
+    { tab: 'plugs', icon: Plug, label: t('settings.tabs.smartPlugs'), extra: countBadge(smartPlugs?.length ?? 0) },
+    { tab: 'sensors', icon: Gauge, label: t('settings.tabs.sensors'), extra: countBadge(haSensorCount) },
+    { tab: 'notifications', icon: Bell, label: t('settings.tabs.notifications'), extra: countBadge(notificationProviders?.length ?? 0) },
+    { tab: 'queue', icon: ListOrdered, label: t('settings.tabs.queue', 'Workflow') },
+    { tab: 'filament', icon: Cylinder, label: t('settings.tabs.filament') },
+    { tab: 'camera', icon: Video, label: t('settings.tabs.camera') },
+    { tab: 'network', icon: Wifi, label: t('settings.tabs.network'), extra: statusDot(!!mqttStatus?.enabled) },
+    // API Keys holds API keys, webhooks, the API browser and Connected Apps;
+    // a user who may see none of them would land on an empty tab.
+    ...(canSeeApiKeysTab
+      ? [{ tab: 'apikeys', icon: Key, label: t('settings.tabs.apiKeys'), extra: countBadge(apiKeys?.length ?? 0) } as SettingsTabEntry]
+      : []),
+    { tab: 'virtual-printer', icon: Printer, label: t('settings.tabs.virtualPrinter'), extra: statusDot(!!virtualPrinterRunning) },
+    { tab: 'spoolbuddy', icon: Scale, label: t('settings.tabs.spoolbuddy'), extra: <>{countBadge(spoolbuddyDeviceCount)}{statusDot(!!spoolbuddyAnyOnline)}</> },
+    { tab: 'failure-detection', icon: ScanEye, label: t('settings.tabs.failureDetection'), extra: statusDot(!!obicoActive) },
+    { tab: 'users', icon: Users, label: t('settings.tabs.users'), extra: authEnabled && <span className="w-2 h-2 rounded-full shrink-0 bg-green-400" /> },
+    { tab: 'backup', icon: Database, label: t('settings.tabs.backup'), extra: statusDot(!!((cloudAuthStatus?.is_authenticated && githubBackupStatus?.configured && githubBackupStatus?.enabled) || settings?.local_backup_enabled)) },
+  ] as SettingsTabEntry[]).sort((x, y) => x.label.localeCompare(y.label, i18n.language));
+
   return (
     <CardDensityProvider density="dense">
     <div className="p-4 md:p-8">
@@ -1597,182 +1644,21 @@ export function SettingsPage() {
       {/* Tab Navigation + content: horizontal tabs on mobile, vertical rail on lg+ */}
       <div className="flex flex-col lg:flex-row gap-4 lg:gap-6">
       <nav className="flex flex-wrap gap-1 border-b border-bambu-dark-tertiary lg:flex-col lg:flex-nowrap lg:gap-0 lg:border-b-0 lg:border-r lg:w-60 lg:flex-shrink-0 lg:self-start lg:sticky lg:top-4">
-        <button
-          onClick={() => handleTabChange('general')}
-          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
-            activeTab === 'general'
-              ? 'text-bambu-green border-bambu-green'
-              : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
-          }`}
-        >
-          <SettingsIcon className="w-4 h-4 shrink-0" />
-          {t('settings.tabs.general')}
-        </button>
-        <button
-          onClick={() => handleTabChange('plugs')}
-          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
-            activeTab === 'plugs'
-              ? 'text-bambu-green border-bambu-green'
-              : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
-          }`}
-        >
-          <Plug className="w-4 h-4 shrink-0" />
-          {t('settings.tabs.smartPlugs')}
-          {smartPlugs && smartPlugs.length > 0 && (
-            <span className="text-xs bg-bambu-dark-tertiary px-1.5 py-0.5 rounded-full shrink-0">
-              {smartPlugs.length}
-            </span>
-          )}
-        </button>
-        <button
-          onClick={() => handleTabChange('sensors')}
-          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
-            activeTab === 'sensors'
-              ? 'text-bambu-green border-bambu-green'
-              : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
-          }`}
-        >
-          <Gauge className="w-4 h-4 shrink-0" />
-          {t('settings.tabs.sensors')}
-          {(haSensors?.length ?? 0) + (locationHaSensors?.length ?? 0) > 0 && (
-            <span className="text-xs bg-bambu-dark-tertiary px-1.5 py-0.5 rounded-full shrink-0">
-              {(haSensors?.length ?? 0) + (locationHaSensors?.length ?? 0)}
-            </span>
-          )}
-        </button>
-        <button
-          onClick={() => handleTabChange('notifications')}
-          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
-            activeTab === 'notifications'
-              ? 'text-bambu-green border-bambu-green'
-              : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
-          }`}
-        >
-          <Bell className="w-4 h-4 shrink-0" />
-          {t('settings.tabs.notifications')}
-          {notificationProviders && notificationProviders.length > 0 && (
-            <span className="text-xs bg-bambu-dark-tertiary px-1.5 py-0.5 rounded-full shrink-0">
-              {notificationProviders.length}
-            </span>
-          )}
-        </button>
-        <button
-          onClick={() => handleTabChange('queue')}
-          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
-            activeTab === 'queue'
-              ? 'text-bambu-green border-bambu-green'
-              : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
-          }`}
-        >
-          <ListOrdered className="w-4 h-4 shrink-0" />
-          {t('settings.tabs.queue', 'Workflow')}
-        </button>
-        <button
-          onClick={() => handleTabChange('filament')}
-          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
-            activeTab === 'filament'
-              ? 'text-bambu-green border-bambu-green'
-              : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
-          }`}
-        >
-          <Cylinder className="w-4 h-4 shrink-0" />
-          {t('settings.tabs.filament')}
-        </button>
-        <button
-          onClick={() => handleTabChange('network')}
-          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
-            activeTab === 'network'
-              ? 'text-bambu-green border-bambu-green'
-              : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
-          }`}
-        >
-          <Wifi className="w-4 h-4 shrink-0" />
-          {t('settings.tabs.network')}
-          <span className={`w-2 h-2 rounded-full shrink-0 ${mqttStatus?.enabled ? 'bg-green-400' : 'bg-gray-500'}`} />
-        </button>
-        <button
-          onClick={() => handleTabChange('apikeys')}
-          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
-            activeTab === 'apikeys'
-              ? 'text-bambu-green border-bambu-green'
-              : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
-          }`}
-        >
-          <Key className="w-4 h-4 shrink-0" />
-          {t('settings.tabs.apiKeys')}
-          {apiKeys && apiKeys.length > 0 && (
-            <span className="text-xs bg-bambu-dark-tertiary px-1.5 py-0.5 rounded-full shrink-0">
-              {apiKeys.length}
-            </span>
-          )}
-        </button>
-        <button
-          onClick={() => handleTabChange('virtual-printer')}
-          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
-            activeTab === 'virtual-printer'
-              ? 'text-bambu-green border-bambu-green'
-              : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
-          }`}
-        >
-          <Printer className="w-4 h-4 shrink-0" />
-          {t('settings.tabs.virtualPrinter')}
-          <span className={`w-2 h-2 rounded-full shrink-0 ${virtualPrinterRunning ? 'bg-green-400' : 'bg-gray-500'}`} />
-        </button>
-        <button
-          onClick={() => handleTabChange('spoolbuddy')}
-          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
-            activeTab === 'spoolbuddy'
-              ? 'text-bambu-green border-bambu-green'
-              : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
-          }`}
-        >
-          <Scale className="w-4 h-4 shrink-0" />
-          {t('settings.tabs.spoolbuddy')}
-          {spoolbuddyDeviceCount > 0 && (
-            <span className="text-xs bg-bambu-dark-tertiary px-1.5 py-0.5 rounded-full shrink-0">
-              {spoolbuddyDeviceCount}
-            </span>
-          )}
-          <span className={`w-2 h-2 rounded-full shrink-0 ${spoolbuddyAnyOnline ? 'bg-green-400' : 'bg-gray-500'}`} />
-        </button>
-        <button
-          onClick={() => handleTabChange('failure-detection')}
-          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
-            activeTab === 'failure-detection'
-              ? 'text-bambu-green border-bambu-green'
-              : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
-          }`}
-        >
-          <ScanEye className="w-4 h-4 shrink-0" />
-          {t('settings.tabs.failureDetection')}
-          <span className={`w-2 h-2 rounded-full shrink-0 ${obicoActive ? 'bg-green-400' : 'bg-gray-500'}`} />
-        </button>
-        <button
-          onClick={() => handleTabChange('users')}
-          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
-            activeTab === 'users'
-              ? 'text-bambu-green border-bambu-green'
-              : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
-          }`}
-        >
-          <Users className="w-4 h-4 shrink-0" />
-          {t('settings.tabs.users')}
-          {authEnabled && (
-            <span className="w-2 h-2 rounded-full shrink-0 bg-green-400" />
-          )}
-        </button>
-        <button
-          onClick={() => handleTabChange('backup')}
-          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
-            activeTab === 'backup'
-              ? 'text-bambu-green border-bambu-green'
-              : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
-          }`}
-        >
-          <Database className="w-4 h-4 shrink-0" />
-          {t('settings.tabs.backup')}
-          <span className={`w-2 h-2 rounded-full shrink-0 ${(cloudAuthStatus?.is_authenticated && githubBackupStatus?.configured && githubBackupStatus?.enabled) || settings?.local_backup_enabled ? 'bg-green-400' : 'bg-gray-500'}`} />
-        </button>
+        {[generalTab, ...otherTabs].map(({ tab, icon: Icon, label, extra }) => (
+          <button
+            key={tab}
+            onClick={() => handleTabChange(tab)}
+            className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
+              activeTab === tab
+                ? 'text-bambu-green border-bambu-green'
+                : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
+            }`}
+          >
+            <Icon className="w-4 h-4 shrink-0" />
+            {label}
+            {extra}
+          </button>
+        ))}
       </nav>
       <div className="flex-1 min-w-0">
       {activeTab === 'general' && (
@@ -2256,149 +2142,8 @@ export function SettingsPage() {
 
         </div>
 
-        {/* Second Column - Camera, Cost, AMS & Spoolman */}
+        {/* Second Column - Cost, AMS & Spoolman */}
         <div className="space-y-3 flex-1 lg:max-w-md">
-          {/* Camera Settings */}
-          <Card id="card-camera">
-            <CardHeader>
-              <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-                <Video className="w-5 h-5 text-bambu-green" />
-                {t('settings.camera')}
-              </h2>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {/* Camera View Mode used to live here. It is now the split
-                  camera button on each printer card, where the choice is made
-                  per stream instead of once for the whole install. The stored
-                  setting stays as the default a fresh browser starts from. */}
-
-              {/* External Cameras Section */}
-              <div>
-                <h3 className="text-sm font-medium text-white mb-2">{t('settings.externalCameras')}</h3>
-                <p className="text-xs text-bambu-gray mb-3">
-                  {t('settings.externalCamerasDescription')}
-                </p>
-
-                {printers && printers.length > 0 ? (
-                  <div className="space-y-3">
-                    {printers.map(printer => (
-                      <div key={printer.id} className="p-3 bg-bambu-dark rounded-lg">
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-white font-medium text-sm">{printer.name}</span>
-                          <label className="relative inline-flex items-center cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={printer.external_camera_enabled}
-                              onChange={(e) => handleUpdatePrinterCamera(printer.id, { enabled: e.target.checked })}
-                              className="sr-only peer"
-                            />
-                            <div className="w-9 h-5 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-bambu-green"></div>
-                          </label>
-                        </div>
-
-                        {printer.external_camera_enabled && (
-                          <div className="space-y-2 mt-2">
-                            <input
-                              type="text"
-                              placeholder={printer.external_camera_type === 'usb' ? t('settings.cameraPlaceholderUsb') : t('settings.cameraPlaceholderUrl')}
-                              value={localCameraUrls[printer.id] ?? printer.external_camera_url ?? ''}
-                              onChange={(e) => handleCameraUrlChange(printer.id, e.target.value)}
-                              className="w-full px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-white text-sm focus:border-bambu-green focus:outline-none"
-                            />
-                            <div className="flex gap-2">
-                              <select
-                                value={printer.external_camera_type || 'mjpeg'}
-                                onChange={(e) => handleUpdatePrinterCamera(printer.id, { type: e.target.value })}
-                                className="flex-1 px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-white text-sm focus:border-bambu-green focus:outline-none"
-                              >
-                                <option value="mjpeg">{t('settings.cameraTypeMjpeg')}</option>
-                                <option value="rtsp">{t('settings.cameraTypeRtsp')}</option>
-                                <option value="snapshot">{t('settings.cameraTypeSnapshot')}</option>
-                                <option value="usb">{t('settings.cameraTypeUsb')}</option>
-                              </select>
-                              <Button
-                                size="sm"
-                                variant="secondary"
-                                onClick={() => handleTestExternalCamera(printer.id, localCameraUrls[printer.id] ?? printer.external_camera_url ?? '', printer.external_camera_type || 'mjpeg')}
-                                disabled={extCameraTestLoading[printer.id] || !(localCameraUrls[printer.id] ?? printer.external_camera_url)}
-                              >
-                                {extCameraTestLoading[printer.id] ? (
-                                  <Loader2 className="w-4 h-4 animate-spin" />
-                                ) : (
-                                  t('settings.test')
-                                )}
-                              </Button>
-                            </div>
-                            {extCameraTestResults[printer.id] && (
-                              <div className={`text-xs flex items-center gap-1 ${extCameraTestResults[printer.id]?.success ? 'text-green-500' : 'text-red-500'}`}>
-                                {extCameraTestResults[printer.id]?.success ? (
-                                  <>
-                                    <CheckCircle className="w-3 h-3" />
-                                    {t('settings.connected')}{extCameraTestResults[printer.id]?.resolution && ` (${extCameraTestResults[printer.id]?.resolution})`}
-                                  </>
-                                ) : (
-                                  <>
-                                    <XCircle className="w-3 h-3" />
-                                    {extCameraTestResults[printer.id]?.error || t('settings.toast.connectionFailed')}
-                                  </>
-                                )}
-                              </div>
-                            )}
-                            {(printer.external_camera_type === 'mjpeg' || printer.external_camera_type === 'rtsp' || printer.external_camera_type === 'usb') && (
-                              <div className="space-y-1">
-                                <label className="text-xs text-bambu-gray">{t('settings.cameraSnapshotUrl', 'Snapshot URL (optional)')}</label>
-                                <div className="flex gap-2">
-                                  <input
-                                    type="text"
-                                    placeholder={t('settings.cameraSnapshotUrlPlaceholder', 'http://192.168.1.61:1984/api/frame.jpeg?src=printer')}
-                                    value={localSnapshotUrls[printer.id] ?? printer.external_camera_snapshot_url ?? ''}
-                                    onChange={(e) => handleSnapshotUrlChange(printer.id, e.target.value)}
-                                    className="flex-1 px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-white text-sm focus:border-bambu-green focus:outline-none"
-                                  />
-                                  <Button
-                                    size="sm"
-                                    variant="secondary"
-                                    onClick={() => handleTestExternalCamera(printer.id, localSnapshotUrls[printer.id] ?? printer.external_camera_snapshot_url ?? '', 'snapshot')}
-                                    disabled={extCameraTestLoading[printer.id] || !(localSnapshotUrls[printer.id] ?? printer.external_camera_snapshot_url)}
-                                  >
-                                    {extCameraTestLoading[printer.id] ? (
-                                      <Loader2 className="w-4 h-4 animate-spin" />
-                                    ) : (
-                                      t('settings.test')
-                                    )}
-                                  </Button>
-                                </div>
-                                <p className="text-xs text-bambu-gray opacity-75">
-                                  {t('settings.cameraSnapshotUrlHelp', 'Single-frame URL used for notification thumbnails, finish photos, timelapse and plate detection. Leave blank to capture from the live stream above. Useful for go2rtc (/api/frame.jpeg) and IP cameras with a dedicated snapshot endpoint.')}
-                                </p>
-                              </div>
-                            )}
-                            <div className="flex items-center gap-2">
-                              <label className="text-xs text-bambu-gray">{t('settings.cameraRotation')}</label>
-                              <select
-                                value={printer.camera_rotation || 0}
-                                onChange={(e) => handleUpdatePrinterCamera(printer.id, { rotation: parseInt(e.target.value) })}
-                                className="px-2 py-1 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-white text-xs focus:border-bambu-green focus:outline-none"
-                              >
-                                <option value={0}>0°</option>
-                                <option value={90}>90°</option>
-                                <option value={180}>180°</option>
-                                <option value={270}>270°</option>
-                              </select>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-xs text-bambu-gray italic">{t('settings.noPrintersConfigured')}</p>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-
-
           <Card id="card-cost">
             <CardHeader>
               <h2 className="text-lg font-semibold text-white">{t('settings.costTracking')}</h2>
@@ -4443,14 +4188,190 @@ export function SettingsPage() {
       )}
 
       {/* API Keys Tab */}
+      {activeTab === 'camera' && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* Everything about cameras in one place: external cameras, the
+              long-lived tokens other tools use to reach a stream, and the
+              streaming overlay built from those tokens. */}
+          <div className="min-w-0 space-y-6">
+            <Card id="card-camera">
+              <CardHeader>
+                <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                  <Video className="w-5 h-5 text-bambu-green" />
+                  {t('settings.camera')}
+                </h2>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {/* Camera View Mode used to live here. It is now the split
+                    camera button on each printer card, where the choice is made
+                    per stream instead of once for the whole install. The stored
+                    setting stays as the default a fresh browser starts from. */}
+
+                {/* External Cameras Section */}
+                <div>
+                  <h3 className="text-sm font-medium text-white mb-2">{t('settings.externalCameras')}</h3>
+                  <p className="text-xs text-bambu-gray mb-3">
+                    {t('settings.externalCamerasDescription')}
+                  </p>
+
+                  {printers && printers.length > 0 ? (
+                    <div className="space-y-3">
+                      {printers.map(printer => (
+                        <div key={printer.id} className="p-3 bg-bambu-dark rounded-lg">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-white font-medium text-sm">{printer.name}</span>
+                            <label className="relative inline-flex items-center cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={printer.external_camera_enabled}
+                                onChange={(e) => handleUpdatePrinterCamera(printer.id, { enabled: e.target.checked })}
+                                className="sr-only peer"
+                              />
+                              <div className="w-9 h-5 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-bambu-green"></div>
+                            </label>
+                          </div>
+
+                          {printer.external_camera_enabled && (
+                            <div className="space-y-2 mt-2">
+                              <input
+                                type="text"
+                                placeholder={printer.external_camera_type === 'usb' ? t('settings.cameraPlaceholderUsb') : t('settings.cameraPlaceholderUrl')}
+                                value={localCameraUrls[printer.id] ?? printer.external_camera_url ?? ''}
+                                onChange={(e) => handleCameraUrlChange(printer.id, e.target.value)}
+                                className="w-full px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-white text-sm focus:border-bambu-green focus:outline-none"
+                              />
+                              <div className="flex gap-2">
+                                <select
+                                  value={printer.external_camera_type || 'mjpeg'}
+                                  onChange={(e) => handleUpdatePrinterCamera(printer.id, { type: e.target.value })}
+                                  className="flex-1 px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-white text-sm focus:border-bambu-green focus:outline-none"
+                                >
+                                  <option value="mjpeg">{t('settings.cameraTypeMjpeg')}</option>
+                                  <option value="rtsp">{t('settings.cameraTypeRtsp')}</option>
+                                  <option value="snapshot">{t('settings.cameraTypeSnapshot')}</option>
+                                  <option value="usb">{t('settings.cameraTypeUsb')}</option>
+                                </select>
+                                <Button
+                                  size="sm"
+                                  variant="secondary"
+                                  onClick={() => handleTestExternalCamera(printer.id, localCameraUrls[printer.id] ?? printer.external_camera_url ?? '', printer.external_camera_type || 'mjpeg')}
+                                  disabled={extCameraTestLoading[printer.id] || !(localCameraUrls[printer.id] ?? printer.external_camera_url)}
+                                >
+                                  {extCameraTestLoading[printer.id] ? (
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                  ) : (
+                                    t('settings.test')
+                                  )}
+                                </Button>
+                              </div>
+                              {extCameraTestResults[printer.id] && (
+                                <div className={`text-xs flex items-center gap-1 ${extCameraTestResults[printer.id]?.success ? 'text-green-500' : 'text-red-500'}`}>
+                                  {extCameraTestResults[printer.id]?.success ? (
+                                    <>
+                                      <CheckCircle className="w-3 h-3" />
+                                      {t('settings.connected')}{extCameraTestResults[printer.id]?.resolution && ` (${extCameraTestResults[printer.id]?.resolution})`}
+                                    </>
+                                  ) : (
+                                    <>
+                                      <XCircle className="w-3 h-3" />
+                                      {extCameraTestResults[printer.id]?.error || t('settings.toast.connectionFailed')}
+                                    </>
+                                  )}
+                                </div>
+                              )}
+                              {(printer.external_camera_type === 'mjpeg' || printer.external_camera_type === 'rtsp' || printer.external_camera_type === 'usb') && (
+                                <div className="space-y-1">
+                                  <label className="text-xs text-bambu-gray">{t('settings.cameraSnapshotUrl', 'Snapshot URL (optional)')}</label>
+                                  <div className="flex gap-2">
+                                    <input
+                                      type="text"
+                                      placeholder={t('settings.cameraSnapshotUrlPlaceholder', 'http://192.168.1.61:1984/api/frame.jpeg?src=printer')}
+                                      value={localSnapshotUrls[printer.id] ?? printer.external_camera_snapshot_url ?? ''}
+                                      onChange={(e) => handleSnapshotUrlChange(printer.id, e.target.value)}
+                                      className="flex-1 px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-white text-sm focus:border-bambu-green focus:outline-none"
+                                    />
+                                    <Button
+                                      size="sm"
+                                      variant="secondary"
+                                      onClick={() => handleTestExternalCamera(printer.id, localSnapshotUrls[printer.id] ?? printer.external_camera_snapshot_url ?? '', 'snapshot')}
+                                      disabled={extCameraTestLoading[printer.id] || !(localSnapshotUrls[printer.id] ?? printer.external_camera_snapshot_url)}
+                                    >
+                                      {extCameraTestLoading[printer.id] ? (
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                      ) : (
+                                        t('settings.test')
+                                      )}
+                                    </Button>
+                                  </div>
+                                  <p className="text-xs text-bambu-gray opacity-75">
+                                    {t('settings.cameraSnapshotUrlHelp', 'Single-frame URL used for notification thumbnails, finish photos, timelapse and plate detection. Leave blank to capture from the live stream above. Useful for go2rtc (/api/frame.jpeg) and IP cameras with a dedicated snapshot endpoint.')}
+                                  </p>
+                                </div>
+                              )}
+                              <div className="flex items-center gap-2">
+                                <label className="text-xs text-bambu-gray">{t('settings.cameraRotation')}</label>
+                                <select
+                                  value={printer.camera_rotation || 0}
+                                  onChange={(e) => handleUpdatePrinterCamera(printer.id, { rotation: parseInt(e.target.value) })}
+                                  className="px-2 py-1 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-white text-xs focus:border-bambu-green focus:outline-none"
+                                >
+                                  <option value={0}>0°</option>
+                                  <option value={90}>90°</option>
+                                  <option value={180}>180°</option>
+                                  <option value={270}>270°</option>
+                                </select>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-bambu-gray italic">{t('settings.noPrintersConfigured')}</p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Long-lived camera-stream tokens (#1108) */}
+            <Card>
+              <CardHeader>
+                <h3 className="text-base font-semibold text-white flex items-center gap-2" id="card-camera-tokens">
+                  <Video className="w-4 h-4 text-bambu-green" />
+                  {t('cameraTokens.title', 'Camera API Tokens')}
+                </h3>
+              </CardHeader>
+              <CardContent>
+                <CameraTokensSection key={cameraTokenRevision} />
+              </CardContent>
+            </Card>
+          </div>
+          <div className="min-w-0">
+            {/* Streaming-overlay URL builder (#1422). Sits beside the camera
+                tokens it usually needs — an overlay for a login-enabled
+                deployment is a token plus a URL, and both are made here. */}
+            <Card>
+              <CardHeader>
+                <h3 className="text-base font-semibold text-white flex items-center gap-2" id="card-stream-overlay">
+                  <MonitorPlay className="w-4 h-4 text-bambu-green" />
+                  {t('streamOverlay.builder.title', 'Streaming Overlay')}
+                </h3>
+              </CardHeader>
+              <CardContent>
+                <StreamOverlayBuilder onTokenCreated={() => setCameraTokenRevision((revision) => revision + 1)} />
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      )}
+
       {activeTab === 'apikeys' && (
         <div className={hasPermission('api_keys:read')
           ? 'grid grid-cols-1 lg:grid-cols-2 gap-4'
           : 'grid grid-cols-1 gap-4'}>
           {/* Left Column - API Keys Management. Admin-gated content
               (webhook keys, webhook docs) is hidden from users without
-              api_keys:read; the Camera Tokens panel is always shown so
-              users with camera:view can self-manage their own tokens. */}
+              api_keys:read. Camera tokens moved to the Camera tab. */}
           <div className="min-w-0">
             {hasPermission('api_keys:read') && <>
             <div className="flex items-start justify-between gap-4 mb-6">
@@ -4887,40 +4808,11 @@ export function SettingsPage() {
                 </CardContent>
               </Card>
             )}
-
-            {/* Long-lived camera-stream tokens (#1108) */}
-            <Card className="mt-6">
-              <CardHeader>
-                <h3 className="text-base font-semibold text-white flex items-center gap-2" id="card-camera-tokens">
-                  <Video className="w-4 h-4 text-bambu-green" />
-                  {t('cameraTokens.title', 'Camera API Tokens')}
-                </h3>
-              </CardHeader>
-              <CardContent>
-                <CameraTokensSection key={cameraTokenRevision} />
-              </CardContent>
-            </Card>
-
-            {/* Streaming-overlay URL builder (#1422). Sits under the camera
-                tokens it usually needs — an overlay for a login-enabled
-                deployment is a token plus a URL, and both are made here. */}
-            <Card className="mt-6">
-              <CardHeader>
-                <h3 className="text-base font-semibold text-white flex items-center gap-2" id="card-stream-overlay">
-                  <MonitorPlay className="w-4 h-4 text-bambu-green" />
-                  {t('streamOverlay.builder.title', 'Streaming Overlay')}
-                </h3>
-              </CardHeader>
-              <CardContent>
-                <StreamOverlayBuilder onTokenCreated={() => setCameraTokenRevision((revision) => revision + 1)} />
-              </CardContent>
-            </Card>
           </div>
 
           {/* Right Column - API Browser. Hidden from users without
               api_keys:read since the API Browser is the testing surface
-              for those keys; non-admins land in this tab only for the
-              Camera Tokens panel and don't need the browser. */}
+              for those keys. */}
           {hasPermission('api_keys:read') && <div className="min-w-0">
             <div className="mb-6">
               <h2 className="text-lg font-semibold text-white flex items-center gap-2" id="card-apibrowser">

@@ -1972,6 +1972,7 @@ export default {
       queueDispatch: 'Warteschlange & Dispatch',
       queuePipelines: 'Pipelines',
       filament: 'Filament',
+      camera: 'Kamera',
       network: 'Netzwerk',
       apiKeys: 'API-Schlüssel',
       virtualPrinter: 'Virtueller Drucker',

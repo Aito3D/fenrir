@@ -1971,6 +1971,7 @@ export default {
       queueDispatch: 'Coda e Dispatch',
       queuePipelines: 'Pipeline',
       filament: 'Filamento',
+      camera: 'Telecamera',
       network: 'Rete',
       apiKeys: 'Chiavi API',
       virtualPrinter: 'Stampante virtuale',

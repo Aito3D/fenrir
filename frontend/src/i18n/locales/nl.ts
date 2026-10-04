@@ -1990,6 +1990,7 @@ export default {
       queueDispatch: 'Wachtrij en verzending',
       queuePipelines: 'Pipelines',
       filament: 'Filament',
+      camera: 'Camera',
       network: 'Netwerk',
       apiKeys: 'API-sleutels',
       virtualPrinter: 'Virtuele printer',

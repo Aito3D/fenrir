@@ -1973,6 +1973,7 @@ export default {
       queueDispatch: 'Cola y Despacho',
       queuePipelines: 'Pipelines',
       filament: 'Filamento',
+      camera: 'Cámara',
       network: 'Red',
       apiKeys: 'Claves API',
       virtualPrinter: 'Impresora virtual',

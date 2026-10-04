@@ -1971,6 +1971,7 @@ export default {
       queueDispatch: 'キューとディスパッチ',
       queuePipelines: 'パイプライン',
       filament: 'フィラメント',
+      camera: 'カメラ',
       network: 'ネットワーク',
       apiKeys: 'APIキー',
       virtualPrinter: '仮想プリンター',

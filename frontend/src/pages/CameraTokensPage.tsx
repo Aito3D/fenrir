@@ -4,7 +4,7 @@
  * Exports two surfaces:
  *
  * - ``CameraTokensSection`` — the actual list+create+revoke UI. Designed to
- *   drop into Settings → API Keys (or any other host card) without page
+ *   drop into Settings → Camera (or any other host card) without page
  *   chrome of its own.
  *
  * - ``CameraTokensPage`` (default export) — a thin wrapper that puts the
@@ -451,7 +451,7 @@ function TokenTable({ tokens, showOwner, userIdToName, onRevoke, emptyMessage }:
 /**
  * The actual UI block: create form + my-tokens table + admin all-tokens table.
  * Renders without any outer page chrome so it can be embedded inside
- * Settings → API Keys (the canonical home) or any other host card.
+ * Settings → Camera (the canonical home) or any other host card.
  */
 export function CameraTokensSection() {
   const { t } = useTranslation();

@@ -1973,6 +1973,7 @@ export default {
       queueDispatch: 'Kuyruk ve Sevkıyat',
       queuePipelines: 'Pipeline\'lar',
       filament: 'Filament',
+      camera: 'Kamera',
       network: 'Ağ',
       apiKeys: 'API Anahtarları',
       virtualPrinter: 'Sanal Yazıcı',

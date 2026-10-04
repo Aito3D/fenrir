@@ -1988,6 +1988,7 @@ export default {
       queueDispatch: "Черга та відправка",
       queuePipelines: "Конвеєри",
       filament: "Філамент",
+      camera: 'Камера',
       network: "Мережа",
       apiKeys: "Ключі API",
       virtualPrinter: "Віртуальний принтер",
