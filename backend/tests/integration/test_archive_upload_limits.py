@@ -39,6 +39,15 @@ def small_cap(monkeypatch):
     return 4096
 
 
+@pytest.fixture(autouse=True)
+def _private_data_dir(tmp_path, monkeypatch):
+    """Archive ids repeat across parallel workers (one database each), so the
+    shared archive/no_source/<id> folders would be written and cleaned up by
+    two tests at once."""
+    monkeypatch.setattr(settings, "base_dir", tmp_path)
+    monkeypatch.setattr(settings, "archive_dir", tmp_path / "archive")
+
+
 @pytest.fixture
 def cleanup():
     made: list = []
