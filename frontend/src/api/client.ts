@@ -6548,6 +6548,24 @@ export const api = {
     if (dateTo) params.set('date_to', dateTo);
     return request<Archive[]>(`/archives/?${params}`);
   },
+  // Every archive, in pages: one limit=10000 request silently dropped the
+  // oldest archives once an install passed 10,000. Offset paging over a live
+  // newest-first list can repeat a row when one is added between pages, so
+  // ids are kept once.
+  getAllArchives: async (printerId?: number, pageSize = 10000): Promise<Archive[]> => {
+    const rows: Archive[] = [];
+    const seen = new Set<number>();
+    for (let offset = 0; ; offset += pageSize) {
+      const page = await api.getArchives(printerId, undefined, pageSize, offset);
+      for (const row of page) {
+        if (!seen.has(row.id)) {
+          seen.add(row.id);
+          rows.push(row);
+        }
+      }
+      if (page.length < pageSize) return rows;
+    }
+  },
   getArchivesSlim: (dateFrom?: string, dateTo?: string, createdById?: number) => {
     const params = new URLSearchParams();
     if (dateFrom) params.set('date_from', dateFrom);

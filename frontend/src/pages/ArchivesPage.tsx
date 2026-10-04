@@ -3218,7 +3218,7 @@ export function ArchivesPage() {
   const headSize = Math.max(pageSize, ARCHIVE_HEAD_MIN);
   const fullQuery = useQuery({
     queryKey: ['archives', filterPrinter],
-    queryFn: () => api.getArchives(filterPrinter || undefined),
+    queryFn: () => api.getAllArchives(filterPrinter || undefined),
     // Archive WebSocket events keep it fresh; a refetch on every return to the
     // tab re-downloaded the whole list (~1 MB gzipped at 6k archives).
     refetchOnWindowFocus: false,
