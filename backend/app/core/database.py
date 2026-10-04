@@ -6205,6 +6205,10 @@ async def run_migrations(conn):
         f"{_aito_quote_status_confirmed_default}",
     )
 
+    # Migration: document numbers for the board search (2026-10-04). Nullable,
+    # no backfill: the invoice sweep fills existing cards on its next pass.
+    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN document_numbers TEXT")
+
     # Migration: a settled terminal charge whose event/acceptance failed is
     # re-driven by the sweep (2026-09-26). Nullable, no backfill: existing
     # rows read NULL, i.e. nothing owed.

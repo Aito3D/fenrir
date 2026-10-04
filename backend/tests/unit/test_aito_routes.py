@@ -1155,6 +1155,8 @@ def _minimal_project_response(**overrides) -> AitoProjectResponse:
         "shipping_price": None,
         "shipping_lta": None,
         "shipping_service_name": None,
+        "search_text": "",
+        "document_numbers": [],
         "version": 1,
         "created_at": now,
         "updated_at": now,
@@ -3551,3 +3553,30 @@ async def test_task_rejects_a_zero_percent_discount(async_client):
 async def test_task_rejects_a_discount_over_one_hundred(async_client):
     r = await _create(async_client, tasks=[_task(usinage_cost=1000.0, usinage_discount_pct=101.0)])
     assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_board_and_trash_carry_search_text_and_document_numbers(async_client, db_session):
+    r = await _create(
+        async_client,
+        description="Support GoPro",
+        client_id="C1",
+        client_name="Dupont",
+        tasks=[{"title": "Fixation casque", "impression_cost": 10, "impression_description": "PETG bleu"}],
+    )
+    assert r.status_code == 201
+    project_id = r.json()["id"]
+    assert "Fixation casque" in r.json()["search_text"]
+
+    project = await db_session.get(AitoProject, project_id)
+    project.document_numbers = '["INV-000123"]'
+    await db_session.commit()
+
+    board = {p["id"]: p for p in (await async_client.get("/api/v1/aito/")).json()}
+    assert board[project_id]["search_text"] == "Fixation casque\nPETG bleu"
+    assert board[project_id]["document_numbers"] == ["INV-000123"]
+
+    assert (await async_client.delete(f"/api/v1/aito/{project_id}")).status_code == 204
+    trash = {p["id"]: p for p in (await async_client.get("/api/v1/aito/trash")).json()}
+    assert trash[project_id]["search_text"] == "Fixation casque\nPETG bleu"
+    assert trash[project_id]["document_numbers"] == ["INV-000123"]
