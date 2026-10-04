@@ -2,7 +2,7 @@
 
 import re
 from datetime import date, datetime
-from typing import Literal, get_args
+from typing import Any, Literal, get_args
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -1574,3 +1574,13 @@ class AitoWatchResponse(BaseModel):
     # Aito kinds (follows_settings), an explicit watch's its saved list.
     kinds: list[str]
     follows_settings: bool = False
+
+
+class AitoForceSyncStep(BaseModel):
+    key: Literal["quote", "credit", "invoice", "payment_links"]
+    outcome: Literal["in_sync", "fixed", "failed", "skipped"]
+    detail: dict[str, Any] = {}
+
+
+class AitoForceSyncReport(BaseModel):
+    steps: list[AitoForceSyncStep]

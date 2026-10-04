@@ -43,6 +43,8 @@ from backend.app.schemas.aito import (
     AitoEventPage,
     AitoEventResponse,
     AitoFlagUpdate,
+    AitoForceSyncReport,
+    AitoForceSyncStep,
     AitoInvoiceCreatedResponse,
     AitoInvoiceDepositsInvoice,
     AitoInvoiceDepositsResponse,
@@ -106,6 +108,7 @@ from backend.app.services.aito_deposit_apply import (
     project_deposits,
 )
 from backend.app.services.aito_events import diff_fields, kinds_for_depth, record, utc_now_naive
+from backend.app.services.aito_force_sync import quote_snapshot, run_force_sync
 from backend.app.services.aito_invoice_create import (
     apply_retainers,
     build_invoice_payload,
@@ -1888,6 +1891,8 @@ _AI_RATE_LIMIT_DETAIL = "Too many AI requests. Please wait a moment and try agai
 # click-spammable, and it must not eat (or be starved by) the AI budget.
 _PAYMENT_LINK_REFRESH_MAX_CALLS = 10
 _PAYMENT_LINK_REFRESH_DETAIL = "Too many payment link refreshes. Please wait a moment and try again."
+_FORCE_SYNC_MAX_CALLS = 6
+_FORCE_SYNC_DETAIL = "Too many force syncs. Please wait a moment and try again."
 # T-024: the client-rating read. Not billed like a completion, but every
 # cache miss costs up to two Books calls for a caller-named id, so it gets
 # its own bucket and its own (larger) budget: an operator opening cards and
@@ -5227,6 +5232,45 @@ async def sync_project_now(
     await _commit_and_wake(db, queued, project.id, immediate=True)
     await db.refresh(project)
     return await _project_response(db, project)
+
+
+@router.post("/{project_id}/force-sync", response_model=AitoForceSyncReport)
+async def force_sync_project(
+    project_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
+):
+    """The ⋯ menu's Force Zoho sync: check every Zoho-backed part of the card
+    and repair drift, reporting per step (aito_force_sync). The quote half is
+    the same mark-pending as ``sync_project_now`` — it forces the ATTEMPT,
+    never the write — then waits for the worker's attempt to land. A card with
+    no quote yet is NOT marked: a check must not create a quote."""
+    _check_rate_limit(
+        request, current_user, bucket="force_sync", max_calls=_FORCE_SYNC_MAX_CALLS, detail=_FORCE_SYNC_DETAIL
+    )
+    project = await _get_active_project_or_404(db, project_id)
+    pid = project.id
+    before = quote_snapshot(project)
+    if project.quote_id or project.quote_sync_state == "pending":
+        was_pending = project.quote_sync_state == "pending"
+        _mark_pending_if_ours(project)
+        if not was_pending and project.quote_sync_state == "pending":
+            await record(db, pid, "sync.queued", actor_class="system")
+    queued = project.quote_sync_state == "pending"
+    await db.commit()
+
+    steps = await run_force_sync(db, project, quote_queued=queued, quote_before=before)
+    await record(
+        db,
+        pid,
+        "project.force_synced",
+        actor_class="user",
+        actor_name=_actor(current_user),
+        detail={"steps": {s.key: s.outcome for s in steps}},
+    )
+    await db.commit()
+    return AitoForceSyncReport(steps=[AitoForceSyncStep(key=s.key, outcome=s.outcome, detail=s.detail) for s in steps])
 
 
 @router.post("/{project_id}/quote-status", response_model=AitoQuoteStatusResponse)

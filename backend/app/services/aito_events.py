@@ -170,6 +170,8 @@ KINDS: dict[str, str] = {
     # legible than anything a person did by hand, which is why it is a
     # separate depth rather than part of detail.
     "sync.queued": "trace",
+    # an operator asked for a full Zoho check; detail carries each step's outcome
+    "project.force_synced": "detail",
     "sync.pushed": "trace",
     "sync.failed": "trace",
     "sync.locked": "trace",
