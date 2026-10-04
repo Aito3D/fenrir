@@ -1072,3 +1072,24 @@ async def test_a_second_pass_keeps_one_copy_of_the_number(db_session, monkeypatc
     await sweep_invoices(db_session, force=True)
     db_session.expire_all()
     assert document_numbers_of(await db_session.get(AitoProject, project_id)) == ["INV-1"]
+
+
+@pytest.mark.asyncio
+async def test_a_number_written_mid_pass_survives_the_sweep(db_session, monkeypatch):
+    from backend.app.services.aito_search import remember_document_numbers
+
+    project = await _project(db_session)
+    project_id = project.id
+    fake = _fake({"EST1": [_invoice(10.0)]}, [])
+
+    async def list_invoices(db, quote_id, client_id):
+        # Another writer appends a number after the pass picked its targets.
+        other = await db.get(AitoProject, project_id)
+        remember_document_numbers(other, "RET-9")
+        await db.commit()
+        return await fake(db, quote_id, client_id)
+
+    monkeypatch.setattr(zoho_service, "list_project_invoices", list_invoices)
+    await sweep_invoices(db_session, force=True)
+    db_session.expire_all()
+    assert document_numbers_of(await db_session.get(AitoProject, project_id)) == ["RET-9", "INV-1"]

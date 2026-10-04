@@ -340,17 +340,10 @@ async def sweep_invoices(db: AsyncSession, *, force: bool = False) -> int:
         # raises ``MissingGreenlet`` outside of one, so the values this loop
         # needs to *read* are pinned to plain locals instead.
         targets = [
-            (
-                project,
-                project.id,
-                project.quote_id or "",
-                project.client_id or "",
-                project.quote_number,
-                project.document_numbers,
-            )
+            (project, project.id, project.quote_id or "", project.client_id or "", project.quote_number)
             for project in projects
         ]
-        for project, project_id, quote_id, client_id, quote_number, known_numbers in targets:
+        for project, project_id, quote_id, client_id, quote_number in targets:
             try:
                 invoices = await zoho_service.list_project_invoices(db, quote_id, client_id)
                 if invoices:
@@ -370,10 +363,12 @@ async def sweep_invoices(db: AsyncSession, *, force: bool = False) -> int:
                     project.invoice_status = status
                     project.invoice_balance = balance
                     project.invoice_due_date = due
-                    # `remember_document_numbers` READS the stored list, and a
-                    # rollback for an earlier project expired this row: write the
-                    # pinned value back first so the read never lazy-loads.
-                    project.document_numbers = known_numbers
+                    # `remember_document_numbers` READS the stored list. Reload
+                    # just that column first: a rollback for an earlier project
+                    # may have expired this row (a lazy-load would raise
+                    # MissingGreenlet), and another writer may have appended a
+                    # number since the pass began, which must not be overwritten.
+                    await db.refresh(project, attribute_names=["document_numbers"])
                     remember_document_numbers(project, newest.get("number"))
                     if credit is not None:
                         # The status reconcile stops reading a locked (invoiced)
