@@ -36,7 +36,7 @@ export function ProjectHeader({ project }: { project: Project }) {
     mutationFn: () =>
       api.updateProject(project.id, {
         name: title.trim(),
-        description: description.trim() || null,
+        description: description.trim(),
         ...splitTagDrafts(tags),
       }),
     onSuccess: () => {
