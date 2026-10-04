@@ -3272,7 +3272,14 @@ async def run_sync_loop() -> None:
                         # sync side.
                         if _throttled_until is None or time.monotonic() >= _throttled_until:
                             try:
-                                await sweep_invoices(db)
+                                # T-102: pushes are served between the sweep's
+                                # projects, and the pass stops at the shared
+                                # per-minute ceiling like the change pass.
+                                await sweep_invoices(
+                                    db,
+                                    serve_due_pushes=_serve_due_pushes,
+                                    call_ceiling=BACKGROUND_CALL_CEILING,
+                                )
                                 # The other direction: the sweep above asks Books
                                 # about invoices this board already knows it has,
                                 # once an hour. This asks what Books has CHANGED

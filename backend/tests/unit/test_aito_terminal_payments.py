@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 
 import httpx
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from backend.app.api.routes.settings import set_setting
@@ -1009,6 +1009,102 @@ async def test_the_abandoned_sweep_skips_a_reservation_that_vanished(db_session,
     monkeypatch.undo()
     assert (await db_session.get(AitoTerminalPayment, gone_id)).status == "pending"
     assert (await db_session.get(AitoTerminalPayment, kept_id)).status == "failed"
+
+
+@pytest.mark.asyncio
+async def test_the_abandoned_sweep_skips_a_reservation_being_replayed(db_session):
+    """T-123: an old unminted reservation whose replay POST is in flight in
+    this process is not abandoned -- no write-off, no event."""
+    p = await _project(db_session)
+    pid = p.id
+    stuck = _reservation(p.id, idempotency_key="k-replaying", created_at=NOW)
+    db_session.add(stuck)
+    await db_session.commit()
+    stuck_id = stuck.id
+    svc._in_flight.add(stuck_id)
+    try:
+        assert await svc._age_out_abandoned_reservations(db_session, now=NOW + timedelta(minutes=11), limit=10) == 0
+    finally:
+        svc._in_flight.discard(stuck_id)
+    db_session.expire_all()
+    row = await db_session.get(AitoTerminalPayment, stuck_id)
+    assert row.status == "pending" and row.settled_at is None and row.sync_error is None
+    assert await _events(db_session, pid, "payment.terminal.failed") == []
+
+
+@pytest.mark.asyncio
+async def test_the_abandoned_sweep_leaves_a_row_adopted_after_the_listing_alone(db_session, monkeypatch):
+    """T-123: the write-off is a conditional claim. A replay that adopted
+    the row (minted it, opened it) between the sweep's listing and its write
+    wins: the sweep writes nothing, records nothing, counts nothing, and
+    still writes off the next stale row."""
+    p = await _project(db_session)
+    pid = p.id
+    adopted = _reservation(p.id, idempotency_key="k-adopted", created_at=NOW)
+    stale = _reservation(p.id, idempotency_key="k-stale", created_at=NOW)
+    db_session.add_all([adopted, stale])
+    await db_session.commit()
+    adopted_id, stale_id = adopted.id, stale.id
+    real_get = db_session.get
+
+    async def get(entity, ident, *args, **kwargs):
+        row = await real_get(entity, ident, *args, **kwargs)
+        if ident == adopted_id:
+            # The replay's `_adopt` commit lands in the gap.
+            await db_session.execute(
+                update(AitoTerminalPayment)
+                .where(AitoTerminalPayment.id == adopted_id)
+                .values(status="open", heimdall_id="h-adopted")
+                .execution_options(synchronize_session=False)
+            )
+            await db_session.commit()
+        return row
+
+    monkeypatch.setattr(db_session, "get", get)
+    later = NOW + timedelta(minutes=11)
+    assert await svc._age_out_abandoned_reservations(db_session, now=later, limit=10) == 1
+    monkeypatch.undo()
+    db_session.expire_all()
+    kept = await db_session.get(AitoTerminalPayment, adopted_id)
+    assert kept.status == "open" and kept.heimdall_id == "h-adopted"
+    assert kept.settled_at is None and kept.sync_error is None
+    aged = await db_session.get(AitoTerminalPayment, stale_id)
+    assert aged.status == "failed" and aged.settled_at == later
+    assert len(await _events(db_session, pid, "payment.terminal.failed")) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_sweep_during_a_replay_post_leaves_the_replayed_row_open_and_unsettled(test_engine, db_session):
+    """T-123 end to end: the operator replays a reservation older than
+    ABANDONED_RESERVATION_SECONDS and the tick's sweep runs while the POST
+    is in flight. The row ends up adopted and open with `settled_at` NULL, so
+    Heimdall's later `paid` still settles it (event, acceptance, notification);
+    no false `abandoned` event is written."""
+    p = await _project(db_session)
+    pid = p.id
+    stuck = _reservation(p.id, created_at=NOW)
+    db_session.add(stuck)
+    await db_session.commit()
+    stuck_id = stuck.id
+    later = NOW + timedelta(minutes=11)
+    maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    swept = []
+
+    async def handler(request):
+        async with maker() as other:
+            swept.append(await svc._age_out_abandoned_reservations(other, now=later, limit=10))
+        return httpx.Response(202, json=_payment(id="h-replayed"))
+
+    heimdall_service._transport = httpx.MockTransport(handler)
+    row = await svc.start_terminal_payment(db_session, p, document=INVOICE, amount=23000, actor_name="paul", now=later)
+
+    assert swept == [0]
+    assert row.id == stuck_id and row.heimdall_id == "h-replayed"
+    db_session.expire_all()
+    row = await db_session.get(AitoTerminalPayment, stuck_id)
+    assert row.status == "processing" and row.settled_at is None
+    assert await _events(db_session, pid, "payment.terminal.failed") == []
+    assert len(await _events(db_session, pid, "payment.terminal.started")) == 1
 
 
 # --- transport faults (T-011) ------------------------------------------------

@@ -636,3 +636,94 @@ unchanged.
 
 - Golden probes re-recorded: app-openapi-index (read_all's params gain `query:up_to`; the other 34 match unchanged).
 - SURFACE.md sections regenerated: none (`bash tools/gen_surface_aito23.sh` output identical to SURFACE.md; the client.ts method signature is not captured).
+
+## T-102 — the hourly invoice sweep serves due pushes between projects and stops at the Books call ceiling (user-approved 2026-10-03)
+
+Sanctions commit <this commit> "refactor(loop-12): T-102 serve pushes and
+respect the call ceiling in the invoice sweep (user-approved behavior change)".
+`sweep_invoices` in `backend/app/services/aito_invoice_sweep.py` gains two
+OPTIONAL keyword arguments, `serve_due_pushes` and `call_ceiling` (both default
+`None`, which keeps the old pass). `run_sync_loop` in
+`backend/app/services/aito_quote_sync.py` passes its own `_serve_due_pushes`
+(handed in, not imported, to avoid the import cycle) and
+`BACKGROUND_CALL_CEILING`. Before each project the sweep serves due pushes
+(the served drain contains its own failures, as in `_drain_reconcile_queue`),
+then, once `zoho_service.calls_in_last_minute()` has reached the ceiling, the
+pass stops without stamping `_last_run`. The existing least-recently-checked
+ordering makes the next tick resume with the unreached tail. User-visible: on
+large boards the hourly invoice refresh may finish over several ticks instead
+of one, and the document/invoice buttons (Print quote/invoice PDF, Send quote,
+Create invoice) no longer return the 503 "Zoho has not confirmed" while it
+runs. Unchanged: the 429 path, the per-project commit and skip rules, the
+hourly gate after a pass that reaches the end. Pinned by five new tests at the
+end of `backend/tests/unit/test_aito_invoice_sweep.py`. The six loop-level
+`sweep_invoices` fakes in the test suite now accept the new keyword arguments.
+
+- Golden probes re-recorded: none (35/35 match).
+- SURFACE.md sections regenerated: the `sweep_invoices` line now reads `async def sweep_invoices(` (the signature is wrapped over several lines and the generator keeps only the first one).
+
+## T-123 — the abandoned-reservation sweep no longer writes off a reservation that is being replayed (user-approved 2026-10-03)
+
+Sanctions commit <this commit> "refactor(loop-12): T-123 the age-out sweep
+leaves a replayed reservation alone (user-approved behavior change)".
+`_age_out_abandoned_reservations` in
+`backend/app/services/aito_terminal_payments.py` used to set
+`status='failed'` and `settled_at` with an unconditional ORM write and never
+checked `_in_flight`. A replay of an old unminted reservation keeps the row's
+original `created_at`, so a tick landing during the replay's POST
+(`confirm: true`) wrote the row off and recorded a false `abandoned` event.
+The replay's `_adopt` then set `status`/`heimdall_id` but not `settled_at`, so
+Heimdall's later `paid` never produced the paid event, the quote acceptance or
+the notification for a real card charge. Now the sweep skips ids in
+`_in_flight`, and the write-off is a conditional
+`UPDATE ... WHERE id = :id AND status = 'pending' AND heimdall_id IS NULL AND settled_at IS NULL`.
+When it matches no row, nothing is written, no event is recorded and the row
+is not counted. The write-off and its `payment.terminal.failed` event still
+share one commit (T-122). User-visible: a reservation being replayed (its
+`start_terminal_payment` POST in flight) is no longer marked abandoned/failed
+by the sweep mid-request, and a row the replay already adopted is left alone.
+Unchanged: the cutoff, the selection, the per-row isolation, and the other
+branches. Pinned by three new tests in
+`backend/tests/unit/test_aito_terminal_payments.py` (in-flight skip, a claim
+that loses to an adoption between listing and write, and a sweep running
+during a replay POST end to end).
+
+- Golden probes re-recorded: none (35/35 match).
+- SURFACE.md sections regenerated: none (`bash tools/gen_surface_aito23.sh` output identical to SURFACE.md).
+
+## T-121 — only Books' own status history (comment_type "system") becomes a quote viewed/accepted/declined/expired/sent event (user-approved 2026-10-03)
+
+Sanctions commit <this commit> "refactor(loop-12): T-121 classify only Books'
+system history comments (user-approved behavior change)". `map_comment` in
+`backend/app/services/aito_zoho_comments.py` matched its keyword table against
+every Books comment, so a note typed by a person (a staff note such as "Devis
+non accepté", or a customer-portal comment) that merely contained "accepté",
+"refusé", "consulté" and so on was recorded as a client `quote.accepted` /
+`quote.declined` / `quote.viewed` event. That event rang every watcher's inbox
+bell and counted in the acceptance stats. Now the table is tried only when
+`comment.get("comment_type") == "system"`. Every other comment (other type,
+or none) falls through to the existing `zoho.comment` fallback with
+`actor_class` "system" and the text verbatim. User-visible: human-written Books
+comments that mention 'accepted', 'refusé', 'consulté' and so on appear on the
+timeline as plain Zoho comments instead of quote accepted/declined/viewed
+events, and no longer ring the inbox bell or count in the acceptance stats.
+Evidence the gate keeps real history: a user-authorised READ-ONLY probe of
+three real estimates (GET /estimates/{id}/comments, 2026-10-03, 37 comments)
+found every history comment carrying `comment_type == "system"`. That includes
+"Devis accepté à l’aide du lien public", "Le client a consulté le devis dans
+l’e-mail." and "Devis marqué comme accepté/refusé/envoyé". Unchanged: the
+pattern table, the echo suppression, the timestamps and the fallback. Pinned
+by new tests in `backend/tests/unit/test_aito_zoho_comments.py`: a system
+public-link acceptance still maps to `quote.accepted`; system viewed/declined
+history is still classified; the same texts with comment_type absent,
+"internal", "customer", "SYSTEM" or "" map to `zoho.comment`; an internal
+note mentioning acceptance is mirrored as a plain comment. The existing
+fixtures already carried `comment_type: "system"` and were not changed.
+
+- Golden probes re-recorded: aito-status-comments. Its `map_comment` samples
+  in the frozen `tools/probe_aito_status.py` carry no `comment_type`, so the
+  four that were classified (viewed, accepted, declined, expired) now read
+  `zoho.comment` / `system`. Real Books status history always carries
+  "system" (probe above), so on real data only non-system comments change.
+  The other 34 probes match unchanged.
+- SURFACE.md sections regenerated: none (`bash tools/gen_surface_aito23.sh` output identical to SURFACE.md).

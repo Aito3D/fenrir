@@ -929,11 +929,11 @@
     "description": "The estimate has been viewed by the customer."
    },
    "out": {
-    "actor_class": "client",
+    "actor_class": "system",
     "detail": {
      "text": "The estimate has been viewed by the customer."
     },
-    "kind": "quote.viewed"
+    "kind": "zoho.comment"
    }
   },
   {
@@ -941,11 +941,11 @@
     "description": "Estimate accepted by customer"
    },
    "out": {
-    "actor_class": "client",
+    "actor_class": "system",
     "detail": {
      "text": "Estimate accepted by customer"
     },
-    "kind": "quote.accepted"
+    "kind": "zoho.comment"
    }
   },
   {
@@ -953,11 +953,11 @@
     "description": "Estimate declined by the customer."
    },
    "out": {
-    "actor_class": "client",
+    "actor_class": "system",
     "detail": {
      "text": "Estimate declined by the customer."
     },
-    "kind": "quote.declined"
+    "kind": "zoho.comment"
    }
   },
   {
@@ -965,11 +965,11 @@
     "description": "This estimate has expired."
    },
    "out": {
-    "actor_class": "client",
+    "actor_class": "system",
     "detail": {
      "text": "This estimate has expired."
     },
-    "kind": "quote.expired"
+    "kind": "zoho.comment"
    }
   },
   {

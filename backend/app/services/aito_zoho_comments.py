@@ -126,11 +126,19 @@ def map_comment(comment: dict) -> dict:
     """One Books comment as the arguments for an event.
 
     Never returns None. An unrecognised comment is still history.
+
+    T-121: only Books' own status history is classified. A read-only probe of
+    real estimates (2026-10-03) found every history entry -- the public-link
+    acceptance, "viewed in the e-mail", "marked as accepted/declined/sent" --
+    carrying ``comment_type == "system"``. Anything else (a note typed by a
+    person that merely mentions "accepté" or "refusé") is kept verbatim as a
+    zoho.comment, so it never claims a client decision.
     """
     text = (comment.get("description") or "").strip()
-    for pattern, kind, actor_class in _PATTERNS:
-        if pattern.search(text):
-            return {"kind": kind, "actor_class": actor_class, "detail": {"text": text}}
+    if comment.get("comment_type") == "system":
+        for pattern, kind, actor_class in _PATTERNS:
+            if pattern.search(text):
+                return {"kind": kind, "actor_class": actor_class, "detail": {"text": text}}
     return {
         "kind": "zoho.comment",
         # 'system' rather than 'client': we do not know who wrote it, and

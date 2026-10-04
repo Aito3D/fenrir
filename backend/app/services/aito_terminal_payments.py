@@ -629,7 +629,11 @@ async def _age_out_abandoned_reservations(db: AsyncSession, *, now: datetime, li
     operator present. The sweep ages the row out and stops there; if Heimdall
     did charge the card before the handler died, the operator's paper roll
     and Heimdall's own ledger are the record, and the abandoned event says
-    where to look."""
+    where to look.
+
+    T-123: a reservation being replayed right now (in `_in_flight`) is
+    skipped, and the write-off is a conditional claim, so a row the replay
+    adopted after the listing keeps its adoption and gets no event."""
     cutoff = now - timedelta(seconds=ABANDONED_RESERVATION_SECONDS)
     stmt = (
         select(AitoTerminalPayment.id)
@@ -647,10 +651,35 @@ async def _age_out_abandoned_reservations(db: AsyncSession, *, now: datetime, li
             row = await db.get(AitoTerminalPayment, rid)
             if row is None:
                 continue
-            row.status = "failed"
-            row.sync_error = "reservation abandoned"
-            row.checked_at = now
-            row.settled_at = now
+            # T-123: a reservation an operator is replaying right now (its
+            # `start_terminal_payment` POST in flight, in this process) is
+            # not abandoned. Checked after the fetch's await, right before
+            # the claim.
+            if rid in _in_flight:
+                continue
+            # A conditional claim, not an ORM set: a row the replay already
+            # adopted (minted, re-opened or settled) since the listing above
+            # matches nothing and is left alone, with no event.
+            claimed = await db.execute(
+                update(AitoTerminalPayment)
+                .where(
+                    AitoTerminalPayment.id == rid,
+                    AitoTerminalPayment.status == "pending",
+                    AitoTerminalPayment.heimdall_id.is_(None),
+                    AitoTerminalPayment.settled_at.is_(None),
+                )
+                .values(status="failed", sync_error="reservation abandoned", checked_at=now, settled_at=now)
+                .execution_options(synchronize_session=False)
+            )
+            if claimed.rowcount != 1:
+                await db.rollback()
+                continue
+            # The loaded row mirrors the claim (same idiom as the settle claim
+            # in `apply_terminal_state`); a rollback below expires it again.
+            set_committed_value(row, "status", "failed")
+            set_committed_value(row, "sync_error", "reservation abandoned")
+            set_committed_value(row, "checked_at", now)
+            set_committed_value(row, "settled_at", now)
             # The write-off and its event share ONE commit: a failed event
             # write rolls the row back to `pending`, so the next pass ages it
             # out again rather than leaving a failed row with no event.

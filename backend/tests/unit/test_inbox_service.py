@@ -325,7 +325,7 @@ async def test_a_failing_books_pass_still_purges_the_inbox(db_session, test_engi
     async def ok(*_args, **_kwargs):
         return 0
 
-    async def books_down(db):
+    async def books_down(db, **_kwargs):
         raise ZohoUpstreamError("HTTP 503")
 
     tick_done = asyncio.Event()

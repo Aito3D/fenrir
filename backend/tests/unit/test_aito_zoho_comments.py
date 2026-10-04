@@ -89,6 +89,81 @@ def test_a_field_named_expiration_is_not_mistaken_for_the_quote_expiring():
     assert mapped["kind"] == "zoho.comment"
 
 
+# --- T-121: only Books' own history (comment_type "system") is classified ----
+#
+# A read-only probe of real estimates (2026-10-03, 37 comments) found every
+# history entry carrying comment_type "system". A comment of any other type
+# (or none) is a note somebody typed; one that merely mentions "accepté" must
+# not become a client acceptance (inbox bell, acceptance stats).
+
+_PUBLIC_LINK_ACCEPTANCE = "Devis accepté à l’aide du lien public"
+
+
+def test_a_system_public_link_acceptance_still_becomes_quote_accepted():
+    mapped = map_comment(
+        {"description": _PUBLIC_LINK_ACCEPTANCE, "comment_type": "system", "commented_by": "Zoho Books"}
+    )
+    assert mapped == {
+        "kind": "quote.accepted",
+        "actor_class": "client",
+        "detail": {"text": _PUBLIC_LINK_ACCEPTANCE},
+    }
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        _PUBLIC_LINK_ACCEPTANCE,
+        "Le client a consulté le devis dans l’e-mail.",
+        "Devis marqué comme refusé",
+        "Estimate declined by the customer.",
+        "This estimate has expired.",
+        "Devis envoyé par e-mail à client@example.com",
+    ],
+)
+@pytest.mark.parametrize("comment_type", [None, "internal", "customer", "SYSTEM", ""])
+def test_a_non_system_comment_is_never_promoted(text, comment_type):
+    comment = {"description": text}
+    if comment_type is not None:
+        comment["comment_type"] = comment_type
+    assert map_comment(comment) == {"kind": "zoho.comment", "actor_class": "system", "detail": {"text": text}}
+
+
+@pytest.mark.parametrize(
+    ("text", "kind"),
+    [
+        ("Le client a consulté le devis dans l’e-mail.", "quote.viewed"),
+        ("Devis marqué comme refusé", "quote.declined"),
+        ("Devis marqué comme accepté", "quote.accepted"),
+    ],
+)
+def test_system_viewed_and_declined_history_is_still_classified(text, kind):
+    assert map_comment({"description": text, "comment_type": "system"})["kind"] == kind
+
+
+@pytest.mark.asyncio
+async def test_a_typed_note_mentioning_acceptance_is_mirrored_as_a_plain_comment(db_session):
+    project = AitoProject(description="Trophy", board_column="devis", quote_id="EST-1")
+    db_session.add(project)
+    await db_session.commit()
+    await db_session.refresh(project)
+    project_id = project.id
+
+    comments = [
+        {
+            "comment_id": "c-note",
+            "description": "Devis non accepté pour l'instant, relancer lundi",
+            "comment_type": "internal",
+            "date": "2026-07-28",
+            "time": "17:20",
+        }
+    ]
+    assert await mirror_comments(db_session, project, comments) == 1
+
+    rows = (await db_session.execute(select(AitoEvent).where(AitoEvent.project_id == project_id))).scalars().all()
+    assert [(r.kind, r.actor_class) for r in rows] == [("zoho.comment", "system")]
+
+
 @pytest.mark.asyncio
 async def test_the_same_comment_is_never_mirrored_twice(db_session):
     project = AitoProject(description="Trophy", board_column="devis", quote_id="EST-1")

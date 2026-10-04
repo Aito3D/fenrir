@@ -3439,7 +3439,7 @@ async def test_a_books_failure_in_the_invoice_passes_still_runs_the_heimdall_pas
     calls: list[tuple[str, object]] = []
     terminal_done = asyncio.Event()
 
-    async def boom(db):
+    async def boom(db, **_kwargs):
         calls.append((failing, db))
         raise error
 

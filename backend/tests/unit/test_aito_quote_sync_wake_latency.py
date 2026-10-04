@@ -273,7 +273,7 @@ async def test_a_wake_during_the_ticks_polls_is_served_between_passes(monkeypatc
         drains.append("pending" if pending_only else "full")
         return 0
 
-    async def fake_sweep(db):
+    async def fake_sweep(db, **_kwargs):
         drains.append("sweep")
         in_sweep.set()
         await release_sweep.wait()
@@ -336,7 +336,7 @@ async def test_an_edits_window_is_still_honoured_mid_tick(monkeypatch):
         aito_push_schedule.drop_due_except(time.monotonic(), set())
         return 0
 
-    async def fake_sweep(db):
+    async def fake_sweep(db, **_kwargs):
         drains.append("sweep")
         in_sweep.set()
         await release_sweep.wait()

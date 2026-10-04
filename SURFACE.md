@@ -294,7 +294,7 @@ async def start_terminal_payment(
 async def summarize_project(
 async def summarize_tasks(db: AsyncSession, tasks: list[dict])
 async def sweep_inbox(db: AsyncSession, *, force: bool = False)
-async def sweep_invoices(db: AsyncSession, *, force: bool = False)
+async def sweep_invoices(
 async def sync_enabled(db: AsyncSession)
 async def sync_interval_seconds(db: AsyncSession)
 async def sync_project_now(

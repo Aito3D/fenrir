@@ -550,7 +550,7 @@ async def test_run_sync_loop_arms_the_shared_throttle_on_a_sweep_side_429(
     monkeypatch.setattr(aito_quote_sync, "sync_interval_seconds", lambda db: _immediate(300))
     monkeypatch.setattr(aito_quote_sync, "run_sync_once", lambda db, pending_only=False, **_kw: _immediate(0))
 
-    async def _raise_once(db):
+    async def _raise_once(db, **_kwargs):
         raise ZohoRateLimited("Too many requests", retry_after=42.0)
 
     monkeypatch.setattr(aito_quote_sync, "sweep_invoices", _raise_once)
@@ -584,7 +584,7 @@ async def test_run_sync_loop_skips_the_sweep_while_already_throttled(
 
     sweep_calls: list[None] = []
 
-    async def _tracked_sweep(db):
+    async def _tracked_sweep(db, **_kwargs):
         sweep_calls.append(None)
         return 0
 
@@ -1109,3 +1109,141 @@ async def test_the_overdue_event_stays_out_of_the_story(async_client, db_session
 
     assert "project.due.overdue" not in await kinds("story")
     assert (await kinds("detail")).count("project.due.overdue") == 1
+
+
+# --- T-102: pushes served between projects, stop at the call ceiling --------
+#
+# The hourly pass runs inside the loop's tick; while it ran, a route waiting
+# on flush_and_wait (Print PDF, Send quote, Create invoice) waited for the
+# whole pass and could hit its 20 s timeout, and the pass alone could spend
+# Books' per-minute budget. The loop now hands in its push server and the
+# shared ceiling.
+
+
+@pytest.mark.asyncio
+async def test_due_pushes_are_served_before_every_project(db_session, monkeypatch):
+    await _project(db_session, quote_id="EST-A")
+    await _project(db_session, quote_id="EST-B")
+    order: list[str] = []
+    monkeypatch.setattr(zoho_service, "list_project_invoices", _fake({}, order))
+
+    async def serve(db):
+        assert db is db_session
+        order.append("serve")
+        return 0
+
+    updated = await sweep_invoices(db_session, force=True, serve_due_pushes=serve)
+
+    assert updated == 2
+    assert order == ["serve", "EST-A", "serve", "EST-B"]
+    assert aito_invoice_sweep._last_run != 0.0
+
+
+@pytest.mark.asyncio
+async def test_the_call_ceiling_cuts_the_pass_without_spending_the_hourly_slot(db_session, monkeypatch):
+    a = await _project(db_session, quote_id="EST-A")
+    b = await _project(db_session, quote_id="EST-B")
+    c = await _project(db_session, quote_id="EST-C")
+    a_id, b_id, c_id = a.id, b.id, c.id
+    calls: list[str] = []
+    monkeypatch.setattr(zoho_service, "list_project_invoices", _fake({}, calls))
+    # The meter reads 49 before A and 50 before B: the ceiling is reached
+    # after the first project.
+    readings = iter([49, 50])
+    monkeypatch.setattr(zoho_service, "calls_in_last_minute", lambda: next(readings))
+
+    updated = await sweep_invoices(db_session, force=True, call_ceiling=50)
+
+    assert updated == 1
+    assert calls == ["EST-A"]
+    # Not spent: the next tick resumes rather than waiting out the hour.
+    assert aito_invoice_sweep._last_run == 0.0
+    db_session.expire_all()
+    assert (await db_session.get(AitoProject, a_id)).invoice_checked_at is not None
+    assert (await db_session.get(AitoProject, b_id)).invoice_checked_at is None
+    assert (await db_session.get(AitoProject, c_id)).invoice_checked_at is None
+
+    # The next (non-forced) pass resumes with the unreached tail.
+    resumed: list[str] = []
+    monkeypatch.setattr(zoho_service, "list_project_invoices", _fake({}, resumed))
+    monkeypatch.setattr(zoho_service, "calls_in_last_minute", lambda: 0)
+
+    assert await sweep_invoices(db_session, call_ceiling=50) == 3
+    assert resumed == ["EST-B", "EST-C", "EST-A"]
+    assert aito_invoice_sweep._last_run != 0.0
+
+
+@pytest.mark.asyncio
+async def test_without_the_loop_arguments_the_pass_ignores_the_meter(db_session, monkeypatch):
+    """Default ``None``: a caller that passes neither keeps the old pass."""
+    await _project(db_session, quote_id="EST-A")
+    calls: list[str] = []
+    monkeypatch.setattr(zoho_service, "list_project_invoices", _fake({}, calls))
+    monkeypatch.setattr(zoho_service, "calls_in_last_minute", lambda: 10_000)
+
+    assert await sweep_invoices(db_session, force=True) == 1
+    assert calls == ["EST-A"]
+    assert aito_invoice_sweep._last_run != 0.0
+
+
+@pytest.mark.asyncio
+async def test_a_failing_served_drain_does_not_stop_the_pass(db_session, monkeypatch):
+    """The real ``_serve_due_pushes`` contains a drain failure (logged,
+    rolled back) the way the change pass relies on, so every project is
+    still refreshed."""
+    await _project(db_session, quote_id="EST-A")
+    await _project(db_session, quote_id="EST-B")
+    calls: list[str] = []
+    monkeypatch.setattr(zoho_service, "list_project_invoices", _fake({}, calls))
+    drains: list[str] = []
+
+    async def failing_drain(db, **_kwargs):
+        drains.append("drain")
+        raise RuntimeError("push blew up")
+
+    monkeypatch.setattr(aito_quote_sync, "_drain_pending", failing_drain)
+    monkeypatch.setattr(aito_quote_sync, "_wake", asyncio.Event())
+    monkeypatch.setattr(aito_quote_sync, "_drain_requested", True)
+    # Nothing else due: only the requested drain is served.
+    monkeypatch.setattr(aito_quote_sync.aito_push_schedule, "any_due", lambda _now: False)
+
+    updated = await sweep_invoices(db_session, force=True, serve_due_pushes=aito_quote_sync._serve_due_pushes)
+
+    assert updated == 2
+    assert calls == ["EST-A", "EST-B"]
+    assert drains == ["drain"]  # requested once, served once
+    assert aito_invoice_sweep._last_run != 0.0
+
+
+@pytest.mark.asyncio
+async def test_run_sync_loop_hands_the_sweep_its_push_server_and_ceiling(
+    db_session, test_engine, fresh_wake_event, monkeypatch
+):
+    maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    monkeypatch.setattr(aito_quote_sync, "async_session", maker)
+    monkeypatch.setattr(aito_quote_sync, "sync_enabled", lambda db: _immediate(True))
+    monkeypatch.setattr(aito_quote_sync.zoho_service, "is_configured", lambda db: _immediate(True))
+    monkeypatch.setattr(aito_quote_sync, "sync_interval_seconds", lambda db: _immediate(300))
+    monkeypatch.setattr(aito_quote_sync, "run_sync_once", lambda db, pending_only=False, **_kw: _immediate(0))
+
+    seen: list[dict] = []
+    called = asyncio.Event()
+
+    async def _tracked_sweep(db, **kwargs):
+        seen.append(kwargs)
+        called.set()
+        return 0
+
+    monkeypatch.setattr(aito_quote_sync, "sweep_invoices", _tracked_sweep)
+
+    loop_task = asyncio.create_task(aito_quote_sync.run_sync_loop())
+    try:
+        await asyncio.wait_for(called.wait(), timeout=10)
+        assert seen[0] == {
+            "serve_due_pushes": aito_quote_sync._serve_due_pushes,
+            "call_ceiling": aito_quote_sync.BACKGROUND_CALL_CEILING,
+        }
+    finally:
+        loop_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await loop_task
