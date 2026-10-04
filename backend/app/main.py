@@ -9,6 +9,7 @@ import re
 import secrets
 import time
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from logging.handlers import RotatingFileHandler
 from pathlib import Path, PurePosixPath
@@ -143,6 +144,7 @@ from backend.app.services.print_storage import (
     REASON_FTPS_COOLOFF,
     REASON_INTERNAL_HISTORY,
     REASON_INTERNAL_STORAGE,
+    StorageVerdict,
     external_storage_present,
     ftp_probe_paths,
     print_file_reachable_over_ftp,
@@ -4646,6 +4648,518 @@ async def _resume_existing_archive(
     return False
 
 
+@dataclass
+class _Acquired:
+    """What _acquire_print_3mf found, and everything its search learned that the
+    archive-creation branches of on_print_start go on to read."""
+
+    downloaded_filename: str | None
+    temp_path: Path | None
+    content_verdict: str | None
+    candidate_rejected: bool
+    blocked_by_ftps_cooloff: bool
+    ftp_transfer_failed: bool
+    display_name_after_plate_reject: str | None
+    subtask_name: str
+    storage: StorageVerdict
+    probe_ran: bool
+    probe_names: list[str]
+    keeps_cache_mirror: bool
+    expected_md5: str | None
+    verify_plate: int | None
+    reported_remaining: object
+
+
+async def _acquire_print_3mf(
+    printer, printer_id: int, data: dict, filename: str, subtask_name: str, possible_names: list[str], logger
+) -> _Acquired:
+    """Find and download the running print's 3MF: cache reuse, the eMMC//cache
+    probe, the FTP sweep, the directory walk and the plate-mismatch retry.
+
+    on_print_start's acquisition block, moved verbatim. ``subtask_name`` may come
+    back corrected (or blanked) by the plate guard, so the caller must use the
+    returned one from here on.
+    """
+    from backend.app.services.bambu_ftp import list_files_async
+
+    # Try to find and download the 3MF file
+    temp_path = None
+    downloaded_filename = None
+
+    # Content verification inputs (#2104): filename search alone can land
+    # on a months-old same-name file elsewhere on the printer's storage
+    # (e.g. stale copy at / while the fresh slicer upload sits in /cache).
+    # Every accepted candidate below is judged by verify_3mf_candidate —
+    # md5 from the intercepted print command when available, otherwise a
+    # plate-prediction plausibility check; "rejected" candidates are
+    # discarded and the search continues with the next path.
+    _expected_md5 = (data.get("print_md5") or "").strip().lower() or None
+    _verify_plate = parse_plate_id(filename)
+    _reported_remaining = data.get("remaining_time")
+    content_verdict: str | None = None
+    candidate_rejected = False
+
+    async def _judge_candidate(candidate_path, source: str) -> str:
+        nonlocal candidate_rejected
+        # The md5 of a large 3MF in a worker thread, not on the event loop.
+        verdict, detail = await asyncio.to_thread(
+            verify_3mf_candidate, candidate_path, _expected_md5, _verify_plate, _reported_remaining
+        )
+        if verdict == "rejected":
+            candidate_rejected = True
+            logger.warning("[CALLBACK] Rejected 3MF candidate %s (%s): %s", candidate_path, source, detail)
+        else:
+            logger.info("[CALLBACK] 3MF candidate %s (%s): %s — %s", candidate_path, source, verdict, detail)
+        return verdict
+
+    # Cache check: cover endpoint may have already pulled this 3MF during
+    # the print (frontend opens the card and shows the thumbnail) — reuse
+    # that file instead of re-downloading 36MB over the same FTP link that
+    # just served it (#972). The cache keys on a normalized filename so
+    # variants like "X", "X.3mf", "X.gcode.3mf" all collapse to one entry.
+    for try_filename in possible_names:
+        if not try_filename.endswith(".3mf"):
+            continue
+        cached = get_cached_3mf(printer_id, try_filename)
+        if cached:
+            verdict = await _judge_candidate(cached, "cache reuse")
+            if verdict == "rejected":
+                continue  # Stale cached copy of a different job — go to FTP
+            logger.info("Reusing cached 3MF from %s (avoided duplicate FTP)", cached)
+            content_verdict = verdict
+            temp_path = cached
+            downloaded_filename = try_filename
+            break
+
+    # Does this printer keep the sliced file somewhere FTPS can reach? On
+    # H2-series and P2S the answer is routinely no — the file stays on
+    # internal eMMC and port 990 only ever serves external storage — and
+    # then the whole sweep below (six filenames x five directories x four
+    # retries, then the directory walk) is ~110 connections that cannot
+    # succeed. Skip it and say why (#2780).
+    storage = print_file_reachable_over_ftp(printer_manager.get_status(printer_id))
+
+    # Set when a lookup is abandoned because the printer's FTPS cool-off is
+    # running rather than because the file is somewhere unreachable. The
+    # distinction is the whole of #2957: one is permanent, the other clears
+    # in minutes with the file still sitting on the printer.
+    blocked_by_ftps_cooloff = False
+
+    # Set when a probe reached the printer and still came back without the
+    # file -- a timeout mid-transfer, a refused connection, anything that is
+    # not a clean "not here". A 550 raises FileNotOnPrinterError and is
+    # caught by name below, so a file that genuinely is not on the card
+    # leaves this False and schedules nothing. Anything else means the
+    # transfer, not the file, is what failed, and that does not last (#3063).
+    ftp_transfer_failed = False
+
+    # The print's name, for a fallback archive whose `subtask_name` the
+    # plate guard below had to disown. Display only, and deliberately kept
+    # apart from `subtask_name`: that variable is what every file lookup
+    # here is built from, and once a name has been shown to fetch another
+    # plate's 3MF it must not key `_active_prints` either, or the cover
+    # endpoint hands the same contradicted file to
+    # `_recover_fallback_archive` and fills the row in with it (#3126).
+    display_name_after_plate_reject: str | None = None
+
+    # Get FTP retry settings
+    ftp_retry_enabled, ftp_retry_count, ftp_retry_delay, ftp_timeout = await get_ftp_retry_settings()
+
+    # ...but "the printer put it on eMMC" is where it went, not whether we
+    # can read it. An H2D with a card in mirrors the job to /cache and
+    # serves it happily, and skipping on the URL alone cost that reporter
+    # every archive for two days (#2856). So ask the printer instead of
+    # guessing: the dispatch named the exact file, which is one connection
+    # walking five paths rather than the sweep's ~110. Only when the probe
+    # comes back empty does the verdict's reason stand.
+    #
+    # A touchscreen reprint names no file at all -- the printer reports
+    # `project_file.gcode.3mf` whatever the job was -- so there the print's
+    # own names stand in for it, and the /cache mirror has it under those
+    # (#6536). Every hit is judged like the sweep's: /cache and / keep stale
+    # same-name slices, and the md5 from the dispatch tells them apart.
+    probe_names = probe_filenames(storage.probe_filename, possible_names)
+    probe_ran = False
+    if not storage.reachable and not downloaded_filename and probe_names:
+        if ftps_handshake_blocked(printer.ip_address):
+            # Deliberately NOT recorded as a cool-off give-up. This branch
+            # only runs on an unreachable verdict, and that verdict is the
+            # honest, permanent reason the archive is empty — the probe was
+            # a long shot on top of it. Blaming the cool-off here would
+            # schedule a retry for a file sitting on internal eMMC, which is
+            # the sweep #2780 removed (#2957).
+            logger.debug(
+                "Not probing for %s on printer %s: its file service is not answering over TLS",
+                probe_names,
+                printer_id,
+            )
+        else:
+            probe_ran = True
+            found = await _probe_for_3mf(
+                printer_id,
+                printer.ip_address,
+                printer.access_code,
+                printer.model,
+                probe_names,
+                _judge_candidate,
+                ftp_timeout,
+            )
+            if found:
+                downloaded_filename, temp_path, probe_hit, content_verdict = found
+                cache_3mf_download(printer_id, downloaded_filename, temp_path)
+                # Naming the path, not just the file: a printer that keeps
+                # uploads around for weeks can serve a same-named copy of an
+                # earlier slice, and without the directory in the log that
+                # mismatch is invisible rather than merely rare (#1820).
+                logger.info(
+                    "Found %s at %s over FTPS for printer %s even though the printer reported %s",
+                    downloaded_filename,
+                    probe_hit,
+                    printer_id,
+                    storage.reason,
+                )
+
+    # Asked here, with no DB transaction open, rather than where the retry
+    # is scheduled: that is inside the fallback-archive writes, and an FTP
+    # listing there would pin a pooled connection for its duration (#2572).
+    keeps_cache_mirror = probe_ran and not downloaded_filename and await _printer_keeps_cache_mirror(printer)
+
+    if not storage.reachable and not downloaded_filename:
+        # Same opening words whether or not a probe ran, because that is
+        # the phrase support asks people to grep for — only the tail says
+        # which of the two happened.
+        logger.info(
+            "Skipping the 3MF lookup for printer %s: %s — %s",
+            printer_id,
+            storage.reason,
+            "no copy of it on external storage either"
+            if storage.probe_filename
+            else "the print file is not on storage Fenrir can read over FTPS, so no path would find it",
+        )
+
+    for try_filename in possible_names if not downloaded_filename and storage.reachable else []:
+        if not try_filename.endswith(".3mf"):
+            continue
+
+        # Root (/) is where BambuStudio/OrcaSlicer uploads land on A1/P1-series
+        # printers, so try it first — deferring it to last cost #972's reporter
+        # ~48 minutes of retries on /cache//model//data//data/Metadata before
+        # landing on the path that actually had the file.
+        remote_paths = ftp_probe_paths(try_filename)
+
+        temp_path = print_temp_path(printer_id, try_filename)
+
+        for remote_path in remote_paths:
+            if ftps_handshake_blocked(printer.ip_address):
+                # The printer's FTPS service is not completing a TLS
+                # handshake, so it has no path we could reach — walking the
+                # remaining candidates only re-runs the same failure
+                # (#2780). Fall through to the no-3MF archive now.
+                #
+                # Remember *why*, though. This is the one give-up that is
+                # temporary: the cool-off clears in minutes and the file was
+                # on the printer the whole time. The fallback archive is
+                # stamped with it so a retry can be scheduled, and so the
+                # Archives banner stops blaming storage (#2957).
+                blocked_by_ftps_cooloff = True
+                logger.warning(
+                    "Giving up on the 3MF for printer %s: its file service is not answering over TLS",
+                    printer_id,
+                )
+                break
+            logger.debug("Trying FTP download: %s", remote_path)
+            try:
+                if ftp_retry_enabled:
+                    downloaded = await with_ftp_retry(
+                        download_file_async,
+                        printer.ip_address,
+                        printer.access_code,
+                        remote_path,
+                        temp_path,
+                        timeout=ftp_timeout,
+                        socket_timeout=ftp_timeout,
+                        printer_model=printer.model,
+                        max_retries=ftp_retry_count,
+                        retry_delay=ftp_retry_delay,
+                        operation_name=f"Download 3MF from {remote_path}",
+                        cooloff_ip=printer.ip_address,
+                        non_retry_exceptions=(FileNotOnPrinterError,),
+                    )
+                else:
+                    downloaded = await download_file_async(
+                        printer.ip_address,
+                        printer.access_code,
+                        remote_path,
+                        temp_path,
+                        timeout=ftp_timeout,
+                        socket_timeout=ftp_timeout,
+                        printer_model=printer.model,
+                    )
+                if downloaded:
+                    verdict = await _judge_candidate(temp_path, remote_path)
+                    if verdict == "rejected":
+                        # Same-name impostor (e.g. stale copy at / while
+                        # the real upload sits in /cache) — discard and
+                        # keep walking the remaining paths.
+                        try:
+                            temp_path.unlink(missing_ok=True)
+                        except OSError:
+                            pass
+                        continue
+                    content_verdict = verdict
+                    downloaded_filename = try_filename
+                    logger.info("Downloaded: %s", remote_path)
+                    # Populate shared cache so the cover endpoint (if it
+                    # runs next) doesn't refetch the same 36MB over FTP.
+                    cache_3mf_download(printer_id, try_filename, temp_path)
+                    break
+                # with_ftp_retry returns None once it has spent its budget,
+                # and download_file_async returns False on a timeout, so an
+                # exhausted transfer arrives here rather than as an
+                # exception (#3063).
+                ftp_transfer_failed = True
+            except FileNotOnPrinterError:
+                # 550 — file isn't at this path. Advance to next candidate
+                # without burning the retry budget.
+                logger.debug("3MF not at %s (550), trying next path", remote_path)
+            except Exception as e:
+                ftp_transfer_failed = True
+                logger.debug("FTP download failed for %s: %s", remote_path, e)
+
+        if downloaded_filename or ftps_handshake_blocked(printer.ip_address):
+            break
+
+    # If still not found, try listing directories to find matching file
+    # Different printer models use different directory structures. Skipped
+    # when the printer's FTPS handshake is failing — the directory walk is
+    # five more connections that cannot get further than the download did.
+    if (
+        not downloaded_filename
+        and storage.reachable
+        and (filename or subtask_name)
+        and not ftps_handshake_blocked(printer.ip_address)
+    ):
+        search_term = (subtask_name or filename).lower().replace(".gcode", "").replace(".3mf", "")
+        logger.info("Direct FTP download failed, searching directories for '%s'", search_term)
+        search_dirs = ["/cache", "/model", "/data", "/data/Metadata", "/"]
+        for search_dir in search_dirs:
+            if downloaded_filename:
+                break
+            try:
+                dir_files = await list_files_async(
+                    printer.ip_address, printer.access_code, search_dir, printer_model=printer.model
+                )
+                threemf_files = [f.get("name") for f in dir_files if f.get("name", "").endswith(".3mf")]
+                if threemf_files:
+                    logger.info(
+                        f"Found {len(threemf_files)} 3MF files in {search_dir}: {threemf_files[:5]}{'...' if len(threemf_files) > 5 else ''}"
+                    )
+                for f in dir_files:
+                    if f.get("is_directory"):
+                        continue
+                    fname = f.get("name", "")
+                    # Normalize both for comparison (spaces and underscores are equivalent)
+                    fname_normalized = fname.lower().replace(" ", "_")
+                    search_normalized = search_term.replace(" ", "_")
+                    if fname.endswith(".3mf") and search_normalized in fname_normalized:
+                        logger.info("Found matching file in %s: %s", search_dir, fname)
+                        temp_path = print_temp_path(printer_id, fname)
+                        remote_full_path = posixpath.join(search_dir, fname)
+                        if ftp_retry_enabled:
+                            downloaded = await with_ftp_retry(
+                                download_file_async,
+                                printer.ip_address,
+                                printer.access_code,
+                                remote_full_path,
+                                temp_path,
+                                timeout=ftp_timeout,
+                                socket_timeout=ftp_timeout,
+                                printer_model=printer.model,
+                                max_retries=ftp_retry_count,
+                                retry_delay=ftp_retry_delay,
+                                operation_name=f"Download 3MF from {remote_full_path}",
+                                cooloff_ip=printer.ip_address,
+                            )
+                        else:
+                            downloaded = await download_file_async(
+                                printer.ip_address,
+                                printer.access_code,
+                                remote_full_path,
+                                temp_path,
+                                timeout=ftp_timeout,
+                                socket_timeout=ftp_timeout,
+                                printer_model=printer.model,
+                            )
+                        if downloaded:
+                            verdict = await _judge_candidate(temp_path, posixpath.join(search_dir, fname))
+                            if verdict == "rejected":
+                                try:
+                                    temp_path.unlink(missing_ok=True)
+                                except OSError:
+                                    pass
+                                continue
+                            content_verdict = verdict
+                            downloaded_filename = fname
+                            logger.info("Found and downloaded from %s: %s", search_dir, fname)
+                            cache_3mf_download(printer_id, fname, temp_path)
+                            break
+                        # The listing named the file, so it is on the card;
+                        # only the transfer failed (#3063).
+                        ftp_transfer_failed = True
+            except Exception as e:
+                logger.debug("Failed to list %s: %s", search_dir, e)
+
+    # Validate the downloaded 3MF actually matches the plate that's running
+    # (#1204): subtask_name lags across consecutive plates of the same model,
+    # so the first FTP candidate (built from subtask_name) can land on the
+    # previous plate's still-resident upload. Cross-check the slice_info
+    # plate index against the plate parsed from gcode_file (always fresh —
+    # it's the field whose change triggered this callback).
+    if downloaded_filename and temp_path:
+        expected_plate = parse_plate_id(filename)
+        actual_plate = peek_plate_index_in_3mf(temp_path) if expected_plate is not None else None
+        if expected_plate is not None and actual_plate is not None and actual_plate != expected_plate:
+            logger.warning(
+                "[CALLBACK] 3MF plate mismatch: downloaded %s reports plate %s but printer is "
+                "running plate %s — subtask_name=%r appears stale, retrying with corrected name",
+                downloaded_filename,
+                actual_plate,
+                expected_plate,
+                subtask_name,
+            )
+            corrected_subtask = swap_plate_suffix(subtask_name, expected_plate)
+            retry_succeeded = False
+            if corrected_subtask and corrected_subtask != subtask_name:
+                for try_filename in (f"{corrected_subtask}.gcode.3mf", f"{corrected_subtask}.3mf"):
+                    retry_temp_path = print_temp_path(printer_id, try_filename)
+                    for remote_path in ftp_probe_paths(try_filename):
+                        try:
+                            if ftp_retry_enabled:
+                                downloaded = await with_ftp_retry(
+                                    download_file_async,
+                                    printer.ip_address,
+                                    printer.access_code,
+                                    remote_path,
+                                    retry_temp_path,
+                                    timeout=ftp_timeout,
+                                    socket_timeout=ftp_timeout,
+                                    printer_model=printer.model,
+                                    max_retries=ftp_retry_count,
+                                    retry_delay=ftp_retry_delay,
+                                    operation_name=f"Re-download 3MF from {remote_path}",
+                                    cooloff_ip=printer.ip_address,
+                                    non_retry_exceptions=(FileNotOnPrinterError,),
+                                )
+                            else:
+                                downloaded = await download_file_async(
+                                    printer.ip_address,
+                                    printer.access_code,
+                                    remote_path,
+                                    retry_temp_path,
+                                    timeout=ftp_timeout,
+                                    socket_timeout=ftp_timeout,
+                                    printer_model=printer.model,
+                                )
+                            if (
+                                downloaded
+                                and peek_plate_index_in_3mf(retry_temp_path) == expected_plate
+                                and (
+                                    retry_verdict := await _judge_candidate(
+                                        retry_temp_path, f"plate-retry {remote_path}"
+                                    )
+                                )
+                                != "rejected"
+                            ):
+                                content_verdict = retry_verdict
+                                logger.info(
+                                    "[CALLBACK] Re-download succeeded with corrected name %s "
+                                    "(plate %s) — replacing wrong file",
+                                    try_filename,
+                                    expected_plate,
+                                )
+                                try:
+                                    temp_path.unlink(missing_ok=True)
+                                except OSError:
+                                    pass
+                                temp_path = retry_temp_path
+                                downloaded_filename = try_filename
+                                subtask_name = corrected_subtask
+                                cache_3mf_download(printer_id, try_filename, temp_path)
+                                retry_succeeded = True
+                                break
+                            elif downloaded:
+                                # Wrong plate again — discard and keep trying
+                                try:
+                                    retry_temp_path.unlink(missing_ok=True)
+                                except OSError:
+                                    pass
+                        except FileNotOnPrinterError:
+                            continue
+                        except Exception as e:
+                            logger.debug("Re-download failed for %s: %s", remote_path, e)
+                    if retry_succeeded:
+                        break
+            # If the retry didn't find a matching file, drop the wrong 3MF
+            # so the no-3MF fallback below creates an archive whose name
+            # at least reflects the right plate.
+            if not retry_succeeded:
+                logger.warning(
+                    "[CALLBACK] Could not re-download correct plate %s — falling back to no-3MF archive",
+                    expected_plate,
+                )
+                try:
+                    temp_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+                temp_path = None
+                downloaded_filename = None
+                # Whatever the sweep's transport did earlier, it is not why
+                # this archive ends up empty: a 3MF downloaded fine, it was
+                # just the wrong plate. Retrying would re-fetch that same
+                # contradicted file under the same stale names and hand it
+                # to _recover_fallback_archive, which checks that a
+                # candidate is a readable 3MF but not which plate it is --
+                # so the row would be filled in with another plate's
+                # filament and cost, the exact swap #2957 removed (#3063).
+                ftp_transfer_failed = False
+                # Disown the name for *lookups*: it has just been shown to
+                # fetch another plate's 3MF, and it keys `_active_prints`
+                # below, where the cover endpoint's own download of that
+                # same name would find this archive and fill it in with the
+                # file we are discarding here.
+                #
+                # Keep it for the *title*, which is a separate question.
+                # ``swap_plate_suffix`` returns None both for a name that
+                # carries no "- Plate N" / "_plate_N" suffix and for no
+                # name at all, and those are not the same situation: a name
+                # without a suffix holds no stale plate number to be wrong
+                # about. Blanking both uses at once dropped the project
+                # name too, and the row fell through to the gcode_file path
+                # titled "plate_1" though the real name was in hand.
+                # #1204's own premise is consecutive plates *of the same
+                # model*, so the project part is right either way (#3126).
+                display_name_after_plate_reject = corrected_subtask or subtask_name or None
+                subtask_name = corrected_subtask or ""
+
+    return _Acquired(
+        downloaded_filename=downloaded_filename,
+        temp_path=temp_path,
+        content_verdict=content_verdict,
+        candidate_rejected=candidate_rejected,
+        blocked_by_ftps_cooloff=blocked_by_ftps_cooloff,
+        ftp_transfer_failed=ftp_transfer_failed,
+        display_name_after_plate_reject=display_name_after_plate_reject,
+        subtask_name=subtask_name,
+        storage=storage,
+        probe_ran=probe_ran,
+        probe_names=probe_names,
+        keeps_cache_mirror=keeps_cache_mirror,
+        expected_md5=_expected_md5,
+        verify_plate=_verify_plate,
+        reported_remaining=_reported_remaining,
+    )
+
+
 async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
     """Handle print start - archive the 3MF file immediately.
 
@@ -4763,7 +5277,6 @@ async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
 
     async with async_session() as db:
         from backend.app.models.printer import Printer
-        from backend.app.services.bambu_ftp import list_files_async
 
         result = await db.execute(select(Printer).where(Printer.id == printer_id))
         printer = result.scalar_one_or_none()
@@ -5015,464 +5528,22 @@ async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
         # a fresh connection, and expire_on_commit=False keeps printer.* readable.
         await db.commit()
 
-        # Try to find and download the 3MF file
-        temp_path = None
-        downloaded_filename = None
-
-        # Content verification inputs (#2104): filename search alone can land
-        # on a months-old same-name file elsewhere on the printer's storage
-        # (e.g. stale copy at / while the fresh slicer upload sits in /cache).
-        # Every accepted candidate below is judged by verify_3mf_candidate —
-        # md5 from the intercepted print command when available, otherwise a
-        # plate-prediction plausibility check; "rejected" candidates are
-        # discarded and the search continues with the next path.
-        _expected_md5 = (data.get("print_md5") or "").strip().lower() or None
-        _verify_plate = parse_plate_id(filename)
-        _reported_remaining = data.get("remaining_time")
-        content_verdict: str | None = None
-        candidate_rejected = False
-
-        async def _judge_candidate(candidate_path, source: str) -> str:
-            nonlocal candidate_rejected
-            # The md5 of a large 3MF in a worker thread, not on the event loop.
-            verdict, detail = await asyncio.to_thread(
-                verify_3mf_candidate, candidate_path, _expected_md5, _verify_plate, _reported_remaining
-            )
-            if verdict == "rejected":
-                candidate_rejected = True
-                logger.warning("[CALLBACK] Rejected 3MF candidate %s (%s): %s", candidate_path, source, detail)
-            else:
-                logger.info("[CALLBACK] 3MF candidate %s (%s): %s — %s", candidate_path, source, verdict, detail)
-            return verdict
-
-        # Cache check: cover endpoint may have already pulled this 3MF during
-        # the print (frontend opens the card and shows the thumbnail) — reuse
-        # that file instead of re-downloading 36MB over the same FTP link that
-        # just served it (#972). The cache keys on a normalized filename so
-        # variants like "X", "X.3mf", "X.gcode.3mf" all collapse to one entry.
-        for try_filename in possible_names:
-            if not try_filename.endswith(".3mf"):
-                continue
-            cached = get_cached_3mf(printer_id, try_filename)
-            if cached:
-                verdict = await _judge_candidate(cached, "cache reuse")
-                if verdict == "rejected":
-                    continue  # Stale cached copy of a different job — go to FTP
-                logger.info("Reusing cached 3MF from %s (avoided duplicate FTP)", cached)
-                content_verdict = verdict
-                temp_path = cached
-                downloaded_filename = try_filename
-                break
-
-        # Does this printer keep the sliced file somewhere FTPS can reach? On
-        # H2-series and P2S the answer is routinely no — the file stays on
-        # internal eMMC and port 990 only ever serves external storage — and
-        # then the whole sweep below (six filenames x five directories x four
-        # retries, then the directory walk) is ~110 connections that cannot
-        # succeed. Skip it and say why (#2780).
-        storage = print_file_reachable_over_ftp(printer_manager.get_status(printer_id))
-
-        # Set when a lookup is abandoned because the printer's FTPS cool-off is
-        # running rather than because the file is somewhere unreachable. The
-        # distinction is the whole of #2957: one is permanent, the other clears
-        # in minutes with the file still sitting on the printer.
-        blocked_by_ftps_cooloff = False
-
-        # Set when a probe reached the printer and still came back without the
-        # file -- a timeout mid-transfer, a refused connection, anything that is
-        # not a clean "not here". A 550 raises FileNotOnPrinterError and is
-        # caught by name below, so a file that genuinely is not on the card
-        # leaves this False and schedules nothing. Anything else means the
-        # transfer, not the file, is what failed, and that does not last (#3063).
-        ftp_transfer_failed = False
-
-        # The print's name, for a fallback archive whose `subtask_name` the
-        # plate guard below had to disown. Display only, and deliberately kept
-        # apart from `subtask_name`: that variable is what every file lookup
-        # here is built from, and once a name has been shown to fetch another
-        # plate's 3MF it must not key `_active_prints` either, or the cover
-        # endpoint hands the same contradicted file to
-        # `_recover_fallback_archive` and fills the row in with it (#3126).
-        display_name_after_plate_reject: str | None = None
-
-        # Get FTP retry settings
-        ftp_retry_enabled, ftp_retry_count, ftp_retry_delay, ftp_timeout = await get_ftp_retry_settings()
-
-        # ...but "the printer put it on eMMC" is where it went, not whether we
-        # can read it. An H2D with a card in mirrors the job to /cache and
-        # serves it happily, and skipping on the URL alone cost that reporter
-        # every archive for two days (#2856). So ask the printer instead of
-        # guessing: the dispatch named the exact file, which is one connection
-        # walking five paths rather than the sweep's ~110. Only when the probe
-        # comes back empty does the verdict's reason stand.
-        #
-        # A touchscreen reprint names no file at all -- the printer reports
-        # `project_file.gcode.3mf` whatever the job was -- so there the print's
-        # own names stand in for it, and the /cache mirror has it under those
-        # (#6536). Every hit is judged like the sweep's: /cache and / keep stale
-        # same-name slices, and the md5 from the dispatch tells them apart.
-        probe_names = probe_filenames(storage.probe_filename, possible_names)
-        probe_ran = False
-        if not storage.reachable and not downloaded_filename and probe_names:
-            if ftps_handshake_blocked(printer.ip_address):
-                # Deliberately NOT recorded as a cool-off give-up. This branch
-                # only runs on an unreachable verdict, and that verdict is the
-                # honest, permanent reason the archive is empty — the probe was
-                # a long shot on top of it. Blaming the cool-off here would
-                # schedule a retry for a file sitting on internal eMMC, which is
-                # the sweep #2780 removed (#2957).
-                logger.debug(
-                    "Not probing for %s on printer %s: its file service is not answering over TLS",
-                    probe_names,
-                    printer_id,
-                )
-            else:
-                probe_ran = True
-                found = await _probe_for_3mf(
-                    printer_id,
-                    printer.ip_address,
-                    printer.access_code,
-                    printer.model,
-                    probe_names,
-                    _judge_candidate,
-                    ftp_timeout,
-                )
-                if found:
-                    downloaded_filename, temp_path, probe_hit, content_verdict = found
-                    cache_3mf_download(printer_id, downloaded_filename, temp_path)
-                    # Naming the path, not just the file: a printer that keeps
-                    # uploads around for weeks can serve a same-named copy of an
-                    # earlier slice, and without the directory in the log that
-                    # mismatch is invisible rather than merely rare (#1820).
-                    logger.info(
-                        "Found %s at %s over FTPS for printer %s even though the printer reported %s",
-                        downloaded_filename,
-                        probe_hit,
-                        printer_id,
-                        storage.reason,
-                    )
-
-        # Asked here, with no DB transaction open, rather than where the retry
-        # is scheduled: that is inside the fallback-archive writes, and an FTP
-        # listing there would pin a pooled connection for its duration (#2572).
-        keeps_cache_mirror = probe_ran and not downloaded_filename and await _printer_keeps_cache_mirror(printer)
-
-        if not storage.reachable and not downloaded_filename:
-            # Same opening words whether or not a probe ran, because that is
-            # the phrase support asks people to grep for — only the tail says
-            # which of the two happened.
-            logger.info(
-                "Skipping the 3MF lookup for printer %s: %s — %s",
-                printer_id,
-                storage.reason,
-                "no copy of it on external storage either"
-                if storage.probe_filename
-                else "the print file is not on storage Fenrir can read over FTPS, so no path would find it",
-            )
-
-        for try_filename in possible_names if not downloaded_filename and storage.reachable else []:
-            if not try_filename.endswith(".3mf"):
-                continue
-
-            # Root (/) is where BambuStudio/OrcaSlicer uploads land on A1/P1-series
-            # printers, so try it first — deferring it to last cost #972's reporter
-            # ~48 minutes of retries on /cache//model//data//data/Metadata before
-            # landing on the path that actually had the file.
-            remote_paths = ftp_probe_paths(try_filename)
-
-            temp_path = print_temp_path(printer_id, try_filename)
-
-            for remote_path in remote_paths:
-                if ftps_handshake_blocked(printer.ip_address):
-                    # The printer's FTPS service is not completing a TLS
-                    # handshake, so it has no path we could reach — walking the
-                    # remaining candidates only re-runs the same failure
-                    # (#2780). Fall through to the no-3MF archive now.
-                    #
-                    # Remember *why*, though. This is the one give-up that is
-                    # temporary: the cool-off clears in minutes and the file was
-                    # on the printer the whole time. The fallback archive is
-                    # stamped with it so a retry can be scheduled, and so the
-                    # Archives banner stops blaming storage (#2957).
-                    blocked_by_ftps_cooloff = True
-                    logger.warning(
-                        "Giving up on the 3MF for printer %s: its file service is not answering over TLS",
-                        printer_id,
-                    )
-                    break
-                logger.debug("Trying FTP download: %s", remote_path)
-                try:
-                    if ftp_retry_enabled:
-                        downloaded = await with_ftp_retry(
-                            download_file_async,
-                            printer.ip_address,
-                            printer.access_code,
-                            remote_path,
-                            temp_path,
-                            timeout=ftp_timeout,
-                            socket_timeout=ftp_timeout,
-                            printer_model=printer.model,
-                            max_retries=ftp_retry_count,
-                            retry_delay=ftp_retry_delay,
-                            operation_name=f"Download 3MF from {remote_path}",
-                            cooloff_ip=printer.ip_address,
-                            non_retry_exceptions=(FileNotOnPrinterError,),
-                        )
-                    else:
-                        downloaded = await download_file_async(
-                            printer.ip_address,
-                            printer.access_code,
-                            remote_path,
-                            temp_path,
-                            timeout=ftp_timeout,
-                            socket_timeout=ftp_timeout,
-                            printer_model=printer.model,
-                        )
-                    if downloaded:
-                        verdict = await _judge_candidate(temp_path, remote_path)
-                        if verdict == "rejected":
-                            # Same-name impostor (e.g. stale copy at / while
-                            # the real upload sits in /cache) — discard and
-                            # keep walking the remaining paths.
-                            try:
-                                temp_path.unlink(missing_ok=True)
-                            except OSError:
-                                pass
-                            continue
-                        content_verdict = verdict
-                        downloaded_filename = try_filename
-                        logger.info("Downloaded: %s", remote_path)
-                        # Populate shared cache so the cover endpoint (if it
-                        # runs next) doesn't refetch the same 36MB over FTP.
-                        cache_3mf_download(printer_id, try_filename, temp_path)
-                        break
-                    # with_ftp_retry returns None once it has spent its budget,
-                    # and download_file_async returns False on a timeout, so an
-                    # exhausted transfer arrives here rather than as an
-                    # exception (#3063).
-                    ftp_transfer_failed = True
-                except FileNotOnPrinterError:
-                    # 550 — file isn't at this path. Advance to next candidate
-                    # without burning the retry budget.
-                    logger.debug("3MF not at %s (550), trying next path", remote_path)
-                except Exception as e:
-                    ftp_transfer_failed = True
-                    logger.debug("FTP download failed for %s: %s", remote_path, e)
-
-            if downloaded_filename or ftps_handshake_blocked(printer.ip_address):
-                break
-
-        # If still not found, try listing directories to find matching file
-        # Different printer models use different directory structures. Skipped
-        # when the printer's FTPS handshake is failing — the directory walk is
-        # five more connections that cannot get further than the download did.
-        if (
-            not downloaded_filename
-            and storage.reachable
-            and (filename or subtask_name)
-            and not ftps_handshake_blocked(printer.ip_address)
-        ):
-            search_term = (subtask_name or filename).lower().replace(".gcode", "").replace(".3mf", "")
-            logger.info("Direct FTP download failed, searching directories for '%s'", search_term)
-            search_dirs = ["/cache", "/model", "/data", "/data/Metadata", "/"]
-            for search_dir in search_dirs:
-                if downloaded_filename:
-                    break
-                try:
-                    dir_files = await list_files_async(
-                        printer.ip_address, printer.access_code, search_dir, printer_model=printer.model
-                    )
-                    threemf_files = [f.get("name") for f in dir_files if f.get("name", "").endswith(".3mf")]
-                    if threemf_files:
-                        logger.info(
-                            f"Found {len(threemf_files)} 3MF files in {search_dir}: {threemf_files[:5]}{'...' if len(threemf_files) > 5 else ''}"
-                        )
-                    for f in dir_files:
-                        if f.get("is_directory"):
-                            continue
-                        fname = f.get("name", "")
-                        # Normalize both for comparison (spaces and underscores are equivalent)
-                        fname_normalized = fname.lower().replace(" ", "_")
-                        search_normalized = search_term.replace(" ", "_")
-                        if fname.endswith(".3mf") and search_normalized in fname_normalized:
-                            logger.info("Found matching file in %s: %s", search_dir, fname)
-                            temp_path = print_temp_path(printer_id, fname)
-                            remote_full_path = posixpath.join(search_dir, fname)
-                            if ftp_retry_enabled:
-                                downloaded = await with_ftp_retry(
-                                    download_file_async,
-                                    printer.ip_address,
-                                    printer.access_code,
-                                    remote_full_path,
-                                    temp_path,
-                                    timeout=ftp_timeout,
-                                    socket_timeout=ftp_timeout,
-                                    printer_model=printer.model,
-                                    max_retries=ftp_retry_count,
-                                    retry_delay=ftp_retry_delay,
-                                    operation_name=f"Download 3MF from {remote_full_path}",
-                                    cooloff_ip=printer.ip_address,
-                                )
-                            else:
-                                downloaded = await download_file_async(
-                                    printer.ip_address,
-                                    printer.access_code,
-                                    remote_full_path,
-                                    temp_path,
-                                    timeout=ftp_timeout,
-                                    socket_timeout=ftp_timeout,
-                                    printer_model=printer.model,
-                                )
-                            if downloaded:
-                                verdict = await _judge_candidate(temp_path, posixpath.join(search_dir, fname))
-                                if verdict == "rejected":
-                                    try:
-                                        temp_path.unlink(missing_ok=True)
-                                    except OSError:
-                                        pass
-                                    continue
-                                content_verdict = verdict
-                                downloaded_filename = fname
-                                logger.info("Found and downloaded from %s: %s", search_dir, fname)
-                                cache_3mf_download(printer_id, fname, temp_path)
-                                break
-                            # The listing named the file, so it is on the card;
-                            # only the transfer failed (#3063).
-                            ftp_transfer_failed = True
-                except Exception as e:
-                    logger.debug("Failed to list %s: %s", search_dir, e)
-
-        # Validate the downloaded 3MF actually matches the plate that's running
-        # (#1204): subtask_name lags across consecutive plates of the same model,
-        # so the first FTP candidate (built from subtask_name) can land on the
-        # previous plate's still-resident upload. Cross-check the slice_info
-        # plate index against the plate parsed from gcode_file (always fresh —
-        # it's the field whose change triggered this callback).
-        if downloaded_filename and temp_path:
-            expected_plate = parse_plate_id(filename)
-            actual_plate = peek_plate_index_in_3mf(temp_path) if expected_plate is not None else None
-            if expected_plate is not None and actual_plate is not None and actual_plate != expected_plate:
-                logger.warning(
-                    "[CALLBACK] 3MF plate mismatch: downloaded %s reports plate %s but printer is "
-                    "running plate %s — subtask_name=%r appears stale, retrying with corrected name",
-                    downloaded_filename,
-                    actual_plate,
-                    expected_plate,
-                    subtask_name,
-                )
-                corrected_subtask = swap_plate_suffix(subtask_name, expected_plate)
-                retry_succeeded = False
-                if corrected_subtask and corrected_subtask != subtask_name:
-                    for try_filename in (f"{corrected_subtask}.gcode.3mf", f"{corrected_subtask}.3mf"):
-                        retry_temp_path = print_temp_path(printer_id, try_filename)
-                        for remote_path in ftp_probe_paths(try_filename):
-                            try:
-                                if ftp_retry_enabled:
-                                    downloaded = await with_ftp_retry(
-                                        download_file_async,
-                                        printer.ip_address,
-                                        printer.access_code,
-                                        remote_path,
-                                        retry_temp_path,
-                                        timeout=ftp_timeout,
-                                        socket_timeout=ftp_timeout,
-                                        printer_model=printer.model,
-                                        max_retries=ftp_retry_count,
-                                        retry_delay=ftp_retry_delay,
-                                        operation_name=f"Re-download 3MF from {remote_path}",
-                                        cooloff_ip=printer.ip_address,
-                                        non_retry_exceptions=(FileNotOnPrinterError,),
-                                    )
-                                else:
-                                    downloaded = await download_file_async(
-                                        printer.ip_address,
-                                        printer.access_code,
-                                        remote_path,
-                                        retry_temp_path,
-                                        timeout=ftp_timeout,
-                                        socket_timeout=ftp_timeout,
-                                        printer_model=printer.model,
-                                    )
-                                if (
-                                    downloaded
-                                    and peek_plate_index_in_3mf(retry_temp_path) == expected_plate
-                                    and (
-                                        retry_verdict := await _judge_candidate(
-                                            retry_temp_path, f"plate-retry {remote_path}"
-                                        )
-                                    )
-                                    != "rejected"
-                                ):
-                                    content_verdict = retry_verdict
-                                    logger.info(
-                                        "[CALLBACK] Re-download succeeded with corrected name %s "
-                                        "(plate %s) — replacing wrong file",
-                                        try_filename,
-                                        expected_plate,
-                                    )
-                                    try:
-                                        temp_path.unlink(missing_ok=True)
-                                    except OSError:
-                                        pass
-                                    temp_path = retry_temp_path
-                                    downloaded_filename = try_filename
-                                    subtask_name = corrected_subtask
-                                    cache_3mf_download(printer_id, try_filename, temp_path)
-                                    retry_succeeded = True
-                                    break
-                                elif downloaded:
-                                    # Wrong plate again — discard and keep trying
-                                    try:
-                                        retry_temp_path.unlink(missing_ok=True)
-                                    except OSError:
-                                        pass
-                            except FileNotOnPrinterError:
-                                continue
-                            except Exception as e:
-                                logger.debug("Re-download failed for %s: %s", remote_path, e)
-                        if retry_succeeded:
-                            break
-                # If the retry didn't find a matching file, drop the wrong 3MF
-                # so the no-3MF fallback below creates an archive whose name
-                # at least reflects the right plate.
-                if not retry_succeeded:
-                    logger.warning(
-                        "[CALLBACK] Could not re-download correct plate %s — falling back to no-3MF archive",
-                        expected_plate,
-                    )
-                    try:
-                        temp_path.unlink(missing_ok=True)
-                    except OSError:
-                        pass
-                    temp_path = None
-                    downloaded_filename = None
-                    # Whatever the sweep's transport did earlier, it is not why
-                    # this archive ends up empty: a 3MF downloaded fine, it was
-                    # just the wrong plate. Retrying would re-fetch that same
-                    # contradicted file under the same stale names and hand it
-                    # to _recover_fallback_archive, which checks that a
-                    # candidate is a readable 3MF but not which plate it is --
-                    # so the row would be filled in with another plate's
-                    # filament and cost, the exact swap #2957 removed (#3063).
-                    ftp_transfer_failed = False
-                    # Disown the name for *lookups*: it has just been shown to
-                    # fetch another plate's 3MF, and it keys `_active_prints`
-                    # below, where the cover endpoint's own download of that
-                    # same name would find this archive and fill it in with the
-                    # file we are discarding here.
-                    #
-                    # Keep it for the *title*, which is a separate question.
-                    # ``swap_plate_suffix`` returns None both for a name that
-                    # carries no "- Plate N" / "_plate_N" suffix and for no
-                    # name at all, and those are not the same situation: a name
-                    # without a suffix holds no stale plate number to be wrong
-                    # about. Blanking both uses at once dropped the project
-                    # name too, and the row fell through to the gcode_file path
-                    # titled "plate_1" though the real name was in hand.
-                    # #1204's own premise is consecutive plates *of the same
-                    # model*, so the project part is right either way (#3126).
-                    display_name_after_plate_reject = corrected_subtask or subtask_name or None
-                    subtask_name = corrected_subtask or ""
+        acquired = await _acquire_print_3mf(printer, printer_id, data, filename, subtask_name, possible_names, logger)
+        downloaded_filename = acquired.downloaded_filename
+        temp_path = acquired.temp_path
+        content_verdict = acquired.content_verdict
+        candidate_rejected = acquired.candidate_rejected
+        blocked_by_ftps_cooloff = acquired.blocked_by_ftps_cooloff
+        ftp_transfer_failed = acquired.ftp_transfer_failed
+        display_name_after_plate_reject = acquired.display_name_after_plate_reject
+        subtask_name = acquired.subtask_name
+        storage = acquired.storage
+        probe_ran = acquired.probe_ran
+        probe_names = acquired.probe_names
+        keeps_cache_mirror = acquired.keeps_cache_mirror
+        _expected_md5 = acquired.expected_md5
+        _verify_plate = acquired.verify_plate
+        _reported_remaining = acquired.reported_remaining
 
         if not downloaded_filename or not temp_path:
             logger.warning("Could not find 3MF file for print: %s", filename or subtask_name)
