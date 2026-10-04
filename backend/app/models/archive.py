@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, func
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, query_expression, relationship
 
 from backend.app.core.database import Base
 
@@ -98,6 +98,10 @@ class PrintArchive(Base):
 
     # Extended metadata (JSON blob for flexibility)
     extra_data: Mapped[dict | None] = mapped_column(JSON)
+    # extra_data minus its `_print_data` snapshot, computed in SQL. Loaded only
+    # by the archive list (ArchiveService.list_archives(slim_extra=True)), which
+    # defers the full column so the ~9 KB snapshot per row is never decoded.
+    list_extra_data: Mapped[dict | None] = query_expression()
 
     # MakerWorld info (auto-extracted from 3MF)
     makerworld_url: Mapped[str | None] = mapped_column(String(500))

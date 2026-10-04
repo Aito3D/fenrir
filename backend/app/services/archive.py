@@ -1247,6 +1247,20 @@ async def _count_related_queue_items(db: AsyncSession, archive_id: int) -> tuple
     return int(total or 0), int(printing or 0)
 
 
+def _list_extra_data_expr():
+    """SQL for ``extra_data`` without its ``_print_data`` key, decoded as JSON."""
+    from sqlalchemy import JSON, cast, func, type_coerce
+    from sqlalchemy.dialects.postgresql import JSONB
+
+    from backend.app.core.db_dialect import is_sqlite
+
+    if is_sqlite():
+        expr = func.json_remove(PrintArchive.extra_data, "$._print_data")
+    else:
+        expr = cast(PrintArchive.extra_data, JSONB).op("-")("_print_data")
+    return type_coerce(expr, JSON)
+
+
 class ArchiveService:
     """Service for archiving print jobs."""
 
@@ -1791,8 +1805,15 @@ class ArchiveService:
         limit: int = 50,
         offset: int = 0,
         visible_to_user_id: int | None = None,
+        slim_extra: bool = False,
     ) -> list[PrintArchive]:
         """List archives with optional filtering.
+
+        ``slim_extra`` loads ``list_extra_data`` (extra_data minus
+        ``_print_data``, computed in SQL) and defers the full ``extra_data`` and
+        ``timelapse_baseline`` columns. For the archive list, which never needs
+        either: decoding every row's snapshot cost ~1 s of event loop per list
+        at 6k archives. A caller using it must not touch ``extra_data``.
 
         ``visible_to_user_id`` scopes results to archives that user owns. Used
         when the caller has ARCHIVES_READ_OWN but not ARCHIVES_READ_ALL — pass
@@ -1809,6 +1830,14 @@ class ArchiveService:
             .where(PrintArchive.deleted_at.is_(None))
             .order_by(PrintArchive.created_at.desc())
         )
+        if slim_extra:
+            from sqlalchemy.orm import defer, with_expression
+
+            query = query.options(
+                defer(PrintArchive.extra_data),
+                defer(PrintArchive.timelapse_baseline),
+                with_expression(PrintArchive.list_extra_data, _list_extra_data_expr()),
+            )
 
         if printer_id:
             query = query.where(PrintArchive.printer_id == printer_id)

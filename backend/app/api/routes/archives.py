@@ -414,6 +414,17 @@ def _list_extra_data(extra_data: dict | None) -> dict | None:
     return {k: v for k, v in extra_data.items() if k != "_print_data"}
 
 
+def _response_list_extra_data(archive: PrintArchive) -> dict | None:
+    """The list's extra_data: the SQL-slimmed value when the query loaded it
+    (the full column is then deferred and must not be touched), else the full
+    column minus ``_print_data``."""
+    from sqlalchemy import inspect as sa_inspect
+
+    if "extra_data" in sa_inspect(archive).unloaded:
+        return archive.list_extra_data
+    return _list_extra_data(archive.extra_data)
+
+
 def archive_to_response(
     archive: PrintArchive,
     duplicates: list[dict] | None = None,
@@ -458,7 +469,7 @@ def archive_to_response(
         "status": archive.status,
         "started_at": archive.started_at,
         "completed_at": archive.completed_at,
-        "extra_data": archive.extra_data if include_print_data else _list_extra_data(archive.extra_data),
+        "extra_data": archive.extra_data if include_print_data else _response_list_extra_data(archive),
         "makerworld_url": archive.makerworld_url,
         "designer": archive.designer,
         "external_url": archive.external_url,
@@ -530,6 +541,7 @@ async def list_archives(
         limit=limit,
         offset=offset,
         visible_to_user_id=visible_to_user_id,
+        slim_extra=True,
     )
 
     # Get sets of duplicate hashes and duplicate (name, hash) pairs (efficient single queries)
