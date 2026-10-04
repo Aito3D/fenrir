@@ -48,7 +48,7 @@ export function MachineList({
           </button>
         </span>
       </div>
-      <div className="flex gap-1 overflow-x-auto md:flex-col md:overflow-visible">
+      <div className="w-full flex gap-1 overflow-x-auto md:flex-col md:overflow-visible">
         {groups.map((g) => (
           <div key={g.label} className="flex gap-1 md:flex-col">
             <div className="hidden px-2 pt-3 text-[0.7rem] uppercase tracking-wider text-bambu-gray md:block">

@@ -115,8 +115,8 @@ export function HoursTab() {
     });
 
   return (
-    <div className="grid gap-4 md:grid-cols-[280px_1fr]">
-      <Card className="md:max-h-[640px] md:overflow-auto">
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-[280px_minmax(0,1fr)]">
+      <Card className="min-w-0 md:max-h-[640px] md:overflow-auto">
         <CardContent>
           <MachineList
             machines={machines}
