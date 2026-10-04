@@ -253,6 +253,82 @@ async def test_reprint_with_no_timelapse_path_is_noop(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_reprint_clears_the_previous_run_s_outcome(tmp_path):
+    """The reused row still carries run one's failure_reason and completed_at.
+    The reason then landed on run two's print-log row (Failure Analysis filed
+    a completed reprint under "userCancelled"), and the old completed_at made
+    a running reprint look old to the archive purge."""
+    mock_printer = MagicMock()
+    mock_printer.id = 1
+    mock_printer.auto_archive = True
+    mock_printer.external_camera_enabled = False
+    mock_printer.external_camera_url = None
+    mock_printer.name = "TestP2S"
+
+    mock_archive = MagicMock()
+    mock_archive.id = 99
+    mock_archive.filename = "FreshFile.3mf"
+    mock_archive.subtask_id = None
+    mock_archive.print_time_seconds = None
+    mock_archive.created_by_id = None
+    mock_archive.printer_id = 1
+    mock_archive.print_name = "FreshFile"
+    mock_archive.status = "archived"
+    mock_archive.file_path = "archives/99/FreshFile.3mf"
+    mock_archive.energy_start_kwh = None
+    mock_archive.timelapse_path = None
+    mock_archive.failure_reason = "userCancelled"
+    mock_archive.completed_at = "2025-01-01T00:00:00"
+
+    register_expected_print(1, "FreshFile.3mf", archive_id=99, ams_mapping=None)
+
+    mock_session = _build_mocks(mock_printer, mock_archive)
+
+    (
+        async_session_p,
+        notif_p,
+        plug_p,
+        ws_p,
+        pm_p,
+        relay_p,
+        _energy,
+        _load_obj,
+        _store_spoolman,
+        _send_start,
+        _list_tl,
+    ) = _patches()
+
+    with (
+        async_session_p as mock_session_maker,
+        notif_p as mock_notif,
+        plug_p as mock_plug,
+        ws_p as mock_ws,
+        pm_p as mock_pm,
+        relay_p as mock_relay,
+        _energy,
+        _load_obj,
+        _store_spoolman,
+        _send_start,
+        _list_tl,
+        patch.object(app_settings, "base_dir", tmp_path),
+    ):
+        mock_session_maker.return_value = mock_session
+        mock_notif.on_print_start = AsyncMock()
+        mock_plug.on_print_start = AsyncMock()
+        mock_ws.send_print_start = AsyncMock()
+        mock_ws.send_archive_updated = AsyncMock()
+        mock_relay.on_print_start = AsyncMock()
+        mock_pm.get_printer = MagicMock(return_value=MagicMock(name="Test", serial_number="TEST123"))
+
+        from backend.app.main import on_print_start
+
+        await on_print_start(1, {"filename": "FreshFile.3mf", "subtask_name": "FreshFile"})
+
+    assert mock_archive.failure_reason is None
+    assert mock_archive.completed_at is None
+
+
+@pytest.mark.asyncio
 async def test_reprint_with_missing_stale_file_does_not_raise(tmp_path):
     """If the stale file referenced by timelapse_path no longer exists on
     disk (user deleted, archive purge, container rebuilt with bind-mount

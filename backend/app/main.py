@@ -4608,6 +4608,13 @@ async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
                     archive.confirm_token = None
                     archive.confirm_token_used_at = None
 
+                # Same for the previous run's outcome. update_archive_status
+                # only ever sets a failure_reason, so run one's reason landed on
+                # run two's print-log row; and the old completed_at made a
+                # running reprint look old to the archive purge.
+                archive.failure_reason = None
+                archive.completed_at = None
+
                 # Reprint of an archive reuses the source row. Without resetting
                 # ``timelapse_path`` _scan_for_timelapse_with_retries early-returns
                 # ("already has timelapse") and _capture_finish_photo_from_timelapse
