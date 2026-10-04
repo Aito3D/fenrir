@@ -4223,6 +4223,44 @@ async def dispatch_outcome_confirmation(
     return True
 
 
+def _print_3mf_candidate_names(subtask_name: str, filename: str) -> list[str]:
+    """The 3MF filenames on_print_start tries for a print, best guess first, deduped."""
+    possible_names = []
+
+    # Bambu printers typically store files as "Name.gcode.3mf"
+    # The subtask_name is usually the best source for the filename
+    if subtask_name:
+        # Try common Bambu naming patterns
+        possible_names.append(f"{subtask_name}.gcode.3mf")
+        possible_names.append(f"{subtask_name}.3mf")
+
+    # Try original filename with .3mf extension
+    if filename:
+        # Extract just the filename part, not the full path
+        fname = filename.split("/")[-1] if "/" in filename else filename
+        if fname.endswith(".3mf"):
+            possible_names.append(fname)
+        elif fname.endswith(".gcode"):
+            base = fname.rsplit(".", 1)[0]
+            possible_names.append(f"{base}.gcode.3mf")
+            possible_names.append(f"{base}.3mf")
+        else:
+            possible_names.append(f"{fname}.gcode.3mf")
+            possible_names.append(f"{fname}.3mf")
+
+    # Also try with spaces converted to underscores (Bambu Studio may normalize filenames)
+    space_variants = []
+    for name in possible_names:
+        if " " in name:
+            space_variants.append(name.replace(" ", "_"))
+    possible_names.extend(space_variants)
+
+    # Remove duplicates while preserving order
+    seen = set()
+    possible_names = [x for x in possible_names if not (x in seen or seen.add(x))]
+    return possible_names
+
+
 async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
     """Handle print start - archive the 3MF file immediately.
 
@@ -4919,39 +4957,7 @@ async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
                 return
 
         # Build list of possible 3MF filenames to try
-        possible_names = []
-
-        # Bambu printers typically store files as "Name.gcode.3mf"
-        # The subtask_name is usually the best source for the filename
-        if subtask_name:
-            # Try common Bambu naming patterns
-            possible_names.append(f"{subtask_name}.gcode.3mf")
-            possible_names.append(f"{subtask_name}.3mf")
-
-        # Try original filename with .3mf extension
-        if filename:
-            # Extract just the filename part, not the full path
-            fname = filename.split("/")[-1] if "/" in filename else filename
-            if fname.endswith(".3mf"):
-                possible_names.append(fname)
-            elif fname.endswith(".gcode"):
-                base = fname.rsplit(".", 1)[0]
-                possible_names.append(f"{base}.gcode.3mf")
-                possible_names.append(f"{base}.3mf")
-            else:
-                possible_names.append(f"{fname}.gcode.3mf")
-                possible_names.append(f"{fname}.3mf")
-
-        # Also try with spaces converted to underscores (Bambu Studio may normalize filenames)
-        space_variants = []
-        for name in possible_names:
-            if " " in name:
-                space_variants.append(name.replace(" ", "_"))
-        possible_names.extend(space_variants)
-
-        # Remove duplicates while preserving order
-        seen = set()
-        possible_names = [x for x in possible_names if not (x in seen or seen.add(x))]
+        possible_names = _print_3mf_candidate_names(subtask_name, filename)
 
         logger.info("Trying filenames: %s", possible_names)
 
