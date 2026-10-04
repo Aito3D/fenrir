@@ -998,3 +998,31 @@ properties.
 
 - Golden probes re-recorded: `aito-pydantic-schemas` (the `client_id` and `client_name` properties of AitoProjectUpdate removed, 26 lines) and `app-openapi-index` (the same two properties of the PATCH body, 2 lines). The other 33 match unchanged.
 - SURFACE.md lines: the `AitoProjectUpdate` field list loses `"client_id": "str | None"` and `"client_name": "str | None"` (2 deletions).
+
+## T-158 — a reconcile card edited mid-tick is pushed when its quiet window closes, not at once (user-approved 2026-10-03)
+
+Sanctions commit <this commit> "refactor(loop-18): T-158 mid-tick edit keeps
+its quiet window (user-approved behavior change)". In `run_sync_once`
+(`backend/app/services/aito_quote_sync.py`) a card selected as a reconcile
+(an attention row: 'error', or an unconfirmed status) got neither
+`must_be_pending` nor `skip_if_pending` from `_reconcile_one`. An operator
+editing it while the tick walked earlier cards (the usual way to fix an
+'error' card) made it pending and opened its 10-second window through
+`note_edit`, but the tick re-read it as pending and pushed it at once,
+ignoring the window and leaving it unspent; every further edit in that
+session cost another Books PUT. Now ids not selected as pending get
+`skip_if_pending=True`, as `_drain_reconcile_queue` already passes: such a
+card is skipped (not counted in `attempted`), stays pending, and its window
+wakes the drain that pushes it once the quiet period ends. Unchanged: cards
+selected as pending (`must_be_pending`), the T-125 per-card guard and
+`finally` re-arm, the T-124 attention-pass guard, and the skip path's waiter
+release. Pinned by
+`test_a_reconcile_card_edited_mid_tick_is_left_to_its_quiet_window` and
+`test_a_reconcile_card_left_to_its_window_is_pushed_once_the_window_closes`
+in `backend/tests/unit/test_aito_quote_sync_wake_latency.py` (both fail on
+the old code: the edited card is pushed mid-tick). The first also pins that
+the skipped card keeps an open window that closes within the quiet period,
+so it is not stranded.
+
+- Golden probes re-recorded: none (35/35 match).
+- SURFACE.md sections regenerated: none (`bash tools/gen_surface_aito23.sh` output identical to SURFACE.md).

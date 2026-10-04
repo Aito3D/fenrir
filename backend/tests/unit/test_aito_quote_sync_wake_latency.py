@@ -696,3 +696,93 @@ async def test_a_rate_limited_drain_leaves_no_window_for_the_cards_after_it(db_s
     assert await run_sync_once(db_session, pending_only=True) == 1
     assert first.id not in aito_push_schedule._windows
     assert not aito_push_schedule._windows
+
+
+# --------------------------------------------------------------------------
+# 6. A reconcile card edited mid-tick keeps its quiet window (T-158).
+# --------------------------------------------------------------------------
+
+
+async def _add_error_card(db, estimate_id: str) -> AitoProject:
+    """An 'error' card: what the tick's attention selection retries, and what
+    an operator edits to fix."""
+    project = await _add_quoted_idle(db, estimate_id)
+    project.quote_sync_state = "error"
+    project.quote_sync_error = "Books refused"
+    await db.commit()
+    return project
+
+
+@pytest.mark.asyncio
+async def test_a_reconcile_card_edited_mid_tick_is_left_to_its_quiet_window(db_session, monkeypatch):
+    """Selected as a reconcile, then edited while the tick was on an earlier
+    card: the edit marks it pending and opens its ten-second window. The tick
+    used to push it the moment it got there, ignoring the window (and leaving
+    it unspent); it now leaves the card to the drain the window wakes."""
+    first = await _add_error_card(db_session, "EA")
+    second = await _add_error_card(db_session, "EB")
+    first_id, second_id = first.id, second.id
+
+    synced: list[tuple[int, str]] = []
+
+    async def fake_sync_project(db, project, *args, **kwargs):
+        synced.append((project.id, project.quote_sync_state))
+        if project.id == first_id:
+            # The operator's edit lands on the second card, committed and
+            # announced exactly as the PATCH route does it.
+            edited = await db.get(AitoProject, second_id)
+            edited.quote_sync_state = "pending"
+            await db.commit()
+            aito_quote_sync.request_debounced_sync(second_id)
+        project.quote_sync_state = "idle"
+        return False
+
+    monkeypatch.setattr(aito_quote_sync, "sync_project", fake_sync_project)
+
+    attempted = await run_sync_once(db_session, attention_only=True)
+
+    assert synced == [(first_id, "error")]
+    assert attempted == 1
+    fresh = await db_session.get(AitoProject, second_id, populate_existing=True)
+    assert fresh.quote_sync_state == "pending"
+    # Not stranded: its window is still open, and closes within the quiet
+    # period, which wakes the drain that pushes it.
+    now = time.monotonic()
+    assert second_id in aito_push_schedule._windows
+    assert not aito_push_schedule.is_due(second_id, now)
+    assert 0.0 < aito_push_schedule.next_due(now) <= aito_push_schedule.EDIT_QUIET_SECONDS
+
+
+@pytest.mark.asyncio
+async def test_a_reconcile_card_left_to_its_window_is_pushed_once_the_window_closes(db_session, monkeypatch):
+    """The other half: once the window the edit opened closes, the pending
+    drain takes the card and spends the window."""
+    first = await _add_error_card(db_session, "EA")
+    second = await _add_error_card(db_session, "EB")
+    first_id, second_id = first.id, second.id
+
+    synced: list[int] = []
+
+    async def fake_sync_project(db, project, *args, **kwargs):
+        synced.append(project.id)
+        if project.id == first_id:
+            edited = await db.get(AitoProject, second_id)
+            edited.quote_sync_state = "pending"
+            await db.commit()
+            aito_quote_sync.request_debounced_sync(second_id)
+        project.quote_sync_state = "idle"
+        return False
+
+    monkeypatch.setattr(aito_quote_sync, "sync_project", fake_sync_project)
+
+    await run_sync_once(db_session, attention_only=True)
+    assert synced == [first_id]
+
+    # The quiet period runs out.
+    aito_push_schedule._windows[second_id].due_at = time.monotonic()
+    assert await run_sync_once(db_session, pending_only=True) == 1
+
+    assert synced == [first_id, second_id]
+    assert second_id not in aito_push_schedule._windows
+    fresh = await db_session.get(AitoProject, second_id, populate_existing=True)
+    assert fresh.quote_sync_state == "idle"

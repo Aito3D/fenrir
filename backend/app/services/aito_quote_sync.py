@@ -2567,7 +2567,8 @@ async def run_sync_once(
 
     A pending card whose push window is still open (``aito_push_schedule``:
     an edit made less than its quiet period ago) is left alone; the drain its
-    window closing wakes takes it.
+    window closing wakes takes it. So is a card selected for a reconcile that
+    turned pending before the loop reached it (T-158).
 
     ``fast_retry`` is passed straight through to ``sync_project``; see there.
 
@@ -2684,6 +2685,12 @@ async def run_sync_once(
             # sync_project's reconcile branch — an extra GET the wake path
             # promises never to spend, and one the full sweep has no reason to
             # spend on a quote it (or a Force sync) just wrote.
+            # `skip_if_pending` (T-158): selected as a reconcile but made pending
+            # since (an operator fixing an 'error' card mid-tick). Its edit
+            # opened a quiet window (note_edit), and the drain that window's
+            # closing wakes pushes it, coalesced with any further edits; pushing
+            # it here would ignore the window and leave it unspent. Same rule as
+            # _drain_reconcile_queue's.
             try:
                 rate_limited = await _reconcile_one(
                     db,
@@ -2691,6 +2698,7 @@ async def run_sync_once(
                     credit_cache,
                     retainer_cache,
                     must_be_pending=project_id in selected_as_pending,
+                    skip_if_pending=project_id not in selected_as_pending,
                     fast_retry=fast_retry,
                 )
             except asyncio.CancelledError:
