@@ -363,6 +363,7 @@ async def init_db():
         printer_sensor_history,
         project,
         project_bom,
+        project_tag,
         scheduled_drying,
         settings,
         shopping_list,
@@ -6273,6 +6274,13 @@ async def run_migrations(conn):
         await conn.execute(
             text("UPDATE printers SET camera_light_auto = :off WHERE camera_light_auto IS NULL"), {"off": False}
         )
+
+    # Projects as a PDM, phase 1 (2026-10-04, spec §7 step 1): permanent
+    # project codes, the projects-space folder name, and tags as rows of the
+    # shared library_tags catalogue. project_tags itself comes from create_all.
+    await _safe_execute(conn, "ALTER TABLE projects ADD COLUMN code VARCHAR(16)")
+    await _safe_execute(conn, "ALTER TABLE projects ADD COLUMN storage_dir VARCHAR(255)")
+    await _safe_execute(conn, "CREATE UNIQUE INDEX IF NOT EXISTS ix_projects_code ON projects (code)")
 
 
 async def _migrate_unlock_retainer_locked_quotes(conn) -> None:
