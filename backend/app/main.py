@@ -3714,6 +3714,35 @@ async def _printer_keeps_cache_mirror(printer) -> bool:
     )
 
 
+def _recovery_check(md5: str | None, plate: int | None, remaining_s: float | None) -> dict:
+    """What print start knew about the job, for judging a file found later.
+
+    Stored on a fallback archive as ``extra_data._recovery_check``: the
+    dispatch md5, the plate, and the remaining time the printer reported and
+    when. Recovery runs ``verify_3mf_candidate`` with it, so a stale same-name
+    copy -- even the one print start just rejected -- is never attached.
+    """
+    return {
+        "md5": (md5 or "").strip().lower() or None,
+        "plate": plate,
+        "remaining_s": remaining_s,
+        "at": time.time(),
+    }
+
+
+def _remaining_now(check: dict) -> float | None:
+    """The reported remaining time, aged by how long ago it was reported.
+
+    None once it would be zero or less: the plausibility check needs a positive
+    figure, and a print past its estimate has nothing to compare against.
+    """
+    remaining = check.get("remaining_s")
+    if not remaining:
+        return None
+    left = float(remaining) - (time.time() - float(check.get("at") or time.time()))
+    return left if left > 0 else None
+
+
 async def _recover_fallback_archive(
     archive_id: int, source_3mf: Path, printer_id: int, original_filename: str | None = None
 ) -> bool:
@@ -3762,6 +3791,20 @@ async def _recover_fallback_archive_locked(
             # real 3MF attached and overwriting it is not this function's job.
             return False
 
+        # Judge the file like print start judged its candidates (2026-10-04):
+        # every late path -- the cover endpoint, the retries, the completion
+        # cache -- lands here, and none of them knew the job's md5 or plate.
+        content_verified = None
+        check = (archive.extra_data or {}).get("_recovery_check")
+        if isinstance(check, dict):
+            verdict, detail = await asyncio.to_thread(
+                verify_3mf_candidate, source_3mf, check.get("md5"), check.get("plate"), _remaining_now(check)
+            )
+            if verdict == "rejected":
+                logger.warning("[RECOVER] Not filling archive %s from %s: %s", archive_id, source_3mf, detail)
+                return False
+            content_verified = verdict == "verified" if verdict else None
+
         print_data = (archive.extra_data or {}).get("_print_data") or {}
         service = ArchiveService(db)
         recovered = await service.archive_print(
@@ -3771,6 +3814,7 @@ async def _recover_fallback_archive_locked(
             subtask_id=archive.subtask_id,
             update_archive_id=archive.id,
             original_filename=original_filename,
+            content_verified=content_verified,
         )
         if recovered is None:
             return False
@@ -5439,6 +5483,9 @@ async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
                         "no_3mf_reason": no_3mf_reason,
                         "original_subtask": subtask_name or display_name_after_plate_reject or "",
                         "_print_data": data,
+                        # What print start knew, so a file that turns up later
+                        # is judged the same way before it fills this card in.
+                        "_recovery_check": _recovery_check(_expected_md5, _verify_plate, _reported_remaining),
                         # True when same-name candidates were found but all
                         # failed content verification — better no file than a
                         # wrong file polluting stats and duplicate groups.

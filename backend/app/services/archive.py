@@ -1656,6 +1656,8 @@ class ArchiveService:
                 existing.cost = cost
             existing.quantity = quantity
             existing.extra_data = merged
+            if content_verified is not None:
+                existing.content_verified = content_verified
             if plate_id is not None:
                 existing.plate_id = plate_id
             if library_file_id is not None:
