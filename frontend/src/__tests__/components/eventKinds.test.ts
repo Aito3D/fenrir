@@ -78,6 +78,12 @@ describe('detailText', () => {
     );
   });
 
+  it('marks an invoice.deposit_applied whose outcome Books never confirmed', () => {
+    expect(
+      detailText('invoice.deposit_applied', { retainer_number: 'RET26-00295', amount: 4000, outcome: 'unknown' }),
+    ).toBe('RET26-00295 · 4000 (?)');
+  });
+
   it('returns null for invoice.deposit_applied when the retainer number is missing', () => {
     expect(detailText('invoice.deposit_applied', { amount: 4000 })).toBeNull();
   });

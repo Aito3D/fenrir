@@ -3,7 +3,9 @@ import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { ApplyDepositModal } from '../../components/aito/ApplyDepositModal';
+import { QueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../../api/client';
+import { formatMoney } from '../../utils/pricing';
 
 const DATA = {
   invoice: { id: 'INV1', number: 'FA-26-4458', balance: 14000, currency_code: 'XPF' },
@@ -65,7 +67,7 @@ describe('ApplyDepositModal', () => {
     resolve({} as never);
   });
 
-  it('keeps the modal open with the server message on a 409', async () => {
+  it('keeps the modal open with the translated cap on a 409, not the server text', async () => {
     // throwApiError turns {code, message, cap} into message + code + detail.
     vi.spyOn(api, 'applyAitoInvoiceDeposit').mockRejectedValue(
       new ApiError('At most 3000.00 can be applied', 409, 'amount_too_high', { cap: 3000 }),
@@ -73,8 +75,43 @@ describe('ApplyDepositModal', () => {
     const onClose = vi.fn();
     render(<ApplyDepositModal projectId={12} data={DATA} onClose={onClose} />);
     await userEvent.click(screen.getByRole('button', { name: /^Apply/ }));
-    expect(await screen.findByText(/At most 3000/)).toBeInTheDocument();
+    // formatMoney uses narrow no-break spaces, which toHaveTextContent normalises away.
+    expect((await screen.findByRole('alert')).textContent).toBe(`At most ${formatMoney(3000, 'XPF')}`);
+    expect(screen.queryByText(/can be applied/)).toBeNull();
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('says to check the invoice when the outcome is unknown', async () => {
+    vi.spyOn(api, 'applyAitoInvoiceDeposit').mockRejectedValue(
+      new ApiError('The deposit may have been applied; check the invoice before retrying.', 502, 'outcome_unknown', {
+        code: 'outcome_unknown',
+      }),
+    );
+    const onClose = vi.fn();
+    render(<ApplyDepositModal projectId={12} data={DATA} onClose={onClose} />);
+    await userEvent.click(screen.getByRole('button', { name: /^Apply/ }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'The deposit may have been applied. Check the invoice in Zoho Books before trying again.',
+    );
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('re-reads the deposits and the invoice after any error', async () => {
+    const invalidate = vi.spyOn(QueryClient.prototype, 'invalidateQueries');
+    vi.spyOn(api, 'applyAitoInvoiceDeposit').mockRejectedValue(new ApiError('Books is down', 502));
+    render(<ApplyDepositModal projectId={12} data={DATA} onClose={() => {}} />);
+    await userEvent.click(screen.getByRole('button', { name: /^Apply/ }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Books is down');
+    const keys = invalidate.mock.calls.map(([f]) => (f as { queryKey?: unknown[] } | undefined)?.queryKey);
+    expect(keys).toContainEqual(['aito-invoice-deposits', 12]);
+    expect(keys).toContainEqual(['aito-invoice', 12]);
+  });
+
+  it('falls back to the generic sentence for a non-API error', async () => {
+    vi.spyOn(api, 'applyAitoInvoiceDeposit').mockRejectedValue(new TypeError('Failed to fetch'));
+    render(<ApplyDepositModal projectId={12} data={DATA} onClose={() => {}} />);
+    await userEvent.click(screen.getByRole('button', { name: /^Apply/ }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('The deposit could not be applied');
   });
 
   it('closes instead of crashing when a refetch empties the deposits', () => {

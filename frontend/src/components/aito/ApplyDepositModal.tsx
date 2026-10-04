@@ -20,8 +20,9 @@ const MODAL_OUT_MS = 170;
  *  The caller guarantees `data.invoice` is set and at least one deposit has
  *  money left. The amount starts at whichever runs out first (invoice balance
  *  or deposit) and cannot exceed that; the server re-reads Books and has the
- *  last word (409 `amount_too_high`, whose message is shown as-is). Like
- *  MergeProjectModal it stacks above the panel (z-[110]) and swallows Escape. */
+ *  last word: a 409 `amount_too_high` shows its cap, a 502 `outcome_unknown`
+ *  says to check the invoice before retrying, and any error re-reads the
+ *  figures. Like MergeProjectModal it stacks above the panel (z-[110]) and swallows Escape. */
 export function ApplyDepositModal({
   projectId,
   data,
@@ -91,6 +92,15 @@ function ApplyDepositDialog({
     setError(null);
   };
 
+  const applyErrorText = (err: unknown): string => {
+    if (!(err instanceof ApiError)) return t('aito.applyDepositError');
+    if (err.code === 'outcome_unknown') return t('aito.applyDepositUnknown');
+    if (err.code === 'amount_too_high' && typeof err.detail?.cap === 'number') {
+      return t('aito.applyDepositTooHigh', { amount: money(err.detail.cap) });
+    }
+    return err.message || t('aito.applyDepositError');
+  };
+
   const apply = useMutation({
     mutationFn: (amt: number) =>
       api.applyAitoInvoiceDeposit(projectId, { invoice_id: invoice.id, retainer_id: selected.id, amount: amt }),
@@ -105,7 +115,15 @@ function ApplyDepositDialog({
     onSettled: () => {
       inFlight.current = false;
     },
-    onError: (err) => setError(err instanceof ApiError ? err.message : t('aito.applyDepositError')),
+    onError: (err) => {
+      // Whatever went wrong, the figures in hand may now be stale (the
+      // invoice shrank, the deposit was spent, or the apply may have landed):
+      // re-read them so the modal shows what Books says now.
+      for (const key of ['aito-invoice-deposits', 'aito-invoice', 'aito-events']) {
+        queryClient.invalidateQueries({ queryKey: [key, projectId] });
+      }
+      setError(applyErrorText(err));
+    },
   });
 
   const submit = () => {
@@ -213,7 +231,7 @@ function ApplyDepositDialog({
           </div>
 
           <footer className="flex items-center justify-between gap-3 border-t border-bambu-dark-tertiary px-6 py-3">
-            <p role="alert" className="min-w-0 truncate text-xs text-red-400">
+            <p role="alert" className="min-w-0 break-words text-xs text-red-400">
               {error}
             </p>
             <div className="flex flex-none items-center gap-2">

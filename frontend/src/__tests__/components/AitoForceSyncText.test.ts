@@ -34,6 +34,7 @@ describe('forceSyncStepText', () => {
     ['unreachable', 'Zoho could not be reached'],
     ['refused', 'Zoho refused the push'],
     ['upstream', 'Zoho returned an error'],
+    ['internal', 'Unexpected error — see the server log'],
   ])('translates the %s reason', (reason, expected) => {
     expect(text(step('credit', 'failed', { reason })).detail).toBe(expected);
   });
@@ -80,5 +81,31 @@ describe('forceSyncStepText', () => {
 
   it('shows an unknown reason raw', () => {
     expect(text(step('quote', 'skipped', { reason: 'mystery' })).detail).toBe('mystery');
+  });
+
+  it.each([
+    ['rate_limited', 'Heimdall rate limit — try again in a minute'],
+    ['not_configured', 'Heimdall is not configured'],
+    ['upstream', 'Heimdall returned an error'],
+  ])('names Heimdall, not Zoho, for the payment links %s reason', (reason, expected) => {
+    expect(text(step('payment_links', 'skipped', { reason })).detail).toBe(expected);
+  });
+
+  it('says the deposit was refused on the invoice step', () => {
+    expect(text(step('invoice', 'failed', { reason: 'refused' })).detail).toBe('Zoho refused to apply the deposit');
+  });
+
+  it('labels a quote total change as a total, not a credit', () => {
+    const d = text(step('quote', 'fixed', { total: { before: 100, after: 200 } })).detail!;
+    expect(d).toBe(`Total from ${formatMoney(100, 'XPF')} to ${formatMoney(200, 'XPF')}`);
+  });
+
+  it("formats the invoice step's money in the invoice's own currency", () => {
+    const d = text(
+      step('invoice', 'fixed', { number: 'FA-26-1', balance_before: 140, balance_after: 70, currency_code: 'EUR' }),
+    ).detail!;
+    expect(d).toContain(formatMoney(140, 'EUR'));
+    expect(d).toContain(formatMoney(70, 'EUR'));
+    expect(d).not.toContain(formatMoney(140, 'XPF'));
   });
 });
