@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from backend.app.models.aito_project import AitoProject
 from backend.app.services import aito_events, aito_invoice_sweep, aito_quote_sync
 from backend.app.services.aito_invoice_sweep import sweep_invoices
+from backend.app.services.aito_search import document_numbers_of
 from backend.app.services.zoho import ZohoRateLimited, ZohoUpstreamError, zoho_service
 
 
@@ -101,6 +102,7 @@ async def test_selection_and_field_writes(db_session, monkeypatch):
     row = await db_session.get(AitoProject, open_id)
     assert (row.invoice_status, row.invoice_balance, row.invoice_due_date) == ("partially_paid", 40.0, "2026-03-01")
     assert isinstance(row.invoice_checked_at, datetime)
+    assert document_numbers_of(row) == ["INV-1"]
     for other_id in other_ids:
         assert (await db_session.get(AitoProject, other_id)).invoice_checked_at is None
 
@@ -1059,3 +1061,14 @@ async def test_the_overdue_event_stays_out_of_the_story(async_client, db_session
 
     assert "project.due.overdue" not in await kinds("story")
     assert (await kinds("detail")).count("project.due.overdue") == 1
+
+
+@pytest.mark.asyncio
+async def test_a_second_pass_keeps_one_copy_of_the_number(db_session, monkeypatch):
+    project = await _project(db_session)
+    project_id = project.id
+    monkeypatch.setattr(zoho_service, "list_project_invoices", _fake({"EST1": [_invoice(10.0)]}, []))
+    await sweep_invoices(db_session, force=True)
+    await sweep_invoices(db_session, force=True)
+    db_session.expire_all()
+    assert document_numbers_of(await db_session.get(AitoProject, project_id)) == ["INV-1"]

@@ -14,6 +14,7 @@ from sqlalchemy import select
 from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
 from backend.app.services.aito_invoice_create import build_line_items
+from backend.app.services.aito_search import document_numbers_of
 from backend.app.services.zoho import ZohoRateLimited, ZohoUpstreamError, zoho_service
 
 ESTIMATE = {
@@ -425,6 +426,9 @@ async def test_a_paid_retainer_is_applied_as_payment(async_client, db_session, b
     credits = next(c for c in books["calls"] if c["path"] == "/invoices/inv-1/credits")
     assert credits["json"] == {"invoice_payments": [{"payment_id": "pay-1", "amount_applied": 1000.0}]}
     assert body["retainers"] == [{"number": "RET-00269", "total": 1000.0, "applied": 1000.0}]
+    db_session.expire_all()
+    row = await db_session.get(AitoProject, project_id)
+    assert "FA-26-4100" in document_numbers_of(row)
 
 
 @pytest.mark.asyncio

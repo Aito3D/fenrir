@@ -12,6 +12,7 @@ from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
 from backend.app.services import aito_manual_payments as svc
 from backend.app.services.aito_payment_documents import PaymentDocument
+from backend.app.services.aito_search import document_numbers_of
 from backend.app.services.zoho import ZohoAmbiguous, ZohoUnreachable, ZohoUpstreamError, zoho_service
 
 TODAY = date(2026, 9, 23)
@@ -315,6 +316,7 @@ async def test_refresh_after_invoice_payment_writes_the_invoice_figures(db_sessi
     await svc.refresh_after_payment(db_session, p.id, "invoice")
     await db_session.refresh(p)
     assert p.invoice_status == "paid" and p.invoice_balance == 0 and p.invoice_due_date == "2026-10-01"
+    assert document_numbers_of(p) == ["FA-26-0001"]
 
 
 @pytest.mark.asyncio

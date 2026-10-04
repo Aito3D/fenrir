@@ -66,6 +66,7 @@ from backend.app.services.aito_quote_export import (
 )
 from backend.app.services.aito_quote_import import client_snapshot
 from backend.app.services.aito_quote_status import accept_quote, adopt_quote_status
+from backend.app.services.aito_search import remember_document_numbers
 from backend.app.services.aito_shipping import island_label
 from backend.app.services.aito_tracking import build_tracking_url, purge_tracking_views, with_tracking_notes
 from backend.app.services.aito_zoho_comments import mirror_comments, should_pull_comments
@@ -1745,6 +1746,7 @@ async def sync_project(
             # held 429 is re-raised right after it — so sync_project's
             # ZohoRateLimited handler, the tick's stand-down and the retry
             # budget behave exactly as before.
+            retainers: list[dict] | None = None
             retainer_throttle: ZohoRateLimited | None = None
             if needed is not None and paid < needed and project.quote_number:
                 try:
@@ -1756,6 +1758,7 @@ async def sync_project(
                         paid += _referenced_retainer_total(estimate, retainers, project.quote_number)
             if retainer_throttle is None:
                 project.retainer_paid_total = paid
+                remember_document_numbers(project, *_retainer_numbers(estimate, retainers, project.quote_number))
             # Beside it, the CUSTOMER's unspent deposits — a different figure
             # with a different meaning (see aito_customer_credit): what they
             # still have on account across every retainer, quote-linked or
@@ -2712,6 +2715,19 @@ def _paid_retainer_total(estimate: dict) -> float:
             except (TypeError, ValueError):
                 continue
     return total
+
+
+def _retainer_numbers(estimate: dict, retainers: list[dict] | None, quote_number: str | None) -> list[str]:
+    """Retainer numbers this quote's customer was given: the ones attached to
+    the estimate plus the customer's retainers that name this quote in their
+    reference (the counter / payment-link deposits — see
+    `_referenced_retainer_total`). Any status: a draft retainer's number was
+    still sent to someone. For the board search only."""
+    numbers = [str(entry.get("retainerinvoice_number") or "") for entry in estimate.get("retainerinvoices") or []]
+    for row in retainers or []:
+        if _same_reference(str(row.get("reference_number") or ""), quote_number):
+            numbers.append(str(row.get("retainerinvoice_number") or ""))
+    return [number for number in numbers if number]
 
 
 def _referenced_retainer_total(estimate: dict, retainers: list[dict], quote_number: str | None) -> float:

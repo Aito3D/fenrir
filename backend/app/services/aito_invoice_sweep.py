@@ -62,6 +62,7 @@ from backend.app.models.aito_project import AitoProject
 from backend.app.services import aito_events
 from backend.app.services.aito_events import utc_now_naive as _now
 from backend.app.services.aito_invoice_create import RetainerCredit, apply_retainers, customer_credits, share_out
+from backend.app.services.aito_search import remember_document_numbers
 from backend.app.services.inbox import broadcast_pending, purge_old
 from backend.app.services.zoho import ZohoNotConfiguredError, ZohoRateLimited, ZohoUpstreamError, zoho_service
 
@@ -339,10 +340,17 @@ async def sweep_invoices(db: AsyncSession, *, force: bool = False) -> int:
         # raises ``MissingGreenlet`` outside of one, so the values this loop
         # needs to *read* are pinned to plain locals instead.
         targets = [
-            (project, project.id, project.quote_id or "", project.client_id or "", project.quote_number)
+            (
+                project,
+                project.id,
+                project.quote_id or "",
+                project.client_id or "",
+                project.quote_number,
+                project.document_numbers,
+            )
             for project in projects
         ]
-        for project, project_id, quote_id, client_id, quote_number in targets:
+        for project, project_id, quote_id, client_id, quote_number, known_numbers in targets:
             try:
                 invoices = await zoho_service.list_project_invoices(db, quote_id, client_id)
                 if invoices:
@@ -362,6 +370,11 @@ async def sweep_invoices(db: AsyncSession, *, force: bool = False) -> int:
                     project.invoice_status = status
                     project.invoice_balance = balance
                     project.invoice_due_date = due
+                    # `remember_document_numbers` READS the stored list, and a
+                    # rollback for an earlier project expired this row: write the
+                    # pinned value back first so the read never lazy-loads.
+                    project.document_numbers = known_numbers
+                    remember_document_numbers(project, newest.get("number"))
                     if credit is not None:
                         # The status reconcile stops reading a locked (invoiced)
                         # estimate, so this figure otherwise freezes the day

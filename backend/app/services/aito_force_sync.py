@@ -25,6 +25,7 @@ from backend.app.models.aito_payment_link import AitoPaymentLink
 from backend.app.models.aito_project import AitoProject
 from backend.app.services import aito_invoice_sweep, aito_payment_links, aito_quote_sync
 from backend.app.services.aito_customer_credit import read_customer_credit
+from backend.app.services.aito_search import remember_document_numbers
 from backend.app.services.heimdall import heimdall_service
 from backend.app.services.zoho import ZohoNotConfiguredError, ZohoRateLimited, ZohoUpstreamError, zoho_service
 
@@ -114,6 +115,7 @@ async def _invoice_step(db: AsyncSession, project: AitoProject) -> StepResult:
     project.invoice_status = fresh.get("status") or None
     project.invoice_balance = after
     project.invoice_due_date = fresh.get("due_date") or None
+    remember_document_numbers(project, fresh.get("number"))
     if settlement is not None and settlement.remaining is not None:
         project.customer_credit_total = settlement.remaining
     await db.commit()

@@ -127,7 +127,7 @@ from backend.app.services.aito_quote_sync import (
     request_immediate_sync,
 )
 from backend.app.services.aito_retainers import list_project_retainers
-from backend.app.services.aito_search import document_numbers_of, task_search_text
+from backend.app.services.aito_search import document_numbers_of, remember_document_numbers, task_search_text
 from backend.app.services.aito_send_guard import DuplicateSendGuard
 from backend.app.services.aito_shipping import (
     SERVICE_LABELS,
@@ -2778,6 +2778,7 @@ async def create_invoice(
             # sweep's own selection. Books is the authority and Books has just
             # confirmed — there is nothing to wait for.
             project.quote_invoiced = True
+            remember_document_numbers(project, created.get("invoice_number"))
             if credit is not None:
                 project.customer_credit_total = credit
             await record(
