@@ -2033,3 +2033,66 @@ async def test_a_redrive_failure_record_that_itself_fails_does_not_end_the_pass(
     await db_session.refresh(stored)
     assert stored.effects_pending_at == NOW and stored.sync_error is None
     assert svc._redrive_failures[row_id] == 1
+
+
+# --- T-157: due pushes served between polled rows ------------------------------
+
+
+def _open_row(project_id, key, heimdall_id):
+    return AitoTerminalPayment(
+        project_id=project_id,
+        document_kind="invoice",
+        document_id="i",
+        document_number="FA",
+        idempotency_key=key,
+        heimdall_id=heimdall_id,
+        amount=1,
+        status="processing",
+        created_at=NOW,
+    )
+
+
+@pytest.mark.asyncio
+async def test_poll_open_serves_due_pushes_before_every_row(db_session):
+    """A route waiting on its card's push waits for one Heimdall GET, not the
+    whole 40-row pass. The serve may roll the shared session back (the loop's
+    `_serve_due_pushes` does, on a failed drain): every row is re-fetched by id
+    after it, so the pass still polls them all."""
+    p = await _project(db_session)
+    project_id = p.id
+    db_session.add_all([_open_row(project_id, "k1", "h-1"), _open_row(project_id, "k2", "h-2")])
+    await db_session.commit()
+    seen = []
+
+    def handler(request):
+        hid = request.url.path.rsplit("/", 1)[-1]
+        seen.append(hid)
+        return httpx.Response(200, json=_payment(id=hid))
+
+    async def serve(db):
+        assert db is db_session
+        seen.append("serve")
+        await db.rollback()
+        return 0
+
+    heimdall_service._transport = httpx.MockTransport(handler)
+    visited = await svc.poll_open_terminal_payments(db_session, now=NOW + timedelta(minutes=5), serve_due_pushes=serve)
+
+    assert visited == 2
+    assert seen == ["serve", "h-1", "serve", "h-2"]
+
+
+@pytest.mark.asyncio
+async def test_poll_open_serves_nothing_by_default(db_session):
+    p = await _project(db_session)
+    db_session.add(_open_row(p.id, "k1", "h-1"))
+    await db_session.commit()
+    seen = []
+
+    def handler(request):
+        seen.append(request.url.path.rsplit("/", 1)[-1])
+        return httpx.Response(200, json=_payment(id="h-1"))
+
+    heimdall_service._transport = httpx.MockTransport(handler)
+    assert await svc.poll_open_terminal_payments(db_session, now=NOW + timedelta(minutes=5)) == 1
+    assert seen == ["h-1"]

@@ -279,7 +279,7 @@ async def test_a_wake_during_the_ticks_polls_is_served_between_passes(monkeypatc
         await release_sweep.wait()
         return 0
 
-    async def fake_terminal_poll(db):
+    async def fake_terminal_poll(db, **_kwargs):
         drains.append("terminal")
         at_terminal_poll.set()
         await release_end.wait()
@@ -342,7 +342,7 @@ async def test_an_edits_window_is_still_honoured_mid_tick(monkeypatch):
         await release_sweep.wait()
         return 0
 
-    async def fake_terminal_poll(db):
+    async def fake_terminal_poll(db, **_kwargs):
         drains.append("terminal")
         tick_done.set()
 

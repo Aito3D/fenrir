@@ -2882,3 +2882,171 @@ async def test_a_lost_invoice_link_whose_row_vanished_before_the_reread_does_not
     assert visited == 1 and link_gets == 2
     (row,) = [r for r in await _rows(db_session, project_id) if r.id == row_id]
     assert row.status == "pending"  # nothing was marked failed: the re-read found no row
+
+
+# --- T-157: due pushes served between the pass's rows -------------------------
+
+
+async def _two_linked_projects(db):
+    """Two quoted projects whose links exist and are due a poll."""
+    a = await _project(db, quote_number="DEV-A")
+    b = await _project(db, quote_number="DEV-B")
+    await reconcile_payment_links(db, now=NOW, today=TODAY)
+    return a, b
+
+
+async def test_the_pass_serves_due_pushes_before_every_project_and_every_poll(db_session, fake):
+    """A route waiting on its card's push waits for one Heimdall round trip,
+    not the whole pass: the loop's serve runs before each project of the
+    reconcile half and before each link of the poll half."""
+    a = await _project(db_session, quote_number="DEV-A")
+    b = await _project(db_session, quote_number="DEV-B")
+
+    async def serve(db):
+        assert db is db_session
+        fake.calls.append(("serve",))
+        return 0
+
+    await reconcile_payment_links(db_session, now=NOW, today=TODAY, serve_due_pushes=serve)
+    await reconcile_payment_links(db_session, now=NOW + timedelta(minutes=5), today=TODAY, serve_due_pushes=serve)
+
+    kinds = [c[0] for c in fake.calls]
+    assert kinds.count("create") == 2 and kinds.count("get") >= 2
+    for i, kind in enumerate(kinds):
+        if kind != "serve":
+            assert kinds[i - 1] == "serve", kinds  # every Heimdall call follows a serve
+    assert (await current_link(db_session, a.id)).heimdall_id is not None
+    assert (await current_link(db_session, b.id)).heimdall_id is not None
+
+
+async def test_a_push_served_mid_pass_reconciles_its_link_nested_instead_of_deadlocking(db_session, fake):
+    """The served push ends in `reconcile_payment_links(changes_only=True)`,
+    on the task that already holds `_pass_lock` (what `_drain_pending` does
+    after every drain). It must run there and then — the new total reaching
+    Heimdall at once — rather than wait forever on its own task's lock."""
+    import asyncio
+
+    a, _b = await _two_linked_projects(db_session)
+    fake.calls.clear()
+    served = 0
+
+    async def serve_a_push_of_a(db):
+        nonlocal served
+        served += 1
+        if served == 1:
+            a.quote_total = 9000.0  # what the push just wrote back from Books
+            await db.commit()
+            await reconcile_payment_links(db, changes_only=True, now=NOW, today=TODAY)
+        return 1 if served == 1 else 0
+
+    await asyncio.wait_for(
+        reconcile_payment_links(
+            db_session, now=NOW + timedelta(minutes=5), today=TODAY, serve_due_pushes=serve_a_push_of_a
+        ),
+        timeout=5,
+    )
+
+    assert [c[0] for c in fake.calls][:1] == ["patch"]  # the nested pass, before the outer one's polls
+    assert [c[0] for c in fake.calls].count("get") == 2
+    assert (await current_link(db_session, a.id)).amount == 9000
+    assert svc._pass_owner is None
+    assert not svc._pass_lock.locked()
+
+
+async def test_a_failing_served_push_leaves_the_pass_on_a_sound_session(db_session, fake, monkeypatch):
+    """The loop's real `_serve_due_pushes`, its drain dying half-way with an
+    uncommitted write on the shared session: it logs and rolls back, and the
+    pass carries on polling every link, each re-fetched by id."""
+    import time
+
+    from sqlalchemy import update
+
+    from backend.app.services import aito_push_schedule, aito_quote_sync
+
+    a, b = await _two_linked_projects(db_session)
+    # Plain ids: the rollback below expires every ORM object in the session.
+    ids = (a.id, b.id)
+    links = sorted([(await current_link(db_session, pid)).heimdall_id for pid in ids])
+    fake.calls.clear()
+    drains = 0
+
+    async def dying_drain(db, **_kwargs):
+        nonlocal drains
+        drains += 1
+        await db.execute(update(AitoProject).where(AitoProject.id == ids[0]).values(description="half-written"))
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr(aito_quote_sync, "_drain_pending", dying_drain)
+    aito_push_schedule.note_immediate(ids[0], time.monotonic())
+
+    await reconcile_payment_links(
+        db_session,
+        now=NOW + timedelta(minutes=5),
+        today=TODAY,
+        serve_due_pushes=aito_quote_sync._serve_due_pushes,
+    )
+
+    assert drains >= 1
+    assert sorted(c[1] for c in fake.calls if c[0] == "get") == links
+    for pid in ids:
+        assert (await current_link(db_session, pid)).checked_at == NOW + timedelta(minutes=5)
+    project = await db_session.get(AitoProject, ids[0])
+    await db_session.refresh(project)
+    assert project.description == "x"  # the drain's half-write was rolled back, not committed by the pass
+
+
+async def test_a_429_hit_by_a_served_push_stops_the_outer_pass(db_session, fake):
+    """The served push's nested pass met Heimdall's 429 and armed the
+    throttle: the outer pass makes no further Heimdall call either."""
+    a, _b = await _two_linked_projects(db_session)
+    fake.calls.clear()
+
+    async def serve_into_a_429(db):
+        a.quote_total = 9000.0
+        await db.commit()
+        fake.fail_with = HeimdallRateLimited("slow down", 120.0)
+        try:
+            await reconcile_payment_links(db, changes_only=True, now=NOW, today=TODAY)
+        finally:
+            fake.fail_with = None
+        return 1
+
+    visited = await reconcile_payment_links(
+        db_session, now=NOW + timedelta(minutes=5), today=TODAY, serve_due_pushes=serve_into_a_429
+    )
+
+    assert visited == 0
+    assert [c[0] for c in fake.calls] == ["patch"]  # the nested attempt only
+    assert svc._throttled_until is not None
+
+
+async def test_a_429_hit_by_a_push_served_during_the_polls_stops_the_remaining_polls(db_session, fake):
+    """Same, in the poll half: the reconcile half's two serves found nothing
+    due; the push served before the first poll meets the 429, and no link is
+    polled after it."""
+    a, _b = await _two_linked_projects(db_session)
+    fake.calls.clear()
+    served = 0
+
+    async def serve(db):
+        nonlocal served
+        served += 1
+        if served != 3:  # 1 and 2 precede the two projects of the reconcile half
+            return 0
+        a.quote_total = 9000.0
+        await db.commit()
+        fake.fail_with = HeimdallRateLimited("slow down", 120.0)
+        try:
+            await reconcile_payment_links(db, changes_only=True, now=NOW, today=TODAY)
+        finally:
+            fake.fail_with = None
+        return 1
+
+    visited = await reconcile_payment_links(
+        db_session, now=NOW + timedelta(minutes=5), today=TODAY, serve_due_pushes=serve
+    )
+
+    assert visited == 2
+    assert served == 3
+    assert [c[0] for c in fake.calls] == ["patch"]  # the nested attempt; no GET after it
+    assert svc._throttled_until is not None

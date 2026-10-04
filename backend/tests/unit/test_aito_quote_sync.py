@@ -3250,7 +3250,7 @@ async def test_periodic_tick_rolls_back_a_failed_purge_before_reconciling_paymen
     async def fake_purge_tracking_views(db):
         raise RuntimeError("database is locked")
 
-    async def fake_reconcile_payment_links(db):
+    async def fake_reconcile_payment_links(db, **_kwargs):
         reconcile_called_with.append(db)
         reconcile_done.set()
 
@@ -3312,7 +3312,7 @@ async def test_a_failing_inbox_sweep_rolls_back_before_reconciling_payment_links
     async def failing_sweep_inbox(db, *, force=False):
         raise RuntimeError("inbox step blew up")
 
-    async def fake_reconcile_payment_links(db):
+    async def fake_reconcile_payment_links(db, **_kwargs):
         reconcile_called_with.append(db)
         reconcile_done.set()
 
@@ -3374,7 +3374,7 @@ async def test_a_periodic_tick_polls_contacts_and_survives_that_poll_failing(mon
         polled_with.append(db)
         raise RuntimeError("Books hiccup")
 
-    async def fake_reconcile_payment_links(db):
+    async def fake_reconcile_payment_links(db, **_kwargs):
         reconcile_done.set()
 
     monkeypatch.setattr(aito_quote_sync, "async_session", fake_session)

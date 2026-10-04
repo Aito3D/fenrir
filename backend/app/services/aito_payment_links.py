@@ -9,6 +9,7 @@ import asyncio
 import logging
 import math
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import TYPE_CHECKING
@@ -92,6 +93,12 @@ _throttled_until: float | None = None
 # a stray live link sits at OSB. Single-process app, so a lock is the whole
 # fix — no partial unique index, no migration.
 _pass_lock = asyncio.Lock()
+# The task running the pass `_pass_lock` guards, while it runs. T-157: the loop
+# serves due pushes between the pass's rows, and a served push ends in
+# `reconcile_payment_links(changes_only=True)` ON THE SAME TASK. `asyncio.Lock`
+# is not re-entrant, so that call would wait forever on the lock its own task
+# holds; it runs its pass nested instead (see `reconcile_payment_links`).
+_pass_owner: "asyncio.Task | None" = None
 # Serialises the RESERVATION window alone — the `current_link` guard read,
 # `_next_key`, the insert and its commit — for every path that reserves a row:
 # the reconciler's `_create` (already under `_pass_lock`; a second, small lock
@@ -925,6 +932,7 @@ async def reconcile_payment_links(
     now: datetime | None = None,
     today: date | None = None,
     force: bool = False,
+    serve_due_pushes: Callable[[AsyncSession], Awaitable[int]] | None = None,
 ) -> int:
     """One pass: reconcile every quoted project, then poll pending links.
     Returns the number of projects visited. Silent no-op when Heimdall is not
@@ -958,19 +966,47 @@ async def reconcile_payment_links(
     Only this pass stands down — no throttle window is armed, so the next
     tick and the panel's Retry both try again. A Heimdall ANSWER (4xx, 5xx,
     `HeimdallAmbiguous`) does not stop the pass.
+
+    T-157: the loop passes ``serve_due_pushes`` (its own
+    ``_serve_due_pushes``, handed in rather than imported to avoid the import
+    cycle), served before each project of the reconcile half and each link of
+    the poll half, so a route waiting in ``flush_and_wait`` waits for one
+    Heimdall round trip, not the whole pass. A push served there ends in this
+    function again (``changes_only``), on the task already holding
+    ``_pass_lock``: that call runs its pass nested, between two rows of the
+    outer one, rather than deadlocking on the lock. Left ``None`` (the
+    default), nothing is served.
     """
+    global _pass_owner
     if not await heimdall_service.is_configured(db):
         return 0
     if _throttled_until is not None and time.monotonic() < _throttled_until:
         return 0
+    if _pass_owner is not None and _pass_owner is asyncio.current_task():
+        # Re-entered from a push the outer pass served between its rows. Not
+        # concurrent with it: the outer pass is suspended at a row boundary,
+        # its previous row committed, and it re-fetches every row by id.
+        return await _run_pass(
+            db, only_project_id=only_project_id, changes_only=changes_only, now=now, today=today, force=force
+        )
     async with _pass_lock:
         # Re-checked under the lock: the pass we just waited for may have
         # hit the 429 that arms this.
         if _throttled_until is not None and time.monotonic() < _throttled_until:
             return 0
-        return await _run_pass(
-            db, only_project_id=only_project_id, changes_only=changes_only, now=now, today=today, force=force
-        )
+        _pass_owner = asyncio.current_task()
+        try:
+            return await _run_pass(
+                db,
+                only_project_id=only_project_id,
+                changes_only=changes_only,
+                now=now,
+                today=today,
+                force=force,
+                serve_due_pushes=serve_due_pushes,
+            )
+        finally:
+            _pass_owner = None
 
 
 async def _run_pass(
@@ -981,9 +1017,21 @@ async def _run_pass(
     now: datetime | None,
     today: date | None,
     force: bool,
+    serve_due_pushes: Callable[[AsyncSession], Awaitable[int]] | None = None,
 ) -> int:
     """The body of `reconcile_payment_links`, run under `_pass_lock`."""
+
     global _throttled_until
+
+    async def serve() -> bool:
+        """Serve the due pushes; True when a 429 the served push's own nested
+        pass hit armed this reconciler's throttle, and the pass must stop.
+        ``serve_due_pushes`` contains its own failures (logged, rolled back)."""
+        if serve_due_pushes is None:
+            return False
+        await serve_due_pushes(db)
+        return _throttled_until is not None and time.monotonic() < _throttled_until
+
     now = now or _now()
     today = today or now.date()
     from backend.app.services.aito_quote_sync import quote_validity_days
@@ -1009,6 +1057,10 @@ async def _run_pass(
     stood_down = False  # a HeimdallUnreachable in this pass: no more Heimdall calls
     try:
         for pid in project_ids:
+            # Between rows: the previous project committed (or rolled back)
+            # and this one is fetched below, after the served push.
+            if await serve():
+                return visited
             # The `db.get` is INSIDE the try: a previous iteration's rollback
             # can leave the session in a state where even the fetch raises,
             # and a fetch error must isolate to its own item rather than
@@ -1054,6 +1106,8 @@ async def _run_pass(
             pending_ids = list((await db.execute(pending)).scalars().all())
             for rid in pending_ids:
                 if stood_down:
+                    break
+                if await serve():
                     break
                 project_id: int | None = None
                 row_kind = "quote"

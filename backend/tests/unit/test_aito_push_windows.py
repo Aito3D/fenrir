@@ -361,7 +361,7 @@ async def test_a_failing_change_pass_does_not_cost_the_tick_its_other_passes(mon
     async def broken_change_pass(db):
         raise RuntimeError("database is locked")
 
-    async def fake_terminal_poll(db):
+    async def fake_terminal_poll(db, **_kwargs):
         terminal_polled.set()
 
     monkeypatch.setattr(aito_quote_sync, "run_change_pass", broken_change_pass)
@@ -413,7 +413,7 @@ async def test_a_failing_attention_pass_does_not_cost_the_tick_its_other_passes(
             return await real_run_sync_once(db, attention_only=True)
         return await fake_once(db, pending_only=pending_only, fast_retry=fast_retry)
 
-    async def fake_terminal_poll(db):
+    async def fake_terminal_poll(db, **_kwargs):
         terminal_polled.set()
 
     monkeypatch.setattr(aito_quote_sync, "async_session", locked_session)
@@ -431,6 +431,58 @@ async def test_a_failing_attention_pass_does_not_cost_the_tick_its_other_passes(
         assert "database is locked" in caplog.text
         assert "Aito quote sync tick failed" not in caplog.text
         assert rollbacks  # the attention pass's half-done work was rolled back
+    finally:
+        await _stop(loop_task)
+
+
+@pytest.mark.asyncio
+async def test_a_failing_wake_lap_change_pass_keeps_the_windows_that_fell_due_during_it(monkeypatch, caplog):
+    """T-156: the wake lap ran the change pass outside any try of its own, so
+    its failure reached the lap's handler, which drops every due window. A
+    window that closed while the pass was reading Books (an edit's quiet
+    period, a Print click's note_immediate) was deleted unpushed, and the card
+    waited for the next full tick. It must be drained within the next lap."""
+    drains: list = []
+    _loop_fakes(monkeypatch, drains)
+    monkeypatch.setattr(aito_quote_sync, "CHANGE_PASS_SECONDS", 0.1)
+    rollbacks: list = []
+    change_passes = 0
+
+    class Session:
+        async def rollback(self):
+            rollbacks.append(None)
+
+    @contextlib.asynccontextmanager
+    async def session():
+        yield Session()
+
+    async def change_pass_fails_after_a_window_closes(db):
+        nonlocal change_passes
+        change_passes += 1
+        drains.append(("change", time.monotonic()))
+        if change_passes == 2:  # the first wake-lap pass; the tick ran #1
+            # What a route's flush_and_wait does while the pass is in flight.
+            aito_push_schedule.note_immediate(7, time.monotonic())
+            raise RuntimeError("database is locked")
+        return 0
+
+    monkeypatch.setattr(aito_quote_sync, "async_session", session)
+    monkeypatch.setattr(aito_quote_sync, "run_change_pass", change_pass_fails_after_a_window_closes)
+    loop_task = asyncio.create_task(aito_quote_sync.run_sync_loop())
+    try:
+        with caplog.at_level("ERROR"):
+            # The tick is 300 s away: a drain inside this wait can only be the
+            # lap serving the window the failed pass left standing.
+            deadline = time.monotonic() + 3
+            while "drain" not in [kind for kind, _ in drains] and time.monotonic() < deadline:
+                await asyncio.sleep(0.02)
+        kinds = [kind for kind, _ in drains]
+        assert kinds[:3] == ["tick", "change", "change"]
+        assert "drain" in kinds[3:]  # the window closed mid-pass was served, not dropped
+        assert "Aito change pass failed" in caplog.text
+        assert "Aito quote sync wake drain failed" not in caplog.text
+        assert rollbacks
+        assert not loop_task.done()
     finally:
         await _stop(loop_task)
 
@@ -460,5 +512,38 @@ async def test_a_stale_due_window_cannot_spin_the_loop(monkeypatch):
         assert drains == []
         assert laps < 10
         assert aito_push_schedule.next_due(time.monotonic()) is None
+    finally:
+        await _stop(loop_task)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("serving", [True, False])
+async def test_the_tick_hands_its_serve_to_the_heimdall_passes_only_while_serving(monkeypatch, serving):
+    """T-157: the payment-link and terminal passes get the loop's own
+    `_serve_due_pushes`, so pushes land between their Heimdall calls — and
+    nothing at all when sync is off, like every other serve on the tick."""
+    from backend.app.services import aito_payment_links, aito_terminal_payments
+
+    drains: list = []
+    _loop_fakes(monkeypatch, drains)
+    monkeypatch.setattr(aito_quote_sync, "sync_enabled", _always(serving))
+    monkeypatch.setattr(aito_quote_sync, "CHANGE_PASS_SECONDS", 3600.0)
+    handed: dict = {}
+    terminal_polled = asyncio.Event()
+
+    async def fake_reconcile(db, **kwargs):
+        handed["reconcile_payment_links"] = kwargs.get("serve_due_pushes", "missing")
+
+    async def fake_terminal_poll(db, **kwargs):
+        handed["poll_open_terminal_payments"] = kwargs.get("serve_due_pushes", "missing")
+        terminal_polled.set()
+
+    monkeypatch.setattr(aito_payment_links, "reconcile_payment_links", fake_reconcile)
+    monkeypatch.setattr(aito_terminal_payments, "poll_open_terminal_payments", fake_terminal_poll)
+    loop_task = asyncio.create_task(aito_quote_sync.run_sync_loop())
+    try:
+        await asyncio.wait_for(terminal_polled.wait(), timeout=5)
+        expected = aito_quote_sync._serve_due_pushes if serving else None
+        assert handed == {"reconcile_payment_links": expected, "poll_open_terminal_payments": expected}
     finally:
         await _stop(loop_task)

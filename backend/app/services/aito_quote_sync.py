@@ -3414,7 +3414,10 @@ async def run_sync_loop() -> None:
                     try:
                         from backend.app.services.aito_payment_links import reconcile_payment_links
 
-                        await reconcile_payment_links(db)
+                        # T-157: pushes served between its rows, as in the
+                        # sweep above; only while serving, like the serves
+                        # around it.
+                        await reconcile_payment_links(db, serve_due_pushes=_serve_due_pushes if serving else None)
                     except Exception:
                         logger.exception("Payment-link reconcile failed")
                     if serving:
@@ -3422,7 +3425,7 @@ async def run_sync_loop() -> None:
                     try:
                         from backend.app.services.aito_terminal_payments import poll_open_terminal_payments
 
-                        await poll_open_terminal_payments(db)
+                        await poll_open_terminal_payments(db, serve_due_pushes=_serve_due_pushes if serving else None)
                     except Exception:
                         logger.exception("Terminal payment poll failed")
             except asyncio.CancelledError:
@@ -3477,7 +3480,18 @@ async def run_sync_loop() -> None:
                                     db, fast_retry=retry_only, where="fast-retry" if retry_only else "wake"
                                 )
                             if change_due:
-                                await run_change_pass(db)
+                                # T-156: its own try, like the tick's. Left to
+                                # the handler below, a failure here dropped
+                                # every window that fell due while the pass
+                                # was reading Books — edits waiting for the
+                                # next tick, a Print click timing out on 503.
+                                # Cancellation is not an Exception.
+                                try:
+                                    await run_change_pass(db)
+                                except Exception:
+                                    logger.exception("Aito change pass failed")
+                                    with contextlib.suppress(Exception):
+                                        await db.rollback()
                 except asyncio.CancelledError:
                     raise
                 except Exception:

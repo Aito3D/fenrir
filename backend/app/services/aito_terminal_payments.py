@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
 
 from sqlalchemy import select, update
@@ -706,7 +707,13 @@ async def _age_out_abandoned_reservations(db: AsyncSession, *, now: datetime, li
     return aged
 
 
-async def poll_open_terminal_payments(db: AsyncSession, *, now: datetime | None = None, limit: int = 40) -> int:
+async def poll_open_terminal_payments(
+    db: AsyncSession,
+    *,
+    now: datetime | None = None,
+    limit: int = 40,
+    serve_due_pushes: Callable[[AsyncSession], Awaitable[int]] | None = None,
+) -> int:
     """The tick's sweep: abandoned reservations are aged out (never re-sent —
     see `_age_out_abandoned_reservations`), then every open row, plus paid
     rows whose Zoho booking is still pending or whose settle never committed
@@ -715,7 +722,14 @@ async def poll_open_terminal_payments(db: AsyncSession, *, now: datetime | None 
     Heimdall call). Returns
     the number of rows acted on. A 429 stops the polling half (the
     reconciler's own throttle covers the next tick); so does a
-    `HeimdallUnreachable` (stored on the row it hit), for this pass only."""
+    `HeimdallUnreachable` (stored on the row it hit), for this pass only.
+
+    T-157: the loop passes ``serve_due_pushes`` (its own
+    ``_serve_due_pushes``, handed in to avoid the import cycle), served before
+    each polled row, so a route waiting in ``flush_and_wait`` waits for one
+    Heimdall round trip, not the whole pass. It contains its own failures
+    (logged, rolled back); every row is re-fetched by id after it. Left
+    ``None`` (the default), nothing is served."""
     if not await heimdall_service.is_configured(db):
         return 0
     now = now or _now()
@@ -736,6 +750,8 @@ async def poll_open_terminal_payments(db: AsyncSession, *, now: datetime | None 
     )
     ids = list((await db.execute(stmt)).scalars().all())
     for rid in ids:
+        if serve_due_pushes is not None:
+            await serve_due_pushes(db)
         try:
             row = await db.get(AitoTerminalPayment, rid)
             if row is None:

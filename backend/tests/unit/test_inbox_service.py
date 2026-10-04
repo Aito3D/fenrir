@@ -330,7 +330,7 @@ async def test_a_failing_books_pass_still_purges_the_inbox(db_session, test_engi
 
     tick_done = asyncio.Event()
 
-    async def last_pass(db):
+    async def last_pass(db, **_kwargs):
         tick_done.set()
 
     monkeypatch.setattr(aito_quote_sync, "_wake", asyncio.Event())

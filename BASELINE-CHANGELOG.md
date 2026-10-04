@@ -812,3 +812,94 @@ cancellation check.
 
 - Golden probes re-recorded: none (35/35 match).
 - SURFACE.md sections regenerated: none (`bash tools/gen_surface_aito23.sh` output identical to SURFACE.md).
+
+## T-155 — the quote email refuses a card whose edits have not reached Books (user-approved 2026-10-03)
+
+Sanctions commit <this commit> "refactor(loop-15): T-155 quote email refuses
+unpushed edits (user-approved behavior change)". `get_quote_email` and
+`send_quote_email` in `backend/app/api/routes/aito.py` called
+`ensure_pushed(db, project, strict=True)`, which returns at once when no sync
+worker is serving (quote sync disabled while Books stays configured, or the
+tick's settings read failing). The card stayed `quote_sync_state="pending"`
+and the routes went on to preview, or have Books email, the estimate as it
+was BEFORE the edit. Both now re-check after `ensure_pushed`, mirroring
+`_project_ready_to_invoice`: a card with a quote that is still pending gets
+409 "This quote has changes still syncing to Zoho", and nothing is read from
+or sent through Books, the card does not move and no `quote.emailed` event
+is recorded. Unchanged: a card with no quote yet still gets the 404 "This
+project has no Zoho quote" (the re-check is gated on `quote_id`, matching
+the invoice path, where the no-quote answer comes first); the 503 when a
+serving worker's push does not land; every other check. Pinned by
+`test_the_quote_email_refuses_a_card_still_pending_when_no_worker_pushes_it`
+(GET and POST; fails on the old code) and
+`test_a_pending_card_with_no_quote_yet_still_gets_the_no_quote_404` in
+`backend/tests/unit/test_aito_flush_routes.py`.
+
+- Golden probes re-recorded: none (35/35 match).
+- SURFACE.md sections regenerated: none (`bash tools/gen_surface_aito23.sh` output identical to SURFACE.md).
+
+## T-156 — a failed change pass in the wake lap no longer drops the push windows that fell due during it (user-approved 2026-10-03)
+
+Sanctions commit <this commit> "refactor(loop-15): T-156 wake-lap change pass
+gets its own guard (user-approved behavior change)". In `run_sync_loop`
+(`backend/app/services/aito_quote_sync.py`) the between-tick wake lap called
+`run_change_pass(db)` inside the lap's single try, whose handler logs "Aito
+quote sync wake drain failed" and calls
+`aito_push_schedule.drop_due_except(time.monotonic(), set())`. A change-pass
+failure (a locked database while a watermark commits, a `db.get` raising in
+the reconcile-queue drain) therefore deleted every window that closed while
+the pass was reading Books: those cards stayed pending with no window, so
+nothing woke the loop for them before the next full tick (300 s), and a
+route waiting in `flush_and_wait` answered 503 after its timeout. Now the
+lap's `run_change_pass` has its own try, the same shape as the tick's: on an
+`Exception` it logs "Aito change pass failed" and rolls the session back
+(rollback errors suppressed), leaving the windows standing for the next lap.
+Cancellation still propagates. Unchanged: the outer handler and its
+`drop_due_except`, which now catches only a failure of the serving check or
+of `_drain_pending`; the tick body; every other pass. Pinned by
+`test_a_failing_wake_lap_change_pass_keeps_the_windows_that_fell_due_during_it`
+in `backend/tests/unit/test_aito_push_windows.py` (fails on the old code:
+the window is dropped and no drain follows).
+
+- Golden probes re-recorded: none (35/35 match).
+- SURFACE.md sections regenerated: none (`bash tools/gen_surface_aito23.sh` output identical to SURFACE.md).
+
+## T-157 — pushes are served between the rows of the payment-link and terminal passes (user-approved 2026-10-03)
+
+Sanctions commit <this commit> "refactor(loop-15): T-157 serve due pushes
+inside the Heimdall passes (user-approved behavior change)". `run_sync_loop`
+served due pushes only before and after `reconcile_payment_links`, and not at
+all around `poll_open_terminal_payments`. Each runs up to MAX_POLLS_PER_TICK
+(40) sequential Heimdall calls, so a slow Heimdall held a route waiting in
+`flush_and_wait` past FLUSH_TIMEOUT_SECONDS and Print / Create invoice / Send
+quote answered 503. Both passes now take an optional `serve_due_pushes`
+callback (default `None`: nothing served, as before), the T-102 pattern of
+`sweep_invoices`. `run_sync_loop` hands them `_serve_due_pushes` while
+serving and `None` otherwise. `_run_pass` calls it before each project of
+the reconcile half and each link of the poll half, and the terminal poll
+before each row. A served push ends in `reconcile_payment_links(changes_only=True)`
+on the task already holding `_pass_lock` (not re-entrant), so the module
+records the pass's owning task (`_pass_owner`), and a call from that task
+runs its pass nested between two rows instead of deadlocking. If that nested
+pass hits a 429 and arms the throttle, the outer pass stops (the reconcile
+half returns, the poll half breaks) rather than calling Heimdall again inside
+the window. `_serve_due_pushes` logs and rolls back its own failures, and
+both passes re-fetch every row by id after it, so a failed served push costs
+nothing more. Books calls now interleave with Heimdall calls in a different
+order. Unchanged: every caller that passes no callback (the routes, the
+drain's own changes-only pass, the tests' direct calls), the per-row failure
+handling, the stand-down on `HeimdallUnreachable`. Loop-level test fakes of
+the two passes were widened to accept the new keyword. Pinned by
+`test_the_pass_serves_due_pushes_before_every_project_and_every_poll`,
+`test_a_push_served_mid_pass_reconciles_its_link_nested_instead_of_deadlocking`,
+`test_a_failing_served_push_leaves_the_pass_on_a_sound_session` and the two
+`test_a_429_hit_by_a_*` tests in `backend/tests/unit/test_aito_payment_links.py`,
+plus `test_poll_open_serves_due_pushes_before_every_row` and
+`test_poll_open_serves_nothing_by_default` in
+`backend/tests/unit/test_aito_terminal_payments.py`, and
+`test_the_tick_hands_its_serve_to_the_heimdall_passes_only_while_serving` in
+`backend/tests/unit/test_aito_push_windows.py`. All fail on the old code. The
+nested test times out with the re-entry branch disabled.
+
+- Golden probes re-recorded: none (35/35 match).
+- SURFACE.md sections regenerated: `backend/app/services/aito_terminal_payments.py` signatures. The `poll_open_terminal_payments` line now reads `async def poll_open_terminal_payments(`: the signature gained `serve_due_pushes` and wraps, and the generator keeps the first line only. `reconcile_payment_links` was already wrapped, so its line is unchanged.

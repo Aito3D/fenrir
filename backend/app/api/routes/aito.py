@@ -3295,6 +3295,12 @@ async def get_quote_email(
     # Strict, like the send it previews: the dialog must not open on a quote
     # Books refused the latest edit of.
     await ensure_pushed(db, project, strict=True)
+    if project.quote_id and project.quote_sync_state == "pending":
+        # Reached only when no worker is serving, as in
+        # `_project_ready_to_invoice` (and, as there, a card with no quote yet
+        # keeps its "no Zoho quote" answer): the preview would show the quote
+        # as it was BEFORE the edit.
+        raise HTTPException(status_code=409, detail="This quote has changes still syncing to Zoho")
     content, default_email = await _load_quote_email_content(db, project, project_id)
     return AitoQuoteEmailContent(
         subject=content["subject"],
@@ -3345,6 +3351,12 @@ async def send_quote_email(
     # The quote that goes out must carry the card's latest lines. Strict: an
     # email cannot be recalled, so a push that fails is a refusal.
     await ensure_pushed(db, project, strict=True)
+    if project.quote_id and project.quote_sync_state == "pending":
+        # Reached only when no worker is serving, as in
+        # `_project_ready_to_invoice` (and, as there, a card with no quote yet
+        # keeps its "no Zoho quote" answer): Books would email the quote as it
+        # was BEFORE the edit, and an email cannot be recalled.
+        raise HTTPException(status_code=409, detail="This quote has changes still syncing to Zoho")
     content, _ = await _load_quote_email_content(db, project, project_id, rollback_on_error=True)
 
     # Re-read rather than trust the request. An allowlist the caller supplies

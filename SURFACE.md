@@ -246,7 +246,7 @@ async def poll_changes(db: AsyncSession)
 async def poll_contacts(db: AsyncSession)
 async def poll_invoices(db: AsyncSession)
 async def poll_link(db: AsyncSession, row: AitoPaymentLink, *, now: datetime)
-async def poll_open_terminal_payments(db: AsyncSession, *, now: datetime | None = None, limit: int = 40)
+async def poll_open_terminal_payments(
 async def preferences_for(db: AsyncSession, user_id: int)
 async def preview_estimate(
 async def proofread_field(
