@@ -135,9 +135,12 @@ from backend.app.services.print_scheduler import scheduler as print_scheduler
 from backend.app.services.print_storage import (
     REASON_FTP_TRANSFER_FAILED,
     REASON_FTPS_COOLOFF,
+    REASON_INTERNAL_HISTORY,
+    REASON_INTERNAL_STORAGE,
     external_storage_present,
     ftp_probe_paths,
     print_file_reachable_over_ftp,
+    probe_filenames,
 )
 from backend.app.services.printer_manager import (
     init_printer_connections,
@@ -3563,6 +3566,13 @@ _FALLBACK_3MF_RETRY_DELAYS_SECONDS: tuple[float, ...] = (310.0, 620.0)
 # two cover a printer that stays busy well into the print.
 _FALLBACK_3MF_TRANSFER_RETRY_DELAYS_SECONDS: tuple[float, ...] = (60.0, 240.0, 600.0)
 
+# Retry ladder for a probe that missed on a printer whose card does keep a /cache
+# mirror. An H2 writes that copy a few seconds after the print starts, so the
+# print-start probe can simply be too early: #6522 and #6523 (H2S, 2026-10-03)
+# missed at +2 s while the file was there minutes later. Short and bounded --
+# one probe per rung, and a printer with an empty /cache never gets here.
+_CACHE_MIRROR_RETRY_DELAYS_SECONDS: tuple[float, ...] = (15.0, 60.0, 180.0)
+
 # printer_id -> the in-flight retry task, so print completion can cancel it.
 _fallback_3mf_retry_tasks: dict[int, asyncio.Task] = {}
 
@@ -3580,7 +3590,73 @@ _fallback_3mf_retry_tasks: dict[int, asyncio.Task] = {}
 _fallback_recovery_locks: dict[int, asyncio.Lock] = {}
 
 
-async def _recover_fallback_archive(archive_id: int, source_3mf: Path, printer_id: int) -> bool:
+async def _probe_for_3mf(
+    ip_address: str,
+    access_code: str,
+    printer_model: str | None,
+    names: list[str],
+    judge,
+    socket_timeout: float | None,
+) -> tuple[str, Path, str, str | None] | None:
+    """Look for one of *names* at the bounded probe paths, judging each hit.
+
+    Returns ``(name, local_path, remote_path, verdict)`` for the first hit
+    *judge* does not reject, or None. A rejected hit resumes the walk after the
+    path that served it: root is probed first and keeps stale same-name uploads
+    for months, while the right file sits in /cache. *judge* None accepts the
+    first hit, which is what every caller did before probe hits were checked.
+    """
+    logger = logging.getLogger(__name__)
+    for name in names:
+        local_path = app_settings.archive_dir / "temp" / name
+        local_path.parent.mkdir(parents=True, exist_ok=True)
+        paths = ftp_probe_paths(name)
+        while paths:
+            try:
+                hit = await download_file_try_paths_async(
+                    ip_address,
+                    access_code,
+                    paths,
+                    local_path,
+                    socket_timeout=socket_timeout,
+                    printer_model=printer_model,
+                )
+            except Exception as e:
+                logger.debug("3MF probe for %s failed: %s", name, e)
+                hit = None
+            if not hit:
+                break
+            verdict = judge(local_path, hit) if judge else None
+            if verdict != "rejected":
+                return name, local_path, hit, verdict
+            paths = paths[paths.index(hit) + 1 :] if hit in paths else []
+    return None
+
+
+async def _printer_keeps_cache_mirror(printer) -> bool:
+    """Does this printer's card hold a /cache mirror of its recent jobs?
+
+    The H2s that keep one hold their last eight sliced files there; the ones
+    that do not have an empty or missing /cache (H2C05, H2S03 and X2D01 on
+    2026-10-03). One listing, only after a probe has already missed.
+    """
+    from backend.app.services.bambu_ftp import list_files_async
+
+    try:
+        entries = await list_files_async(
+            printer.ip_address, printer.access_code, "/cache", timeout=20.0, printer_model=printer.model
+        )
+    except Exception as e:
+        logging.getLogger(__name__).debug("Could not list /cache on printer %s: %s", printer.id, e)
+        return False
+    return any(
+        str(entry.get("name", "")).lower().endswith(".3mf") and not entry.get("is_directory") for entry in entries
+    )
+
+
+async def _recover_fallback_archive(
+    archive_id: int, source_3mf: Path, printer_id: int, original_filename: str | None = None
+) -> bool:
     """Fill in a no-3MF archive from a 3MF that turned up later.
 
     Returns True when the row was upgraded. Safe to call speculatively: it
@@ -3588,13 +3664,19 @@ async def _recover_fallback_archive(archive_id: int, source_3mf: Path, printer_i
     is a readable 3MF before touching anything.
 
     Serialised per printer — see ``_fallback_recovery_locks``.
+
+    ``original_filename`` is the print's own file name when *source_3mf* is a
+    temp copy named for whoever downloaded it — the cover endpoint's
+    ``cover_<id>_<name>`` reached the Archives page as #6526's title.
     """
     lock = _fallback_recovery_locks.setdefault(printer_id, asyncio.Lock())
     async with lock:
-        return await _recover_fallback_archive_locked(archive_id, source_3mf, printer_id)
+        return await _recover_fallback_archive_locked(archive_id, source_3mf, printer_id, original_filename)
 
 
-async def _recover_fallback_archive_locked(archive_id: int, source_3mf: Path, printer_id: int) -> bool:
+async def _recover_fallback_archive_locked(
+    archive_id: int, source_3mf: Path, printer_id: int, original_filename: str | None = None
+) -> bool:
     """The body of :func:`_recover_fallback_archive`, under its per-printer lock."""
     import zipfile
 
@@ -3628,6 +3710,7 @@ async def _recover_fallback_archive_locked(archive_id: int, source_3mf: Path, pr
             print_data={**print_data, "status": archive.status or "printing"},
             subtask_id=archive.subtask_id,
             update_archive_id=archive.id,
+            original_filename=original_filename,
         )
         if recovered is None:
             return False
@@ -3650,6 +3733,19 @@ async def _recover_fallback_archive_locked(archive_id: int, source_3mf: Path, pr
             }
         )
         return True
+
+
+def _recovered_filename(name: str, path: Path, printer_id: int) -> str:
+    """The print's own file name for a 3MF a caller downloaded under its own.
+
+    *name* is what the caller asked the printer for; when that is a bare
+    subtask name with no extension, fall back to the temp file's name minus the
+    cover endpoint's ``cover_<printer_id>_`` prefix.
+    """
+    if name and name.lower().endswith(".3mf"):
+        return Path(name).name
+    prefix = f"cover_{printer_id}_"
+    return path.name[len(prefix) :] if path.name.startswith(prefix) else path.name
 
 
 async def try_recover_fallback_archive(printer_id: int, name: str, path: Path) -> bool:
@@ -3688,7 +3784,9 @@ async def try_recover_fallback_archive(printer_id: int, name: str, path: Path) -
             return False
 
     try:
-        return await _recover_fallback_archive(archive_id, path, printer_id)
+        return await _recover_fallback_archive(
+            archive_id, path, printer_id, original_filename=_recovered_filename(name, path, printer_id)
+        )
     except Exception as e:
         # Recovery is opportunistic. A failure here must never take down the
         # caller, which is usually just trying to render a thumbnail.
@@ -3702,6 +3800,7 @@ def _schedule_fallback_3mf_retry(
     filenames: list[str],
     delays: tuple[float, ...] | None = None,
     reason: str = REASON_FTPS_COOLOFF,
+    judge=None,
 ) -> None:
     """Re-attempt the 3MF download after a temporary give-up.
 
@@ -3711,6 +3810,10 @@ def _schedule_fallback_3mf_retry(
     read for the ladder and the log line -- the retry itself is identical, since
     in both cases the file is on the printer and the last attempt at it failed
     for a reason that does not last.
+
+    ``judge(path, remote)`` returns a ``verify_3mf_candidate`` verdict for a
+    file the retry found; a "rejected" one is never attached. The /cache-mirror
+    retry passes one because that directory keeps stale same-name slices.
     """
 
     logger = logging.getLogger(__name__)
@@ -3747,7 +3850,11 @@ def _schedule_fallback_3mf_retry(
             # endpoint routinely does, and its copy is the same bytes.
             for name in filenames:
                 cached = get_cached_3mf(printer_id, name)
-                if cached and await _recover_fallback_archive(archive_id, cached, printer_id):
+                if (
+                    cached
+                    and (judge is None or judge(cached, None) != "rejected")
+                    and await _recover_fallback_archive(archive_id, cached, printer_id, original_filename=name)
+                ):
                     return
 
             if ftps_handshake_blocked(printer_ip):
@@ -3759,6 +3866,7 @@ def _schedule_fallback_3mf_retry(
                 continue
 
             _, _, _, ftp_timeout = await get_ftp_retry_settings()
+            names: list[str] = []
             for candidate in filenames:
                 # Bare name only. These come from the print-start flow, which
                 # already strips the path, but the local temp write must not
@@ -3770,24 +3878,13 @@ def _schedule_fallback_3mf_retry(
                     continue
                 if not name.endswith(".3mf"):
                     name = f"{name}.3mf"
-                temp_path = app_settings.archive_dir / "temp" / name
-                temp_path.parent.mkdir(parents=True, exist_ok=True)
-                try:
-                    hit = await download_file_try_paths_async(
-                        printer_ip,
-                        printer_code,
-                        ftp_probe_paths(name),
-                        temp_path,
-                        socket_timeout=ftp_timeout,
-                        printer_model=printer_model,
-                    )
-                except Exception as e:
-                    logger.debug("[RECOVER] Retry download of %s failed: %s", name, e)
-                    continue
-                if not hit:
-                    continue
+                if name not in names:
+                    names.append(name)
+            found = await _probe_for_3mf(printer_ip, printer_code, printer_model, names, judge, ftp_timeout)
+            if found:
+                name, temp_path, _remote, _verdict = found
                 cache_3mf_download(printer_id, name, temp_path)
-                if await _recover_fallback_archive(archive_id, temp_path, printer_id):
+                if await _recover_fallback_archive(archive_id, temp_path, printer_id, original_filename=name):
                     return
 
             logger.info("[RECOVER] Archive %s still has no 3MF after a retry", archive_id)
@@ -4826,7 +4923,15 @@ async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
         # guessing: the dispatch named the exact file, which is one connection
         # walking five paths rather than the sweep's ~110. Only when the probe
         # comes back empty does the verdict's reason stand.
-        if not storage.reachable and not downloaded_filename and storage.probe_filename:
+        #
+        # A touchscreen reprint names no file at all -- the printer reports
+        # `project_file.gcode.3mf` whatever the job was -- so there the print's
+        # own names stand in for it, and the /cache mirror has it under those
+        # (#6536). Every hit is judged like the sweep's: /cache and / keep stale
+        # same-name slices, and the md5 from the dispatch tells them apart.
+        probe_names = probe_filenames(storage.probe_filename, possible_names)
+        probe_ran = False
+        if not storage.reachable and not downloaded_filename and probe_names:
             if ftps_handshake_blocked(printer.ip_address):
                 # Deliberately NOT recorded as a cool-off give-up. This branch
                 # only runs on an unreachable verdict, and that verdict is the
@@ -4836,28 +4941,22 @@ async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
                 # the sweep #2780 removed (#2957).
                 logger.debug(
                     "Not probing for %s on printer %s: its file service is not answering over TLS",
-                    storage.probe_filename,
+                    probe_names,
                     printer_id,
                 )
             else:
-                probe_path = app_settings.archive_dir / "temp" / storage.probe_filename
-                probe_path.parent.mkdir(parents=True, exist_ok=True)
-                try:
-                    probe_hit = await download_file_try_paths_async(
-                        printer.ip_address,
-                        printer.access_code,
-                        ftp_probe_paths(storage.probe_filename),
-                        probe_path,
-                        socket_timeout=ftp_timeout,
-                        printer_model=printer.model,
-                    )
-                except Exception as e:
-                    logger.debug("3MF probe for %s failed: %s", storage.probe_filename, e)
-                    probe_hit = False
-                if probe_hit:
-                    downloaded_filename = storage.probe_filename
-                    temp_path = probe_path
-                    cache_3mf_download(printer_id, downloaded_filename, probe_path)
+                probe_ran = True
+                found = await _probe_for_3mf(
+                    printer.ip_address,
+                    printer.access_code,
+                    printer.model,
+                    probe_names,
+                    lambda candidate, remote: _judge_candidate(candidate, remote),
+                    ftp_timeout,
+                )
+                if found:
+                    downloaded_filename, temp_path, probe_hit, content_verdict = found
+                    cache_3mf_download(printer_id, downloaded_filename, temp_path)
                     # Naming the path, not just the file: a printer that keeps
                     # uploads around for weeks can serve a same-named copy of an
                     # earlier slice, and without the directory in the log that
@@ -5354,6 +5453,36 @@ async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
                         archive_id=fallback_archive.id,
                         filenames=list(possible_names),
                         reason=no_3mf_reason,
+                    )
+                # An internal-storage miss is usually permanent (#2780) -- but
+                # not on a printer whose card mirrors its jobs to /cache, where
+                # the probe at +2 s can simply beat the copy (#6522). Retry only
+                # there, under the names the probe used, and judge what turns up
+                # against the dispatch md5 and the plate's predicted time, with
+                # the remaining time carried forward from print start.
+                elif (
+                    probe_ran
+                    and no_3mf_reason in (REASON_INTERNAL_STORAGE, REASON_INTERNAL_HISTORY)
+                    and await _printer_keeps_cache_mirror(printer)
+                ):
+                    started = time.monotonic()
+
+                    def _judge_late(candidate, remote=None):
+                        remaining = None
+                        if _reported_remaining:
+                            remaining = max(_reported_remaining - (time.monotonic() - started), 0) or None
+                        verdict, detail = verify_3mf_candidate(candidate, _expected_md5, _verify_plate, remaining)
+                        if verdict == "rejected":
+                            logger.warning("[RECOVER] Rejected late 3MF candidate %s: %s", remote or candidate, detail)
+                        return verdict
+
+                    _schedule_fallback_3mf_retry(
+                        printer_id=printer_id,
+                        archive_id=fallback_archive.id,
+                        filenames=probe_names,
+                        delays=_CACHE_MIRROR_RETRY_DELAYS_SECONDS,
+                        reason=no_3mf_reason,
+                        judge=_judge_late,
                     )
 
                 # Send notification without archive data (file not found)

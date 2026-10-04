@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import posixpath
 import re
 import secrets
 import zipfile
@@ -60,7 +61,7 @@ from backend.app.services.bambu_ftp import (
     get_storage_info_async,
     list_files_result_async,
 )
-from backend.app.services.print_storage import ftp_probe_paths, print_file_reachable_over_ftp
+from backend.app.services.print_storage import ftp_probe_paths, print_file_reachable_over_ftp, probe_filenames
 from backend.app.services.printer_diagnostic import run_connection_diagnostic
 from backend.app.services.printer_manager import (
     display_temperatures,
@@ -1360,18 +1361,22 @@ async def _produce_cover_image(
         # a cover for a print the archive flow did not see start.
         max_retries = 2
         if not storage.reachable:
-            if not storage.probe_filename:
+            # A touchscreen reprint reports the placeholder `project_file`
+            # rather than a name; the print's own names stand in for it, which
+            # is what the card's /cache mirror files it under (#6536).
+            probe_names = probe_filenames(storage.probe_filename, possible_filenames)
+            if not probe_names:
                 _cover_404_cache.setdefault(printer_id, set()).add(cache_key)
                 raise HTTPException(
                     404,
                     f"The print file for '{subtask_name}' is not on storage Fenrir can read over FTPS "
                     f"({storage.reason}), so it has no cover to extract.",
                 )
-            remote_paths = ftp_probe_paths(storage.probe_filename)
+            remote_paths = [path for name in probe_names for path in ftp_probe_paths(name)]
             # The dispatch's name is the authoritative one — a print whose
             # subtask_name has been normalized or truncated would otherwise be
             # cached under a key the archive flow never looks up.
-            temp_filename = storage.probe_filename
+            temp_filename = probe_names[0]
             temp_path = settings.archive_dir / "temp" / f"cover_{printer_id}_{temp_filename}"
             # One look, not three: the printer has already said this file is not
             # here, so a retry storm on top of a hunch is exactly what #2780 was.
@@ -1424,6 +1429,11 @@ async def _produce_cover_image(
                     printer_model=printer.model,
                 )
                 if downloaded:
+                    # Several names can be in play (the subtask variants, or a
+                    # reprint's stand-ins); the one that served the file is the
+                    # one to share it under and to name the archive after.
+                    if isinstance(downloaded, str) and downloaded.lower().endswith(".3mf"):
+                        temp_filename = posixpath.basename(downloaded)
                     break
             except Exception as e:
                 last_error = e

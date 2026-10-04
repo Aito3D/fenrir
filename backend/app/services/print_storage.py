@@ -107,6 +107,9 @@ _PROBE_DIRECTORIES = ("/", "/cache/", "/model/", "/data/", "/data/Metadata/")
 # actually there -- and it would be written to a local temp path too.
 _MAX_PROBE_FILENAME_LENGTH = 255
 
+# The stem of the file an H2 reports for a reprint from its own history.
+_PLACEHOLDER_PRINT_STEM = "project_file"
+
 
 @dataclass(frozen=True)
 class StorageVerdict:
@@ -182,7 +185,20 @@ def probe_filename_from_url(project_url: str | None) -> str | None:
     _scheme, separator, path = project_url.partition("://")
     if not separator:
         return None
-    name = path.rpartition("/")[2].strip()
+    return _safe_3mf_name(path.rpartition("/")[2])
+
+
+def _safe_3mf_name(name: object) -> str | None:
+    """*name* when it is a bare ``.3mf`` filename safe to probe with, else None.
+
+    Both callers' names arrive from the network -- a dispatch URL, a subtask
+    name -- and become a remote path and a local temp filename, so anything
+    that could steer either is refused rather than sanitized: no separators, no
+    traversal, no control characters.
+    """
+    if not isinstance(name, str):
+        return None
+    name = name.strip()
     if not name or len(name) > _MAX_PROBE_FILENAME_LENGTH:
         return None
     # A leading dot is either a traversal segment or a hidden file; neither is
@@ -190,13 +206,53 @@ def probe_filename_from_url(project_url: str | None) -> str | None:
     # is a path separator on the host even though it is a legal character in
     # the printer's own filesystem, which is how a name could reach outside the
     # temp directory it is written to.
-    if name.startswith(".") or "\\" in name:
+    if name.startswith(".") or "/" in name or "\\" in name:
         return None
     if any(character < " " or character == "\x7f" for character in name):
         return None
     if not name.lower().endswith(".3mf"):
         return None
     return name
+
+
+def is_placeholder_print_file(name: str | None) -> bool:
+    """Is *name* the generic file a touchscreen reprint reports?
+
+    An H2 reprinting from its own history announces
+    ``file:///userdata/project_file.gcode.3mf`` whatever the job was called,
+    so the name says nothing about which file it is. The card's ``/cache``
+    mirror keeps the job under its real name (measured on an H2C, 2026-10-03).
+    """
+    if not isinstance(name, str):
+        return False
+    lowered = name.strip().lower()
+    for suffix in (".gcode.3mf", ".3mf"):
+        if lowered.endswith(suffix):
+            lowered = lowered[: -len(suffix)]
+            break
+    return lowered == _PLACEHOLDER_PRINT_STEM
+
+
+def probe_filenames(probe_filename: str | None, candidates: list[str]) -> list[str]:
+    """The names a bounded probe should ask for, best first.
+
+    *probe_filename* is the verdict's name for the file. A real one is the
+    authoritative answer and the only name asked for -- the *candidates*, built
+    from ``subtask_name``, are guesses. The reprint placeholder is not a name
+    at all, so the candidates stand in for it (#6536). No probe name means no
+    probe, whatever the candidates say: that verdict already settled the
+    question (an empty slot).
+    """
+    if not probe_filename:
+        return []
+    if not is_placeholder_print_file(probe_filename):
+        return [probe_filename]
+    names: list[str] = []
+    for candidate in candidates:
+        name = _safe_3mf_name(candidate)
+        if name and not is_placeholder_print_file(name) and name not in names:
+            names.append(name)
+    return names or [probe_filename]
 
 
 def ftp_probe_paths(filename: str) -> list[str]:
