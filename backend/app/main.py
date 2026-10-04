@@ -5318,7 +5318,7 @@ async def _archive_downloaded_print(
         # clean up any stragglers here to avoid leaking disk on retries.
         cached_now = get_cached_3mf(printer_id, downloaded_filename) if downloaded_filename else None
         if temp_path and temp_path.exists() and cached_now != temp_path:
-            temp_path.unlink()
+            temp_path.unlink(missing_ok=True)  # cache eviction can remove it in between
 
 
 async def _create_fallback_archive(
