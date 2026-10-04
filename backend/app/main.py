@@ -5568,6 +5568,277 @@ async def _create_fallback_archive(
         return
 
 
+async def _auto_archive_off_and_unexpected(printer_id: int, data: dict, notification_sent: bool, logger) -> bool:
+    """auto_archive is off: is this print one Fenrir did not dispatch?
+
+    on_print_start's auto_archive-disabled check, moved verbatim. Returns True
+    (after the start notification) for a truly external print, which is not
+    archived; False when an expected print is waiting to be promoted.
+    """
+    # auto-archive disabled — check if there's an expected print (dispatched
+    # by Fenrir via queue/reprint) that already has an archive to promote.
+    # If so, fall through to the expected-print handling below so the archive
+    # is tracked in _active_prints and usage tracking works at completion.
+    _fn = data.get("filename", "")
+    _sn = data.get("subtask_name", "")
+    _check_keys: list[tuple[int, str]] = []
+    if _sn:
+        _check_keys += [
+            (printer_id, _sn),
+            (printer_id, f"{_sn}.3mf"),
+            (printer_id, f"{_sn}.gcode.3mf"),
+        ]
+    if _fn:
+        _base_fn = _fn.split("/")[-1] if "/" in _fn else _fn
+        _check_keys.append((printer_id, _base_fn))
+        _no_archive_base = _base_fn.replace(".gcode", "").replace(".3mf", "")
+        _check_keys += [
+            (printer_id, _no_archive_base),
+            (printer_id, f"{_no_archive_base}.3mf"),
+        ]
+
+    _has_expected = any(k in _expected_prints for k in _check_keys)
+
+    if not _has_expected:
+        # No expected print — truly external print (started from slicer/touchscreen)
+        logger.info("[CALLBACK] Skipping archive - auto_archive: False, no expected print")
+        if not notification_sent:
+            _no_archive_creator: int | None = None
+            for _key in _check_keys:
+                _expected_prints.pop(_key, None)
+                _expected_print_registered_at.pop(_key, None)
+                popped_creator = _expected_print_creators.pop(_key, None)
+                if _no_archive_creator is None:
+                    _no_archive_creator = popped_creator
+            _creator_data = {"created_by_id": _no_archive_creator} if _no_archive_creator else None
+            await _send_print_start_notification(printer_id, data, _creator_data, logger)
+        return True
+    else:
+        logger.info("[CALLBACK] auto_archive disabled but expected print found — promoting archive")
+    return False
+
+
+async def _run_plate_check(db, printer, printer_id: int, logger) -> None:
+    """Pause the print if the camera sees objects on the build plate.
+
+    on_print_start's plate-detection block, moved verbatim, including the
+    commit that releases the pooled connection before the camera work (#2572).
+    """
+    logger.info("[PLATE CHECK] ENTERING plate detection code for printer %s", printer_id)
+    # Release the pooled DB connection before the plate-detection camera
+    # work (a 2.5s light-settle sleep + FTP/camera capture). Only the
+    # printer SELECT has run so far — nothing to persist — so this commit
+    # is a data-noop that ends the read transaction and returns the
+    # connection to the pool during the I/O (issue #2572). expire_on_commit
+    # =False keeps printer.* readable; on_plate_not_empty (rare) and the
+    # archive lookups below re-acquire a fresh connection on next execute.
+    await db.commit()
+    try:
+        from backend.app.services.plate_detection import check_plate_empty
+
+        # Build ROI tuple from printer settings if available
+        roi = None
+        if all(
+            [
+                printer.plate_detection_roi_x is not None,
+                printer.plate_detection_roi_y is not None,
+                printer.plate_detection_roi_w is not None,
+                printer.plate_detection_roi_h is not None,
+            ]
+        ):
+            roi = (
+                printer.plate_detection_roi_x,
+                printer.plate_detection_roi_y,
+                printer.plate_detection_roi_w,
+                printer.plate_detection_roi_h,
+            )
+
+        # Auto-turn on chamber light if it's off for better detection
+        light_was_off = False
+        client = printer_manager.get_client(printer_id)
+        if client and client.state:
+            light_was_off = not client.state.chamber_light
+            if light_was_off:
+                logger.info("[PLATE CHECK] Turning on chamber light for printer %s", printer_id)
+                client.set_chamber_light(True)
+                # Wait for light to physically turn on and camera to adjust exposure
+                await asyncio.sleep(2.5)
+
+        plate_photo_data = None
+        objects_detected = False
+        try:
+            logger.info("[PLATE CHECK] Running plate detection for printer %s", printer_id)
+            plate_result = await check_plate_empty(
+                printer_id=printer_id,
+                ip_address=printer.ip_address,
+                access_code=printer.access_code,
+                model=printer.model,
+                include_debug_image=False,
+                external_camera_url=printer.external_camera_url,
+                external_camera_type=printer.external_camera_type,
+                use_external=printer.external_camera_enabled,
+                roi=roi,
+                external_camera_snapshot_url=printer.external_camera_snapshot_url,
+            )
+
+            objects_detected = not plate_result.needs_calibration and not plate_result.is_empty
+            if objects_detected:
+                # Objects detected - pause the print!
+                logger.warning(
+                    f"[PLATE CHECK] Objects detected on plate for printer {printer_id}! "
+                    f"Confidence: {plate_result.confidence:.0%}, Diff: {plate_result.difference_percent:.1f}%"
+                )
+                pause_client = printer_manager.get_client(printer_id)
+                if pause_client:
+                    pause_client.pause_print()
+                    logger.info("[PLATE CHECK] Print paused for printer %s", printer_id)
+
+                # Snapshot while the light's still on — restoring it first
+                # would leave the notification with a dark photo.
+                try:
+                    plate_photo_data = await _capture_snapshot_for_notification(printer_id, printer, logger)
+                except Exception as snap_err:
+                    logger.warning("[PLATE CHECK] Failed to capture snapshot for printer %s: %s", printer_id, snap_err)
+        finally:
+            # Restore chamber light to original state as soon as the
+            # camera is done with it, whatever happened above.
+            if light_was_off and client:
+                logger.info("[PLATE CHECK] Restoring chamber light to off for printer %s", printer_id)
+                try:
+                    client.set_chamber_light(False)
+                except Exception as light_err:
+                    logger.warning(
+                        "[PLATE CHECK] Failed to restore chamber light for printer %s: %s",
+                        printer_id,
+                        light_err,
+                    )
+
+        if objects_detected:
+            # Send notification about plate not empty
+            await ws_manager.broadcast(
+                {
+                    "type": "plate_not_empty",
+                    "printer_id": printer_id,
+                    "printer_name": printer.name,
+                    "message": f"Objects detected on build plate! Print paused. (Diff: {plate_result.difference_percent:.1f}%)",
+                }
+            )
+
+            # Also send push notification
+            try:
+                await notification_service.on_plate_not_empty(
+                    printer_id=printer_id,
+                    printer_name=printer.name,
+                    db=db,
+                    difference_percent=plate_result.difference_percent,
+                    image_data=plate_photo_data,
+                )
+            except Exception as notif_err:
+                logger.warning("[PLATE CHECK] Failed to send notification: %s", notif_err)
+        else:
+            logger.info("[PLATE CHECK] Plate is empty for printer %s, proceeding with print", printer_id)
+    except Exception as plate_err:
+        # Don't block print on plate detection errors
+        logger.warning("[PLATE CHECK] Plate detection failed for printer %s: %s", printer_id, plate_err)
+
+
+async def _print_start_housekeeping(printer_id: int, data: dict, logger) -> None:
+    """Everything tied to a genuine start moment (skipped on catch-up).
+
+    on_print_start's ``not catch_up`` block, moved verbatim: per-print state
+    resets, the print-start event, missing-spool notice, MQTT relay, usage
+    tracker seeding and smart-plug power-on.
+    """
+    # Clear any stale user-stopped flag from previous print cycles
+    _user_stopped_printers.discard(printer_id)
+    # A new print starts its milestones from zero (#3211). The status path only
+    # resets on progress below 5 while not printing, which a printer that goes
+    # from FINISH at 100% straight into a new print at a preparation-phase 85%
+    # never shows. Not on catch-up: that is the fork's resume of a print already
+    # running across a Fenrir restart, and resetting there would repeat a
+    # milestone mid-print.
+    _last_progress_milestone[printer_id] = 0
+    _kill_switch_notification_tasks.pop(printer_id, None)
+
+    # #1721: drop any leftover pre-captured finish frame from a prior print
+    # so a never-consumed cache entry can't bleed into the new print's photo.
+    _stage22_finish_frames.pop(printer_id, None)
+    # #1867: same for the in-print frame bank — a queued print must not reuse
+    # the previous job's banked frame.
+    _inprint_frame_bank.pop(printer_id, None)
+    _inprint_frame_bank_ts.pop(printer_id, None)
+    # #2547: bind (or clear) the "this print ends with injected End G-code" flag,
+    # so a print Fenrir didn't dispatch drops the previous print's flag instead
+    # of inheriting it. Inside the catch-up gate (unlike upstream): a catch-up
+    # means this process just attached, so the in-memory flag store is empty and
+    # there is nothing stale to drop.
+    print_dispatch_context.adopt(printer_id)
+
+    # Cancel any active bed cooldown waiter for this printer
+    if _bed_cool_waiters.pop(printer_id, None):
+        logger.info("[BED-COOL] Cancelled bed cooldown waiter for printer %s (new print started)", printer_id)
+
+    # Clear cached cover images so the new print's thumbnail is fetched fresh
+    from backend.app.api.routes.printers import clear_cover_cache
+
+    clear_cover_cache(printer_id)
+
+    await ws_manager.send_print_start(printer_id, data)
+
+    # Notify when the print-start AMS mapping references tray slots without spool assignments.
+    await notify_missing_spool_assignments_on_print_start(printer_id, data, logger)
+
+    # MQTT relay - publish print start
+    try:
+        printer_info = printer_manager.get_printer(printer_id)
+        if printer_info:
+            await mqtt_relay.on_print_start(
+                printer_id,
+                printer_info.name,
+                printer_info.serial_number,
+                data.get("filename", ""),
+                data.get("subtask_name", ""),
+            )
+    except Exception:
+        pass  # Don't fail print start callback if MQTT fails
+
+    # Capture AMS tray remain%, the assignment snapshot, the dispatched plate
+    # and mapping, and the seeded tray-change log.
+    #
+    # Unconditional, for both inventory backends. This only *captures* — the
+    # writing is still split, with the internal tracker skipped at completion
+    # when Spoolman owns usage. Spoolman's own durable row (#1820) already
+    # carries its plate-scoped 3MF figures and stored mapping, but not the
+    # tray-change log, and that log is the only record of which spool fed
+    # which layers when AMS Filament Backup swaps trays mid-print. Capturing
+    # it on one side only would leave Spoolman users with the mid-print
+    # restart bug this fixes for everyone else. (Still inside the catch-up
+    # gate: restart recovery restores the persisted session instead of
+    # seeding a fresh capture — see _restore_usage_tracking_session.)
+    try:
+        async with async_session() as db:
+            from backend.app.api.routes.settings import get_setting
+            from backend.app.services.usage_tracker import on_print_start as usage_on_print_start
+
+            _spoolman_on = await get_setting(db, "spoolman_enabled")
+            await usage_on_print_start(
+                printer_id,
+                data,
+                printer_manager,
+                db=db,
+                spoolman_owns_usage=bool(_spoolman_on) and _spoolman_on.lower() == "true",
+            )
+    except Exception as e:
+        logger.warning("Usage tracker on_print_start failed: %s", e)
+
+    # Smart plug automation: turn on plug when print starts
+    try:
+        async with async_session() as db:
+            await smart_plug_manager.on_print_start(printer_id, db)
+    except Exception as e:
+        logger.warning("Smart plug on_print_start failed: %s", e)
+
+
 async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
     """Handle print start - archive the 3MF file immediately.
 
@@ -5590,94 +5861,7 @@ async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
     )
 
     if not catch_up:
-        # Clear any stale user-stopped flag from previous print cycles
-        _user_stopped_printers.discard(printer_id)
-        # A new print starts its milestones from zero (#3211). The status path only
-        # resets on progress below 5 while not printing, which a printer that goes
-        # from FINISH at 100% straight into a new print at a preparation-phase 85%
-        # never shows. Not on catch-up: that is the fork's resume of a print already
-        # running across a Fenrir restart, and resetting there would repeat a
-        # milestone mid-print.
-        _last_progress_milestone[printer_id] = 0
-        _kill_switch_notification_tasks.pop(printer_id, None)
-
-        # #1721: drop any leftover pre-captured finish frame from a prior print
-        # so a never-consumed cache entry can't bleed into the new print's photo.
-        _stage22_finish_frames.pop(printer_id, None)
-        # #1867: same for the in-print frame bank — a queued print must not reuse
-        # the previous job's banked frame.
-        _inprint_frame_bank.pop(printer_id, None)
-        _inprint_frame_bank_ts.pop(printer_id, None)
-        # #2547: bind (or clear) the "this print ends with injected End G-code" flag,
-        # so a print Fenrir didn't dispatch drops the previous print's flag instead
-        # of inheriting it. Inside the catch-up gate (unlike upstream): a catch-up
-        # means this process just attached, so the in-memory flag store is empty and
-        # there is nothing stale to drop.
-        print_dispatch_context.adopt(printer_id)
-
-        # Cancel any active bed cooldown waiter for this printer
-        if _bed_cool_waiters.pop(printer_id, None):
-            logger.info("[BED-COOL] Cancelled bed cooldown waiter for printer %s (new print started)", printer_id)
-
-        # Clear cached cover images so the new print's thumbnail is fetched fresh
-        from backend.app.api.routes.printers import clear_cover_cache
-
-        clear_cover_cache(printer_id)
-
-        await ws_manager.send_print_start(printer_id, data)
-
-        # Notify when the print-start AMS mapping references tray slots without spool assignments.
-        await notify_missing_spool_assignments_on_print_start(printer_id, data, logger)
-
-        # MQTT relay - publish print start
-        try:
-            printer_info = printer_manager.get_printer(printer_id)
-            if printer_info:
-                await mqtt_relay.on_print_start(
-                    printer_id,
-                    printer_info.name,
-                    printer_info.serial_number,
-                    data.get("filename", ""),
-                    data.get("subtask_name", ""),
-                )
-        except Exception:
-            pass  # Don't fail print start callback if MQTT fails
-
-        # Capture AMS tray remain%, the assignment snapshot, the dispatched plate
-        # and mapping, and the seeded tray-change log.
-        #
-        # Unconditional, for both inventory backends. This only *captures* — the
-        # writing is still split, with the internal tracker skipped at completion
-        # when Spoolman owns usage. Spoolman's own durable row (#1820) already
-        # carries its plate-scoped 3MF figures and stored mapping, but not the
-        # tray-change log, and that log is the only record of which spool fed
-        # which layers when AMS Filament Backup swaps trays mid-print. Capturing
-        # it on one side only would leave Spoolman users with the mid-print
-        # restart bug this fixes for everyone else. (Still inside the catch-up
-        # gate: restart recovery restores the persisted session instead of
-        # seeding a fresh capture — see _restore_usage_tracking_session.)
-        try:
-            async with async_session() as db:
-                from backend.app.api.routes.settings import get_setting
-                from backend.app.services.usage_tracker import on_print_start as usage_on_print_start
-
-                _spoolman_on = await get_setting(db, "spoolman_enabled")
-                await usage_on_print_start(
-                    printer_id,
-                    data,
-                    printer_manager,
-                    db=db,
-                    spoolman_owns_usage=bool(_spoolman_on) and _spoolman_on.lower() == "true",
-                )
-        except Exception as e:
-            logger.warning("Usage tracker on_print_start failed: %s", e)
-
-        # Smart plug automation: turn on plug when print starts
-        try:
-            async with async_session() as db:
-                await smart_plug_manager.on_print_start(printer_id, db)
-        except Exception as e:
-            logger.warning("Smart plug on_print_start failed: %s", e)
+        await _print_start_housekeeping(printer_id, data, logger)
 
     # Track if notification was sent (to avoid sending twice). Catch-up mode
     # marks it already-sent: the previous process notified at the real start.
@@ -5696,124 +5880,7 @@ async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
             f"[PLATE CHECK] printer_id={printer_id}, plate_detection_enabled={printer.plate_detection_enabled if printer else 'NO PRINTER'}"
         )
         if printer and printer.plate_detection_enabled and not catch_up:
-            logger.info("[PLATE CHECK] ENTERING plate detection code for printer %s", printer_id)
-            # Release the pooled DB connection before the plate-detection camera
-            # work (a 2.5s light-settle sleep + FTP/camera capture). Only the
-            # printer SELECT has run so far — nothing to persist — so this commit
-            # is a data-noop that ends the read transaction and returns the
-            # connection to the pool during the I/O (issue #2572). expire_on_commit
-            # =False keeps printer.* readable; on_plate_not_empty (rare) and the
-            # archive lookups below re-acquire a fresh connection on next execute.
-            await db.commit()
-            try:
-                from backend.app.services.plate_detection import check_plate_empty
-
-                # Build ROI tuple from printer settings if available
-                roi = None
-                if all(
-                    [
-                        printer.plate_detection_roi_x is not None,
-                        printer.plate_detection_roi_y is not None,
-                        printer.plate_detection_roi_w is not None,
-                        printer.plate_detection_roi_h is not None,
-                    ]
-                ):
-                    roi = (
-                        printer.plate_detection_roi_x,
-                        printer.plate_detection_roi_y,
-                        printer.plate_detection_roi_w,
-                        printer.plate_detection_roi_h,
-                    )
-
-                # Auto-turn on chamber light if it's off for better detection
-                light_was_off = False
-                client = printer_manager.get_client(printer_id)
-                if client and client.state:
-                    light_was_off = not client.state.chamber_light
-                    if light_was_off:
-                        logger.info("[PLATE CHECK] Turning on chamber light for printer %s", printer_id)
-                        client.set_chamber_light(True)
-                        # Wait for light to physically turn on and camera to adjust exposure
-                        await asyncio.sleep(2.5)
-
-                plate_photo_data = None
-                objects_detected = False
-                try:
-                    logger.info("[PLATE CHECK] Running plate detection for printer %s", printer_id)
-                    plate_result = await check_plate_empty(
-                        printer_id=printer_id,
-                        ip_address=printer.ip_address,
-                        access_code=printer.access_code,
-                        model=printer.model,
-                        include_debug_image=False,
-                        external_camera_url=printer.external_camera_url,
-                        external_camera_type=printer.external_camera_type,
-                        use_external=printer.external_camera_enabled,
-                        roi=roi,
-                        external_camera_snapshot_url=printer.external_camera_snapshot_url,
-                    )
-
-                    objects_detected = not plate_result.needs_calibration and not plate_result.is_empty
-                    if objects_detected:
-                        # Objects detected - pause the print!
-                        logger.warning(
-                            f"[PLATE CHECK] Objects detected on plate for printer {printer_id}! "
-                            f"Confidence: {plate_result.confidence:.0%}, Diff: {plate_result.difference_percent:.1f}%"
-                        )
-                        pause_client = printer_manager.get_client(printer_id)
-                        if pause_client:
-                            pause_client.pause_print()
-                            logger.info("[PLATE CHECK] Print paused for printer %s", printer_id)
-
-                        # Snapshot while the light's still on — restoring it first
-                        # would leave the notification with a dark photo.
-                        try:
-                            plate_photo_data = await _capture_snapshot_for_notification(printer_id, printer, logger)
-                        except Exception as snap_err:
-                            logger.warning(
-                                "[PLATE CHECK] Failed to capture snapshot for printer %s: %s", printer_id, snap_err
-                            )
-                finally:
-                    # Restore chamber light to original state as soon as the
-                    # camera is done with it, whatever happened above.
-                    if light_was_off and client:
-                        logger.info("[PLATE CHECK] Restoring chamber light to off for printer %s", printer_id)
-                        try:
-                            client.set_chamber_light(False)
-                        except Exception as light_err:
-                            logger.warning(
-                                "[PLATE CHECK] Failed to restore chamber light for printer %s: %s",
-                                printer_id,
-                                light_err,
-                            )
-
-                if objects_detected:
-                    # Send notification about plate not empty
-                    await ws_manager.broadcast(
-                        {
-                            "type": "plate_not_empty",
-                            "printer_id": printer_id,
-                            "printer_name": printer.name,
-                            "message": f"Objects detected on build plate! Print paused. (Diff: {plate_result.difference_percent:.1f}%)",
-                        }
-                    )
-
-                    # Also send push notification
-                    try:
-                        await notification_service.on_plate_not_empty(
-                            printer_id=printer_id,
-                            printer_name=printer.name,
-                            db=db,
-                            difference_percent=plate_result.difference_percent,
-                            image_data=plate_photo_data,
-                        )
-                    except Exception as notif_err:
-                        logger.warning("[PLATE CHECK] Failed to send notification: %s", notif_err)
-                else:
-                    logger.info("[PLATE CHECK] Plate is empty for printer %s, proceeding with print", printer_id)
-            except Exception as plate_err:
-                # Don't block print on plate detection errors
-                logger.warning("[PLATE CHECK] Plate detection failed for printer %s: %s", printer_id, plate_err)
+            await _run_plate_check(db, printer, printer_id, logger)
 
         if not printer:
             logger.info("[CALLBACK] Skipping archive - printer not found in database")
@@ -5822,46 +5889,8 @@ async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
             return
 
         if not printer.auto_archive:
-            # auto-archive disabled — check if there's an expected print (dispatched
-            # by Fenrir via queue/reprint) that already has an archive to promote.
-            # If so, fall through to the expected-print handling below so the archive
-            # is tracked in _active_prints and usage tracking works at completion.
-            _fn = data.get("filename", "")
-            _sn = data.get("subtask_name", "")
-            _check_keys: list[tuple[int, str]] = []
-            if _sn:
-                _check_keys += [
-                    (printer_id, _sn),
-                    (printer_id, f"{_sn}.3mf"),
-                    (printer_id, f"{_sn}.gcode.3mf"),
-                ]
-            if _fn:
-                _base_fn = _fn.split("/")[-1] if "/" in _fn else _fn
-                _check_keys.append((printer_id, _base_fn))
-                _no_archive_base = _base_fn.replace(".gcode", "").replace(".3mf", "")
-                _check_keys += [
-                    (printer_id, _no_archive_base),
-                    (printer_id, f"{_no_archive_base}.3mf"),
-                ]
-
-            _has_expected = any(k in _expected_prints for k in _check_keys)
-
-            if not _has_expected:
-                # No expected print — truly external print (started from slicer/touchscreen)
-                logger.info("[CALLBACK] Skipping archive - auto_archive: False, no expected print")
-                if not notification_sent:
-                    _no_archive_creator: int | None = None
-                    for _key in _check_keys:
-                        _expected_prints.pop(_key, None)
-                        _expected_print_registered_at.pop(_key, None)
-                        popped_creator = _expected_print_creators.pop(_key, None)
-                        if _no_archive_creator is None:
-                            _no_archive_creator = popped_creator
-                    _creator_data = {"created_by_id": _no_archive_creator} if _no_archive_creator else None
-                    await _send_print_start_notification(printer_id, data, _creator_data, logger)
+            if await _auto_archive_off_and_unexpected(printer_id, data, notification_sent, logger):
                 return
-            else:
-                logger.info("[CALLBACK] auto_archive disabled but expected print found — promoting archive")
 
         # Get the filename and subtask_name
         filename = data.get("filename", "")
