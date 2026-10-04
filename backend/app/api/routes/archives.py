@@ -3876,6 +3876,118 @@ async def get_qrcode(
     )
 
 
+_DEFAULT_BUILD_VOLUME = {"x": 256, "y": 256, "z": 256}
+
+
+def _zip_has_mesh(zf: zipfile.ZipFile, names: list[str]) -> bool:
+    """Whether any ``.model`` entry carries actual mesh data."""
+    for name in names:
+        if name.endswith(".model"):
+            try:
+                content = zf.read(name).decode("utf-8")
+                if "<vertex" in content or "<mesh" in content:
+                    return True
+            except Exception:
+                pass  # Skip unreadable .model entries in archive
+    return False
+
+
+def _read_project_settings(zf: zipfile.ZipFile, names: list[str]) -> dict | None:
+    """``Metadata/project_settings.config`` as a dict, or None if absent or malformed."""
+    if "Metadata/project_settings.config" not in names:
+        return None
+    try:
+        return json.loads(zf.read("Metadata/project_settings.config").decode("utf-8"))
+    except Exception:
+        return None  # Skip malformed project_settings.config
+
+
+def _apply_printable_volume(config_data: dict, volume: dict) -> None:
+    """Set *volume*'s x/y from ``printable_area`` and z from
+    ``printable_height``, each only when it parses."""
+    # Parse printable_area: ['0x0', '256x0', '256x256', '0x256']
+    printable_area = config_data.get("printable_area", [])
+    if printable_area and len(printable_area) >= 3:
+        max_x = 0
+        max_y = 0
+        for coord in printable_area:
+            if "x" in coord:
+                parts = coord.split("x")
+                if len(parts) == 2:
+                    try:
+                        x, y = int(parts[0]), int(parts[1])
+                        max_x = max(max_x, x)
+                        max_y = max(max_y, y)
+                    except ValueError:
+                        pass  # Skip non-numeric printable_area coordinate
+        if max_x > 0 and max_y > 0:
+            volume["x"] = max_x
+            volume["y"] = max_y
+
+    printable_height = config_data.get("printable_height")
+    if printable_height:
+        try:
+            volume["z"] = int(printable_height)
+        except (ValueError, TypeError):
+            pass  # Skip unparseable printable_height value
+
+
+def _source_3mf_info(zf_path: Path) -> tuple[bool, list[str], dict]:
+    """Mesh presence, filament colours and build volume of a source 3MF."""
+    found_mesh = False
+    colors: list[str] = []
+    volume = dict(_DEFAULT_BUILD_VOLUME)
+    try:
+        with zipfile.ZipFile(zf_path, "r") as zf:
+            names = zf.namelist()
+            found_mesh = _zip_has_mesh(zf, names)
+            config_data = _read_project_settings(zf, names)
+            if config_data is not None:
+                try:
+                    _apply_printable_volume(config_data, volume)
+                    for color in config_data.get("filament_colour", []) or []:
+                        if color and isinstance(color, str):
+                            colors.append(color)
+                except Exception:
+                    pass  # Skip malformed project_settings.config
+    except zipfile.BadZipFile:
+        pass  # File is not a valid zip/3MF archive
+    return found_mesh, colors, volume
+
+
+def _slice_info_filament_colors(zf: zipfile.ZipFile, names: list[str]) -> list[str]:
+    """Colours of the filaments a sliced plate uses, indexed by tool (gaps get
+    the default green); empty when slice_info is absent or malformed."""
+    import defusedxml.ElementTree as ET
+
+    slice_colors: list[str] = []
+    if "Metadata/slice_info.config" not in names:
+        return slice_colors
+    try:
+        root = ET.fromstring(zf.read("Metadata/slice_info.config").decode("utf-8"))
+        filament_map: dict[int, str] = {}
+        for f in root.findall(".//filament"):
+            fid = f.get("id")
+            fcolor = f.get("color")
+            try:
+                used_amount = float(f.get("used_g", "0"))
+            except (ValueError, TypeError):
+                used_amount = 0
+            if fid is not None and fcolor:
+                try:
+                    tool_id = int(fid) - 1
+                    if tool_id >= 0 and used_amount > 0:
+                        filament_map[tool_id] = fcolor
+                except ValueError:
+                    pass  # Skip filament entry with non-numeric ID
+        if filament_map:
+            for i in range(max(filament_map.keys()) + 1):
+                slice_colors.append(filament_map.get(i, "#00AE42"))
+    except Exception:
+        pass  # Skip malformed slice_info.config XML
+    return slice_colors
+
+
 @router.get("/{archive_id}/capabilities")
 async def get_archive_capabilities(
     archive_id: int,
@@ -3888,8 +4000,6 @@ async def get_archive_capabilities(
     ),
 ):
     """Check what viewing capabilities are available for this 3MF file."""
-    import defusedxml.ElementTree as ET
-
     user, can_read_all = auth_result
     service = ArchiveService(db)
     archive = _ensure_archive_visible(await service.get_archive(archive_id), user, can_read_all)
@@ -3901,7 +4011,7 @@ async def get_archive_capabilities(
     has_model = False
     has_gcode = False
     has_source = False
-    build_volume = {"x": 256, "y": 256, "z": 256}  # Default to X1/P1 size
+    build_volume = dict(_DEFAULT_BUILD_VOLUME)  # Default to X1/P1 size
     filament_colors: list[str] = []
 
     # Check if source 3MF exists - this is where actual mesh data typically lives
@@ -3911,82 +4021,14 @@ async def get_archive_capabilities(
         if source_path.exists():
             has_source = True
 
-    # Helper function to check for mesh data and extract colors from a 3MF file
-    def extract_3mf_info(zf_path: Path) -> tuple[bool, list[str], dict]:
-        """Extract mesh presence, colors, and build volume from a 3MF file."""
-        found_mesh = False
-        colors: list[str] = []
-        volume = {"x": 256, "y": 256, "z": 256}
-
-        try:
-            with zipfile.ZipFile(zf_path, "r") as zf:
-                names = zf.namelist()
-
-                # Check for 3D model - look for actual mesh data
-                for name in names:
-                    if name.endswith(".model"):
-                        try:
-                            content = zf.read(name).decode("utf-8")
-                            if "<vertex" in content or "<mesh" in content:
-                                found_mesh = True
-                                break
-                        except Exception:
-                            pass  # Skip unreadable .model entries in archive
-
-                # Extract filament colors from project_settings.config
-                if "Metadata/project_settings.config" in names:
-                    try:
-                        config_content = zf.read("Metadata/project_settings.config").decode("utf-8")
-                        config_data = json.loads(config_content)
-
-                        # Parse printable_area: ['0x0', '256x0', '256x256', '0x256']
-                        printable_area = config_data.get("printable_area", [])
-                        if printable_area and len(printable_area) >= 3:
-                            max_x = 0
-                            max_y = 0
-                            for coord in printable_area:
-                                if "x" in coord:
-                                    parts = coord.split("x")
-                                    if len(parts) == 2:
-                                        try:
-                                            x, y = int(parts[0]), int(parts[1])
-                                            max_x = max(max_x, x)
-                                            max_y = max(max_y, y)
-                                        except ValueError:
-                                            pass  # Skip non-numeric printable_area coordinate
-                            if max_x > 0 and max_y > 0:
-                                volume["x"] = max_x
-                                volume["y"] = max_y
-
-                        # Parse printable_height
-                        printable_height = config_data.get("printable_height")
-                        if printable_height:
-                            try:
-                                volume["z"] = int(printable_height)
-                            except (ValueError, TypeError):
-                                pass  # Skip unparseable printable_height value
-
-                        # Extract filament colors
-                        raw_colors = config_data.get("filament_colour", [])
-                        if raw_colors:
-                            for color in raw_colors:
-                                if color and isinstance(color, str):
-                                    colors.append(color)
-                    except Exception:
-                        pass  # Skip malformed project_settings.config
-        except zipfile.BadZipFile:
-            pass  # File is not a valid zip/3MF archive
-
-        return found_mesh, colors, volume
-
     # First check source 3MF for mesh data and colors (preferred for 3D model viewing)
     if has_source and source_path:
-        source_has_mesh, source_colors, source_volume = extract_3mf_info(source_path)
+        source_has_mesh, source_colors, source_volume = _source_3mf_info(source_path)
         if source_has_mesh:
             has_model = True
         if source_colors:
             filament_colors = source_colors
-        if source_volume["x"] != 256 or source_volume["y"] != 256 or source_volume["z"] != 256:
+        if source_volume != _DEFAULT_BUILD_VOLUME:
             build_volume = source_volume
 
     try:
@@ -4000,93 +4042,25 @@ async def get_archive_capabilities(
 
             # Check for 3D model in sliced file (fallback if no source)
             if not has_model:
-                for name in names:
-                    if name.endswith(".model"):
-                        try:
-                            content = zf.read(name).decode("utf-8")
-                            if "<vertex" in content or "<mesh" in content:
-                                has_model = True
-                                break
-                        except Exception:
-                            pass  # Skip unreadable .model entries in archive
+                has_model = _zip_has_mesh(zf, names)
 
-            # Extract filament colors from slice_info.config (for gcode preview)
-            # These are the actual filaments used in the print, indexed by tool/extruder
-            slice_colors: list[str] = []
-            if "Metadata/slice_info.config" in names:
-                try:
-                    slice_content = zf.read("Metadata/slice_info.config").decode("utf-8")
-                    root = ET.fromstring(slice_content)
+            # Use slice_info colors (the filaments the print actually used,
+            # indexed by tool) if we don't have colors from source yet
+            if not filament_colors:
+                filament_colors = _slice_info_filament_colors(zf, names) or filament_colors
 
-                    filaments = root.findall(".//filament")
-                    filament_map: dict[int, str] = {}
-                    for f in filaments:
-                        fid = f.get("id")
-                        fcolor = f.get("color")
-                        used_g = f.get("used_g", "0")
-                        try:
-                            used_amount = float(used_g)
-                        except (ValueError, TypeError):
-                            used_amount = 0
-
-                        if fid is not None and fcolor:
-                            try:
-                                tool_id = int(fid) - 1
-                                if tool_id >= 0 and used_amount > 0:
-                                    filament_map[tool_id] = fcolor
-                            except ValueError:
-                                pass  # Skip filament entry with non-numeric ID
-
-                    if filament_map:
-                        max_tool = max(filament_map.keys())
-                        for i in range(max_tool + 1):
-                            slice_colors.append(filament_map.get(i, "#00AE42"))
-                except Exception:
-                    pass  # Skip malformed slice_info.config XML
-
-            # Use slice_info colors if we don't have colors from source yet
-            if not filament_colors and slice_colors:
-                filament_colors = slice_colors
-
-            # Extract build volume from sliced file if not already set from source
+            # Extract build volume from sliced file if not already set from
+            # source, and its project colours as the last fallback. One guard
+            # for both, as before: a malformed value skips the rest.
             if build_volume["x"] == 256 and build_volume["y"] == 256:
-                if "Metadata/project_settings.config" in names:
+                config_data = _read_project_settings(zf, names)
+                if config_data is not None:
                     try:
-                        config_content = zf.read("Metadata/project_settings.config").decode("utf-8")
-                        config_data = json.loads(config_content)
-
-                        printable_area = config_data.get("printable_area", [])
-                        if printable_area and len(printable_area) >= 3:
-                            max_x = 0
-                            max_y = 0
-                            for coord in printable_area:
-                                if "x" in coord:
-                                    parts = coord.split("x")
-                                    if len(parts) == 2:
-                                        try:
-                                            x, y = int(parts[0]), int(parts[1])
-                                            max_x = max(max_x, x)
-                                            max_y = max(max_y, y)
-                                        except ValueError:
-                                            pass  # Skip non-numeric printable_area coordinate
-                            if max_x > 0 and max_y > 0:
-                                build_volume["x"] = max_x
-                                build_volume["y"] = max_y
-
-                        printable_height = config_data.get("printable_height")
-                        if printable_height:
-                            try:
-                                build_volume["z"] = int(printable_height)
-                            except (ValueError, TypeError):
-                                pass  # Skip unparseable printable_height value
-
-                        # Fallback colors from project_settings if still empty
+                        _apply_printable_volume(config_data, build_volume)
                         if not filament_colors:
-                            raw_colors = config_data.get("filament_colour", [])
-                            if raw_colors:
-                                for color in raw_colors:
-                                    if color and isinstance(color, str):
-                                        filament_colors.append(color)
+                            for color in config_data.get("filament_colour", []) or []:
+                                if color and isinstance(color, str):
+                                    filament_colors.append(color)
                     except Exception:
                         pass  # Skip malformed project_settings.config
 
