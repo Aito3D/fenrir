@@ -2,7 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useToast } from '../contexts/ToastContext';
 import { useTranslation } from 'react-i18next';
-import { api, ApiError } from '../api/client';
+import { api, ApiError, bumpArchiveThumbnail } from '../api/client';
 import { inventoryLocationsQueryKey, inventorySuppliersQueryKey } from '../utils/inventoryQueries';
 import { useBoardSync } from './useBoardSync';
 import { registerPresenceSender, setAitoPresenceState } from './useAitoPresence';
@@ -406,13 +406,15 @@ export function useWebSocket() {
       }
 
       case 'archive_created':
+      case 'archive_updated': {
+        // A new archive can reuse a deleted one's id, and an updated one can
+        // have a new cover (a 3MF filled in later): move its thumbnail URL on.
+        const archiveId = (message as unknown as { data?: { id?: number } }).data?.id;
+        if (typeof archiveId === 'number') bumpArchiveThumbnail(archiveId);
         debouncedInvalidate('archives');
-        debouncedInvalidate('archiveStats');
+        if (message.type === 'archive_created') debouncedInvalidate('archiveStats');
         break;
-
-      case 'archive_updated':
-        debouncedInvalidate('archives');
-        break;
+      }
 
       case 'pong':
         // Keepalive response, ignore
