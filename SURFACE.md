@@ -467,6 +467,7 @@ def with_tracking_sms(message: str, url: str)
 ## Pydantic schemas + ORM model class names
 ```regen: grep -hoE "^class [A-Za-z0-9_]+" backend/app/schemas/aito.py backend/app/schemas/heimdall.py backend/app/models/aito_*.py backend/app/schemas/inbox.py backend/app/models/notification_inbox.py | sort```
 ```
+class _OptionalClientContactChecks
 class AitoClientEdit
 class AitoClientHistoryCard
 class AitoClientHistoryResponse

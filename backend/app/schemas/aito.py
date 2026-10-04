@@ -277,7 +277,28 @@ class AitoTaskResponse(AitoTaskBase):
     updated_at: datetime
 
 
-class AitoProjectCreate(AitoShippingInput, AitoClientSocialInput):
+class _OptionalClientContactChecks:
+    # The optional client_email/client_phone checks shared by every schema that
+    # carries a card's client (AitoProjectCreate, AitoClientTransfer,
+    # AitoProjectUpdate). A validators-only mixin, deliberately NOT a
+    # BaseModel and holding no fields: each schema keeps declaring its own
+    # client fields, so their caps and JSON-schema order stay exactly where
+    # they are. Pydantic collects these validators from the subclass's MRO.
+    # None skips the check; AitoClientEdit's non-optional email/phone keep
+    # their own validators.
+
+    @field_validator("client_email")
+    @classmethod
+    def _validate_client_email(cls, value: str | None) -> str | None:
+        return value if value is None else _check_email(value)
+
+    @field_validator("client_phone")
+    @classmethod
+    def _validate_client_phone(cls, value: str | None) -> str | None:
+        return value if value is None else _check_phone(value)
+
+
+class AitoProjectCreate(AitoShippingInput, AitoClientSocialInput, _OptionalClientContactChecks):
     # 10_000 is generous headroom over anything a human types — it exists to keep a
     # pathological payload from ballooning the row or the AI summarizer's prompt.
     description: str = Field(min_length=1, max_length=10_000)
@@ -361,16 +382,6 @@ class AitoProjectCreate(AitoShippingInput, AitoClientSocialInput):
     # impression service, so a large batch of IDENTICAL prints is one task,
     # not many. Chosen inside the user-approved 200-500 range.
     tasks: list[AitoTaskCreate] = Field(default_factory=list, max_length=300)
-
-    @field_validator("client_email")
-    @classmethod
-    def _validate_client_email(cls, value: str | None) -> str | None:
-        return value if value is None else _check_email(value)
-
-    @field_validator("client_phone")
-    @classmethod
-    def _validate_client_phone(cls, value: str | None) -> str | None:
-        return value if value is None else _check_phone(value)
 
     @field_validator("quote_status", mode="before")
     @classmethod
@@ -493,7 +504,7 @@ class AitoTaskTransfer(BaseModel):
         return value
 
 
-class AitoClientTransfer(BaseModel):
+class AitoClientTransfer(BaseModel, _OptionalClientContactChecks):
     """PUT /aito/{id}/transfer-client — the card changes hands. Same caps and
     phone/email checks as AitoProjectCreate's client fields; the social pair
     is NOT accepted (it belonged to the old client and is cleared)."""
@@ -505,18 +516,8 @@ class AitoClientTransfer(BaseModel):
     client_is_company: bool | None = None
     client_contact_person_id: str | None = Field(default=None, max_length=50)
 
-    @field_validator("client_email")
-    @classmethod
-    def _validate_client_email(cls, value: str | None) -> str | None:
-        return value if value is None else _check_email(value)
 
-    @field_validator("client_phone")
-    @classmethod
-    def _validate_client_phone(cls, value: str | None) -> str | None:
-        return value if value is None else _check_phone(value)
-
-
-class AitoProjectUpdate(AitoShippingInput, AitoClientSocialInput):
+class AitoProjectUpdate(AitoShippingInput, AitoClientSocialInput, _OptionalClientContactChecks):
     """Content edits from the card detail panel. Ordering (column/position) is
     owned by the /move endpoint and deliberately not accepted here."""
 
@@ -564,16 +565,6 @@ class AitoProjectUpdate(AitoShippingInput, AitoClientSocialInput):
         if not value.strip():
             raise ValueError("description must not be blank")
         return value
-
-    @field_validator("client_email")
-    @classmethod
-    def _validate_client_email(cls, value: str | None) -> str | None:
-        return value if value is None else _check_email(value)
-
-    @field_validator("client_phone")
-    @classmethod
-    def _validate_client_phone(cls, value: str | None) -> str | None:
-        return value if value is None else _check_phone(value)
 
 
 AitoFlag = Literal["urgent", "sav", "pause", "fiverr"]

@@ -522,3 +522,24 @@ locale changes.
 
 - SURFACE.md sections regenerated: "Frontend exported symbols" (+1 line, additions only).
 - Golden probes re-recorded: none (35/35 match).
+
+## 2026-10-02 — campaign 23, T-138: additive internal class _OptionalClientContactChecks (sanctioned re-baseline, not a behavior change)
+
+Sanctions commit <this commit> "refactor(loop-10): T-138 share the optional
+client email/phone validators across the client-bearing schemas". The
+`client_email` / `client_phone` field validators (None passes, otherwise
+`_check_email` / `_check_phone`), pasted verbatim into AitoProjectCreate,
+AitoClientTransfer and AitoProjectUpdate, moved into the new validators-only
+mixin `_OptionalClientContactChecks` in `backend/app/schemas/aito.py`, which
+the three models now inherit. The mixin is a plain class, not a BaseModel, and
+declares no fields: every model keeps its own client field declarations, so
+field names, caps, defaults, model_fields order and JSON-schema order are
+unchanged (pinned per model by the new
+`backend/tests/unit/test_aito_schema_client_contact.py`: accept/reject
+outcomes, exact error type/loc/msg, field order and a sha256 of each ordered
+JSON schema, all captured from the unchanged code). AitoClientEdit's
+non-optional email/phone validators were left as they are. Being a plain
+class, it does not appear in the "Pydantic schema fields" section.
+
+- SURFACE.md sections regenerated: "Pydantic schemas + ORM model class names" (+1 line, additions only).
+- Golden probes re-recorded: none (35/35 match).
