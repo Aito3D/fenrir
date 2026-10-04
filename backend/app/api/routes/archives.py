@@ -81,6 +81,10 @@ _PRINTER_MEDIA_LIST_TIMEOUT_SECONDS = 8.0
 _PROJECT_SETTINGS_PATH = "Metadata/project_settings.config"
 
 
+# rescan-all / backfill-hashes commit this often, so a long run keeps its
+# progress and never holds one write transaction for minutes.
+_RESCAN_COMMIT_EVERY = 100
+
 # Caps for the uploads that are still read into memory (their consumers take
 # bytes). 3MF, source and F3D uploads stream to disk under
 # ``library_max_upload_bytes`` instead.
@@ -2184,24 +2188,36 @@ async def rescan_all_archives(
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_ALL),
 ):
-    """Rescan all archives and update their metadata."""
+    """Rescan all archives and update their metadata.
+
+    Live archives with a 3MF only: a no-3MF fallback has nothing to rescan
+    (reporting it as "File not found" flooded the result on H2 installs), and a
+    soft-deleted archive is gone. Each parse runs in a worker thread -- on the
+    event loop a few thousand of them froze MQTT, the WebSocket and the cameras
+    for minutes -- and progress is committed in batches.
+    """
+    from sqlalchemy.orm import defer
+
     from backend.app.services.archive import ThreeMFParser
 
-    result = await db.execute(select(PrintArchive))
+    result = await db.execute(
+        select(PrintArchive)
+        .options(defer(PrintArchive.extra_data))
+        .where(PrintArchive.deleted_at.is_(None), PrintArchive.file_path != "")
+    )
     archives = list(result.scalars().all())
 
     updated = 0
     errors = []
 
-    for archive in archives:
+    for index, archive in enumerate(archives, start=1):
         try:
             file_path = settings.base_dir / archive.file_path
             if not file_path.is_file():
                 errors.append({"id": archive.id, "error": "File not found"})
                 continue
 
-            parser = ThreeMFParser(file_path)
-            metadata = parser.parse()
+            metadata = await asyncio.to_thread(lambda path=file_path: ThreeMFParser(path).parse())
 
             if metadata.get("filament_type"):
                 archive.filament_type = metadata["filament_type"]
@@ -2226,6 +2242,8 @@ async def rescan_all_archives(
         except Exception as e:
             logger.exception("Failed to rescan archive %s: %s", archive.id, e)
             errors.append({"id": archive.id, "error": "Failed to parse 3MF file"})
+        if index % _RESCAN_COMMIT_EVERY == 0:
+            await db.commit()
 
     await db.commit()
     return {"updated": updated, "errors": errors}
@@ -2263,25 +2281,41 @@ async def backfill_content_hashes(
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_ALL),
 ):
-    """Compute and store content hashes for all archives missing them."""
-    result = await db.execute(select(PrintArchive).where(PrintArchive.content_hash.is_(None)))
+    """Compute and store content hashes for all archives missing them.
+
+    Same shape as rescan-all: live archives with a 3MF, hashed in a worker
+    thread, committed in batches.
+    """
+    from sqlalchemy.orm import defer
+
+    result = await db.execute(
+        select(PrintArchive)
+        .options(defer(PrintArchive.extra_data))
+        .where(
+            PrintArchive.content_hash.is_(None),
+            PrintArchive.deleted_at.is_(None),
+            PrintArchive.file_path != "",
+        )
+    )
     archives = list(result.scalars().all())
 
     updated = 0
     errors = []
 
-    for archive in archives:
+    for index, archive in enumerate(archives, start=1):
         try:
             file_path = settings.base_dir / archive.file_path
             if not file_path.is_file():
                 errors.append({"id": archive.id, "error": "File not found"})
                 continue
 
-            archive.content_hash = ArchiveService.compute_file_hash(file_path)
+            archive.content_hash = await asyncio.to_thread(ArchiveService.compute_file_hash, file_path)
             updated += 1
         except Exception as e:
             logger.exception("Failed to compute hash for archive %s: %s", archive.id, e)
             errors.append({"id": archive.id, "error": "Failed to compute hash"})
+        if index % _RESCAN_COMMIT_EVERY == 0:
+            await db.commit()
 
     await db.commit()
     return {"updated": updated, "errors": errors}
