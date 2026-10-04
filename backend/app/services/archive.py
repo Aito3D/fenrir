@@ -1476,7 +1476,19 @@ class ArchiveService:
         archive_dir = (
             settings.archive_dir / printer_folder / archive_name
         )  # SEC-PATH-OK: printer_folder = str(int|None) → digits or "unassigned"; archive_name = f"{timestamp}_{display_stem}" where resolve_display_stem strips path components via Path(filename).name
-        archive_dir.mkdir(parents=True, exist_ok=True)
+        # Every archive owns its folder. The name is only second-resolution, so
+        # two same-name files archived within a second used to share one: the
+        # second overwrote the first's 3MF, and deleting either removed both.
+        archive_dir.parent.mkdir(parents=True, exist_ok=True)
+        base_dir_name = archive_dir.name
+        suffix = 1
+        while True:
+            try:
+                archive_dir.mkdir(exist_ok=False)
+                break
+            except FileExistsError:
+                suffix += 1
+                archive_dir = archive_dir.with_name(f"{base_dir_name}_{suffix}")
 
         # Copy 3MF file with an explicit fsync'd loop (avoids a sendfile
         # short-read quirk that silently truncated 3MF archives on some
@@ -1506,9 +1518,8 @@ class ArchiveService:
                 dst_size,
             )
             # Narrow cleanup: remove only the truncated file and the archive
-            # directory if it's now empty. archive_dir was created with
-            # exist_ok=True so it could in theory pre-date this call (e.g.
-            # same-second same-filename collision); rmtree would be too broad.
+            # directory if it's now empty. The directory is this call's own
+            # (created exclusively above), but the narrow form costs nothing.
             try:
                 dest_file.unlink()
             except OSError:
