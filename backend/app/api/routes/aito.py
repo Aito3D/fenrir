@@ -2281,6 +2281,7 @@ async def apply_invoice_deposit(
     """Spend part or all of one of this quote's deposits on its open invoice.
     Every figure is re-read from Books; see aito_deposit_apply."""
     project = await _get_active_project_or_404(db, project_id)
+    quote_id, client_id = project.quote_id or "", project.client_id or ""
     try:
         fresh = await apply_deposit(
             db,
@@ -2290,8 +2291,6 @@ async def apply_invoice_deposit(
             amount=payload.amount,
             actor_name=_actor(current_user),
         )
-        invoices = await zoho_service.list_project_invoices(db, project.quote_id or "", project.client_id or "")
-        url = await zoho_service.books_invoice_url(db, payload.invoice_id)
     except DepositNotFound as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
     except DepositAmountTooHigh as e:
@@ -2303,6 +2302,16 @@ async def apply_invoice_deposit(
     except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
         logger.warning("Aito deposit apply failed for project %s: %s", project_id, e)
         raise HTTPException(status_code=502, detail=str(e)) from e
+    # The deposit is already applied; these only decorate the response, so a
+    # Books failure degrades them rather than reporting the apply as failed.
+    try:
+        invoices = await zoho_service.list_project_invoices(db, quote_id, client_id)
+    except (ZohoNotConfiguredError, ZohoUpstreamError):
+        invoices = []
+    try:
+        url = await zoho_service.books_invoice_url(db, payload.invoice_id)
+    except (ZohoNotConfiguredError, ZohoUpstreamError):
+        url = ""
     return AitoInvoiceResponse(**fresh, url=url, invoice_count=len(invoices) or 1)
 
 

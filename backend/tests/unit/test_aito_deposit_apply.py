@@ -5,7 +5,7 @@ from sqlalchemy import select
 
 from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
-from backend.app.services.zoho import zoho_service
+from backend.app.services.zoho import ZohoRateLimited, ZohoUpstreamError, zoho_service
 
 
 async def _project(db, **fields) -> AitoProject:
@@ -185,7 +185,27 @@ async def test_amount_above_what_books_now_allows_is_refused(async_client, db_se
 @pytest.mark.asyncio
 async def test_retainer_of_another_job_is_404(async_client, db_session, monkeypatch):
     p = await _project(db_session)
-    books = _Books(monkeypatch)
+    books = _Books(
+        monkeypatch,
+        payments=[
+            {
+                "payment_id": "P1",
+                "payment_number": "1",
+                "retainerinvoice_id": "RET1",
+                "amount": 7000.0,
+                "unused_amount": 7000.0,
+                "date": "2026-09-01",
+            },
+            {
+                "payment_id": "P9",
+                "payment_number": "9",
+                "retainerinvoice_id": "RET9",
+                "amount": 500.0,
+                "unused_amount": 500.0,
+                "date": "2026-08-01",
+            },
+        ],
+    )
     r = await async_client.post(
         f"/api/v1/aito/{p.id}/invoice-deposits/apply",
         json={"invoice_id": "INV1", "retainer_id": "RET9", "amount": 100},
@@ -213,3 +233,61 @@ async def test_zero_amount_is_422(async_client, db_session, monkeypatch):
         json={"invoice_id": "INV1", "retainer_id": "RET1", "amount": 0},
     )
     assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("exc", [ZohoUpstreamError("boom"), ZohoRateLimited("slow down")])
+async def test_reread_failure_after_apply_still_succeeds_and_keeps_the_event(
+    async_client, db_session, monkeypatch, exc
+):
+    p = await _project(db_session)
+    pid = p.id
+    books = _Books(monkeypatch)
+
+    async def failing(db, invoice_id):
+        raise exc
+
+    monkeypatch.setattr(zoho_service, "get_invoice", failing)
+    monkeypatch.setattr(zoho_service, "books_invoice_url", failing)
+    r = await async_client.post(
+        f"/api/v1/aito/{p.id}/invoice-deposits/apply",
+        json={"invoice_id": "INV1", "retainer_id": "RET1", "amount": 5000},
+    )
+    assert r.status_code == 200, r.text
+    assert books.applied == [("INV1", [{"payment_id": "P1", "amount_applied": 5000.0}])]
+    assert r.json()["balance"] == 9000.0
+    assert r.json()["url"] == ""
+    db_session.expire_all()
+    events = (
+        (
+            await db_session.execute(
+                select(AitoEvent).where(AitoEvent.project_id == pid, AitoEvent.kind == "invoice.deposit_applied")
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(events) == 1
+    await db_session.refresh(p)
+    assert p.invoice_balance == 9000.0
+
+
+@pytest.mark.asyncio
+async def test_failure_in_apply_is_502_and_records_nothing(async_client, db_session, monkeypatch):
+    p = await _project(db_session)
+    _Books(monkeypatch)
+
+    async def failing(db, invoice_id, invoice_payments):
+        raise ZohoUpstreamError("boom")
+
+    monkeypatch.setattr(zoho_service, "apply_invoice_credits", failing)
+    r = await async_client.post(
+        f"/api/v1/aito/{p.id}/invoice-deposits/apply",
+        json={"invoice_id": "INV1", "retainer_id": "RET1", "amount": 5000},
+    )
+    assert r.status_code == 502
+    db_session.expire_all()
+    events = (
+        (await db_session.execute(select(AitoEvent).where(AitoEvent.kind == "invoice.deposit_applied"))).scalars().all()
+    )
+    assert events == []

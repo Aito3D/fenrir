@@ -8,6 +8,8 @@ the client's numbers only say what the operator MEANT, never what is true."""
 
 from __future__ import annotations
 
+import logging
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.aito_project import AitoProject
@@ -15,7 +17,9 @@ from backend.app.services import aito_events
 from backend.app.services.aito_customer_credit import read_customer_credit
 from backend.app.services.aito_invoice_create import RetainerCredit, customer_credits, share_out
 from backend.app.services.aito_invoice_sweep import linked_credits
-from backend.app.services.zoho import zoho_service
+from backend.app.services.zoho import ZohoNotConfiguredError, ZohoUpstreamError, zoho_service
+
+logger = logging.getLogger(__name__)
 
 # Books keeps cents; a client-side float may differ in the last digit.
 _CENT = 0.005
@@ -52,6 +56,8 @@ async def apply_deposit(
     amount: float,
     actor_name: str | None,
 ) -> dict:
+    amount = round(amount, 2)
+    project_id, client_id = project.id, project.client_id
     invoice, credits = await project_deposits(db, project)
     if invoice is None or str(invoice.get("id")) != invoice_id:
         raise DepositNotFound("That invoice is not this project's open invoice")
@@ -67,12 +73,12 @@ async def apply_deposit(
     await zoho_service.apply_invoice_credits(db, invoice_id, payments)
     await aito_events.record(
         db,
-        project.id,
+        project_id,
         "invoice.deposit_applied",
         actor_class="user",
         actor_name=actor_name,
         subject_type="project",
-        subject_id=project.id,
+        subject_id=project_id,
         detail={
             "retainer_number": credit.number,
             "invoice_number": str(invoice.get("number") or ""),
@@ -80,11 +86,28 @@ async def apply_deposit(
             "source": "manual",
         },
     )
-    fresh = await zoho_service.get_invoice(db, invoice_id) or invoice
+    # The money has moved: keep the record before anything else can fail, so a
+    # retry never sees a deposit that was spent without a trace.
+    await db.commit()
+
+    # Everything below is a best-effort refresh (same stance as the sweep): a
+    # Books hiccup must not turn a successful application into an error.
+    try:
+        fresh = await zoho_service.get_invoice(db, invoice_id)
+    except (ZohoNotConfiguredError, ZohoUpstreamError) as exc:
+        logger.warning("Deposit applied to invoice %s but it could not be re-read: %s", invoice_id, exc)
+        fresh = None
+    if not fresh:
+        balance = max(float(invoice.get("balance") or 0) - amount, 0.0)
+        fresh = {**invoice, "balance": round(balance, 2)}
     project.invoice_status = fresh.get("status") or None
     project.invoice_balance = float(fresh.get("balance") or 0)
     project.invoice_due_date = fresh.get("due_date") or None
-    credit_total = await read_customer_credit(db, project.client_id)
+    try:
+        credit_total = await read_customer_credit(db, client_id)
+    except (ZohoNotConfiguredError, ZohoUpstreamError) as exc:
+        logger.warning("Deposit applied to invoice %s but customer credit could not be read: %s", invoice_id, exc)
+        credit_total = None
     if credit_total is not None:
         project.customer_credit_total = credit_total
     await db.commit()

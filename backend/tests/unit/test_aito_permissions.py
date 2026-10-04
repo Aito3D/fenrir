@@ -140,14 +140,14 @@ WRITE_ROUTES = [
         {"document_id": "x", "amount": 1},
     ),
     ("cancel_invoice_payment_link", "post", f"/api/v1/aito/{_MISSING_ID}/payment-link/1/cancel", None),
-    # T-037: found by the dynamic sweep below — gated with AITO_UPDATE like
-    # every other mutation here, but never hand-added to this list.
     (
         "apply_invoice_deposit",
         "post",
         f"/api/v1/aito/{_MISSING_ID}/invoice-deposits/apply",
         {"invoice_id": "i", "retainer_id": "r", "amount": 1},
     ),
+    # T-037: found by the dynamic sweep below — gated with AITO_UPDATE like
+    # every other mutation here, but never hand-added to this list.
     ("set_project_due_date", "patch", f"/api/v1/aito/{_MISSING_ID}/due-date", {"due_date": "2026-01-01"}),
 ]
 
