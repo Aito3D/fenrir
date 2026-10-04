@@ -2964,6 +2964,85 @@ async def _pull_and_attach_timelapse(
     }
 
 
+def _match_timelapse_by_clock(archive: PrintArchive, base_name: str, video_files: list[dict]) -> dict | None:
+    """The scan's clock-based strategies 1-4, first match wins.
+
+    Only for archives without a print-start baseline: every one of these reads
+    the printer's clock, which a LAN-only printer can't sync (#2704).
+    """
+    # Strategy 1: Match by print name in filename
+    for f in video_files:
+        fname = f.get("name", "")
+        if base_name.lower() in fname.lower():
+            return f
+
+    # Strategy 2: Match by timestamp proximity against print START time.
+    # Bambu timelapse filename embeds the print start time in printer-local clock.
+    # See _match_timelapse_by_timestamp for the offset-search rationale and why we
+    # intentionally don't try to match filename against end time here.
+    if archive.started_at:
+        candidate, diff = _match_timelapse_by_timestamp(video_files, archive.started_at)
+        if candidate is not None:
+            logger.info("Matched timelapse by timestamp: %s (diff: %s)", candidate.get("name"), diff)
+            return candidate
+
+    # Strategy 3: Use file modification time from FTP listing
+    # This handles cases where printer's filename timestamp is wrong but file mtime is correct
+    if archive.started_at or archive.completed_at or archive.created_at:
+        archive_end = archive.completed_at or archive.created_at
+        best_match = None
+        best_diff = timedelta(hours=24)
+
+        for f in video_files:
+            mtime = f.get("mtime")
+            if mtime:
+                # Timelapse file should be modified during or shortly after the print
+                # The mtime should be close to completion time (video finishes when print ends)
+                if archive_end:
+                    diff = abs(mtime - archive_end)
+                    if diff < best_diff:
+                        best_diff = diff
+                        best_match = f
+                        logger.debug(
+                            f"Timelapse mtime match candidate: {f.get('name')}, mtime: {mtime}, diff from end: {diff}"
+                        )
+
+        if best_match and best_diff < timedelta(hours=2):
+            logger.info("Matched timelapse by file mtime: %s (diff: %s)", best_match.get("name"), best_diff)
+            return best_match
+
+    # Strategy 4: If only one timelapse exists and archive was recently completed, use it
+    # This handles cases where printer clock is wrong or timezone issues exist
+    if len(video_files) == 1:
+        archive_completed = archive.completed_at or archive.created_at
+        if archive_completed:
+            if archive_completed.tzinfo is None:
+                archive_completed = archive_completed.replace(tzinfo=timezone.utc)
+            time_since_completion = datetime.now(timezone.utc) - archive_completed
+            # If archive was completed within the last hour, assume the single timelapse is for it
+            if time_since_completion < timedelta(hours=1):
+                logger.info("Using single timelapse file as fallback: %s", video_files[0].get("name"))
+                return video_files[0]
+
+    return None
+
+
+def _timelapse_choices(video_files: list[dict]) -> list[dict]:
+    """The videos offered for manual selection, most recent first."""
+    available_files = [
+        {
+            "name": f.get("name"),
+            "path": f.get("path"),
+            "size": f.get("size"),
+            "mtime": f.get("mtime").isoformat() if f.get("mtime") else None,
+        }
+        for f in video_files
+    ]
+    # Sort by mtime descending (most recent first)
+    available_files.sort(key=lambda x: x.get("mtime") or "", reverse=True)
+    return available_files
+
+
 @router.post("/{archive_id}/timelapse/scan")
 async def scan_timelapse(
     archive_id: int,
@@ -3065,83 +3144,20 @@ async def scan_timelapse(
         else:
             logger.info("Baseline shows no unclaimed new video on the printer for archive %s", archive_id)
 
-    # Strategy 1: Match by print name in filename
+    # Strategies 1-4 read the printer's clock, so a baseline (when there is
+    # one) is authoritative and they are skipped.
     if not used_baseline:
-        for f in video_files:
-            fname = f.get("name", "")
-            if base_name.lower() in fname.lower():
-                matching_file = f
-                break
-
-    # Strategy 2: Match by timestamp proximity against print START time.
-    # Bambu timelapse filename embeds the print start time in printer-local clock.
-    # See _match_timelapse_by_timestamp for the offset-search rationale and why we
-    # intentionally don't try to match filename against end time here.
-    if not used_baseline and not matching_file and archive.started_at:
-        candidate, diff = _match_timelapse_by_timestamp(video_files, archive.started_at)
-        if candidate is not None:
-            matching_file = candidate
-            logger.info("Matched timelapse by timestamp: %s (diff: %s)", candidate.get("name"), diff)
-
-    # Strategy 3: Use file modification time from FTP listing
-    # This handles cases where printer's filename timestamp is wrong but file mtime is correct
-    if not used_baseline and not matching_file and (archive.started_at or archive.completed_at or archive.created_at):
-        archive_end = archive.completed_at or archive.created_at
-        best_match = None
-        best_diff = timedelta(hours=24)
-
-        for f in video_files:
-            mtime = f.get("mtime")
-            if mtime:
-                # Timelapse file should be modified during or shortly after the print
-                # The mtime should be close to completion time (video finishes when print ends)
-                if archive_end:
-                    diff = abs(mtime - archive_end)
-                    if diff < best_diff:
-                        best_diff = diff
-                        best_match = f
-                        logger.debug(
-                            f"Timelapse mtime match candidate: {f.get('name')}, mtime: {mtime}, diff from end: {diff}"
-                        )
-
-        if best_match and best_diff < timedelta(hours=2):
-            matching_file = best_match
-            logger.info("Matched timelapse by file mtime: %s (diff: %s)", best_match.get("name"), best_diff)
-
-    # Strategy 4: If only one timelapse exists and archive was recently completed, use it
-    # This handles cases where printer clock is wrong or timezone issues exist
-    if not used_baseline and not matching_file and len(video_files) == 1:
-        archive_completed = archive.completed_at or archive.created_at
-        if archive_completed:
-            if archive_completed.tzinfo is None:
-                archive_completed = archive_completed.replace(tzinfo=timezone.utc)
-            time_since_completion = datetime.now(timezone.utc) - archive_completed
-            # If archive was completed within the last hour, assume the single timelapse is for it
-            if time_since_completion < timedelta(hours=1):
-                matching_file = video_files[0]
-                logger.info("Using single timelapse file as fallback: %s", video_files[0].get("name"))
+        matching_file = _match_timelapse_by_clock(archive, base_name, video_files)
 
     # Note: We intentionally don't use a "most recent file" fallback because
     # we can't verify if timelapse was actually enabled for this print.
     # Instead, return the list of available files for manual selection.
 
     if not matching_file:
-        # Return available files for manual selection
-        available_files = [
-            {
-                "name": f.get("name"),
-                "path": f.get("path"),
-                "size": f.get("size"),
-                "mtime": f.get("mtime").isoformat() if f.get("mtime") else None,
-            }
-            for f in video_files
-        ]
-        # Sort by mtime descending (most recent first)
-        available_files.sort(key=lambda x: x.get("mtime") or "", reverse=True)
         return {
             "status": "not_found",
             "message": "No matching timelapse found - please select manually",
-            "available_files": available_files,
+            "available_files": _timelapse_choices(video_files),
         }
 
     # Download the timelapse - use the full path from the file listing
