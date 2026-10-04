@@ -380,6 +380,49 @@ async def test_two_concurrent_creates_raise_exactly_one_invoice(async_client, db
 
 
 @pytest.mark.asyncio
+async def test_an_edit_landing_while_the_create_waits_for_the_lock_is_refused(
+    async_client, db_session, books, monkeypatch
+):
+    """T-100 (user-approved 2026-10-03): the push guard runs BEFORE the lock,
+    and the lock waits out any other invoice in progress (10s+ of Books
+    calls). An edit committed in that wait puts the card back to 'pending'
+    with Books still holding the old lines; the create re-reads the card
+    under the lock and now answers the sync-pending 503 instead of billing
+    the pre-edit lines. Nothing reaches Books."""
+    from sqlalchemy import update
+
+    from backend.app.api.routes import aito as aito_routes
+
+    project_id = await _project(db_session)
+    # A fresh lock, bound to this test's event loop: the module's own one may
+    # already be bound to an earlier test's loop by a contended acquire.
+    lock = asyncio.Lock()
+    monkeypatch.setattr(aito_routes, "_invoice_lock", lock)
+    await lock.acquire()
+    try:
+        request = asyncio.ensure_future(async_client.post(f"/api/v1/aito/{project_id}/invoice"))
+        for _ in range(500):
+            if getattr(lock, "_waiters", None):
+                break
+            await asyncio.sleep(0.01)
+        assert getattr(lock, "_waiters", None), "the create never reached the lock"
+        await db_session.execute(
+            update(AitoProject).where(AitoProject.id == project_id).values(quote_sync_state="pending")
+        )
+        await db_session.commit()
+    finally:
+        lock.release()
+    response = await request
+
+    assert response.status_code == 503, response.text
+    assert response.json()["detail"]["code"] == "sync_pending"
+    assert books["calls"] == []
+    db_session.expire_all()
+    project = await db_session.get(AitoProject, project_id)
+    assert project.quote_invoiced is False
+
+
+@pytest.mark.asyncio
 async def test_a_deleted_project_is_a_404(async_client, db_session, books):
     project_id = await _project(db_session, status="deleted")
 

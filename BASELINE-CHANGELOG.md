@@ -543,3 +543,96 @@ class, it does not appear in the "Pydantic schema fields" section.
 
 - SURFACE.md sections regenerated: "Pydantic schemas + ORM model class names" (+1 line, additions only).
 - Golden probes re-recorded: none (35/35 match).
+
+## T-096 — transferring a card to another client rotates its public tracking token (user-approved 2026-10-03)
+
+Sanctions commit <this commit> "refactor(loop-11): T-096 rotate the tracking
+token when a card changes client (user-approved behavior change)". A card's
+public `/t/` link was handed to its client (sent to them, printed in the Zoho
+estimate's notes), and it survived a change of client: after a card was
+transferred to another contact the previous client's link kept serving the new
+client's job (tasks, due date, island, air waybill number and, while unpaid,
+the payment link). Now `transfer_client` in `backend/app/api/routes/aito.py`
+(PUT `/aito/{id}/transfer-client`, when the contact id actually changes) and
+`_follow_customer` in `backend/app/services/aito_quote_sync.py` (the sweep
+adopting a customer reassigned in Books) replace an existing
+`tracking_token` with a fresh one from `mint_unique_token`. User-visible: the
+link sent earlier now answers "Lien introuvable" (404) and the operator sends
+the new client the new link. Unchanged: a card that never had a token still
+has none (one is minted lazily as before), the same-contact no-op keeps the
+token, no event is added, and the transfer's queued push rewrites the
+estimate's notes through `notes_with_tracking` as it already did. Pinned by
+three new tests each in `backend/tests/unit/test_aito_transfer_client.py` and
+`backend/tests/unit/test_aito_sync_customer.py`.
+
+- Golden probes re-recorded: none (35/35 match).
+- SURFACE.md sections regenerated: none (`bash tools/gen_surface_aito23.sh` output identical to SURFACE.md).
+
+## T-100 — create_invoice refuses a card that went back to pending while it waited for the invoice lock (user-approved 2026-10-03)
+
+Sanctions commit <this commit> "refactor(loop-11): T-100 re-check the sync
+state under the invoice lock (user-approved behavior change)". `create_invoice`
+in `backend/app/api/routes/aito.py` runs its push guard (`ensure_pushed(strict=True)`
+in `_project_ready_to_invoice`) before taking `_invoice_lock`, and that lock is
+held across 10 s+ of Books calls by any other invoice in progress. A task edit
+committed during that wait put the card back to `quote_sync_state = 'pending'`
+with Books still holding the old lines, and the re-read under the lock only
+re-checked `quote_invoiced`, so the invoice billed the pre-edit lines. Now,
+right after that re-read, a pending card is refused with 503 and
+`SYNC_PENDING_DETAIL` (`code: sync_pending`, the "Zoho has not confirmed the
+latest changes yet" message the frontend already maps to
+`aito.syncNotConfirmed`), before the duplicate read and the create; no Books
+call is made. It does not push or wait for the push under the lock, so the lock
+is never held across a flush wait. User-visible: an invoice click that races a
+concurrent edit of the same card gets that 503 instead of producing an invoice
+from the pre-edit lines. Unchanged: every guard before the lock, the 409 for an
+already-invoiced card (still checked first), and everything after the check.
+An edit committed after the re-read (during the plan reads) is not covered by
+this change. Pinned by
+`test_an_edit_landing_while_the_create_waits_for_the_lock_is_refused` in
+`backend/tests/unit/test_aito_invoice_create.py`.
+
+- Golden probes re-recorded: none (35/35 match).
+- SURFACE.md sections regenerated: none (`bash tools/gen_surface_aito23.sh | diff - SURFACE.md` is empty).
+
+## T-101 — inbox read-all is bounded by the newest row shown, and both mark-read writes refetch when they settle (user-approved 2026-10-03)
+
+Sanctions commit <this commit> "refactor(loop-11): T-101 bound inbox read-all
+and refetch after mark-read (user-approved behavior change)". Two halves:
+
+- Backend: `POST /api/v1/inbox/read-all` (`read_all` in
+  `backend/app/api/routes/inbox.py`) gains an OPTIONAL query parameter
+  `up_to: int | None = Query(None, ge=1)`. When given, the UPDATE is bounded
+  with `Notification.id <= up_to`, so a row that arrived after the panel was
+  drawn stays unread. Without it the route marks every unread row read,
+  exactly as before, so an older client behaves as it always did. `up_to=0`
+  or a negative value is a 422.
+- Frontend: `api.markInboxAllRead(upTo?: number)` in `frontend/src/api/client.ts`
+  appends `?up_to=` only when given (additive, optional). In
+  `frontend/src/components/NotificationBell.tsx`, `markAllRead` sends the
+  newest id of the cached page (`items[0].id`), and both `markRead` and
+  `markAllRead` refetch the inbox (`invalidateQueries(INBOX_KEY)`) once the
+  write settles. The optimistic `cancelQueries` before each write could throw
+  away an arrival's in-flight refetch, and nothing refetched after it.
+  `writeFailed` now only shows the toast, because the refetch on settle
+  replaces the one it used to start.
+
+User-visible: a notification that arrives while the user clicks "Mark all
+read" (or marks one row read) stays unread, shows up and rings the bell (and
+chimes per sound_kinds) right after the write, instead of being marked read
+silently or staying hidden until the next focus or event. Unchanged: the
+optimistic patches, the failure toast, the arrival/ring logic, and the read-all
+behavior without `up_to`.
+
+Tests: `test_read_all_up_to_leaves_newer_rows_unread` and
+`test_read_all_rejects_a_non_positive_up_to` in
+`backend/tests/unit/test_inbox_routes.py`. Three new cases in
+`frontend/src/__tests__/components/NotificationBell.test.tsx` (up_to sent, an
+arrival during a held read-all stays unread and rings, mark-one refetches and
+shows an arrival). The default MSW read handlers there now update the mocked
+server inbox the way the real server does, because every write now ends in a
+refetch. The existing "Mark all read clears every unread row" assertions are
+unchanged.
+
+- Golden probes re-recorded: app-openapi-index (read_all's params gain `query:up_to`; the other 34 match unchanged).
+- SURFACE.md sections regenerated: none (`bash tools/gen_surface_aito23.sh` output identical to SURFACE.md; the client.ts method signature is not captured).

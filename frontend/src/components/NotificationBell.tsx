@@ -119,14 +119,16 @@ function SignedInBell() {
 
   const patchInbox = (fn: (page: InboxPage) => InboxPage) =>
     queryClient.setQueryData<InboxPage>(INBOX_KEY, (old) => (old ? fn(old) : old));
-  // A failed write says so and takes the server's page back over the guess.
-  const writeFailed = () => {
-    showToast(t('inbox.markReadFailed'), 'error');
-    void queryClient.invalidateQueries({ queryKey: INBOX_KEY });
-  };
+  // A failed write says so; the refetch every write ends with (refetchInbox
+  // below) takes the server's page back over the guess.
+  const writeFailed = () => showToast(t('inbox.markReadFailed'), 'error');
 
   // Each optimistic write first cancels an inbox fetch in flight, which would
-  // otherwise land after the patch with the row still unread.
+  // otherwise land after the patch with the row still unread. That fetch may
+  // have been an arrival's, so the inbox is refetched once the write settles:
+  // the arrival then shows (and rings) instead of waiting for the next focus.
+  const refetchInbox = () => void queryClient.invalidateQueries({ queryKey: INBOX_KEY });
+
   const markRead = (item: InboxItem) => {
     if (item.read_at !== null) return;
     const now = new Date().toISOString();
@@ -135,14 +137,16 @@ function SignedInBell() {
       items: page.items.map((i) => (i.id === item.id ? { ...i, read_at: now } : i)),
       unread: Math.max(0, page.unread - 1),
     }));
-    api.markInboxRead(item.id).catch(writeFailed);
+    api.markInboxRead(item.id).catch(writeFailed).finally(refetchInbox);
   };
 
+  // Bounded by the newest row shown: one that arrived meanwhile stays unread.
   const markAllRead = () => {
     const now = new Date().toISOString();
+    const upTo = queryClient.getQueryData<InboxPage>(INBOX_KEY)?.items[0]?.id;
     void queryClient.cancelQueries({ queryKey: INBOX_KEY });
     patchInbox((page) => ({ items: page.items.map((i) => ({ ...i, read_at: i.read_at ?? now })), unread: 0 }));
-    api.markInboxAllRead().catch(writeFailed);
+    api.markInboxAllRead(upTo).catch(writeFailed).finally(refetchInbox);
   };
 
   const openItem = (item: InboxItem) => {

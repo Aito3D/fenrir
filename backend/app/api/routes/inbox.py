@@ -73,15 +73,19 @@ async def list_inbox(
 
 @router.post("/read-all", status_code=204)
 async def read_all(
+    up_to: int | None = Query(None, ge=1),
     db: AsyncSession = Depends(get_db),
     current_user: User | None = Depends(require_auth_if_enabled),
 ):
+    """Mark the caller's unread rows read. ``up_to`` is the newest id the
+    user was shown: a row that arrived after the panel last loaded stays
+    unread, so it still rings the bell. Without it, every unread row is
+    marked (what a client predating the parameter gets)."""
     if current_user is not None:
-        await db.execute(
-            update(Notification)
-            .where(Notification.user_id == current_user.id, Notification.read_at.is_(None))
-            .values(read_at=utc_now_naive())
-        )
+        mine = [Notification.user_id == current_user.id, Notification.read_at.is_(None)]
+        if up_to is not None:
+            mine.append(Notification.id <= up_to)
+        await db.execute(update(Notification).where(*mine).values(read_at=utc_now_naive()))
         await db.commit()
     return Response(status_code=204)
 

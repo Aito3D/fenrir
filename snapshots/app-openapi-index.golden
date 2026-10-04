@@ -8449,7 +8449,8 @@
   "POST /api/v1/inbox/read-all": {
    "operationId": "read_all_api_v1_inbox_read_all_post",
    "params": [
-    "header:X-API-Key"
+    "header:X-API-Key",
+    "query:up_to"
    ],
    "requestBody": {},
    "responses": {

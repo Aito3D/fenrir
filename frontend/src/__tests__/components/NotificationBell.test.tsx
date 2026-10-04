@@ -44,6 +44,13 @@ let preferences: InboxPreferences;
 const calls: string[] = [];
 let putBody: unknown = null;
 let prefsServed = false;
+const readAllUpTo: (string | null)[] = [];
+
+function markServerRead(match: (i: InboxItem) => boolean) {
+  const now = new Date().toISOString();
+  const items = inbox.items.map((i) => (i.read_at === null && match(i) ? { ...i, read_at: now } : i));
+  inbox = { items, unread: items.filter((i) => i.read_at === null).length };
+}
 
 function signIn() {
   server.use(
@@ -73,6 +80,7 @@ describe('NotificationBell', () => {
   beforeEach(() => {
     window.history.replaceState({}, '', '/');
     calls.length = 0;
+    readAllUpTo.length = 0;
     putBody = null;
     prefsServed = false;
     inbox = {
@@ -95,12 +103,18 @@ describe('NotificationBell', () => {
         preferences = { ...preferences, ...(putBody as object) };
         return HttpResponse.json(preferences);
       }),
-      http.post('/api/v1/inbox/read-all', () => {
+      // Stateful like the server: every write now ends with a refetch, which
+      // must see the write.
+      http.post('/api/v1/inbox/read-all', ({ request }) => {
         calls.push('read-all');
+        const upTo = new URL(request.url).searchParams.get('up_to');
+        readAllUpTo.push(upTo);
+        markServerRead((i) => upTo === null || i.id <= Number(upTo));
         return new HttpResponse(null, { status: 204 });
       }),
       http.post('/api/v1/inbox/:id/read', ({ params }) => {
         calls.push(`read:${params.id}`);
+        markServerRead((i) => i.id === Number(params.id));
         return new HttpResponse(null, { status: 204 });
       }),
     );
@@ -303,6 +317,70 @@ describe('NotificationBell', () => {
     await waitFor(() => expect(calls).toEqual(['read-all']));
     expect(screen.queryByTestId('notification-badge')).toBeNull();
     expect(within(dialog).queryByTestId(/^notification-dot-/)).toBeNull();
+  });
+
+  it('Mark all read sends the newest row shown as up_to', async () => {
+    signIn();
+    render(<NotificationBell />);
+    const dialog = await openPanel();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Mark all read' }));
+    await waitFor(() => expect(readAllUpTo).toEqual(['12']));
+  });
+
+  it('a row arriving while Mark all read is in flight stays unread and rings', async () => {
+    signIn();
+    let answer: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      answer = resolve;
+    });
+    server.use(
+      http.post('/api/v1/inbox/read-all', async ({ request }) => {
+        await held;
+        const upTo = Number(new URL(request.url).searchParams.get('up_to'));
+        markServerRead((i) => i.id <= upTo);
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    render(<NotificationBell />);
+    const bell = await screen.findByTestId('notification-bell');
+    await waitFor(() => expect(prefsServed).toBe(true));
+    const dialog = await openPanel();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Mark all read' }));
+    await waitFor(() => expect(screen.queryByTestId('notification-badge')).toBeNull());
+    // Lands on the server after the panel was drawn, before the write settles.
+    inbox = { items: [row({ id: 20, kind: 'aito.paid' }), ...inbox.items], unread: inbox.unread + 1 };
+    answer();
+    // The write's own refetch shows it: unread, badge 1, the bell rings.
+    await waitFor(() => expect(screen.getByTestId('notification-badge')).toHaveTextContent('1'));
+    expect(within(dialog).getByTestId('notification-dot-20')).toBeInTheDocument();
+    expect(within(dialog).queryByTestId('notification-dot-12')).toBeNull();
+    expect(bell.querySelector('.bell-ring')).not.toBeNull();
+    expect(chime).toHaveBeenCalledTimes(1);
+  });
+
+  it('marking one row read refetches once it settles, showing an arrival', async () => {
+    signIn();
+    let served = 0;
+    server.use(
+      http.get('/api/v1/inbox', () => {
+        served += 1;
+        return HttpResponse.json(inbox);
+      }),
+      http.post('/api/v1/inbox/:id/read', ({ params }) => {
+        inbox = { items: [row({ id: 20, kind: 'aito.paid' }), ...inbox.items], unread: inbox.unread + 1 };
+        markServerRead((i) => i.id === Number(params.id));
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    render(<NotificationBell />);
+    const dialog = await openPanel();
+    await within(dialog).findByTestId('notification-dot-12');
+    const before = served;
+    fireEvent.click(within(dialog).getByTestId('notification-dot-12'));
+    await waitFor(() => expect(served).toBeGreaterThan(before));
+    expect(await within(dialog).findByTestId('notification-dot-20')).toBeInTheDocument();
+    expect(within(dialog).queryByTestId('notification-dot-12')).toBeNull();
+    expect(screen.getByTestId('notification-badge')).toHaveTextContent('2');
   });
 
   it('Escape closes the panel', async () => {

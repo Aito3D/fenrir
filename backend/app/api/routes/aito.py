@@ -2647,6 +2647,13 @@ async def create_invoice(
         await db.refresh(project)
         if project.quote_invoiced:
             raise HTTPException(status_code=409, detail=_ALREADY_INVOICED_DETAIL)
+        if project.quote_sync_state == "pending":
+            # An edit committed while this request waited for the lock (or
+            # since `ensure_pushed` ran): Books still holds the lines as they
+            # were before it, and billing those is what the push guard exists
+            # to prevent. Refused rather than pushed here, so the lock is
+            # never held across a flush wait; the click is simply retried.
+            raise HTTPException(status_code=503, detail=SYNC_PENDING_DETAIL)
         try:
             existing = await zoho_service.list_project_invoices(db, quote_id, client_id)
             if existing:
@@ -4202,6 +4209,13 @@ async def transfer_client(
     project.client_contact_name = None
     project.client_social_network = None
     project.client_social_handle = None
+    # The public tracking link was handed to the OLD client (sent to them,
+    # printed in the estimate's notes): it must stop showing this job. A
+    # card that never had a link keeps having none; ensure_tracking_token
+    # mints one lazily for the new client. The push queued below rewrites
+    # the estimate's notes with the new link (notes_with_tracking).
+    if project.tracking_token:
+        project.tracking_token = await mint_unique_token(db)
     was_pending = _mark_pending_if_ours_noting(project)
     # The estimate's customer is now the card's to push (see
     # AitoProject.client_push_pending): without it the sync would read Books'

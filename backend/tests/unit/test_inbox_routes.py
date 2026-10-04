@@ -125,6 +125,33 @@ async def test_read_all_and_pagination(async_client, db_session, inbox_users):
 
 
 @pytest.mark.asyncio
+async def test_read_all_up_to_leaves_newer_rows_unread(async_client, db_session, inbox_users):
+    """T-101 (user-approved 2026-10-03): ``up_to`` is the newest row the user
+    was shown; one that arrived after it stays unread so it still rings."""
+    alice, bob = inbox_users
+    ids = await _seed(db_session, alice.id, 4)
+    bob_ids = await _seed(db_session, bob.id, 1)
+
+    r = await async_client.post("/api/v1/inbox/read-all", params={"up_to": ids[2]}, headers=alice.headers)
+    assert r.status_code == 204
+    page = (await async_client.get("/api/v1/inbox", headers=alice.headers)).json()
+    assert page["unread"] == 1
+    assert [i["id"] for i in page["items"] if i["read_at"] is None] == [ids[3]]
+    # Bob's row, newer than up_to or not, is still his own business.
+    page = (await async_client.get("/api/v1/inbox", headers=bob.headers)).json()
+    assert [i["id"] for i in page["items"] if i["read_at"] is None] == bob_ids
+
+
+@pytest.mark.asyncio
+async def test_read_all_rejects_a_non_positive_up_to(async_client, db_session, inbox_users):
+    alice, _ = inbox_users
+    await _seed(db_session, alice.id, 1)
+    r = await async_client.post("/api/v1/inbox/read-all", params={"up_to": 0}, headers=alice.headers)
+    assert r.status_code == 422
+    assert (await async_client.get("/api/v1/inbox", headers=alice.headers)).json()["unread"] == 1
+
+
+@pytest.mark.asyncio
 async def test_preferences_roundtrip_and_validation(async_client, db_session, inbox_users):
     alice, bob = inbox_users
 

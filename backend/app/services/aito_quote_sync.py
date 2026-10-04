@@ -68,7 +68,12 @@ from backend.app.services.aito_quote_export import (
 from backend.app.services.aito_quote_import import client_snapshot
 from backend.app.services.aito_quote_status import accept_quote, adopt_quote_status
 from backend.app.services.aito_shipping import island_label
-from backend.app.services.aito_tracking import build_tracking_url, purge_tracking_views, with_tracking_notes
+from backend.app.services.aito_tracking import (
+    build_tracking_url,
+    mint_unique_token,
+    purge_tracking_views,
+    with_tracking_notes,
+)
 from backend.app.services.aito_zoho_comments import mirror_comments, should_pull_comments
 from backend.app.services.inbox import broadcast_pending
 from backend.app.services.zoho import (
@@ -1345,7 +1350,9 @@ async def _follow_customer(db: AsyncSession, project: AitoProject, estimate: dic
     contacted stamp (the new client was never told the job is ready, so the
     follow-up rules must re-arm). Recorded on the card's history as a system
     event; the cleared stamp gets its own ``project.contacted.cleared`` with
-    ``cause: zoho`` beside the rule move's ``cause: rule``.
+    ``cause: zoho`` beside the rule move's ``cause: rule``. The public
+    tracking token, when the card has one, is rotated too: the old client
+    holds that link.
 
     This IS a write to VERSIONED_FIELDS, on purpose: an operator mid-edit on
     that panel gets a 409 on save, which is right — their draft was based on
@@ -1379,6 +1386,10 @@ async def _follow_customer(db: AsyncSession, project: AitoProject, estimate: dic
     project.client_is_company = snapshot["is_company"]
     project.client_social_network = None
     project.client_social_handle = None
+    # The old client holds the card's public tracking link: rotate it so
+    # that link stops showing the job, as transfer_client does.
+    if project.tracking_token:
+        project.tracking_token = await mint_unique_token(db)
     await record(
         db,
         project.id,
