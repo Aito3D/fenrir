@@ -275,3 +275,15 @@ async def test_suggest_tags_marks_existing_and_excludes_current(async_client: As
         {"name": "fixation", "tag_id": None},
     ]
     assert seen["existing"] == ["Drone", "Support"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_id_lists_are_capped_at_200(async_client: AsyncClient):
+    too_many = list(range(1, 202))
+    response = await async_client.get("/api/v1/projects/search", params={"tag_ids": too_many})
+    assert response.status_code == 422
+    response = await async_client.post("/api/v1/projects/", json={"name": "X", "tag_ids": too_many})
+    assert response.status_code == 422
+    ok = await async_client.get("/api/v1/projects/search", params={"tag_ids": too_many[:200]})
+    assert ok.status_code == 200

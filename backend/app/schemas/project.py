@@ -37,7 +37,7 @@ class ProjectCreate(BaseModel):
     tags: str | None = None
     # Projects as a PDM (spec §1.2). When either is sent, it wins over the
     # legacy ``tags`` string; ``tag_ids`` replaces the whole set.
-    tag_ids: list[int] | None = None
+    tag_ids: list[int] | None = Field(default=None, max_length=200)
     new_tag_names: list[str] | None = Field(default=None, max_length=20)
     due_date: datetime | None = None
     priority: str = "normal"
@@ -65,7 +65,7 @@ class ProjectUpdate(BaseModel):
     tags: str | None = None
     # Projects as a PDM (spec §1.2). When either is sent, it wins over the
     # legacy ``tags`` string; ``tag_ids`` replaces the whole set.
-    tag_ids: list[int] | None = None
+    tag_ids: list[int] | None = Field(default=None, max_length=200)
     new_tag_names: list[str] | None = Field(default=None, max_length=20)
     due_date: datetime | None = None
     priority: str | None = None
@@ -402,7 +402,7 @@ class ProjectReformulateResponse(BaseModel):
 class ProjectSuggestTagsRequest(BaseModel):
     title: str = Field(..., min_length=1, max_length=255)
     description: str | None = Field(default=None, max_length=2000)
-    exclude_tag_ids: list[int] = []
+    exclude_tag_ids: list[int] = Field(default_factory=list, max_length=200)
 
 
 class ProjectSuggestTagsResponse(BaseModel):

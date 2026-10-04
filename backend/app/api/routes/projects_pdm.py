@@ -64,7 +64,7 @@ def _text_match(column, raw: str):
 @router.get("/search", response_model=ProjectSearchResponse)
 async def search_projects(
     q: str | None = Query(default=None, max_length=200),
-    tag_ids: list[int] = Query(default=[]),
+    tag_ids: list[int] = Query(default=[], max_length=200),
     tag_mode: Literal["any", "all"] = "any",
     status: str | None = None,
     limit: int = Query(default=50, ge=1, le=200),
