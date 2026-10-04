@@ -31,7 +31,7 @@ _WINDOWS_RESERVED = {
 
 def projects_root() -> Path:
     """``{data}/projects``, created on first use."""
-    root = settings.base_dir / PROJECTS_DIRNAME
+    root = settings.base_dir / PROJECTS_DIRNAME  # SEC-PATH-OK: constant directory name under the data dir
     root.mkdir(parents=True, exist_ok=True)
     return root
 
