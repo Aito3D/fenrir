@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 
 def _validate_project_url(value: str | None) -> str | None:
@@ -18,6 +18,11 @@ def _validate_project_url(value: str | None) -> str | None:
     return trimmed
 
 
+class ProjectTagRef(BaseModel):
+    id: int
+    name: str
+
+
 class ProjectCreate(BaseModel):
     """Schema for creating a new project."""
 
@@ -29,6 +34,10 @@ class ProjectCreate(BaseModel):
     target_sets: int | None = None  # Copies-per-file target (#1897)
     notes: str | None = None
     tags: str | None = None
+    # Projects as a PDM (spec §1.2). When either is sent, it wins over the
+    # legacy ``tags`` string; ``tag_ids`` replaces the whole set.
+    tag_ids: list[int] | None = None
+    new_tag_names: list[str] | None = Field(default=None, max_length=20)
     due_date: datetime | None = None
     priority: str = "normal"
     budget: float | None = None
@@ -53,6 +62,10 @@ class ProjectUpdate(BaseModel):
     target_sets: int | None = None  # Copies-per-file target (#1897)
     notes: str | None = None
     tags: str | None = None
+    # Projects as a PDM (spec §1.2). When either is sent, it wins over the
+    # legacy ``tags`` string; ``tag_ids`` replaces the whole set.
+    tag_ids: list[int] | None = None
+    new_tag_names: list[str] | None = Field(default=None, max_length=20)
     due_date: datetime | None = None
     priority: str | None = None
     budget: float | None = None
@@ -115,6 +128,8 @@ class ProjectResponse(BaseModel):
     """Schema for project response."""
 
     id: int
+    code: str | None = None
+    tag_list: list[ProjectTagRef] = []
     name: str
     description: str | None
     color: str | None
@@ -169,6 +184,7 @@ class ProjectListResponse(BaseModel):
     """Schema for project list item (lighter weight)."""
 
     id: int
+    code: str | None = None
     name: str
     description: str | None
     color: str | None

@@ -39,6 +39,7 @@ from backend.app.core.auth import require_ownership_permission, require_permissi
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.models.library import LibraryFile, LibraryFileTag, LibraryTag, prune_empty_library_tags
+from backend.app.models.project_tag import ProjectTag
 from backend.app.models.user import User
 from backend.app.schemas.library import (
     TagBulkAssignRequest,
@@ -47,6 +48,7 @@ from backend.app.schemas.library import (
     TagResponse,
     TagUpdate,
 )
+from backend.app.services.project_tags import project_ids_with_tag, refresh_tag_mirrors
 
 logger = logging.getLogger(__name__)
 
@@ -164,6 +166,11 @@ async def update_tag(
     tag.name = payload.name
     tag.name_key = _name_key(payload.name)
     await _commit_or_409(db)
+    # Fenrir: projects keep a text mirror of their tag names.
+    renamed_in = await project_ids_with_tag(db, tag_id)
+    if renamed_in:
+        await refresh_tag_mirrors(db, renamed_in)
+        await db.commit()
     await db.refresh(tag)
 
     # Re-count files for the projection so the caller's modal shows the
@@ -195,7 +202,13 @@ async def delete_tag(
     tag = (await db.execute(select(LibraryTag).where(LibraryTag.id == tag_id))).scalar_one_or_none()
     if tag is None:
         raise HTTPException(status_code=404, detail="Tag not found")
+    # Fenrir: unlink projects explicitly (SQLite runs without FK cascades) and
+    # refresh their tag mirror.
+    used_by = await project_ids_with_tag(db, tag_id)
+    await db.execute(delete(ProjectTag).where(ProjectTag.tag_id == tag_id))
     await db.delete(tag)
+    await db.flush()
+    await refresh_tag_mirrors(db, used_by)
     await db.commit()
 
 

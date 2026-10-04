@@ -270,19 +270,26 @@ class LibraryFileTag(Base):
 
 
 async def prune_empty_library_tags(db: AsyncSession) -> None:
-    """Delete tags with no active (non-trashed) file associations.
+    """Delete tags with no active (non-trashed) file and no project associations.
 
     Called after any operation that can leave a tag with file_count=0:
     file deletion (soft or hard), bulk-delete, folder delete, tag bulk-assign
     remove/replace, and the trash sweeper.
     """
+    from backend.app.models.project_tag import ProjectTag
+
     active_tag_ids = (
         select(LibraryFileTag.tag_id)
         .join(LibraryFile, LibraryFile.id == LibraryFileTag.file_id)
         .where(LibraryFile.deleted_at.is_(None))
         .distinct()
     )
-    await db.execute(delete(LibraryTag).where(LibraryTag.id.not_in(active_tag_ids)))
+    # Fenrir: tags carried by a project are in use even with no file behind
+    # them (projects as a PDM share this catalogue).
+    project_tag_ids = select(ProjectTag.tag_id).distinct()
+    await db.execute(
+        delete(LibraryTag).where(LibraryTag.id.not_in(active_tag_ids), LibraryTag.id.not_in(project_tag_ids))
+    )
 
 
 from backend.app.models.archive import PrintArchive  # noqa: E402, F811
