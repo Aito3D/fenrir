@@ -133,4 +133,18 @@ describe('BoardSearch combobox', () => {
     expect(screen.getAllByRole('option')).toHaveLength(8);
     expect(screen.getByText('+3 more matches')).toBeInTheDocument();
   });
+
+  it('ignores keys pressed during IME composition', async () => {
+    const onSelect = vi.fn();
+    render(<Harness onSelect={onSelect} />);
+    const input = screen.getByRole('combobox');
+    await userEvent.type(input, 'dup');
+    fireEvent.keyDown(input, { key: 'Enter', isComposing: true });
+    fireEvent.keyDown(input, { key: 'ArrowDown', keyCode: 229 });
+    fireEvent.keyDown(input, { key: 'Escape', isComposing: true });
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(screen.getByRole('listbox')).toBeInTheDocument();
+    expect(input.getAttribute('aria-activedescendant')).toBeNull();
+    expect(screen.getByTestId('value')).toHaveTextContent('dup');
+  });
 });

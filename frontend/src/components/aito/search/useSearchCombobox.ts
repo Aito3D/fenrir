@@ -34,6 +34,9 @@ export function useSearchCombobox({
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    // Keys that drive an IME (conversion Enter, candidate arrows, cancelling
+    // Escape) are not combobox commands. keyCode 229 covers Safari.
+    if (event.nativeEvent.isComposing || event.keyCode === 229) return;
     if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && open && shown > 0) {
       event.preventDefault();
       const down = event.key === 'ArrowDown';
