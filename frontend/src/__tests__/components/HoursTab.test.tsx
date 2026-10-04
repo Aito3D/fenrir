@@ -180,4 +180,49 @@ describe('HoursTab', () => {
     expect(within(dialog).getByText('Not a number')).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: 'Save' })).toBeDisabled();
   });
+
+  it('previews a pasted sheet and imports matched + new retired columns', async () => {
+    serve();
+    let body: unknown = null;
+    server.use(
+      http.post('/api/v1/maintenance/hours/import', async ({ request }) => {
+        body = await request.json();
+        return HttpResponse.json({ machines_created: 1, readings_written: 3 });
+      }),
+    );
+    const user = userEvent.setup();
+    render(<HoursTab />);
+    await user.click(await screen.findByRole('button', { name: 'Paste from sheet' }));
+    const dialog = await screen.findByTestId('hours-paste-import');
+    const text = 'Date\tX1C04\tX1C02\tTotal\n19/07/2024\t243\t212\t455\n25/04/2026\t3803\t0\t3803\n';
+    await user.click(within(dialog).getByRole('textbox'));
+    await user.paste(text);
+    expect(within(dialog).getByText('2 dates · 2 columns · 3 readings')).toBeInTheDocument(); // Total is ignored
+    const x1c02 = within(dialog).getByTestId('paste-column-X1C02');
+    expect(within(x1c02).getByRole('combobox')).toHaveValue('create');
+    expect(within(within(dialog).getByTestId('paste-column-Total')).getByRole('combobox')).toHaveValue('ignore');
+    await user.click(within(dialog).getByRole('button', { name: 'Import' }));
+    await waitFor(() =>
+      expect(body).toEqual({
+        new_machines: [{ key: 'X1C02', name: 'X1C02', model: 'X1C' }],
+        readings: [
+          { machine_id: 1, reading_date: '2024-07-19', hours: 243 },
+          { key: 'X1C02', reading_date: '2024-07-19', hours: 212 },
+          { machine_id: 1, reading_date: '2026-04-25', hours: 3803 },
+        ],
+      }),
+    );
+  });
+
+  it('explains a paste without dated rows and keeps Import disabled', async () => {
+    serve();
+    const user = userEvent.setup();
+    render(<HoursTab />);
+    await user.click(await screen.findByRole('button', { name: 'Paste from sheet' }));
+    const dialog = await screen.findByTestId('hours-paste-import');
+    await user.click(within(dialog).getByRole('textbox'));
+    await user.paste('X1C04\t3803');
+    expect(within(dialog).getByText(/No row starts with a date/)).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Import' })).toBeDisabled();
+  });
 });

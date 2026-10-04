@@ -11,6 +11,7 @@ import { Card, CardContent } from '../../Card';
 import { ConfirmModal } from '../../ConfirmModal';
 import { HoursChart, type HoursChartMode } from './HoursChart';
 import { MachineList, type MachineStat } from './MachineList';
+import { PasteImportModal } from './PasteImportModal';
 import { ReadingFormModal } from './ReadingFormModal';
 import { ReadingLog } from './ReadingLog';
 
@@ -64,6 +65,15 @@ export function HoursTab() {
       queryClient.invalidateQueries({ queryKey: ['maintenanceSummary'] });
       setFormDate(null);
       showToast(t('maintenance.hours.saved'));
+    },
+    onError: (e: Error) => showToast(e.message, 'error'),
+  });
+  const importReadings = useMutation({
+    mutationFn: api.importHourReadings,
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['maintenanceHours'] });
+      setPasteOpen(false);
+      showToast(t('maintenance.hours.paste.imported', { n: result.readings_written }));
     },
     onError: (e: Error) => showToast(e.message, 'error'),
   });
@@ -164,7 +174,6 @@ export function HoursTab() {
         </Card>
       </div>
 
-      {/* Task 8 mounts ReadingFormModal on formDate; Task 9 mounts PasteImportModal on pasteOpen. */}
       {formDate !== null && (
         <ReadingFormModal
           initialDate={formDate}
@@ -177,7 +186,15 @@ export function HoursTab() {
           onClose={() => setFormDate(null)}
         />
       )}
-      {pasteOpen ? null : null}
+      {pasteOpen && (
+        <PasteImportModal
+          machines={machines}
+          today={data.today}
+          isImporting={importReadings.isPending}
+          onImport={(body) => importReadings.mutate(body)}
+          onClose={() => setPasteOpen(false)}
+        />
+      )}
 
       {confirmDate && (
         <ConfirmModal
