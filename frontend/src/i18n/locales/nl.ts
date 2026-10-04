@@ -4825,6 +4825,27 @@ export default {
       smoothPEI: 'Smooth PEI Plate',
     },
     // Slicer Pipelines (#1425) — apply a saved bundle or save the current pick.
+    filters: {
+      onlyConnectedModels: 'Alleen printers die online zijn',
+      onlyConnectedModelsHint: 'Printerprofielen voor de modellen die nu online zijn, in elke nozzlemaat.',
+      onlyLoadedSpools: 'Alleen geladen spoelen',
+      onlyLoadedSpoolsHint: 'Filamentprofielen van de spoelen in de online printers van het gekozen model. Een profiel dat je zelf kiest, blijft staan.',
+      noneOnline: 'Geen printer is online, dus alle profielen worden getoond.',
+      noneLoaded: 'Geen geladen spoel heeft een profiel voor deze printer, dus alle filamentprofielen worden getoond.',
+      notOnline: 'Niet online',
+      notLoaded: 'Niet geladen',
+    },
+    loadedSpools: {
+      title: 'Geladen spoelen',
+      pick: 'Kiezen',
+      pickTitle: 'Kies een spoel die in een verbonden printer zit',
+      none: 'Geen printer van dit model is online.',
+      nothingLoaded: 'Geen AMS en geen externe spoel.',
+      unknownSpool: 'Onbekende spoel',
+      empty: 'Leeg',
+      noProfile: 'Geen profiel voor de gekozen printer',
+      noProfileShort: 'Geen profiel voor deze printer',
+    },
     pipelines: {
       label: 'Pipeline',
       applyAria: 'Pipeline toepassen',

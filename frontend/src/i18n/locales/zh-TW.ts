@@ -4777,6 +4777,27 @@ export default {
       smoothPEI: 'Smooth PEI Plate',
     },
     // Slicer Pipelines (#1425) — apply a saved bundle or save the current pick.
+    filters: {
+      onlyConnectedModels: '僅限線上的印表機',
+      onlyConnectedModelsHint: '目前線上機型的印表機設定檔（所有噴嘴尺寸）。',
+      onlyLoadedSpools: '僅限已裝載的線材盤',
+      onlyLoadedSpoolsHint: '所選機型線上印表機中所裝線材盤的線材設定檔。您自己選擇的設定檔會保留。',
+      noneOnline: '沒有線上的印表機，因此顯示所有設定檔。',
+      noneLoaded: '沒有已裝載的線材盤帶有此印表機的設定檔，因此顯示所有線材設定檔。',
+      notOnline: '離線',
+      notLoaded: '未裝載',
+    },
+    loadedSpools: {
+      title: '已裝載的線材盤',
+      pick: '選擇',
+      pickTitle: '選擇已連線印表機中裝載的線材盤',
+      none: '此機型沒有線上的印表機。',
+      nothingLoaded: '沒有 AMS，也沒有外部線材盤。',
+      unknownSpool: '無法識別的線材盤',
+      empty: '空',
+      noProfile: '沒有適用於所選印表機的設定檔',
+      noProfileShort: '沒有適用於此印表機的設定檔',
+    },
     pipelines: {
       label: '管線',
       applyAria: '套用管線',

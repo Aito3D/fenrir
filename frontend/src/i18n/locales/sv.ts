@@ -4824,6 +4824,27 @@ errors: {
       smoothPEI: 'Slät PEI-platta',
     },
     // Slicer Pipelines (#1425) — apply a saved bundle or save the current pick.
+    filters: {
+      onlyConnectedModels: 'Endast skrivare som är online',
+      onlyConnectedModelsHint: 'Skrivarprofiler för modellerna som är online just nu, i alla munstycksstorlekar.',
+      onlyLoadedSpools: 'Endast laddade spolar',
+      onlyLoadedSpoolsHint: 'Filamentprofiler för spolarna i de anslutna skrivarna av vald modell. En profil du väljer själv ligger kvar.',
+      noneOnline: 'Ingen skrivare är online, så alla profiler visas.',
+      noneLoaded: 'Ingen laddad spole har en profil för den här skrivaren, så alla filamentprofiler visas.',
+      notOnline: 'Inte online',
+      notLoaded: 'Inte laddad',
+    },
+    loadedSpools: {
+      title: 'Laddade spolar',
+      pick: 'Välj',
+      pickTitle: 'Välj en spole som sitter i en ansluten skrivare',
+      none: 'Ingen skrivare av den här modellen är online.',
+      nothingLoaded: 'Ingen AMS och ingen extern spole.',
+      unknownSpool: 'Okänd spole',
+      empty: 'Tom',
+      noProfile: 'Ingen profil för vald skrivare',
+      noProfileShort: 'Ingen profil för den här skrivaren',
+    },
     pipelines: {
       label: 'Pipeline',
       applyAria: 'Tillämpa pipeline',

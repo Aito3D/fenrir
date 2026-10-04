@@ -4792,6 +4792,27 @@ export default {
       smoothPEI: 'Smooth PEI Plate',
     },
     // Slicer Pipelines (#1425) — apply a saved bundle or save the current pick.
+    filters: {
+      onlyConnectedModels: 'Solo impresoras en línea',
+      onlyConnectedModelsHint: 'Perfiles de impresora de los modelos conectados ahora, en todos los tamaños de boquilla.',
+      onlyLoadedSpools: 'Solo bobinas cargadas',
+      onlyLoadedSpoolsHint: 'Perfiles de filamento de las bobinas en las impresoras conectadas del modelo seleccionado. Un perfil que elijas tú se mantiene.',
+      noneOnline: 'Ninguna impresora está en línea, así que se muestran todos los perfiles.',
+      noneLoaded: 'Ninguna bobina cargada tiene un perfil para esta impresora, así que se muestran todos los perfiles de filamento.',
+      notOnline: 'Sin conexión',
+      notLoaded: 'No cargado',
+    },
+    loadedSpools: {
+      title: 'Bobinas cargadas',
+      pick: 'Elegir',
+      pickTitle: 'Elegir una bobina cargada en una impresora conectada',
+      none: 'Ninguna impresora de este modelo está en línea.',
+      nothingLoaded: 'Sin AMS ni bobina externa.',
+      unknownSpool: 'Bobina no identificada',
+      empty: 'Vacío',
+      noProfile: 'Sin perfil para la impresora seleccionada',
+      noProfileShort: 'Sin perfil para esta impresora',
+    },
     pipelines: {
       label: 'Pipeline',
       applyAria: 'Aplicar pipeline',

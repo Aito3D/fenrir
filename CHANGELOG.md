@@ -5,6 +5,13 @@ All notable changes to Bambuddy will be documented in this file.
 ## [1.2.6b1] - Unreleased
 
 ### Added
+- **The Slice dialog can list only the printers that are online and the spools loaded in them (#3172, requested by @wolfrage76)** — The person slicing is often not at the printer, and the useful filaments are the ones already loaded, because those are what a remote print can start on. The Slice dialog listed every printer profile and every filament profile, so you had to know or walk over to check what was in the AMS. Two checkboxes above the printer profile now narrow the lists. Both are off until you turn them on, and the browser remembers them.
+  - **Only printers that are online:** the printer profiles of the models connected right now, at every nozzle size. A profile Bambuddy picked for an offline model moves to an online one. One you picked yourself stays.
+  - **Only spools that are loaded:** each filament row lists the profiles of the spools in the online printers of the selected model, and its automatic pick is made from them. A profile you picked yourself stays.
+  - **Pick:** a new button on each filament row opens the loaded spools, one section per printer, laid out like the AMS units with empty slots shown. Clicking a spool sets the row's profile and colour. A spool with no profile for the selected printer is greyed out.
+  - **Matching:** a spool uses the profile set for its slot in Bambuddy, or that profile's copy for the selected printer. A spool set up from the slicer or the printer's screen uses its brand text, so Bambu "PLA Basic" finds **Bambu PLA Basic**. Profiles that state another material are never matched.
+  - **Never empty:** hidden profiles stay behind **Show all**, in a **Not online** or **Not loaded** group. With nothing online or nothing matching, the full lists are shown.
+  - **Access:** the checkboxes appear only for users who may see printer status, and list only the printers they have access to.
 - **Browse your Manyfold library in Bambuddy and import its files (#1471, requested by @hibikipr)** — [Manyfold](https://manyfold.app) is a self-hosted library for 3D models. The sidebar entry **MakerWorld** is now **Model Sources**, with a **MakerWorld** tab, which works as before, and a **Manyfold** tab.
   - **Connecting:** in Manyfold, open Settings → API and create an application with the scopes `public` and `read`. Then enter Manyfold's URL and the application's client ID and secret in the Manyfold tab. **Test connection** shows how many models Bambuddy can see. Bambuddy sees the models the application's owner can see in Manyfold, and never writes to Manyfold.
   - **Browsing:** search and page through the models with their previews, and open one to see its description, tags, licence and files.

@@ -4790,6 +4790,27 @@ export default {
       smoothPEI: 'Smooth PEI Plate',
     },
     // Slicer Pipelines (#1425) — apply a saved bundle or save the current pick.
+    filters: {
+      onlyConnectedModels: 'オンラインのプリンターのみ',
+      onlyConnectedModelsHint: '現在オンラインの機種のプリンタープロファイル（すべてのノズル径）。',
+      onlyLoadedSpools: '装填済みのスプールのみ',
+      onlyLoadedSpoolsHint: '選択した機種のオンラインのプリンターに装填されたスプールのフィラメントプロファイル。自分で選んだプロファイルはそのまま残ります。',
+      noneOnline: 'オンラインのプリンターがないため、すべてのプロファイルを表示しています。',
+      noneLoaded: 'このプリンター用のプロファイルを持つ装填済みスプールがないため、すべてのフィラメントプロファイルを表示しています。',
+      notOnline: 'オフライン',
+      notLoaded: '未装填',
+    },
+    loadedSpools: {
+      title: '装填済みのスプール',
+      pick: '選択',
+      pickTitle: '接続中のプリンターに装填されたスプールを選択',
+      none: 'この機種のプリンターはオンラインではありません。',
+      nothingLoaded: 'AMSも外部スプールもありません。',
+      unknownSpool: '不明なスプール',
+      empty: '空',
+      noProfile: '選択したプリンター用のプロファイルがありません',
+      noProfileShort: 'このプリンター用のプロファイルがありません',
+    },
     pipelines: {
       label: 'パイプライン',
       applyAria: 'パイプラインを適用',

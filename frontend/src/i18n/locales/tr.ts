@@ -4778,6 +4778,27 @@ export default {
       smoothPEI: 'Düz PEI Plakası',
     },
     // Slicer Pipelines (#1425) — apply a saved bundle or save the current pick.
+    filters: {
+      onlyConnectedModels: 'Yalnızca çevrimiçi yazıcılar',
+      onlyConnectedModelsHint: 'Şu anda çevrimiçi olan modellerin yazıcı profilleri, tüm nozul boyutlarında.',
+      onlyLoadedSpools: 'Yalnızca takılı makaralar',
+      onlyLoadedSpoolsHint: 'Seçili modelin çevrimiçi yazıcılarındaki makaraların filament profilleri. Kendi seçtiğiniz profil korunur.',
+      noneOnline: 'Çevrimiçi yazıcı yok, bu yüzden tüm profiller gösteriliyor.',
+      noneLoaded: 'Takılı makaraların hiçbirinin bu yazıcı için profili yok, bu yüzden tüm filament profilleri gösteriliyor.',
+      notOnline: 'Çevrimdışı',
+      notLoaded: 'Takılı değil',
+    },
+    loadedSpools: {
+      title: 'Takılı makaralar',
+      pick: 'Seç',
+      pickTitle: 'Bağlı bir yazıcıdaki makarayı seç',
+      none: 'Bu modelden çevrimiçi yazıcı yok.',
+      nothingLoaded: 'AMS ve harici makara yok.',
+      unknownSpool: 'Tanımlanamayan makara',
+      empty: 'Boş',
+      noProfile: 'Seçili yazıcı için profil yok',
+      noProfileShort: 'Bu yazıcı için profil yok',
+    },
     pipelines: {
       label: 'Pipeline',
       applyAria: 'Pipeline uygula',

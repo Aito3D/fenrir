@@ -4581,6 +4581,27 @@ export default {
       smoothPEI: '매끄러운 PEI 플레이트'
     },
     // Slicer Pipelines (#1425) — apply a saved bundle or save the current pick.
+    filters: {
+      onlyConnectedModels: '온라인 프린터만',
+      onlyConnectedModelsHint: '지금 온라인인 모델의 프린터 프로필(모든 노즐 크기).',
+      onlyLoadedSpools: '장착된 스풀만',
+      onlyLoadedSpoolsHint: '선택한 모델의 온라인 프린터에 장착된 스풀의 필라멘트 프로필. 직접 고른 프로필은 유지됩니다.',
+      noneOnline: '온라인 프린터가 없어 모든 프로필을 표시합니다.',
+      noneLoaded: '이 프린터용 프로필이 있는 장착 스풀이 없어 모든 필라멘트 프로필을 표시합니다.',
+      notOnline: '오프라인',
+      notLoaded: '미장착',
+    },
+    loadedSpools: {
+      title: '장착된 스풀',
+      pick: '선택',
+      pickTitle: '연결된 프린터에 장착된 스풀 선택',
+      none: '이 모델의 프린터가 온라인이 아닙니다.',
+      nothingLoaded: 'AMS도 외부 스풀도 없습니다.',
+      unknownSpool: '알 수 없는 스풀',
+      empty: '비어 있음',
+      noProfile: '선택한 프린터용 프로필 없음',
+      noProfileShort: '이 프린터용 프로필 없음',
+    },
     pipelines: {
       label: '파이프라인',
       applyAria: '파이프라인 적용',
