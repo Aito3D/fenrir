@@ -140,3 +140,101 @@ async def test_hours_routes_require_auth_when_enabled(async_client: AsyncClient)
     assert (await async_client.get(BASE)).status_code == 401
     body = {"reading_date": "2026-01-01", "entries": [{"machine_id": 1, "hours": 1}]}
     assert (await async_client.post(f"{BASE}/readings", json=body)).status_code == 401
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+class TestHoursImport:
+    async def test_import_creates_retired_machines_and_never_recalibrates(
+        self, async_client: AsyncClient, printer_factory, db_session
+    ):
+        p = await printer_factory(name="X1C04", runtime_seconds=3600 * 124)
+        m = await _machine_for(async_client, "X1C04")
+        today = date.today().isoformat()
+        body = {
+            "new_machines": [{"key": "X1C01", "name": "X1C01", "model": "X1C"}],
+            "readings": [
+                {"key": "X1C01", "reading_date": "2024-07-19", "hours": 1470},
+                {"key": "X1C01", "reading_date": "2026-04-25", "hours": 4102},
+                {"machine_id": m["id"], "reading_date": "2026-04-25", "hours": 3803},
+                {"machine_id": m["id"], "reading_date": today, "hours": 3900},
+            ],
+        }
+        response = await async_client.post(f"{BASE}/import", json=body)
+        assert response.status_code == 200
+        assert response.json() == {"machines_created": 1, "readings_written": 4}
+        data = (await async_client.get(BASE)).json()
+        retired = next(x for x in data["machines"] if x["name"] == "X1C01")
+        assert retired["retired"] is True and retired["current_hours"] is None
+        assert len([r for r in data["readings"] if r["machine_id"] == retired["id"]]) == 2
+        await db_session.refresh(p)
+        assert p.print_hours_offset == 0.0  # imports never recalibrate, even for today's date
+
+    async def test_import_replaces_existing_dates(self, async_client: AsyncClient, printer_factory):
+        await printer_factory(name="H2S01")
+        m = await _machine_for(async_client, "H2S01")
+        row = {"machine_id": m["id"], "reading_date": "2026-01-01", "hours": 861}
+        await async_client.post(f"{BASE}/import", json={"readings": [row]})
+        row["hours"] = 862
+        await async_client.post(f"{BASE}/import", json={"readings": [row]})
+        data = (await async_client.get(BASE)).json()
+        assert [r["hours"] for r in data["readings"]] == [862.0]
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            {"readings": [{"reading_date": "2026-01-01", "hours": 1}]},  # neither machine_id nor key
+            {"readings": [{"key": "nope", "reading_date": "2026-01-01", "hours": 1}]},  # unknown key
+            {"readings": [{"machine_id": 99999, "reading_date": "2026-01-01", "hours": 1}]},  # unknown id
+            {
+                "new_machines": [{"key": "a", "name": "A"}, {"key": "a", "name": "B"}],
+                "readings": [{"key": "a", "reading_date": "2026-01-01", "hours": 1}],
+            },
+        ],
+    )
+    async def test_import_validation_rejects_without_writing(self, async_client: AsyncClient, body):
+        response = await async_client.post(f"{BASE}/import", json=body)
+        assert response.status_code == 422
+        assert (await async_client.get(BASE)).json()["machines"] == []
+
+    async def test_import_rejects_new_machine_named_like_existing(self, async_client: AsyncClient, printer_factory):
+        await printer_factory(name="X1C02")
+        body = {
+            "new_machines": [{"key": "k", "name": "x1c02"}],
+            "readings": [{"key": "k", "reading_date": "2026-01-01", "hours": 1}],
+        }
+        assert (await async_client.post(f"{BASE}/import", json=body)).status_code == 422
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+class TestRetiredMachines:
+    async def _retired(self, db_session) -> HourMachine:
+        m = HourMachine(name="H2C03", model="H2C", retired=True)
+        db_session.add(m)
+        await db_session.commit()
+        return m
+
+    async def test_rename_retired_machine(self, async_client: AsyncClient, db_session):
+        m = await self._retired(db_session)
+        response = await async_client.patch(f"{BASE}/machines/{m.id}", json={"name": "H2C03 (sold)"})
+        assert response.status_code == 200
+        assert response.json()["name"] == "H2C03 (sold)"
+
+    async def test_delete_retired_machine_removes_readings(self, async_client: AsyncClient, db_session):
+        m = await self._retired(db_session)
+        await async_client.post(
+            f"{BASE}/import", json={"readings": [{"machine_id": m.id, "reading_date": "2026-04-25", "hours": 345}]}
+        )
+        assert (await async_client.delete(f"{BASE}/machines/{m.id}")).status_code == 200
+        data = (await async_client.get(BASE)).json()
+        assert data["machines"] == [] and data["readings"] == []
+
+    async def test_linked_machine_cannot_be_renamed_or_deleted(self, async_client: AsyncClient, printer_factory):
+        await printer_factory(name="H2D01")
+        m = await _machine_for(async_client, "H2D01")
+        assert (await async_client.patch(f"{BASE}/machines/{m['id']}", json={"name": "x"})).status_code == 409
+        assert (await async_client.delete(f"{BASE}/machines/{m['id']}")).status_code == 409
+
+    async def test_unknown_machine_404(self, async_client: AsyncClient):
+        assert (await async_client.delete(f"{BASE}/machines/99999")).status_code == 404

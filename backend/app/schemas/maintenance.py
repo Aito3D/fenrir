@@ -176,3 +176,31 @@ class HourReadingEntry(BaseModel):
 class HourReadingBatch(BaseModel):
     reading_date: date
     entries: list[HourReadingEntry] = Field(..., min_length=1)
+
+
+class HourMachineCreate(BaseModel):
+    key: str = Field(..., min_length=1, max_length=100)  # the paste column header; readings refer to it
+    name: str = Field(..., min_length=1, max_length=100)
+    model: str | None = Field(default=None, max_length=50)
+
+
+class HourImportReading(BaseModel):
+    machine_id: int | None = None
+    key: str | None = None
+    reading_date: date
+    hours: float = Field(..., ge=0, le=MAX_HOURS)
+
+
+class HourImportBody(BaseModel):
+    new_machines: list[HourMachineCreate] = Field(default_factory=list)
+    readings: list[HourImportReading] = Field(..., min_length=1)
+
+
+class HourImportResult(BaseModel):
+    machines_created: int
+    readings_written: int
+
+
+class HourMachineUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    model: str | None = Field(default=None, max_length=50)
