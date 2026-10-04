@@ -9,6 +9,7 @@ import {
   Merge,
   MoveRight,
   Printer,
+  RefreshCw,
   Split,
   Trash2,
   UserRoundPen,
@@ -34,6 +35,8 @@ interface ProjectActionsMenuProps {
   onTransferClient: () => void;
   /** Opens the watch dialog — to start watching, or to change or stop it. */
   onWatch: () => void;
+  /** Opens the force-sync report; runs on open. */
+  onForceSync: () => void;
   /** Whether the signed-in user watches this card; only flips the row's label. */
   watching?: boolean;
   /** A signed-in user to watch for. Without one (auth off) there is no inbox,
@@ -116,6 +119,12 @@ function rows(p: ProjectActionsMenuProps, t: TFunction): ActionMenuItem[] {
           ),
         ]
       : []),
+    item(
+      { key: 'forceSync', icon: RefreshCw, label: t('aito.forceZohoSync'), onSelect: p.onForceSync },
+      // POST /{id}/force-sync rides AITO_UPDATE and 404s a trashed card. An
+      // invoiced card stays enabled: the invoice and deposit steps matter most there.
+      reason([trashed, hintTrashed], [!p.canUpdate, hintNoPermission]),
+    ),
     item(
       { key: 'duplicate', icon: CopyPlus, label: t('aito.duplicateProject'), onSelect: () => p.onDuplicate?.() },
       // Not gated on the card's state: "same thing again" is as valid for a

@@ -22,6 +22,7 @@ export const EVENT_LABEL_KEY: Record<string, string> = {
   'quote.expired': 'aito.history.quoteExpired',
   'stage.changed': 'aito.history.stageChanged',
   'project.trashed': 'aito.history.projectTrashed',
+  'project.force_synced': 'aito.history.projectForceSynced',
   'project.restored': 'aito.history.projectRestored',
   'task.added': 'aito.history.taskAdded',
   'task.updated': 'aito.history.taskUpdated',

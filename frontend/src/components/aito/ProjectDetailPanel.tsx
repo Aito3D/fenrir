@@ -5,6 +5,7 @@ import { Building2, Check, Copy, ExternalLink, Eye, History, Loader2, Lock, Mail
 import type { LucideIcon } from 'lucide-react';
 import { DuplicateReplaceConfirm } from './DuplicateReplaceConfirm';
 import { MergeProjectModal } from './MergeProjectModal';
+import { ForceSyncModal } from './ForceSyncModal';
 import { TaskTransferModal } from './TaskTransferModal';
 import { TransferClientModal } from './TransferClientModal';
 import { WatchModal } from './WatchModal';
@@ -895,6 +896,7 @@ export function ProjectDetailPanel({
   // rows are usable (see ProjectActionsMenu's `rows`); the panel only owns
   // what each row opens, so a dialog outlives the menu that launched it.
   const [merging, setMerging] = useState(false);
+  const [forceSyncing, setForceSyncing] = useState(false);
   const [transferringClient, setTransferringClient] = useState(false);
   const [watchOpen, setWatchOpen] = useState(false);
   const [transferMode, setTransferMode] = useState<'split' | 'move' | null>(null);
@@ -1294,6 +1296,9 @@ export function ProjectDetailPanel({
           )}
         </div>
         {merging && <MergeProjectModal project={project} onClose={() => setMerging(false)} />}
+        {forceSyncing && (
+          <ForceSyncModal project={project} currency={currency} onClose={() => setForceSyncing(false)} />
+        )}
         {/* The new client reaches the header through the board cache the
             modal writes on success — nothing to hand back here. */}
         {transferringClient && (
@@ -1496,6 +1501,7 @@ export function ProjectDetailPanel({
                     canUpdate={canUpdate}
                     canDelete={canDelete}
                     onMerge={() => setMerging(true)}
+                    onForceSync={() => setForceSyncing(true)}
                     onSplit={() => setTransferMode('split')}
                     onMoveTasks={() => setTransferMode('move')}
                     onCopySummary={() => void cardActions.copySummary()}
@@ -1512,6 +1518,7 @@ export function ProjectDetailPanel({
                     shortcutEnabled={
                       !(
                         merging ||
+                        forceSyncing ||
                         transferMode ||
                         transferringClient ||
                         watchOpen ||
