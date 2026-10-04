@@ -3714,6 +3714,22 @@ async def _printer_keeps_cache_mirror(printer) -> bool:
     )
 
 
+async def _append_archive_photo(archive_id: int, photo_filename: str) -> None:
+    """List *photo_filename* on the archive, in a short session of its own.
+
+    A new list, never the loaded one appended in place: ``photos`` is a plain
+    JSON column, so mutating it in place committed nothing whenever the archive
+    already had photos (a reprint, or a photo uploaded during the print).
+    """
+    from backend.app.models.archive import PrintArchive
+
+    async with async_session() as db:
+        arch = await db.get(PrintArchive, archive_id)
+        if arch is not None:
+            arch.photos = [*(arch.photos or []), photo_filename]
+            await db.commit()
+
+
 def _recovery_check(md5: str | None, plate: int | None, remaining_s: float | None) -> dict:
     """What print start knew about the job, for judging a file found later.
 
@@ -8560,15 +8576,7 @@ async def on_print_complete(printer_id: int, data: dict):
 
             # Write phase: attach the photo in a fresh short-lived session.
             if photo_filename:
-                async with async_session() as db:
-                    from backend.app.models.archive import PrintArchive
-
-                    arch = await db.get(PrintArchive, archive_id)
-                    if arch is not None:
-                        photos = arch.photos or []
-                        photos.append(photo_filename)
-                        arch.photos = photos
-                        await db.commit()
+                await _append_archive_photo(archive_id, photo_filename)
                 logger.info("[PHOTO-BG] Saved: %s", photo_filename)
 
             # The short wait above is bounded so a slow printer can't hold up
