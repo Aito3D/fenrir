@@ -942,6 +942,8 @@ function ArchiveCard({
                 : api.getArchiveThumbnail(archive.id)
             }
             alt={archive.print_name || archive.filename}
+            loading="lazy"
+            decoding="async"
             className="w-full h-full object-cover brightness-125 contrast-110"
           />
         ) : (
@@ -2465,6 +2467,8 @@ function ArchiveListRow({
             <img
               src={api.getArchiveThumbnail(archive.id)}
               alt=""
+              loading="lazy"
+              decoding="async"
               className="w-10 h-10 object-cover rounded brightness-125 contrast-110"
             />
           ) : (
@@ -3033,6 +3037,11 @@ const collections: { id: Collection; label: string; icon: React.ReactNode }[] = 
   { id: 'failed', label: 'Failed Prints', icon: <AlertCircle className="w-4 h-4" /> },
   { id: 'duplicates', label: 'Duplicates', icon: <Copy className="w-4 h-4" /> },
 ];
+
+// Duplicate-group key: members of a group share their original's id.
+function dupGroupKeyOf(a: { id: number; duplicate_sequence?: number | null; original_archive_id?: number | null }): number {
+  return (a.duplicate_sequence ?? 0) > 0 && a.original_archive_id ? a.original_archive_id : a.id;
+}
 
 export function ArchivesPage() {
   const { t } = useTranslation();
@@ -3703,48 +3712,61 @@ export function ArchivesPage() {
     [printers],
   );
 
-  // Extract unique materials and colors from archives
-  const uniqueMaterials = [...new Set(
-    archives?.flatMap(a => a.filament_type?.split(', ') || []).filter(Boolean) || []
-  )].sort();
+  // Extract unique materials and colors from archives. Memoized on the list:
+  // over ~6k archives these passes (and the filter/sort below) ran on every
+  // render -- each keystroke, hover and refetch.
+  const uniqueMaterials = useMemo(
+    () => [...new Set(archives?.flatMap(a => a.filament_type?.split(', ') || []).filter(Boolean) || [])].sort(),
+    [archives],
+  );
 
-  const uniqueColors = [...new Set(
-    archives?.flatMap(a => a.filament_color?.split(',') || []).filter(Boolean) || []
-  )];
+  const uniqueColors = useMemo(
+    () => [...new Set(archives?.flatMap(a => a.filament_color?.split(',') || []).filter(Boolean) || [])],
+    [archives],
+  );
 
-  const uniqueTags = [...new Set(
-    archives?.flatMap(a => a.tags?.split(',').map(t => t.trim()) || []).filter(Boolean) || []
-  )].sort();
+  const uniqueTags = useMemo(
+    () => [...new Set(archives?.flatMap(a => a.tags?.split(',').map(t => t.trim()) || []).filter(Boolean) || [])].sort(),
+    [archives],
+  );
 
   // When sorting by date, a duplicate group surfaces at its MOST RECENT
   // member's position — and "Hide duplicates" shows that newest member.
   // Without this, a fresh reprint of an identical file sorts by the
   // original's old date (or is hidden entirely with "Hide duplicates" on)
   // and looks like it was never archived.
-  const dupGroupKey = (a: NonNullable<typeof archives>[number]) =>
-    (a.duplicate_sequence ?? 0) > 0 && a.original_archive_id ? a.original_archive_id : a.id;
-  const groupLatest = new Map<number, { t: number; id: number }>();
-  for (const a of archives || []) {
-    if (a.duplicate_count > 0) {
-      const key = dupGroupKey(a);
+  // Each archive's created time, parsed once per list rather than on every
+  // comparison of the sort; and each duplicate group's newest member.
+  const { createdMs, groupLatest } = useMemo(() => {
+    const created = new Map<number, number>();
+    const latest = new Map<number, { t: number; id: number }>();
+    for (const a of archives || []) {
       const t = parseUTCDate(a.created_at)?.getTime() || 0;
-      const prev = groupLatest.get(key);
-      if (!prev || t >= prev.t) {
-        groupLatest.set(key, { t, id: a.id });
+      created.set(a.id, t);
+      if (a.duplicate_count > 0) {
+        const key = dupGroupKeyOf(a);
+        const prev = latest.get(key);
+        if (!prev || t >= prev.t) {
+          latest.set(key, { t, id: a.id });
+        }
       }
     }
-  }
-  const dateSortTime = (a: NonNullable<typeof archives>[number]) => {
-    const own = parseUTCDate(a.created_at)?.getTime() || 0;
-    if (a.duplicate_count === 0) return own;
-    return Math.max(groupLatest.get(dupGroupKey(a))?.t ?? 0, own);
-  };
+    return { createdMs: created, groupLatest: latest };
+  }, [archives]);
 
-  const filteredArchives = archives
+  const filteredArchives = useMemo(() => {
+    const now = new Date();
+    const searchLower = search.toLowerCase();
+    const createdOf = (a: NonNullable<typeof archives>[number]) => createdMs.get(a.id) ?? 0;
+    const dateSortTime = (a: NonNullable<typeof archives>[number]) => {
+      const own = createdOf(a);
+      if (a.duplicate_count === 0) return own;
+      return Math.max(groupLatest.get(dupGroupKeyOf(a))?.t ?? 0, own);
+    };
+    return archives
     ?.filter((a) => {
       // Collection filter
-      const now = new Date();
-      const archiveDate = parseUTCDate(a.created_at) || new Date(0);
+      const archiveDate = new Date(createdOf(a));
       let matchesCollection = true;
 
       switch (collection) {
@@ -3775,7 +3797,7 @@ export function ArchivesPage() {
       }
 
       // Search filter
-      const matchesSearch = (a.print_name || a.filename).toLowerCase().includes(search.toLowerCase());
+      const matchesSearch = (a.print_name || a.filename).toLowerCase().includes(searchLower);
 
       // Material filter
       const matchesMaterial = !filterMaterial ||
@@ -3808,7 +3830,7 @@ export function ArchivesPage() {
       // looks like it was never archived.
       const matchesHideDuplicates =
         collection === 'duplicates' || !hideDuplicates || a.duplicate_count === 0 ||
-        a.id === groupLatest.get(dupGroupKey(a))?.id;
+        a.id === groupLatest.get(dupGroupKeyOf(a))?.id;
 
       // Tag filter
       const archiveTags = a.tags?.split(',').map(t => t.trim()) || [];
@@ -3829,12 +3851,12 @@ export function ArchivesPage() {
           // newest time and cluster together; tiebreak by own date.
           const diff = dateSortTime(b) - dateSortTime(a);
           if (diff !== 0) return diff;
-          return (parseUTCDate(b.created_at)?.getTime() || 0) - (parseUTCDate(a.created_at)?.getTime() || 0);
+          return createdOf(b) - createdOf(a);
         }
         case 'date-asc': {
           const diff = dateSortTime(a) - dateSortTime(b);
           if (diff !== 0) return diff;
-          return (parseUTCDate(a.created_at)?.getTime() || 0) - (parseUTCDate(b.created_at)?.getTime() || 0);
+          return createdOf(a) - createdOf(b);
         }
         case 'name-asc':
           return (a.print_name || a.filename).localeCompare(b.print_name || b.filename);
@@ -3848,6 +3870,10 @@ export function ArchivesPage() {
           return 0;
       }
     });
+  }, [
+    archives, createdMs, groupLatest, collection, search, filterMaterial, filterColors, colorFilterMode,
+    filterFavorites, hideFailed, filterUnconfirmed, hideDuplicates, filterTag, filterFileType, sortBy,
+  ]);
 
   // Pagination
   const totalFiltered = filteredArchives?.length || 0;

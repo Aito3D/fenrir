@@ -695,6 +695,26 @@ describe('ArchivesPage', () => {
       }, { timeout: 5000 });
     });
 
+    it('sorts a duplicate group at its newest member, newest first', async () => {
+      // Pins the group-aware date sort (precomputed per list since 2026-10-04):
+      // the 2024-01 original sorts with its 2024-06 reprint, ahead of a
+      // 2024-03 archive that is newer than the original alone.
+      server.use(
+        http.get('/api/v1/archives/', () =>
+          HttpResponse.json([
+            ...duplicateGroupArchives,
+            { ...mockArchives[0], id: 202, print_name: 'MarchPrint', created_at: '2024-03-01T09:00:00Z', duplicate_count: 0, duplicate_sequence: 0, original_archive_id: null },
+          ])
+        )
+      );
+      render(<ArchivesPage />);
+
+      await waitFor(() => expect(screen.getByText('MarchPrint')).toBeInTheDocument(), { timeout: 5000 });
+      const names = ['FreshReprint', 'OldOriginal', 'MarchPrint'].map((name) => screen.getByText(name));
+      const order = [...names].sort((x, y) => (x.compareDocumentPosition(y) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
+      expect(order.map((el) => el.textContent)).toEqual(['FreshReprint', 'OldOriginal', 'MarchPrint']);
+    });
+
     it('shows all group members when hide duplicates is off', async () => {
       render(<ArchivesPage />);
 
