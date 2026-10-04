@@ -23,14 +23,18 @@ const MODE_KEY: Record<HoursChartMode, string> = {
 };
 
 export function HoursTab() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const { hasPermission } = useAuth();
   const canEdit = hasPermission('maintenance:update');
   const canDelete = hasPermission('maintenance:delete');
 
-  const { data, isLoading } = useQuery({ queryKey: ['maintenanceHours'], queryFn: api.getPrinterHours });
+  const { data, isLoading } = useQuery({
+    queryKey: ['maintenanceHours'],
+    queryFn: api.getPrinterHours,
+    refetchInterval: 15 * 60 * 1000, // keep the server's "today" fresh across midnight
+  });
   const [hidden, setHidden] = useState<Set<number>>(new Set());
   const [mode, setMode] = useState<HoursChartMode>('cumulative');
   const [formDate, setFormDate] = useState<string | null>(null);
@@ -199,7 +203,9 @@ export function HoursTab() {
       {confirmDate && (
         <ConfirmModal
           title={t('maintenance.hours.deleteTitle')}
-          message={t('maintenance.hours.deleteMessage', { date: confirmDate })}
+          message={t('maintenance.hours.deleteMessage', {
+            date: new Intl.DateTimeFormat(i18n.language, { timeZone: 'UTC' }).format(new Date(`${confirmDate}T00:00:00Z`)),
+          })}
           confirmText={t('common.delete')}
           variant="danger"
           isLoading={deleteDate.isPending}

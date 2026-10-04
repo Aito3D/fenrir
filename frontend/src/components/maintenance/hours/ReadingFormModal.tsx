@@ -52,7 +52,7 @@ export function ReadingFormModal({
     if (parsed === undefined) invalid = true;
     else if (parsed === null) {
       if (existing.has(m.id)) entries.push({ machine_id: m.id, hours: null });
-    } else entries.push({ machine_id: m.id, hours: parsed });
+    } else if (existing.get(m.id) !== parsed) entries.push({ machine_id: m.id, hours: parsed });
   }
   const fmt = (n: number) => Math.round(n).toLocaleString(i18n.language);
 

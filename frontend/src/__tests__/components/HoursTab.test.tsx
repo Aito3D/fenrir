@@ -20,7 +20,7 @@ vi.mock('recharts', async (orig) => {
 });
 
 const overview: HoursOverview = {
-  today: '2026-10-04',
+  today: '2031-02-14',
   machines: [
     { id: 1, printer_id: 6, name: 'X1C04', model: 'X1C', retired: false, current_hours: 3900 },
     { id: 2, printer_id: 3, name: 'H2S02', model: 'H2S', retired: false, current_hours: 1200 },
@@ -31,8 +31,8 @@ const overview: HoursOverview = {
     { id: 2, machine_id: 1, reading_date: '2026-04-25', hours: 3803, source: 'manual' },
     { id: 3, machine_id: 2, reading_date: '2026-04-25', hours: 906, source: 'manual' },
     { id: 4, machine_id: 3, reading_date: '2026-04-25', hours: 4102, source: 'manual' },
-    { id: 5, machine_id: 1, reading_date: '2026-10-04', hours: 3900, source: 'auto' },
-    { id: 6, machine_id: 2, reading_date: '2026-10-04', hours: 1200, source: 'auto' },
+    { id: 5, machine_id: 1, reading_date: '2031-02-14', hours: 3900, source: 'auto' },
+    { id: 6, machine_id: 2, reading_date: '2031-02-14', hours: 1200, source: 'auto' },
   ],
 };
 
@@ -55,7 +55,7 @@ describe('HoursTab', () => {
     render(<HoursTab />);
     const log = await screen.findByTestId('hours-reading-log');
     const rows = within(log).getAllByTestId('hours-log-row').map((r) => r.dataset.date + ':' + r.dataset.source);
-    expect(rows).toEqual(['2026-10-04:auto', '2026-04-25:manual', '2026-01-01:manual']);
+    expect(rows).toEqual(['2031-02-14:auto', '2026-04-25:manual', '2026-01-01:manual']);
   });
 
   it('switches chart modes', async () => {
@@ -81,7 +81,7 @@ describe('HoursTab', () => {
   });
 
   it('shows the empty state', async () => {
-    serve({ today: '2026-10-04', machines: overview.machines.slice(0, 1), readings: [] });
+    serve({ today: '2031-02-14', machines: overview.machines.slice(0, 1), readings: [] });
     render(<HoursTab />);
     expect(await screen.findByText('No readings yet. Add one or paste your sheet.')).toBeInTheDocument();
   });
@@ -113,7 +113,7 @@ describe('HoursTab', () => {
     render(<HoursTab />);
     await user.click(await screen.findByRole('button', { name: 'New reading' }));
     const dialog = await screen.findByTestId('hours-reading-form');
-    expect(within(dialog).getByLabelText('Date')).toHaveValue('2026-10-04'); // server today, not the browser's
+    expect(within(dialog).getByLabelText('Date')).toHaveValue('2031-02-14'); // server today, not the browser's
     const fields = within(dialog).getAllByRole('textbox');
     expect(fields.map((f) => f.getAttribute('name'))).toEqual(['H2S02', 'X1C04']); // no retired X1C01
     expect(within(dialog).getByRole('textbox', { name: 'X1C04' })).toHaveValue('');
@@ -138,7 +138,7 @@ describe('HoursTab', () => {
     expect(within(dialog).getByText('Lower than the previous reading (3,803 h)')).toBeInTheDocument();
     await user.click(within(dialog).getByRole('button', { name: 'Save' }));
     await waitFor(() =>
-      expect(body).toEqual({ reading_date: '2026-10-04', entries: [{ machine_id: 1, hours: 3700 }] }),
+      expect(body).toEqual({ reading_date: '2031-02-14', entries: [{ machine_id: 1, hours: 3700 }] }),
     );
   });
 
@@ -165,7 +165,7 @@ describe('HoursTab', () => {
     await waitFor(() =>
       expect(body).toEqual({
         reading_date: '2026-04-25',
-        entries: [{ machine_id: 2, hours: null }, { machine_id: 1, hours: 3803 }],
+        entries: [{ machine_id: 2, hours: null }],
       }),
     );
   });

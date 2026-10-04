@@ -20,12 +20,11 @@ interface MachineListProps {
   onDeleteRetired: (machine: HourMachine) => void;
 }
 
-const fmt = (n: number) => Math.round(n).toLocaleString();
-
 export function MachineList({
   machines, colors, hidden, stats, canDelete, onToggle, onShowAll, onHideAll, onDeleteRetired,
 }: MachineListProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const fmt = (n: number) => Math.round(n).toLocaleString(i18n.language);
   const active = machines.filter((m) => !m.retired);
   const families = [...new Set(active.map(familyOf))].sort();
   const groups: { label: string; items: HourMachine[] }[] = [
@@ -84,7 +83,7 @@ export function MachineList({
                       type="button"
                       aria-label={t('maintenance.hours.deleteMachineTitle')}
                       onClick={() => onDeleteRetired(m)}
-                      className="hidden p-1 text-bambu-gray opacity-0 hover:text-red-400 group-hover:opacity-100 md:block"
+                      className="hidden p-1 text-bambu-gray opacity-0 hover:text-red-400 focus-visible:opacity-100 group-hover:opacity-100 md:block"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
