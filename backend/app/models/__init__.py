@@ -24,7 +24,13 @@ from backend.app.models.local_preset import LocalPreset
 from backend.app.models.location import Location
 from backend.app.models.location_ha_sensor import LocationHASensor
 from backend.app.models.long_lived_token import LongLivedToken
-from backend.app.models.maintenance import MaintenanceHistory, MaintenanceType, PrinterMaintenance
+from backend.app.models.maintenance import (
+    HourMachine,
+    HourReading,
+    MaintenanceHistory,
+    MaintenanceType,
+    PrinterMaintenance,
+)
 from backend.app.models.notification import NotificationLog
 from backend.app.models.notification_inbox import AitoWatch, Notification, UserInboxPreference
 from backend.app.models.notification_template import NotificationTemplate
@@ -76,6 +82,8 @@ __all__ = [
     "SmartPlugEnergySnapshot",
     "MaintenanceType",
     "PrinterMaintenance",
+    "HourMachine",
+    "HourReading",
     "MaintenanceHistory",
     "KProfileNote",
     "NotificationTemplate",
