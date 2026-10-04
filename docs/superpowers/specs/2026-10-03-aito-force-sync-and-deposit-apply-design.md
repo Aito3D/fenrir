@@ -138,3 +138,17 @@ outcome per step (new KINDS entry + `aito.history.*` label in 15 locales).
   invoiced (and keeps it with a terminal in flight); InvoiceCard shows/hides the apply icon;
   ApplyDepositModal prefill, re-prefill, cap, submit; `depositPrefill` unit; name has no hold.
 - `./test_frontend.sh`, `./test_backend.sh`, `npm run build`; i18n parity across 15 locales.
+
+## Implementation notes
+
+Deviations and details settled during implementation:
+
+- Force sync `credit` step refreshes `customer_credit_total` only; `retainer_paid_total` stays the quote worker's figure (recomputing it with other rules would flip-flop against the worker).
+- The invoice step's `fixed` detail is `{number, balance_before, balance_after}`, not an `applied` list.
+- The route marks a card pending only when it has a quote_id or is already pending (a check must not create a quote).
+- Quote step: a card left `pending` after the attempt reports failed (`rate_limited` -> later Zoho steps skipped, or `upstream` + message); an error cleared with no other change reports `fixed` with `error_cleared`. The invoice step reports failed/`unreachable` when the deposit settle could not run. The links step reports skipped/`rate_limited` when the Heimdall pass did nothing for a visitable card; the credit step reports skipped/`not_configured` without Zoho.
+- Apply-deposit: the `invoice.deposit_applied` event is committed right after Books accepts the application; every later read degrades (stale balance minus the applied amount, url "", invoice_count 1) so a retry cannot double-apply. The amount is rounded to cents server- and client-side.
+- The deposit block on an invoiced card stays only while the quote terminal derives to `terminal_processing` / `terminal_attention` (reuses `derivePaymentState`), not a raw status list.
+- The menu label key is `aito.forceZohoSync` (`aito.forceSync` already existed for the Billing card button).
+- Aito route count is now 59 / 38 write.
+- The hold test lives in ProjectDetailPanel.test.tsx, not AitoClientHistory.test.tsx.
