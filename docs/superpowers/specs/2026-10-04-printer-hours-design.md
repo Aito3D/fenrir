@@ -29,8 +29,9 @@ retired machine back to a printer, and CSV/XLSX file import (paste only).
 
 ## Data model
 
-Two new tables, created by `create_all`, so no `run_migrations()` change. Both are registered in the three model
-import lists (`models/__init__.py`, `init_db()`, `tests/conftest.py`).
+Two new tables, created by `create_all`, so no `run_migrations()` change. Both models live in
+`backend/app/models/maintenance.py`, which the `init_db()` and `tests/conftest.py` import lists already import, so
+only `models/__init__.py` gains the two names.
 
 ### `hour_machines` (`HourMachine`)
 
@@ -40,6 +41,7 @@ import lists (`models/__init__.py`, `init_db()`, `tests/conftest.py`).
 | printer_id | int FK `printers.id` `ON DELETE SET NULL`, nullable, unique | NULL for retired machines |
 | name | str(100) | printer name at creation; the printer's live name wins when linked |
 | model | str(50) nullable | e.g. `X1C`, `H2S`; drives the family colour |
+| serial_number | str(50) nullable | linked printer's serial; SQLite can reuse a deleted printer's id, so a serial mismatch retires the row instead of hijacking it |
 | retired | bool, default false | |
 | created_at | datetime | |
 
@@ -89,7 +91,7 @@ same value.
 Backdated readings and imports never touch the offset. Otherwise pasting the sheet's 25/04 values would wind every
 counter back to April.
 
-### Routes (in `routes/maintenance.py`, prefix `/maintenance/hours`)
+### Routes (new module `routes/printer_hours.py`, prefix `/maintenance/hours`, included in `main.py` next to `maintenance.router`)
 
 | method & path | permission | body / result |
 |---|---|---|
@@ -107,8 +109,7 @@ Schemas go in `backend/app/schemas/maintenance.py`; client types and functions i
 
 ## Frontend
 
-`MaintenancePage.tsx` gets `TabType = 'status' | 'settings' | 'hours'` and a third tab button. The header subtitle
-for this tab reads "Last manual reading {date}". The tab body is a new component.
+`MaintenancePage.tsx` gets `TabType = 'status' | 'settings' | 'hours'` and a third tab button. The tab body is a new component. The subtitle for this tab is a static line ("Lifetime hours per machine").
 
 ### Files
 
@@ -125,11 +126,12 @@ for this tab reads "Last manual reading {date}". The tab body is a new component
   - **Fleet total**: the sum over machines of their interpolated value at each date. Before a machine's first
     reading it contributes 0; after its last one (retired machines) it stays at its last value.
 - `components/maintenance/hours/ReadingLog.tsx`: one row per date, newest first: badge (manual/auto), date, machine
-  count, total. Auto days collapse into one "Fenrir counters · today" row, plus older auto days only when no manual
-  reading exists for them. Manual rows have **Edit** (opens the form for that date) and delete.
-- `components/maintenance/hours/ReadingFormModal.tsx`: date input (default today, max today) and one numeric field
-  per **non-retired** machine. For today the fields are prefilled with `current_hours`; for an edited date with
-  that date's manual values (empty if none). Each field shows its delta against the machine's previous manual
+  count, total. Auto readings appear as one "Fenrir counters · today" row (today's snapshot only; daily auto rows would flood
+  the log). Manual rows have **Edit** (opens the form for that date) and delete.
+- `components/maintenance/hours/ReadingFormModal.tsx`: date input (default and max = the server's `today` from `GET /hours`, so
+  the browser's and the server's "today" never disagree) and one numeric field per **non-retired** machine.
+  Fenrir's `current_hours` is shown as the field's grey *placeholder*, not its value: an untouched field is skipped,
+  so a machine nobody read is never recorded as a manual reading. An edited date prefills that date's manual values. Each field shows its delta against the machine's previous manual
   reading, amber when negative. A note explains that today's readings recalibrate the counter. Clearing a
   previously filled field deletes that cell.
 - `components/maintenance/hours/PasteImportModal.tsx`: textarea plus a live preview. Columns are matched to machines
