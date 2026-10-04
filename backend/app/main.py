@@ -118,6 +118,7 @@ from backend.app.services.bambu_ftp import (
     get_cached_3mf,
     get_ftp_retry_settings,
     normalize_3mf_name,
+    print_temp_path,
     with_ftp_retry,
 )
 from backend.app.services.bambu_mqtt import PrinterState
@@ -3650,6 +3651,7 @@ _fallback_recovery_locks: dict[int, asyncio.Lock] = {}
 
 
 async def _probe_for_3mf(
+    printer_id: int,
     ip_address: str,
     access_code: str,
     printer_model: str | None,
@@ -3667,8 +3669,7 @@ async def _probe_for_3mf(
     """
     logger = logging.getLogger(__name__)
     for name in names:
-        local_path = app_settings.archive_dir / "temp" / name
-        local_path.parent.mkdir(parents=True, exist_ok=True)
+        local_path = print_temp_path(printer_id, name)
         paths = ftp_probe_paths(name)
         while paths:
             try:
@@ -3939,7 +3940,7 @@ def _schedule_fallback_3mf_retry(
                     name = f"{name}.3mf"
                 if name not in names:
                     names.append(name)
-            found = await _probe_for_3mf(printer_ip, printer_code, printer_model, names, judge, ftp_timeout)
+            found = await _probe_for_3mf(printer_id, printer_ip, printer_code, printer_model, names, judge, ftp_timeout)
             if found:
                 name, temp_path, _remote, _verdict = found
                 cache_3mf_download(printer_id, name, temp_path)
@@ -5006,6 +5007,7 @@ async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
             else:
                 probe_ran = True
                 found = await _probe_for_3mf(
+                    printer_id,
                     printer.ip_address,
                     printer.access_code,
                     printer.model,
@@ -5062,7 +5064,7 @@ async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
                 f"/data/Metadata/{try_filename}",
             ]
 
-            temp_path = app_settings.archive_dir / "temp" / try_filename
+            temp_path = print_temp_path(printer_id, try_filename)
             temp_path.parent.mkdir(parents=True, exist_ok=True)
 
             for remote_path in remote_paths:
@@ -5179,7 +5181,7 @@ async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
                         search_normalized = search_term.replace(" ", "_")
                         if fname.endswith(".3mf") and search_normalized in fname_normalized:
                             logger.info("Found matching file in %s: %s", search_dir, fname)
-                            temp_path = app_settings.archive_dir / "temp" / fname
+                            temp_path = print_temp_path(printer_id, fname)
                             temp_path.parent.mkdir(parents=True, exist_ok=True)
                             remote_full_path = posixpath.join(search_dir, fname)
                             if ftp_retry_enabled:
@@ -5248,7 +5250,7 @@ async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
                 retry_succeeded = False
                 if corrected_subtask and corrected_subtask != subtask_name:
                     for try_filename in (f"{corrected_subtask}.gcode.3mf", f"{corrected_subtask}.3mf"):
-                        retry_temp_path = app_settings.archive_dir / "temp" / try_filename
+                        retry_temp_path = print_temp_path(printer_id, try_filename)
                         retry_temp_path.parent.mkdir(parents=True, exist_ok=True)
                         for remote_path in (
                             f"/{try_filename}",

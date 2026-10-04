@@ -3,8 +3,11 @@ import io
 import json
 import logging
 import re as _re
+import shutil
+import tempfile
 import zipfile
 from collections import defaultdict
+from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal
 from html import escape as html_escape
@@ -74,6 +77,22 @@ _PRINTER_MEDIA_LIST_TIMEOUT_SECONDS = 8.0
 
 # Path of the embedded slicer config inside a BambuStudio/OrcaSlicer 3MF.
 _PROJECT_SETTINGS_PATH = "Metadata/project_settings.config"
+
+
+@contextmanager
+def _upload_temp_file(safe_filename: str):
+    """A private temp path for one uploaded file, removed with its folder after.
+
+    Uploads used to share ``archive/temp/<name>``: two people uploading
+    ``plate_1.3mf`` at once overwrote, and then deleted, each other's file.
+    """
+    root = settings.archive_dir / "temp" / "uploads"
+    root.mkdir(parents=True, exist_ok=True)
+    folder = Path(tempfile.mkdtemp(dir=root))
+    try:
+        yield folder / safe_filename
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
 
 
 def _safe_filename(filename: str) -> str:
@@ -4154,12 +4173,8 @@ async def upload_archive(
 
     # Save uploaded file temporarily — strip directory components to prevent path traversal
     safe_filename = _safe_filename(file.filename)
-    temp_path = (
-        settings.archive_dir / "temp" / safe_filename
-    )  # SEC-PATH-OK: safe_filename = _safe_filename(...) basename-stripped above
-    temp_path.parent.mkdir(parents=True, exist_ok=True)
-
-    try:
+    # SEC-PATH-OK: safe_filename = _safe_filename(...) basename-stripped above
+    with _upload_temp_file(safe_filename) as temp_path:
         content = await file.read()
         # #1401: same content validation as library upload — catches
         # raw-gcode-renamed-to-.3mf and other unprintable shapes before
@@ -4181,9 +4196,6 @@ async def upload_archive(
             raise HTTPException(400, "Failed to archive file")
 
         return ArchiveResponse.model_validate(archive)
-    finally:
-        if temp_path.exists():
-            temp_path.unlink()
 
 
 @router.post("/upload-bulk")
@@ -4217,48 +4229,45 @@ async def upload_archives_bulk(
             continue
 
         safe_filename = _safe_filename(file.filename)
-        temp_path = (
-            settings.archive_dir / "temp" / safe_filename
-        )  # SEC-PATH-OK: safe_filename = _safe_filename(...) basename-stripped above
-        temp_path.parent.mkdir(parents=True, exist_ok=True)
-
-        try:
-            content = await file.read()
-            # #1401: bulk-upload variant of the library validation. Collect
-            # the rejection per-file rather than aborting the whole batch
-            # so one bad file in a 10-file drag-drop doesn't lose the
-            # other nine.
+        # SEC-PATH-OK: safe_filename = _safe_filename(...) basename-stripped above
+        with _upload_temp_file(safe_filename) as temp_path:
             try:
-                validate_print_file_upload(file.filename, content)
-            except HTTPException as exc:
-                errors.append({"filename": file.filename, "error": exc.detail})
-                continue
-            temp_path.write_bytes(content)
+                content = await file.read()
+                # #1401: bulk-upload variant of the library validation. Collect
+                # the rejection per-file rather than aborting the whole batch
+                # so one bad file in a 10-file drag-drop doesn't lose the
+                # other nine.
+                try:
+                    validate_print_file_upload(file.filename, content)
+                except HTTPException as exc:
+                    errors.append({"filename": file.filename, "error": exc.detail})
+                    continue
+                temp_path.write_bytes(content)
 
-            service = ArchiveService(db)
-            archive = await service.archive_print(
-                printer_id=printer_id,
-                source_file=temp_path,
-                created_by_id=current_user.id if current_user else None,
-                prefer_filename_for_name=prefer_filename_for_name,
-            )
-
-            if archive:
-                results.append(
-                    {
-                        "filename": file.filename,
-                        "id": archive.id,
-                        "status": "success",
-                    }
+                service = ArchiveService(db)
+                archive = await service.archive_print(
+                    printer_id=printer_id,
+                    source_file=temp_path,
+                    created_by_id=current_user.id if current_user else None,
+                    prefer_filename_for_name=prefer_filename_for_name,
                 )
-            else:
-                errors.append({"filename": file.filename, "error": "Failed to process"})
-        except Exception as e:
-            logger.exception("Failed to upload archive %s: %s", file.filename, e)
-            errors.append({"filename": file.filename, "error": "Failed to process file"})
-        finally:
-            if temp_path.exists():
-                temp_path.unlink()
+
+                if archive:
+                    results.append(
+                        {
+                            "filename": file.filename,
+                            "id": archive.id,
+                            "status": "success",
+                        }
+                    )
+                else:
+                    errors.append({"filename": file.filename, "error": "Failed to process"})
+            except Exception as e:
+                logger.exception("Failed to upload archive %s: %s", file.filename, e)
+                errors.append({"filename": file.filename, "error": "Failed to process file"})
+                # A failed flush or commit leaves the session needing a rollback;
+                # without one every later file in the batch failed with it.
+                await db.rollback()
 
     return {
         "uploaded": len(results),

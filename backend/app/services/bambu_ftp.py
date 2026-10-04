@@ -1542,6 +1542,23 @@ def normalize_3mf_name(name: str) -> str:
     return cleaned.replace(" ", "_")
 
 
+def print_temp_path(printer_id: int, name: str) -> Path:
+    """Where a print file fetched from *printer_id* is downloaded to.
+
+    One folder per printer under ``archive/temp``: the same job sent to several
+    printers at once used to land on one shared ``archive/temp/<name>``, where
+    one printer's download truncated -- or, on a 550, unlinked -- the copy
+    another printer's archive or cover read was using (2026-10-03). Still under
+    the temp root, so :func:`clear_3mf_cache` keeps owning the file. Only the
+    bare name is used, so a path-shaped name cannot leave the folder.
+    """
+    from backend.app.core.config import settings as _config_settings
+
+    folder = _config_settings.archive_dir / "temp" / f"printer_{int(printer_id)}"
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder / (Path(name).name or "print.3mf")
+
+
 def cache_3mf_download(printer_id: int, name: str, local_path: Path) -> None:
     """Record a successfully-downloaded 3MF so a sibling flow can reuse it."""
     _threemf_path_cache[(printer_id, normalize_3mf_name(name))] = local_path

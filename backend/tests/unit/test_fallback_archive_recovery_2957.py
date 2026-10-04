@@ -517,8 +517,10 @@ class TestTheRetryWritesInsideTheDataVolume:
             await asyncio.wait_for(main_module._fallback_3mf_retry_tasks[printer_id], timeout=5)
 
         assert written, "the retry never attempted a download"
+        # Each printer downloads into its own folder under the temp root.
+        printer_folder = temp_root / f"printer_{printer_id}"
         for dest in written:
-            assert dest.resolve().parent == temp_root, f"{dest} escaped {temp_root}"
+            assert dest.resolve().parent == printer_folder, f"{dest} escaped {printer_folder}"
 
 
 class TestPhotosSurviveRecovery:
