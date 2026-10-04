@@ -4261,6 +4261,391 @@ def _print_3mf_candidate_names(subtask_name: str, filename: str) -> list[str]:
     return possible_names
 
 
+async def _promote_expected_archive(
+    db,
+    printer,
+    printer_id: int,
+    data: dict,
+    filename: str,
+    subtask_name: str,
+    subtask_id,
+    notification_sent: bool,
+    logger,
+) -> bool:
+    """Reuse the archive a reprint / queue dispatch registered for this print.
+
+    on_print_start's expected-archive branch, moved verbatim. Returns True when
+    the print was attached to that archive and on_print_start must stop there;
+    False when there was no expected archive (or its row is gone) and the
+    normal lookup/creation should run.
+    """
+    # Check if this is an expected print from reprint/scheduled
+    # Build list of possible keys to check
+    expected_keys = []
+    if subtask_name:
+        expected_keys.append((printer_id, subtask_name))
+        expected_keys.append((printer_id, f"{subtask_name}.3mf"))
+        expected_keys.append((printer_id, f"{subtask_name}.gcode.3mf"))
+    if filename:
+        fname = filename.split("/")[-1] if "/" in filename else filename
+        expected_keys.append((printer_id, fname))
+        # Strip extensions to match
+        base = fname.replace(".gcode", "").replace(".3mf", "")
+        expected_keys.append((printer_id, base))
+        expected_keys.append((printer_id, f"{base}.3mf"))
+
+    expected_archive_id = None
+    for key in expected_keys:
+        expected_archive_id = _expected_prints.pop(key, None)
+        _expected_print_registered_at.pop(key, None)
+        if expected_archive_id:
+            # Clean up other possible keys for this print
+            for other_key in expected_keys:
+                _expected_prints.pop(other_key, None)
+                _expected_print_registered_at.pop(other_key, None)
+            break
+
+    if expected_archive_id:
+        # This is a reprint/scheduled print - use existing archive, don't create new one
+        logger.info("Using expected archive %s for print (skipping duplicate)", expected_archive_id)
+        from backend.app.models.archive import PrintArchive
+
+        result = await db.execute(select(PrintArchive).where(PrintArchive.id == expected_archive_id))
+        archive = result.scalar_one_or_none()
+
+        if archive:
+            # Update archive status to printing
+            archive.status = "printing"
+            archive.started_at = datetime.now(timezone.utc)
+
+            # The previous run's answer is still on this row and the
+            # completion prompt is gated on ``user_verdict is None`` (#1898),
+            # so without a reset the second run inherits the first run's
+            # verdict: no prompt at all, and a green "good" badge on a run
+            # nobody ever judged.
+            if archive.confirm_requested:
+                archive.user_verdict = None
+                archive.user_verdict_source = None
+                archive.user_verdict_at = None
+                archive.confirm_token = None
+                archive.confirm_token_used_at = None
+
+            # Same for the previous run's outcome. update_archive_status
+            # only ever sets a failure_reason, so run one's reason landed on
+            # run two's print-log row; and the old completed_at made a
+            # running reprint look old to the archive purge.
+            archive.failure_reason = None
+            archive.completed_at = None
+
+            # Reprint of an archive reuses the source row. Without resetting
+            # ``timelapse_path`` _scan_for_timelapse_with_retries early-returns
+            # ("already has timelapse") and _capture_finish_photo_from_timelapse
+            # extracts the *original* print's last frame, which then ships in
+            # the completion notification (#1707). Clear the path so the
+            # scanner runs fresh; also unlink the old video file so reprints
+            # don't accumulate orphans in the archive directory. Photos list
+            # is left alone — accumulating one finish photo per run is fine.
+            # The print-start baseline (#2704) is stale for the same reason:
+            # it describes the printer before the previous run. The capture
+            # below overwrites it, but clear it here too so an early failure
+            # can't leave the scan diffing against the wrong snapshot.
+            archive.timelapse_baseline = None
+            stale_timelapse_relpath = archive.timelapse_path
+            if stale_timelapse_relpath:
+                archive.timelapse_path = None
+                try:
+                    stale_path = app_settings.base_dir / stale_timelapse_relpath
+                    if stale_path.is_file():
+                        stale_path.unlink()
+                        logger.info(
+                            "Deleted stale timelapse %s on reprint of archive %s",
+                            stale_timelapse_relpath,
+                            expected_archive_id,
+                        )
+                except OSError as e:
+                    logger.warning(
+                        "Failed to delete stale timelapse %s on reprint: %s",
+                        stale_timelapse_relpath,
+                        e,
+                    )
+            # Persist a restart-stable id so a later restart resumes this
+            # archive by subtask_id instead of name-matching + duplicating
+            # it (#1485). The printer often hasn't echoed subtask_id back
+            # this soon after dispatch, so fall back to the id Fenrir
+            # minted when it sent the print command. Scoped to this
+            # expected-print branch on purpose: an expected match means
+            # Fenrir dispatched this exact print in this process, so the
+            # client's last-dispatch id genuinely belongs to it — using it
+            # for an externally-started print could mis-tag the archive.
+            effective_subtask_id = subtask_id
+            if not effective_subtask_id:
+                _client = printer_manager.get_client(printer_id)
+                _dispatched = getattr(_client, "last_dispatch_subtask_id", None) if _client else None
+                if _dispatched:
+                    effective_subtask_id = str(_dispatched).strip() or None
+            # Update on first-set OR on reprint (the queue dispatcher mints
+            # a fresh subtask_id per dispatch in bambu_mqtt:3647). Skipping
+            # the rewrite for reprints leaves the archive holding the FIRST
+            # run's id; if MQTT then reconnects mid-print, the reconciler
+            # (#1542) compares the stale stored id against the printer's
+            # live id, sees a mismatch, and synthesises a bogus PRINT
+            # COMPLETE — exactly the false-positive "Print Stopped" reported
+            # in #1807. Inequality check preserves the noop-on-stable-push
+            # behaviour the earlier `not archive.subtask_id` guard provided.
+            if effective_subtask_id and archive.subtask_id != effective_subtask_id:
+                archive.subtask_id = effective_subtask_id
+            # #1403 follow-up: VP-queue archives are created with
+            # printer_id=None at queue-add time (we don't know which
+            # printer will run the job yet). When the print actually
+            # starts on a specific printer the expected-archive lookup
+            # used to skip this assignment, leaving printer_id=None
+            # forever — which then disables the "Scan for timelapse"
+            # button in ArchivesPage (gated on !archive.printer_id).
+            if archive.printer_id != printer_id:
+                archive.printer_id = printer_id
+            await db.commit()
+
+            # Track as active print
+            _active_prints[(printer_id, archive.filename)] = archive.id
+            if subtask_name:
+                _active_prints[(printer_id, f"{subtask_name}.3mf")] = archive.id
+
+            # Start timelapse session if external camera is enabled (#1353).
+            # Queue / VP-dispatched prints land here in the expected-archive
+            # branch and used to skip start_session entirely — frames were
+            # never captured and the post-print stitch silently returned None.
+            _maybe_start_layer_timelapse(printer, printer_id, archive.id)
+
+            # Inject ams_mapping into usage tracker session — the session was created
+            # before expected-print promotion, so it may have ams_mapping=None when
+            # the MQTT request topic subscription failed (common on P1S/A1).
+            _stored_map = _print_ams_mappings.get(expected_archive_id)
+            _stored_plate_id = _print_plate_ids.get(expected_archive_id)
+            if _stored_map or _stored_plate_id is not None:
+                try:
+                    from backend.app.services.usage_tracker import _active_sessions
+
+                    _ut_session = _active_sessions.get(printer_id)
+                    if _ut_session and _stored_map and not _ut_session.ams_mapping:
+                        _ut_session.ams_mapping = _stored_map
+                        logger.info("[CALLBACK] Injected ams_mapping into usage tracker session: %s", _stored_map)
+                    # plate_id injection covers direct-Print of plate N of a multi-plate
+                    # 3MF — queue prints already capture it via the on_print_start queue
+                    # lookup, but direct-Print never goes through the queue (#1697).
+                    if _ut_session and _stored_plate_id is not None and _ut_session.plate_id is None:
+                        _ut_session.plate_id = _stored_plate_id
+                        logger.info("[CALLBACK] Injected plate_id into usage tracker session: %s", _stored_plate_id)
+                except Exception:
+                    pass
+
+            # Set up energy tracking (#941: persist start on archive row)
+            await _record_energy_start(archive, printer_id, db, context="expected-print")
+
+            await ws_manager.send_archive_updated(
+                {
+                    "id": archive.id,
+                    "status": "printing",
+                }
+            )
+
+            # Send notification with archive data (reprint/scheduled)
+            if not notification_sent:
+                # Use archive's created_by_id; fall back to the creator registered via
+                # register_expected_print (handles library-file-based queue items where
+                # the freshly-created archive has no created_by_id yet).
+                # Pop ALL matching keys so no stale entries remain in the dict.
+                fallback_creator = None
+                for key in expected_keys:
+                    popped = _expected_print_creators.pop(key, None)
+                    if fallback_creator is None:
+                        fallback_creator = popped
+                archive_data = {
+                    "print_time_seconds": archive.print_time_seconds,
+                    "created_by_id": archive.created_by_id or fallback_creator,
+                }
+                await _send_print_start_notification(printer_id, data, archive_data, logger)
+
+            # Extract printable objects from the archived 3MF file
+            _load_objects_from_archive(archive, printer_id, logger)
+
+            # Store Spoolman tracking data for per-filament usage reporting
+            try:
+                await _store_spoolman_print_data(
+                    printer_id,
+                    archive.id,
+                    archive.file_path,
+                    db,
+                    printer_manager,
+                    ams_mapping=_get_start_ams_mapping(data, archive.id),
+                    plate_id=_get_start_plate_id(archive.id),
+                )
+            except Exception as e:
+                logger.warning("[SPOOLMAN] Failed to store tracking data: %s", e)
+
+            # Capture timelapse file baseline for snapshot-diff on completion
+            # (mirrors the new-archive branch). Queue / VP-dispatched prints
+            # hit this branch — without the baseline the completion-time scan
+            # falls into its "take baseline now" fallback, which snapshots
+            # AFTER the new MP4 already exists and never matches a diff
+            # (#1403 follow-up — see pwostran's 2026-05-18 support bundle).
+            await _capture_timelapse_baseline_at_start(printer, printer_id, logger, archive_id=archive.id)
+
+            return True  # Skip creating a new archive
+
+        # Expected-print entry pointed at an archive row that no longer
+        # exists (deleted between dispatch and print start). Fall through
+        # to the normal lookup/creation below instead of dropping the
+        # print on the floor.
+        logger.warning(
+            "Expected archive %s not found in DB — falling through to archive creation",
+            expected_archive_id,
+        )
+    return False
+
+
+async def _resume_existing_archive(
+    db, printer_id: int, data: dict, filename: str, subtask_name: str, subtask_id, notification_sent: bool, logger
+) -> bool:
+    """Reattach this print to an archive row that is already "printing" (or stale-cancelled).
+
+    on_print_start's duplicate/restart guard, moved verbatim. Returns True when
+    the print was resumed onto an existing row and on_print_start must stop;
+    False when there is none, or the one found was stale and has just been
+    cancelled, so a new archive should be created.
+    """
+    # Check if there's already a "printing" archive for this printer/file
+    # This prevents duplicates when backend restarts during an active print
+    from backend.app.models.archive import PrintArchive
+
+    existing_archive: PrintArchive | None = None
+
+    # Preferred match: subtask_id equality. MQTT reports the same subtask_id
+    # across a backend restart for the same print, so this is the most
+    # reliable way to reattach. We also accept a previously stale-cancelled
+    # archive here so users upgrading mid-print get revived when the row
+    # their earlier Fenrir version wrongly cancelled reappears (#972).
+    if subtask_id:
+        by_id = await db.execute(
+            select(PrintArchive)
+            .where(PrintArchive.printer_id == printer_id)
+            .where(PrintArchive.subtask_id == subtask_id)
+            .where(PrintArchive.status.in_(["printing", "cancelled"]))
+            .order_by(PrintArchive.created_at.desc())
+            .limit(1)
+        )
+        candidate = by_id.scalar_one_or_none()
+        if candidate and (candidate.status == "printing" or (candidate.failure_reason or "").startswith("Stale")):
+            existing_archive = candidate
+
+    # Fallback match: name-based lookup. Kept as-is for prints whose
+    # subtask_id is missing ("0" / local / non-cloud prints).
+    if existing_archive is None:
+        check_name = subtask_name or filename.split("/")[-1].replace(".gcode", "").replace(".3mf", "")
+        existing = await db.execute(
+            select(PrintArchive)
+            .where(PrintArchive.printer_id == printer_id)
+            .where(PrintArchive.status == "printing")
+            .where(
+                or_(
+                    PrintArchive.print_name == check_name,
+                    PrintArchive.filename.in_(
+                        [
+                            f"{check_name}.3mf",
+                            f"{check_name}.gcode.3mf",
+                        ]
+                    ),
+                )
+            )
+            .order_by(PrintArchive.created_at.desc())
+            .limit(1)
+        )
+        existing_archive = existing.scalar_one_or_none()
+
+    if existing_archive:
+        # subtask_id match → always resume, regardless of age. Same print,
+        # just a backend restart. Revive if it was previously stale-cancelled.
+        subtask_match = bool(subtask_id and existing_archive.subtask_id == subtask_id)
+
+        if subtask_match:
+            if existing_archive.status == "cancelled":
+                logger.warning(
+                    "Reviving stale-cancelled archive %s — matching subtask_id %s confirms same print (#972)",
+                    existing_archive.id,
+                    subtask_id,
+                )
+                existing_archive.status = "printing"
+                existing_archive.failure_reason = None
+                await db.commit()
+            else:
+                logger.info("Resuming archive %s on subtask_id match (%s)", existing_archive.id, subtask_id)
+            _active_prints[(printer_id, existing_archive.filename)] = existing_archive.id
+            if existing_archive.energy_start_kwh is None:
+                await _record_energy_start(existing_archive, printer_id, db, context="subtask-resume")
+            if not notification_sent:
+                archive_data = {
+                    "print_time_seconds": existing_archive.print_time_seconds,
+                    "created_by_id": existing_archive.created_by_id,
+                }
+                await _send_print_start_notification(printer_id, data, archive_data, logger)
+            _load_objects_from_archive(existing_archive, printer_id, logger)
+            return True
+
+        # Name-match only (no subtask_id to anchor on): decide resume vs.
+        # stale from the printer's *current* progress, not wall-clock age.
+        # A genuinely long print used to trip a blind 4h cutoff and have its
+        # live archive cancelled + duplicated on every backend restart
+        # (#1485). If the printer reports real progress, this name-matched
+        # 'printing' archive IS that ongoing print — resume it whatever its
+        # age. Only treat it as a stale leftover when the printer clearly
+        # shows a different, freshly-started print: near-0% progress on an
+        # archive far too old to still be at 0%. Unknown progress (printer
+        # not connected) never cancels — resuming is the safe default.
+        archive_age = datetime.now(timezone.utc) - existing_archive.created_at.replace(tzinfo=timezone.utc)
+        live_status = printer_manager.get_status(printer_id)
+        live_progress = getattr(live_status, "progress", None) if live_status else None
+        looks_stale = live_progress is not None and live_progress < 1.0 and archive_age.total_seconds() > 2 * 60 * 60
+        if looks_stale:
+            logger.warning(
+                f"Found stale 'printing' archive {existing_archive.id} (age: {archive_age}, "
+                f"printer progress {live_progress:.0f}%) — marking cancelled and creating new archive"
+            )
+            existing_archive.status = "cancelled"
+            # Canonical key, not a sentence (issue #2974). "No status update
+            # received" is what both stale paths actually observed; which of
+            # the two it was is already carried by ``status`` -- cancelled
+            # here, the reconciled outcome at the reconnect site -- so one
+            # key loses no information and gives the Statistics breakdown a
+            # single bucket instead of two untranslatable prose strings.
+            existing_archive.failure_reason = "noStatusUpdate"
+            await db.commit()
+            # Fall through to create new archive (don't return)
+        else:
+            logger.info(f"Skipping duplicate - already have printing archive {existing_archive.id} for {check_name}")
+            # Track this as the active print
+            _active_prints[(printer_id, existing_archive.filename)] = existing_archive.id
+            # Attach subtask_id retroactively so future restarts can resume.
+            # Compare for inequality (not "is empty") to also pick up reprint
+            # dispatches that mint a fresh id — see #1807 for the bogus
+            # "Print Stopped" the strict-empty guard caused on reconnect.
+            if subtask_id and existing_archive.subtask_id != subtask_id:
+                existing_archive.subtask_id = subtask_id
+                await db.commit()
+            # Also set up energy tracking if not already tracked (#941: persisted column)
+            if existing_archive.energy_start_kwh is None:
+                await _record_energy_start(existing_archive, printer_id, db, context="existing-printing")
+            # Send notification with archive data (existing archive)
+            if not notification_sent:
+                archive_data = {
+                    "print_time_seconds": existing_archive.print_time_seconds,
+                    "created_by_id": existing_archive.created_by_id,
+                }
+                await _send_print_start_notification(printer_id, data, archive_data, logger)
+            # Extract printable objects from the archived 3MF file
+            _load_objects_from_archive(existing_archive, printer_id, logger)
+            return True
+    return False
+
+
 async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
     """Handle print start - archive the 3MF file immediately.
 
@@ -4599,362 +4984,19 @@ async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
                 await _send_print_start_notification(printer_id, data, logger=logger)
             return
 
-        # Check if this is an expected print from reprint/scheduled
-        # Build list of possible keys to check
-        expected_keys = []
-        if subtask_name:
-            expected_keys.append((printer_id, subtask_name))
-            expected_keys.append((printer_id, f"{subtask_name}.3mf"))
-            expected_keys.append((printer_id, f"{subtask_name}.gcode.3mf"))
-        if filename:
-            fname = filename.split("/")[-1] if "/" in filename else filename
-            expected_keys.append((printer_id, fname))
-            # Strip extensions to match
-            base = fname.replace(".gcode", "").replace(".3mf", "")
-            expected_keys.append((printer_id, base))
-            expected_keys.append((printer_id, f"{base}.3mf"))
+        if await _promote_expected_archive(
+            db, printer, printer_id, data, filename, subtask_name, subtask_id, notification_sent, logger
+        ):
+            return
 
-        expected_archive_id = None
-        for key in expected_keys:
-            expected_archive_id = _expected_prints.pop(key, None)
-            _expected_print_registered_at.pop(key, None)
-            if expected_archive_id:
-                # Clean up other possible keys for this print
-                for other_key in expected_keys:
-                    _expected_prints.pop(other_key, None)
-                    _expected_print_registered_at.pop(other_key, None)
-                break
-
-        if expected_archive_id:
-            # This is a reprint/scheduled print - use existing archive, don't create new one
-            logger.info("Using expected archive %s for print (skipping duplicate)", expected_archive_id)
-            from backend.app.models.archive import PrintArchive
-
-            result = await db.execute(select(PrintArchive).where(PrintArchive.id == expected_archive_id))
-            archive = result.scalar_one_or_none()
-
-            if archive:
-                # Update archive status to printing
-                archive.status = "printing"
-                archive.started_at = datetime.now(timezone.utc)
-
-                # The previous run's answer is still on this row and the
-                # completion prompt is gated on ``user_verdict is None`` (#1898),
-                # so without a reset the second run inherits the first run's
-                # verdict: no prompt at all, and a green "good" badge on a run
-                # nobody ever judged.
-                if archive.confirm_requested:
-                    archive.user_verdict = None
-                    archive.user_verdict_source = None
-                    archive.user_verdict_at = None
-                    archive.confirm_token = None
-                    archive.confirm_token_used_at = None
-
-                # Same for the previous run's outcome. update_archive_status
-                # only ever sets a failure_reason, so run one's reason landed on
-                # run two's print-log row; and the old completed_at made a
-                # running reprint look old to the archive purge.
-                archive.failure_reason = None
-                archive.completed_at = None
-
-                # Reprint of an archive reuses the source row. Without resetting
-                # ``timelapse_path`` _scan_for_timelapse_with_retries early-returns
-                # ("already has timelapse") and _capture_finish_photo_from_timelapse
-                # extracts the *original* print's last frame, which then ships in
-                # the completion notification (#1707). Clear the path so the
-                # scanner runs fresh; also unlink the old video file so reprints
-                # don't accumulate orphans in the archive directory. Photos list
-                # is left alone — accumulating one finish photo per run is fine.
-                # The print-start baseline (#2704) is stale for the same reason:
-                # it describes the printer before the previous run. The capture
-                # below overwrites it, but clear it here too so an early failure
-                # can't leave the scan diffing against the wrong snapshot.
-                archive.timelapse_baseline = None
-                stale_timelapse_relpath = archive.timelapse_path
-                if stale_timelapse_relpath:
-                    archive.timelapse_path = None
-                    try:
-                        stale_path = app_settings.base_dir / stale_timelapse_relpath
-                        if stale_path.is_file():
-                            stale_path.unlink()
-                            logger.info(
-                                "Deleted stale timelapse %s on reprint of archive %s",
-                                stale_timelapse_relpath,
-                                expected_archive_id,
-                            )
-                    except OSError as e:
-                        logger.warning(
-                            "Failed to delete stale timelapse %s on reprint: %s",
-                            stale_timelapse_relpath,
-                            e,
-                        )
-                # Persist a restart-stable id so a later restart resumes this
-                # archive by subtask_id instead of name-matching + duplicating
-                # it (#1485). The printer often hasn't echoed subtask_id back
-                # this soon after dispatch, so fall back to the id Fenrir
-                # minted when it sent the print command. Scoped to this
-                # expected-print branch on purpose: an expected match means
-                # Fenrir dispatched this exact print in this process, so the
-                # client's last-dispatch id genuinely belongs to it — using it
-                # for an externally-started print could mis-tag the archive.
-                effective_subtask_id = subtask_id
-                if not effective_subtask_id:
-                    _client = printer_manager.get_client(printer_id)
-                    _dispatched = getattr(_client, "last_dispatch_subtask_id", None) if _client else None
-                    if _dispatched:
-                        effective_subtask_id = str(_dispatched).strip() or None
-                # Update on first-set OR on reprint (the queue dispatcher mints
-                # a fresh subtask_id per dispatch in bambu_mqtt:3647). Skipping
-                # the rewrite for reprints leaves the archive holding the FIRST
-                # run's id; if MQTT then reconnects mid-print, the reconciler
-                # (#1542) compares the stale stored id against the printer's
-                # live id, sees a mismatch, and synthesises a bogus PRINT
-                # COMPLETE — exactly the false-positive "Print Stopped" reported
-                # in #1807. Inequality check preserves the noop-on-stable-push
-                # behaviour the earlier `not archive.subtask_id` guard provided.
-                if effective_subtask_id and archive.subtask_id != effective_subtask_id:
-                    archive.subtask_id = effective_subtask_id
-                # #1403 follow-up: VP-queue archives are created with
-                # printer_id=None at queue-add time (we don't know which
-                # printer will run the job yet). When the print actually
-                # starts on a specific printer the expected-archive lookup
-                # used to skip this assignment, leaving printer_id=None
-                # forever — which then disables the "Scan for timelapse"
-                # button in ArchivesPage (gated on !archive.printer_id).
-                if archive.printer_id != printer_id:
-                    archive.printer_id = printer_id
-                await db.commit()
-
-                # Track as active print
-                _active_prints[(printer_id, archive.filename)] = archive.id
-                if subtask_name:
-                    _active_prints[(printer_id, f"{subtask_name}.3mf")] = archive.id
-
-                # Start timelapse session if external camera is enabled (#1353).
-                # Queue / VP-dispatched prints land here in the expected-archive
-                # branch and used to skip start_session entirely — frames were
-                # never captured and the post-print stitch silently returned None.
-                _maybe_start_layer_timelapse(printer, printer_id, archive.id)
-
-                # Inject ams_mapping into usage tracker session — the session was created
-                # before expected-print promotion, so it may have ams_mapping=None when
-                # the MQTT request topic subscription failed (common on P1S/A1).
-                _stored_map = _print_ams_mappings.get(expected_archive_id)
-                _stored_plate_id = _print_plate_ids.get(expected_archive_id)
-                if _stored_map or _stored_plate_id is not None:
-                    try:
-                        from backend.app.services.usage_tracker import _active_sessions
-
-                        _ut_session = _active_sessions.get(printer_id)
-                        if _ut_session and _stored_map and not _ut_session.ams_mapping:
-                            _ut_session.ams_mapping = _stored_map
-                            logger.info("[CALLBACK] Injected ams_mapping into usage tracker session: %s", _stored_map)
-                        # plate_id injection covers direct-Print of plate N of a multi-plate
-                        # 3MF — queue prints already capture it via the on_print_start queue
-                        # lookup, but direct-Print never goes through the queue (#1697).
-                        if _ut_session and _stored_plate_id is not None and _ut_session.plate_id is None:
-                            _ut_session.plate_id = _stored_plate_id
-                            logger.info("[CALLBACK] Injected plate_id into usage tracker session: %s", _stored_plate_id)
-                    except Exception:
-                        pass
-
-                # Set up energy tracking (#941: persist start on archive row)
-                await _record_energy_start(archive, printer_id, db, context="expected-print")
-
-                await ws_manager.send_archive_updated(
-                    {
-                        "id": archive.id,
-                        "status": "printing",
-                    }
-                )
-
-                # Send notification with archive data (reprint/scheduled)
-                if not notification_sent:
-                    # Use archive's created_by_id; fall back to the creator registered via
-                    # register_expected_print (handles library-file-based queue items where
-                    # the freshly-created archive has no created_by_id yet).
-                    # Pop ALL matching keys so no stale entries remain in the dict.
-                    fallback_creator = None
-                    for key in expected_keys:
-                        popped = _expected_print_creators.pop(key, None)
-                        if fallback_creator is None:
-                            fallback_creator = popped
-                    archive_data = {
-                        "print_time_seconds": archive.print_time_seconds,
-                        "created_by_id": archive.created_by_id or fallback_creator,
-                    }
-                    await _send_print_start_notification(printer_id, data, archive_data, logger)
-
-                # Extract printable objects from the archived 3MF file
-                _load_objects_from_archive(archive, printer_id, logger)
-
-                # Store Spoolman tracking data for per-filament usage reporting
-                try:
-                    await _store_spoolman_print_data(
-                        printer_id,
-                        archive.id,
-                        archive.file_path,
-                        db,
-                        printer_manager,
-                        ams_mapping=_get_start_ams_mapping(data, archive.id),
-                        plate_id=_get_start_plate_id(archive.id),
-                    )
-                except Exception as e:
-                    logger.warning("[SPOOLMAN] Failed to store tracking data: %s", e)
-
-                # Capture timelapse file baseline for snapshot-diff on completion
-                # (mirrors the new-archive branch). Queue / VP-dispatched prints
-                # hit this branch — without the baseline the completion-time scan
-                # falls into its "take baseline now" fallback, which snapshots
-                # AFTER the new MP4 already exists and never matches a diff
-                # (#1403 follow-up — see pwostran's 2026-05-18 support bundle).
-                await _capture_timelapse_baseline_at_start(printer, printer_id, logger, archive_id=archive.id)
-
-                return  # Skip creating a new archive
-
-            # Expected-print entry pointed at an archive row that no longer
-            # exists (deleted between dispatch and print start). Fall through
-            # to the normal lookup/creation below instead of dropping the
-            # print on the floor.
-            logger.warning(
-                "Expected archive %s not found in DB — falling through to archive creation",
-                expected_archive_id,
-            )
-
-        # Check if there's already a "printing" archive for this printer/file
-        # This prevents duplicates when backend restarts during an active print
+        # Kept here as well as in _resume_existing_archive: the new-archive branch
+        # below reads PrintArchive after a failed flag write.
         from backend.app.models.archive import PrintArchive
 
-        existing_archive: PrintArchive | None = None
-
-        # Preferred match: subtask_id equality. MQTT reports the same subtask_id
-        # across a backend restart for the same print, so this is the most
-        # reliable way to reattach. We also accept a previously stale-cancelled
-        # archive here so users upgrading mid-print get revived when the row
-        # their earlier Fenrir version wrongly cancelled reappears (#972).
-        if subtask_id:
-            by_id = await db.execute(
-                select(PrintArchive)
-                .where(PrintArchive.printer_id == printer_id)
-                .where(PrintArchive.subtask_id == subtask_id)
-                .where(PrintArchive.status.in_(["printing", "cancelled"]))
-                .order_by(PrintArchive.created_at.desc())
-                .limit(1)
-            )
-            candidate = by_id.scalar_one_or_none()
-            if candidate and (candidate.status == "printing" or (candidate.failure_reason or "").startswith("Stale")):
-                existing_archive = candidate
-
-        # Fallback match: name-based lookup. Kept as-is for prints whose
-        # subtask_id is missing ("0" / local / non-cloud prints).
-        if existing_archive is None:
-            check_name = subtask_name or filename.split("/")[-1].replace(".gcode", "").replace(".3mf", "")
-            existing = await db.execute(
-                select(PrintArchive)
-                .where(PrintArchive.printer_id == printer_id)
-                .where(PrintArchive.status == "printing")
-                .where(
-                    or_(
-                        PrintArchive.print_name == check_name,
-                        PrintArchive.filename.in_(
-                            [
-                                f"{check_name}.3mf",
-                                f"{check_name}.gcode.3mf",
-                            ]
-                        ),
-                    )
-                )
-                .order_by(PrintArchive.created_at.desc())
-                .limit(1)
-            )
-            existing_archive = existing.scalar_one_or_none()
-
-        if existing_archive:
-            # subtask_id match → always resume, regardless of age. Same print,
-            # just a backend restart. Revive if it was previously stale-cancelled.
-            subtask_match = bool(subtask_id and existing_archive.subtask_id == subtask_id)
-
-            if subtask_match:
-                if existing_archive.status == "cancelled":
-                    logger.warning(
-                        "Reviving stale-cancelled archive %s — matching subtask_id %s confirms same print (#972)",
-                        existing_archive.id,
-                        subtask_id,
-                    )
-                    existing_archive.status = "printing"
-                    existing_archive.failure_reason = None
-                    await db.commit()
-                else:
-                    logger.info("Resuming archive %s on subtask_id match (%s)", existing_archive.id, subtask_id)
-                _active_prints[(printer_id, existing_archive.filename)] = existing_archive.id
-                if existing_archive.energy_start_kwh is None:
-                    await _record_energy_start(existing_archive, printer_id, db, context="subtask-resume")
-                if not notification_sent:
-                    archive_data = {
-                        "print_time_seconds": existing_archive.print_time_seconds,
-                        "created_by_id": existing_archive.created_by_id,
-                    }
-                    await _send_print_start_notification(printer_id, data, archive_data, logger)
-                _load_objects_from_archive(existing_archive, printer_id, logger)
-                return
-
-            # Name-match only (no subtask_id to anchor on): decide resume vs.
-            # stale from the printer's *current* progress, not wall-clock age.
-            # A genuinely long print used to trip a blind 4h cutoff and have its
-            # live archive cancelled + duplicated on every backend restart
-            # (#1485). If the printer reports real progress, this name-matched
-            # 'printing' archive IS that ongoing print — resume it whatever its
-            # age. Only treat it as a stale leftover when the printer clearly
-            # shows a different, freshly-started print: near-0% progress on an
-            # archive far too old to still be at 0%. Unknown progress (printer
-            # not connected) never cancels — resuming is the safe default.
-            archive_age = datetime.now(timezone.utc) - existing_archive.created_at.replace(tzinfo=timezone.utc)
-            live_status = printer_manager.get_status(printer_id)
-            live_progress = getattr(live_status, "progress", None) if live_status else None
-            looks_stale = (
-                live_progress is not None and live_progress < 1.0 and archive_age.total_seconds() > 2 * 60 * 60
-            )
-            if looks_stale:
-                logger.warning(
-                    f"Found stale 'printing' archive {existing_archive.id} (age: {archive_age}, "
-                    f"printer progress {live_progress:.0f}%) — marking cancelled and creating new archive"
-                )
-                existing_archive.status = "cancelled"
-                # Canonical key, not a sentence (issue #2974). "No status update
-                # received" is what both stale paths actually observed; which of
-                # the two it was is already carried by ``status`` -- cancelled
-                # here, the reconciled outcome at the reconnect site -- so one
-                # key loses no information and gives the Statistics breakdown a
-                # single bucket instead of two untranslatable prose strings.
-                existing_archive.failure_reason = "noStatusUpdate"
-                await db.commit()
-                # Fall through to create new archive (don't return)
-            else:
-                logger.info(
-                    f"Skipping duplicate - already have printing archive {existing_archive.id} for {check_name}"
-                )
-                # Track this as the active print
-                _active_prints[(printer_id, existing_archive.filename)] = existing_archive.id
-                # Attach subtask_id retroactively so future restarts can resume.
-                # Compare for inequality (not "is empty") to also pick up reprint
-                # dispatches that mint a fresh id — see #1807 for the bogus
-                # "Print Stopped" the strict-empty guard caused on reconnect.
-                if subtask_id and existing_archive.subtask_id != subtask_id:
-                    existing_archive.subtask_id = subtask_id
-                    await db.commit()
-                # Also set up energy tracking if not already tracked (#941: persisted column)
-                if existing_archive.energy_start_kwh is None:
-                    await _record_energy_start(existing_archive, printer_id, db, context="existing-printing")
-                # Send notification with archive data (existing archive)
-                if not notification_sent:
-                    archive_data = {
-                        "print_time_seconds": existing_archive.print_time_seconds,
-                        "created_by_id": existing_archive.created_by_id,
-                    }
-                    await _send_print_start_notification(printer_id, data, archive_data, logger)
-                # Extract printable objects from the archived 3MF file
-                _load_objects_from_archive(existing_archive, printer_id, logger)
-                return
+        if await _resume_existing_archive(
+            db, printer_id, data, filename, subtask_name, subtask_id, notification_sent, logger
+        ):
+            return
 
         # Build list of possible 3MF filenames to try
         possible_names = _print_3mf_candidate_names(subtask_name, filename)
