@@ -1530,19 +1530,35 @@ async def get_archive_stats(
     )
 
 
+# Live plug totals: each plug gets its own deadline and they are read
+# concurrently; the sum is reused briefly, since stats are refetched on every
+# print start and completion and the lifetime counter barely moves in a minute.
+_LIVE_PLUG_TIMEOUT_SECONDS = 5.0
+_LIVE_PLUG_CACHE_SECONDS = 60.0
+_live_plug_total_cache: dict[str, tuple[float, float]] = {}
+
+
 async def _sum_live_plug_totals(db: AsyncSession) -> float:
     """Sum the live lifetime counter from every smart plug.
 
     Used for all-time "total consumption" mode. Only the current value is
     available so this can't be date-filtered — use `_sum_snapshot_deltas` for
-    that case.
+    that case. Plugs are read concurrently with a timeout each (one after
+    another, a slow Home Assistant held the request for tens of seconds); a
+    plug that does not answer in time counts as 0.
     """
+    import time as _time
+
     from backend.app.api.routes.settings import get_setting
     from backend.app.models.smart_plug import SmartPlug
     from backend.app.services.homeassistant import homeassistant_service
     from backend.app.services.mqtt_relay import mqtt_relay
     from backend.app.services.rest_smart_plug import rest_smart_plug_service
     from backend.app.services.tasmota import tasmota_service
+
+    cached = _live_plug_total_cache.get("total")
+    if cached is not None and _time.monotonic() - cached[0] < _LIVE_PLUG_CACHE_SECONDS:
+        return cached[1]
 
     plugs_result = await db.execute(select(SmartPlug))
     plugs = list(plugs_result.scalars().all())
@@ -1551,25 +1567,31 @@ async def _sum_live_plug_totals(db: AsyncSession) -> float:
     ha_token = await get_setting(db, "ha_token") or ""
     homeassistant_service.configure(ha_url, ha_token)
 
-    total = 0.0
-    for plug in plugs:
+    async def _plug_total(plug) -> float:
         if plug.plug_type == "tasmota":
             energy = await tasmota_service.get_energy(plug)
-            if energy and energy.get("total") is not None:
-                total += energy["total"]
-        elif plug.plug_type == "homeassistant":
+            return energy["total"] if energy and energy.get("total") is not None else 0.0
+        if plug.plug_type == "homeassistant":
             energy = await homeassistant_service.get_energy(plug)
-            if energy and energy.get("total") is not None:
-                total += energy["total"]
-        elif plug.plug_type == "mqtt":
+            return energy["total"] if energy and energy.get("total") is not None else 0.0
+        if plug.plug_type == "mqtt":
             # MQTT plugs only expose today's counter, not lifetime.
             mqtt_data = mqtt_relay.smart_plug_service.get_plug_data(plug.id)
-            if mqtt_data and mqtt_data.energy is not None:
-                total += mqtt_data.energy
-        elif plug.plug_type == "rest":
+            return mqtt_data.energy if mqtt_data and mqtt_data.energy is not None else 0.0
+        if plug.plug_type == "rest":
             energy = await rest_smart_plug_service.get_energy(plug)
-            if energy and energy.get("today") is not None:
-                total += energy["today"]
+            return energy["today"] if energy and energy.get("today") is not None else 0.0
+        return 0.0
+
+    async def _bounded(plug) -> float:
+        try:
+            return await asyncio.wait_for(_plug_total(plug), _LIVE_PLUG_TIMEOUT_SECONDS)
+        except Exception as e:
+            logger.debug("Energy total from plug %s unavailable: %s", getattr(plug, "id", "?"), e)
+            return 0.0
+
+    total = float(sum(await asyncio.gather(*(_bounded(plug) for plug in plugs))))
+    _live_plug_total_cache["total"] = (_time.monotonic(), total)
     return total
 
 
