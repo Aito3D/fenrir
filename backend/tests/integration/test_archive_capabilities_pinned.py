@@ -95,7 +95,9 @@ async def test_source_mesh_colours_and_volume_win(async_client, archive_factory,
         source={
             "3D/Objects/o.model": "<model><mesh><vertex x='1'/></mesh></model>",
             "Metadata/project_settings.config": _config(
-                printable_area=["0x0", "256x0", "256x256", "0x256"], printable_height="250", filament_colour=["#ABCDEF", "", 3]
+                printable_area=["0x0", "256x0", "256x256", "0x256"],
+                printable_height="250",
+                filament_colour=["#ABCDEF", "", 3],
             ),
         },
     )
