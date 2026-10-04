@@ -79,6 +79,49 @@ _PRINTER_MEDIA_LIST_TIMEOUT_SECONDS = 8.0
 _PROJECT_SETTINGS_PATH = "Metadata/project_settings.config"
 
 
+# Caps for the uploads that are still read into memory (their consumers take
+# bytes). 3MF, source and F3D uploads stream to disk under
+# ``library_max_upload_bytes`` instead.
+_UPLOAD_PHOTO_MAX_BYTES = 50 * 1024 * 1024
+_UPLOAD_AUDIO_MAX_BYTES = 200 * 1024 * 1024
+
+
+def _upload_too_large(max_bytes: int) -> HTTPException:
+    return HTTPException(status_code=413, detail=f"Upload exceeds the maximum size of {max_bytes} bytes")
+
+
+async def _read_upload_capped(file: UploadFile, max_bytes: int) -> bytes:
+    """Read an upload in chunks, refusing it with 413 past *max_bytes*.
+
+    ``await file.read()`` held any size whole in memory: a multi-GB upload, or
+    a few concurrent large ones, could OOM-kill a small server.
+    """
+    if file.size is not None and file.size > max_bytes:
+        raise _upload_too_large(max_bytes)
+    chunks: list[bytes] = []
+    total = 0
+    while chunk := await file.read(1 << 20):
+        total += len(chunk)
+        if total > max_bytes:
+            raise _upload_too_large(max_bytes)
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+async def _stream_upload(file: UploadFile, dest: Path, validate_as: str | None = None) -> int:
+    """Stream an upload to *dest* under the library's size cap (413 past it).
+
+    *validate_as* is the filename to run the print-file check against; it only
+    needs the first bytes, so it runs on the first chunk and a bad file is
+    refused before the rest is read. *dest* is removed on any failure.
+    """
+    from backend.app.api.routes.library import _stream_upload_to_path, validate_print_file_upload
+
+    on_first = (lambda chunk: validate_print_file_upload(validate_as, chunk)) if validate_as else None
+    total, _sha = await _stream_upload_to_path(file, dest, settings.library_max_upload_bytes, on_first_chunk=on_first)
+    return total
+
+
 @contextmanager
 def _upload_temp_file(safe_filename: str):
     """A private temp path for one uploaded file, removed with its folder after.
@@ -3138,7 +3181,7 @@ async def upload_timelapse(
     if not file.filename or not file.filename.endswith((".mp4", ".avi", ".mkv")):
         raise HTTPException(400, "File must be a video file (.mp4, .avi, .mkv)")
 
-    content = await file.read()
+    content = await _read_upload_capped(file, settings.library_max_upload_bytes)
     safe_filename = _safe_filename(file.filename)
     success = await service.attach_timelapse(archive_id, content, safe_filename)
 
@@ -3268,7 +3311,7 @@ async def process_timelapse(
         if not audio.filename.lower().endswith((".mp3", ".wav", ".m4a", ".aac", ".ogg")):
             raise HTTPException(400, "Audio must be .mp3, .wav, .m4a, .aac, or .ogg")
 
-        audio_content = await audio.read()
+        audio_content = await _read_upload_capped(audio, _UPLOAD_AUDIO_MAX_BYTES)
         # Extract and validate suffix to prevent path injection
         suffix = Path(audio.filename).suffix.lower()
         if suffix not in (".mp3", ".wav", ".m4a", ".aac", ".ogg"):
@@ -3372,7 +3415,7 @@ async def upload_photo(
     photo_path = photos_dir / photo_filename  # SEC-PATH-OK: photo_filename = uuid.uuid4().hex[:8] + ext
 
     # Save file
-    content = await file.read()
+    content = await _read_upload_capped(file, _UPLOAD_PHOTO_MAX_BYTES)
     photo_path.write_bytes(content)
 
     # Update archive photos list (create new list to trigger SQLAlchemy change detection)
@@ -4175,14 +4218,11 @@ async def upload_archive(
     safe_filename = _safe_filename(file.filename)
     # SEC-PATH-OK: safe_filename = _safe_filename(...) basename-stripped above
     with _upload_temp_file(safe_filename) as temp_path:
-        content = await file.read()
         # #1401: same content validation as library upload — catches
         # raw-gcode-renamed-to-.3mf and other unprintable shapes before
-        # archiving them and offering them up for print.
-        from backend.app.api.routes.library import validate_print_file_upload
-
-        validate_print_file_upload(file.filename, content)
-        temp_path.write_bytes(content)
+        # archiving them and offering them up for print. Streamed to disk
+        # under the size cap rather than read into memory whole.
+        await _stream_upload(file, temp_path, file.filename)
 
         service = ArchiveService(db)
         archive = await service.archive_print(
@@ -4218,7 +4258,6 @@ async def upload_archives_bulk(
     prefer_filename_for_name applies to every file in the batch. See
     upload_archive for the flag's lineage.
     """
-    from backend.app.api.routes.library import validate_print_file_upload
 
     results = []
     errors = []
@@ -4232,17 +4271,15 @@ async def upload_archives_bulk(
         # SEC-PATH-OK: safe_filename = _safe_filename(...) basename-stripped above
         with _upload_temp_file(safe_filename) as temp_path:
             try:
-                content = await file.read()
                 # #1401: bulk-upload variant of the library validation. Collect
-                # the rejection per-file rather than aborting the whole batch
-                # so one bad file in a 10-file drag-drop doesn't lose the
-                # other nine.
+                # the rejection (bad content, or over the size cap) per-file
+                # rather than aborting the whole batch so one bad file in a
+                # 10-file drag-drop doesn't lose the other nine.
                 try:
-                    validate_print_file_upload(file.filename, content)
+                    await _stream_upload(file, temp_path, file.filename)
                 except HTTPException as exc:
                     errors.append({"filename": file.filename, "error": exc.detail})
                     continue
-                temp_path.write_bytes(content)
 
                 service = ArchiveService(db)
                 archive = await service.archive_print(
@@ -5101,18 +5138,18 @@ def _resolve_source_3mf_path(archive: PrintArchive, source_filename: str) -> Pat
     return _resolve_attachment_path(archive, "source", source_filename)
 
 
-def _store_attachment(path: Path, content: bytes) -> None:
-    """Write *content* to *path* without ever leaving a half-written file there.
+async def _stream_attachment(file: UploadFile, path: Path, validate_as: str | None = None) -> None:
+    """Stream an upload to *path* without ever leaving a half-written file there.
 
     Written beside the target and swapped in with ``os.replace``, so a full
-    disk or a crash leaves either the old file or the new one, never a
+    disk, a 413 or a crash leaves either the old file or the new one, never a
     truncated mix -- the target may be the very file being replaced.
     """
     import os
 
     tmp = path.with_name(f".{path.name}.part")
     try:
-        tmp.write_bytes(content)
+        await _stream_upload(file, tmp, validate_as)
         os.replace(tmp, path)
     finally:
         tmp.unlink(missing_ok=True)
@@ -5211,17 +5248,13 @@ async def upload_source_3mf(
     source_filename = _safe_filename(file.filename)
     source_path = _resolve_source_3mf_path(archive, source_filename)
 
-    content = await file.read()
     # #1401: validate zip header on source 3MF uploads too — source files
     # are uploaded for reprint and slicing, so an invalid one breaks the
     # same downstream paths as a bad sliced file.
-    from backend.app.api.routes.library import validate_print_file_upload
-
-    validate_print_file_upload(file.filename, content)
     # The old source goes only once the new one is in place and committed: a
     # rejected or failed upload used to cost the only copy.
     old_source = archive.source_3mf_path
-    _store_attachment(source_path, content)
+    await _stream_attachment(file, source_path, file.filename)
 
     # Update archive with source path (relative to base_dir)
     archive.source_3mf_path = str(source_path.relative_to(settings.base_dir))
@@ -5423,15 +5456,11 @@ async def upload_source_3mf_by_name(
     source_filename = safe_filename
     source_path = _resolve_source_3mf_path(archive, source_filename)
 
-    content = await file.read()
     # #1401: same zip-header check as the other upload routes — the
     # match-by-name endpoint is used by slicer post-processing scripts,
     # so a misconfigured script is exactly how a bad 3MF would slip in.
-    from backend.app.api.routes.library import validate_print_file_upload
-
-    validate_print_file_upload(file.filename, content)
     old_source = archive.source_3mf_path
-    _store_attachment(source_path, content)
+    await _stream_attachment(file, source_path, file.filename)
 
     # Update archive with source path
     archive.source_3mf_path = str(source_path.relative_to(settings.base_dir))
@@ -5510,9 +5539,8 @@ async def upload_f3d(
     f3d_filename = _safe_filename(file.filename)
     f3d_path = _resolve_attachment_path(archive, "f3d", f3d_filename)
 
-    content = await file.read()
     old_f3d = archive.f3d_path
-    _store_attachment(f3d_path, content)
+    await _stream_attachment(file, f3d_path)
 
     # Update archive with F3D path (relative to base_dir)
     archive.f3d_path = str(f3d_path.relative_to(settings.base_dir))
