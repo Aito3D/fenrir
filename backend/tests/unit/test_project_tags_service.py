@@ -97,3 +97,7 @@ def test_rank_puts_existing_first_caps_new_at_two_and_total_at_five():
 def test_rank_skips_tags_the_project_already_has():
     catalogue = {"drone": ProjectTagRef(id=1, name="Drone")}
     assert rank_tag_suggestions(["drone"], catalogue, exclude_ids={1}) == []
+
+
+def test_parse_tag_lines_keeps_leading_digits_of_real_tags():
+    assert parse_tag_lines("3D\n- 3MF\n1) impression 3D") == ["3D", "3MF", "impression 3D"]

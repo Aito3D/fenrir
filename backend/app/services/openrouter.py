@@ -410,7 +410,7 @@ def parse_tag_lines(answer: str) -> list[str]:
     """One name per line (commas also split); bullets, numbering and quotes stripped."""
     names: list[str] = []
     for line in answer.replace(",", "\n").splitlines():
-        name = re.sub(r"^[\s\-*•·\d.)]+", "", line).strip().strip("\"'«»“”").strip()
+        name = re.sub(r"^\s*(?:[-*•·]+|\d+[.)])\s*", "", line).strip().strip("\"'«»“”").strip()
         if name and len(name) <= 64:
             names.append(name)
     return names
