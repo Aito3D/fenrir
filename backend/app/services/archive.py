@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import html
 import json
@@ -1521,7 +1522,10 @@ class ArchiveService:
             # short-read quirk that silently truncated 3MF archives on some
             # platforms — see _copy_and_fsync and #1032).
             dest_file = archive_dir / source_file.name
-            _copy_and_fsync(source_file, dest_file)
+            # The file work below runs in worker threads: copying, fsyncing,
+            # hashing and parsing a 50-300 MB 3MF on the event loop stalled
+            # every other printer's MQTT for seconds at each print start.
+            await asyncio.to_thread(_copy_and_fsync, source_file, dest_file)
 
             # If we just archived a 3MF, verify the dest is a valid ZIP before
             # going any further. Staying quiet here is how #1032 escaped review —
@@ -1529,8 +1533,8 @@ class ArchiveService:
             # on the dest failed with "File is not a zip file".
             if (
                 source_file.suffix.lower() == ".3mf"
-                and zipfile.is_zipfile(source_file)
-                and not zipfile.is_zipfile(dest_file)
+                and await asyncio.to_thread(zipfile.is_zipfile, source_file)
+                and not await asyncio.to_thread(zipfile.is_zipfile, dest_file)
             ):
                 try:
                     src_size = source_file.stat().st_size
@@ -1558,7 +1562,7 @@ class ArchiveService:
                 return None
 
             # Compute content hash for duplicate detection
-            content_hash = self.compute_file_hash(dest_file)
+            content_hash = await asyncio.to_thread(self.compute_file_hash, dest_file)
 
             # Extract plate number from filename (e.g., "plate_5" from "/data/Metadata/plate_5.gcode")
             plate_number = None
@@ -1570,13 +1574,13 @@ class ArchiveService:
 
             # Parse 3MF metadata
             parser = ThreeMFParser(dest_file, plate_number=plate_number)
-            metadata = parser.parse()
+            metadata = await asyncio.to_thread(parser.parse)
 
             # Save thumbnail if present
             thumbnail_path = None
             if "_thumbnail_data" in metadata:
                 thumb_file = archive_dir / f"thumbnail{metadata['_thumbnail_ext']}"
-                thumb_file.write_bytes(metadata["_thumbnail_data"])
+                await asyncio.to_thread(thumb_file.write_bytes, metadata["_thumbnail_data"])
                 thumbnail_path = str(thumb_file.relative_to(settings.base_dir))
                 del metadata["_thumbnail_data"]
                 del metadata["_thumbnail_ext"]

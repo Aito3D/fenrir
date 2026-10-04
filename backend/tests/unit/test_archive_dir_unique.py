@@ -91,3 +91,47 @@ async def test_a_failed_commit_removes_the_folder_and_rolls_back(db_session, tmp
     assert not created[0].exists(), "the folder of the failed archive was left behind"
     # The session is usable again.
     await db_session.execute(select(PrintArchive.id).limit(1))
+
+
+async def test_the_file_work_runs_off_the_event_loop(db_session, tmp_path):
+    """Copy + fsync, hashing and parsing a 50-300 MB 3MF blocked the loop for
+    seconds at every print start, stalling every other printer's MQTT."""
+    import threading
+
+    from backend.app.services import archive as archive_module
+    from backend.app.services.archive import ArchiveService, ThreeMFParser
+
+    source = _3mf(tmp_path / "d" / "offloop.3mf", "d")
+    threads: dict[str, threading.Thread] = {}
+    real_copy, real_hash, real_parse = (
+        archive_module._copy_and_fsync,
+        ArchiveService.compute_file_hash,
+        ThreeMFParser.parse,
+    )
+
+    def _copy(src, dst):
+        threads["copy"] = threading.current_thread()
+        return real_copy(src, dst)
+
+    def _hash(path):
+        threads["hash"] = threading.current_thread()
+        return real_hash(path)
+
+    def _parse(self):
+        threads["parse"] = threading.current_thread()
+        return real_parse(self)
+
+    made = []
+    with (
+        patch.object(archive_module, "_copy_and_fsync", _copy),
+        patch.object(ArchiveService, "compute_file_hash", staticmethod(_hash)),
+        patch.object(ThreeMFParser, "parse", _parse),
+    ):
+        archive = await ArchiveService(db_session).archive_print(printer_id=None, source_file=source)
+    made.append(settings.base_dir / Path(archive.file_path).parent)
+    try:
+        assert set(threads) == {"copy", "hash", "parse"}
+        assert all(t is not threading.main_thread() for t in threads.values())
+    finally:
+        for folder in made:
+            shutil.rmtree(folder, ignore_errors=True)

@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 import json
 import logging
 import math
@@ -3687,6 +3688,8 @@ async def _probe_for_3mf(
             if not hit:
                 break
             verdict = judge(local_path, hit) if judge else None
+            if inspect.isawaitable(verdict):
+                verdict = await verdict
             if verdict != "rejected":
                 return name, local_path, hit, verdict
             paths = paths[paths.index(hit) + 1 :] if hit in paths else []
@@ -4980,9 +4983,12 @@ async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
         content_verdict: str | None = None
         candidate_rejected = False
 
-        def _judge_candidate(candidate_path, source: str) -> str:
+        async def _judge_candidate(candidate_path, source: str) -> str:
             nonlocal candidate_rejected
-            verdict, detail = verify_3mf_candidate(candidate_path, _expected_md5, _verify_plate, _reported_remaining)
+            # The md5 of a large 3MF in a worker thread, not on the event loop.
+            verdict, detail = await asyncio.to_thread(
+                verify_3mf_candidate, candidate_path, _expected_md5, _verify_plate, _reported_remaining
+            )
             if verdict == "rejected":
                 candidate_rejected = True
                 logger.warning("[CALLBACK] Rejected 3MF candidate %s (%s): %s", candidate_path, source, detail)
@@ -5000,7 +5006,7 @@ async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
                 continue
             cached = get_cached_3mf(printer_id, try_filename)
             if cached:
-                verdict = _judge_candidate(cached, "cache reuse")
+                verdict = await _judge_candidate(cached, "cache reuse")
                 if verdict == "rejected":
                     continue  # Stale cached copy of a different job — go to FTP
                 logger.info("Reusing cached 3MF from %s (avoided duplicate FTP)", cached)
@@ -5079,7 +5085,7 @@ async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
                     printer.access_code,
                     printer.model,
                     probe_names,
-                    lambda candidate, remote: _judge_candidate(candidate, remote),
+                    _judge_candidate,
                     ftp_timeout,
                 )
                 if found:
@@ -5181,7 +5187,7 @@ async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
                             printer_model=printer.model,
                         )
                     if downloaded:
-                        verdict = _judge_candidate(temp_path, remote_path)
+                        verdict = await _judge_candidate(temp_path, remote_path)
                         if verdict == "rejected":
                             # Same-name impostor (e.g. stale copy at / while
                             # the real upload sits in /cache) — discard and
@@ -5277,7 +5283,7 @@ async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
                                     printer_model=printer.model,
                                 )
                             if downloaded:
-                                verdict = _judge_candidate(temp_path, posixpath.join(search_dir, fname))
+                                verdict = await _judge_candidate(temp_path, posixpath.join(search_dir, fname))
                                 if verdict == "rejected":
                                     try:
                                         temp_path.unlink(missing_ok=True)
@@ -5357,7 +5363,9 @@ async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
                                     downloaded
                                     and peek_plate_index_in_3mf(retry_temp_path) == expected_plate
                                     and (
-                                        retry_verdict := _judge_candidate(retry_temp_path, f"plate-retry {remote_path}")
+                                        retry_verdict := await _judge_candidate(
+                                            retry_temp_path, f"plate-retry {remote_path}"
+                                        )
                                     )
                                     != "rejected"
                                 ):
