@@ -1113,7 +1113,6 @@ class ProjectPageParser:
             True if successful, False otherwise.
         """
         import html
-        import tempfile
 
         try:
             # Read the 3MF file
@@ -1139,28 +1138,31 @@ class ProjectPageParser:
                 for field, xml_name in field_mapping.items():
                     if field in updates and updates[field] is not None:
                         new_value = html.escape(updates[field])
-                        # Replace existing metadata or we'd need to add it
+                        # Replace existing metadata or we'd need to add it.
+                        # A callable, not a replacement string: re.sub reads
+                        # backslashes in a string template, so a typed Windows
+                        # path raised or saved something else.
                         pattern = rf'(<metadata\s+name="{xml_name}"[^>]*>)[^<]*(</metadata>)'
-                        replacement = rf"\g<1>{new_value}\g<2>"
-                        content = re.sub(pattern, replacement, content)
+                        content = re.sub(pattern, lambda m, v=new_value: f"{m.group(1)}{v}{m.group(2)}", content)
 
-                # Write to a temporary file first
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".3mf") as tmp:
-                    tmp_path = Path(tmp.name)
-
-                # Create new zip with updated content
+                # Written beside the original (same filesystem) and swapped in
+                # after an fsync, so a crash or a full disk leaves the old file
+                # intact rather than a truncated one -- the #1032 class.
+                tmp_path = self.file_path.with_name(f".{self.file_path.name}.part")
                 with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED) as zf_write:
                     for item in zf_read.namelist():
                         if item == model_path:
                             zf_write.writestr(item, content.encode("utf-8"))
                         else:
                             zf_write.writestr(item, zf_read.read(item))
+                with open(tmp_path, "rb") as written:
+                    os.fsync(written.fileno())
 
-            # Replace original file with updated one
-            shutil.move(tmp_path, self.file_path)
+            os.replace(tmp_path, self.file_path)
             return True
 
         except Exception:
+            logger.exception("Could not update the project page of %s", self.file_path)
             # Clean up temp file if it exists
             if "tmp_path" in locals() and tmp_path.exists():
                 tmp_path.unlink()

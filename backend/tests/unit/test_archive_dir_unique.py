@@ -80,9 +80,12 @@ async def test_a_failed_commit_removes_the_folder_and_rolls_back(db_session, tmp
     async def _locked():
         raise OperationalError("COMMIT", {}, Exception("database is locked"))
 
-    with patch.object(Path, "mkdir", _track), patch.object(db_session, "commit", _locked):
-        with pytest.raises(OperationalError):
-            await service.archive_print(printer_id=None, source_file=source)
+    with (
+        patch.object(Path, "mkdir", _track),
+        patch.object(db_session, "commit", _locked),
+        pytest.raises(OperationalError),
+    ):
+        await service.archive_print(printer_id=None, source_file=source)
 
     assert created, "archive_print never made its folder"
     assert not created[0].exists(), "the folder of the failed archive was left behind"

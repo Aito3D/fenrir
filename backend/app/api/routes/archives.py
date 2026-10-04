@@ -38,7 +38,7 @@ from backend.app.models.filament import Filament
 from backend.app.models.printer import Printer
 from backend.app.models.spool_usage_history import SpoolUsageHistory
 from backend.app.models.user import User
-from backend.app.schemas.archive import ArchiveResponse, ArchiveSlim, ArchiveStats, ArchiveUpdate
+from backend.app.schemas.archive import ArchiveResponse, ArchiveSlim, ArchiveStats, ArchiveUpdate, ProjectPageUpdate
 from backend.app.schemas.print_log import PrintLogResponse
 from backend.app.schemas.slicer import SliceRequest
 from backend.app.services.archive import ArchiveService
@@ -5114,7 +5114,7 @@ async def get_project_page(
 @router.patch("/{archive_id}/project-page")
 async def update_project_page(
     archive_id: int,
-    update_data: dict,
+    update_data: ProjectPageUpdate,
     db: AsyncSession = Depends(get_db),
     auth_result: tuple[User | None, bool] = Depends(
         require_ownership_permission(
@@ -5135,13 +5135,20 @@ async def update_project_page(
         raise HTTPException(404, "Archive file not found")
 
     parser = ProjectPageParser(file_path)
-    success = parser.update_metadata(update_data)
+    # Re-zipping a large 3MF takes seconds: off the event loop.
+    success = await asyncio.to_thread(parser.update_metadata, update_data.model_dump(exclude_unset=True))
 
     if not success:
         raise HTTPException(500, "Failed to update project page")
 
+    # The file changed, so does what the row says about it (duplicate
+    # detection matches on content_hash).
+    archive.file_size = file_path.stat().st_size
+    archive.content_hash = await asyncio.to_thread(ArchiveService.compute_file_hash, file_path)
+    await db.commit()
+
     # Return updated data
-    data = parser.parse(archive_id)
+    data = await asyncio.to_thread(parser.parse, archive_id)
     return data
 
 
