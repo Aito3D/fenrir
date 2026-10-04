@@ -83,7 +83,24 @@ describe('HoursTab', () => {
   it('shows the empty state', async () => {
     serve({ today: '2031-02-14', machines: overview.machines.slice(0, 1), readings: [] });
     render(<HoursTab />);
-    expect(await screen.findByText('No readings yet. Add one or paste your sheet.')).toBeInTheDocument();
+    // once in the chart area, once under the reading log
+    expect(await screen.findAllByText('No readings yet. Add one or paste your sheet.')).toHaveLength(2);
+    expect(screen.queryByTestId('hours-chart-empty')).toBeInTheDocument();
+  });
+
+  it('shows the last manual value, not an uncalibrated counter below it', async () => {
+    serve({
+      ...overview,
+      machines: [{ id: 1, printer_id: 6, name: 'X1C04', model: 'X1C', retired: false, current_hours: 124 }],
+      readings: [
+        { id: 2, machine_id: 1, reading_date: '2026-04-25', hours: 3803, source: 'manual' },
+        { id: 5, machine_id: 1, reading_date: '2031-02-14', hours: 124, source: 'auto' },
+      ],
+    });
+    render(<HoursTab />);
+    const list = await screen.findByTestId('hours-machine-list');
+    expect(within(list).getByText('3,803 h')).toBeInTheDocument();
+    expect(within(list).queryByText('124 h')).not.toBeInTheDocument();
   });
 
   it('deletes a manual date after confirmation', async () => {

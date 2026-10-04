@@ -26,16 +26,20 @@ export function dayNumber(iso: string): number {
 
 const byDate = (a: HourPoint, b: HourPoint) => a.date.localeCompare(b.date);
 
-/** Manual readings, plus auto readings newer than the last manual one (older ones predate calibration). */
+/**
+ * Manual readings, plus auto readings newer than the last manual one (older ones predate calibration)
+ * and not lower than it: lifetime hours never decrease, so a lower auto value is a counter that has
+ * not been calibrated yet (calibration happens when a reading dated today is saved).
+ */
 export function machineSeries(readings: HourReading[], machineId: number): MachineSeries {
   const mine = readings.filter((r) => r.machine_id === machineId);
   const manual = mine
     .filter((r) => r.source === 'manual')
     .map((r) => ({ date: r.reading_date, hours: r.hours }))
     .sort(byDate);
-  const lastManual = manual.length ? manual[manual.length - 1].date : null;
+  const lastManual = manual.length ? manual[manual.length - 1] : null;
   const auto = mine
-    .filter((r) => r.source === 'auto' && (lastManual === null || r.reading_date > lastManual))
+    .filter((r) => r.source === 'auto' && (lastManual === null || (r.reading_date > lastManual.date && r.hours >= lastManual.hours)))
     .map((r) => ({ date: r.reading_date, hours: r.hours }))
     .sort(byDate);
   return { manual, auto };
@@ -109,13 +113,13 @@ export function fleetTotal(pointsList: HourPoint[][], dates: string[]): number[]
   return dates.map((d) => Math.round(pointsList.reduce((sum, p) => sum + valueAt(p, d), 0) * 10) / 10);
 }
 
-/** Average hours per month over the last `windowDays` (from the first reading if later). Null below 2 readings. */
+/** Average hours per month over the last `windowDays` (from the first reading if later), never negative. Null below 2 readings. */
 export function ratePerMonth(points: HourPoint[], today: string, windowDays = 90): number | null {
   if (points.length < 2) return null;
   const end = dayNumber(today);
   const start = Math.max(end - windowDays, dayNumber(points[0].date));
   if (end - start < 7) return null;
-  return ((valueAtDay(points, end) - valueAtDay(points, start)) / (end - start)) * 30.44;
+  return Math.max(0, ((valueAtDay(points, end) - valueAtDay(points, start)) / (end - start)) * 30.44);
 }
 
 const SPACES = /[\s\u00a0\u202f]/g;

@@ -69,6 +69,14 @@ describe('series maths', () => {
     });
   });
 
+  it('drops a newer auto reading that is lower than the last manual one (uncalibrated counter)', () => {
+    const base: HourReading[] = [{ id: 1, machine_id: 9, reading_date: '2026-04-25', hours: 3803, source: 'manual' }];
+    const low: HourReading = { id: 2, machine_id: 9, reading_date: '2026-10-04', hours: 124, source: 'auto' };
+    const high: HourReading = { id: 3, machine_id: 9, reading_date: '2026-10-04', hours: 3840, source: 'auto' };
+    expect(machineSeries([...base, low], 9).auto).toEqual([]);
+    expect(machineSeries([...base, high], 9).auto).toEqual([{ date: '2026-10-04', hours: 3840 }]);
+  });
+
   it('buckets hours by calendar month without counting lifetime hours before the first reading', () => {
     const months = monthStarts('2026-03-15', '2026-05-02');
     expect(months).toEqual(['2026-03-01', '2026-04-01', '2026-05-01']);
@@ -90,6 +98,11 @@ describe('series maths', () => {
     expect(ratePerMonth(pts('X1C04'), '2026-04-25')).toBeCloseTo(135.1, 0);
     expect(ratePerMonth(pts('A101'), '2026-04-25')).toBe(0);
     expect(ratePerMonth(pts('H2C01'), '2026-04-25')).toBeNull(); // a single reading has no rate
+  });
+
+  it('never returns a negative rate', () => {
+    const p = [{ date: '2026-01-01', hours: 500 }, { date: '2026-03-01', hours: 10 }];
+    expect(ratePerMonth(p, '2026-03-01')).toBe(0);
   });
 });
 

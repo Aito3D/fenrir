@@ -52,8 +52,10 @@ export function HoursTab() {
     const out = new Map<number, MachineStat>();
     for (const m of machines) {
       const pts = seriesPoints(series.get(m.id)!);
+      const lastManual = series.get(m.id)!.manual.at(-1);
+      const counterOk = m.current_hours != null && (!lastManual || m.current_hours >= lastManual.hours);
       out.set(m.id, {
-        hours: m.current_hours ?? (pts.length ? pts[pts.length - 1].hours : null),
+        hours: counterOk ? m.current_hours : pts.length ? pts[pts.length - 1].hours : null,
         rate: data ? ratePerMonth(pts, data.today) : null,
       });
     }

@@ -34,6 +34,14 @@ export function HoursChart({ mode, machines, hidden, series, colors, today }: Ho
   const dayFmt = useMemo(() => new Intl.DateTimeFormat(i18n.language, { timeZone: 'UTC' }), [i18n.language]);
   const visible = machines.filter((m) => !hidden.has(m.id));
 
+  if (!visible.some((m) => seriesPoints(series.get(m.id)!).length > 0)) {
+    return (
+      <div data-testid="hours-chart-empty" className="flex h-[380px] items-center justify-center text-sm text-bambu-gray">
+        {t('maintenance.hours.empty')}
+      </div>
+    );
+  }
+
   if (mode === 'monthly') {
     const firstDates = visible.map((m) => seriesPoints(series.get(m.id)!)[0]?.date).filter(Boolean) as string[];
     const from = firstDates.sort()[0] ?? today;
