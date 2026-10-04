@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
@@ -53,6 +53,14 @@ describe('ProjectListPage', () => {
     render(<ProjectListPage />);
     const link = await screen.findByRole('link', { name: 'Support caméra' });
     expect(link).toHaveAttribute('href', '/projects/1');
+  });
+
+  it('pushes one history entry when the title link is clicked', async () => {
+    const push = vi.spyOn(window.history, 'pushState');
+    render(<ProjectListPage />);
+    await userEvent.click(await screen.findByRole('link', { name: 'Support caméra' }));
+    expect(push.mock.calls.filter((c) => c[2] === '/projects/1')).toHaveLength(1);
+    push.mockRestore();
   });
 
   it('defaults to active projects', async () => {

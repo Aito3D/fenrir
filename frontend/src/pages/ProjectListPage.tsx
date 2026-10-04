@@ -200,6 +200,7 @@ export function ProjectListPage() {
                   <td className="px-4 py-3">
                     <Link
                       to={`/projects/${project.id}`}
+                      onClick={(e) => e.stopPropagation()}
                       className={`rounded font-medium text-white hover:underline ${focusRingCls}`}
                     >
                       {project.name}
