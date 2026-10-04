@@ -157,7 +157,7 @@ import {
 } from 'lucide-react';
 import { ConfirmOutcomeDialog } from '../components/ConfirmOutcomeDialog';
 
-import { useNavigate } from 'react-router-dom';
+import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import { api, discoveryApi, firmwareApi, withMediaToken, ApiError } from '../api/client';
 import { formatDateOnly, formatDateTime, formatETA, formatDuration, formatDurationFromHours, parseUTCDate } from '../utils/date';
 import type { Printer, PrinterCreate, PrinterStatus, AMSUnit, DiscoveredPrinter, FirmwareUpdateInfo, FirmwareUploadStatus, LinkedSpoolInfo, SpoolAssignment, HMSError, InventorySpool, SmartPlug, PrinterDiagnosticResult } from '../api/client';
@@ -8061,6 +8061,7 @@ export function AddPrinterModal({
                 value={form.location || ''}
                 onChange={(e) => setForm({ ...form, location: e.target.value })}
                 placeholder={t('printers.modal.locationPlaceholder')}
+                maxLength={100}
               />
               <p className="text-xs text-bambu-gray mt-1">{t('printers.locationHelp')}</p>
             </div>
@@ -8592,6 +8593,7 @@ function EditPrinterModal({
                 value={form.location}
                 onChange={(e) => setForm({ ...form, location: e.target.value })}
                 placeholder={t('printers.modal.locationPlaceholder')}
+                maxLength={100}
               />
               <p className="text-xs text-bambu-gray mt-1">{t('printers.locationHelp')}</p>
             </div>
@@ -9795,6 +9797,14 @@ export function PrintersPage() {
             <ArrowDown className="w-4 h-4 text-white" />
           )}
         </button>
+        <RouterLink
+          to="/printer-locations"
+          className="h-8 shrink-0 px-2 rounded-lg border bg-bambu-dark border-bambu-dark-tertiary text-white hover:bg-bambu-dark-tertiary transition-colors flex items-center justify-center"
+          title={t('printers.locations.title')}
+          aria-label={t('printers.locations.title')}
+        >
+          <Box className="w-4 h-4 text-bambu-green" />
+        </RouterLink>
       </div>
 
       {/* Page view toggle: Cards / Cam Wall */}

@@ -422,6 +422,23 @@ export interface OverlayStatus {
 }
 
 // Printer types
+// Printer locations (groups) and their appearance (#2962). `id` is null for a
+// location only printers carry, with no row of its own yet.
+export interface PrinterLocation {
+  id: number | null;
+  name: string;
+  icon: string | null;
+  color: string | null;
+  printer_count: number;
+}
+
+export interface PrinterLocationUpdate {
+  name: string;
+  new_name?: string;
+  icon?: string | null;
+  color?: string | null;
+}
+
 export interface Printer {
   id: number;
   name: string;
@@ -445,6 +462,7 @@ export interface Printer {
   external_camera_enabled: boolean;
   external_camera_snapshot_url: string | null;  // optional single-frame override (#1177)
   camera_rotation: number;  // 0, 90, 180, 270 degrees
+  camera_light_auto: boolean;  // picked for the chamber light when camera_light_mode is 'selected' (#1655)
   plate_detection_enabled: boolean;  // Check plate before print
   plate_detection_roi?: PlateDetectionROI;  // ROI for plate detection
   // RTSP-capable model (X1/H2/P2) — when camera_engine is 'go2rtc' these
@@ -757,6 +775,7 @@ export interface PrinterCreate {
   external_camera_enabled?: boolean;
   external_camera_snapshot_url?: string | null;
   camera_rotation?: number;
+  camera_light_auto?: boolean;
   plate_detection_enabled?: boolean;
   plate_detection_roi?: PlateDetectionROI;
 }
@@ -1494,6 +1513,9 @@ export interface AppSettings {
   camera_quality: CameraQuality;
   camera_gpu_accel: boolean;
   camera_engine: CameraEngine;
+  // Chamber light while the camera is in use (#1655)
+  camera_light_mode: 'off' | 'all' | 'selected';
+  camera_light_delay: number;  // seconds a snapshot waits after the light came on
   // Preferred slicer (server-side API / sidecar)
   preferred_slicer: 'bambu_studio' | 'orcaslicer';
   // Desktop "Open in Slicer" override (#1329). Null inherits from
@@ -2932,6 +2954,8 @@ export interface PrintBatchDispatchRequest {
 
 export interface PrintQueueItemUpdate {
   printer_id?: number | null;  // null = unassign
+  // A deliberate filament substitution in the mapping (#2799); see PrintModal.
+  skip_filament_check?: boolean;
   target_model?: string | null;  // Target printer model (mutually exclusive with printer_id)
   target_location?: string | null;  // Target location filter (only used with target_model)
   filament_overrides?: Array<{ slot_id: number; type: string; color: string; color_name?: string; tray_info_idx?: string; force_color_match?: boolean }> | null;
@@ -5826,6 +5850,33 @@ export interface AitoWatch {
 
 // API functions
 export const api = {
+  // Overlay branding
+  getOverlayLogo: async (token: string | null, signal?: AbortSignal): Promise<Blob | null> => {
+    const endpoint = token ? `/overlay-branding/logo?token=${encodeURIComponent(token)}` : '/settings/overlay-logo';
+    const response = await fetch(`${API_BASE}${endpoint}`, {
+      signal, cache: 'no-store',
+      headers: !token && authToken ? { Authorization: `Bearer ${authToken}` } : {},
+    });
+    if (response.status === 404) return null;
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response.blob();
+  },
+  uploadOverlayLogo: async (file: File): Promise<void> => {
+    const body = new FormData();
+    body.append('file', file);
+    const response = await fetch(`${API_BASE}/settings/overlay-logo`, {
+      method: 'POST', body,
+      headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      const detail = error?.detail;
+      const message = typeof detail === 'string' ? detail : detail?.message;
+      throw new Error(typeof message === 'string' && message ? message : `HTTP ${response.status}`);
+    }
+  },
+  deleteOverlayLogo: () => request<{ status: string }>('/settings/overlay-logo', { method: 'DELETE' }),
+
   // Authentication
   getAuthStatus: () => request<AuthStatus>('/auth/status'),
   setupAuth: (data: SetupRequest) =>
@@ -6094,6 +6145,21 @@ export const api = {
     if (location) params.set('location', location);
     return request<Array<{ type: string; color: string; tray_info_idx: string; tray_sub_brands: string; extruder_id: number | null }>>(`/printers/available-filaments?${params}`);
   },
+  getPrinterLocations: () => request<PrinterLocation[]>('/printer-locations/'),
+  createPrinterLocation: (data: { name: string; icon?: string | null; color?: string | null }) =>
+    request<PrinterLocation>('/printer-locations/', { method: 'POST', body: JSON.stringify(data) }),
+  updatePrinterLocation: (data: PrinterLocationUpdate) =>
+    request<PrinterLocation>('/printer-locations/', { method: 'PATCH', body: JSON.stringify(data) }),
+  deletePrinterLocations: (names: string[]) =>
+    request<{ deleted: number; printers_ungrouped: number }>('/printer-locations/delete', {
+      method: 'POST',
+      body: JSON.stringify({ names }),
+    }),
+  assignPrinterLocation: (printerIds: number[], location: string | null) =>
+    request<{ moved: number }>('/printer-locations/assign', {
+      method: 'POST',
+      body: JSON.stringify({ printer_ids: printerIds, location }),
+    }),
   getPrinterStatus: (id: number) =>
     request<PrinterStatus>(`/printers/${id}/status`),
   refreshPrinterStatus: (id: number) =>

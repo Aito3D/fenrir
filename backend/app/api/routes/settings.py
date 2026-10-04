@@ -25,6 +25,7 @@ from backend.app.core.permissions import Permission
 from backend.app.models.settings import Settings
 from backend.app.models.user import User
 from backend.app.schemas.settings import AppSettings, AppSettingsUpdate
+from backend.app.services import camera_light
 
 logger = logging.getLogger(__name__)
 
@@ -240,6 +241,7 @@ _FLOAT_SETTING_KEYS = frozenset(
     {
         "default_filament_cost",
         "energy_cost_per_kwh",
+        "camera_light_delay",
         "ams_temp_good",
         "ams_temp_fair",
         "library_disk_warning_gb",
@@ -450,6 +452,9 @@ async def update_settings(
 
         zoho_filaments.reset_cache()
 
+    if {"camera_light_mode", "camera_light_delay"} & set(update_data.keys()):
+        camera_light.invalidate_settings()
+
     # Reconfigure MQTT relay if any MQTT settings changed
     if mqtt_updated:
         try:
@@ -557,6 +562,7 @@ async def reset_settings(
         await db.delete(setting)
 
     await db.commit()
+    camera_light.invalidate_settings()
 
     return DEFAULT_SETTINGS
 
@@ -949,6 +955,7 @@ async def create_backup_zip(output_path: Path | None = None) -> tuple[Path, str]
             ("plate_calibration", app_settings.plate_calibration_dir),
             ("icons", base_dir / "icons"),
             ("projects", base_dir / "projects"),
+            ("overlay-branding", base_dir / "overlay-branding"),
         ]
 
         def _copy_backup_dirs() -> None:
@@ -1747,6 +1754,7 @@ async def restore_backup(
                 ("plate_calibration", app_settings.plate_calibration_dir),
                 ("icons", base_dir / "icons"),
                 ("projects", base_dir / "projects"),
+                ("overlay-branding", base_dir / "overlay-branding"),
             ]
 
             # T-017: a directory whose staging copy fails is left with its

@@ -3,6 +3,7 @@ from urllib.parse import urlparse, urlunparse
 
 from pydantic import BaseModel, Field, computed_field, field_validator, model_validator
 
+from backend.app.schemas.printer_location import normalize_location_name
 from backend.app.utils.printer_models import supports_nozzle_flow_type
 
 
@@ -40,6 +41,7 @@ class PrinterBase(BaseModel):
     external_camera_enabled: bool = False
     external_camera_snapshot_url: str | None = None  # Optional single-frame override; #1177
     camera_rotation: int = 0  # 0, 90, 180, 270 degrees
+    camera_light_auto: bool = False  # #1655, used when camera_light_mode is "selected"
 
 
 class PrinterCreate(PrinterBase):
@@ -47,6 +49,10 @@ class PrinterCreate(PrinterBase):
     # PrinterResponse. Direct exposure on PRINTERS_READ would let a Viewer
     # connect to the printer's MQTT and bypass Fenrir's RBAC.
     access_code: str = Field(..., min_length=1, max_length=20)
+
+    # Input only, not on PrinterBase: SQLite never enforced the column width,
+    # so a stored location may be longer, and the response must still read it.
+    _location = field_validator("location")(normalize_location_name)
 
 
 class PlateDetectionROI(BaseModel):
@@ -68,6 +74,7 @@ class PrinterUpdate(BaseModel):
     access_code: str | None = None
     model: str | None = None
     location: str | None = None
+    _location = field_validator("location")(normalize_location_name)
     is_active: bool | None = None
     auto_archive: bool | None = None
     print_hours_offset: float | None = None
@@ -76,6 +83,7 @@ class PrinterUpdate(BaseModel):
     external_camera_enabled: bool | None = None
     external_camera_snapshot_url: str | None = None  # #1177
     camera_rotation: int | None = None  # 0, 90, 180, 270 degrees
+    camera_light_auto: bool | None = None  # #1655
     plate_detection_enabled: bool | None = None
     plate_detection_roi: PlateDetectionROI | None = None
 
@@ -112,6 +120,7 @@ class PrinterResponse(PrinterBase):
     external_camera_enabled: bool = False
     external_camera_snapshot_url: str | None = None  # #1177
     camera_rotation: int = 0  # 0, 90, 180, 270 degrees
+    camera_light_auto: bool = False  # #1655
     plate_detection_enabled: bool = False
     plate_detection_roi: PlateDetectionROI | None = None
     created_at: datetime
@@ -150,6 +159,7 @@ class PrinterResponse(PrinterBase):
             "external_camera_enabled": printer.external_camera_enabled,
             "external_camera_snapshot_url": printer.external_camera_snapshot_url,
             "camera_rotation": printer.camera_rotation,
+            "camera_light_auto": bool(printer.camera_light_auto),
             "is_active": printer.is_active,
             "nozzle_count": printer.nozzle_count,
             "supports_nozzle_flow_type": supports_nozzle_flow_type(printer.model),

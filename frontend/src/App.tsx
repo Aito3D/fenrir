@@ -68,6 +68,7 @@ const ExternalLinkPage = lazyWithReload(() => import('./pages/ExternalLinkPage')
 const AitoTrackPage = lazyWithReload(() => import('./pages/AitoTrackPage').then(m => ({ default: m.AitoTrackPage })));
 const AitoTrackEntryPage = lazyWithReload(() => import('./pages/AitoTrackEntryPage').then(m => ({ default: m.AitoTrackEntryPage })));
 const GroupEditPage = lazyWithReload(() => import('./pages/GroupEditPage').then(m => ({ default: m.GroupEditPage })));
+const PrinterLocationsPage = lazyWithReload(() => import('./pages/PrinterLocationsPage').then(m => ({ default: m.PrinterLocationsPage })));
 const InventoryPage = lazyWithReload(() => import('./pages/InventoryPage'));
 const MakerworldPage = lazyWithReload(() => import('./pages/MakerworldPage').then(m => ({ default: m.MakerworldPage })));
 const SystemInfoPage = lazyWithReload(() => import('./pages/SystemInfoPage').then(m => ({ default: m.SystemInfoPage })));
@@ -292,13 +293,14 @@ const router = createBrowserRouter(
         <Route path="settings" element={<PermissionRoute permission="settings:read"><SettingsPage /></PermissionRoute>} />
         <Route path="groups/new" element={<PermissionRoute permission="groups:create"><GroupEditPage /></PermissionRoute>} />
         <Route path="groups/:id/edit" element={<PermissionRoute permission="groups:update"><GroupEditPage /></PermissionRoute>} />
+        <Route path="printer-locations" element={<PermissionRoute permission="printers:read"><PrinterLocationsPage /></PermissionRoute>} />
         <Route path="users" element={<Navigate to="/settings?tab=users" replace />} />
         <Route path="groups" element={<Navigate to="/settings?tab=users" replace />} />
         <Route path="system" element={<SystemInfoPage />} />
         <Route path="notifications" element={<NotificationsPage />} />
         <Route path="gcode-viewer" element={<GCodeViewerPage />} />
         <Route path="external/:id" element={<ExternalLinkPage />} />
-        <Route path="camera-tokens" element={<Navigate to="/settings?tab=apikeys#card-camera-tokens" replace />} />
+        <Route path="camera-tokens" element={<Navigate to="/settings?tab=camera#card-camera-tokens" replace />} />
       </Route>
     </>,
   ),

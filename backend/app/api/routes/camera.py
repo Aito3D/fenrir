@@ -64,6 +64,7 @@ from backend.app.services.camera import (
     rtsp_socket_timeout_flag,
     test_camera_connection,
 )
+from backend.app.services.camera_light import camera_light
 from backend.app.services.go2rtc import go2rtc_service
 from backend.app.utils.ffmpeg_output import NO_FFMPEG_OUTPUT, summarize_ffmpeg_stderr
 
@@ -2860,24 +2861,26 @@ async def camera_stream(
             """Wrap external stream to track start/stop and update frame times."""
             nonlocal last_yield_time
             try:
-                async for frame in generate_mjpeg_stream(
-                    printer.external_camera_url,
-                    printer.external_camera_type,
-                    fps,
-                    gpu_accel=gpu_accel,
-                    quality=quality,
-                    threads=threads,
-                    on_process=_register_external_process,
-                    stop_event=stop_event,
-                ):
-                    # Rate limit to prevent overwhelming browser
-                    current_time = time.monotonic()
-                    elapsed = current_time - last_yield_time
-                    if elapsed < frame_interval:
-                        await asyncio.sleep(frame_interval - elapsed)
-                    last_yield_time = time.monotonic()
-                    _state.last_frame_times[printer_id] = last_yield_time
-                    yield frame
+                # Chamber light while the viewer watches (#1655).
+                async with camera_light(printer, wait=False):
+                    async for frame in generate_mjpeg_stream(
+                        printer.external_camera_url,
+                        printer.external_camera_type,
+                        fps,
+                        gpu_accel=gpu_accel,
+                        quality=quality,
+                        threads=threads,
+                        on_process=_register_external_process,
+                        stop_event=stop_event,
+                    ):
+                        # Rate limit to prevent overwhelming browser
+                        current_time = time.monotonic()
+                        elapsed = current_time - last_yield_time
+                        if elapsed < frame_interval:
+                            await asyncio.sleep(frame_interval - elapsed)
+                        last_yield_time = time.monotonic()
+                        _state.last_frame_times[printer_id] = last_yield_time
+                        yield frame
             finally:
                 # Best-effort unregister. If an abrupt disconnect skips this
                 # finally, the registry entries persist — which is exactly what
@@ -2922,13 +2925,16 @@ async def camera_stream(
     # connection, blocking the event loop and exhausting connection slots.
     async def with_disconnect_check():
         last_disconnect_check = 0.0
-        async for chunk in viewer:
-            now = time.monotonic()
-            if now - last_disconnect_check > 1.0:
-                if await request.is_disconnected():
-                    break
-                last_disconnect_check = now
-            yield chunk
+        # Chamber light while this viewer watches (#1655). Held per viewer, so
+        # it goes off once the last one leaves.
+        async with camera_light(printer, wait=False):
+            async for chunk in viewer:
+                now = time.monotonic()
+                if now - last_disconnect_check > 1.0:
+                    if await request.is_disconnected():
+                        break
+                    last_disconnect_check = now
+                yield chunk
 
     return StreamingResponse(
         with_disconnect_check(),
@@ -3039,9 +3045,6 @@ async def camera_snapshot(
 
     Requires a stream token query param (?token=xxx) when auth is enabled.
     """
-    import tempfile
-    from pathlib import Path
-
     # Fetch the printer in a short-lived session and release the pooled DB
     # connection BEFORE the camera capture below (up to 15s, longer under a
     # saturated FTP/camera pool). Holding a Depends(get_db) session across the
@@ -3051,6 +3054,17 @@ async def camera_snapshot(
     # below reads only already-loaded scalar columns (expire_on_commit=False).
     async with database.async_session() as db:
         printer = await get_printer_or_404(printer_id, db)
+
+    # Chamber light for the picture (#1655). Home Assistant and other
+    # automations take their pictures here.
+    async with camera_light(printer):
+        return await _snapshot_response(printer_id, printer)
+
+
+async def _snapshot_response(printer_id: int, printer: Printer) -> Response:
+    """The capture behind ``camera_snapshot``."""
+    import tempfile
+    from pathlib import Path
 
     # Check for external camera first
     if printer.external_camera_enabled and printer.external_camera_url:

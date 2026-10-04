@@ -64,10 +64,12 @@ from backend.app.api.routes import (
     notifications,
     obico,
     orca_cloud,
+    overlay_branding,
     pending_uploads,
     pipeline_runs,
     print_log,
     print_queue,
+    printer_locations,
     printer_sensor_history,
     printers,
     projects,
@@ -98,7 +100,7 @@ from backend.app.core.database import async_session, engine, init_db
 from backend.app.core.json_gzip import JsonGZipMiddleware
 from backend.app.core.tasks import spawn_background_task
 from backend.app.core.websocket import ws_manager
-from backend.app.services import print_dispatch_context, slot_unlink_grace
+from backend.app.services import kprofile_drift, print_dispatch_context, slot_unlink_grace
 from backend.app.services.archive import (
     ArchiveService,
     peek_plate_index_in_3mf,
@@ -119,6 +121,7 @@ from backend.app.services.bambu_ftp import (
     with_ftp_retry,
 )
 from backend.app.services.bambu_mqtt import PrinterState
+from backend.app.services.camera_light import camera_light
 from backend.app.services.energy_plug import energy_plug_candidates, select_energy_reading
 from backend.app.services.github_backup import github_backup_service
 from backend.app.services.ha_sensor_manager import ha_sensor_manager
@@ -494,13 +497,18 @@ _kill_switch_setting_cache: tuple[bool, float] | None = None
 # provider notification when the immediate attempt failed.
 _kill_switch_notification_tasks: dict[int, asyncio.Task[bool]] = {}
 
-# Track HMS errors that have been notified: {printer_id: set of error codes}
-# This prevents sending duplicate notifications for the same error
-_notified_hms_errors: dict[int, set[str]] = {}
-# Track when HMS errors were last seen: {printer_id: timestamp}
-# Used to debounce clearing — prevents flapping errors from re-triggering notifications
-_hms_last_seen: dict[int, float] = {}
-_HMS_CLEAR_GRACE_SECONDS = 30.0
+# HMS faults already notified, with when each was last seen:
+# {printer_id: {fault key: timestamp}}. Tracked per fault, not per printer: a
+# fault that flickers beside a held notice was forgotten on every gap and
+# notified on every return (#3226). The window is long because the measured
+# gaps reach 64 s.
+_notified_hms_errors: dict[int, dict[str, float]] = {}
+_HMS_CLEAR_GRACE_SECONDS = 600.0
+# The print state each printer was last seen in, and the faults recorded before
+# it last changed, which are forgotten as soon as they are gone (see
+# _take_new_hms_faults).
+_hms_print_state: dict[int, str] = {}
+_hms_forget_when_gone: dict[int, set[str]] = {}
 
 # HMS error codes that should not trigger notifications.
 # These are infrastructure/auth issues, not actionable print errors.
@@ -1518,18 +1526,46 @@ def _hms_errors_to_notify(errors: list, new_error_codes: set[str]) -> list:
     return [e for e in errors if _hms_notify_key(e) in new_error_codes and _hms_fault_counts(e)]
 
 
-def _take_new_hms_faults(printer_id: int, errors: list) -> list:
+def _take_new_hms_faults(printer_id: int, errors: list, print_state: str | None = None) -> list:
     """The faults on this printer not notified yet, and record them as notified.
 
     Tracking is updated before anything is sent, so concurrent status callbacks
-    cannot notify the same fault twice. The set is replaced, not extended: a
-    fault that clears and later returns is notified again, and the grace period
-    in the caller keeps a fault that flickers off for a moment from doing that.
+    cannot notify the same fault twice. A notified fault is forgotten once it
+    has been gone for ``_HMS_CLEAR_GRACE_SECONDS``, so one that flickers off
+    and on is notified once (#3226), while one that clears and comes back much
+    later is notified again.
+
+    When ``print_state`` changes (a print resumed, started or finished), every
+    fault recorded so far is forgotten the first time it is gone, without the
+    wait: a runout fixed before resuming must be notified if it happens again a
+    few minutes later, while the printer sits paused. Not only the faults gone
+    at the change itself, because the update that flips the state can still
+    carry the old fault (a ``print_error`` entry stays until a payload brings
+    ``hms``).
     """
+    now = time.time()
     current = {_hms_notify_key(e) for e in errors}
-    new = current - _notified_hms_errors.get(printer_id, set())
-    _notified_hms_errors[printer_id] = current
-    _hms_last_seen[printer_id] = time.time()
+    seen = _notified_hms_errors.setdefault(printer_id, {})
+    forget_when_gone = _hms_forget_when_gone.setdefault(printer_id, set())
+
+    if print_state is not None:
+        print_state = print_state.upper()
+        if _hms_print_state.get(printer_id, print_state) != print_state:
+            forget_when_gone.update(seen)
+        _hms_print_state[printer_id] = print_state
+
+    for key, last_seen in list(seen.items()):
+        if key not in current and (key in forget_when_gone or now - last_seen >= _HMS_CLEAR_GRACE_SECONDS):
+            del seen[key]
+            forget_when_gone.discard(key)
+
+    new = current - seen.keys()
+    for key in current:
+        seen[key] = now
+    if not seen:
+        _notified_hms_errors.pop(printer_id, None)
+    if not forget_when_gone:
+        _hms_forget_when_gone.pop(printer_id, None)
     return _hms_errors_to_notify(errors, new)
 
 
@@ -1640,6 +1676,22 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
         )
     elif not state.connected and _printer_kprofiles_primed_since_connect.get(printer_id, False):
         _printer_kprofiles_primed_since_connect[printer_id] = False
+
+    # A slot can lose its K-profile selection (cali_idx back to -1) with nothing
+    # else in the AMS report changing -- a power cycle does it to every slot --
+    # and on_ams_change never hears of it (#3219). Checked here, on every push
+    # while the printer is idle; needs_check is cheap and throttled per slot.
+    # Guarded: nothing here may stop the status broadcast below.
+    try:
+        if not state.connected:
+            kprofile_drift.forget_printer(printer_id)
+        elif kprofile_drift.needs_check(printer_id, state):
+            spawn_background_task(
+                kprofile_drift.reapply_lost_kprofiles(printer_id),
+                name=f"reapply-kprofiles-{printer_id}",
+            )
+    except Exception:
+        logging.getLogger(__name__).exception("[Printer %s] K-profile check failed", printer_id)
 
     # Offline-notification edge (#1752): schedule `on_printer_offline` on
     # connected → disconnected. The "back online" channel is already covered
@@ -1936,7 +1988,7 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
     # Check for new HMS errors and send notifications
     current_hms_errors = getattr(state, "hms_errors", []) or []
     if current_hms_errors:
-        new_errors = _take_new_hms_faults(printer_id, current_hms_errors)
+        new_errors = _take_new_hms_faults(printer_id, current_hms_errors, state.state)
 
         if new_errors:
             try:
@@ -2018,15 +2070,10 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
                 logging.getLogger(__name__).warning(f"HMS error notification failed: {e}")
 
     else:
-        # No HMS errors — only clear tracking after a grace period to prevent
-        # flapping errors (brief hms:[] gaps) from re-triggering notifications.
-        # Some HMS codes (e.g. chamber temp regulation during PETG prints) toggle
-        # on/off every few seconds as conditions fluctuate around thresholds.
-        if printer_id in _notified_hms_errors:
-            last_seen = _hms_last_seen.get(printer_id, 0)
-            if time.time() - last_seen >= _HMS_CLEAR_GRACE_SECONDS:
-                _notified_hms_errors.pop(printer_id, None)
-                _hms_last_seen.pop(printer_id, None)
+        # No HMS errors: nothing to send, but faults gone long enough (or gone
+        # across a print state change) are forgotten. Some codes, e.g. chamber
+        # temperature regulation during PETG prints, toggle every few seconds.
+        _take_new_hms_faults(printer_id, [], state.state)
 
     await ws_manager.send_printer_status(
         printer_id,
@@ -3255,14 +3302,25 @@ async def _finish_photo_for_notification(
     return url, photo_bytes
 
 
-async def _capture_snapshot_for_notification(printer_id: int, printer, logger) -> bytes | None:
+async def _capture_snapshot_for_notification(printer_id: int, printer, logger, *, light: bool = True) -> bytes | None:
     """Capture a camera snapshot for notification image attachment.
 
     Returns JPEG bytes (max 2.5MB) or None if capture fails or is unavailable.
     Uses: external camera > buffered frame > fresh capture.
+
+    Turns the chamber light on for the picture when the printer asks for it
+    (#1655). ``light=False`` is for callers that capture all through a print,
+    where the light would flash with every frame.
     """
     if not printer:
         return None
+
+    async with camera_light(printer if light else None):
+        return await _capture_snapshot_frame(printer_id, printer, logger)
+
+
+async def _capture_snapshot_frame(printer_id: int, printer, logger) -> bytes | None:
+    """The capture behind ``_capture_snapshot_for_notification``."""
 
     try:
         from backend.app.api.routes.settings import get_setting
@@ -3380,8 +3438,9 @@ async def _maybe_bank_inprint_frame(printer_id: int, layer_num: int) -> None:
             return
         # Reuses the notification snapshot path, which honours the
         # `capture_finish_photo` setting (returns None when disabled) so we
-        # don't bank frames the user never asked for.
-        frame = await _capture_snapshot_for_notification(printer_id, printer, logger)
+        # don't bank frames the user never asked for. Without the chamber light
+        # (#1655): this runs every 25 seconds for the whole print.
+        frame = await _capture_snapshot_for_notification(printer_id, printer, logger, light=False)
         if frame:
             _inprint_frame_bank[printer_id] = frame
             _inprint_frame_bank_ts[printer_id] = now
@@ -6689,7 +6748,9 @@ _PLATE_RESTORE_SETTLE_SECONDS = 12.0
 # How long `_background_finish_photo` waits for this producer. Must cover the
 # settle window plus a worst-case RTSP grab (15s), and stay below the
 # notification path's own photo wait so a slow producer degrades to a
-# photo-less notification rather than a missed one.
+# photo-less notification rather than a missed one. The chamber light's
+# snapshot delay (#1655) spends from the spare 8 seconds, which is why
+# camera_light.MAX_DELAY_SECONDS stays below it.
 _FINISH_PHOTO_PRODUCER_WAIT_SECONDS = _PLATE_RESTORE_SETTLE_SECONDS + 23.0
 
 
@@ -7009,51 +7070,54 @@ async def on_finish_photo_moment(printer_id: int, data: dict):
             elif await _restore_plate_for_finish_photo(printer_id, wants_restore, logger):
                 restore_max_z = wants_restore
 
-        if frame_bytes is None and printer.external_camera_enabled and printer.external_camera_url:
-            from backend.app.api.routes.camera import live_frame_for_capture
-            from backend.app.services.external_camera import capture_frame
+        # Chamber light for the live capture below (#1655). The banked frame
+        # above was taken without it, like every in-print bank.
+        async with camera_light(printer if frame_bytes is None else None):
+            if frame_bytes is None and printer.external_camera_enabled and printer.external_camera_url:
+                from backend.app.api.routes.camera import live_frame_for_capture
+                from backend.app.services.external_camera import capture_frame
 
-            # #2707: this used to collide with the live view and fail, which is
-            # how finish-photo notifications went out with no image attached.
-            # Leaving frame_bytes None keeps the rest of the fallback chain.
-            defer, buffered = live_frame_for_capture(printer_id)
-            if defer:
-                frame_bytes = buffered
-            else:
-                frame_bytes = await capture_frame(
-                    printer.external_camera_url,
-                    printer.external_camera_type or "mjpeg",
-                    snapshot_url=printer.external_camera_snapshot_url,
-                )
-            if frame_bytes:
-                logger.info(
-                    "[FINISH-PHOTO-MOMENT] captured external-camera frame (%d bytes)",
-                    len(frame_bytes),
-                )
-        elif frame_bytes is None:
-            from backend.app.api.routes.camera import get_buffered_frame
-
-            buffered = get_buffered_frame(printer_id)
-            if buffered:
-                frame_bytes = buffered
-                logger.info(
-                    "[FINISH-PHOTO-MOMENT] used buffered RTSP frame (%d bytes)",
-                    len(frame_bytes),
-                )
-            else:
-                from backend.app.services.camera import capture_camera_frame_bytes
-
-                frame_bytes = await capture_camera_frame_bytes(
-                    ip_address=printer.ip_address,
-                    access_code=printer.access_code,
-                    model=printer.model,
-                    timeout=15,
-                )
+                # #2707: this used to collide with the live view and fail, which is
+                # how finish-photo notifications went out with no image attached.
+                # Leaving frame_bytes None keeps the rest of the fallback chain.
+                defer, buffered = live_frame_for_capture(printer_id)
+                if defer:
+                    frame_bytes = buffered
+                else:
+                    frame_bytes = await capture_frame(
+                        printer.external_camera_url,
+                        printer.external_camera_type or "mjpeg",
+                        snapshot_url=printer.external_camera_snapshot_url,
+                    )
                 if frame_bytes:
                     logger.info(
-                        "[FINISH-PHOTO-MOMENT] captured RTSP frame (%d bytes)",
+                        "[FINISH-PHOTO-MOMENT] captured external-camera frame (%d bytes)",
                         len(frame_bytes),
                     )
+            elif frame_bytes is None:
+                from backend.app.api.routes.camera import get_buffered_frame
+
+                buffered = get_buffered_frame(printer_id)
+                if buffered:
+                    frame_bytes = buffered
+                    logger.info(
+                        "[FINISH-PHOTO-MOMENT] used buffered RTSP frame (%d bytes)",
+                        len(frame_bytes),
+                    )
+                else:
+                    from backend.app.services.camera import capture_camera_frame_bytes
+
+                    frame_bytes = await capture_camera_frame_bytes(
+                        ip_address=printer.ip_address,
+                        access_code=printer.access_code,
+                        model=printer.model,
+                        timeout=15,
+                    )
+                    if frame_bytes:
+                        logger.info(
+                            "[FINISH-PHOTO-MOMENT] captured RTSP frame (%d bytes)",
+                            len(frame_bytes),
+                        )
 
         if frame_bytes:
             if not frame_already_rotated:
@@ -8382,64 +8446,68 @@ async def on_print_complete(printer_id: int, data: dict):
             # Fallback chain: external camera → buffered live frame →
             # fresh RTSP capture. Only runs if the timelapse path above
             # didn't already produce a photo.
-            if not photo_filename:
-                if printer.external_camera_enabled and printer.external_camera_url:
-                    logger.info("[PHOTO-BG] Using external camera")
-                    from backend.app.api.routes.camera import live_frame_for_capture
-                    from backend.app.services.external_camera import capture_frame
+            # Chamber light for the live capture below (#1655).
+            async with camera_light(printer if not photo_filename else None):
+                if not photo_filename:
+                    if printer.external_camera_enabled and printer.external_camera_url:
+                        logger.info("[PHOTO-BG] Using external camera")
+                        from backend.app.api.routes.camera import live_frame_for_capture
+                        from backend.app.services.external_camera import capture_frame
 
-                    # #2707: the second half of the finish-photo failure — the
-                    # pre-capture and this fallback both collided with the live
-                    # view. None here continues down the fallback chain.
-                    defer, buffered = live_frame_for_capture(printer_id)
-                    if defer:
-                        frame_data = buffered
+                        # #2707: the second half of the finish-photo failure — the
+                        # pre-capture and this fallback both collided with the live
+                        # view. None here continues down the fallback chain.
+                        defer, buffered = live_frame_for_capture(printer_id)
+                        if defer:
+                            frame_data = buffered
+                        else:
+                            frame_data = await capture_frame(
+                                printer.external_camera_url,
+                                printer.external_camera_type or "mjpeg",
+                                snapshot_url=printer.external_camera_snapshot_url,
+                            )
+                        if frame_data:
+                            frame_data = _apply_camera_rotation(frame_data, printer, logger)
+                            photos_dir = archive_dir / "photos"
+                            photos_dir.mkdir(parents=True, exist_ok=True)
+                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                            photo_filename = f"finish_{timestamp}_{uuid.uuid4().hex[:8]}.jpg"
+                            photo_path = photos_dir / photo_filename
+                            await asyncio.to_thread(photo_path.write_bytes, frame_data)
+                            logger.info("[PHOTO-BG] Saved external camera frame: %s", photo_filename)
                     else:
-                        frame_data = await capture_frame(
-                            printer.external_camera_url,
-                            printer.external_camera_type or "mjpeg",
-                            snapshot_url=printer.external_camera_snapshot_url,
-                        )
-                    if frame_data:
-                        frame_data = _apply_camera_rotation(frame_data, printer, logger)
-                        photos_dir = archive_dir / "photos"
-                        photos_dir.mkdir(parents=True, exist_ok=True)
-                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        photo_filename = f"finish_{timestamp}_{uuid.uuid4().hex[:8]}.jpg"
-                        photo_path = photos_dir / photo_filename
-                        await asyncio.to_thread(photo_path.write_bytes, frame_data)
-                        logger.info("[PHOTO-BG] Saved external camera frame: %s", photo_filename)
-                else:
-                    # Check if camera stream is active - use buffered frame to avoid freeze
-                    # Check both RTSP streams (_active_streams) and chamber image streams (_active_chamber_streams)
-                    active_for_printer = [k for k in _active_streams if k.startswith(f"{printer_id}-")]
-                    active_chamber_for_printer = [k for k in _active_chamber_streams if k.startswith(f"{printer_id}-")]
-                    buffered_frame = get_buffered_frame(printer_id)
+                        # Check if camera stream is active - use buffered frame to avoid freeze
+                        # Check both RTSP streams (_active_streams) and chamber image streams (_active_chamber_streams)
+                        active_for_printer = [k for k in _active_streams if k.startswith(f"{printer_id}-")]
+                        active_chamber_for_printer = [
+                            k for k in _active_chamber_streams if k.startswith(f"{printer_id}-")
+                        ]
+                        buffered_frame = get_buffered_frame(printer_id)
 
-                    if (active_for_printer or active_chamber_for_printer) and buffered_frame:
-                        # Use frame from active stream
-                        logger.info("[PHOTO-BG] Using buffered frame from active stream")
-                        buffered_frame = _apply_camera_rotation(buffered_frame, printer, logger)
-                        photos_dir = archive_dir / "photos"
-                        photos_dir.mkdir(parents=True, exist_ok=True)
-                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        photo_filename = f"finish_{timestamp}_{uuid.uuid4().hex[:8]}.jpg"
-                        photo_path = photos_dir / photo_filename
-                        await asyncio.to_thread(photo_path.write_bytes, buffered_frame)
-                        logger.info("[PHOTO-BG] Saved buffered frame: %s", photo_filename)
-                    else:
-                        # No active stream - capture new frame
-                        from backend.app.services.camera import capture_finish_photo
+                        if (active_for_printer or active_chamber_for_printer) and buffered_frame:
+                            # Use frame from active stream
+                            logger.info("[PHOTO-BG] Using buffered frame from active stream")
+                            buffered_frame = _apply_camera_rotation(buffered_frame, printer, logger)
+                            photos_dir = archive_dir / "photos"
+                            photos_dir.mkdir(parents=True, exist_ok=True)
+                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                            photo_filename = f"finish_{timestamp}_{uuid.uuid4().hex[:8]}.jpg"
+                            photo_path = photos_dir / photo_filename
+                            await asyncio.to_thread(photo_path.write_bytes, buffered_frame)
+                            logger.info("[PHOTO-BG] Saved buffered frame: %s", photo_filename)
+                        else:
+                            # No active stream - capture new frame
+                            from backend.app.services.camera import capture_finish_photo
 
-                        photo_filename = await capture_finish_photo(
-                            printer_id=printer_id,
-                            ip_address=printer.ip_address,
-                            access_code=printer.access_code,
-                            model=printer.model,
-                            archive_dir=archive_dir,
-                            gpu_accel=gpu_accel,
-                            rotation=getattr(printer, "camera_rotation", 0),
-                        )
+                            photo_filename = await capture_finish_photo(
+                                printer_id=printer_id,
+                                ip_address=printer.ip_address,
+                                access_code=printer.access_code,
+                                model=printer.model,
+                                archive_dir=archive_dir,
+                                gpu_accel=gpu_accel,
+                                rotation=getattr(printer, "camera_rotation", 0),
+                            )
 
             # Write phase: attach the photo in a fresh short-lived session.
             if photo_filename:
@@ -9845,6 +9913,12 @@ async def lifespan(app: FastAPI):
 
     install_proactor_reset_filter()
 
+    # Before anything opens files or sockets in bulk: a soft limit of 1024 is
+    # what turned descriptor exhaustion into a corrupted database (#2883).
+    from backend.app.core.fd_limit import raise_open_file_limit
+
+    raise_open_file_limit()
+
     # Before init_db, so the warning is near the top of the log rather than
     # below a migration run. See warn_if_running_on_uvloop for what is at stake.
     warn_if_running_on_uvloop()
@@ -10573,6 +10647,8 @@ PUBLIC_API_ROUTES = {
     # before the route handler runs, regardless of the route's own
     # "no auth required" intent.
     "/api/v1/system/appliance",
+    # Overlay branding: the route enforces overlay-scoped token authentication.
+    "/api/v1/overlay-branding/logo",
 }
 
 # Route prefixes that are public (for routes with dynamic segments)
@@ -11060,6 +11136,7 @@ app.include_router(
     camera.router, prefix=app_settings.api_prefix
 )  # Before printers — /printers/camera/* must match before /{printer_id}
 app.include_router(printers.router, prefix=app_settings.api_prefix)
+app.include_router(printer_locations.router, prefix=app_settings.api_prefix)
 app.include_router(archives.router, prefix=app_settings.api_prefix)
 app.include_router(filaments.router, prefix=app_settings.api_prefix)
 app.include_router(filament_profiles.router, prefix=app_settings.api_prefix)
@@ -11067,6 +11144,7 @@ app.include_router(finance.router, prefix=app_settings.api_prefix)
 app.include_router(inventory.router, prefix=app_settings.api_prefix)
 app.include_router(labels.router, prefix=app_settings.api_prefix)
 app.include_router(settings_routes.router, prefix=app_settings.api_prefix)
+app.include_router(overlay_branding.router, prefix=app_settings.api_prefix)
 app.include_router(cloud.router, prefix=app_settings.api_prefix)
 app.include_router(orca_cloud.router, prefix=app_settings.api_prefix)
 app.include_router(local_presets.router, prefix=app_settings.api_prefix)
