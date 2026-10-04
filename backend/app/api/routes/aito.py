@@ -103,7 +103,9 @@ from backend.app.services.aito_client_rating import read_client_rating
 from backend.app.services.aito_customer_credit import read_customer_credit
 from backend.app.services.aito_deposit_apply import (
     DepositAmountTooHigh,
+    DepositAmountTooSmall,
     DepositNotFound,
+    DepositOutcomeUnknown,
     apply_deposit,
     project_deposits,
 )
@@ -2260,6 +2262,9 @@ async def get_invoice_deposits(
     project = await _get_active_project_or_404(db, project_id)
     try:
         invoice, credits = await project_deposits(db, project)
+    except ZohoRateLimited as e:
+        aito_quote_sync._arm_rate_limit_throttle(e)
+        raise HTTPException(status_code=429, detail=str(e)) from e
     except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
         logger.warning("Aito deposit lookup failed for project %s: %s", project_id, e)
         raise HTTPException(status_code=502, detail=str(e)) from e
@@ -2298,11 +2303,18 @@ async def apply_invoice_deposit(
         )
     except DepositNotFound as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
+    except DepositAmountTooSmall as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
     except DepositAmountTooHigh as e:
         raise HTTPException(
             status_code=409, detail={"code": "amount_too_high", "message": str(e), "cap": round(e.cap, 2)}
         ) from e
+    except DepositOutcomeUnknown as e:
+        # The attempt is already on record; other boards must refetch too.
+        await _broadcast_changed("invoice", project_id, _actor(current_user))
+        raise HTTPException(status_code=502, detail={"code": "outcome_unknown", "message": str(e)}) from e
     except ZohoRateLimited as e:
+        aito_quote_sync._arm_rate_limit_throttle(e)
         raise HTTPException(status_code=429, detail=str(e)) from e
     except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
         logger.warning("Aito deposit apply failed for project %s: %s", project_id, e)
@@ -2317,6 +2329,7 @@ async def apply_invoice_deposit(
         url = await zoho_service.books_invoice_url(db, payload.invoice_id)
     except (ZohoNotConfiguredError, ZohoUpstreamError):
         url = ""
+    await _broadcast_changed("invoice", project_id, _actor(current_user))
     return AitoInvoiceResponse(**fresh, url=url, invoice_count=len(invoices) or 1)
 
 
@@ -5270,6 +5283,9 @@ async def force_sync_project(
         detail={"steps": {s.key: s.outcome for s in steps}},
     )
     await db.commit()
+    # "invoice": other operators' boards refetch, and their open Invoice card
+    # too — a settled deposit changes only what Books reports.
+    await _broadcast_changed("invoice", pid, _actor(current_user))
     return AitoForceSyncReport(steps=[AitoForceSyncStep(key=s.key, outcome=s.outcome, detail=s.detail) for s in steps])
 
 

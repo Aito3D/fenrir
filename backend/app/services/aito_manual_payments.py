@@ -22,6 +22,7 @@ from backend.app.services.inbox import broadcast_pending
 from backend.app.services.zoho import (
     ZohoAmbiguous,
     ZohoNotConfiguredError,
+    ZohoRateLimited,
     ZohoUnreachable,
     ZohoUpstreamError,
     zoho_service,
@@ -360,7 +361,18 @@ async def refresh_after_payment(db: AsyncSession, project_id: int, kind: str) ->
             from backend.app.services import aito_quote_sync
 
             await aito_quote_sync.sync_project(db, project)
-            await settle_invoiced_deposits(db, project)
+            # Its own catch: the settle can raise AFTER Books took the money
+            # and its `invoice.deposit_applied` events were recorded (a 429
+            # on the re-read). Escaping to the outer catch would skip the
+            # commit below and leave those events -- and sync_project's work
+            # -- uncommitted for the next rollback on this session to drop.
+            try:
+                await settle_invoiced_deposits(db, project)
+            except ZohoRateLimited as exc:
+                aito_quote_sync._arm_rate_limit_throttle(exc)
+                logger.warning("deposit settle after a quote payment on project %s was rate limited", project_id)
+            except Exception as exc:  # noqa: BLE001 — the sweep retries within the hour
+                logger.warning("deposit settle after a quote payment on project %s failed: %s", project_id, exc)
             # The paid-deposit auto-accept records quote.accepted, an inbox
             # row for the card's watchers: commit and push it here, as the
             # sweep does after its own sync_project.

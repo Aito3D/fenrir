@@ -153,3 +153,97 @@ async def test_create_invoice_reconciles_the_card_links_at_once(async_client, db
 
     assert response.status_code == 200
     assert any(c.get("only_project_id") == pid and c.get("force") is True for c in calls)
+
+
+@pytest.mark.asyncio
+async def test_settle_failure_after_apply_still_commits_and_broadcasts(db_session, monkeypatch):
+    """The late-deposit settle applied money and recorded its event, then its
+    re-read hit a 429: the event and sync_project's work are committed, the
+    board is told, and the shared throttle is armed."""
+    from sqlalchemy import select
+
+    from backend.app.models.aito_event import AitoEvent
+    from backend.app.services import aito_events, aito_quote_sync
+    from backend.app.services.zoho import ZohoRateLimited
+
+    p = await _project(db_session)
+    pid = p.id
+
+    async def fake_sync_project(db, project, *a, **k):
+        project.retainer_paid_total = 7000.0
+
+    async def list_project_invoices(db, estimate_id, customer_id):
+        return [{"id": "INV1", "number": "FA-1", "balance": 7000.0, "status": "draft", "due_date": "2026-10-10"}]
+
+    async def fake_settle(db, project_id, quote_id, invoice, quote_number=None):
+        await aito_events.record(
+            db,
+            project_id,
+            "invoice.deposit_applied",
+            actor_class="system",
+            subject_type="project",
+            subject_id=project_id,
+            detail={"retainer_number": "RET-1", "invoice_number": "FA-1", "amount": 7000.0},
+        )
+        raise ZohoRateLimited("429", retry_after=30.0, code=429)
+
+    armed: list = []
+    broadcasts: list = []
+
+    async def fake_broadcast(db):
+        broadcasts.append(db)
+
+    monkeypatch.setattr("backend.app.services.aito_quote_sync.sync_project", fake_sync_project)
+    monkeypatch.setattr(zoho_service, "list_project_invoices", list_project_invoices)
+    monkeypatch.setattr("backend.app.services.aito_invoice_sweep.settle_with_deposits", fake_settle)
+    monkeypatch.setattr(aito_quote_sync, "_arm_rate_limit_throttle", lambda e: armed.append(e))
+    monkeypatch.setattr(aito_manual_payments, "broadcast_pending", fake_broadcast)
+
+    await aito_manual_payments.refresh_after_payment(db_session, pid, "quote")
+
+    await db_session.rollback()  # anything left uncommitted is gone now
+    events = (
+        (
+            await db_session.execute(
+                select(AitoEvent).where(AitoEvent.project_id == pid, AitoEvent.kind == "invoice.deposit_applied")
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(events) == 1
+    row = await db_session.get(AitoProject, pid)
+    await db_session.refresh(row)
+    assert row.retainer_paid_total == 7000.0
+    assert broadcasts and armed
+
+
+@pytest.mark.asyncio
+async def test_settle_generic_failure_still_commits_sync_work(db_session, monkeypatch):
+    from backend.app.services.zoho import ZohoUpstreamError
+
+    p = await _project(db_session)
+    pid = p.id
+
+    async def fake_sync_project(db, project, *a, **k):
+        project.retainer_paid_total = 3000.0
+
+    async def boom(db, estimate_id, customer_id):
+        raise ZohoUpstreamError("Books is down")
+
+    broadcasts: list = []
+
+    async def fake_broadcast(db):
+        broadcasts.append(db)
+
+    monkeypatch.setattr("backend.app.services.aito_quote_sync.sync_project", fake_sync_project)
+    monkeypatch.setattr(zoho_service, "list_project_invoices", boom)
+    monkeypatch.setattr(aito_manual_payments, "broadcast_pending", fake_broadcast)
+
+    await aito_manual_payments.refresh_after_payment(db_session, pid, "quote")
+
+    await db_session.rollback()
+    row = await db_session.get(AitoProject, pid)
+    await db_session.refresh(row)
+    assert row.retainer_paid_total == 3000.0
+    assert broadcasts

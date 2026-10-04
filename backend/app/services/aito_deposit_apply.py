@@ -17,7 +17,13 @@ from backend.app.services import aito_events
 from backend.app.services.aito_customer_credit import read_customer_credit
 from backend.app.services.aito_invoice_create import RetainerCredit, customer_credits, share_out
 from backend.app.services.aito_invoice_sweep import linked_credits
-from backend.app.services.zoho import ZohoNotConfiguredError, ZohoUpstreamError, zoho_service
+from backend.app.services.zoho import (
+    ZohoAmbiguous,
+    ZohoNotConfiguredError,
+    ZohoUnreachable,
+    ZohoUpstreamError,
+    zoho_service,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +39,21 @@ class DepositAmountTooHigh(Exception):
     def __init__(self, cap: float):
         super().__init__(f"At most {cap:.2f} can be applied")
         self.cap = cap
+
+
+class DepositAmountTooSmall(Exception):
+    """Below one cent once rounded: Books keeps cents, there is nothing to send."""
+
+
+class DepositOutcomeUnknown(Exception):
+    """Books did not say whether the application landed (read timeout, gateway
+    5xx). The attempt is on record; a blind retry could apply it twice."""
+
+    MESSAGE = "The deposit may have been applied; check the invoice before retrying."
+
+    def __init__(self, cause: Exception):
+        super().__init__(self.MESSAGE)
+        self.cause = cause
 
 
 async def project_deposits(db: AsyncSession, project: AitoProject) -> tuple[dict | None, list[RetainerCredit]]:
@@ -57,6 +78,8 @@ async def apply_deposit(
     actor_name: str | None,
 ) -> dict:
     amount = round(amount, 2)
+    if amount < 0.01:
+        raise DepositAmountTooSmall("The amount must be at least 0.01")
     project_id, client_id = project.id, project.client_id
     invoice, credits = await project_deposits(db, project)
     if invoice is None or str(invoice.get("id")) != invoice_id:
@@ -64,13 +87,45 @@ async def apply_deposit(
     credit = next((c for c in credits if c.id == retainer_id), None)
     if credit is None:
         raise DepositNotFound("That deposit is not one of this quote's")
-    cap = min(float(invoice.get("balance") or 0), credit.applicable)
-    if amount > cap + _CENT:
-        raise DepositAmountTooHigh(cap)
+    cap = round(min(float(invoice.get("balance") or 0), credit.applicable), 2)
+    if cap < 0.01 or amount > cap + _CENT:
+        raise DepositAmountTooHigh(max(cap, 0.0))
     amount = min(amount, cap)
 
     [(_, payments)] = share_out([credit], amount)
-    await zoho_service.apply_invoice_credits(db, invoice_id, payments)
+    if not payments:
+        raise DepositAmountTooHigh(cap)
+    sent = round(sum(float(p["amount_applied"]) for p in payments), 2)
+    detail = {
+        "retainer_number": credit.number,
+        "invoice_number": str(invoice.get("number") or ""),
+        "amount": sent,
+        "source": "manual",
+    }
+    try:
+        await zoho_service.apply_invoice_credits(db, invoice_id, payments)
+    except (ZohoUnreachable, ZohoAmbiguous) as exc:
+        # The write may have landed: keep the attempt on record (same rule as
+        # record_manual_payment) and tell the operator to look before retrying.
+        logger.error(
+            "Deposit %s on invoice %s (project %s): Books did not say whether the application landed: %s",
+            credit.number,
+            invoice_id,
+            project_id,
+            exc,
+        )
+        await aito_events.record(
+            db,
+            project_id,
+            "invoice.deposit_applied",
+            actor_class="user",
+            actor_name=actor_name,
+            subject_type="project",
+            subject_id=project_id,
+            detail={**detail, "outcome": "unknown"},
+        )
+        await db.commit()
+        raise DepositOutcomeUnknown(exc) from exc
     await aito_events.record(
         db,
         project_id,
@@ -79,12 +134,7 @@ async def apply_deposit(
         actor_name=actor_name,
         subject_type="project",
         subject_id=project_id,
-        detail={
-            "retainer_number": credit.number,
-            "invoice_number": str(invoice.get("number") or ""),
-            "amount": round(amount, 2),
-            "source": "manual",
-        },
+        detail=detail,
     )
     # The money has moved: keep the record before anything else can fail, so a
     # retry never sees a deposit that was spent without a trace.
@@ -98,7 +148,7 @@ async def apply_deposit(
         logger.warning("Deposit applied to invoice %s but it could not be re-read: %s", invoice_id, exc)
         fresh = None
     if not fresh:
-        balance = max(float(invoice.get("balance") or 0) - amount, 0.0)
+        balance = max(float(invoice.get("balance") or 0) - sent, 0.0)
         fresh = {**invoice, "balance": round(balance, 2)}
     project.invoice_status = fresh.get("status") or None
     project.invoice_balance = float(fresh.get("balance") or 0)
