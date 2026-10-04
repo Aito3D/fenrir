@@ -743,6 +743,18 @@ _HMS_USER_ACTION_CODES: frozenset[str] = frozenset(
     }
 )
 
+# HMS advisories the shop never wants in front of an operator, matched on the
+# full 16-char code because their short codes (e.g. "0700_0001") are shared with
+# real faults on other AMS parts. "AMS <X> uses printer power for drying during
+# loading/printing" fires on every filament load of an AMS without its own power
+# adapter. It had no text before the upstream HMS catalogue, so it was silently
+# dropped; once it gained one it became a notification and a badge each time the
+# printer re-raised it. Dropped at parse time like the cancel echoes above.
+_HMS_HIDDEN_FULL_CODES: frozenset[str] = frozenset(
+    [f"07{unit:02X}250000020001" for unit in range(8)]  # AMS A-H
+    + [f"18{unit:02X}250000020001" for unit in range(8)]  # AMS-HT A-H
+)
+
 # "MQTT command verification failed" — the printer's authorization/authentication
 # protection (firmware >= 01.08.03.00beta / 01.08.05.00) rejecting a control
 # command it could not verify. Queries (get_version, extrusion_cali_get,
@@ -4941,6 +4953,8 @@ class BambuMQTTClient:
                         # action table still has some short-form entries, so that
                         # lookup falls back to it.
                         full_code = f"{attr:08X}{code:08X}"
+                        if full_code in _HMS_HIDDEN_FULL_CODES:
+                            continue
                         if full_code == HMS_MQTT_VERIFY_FAILED:
                             verify_failed = True
                         actions = get_actions_for_error_code(self.serial_number[:3], full_code)

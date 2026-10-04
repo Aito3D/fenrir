@@ -5435,6 +5435,36 @@ class TestHMSUserActionFiltering:
         assert len(mqtt_client.state.hms_errors) == 1
         assert mqtt_client.state.hms_errors[0].code == "0x8061"
 
+    @pytest.mark.parametrize(
+        ("attr", "label"),
+        [(0x07002500, "AMS A"), (0x07032500, "AMS D"), (0x18002500, "AMS-HT A"), (0x18072500, "AMS-HT H")],
+    )
+    def test_ams_printer_power_drying_notice_filtered(self, mqtt_client, attr, label):
+        """ "AMS A uses printer power for drying during loading/printing" is an
+        advisory, not a fault. Its text arrived with the upstream HMS catalogue
+        and it then reached operators as a notification and a badge every time
+        an AMS loaded filament, so it never enters state.hms_errors."""
+        mqtt_client._update_state({"hms": [{"attr": attr, "code": 0x00020001}]})
+        assert mqtt_client.state.hms_errors == [], label
+
+    def test_ams_drying_filter_keeps_a_fault_with_the_same_short_code(self, mqtt_client):
+        """The filter matches the full code. A different AMS part with the same
+        0700_0001 short code is a different fault and must still pass."""
+        mqtt_client._update_state({"hms": [{"attr": 0x07002000, "code": 0x00020001}]})
+        assert len(mqtt_client.state.hms_errors) == 1
+        assert mqtt_client.state.hms_errors[0].full_code == "0700200000020001"
+
+    def test_ams_drying_filter_keeps_concurrent_real_faults(self, mqtt_client):
+        mqtt_client._update_state(
+            {
+                "hms": [
+                    {"attr": 0x07002500, "code": 0x00020001},  # drying advisory: drop
+                    {"attr": 0x07FF0200, "code": 0x8011},  # filament runout: keep
+                ]
+            }
+        )
+        assert [e.code for e in mqtt_client.state.hms_errors] == ["0x8011"]
+
 
 class TestHMSFullCode:
     """full_code is the firmware-matching key for HMS-related commands.
