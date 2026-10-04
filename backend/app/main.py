@@ -50,6 +50,7 @@ from backend.app.api.routes import (
     location_ha_sensors,
     maintenance,
     makerworld,
+    manyfold,
     metrics,
     mfa,
     notification_templates,
@@ -10730,6 +10731,7 @@ app.include_router(pipeline_runs.pipeline_run_router, prefix=app_settings.api_pr
 app.include_router(slicer_presets.router, prefix=app_settings.api_prefix)
 app.include_router(archive_purge.router, prefix=app_settings.api_prefix)
 app.include_router(makerworld.router, prefix=app_settings.api_prefix)
+app.include_router(manyfold.router, prefix=app_settings.api_prefix)
 app.include_router(api_keys.router, prefix=app_settings.api_prefix)
 app.include_router(connected_apps.router, prefix=app_settings.api_prefix)
 app.include_router(webhook.router, prefix=app_settings.api_prefix)

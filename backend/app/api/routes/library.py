@@ -613,17 +613,17 @@ async def save_3mf_bytes_to_library(
     source_url: str | None = None,
     owner_id: int | None = None,
 ) -> tuple[LibraryFile, bool]:
-    """Save a 3MF blob into the library and return ``(library_file, was_existing)``.
+    """Save a fetched file into the library and return ``(library_file, was_existing)``.
 
-    Used by routes that receive a 3MF in-process rather than as a multipart
-    upload (currently: MakerWorld import; reusable for any future source that
-    fetches bytes server-side). Deduplicates by ``source_url`` when provided —
+    Used by routes that receive a file in-process rather than as a multipart
+    upload: the MakerWorld import (3MF) and the Manyfold import (3MF, STL,
+    STEP). Deduplicates by ``source_url`` when provided —
     if a LibraryFile with the same source_url already exists, the existing
     row is returned and the bytes are NOT re-saved (MakerWorld signed URLs
     change each download, so hash-based dedupe alone would miss re-imports).
 
     Parses 3MF metadata + thumbnail the same way the multipart upload route
-    does, via :class:`ThreeMFParser`. Paths are stored as relative so the
+    does, via :class:`ThreeMFParser`, and renders an STL's thumbnail. Paths are stored as relative so the
     library is portable across installs.
     """
     # Source-URL-based dedupe: return the existing row untouched.
@@ -677,6 +677,17 @@ async def save_3mf_bytes_to_library(
             # still land in the library so the user can see / delete it rather
             # than failing the whole request.
             logger.warning("Failed to parse 3MF %s: %s", filename, exc)
+    elif ext == ".stl":
+        # Manyfold imports (#1471) bring STLs. Same thumbnail as the multipart
+        # upload gives them, with the same pre-skip for stubs too small to hold
+        # a triangle.
+        try:
+            if file_path.stat().st_size >= MIN_USABLE_STL_BYTES:
+                thumbnail_path = await asyncio.to_thread(
+                    generate_stl_thumbnail, file_path, get_library_thumbnails_dir()
+                )
+        except Exception as exc:  # noqa: BLE001 — a thumbnail must never fail the import
+            logger.warning("Failed to render STL thumbnail for %s: %s", filename, exc)
 
     library_file = LibraryFile(
         folder_id=folder_id,

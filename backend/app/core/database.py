@@ -5945,6 +5945,7 @@ async def seed_default_groups():
 
     from backend.app.core.permissions import ALL_PERMISSIONS, DEFAULT_GROUPS
     from backend.app.models.group import Group
+    from backend.app.models.settings import Settings
     from backend.app.models.user import User
 
     logger = logging.getLogger(__name__)
@@ -6117,6 +6118,32 @@ async def seed_default_groups():
             if changed:
                 group.permissions = perms
         await session.commit()
+
+        # Manyfold (#1471) is a second model source beside MakerWorld, so a
+        # group gets the same reach there it already has on MakerWorld. Runs
+        # once: an admin who later takes a Manyfold permission away keeps it
+        # taken away.
+        manyfold_flag = "_backfill_1471_manyfold_permissions_done"
+        flag_row = (await session.execute(select(Settings).where(Settings.key == manyfold_flag))).scalar_one_or_none()
+        if flag_row is None:
+            result = await session.execute(select(Group))
+            for group in result.scalars().all():
+                if not group.permissions:
+                    continue
+                perms = list(group.permissions)
+                added = [
+                    manyfold_perm
+                    for makerworld_perm, manyfold_perm in (
+                        ("makerworld:view", "manyfold:view"),
+                        ("makerworld:import", "manyfold:import"),
+                    )
+                    if makerworld_perm in perms and manyfold_perm not in perms
+                ]
+                if added:
+                    group.permissions = perms + added
+                    logger.info("Added %s to group '%s' (matches its MakerWorld access)", ", ".join(added), group.name)
+            session.add(Settings(key=manyfold_flag, value="true"))
+            await session.commit()
 
         # Backfill: sync the Administrators system group to ALL_PERMISSIONS.
         # Administrators' contract is full access to every feature — fresh

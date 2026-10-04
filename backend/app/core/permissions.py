@@ -166,6 +166,10 @@ class Permission(StrEnum):
     MAKERWORLD_VIEW = "makerworld:view"  # Resolve MakerWorld URLs and view model metadata
     MAKERWORLD_IMPORT = "makerworld:import"  # Download 3MFs from MakerWorld into the library
 
+    # Manyfold Integration (#1471)
+    MANYFOLD_VIEW = "manyfold:view"  # Browse and search the connected Manyfold library
+    MANYFOLD_IMPORT = "manyfold:import"  # Download Manyfold files into the library
+
     # API Keys (admin-level)
     API_KEYS_READ = "api_keys:read"
     API_KEYS_CREATE = "api_keys:create"
@@ -343,6 +347,10 @@ PERMISSION_CATEGORIES = {
         Permission.MAKERWORLD_VIEW,
         Permission.MAKERWORLD_IMPORT,
     ],
+    "Manyfold": [
+        Permission.MANYFOLD_VIEW,
+        Permission.MANYFOLD_IMPORT,
+    ],
     "API Keys": [
         Permission.API_KEYS_READ,
         Permission.API_KEYS_CREATE,
@@ -414,6 +422,9 @@ DEFAULT_GROUPS = {
             # MakerWorld integration
             Permission.MAKERWORLD_VIEW.value,
             Permission.MAKERWORLD_IMPORT.value,
+            # Manyfold integration
+            Permission.MANYFOLD_VIEW.value,
+            Permission.MANYFOLD_IMPORT.value,
             # Orca Cloud — needed for the Slice modal's Orca Cloud preset
             # picker to populate. Workshops that use Orca Cloud presets
             # need every operator to be able to authenticate. Bambu Cloud
@@ -522,6 +533,8 @@ DEFAULT_GROUPS = {
             Permission.WEBSOCKET_CONNECT.value,
             # MakerWorld browsing only (no import — that writes to library)
             Permission.MAKERWORLD_VIEW.value,
+            # Manyfold browsing only, for the same reason
+            Permission.MANYFOLD_VIEW.value,
         ],
         "is_system": True,
     },

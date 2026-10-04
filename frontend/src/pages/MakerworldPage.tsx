@@ -107,7 +107,9 @@ function useElapsedSeconds(active: boolean): number {
   return elapsed;
 }
 
-export function MakerworldPage() {
+/** ``embedded`` renders it as the MakerWorld tab of the Model Sources page,
+ *  which brings its own page title. */
+export function MakerworldPage({ embedded = false }: { embedded?: boolean } = {}) {
   const { t } = useTranslation();
   const { hasPermission } = useAuth();
   const { showToast } = useToast();
@@ -419,16 +421,20 @@ export function MakerworldPage() {
   const downloadCount = pickNumber(design, 'downloadCount');
 
   return (
-    <div className="p-4 md:p-8 max-w-screen-2xl space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-          <Globe className="w-7 h-7 text-bambu-green" />
-          {t('makerworld.title')}
-        </h1>
-        <p className="text-bambu-gray mt-1">
-          {t('makerworld.description')}
-        </p>
-      </div>
+    <div className={embedded ? 'space-y-6' : 'p-4 md:p-8 max-w-screen-2xl space-y-6'}>
+      {embedded ? (
+        <p className="text-bambu-gray">{t('makerworld.description')}</p>
+      ) : (
+        <div>
+          <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+            <Globe className="w-7 h-7 text-bambu-green" />
+            {t('makerworld.title')}
+          </h1>
+          <p className="text-bambu-gray mt-1">
+            {t('makerworld.description')}
+          </p>
+        </div>
+      )}
 
       {/* Two-column layout: main flow on the left, sticky "Recent imports"
           sidebar on the right at lg+. Collapses to single column on narrow

@@ -1060,6 +1060,7 @@ async def _collect_support_info() -> dict:
             "host",
             "broker",  # MQTT broker hostname / IP — network exposure
             "credential",
+            "client_id",  # e.g. manyfold_client_id (#1471): half of an OAuth login
         }
         # Value-based safety net: redact anything whose value carries an
         # unambiguous secret prefix, even if the key name didn't match.

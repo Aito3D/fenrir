@@ -688,6 +688,10 @@ class TestCollectSupportInfo:
             # named without "auth_key" but whose value starts with the Tailscale
             # prefix must still redact.
             MagicMock(key="some_future_ts_setting", value="tskey-other-secret"),
+            # The Manyfold connection (#1471): all three halves of the login.
+            MagicMock(key="manyfold_url", value="http://192.168.1.10:3214"),
+            MagicMock(key="manyfold_client_id", value="app-id"),
+            MagicMock(key="manyfold_client_secret", value="app-secret"),
         ]
 
         def make_result(rows=None):
@@ -736,6 +740,9 @@ class TestCollectSupportInfo:
         assert s.get("mqtt_broker") == "[REDACTED]"
         assert s.get("virtual_printer_tailscale_auth_key") == "[REDACTED]"
         assert s.get("some_future_ts_setting") == "[REDACTED]"
+        assert s.get("manyfold_url") == "[REDACTED]"
+        assert s.get("manyfold_client_id") == "[REDACTED]"
+        assert s.get("manyfold_client_secret") == "[REDACTED]"
 
 
 class TestParseObicoEnabledPrinters:

@@ -1724,6 +1724,69 @@ export interface MakerworldRecentImport {
   created_at: string;
 }
 
+// Manyfold integration (#1471): a self-hosted model library, browsed and
+// searched, with single files imported into the library.
+export interface ManyfoldConfig {
+  url: string;
+  client_id: string;
+  /** The secret itself is never returned. */
+  has_client_secret: boolean;
+  configured: boolean;
+}
+
+export interface ManyfoldConfigInput {
+  url: string;
+  client_id: string;
+  /** Empty or left out keeps the stored secret. */
+  client_secret?: string;
+}
+
+export interface ManyfoldStatus {
+  configured: boolean;
+  url: string;
+}
+
+export interface ManyfoldModelSummary {
+  id: string;
+  name: string;
+}
+
+export interface ManyfoldModelList {
+  total: number;
+  page: number;
+  has_next: boolean;
+  has_previous: boolean;
+  models: ManyfoldModelSummary[];
+}
+
+export interface ManyfoldFile {
+  id: string;
+  name: string;
+  mime: string;
+  importable: boolean;
+  /** Set while the file imported earlier is still in the library. */
+  library_file: { id: number; filename: string; folder_id: number | null } | null;
+}
+
+export interface ManyfoldModel {
+  id: string;
+  name: string;
+  caption: string | null;
+  description: string | null;
+  license: string | null;
+  tags: string[];
+  url: string;
+  has_preview: boolean;
+  files: ManyfoldFile[];
+}
+
+export interface ManyfoldImportResponse {
+  library_file_id: number;
+  filename: string;
+  folder_id: number | null;
+  was_existing: boolean;
+}
+
 export interface SlicerSetting {
   setting_id: string;
   name: string;
@@ -4307,6 +4370,7 @@ export type Permission =
   | 'github:backup' | 'github:restore'
   | 'cloud:auth' | 'orca_cloud:auth'
   | 'makerworld:view' | 'makerworld:import'
+  | 'manyfold:view' | 'manyfold:import'
   | 'api_keys:read' | 'api_keys:create' | 'api_keys:update' | 'api_keys:delete'
   | 'users:read' | 'users:read_slim' | 'users:create' | 'users:update' | 'users:delete'
   | 'groups:read' | 'groups:create' | 'groups:update' | 'groups:delete'
@@ -6173,6 +6237,36 @@ export const api = {
         profile_id: profile_id ?? null,
         folder_id: folder_id ?? null,
       }),
+    }),
+  // Manyfold (#1471).
+  getManyfoldConfig: () => request<ManyfoldConfig>('/manyfold/config'),
+  updateManyfoldConfig: (data: ManyfoldConfigInput) =>
+    request<ManyfoldConfig>('/manyfold/config', { method: 'PUT', body: JSON.stringify(data) }),
+  deleteManyfoldConfig: () => request<void>('/manyfold/config', { method: 'DELETE' }),
+  testManyfoldConfig: (data: ManyfoldConfigInput) =>
+    request<{ model_count: number }>('/manyfold/config/test', { method: 'POST', body: JSON.stringify(data) }),
+  getManyfoldStatus: () => request<ManyfoldStatus>('/manyfold/status'),
+  listManyfoldModels: (query: string, page: number) => {
+    const params = new URLSearchParams({ page: String(page) });
+    if (query) params.set('q', query);
+    return request<ManyfoldModelList>(`/manyfold/models?${params.toString()}`);
+  },
+  getManyfoldModel: (modelId: string) =>
+    request<ManyfoldModel>(`/manyfold/models/${encodeURIComponent(modelId)}`),
+  /** The model's preview, or null when it has none. Fetched rather than used
+   *  as an <img src>: a failing protected <img> makes the app renew its media
+   *  token, and models without a preview answer 404. */
+  getManyfoldPreview: async (modelId: string): Promise<Blob | null> => {
+    const headers: Record<string, string> = {};
+    if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+    const response = await fetch(`${API_BASE}/manyfold/models/${encodeURIComponent(modelId)}/preview`, { headers });
+    if (!response.ok) return null;
+    return response.blob();
+  },
+  importManyfoldFile: (modelId: string, fileId: string, folderId: number | null) =>
+    request<ManyfoldImportResponse>('/manyfold/import', {
+      method: 'POST',
+      body: JSON.stringify({ model_id: modelId, file_id: fileId, folder_id: folderId }),
     }),
   getCloudSettingDetail: (settingId: string) =>
     request<SlicerSettingDetail>(`/cloud/settings/${settingId}`),

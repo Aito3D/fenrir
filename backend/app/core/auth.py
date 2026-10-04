@@ -122,6 +122,7 @@ _APIKEY_SCOPE_BY_PERMISSION: dict[Permission, str | tuple[str, ...]] = {
     # working (they need the UI-language setting via API key).
     Permission.SETTINGS_READ: "can_read_status",
     Permission.MAKERWORLD_VIEW: "can_read_status",
+    Permission.MANYFOLD_VIEW: "can_read_status",
     # Pipeline definitions and run history are configuration + status: listing
     # pipelines, reading a run, and the (write-free) POST check-eligibility
     # pre-flight. Authoring stays admin-only under PIPELINES_WRITE.
@@ -158,6 +159,7 @@ _APIKEY_SCOPE_BY_PERMISSION: dict[Permission, str | tuple[str, ...]] = {
     Permission.LIBRARY_DELETE_OWN: "can_manage_library",
     Permission.LIBRARY_DELETE_ALL: "can_manage_library",
     Permission.MAKERWORLD_IMPORT: "can_manage_library",
+    Permission.MANYFOLD_IMPORT: "can_manage_library",
     # can_manage_inventory — inventory write scope. Covers the documented
     # spool/catalog/forecast write surface AND the SpoolBuddy kiosk endpoints
     # (NFC scan, scale reading, system command/update) which used
