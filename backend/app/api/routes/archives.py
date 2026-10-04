@@ -2,9 +2,11 @@ import asyncio
 import io
 import json
 import logging
+import os
 import re as _re
 import shutil
 import tempfile
+import uuid
 import zipfile
 from collections import defaultdict
 from contextlib import contextmanager
@@ -3280,7 +3282,6 @@ async def process_timelapse(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_ALL),
 ):
     """Process timelapse with trim, speed, and optional audio overlay."""
-    import shutil
     import tempfile
 
     from backend.app.schemas.timelapse import ProcessResponse
@@ -3316,16 +3317,22 @@ async def process_timelapse(
         suffix = Path(audio.filename).suffix.lower()
         if suffix not in (".mp3", ".wav", ".m4a", ".aac", ".ogg"):
             raise HTTPException(400, "Invalid audio file extension")
-        audio_temp_path = Path(tempfile.gettempdir()) / f"audio_{archive_id}{suffix}"
-        audio_temp_path.write_bytes(audio_content)
+        # A unique name: two edits of one archive shared audio_<id>.ext.
+        fd, audio_name = tempfile.mkstemp(prefix=f"audio_{archive_id}_", suffix=suffix)
+        audio_temp_path = Path(audio_name)
+        with os.fdopen(fd, "wb") as audio_file:
+            audio_file.write(audio_content)
 
+    temp_output = None
     try:
         processor = TimelapseProcessor(timelapse_path)
 
         # Determine output path
         if save_mode == "replace":
-            # Process to temp file first, then replace
-            temp_output = Path(tempfile.gettempdir()) / f"processed_{archive_id}.mp4"
+            # Process to a temp file beside the original, then swap it in: a
+            # unique name (two edits of one archive shared processed_<id>.mp4)
+            # on the same filesystem, so the swap is an atomic rename.
+            temp_output = archive_dir / f".processing_{uuid.uuid4().hex}.mp4"
             output_path = temp_output
         else:
             # Save as new file alongside original
@@ -3353,7 +3360,7 @@ async def process_timelapse(
         # Handle save mode
         if save_mode == "replace":
             # Replace original file
-            shutil.move(str(output_path), str(timelapse_path))
+            os.replace(output_path, timelapse_path)
             final_path = archive.timelapse_path
             message = "Timelapse replaced successfully"
         else:
@@ -3372,9 +3379,12 @@ async def process_timelapse(
         logger.error("Timelapse processing failed: %s", e)
         raise HTTPException(500, f"Processing failed: {str(e)}")
     finally:
-        # Cleanup temp audio file
-        if audio_temp_path and audio_temp_path.exists():
-            audio_temp_path.unlink()
+        # Clean up the temp audio, and a temp output a failed or cancelled run
+        # left behind (after a successful replace it has already been moved).
+        if audio_temp_path:
+            audio_temp_path.unlink(missing_ok=True)
+        if temp_output is not None:
+            temp_output.unlink(missing_ok=True)
 
 
 # ============================================
