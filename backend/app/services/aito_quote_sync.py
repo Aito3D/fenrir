@@ -3266,7 +3266,18 @@ async def run_sync_loop() -> None:
                     if serving:
                         # This drain IS any drain somebody just asked for.
                         _take_drain_request()
-                        await run_sync_once(db, attention_only=True)
+                        # T-124: its own try too. sync_project's catch-all
+                        # cannot stop everything (its own record() can hit the
+                        # same locked database; the selection query is outside
+                        # it), and an error escaping here used to skip every
+                        # pass below for the whole interval. Cancellation is
+                        # not an Exception, so it still propagates.
+                        try:
+                            await run_sync_once(db, attention_only=True)
+                        except Exception:
+                            logger.exception("Aito attention pass failed")
+                            with contextlib.suppress(Exception):
+                                await db.rollback()
                         await _serve_due_pushes(db)
                         # Its own try, like every pass below: a failure here
                         # (a locked database while a watermark is stored, a

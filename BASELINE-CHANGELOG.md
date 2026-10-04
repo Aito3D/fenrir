@@ -784,3 +784,31 @@ and crossed A<-B / B<-A (one 409, the winner's target stays on the board).
 
 - Golden probes re-recorded: none (35/35 match).
 - SURFACE.md sections regenerated: none (`bash tools/gen_surface_aito23.sh` output identical to SURFACE.md).
+
+## T-124 — an error escaping the tick's attention pass no longer skips the tick's later passes (user-approved 2026-10-03)
+
+Sanctions commit <this commit> "refactor(loop-14): T-124 attention pass gets
+its own guard (user-approved behavior change)". `run_sync_loop` in
+`backend/app/services/aito_quote_sync.py` called
+`run_sync_once(db, attention_only=True)` outside any try of its own, while
+every pass after it has one. An exception escaping it (its selection query
+hitting a locked database, a `record()` failing inside sync_project's
+catch-all) fell through to the outer "Aito quote sync tick failed" handler,
+so the tick skipped the change pass, invoice sweep/poll, contact poll,
+tracking purge, inbox sweep, payment-link reconcile and terminal poll for
+the whole poll interval. Now that one call is wrapped like the change pass
+below it: on an `Exception` it logs "Aito attention pass failed" and rolls
+the session back (rollback errors suppressed), and the tick goes on to
+`_serve_due_pushes` and the later passes. Cancellation is not an
+`Exception` and still propagates. Unchanged: every other pass's guard, the
+outer tick handler, the between-tick laps. Pinned by
+`test_a_failing_attention_pass_does_not_cost_the_tick_its_other_passes` in
+`backend/tests/unit/test_aito_push_windows.py` (fails on the old code: the
+terminal poll is never reached). `test_run_sync_loop_survives_a_failing_periodic_tick`
+in `backend/tests/unit/test_aito_quote_sync.py` pinned the old routing of an
+attention-pass error to the outer handler; it now raises from the tick's
+`sync_enabled` read instead, so it still drives the outer handler and the
+cancellation check.
+
+- Golden probes re-recorded: none (35/35 match).
+- SURFACE.md sections regenerated: none (`bash tools/gen_surface_aito23.sh` output identical to SURFACE.md).

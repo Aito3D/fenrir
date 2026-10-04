@@ -377,6 +377,65 @@ async def test_a_failing_change_pass_does_not_cost_the_tick_its_other_passes(mon
 
 
 @pytest.mark.asyncio
+async def test_a_failing_attention_pass_does_not_cost_the_tick_its_other_passes(monkeypatch, caplog):
+    """T-124: the tick's attention pass ran outside any try of its own. An
+    error escaping run_sync_once — here its selection query hitting a locked
+    database, which no per-card guard covers — fell through to the tick's
+    outer handler and skipped the change, invoice, contact, purge, inbox,
+    payment-link and terminal passes for the whole interval. It must cost
+    that pass only, logged, with the session rolled back."""
+    from sqlalchemy.exc import OperationalError
+
+    from backend.app.services import aito_terminal_payments
+
+    drains: list = []
+    _loop_fakes(monkeypatch, drains)
+    real_run_sync_once = run_sync_once  # the module-level import, not the fake
+    rollbacks: list = []
+    terminal_polled = asyncio.Event()
+
+    class LockedSession:
+        async def execute(self, *args, **kwargs):
+            raise OperationalError("SELECT aito_projects", {}, Exception("database is locked"))
+
+        async def rollback(self):
+            rollbacks.append(None)
+
+    @contextlib.asynccontextmanager
+    async def locked_session():
+        yield LockedSession()
+
+    fake_once = aito_quote_sync.run_sync_once  # _loop_fakes' recorder
+
+    async def attention_pass_hits_the_lock(db, pending_only=False, fast_retry=False, attention_only=False):
+        if attention_only:
+            drains.append(("attention", time.monotonic()))
+            return await real_run_sync_once(db, attention_only=True)
+        return await fake_once(db, pending_only=pending_only, fast_retry=fast_retry)
+
+    async def fake_terminal_poll(db):
+        terminal_polled.set()
+
+    monkeypatch.setattr(aito_quote_sync, "async_session", locked_session)
+    monkeypatch.setattr(aito_quote_sync, "run_sync_once", attention_pass_hits_the_lock)
+    monkeypatch.setattr(aito_quote_sync, "CHANGE_PASS_SECONDS", 3600.0)
+    monkeypatch.setattr(aito_terminal_payments, "poll_open_terminal_payments", fake_terminal_poll)
+    loop_task = asyncio.create_task(aito_quote_sync.run_sync_loop())
+    try:
+        with caplog.at_level("ERROR"):
+            await asyncio.wait_for(terminal_polled.wait(), timeout=5)
+        kinds = [kind for kind, _ in drains]
+        assert kinds[0] == "attention"
+        assert "change" in kinds  # the tick's change pass still ran after the failure
+        assert "Aito attention pass failed" in caplog.text
+        assert "database is locked" in caplog.text
+        assert "Aito quote sync tick failed" not in caplog.text
+        assert rollbacks  # the attention pass's half-done work was rolled back
+    finally:
+        await _stop(loop_task)
+
+
+@pytest.mark.asyncio
 async def test_a_stale_due_window_cannot_spin_the_loop(monkeypatch):
     # Sync switched off with a due window standing: no drain may run, and the
     # wait must not degrade into a zero-timeout loop.
