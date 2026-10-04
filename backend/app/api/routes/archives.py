@@ -1169,8 +1169,6 @@ async def export_archives(
 
     Returns a downloadable file with archive data.
     """
-    from datetime import datetime
-
     from fastapi.responses import StreamingResponse
 
     from backend.app.services.export import ExportService
@@ -2480,7 +2478,7 @@ async def download_archive(
 @router.get("/{archive_id}/file/{filename}")
 async def download_archive_with_filename(
     archive_id: int,
-    filename: str,
+    filename: str,  # noqa: ARG001 -- path segment only: slicers detect the format from the URL's filename
     db: AsyncSession = Depends(get_db),
     auth_result: tuple[User | None, bool] = Depends(
         require_ownership_permission(
@@ -2535,7 +2533,7 @@ async def create_archive_slicer_token(
 async def download_archive_for_slicer(
     archive_id: int,
     token: str,
-    filename: str,
+    filename: str,  # noqa: ARG001 -- path segment only: slicers detect the format from the URL's filename
     db: AsyncSession = Depends(get_db),
 ):
     """Download 3MF file using a slicer download token.
@@ -3006,9 +3004,6 @@ async def scan_timelapse(
     # Strategy 3: Use file modification time from FTP listing
     # This handles cases where printer's filename timestamp is wrong but file mtime is correct
     if not used_baseline and not matching_file and (archive.started_at or archive.completed_at or archive.created_at):
-        from datetime import datetime, timedelta
-
-        _archive_start = archive.started_at
         archive_end = archive.completed_at or archive.created_at
         best_match = None
         best_diff = timedelta(hours=24)
@@ -3034,8 +3029,6 @@ async def scan_timelapse(
     # Strategy 4: If only one timelapse exists and archive was recently completed, use it
     # This handles cases where printer clock is wrong or timezone issues exist
     if not used_baseline and not matching_file and len(video_files) == 1:
-        from datetime import datetime, timedelta, timezone
-
         archive_completed = archive.completed_at or archive.created_at
         if archive_completed:
             if archive_completed.tzinfo is None:
@@ -4442,8 +4435,6 @@ async def get_archive_plates(
     Returns a list of plates with their index, name, thumbnail availability,
     and filament requirements. For single-plate exports, returns a single plate.
     """
-    import re
-
     import defusedxml.ElementTree as ET
 
     user, can_read_all = auth_result
@@ -4506,7 +4497,7 @@ async def get_archive_plates(
                     and "no_light" not in n
                 ]
                 plate_name_candidates = plate_json_files + plate_png_files
-                plate_re = re.compile(r"^Metadata/plate_(\d+)\.(json|png)$")
+                plate_re = _re.compile(r"^Metadata/plate_(\d+)\.(json|png)$")
                 seen_indices: set[int] = set()
                 for name in plate_name_candidates:
                     match = plate_re.match(name)
@@ -4669,7 +4660,7 @@ async def get_archive_plates(
             # Parse plate_*.json for object lists when slice_info is missing
             plate_json_objects: dict[int, list[str]] = {}
             for name in namelist:
-                match = re.match(r"^Metadata/plate_(\d+)\.json$", name)
+                match = _re.match(r"^Metadata/plate_(\d+)\.json$", name)
                 if not match:
                     continue
                 try:
