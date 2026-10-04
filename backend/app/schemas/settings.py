@@ -65,6 +65,19 @@ class AppSettings(BaseModel):
         default="total",
         description="Energy display mode on stats: 'print' shows sum of per-print energy, 'total' shows lifetime plug consumption",
     )
+    # A plain string on the way out, like energy_tracking_mode: a stray value
+    # (a restored backup) reads as "fixed" everywhere instead of failing the
+    # whole settings response. Writes are checked in AppSettingsUpdate.
+    energy_price_source: str = Field(
+        default="fixed",
+        description=(
+            "Where the electricity price comes from: 'fixed' uses energy_cost_per_kwh, "
+            "'homeassistant' reads energy_price_ha_entity hourly and at print start and end (#1251)"
+        ),
+    )
+    energy_price_ha_entity: str = Field(
+        default="", description="Home Assistant sensor holding the electricity price per kWh"
+    )
 
     # Spoolman integration
     spoolman_enabled: bool = Field(default=False, description="Enable Spoolman integration for filament tracking")
@@ -721,6 +734,8 @@ class AppSettingsUpdate(BaseModel):
     currency: str | None = None
     energy_cost_per_kwh: float | None = None
     energy_tracking_mode: str | None = None
+    energy_price_source: Literal["fixed", "homeassistant"] | None = None
+    energy_price_ha_entity: str | None = Field(default=None, max_length=255)
     spoolman_enabled: bool | None = None
     spoolman_url: str | None = None
     spoolman_sync_mode: str | None = None

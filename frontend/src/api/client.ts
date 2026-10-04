@@ -1399,6 +1399,10 @@ export interface AppSettings {
   currency: string;
   energy_cost_per_kwh: number;
   energy_tracking_mode: 'print' | 'total';
+  // Where the electricity price comes from (#1251). With 'homeassistant',
+  // energy_cost_per_kwh holds the sensor's last reading and is read-only.
+  energy_price_source: 'fixed' | 'homeassistant';
+  energy_price_ha_entity: string;
   check_updates: boolean;
   check_printer_firmware: boolean;
   include_beta_updates: boolean;

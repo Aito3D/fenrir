@@ -995,6 +995,18 @@ async def _record_energy_start(archive, printer_id: int, db, *, context: str = "
             return False
         plug, energy = selected
         archive.energy_start_kwh = float(energy["total"])
+        # With the plug's snapshots, what lets the cost follow the price over
+        # the print rather than take the price at its end (#1251). A price that
+        # can't be had must not cost the print its energy reading.
+        archive.energy_start_at = utcnow_naive()
+        archive.energy_start_plug_id = plug.id
+        try:
+            from backend.app.services.energy_price import current_price
+
+            archive.energy_start_price = await current_price(db)
+        except Exception as e:
+            _logger.warning("[ENERGY] Could not read the electricity price for archive %s: %s", archive.id, e)
+            archive.energy_start_price = None
         await db.commit()
         _logger.info(
             "[ENERGY] Recorded starting energy%s for archive %s from plug '%s': %s kWh",
@@ -7983,11 +7995,29 @@ async def on_print_complete(printer_id: int, data: dict):
                     )
                     return
 
-                from backend.app.api.routes.settings import get_setting
+                from backend.app.services.energy_price import current_price, print_energy_cost, stored_price
 
-                energy_cost_per_kwh = await get_setting(db, "energy_cost_per_kwh")
-                cost_per_kwh = float(energy_cost_per_kwh) if energy_cost_per_kwh else 0.15
-                energy_cost_value = round(energy_used * cost_per_kwh, 3)
+                # Each hour of the print at the price of that hour (#1251). If
+                # that fails, the last price known, as before, rather than no
+                # energy at all. Read first: the session may be unusable after.
+                last_price = await stored_price(db)
+                try:
+                    energy_cost_value = round(
+                        await print_energy_cost(
+                            db,
+                            plug_id=archive.energy_start_plug_id,
+                            start_at=archive.energy_start_at,
+                            start_kwh=starting_kwh,
+                            start_price=archive.energy_start_price,
+                            end_kwh=energy["total"],
+                            end_plug_id=plug.id,
+                            price_now=await current_price(db),
+                        ),
+                        3,
+                    )
+                except Exception as e:
+                    logger.warning("[ENERGY-BG] Hour-by-hour cost failed for archive %s: %s", archive_id, e)
+                    energy_cost_value = round(energy_used * last_price, 3)
 
                 # First-run-only overwrite of archive.energy_kwh / energy_cost so a
                 # reprint doesn't visually clobber the source archive's energy data
