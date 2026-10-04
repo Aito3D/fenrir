@@ -227,3 +227,26 @@ describe('searchProjects — ranking', () => {
     expect(searchProjects([card()], '   ')).toEqual([]);
   });
 });
+
+describe('searchProjects — number grouping and phone shape', () => {
+  const quoteCard = card({ id: 1, quote_number: 'DEV-2638', description: 'Plaque 1200 mm', client_name: null });
+
+  it('keeps unrelated 4-digit numbers as separate terms', () => {
+    expect(searchProjects([quoteCard], 'dev 2638 1200')).toHaveLength(1);
+    expect(searchProjects([quoteCard], '2638 1200')).toHaveLength(1);
+  });
+
+  it('still merges phone groups', () => {
+    const p = card({ client_phone: '87 12 34 56', quote_number: null });
+    for (const q of ['87 12 34 56', '+689 87 12 34 56', '8712 3456']) {
+      expect(searchProjects([p], q)[0]?.field, q).toBe('clientPhone');
+    }
+  });
+
+  it('does not phone-match identifiers or dates', () => {
+    const phoneCard = card({ id: 2, client_phone: '87 26 38 11', quote_number: null, client_name: null });
+    expect(searchProjects([quoteCard, phoneCard], 'dev2638').map((h) => h.project.id)).toEqual([1]);
+    expect(searchProjects([phoneCard], 'DEV-2638')).toEqual([]);
+    expect(searchProjects([phoneCard], 'tel:dev2638')).toEqual([]);
+  });
+});

@@ -116,6 +116,8 @@ const PREFIXES: { prefix: string; keep: boolean; allow: (f: IndexedField) => boo
 ];
 const DEFAULT_ALLOW = (f: IndexedField) => f.field !== 'cardId';
 
+const PHONE_SHAPED = /^\+?[\d.\-()]+$/;
+
 let lastQuery: string | null = null;
 let lastTerms: Term[] = [];
 
@@ -124,11 +126,18 @@ let lastTerms: Term[] = [];
 function parse(query: string): Term[] {
   if (query === lastQuery) return lastTerms;
   const tokens: string[] = [];
+  let lastPiece = 0;
   for (const token of fold(query).split(/\s+/).filter(Boolean)) {
-    const numeric = /^\+?[\d.\-()]+$/.test(token);
+    const numeric = PHONE_SHAPED.test(token);
+    const piece = digits(token).length;
     const previous = tokens[tokens.length - 1];
-    if (numeric && previous !== undefined && /^\+?[\d.\-()]+$/.test(previous)) tokens[tokens.length - 1] = previous + token;
+    // Only short groups glue (`87 12 34 56`, `+689 87 12`): two 4-digit
+    // numbers (`2638 1200`) are separate identifiers, not one phone.
+    const glue =
+      numeric && previous !== undefined && PHONE_SHAPED.test(previous) && (previous.startsWith('+') || (piece <= 3 && lastPiece <= 3));
+    if (glue) tokens[tokens.length - 1] = previous + token;
     else tokens.push(token);
+    lastPiece = piece;
   }
   lastTerms = tokens.map((token) => {
     for (const { prefix, keep, allow } of PREFIXES) {
@@ -153,6 +162,7 @@ function matchField(field: IndexedField, term: string): Match | null {
   const whole = (score: number): Match => ({ score, start: 0, end: field.folded.length, whole: true });
   switch (field.kind) {
     case 'phone': {
+      if (!PHONE_SHAPED.test(term)) return null;
       const typed = phoneDigits(term);
       if (digits(term).length < MIN_PHONE_DIGITS || typed.length < MIN_PHONE_DIGITS) return null;
       if (field.key === typed) return whole(SCORE.exact);
