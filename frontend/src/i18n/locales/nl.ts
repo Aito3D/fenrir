@@ -9953,7 +9953,7 @@ export default {
     colTitle: 'Titel',
     colTags: 'Tags',
     colStatus: 'Status',
-    colPrints: 'Prints',
+    colPrints: 'Afdrukken',
     colUpdated: 'Bijgewerkt',
     empty: 'Nog geen projecten',
     emptySearch: 'Geen project komt overeen met deze zoekopdracht',

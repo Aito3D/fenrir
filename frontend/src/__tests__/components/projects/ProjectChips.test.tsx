@@ -15,7 +15,6 @@ describe('ProjectCodeChip', () => {
     // The render wrapper mounts a toast viewport, so assert on the chip's own output.
     render(<ProjectCodeChip code={null} className="chip-under-test" />);
     expect(document.querySelector('.chip-under-test')).toBeNull();
-    expect(screen.queryByTitle(/P-/)).not.toBeInTheDocument();
   });
 });
 

@@ -658,7 +658,6 @@ const NL_COGNATES = [
   'online',  // aito.payment.channelLink — same loanword used in "Betaal online"
   'Cheque',  // aito.payment.modeCheque / heimdall.paymentModeCheque — same word in Dutch
   'Code',  // projectsPdm.colCode — same word in Dutch
-  'Prints',  // projectsPdm.colPrints — « prints » is the Dutch term for 3D prints
 ];
 
 const IDENTICAL_TO_EN_ALLOWED = {
