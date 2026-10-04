@@ -63,6 +63,36 @@ class TestHoursSave:
         await db_session.refresh(p)
         assert p.print_hours_offset == pytest.approx(2529.0)
 
+    async def test_resaving_unchanged_today_value_does_not_rewind_counter(
+        self, async_client: AsyncClient, printer_factory, db_session
+    ):
+        p = await printer_factory(name="X1C08", runtime_seconds=3600 * 100)
+        m = await _machine_for(async_client, "X1C08")
+        today = date.today().isoformat()
+        body = {"reading_date": today, "entries": [{"machine_id": m["id"], "hours": 2629}]}
+        assert (await async_client.post(f"{BASE}/readings", json=body)).status_code == 200
+        await db_session.refresh(p)
+        offset = p.print_hours_offset
+        p.runtime_seconds = 3600 * 106  # the printer ran 6 more hours
+        await db_session.commit()
+
+        response = await async_client.post(f"{BASE}/readings", json=body)
+        assert response.status_code == 200
+        await db_session.refresh(p)
+        assert p.print_hours_offset == offset
+        data = response.json()
+        assert next(x for x in data["machines"] if x["id"] == m["id"])["current_hours"] == 2635.0
+
+    async def test_clamped_recalibration_writes_actual_counter_to_auto_row(
+        self, async_client: AsyncClient, printer_factory
+    ):
+        await printer_factory(name="X1C09", runtime_seconds=3600 * 100)
+        m = await _machine_for(async_client, "X1C09")
+        body = {"reading_date": date.today().isoformat(), "entries": [{"machine_id": m["id"], "hours": 40}]}
+        data = (await async_client.post(f"{BASE}/readings", json=body)).json()
+        auto = next(r for r in data["readings"] if r["source"] == "auto")
+        assert auto["hours"] == 100.0
+
     async def test_resave_replaces_and_null_deletes(self, async_client: AsyncClient, printer_factory):
         await printer_factory(name="X1C07")
         m = await _machine_for(async_client, "X1C07")
@@ -137,9 +167,44 @@ async def test_hours_routes_require_auth_when_enabled(async_client: AsyncClient)
         json={"auth_enabled": True, "admin_username": "hoursadmin", "admin_password": "TestPass1!"},
     )
     assert setup.status_code == 200
-    assert (await async_client.get(BASE)).status_code == 401
-    body = {"reading_date": "2026-01-01", "entries": [{"machine_id": 1, "hours": 1}]}
-    assert (await async_client.post(f"{BASE}/readings", json=body)).status_code == 401
+    reading = {"reading_date": "2026-01-01", "entries": [{"machine_id": 1, "hours": 1}]}
+    imp = {"new_machines": [], "readings": [{"machine_id": 1, "reading_date": "2026-01-01", "hours": 1}]}
+    calls = [
+        ("get", BASE, {}),
+        ("post", f"{BASE}/readings", {"json": reading}),
+        ("delete", f"{BASE}/readings", {"params": {"reading_date": "2026-01-01"}}),
+        ("post", f"{BASE}/import", {"json": imp}),
+        ("patch", f"{BASE}/machines/1", {"json": {"name": "Renamed"}}),
+        ("delete", f"{BASE}/machines/1", {}),
+    ]
+    for method, url, kwargs in calls:
+        response = await async_client.request(method, url, **kwargs)
+        assert response.status_code == 401, (method, url)
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_hours_write_routes_enforce_update_and_delete_permissions(async_client: AsyncClient, db_session):
+    from backend.app.core.auth import create_access_token, get_password_hash
+    from backend.app.models.group import Group
+    from backend.app.models.settings import Settings
+    from backend.app.models.user import User
+
+    db_session.add(Settings(key="auth_enabled", value="true"))
+    group = Group(name="hours-readers", permissions=["maintenance:read"], is_system=False)
+    db_session.add(group)
+    await db_session.flush()
+    user = User(username="hoursreader", password_hash=get_password_hash("password"), is_active=True)
+    user.groups.append(group)
+    db_session.add(user)
+    await db_session.commit()
+    headers = {"Authorization": f"Bearer {create_access_token(data={'sub': user.username})}"}
+
+    assert (await async_client.get(BASE, headers=headers)).status_code == 200
+    reading = {"reading_date": "2026-01-01", "entries": [{"machine_id": 1, "hours": 1}]}
+    assert (await async_client.post(f"{BASE}/readings", json=reading, headers=headers)).status_code == 403
+    response = await async_client.delete(f"{BASE}/readings", params={"reading_date": "2026-01-01"}, headers=headers)
+    assert response.status_code == 403
 
 
 @pytest.mark.asyncio

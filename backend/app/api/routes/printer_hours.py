@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/maintenance/hours", tags=["maintenance"])
 
 
-async def _overview(db: AsyncSession) -> HoursOverview:
+async def _overview(db: AsyncSession, today: date | None = None) -> HoursOverview:
     machines = await ensure_hour_machines(db)
     rows = (await db.execute(select(Printer.id, Printer.runtime_seconds, Printer.print_hours_offset))).all()
     hours_by_printer = {pid: current_hours(runtime, offset) for pid, runtime, offset in rows}
@@ -45,7 +45,7 @@ async def _overview(db: AsyncSession) -> HoursOverview:
         await db.execute(select(HourReading).order_by(HourReading.reading_date, HourReading.machine_id, HourReading.id))
     ).scalars()
     return HoursOverview(
-        today=date.today(),
+        today=today or date.today(),
         machines=[
             HourMachineOut(
                 id=m.id,
@@ -65,8 +65,8 @@ async def _overview(db: AsyncSession) -> HoursOverview:
     )
 
 
-def _reject_future(reading_date: date) -> None:
-    if reading_date > date.today():
+def _reject_future(reading_date: date, today: date | None = None) -> None:
+    if reading_date > (today or date.today()):
         raise HTTPException(status_code=422, detail="Reading date is in the future")
 
 
@@ -85,7 +85,8 @@ async def save_readings(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_UPDATE),
 ):
     """Upsert one date's manual readings. Readings dated today recalibrate their printer's counter."""
-    _reject_future(body.reading_date)
+    today = date.today()
+    _reject_future(body.reading_date, today)
     ids = [e.machine_id for e in body.entries]
     if len(set(ids)) != len(ids):
         raise HTTPException(status_code=422, detail="A machine appears twice in entries")
@@ -98,10 +99,21 @@ async def save_readings(
         if m.retired:
             raise HTTPException(status_code=422, detail=f"{m.name} is retired; correct its history by pasting")
 
-    is_today = body.reading_date == date.today()
+    is_today = body.reading_date == today
     recalibrated: list[tuple[int, str]] = []
     for entry in body.entries:
         m = machines[entry.machine_id]
+        existing = (
+            await db.execute(
+                select(HourReading.hours).where(
+                    HourReading.machine_id == m.id,
+                    HourReading.reading_date == body.reading_date,
+                    HourReading.source == SOURCE_MANUAL,
+                )
+            )
+        ).scalar_one_or_none()
+        if entry.hours is not None and entry.hours == existing:
+            continue  # unchanged value: never recalibrate (it would rewind the live counter)
         await upsert_reading(db, m.id, body.reading_date, SOURCE_MANUAL, entry.hours)
         if entry.hours is None or not is_today or m.printer_id is None:
             continue
@@ -109,13 +121,15 @@ async def save_readings(
         if printer is None:  # deleted mid-request: keep the reading, skip the counter
             continue
         recalibrate_printer(printer, entry.hours)
-        await upsert_reading(db, m.id, body.reading_date, SOURCE_AUTO, entry.hours)
+        # recalibrate_printer clamps at 0, so record what the counter now actually reads
+        actual = round(current_hours(printer.runtime_seconds, printer.print_hours_offset), 1)
+        await upsert_reading(db, m.id, body.reading_date, SOURCE_AUTO, actual)
         recalibrated.append((printer.id, printer.name))
     await db.commit()
 
     for printer_id, printer_name in recalibrated:
         await notify_maintenance_attention(db, printer_id, printer_name)
-    return await _overview(db)
+    return await _overview(db, today)
 
 
 @router.delete("/readings", response_model=HoursOverview)
@@ -139,6 +153,7 @@ async def import_readings(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_UPDATE),
 ):
     """Bulk upsert manual readings from a pasted sheet, creating retired machines. Never recalibrates."""
+    today = date.today()
     keys = [nm.key for nm in body.new_machines]
     if len(set(keys)) != len(keys):
         raise HTTPException(status_code=422, detail="Duplicate machine key")
@@ -155,7 +170,7 @@ async def import_readings(
             raise HTTPException(status_code=422, detail=f"Unknown machine key {r.key}")
         if r.machine_id is not None and r.machine_id not in existing_ids:
             raise HTTPException(status_code=422, detail=f"Unknown machine {r.machine_id}")
-        _reject_future(r.reading_date)
+        _reject_future(r.reading_date, today)
 
     created: dict[str, HourMachine] = {}
     for nm in body.new_machines:
