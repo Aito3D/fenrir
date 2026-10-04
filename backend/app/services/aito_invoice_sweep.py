@@ -50,6 +50,7 @@ cut off rather than the ones already refreshed."""
 
 import logging
 import time
+from dataclasses import dataclass, field
 from datetime import date, datetime, time as dtime, timezone
 
 from sqlalchemy import or_, select
@@ -60,7 +61,7 @@ from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
 from backend.app.services import aito_events
 from backend.app.services.aito_events import utc_now_naive as _now
-from backend.app.services.aito_invoice_create import RetainerCredit, apply_retainers, customer_credits
+from backend.app.services.aito_invoice_create import RetainerCredit, apply_retainers, customer_credits, share_out
 from backend.app.services.inbox import broadcast_pending, purge_old
 from backend.app.services.zoho import ZohoNotConfiguredError, ZohoRateLimited, ZohoUpstreamError, zoho_service
 
@@ -107,6 +108,18 @@ def linked_credits(
     return [c for c in credits if c.applicable > 0 and (c.id in linked or _same_reference(c.reference, quote_number))]
 
 
+@dataclass
+class DepositSettlement:
+    """What ``settle_deposits`` did. ``refused`` names the linked deposits
+    that had a share to spend and that Books did not take — ``apply_retainers``
+    swallows those failures, so without this the caller cannot tell "nothing
+    to apply" from "Books said no"."""
+
+    invoice: dict
+    remaining: float | None
+    refused: list[str] = field(default_factory=list)
+
+
 async def settle_with_deposits(
     db: AsyncSession, project_id: int, quote_id: str, invoice: dict, quote_number: str | None = None
 ) -> tuple[dict, float | None]:
@@ -123,6 +136,14 @@ async def settle_with_deposits(
     Idempotent by construction — an applied payment's ``unused_amount`` drops
     to zero in Books, so the next pass finds nothing left to spend.
     """
+    settlement = await settle_deposits(db, project_id, quote_id, invoice, quote_number)
+    return settlement.invoice, settlement.remaining
+
+
+async def settle_deposits(
+    db: AsyncSession, project_id: int, quote_id: str, invoice: dict, quote_number: str | None = None
+) -> DepositSettlement:
+    """``settle_with_deposits`` with the refusals kept (see DepositSettlement)."""
     try:
         estimate = await zoho_service.get_estimate(db, quote_id)
         credits = await customer_credits(db, estimate)
@@ -130,15 +151,20 @@ async def settle_with_deposits(
         raise
     except (ZohoNotConfiguredError, ZohoUpstreamError, ValueError, TypeError, KeyError) as exc:
         logger.warning("Invoice sweep could not read deposits for project %s: %s", project_id, exc)
-        return invoice, None
+        return DepositSettlement(invoice, None)
 
     remaining = sum(c.applicable for c in credits)
     to_apply = linked_credits(estimate, credits, quote_number)
     if not to_apply:
-        return invoice, remaining
+        return DepositSettlement(invoice, remaining)
 
     invoice_id = str(invoice.get("id") or "")
-    applications = await apply_retainers(db, invoice_id, float(invoice.get("balance") or 0), to_apply)
+    balance = float(invoice.get("balance") or 0)
+    # The same pure split apply_retainers makes, so a deposit that had a share
+    # and came back with nothing applied is known to have been refused.
+    shares = share_out(to_apply, balance)
+    applications = await apply_retainers(db, invoice_id, balance, to_apply)
+    refused = [a.number for (_, payments), a in zip(shares, applications, strict=False) if payments and a.applied <= 0]
     applied_total = 0.0
     for application in applications:
         if application.applied <= 0:
@@ -158,7 +184,7 @@ async def settle_with_deposits(
             },
         )
     if applied_total <= 0:
-        return invoice, remaining
+        return DepositSettlement(invoice, remaining, refused)
 
     # Re-read BY ID, same rule as the create route: the list row in hand was
     # read before the deposits landed. Degrades to the stale row on failure
@@ -170,7 +196,7 @@ async def settle_with_deposits(
     except (ZohoNotConfiguredError, ZohoUpstreamError) as exc:
         logger.warning("Invoice sweep applied deposits to %s but could not re-read it: %s", invoice_id, exc)
         fresh = None
-    return (fresh or invoice), max(remaining - applied_total, 0.0)
+    return DepositSettlement(fresh or invoice, max(remaining - applied_total, 0.0), refused)
 
 
 # The Aito columns where a promised date is moot: a delivered job is not late.

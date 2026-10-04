@@ -7,6 +7,7 @@ from sqlalchemy import select
 from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
 from backend.app.services import aito_quote_sync
+from backend.app.services.aito_invoice_sweep import DepositSettlement, settle_deposits as real_settle_deposits
 from backend.app.services.heimdall import heimdall_service
 from backend.app.services.zoho import ZohoRateLimited, zoho_service
 
@@ -67,7 +68,7 @@ def stubs(monkeypatch):
         return state["invoices"]
 
     async def settle(db, project_id, quote_id, invoice, quote_number=None):
-        return (state["settled"] or invoice), 0.0
+        return DepositSettlement(state["settled"] or invoice, 0.0)
 
     async def is_configured(db):
         return False
@@ -80,7 +81,7 @@ def stubs(monkeypatch):
     monkeypatch.setattr(aito_quote_sync, "can_flush", lambda: True)
     monkeypatch.setattr("backend.app.services.aito_force_sync.read_customer_credit", read_customer_credit)
     monkeypatch.setattr(zoho_service, "list_project_invoices", list_project_invoices)
-    monkeypatch.setattr("backend.app.services.aito_invoice_sweep.settle_with_deposits", settle)
+    monkeypatch.setattr("backend.app.services.aito_invoice_sweep.settle_deposits", settle)
 
     async def zoho_configured(db):
         return True
@@ -129,11 +130,18 @@ async def test_credit_drift_is_fixed(async_client, db_session, stubs):
 @pytest.mark.asyncio
 async def test_deposit_applied_to_invoice_is_fixed(async_client, db_session, stubs):
     p = await _project(db_session)
-    stubs["invoices"] = [{"id": "INV1", "number": "FA-1", "balance": 7000.0, "status": "draft", "due_date": ""}]
+    stubs["invoices"] = [
+        {"id": "INV1", "number": "FA-1", "balance": 7000.0, "status": "draft", "due_date": "", "currency_code": "XPF"}
+    ]
     stubs["settled"] = {"id": "INV1", "number": "FA-1", "balance": 0.0, "status": "paid", "due_date": ""}
     r = await async_client.post(f"/api/v1/aito/{p.id}/force-sync")
     assert _by_key(r.json())["invoice"]["outcome"] == "fixed"
-    assert _by_key(r.json())["invoice"]["detail"] == {"number": "FA-1", "balance_before": 7000.0, "balance_after": 0.0}
+    assert _by_key(r.json())["invoice"]["detail"] == {
+        "number": "FA-1",
+        "balance_before": 7000.0,
+        "balance_after": 0.0,
+        "currency_code": "XPF",
+    }
 
 
 @pytest.mark.asyncio
@@ -273,9 +281,9 @@ async def test_failed_deposit_application_is_failed(async_client, db_session, st
     stubs["invoices"] = [invoice]
 
     async def settle(db, project_id, quote_id, inv, quote_number=None):
-        return inv, None
+        return DepositSettlement(inv, None)
 
-    monkeypatch.setattr("backend.app.services.aito_invoice_sweep.settle_with_deposits", settle)
+    monkeypatch.setattr("backend.app.services.aito_invoice_sweep.settle_deposits", settle)
     r = await async_client.post(f"/api/v1/aito/{p.id}/force-sync")
     assert _by_key(r.json())["invoice"] == {"key": "invoice", "outcome": "failed", "detail": {"reason": "unreachable"}}
 
@@ -317,3 +325,152 @@ async def test_links_pass_that_visited_nothing_is_rate_limited(async_client, db_
         "outcome": "skipped",
         "detail": {"reason": "rate_limited"},
     }
+
+
+@pytest.mark.asyncio
+async def test_books_refusing_the_deposit_is_failed_refused(async_client, db_session, stubs, monkeypatch):
+    """The REAL settle: a linked deposit with something to spend, an open
+    balance, and Books rejecting the application -> failed, not in_sync."""
+    from backend.app.services.zoho import ZohoRequestRejected
+
+    monkeypatch.setattr("backend.app.services.aito_invoice_sweep.settle_deposits", real_settle_deposits)
+    stubs["invoices"] = [{"id": "INV1", "number": "FA-1", "balance": 7000.0, "status": "draft", "due_date": ""}]
+
+    async def get_estimate(db, estimate_id):
+        return {"estimate_id": "EST1", "customer_id": "z1", "retainerinvoices": [{"retainerinvoice_id": "RET1"}]}
+
+    async def list_customer_payments(db, customer_id):
+        return [
+            {
+                "payment_id": "P1",
+                "payment_number": "1",
+                "retainerinvoice_id": "RET1",
+                "amount": 7000.0,
+                "unused_amount": 7000.0,
+                "date": "2026-09-01",
+            }
+        ]
+
+    async def list_customer_retainers(db, customer_id):
+        return [{"retainerinvoice_id": "RET1", "retainerinvoice_number": "RET-1", "reference_number": ""}]
+
+    attempts: list = []
+
+    async def refuse(db, invoice_id, invoice_payments):
+        attempts.append(invoice_payments)
+        raise ZohoRequestRejected("Books said no")
+
+    for name, fn in {
+        "get_estimate": get_estimate,
+        "list_customer_payments": list_customer_payments,
+        "list_customer_retainers": list_customer_retainers,
+        "apply_invoice_credits": refuse,
+    }.items():
+        monkeypatch.setattr(zoho_service, name, fn)
+
+    p = await _project(db_session)
+    r = await async_client.post(f"/api/v1/aito/{p.id}/force-sync")
+    assert r.status_code == 200, r.text
+    assert attempts, "the real settle must have tried Books"
+    assert _by_key(r.json())["invoice"] == {"key": "invoice", "outcome": "failed", "detail": {"reason": "refused"}}
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_after_a_deposit_landed_keeps_its_event(async_client, db_session, stubs, monkeypatch):
+    """The settle applied money and recorded the event, then its re-read hit a
+    429: the event is committed, the rest of the Zoho steps stand down."""
+    from backend.app.services import aito_events
+
+    p = await _project(db_session)
+    pid = p.id
+    stubs["invoices"] = [{"id": "INV1", "number": "FA-1", "balance": 7000.0, "status": "draft", "due_date": ""}]
+    monkeypatch.setattr(aito_quote_sync, "_arm_rate_limit_throttle", lambda e: None)
+
+    async def settle(db, project_id, quote_id, invoice, quote_number=None):
+        await aito_events.record(
+            db,
+            project_id,
+            "invoice.deposit_applied",
+            actor_class="system",
+            subject_type="project",
+            subject_id=project_id,
+            detail={"retainer_number": "RET-1", "invoice_number": "FA-1", "amount": 7000.0},
+        )
+        raise ZohoRateLimited("429", retry_after=30.0, code=429)
+
+    monkeypatch.setattr("backend.app.services.aito_invoice_sweep.settle_deposits", settle)
+    r = await async_client.post(f"/api/v1/aito/{pid}/force-sync")
+    assert r.status_code == 200, r.text
+    assert _by_key(r.json())["invoice"]["detail"] == {"reason": "rate_limited"}
+    db_session.expire_all()
+    rows = (
+        (
+            await db_session.execute(
+                select(AitoEvent).where(AitoEvent.project_id == pid, AitoEvent.kind == "invoice.deposit_applied")
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(rows) == 1
+
+
+@pytest.mark.asyncio
+async def test_unexpected_error_in_a_step_is_reported_not_a_500(async_client, db_session, stubs):
+    p = await _project(db_session)
+    stubs["credit"] = RuntimeError("bug")
+    r = await async_client.post(f"/api/v1/aito/{p.id}/force-sync")
+    assert r.status_code == 200, r.text
+    steps = _by_key(r.json())
+    assert steps["credit"] == {"key": "credit", "outcome": "failed", "detail": {"reason": "internal"}}
+    assert steps["invoice"]["outcome"] == "in_sync"  # the next step still ran
+
+
+@pytest.mark.asyncio
+async def test_a_failed_commit_in_a_step_leaves_the_session_usable(async_client, db_session, stubs, monkeypatch):
+    p = await _project(db_session)
+    pid = p.id
+
+    async def poisoning_credit_step(db, project):
+        # A duplicate primary key: the flush fails and the session needs a rollback.
+        db.add(AitoProject(id=project.id, description="dup", board_column="finish", position=0, status="active"))
+        await db.commit()
+
+    monkeypatch.setattr("backend.app.services.aito_force_sync._credit_step", poisoning_credit_step)
+    stubs["invoices"] = [{"id": "INV1", "number": "FA-1", "balance": 7000.0, "status": "draft", "due_date": ""}]
+    stubs["settled"] = {"id": "INV1", "number": "FA-1", "balance": 0.0, "status": "paid", "due_date": ""}
+    r = await async_client.post(f"/api/v1/aito/{pid}/force-sync")
+    assert r.status_code == 200, r.text
+    steps = _by_key(r.json())
+    assert steps["credit"]["detail"] == {"reason": "internal"}
+    assert steps["invoice"]["outcome"] == "fixed"
+    db_session.expire_all()
+    row = await db_session.get(AitoProject, pid)
+    assert row.invoice_balance == 0.0
+
+
+@pytest.mark.asyncio
+async def test_force_sync_broadcasts_the_board_change(async_client, db_session, stubs, monkeypatch):
+    p = await _project(db_session)
+    seen: list = []
+
+    async def fake_broadcast(action, project_id, actor):
+        seen.append((action, project_id))
+
+    monkeypatch.setattr("backend.app.api.routes.aito._broadcast_changed", fake_broadcast)
+    r = await async_client.post(f"/api/v1/aito/{p.id}/force-sync")
+    assert r.status_code == 200
+    assert seen == [("invoice", p.id)]
+
+
+@pytest.mark.asyncio
+async def test_force_sync_is_rate_limited_per_user(async_client, db_session, stubs):
+    from backend.app.api.routes import aito as aito_routes
+
+    p = await _project(db_session)
+    for _ in range(aito_routes._FORCE_SYNC_MAX_CALLS):
+        r = await async_client.post(f"/api/v1/aito/{p.id}/force-sync")
+        assert r.status_code == 200, r.text
+    r = await async_client.post(f"/api/v1/aito/{p.id}/force-sync")
+    assert r.status_code == 429
+    assert r.json()["detail"] == aito_routes._FORCE_SYNC_DETAIL

@@ -3,7 +3,7 @@ checked and repaired now, with a per-step report.
 
 Nothing here writes to Books on its own authority. The quote push is the
 worker's (marked pending by the route, then ``flush_and_wait``), the deposit
-application is the sweep's ``settle_with_deposits``, the links are
+application is the sweep's ``settle_deposits``, the links are
 ``reconcile_payment_links`` — so every guard those already own still applies.
 Each step is isolated; a Zoho 429 stops the remaining ZOHO steps (no point
 deepening the shared throttle) but not Heimdall's.
@@ -101,26 +101,36 @@ async def _invoice_step(db: AsyncSession, project: AitoProject) -> StepResult:
     if not invoices:
         return StepResult("invoice", "in_sync")
     newest = invoices[0]
-    fresh = newest
-    remaining = None
-    if float(newest.get("balance") or 0) > 0:
-        fresh, remaining = await aito_invoice_sweep.settle_with_deposits(db, project_id, quote_id, newest, quote_number)
-    before, after = float(newest.get("balance") or 0), float(fresh.get("balance") or 0)
-    if before > 0 and remaining is None:
-        # settle_with_deposits swallows its failures and answers (invoice, None)
-        return StepResult("invoice", "failed", {"reason": "unreachable"})
+    before = float(newest.get("balance") or 0)
+    settlement = None
+    if before > 0:
+        settlement = await aito_invoice_sweep.settle_deposits(db, project_id, quote_id, newest, quote_number)
+        if settlement.remaining is None:
+            # The deposit reads failed (settle swallows them); nothing was applied.
+            return StepResult("invoice", "failed", {"reason": "unreachable"})
+    fresh = settlement.invoice if settlement is not None else newest
+    after = float(fresh.get("balance") or 0)
     await db.refresh(project)
     project.invoice_status = fresh.get("status") or None
-    project.invoice_balance = float(fresh.get("balance") or 0)
+    project.invoice_balance = after
     project.invoice_due_date = fresh.get("due_date") or None
-    if remaining is not None:
-        project.customer_credit_total = remaining
+    if settlement is not None and settlement.remaining is not None:
+        project.customer_credit_total = settlement.remaining
     await db.commit()
+    if settlement is not None and settlement.refused and after > 0:
+        # A linked deposit had a share to spend and Books did not take it:
+        # the balance stays open while the money sits unused. Not in sync.
+        return StepResult("invoice", "failed", {"reason": "refused"})
     if after < before:
         return StepResult(
             "invoice",
             "fixed",
-            {"number": str(newest.get("number") or ""), "balance_before": before, "balance_after": after},
+            {
+                "number": str(newest.get("number") or ""),
+                "balance_before": before,
+                "balance_after": after,
+                "currency_code": str(fresh.get("currency_code") or newest.get("currency_code") or ""),
+            },
         )
     return StepResult("invoice", "in_sync")
 
@@ -154,6 +164,25 @@ async def _links_step(db: AsyncSession, project: AitoProject) -> StepResult:
     return StepResult("payment_links", "fixed" if after != before else "in_sync")
 
 
+async def _keep_what_landed(db: AsyncSession, project: AitoProject) -> None:
+    """After a step raised: commit what it recorded (a settle can raise a 429
+    on its re-read AFTER Books took the money and its events were recorded —
+    no write to Books without its event), and leave the session usable for
+    the steps after it. A session a failed commit poisoned is rolled back,
+    and the project reloaded, since a rollback expires it."""
+    if db.is_active:
+        try:
+            await db.commit()
+            return
+        except Exception as exc:  # noqa: BLE001 - fall through to the rollback
+            logger.warning("Force sync: committing after a failed step on project %s failed: %s", project.id, exc)
+    try:
+        await db.rollback()
+        await db.refresh(project)
+    except Exception as exc:  # noqa: BLE001 - the later steps report their own failures
+        logger.warning("Force sync: could not recover the session after a failed step: %s", exc)
+
+
 async def run_force_sync(
     db: AsyncSession, project: AitoProject, *, quote_queued: bool, quote_before: dict
 ) -> list[StepResult]:
@@ -177,14 +206,22 @@ async def run_force_sync(
         except ZohoRateLimited as e:
             aito_quote_sync._arm_rate_limit_throttle(e)
             throttled = True
+            await _keep_what_landed(db, project)
             results.append(StepResult(key, "failed", {"reason": "rate_limited"}))
         except ZohoNotConfiguredError:
+            await _keep_what_landed(db, project)
             results.append(StepResult(key, "skipped", {"reason": "not_configured"}))
         except ZohoUpstreamError as e:
+            await _keep_what_landed(db, project)
             results.append(StepResult(key, "failed", {"reason": "upstream", "message": str(e)}))
+        except Exception as e:  # noqa: BLE001 - a report, never a 500
+            logger.warning("Force sync: %s step for project %s failed: %s", key, project_id, e, exc_info=True)
+            await _keep_what_landed(db, project)
+            results.append(StepResult(key, "failed", {"reason": "internal"}))
     try:
         results.append(await _links_step(db, project))
     except Exception as e:  # noqa: BLE001 - a report, never a 500
         logger.warning("Force sync: payment links for project %s failed: %s", project_id, e)
+        await _keep_what_landed(db, project)
         results.append(StepResult("payment_links", "failed", {"reason": "upstream", "message": str(e)}))
     return results
