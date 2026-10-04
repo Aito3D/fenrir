@@ -30,7 +30,7 @@ export function PasteImportModal({ machines, today, isImporting, onImport, onClo
   }, [onClose]);
 
   const hasText = text.trim() !== '';
-  const noRows = hasText && plan.dates === 0;
+  const noRows = hasText && paste.rows.length === 0;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 animate-overlay-in" onClick={onClose}>

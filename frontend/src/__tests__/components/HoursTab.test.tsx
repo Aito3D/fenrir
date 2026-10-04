@@ -225,4 +225,17 @@ describe('HoursTab', () => {
     expect(within(dialog).getByText(/No row starts with a date/)).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: 'Import' })).toBeDisabled();
   });
+
+  it('shows the future-rows notice when every dated row is after today', async () => {
+    serve();
+    const user = userEvent.setup();
+    render(<HoursTab />);
+    await user.click(await screen.findByRole('button', { name: 'Paste from sheet' }));
+    const dialog = await screen.findByTestId('hours-paste-import');
+    await user.click(within(dialog).getByRole('textbox'));
+    await user.paste('Date\tX1C04\n05/10/2099\t3900\n');
+    expect(within(dialog).queryByText(/No row starts with a date/)).not.toBeInTheDocument();
+    expect(within(dialog).getByText('Rows dated in the future are skipped: 1')).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Import' })).toBeDisabled();
+  });
 });
