@@ -727,3 +727,60 @@ fixtures already carried `comment_type: "system"` and were not changed.
   "system" (probe above), so on real data only non-system comments change.
   The other 34 probes match unchanged.
 - SURFACE.md sections regenerated: none (`bash tools/gen_surface_aito23.sh` output identical to SURFACE.md).
+
+## T-125 — a DB error on one card no longer strands the rest of its drain (user-approved 2026-10-03)
+
+Sanctions commit <this commit> "refactor(loop-13): T-125 one card's error no
+longer strands the rest of the drain (user-approved behavior change)".
+`run_sync_once` in `backend/app/services/aito_quote_sync.py` spends every due
+push window up front, and the per-card `_reconcile_one` call had no guard. An
+exception there (a `db.get` that raised, a `record()` failing inside
+sync_project's catch-all) left the loop. The cards it had not reached stayed
+pending with no window, so `any_due()` was false and nothing woke the loop
+before the next full tick. Their `flush_and_wait` waiters were never
+resolved either, so a Print or Send-quote route waiting in `ensure_pushed`
+answered 503 after the flush timeout. Now each `_reconcile_one` call is
+wrapped: on an `Exception` it logs "Aito quote sync failed for project %s",
+rolls the session back, resolves that card's waiter and moves on to the next
+card. If the loop is still left by an exception the guard does not catch
+(a cancellation), a `finally` calls `note_immediate()` for every due id the
+loop never reached, so the next lap takes them. User-visible: after a DB
+error on one card, the remaining cards of that drain are pushed in the same
+drain instead of at the next full tick, and a waiting route gets its answer
+instead of a 503. Unchanged: the success path, push order, the 429 break
+(the cards after it still get no window, so the loop is not re-woken into
+the limit), `attempted` counting (a card that raised is not counted), and
+the existing error logging. Pinned by three new tests in
+`backend/tests/unit/test_aito_quote_sync_wake_latency.py`: a failing first
+card does not stop the second, and both waiters resolve; a cancellation
+re-arms the unreached due card; a 429 break leaves no window behind.
+
+- Golden probes re-recorded: none (35/35 match).
+- SURFACE.md sections regenerated: none (`bash tools/gen_surface_aito23.sh` output identical to SURFACE.md).
+
+## T-126 — the second of two concurrent or duplicated merges of the same cards gets a 409 (user-approved 2026-10-03)
+
+Sanctions commit <this commit> "refactor(loop-13): T-126 merge claims both
+cards before writing (user-approved behavior change)". `merge_project` in
+`backend/app/api/routes/aito.py` checked that both cards were active with a
+SELECT, then trashed the source with an unconditional ORM write many awaits
+later. Two merges interleaving on the event loop both passed the check. A<-B
+sent twice copied B's tasks onto A twice, so A's quote was pushed with every
+line doubled. A<-B racing B<-A trashed both cards. Now, after the existing
+refusals and before the first write, the new `_claim_active_projects` runs a
+no-op `UPDATE aito_projects SET version = version, updated_at = updated_at
+WHERE id = :id AND status = 'active'` on both cards, in id order (so crossed
+merges cannot deadlock). If either matches no row, the request answers 409
+"One of these cards was just merged or deleted — refresh". No task is copied
+and no event is recorded. User-visible: the second of two concurrent or
+duplicated merge requests gets a 409 instead of succeeding. Unchanged: the
+single-request success path (copies, the ORM trash write, events, sync
+wake, broadcasts, response), and the earlier 404/409 refusals, which keep
+their order. The claim sets `version` and `updated_at` to their own values
+(like `_claim_expected_version`), so it changes nothing on the row. Pinned
+by two new tests in `backend/tests/unit/test_aito_merge.py`: a duplicated
+A<-B (one 200, one 409, tasks copied once, one merged/trashed event each),
+and crossed A<-B / B<-A (one 409, the winner's target stays on the board).
+
+- Golden probes re-recorded: none (35/35 match).
+- SURFACE.md sections regenerated: none (`bash tools/gen_surface_aito23.sh` output identical to SURFACE.md).

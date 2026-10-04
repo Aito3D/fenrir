@@ -610,3 +610,89 @@ async def test_an_adopted_orphan_is_brought_into_sync_in_the_same_pass(db_sessio
     assert not any(m == "POST" for m, _ in methods)
     assert ("GET", "/books/v3/estimates/E-ORPHAN") in methods
     assert ("PUT", "/books/v3/estimates/E-ORPHAN") in methods
+
+
+# --------------------------------------------------------------------------
+# 5. One card's DB error does not strand the rest of its drain (T-125).
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_db_error_on_one_card_does_not_strand_the_rest_of_the_drain(db_session, monkeypatch):
+    """The windows of every due card are spent up front. An exception escaping
+    one card used to abort the loop, leaving the cards after it pending with
+    no window and no wake until the next full tick, and the failing card's
+    route waiting out its flush timeout. Now the failing card's waiter is
+    released at once and the cards after it are pushed in the same drain."""
+    first = await _add_pending(db_session)
+    second = await _add_pending(db_session)
+    first_id, second_id = first.id, second.id
+
+    pushed: list[int] = []
+
+    async def failing_then_ok(db, project, *args, **kwargs):
+        if project.id == first_id:
+            raise RuntimeError("database is locked")
+        pushed.append(project.id)
+        project.quote_sync_state = "idle"
+        return False
+
+    monkeypatch.setattr(aito_quote_sync, "sync_project", failing_then_ok)
+    first_waiter = aito_push_schedule.add_waiter(first_id)
+    second_waiter = aito_push_schedule.add_waiter(second_id)
+
+    attempted = await run_sync_once(db_session, pending_only=True)
+
+    assert pushed == [second_id]
+    assert attempted == 1
+    assert first_waiter.done()
+    assert second_waiter.done()
+    fresh_first = await db_session.get(AitoProject, first_id, populate_existing=True)
+    fresh_second = await db_session.get(AitoProject, second_id, populate_existing=True)
+    # The failed card was rolled back, still pending for the next drain.
+    assert fresh_first.quote_sync_state == "pending"
+    assert fresh_second.quote_sync_state == "idle"
+
+
+@pytest.mark.asyncio
+async def test_a_drain_cut_short_rearms_the_due_cards_it_never_reached(db_session, monkeypatch):
+    """Should the loop be left by an exception the per-card guard does not
+    catch (a cancellation), the due cards it never reached get their windows
+    back, so the next lap takes them instead of the next full tick."""
+    first = await _add_pending(db_session)
+    second = await _add_pending(db_session)
+    first_id, second_id = first.id, second.id
+
+    async def cancelled(db, project, *args, **kwargs):
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(aito_quote_sync, "sync_project", cancelled)
+
+    with pytest.raises(asyncio.CancelledError):
+        await run_sync_once(db_session, pending_only=True)
+
+    now = time.monotonic()
+    # The card the loop was on when cut short spent its window; the one it
+    # never reached is due again, at once.
+    assert first_id not in aito_push_schedule._windows
+    assert second_id in aito_push_schedule._windows
+    assert aito_push_schedule.any_due(now)
+    assert aito_push_schedule.next_due(now) == 0.0
+
+
+@pytest.mark.asyncio
+async def test_a_rate_limited_drain_leaves_no_window_for_the_cards_after_it(db_session, monkeypatch):
+    """The re-arm is for a drain cut short by an exception only: a 429 break
+    still leaves the cards after it windowless, so the loop is not re-woken
+    into the same limit."""
+    first = await _add_pending(db_session)
+    await _add_pending(db_session)
+
+    async def rate_limited(db, project, *args, **kwargs):
+        return True
+
+    monkeypatch.setattr(aito_quote_sync, "sync_project", rate_limited)
+
+    assert await run_sync_once(db_session, pending_only=True) == 1
+    assert first.id not in aito_push_schedule._windows
+    assert not aito_push_schedule._windows

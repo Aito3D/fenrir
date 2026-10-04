@@ -3985,6 +3985,30 @@ async def _claim_expected_version(db: AsyncSession, project: AitoProject, expect
     return result.rowcount > 0
 
 
+async def _claim_active_projects(db: AsyncSession, project_ids: list[int]) -> bool:
+    """Atomically claim the right to write these cards for a request that
+    checked they were active, for `merge_project` (T-126).
+
+    Same no-op `UPDATE ... WHERE` claim as `_claim_expected_version`, keyed
+    on `status = 'active'` instead of the version: it takes each row's write
+    lock, so a concurrent request that trashed one of them either committed
+    first (the WHERE misses, this returns False and the caller 409s) or
+    blocks until this transaction resolves. Taken in id order so two
+    requests claiming the same pair the other way round cannot deadlock.
+    Returns False as soon as one card is no longer active.
+    """
+    for project_id in sorted(set(project_ids)):
+        result = await db.execute(
+            update(AitoProject)
+            .where(AitoProject.id == project_id, AitoProject.status == "active")
+            .values(version=AitoProject.version, updated_at=AitoProject.updated_at)
+            .execution_options(synchronize_session=False)
+        )
+        if result.rowcount == 0:
+            return False
+    return True
+
+
 async def _claim_and_bump_version(db: AsyncSession, project: AitoProject, expected: int) -> bool:
     """`_claim_expected_version` for a caller that then talks to the network:
     the claim BUMPS the version and COMMITS, for `edit_project_client` (T-040).
@@ -5537,6 +5561,13 @@ async def merge_project(
     source = await _get_active_project_or_404(db, payload.source_project_id)
     if source.quote_invoiced:
         raise HTTPException(status_code=409, detail="This project has been invoiced — its tasks stay on it")
+    # The checks above read rows that a concurrent merge may trash before this
+    # one writes (two operators, a client retry, A<-B racing B<-A). Claim
+    # both cards against the LIVE rows before the first write, so only one
+    # merge wins and the loser leaves without copying a task or recording
+    # an event.
+    if not await _claim_active_projects(db, [target.id, source.id]):
+        raise HTTPException(status_code=409, detail="One of these cards was just merged or deleted — refresh")
 
     stmt = select(AitoTask).where(AitoTask.project_id == source.id).order_by(AitoTask.position, AitoTask.id)
     source_tasks = list((await db.execute(stmt)).scalars())

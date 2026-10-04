@@ -2665,44 +2665,72 @@ async def run_sync_once(
     # Same shape, same lifetime, for Trigger B's retainer listing: the
     # projects of one customer share a single /retainerinvoices read.
     retainer_cache: dict[str, list[dict]] = {}
-    for project_id in project_ids:
-        if not pending_only:
-            attempted += await _serve_due_pushes(db)
-        # Skipped (None) when gone or already handled by something else since
-        # the id was selected above — nothing left to sync. Not counted below:
-        # it was never actually attempted. `must_be_pending`: selected as
-        # pending but the state moved on before the loop got here.
-        # _still_selected alone would wave a now-reconcilable row through to
-        # sync_project's reconcile branch — an extra GET the wake path
-        # promises never to spend, and one the full sweep has no reason to
-        # spend on a quote it (or a Force sync) just wrote.
-        rate_limited = await _reconcile_one(
-            db,
-            project_id,
-            credit_cache,
-            retainer_cache,
-            must_be_pending=project_id in selected_as_pending,
-            fast_retry=fast_retry,
-        )
-        if rate_limited is None:
+    # The ids whose turn came. Should the loop be left by an exception, the
+    # due cards it never reached get their windows back (finally, below):
+    # their windows were all spent up front, so without that nothing would
+    # wake the loop for them before the next full tick.
+    reached: set[int] = set()
+    finished = False
+    try:
+        for project_id in project_ids:
+            if not pending_only:
+                attempted += await _serve_due_pushes(db)
+            reached.add(project_id)
+            # Skipped (None) when gone or already handled by something else since
+            # the id was selected above — nothing left to sync. Not counted below:
+            # it was never actually attempted. `must_be_pending`: selected as
+            # pending but the state moved on before the loop got here.
+            # _still_selected alone would wave a now-reconcilable row through to
+            # sync_project's reconcile branch — an extra GET the wake path
+            # promises never to spend, and one the full sweep has no reason to
+            # spend on a quote it (or a Force sync) just wrote.
+            try:
+                rate_limited = await _reconcile_one(
+                    db,
+                    project_id,
+                    credit_cache,
+                    retainer_cache,
+                    must_be_pending=project_id in selected_as_pending,
+                    fast_retry=fast_retry,
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                # One card's failure outside sync_project's own catch-all (a
+                # db.get that raised, a record() inside an error path) must
+                # not strand the cards after it: roll back so the session is
+                # usable, release this card's waiter so its route answers now
+                # instead of timing out, and carry on with the rest.
+                logger.exception("Aito quote sync failed for project %s", project_id)
+                with contextlib.suppress(Exception):
+                    await db.rollback()
+                aito_push_schedule.resolve(project_id)
+                continue
+            if rate_limited is None:
+                aito_push_schedule.resolve(project_id)
+                continue
+            attempted += 1
+            # The attempt is committed, whatever it concluded: a route waiting on
+            # this card (flush_and_wait) re-reads the row and decides. Cards a 429
+            # break below never reaches keep their waiters; the fast retry that
+            # follows resolves them, well inside the flush timeout.
             aito_push_schedule.resolve(project_id)
-            continue
-        attempted += 1
-        # The attempt is committed, whatever it concluded: a route waiting on
-        # this card (flush_and_wait) re-reads the row and decides. Cards a 429
-        # break below never reaches keep their waiters; the fast retry that
-        # follows resolves them, well inside the flush timeout.
-        aito_push_schedule.resolve(project_id)
-        if rate_limited:
-            # sync_project just deferred this project on a 429 rather than
-            # failing it (see its own ZohoRateLimited handler above); its
-            # commit/broadcast for THIS project already ran normally. Every
-            # other id still in project_ids would spend another request on an
-            # org Books just told us to back off from, deepening the
-            # throttle instead of clearing it. Stop here — they stay exactly
-            # where the sweep found them (still selected next tick) and are
-            # not counted in `attempted` below beyond this one.
-            break
+            if rate_limited:
+                # sync_project just deferred this project on a 429 rather than
+                # failing it (see its own ZohoRateLimited handler above); its
+                # commit/broadcast for THIS project already ran normally. Every
+                # other id still in project_ids would spend another request on an
+                # org Books just told us to back off from, deepening the
+                # throttle instead of clearing it. Stop here — they stay exactly
+                # where the sweep found them (still selected next tick) and are
+                # not counted in `attempted` below beyond this one.
+                break
+        finished = True
+    finally:
+        if not finished:
+            now = time.monotonic()
+            for pid in due_ids - reached:
+                aito_push_schedule.note_immediate(pid, now)
     return attempted
 
 

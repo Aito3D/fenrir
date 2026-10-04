@@ -10,6 +10,7 @@ import { render } from '../utils';
 import { server } from '../mocks/server';
 import { setAuthToken, type InboxItem, type InboxPreferences } from '../../api/client';
 import { NotificationBell } from '../../components/NotificationBell';
+import { useAuth } from '../../contexts/AuthContext';
 import { chime, unlockChime } from '../../utils/chime';
 
 vi.mock('../../utils/chime', () => ({ chime: vi.fn(), unlockChime: vi.fn(() => () => {}) }));
@@ -71,6 +72,30 @@ function signIn() {
   setAuthToken('test-token');
 }
 
+/**
+ * A sibling that reads the same auth context as the bell and appears only once
+ * the auth answer has been consumed (`loading` false), carrying what it said.
+ * Waiting on it is the positive signal the hidden-state tests need: without it
+ * an absent bell could just mean the auth query had not answered yet.
+ */
+function AuthSettled() {
+  const { loading, authEnabled, user } = useAuth();
+  if (loading) return null;
+  return <div data-testid="auth-settled" data-auth-enabled={String(authEnabled)} data-signed-in={String(!!user)} />;
+}
+
+async function renderAndWaitForAuth(expected: { authEnabled: boolean; signedIn: boolean }) {
+  render(
+    <>
+      <NotificationBell />
+      <AuthSettled />
+    </>,
+  );
+  const settled = await screen.findByTestId('auth-settled');
+  expect(settled).toHaveAttribute('data-auth-enabled', String(expected.authEnabled));
+  expect(settled).toHaveAttribute('data-signed-in', String(expected.signedIn));
+}
+
 async function openPanel() {
   fireEvent.click(await screen.findByTestId('notification-bell'));
   return screen.findByRole('dialog');
@@ -128,19 +153,19 @@ describe('NotificationBell', () => {
     server.use(
       http.get('/api/v1/auth/status', () => HttpResponse.json({ auth_enabled: true, requires_setup: false })),
     );
-    render(<NotificationBell />);
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 50));
-    });
+    await renderAndWaitForAuth({ authEnabled: true, signedIn: false });
     expect(screen.queryByTestId('notification-bell')).toBeNull();
   });
 
   it('is hidden when auth is disabled', async () => {
-    render(<NotificationBell />);
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 50));
-    });
+    await renderAndWaitForAuth({ authEnabled: false, signedIn: false });
     expect(screen.queryByTestId('notification-bell')).toBeNull();
+  });
+
+  it('is shown once a signed-in user with auth enabled is known (control for the hidden cases)', async () => {
+    signIn();
+    await renderAndWaitForAuth({ authEnabled: true, signedIn: true });
+    expect(screen.getByTestId('notification-bell')).toBeInTheDocument();
   });
 
   it('shows the unread count from the response, capped at 9+', async () => {
