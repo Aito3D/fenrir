@@ -1,8 +1,9 @@
 """Maintenance tracking schemas."""
 
-from datetime import datetime
+from datetime import date, datetime
+from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # Maintenance Type schemas
@@ -136,3 +137,42 @@ class PerformMaintenanceRequest(BaseModel):
     """Request to mark maintenance as performed."""
 
     notes: str | None = None
+
+
+# Printer hours history (Maintenance → Hours tab)
+MAX_HOURS = 200_000.0
+
+
+class HourMachineOut(BaseModel):
+    id: int
+    printer_id: int | None
+    name: str
+    model: str | None
+    retired: bool
+    current_hours: float | None  # Fenrir's live counter; None for retired machines
+
+
+class HourReadingOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    machine_id: int
+    reading_date: date
+    hours: float
+    source: Literal["manual", "auto"]
+
+
+class HoursOverview(BaseModel):
+    today: date  # the server's date — the UI's "today" for defaults and the recalibration rule
+    machines: list[HourMachineOut]
+    readings: list[HourReadingOut]
+
+
+class HourReadingEntry(BaseModel):
+    machine_id: int
+    hours: float | None = Field(default=None, ge=0, le=MAX_HOURS)  # None deletes that cell
+
+
+class HourReadingBatch(BaseModel):
+    reading_date: date
+    entries: list[HourReadingEntry] = Field(..., min_length=1)
