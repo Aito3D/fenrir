@@ -39,7 +39,7 @@ from backend.app.core.auth import (
 )
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
-from backend.app.models.library import LibraryFile, LibraryFolder
+from backend.app.models.library import LibraryFile
 from backend.app.models.user import User
 from backend.app.schemas.makerworld import (
     MakerWorldImportRequest,
@@ -49,6 +49,7 @@ from backend.app.schemas.makerworld import (
     MakerWorldResolveRequest,
     MakerWorldStatus,
 )
+from backend.app.services.library_folder_access import default_import_folder, get_writable_folder
 from backend.app.services.model_providers import makerworld_provider, registry
 from backend.app.services.model_providers.base import (
     ModelProvider,
@@ -336,10 +337,8 @@ async def import_instance(
     current_user = await _authorize_for_provider(provider, provider.import_permission, credentials, x_api_key)
 
     if body.folder_id is not None:
-        folder_q = await db.execute(select(LibraryFolder).where(LibraryFolder.id == body.folder_id))
-        target_folder = folder_q.scalar_one_or_none()
-        if target_folder is None:
-            raise HTTPException(status_code=404, detail="Folder not found")
+        # Only into a folder the user may write to (#3201).
+        target_folder = await get_writable_folder(db, body.folder_id, current_user)
         if target_folder.is_external and target_folder.external_readonly:
             raise HTTPException(
                 status_code=403,
@@ -359,18 +358,7 @@ async def import_instance(
         if default_folder_name is None:
             effective_folder_id = None
         else:
-            default_folder_q = await db.execute(
-                select(LibraryFolder).where(
-                    LibraryFolder.name == default_folder_name,
-                    LibraryFolder.parent_id.is_(None),
-                    LibraryFolder.is_external.is_(False),
-                )
-            )
-            default_folder = default_folder_q.scalar_one_or_none()
-            if default_folder is None:
-                default_folder = LibraryFolder(name=default_folder_name, parent_id=None)
-                db.add(default_folder)
-                await db.flush()
+            default_folder = await default_import_folder(db, default_folder_name, current_user)
             effective_folder_id = default_folder.id
 
     service = await _build_service(db, provider, current_user, api_key_cloud_owner)

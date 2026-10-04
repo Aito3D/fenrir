@@ -2015,7 +2015,7 @@ async def export_project(
 async def import_project(
     data: ProjectImport,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_CREATE),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_CREATE),
 ):
     """Import a project with optional BOM items and linked folders."""
     # Create the project
@@ -2067,12 +2067,15 @@ async def import_project(
             existing_folder.project_id = project.id
         else:
             # Create new folder linked to project
+            # A project's folder is shared, like every linked folder (#3201).
             new_folder = LibraryFolder(
                 name=folder_data.name,
                 project_id=project.id,
                 is_external=False,
                 external_readonly=False,
                 external_show_hidden=False,
+                created_by_id=current_user.id if current_user else None,
+                shared=True,
             )
             db.add(new_folder)
 
@@ -2113,7 +2116,7 @@ async def import_project(
 async def import_project_file(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_CREATE),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_CREATE),
 ):
     """Import a project from a ZIP or JSON file."""
     if not file.filename:
@@ -2207,12 +2210,15 @@ async def import_project_file(
             folder = existing_folder
         else:
             # Create new folder
+            # A project's folder is shared, like every linked folder (#3201).
             folder = LibraryFolder(
                 name=folder_name,
                 project_id=project.id,
                 is_external=False,
                 external_readonly=False,
                 external_show_hidden=False,
+                created_by_id=current_user.id if current_user else None,
+                shared=True,
             )
             db.add(folder)
             await db.flush()

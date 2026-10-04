@@ -5295,6 +5295,13 @@ async def run_migrations(conn):
     await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN energy_start_plug_id INTEGER")
     await _backfill_snapshot_prices(conn)
 
+    # Migration: library folder ownership and sharing (#3201).
+    await _safe_execute(
+        conn, "ALTER TABLE library_folders ADD COLUMN created_by_id INTEGER REFERENCES users(id) ON DELETE SET NULL"
+    )
+    await _safe_execute(conn, "ALTER TABLE library_folders ADD COLUMN shared BOOLEAN DEFAULT FALSE")
+    await _backfill_library_folder_owners(conn)
+
 
 async def _backfill_snapshot_prices(conn) -> None:
     """Give the energy snapshots taken before #1251 the price set at upgrade.
@@ -5340,6 +5347,118 @@ async def _backfill_snapshot_prices(conn) -> None:
             ),
             {"p": price},
         )
+        await conn.execute(
+            text('INSERT INTO settings ("key", value) VALUES (:k, :v)'),
+            {"k": flag, "v": "true"},
+        )
+
+
+async def _backfill_library_folder_owners(conn) -> None:
+    """Give the folders made before #3201 an owner, or share them.
+
+    Folders had no owner, and every library:read_own user saw all of them. A
+    folder whose files, all the way down and trashed ones included, belong to
+    one user becomes that user's own folder, hidden from the others. An empty
+    folder inside such a folder goes with it, so it doesn't leave a shared
+    hole in someone's private tree. Every other folder (empty, several
+    uploaders, files without an owner, external, or linked to a project or
+    archive) is shared, so it stays visible to everyone as before. So are the
+    top-level folders MakerWorld and Manyfold imports land in, which are
+    every importer's destination, not one user's folder.
+
+    Gated to run once: after it, a folder without an owner and not shared is
+    one an admin chose to make that way.
+    """
+    from sqlalchemy import text
+
+    flag = "_backfill_3201_folder_owners_done"
+
+    async with conn.begin_nested():
+        already = (
+            await conn.execute(text('SELECT value FROM settings WHERE "key" = :k'), {"k": flag})
+        ).scalar_one_or_none()
+        if already:
+            return
+
+        folders = (
+            await conn.execute(
+                text("SELECT id, parent_id, is_external, project_id, archive_id, name FROM library_folders")
+            )
+        ).all()
+        children: dict[int | None, list[int]] = {}
+        for fid, parent_id, *_ in folders:
+            children.setdefault(parent_id, []).append(fid)
+        own_owners: dict[int, set] = {}
+        for folder_id, owner_id in (
+            await conn.execute(
+                text("SELECT DISTINCT folder_id, created_by_id FROM library_files WHERE folder_id IS NOT NULL")
+            )
+        ).all():
+            own_owners.setdefault(folder_id, set()).add(owner_id)
+
+        # Owners of every file in each subtree, deepest folders first.
+        subtree_owners: dict[int, set] = {}
+
+        def owners_of(root: int) -> set:
+            # ``seen`` guards against a parent_id loop: startup must never hang.
+            order: list[int] = []
+            seen: set[int] = set()
+            stack = [root]
+            while stack:
+                fid = stack.pop()
+                if fid in seen:
+                    continue
+                seen.add(fid)
+                order.append(fid)
+                stack.extend(children.get(fid, []))
+            for fid in reversed(order):
+                if fid not in subtree_owners:
+                    acc = set(own_owners.get(fid, set()))
+                    for child in children.get(fid, []):
+                        acc |= subtree_owners.get(child, set())
+                    subtree_owners[fid] = acc
+            return subtree_owners[root]
+
+        info = {
+            fid: (parent_id, bool(is_ext), project_id, archive_id, name)
+            for fid, parent_id, is_ext, project_id, archive_id, name in folders
+        }
+        # services/model_providers/*/provider.py ``default_folder_name``.
+        import_folders = {"MakerWorld", "Manyfold"}
+        result: dict[int, int | None] = {}
+
+        # Top down, so an empty folder can follow its parent's owner.
+        stack = list(children.get(None, []))
+        # Folders whose parent is missing (shouldn't happen with the FK) are roots too.
+        stack.extend(
+            fid for fid, (parent_id, *_rest) in info.items() if parent_id is not None and parent_id not in info
+        )
+        while stack:
+            fid = stack.pop()
+            if fid in result:
+                continue
+            parent_id, is_ext, project_id, archive_id, name = info[fid]
+            owners = owners_of(fid)
+            owner = None
+            is_import_folder = parent_id is None and name in import_folders
+            if not is_ext and project_id is None and archive_id is None and not is_import_folder:
+                if len(owners) == 1 and None not in owners:
+                    owner = next(iter(owners))
+                elif not owners and parent_id is not None:
+                    owner = result.get(parent_id)
+            result[fid] = owner
+            stack.extend(children.get(fid, []))
+        for fid in info:
+            result.setdefault(fid, None)
+
+        owned = [{"id": fid, "o": owner} for fid, owner in result.items() if owner is not None]
+        if owned:
+            await conn.execute(
+                text("UPDATE library_folders SET created_by_id = :o, shared = FALSE WHERE id = :id"), owned
+            )
+        shared = [{"id": fid} for fid, owner in result.items() if owner is None]
+        if shared:
+            await conn.execute(text("UPDATE library_folders SET shared = TRUE WHERE id = :id"), shared)
         await conn.execute(
             text('INSERT INTO settings ("key", value) VALUES (:k, :v)'),
             {"k": flag, "v": "true"},

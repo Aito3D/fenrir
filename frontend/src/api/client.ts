@@ -8530,6 +8530,13 @@ export interface LibraryFolderTree {
   // max(folder.updated_at, max(immediate-child file.updated_at)). Used by
   // the File Manager folder tree's "sort by recent activity" mode (#1770).
   latest_activity_at: string | null;
+  // Ownership (#3201). can_* are for the current user: what the File
+  // Manager may offer on this folder. The backend enforces the same rules.
+  created_by_id: number | null;
+  shared: boolean;
+  can_write: boolean;
+  can_rename: boolean;
+  can_delete: boolean;
   children: LibraryFolderTree[];
 }
 
@@ -8547,6 +8554,13 @@ export interface LibraryFolder {
   external_show_hidden: boolean;
   file_count: number;
   latest_activity_at: string | null;
+  // Ownership (#3201). can_* are for the current user: what the File
+  // Manager may offer on this folder. The backend enforces the same rules.
+  created_by_id: number | null;
+  shared: boolean;
+  can_write: boolean;
+  can_rename: boolean;
+  can_delete: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -8571,6 +8585,7 @@ export interface LibraryFolderUpdate {
   parent_id?: number | null;
   project_id?: number | null;  // 0 to unlink
   archive_id?: number | null;  // 0 to unlink
+  shared?: boolean;  // library:update_all only (#3201)
 }
 
 export interface LibraryFileDuplicate {
