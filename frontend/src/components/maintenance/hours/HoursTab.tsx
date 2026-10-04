@@ -11,6 +11,7 @@ import { Card, CardContent } from '../../Card';
 import { ConfirmModal } from '../../ConfirmModal';
 import { HoursChart, type HoursChartMode } from './HoursChart';
 import { MachineList, type MachineStat } from './MachineList';
+import { ReadingFormModal } from './ReadingFormModal';
 import { ReadingLog } from './ReadingLog';
 
 const MODES: HoursChartMode[] = ['cumulative', 'monthly', 'total'];
@@ -54,6 +55,18 @@ export function HoursTab() {
     return out;
   }, [machines, series, data]);
 
+  const saveReadings = useMutation({
+    mutationFn: ({ date, entries }: { date: string; entries: { machine_id: number; hours: number | null }[] }) =>
+      api.saveHourReadings(date, entries),
+    onSuccess: (overview) => {
+      queryClient.setQueryData(['maintenanceHours'], overview);
+      queryClient.invalidateQueries({ queryKey: ['maintenanceOverview'] });
+      queryClient.invalidateQueries({ queryKey: ['maintenanceSummary'] });
+      setFormDate(null);
+      showToast(t('maintenance.hours.saved'));
+    },
+    onError: (e: Error) => showToast(e.message, 'error'),
+  });
   const deleteDate = useMutation({
     mutationFn: (date: string) => api.deleteHourReadings(date),
     onSuccess: (overview) => {
@@ -152,7 +165,19 @@ export function HoursTab() {
       </div>
 
       {/* Task 8 mounts ReadingFormModal on formDate; Task 9 mounts PasteImportModal on pasteOpen. */}
-      {formDate === null && pasteOpen === false ? null : null}
+      {formDate !== null && (
+        <ReadingFormModal
+          initialDate={formDate}
+          today={data.today}
+          machines={machines}
+          readings={data.readings}
+          colors={colors}
+          isSaving={saveReadings.isPending}
+          onSave={(date, entries) => saveReadings.mutate({ date, entries })}
+          onClose={() => setFormDate(null)}
+        />
+      )}
+      {pasteOpen ? null : null}
 
       {confirmDate && (
         <ConfirmModal

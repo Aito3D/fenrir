@@ -106,4 +106,78 @@ describe('HoursTab', () => {
     await user.click(deleteButtons[deleteButtons.length - 1]);
     await waitFor(() => expect(deleted).toBe('2026-01-01'));
   });
+
+  it('form lists only Fenrir printers, defaults to the server date and shows counters as placeholders', async () => {
+    serve();
+    const user = userEvent.setup();
+    render(<HoursTab />);
+    await user.click(await screen.findByRole('button', { name: 'New reading' }));
+    const dialog = await screen.findByTestId('hours-reading-form');
+    expect(within(dialog).getByLabelText('Date')).toHaveValue('2026-10-04'); // server today, not the browser's
+    const fields = within(dialog).getAllByRole('textbox');
+    expect(fields.map((f) => f.getAttribute('name'))).toEqual(['H2S02', 'X1C04']); // no retired X1C01
+    expect(within(dialog).getByRole('textbox', { name: 'X1C04' })).toHaveValue('');
+    expect(within(dialog).getByRole('textbox', { name: 'X1C04' })).toHaveAttribute('placeholder', expect.stringContaining('3'));
+    expect(within(dialog).getByText(/recalibrate/)).toBeInTheDocument();
+  });
+
+  it('flags a value lower than the previous reading and saves only filled fields', async () => {
+    serve();
+    let body: unknown = null;
+    server.use(
+      http.post('/api/v1/maintenance/hours/readings', async ({ request }) => {
+        body = await request.json();
+        return HttpResponse.json(overview);
+      }),
+    );
+    const user = userEvent.setup();
+    render(<HoursTab />);
+    await user.click(await screen.findByRole('button', { name: 'New reading' }));
+    const dialog = await screen.findByTestId('hours-reading-form');
+    await user.type(within(dialog).getByRole('textbox', { name: 'X1C04' }), '3 700');
+    expect(within(dialog).getByText('Lower than the previous reading (3,803 h)')).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+    await waitFor(() =>
+      expect(body).toEqual({ reading_date: '2026-10-04', entries: [{ machine_id: 1, hours: 3700 }] }),
+    );
+  });
+
+  it('edit prefills the date values and clearing a field sends null', async () => {
+    serve();
+    let body: unknown = null;
+    server.use(
+      http.post('/api/v1/maintenance/hours/readings', async ({ request }) => {
+        body = await request.json();
+        return HttpResponse.json(overview);
+      }),
+    );
+    const user = userEvent.setup();
+    render(<HoursTab />);
+    const log = await screen.findByTestId('hours-reading-log');
+    const row = within(log).getAllByTestId('hours-log-row').find((r) => r.dataset.date === '2026-04-25')!;
+    await user.click(within(row).getByRole('button', { name: 'Edit' }));
+    const dialog = await screen.findByTestId('hours-reading-form');
+    expect(within(dialog).getByText(/history only/)).toBeInTheDocument();
+    const x1c04 = within(dialog).getByRole('textbox', { name: 'X1C04' });
+    expect(x1c04).toHaveValue('3803');
+    await user.clear(within(dialog).getByRole('textbox', { name: 'H2S02' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+    await waitFor(() =>
+      expect(body).toEqual({
+        reading_date: '2026-04-25',
+        entries: [{ machine_id: 2, hours: null }, { machine_id: 1, hours: 3803 }],
+      }),
+    );
+  });
+
+  it('disables save on an invalid number', async () => {
+    serve();
+    const user = userEvent.setup();
+    render(<HoursTab />);
+    await user.click(await screen.findByRole('button', { name: 'New reading' }));
+    const dialog = await screen.findByTestId('hours-reading-form');
+    await user.type(within(dialog).getByRole('textbox', { name: 'H2S02' }), '12a');
+    expect(within(dialog).getByText('Not a number')).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Save' })).toBeDisabled();
+  });
 });
