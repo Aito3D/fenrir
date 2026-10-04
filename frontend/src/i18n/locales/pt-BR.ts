@@ -2310,6 +2310,7 @@ export default {
       toggledFavorites: 'Favoritos alternados para {{count}} arquivo(s)',
       failedUpdateFavorites: 'Falha ao atualizar favoritos',
       archivesDeleted: '{{count}} arquivo(s) excluído(s)',
+      someArchivesNotDeleted: "Não foi possível excluir {{failed}} de {{total}} arquivos",
       failedDeleteArchives: 'Falha ao excluir arquivos',
       photoDeleted: 'Foto excluída',
       failedDeletePhoto: 'Falha ao excluir foto',

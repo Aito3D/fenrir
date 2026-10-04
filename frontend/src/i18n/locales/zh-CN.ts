@@ -2310,6 +2310,7 @@ export default {
       toggledFavorites: '已切换 {{count}} 个归档的收藏状态',
       failedUpdateFavorites: '更新收藏失败',
       archivesDeleted: '已删除 {{count}} 个归档',
+      someArchivesNotDeleted: "{{total}} 个归档中有 {{failed}} 个无法删除",
       failedDeleteArchives: '删除归档失败',
       photoDeleted: '照片已删除',
       failedDeletePhoto: '删除照片失败',

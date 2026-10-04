@@ -2321,6 +2321,7 @@ export default {
       toggledFavorites: 'Toggled favorites for {{count}} archive(s)',
       failedUpdateFavorites: 'Failed to update favorites',
       archivesDeleted: '{{count}} archive(s) deleted',
+      someArchivesNotDeleted: "{{failed}} of {{total}} archives could not be deleted",
       failedDeleteArchives: 'Failed to delete archives',
       photoDeleted: 'Photo deleted',
       failedDeletePhoto: 'Failed to delete photo',

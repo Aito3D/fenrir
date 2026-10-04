@@ -2310,6 +2310,7 @@ export default {
       toggledFavorites: 'Se cambió el estado de favorito de {{count}} archivo(s)',
       failedUpdateFavorites: 'Error al actualizar los favoritos',
       archivesDeleted: '{{count}} archivo(s) eliminado(s)',
+      someArchivesNotDeleted: "No se pudieron eliminar {{failed}} de {{total}} archivos",
       failedDeleteArchives: 'Error al eliminar los archivos',
       photoDeleted: 'Foto eliminada',
       failedDeletePhoto: 'Error al eliminar la foto',

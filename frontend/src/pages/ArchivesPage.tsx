@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { settleWithConcurrency } from '../utils/concurrency';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -3520,14 +3521,23 @@ export function ArchivesPage() {
   );
 
   const bulkDeleteMutation = useMutation({
+    // A few at a time, every result kept: all at once contended for the
+    // database's single writer, and one failure used to read as a total
+    // failure while most rows were already gone (no refresh, stale selection).
     mutationFn: async (ids: number[]) => {
-      await Promise.all(ids.map((id) => api.deleteArchive(id)));
-      return ids.length;
+      const results = await settleWithConcurrency(ids, 4, (id) => api.deleteArchive(id));
+      const deleted = ids.filter((_, index) => results[index].status === 'fulfilled');
+      return { deleted, total: ids.length };
     },
-    onSuccess: (count) => {
+    onSuccess: ({ deleted, total }) => {
       invalidateArchiveAndProjectViews(queryClient);
-      setSelectedIds(new Set());
-      showToast(`${count} archive${count !== 1 ? 's' : ''} deleted`);
+      const gone = new Set(deleted);
+      setSelectedIds((prev) => new Set([...prev].filter((id) => !gone.has(id))));
+      if (deleted.length < total) {
+        showToast(t('archives.page.someArchivesNotDeleted', { failed: total - deleted.length, total }), 'error');
+      } else {
+        showToast(t('archives.page.archivesDeleted', { count: deleted.length }));
+      }
     },
     onError: () => {
       showToast(t('archives.toast.failedDeleteArchives'), 'error');

@@ -2310,6 +2310,7 @@ export default {
       toggledFavorites: '{{count}} arşiv için favoriler değiştirildi',
       failedUpdateFavorites: 'Favoriler güncellenemedi',
       archivesDeleted: '{{count}} arşiv silindi',
+      someArchivesNotDeleted: "{{total}} arşivden {{failed}} tanesi silinemedi",
       failedDeleteArchives: 'Arşivler silinemedi',
       photoDeleted: 'Fotoğraf silindi',
       failedDeletePhoto: 'Fotoğraf silinemedi',

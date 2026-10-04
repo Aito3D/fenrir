@@ -1277,6 +1277,7 @@ export default {
       toggledFavorites: 'Växlade favoriter för {{count}} arkiv',
       failedUpdateFavorites: 'Kunde inte uppdatera favoriter',
       archivesDeleted: '{{count}} arkiv borttagna',
+      someArchivesNotDeleted: "{{failed}} av {{total}} arkiv kunde inte tas bort",
       failedDeleteArchives: 'Kunde inte ta bort arkiv',
       photoDeleted: 'Foto borttaget',
       failedDeletePhoto: 'Kunde inte ta bort foto',

@@ -1277,6 +1277,7 @@ export default {
       toggledFavorites: 'Favorieten omgeschakeld voor {{count}} archief/archieven',
       failedUpdateFavorites: 'Favorieten bijwerken mislukt',
       archivesDeleted: '{{count}} archief/archieven verwijderd',
+      someArchivesNotDeleted: "{{failed}} van {{total}} archieven konden niet worden verwijderd",
       failedDeleteArchives: 'Archieven verwijderen mislukt',
       photoDeleted: 'Foto verwijderd',
       failedDeletePhoto: 'Foto verwijderen mislukt',

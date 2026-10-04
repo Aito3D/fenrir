@@ -2309,6 +2309,7 @@ export default {
       toggledFavorites: '{{count}}件のアーカイブのお気に入りを切替えました',
       failedUpdateFavorites: 'お気に入りの更新に失敗しました',
       archivesDeleted: '{{count}}件のアーカイブを削除しました',
+      someArchivesNotDeleted: "{{total}} 件中 {{failed}} 件のアーカイブを削除できませんでした",
       failedDeleteArchives: 'アーカイブの削除に失敗しました',
       photoDeleted: '写真を削除しました',
       failedDeletePhoto: '写真の削除に失敗しました',
