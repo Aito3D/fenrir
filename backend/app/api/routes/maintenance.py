@@ -26,6 +26,7 @@ from backend.app.schemas.maintenance import (
     PrinterMaintenanceUpdate,
 )
 from backend.app.services.notification_service import notification_service
+from backend.app.services.printer_hours import current_hours, recalibrate_printer
 from backend.app.utils.printer_models import get_rod_type
 
 logger = logging.getLogger(__name__)
@@ -137,11 +138,7 @@ async def get_printer_total_hours(db: AsyncSession, printer_id: int) -> float:
     if not row:
         return 0.0
 
-    runtime_seconds = row[0] or 0
-    offset = row[1] or 0.0
-
-    runtime_hours = runtime_seconds / 3600.0
-    return runtime_hours + offset
+    return current_hours(row[0], row[1])
 
 
 async def ensure_default_types(db: AsyncSession) -> None:
@@ -597,19 +594,19 @@ async def perform_maintenance(
     printer = result.scalar_one()
 
     # Get current hours
-    current_hours = await get_printer_total_hours(db, item.printer_id)
+    hours_now = await get_printer_total_hours(db, item.printer_id)
 
     # Create history entry
     history = MaintenanceHistory(
         printer_maintenance_id=item.id,
-        hours_at_maintenance=current_hours,
+        hours_at_maintenance=hours_now,
         notes=data.notes,
     )
     db.add(history)
 
     # Update item
     item.last_performed_at = datetime.now(timezone.utc)
-    item.last_performed_hours = current_hours
+    item.last_performed_hours = hours_now
 
     await db.commit()
 
@@ -628,7 +625,7 @@ async def perform_maintenance(
     # Calculate status
     interval = item.custom_interval_hours or item.maintenance_type.default_interval_hours
     interval_type = getattr(item.maintenance_type, "interval_type", "hours") or "hours"
-    hours_since = current_hours - item.last_performed_hours
+    hours_since = hours_now - item.last_performed_hours
     hours_until = interval - hours_since
 
     return MaintenanceStatus(
@@ -643,7 +640,7 @@ async def perform_maintenance(
         enabled=item.enabled,
         interval_hours=interval,
         interval_type=interval_type,
-        current_hours=current_hours,
+        current_hours=hours_now,
         hours_since_maintenance=hours_since,
         hours_until_due=hours_until if interval_type == "hours" else 0,
         days_since_maintenance=0 if interval_type == "days" else None,
@@ -705,6 +702,27 @@ async def get_maintenance_summary(
     }
 
 
+async def notify_maintenance_attention(db: AsyncSession, printer_id: int, printer_name: str) -> None:
+    """Send the maintenance-due notification when a printer's new hours put items in warning/due."""
+    try:
+        await ensure_default_types(db)
+        overview = await _get_printer_maintenance_internal(printer_id, db, commit=True)
+        items_needing_attention = [
+            {"name": item.maintenance_type_name, "is_due": item.is_due, "is_warning": item.is_warning}
+            for item in overview.maintenance_items
+            if item.enabled and (item.is_due or item.is_warning)
+        ]
+        if items_needing_attention:
+            await notification_service.on_maintenance_due(printer_id, printer_name, items_needing_attention, db)
+            logger.info(
+                "Sent maintenance notification for printer %s: %s items need attention",
+                printer_id,
+                len(items_needing_attention),
+            )
+    except Exception as e:
+        logger.warning("Failed to send maintenance notification: %s", e)
+
+
 @router.patch("/printers/{printer_id}/hours")
 async def set_printer_hours(
     printer_id: int,
@@ -724,38 +742,10 @@ async def set_printer_hours(
     if not printer:
         raise HTTPException(status_code=404, detail="Printer not found")
 
-    # Get current runtime hours
-    runtime_hours = (printer.runtime_seconds or 0) / 3600.0
-
-    # Calculate needed offset
-    printer.print_hours_offset = max(0, total_hours - runtime_hours)
-
+    runtime_hours = recalibrate_printer(printer, total_hours)
+    printer_name = printer.name
     await db.commit()
-
-    # Check for maintenance items that need attention and send notification
-    try:
-        await ensure_default_types(db)
-        overview = await _get_printer_maintenance_internal(printer_id, db, commit=True)
-
-        items_needing_attention = [
-            {
-                "name": item.maintenance_type_name,
-                "is_due": item.is_due,
-                "is_warning": item.is_warning,
-            }
-            for item in overview.maintenance_items
-            if item.enabled and (item.is_due or item.is_warning)
-        ]
-
-        if items_needing_attention:
-            await notification_service.on_maintenance_due(printer_id, printer.name, items_needing_attention, db)
-            logger.info(
-                f"Sent maintenance notification for printer {printer_id}: "
-                f"{len(items_needing_attention)} items need attention"
-            )
-    except Exception as e:
-        logger.warning("Failed to send maintenance notification: %s", e)
-
+    await notify_maintenance_attention(db, printer_id, printer_name)
     return {
         "printer_id": printer_id,
         "total_hours": total_hours,

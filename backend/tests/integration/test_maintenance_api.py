@@ -256,3 +256,26 @@ class TestPrinterHoursAPI:
         """Verify 404 for non-existent printer."""
         response = await async_client.patch("/api/v1/maintenance/printers/9999/hours", params={"total_hours": 100.0})
         assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_set_printer_hours_offset_uses_runtime(self, async_client: AsyncClient, printer_factory):
+        """Offset = total - runtime, so the overview's total reads back the typed value."""
+        printer = await printer_factory(name="Offset Printer", runtime_seconds=3600 * 100)
+        response = await async_client.patch(
+            f"/api/v1/maintenance/printers/{printer.id}/hours", params={"total_hours": 4102.0}
+        )
+        assert response.status_code == 200
+        assert response.json()["offset_hours"] == pytest.approx(4002.0)
+        overview = await async_client.get(f"/api/v1/maintenance/printers/{printer.id}")
+        assert overview.json()["total_print_hours"] == pytest.approx(4102.0)
+
+    @pytest.mark.asyncio
+    async def test_notify_maintenance_attention_swallows_errors(self, db_session, monkeypatch):
+        from backend.app.api.routes import maintenance as maintenance_routes
+
+        async def boom(*_args, **_kwargs):
+            raise RuntimeError("db gone")
+
+        monkeypatch.setattr(maintenance_routes, "ensure_default_types", boom)
+        await maintenance_routes.notify_maintenance_attention(db_session, 1, "X")  # must not raise
