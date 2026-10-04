@@ -5098,6 +5098,45 @@ async def get_project_image(
 
 
 def _resolve_source_3mf_path(archive: PrintArchive, source_filename: str) -> Path:
+    return _resolve_attachment_path(archive, "source", source_filename)
+
+
+def _store_attachment(path: Path, content: bytes) -> None:
+    """Write *content* to *path* without ever leaving a half-written file there.
+
+    Written beside the target and swapped in with ``os.replace``, so a full
+    disk or a crash leaves either the old file or the new one, never a
+    truncated mix -- the target may be the very file being replaced.
+    """
+    import os
+
+    tmp = path.with_name(f".{path.name}.part")
+    try:
+        tmp.write_bytes(content)
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+def _drop_replaced_attachment(old_relpath: str | None, new_relpath: str) -> None:
+    """Remove the file an upload replaced, once the new one is committed.
+
+    Only after the commit, so a rejected or failed upload never costs the old
+    file; and only when the path differs, since a same-name upload replaced it
+    in place. Never anything outside the data volume.
+    """
+    if not old_relpath or old_relpath == new_relpath:
+        return
+    old_path = settings.base_dir / old_relpath
+    try:
+        old_path.resolve().relative_to(settings.base_dir.resolve())
+    except ValueError:
+        logger.warning("Not deleting %s: outside the data directory", old_path)
+        return
+    old_path.unlink(missing_ok=True)
+
+
+def _resolve_attachment_path(archive: PrintArchive, kind: str, attachment_filename: str) -> Path:
     """Resolve where to write a source 3MF for ``archive``.
 
     Normal archives nest the source under ``<archive_file_dir>/source/``.
@@ -5118,9 +5157,13 @@ def _resolve_source_3mf_path(archive: PrintArchive, source_filename: str) -> Pat
     """
     if archive.file_path:
         archive_file = settings.base_dir / archive.file_path
-        source_dir = archive_file.parent / "source"
+        source_dir = archive_file.parent / kind
     else:
+        # The source keeps the folder it has always had; anything else nests
+        # inside it, so deleting the archive removes it too (#2968).
         source_dir = settings.base_dir / "archive" / "no_source" / str(archive.id)
+        if kind != "source":
+            source_dir = source_dir / kind
 
     # Containment check via resolve() — catches absolute file_path, `..`
     # traversal, and any other shape that escapes the data volume — but we
@@ -5135,12 +5178,12 @@ def _resolve_source_3mf_path(archive: PrintArchive, source_filename: str) -> Pat
     except ValueError as exc:
         raise HTTPException(
             500,
-            f"Archive {archive.id} resolves to a path outside the data directory; cannot attach source.",
+            f"Archive {archive.id} resolves to a path outside the data directory; cannot attach {kind}.",
         ) from exc
 
     source_dir.mkdir(parents=True, exist_ok=True)
     return (
-        source_dir / source_filename
+        source_dir / attachment_filename
     )  # SEC-PATH-OK: callers pass _safe_filename(...) basename-stripped; source_dir resolve+relative_to checked above
 
 
@@ -5168,12 +5211,6 @@ async def upload_source_3mf(
     source_filename = _safe_filename(file.filename)
     source_path = _resolve_source_3mf_path(archive, source_filename)
 
-    # Delete old source file if exists
-    if archive.source_3mf_path:
-        old_source_path = settings.base_dir / archive.source_3mf_path
-        if old_source_path.exists():
-            old_source_path.unlink()
-
     content = await file.read()
     # #1401: validate zip header on source 3MF uploads too — source files
     # are uploaded for reprint and slicing, so an invalid one breaks the
@@ -5181,13 +5218,17 @@ async def upload_source_3mf(
     from backend.app.api.routes.library import validate_print_file_upload
 
     validate_print_file_upload(file.filename, content)
-    source_path.write_bytes(content)
+    # The old source goes only once the new one is in place and committed: a
+    # rejected or failed upload used to cost the only copy.
+    old_source = archive.source_3mf_path
+    _store_attachment(source_path, content)
 
     # Update archive with source path (relative to base_dir)
     archive.source_3mf_path = str(source_path.relative_to(settings.base_dir))
 
     await db.commit()
     await db.refresh(archive)
+    _drop_replaced_attachment(old_source, archive.source_3mf_path)
 
     return {
         "status": "uploaded",
@@ -5382,12 +5423,6 @@ async def upload_source_3mf_by_name(
     source_filename = safe_filename
     source_path = _resolve_source_3mf_path(archive, source_filename)
 
-    # Delete old source file if exists
-    if archive.source_3mf_path:
-        old_source_path = settings.base_dir / archive.source_3mf_path
-        if old_source_path.exists():
-            old_source_path.unlink()
-
     content = await file.read()
     # #1401: same zip-header check as the other upload routes — the
     # match-by-name endpoint is used by slicer post-processing scripts,
@@ -5395,12 +5430,14 @@ async def upload_source_3mf_by_name(
     from backend.app.api.routes.library import validate_print_file_upload
 
     validate_print_file_upload(file.filename, content)
-    source_path.write_bytes(content)
+    old_source = archive.source_3mf_path
+    _store_attachment(source_path, content)
 
     # Update archive with source path
     archive.source_3mf_path = str(source_path.relative_to(settings.base_dir))
     await db.commit()
     await db.refresh(archive)
+    _drop_replaced_attachment(old_source, archive.source_3mf_path)
 
     return {
         "status": "uploaded",
@@ -5467,30 +5504,22 @@ async def upload_f3d(
     if not file.filename or not file.filename.endswith(".f3d"):
         raise HTTPException(400, "File must be a .f3d file")
 
-    # Get archive directory and create f3d subdirectory
-    file_path = settings.base_dir / archive.file_path
-    archive_dir = file_path.parent
-    f3d_dir = archive_dir / "f3d"
-    f3d_dir.mkdir(exist_ok=True)
-
-    # Delete old F3D file if exists
-    if archive.f3d_path:
-        old_f3d_path = settings.base_dir / archive.f3d_path
-        if old_f3d_path.exists():
-            old_f3d_path.unlink()
-
-    # Save the F3D file - preserve original filename, strip directory components
+    # Save the F3D file - preserve original filename, strip directory components.
+    # The folder comes from the shared resolver: a fallback archive has no
+    # file_path, and deriving the folder from it wrote outside the data volume.
     f3d_filename = _safe_filename(file.filename)
-    f3d_path = f3d_dir / f3d_filename  # SEC-PATH-OK: f3d_filename = _safe_filename(...) basename-stripped above
+    f3d_path = _resolve_attachment_path(archive, "f3d", f3d_filename)
 
     content = await file.read()
-    f3d_path.write_bytes(content)
+    old_f3d = archive.f3d_path
+    _store_attachment(f3d_path, content)
 
     # Update archive with F3D path (relative to base_dir)
     archive.f3d_path = str(f3d_path.relative_to(settings.base_dir))
 
     await db.commit()
     await db.refresh(archive)
+    _drop_replaced_attachment(old_f3d, archive.f3d_path)
 
     return {
         "status": "uploaded",
