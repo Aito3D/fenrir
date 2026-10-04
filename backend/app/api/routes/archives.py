@@ -414,6 +414,26 @@ def _list_extra_data(extra_data: dict | None) -> dict | None:
     return {k: v for k, v in extra_data.items() if k != "_print_data"}
 
 
+async def _load_linked_folders(db: AsyncSession, archive_ids: list[int]) -> dict[int, dict]:
+    """``{archive_id: {"id", "name"}}`` -- each archive's first linked library
+    folder by name, in one query for the whole page."""
+    from backend.app.models.library import LibraryFolder
+
+    if not archive_ids:
+        return {}
+    linked: dict[int, dict] = {}
+    for chunk_start in range(0, len(archive_ids), 500):
+        chunk = archive_ids[chunk_start : chunk_start + 500]
+        rows = await db.execute(
+            select(LibraryFolder.archive_id, LibraryFolder.id, LibraryFolder.name)
+            .where(LibraryFolder.archive_id.in_(chunk))
+            .order_by(LibraryFolder.name)
+        )
+        for archive_id, folder_id, name in rows.all():
+            linked.setdefault(archive_id, {"id": folder_id, "name": name})
+    return linked
+
+
 def _response_list_extra_data(archive: PrintArchive) -> dict | None:
     """The list's extra_data: the SQL-slimmed value when the query loaded it
     (the full column is then deferred and must not be touched), else the full
@@ -433,6 +453,7 @@ def archive_to_response(
     original_archive_id: int | None = None,
     run_aggregate: dict | None = None,
     include_print_data: bool = True,
+    linked_folder: dict | None = None,
 ) -> dict:
     """Convert archive model to response dict with computed fields."""
     data = {
@@ -452,6 +473,7 @@ def archive_to_response(
         "duplicate_count": duplicate_count if duplicates is None else len(duplicates),
         "duplicate_sequence": duplicate_sequence,
         "original_archive_id": original_archive_id,
+        "linked_folder": linked_folder,
         "print_name": archive.print_name,
         "plate_id": archive.plate_id,
         "print_time_seconds": archive.print_time_seconds,
@@ -528,6 +550,8 @@ async def list_archives(
             Permission.ARCHIVES_READ_OWN,
         )
     ),
+    can_read_library_all: bool = Depends(probe_permissions_if_auth_enabled(Permission.LIBRARY_READ_ALL)),
+    can_read_library_own: bool = Depends(probe_permissions_if_auth_enabled(Permission.LIBRARY_READ_OWN)),
 ):
     """List archived prints."""
     user, can_read_all = auth_result
@@ -612,6 +636,11 @@ async def list_archives(
                 duplicate_meta_by_archive_id.setdefault(archive_id, (sequence, original_id, duplicate_count))
 
     run_aggregates = await _load_run_aggregates(db, [a.id for a in archives])
+    # The folder badge, batched: each card used to fetch it on mount (one
+    # request per archive). Same permission as the endpoint the cards called.
+    linked_folders = (
+        await _load_linked_folders(db, [a.id for a in archives]) if can_read_library_all or can_read_library_own else {}
+    )
 
     # Build response with duplicate sequence and original archive ID pre-computed
     result = []
@@ -639,6 +668,7 @@ async def list_archives(
                 original_archive_id=original_archive_id,
                 run_aggregate=run_aggregates.get(a.id),
                 include_print_data=False,
+                linked_folder=linked_folders.get(a.id),
             )
         )
     return result

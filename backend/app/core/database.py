@@ -6453,6 +6453,16 @@ async def _migrate_create_supplier_tables(conn) -> None:
         "CREATE INDEX IF NOT EXISTS ix_spoolman_spool_suppliers_supplier_id ON spoolman_spool_suppliers (supplier_id)",
     )
 
+    # Archive list: each row's linked folder is looked up by archive_id, and the
+    # print log sorts and date-filters on created_at; both were full scans
+    # (2026-10-04).
+    await _safe_execute(
+        conn, "CREATE INDEX IF NOT EXISTS ix_library_folders_archive_id ON library_folders (archive_id)"
+    )
+    await _safe_execute(
+        conn, "CREATE INDEX IF NOT EXISTS ix_print_log_entries_created_at ON print_log_entries (created_at)"
+    )
+
 
 async def _migrate_supplier_name_key(conn) -> None:
     """Backfill ``suppliers.name_key`` and collapse case-insensitive duplicates (#2988).

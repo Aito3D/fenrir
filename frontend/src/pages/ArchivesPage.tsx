@@ -554,11 +554,9 @@ function ArchiveCard({
     },
   });
 
-  // Query for linked folders
-  const { data: linkedFolders } = useQuery({
-    queryKey: ['archive-folders', archive.id],
-    queryFn: () => api.getLibraryFoldersByArchive(archive.id),
-  });
+  // The linked folder comes with the list row: fetching it per card cost one
+  // request per archive on every page view.
+  const linkedFolders = archive.linked_folder ? [archive.linked_folder] : [];
 
   const assignProjectMutation = useMutation({
     mutationFn: (projectId: number | null) => api.updateArchive(archive.id, { project_id: projectId }),
@@ -2112,11 +2110,9 @@ function ArchiveListRow({
     },
   });
 
-  // Query for linked folders
-  const { data: linkedFolders } = useQuery({
-    queryKey: ['archive-folders', archive.id],
-    queryFn: () => api.getLibraryFoldersByArchive(archive.id),
-  });
+  // The linked folder comes with the list row: fetching it per card cost one
+  // request per archive on every page view.
+  const linkedFolders = archive.linked_folder ? [archive.linked_folder] : [];
 
   const assignProjectMutation = useMutation({
     mutationFn: (projectId: number | null) => api.updateArchive(archive.id, { project_id: projectId }),

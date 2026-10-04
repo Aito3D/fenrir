@@ -881,6 +881,9 @@ export interface Archive {
   duplicate_count: number;
   duplicate_sequence: number;  // 0 = original, 1+ = nth duplicate
   original_archive_id: number | null;  // ID of the first/original archive
+  // First linked library folder, for the card's folder badge (list responses;
+  // null without library read permission).
+  linked_folder?: { id: number; name: string } | null;
   object_count: number | null;
   print_name: string | null;
   plate_id: number | null;  // Selected plate of a multi-plate 3MF (#2603)

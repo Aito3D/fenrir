@@ -2229,6 +2229,8 @@ export function FileManagerPage() {
       queryClient.invalidateQueries({ queryKey: ['library-folders'] });
       queryClient.invalidateQueries({ queryKey: ['library-files'] });
       queryClient.invalidateQueries({ queryKey: ['library-stats'] });
+      // A deleted folder may have been an archive's linked folder (card badge).
+      queryClient.invalidateQueries({ queryKey: ['archives'] });
       if (selectedFolderId === deleteConfirm?.id) {
         setSelectedFolderId(null);
       }
@@ -2324,6 +2326,8 @@ export function FileManagerPage() {
       // Invalidate project/archive folder queries so other pages see the update
       queryClient.invalidateQueries({ queryKey: ['project-folders'] });
       queryClient.invalidateQueries({ queryKey: ['archive-folders'] });
+      // Archive rows carry their linked folder (the card's folder badge).
+      queryClient.invalidateQueries({ queryKey: ['archives'] });
       setLinkFolder(null);
       const isUnlink = variables.data.project_id === 0 && variables.data.archive_id === 0;
       showToast(isUnlink ? t('fileManager.toast.folderUnlinked') : t('fileManager.toast.folderLinked'), 'success');
