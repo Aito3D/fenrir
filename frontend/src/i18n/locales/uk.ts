@@ -181,7 +181,6 @@ export default {
     socialPickFirst: 'Спочатку оберіть соцмережу',
     clientEdit: "Змінити клієнта",
     clientHistory: "Історія клієнта",
-    clientHistoryHint: "Утримуйте, щоб відкрити історію клієнта",
     clientHistoryProjects_one: '<b>{{count}}</b> проєкт',
     clientHistoryProjects_other: '<b>{{count}}</b> проєктів',
     clientHistorySince: 'з <b>{{date}}</b>',

@@ -8376,7 +8376,6 @@ errors: {
     socialPickFirst: 'Välj ett nätverk först',
     clientEdit: 'Redigera kunden',
     clientHistory: 'Kundhistorik',
-    clientHistoryHint: 'Håll intryckt för kundens historik',
     clientHistoryProjects_one: '<b>{{count}}</b> projekt',
     clientHistoryProjects_other: '<b>{{count}}</b> projekt',
     clientHistorySince: 'sedan <b>{{date}}</b>',

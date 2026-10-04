@@ -180,7 +180,6 @@ export default {
     socialPickFirst: '先にSNSを選択',
     clientEdit: '顧客を編集',
     clientHistory: '顧客の履歴',
-    clientHistoryHint: '長押しで顧客の履歴を表示',
     clientHistoryProjects_one: '<b>{{count}}</b> 件のプロジェクト',
     clientHistoryProjects_other: '<b>{{count}}</b> 件のプロジェクト',
     clientHistorySince: '<b>{{date}}</b> から',

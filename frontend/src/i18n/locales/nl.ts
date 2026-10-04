@@ -8376,7 +8376,6 @@ export default {
     socialPickFirst: 'Kies eerst een netwerk',
     clientEdit: 'Klant bewerken',
     clientHistory: 'Klantgeschiedenis',
-    clientHistoryHint: 'Houd ingedrukt voor de klantgeschiedenis',
     clientHistoryProjects_one: '<b>{{count}}</b> project',
     clientHistoryProjects_other: '<b>{{count}}</b> projecten',
     clientHistorySince: 'sinds <b>{{date}}</b>',

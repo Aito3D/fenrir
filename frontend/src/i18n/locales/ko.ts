@@ -180,7 +180,6 @@ export default {
     socialPickFirst: '먼저 SNS를 선택하세요',
     clientEdit: '고객 편집',
     clientHistory: '고객 이력',
-    clientHistoryHint: '길게 눌러 고객 이력 보기',
     clientHistoryProjects_one: '프로젝트 <b>{{count}}</b>건',
     clientHistoryProjects_other: '프로젝트 <b>{{count}}</b>건',
     clientHistorySince: '<b>{{date}}</b>부터',

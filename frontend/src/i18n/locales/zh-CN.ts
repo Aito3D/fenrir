@@ -180,7 +180,6 @@ export default {
     socialPickFirst: '请先选择社交网络',
     clientEdit: '编辑客户',
     clientHistory: '客户历史',
-    clientHistoryHint: '长按查看客户历史',
     clientHistoryProjects_one: '<b>{{count}}</b> 个项目',
     clientHistoryProjects_other: '<b>{{count}}</b> 个项目',
     clientHistorySince: '自 <b>{{date}}</b>',

@@ -180,7 +180,6 @@ export default {
     socialPickFirst: 'Сначала выберите соцсеть',
     clientEdit: 'Изменить клиента',
     clientHistory: 'История клиента',
-    clientHistoryHint: 'Удерживайте, чтобы открыть историю клиента',
     clientHistoryProjects_one: '<b>{{count}}</b> проект',
     clientHistoryProjects_other: '<b>{{count}}</b> проектов',
     clientHistorySince: 'с <b>{{date}}</b>',

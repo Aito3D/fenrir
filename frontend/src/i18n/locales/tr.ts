@@ -180,7 +180,6 @@ export default {
     socialPickFirst: 'Önce bir ağ seçin',
     clientEdit: 'Müşteriyi düzenle',
     clientHistory: 'Müşteri geçmişi',
-    clientHistoryHint: 'Müşteri geçmişi için basılı tutun',
     clientHistoryProjects_one: '<b>{{count}}</b> proje',
     clientHistoryProjects_other: '<b>{{count}}</b> proje',
     clientHistorySince: '<b>{{date}}</b> tarihinden beri',

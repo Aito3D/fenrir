@@ -180,7 +180,6 @@ export default {
     socialPickFirst: 'Pick a network first',
     clientEdit: 'Edit the client',
     clientHistory: 'Client history',
-    clientHistoryHint: 'Hold for the client’s history',
     clientHistoryProjects_one: '<b>{{count}}</b> project',
     clientHistoryProjects_other: '<b>{{count}}</b> projects',
     clientHistorySince: 'since <b>{{date}}</b>',

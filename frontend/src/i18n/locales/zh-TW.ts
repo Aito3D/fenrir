@@ -180,7 +180,6 @@ export default {
     socialPickFirst: '請先選擇社群網路',
     clientEdit: '編輯客戶',
     clientHistory: '客戶歷史',
-    clientHistoryHint: '長按查看客戶歷史',
     clientHistoryProjects_one: '<b>{{count}}</b> 個專案',
     clientHistoryProjects_other: '<b>{{count}}</b> 個專案',
     clientHistorySince: '自 <b>{{date}}</b>',
