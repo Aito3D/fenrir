@@ -35,7 +35,7 @@ export function InvoiceCard({ project, canUpdate }: { project: AitoProject; canU
   const depositsQuery = useAitoInvoiceDeposits(project, canUpdate && !!invoice && invoice.balance > 0);
   const [applying, setApplying] = useState(false);
   const deposits = depositsQuery.data;
-  const canApply = !!deposits?.invoice && deposits.deposits.some((d) => d.applicable > 0);
+  const canApply = !!deposits?.invoice && deposits.invoice.balance > 0 && deposits.deposits.some((d) => d.applicable > 0);
   if (!invoice) return null;
 
   const statusKey = invoiceStatusLabelKey(invoice.status);
@@ -111,7 +111,7 @@ export function InvoiceCard({ project, canUpdate }: { project: AitoProject; canU
           {t('aito.invoiceMoreCount', { count: invoice.invoice_count - 1 })}
         </p>
       )}
-      {applying && deposits && (
+      {applying && canApply && deposits && (
         <ApplyDepositModal projectId={project.id} data={deposits} onClose={() => setApplying(false)} />
       )}
     </div>

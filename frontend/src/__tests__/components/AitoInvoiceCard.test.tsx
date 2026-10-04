@@ -269,5 +269,17 @@ describe('InvoiceCard', () => {
 
       expect(await screen.findByRole('dialog')).toBeInTheDocument();
     });
+
+    it('hides the icon when the refetched invoice has no balance left', async () => {
+      vi.spyOn(api, 'getAitoInvoice').mockResolvedValue(OWING);
+      const d = depositsFor(ONE);
+      d.invoice.balance = 0;
+      const spy = vi.spyOn(api, 'getAitoInvoiceDeposits').mockResolvedValue(d);
+
+      render(<InvoiceCard project={project} canUpdate />);
+
+      await waitFor(() => expect(spy).toHaveBeenCalled());
+      expect(screen.queryByTestId('apply-deposit')).toBeNull();
+    });
   });
 });

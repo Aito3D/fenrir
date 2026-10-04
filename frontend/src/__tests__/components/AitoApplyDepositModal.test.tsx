@@ -76,4 +76,48 @@ describe('ApplyDepositModal', () => {
     expect(await screen.findByText(/At most 3000/)).toBeInTheDocument();
     expect(onClose).not.toHaveBeenCalled();
   });
+
+  it('closes instead of crashing when a refetch empties the deposits', () => {
+    const onClose = vi.fn();
+    const { rerender } = render(<ApplyDepositModal projectId={12} data={DATA} onClose={onClose} />);
+    rerender(<ApplyDepositModal projectId={12} data={{ ...DATA, deposits: [] }} onClose={onClose} />);
+    expect(onClose).toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('closes instead of crashing when a refetch drops the invoice', () => {
+    const onClose = vi.fn();
+    const { rerender } = render(<ApplyDepositModal projectId={12} data={DATA} onClose={onClose} />);
+    rerender(<ApplyDepositModal projectId={12} data={{ invoice: null, deposits: [] }} onClose={onClose} />);
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('reselects the first deposit when the chosen one disappears', async () => {
+    const { rerender } = render(<ApplyDepositModal projectId={12} data={DATA} onClose={() => {}} />);
+    await userEvent.click(screen.getByRole('radio', { name: /RET26-00302/ }));
+    rerender(<ApplyDepositModal projectId={12} data={{ ...DATA, deposits: [DATA.deposits[0]] }} onClose={() => {}} />);
+    expect(screen.getByRole('radio', { name: /RET26-00301/ })).toBeChecked();
+    expect(screen.getByLabelText('Amount to apply')).toHaveValue('7000');
+  });
+
+  it('does not close on overlay click or X while the request is in flight', async () => {
+    vi.spyOn(api, 'applyAitoInvoiceDeposit').mockImplementation(() => new Promise(() => {}));
+    const onClose = vi.fn();
+    render(<ApplyDepositModal projectId={12} data={DATA} onClose={onClose} />);
+    await userEvent.click(screen.getByRole('button', { name: /^Apply/ }));
+    await userEvent.click(screen.getByRole('button', { name: 'Close' }));
+    await userEvent.click(screen.getByRole('dialog').parentElement as HTMLElement);
+    await new Promise((r) => setTimeout(r, 250));
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('rounds a typed amount to cents before sending', async () => {
+    const spy = vi.spyOn(api, 'applyAitoInvoiceDeposit').mockResolvedValue({} as never);
+    render(<ApplyDepositModal projectId={12} data={DATA} onClose={() => {}} />);
+    const input = screen.getByLabelText('Amount to apply');
+    await userEvent.clear(input);
+    await userEvent.type(input, '100.456');
+    await userEvent.click(screen.getByRole('button', { name: /^Apply/ }));
+    await waitFor(() => expect(spy).toHaveBeenCalledWith(12, expect.objectContaining({ amount: 100.46 })));
+  });
 });
