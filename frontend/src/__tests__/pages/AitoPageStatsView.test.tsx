@@ -62,7 +62,7 @@ describe('AitoPage statistics view', () => {
     expect(screen.queryByRole('button', { name: /Show done/ })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Import' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Project' })).toBeNull();
-    expect(screen.queryByPlaceholderText(/Search projects/)).toBeNull();
+    expect(screen.queryByPlaceholderText(/Client, phone/)).toBeNull();
     // The header's own count badge is gone (the strip's day line carries the phrase instead).
     expect(document.querySelector('.vt-aito-count')).toBeNull();
     // The timeframe selector lives inside the view now, beside its tabs, not
@@ -90,7 +90,7 @@ describe('AitoPage statistics view', () => {
     expect(screen.queryByRole('button', { name: 'Statistics' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Import' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Project' })).toBeNull();
-    const search = screen.getByPlaceholderText(/Search projects/);
+    const search = screen.getByPlaceholderText(/Client, phone/);
     expect(search.closest('.lg\\:w-96')).not.toBeNull();
 
     await user.click(screen.getByRole('button', { name: 'Back to board' }));
@@ -103,7 +103,7 @@ describe('AitoPage statistics view', () => {
     expect(await screen.findByRole('button', { name: 'Trash' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Statistics' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Project' })).toBeInTheDocument();
-    expect(screen.getByPlaceholderText(/Search projects/).closest('.lg\\:w-52')).not.toBeNull();
+    expect(screen.getByPlaceholderText(/Client, phone/).closest('.lg\\:w-52')).not.toBeNull();
   });
 
   it('switches views through a scoped View Transition when the browser has one', async () => {
