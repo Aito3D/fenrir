@@ -322,6 +322,42 @@ describe('BillingCard deposit block once invoiced', () => {
     expect(await screen.findByText('Deposit due')).toBeInTheDocument();
   });
 
+  it('keeps Deposit due while a deposit tap needs attention', async () => {
+    vi.spyOn(api, 'getAitoInvoice').mockResolvedValue(null);
+    vi.spyOn(api, 'getAitoRetainers').mockResolvedValue([]);
+    renderCard(
+      project({
+        quote_invoiced: true,
+        quote_total: 14000,
+        terminal_payment: {
+          id: 2, document_kind: 'quote', document_number: 'DEV-2026-1234', status: 'needs_attention', amount: 7000,
+          amount_confirmed: null, booking_status: null, booking_error: null, sync_error: null,
+          created_at: '2026-10-03T00:00:00', settled_at: null,
+        },
+      }),
+      { depositPct: 50 },
+    );
+    expect(await screen.findByText('Deposit due')).toBeInTheDocument();
+  });
+
+  it('hides Deposit due when the only deposit tap is a stale pending reservation', async () => {
+    vi.spyOn(api, 'getAitoInvoice').mockResolvedValue(null);
+    vi.spyOn(api, 'getAitoRetainers').mockResolvedValue([]);
+    renderCard(
+      project({
+        quote_invoiced: true,
+        quote_total: 14000,
+        terminal_payment: {
+          id: 3, document_kind: 'quote', document_number: 'DEV-2026-1234', status: 'pending', amount: 7000,
+          amount_confirmed: null, booking_status: null, booking_error: null, sync_error: null,
+          created_at: '2020-01-01T00:00:00', settled_at: null,
+        },
+      }),
+      { depositPct: 50 },
+    );
+    await waitFor(() => expect(screen.queryByText('Deposit due')).not.toBeInTheDocument());
+  });
+
   it('still shows Deposit due before invoicing', () => {
     renderCard(project({ quote_total: 14000 }), { depositPct: 50 });
     expect(screen.getByText('Deposit due')).toBeInTheDocument();

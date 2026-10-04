@@ -6,7 +6,7 @@ import { PanelCard } from './PanelCard';
 import { DocumentRow } from './DocumentRow';
 import { PaymentBlock } from './payment/PaymentBlock';
 import { invoiceDocument, quoteDocument } from './payment/paymentDocument';
-import { terminalFor } from './payment/paymentState';
+import { derivePaymentState, terminalFor } from './payment/paymentState';
 import { QuoteDownloadButton } from './QuoteDownloadButton';
 import { QuotePrintButton } from './QuotePrintButton';
 import { SendQuoteButton } from './SendQuoteButton';
@@ -96,9 +96,10 @@ export function BillingCard({
   // Once the job is billed the deposit is moot: collect on the invoice. The
   // backend cancels the link and refuses new deposit payments; the block only
   // stays while a deposit tap is still on the terminal, so a payment in
-  // progress is never hidden mid-way.
+  // progress, or one a human must resolve, is never hidden mid-way.
   const quoteTerminal = terminalFor(project, 'quote');
-  const depositInFlight = quoteTerminal != null && ['pending', 'processing'].includes(quoteTerminal.status);
+  const depositState = derivePaymentState(project.payment_link ?? null, quoteTerminal).kind;
+  const depositInFlight = depositState === 'terminal_processing' || depositState === 'terminal_attention';
   const quotePay = project.quote_invoiced && !depositInFlight ? null : quoteDocument(project, depositPct, currency);
   const hasCredit = project.customer_credit_total != null && project.customer_credit_total > 0;
 

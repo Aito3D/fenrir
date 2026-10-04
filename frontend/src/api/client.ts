@@ -4911,10 +4911,6 @@ export interface AitoInvoiceEmailContent {
   invoice_number: string;
 }
 
-/** The Invoice card's contents, read live from Books rather than snapshotted
- *  onto the project like the quote fields are — an invoice's interesting
- *  field is whether it has been PAID, and a stored copy of that is wrong the
- *  moment the client pays. See schemas/aito.py:AitoInvoiceResponse. */
 export type AitoForceSyncStepKey = 'quote' | 'credit' | 'invoice' | 'payment_links';
 export type AitoForceSyncOutcome = 'in_sync' | 'fixed' | 'failed' | 'skipped';
 export interface AitoForceSyncStep {
@@ -4936,6 +4932,10 @@ export interface AitoInvoiceDeposits {
   deposits: AitoDepositCredit[];
 }
 
+/** The Invoice card's contents, read live from Books rather than snapshotted
+ *  onto the project like the quote fields are — an invoice's interesting
+ *  field is whether it has been PAID, and a stored copy of that is wrong the
+ *  moment the client pays. See schemas/aito.py:AitoInvoiceResponse. */
 export interface AitoInvoice {
   id: string;
   number: string;
