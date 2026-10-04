@@ -4969,6 +4969,11 @@ async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
                         storage.reason,
                     )
 
+        # Asked here, with no DB transaction open, rather than where the retry
+        # is scheduled: that is inside the fallback-archive writes, and an FTP
+        # listing there would pin a pooled connection for its duration (#2572).
+        keeps_cache_mirror = probe_ran and not downloaded_filename and await _printer_keeps_cache_mirror(printer)
+
         if not storage.reachable and not downloaded_filename:
             # Same opening words whether or not a probe ran, because that is
             # the phrase support asks people to grep for — only the tail says
@@ -5463,7 +5468,7 @@ async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
                 elif (
                     probe_ran
                     and no_3mf_reason in (REASON_INTERNAL_STORAGE, REASON_INTERNAL_HISTORY)
-                    and await _printer_keeps_cache_mirror(printer)
+                    and keeps_cache_mirror
                 ):
                     started = time.monotonic()
 
