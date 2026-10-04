@@ -4031,46 +4031,20 @@ describe('client history from the masthead', () => {
     ),
   });
 
-  it('opens the history when the name is held for 500ms, not on a shorter press', async () => {
+  it('the client name is plain text, not a hold target', async () => {
     server.use(status(), history());
     renderWith();
-    // The name becomes a hold button once the walk-in id is known.
-    const name = await screen.findByRole('button', { name: 'ACME SARL' });
-    // Fake timers must be torn down even if an assertion below throws — see
-    // the same rationale near line 864.
-    try {
-      vi.useFakeTimers();
-      fireEvent.pointerDown(name);
-      act(() => vi.advanceTimersByTime(200));
-      fireEvent.pointerUp(name);
-      act(() => vi.advanceTimersByTime(500));
-      expect(screen.queryByRole('dialog', { name: 'Client history' })).toBeNull();
-      fireEvent.pointerDown(name);
-      act(() => vi.advanceTimersByTime(500));
-    } finally {
-      vi.useRealTimers();
-    }
-    expect(await screen.findByRole('dialog', { name: 'Client history' })).toBeInTheDocument();
+    await screen.findByRole('button', { name: 'Client history' });
+    expect(screen.queryByText('Hold for the client’s history')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'ACME SARL' })).not.toBeInTheDocument();
+    expect(screen.getByText('ACME SARL')).toHaveClass('truncate');
   });
 
-  it('pins the name-truncation class chain (jsdom has no layout, so this is the only guard against a wrapper regression)', async () => {
+  it('keeps the History button visible on touch screens, which have no hover', async () => {
     server.use(status(), history());
     renderWith();
-    const name = await screen.findByRole('button', { name: 'ACME SARL' });
-    // A block, min-w-0 span between HoldButton and the h2 plus max-w-full on
-    // the button is what makes a long name truncate instead of pushing the
-    // rating pill, History button and pencil out of the clipped panel — see
-    // the WHY comment above the span in ProjectDetailPanel.tsx. jsdom does
-    // not lay anything out, so a class regression here would pass every
-    // other test in this file; this test exists only to pin the chain.
-    expect(name.className).toContain('max-w-full');
-    expect(name.className).toContain('min-w-0');
-    const wrapper = name.parentElement!.parentElement!;
-    expect(wrapper.tagName).toBe('SPAN');
-    expect(wrapper.className).toContain('block');
-    expect(wrapper.className).toContain('min-w-0');
-    expect(wrapper.className).toContain('-mx-1');
-    expect(within(name).getByText('ACME SARL')).toHaveClass('truncate');
+    const btn = await screen.findByRole('button', { name: 'Client history' });
+    expect(btn.className).toContain('pointer-coarse:opacity-100');
   });
 
   it('opens the history from the History button beside the pencil', async () => {

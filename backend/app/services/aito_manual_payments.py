@@ -22,6 +22,7 @@ from backend.app.services.inbox import broadcast_pending
 from backend.app.services.zoho import (
     ZohoAmbiguous,
     ZohoNotConfiguredError,
+    ZohoRateLimited,
     ZohoUnreachable,
     ZohoUpstreamError,
     zoho_service,
@@ -310,6 +311,28 @@ async def record_manual_payment(
     return ManualPaymentResult(zoho_payment_id=zoho_payment_id, retainer_number=retainer_number, mode_name=mode_name)
 
 
+async def settle_invoiced_deposits(db: AsyncSession, project: AitoProject) -> None:
+    """A deposit paid AFTER the invoice was raised: spend it on the invoice now
+    rather than at the hourly sweep. Same rules as the sweep (only this quote's
+    own deposits, newest invoice only). Raises like the Zoho calls it makes;
+    the caller's best-effort wrapper owns the logging."""
+    from backend.app.services import aito_invoice_sweep
+
+    if not (project.quote_invoiced and project.quote_id):
+        return
+    invoices = await zoho_service.list_project_invoices(db, project.quote_id, project.client_id or "")
+    if not invoices or float(invoices[0].get("balance") or 0) <= 0:
+        return
+    fresh, remaining = await aito_invoice_sweep.settle_with_deposits(
+        db, project.id, project.quote_id, invoices[0], project.quote_number
+    )
+    project.invoice_status = fresh.get("status") or None
+    project.invoice_balance = float(fresh.get("balance") or 0)
+    project.invoice_due_date = fresh.get("due_date") or None
+    if remaining is not None:
+        project.customer_credit_total = remaining
+
+
 async def refresh_after_payment(db: AsyncSession, project_id: int, kind: str) -> None:
     """Move the card's figures NOW rather than at the next sweep. Best
     effort: any failure is logged and the sweep corrects it within the
@@ -335,9 +358,21 @@ async def refresh_after_payment(db: AsyncSession, project_id: int, kind: str) ->
                 project.customer_credit_total = credit
             await db.commit()
         else:
-            from backend.app.services.aito_quote_sync import sync_project
+            from backend.app.services import aito_quote_sync
 
-            await sync_project(db, project)
+            await aito_quote_sync.sync_project(db, project)
+            # Its own catch: the settle can raise AFTER Books took the money
+            # and its `invoice.deposit_applied` events were recorded (a 429
+            # on the re-read). Escaping to the outer catch would skip the
+            # commit below and leave those events -- and sync_project's work
+            # -- uncommitted for the next rollback on this session to drop.
+            try:
+                await settle_invoiced_deposits(db, project)
+            except ZohoRateLimited as exc:
+                aito_quote_sync._arm_rate_limit_throttle(exc)
+                logger.warning("deposit settle after a quote payment on project %s was rate limited", project_id)
+            except Exception as exc:  # noqa: BLE001 — the sweep retries within the hour
+                logger.warning("deposit settle after a quote payment on project %s failed: %s", project_id, exc)
             # The paid-deposit auto-accept records quote.accepted, an inbox
             # row for the card's watchers: commit and push it here, as the
             # sweep does after its own sync_project.

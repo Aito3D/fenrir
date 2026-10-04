@@ -7,7 +7,7 @@ import type { AitoProject } from '../../api/client';
 
 const activeProject = { id: 12, status: 'active', quote_invoiced: false } as unknown as AitoProject;
 
-type Row = 'merge' | 'split' | 'move' | 'copy' | 'print' | 'transfer' | 'watch' | 'duplicate' | 'trash';
+type Row = 'merge' | 'split' | 'move' | 'copy' | 'print' | 'transfer' | 'watch' | 'forceSync' | 'duplicate' | 'trash';
 
 const LABELS: Record<Row, string> = {
   merge: 'Merge another card…',
@@ -17,6 +17,7 @@ const LABELS: Record<Row, string> = {
   print: 'Print job ticket',
   transfer: 'Transfer to another client…',
   watch: 'Watch this card…',
+  forceSync: 'Force Zoho sync',
   duplicate: 'Duplicate',
   trash: 'Move to trash',
 };
@@ -31,6 +32,7 @@ function callbacks() {
     onPrintTicket: vi.fn(),
     onTransferClient: vi.fn(),
     onWatch: vi.fn(),
+    onForceSync: vi.fn(),
     onDuplicate: vi.fn(),
     onDelete: vi.fn(),
   };
@@ -92,6 +94,7 @@ describe('ProjectActionsMenu', () => {
         move: 'In the trash',
         transfer: 'In the trash',
         watch: 'In the trash',
+        forceSync: 'In the trash',
         trash: 'In the trash',
       },
     ],
@@ -105,6 +108,7 @@ describe('ProjectActionsMenu', () => {
       move: 'No permission',
       transfer: 'No permission',
       watch: 'No permission',
+      forceSync: 'No permission',
     }],
     ['without the create permission, Split and Duplicate', { canCreate: false }, {
       split: 'No permission',
@@ -148,6 +152,7 @@ describe('ProjectActionsMenu', () => {
     ['print', 'onPrintTicket'],
     ['transfer', 'onTransferClient'],
     ['watch', 'onWatch'],
+    ['forceSync', 'onForceSync'],
     ['duplicate', 'onDuplicate'],
     ['trash', 'onDelete'],
   ] as const)('the %s row fires %s once and closes the menu', async (r, cb) => {

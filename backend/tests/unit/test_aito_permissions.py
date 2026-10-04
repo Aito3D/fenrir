@@ -140,13 +140,20 @@ WRITE_ROUTES = [
         {"document_id": "x", "amount": 1},
     ),
     ("cancel_invoice_payment_link", "post", f"/api/v1/aito/{_MISSING_ID}/payment-link/1/cancel", None),
+    (
+        "apply_invoice_deposit",
+        "post",
+        f"/api/v1/aito/{_MISSING_ID}/invoice-deposits/apply",
+        {"invoice_id": "i", "retainer_id": "r", "amount": 1},
+    ),
+    ("force_sync_project", "post", f"/api/v1/aito/{_MISSING_ID}/force-sync", None),
     # T-037: found by the dynamic sweep below — gated with AITO_UPDATE like
     # every other mutation here, but never hand-added to this list.
     ("set_project_due_date", "patch", f"/api/v1/aito/{_MISSING_ID}/due-date", {"due_date": "2026-01-01"}),
 ]
 
-assert len(WRITE_ROUTES) == 36, (
-    "WRITE_ROUTES must cover exactly the 36 gated write routes aito.py and aito_payments.py declare"
+assert len(WRITE_ROUTES) == 38, (
+    "WRITE_ROUTES must cover exactly the 38 gated write routes aito.py and aito_payments.py declare"
 )
 
 
@@ -194,6 +201,7 @@ _READ_ONLY_ROUTE_NAMES = {
     "get_invoice_email",
     "get_retainer_email",
     "get_retainers",
+    "get_invoice_deposits",
     "get_retainer_pdf",
     "get_quote_pdf",
     "get_quote_email",
@@ -212,7 +220,7 @@ def test_every_aito_route_declares_a_permission_gate_or_is_the_public_tracking_r
     fails HERE, instead of silently escaping both this sweep and the
     hand-maintained WRITE_ROUTES parametrization below (T-037)."""
     aito_routes = _aito_routes()
-    assert len(aito_routes) == 56, (
+    assert len(aito_routes) == 59, (
         "aito.py + aito_payments.py grew or shrank a route — update this count, "
         "WRITE_ROUTES, and _READ_ONLY_ROUTE_NAMES/_PUBLIC_ROUTE_NAMES together"
     )

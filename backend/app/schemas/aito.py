@@ -2,7 +2,7 @@
 
 import re
 from datetime import date, datetime
-from typing import Literal, get_args
+from typing import Any, Literal, get_args
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -1050,6 +1050,34 @@ class AitoInvoiceResponse(BaseModel):
     invoice_count: int
 
 
+class AitoDepositCredit(BaseModel):
+    id: str
+    number: str
+    applicable: float
+    total: float
+
+
+class AitoInvoiceDepositsInvoice(BaseModel):
+    id: str
+    number: str
+    balance: float
+    currency_code: str
+
+
+class AitoInvoiceDepositsResponse(BaseModel):
+    """This quote's own unspent deposits and the invoice they could go on.
+    `invoice` is null when the card has no open invoice to pay."""
+
+    invoice: AitoInvoiceDepositsInvoice | None
+    deposits: list[AitoDepositCredit]
+
+
+class AitoApplyDepositRequest(BaseModel):
+    invoice_id: str = Field(min_length=1, max_length=64)
+    retainer_id: str = Field(min_length=1, max_length=64)
+    amount: float = Field(gt=0)
+
+
 class AitoRetainerInvoiceResponse(BaseModel):
     """One retainer (deposit) invoice of this project, read live from Books
     on panel open — for the same reason ``AitoInvoiceResponse`` is: its
@@ -1546,3 +1574,13 @@ class AitoWatchResponse(BaseModel):
     # Aito kinds (follows_settings), an explicit watch's its saved list.
     kinds: list[str]
     follows_settings: bool = False
+
+
+class AitoForceSyncStep(BaseModel):
+    key: Literal["quote", "credit", "invoice", "payment_links"]
+    outcome: Literal["in_sync", "fixed", "failed", "skipped"]
+    detail: dict[str, Any] = {}
+
+
+class AitoForceSyncReport(BaseModel):
+    steps: list[AitoForceSyncStep]

@@ -32,16 +32,22 @@ from backend.app.models.aito_task import AitoTask
 from backend.app.models.notification_inbox import AitoWatch
 from backend.app.models.user import User
 from backend.app.schemas.aito import (
+    AitoApplyDepositRequest,
     AitoClientEdit,
     AitoClientHistoryResponse,
     AitoClientRatingResponse,
     AitoClientTransfer,
     AitoContactedUpdate,
+    AitoDepositCredit,
     AitoDueDateUpdate,
     AitoEventPage,
     AitoEventResponse,
     AitoFlagUpdate,
+    AitoForceSyncReport,
+    AitoForceSyncStep,
     AitoInvoiceCreatedResponse,
+    AitoInvoiceDepositsInvoice,
+    AitoInvoiceDepositsResponse,
     AitoInvoiceEmailContent,
     AitoInvoiceEmailRequest,
     AitoInvoicePreview,
@@ -95,7 +101,16 @@ from backend.app.services.aito_board_rules import AWAY_STATUSES, SERVICES, TaskS
 from backend.app.services.aito_client_history import compute_client_history
 from backend.app.services.aito_client_rating import read_client_rating
 from backend.app.services.aito_customer_credit import read_customer_credit
+from backend.app.services.aito_deposit_apply import (
+    DepositAmountTooHigh,
+    DepositAmountTooSmall,
+    DepositNotFound,
+    DepositOutcomeUnknown,
+    apply_deposit,
+    project_deposits,
+)
 from backend.app.services.aito_events import diff_fields, kinds_for_depth, record, utc_now_naive
+from backend.app.services.aito_force_sync import quote_snapshot, run_force_sync
 from backend.app.services.aito_invoice_create import (
     apply_retainers,
     build_invoice_payload,
@@ -160,6 +175,7 @@ from backend.app.services.pushcut import (
 from backend.app.services.zoho import (
     ZohoNotConfiguredError,
     ZohoNotFound,
+    ZohoRateLimited,
     ZohoRequestRejected,
     ZohoUnreachable,
     ZohoUpstreamError,
@@ -1877,6 +1893,8 @@ _AI_RATE_LIMIT_DETAIL = "Too many AI requests. Please wait a moment and try agai
 # click-spammable, and it must not eat (or be starved by) the AI budget.
 _PAYMENT_LINK_REFRESH_MAX_CALLS = 10
 _PAYMENT_LINK_REFRESH_DETAIL = "Too many payment link refreshes. Please wait a moment and try again."
+_FORCE_SYNC_MAX_CALLS = 6
+_FORCE_SYNC_DETAIL = "Too many force syncs. Please wait a moment and try again."
 # T-024: the client-rating read. Not billed like a completion, but every
 # cache miss costs up to two Books calls for a caller-named id, so it gets
 # its own bucket and its own (larger) budget: an operator opening cards and
@@ -2231,6 +2249,88 @@ async def get_retainers(
     except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
         logger.warning("Aito retainer lookup failed for project %s: %s", project_id, e)
         raise HTTPException(status_code=502, detail=str(e)) from e
+
+
+@router.get("/{project_id}/invoice-deposits", response_model=AitoInvoiceDepositsResponse)
+async def get_invoice_deposits(
+    project_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
+) -> AitoInvoiceDepositsResponse:
+    """What the invoice row's Apply-deposit button offers: this quote's own
+    unspent deposits and the open invoice. Live, like get_invoice."""
+    project = await _get_active_project_or_404(db, project_id)
+    try:
+        invoice, credits = await project_deposits(db, project)
+    except ZohoRateLimited as e:
+        aito_quote_sync._arm_rate_limit_throttle(e)
+        raise HTTPException(status_code=429, detail=str(e)) from e
+    except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
+        logger.warning("Aito deposit lookup failed for project %s: %s", project_id, e)
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    return AitoInvoiceDepositsResponse(
+        invoice=None
+        if invoice is None
+        else AitoInvoiceDepositsInvoice(
+            id=str(invoice["id"]),
+            number=str(invoice.get("number") or invoice["id"]),
+            balance=float(invoice.get("balance") or 0),
+            currency_code=str(invoice.get("currency_code") or ""),
+        ),
+        deposits=[AitoDepositCredit(id=c.id, number=c.number, applicable=c.applicable, total=c.total) for c in credits],
+    )
+
+
+@router.post("/{project_id}/invoice-deposits/apply", response_model=AitoInvoiceResponse)
+async def apply_invoice_deposit(
+    project_id: int,
+    payload: AitoApplyDepositRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
+) -> AitoInvoiceResponse:
+    """Spend part or all of one of this quote's deposits on its open invoice.
+    Every figure is re-read from Books; see aito_deposit_apply."""
+    project = await _get_active_project_or_404(db, project_id)
+    quote_id, client_id = project.quote_id or "", project.client_id or ""
+    try:
+        fresh = await apply_deposit(
+            db,
+            project,
+            invoice_id=payload.invoice_id,
+            retainer_id=payload.retainer_id,
+            amount=payload.amount,
+            actor_name=_actor(current_user),
+        )
+    except DepositNotFound as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except DepositAmountTooSmall as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    except DepositAmountTooHigh as e:
+        raise HTTPException(
+            status_code=409, detail={"code": "amount_too_high", "message": str(e), "cap": round(e.cap, 2)}
+        ) from e
+    except DepositOutcomeUnknown as e:
+        # The attempt is already on record; other boards must refetch too.
+        await _broadcast_changed("invoice", project_id, _actor(current_user))
+        raise HTTPException(status_code=502, detail={"code": "outcome_unknown", "message": str(e)}) from e
+    except ZohoRateLimited as e:
+        aito_quote_sync._arm_rate_limit_throttle(e)
+        raise HTTPException(status_code=429, detail=str(e)) from e
+    except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
+        logger.warning("Aito deposit apply failed for project %s: %s", project_id, e)
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    # The deposit is already applied; these only decorate the response, so a
+    # Books failure degrades them rather than reporting the apply as failed.
+    try:
+        invoices = await zoho_service.list_project_invoices(db, quote_id, client_id)
+    except (ZohoNotConfiguredError, ZohoUpstreamError):
+        invoices = []
+    try:
+        url = await zoho_service.books_invoice_url(db, payload.invoice_id)
+    except (ZohoNotConfiguredError, ZohoUpstreamError):
+        url = ""
+    await _broadcast_changed("invoice", project_id, _actor(current_user))
+    return AitoInvoiceResponse(**fresh, url=url, invoice_count=len(invoices) or 1)
 
 
 async def _resolve_project_retainer(db: AsyncSession, project: AitoProject, retainer_id: str) -> dict:
@@ -2694,6 +2794,15 @@ async def create_invoice(
                 await db.rollback()
             except Exception:  # noqa: BLE001 — a failed rollback must not 500 a real invoice
                 pass
+
+    # The deposit link is moot now (wanted_link -> None for an invoiced card);
+    # cancel it immediately rather than on the loop's next pass, so the client
+    # cannot pay a deposit on a job that already has an invoice. Best-effort:
+    # the invoice exists, a Heimdall hiccup must not turn this into an error.
+    try:
+        await reconcile_payment_links(db, only_project_id=project_pk, force=True)
+    except Exception as exc:  # noqa: BLE001 — see above
+        logger.warning("Deposit link cancel after invoicing project %s failed: %s", project_pk, exc)
 
     # Re-read BY ID, not through the estimate filter: the create response was
     # written before `apply_retainers` ran, so it still says draft and owes
@@ -5136,6 +5245,48 @@ async def sync_project_now(
     await _commit_and_wake(db, queued, project.id, immediate=True)
     await db.refresh(project)
     return await _project_response(db, project)
+
+
+@router.post("/{project_id}/force-sync", response_model=AitoForceSyncReport)
+async def force_sync_project(
+    project_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
+):
+    """The ⋯ menu's Force Zoho sync: check every Zoho-backed part of the card
+    and repair drift, reporting per step (aito_force_sync). The quote half is
+    the same mark-pending as ``sync_project_now`` — it forces the ATTEMPT,
+    never the write — then waits for the worker's attempt to land. A card with
+    no quote yet is NOT marked: a check must not create a quote."""
+    _check_rate_limit(
+        request, current_user, bucket="force_sync", max_calls=_FORCE_SYNC_MAX_CALLS, detail=_FORCE_SYNC_DETAIL
+    )
+    project = await _get_active_project_or_404(db, project_id)
+    pid = project.id
+    before = quote_snapshot(project)
+    if project.quote_id or project.quote_sync_state == "pending":
+        was_pending = project.quote_sync_state == "pending"
+        _mark_pending_if_ours(project)
+        if not was_pending and project.quote_sync_state == "pending":
+            await record(db, pid, "sync.queued", actor_class="system")
+    queued = project.quote_sync_state == "pending"
+    await db.commit()
+
+    steps = await run_force_sync(db, project, quote_queued=queued, quote_before=before)
+    await record(
+        db,
+        pid,
+        "project.force_synced",
+        actor_class="user",
+        actor_name=_actor(current_user),
+        detail={"steps": {s.key: s.outcome for s in steps}},
+    )
+    await db.commit()
+    # "invoice": other operators' boards refetch, and their open Invoice card
+    # too — a settled deposit changes only what Books reports.
+    await _broadcast_changed("invoice", pid, _actor(current_user))
+    return AitoForceSyncReport(steps=[AitoForceSyncStep(key=s.key, outcome=s.outcome, detail=s.detail) for s in steps])
 
 
 @router.post("/{project_id}/quote-status", response_model=AitoQuoteStatusResponse)

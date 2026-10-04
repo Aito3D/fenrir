@@ -386,6 +386,14 @@ async def _became_paid(db: AsyncSession, row: AitoPaymentLink, *, now: datetime)
         raise
     if kind == "invoice":
         await _after_invoice_paid(db, project_id)
+    else:
+        project = await db.get(AitoProject, project_id)
+        if project is not None and project.quote_invoiced:
+            # Paid in the window between Create invoice and the link's cancel:
+            # put the money on the invoice now, not at the hourly sweep.
+            from backend.app.services import aito_manual_payments
+
+            await aito_manual_payments.refresh_after_payment(db, project_id, "quote")
 
 
 async def _create(

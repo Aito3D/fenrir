@@ -1,6 +1,11 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { PiggyBank } from 'lucide-react';
 import type { AitoProject } from '../../api/client';
 import { useAitoInvoice } from './useAitoInvoice';
+import { useAitoInvoiceDeposits } from './useAitoInvoiceDeposits';
+import { ApplyDepositModal } from './ApplyDepositModal';
+import { DOC_ICON_BUTTON_CLS, LINK_ICON_CLS } from './linkActionHelpers';
 import { DocumentRow } from './DocumentRow';
 import { InvoiceDownloadButton } from './InvoiceDownloadButton';
 import { InvoicePrintButton } from './InvoicePrintButton';
@@ -26,6 +31,11 @@ export function InvoiceCard({ project, canUpdate }: { project: AitoProject; canU
   const appCurrency = useCurrency();
   const invoiceQuery = useAitoInvoice(project);
   const invoice = invoiceQuery.data;
+  // POST apply-deposit enforces AITO_UPDATE, so a read-only viewer never asks.
+  const depositsQuery = useAitoInvoiceDeposits(project, canUpdate && !!invoice && invoice.balance > 0);
+  const [applying, setApplying] = useState(false);
+  const deposits = depositsQuery.data;
+  const canApply = !!deposits?.invoice && deposits.invoice.balance > 0 && deposits.deposits.some((d) => d.applicable > 0);
   if (!invoice) return null;
 
   const statusKey = invoiceStatusLabelKey(invoice.status);
@@ -60,6 +70,20 @@ export function InvoiceCard({ project, canUpdate }: { project: AitoProject; canU
         booksLabel={t('aito.invoiceOpenInZoho')}
         // Neither PDF button waits on a pending quote sync here: the endpoint
         // pushes the card first (`ensure_pushed`), then returns the PDF.
+        extra={
+          canApply ? (
+            <button
+              type="button"
+              onClick={() => setApplying(true)}
+              aria-label={t('aito.applyDeposit')}
+              title={t('aito.applyDeposit')}
+              data-testid="apply-deposit"
+              className={DOC_ICON_BUTTON_CLS}
+            >
+              <PiggyBank className={LINK_ICON_CLS} aria-hidden="true" />
+            </button>
+          ) : undefined
+        }
         print={<InvoicePrintButton projectId={project.id} invoiceId={invoice.id} variant="icon" />}
         download={
           <InvoiceDownloadButton
@@ -86,6 +110,9 @@ export function InvoiceCard({ project, canUpdate }: { project: AitoProject; canU
         <p className="pb-1.5 text-xs text-bambu-gray">
           {t('aito.invoiceMoreCount', { count: invoice.invoice_count - 1 })}
         </p>
+      )}
+      {applying && canApply && deposits && (
+        <ApplyDepositModal projectId={project.id} data={deposits} onClose={() => setApplying(false)} />
       )}
     </div>
   );

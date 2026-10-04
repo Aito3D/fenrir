@@ -33,6 +33,7 @@ export function DocumentRow({
   print,
   download,
   send,
+  extra,
   testId,
 }: {
   label: string;
@@ -45,6 +46,8 @@ export function DocumentRow({
   print: ReactNode;
   download: ReactNode;
   send?: ReactNode;
+  /** An extra action, rendered before print (e.g. Apply deposit). */
+  extra?: ReactNode;
   testId?: string;
 }) {
   const lineTwo = [status?.text, amount].filter(Boolean).join(' · ');
@@ -65,6 +68,7 @@ export function DocumentRow({
           )}
         </span>
         <span className="inline-flex items-center flex-shrink-0 -my-1 -mr-1">
+          {extra}
           {print}
           {download}
           {send}

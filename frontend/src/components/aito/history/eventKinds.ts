@@ -22,6 +22,7 @@ export const EVENT_LABEL_KEY: Record<string, string> = {
   'quote.expired': 'aito.history.quoteExpired',
   'stage.changed': 'aito.history.stageChanged',
   'project.trashed': 'aito.history.projectTrashed',
+  'project.force_synced': 'aito.history.projectForceSynced',
   'project.restored': 'aito.history.projectRestored',
   'task.added': 'aito.history.taskAdded',
   'task.updated': 'aito.history.taskUpdated',
@@ -233,9 +234,12 @@ export function detailText(kind: string, detail: Record<string, unknown> | null)
     // Which deposit and how much of it: the label alone says a deposit was
     // spent, and the retainer number is what the operator looks up in Books.
     if (typeof detail.retainer_number !== 'string' || !detail.retainer_number) return null;
-    return typeof detail.amount === 'number'
-      ? `${detail.retainer_number} · ${formatValue(detail.amount)}`
-      : detail.retainer_number;
+    const text =
+      typeof detail.amount === 'number'
+        ? `${detail.retainer_number} · ${formatValue(detail.amount)}`
+        : detail.retainer_number;
+    // Books never said whether this one landed (timeout / gateway error).
+    return detail.outcome === 'unknown' ? `${text} (?)` : text;
   }
 
   if (kind === 'quote.accepted') {

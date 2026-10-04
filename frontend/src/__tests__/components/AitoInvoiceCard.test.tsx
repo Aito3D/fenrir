@@ -221,4 +221,65 @@ describe('InvoiceCard', () => {
     expect(await screen.findByText('inv-1')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Open in Zoho Books' })).toHaveAttribute('href', INVOICE.url);
   });
+
+  describe('apply deposit', () => {
+    const OWING: AitoInvoice = { ...INVOICE, balance: 14000, status: 'sent' };
+    const depositsFor = (deposits: { id: string; number: string; applicable: number; total: number }[]) => ({
+      invoice: { id: 'inv-1', number: 'FA-26-0001', balance: 14000, currency_code: 'XPF' },
+      deposits,
+    });
+    const ONE = [{ id: 'R1', number: 'RET26-00301', applicable: 7000, total: 7000 }];
+
+    it('offers the icon when an unspent deposit and an open balance exist', async () => {
+      vi.spyOn(api, 'getAitoInvoice').mockResolvedValue(OWING);
+      vi.spyOn(api, 'getAitoInvoiceDeposits').mockResolvedValue(depositsFor(ONE));
+
+      render(<InvoiceCard project={project} canUpdate />);
+
+      expect(await screen.findByTestId('apply-deposit')).toBeInTheDocument();
+    });
+
+    it('hides the icon when there are no deposits', async () => {
+      vi.spyOn(api, 'getAitoInvoice').mockResolvedValue(OWING);
+      const spy = vi.spyOn(api, 'getAitoInvoiceDeposits').mockResolvedValue(depositsFor([]));
+
+      render(<InvoiceCard project={project} canUpdate />);
+
+      await waitFor(() => expect(spy).toHaveBeenCalled());
+      expect(screen.queryByTestId('apply-deposit')).toBeNull();
+    });
+
+    it('hides the icon, and never asks, without canUpdate', async () => {
+      vi.spyOn(api, 'getAitoInvoice').mockResolvedValue(OWING);
+      const spy = vi.spyOn(api, 'getAitoInvoiceDeposits').mockResolvedValue(depositsFor(ONE));
+
+      render(<InvoiceCard project={project} canUpdate={false} />);
+
+      await screen.findByTestId('invoice-block');
+      expect(screen.queryByTestId('apply-deposit')).toBeNull();
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it('opens the modal on click', async () => {
+      vi.spyOn(api, 'getAitoInvoice').mockResolvedValue(OWING);
+      vi.spyOn(api, 'getAitoInvoiceDeposits').mockResolvedValue(depositsFor(ONE));
+
+      render(<InvoiceCard project={project} canUpdate />);
+      await userEvent.click(await screen.findByTestId('apply-deposit'));
+
+      expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    });
+
+    it('hides the icon when the refetched invoice has no balance left', async () => {
+      vi.spyOn(api, 'getAitoInvoice').mockResolvedValue(OWING);
+      const d = depositsFor(ONE);
+      d.invoice.balance = 0;
+      const spy = vi.spyOn(api, 'getAitoInvoiceDeposits').mockResolvedValue(d);
+
+      render(<InvoiceCard project={project} canUpdate />);
+
+      await waitFor(() => expect(spy).toHaveBeenCalled());
+      expect(screen.queryByTestId('apply-deposit')).toBeNull();
+    });
+  });
 });

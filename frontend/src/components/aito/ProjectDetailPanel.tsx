@@ -5,6 +5,7 @@ import { Building2, Check, Copy, ExternalLink, Eye, History, Loader2, Lock, Mail
 import type { LucideIcon } from 'lucide-react';
 import { DuplicateReplaceConfirm } from './DuplicateReplaceConfirm';
 import { MergeProjectModal } from './MergeProjectModal';
+import { ForceSyncModal } from './ForceSyncModal';
 import { TaskTransferModal } from './TaskTransferModal';
 import { TransferClientModal } from './TransferClientModal';
 import { WatchModal } from './WatchModal';
@@ -37,7 +38,6 @@ import { ClientEditor } from './ClientEditor';
 import { useClientRating } from './useClientRating';
 import { ClientRatingRing } from './ClientRatingPill';
 import { ClientHistoryModal } from './ClientHistoryModal';
-import { HoldButton } from './HoldButton';
 import { useBoardSync } from '../../hooks/useBoardSync';
 import { useOptimisticBoardMutation } from '../../hooks/useOptimisticBoardMutation';
 import { stagesWithWork } from './services';
@@ -545,55 +545,14 @@ function PanelHeader({
           <span className="sr-only">
             {project.client_is_company ? t('aito.companyNameLabel') : t('aito.clientNameLabel')}
           </span>
-          {onOpenHistory ? (
-            // HoldButton's wrapper div has no min-width:0, and an
-            // inline-flex button never shrinks below its own min-content —
-            // so the name needs a BLOCK, `min-w-0` span between it and the
-            // h2, plus `max-w-full` on the button to actually cap it (a
-            // block child takes the span's width instead of forcing
-            // min-content, and the width cap is what makes the inner
-            // `truncate` span shrink). The negative margin sits on the span,
-            // not the button, so the max-width cap is not eaten by it.
-            // Measured in a headless-Chrome layout harness on 2026-09-23:
-            // `span.flex` (no truncation), `w-full` on the button (clips a
-            // short name via the negative margins) and `max-w-full` together
-            // with `-mx-1 px-1` on the button (also clips a short name) all
-            // fail.
-            <span className="block min-w-0 -mx-1">
-              {/* The name itself is the hold target (spec: hold 0.5 s).
-                  `label` is the client name so the heading still announces
-                  the client, and the hint carries the instruction.
-                  `progress="bar"` fills the name green from the left;
-                  `pressEffect="none"` because the band must not grow. Hint
-                  below: the panel root is overflow-hidden and this is its
-                  first row. */}
-              <HoldButton
-                onHold={() => onOpenHistory()}
-                durationMs={500}
-                label={project.client_name ?? t('aito.noClient')}
-                hint={t('aito.clientHistoryHint')}
-                progress="bar"
-                barClassName="bg-bambu-green/20"
-                pressEffect="none"
-                hintPlacement="bottom"
-                className="min-w-0 max-w-full px-1 text-left"
-              >
-                <span className="truncate">{project.client_name ?? t('aito.noClient')}</span>
-              </HoldButton>
-            </span>
-          ) : (
-            <span className="truncate">{project.client_name ?? t('aito.noClient')}</span>
-          )}
-          {/* The gesture's discoverable twin: revealed with the pencil,
-              reachable by keyboard, same dialog. Before the pencil so the
-              pencil keeps its place at the end of the row. */}
+          <span className="truncate">{project.client_name ?? t('aito.noClient')}</span>
           {onOpenHistory && (
             <button
               type="button"
               onClick={onOpenHistory}
               aria-label={t('aito.clientHistory')}
               title={t('aito.clientHistory')}
-              className={`flex-shrink-0 rounded-md p-1 text-bambu-gray opacity-0 transition-[opacity,background-color,color] duration-150 group-hover/client:opacity-100 hover:bg-bambu-dark-tertiary hover:text-white focus-visible:opacity-100 ${focusRingCls}`}
+              className={`flex-shrink-0 rounded-md p-1 text-bambu-gray opacity-0 pointer-coarse:opacity-100 transition-[opacity,background-color,color] duration-150 group-hover/client:opacity-100 hover:bg-bambu-dark-tertiary hover:text-white focus-visible:opacity-100 ${focusRingCls}`}
             >
               <History className="h-3.5 w-3.5" aria-hidden="true" />
             </button>
@@ -895,6 +854,7 @@ export function ProjectDetailPanel({
   // rows are usable (see ProjectActionsMenu's `rows`); the panel only owns
   // what each row opens, so a dialog outlives the menu that launched it.
   const [merging, setMerging] = useState(false);
+  const [forceSyncing, setForceSyncing] = useState(false);
   const [transferringClient, setTransferringClient] = useState(false);
   const [watchOpen, setWatchOpen] = useState(false);
   const [transferMode, setTransferMode] = useState<'split' | 'move' | null>(null);
@@ -1294,6 +1254,9 @@ export function ProjectDetailPanel({
           )}
         </div>
         {merging && <MergeProjectModal project={project} onClose={() => setMerging(false)} />}
+        {forceSyncing && (
+          <ForceSyncModal project={project} currency={currency} onClose={() => setForceSyncing(false)} />
+        )}
         {/* The new client reaches the header through the board cache the
             modal writes on success — nothing to hand back here. */}
         {transferringClient && (
@@ -1496,6 +1459,7 @@ export function ProjectDetailPanel({
                     canUpdate={canUpdate}
                     canDelete={canDelete}
                     onMerge={() => setMerging(true)}
+                    onForceSync={() => setForceSyncing(true)}
                     onSplit={() => setTransferMode('split')}
                     onMoveTasks={() => setTransferMode('move')}
                     onCopySummary={() => void cardActions.copySummary()}
@@ -1512,6 +1476,7 @@ export function ProjectDetailPanel({
                     shortcutEnabled={
                       !(
                         merging ||
+                        forceSyncing ||
                         transferMode ||
                         transferringClient ||
                         watchOpen ||
