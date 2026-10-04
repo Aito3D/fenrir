@@ -106,6 +106,7 @@ from backend.app.services.bambu_ftp import (
     with_ftp_retry,
 )
 from backend.app.services.bambu_mqtt import PrinterState
+from backend.app.services.camera_light import camera_light
 from backend.app.services.energy_plug import energy_plug_candidates, select_energy_reading
 from backend.app.services.github_backup import github_backup_service
 from backend.app.services.ha_sensor_manager import ha_sensor_manager
@@ -3275,14 +3276,25 @@ async def _finish_photo_for_notification(
     return url, photo_bytes
 
 
-async def _capture_snapshot_for_notification(printer_id: int, printer, logger) -> bytes | None:
+async def _capture_snapshot_for_notification(printer_id: int, printer, logger, *, light: bool = True) -> bytes | None:
     """Capture a camera snapshot for notification image attachment.
 
     Returns JPEG bytes (max 2.5MB) or None if capture fails or is unavailable.
     Uses: external camera > buffered frame > fresh capture.
+
+    Turns the chamber light on for the picture when the printer asks for it
+    (#1655). ``light=False`` is for callers that capture all through a print,
+    where the light would flash with every frame.
     """
     if not printer:
         return None
+
+    async with camera_light(printer if light else None):
+        return await _capture_snapshot_frame(printer_id, printer, logger)
+
+
+async def _capture_snapshot_frame(printer_id: int, printer, logger) -> bytes | None:
+    """The capture behind ``_capture_snapshot_for_notification``."""
 
     try:
         from backend.app.api.routes.settings import get_setting
@@ -3394,8 +3406,9 @@ async def _maybe_bank_inprint_frame(printer_id: int, layer_num: int) -> None:
             return
         # Reuses the notification snapshot path, which honours the
         # `capture_finish_photo` setting (returns None when disabled) so we
-        # don't bank frames the user never asked for.
-        frame = await _capture_snapshot_for_notification(printer_id, printer, logger)
+        # don't bank frames the user never asked for. Without the chamber light
+        # (#1655): this runs every 25 seconds for the whole print.
+        frame = await _capture_snapshot_for_notification(printer_id, printer, logger, light=False)
         if frame:
             _inprint_frame_bank[printer_id] = frame
             _inprint_frame_bank_ts[printer_id] = now
@@ -6459,7 +6472,9 @@ _PLATE_RESTORE_SETTLE_SECONDS = 12.0
 # How long `_background_finish_photo` waits for this producer. Must cover the
 # settle window plus a worst-case RTSP grab (15s), and stay below the
 # notification path's own photo wait so a slow producer degrades to a
-# photo-less notification rather than a missed one.
+# photo-less notification rather than a missed one. The chamber light's
+# snapshot delay (#1655) spends from the spare 8 seconds, which is why
+# camera_light.MAX_DELAY_SECONDS stays below it.
 _FINISH_PHOTO_PRODUCER_WAIT_SECONDS = _PLATE_RESTORE_SETTLE_SECONDS + 23.0
 
 
@@ -6779,51 +6794,54 @@ async def on_finish_photo_moment(printer_id: int, data: dict):
             elif await _restore_plate_for_finish_photo(printer_id, wants_restore, logger):
                 restore_max_z = wants_restore
 
-        if frame_bytes is None and printer.external_camera_enabled and printer.external_camera_url:
-            from backend.app.api.routes.camera import live_frame_for_capture
-            from backend.app.services.external_camera import capture_frame
+        # Chamber light for the live capture below (#1655). The banked frame
+        # above was taken without it, like every in-print bank.
+        async with camera_light(printer if frame_bytes is None else None):
+            if frame_bytes is None and printer.external_camera_enabled and printer.external_camera_url:
+                from backend.app.api.routes.camera import live_frame_for_capture
+                from backend.app.services.external_camera import capture_frame
 
-            # #2707: this used to collide with the live view and fail, which is
-            # how finish-photo notifications went out with no image attached.
-            # Leaving frame_bytes None keeps the rest of the fallback chain.
-            defer, buffered = live_frame_for_capture(printer_id)
-            if defer:
-                frame_bytes = buffered
-            else:
-                frame_bytes = await capture_frame(
-                    printer.external_camera_url,
-                    printer.external_camera_type or "mjpeg",
-                    snapshot_url=printer.external_camera_snapshot_url,
-                )
-            if frame_bytes:
-                logger.info(
-                    "[FINISH-PHOTO-MOMENT] captured external-camera frame (%d bytes)",
-                    len(frame_bytes),
-                )
-        elif frame_bytes is None:
-            from backend.app.api.routes.camera import get_buffered_frame
-
-            buffered = get_buffered_frame(printer_id)
-            if buffered:
-                frame_bytes = buffered
-                logger.info(
-                    "[FINISH-PHOTO-MOMENT] used buffered RTSP frame (%d bytes)",
-                    len(frame_bytes),
-                )
-            else:
-                from backend.app.services.camera import capture_camera_frame_bytes
-
-                frame_bytes = await capture_camera_frame_bytes(
-                    ip_address=printer.ip_address,
-                    access_code=printer.access_code,
-                    model=printer.model,
-                    timeout=15,
-                )
+                # #2707: this used to collide with the live view and fail, which is
+                # how finish-photo notifications went out with no image attached.
+                # Leaving frame_bytes None keeps the rest of the fallback chain.
+                defer, buffered = live_frame_for_capture(printer_id)
+                if defer:
+                    frame_bytes = buffered
+                else:
+                    frame_bytes = await capture_frame(
+                        printer.external_camera_url,
+                        printer.external_camera_type or "mjpeg",
+                        snapshot_url=printer.external_camera_snapshot_url,
+                    )
                 if frame_bytes:
                     logger.info(
-                        "[FINISH-PHOTO-MOMENT] captured RTSP frame (%d bytes)",
+                        "[FINISH-PHOTO-MOMENT] captured external-camera frame (%d bytes)",
                         len(frame_bytes),
                     )
+            elif frame_bytes is None:
+                from backend.app.api.routes.camera import get_buffered_frame
+
+                buffered = get_buffered_frame(printer_id)
+                if buffered:
+                    frame_bytes = buffered
+                    logger.info(
+                        "[FINISH-PHOTO-MOMENT] used buffered RTSP frame (%d bytes)",
+                        len(frame_bytes),
+                    )
+                else:
+                    from backend.app.services.camera import capture_camera_frame_bytes
+
+                    frame_bytes = await capture_camera_frame_bytes(
+                        ip_address=printer.ip_address,
+                        access_code=printer.access_code,
+                        model=printer.model,
+                        timeout=15,
+                    )
+                    if frame_bytes:
+                        logger.info(
+                            "[FINISH-PHOTO-MOMENT] captured RTSP frame (%d bytes)",
+                            len(frame_bytes),
+                        )
 
         if frame_bytes:
             if not frame_already_rotated:
@@ -8152,63 +8170,67 @@ async def on_print_complete(printer_id: int, data: dict):
             # Fallback chain: external camera → buffered live frame →
             # fresh RTSP capture. Only runs if the timelapse path above
             # didn't already produce a photo.
-            if not photo_filename:
-                if printer.external_camera_enabled and printer.external_camera_url:
-                    logger.info("[PHOTO-BG] Using external camera")
-                    from backend.app.api.routes.camera import live_frame_for_capture
-                    from backend.app.services.external_camera import capture_frame
+            # Chamber light for the live capture below (#1655).
+            async with camera_light(printer if not photo_filename else None):
+                if not photo_filename:
+                    if printer.external_camera_enabled and printer.external_camera_url:
+                        logger.info("[PHOTO-BG] Using external camera")
+                        from backend.app.api.routes.camera import live_frame_for_capture
+                        from backend.app.services.external_camera import capture_frame
 
-                    # #2707: the second half of the finish-photo failure — the
-                    # pre-capture and this fallback both collided with the live
-                    # view. None here continues down the fallback chain.
-                    defer, buffered = live_frame_for_capture(printer_id)
-                    if defer:
-                        frame_data = buffered
+                        # #2707: the second half of the finish-photo failure — the
+                        # pre-capture and this fallback both collided with the live
+                        # view. None here continues down the fallback chain.
+                        defer, buffered = live_frame_for_capture(printer_id)
+                        if defer:
+                            frame_data = buffered
+                        else:
+                            frame_data = await capture_frame(
+                                printer.external_camera_url,
+                                printer.external_camera_type or "mjpeg",
+                                snapshot_url=printer.external_camera_snapshot_url,
+                            )
+                        if frame_data:
+                            frame_data = _apply_camera_rotation(frame_data, printer, logger)
+                            photos_dir = archive_dir / "photos"
+                            photos_dir.mkdir(parents=True, exist_ok=True)
+                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                            photo_filename = f"finish_{timestamp}_{uuid.uuid4().hex[:8]}.jpg"
+                            photo_path = photos_dir / photo_filename
+                            await asyncio.to_thread(photo_path.write_bytes, frame_data)
+                            logger.info("[PHOTO-BG] Saved external camera frame: %s", photo_filename)
                     else:
-                        frame_data = await capture_frame(
-                            printer.external_camera_url,
-                            printer.external_camera_type or "mjpeg",
-                            snapshot_url=printer.external_camera_snapshot_url,
-                        )
-                    if frame_data:
-                        frame_data = _apply_camera_rotation(frame_data, printer, logger)
-                        photos_dir = archive_dir / "photos"
-                        photos_dir.mkdir(parents=True, exist_ok=True)
-                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        photo_filename = f"finish_{timestamp}_{uuid.uuid4().hex[:8]}.jpg"
-                        photo_path = photos_dir / photo_filename
-                        await asyncio.to_thread(photo_path.write_bytes, frame_data)
-                        logger.info("[PHOTO-BG] Saved external camera frame: %s", photo_filename)
-                else:
-                    # Check if camera stream is active - use buffered frame to avoid freeze
-                    # Check both RTSP streams (_active_streams) and chamber image streams (_active_chamber_streams)
-                    active_for_printer = [k for k in _active_streams if k.startswith(f"{printer_id}-")]
-                    active_chamber_for_printer = [k for k in _active_chamber_streams if k.startswith(f"{printer_id}-")]
-                    buffered_frame = get_buffered_frame(printer_id)
+                        # Check if camera stream is active - use buffered frame to avoid freeze
+                        # Check both RTSP streams (_active_streams) and chamber image streams (_active_chamber_streams)
+                        active_for_printer = [k for k in _active_streams if k.startswith(f"{printer_id}-")]
+                        active_chamber_for_printer = [
+                            k for k in _active_chamber_streams if k.startswith(f"{printer_id}-")
+                        ]
+                        buffered_frame = get_buffered_frame(printer_id)
 
-                    if (active_for_printer or active_chamber_for_printer) and buffered_frame:
-                        # Use frame from active stream
-                        logger.info("[PHOTO-BG] Using buffered frame from active stream")
-                        buffered_frame = _apply_camera_rotation(buffered_frame, printer, logger)
-                        photos_dir = archive_dir / "photos"
-                        photos_dir.mkdir(parents=True, exist_ok=True)
-                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        photo_filename = f"finish_{timestamp}_{uuid.uuid4().hex[:8]}.jpg"
-                        photo_path = photos_dir / photo_filename
-                        await asyncio.to_thread(photo_path.write_bytes, buffered_frame)
-                        logger.info("[PHOTO-BG] Saved buffered frame: %s", photo_filename)
-                    else:
-                        # No active stream - capture new frame
-                        from backend.app.services.camera import capture_finish_photo
+                        if (active_for_printer or active_chamber_for_printer) and buffered_frame:
+                            # Use frame from active stream
+                            logger.info("[PHOTO-BG] Using buffered frame from active stream")
+                            buffered_frame = _apply_camera_rotation(buffered_frame, printer, logger)
+                            photos_dir = archive_dir / "photos"
+                            photos_dir.mkdir(parents=True, exist_ok=True)
+                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                            photo_filename = f"finish_{timestamp}_{uuid.uuid4().hex[:8]}.jpg"
+                            photo_path = photos_dir / photo_filename
+                            await asyncio.to_thread(photo_path.write_bytes, buffered_frame)
+                            logger.info("[PHOTO-BG] Saved buffered frame: %s", photo_filename)
+                        else:
+                            # No active stream - capture new frame
+                            from backend.app.services.camera import capture_finish_photo
 
-                        photo_filename = await capture_finish_photo(
-                            printer_id=printer_id,
-                            ip_address=printer.ip_address,
-                            access_code=printer.access_code,
-                            model=printer.model,
-                            archive_dir=archive_dir,
-                            rotation=getattr(printer, "camera_rotation", 0),
-                        )
+                            photo_filename = await capture_finish_photo(
+                                printer_id=printer_id,
+                                ip_address=printer.ip_address,
+                                access_code=printer.access_code,
+                                model=printer.model,
+                                archive_dir=archive_dir,
+                                rotation=getattr(printer, "camera_rotation", 0),
+                            )
 
             # Write phase: attach the photo in a fresh short-lived session.
             if photo_filename:

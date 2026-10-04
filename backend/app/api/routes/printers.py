@@ -49,7 +49,7 @@ from backend.app.schemas.printer import (
     PrintOptionsResponse,
     hms_error_responses,
 )
-from backend.app.services import drying_preflight, kprofile_drift
+from backend.app.services import camera_light as camera_light_service, drying_preflight, kprofile_drift
 from backend.app.services.bambu_ftp import (
     cache_3mf_download,
     delete_file_async,
@@ -3946,6 +3946,8 @@ async def set_chamber_light(
     success = client.set_chamber_light(on)
     if not success:
         raise HTTPException(500, "Failed to control chamber light")
+    # The light is the user's now; the camera must not switch it off (#1655).
+    camera_light_service.hand_back(printer_id)
 
     return {"success": True, "message": f"Chamber light {'on' if on else 'off'}"}
 

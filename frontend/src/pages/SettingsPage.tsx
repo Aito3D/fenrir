@@ -1,5 +1,5 @@
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Plus, Plug, AlertTriangle, RotateCcw, Bell, Download, RefreshCw, ExternalLink, Globe, Droplets, Thermometer, FileText, Edit2, Pencil, Send, CheckCircle, XCircle, History, Trash2, Zap, TrendingUp, Calendar, DollarSign, Power, PowerOff, Key, Copy, Database, X, Shield, Printer, Cylinder, Wifi, Home, Video, Users, Lock, Unlock, ChevronDown, Save, Mail, Flame, Layers, ListOrdered, Code, Search, Scale, Settings as SettingsIcon, ScanEye, Cog, QrCode, Heart, Briefcase, Workflow, UploadCloud, MonitorPlay } from 'lucide-react';
+import { Loader2, Plus, Plug, AlertTriangle, RotateCcw, Bell, Download, RefreshCw, ExternalLink, Globe, Droplets, Thermometer, FileText, Edit2, Pencil, Send, CheckCircle, XCircle, History, Trash2, Zap, TrendingUp, Calendar, DollarSign, Power, PowerOff, Key, Copy, Database, X, Shield, Printer, Cylinder, Wifi, Home, Video, Users, Lock, Unlock, ChevronDown, Save, Mail, Flame, Layers, ListOrdered, Code, Search, Scale, Settings as SettingsIcon, ScanEye, Cog, QrCode, Heart, Briefcase, Workflow, UploadCloud, MonitorPlay, Info } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
@@ -18,7 +18,7 @@ import {
 } from '../utils/locationSensorDefaults';
 import { describeHASensorReading, iconForHASensor } from '../utils/haSensorDisplay';
 import { PreheatFilamentTargetsEditor } from '../components/PreheatFilamentTargetsEditor';
-import type { APIKey, AppSettings, AppSettingsUpdate, PrinterHASensor, LocationHASensor, LocationHASensorReading, SmartPlug, SmartPlugStatus, NotificationProvider, NotificationTemplate, UpdateStatus, GitHubBackupStatus, CloudAuthStatus, UserCreate, UserUpdate, UserResponse, StorageUsageResponse, CalibrationMode } from '../api/client';
+import type { Printer as PrinterInfo, APIKey, AppSettings, AppSettingsUpdate, PrinterHASensor, LocationHASensor, LocationHASensorReading, SmartPlug, SmartPlugStatus, NotificationProvider, NotificationTemplate, UpdateStatus, GitHubBackupStatus, CloudAuthStatus, UserCreate, UserUpdate, UserResponse, StorageUsageResponse, CalibrationMode } from '../api/client';
 import { Card, CardContent, CardDensityProvider, CardHeader } from '../components/Card';
 import { SlicerPipelinesPanel } from '../components/SlicerPipelinesPanel';
 import { CameraTokensSection } from './CameraTokensPage';
@@ -65,6 +65,7 @@ import { registerSettingsSearch, getSettingsSearchEntries } from '../lib/setting
 import type { UsersSubTab } from '../lib/settingsSearch';
 import { availableEngines, hasEngineChoice, resolveEngine, type SliceEngineId } from '../lib/sliceEngines';
 import { NumberInput } from '../components/NumberInput';
+import { PrinterSearchPicker } from '../components/PrinterSearchPicker';
 
 const validTabs = ['general', 'plugs', 'sensors', 'notifications', 'queue', 'filament', 'camera', 'network', 'apikeys', 'virtual-printer', 'spoolbuddy', 'failure-detection', 'users', 'backup'] as const;
 type TabType = typeof validTabs[number];
@@ -76,7 +77,7 @@ interface SettingsTabEntry { tab: TabType; icon: LucideIcon; label: string; extr
 registerSettingsSearch({ labelKey: 'settings.general', tab: 'general', keywords: 'language date time format printer model printers cards', anchor: 'card-general' });
 registerSettingsSearch({ labelKey: 'settings.appearance', tab: 'general', keywords: 'theme dark light mode colors', anchor: 'card-appearance' });
 registerSettingsSearch({ labelKey: 'settings.archiveSettings', tab: 'general', keywords: 'archive auto save thumbnails captures', anchor: 'card-archive' });
-registerSettingsSearch({ labelKey: 'settings.camera', tab: 'camera', keywords: 'camera external video stream rtsp mjpeg usb snapshot rotation', anchor: 'card-camera' });
+registerSettingsSearch({ labelKey: 'settings.camera', tab: 'camera', keywords: 'camera external video stream rtsp mjpeg usb snapshot rotation chamber light led lamp', anchor: 'card-camera' });
 registerSettingsSearch({ labelKey: 'settings.costTracking', tab: 'general', keywords: 'currency filament cost energy kwh price', anchor: 'card-cost' });
 registerSettingsSearch({ labelKey: 'settings.fileManager', tab: 'general', keywords: 'file manager archive mode disk warning storage', anchor: 'card-filemanager' });
 registerSettingsSearch({ labelKey: 'settings.updates', tab: 'general', keywords: 'updates version firmware beta check', anchor: 'card-updates' });
@@ -198,6 +199,23 @@ function describeLocationSensorValue(
 ): string | null {
   if (!reading) return null;
   return describeHASensorReading(reading, t, { decimals: 2 });
+}
+
+// Chamber light for the camera (#1655), in the order the choice is shown.
+const CAMERA_LIGHT_MODES = ['off', 'all', 'selected'] as const;
+
+/** Closed-row hint for an external camera: its type and where it points. */
+function externalCameraSummary(printer: PrinterInfo): string {
+  const type = (printer.external_camera_type || 'mjpeg').toUpperCase();
+  const url = printer.external_camera_url || '';
+  if (!url) return type;
+  let where = url;
+  try {
+    where = new URL(url).host || url;
+  } catch {
+    // A USB device path or an unfinished URL: show it as typed.
+  }
+  return `${type} · ${where}`;
 }
 
 export function SettingsPage() {
@@ -1134,7 +1152,7 @@ export function SettingsPage() {
   });
 
   const updatePrinterMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: Partial<{ external_camera_url: string | null; external_camera_type: string | null; external_camera_enabled: boolean; external_camera_snapshot_url: string | null; camera_rotation: number }> }) =>
+    mutationFn: ({ id, data }: { id: number; data: Partial<{ external_camera_url: string | null; external_camera_type: string | null; external_camera_enabled: boolean; external_camera_snapshot_url: string | null; camera_rotation: number; camera_light_auto: boolean }> }) =>
       api.updatePrinter(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['printers'] });
@@ -1215,6 +1233,8 @@ export function SettingsPage() {
       baseline.ha_token !== localSettings.ha_token ||
       (baseline.library_archive_mode ?? 'ask') !== (localSettings.library_archive_mode ?? 'ask') ||
       Number(baseline.library_disk_warning_gb ?? 5) !== Number(localSettings.library_disk_warning_gb ?? 5) ||
+      (baseline.camera_light_mode ?? 'off') !== (localSettings.camera_light_mode ?? 'off') ||
+      Number(baseline.camera_light_delay ?? 2) !== Number(localSettings.camera_light_delay ?? 2) ||
       (baseline.preferred_slicer ?? 'bambu_studio') !== (localSettings.preferred_slicer ?? 'bambu_studio') ||
       resolveEngine(baseline.slice_engine) !== resolveEngine(localSettings.slice_engine) ||
       (baseline.open_in_slicer ?? null) !== (localSettings.open_in_slicer ?? null) ||
@@ -1333,6 +1353,8 @@ export function SettingsPage() {
         ha_token: localSettings.ha_token,
         library_archive_mode: localSettings.library_archive_mode,
         library_disk_warning_gb: localSettings.library_disk_warning_gb,
+        camera_light_mode: localSettings.camera_light_mode,
+        camera_light_delay: localSettings.camera_light_delay,
         preferred_slicer: localSettings.preferred_slicer,
         slice_engine: localSettings.slice_engine,
         open_in_slicer: localSettings.open_in_slicer,
@@ -1433,6 +1455,7 @@ export function SettingsPage() {
   const initializedPrinterUrlsRef = useRef<Set<number>>(new Set());
   const [localSnapshotUrls, setLocalSnapshotUrls] = useState<Record<number, string>>({});
   const snapshotUrlSaveTimeoutRef = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
+  const [openCameraPrinterId, setOpenCameraPrinterId] = useState<number | null>(null);
   const initializedPrinterSnapshotUrlsRef = useRef<Set<number>>(new Set());
 
   // Initialize local camera URLs from printer data
@@ -1492,11 +1515,12 @@ export function SettingsPage() {
     }, 800);
   };
 
-  const handleUpdatePrinterCamera = (printerId: number, updates: { type?: string; enabled?: boolean; rotation?: number }) => {
-    const data: Partial<{ external_camera_type: string | null; external_camera_enabled: boolean; camera_rotation: number }> = {};
+  const handleUpdatePrinterCamera = (printerId: number, updates: { type?: string; enabled?: boolean; rotation?: number; lightAuto?: boolean }) => {
+    const data: Partial<{ external_camera_type: string | null; external_camera_enabled: boolean; camera_rotation: number; camera_light_auto: boolean }> = {};
     if (updates.type !== undefined) data.external_camera_type = updates.type || null;
     if (updates.enabled !== undefined) data.external_camera_enabled = updates.enabled;
     if (updates.rotation !== undefined) data.camera_rotation = updates.rotation;
+    if (updates.lightAuto !== undefined) data.camera_light_auto = updates.lightAuto;
     updatePrinterMutation.mutate({ id: printerId, data });
   };
 
@@ -1555,6 +1579,10 @@ export function SettingsPage() {
   const composeUpdateCommand = composeDir
     ? `cd ${/\s/.test(composeDir) ? `"${composeDir}"` : composeDir} && docker compose pull && docker compose up -d`
     : 'docker compose pull && docker compose up -d';
+
+  const cameraLightMode = localSettings.camera_light_mode ?? 'off';
+  const lightPrinters = (printers ?? []).filter(p => p.camera_light_auto);
+  const externalCameraPrinters = (printers ?? []).filter(p => p.external_camera_enabled);
 
   const countBadge = (count: number) => count > 0 && (
     <span className="text-xs bg-bambu-dark-tertiary px-1.5 py-0.5 rounded-full shrink-0">{count}</span>
@@ -4207,129 +4235,234 @@ export function SettingsPage() {
                     per stream instead of once for the whole install. The stored
                     setting stays as the default a fresh browser starts from. */}
 
-                {/* External Cameras Section */}
-                <div>
-                  <h3 className="text-sm font-medium text-white mb-2">{t('settings.externalCameras')}</h3>
-                  <p className="text-xs text-bambu-gray mb-3">
-                    {t('settings.externalCamerasDescription')}
-                  </p>
+                {/* Chamber light for the camera (#1655): one setting for the whole
+                    install, with a printer list only for "Selected printers".
+                    Nothing here grows with the number of printers. */}
+                <section className="space-y-2">
+                  <div>
+                    <h3 className="text-sm font-medium text-white">{t('settings.cameraLight')}</h3>
+                    <p className="text-xs text-bambu-gray">{t('settings.cameraLightHint')}</p>
+                  </div>
+                  <div role="radiogroup" aria-label={t('settings.cameraLight')} className="inline-flex rounded-lg border border-bambu-dark-tertiary overflow-hidden">
+                    {CAMERA_LIGHT_MODES.map(mode => (
+                      <label key={mode} className="cursor-pointer">
+                        <input
+                          type="radio"
+                          name="camera-light-mode"
+                          value={mode}
+                          checked={cameraLightMode === mode}
+                          onChange={() => updateSetting('camera_light_mode', mode)}
+                          className="sr-only peer"
+                        />
+                        <span className="block px-3 py-1.5 text-xs text-bambu-gray peer-checked:bg-bambu-green peer-checked:text-white peer-focus-visible:ring-2 peer-focus-visible:ring-inset peer-focus-visible:ring-white hover:text-white">
+                          {t(`settings.cameraLightMode_${mode}`)}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                  {cameraLightMode !== 'off' && (
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <label htmlFor="camera-light-delay" className="text-xs text-bambu-gray">{t('settings.cameraLightDelay')}</label>
+                        <NumberInput
+                          id="camera-light-delay"
+                          min={0}
+                          max={5}
+                          step="0.5"
+                          integer={false}
+                          fallback={2}
+                          value={localSettings.camera_light_delay ?? 2}
+                          onChange={(v) => updateSetting('camera_light_delay', v)}
+                          className="w-16 px-2 py-1 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-white text-xs text-center focus:border-bambu-green focus:outline-none"
+                        />
+                        <span className="text-xs text-bambu-gray">{t('settings.cameraLightDelayUnit')}</span>
+                      </div>
+                      <p className="text-xs text-bambu-gray opacity-75 mt-1">{t('settings.cameraLightDelayHint')}</p>
+                    </div>
+                  )}
+                  {cameraLightMode === 'selected' && (
+                    <div className="flex flex-wrap items-center gap-1.5" data-testid="camera-light-printers">
+                      {lightPrinters.length === 0 && (
+                        <span className="text-xs text-bambu-gray italic">{t('settings.cameraLightNoneSelected')}</span>
+                      )}
+                      {lightPrinters.map(printer => (
+                        <span key={printer.id} className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-full bg-bambu-dark-tertiary text-xs text-white">
+                          {printer.name}
+                          <button
+                            type="button"
+                            onClick={() => handleUpdatePrinterCamera(printer.id, { lightAuto: false })}
+                            aria-label={t('settings.cameraLightRemovePrinter', { name: printer.name })}
+                            className="p-0.5 rounded-full text-bambu-gray hover:text-white"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </span>
+                      ))}
+                      <PrinterSearchPicker
+                        printers={(printers ?? []).filter(p => !p.camera_light_auto)}
+                        onPick={(p) => handleUpdatePrinterCamera(p.id, { lightAuto: true })}
+                        label={t('settings.cameraLightAddPrinter')}
+                      />
+                    </div>
+                  )}
+                </section>
 
-                  {printers && printers.length > 0 ? (
-                    <div className="space-y-3">
-                      {printers.map(printer => (
-                        <div key={printer.id} className="p-3 bg-bambu-dark rounded-lg">
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="text-white font-medium text-sm">{printer.name}</span>
-                            <label className="relative inline-flex items-center cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={printer.external_camera_enabled}
-                                onChange={(e) => handleUpdatePrinterCamera(printer.id, { enabled: e.target.checked })}
-                                className="sr-only peer"
-                              />
-                              <div className="w-9 h-5 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-bambu-green"></div>
-                            </label>
-                          </div>
+                {/* External cameras: only the printers that have one, so a farm
+                    sees a handful of rows, not every printer it owns. */}
+                <section className="space-y-2 pt-4 border-t border-bambu-dark-tertiary">
+                  <div>
+                    <h3 className="text-sm font-medium text-white">{t('settings.externalCameras')}</h3>
+                    <p className="text-xs text-bambu-gray">{t('settings.externalCamerasDescription')}</p>
+                  </div>
+                  {externalCameraPrinters.length > 0 && (
+                    <div className="rounded-lg border border-bambu-dark-tertiary" data-testid="external-camera-list">
+                      {externalCameraPrinters.map(printer => {
+                        const isOpen = openCameraPrinterId === printer.id;
+                        const summary = externalCameraSummary(printer);
+                        return (
+                          <div key={printer.id} className="border-b border-bambu-dark-tertiary last:border-b-0">
+                            <div className="flex items-center gap-2 px-2 py-1.5">
+                              <button
+                                type="button"
+                                onClick={() => setOpenCameraPrinterId(isOpen ? null : printer.id)}
+                                aria-expanded={isOpen}
+                                aria-label={`${t('settings.cameraShowSettings')}: ${printer.name}`}
+                                className="flex flex-1 min-w-0 items-center gap-2 text-left"
+                              >
+                                <span className="min-w-0 flex-1">
+                                  <span className="block text-sm text-white truncate">{printer.name}</span>
+                                  <span className="block text-[11px] text-bambu-gray truncate" title={summary}>{summary}</span>
+                                </span>
+                                <ChevronDown className={`w-4 h-4 shrink-0 text-bambu-gray transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  handleUpdatePrinterCamera(printer.id, { enabled: false });
+                                  if (isOpen) setOpenCameraPrinterId(null);
+                                }}
+                                aria-label={t('settings.externalCameraRemove', { name: printer.name })}
+                                title={t('settings.externalCameraRemove', { name: printer.name })}
+                                className="p-1 rounded text-bambu-gray hover:text-red-400"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
 
-                          {printer.external_camera_enabled && (
-                            <div className="space-y-2 mt-2">
-                              <input
-                                type="text"
-                                placeholder={printer.external_camera_type === 'usb' ? t('settings.cameraPlaceholderUsb') : t('settings.cameraPlaceholderUrl')}
-                                value={localCameraUrls[printer.id] ?? printer.external_camera_url ?? ''}
-                                onChange={(e) => handleCameraUrlChange(printer.id, e.target.value)}
-                                className="w-full px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-white text-sm focus:border-bambu-green focus:outline-none"
-                              />
-                              <div className="flex gap-2">
-                                <select
-                                  value={printer.external_camera_type || 'mjpeg'}
-                                  onChange={(e) => handleUpdatePrinterCamera(printer.id, { type: e.target.value })}
-                                  className="flex-1 px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-white text-sm focus:border-bambu-green focus:outline-none"
-                                >
-                                  <option value="mjpeg">{t('settings.cameraTypeMjpeg')}</option>
-                                  <option value="rtsp">{t('settings.cameraTypeRtsp')}</option>
-                                  <option value="snapshot">{t('settings.cameraTypeSnapshot')}</option>
-                                  <option value="usb">{t('settings.cameraTypeUsb')}</option>
-                                </select>
-                                <Button
-                                  size="sm"
-                                  variant="secondary"
-                                  onClick={() => handleTestExternalCamera(printer.id, localCameraUrls[printer.id] ?? printer.external_camera_url ?? '', printer.external_camera_type || 'mjpeg')}
-                                  disabled={extCameraTestLoading[printer.id] || !(localCameraUrls[printer.id] ?? printer.external_camera_url)}
-                                >
-                                  {extCameraTestLoading[printer.id] ? (
-                                    <Loader2 className="w-4 h-4 animate-spin" />
-                                  ) : (
-                                    t('settings.test')
-                                  )}
-                                </Button>
-                              </div>
-                              {extCameraTestResults[printer.id] && (
-                                <div className={`text-xs flex items-center gap-1 ${extCameraTestResults[printer.id]?.success ? 'text-green-500' : 'text-red-500'}`}>
-                                  {extCameraTestResults[printer.id]?.success ? (
-                                    <>
-                                      <CheckCircle className="w-3 h-3" />
-                                      {t('settings.connected')}{extCameraTestResults[printer.id]?.resolution && ` (${extCameraTestResults[printer.id]?.resolution})`}
-                                    </>
-                                  ) : (
-                                    <>
-                                      <XCircle className="w-3 h-3" />
-                                      {extCameraTestResults[printer.id]?.error || t('settings.toast.connectionFailed')}
-                                    </>
-                                  )}
-                                </div>
-                              )}
-                              {(printer.external_camera_type === 'mjpeg' || printer.external_camera_type === 'rtsp' || printer.external_camera_type === 'usb') && (
-                                <div className="space-y-1">
-                                  <label className="text-xs text-bambu-gray">{t('settings.cameraSnapshotUrl', 'Snapshot URL (optional)')}</label>
-                                  <div className="flex gap-2">
-                                    <input
-                                      type="text"
-                                      placeholder={t('settings.cameraSnapshotUrlPlaceholder', 'http://192.168.1.61:1984/api/frame.jpeg?src=printer')}
-                                      value={localSnapshotUrls[printer.id] ?? printer.external_camera_snapshot_url ?? ''}
-                                      onChange={(e) => handleSnapshotUrlChange(printer.id, e.target.value)}
-                                      className="flex-1 px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-white text-sm focus:border-bambu-green focus:outline-none"
-                                    />
-                                    <Button
-                                      size="sm"
-                                      variant="secondary"
-                                      onClick={() => handleTestExternalCamera(printer.id, localSnapshotUrls[printer.id] ?? printer.external_camera_snapshot_url ?? '', 'snapshot')}
-                                      disabled={extCameraTestLoading[printer.id] || !(localSnapshotUrls[printer.id] ?? printer.external_camera_snapshot_url)}
-                                    >
-                                      {extCameraTestLoading[printer.id] ? (
-                                        <Loader2 className="w-4 h-4 animate-spin" />
-                                      ) : (
-                                        t('settings.test')
-                                      )}
-                                    </Button>
-                                  </div>
-                                  <p className="text-xs text-bambu-gray opacity-75">
-                                    {t('settings.cameraSnapshotUrlHelp', 'Single-frame URL used for notification thumbnails, finish photos, timelapse and plate detection. Leave blank to capture from the live stream above. Useful for go2rtc (/api/frame.jpeg) and IP cameras with a dedicated snapshot endpoint.')}
-                                  </p>
-                                </div>
-                              )}
-                              <div className="flex items-center gap-2">
-                                <label className="text-xs text-bambu-gray">{t('settings.cameraRotation')}</label>
+                            {isOpen && (
+                          <div className="space-y-2 px-2 pb-3 pt-1 bg-bambu-dark/40">
+                            <input
+                              type="text"
+                              aria-label={`${t('settings.cameraPlaceholderUrl')}: ${printer.name}`}
+                              placeholder={printer.external_camera_type === 'usb' ? t('settings.cameraPlaceholderUsb') : t('settings.cameraPlaceholderUrl')}
+                              value={localCameraUrls[printer.id] ?? printer.external_camera_url ?? ''}
+                              onChange={(e) => handleCameraUrlChange(printer.id, e.target.value)}
+                              className="w-full px-2 py-1.5 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-white text-sm focus:border-bambu-green focus:outline-none"
+                            />
+                            <div className="flex flex-wrap items-center gap-2">
+                              <select
+                                value={printer.external_camera_type || 'mjpeg'}
+                                onChange={(e) => handleUpdatePrinterCamera(printer.id, { type: e.target.value })}
+                                className="flex-1 min-w-0 px-2 py-1.5 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-white text-sm focus:border-bambu-green focus:outline-none"
+                              >
+                                <option value="mjpeg">{t('settings.cameraTypeMjpeg')}</option>
+                                <option value="rtsp">{t('settings.cameraTypeRtsp')}</option>
+                                <option value="snapshot">{t('settings.cameraTypeSnapshot')}</option>
+                                <option value="usb">{t('settings.cameraTypeUsb')}</option>
+                              </select>
+                              <label className="flex items-center gap-1 text-xs text-bambu-gray">
+                                {t('settings.cameraRotation')}
                                 <select
                                   value={printer.camera_rotation || 0}
                                   onChange={(e) => handleUpdatePrinterCamera(printer.id, { rotation: parseInt(e.target.value) })}
-                                  className="px-2 py-1 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-white text-xs focus:border-bambu-green focus:outline-none"
+                                  className="px-1.5 py-1 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-white text-xs focus:border-bambu-green focus:outline-none"
                                 >
                                   <option value={0}>0°</option>
                                   <option value={90}>90°</option>
                                   <option value={180}>180°</option>
                                   <option value={270}>270°</option>
                                 </select>
-                              </div>
+                              </label>
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => handleTestExternalCamera(printer.id, localCameraUrls[printer.id] ?? printer.external_camera_url ?? '', printer.external_camera_type || 'mjpeg')}
+                                disabled={extCameraTestLoading[printer.id] || !(localCameraUrls[printer.id] ?? printer.external_camera_url)}
+                              >
+                                {extCameraTestLoading[printer.id] ? (
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                ) : (
+                                  t('settings.test')
+                                )}
+                              </Button>
                             </div>
-                          )}
-                        </div>
-                      ))}
+                            {extCameraTestResults[printer.id] && (
+                              <div className={`text-xs flex items-center gap-1 ${extCameraTestResults[printer.id]?.success ? 'text-green-500' : 'text-red-500'}`}>
+                                {extCameraTestResults[printer.id]?.success ? (
+                                  <>
+                                    <CheckCircle className="w-3 h-3" />
+                                    {t('settings.connected')}{extCameraTestResults[printer.id]?.resolution && ` (${extCameraTestResults[printer.id]?.resolution})`}
+                                  </>
+                                ) : (
+                                  <>
+                                    <XCircle className="w-3 h-3" />
+                                    {extCameraTestResults[printer.id]?.error || t('settings.toast.connectionFailed')}
+                                  </>
+                                )}
+                              </div>
+                            )}
+                            {(printer.external_camera_type === 'mjpeg' || printer.external_camera_type === 'rtsp' || printer.external_camera_type === 'usb') && (
+                              <div className="space-y-1">
+                                <label className="text-xs text-bambu-gray flex items-center gap-1">
+                                  {t('settings.cameraSnapshotUrl', 'Snapshot URL (optional)')}
+                                  <span title={t('settings.cameraSnapshotUrlHelp')} className="cursor-help" aria-label={t('settings.cameraSnapshotUrlHelp')}>
+                                    <Info className="w-3 h-3" />
+                                  </span>
+                                </label>
+                                <div className="flex gap-2">
+                                  <input
+                                    type="text"
+                                    placeholder={t('settings.cameraSnapshotUrlPlaceholder', 'http://192.168.1.61:1984/api/frame.jpeg?src=printer')}
+                                    value={localSnapshotUrls[printer.id] ?? printer.external_camera_snapshot_url ?? ''}
+                                    onChange={(e) => handleSnapshotUrlChange(printer.id, e.target.value)}
+                                    className="flex-1 min-w-0 px-2 py-1.5 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-white text-sm focus:border-bambu-green focus:outline-none"
+                                  />
+                                  <Button
+                                    size="sm"
+                                    variant="secondary"
+                                    onClick={() => handleTestExternalCamera(printer.id, localSnapshotUrls[printer.id] ?? printer.external_camera_snapshot_url ?? '', 'snapshot')}
+                                    disabled={extCameraTestLoading[printer.id] || !(localSnapshotUrls[printer.id] ?? printer.external_camera_snapshot_url)}
+                                  >
+                                    {extCameraTestLoading[printer.id] ? (
+                                      <Loader2 className="w-4 h-4 animate-spin" />
+                                    ) : (
+                                      t('settings.test')
+                                    )}
+                                  </Button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
+                  )}
+                  {printers && printers.length > 0 ? (
+                    <PrinterSearchPicker
+                      printers={printers.filter(p => !p.external_camera_enabled)}
+                      onPick={(p) => {
+                        handleUpdatePrinterCamera(p.id, { enabled: true });
+                        // A camera just added needs its URL next.
+                        setOpenCameraPrinterId(p.id);
+                      }}
+                      label={t('settings.externalCameraAdd')}
+                    />
                   ) : (
                     <p className="text-xs text-bambu-gray italic">{t('settings.noPrintersConfigured')}</p>
                   )}
-                </div>
+                </section>
               </CardContent>
             </Card>
 

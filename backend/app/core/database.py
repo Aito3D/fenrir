@@ -5236,6 +5236,17 @@ async def run_migrations(conn):
     # Nullable: existing rows have none and keep being shown as before.
     await _safe_execute(conn, "ALTER TABLE slot_preset_mappings ADD COLUMN tray_info_idx VARCHAR(32)")
 
+    # Migration: printers picked for the chamber light while the camera is in
+    # use (#1655), for camera_light_mode "selected". Off by default, so no
+    # printer's light changes on upgrade. The backfill covers a table
+    # create_all() already gave the column (the ALTER is then swallowed and
+    # existing rows keep NULL).
+    await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN camera_light_auto BOOLEAN DEFAULT FALSE")
+    async with conn.begin_nested():
+        await conn.execute(
+            text("UPDATE printers SET camera_light_auto = :off WHERE camera_light_auto IS NULL"), {"off": False}
+        )
+
 
 async def _migrate_confirm_prompt_body_template(conn) -> None:
     """Replace the one-tap verdict URLs in the outcome prompt's body (#1898).
