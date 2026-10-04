@@ -2877,6 +2877,93 @@ async def delete_timelapse(
     return {"status": "deleted"}
 
 
+async def _pull_and_attach_timelapse(
+    printer, archive_id: int, remote_path: str, name: str, expected_size: int | None
+) -> dict:
+    """Download a timelapse from the printer, attach it, then delete the original.
+
+    Shared by the automatic scan and the manual selection. In order: the
+    download (with the configured FTP retries), a check that the printer has
+    finished writing the file (#2704), the attach in a fresh short session, and
+    only then the delete on the printer -- a size-verified transfer committed to
+    the archive is the only thing that makes removing the original safe.
+    Raises HTTPException 500 on a failed download or attach, 409 while the
+    printer is still writing.
+    """
+    from backend.app.core.database import async_session
+    from backend.app.services.bambu_ftp import (
+        delete_archived_timelapse,
+        download_file_bytes_async,
+        get_ftp_retry_settings,
+        remote_file_settled,
+        with_ftp_retry,
+    )
+
+    ftp_retry_enabled, ftp_retry_count, ftp_retry_delay, ftp_timeout = await get_ftp_retry_settings()
+
+    if ftp_retry_enabled:
+        timelapse_data = await with_ftp_retry(
+            download_file_bytes_async,
+            printer.ip_address,
+            printer.access_code,
+            remote_path,
+            socket_timeout=ftp_timeout,
+            printer_model=printer.model,
+            expected_size=expected_size,
+            max_retries=ftp_retry_count,
+            retry_delay=ftp_retry_delay,
+            operation_name=f"Download timelapse {name}",
+            cooloff_ip=printer.ip_address,
+        )
+    else:
+        timelapse_data = await download_file_bytes_async(
+            printer.ip_address,
+            printer.access_code,
+            remote_path,
+            socket_timeout=ftp_timeout,
+            printer_model=printer.model,
+            expected_size=expected_size,
+        )
+
+    if not timelapse_data:
+        raise HTTPException(500, "Failed to download timelapse")
+
+    # Confirm the printer has finished writing before we commit to this file and
+    # delete the original: matching the listing's size proves we got what it
+    # said, not that the file was complete (#2704).
+    if not await remote_file_settled(
+        printer.ip_address,
+        printer.access_code,
+        remote_path,
+        len(timelapse_data),
+        printer_model=printer.model,
+    ):
+        raise HTTPException(409, "The printer is still writing this video — try again in a moment")
+
+    # Attach in a fresh short session (the read session was released before FTP).
+    async with async_session() as db:
+        success = await ArchiveService(db).attach_timelapse(archive_id, timelapse_data, name)
+    if not success:
+        raise HTTPException(500, "Failed to attach timelapse")
+
+    # Safe now, and only now: the transfer matched the size the listing reported
+    # and the bytes are committed to the archive (#2704).
+    await delete_archived_timelapse(
+        printer.ip_address,
+        printer.access_code,
+        remote_path,
+        verified=expected_size is not None,
+        printer_model=printer.model,
+        printer_name=printer.name,
+    )
+
+    return {
+        "status": "attached",
+        "message": f"Timelapse '{name}' attached successfully",
+        "filename": name,
+    }
+
+
 @router.post("/{archive_id}/timelapse/scan")
 async def scan_timelapse(
     archive_id: int,
@@ -2886,13 +2973,8 @@ async def scan_timelapse(
     from backend.app.core.database import async_session
     from backend.app.models.printer import Printer
     from backend.app.services.bambu_ftp import (
-        delete_archived_timelapse,
-        download_file_bytes_async,
         ftps_handshake_blocked,
-        get_ftp_retry_settings,
         list_files_async,
-        remote_file_settled,
-        with_ftp_retry,
     )
 
     # Read the archive + printer in a short session and release the pooled DB
@@ -3064,72 +3146,9 @@ async def scan_timelapse(
 
     # Download the timelapse - use the full path from the file listing
     remote_path = matching_file.get("path") or f"/timelapse/{matching_file['name']}"
-
-    # Get FTP retry settings
-    ftp_retry_enabled, ftp_retry_count, ftp_retry_delay, ftp_timeout = await get_ftp_retry_settings()
-
-    if ftp_retry_enabled:
-        timelapse_data = await with_ftp_retry(
-            download_file_bytes_async,
-            printer.ip_address,
-            printer.access_code,
-            remote_path,
-            socket_timeout=ftp_timeout,
-            printer_model=printer.model,
-            expected_size=matching_file.get("size"),
-            max_retries=ftp_retry_count,
-            retry_delay=ftp_retry_delay,
-            operation_name=f"Download timelapse {matching_file['name']}",
-            cooloff_ip=printer.ip_address,
-        )
-    else:
-        timelapse_data = await download_file_bytes_async(
-            printer.ip_address,
-            printer.access_code,
-            remote_path,
-            socket_timeout=ftp_timeout,
-            printer_model=printer.model,
-            expected_size=matching_file.get("size"),
-        )
-
-    if not timelapse_data:
-        raise HTTPException(500, "Failed to download timelapse")
-
-    # Confirm the printer has finished writing before we commit to this file and
-    # delete the original: matching the listing's size proves we got what it
-    # said, not that the file was complete (#2704).
-    if not await remote_file_settled(
-        printer.ip_address,
-        printer.access_code,
-        remote_path,
-        len(timelapse_data),
-        printer_model=printer.model,
-    ):
-        raise HTTPException(409, "The printer is still writing this video — try again in a moment")
-
-    # Attach in a fresh short session (the read session was released before FTP).
-    async with async_session() as db:
-        success = await ArchiveService(db).attach_timelapse(archive_id, timelapse_data, matching_file["name"])
-
-    if not success:
-        raise HTTPException(500, "Failed to attach timelapse")
-
-    # Safe now, and only now: the transfer matched the size the listing reported
-    # and the bytes are committed to the archive (#2704).
-    await delete_archived_timelapse(
-        printer.ip_address,
-        printer.access_code,
-        remote_path,
-        verified=matching_file.get("size") is not None,
-        printer_model=printer.model,
-        printer_name=printer.name,
+    return await _pull_and_attach_timelapse(
+        printer, archive_id, remote_path, matching_file["name"], matching_file.get("size")
     )
-
-    return {
-        "status": "attached",
-        "message": f"Timelapse '{matching_file['name']}' attached successfully",
-        "filename": matching_file["name"],
-    }
 
 
 @router.post("/{archive_id}/timelapse/select")
@@ -3142,12 +3161,7 @@ async def select_timelapse(
     from backend.app.core.database import async_session
     from backend.app.models.printer import Printer
     from backend.app.services.bambu_ftp import (
-        delete_archived_timelapse,
-        download_file_bytes_async,
-        get_ftp_retry_settings,
         list_files_async,
-        remote_file_settled,
-        with_ftp_retry,
     )
 
     # Read the archive + printer in a short session and release the pooled DB
@@ -3189,69 +3203,7 @@ async def select_timelapse(
         raise HTTPException(404, f"Timelapse '{filename}' not found on printer")
 
     # Download and attach
-    ftp_retry_enabled, ftp_retry_count, ftp_retry_delay, ftp_timeout = await get_ftp_retry_settings()
-
-    if ftp_retry_enabled:
-        timelapse_data = await with_ftp_retry(
-            download_file_bytes_async,
-            printer.ip_address,
-            printer.access_code,
-            remote_path,
-            socket_timeout=ftp_timeout,
-            printer_model=printer.model,
-            expected_size=expected_size,
-            max_retries=ftp_retry_count,
-            retry_delay=ftp_retry_delay,
-            operation_name=f"Download timelapse {filename}",
-            cooloff_ip=printer.ip_address,
-        )
-    else:
-        timelapse_data = await download_file_bytes_async(
-            printer.ip_address,
-            printer.access_code,
-            remote_path,
-            socket_timeout=ftp_timeout,
-            printer_model=printer.model,
-            expected_size=expected_size,
-        )
-
-    if not timelapse_data:
-        raise HTTPException(500, "Failed to download timelapse")
-
-    # Confirm the printer has finished writing before we commit to this file and
-    # delete the original: matching the listing's size proves we got what it
-    # said, not that the file was complete (#2704).
-    if not await remote_file_settled(
-        printer.ip_address,
-        printer.access_code,
-        remote_path,
-        len(timelapse_data),
-        printer_model=printer.model,
-    ):
-        raise HTTPException(409, "The printer is still writing this video — try again in a moment")
-
-    # Attach in a fresh short session (the read session was released before FTP).
-    async with async_session() as db:
-        success = await ArchiveService(db).attach_timelapse(archive_id, timelapse_data, filename)
-    if not success:
-        raise HTTPException(500, "Failed to attach timelapse")
-
-    # Safe now, and only now: the transfer matched the size the listing reported
-    # and the bytes are committed to the archive (#2704).
-    await delete_archived_timelapse(
-        printer.ip_address,
-        printer.access_code,
-        remote_path,
-        verified=expected_size is not None,
-        printer_model=printer.model,
-        printer_name=printer.name,
-    )
-
-    return {
-        "status": "attached",
-        "message": f"Timelapse '{filename}' attached successfully",
-        "filename": filename,
-    }
+    return await _pull_and_attach_timelapse(printer, archive_id, remote_path, filename, expected_size)
 
 
 @router.post("/{archive_id}/timelapse/upload")
