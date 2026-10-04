@@ -138,6 +138,9 @@ async def start_terminal_payment_route(
     balance. 201 with the ledger row (`processing`); poll the GET below."""
     _check_counter_payment_rate_limit(request, current_user)
     project = await _get_active_project_or_404(db, project_id)
+    if body.document_kind == "quote" and project.quote_invoiced:
+        # The deposit is moot once the job is billed: collect on the invoice.
+        raise _refuse(409, "quote_invoiced", "This quote is invoiced: collect the invoice balance instead")
     document = await _document(db, project, body.document_kind, body.document_id)
     try:
         row = await start_terminal_payment(
@@ -183,6 +186,9 @@ async def record_manual_payment_route(
     if body.mode == "cheque" and not (body.reference or "").strip():
         raise _refuse(422, "reference_required", "A cheque needs its number as reference")
     project = await _get_active_project_or_404(db, project_id)
+    if body.document_kind == "quote" and project.quote_invoiced:
+        # The deposit is moot once the job is billed: collect on the invoice.
+        raise _refuse(409, "quote_invoiced", "This quote is invoiced: collect the invoice balance instead")
     document = await _document(db, project, body.document_kind, body.document_id)
     try:
         await record_manual_payment(

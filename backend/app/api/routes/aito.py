@@ -2695,6 +2695,15 @@ async def create_invoice(
             except Exception:  # noqa: BLE001 — a failed rollback must not 500 a real invoice
                 pass
 
+    # The deposit link is moot now (wanted_link -> None for an invoiced card);
+    # cancel it immediately rather than on the loop's next pass, so the client
+    # cannot pay a deposit on a job that already has an invoice. Best-effort:
+    # the invoice exists, a Heimdall hiccup must not turn this into an error.
+    try:
+        await reconcile_payment_links(db, only_project_id=project_pk, force=True)
+    except Exception as exc:  # noqa: BLE001 — see above
+        logger.warning("Deposit link cancel after invoicing project %s failed: %s", project_pk, exc)
+
     # Re-read BY ID, not through the estimate filter: the create response was
     # written before `apply_retainers` ran, so it still says draft and owes
     # the full total, and the deposits are exactly what the operator is
