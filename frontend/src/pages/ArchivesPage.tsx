@@ -3094,7 +3094,9 @@ export function ArchivesPage() {
     () => localStorage.getItem('archiveNo3MFWarningDismissed') === 'true',
   );
   const { data: no3MFWarning } = useQuery({
-    queryKey: ['archives', 'no-3mf-warning'],
+    // Outside the ['archives'] prefix: it has its own staleness, and riding
+    // along on every archive event refetched it with the list.
+    queryKey: ['archive-no-3mf-warning'],
     queryFn: api.getNo3MFWarning,
     staleTime: 5 * 60 * 1000,
     enabled: !no3MFWarningDismissed,
@@ -3214,14 +3216,19 @@ export function ArchivesPage() {
   // behind it. Both keys sit under ['archives'] so every existing
   // invalidateQueries({ queryKey: ['archives'] }) refreshes both.
   const headSize = Math.max(pageSize, ARCHIVE_HEAD_MIN);
-  const headQuery = useQuery({
-    queryKey: ['archives', filterPrinter, 'head', headSize],
-    queryFn: () => api.getArchives(filterPrinter || undefined, undefined, headSize),
-    enabled: pageSize !== -1,
-  });
   const fullQuery = useQuery({
     queryKey: ['archives', filterPrinter],
     queryFn: () => api.getArchives(filterPrinter || undefined),
+    // Archive WebSocket events keep it fresh; a refetch on every return to the
+    // tab re-downloaded the whole list (~1 MB gzipped at 6k archives).
+    refetchOnWindowFocus: false,
+  });
+  // Only until the full list is in: after that the head paints nothing, and
+  // keeping it enabled made every ['archives'] invalidation fetch it too.
+  const headQuery = useQuery({
+    queryKey: ['archives', filterPrinter, 'head', headSize],
+    queryFn: () => api.getArchives(filterPrinter || undefined, undefined, headSize),
+    enabled: pageSize !== -1 && !fullQuery.data,
   });
   // The head holds only the newest rows. Any order other than newest-first,
   // or "show all", would be misleading over them, so those never show it —
