@@ -16,7 +16,7 @@ from html import escape as html_escape
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -4158,14 +4158,22 @@ async def get_gcode(
             else:
                 selected = default_plate_gcode_name(gcode_files)
 
-            gcode_content = zf.read(selected).decode("utf-8")
-            return Response(content=gcode_content, media_type="text/plain")
     except zipfile.BadZipFile:
         raise HTTPException(400, "Invalid 3MF file")
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(500, f"Error extracting G-code: {str(e)}")
+
+    # Streamed in chunks from a sync generator, which Starlette iterates in its
+    # thread pool: a plate's G-code can be hundreds of MB, and reading and
+    # decoding it whole on the event loop stalled every printer's MQTT.
+    def _chunks():
+        with zipfile.ZipFile(file_path, "r") as zf, zf.open(selected) as member:
+            while chunk := member.read(1 << 20):
+                yield chunk
+
+    return StreamingResponse(_chunks(), media_type="text/plain; charset=utf-8")
 
 
 @router.get("/{archive_id}/plate-preview")
