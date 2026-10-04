@@ -1569,17 +1569,6 @@ class ZohoService:
                 break
         return rows
 
-    async def get_retainer_invoice(self, db: AsyncSession, retainer_invoice_id: str) -> dict:
-        """One retainer invoice in full — specifically its ``payments``.
-
-        The estimate's own ``retainerinvoices`` summary carries the number,
-        status and total but no payment ids, and it is the payment id that
-        applying a deposit to an invoice actually needs.
-        """
-        return (await self._request(db, "GET", f"/retainerinvoices/{_seg(retainer_invoice_id)}")).get(
-            "retainerinvoice", {}
-        )
-
     async def apply_invoice_credits(self, db: AsyncSession, invoice_id: str, invoice_payments: list[dict]) -> None:
         """Point existing customer payments at an invoice.
 

@@ -7,7 +7,7 @@ import logging
 import os
 import re
 import time
-from collections.abc import Iterable, Sequence
+from collections.abc import Awaitable, Callable, Iterable, Sequence
 from datetime import date, datetime, timezone
 from types import SimpleNamespace
 from typing import Literal
@@ -2189,9 +2189,7 @@ async def get_invoice(
     is not just an optimisation: see ``list_project_invoices`` for what Books
     does with an empty ``estimate_id``.
     """
-    project = await db.get(AitoProject, project_id)
-    if project is None or project.status == "deleted":
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = await _get_live_project_or_404(db, project_id)
     if not project.quote_id:
         return None
     try:
@@ -2209,17 +2207,44 @@ async def get_invoice(
     return AitoInvoiceResponse(**newest, url=url, invoice_count=len(invoices))
 
 
+async def _rollback_quietly(db: AsyncSession) -> None:
+    """Roll back, swallowing any exception the rollback itself raises.
+
+    For the paths past a real, irreversible act (an email or SMS already
+    sent, an invoice already raised): a 500 there invites a retry that
+    repeats the act, so not even a failed rollback (SQLite lock, cancelled
+    task, whatever) may propagate. Swallowing it is safe: the only thing an
+    unrolled-back session risks is ``get_db``'s own trailing commit raising
+    PendingRollbackError, which a later rollback on the same path still gets
+    a chance to clear. ``Exception``, not ``BaseException``: a cancellation
+    still propagates.
+    """
+    try:
+        await db.rollback()
+    except Exception:  # noqa: BLE001 — see the docstring
+        pass
+
+
+def _retainer_fields(row: dict) -> dict:
+    """The card's fields of a retainer row — everything but its ``url``.
+    Picked explicitly rather than ``**row`` so the resolver may grow fields
+    the card does not render."""
+    return {
+        "id": row["id"],
+        "number": row["number"],
+        "date": row["date"],
+        "total": row["total"],
+        "balance": row["balance"],
+        "currency_code": row["currency_code"],
+        "status": row["status"],
+    }
+
+
 async def _retainer_response(db: AsyncSession, row: dict) -> AitoRetainerInvoiceResponse:
     """A resolver row plus its Books deep link. Built explicitly rather than
     ``**row`` so the resolver may grow fields the card does not render."""
     return AitoRetainerInvoiceResponse(
-        id=row["id"],
-        number=row["number"],
-        date=row["date"],
-        total=row["total"],
-        balance=row["balance"],
-        currency_code=row["currency_code"],
-        status=row["status"],
+        **_retainer_fields(row),
         url=await zoho_service.books_retainer_url(db, row["id"]),
     )
 
@@ -2236,9 +2261,7 @@ async def get_retainers(
     ``[]`` (not 404) for a project with no quote: that is the ordinary state
     of a hand-made card, and a 404 here means the PROJECT is missing.
     """
-    project = await db.get(AitoProject, project_id)
-    if project is None or project.status == "deleted":
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = await _get_live_project_or_404(db, project_id)
     if not project.quote_id:
         return []
     try:
@@ -2265,15 +2288,27 @@ async def _resolve_project_retainer(db: AsyncSession, project: AitoProject, reta
     return row
 
 
-async def _load_project_with_quote_or_404(db: AsyncSession, project_id: int) -> AitoProject:
-    """The shared prologue of the three document-PDF routes: a live card,
-    pushed, that has a Zoho quote — else the matching 404."""
+async def _get_live_project_or_404(db: AsyncSession, project_id: int) -> AitoProject:
+    """The project, unless it is missing or soft-deleted — any other status is
+    live. Unlike ``_get_active_project_or_404`` this is a primary-key ``get``,
+    so it answers from the session's identity map when the row is loaded."""
     project = await db.get(AitoProject, project_id)
     if project is None or project.status == "deleted":
         raise HTTPException(status_code=404, detail="Project not found")
+    return project
+
+
+async def _load_project_with_quote_or_404(db: AsyncSession, project_id: int, *, push: bool = True) -> AitoProject:
+    """The shared prologue of the three document-PDF routes: a live card,
+    pushed, that has a Zoho quote — else the matching 404.
+
+    ``push=False`` is the two email-content loaders' variant: the same
+    checks, without waiting for a pending edit to reach Books."""
+    project = await _get_live_project_or_404(db, project_id)
     # Before the quote_id check: a card whose quote is still being created is
     # pending too, and the wait is what gives it one.
-    await ensure_pushed(db, project)
+    if push:
+        await ensure_pushed(db, project)
     if not project.quote_id:
         raise HTTPException(status_code=404, detail="This project has no Zoho quote")
     return project
@@ -2330,11 +2365,7 @@ async def _load_retainer_email_content(
     ``_load_invoice_email_content``, including the widening of recipients
     with the card's own ``client_email`` and the casing rule for the default.
     """
-    project = await db.get(AitoProject, project_id)
-    if project is None or project.status == "deleted":
-        raise HTTPException(status_code=404, detail="Project not found")
-    if not project.quote_id:
-        raise HTTPException(status_code=404, detail="This project has no Zoho quote")
+    project = await _load_project_with_quote_or_404(db, project_id, push=False)
     try:
         retainer = await _resolve_project_retainer(db, project, retainer_id)
         content = await zoho_service.get_retainer_email_content(db, retainer["id"])
@@ -2408,78 +2439,29 @@ async def send_retainer_email(
     if recipient.lower() not in {r["email"].lower() for r in content["recipients"]}:
         raise HTTPException(status_code=422, detail="That address is not a recipient of this retainer invoice")
 
-    key = _email_guard_key_or_409("retainer", project_pk, retainer["id"], recipient)
-    _EMAIL_GUARD.arm(key, time.monotonic())
-    try:
-        await zoho_service.email_retainer(db, retainer["id"], to_mail_ids=[recipient])
-    except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
-        if not isinstance(e, ZohoUnreachable):
-            _EMAIL_GUARD.release(key)
-        logger.warning("Aito retainer email failed for project %s: %s", project_id, e)
-        await db.rollback()
-        raise _zoho_email_http_error(e) from e
-    except Exception:
-        _EMAIL_GUARD.release(key)
-        raise
-
-    event_recorded = True
-    try:
-        await record(
-            db,
-            project_pk,
-            "retainer.emailed",
-            actor_class="user",
-            actor_name=_actor(current_user),
-            subject_type="project",
-            subject_id=project_pk,
-            detail={"email": recipient, "retainer_number": retainer["number"]},
-        )
-        await db.commit()
-    except SQLAlchemyError as e:
-        event_recorded = False
-        logger.error(
-            "Aito retainer email for project %s WAS SENT via Books but recording the local "
-            "retainer.emailed event failed — no event exists for this send: %s",
-            project_id,
-            e,
-        )
-        try:
-            await db.rollback()
-        except Exception:  # noqa: BLE001 — a real send must never 500 past this point
-            pass
-
+    # Re-read state, updated step by step so a re-read that fails half-way
+    # keeps what it already got (see `_send_document_email`).
     fresh, url = retainer, ""
-    try:
+
+    async def reread() -> None:
+        nonlocal fresh, url
         rows = await list_project_retainers(db, project_snapshot)
         fresh = next((r for r in rows if r["id"] == retainer["id"]), retainer)
         url = await zoho_service.books_retainer_url(db, fresh["id"])
-    except (ZohoNotConfiguredError, ZohoUpstreamError, SQLAlchemyError) as e:
-        logger.warning(
-            "Aito retainer re-read after emailing project %s failed%s: %s",
-            project_id,
-            "" if event_recorded else " (retainer.emailed event was also not recorded — see the error above)",
-            e,
-        )
-        try:
-            await db.rollback()
-        except Exception:  # noqa: BLE001 — see above
-            pass
-    try:
-        await db.rollback()
-    except Exception:  # noqa: BLE001 — see above
-        pass
 
-    await _broadcast_changed("retainer-email", project_pk, _actor(current_user))
-    return AitoRetainerInvoiceResponse(
-        id=fresh["id"],
-        number=fresh["number"],
-        date=fresh["date"],
-        total=fresh["total"],
-        balance=fresh["balance"],
-        currency_code=fresh["currency_code"],
-        status=fresh["status"],
-        url=url,
+    await _send_document_email(
+        db,
+        kind="retainer",
+        project_id=project_id,
+        project_pk=project_pk,
+        document_id=retainer["id"],
+        recipient=recipient,
+        current_user=current_user,
+        send=lambda: zoho_service.email_retainer(db, retainer["id"], to_mail_ids=[recipient]),
+        event_detail=lambda: {"email": recipient, "retainer_number": retainer["number"]},
+        reread=reread,
     )
+    return AitoRetainerInvoiceResponse(**_retainer_fields(fresh), url=url)
 
 
 # One string for every "this card is already billed" refusal — the local
@@ -2506,9 +2488,7 @@ async def _project_ready_to_invoice(db: AsyncSession, project_id: int) -> AitoPr
     is a request that is right but arrives at the wrong moment, and the
     frontend distinguishes them only by the message it shows.
     """
-    project = await db.get(AitoProject, project_id)
-    if project is None or project.status == "deleted":
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = await _get_live_project_or_404(db, project_id)
     if not project.quote_id:
         raise HTTPException(status_code=409, detail="This project has no Zoho quote to invoice")
     if project.board_column != "finish":
@@ -2738,10 +2718,7 @@ async def create_invoice(
                 project_id,
                 e,
             )
-            try:
-                await db.rollback()
-            except Exception:  # noqa: BLE001 — a failed rollback must not 500 a real invoice
-                pass
+            await _rollback_quietly(db)
 
     # Re-read BY ID, not through the estimate filter: the create response was
     # written before `apply_retainers` ran, so it still says draft and owes
@@ -2778,10 +2755,7 @@ async def create_invoice(
             )
     except (ZohoNotConfiguredError, ZohoUpstreamError, SQLAlchemyError) as e:
         logger.warning("Aito invoice re-read failed for project %s after creating it: %s", project_id, e)
-        try:
-            await db.rollback()
-        except Exception:  # noqa: BLE001 — see above
-            pass
+        await _rollback_quietly(db)
     if fresh is None:
         fresh = {
             "id": invoice_id,
@@ -2892,11 +2866,7 @@ async def _load_invoice_email_content(
     ``_load_quote_email_content``: it leaves the session clean immediately
     rather than relying on get_db's own unwinding.
     """
-    project = await db.get(AitoProject, project_id)
-    if project is None or project.status == "deleted":
-        raise HTTPException(status_code=404, detail="Project not found")
-    if not project.quote_id:
-        raise HTTPException(status_code=404, detail="This project has no Zoho quote")
+    project = await _load_project_with_quote_or_404(db, project_id, push=False)
     try:
         invoice, count = await _resolve_project_invoice(db, project, invoice_id)
         content = await zoho_service.get_invoice_email_content(db, invoice["id"])
@@ -3003,6 +2973,129 @@ def _check_zoho_email_rate_limit(request: Request, current_user: User | None) ->
     )
 
 
+async def _send_document_email(
+    db: AsyncSession,
+    *,
+    kind: Literal["invoice", "retainer"],
+    project_id: int,
+    project_pk: int,
+    document_id: str,
+    recipient: str,
+    current_user: User | None,
+    send: Callable[[], Awaitable[object]],
+    event_detail: Callable[[], dict],
+    reread: Callable[[], Awaitable[None]],
+) -> None:
+    """The shared send of ``send_invoice_email`` and ``send_retainer_email``,
+    from arming the duplicate-send guard to the broadcast. The callers keep
+    their prologue (rate limit, loader, allowlist 422) and their response.
+
+    ``kind`` names everything kind-specific that is not a callable: the guard
+    key, the ``{kind}.emailed`` event, the log lines and the
+    ``{kind}-email`` broadcast. ``send`` mails the document through Books;
+    ``event_detail`` builds the event's detail, called at record time;
+    ``reread`` refreshes the caller's own response state and may fail
+    half-way — whatever it updated before failing is kept.
+    """
+    key = _email_guard_key_or_409(kind, project_pk, document_id, recipient)
+    # Armed before the send; nothing is awaited between the check and here.
+    _EMAIL_GUARD.arm(key, time.monotonic())
+    try:
+        await send()
+    except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
+        if not isinstance(e, ZohoUnreachable):
+            # Books refused cleanly: nothing was sent, so an honest retry may go.
+            _EMAIL_GUARD.release(key)
+        logger.warning(f"Aito {kind} email failed for project %s: %s", project_id, e)
+        await db.rollback()
+        raise _zoho_email_http_error(e) from e
+    except Exception:
+        # Not one of Books' answers, so nothing is known to have been sent.
+        _EMAIL_GUARD.release(key)
+        raise
+
+    event_recorded = True
+    try:
+        await record(
+            db,
+            project_pk,
+            f"{kind}.emailed",
+            actor_class="user",
+            actor_name=_actor(current_user),
+            subject_type="project",
+            subject_id=project_pk,
+            detail=event_detail(),
+        )
+        await db.commit()
+    except SQLAlchemyError as e:
+        # Deliberately diverges from send_quote_email, which still 500s when
+        # its own record()+commit() fails: there, the failed half (the card
+        # move) is independently recoverable through set_quote_status or the
+        # sync worker's own reconciliation, so a 500 costs nothing. Here the
+        # mail has ALREADY gone out through Books — there is no recoverable
+        # half, and a 500 would invite a retry that sends the client a real
+        # second document, which is worse than a timeline with a gap in it.
+        # Logged loudly because this is the one path where a real send
+        # leaves no `{kind}.emailed` row at all. ``event_recorded`` is
+        # threaded into the re-read's own warning below so a second,
+        # independent failure there logs as a compounding problem rather
+        # than masquerading as the ONLY thing that went wrong.
+        event_recorded = False
+        logger.error(
+            f"Aito {kind} email for project %s WAS SENT via Books but recording the local "
+            f"{kind}.emailed event failed — no event exists for this send: %s",
+            project_id,
+            e,
+        )
+        # Guarded (`_rollback_quietly`), not a bare `await db.rollback()`: a
+        # real send must never 500 past this point. The re-read block's
+        # rollback below (or the one right before `_broadcast_changed`) still
+        # gets a chance to clear the session if this one fails.
+        await _rollback_quietly(db)
+
+    try:
+        await reread()
+    except (ZohoNotConfiguredError, ZohoUpstreamError, SQLAlchemyError) as e:
+        # Degrade, never 500 — see send_invoice_email's docstring. The card
+        # shows the document as it was a moment before the send; its own
+        # query will correct it on the next fetch. SQLAlchemyError belongs
+        # here alongside the Zoho exceptions because the Books helpers reach
+        # this app's own SQLite file (_load_config runs several get_setting
+        # SELECTs), which the aito_quote_sync worker also writes — a lock
+        # there is as real a failure as Zoho being unreachable, and must
+        # degrade the same way rather than 500 after the mail has already
+        # gone out. The rollback is required, not cosmetic: without it
+        # get_db's own trailing commit would raise PendingRollbackError on the
+        # dirtied session and turn this degrade into the very 500 this block
+        # exists to avoid.
+        #
+        # This is genuinely a re-read failure, not the earlier record()
+        # failure in disguise — the re-read reads only the caller's plain
+        # locals, not attributes on the now-possibly-expired ``project``, so
+        # nothing here can raise MissingGreenlet on ``project``'s behalf. When
+        # ``event_recorded`` is already False, this is a second, independent
+        # failure on top of the first, so the log says so instead of reading
+        # like the send's only problem.
+        logger.warning(
+            f"Aito {kind} re-read after emailing project %s failed%s: %s",
+            project_id,
+            "" if event_recorded else f" ({kind}.emailed event was also not recorded — see the error above)",
+            e,
+        )
+        await _rollback_quietly(db)
+
+    # Reached on the SUCCESS path too, where neither except-block above ran:
+    # the re-read's SELECTs still leave a read transaction open on `db`, which
+    # nothing else has rolled back. Without this, get_db's own trailing
+    # `session.commit()` commits THAT open transaction on the way out —
+    # mostly harmless for a pure read, but not a guarantee this handler wants
+    # to depend on, and cheap enough to close explicitly. Guarded the same
+    # way as its siblings above: a real send must never 500 on the way out.
+    await _rollback_quietly(db)
+
+    await _broadcast_changed(f"{kind}-email", project_pk, _actor(current_user))
+
+
 @router.post("/{project_id}/invoice-email", response_model=AitoInvoiceResponse)
 async def send_invoice_email(
     project_id: int,
@@ -3064,127 +3157,29 @@ async def send_invoice_email(
     if recipient.lower() not in {r["email"].lower() for r in content["recipients"]}:
         raise HTTPException(status_code=422, detail="That address is not a recipient of this invoice")
 
-    key = _email_guard_key_or_409("invoice", project_pk, invoice["id"], recipient)
-    # Armed before the send; nothing is awaited between the check and here.
-    _EMAIL_GUARD.arm(key, time.monotonic())
-    try:
-        await zoho_service.email_invoice(db, invoice["id"], to_mail_ids=[recipient])
-    except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
-        if not isinstance(e, ZohoUnreachable):
-            # Books refused cleanly: nothing was sent, so an honest retry may go.
-            _EMAIL_GUARD.release(key)
-        logger.warning("Aito invoice email failed for project %s: %s", project_id, e)
-        await db.rollback()
-        raise _zoho_email_http_error(e) from e
-    except Exception:
-        # Not one of Books' answers, so nothing is known to have been sent.
-        _EMAIL_GUARD.release(key)
-        raise
-
-    event_recorded = True
-    try:
-        await record(
-            db,
-            project_pk,
-            "invoice.emailed",
-            actor_class="user",
-            actor_name=_actor(current_user),
-            subject_type="project",
-            subject_id=project_pk,
-            detail={"email": recipient, "invoice_number": invoice["number"] or invoice["id"]},
-        )
-        await db.commit()
-    except SQLAlchemyError as e:
-        # Deliberately diverges from send_quote_email, which still 500s when
-        # its own record()+commit() fails: there, the failed half (the card
-        # move) is independently recoverable through set_quote_status or the
-        # sync worker's own reconciliation, so a 500 costs nothing. Here the
-        # mail has ALREADY gone out through Books — there is no recoverable
-        # half, and a 500 would invite a retry that sends the client a real
-        # second invoice, which is worse than a timeline with a gap in it.
-        # Logged loudly because this is the one path where a real send
-        # leaves no `invoice.emailed` row at all. ``event_recorded`` is
-        # threaded into the re-read's own warning below so a second,
-        # independent failure there logs as a compounding problem rather
-        # than masquerading as the ONLY thing that went wrong.
-        event_recorded = False
-        logger.error(
-            "Aito invoice email for project %s WAS SENT via Books but recording the local "
-            "invoice.emailed event failed — no event exists for this send: %s",
-            project_id,
-            e,
-        )
-        # Guarded, not a bare `await db.rollback()`: a real send must never
-        # 500 past this point, because a 500 here invites a client retry that
-        # mails a second real invoice through Books — the one outcome this
-        # whole handler exists to prevent. If the rollback itself raises
-        # (SQLite lock, cancelled task, whatever), letting that propagate
-        # would 500 anyway and defeat the entire point of catching
-        # SQLAlchemyError above it. Swallowing it is safe: the only thing an
-        # unrolled-back session risks is `get_db`'s own trailing commit
-        # raising PendingRollbackError, which the re-read block's rollback
-        # below (or the guarded one right before `_broadcast_changed`) still
-        # gets a chance to clear.
-        try:
-            await db.rollback()
-        except Exception:  # noqa: BLE001 — see the comment above
-            pass
-
+    # Re-read state, updated step by step so a re-read that fails half-way
+    # keeps what it already got (see `_send_document_email`).
     fresh, invoice_count, url = invoice, pre_send_count, ""
-    try:
+
+    async def reread() -> None:
+        nonlocal fresh, invoice_count, url
         invoices = await zoho_service.list_project_invoices(db, quote_id, client_id)
         fresh = next((i for i in invoices if i["id"] == invoice["id"]), invoice)
         invoice_count = len(invoices) or pre_send_count
         url = await zoho_service.books_invoice_url(db, fresh["id"])
-    except (ZohoNotConfiguredError, ZohoUpstreamError, SQLAlchemyError) as e:
-        # Degrade, never 500 — see the docstring. The card shows the invoice,
-        # url, and invoice_count as they were a moment before the send; its
-        # own query will correct all three on the next fetch. SQLAlchemyError
-        # belongs here alongside the Zoho exceptions because
-        # list_project_invoices reaches this app's own SQLite file
-        # (_load_config runs several get_setting SELECTs), which the
-        # aito_quote_sync worker also writes — a lock there is as real a
-        # failure as Zoho being unreachable, and must degrade the same way
-        # rather than 500 after the mail has already gone out. The rollback
-        # is required, not cosmetic: without it get_db's own trailing commit
-        # would raise PendingRollbackError on the dirtied session and turn
-        # this degrade into the very 500 this block exists to avoid.
-        #
-        # This is genuinely a re-read failure, not the earlier record()
-        # failure in disguise — ``quote_id``/``client_id`` are plain locals,
-        # not attributes on the now-possibly-expired ``project``, so nothing
-        # here can raise MissingGreenlet on ``project``'s behalf. When
-        # ``event_recorded`` is already False, this is a second, independent
-        # failure on top of the first, so the log says so instead of reading
-        # like the send's only problem.
-        logger.warning(
-            "Aito invoice re-read after emailing project %s failed%s: %s",
-            project_id,
-            "" if event_recorded else " (invoice.emailed event was also not recorded — see the error above)",
-            e,
-        )
-        # Guarded for the same reason as the rollback above the record()
-        # except-block: the mail is already out through Books, so nothing
-        # past this point may 500 and invite a retry that sends it twice.
-        try:
-            await db.rollback()
-        except Exception:  # noqa: BLE001 — see the comment on the rollback above
-            pass
 
-    # Reached on the SUCCESS path too, where neither except-block above ran:
-    # the re-read's SELECTs (list_project_invoices, books_invoice_url) still
-    # leave a read transaction open on `db`, which nothing else has rolled
-    # back. Without this, get_db's own trailing `session.commit()` commits
-    # THAT open transaction on the way out — mostly harmless for a pure read,
-    # but not a guarantee this handler wants to depend on, and cheap enough
-    # to close explicitly. Guarded the same way as its siblings above: a real
-    # send must never 500 on the way out, whatever the reason.
-    try:
-        await db.rollback()
-    except Exception:  # noqa: BLE001 — see the comment on the rollback above
-        pass
-
-    await _broadcast_changed("invoice-email", project_pk, _actor(current_user))
+    await _send_document_email(
+        db,
+        kind="invoice",
+        project_id=project_id,
+        project_pk=project_pk,
+        document_id=invoice["id"],
+        recipient=recipient,
+        current_user=current_user,
+        send=lambda: zoho_service.email_invoice(db, invoice["id"], to_mail_ids=[recipient]),
+        event_detail=lambda: {"email": recipient, "invoice_number": invoice["number"] or invoice["id"]},
+        reread=reread,
+    )
     return AitoInvoiceResponse(**fresh, url=url, invoice_count=invoice_count)
 
 
@@ -3289,9 +3284,7 @@ async def get_quote_email(
     Preview only. The send path deliberately re-reads all of this rather than
     trusting whatever the client echoes back — see ``send_quote_email``.
     """
-    project = await db.get(AitoProject, project_id)
-    if project is None or project.status == "deleted":
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = await _get_live_project_or_404(db, project_id)
     # Strict, like the send it previews: the dialog must not open on a quote
     # Books refused the latest edit of.
     await ensure_pushed(db, project, strict=True)
@@ -5175,10 +5168,7 @@ async def send_pickup_sms(
         # SQLAlchemyError above it. Swallowing it is safe — the only risk of
         # an unrolled-back session is get_db's own trailing commit raising
         # PendingRollbackError, which this already prevents.
-        try:
-            await db.rollback()
-        except Exception:  # noqa: BLE001 — see the comment above
-            pass
+        await _rollback_quietly(db)
     return AitoPickupSmsResponse()
 
 
