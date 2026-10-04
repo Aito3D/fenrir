@@ -104,6 +104,7 @@ from backend.app.core.websocket import ws_manager
 from backend.app.services import kprofile_drift, print_dispatch_context, slot_unlink_grace
 from backend.app.services.archive import (
     ArchiveService,
+    claimed_timelapse_stems,
     peek_plate_index_in_3mf,
     swap_plate_suffix,
     verify_3mf_candidate,
@@ -5129,16 +5130,9 @@ async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
             # printers, so try it first — deferring it to last cost #972's reporter
             # ~48 minutes of retries on /cache//model//data//data/Metadata before
             # landing on the path that actually had the file.
-            remote_paths = [
-                f"/{try_filename}",
-                f"/cache/{try_filename}",
-                f"/model/{try_filename}",
-                f"/data/{try_filename}",
-                f"/data/Metadata/{try_filename}",
-            ]
+            remote_paths = ftp_probe_paths(try_filename)
 
             temp_path = print_temp_path(printer_id, try_filename)
-            temp_path.parent.mkdir(parents=True, exist_ok=True)
 
             for remote_path in remote_paths:
                 if ftps_handshake_blocked(printer.ip_address):
@@ -5255,7 +5249,6 @@ async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
                         if fname.endswith(".3mf") and search_normalized in fname_normalized:
                             logger.info("Found matching file in %s: %s", search_dir, fname)
                             temp_path = print_temp_path(printer_id, fname)
-                            temp_path.parent.mkdir(parents=True, exist_ok=True)
                             remote_full_path = posixpath.join(search_dir, fname)
                             if ftp_retry_enabled:
                                 downloaded = await with_ftp_retry(
@@ -5324,14 +5317,7 @@ async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
                 if corrected_subtask and corrected_subtask != subtask_name:
                     for try_filename in (f"{corrected_subtask}.gcode.3mf", f"{corrected_subtask}.3mf"):
                         retry_temp_path = print_temp_path(printer_id, try_filename)
-                        retry_temp_path.parent.mkdir(parents=True, exist_ok=True)
-                        for remote_path in (
-                            f"/{try_filename}",
-                            f"/cache/{try_filename}",
-                            f"/model/{try_filename}",
-                            f"/data/{try_filename}",
-                            f"/data/Metadata/{try_filename}",
-                        ):
+                        for remote_path in ftp_probe_paths(try_filename):
                             try:
                                 if ftp_retry_enabled:
                                     downloaded = await with_ftp_retry(
@@ -5834,32 +5820,6 @@ def _timelapse_scan_max_attempts() -> int:
     return max(1, int(_TIMELAPSE_SCAN_TIMEOUT_SECONDS // _TIMELAPSE_SCAN_POLL_INTERVAL_SECONDS) + 1)
 
 
-async def _claimed_timelapse_names(db, printer_id: int, exclude_archive_id: int) -> set[str]:
-    """Video filenames already attached to some other archive of this printer.
-
-    Used to disambiguate when more than one file is new since the baseline —
-    which happens when a previous print's video landed after this print's
-    baseline was taken. Ordering the candidates would be the obvious fix and is
-    the wrong one: it can only be done on mtime or on the filename timestamp,
-    both of which come from the printer's own clock, and a LAN-only printer
-    can't reach Bambu's NTP server. Exclusion needs no clock at all.
-
-    ``attach_timelapse`` saves the video into the archive directory under the
-    printer's original filename, and the later MP4 conversion keeps the stem,
-    so the stem of ``timelapse_path`` recovers what was claimed.
-    """
-    from backend.app.models.archive import PrintArchive
-
-    rows = await db.execute(
-        select(PrintArchive.timelapse_path).where(
-            PrintArchive.printer_id == printer_id,
-            PrintArchive.id != exclude_archive_id,
-            PrintArchive.timelapse_path.is_not(None),
-        )
-    )
-    return {Path(p).stem for p in rows.scalars().all() if p}
-
-
 def _timelapse_listing_is_trustworthy(printer) -> bool:
     """Whether an *empty* timelapse listing for *printer* can be believed.
 
@@ -5910,7 +5870,9 @@ async def _list_timelapse_videos(printer) -> tuple[list[dict], str | None]:
         logger.debug("[TIMELAPSE] Skipping the scan for printer %s: it reports no external storage", printer_id)
         return [], None
 
-    for timelapse_path in ["/timelapse", "/timelapse/video", "/record", "/recording"]:
+    from backend.app.services.printer_media import TIMELAPSE_DIRECTORIES
+
+    for timelapse_path in TIMELAPSE_DIRECTORIES:
         try:
             found_files = await list_files_async(
                 printer.ip_address, printer.access_code, timelapse_path, printer_model=printer.model
@@ -6135,7 +6097,7 @@ async def _scan_for_timelapse_with_retries(archive_id: int, baseline_names: set[
                     logger.warning("[TIMELAPSE] Printer not found for archive %s, stopping poll", archive_id)
                     return
 
-                claimed = await _claimed_timelapse_names(db, archive.printer_id, archive_id)
+                claimed = await claimed_timelapse_stems(db, archive.printer_id, archive_id)
 
             # I/O phase (no DB connection held): FTP list + download.
             video_files, found_path = await _list_timelapse_videos(printer)

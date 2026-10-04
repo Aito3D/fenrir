@@ -41,7 +41,7 @@ from backend.app.models.user import User
 from backend.app.schemas.archive import ArchiveResponse, ArchiveSlim, ArchiveStats, ArchiveUpdate, ProjectPageUpdate
 from backend.app.schemas.print_log import PrintLogResponse
 from backend.app.schemas.slicer import SliceRequest
-from backend.app.services.archive import ArchiveService
+from backend.app.services.archive import ArchiveService, claimed_timelapse_stems
 from backend.app.services.bambu_ftp import ftps_handshake_blocked, list_files_result_async
 from backend.app.services.design_settings import overrides_from_config
 from backend.app.services.filament_requirements import annotate_rack_groups
@@ -58,7 +58,7 @@ from backend.app.services.print_storage import (
     REASON_INTERNAL_STORAGE,
     REASON_NO_EXTERNAL_STORAGE,
 )
-from backend.app.services.printer_media import VIDEO_SUFFIXES, match_ipcam_chunks
+from backend.app.services.printer_media import TIMELAPSE_DIRECTORIES, VIDEO_SUFFIXES, match_ipcam_chunks
 from backend.app.utils.archive_paths import archive_photos_dir, find_archive_photo
 from backend.app.utils.dates import local_day_bounds
 from backend.app.utils.http import build_content_disposition, download_error_response, safe_download_filename
@@ -219,28 +219,6 @@ def _match_timelapse_by_timestamp(
             return None, None
 
     return best_video, best_diff
-
-
-async def _claimed_timelapse_stems(db, printer_id: int | None, exclude_archive_id: int) -> set[str]:
-    """Video filenames already attached to another archive of this printer (#2704).
-
-    Lets the baseline diff drop a previous print's late-landing video from the
-    candidate list without ordering the candidates — ordering could only be done
-    on mtime or the filename timestamp, and both come from a clock the printer
-    can't sync in LAN-only mode. ``attach_timelapse`` stores the video under the
-    printer's own filename and the MP4 conversion keeps the stem, so the stem of
-    ``timelapse_path`` is what was claimed.
-    """
-    if printer_id is None:
-        return set()
-    rows = await db.execute(
-        select(PrintArchive.timelapse_path).where(
-            PrintArchive.printer_id == printer_id,
-            PrintArchive.id != exclude_archive_id,
-            PrintArchive.timelapse_path.is_not(None),
-        )
-    )
-    return {Path(p).stem for p in rows.scalars().all() if p}
 
 
 def _owner_scope(user: User | None, can_read_all: bool) -> int | None:
@@ -2652,11 +2630,11 @@ async def get_archive_printer_media(
     async with database.async_session() as db:
         archive = _ensure_archive_visible(await ArchiveService(db).get_archive(archive_id), user, can_read_all)
         printer = None
-        claimed_timelapse_stems: set[str] = set()
+        claimed_stems: set[str] = set()
         if archive.printer_id is not None:
             printer = (await db.execute(select(Printer).where(Printer.id == archive.printer_id))).scalar_one_or_none()
             if printer is not None and archive.timelapse_path is None:
-                claimed_timelapse_stems = await _claimed_timelapse_stems(db, archive.printer_id, archive_id)
+                claimed_stems = await claimed_timelapse_stems(db, archive.printer_id, archive_id)
 
     local_timelapse = None
     if archive.timelapse_path:
@@ -2699,7 +2677,7 @@ async def get_archive_printer_media(
     if local_timelapse is None:
         videos: list[dict] = []
         any_timelapse_directory_available = False
-        for timelapse_dir in ("/timelapse", "/timelapse/video", "/record", "/recording"):
+        for timelapse_dir in TIMELAPSE_DIRECTORIES:
             if ftps_handshake_blocked(printer.ip_address):
                 break
             listing = await list_files_result_async(
@@ -2726,7 +2704,7 @@ async def get_archive_printer_media(
                 file
                 for file in videos
                 if str(file.get("name") or "") not in baseline
-                and Path(str(file.get("name") or "")).stem not in claimed_timelapse_stems
+                and Path(str(file.get("name") or "")).stem not in claimed_stems
             ]
             if archive.timelapse_baseline is not None:
                 candidate = eligible[0] if len(eligible) == 1 else None
@@ -2947,7 +2925,7 @@ async def scan_timelapse(
     # Scan timelapse directory on printer
     # Different printer models use different paths
     files = []
-    for timelapse_path in ["/timelapse", "/timelapse/video", "/record", "/recording"]:
+    for timelapse_path in TIMELAPSE_DIRECTORIES:
         if ftps_handshake_blocked(printer.ip_address):
             break
         try:
@@ -2993,7 +2971,7 @@ async def scan_timelapse(
     if used_baseline:
         baseline = set(archive.timelapse_baseline)
         async with async_session() as db:
-            claimed = await _claimed_timelapse_stems(db, archive.printer_id, archive_id)
+            claimed = await claimed_timelapse_stems(db, archive.printer_id, archive_id)
         candidates = [
             f for f in video_files if f.get("name", "") not in baseline and Path(f.get("name", "")).stem not in claimed
         ]
@@ -3199,7 +3177,7 @@ async def select_timelapse(
     files = []
     remote_path = None
     expected_size = None
-    for timelapse_dir in ["/timelapse", "/timelapse/video", "/record", "/recording"]:
+    for timelapse_dir in TIMELAPSE_DIRECTORIES:
         try:
             files = await list_files_async(
                 printer.ip_address, printer.access_code, timelapse_dir, printer_model=printer.model

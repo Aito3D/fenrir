@@ -1248,6 +1248,30 @@ async def _count_related_queue_items(db: AsyncSession, archive_id: int) -> tuple
     return int(total or 0), int(printing or 0)
 
 
+async def claimed_timelapse_stems(db: AsyncSession, printer_id: int | None, exclude_archive_id: int) -> set[str]:
+    """Video filenames already attached to another archive of this printer (#2704).
+
+    Used to disambiguate when more than one file is new since the baseline --
+    a previous print's video can land after this print's baseline was taken.
+    Ordering the candidates would be the obvious fix and is the wrong one: it
+    can only be done on mtime or the filename timestamp, both from the
+    printer's own clock, which a LAN-only printer can't sync. Exclusion needs
+    no clock. ``attach_timelapse`` stores the video under the printer's own
+    filename and the MP4 conversion keeps the stem, so the stem of
+    ``timelapse_path`` is what was claimed.
+    """
+    if printer_id is None:
+        return set()
+    rows = await db.execute(
+        select(PrintArchive.timelapse_path).where(
+            PrintArchive.printer_id == printer_id,
+            PrintArchive.id != exclude_archive_id,
+            PrintArchive.timelapse_path.is_not(None),
+        )
+    )
+    return {Path(p).stem for p in rows.scalars().all() if p}
+
+
 def _list_extra_data_expr():
     """SQL for ``extra_data`` without its ``_print_data`` key, decoded as JSON."""
     from sqlalchemy import JSON, cast, func, type_coerce
