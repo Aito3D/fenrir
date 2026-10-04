@@ -690,14 +690,19 @@ async def no_3mf_warning(
     ]
     if user is not None and not can_read_all:
         conditions.append(PrintArchive.created_by_id == user.id)
-    result = await db.execute(select(PrintArchive.extra_data).where(*conditions))
+    # The two keys, read in SQL: decoding every row's whole extra_data (with
+    # its ~9 KB _print_data snapshot) for a month of archives cost ~12 MB of
+    # JSON parsing on the event loop per banner check.
+    result = await db.execute(
+        select(
+            PrintArchive.extra_data["no_3mf_available"].as_boolean(),
+            PrintArchive.extra_data["no_3mf_reason"].as_string(),
+        ).where(*conditions, PrintArchive.extra_data["no_3mf_available"].as_boolean().is_(True))
+    )
     reasons: set[str] = set()
     has_fallback = False
-    for (extra_data,) in result.all():
-        if not extra_data or not extra_data.get("no_3mf_available"):
-            continue
+    for _available, reason in result.all():
         has_fallback = True
-        reason = extra_data.get("no_3mf_reason")
         if reason:
             reasons.add(reason)
     if not has_fallback:
