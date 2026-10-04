@@ -5232,7 +5232,7 @@ def _drop_replaced_attachment(old_relpath: str | None, new_relpath: str) -> None
     """
     if not old_relpath or old_relpath == new_relpath:
         return
-    old_path = settings.base_dir / old_relpath
+    old_path = settings.base_dir / old_relpath  # SEC-PATH-OK: resolve()+relative_to(base_dir) checked below
     try:
         old_path.resolve().relative_to(settings.base_dir.resolve())
     except ValueError:
@@ -5268,7 +5268,7 @@ def _resolve_attachment_path(archive: PrintArchive, kind: str, attachment_filena
         # inside it, so deleting the archive removes it too (#2968).
         source_dir = settings.base_dir / "archive" / "no_source" / str(archive.id)
         if kind != "source":
-            source_dir = source_dir / kind
+            source_dir = source_dir / kind  # SEC-PATH-OK: kind is the literal "source" or "f3d" from our callers
 
     # Containment check via resolve() — catches absolute file_path, `..`
     # traversal, and any other shape that escapes the data volume — but we
