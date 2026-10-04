@@ -10,11 +10,12 @@ from __future__ import annotations
 import logging
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.core.auth import RequirePermissionIfAuthEnabled
+from backend.app.api.routes.aito import _check_ai_rate_limit
+from backend.app.core.auth import RequirePermissionIfAuthEnabled, require_any_permission_if_auth_enabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.models.archive import PrintArchive
@@ -22,8 +23,23 @@ from backend.app.models.library import LibraryTag
 from backend.app.models.project import Project
 from backend.app.models.project_tag import ProjectTag
 from backend.app.models.user import User
-from backend.app.schemas.project import ProjectSearchItem, ProjectSearchResponse, ProjectTagCount
-from backend.app.services.project_tags import project_tag_refs
+from backend.app.schemas.project import (
+    ProjectReformulateRequest,
+    ProjectReformulateResponse,
+    ProjectSearchItem,
+    ProjectSearchResponse,
+    ProjectSuggestTagsRequest,
+    ProjectSuggestTagsResponse,
+    ProjectTagCount,
+    ProjectTagRef,
+)
+from backend.app.services.openrouter import (
+    OpenRouterNotConfiguredError,
+    OpenRouterUpstreamError,
+    reformulate_project_text,
+    suggest_project_tag_names,
+)
+from backend.app.services.project_tags import project_tag_refs, rank_tag_suggestions, tag_name_key
 
 logger = logging.getLogger(__name__)
 
@@ -148,3 +164,52 @@ async def list_project_tags(
         .order_by(LibraryTag.name_key)
     )
     return [ProjectTagCount(id=tag_id, name=name, project_count=int(n)) for tag_id, name, n in rows.all()]
+
+
+_AI_WRITERS = require_any_permission_if_auth_enabled(Permission.PROJECTS_CREATE, Permission.PROJECTS_UPDATE)
+
+
+@router.post("/ai/reformulate", response_model=ProjectReformulateResponse)
+async def reformulate_text(
+    payload: ProjectReformulateRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(_AI_WRITERS),
+):
+    """French rewording of a project title or description (spec §3.5). Shares
+    the Aito OpenRouter budget: same bill, same bucket."""
+    _check_ai_rate_limit(request, current_user)
+    try:
+        text, model = await reformulate_project_text(db, payload.text, payload.field)
+    except OpenRouterNotConfiguredError:
+        raise HTTPException(status_code=409, detail="OpenRouter is not configured") from None
+    except OpenRouterUpstreamError as e:
+        logger.warning("Project reformulate failed upstream: %s", e)
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    return ProjectReformulateResponse(text=text, model=model)
+
+
+@router.post("/ai/suggest-tags", response_model=ProjectSuggestTagsResponse)
+async def suggest_tags(
+    payload: ProjectSuggestTagsRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(_AI_WRITERS),
+):
+    """Up to five tags, catalogue first, at most two new names. Never applied:
+    the client shows them as chips the operator accepts one by one."""
+    _check_ai_rate_limit(request, current_user)
+    catalogue_rows = (await db.execute(select(LibraryTag.id, LibraryTag.name).order_by(LibraryTag.name_key))).all()
+    catalogue = {tag_name_key(name): ProjectTagRef(id=tag_id, name=name) for tag_id, name in catalogue_rows}
+    try:
+        raw, model = await suggest_project_tag_names(
+            db, payload.title, payload.description, [name for _id, name in catalogue_rows]
+        )
+    except OpenRouterNotConfiguredError:
+        raise HTTPException(status_code=409, detail="OpenRouter is not configured") from None
+    except OpenRouterUpstreamError as e:
+        logger.warning("Project tag suggestion failed upstream: %s", e)
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    return ProjectSuggestTagsResponse(
+        suggestions=rank_tag_suggestions(raw, catalogue, set(payload.exclude_tag_ids)), model=model
+    )

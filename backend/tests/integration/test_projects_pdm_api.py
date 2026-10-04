@@ -4,8 +4,10 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
 
+from backend.app.api.routes import projects_pdm
 from backend.app.models.library import LibraryTag
 from backend.app.models.project_tag import ProjectTag
+from backend.app.services.openrouter import OpenRouterNotConfiguredError
 
 
 @pytest.mark.asyncio
@@ -212,3 +214,64 @@ async def test_project_tags_catalogue_counts(async_client: AsyncClient):
     rows = {r["name"]: r["project_count"] for r in (await async_client.get("/api/v1/projects/tags")).json()}
     assert rows["commun"] == 2
     assert rows["seul"] == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_reformulate_returns_model_text(async_client: AsyncClient, monkeypatch):
+    async def fake(_db, text, field):
+        assert field == "title"
+        return "Support pour caméra FX3", "test-model"
+
+    monkeypatch.setattr(projects_pdm, "reformulate_project_text", fake)
+    response = await async_client.post(
+        "/api/v1/projects/ai/reformulate", json={"text": "support cam fx3", "field": "title"}
+    )
+    assert response.status_code == 200
+    assert response.json() == {"text": "Support pour caméra FX3", "model": "test-model"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_reformulate_unconfigured_is_409(async_client: AsyncClient, monkeypatch):
+    async def fake(_db, _text, _field):
+        raise OpenRouterNotConfiguredError()
+
+    monkeypatch.setattr(projects_pdm, "reformulate_project_text", fake)
+    response = await async_client.post("/api/v1/projects/ai/reformulate", json={"text": "x", "field": "description"})
+    assert response.status_code == 409
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_reformulate_rejects_blank_and_unknown_field(async_client: AsyncClient):
+    blank = await async_client.post("/api/v1/projects/ai/reformulate", json={"text": "  ", "field": "title"})
+    assert blank.status_code == 422
+    unknown = await async_client.post("/api/v1/projects/ai/reformulate", json={"text": "x", "field": "notes"})
+    assert unknown.status_code == 422
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_suggest_tags_marks_existing_and_excludes_current(async_client: AsyncClient, monkeypatch, db_session):
+    db_session.add_all([LibraryTag(name="Drone", name_key="drone"), LibraryTag(name="Support", name_key="support")])
+    await db_session.commit()
+    support_id = (await db_session.execute(select(LibraryTag.id).where(LibraryTag.name_key == "support"))).scalar_one()
+    drone_id = (await db_session.execute(select(LibraryTag.id).where(LibraryTag.name_key == "drone"))).scalar_one()
+    seen = {}
+
+    async def fake(_db, _title, _description, existing):
+        seen["existing"] = existing
+        return ["support", "drone", "fixation"], "test-model"
+
+    monkeypatch.setattr(projects_pdm, "suggest_project_tag_names", fake)
+    response = await async_client.post(
+        "/api/v1/projects/ai/suggest-tags",
+        json={"title": "Support caméra drone", "exclude_tag_ids": [support_id]},
+    )
+    assert response.status_code == 200
+    assert response.json()["suggestions"] == [
+        {"name": "Drone", "tag_id": drone_id},
+        {"name": "fixation", "tag_id": None},
+    ]
+    assert seen["existing"] == ["Drone", "Support"]

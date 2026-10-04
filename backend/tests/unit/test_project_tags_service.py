@@ -3,11 +3,14 @@ from sqlalchemy import select
 
 from backend.app.models.library import LibraryTag, prune_empty_library_tags
 from backend.app.models.project import Project
+from backend.app.schemas.project import ProjectTagRef
+from backend.app.services.openrouter import parse_tag_lines
 from backend.app.services.project_tags import (
     UnknownTagError,
     apply_project_tag_input,
     get_or_create_tags,
     project_tag_refs,
+    rank_tag_suggestions,
     set_project_tags,
     sync_project_tags_from_string,
 )
@@ -74,3 +77,23 @@ async def test_prune_keeps_project_only_tags(db_session):
     names = (await db_session.execute(select(LibraryTag.name))).scalars().all()
     assert "projet-seul" in names
     assert "orphelin" not in names
+
+
+def test_parse_tag_lines_strips_bullets_and_quotes():
+    assert parse_tag_lines('- drone\n2. "Pièce auto"\n• support, fixation\n\n') == [
+        "drone",
+        "Pièce auto",
+        "support",
+        "fixation",
+    ]
+
+
+def test_rank_puts_existing_first_caps_new_at_two_and_total_at_five():
+    catalogue = {"drone": ProjectTagRef(id=1, name="Drone"), "fpv": ProjectTagRef(id=2, name="FPV")}
+    ranked = rank_tag_suggestions(["neuf1", "drone", "neuf2", "neuf3", "FPV", "drone"], catalogue, exclude_ids=set())
+    assert [(s.name, s.tag_id) for s in ranked] == [("Drone", 1), ("FPV", 2), ("neuf1", None), ("neuf2", None)]
+
+
+def test_rank_skips_tags_the_project_already_has():
+    catalogue = {"drone": ProjectTagRef(id=1, name="Drone")}
+    assert rank_tag_suggestions(["drone"], catalogue, exclude_ids={1}) == []

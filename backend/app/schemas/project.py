@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -374,3 +375,36 @@ class ProjectTagCount(BaseModel):
     id: int
     name: str
     project_count: int
+
+
+class ProjectTagSuggestion(BaseModel):
+    name: str
+    tag_id: int | None
+
+
+class ProjectReformulateRequest(BaseModel):
+    text: str = Field(..., max_length=2000)
+    field: Literal["title", "description"]
+
+    @field_validator("text")
+    @classmethod
+    def _not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("text must not be blank")
+        return v.strip()
+
+
+class ProjectReformulateResponse(BaseModel):
+    text: str
+    model: str
+
+
+class ProjectSuggestTagsRequest(BaseModel):
+    title: str = Field(..., min_length=1, max_length=255)
+    description: str | None = Field(default=None, max_length=2000)
+    exclude_tag_ids: list[int] = []
+
+
+class ProjectSuggestTagsResponse(BaseModel):
+    suggestions: list[ProjectTagSuggestion]
+    model: str

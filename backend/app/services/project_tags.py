@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.models.library import LibraryTag
 from backend.app.models.project import Project
 from backend.app.models.project_tag import ProjectTag
-from backend.app.schemas.project import ProjectTagRef
+from backend.app.schemas.project import ProjectTagRef, ProjectTagSuggestion
 
 MAX_TAG_CHARS = 64
 
@@ -142,3 +142,30 @@ async def refresh_tag_mirrors(db: AsyncSession, project_ids: list[int]) -> None:
     for project in (await db.execute(select(Project).where(Project.id.in_(project_ids)))).scalars().all():
         project.tags = tag_mirror([ref.name for ref in refs.get(project.id, [])])
     await db.flush()
+
+
+MAX_SUGGESTIONS = 5
+MAX_NEW_SUGGESTIONS = 2
+
+
+def rank_tag_suggestions(
+    raw_names: list[str], catalogue: dict[str, ProjectTagRef], exclude_ids: set[int]
+) -> list[ProjectTagSuggestion]:
+    """Existing catalogue tags first (in the model's order), then at most two new
+    names, five in total; tags the project already has are dropped (spec §3.5)."""
+    existing: list[ProjectTagSuggestion] = []
+    new: list[ProjectTagSuggestion] = []
+    seen: set[str] = set()
+    for raw in raw_names:
+        name = clean_tag_name(raw)
+        key = tag_name_key(name)
+        if not name or key in seen:
+            continue
+        seen.add(key)
+        hit = catalogue.get(key)
+        if hit is not None:
+            if hit.id not in exclude_ids:
+                existing.append(ProjectTagSuggestion(name=hit.name, tag_id=hit.id))
+        elif len(new) < MAX_NEW_SUGGESTIONS:
+            new.append(ProjectTagSuggestion(name=name, tag_id=None))
+    return (existing + new)[:MAX_SUGGESTIONS]
