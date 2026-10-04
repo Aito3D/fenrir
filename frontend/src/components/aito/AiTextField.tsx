@@ -37,6 +37,10 @@ export interface AiTextFieldProps {
   rows?: number;
   /** Extra classes for the control itself (margins, mostly). */
   className?: string;
+  /** What the field sends its text to on blur. Defaults to the Aito
+   *  spell-check; the projects header passes its French rewording instead.
+   *  Same contract either way: the answer replaces the text, with undo. */
+  correct?: (text: string) => Promise<{ text: string }>;
 }
 
 /** A text field that spell-checks its own French when the user leaves it.
@@ -68,6 +72,7 @@ export function AiTextField({
   multiline = false,
   rows = 2,
   className = '',
+  correct = api.proofreadAitoText,
 }: AiTextFieldProps) {
   const { t } = useTranslation();
 
@@ -118,7 +123,7 @@ export function AiTextField({
   }, []);
 
   const mutation = useMutation({
-    mutationFn: (text: string) => api.proofreadAitoText(text),
+    mutationFn: (text: string) => correct(text),
     onSuccess: (data, sent) => {
       settledRef.current.add(data.text);
       // The field is gone — applying the correction now would run it through
