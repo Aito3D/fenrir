@@ -2011,7 +2011,9 @@ class ArchiveService:
         import asyncio
 
         archive = await self.get_archive(archive_id)
-        if not archive:
+        if not archive or archive.deleted_at is not None:
+            # Deleted while the print ran: writing the video would recreate
+            # the removed folder, and nothing would ever delete it again.
             return False
 
         # Where this archive's files live. Deliberately the shared helper: an

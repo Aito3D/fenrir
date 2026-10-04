@@ -308,6 +308,7 @@ class TestBaselineIsPersisted:
         from backend.app.main import _capture_timelapse_baseline_at_start
 
         archive = MagicMock()
+        archive.deleted_at = None  # a live (not soft-deleted) archive
         archive.timelapse_baseline = None
         session = _session(archive)
 
@@ -350,6 +351,7 @@ class TestBaselineIsPersisted:
         from backend.app.main import _capture_timelapse_baseline_at_start
 
         archive = MagicMock()
+        archive.deleted_at = None  # a live (not soft-deleted) archive
         session = _session(archive)
 
         with (
@@ -370,6 +372,7 @@ class TestManualScanUsesTheBaseline:
         from datetime import datetime, timezone
 
         a = MagicMock()
+        a.deleted_at = None  # a live (not soft-deleted) archive
         a.id = 64
         a.printer_id = 1
         a.filename = "mops.3mf"
@@ -520,6 +523,7 @@ class TestFinishPhotoUpgrade:
         from backend.app.main import _upgrade_finish_photo_from_timelapse
 
         archive = MagicMock()
+        archive.deleted_at = None  # a live (not soft-deleted) archive
         archive.photos = ["finish_live_grab.jpg"]
         session = _session(archive)
 
@@ -573,6 +577,7 @@ class TestFinishPhotoUpgrade:
         from backend.app.main import _upgrade_finish_photo_from_timelapse
 
         archive = MagicMock()
+        archive.deleted_at = None  # a live (not soft-deleted) archive
         archive.photos = ["finish_from_timelapse.jpg", "finish_live_grab.jpg"]
         session = _session(archive)
 
@@ -639,6 +644,7 @@ class TestStaleBaselineCannotSurvive:
         from backend.app.main import _capture_timelapse_baseline_at_start
 
         archive = MagicMock()
+        archive.deleted_at = None  # a live (not soft-deleted) archive
         archive.timelapse_baseline = ["from_the_previous_run.avi"]
         session = _session(archive)
 
@@ -656,6 +662,7 @@ class TestStaleBaselineCannotSurvive:
         from backend.app.main import _capture_timelapse_baseline_at_start
 
         archive = MagicMock()
+        archive.deleted_at = None  # a live (not soft-deleted) archive
         archive.timelapse_baseline = ["from_the_previous_run.avi"]
         session = _session(archive)
 

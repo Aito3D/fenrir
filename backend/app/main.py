@@ -3725,7 +3725,7 @@ async def _append_archive_photo(archive_id: int, photo_filename: str) -> None:
 
     async with async_session() as db:
         arch = await db.get(PrintArchive, archive_id)
-        if arch is not None:
+        if arch is not None and arch.deleted_at is None:
             arch.photos = [*(arch.photos or []), photo_filename]
             await db.commit()
 
@@ -6029,6 +6029,11 @@ async def _scan_for_timelapse_with_retries(archive_id: int, baseline_names: set[
             if not archive:
                 logger.warning("[TIMELAPSE] Archive %s not found, aborting", archive_id)
                 return
+            if archive.deleted_at is not None:
+                # Deleted while the print ran; the attach would refuse anyway,
+                # so don't spend the FTP scan (or the printer's copy) on it.
+                logger.info("[TIMELAPSE] Archive %s was deleted, skipping the scan", archive_id)
+                return
             if archive.timelapse_path:
                 logger.info("[TIMELAPSE] Archive %s already has timelapse attached", archive_id)
                 return
@@ -6372,7 +6377,11 @@ async def _capture_finish_photo_from_timelapse(
         async with async_session() as db:
             result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
             archive = result.scalar_one_or_none()
-            timelapse_relpath = archive.timelapse_path if archive else None
+            if archive is None or archive.deleted_at is not None:
+                # Deleted while the print ran: its folder is gone, and writing
+                # a photo would recreate it with nothing left to clean it up.
+                return None, False
+            timelapse_relpath = archive.timelapse_path
 
         if timelapse_relpath:
             video_path = app_settings.base_dir / timelapse_relpath
@@ -6438,7 +6447,7 @@ async def _upgrade_finish_photo_from_timelapse(archive_id: int, archive_dir: Pat
             from backend.app.models.archive import PrintArchive
 
             archive = await db.get(PrintArchive, archive_id)
-            if archive is None:
+            if archive is None or archive.deleted_at is not None:
                 return
             photos = list(archive.photos or [])
             if filename in photos:
@@ -8404,7 +8413,9 @@ async def on_print_complete(printer_id: int, data: dict):
                     await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
                 ).scalar_one_or_none()
 
-            if not printer or not archive:
+            if not printer or not archive or archive.deleted_at is not None:
+                # A deleted archive's folder is gone; a finish photo would
+                # recreate it with nothing left to ever remove it.
                 return None
 
             import uuid

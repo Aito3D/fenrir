@@ -258,6 +258,7 @@ class TestScanForTimelapseWithRetries:
     def _make_mocks(self, archive_filename="benchy.gcode.3mf", timelapse_path=None):
         """Create standard mock archive and printer."""
         mock_archive = MagicMock()
+        mock_archive.deleted_at = None  # a live (not soft-deleted) archive
         mock_archive.id = 1
         mock_archive.timelapse_path = timelapse_path
         mock_archive.printer_id = 1
@@ -587,6 +588,7 @@ class TestListTimelapseVideosAvi:
     async def test_scan_detects_new_avi_file(self):
         """Snapshot-diff should detect new AVI files just like MP4."""
         mock_archive = MagicMock()
+        mock_archive.deleted_at = None  # a live (not soft-deleted) archive
         mock_archive.id = 1
         mock_archive.timelapse_path = None
         mock_archive.printer_id = 1
@@ -672,6 +674,7 @@ class TestConvertTimelapseToMp4:
         mock_process.returncode = 0
 
         mock_archive = MagicMock()
+        mock_archive.deleted_at = None  # a live (not soft-deleted) archive
         mock_archive.id = 42
         mock_archive.timelapse_path = "archives/42/video.avi"
 
@@ -764,6 +767,7 @@ class TestAttachTimelapseBackgroundConversion:
         from backend.app.services.archive import ArchiveService
 
         mock_archive = MagicMock()
+        mock_archive.deleted_at = None  # a live (not soft-deleted) archive
         mock_archive.file_path = "archives/1/file.3mf"
 
         mock_db = AsyncMock()
@@ -793,6 +797,7 @@ class TestAttachTimelapseBackgroundConversion:
         from backend.app.services.archive import ArchiveService
 
         mock_archive = MagicMock()
+        mock_archive.deleted_at = None  # a live (not soft-deleted) archive
         mock_archive.file_path = "archives/1/file.3mf"
 
         mock_db = AsyncMock()
@@ -835,6 +840,7 @@ class TestDeleteTimelapse:
         timelapse_file.write_bytes(b"fake video data")
 
         mock_archive = MagicMock()
+        mock_archive.deleted_at = None  # a live (not soft-deleted) archive
         mock_archive.timelapse_path = "archives/1/timelapse.mp4"
         mock_archive.deleted_at = None
 
@@ -862,6 +868,7 @@ class TestDeleteTimelapse:
         from backend.app.api.routes.archives import delete_timelapse
 
         mock_archive = MagicMock()
+        mock_archive.deleted_at = None  # a live (not soft-deleted) archive
         mock_archive.timelapse_path = None
         mock_archive.deleted_at = None
 
