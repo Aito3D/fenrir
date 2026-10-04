@@ -349,3 +349,28 @@ class ProjectImport(BaseModel):
     budget: float | None = None
     bom_items: list[BOMItemExport] = []
     linked_folders: list[LinkedFolderExport] = []
+
+
+class ProjectSearchItem(BaseModel):
+    id: int
+    code: str | None
+    name: str
+    description: str | None
+    status: str
+    color: str | None
+    cover_image_filename: str | None
+    tags: list[ProjectTagRef]
+    archive_count: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class ProjectSearchResponse(BaseModel):
+    items: list[ProjectSearchItem]
+    total: int
+
+
+class ProjectTagCount(BaseModel):
+    id: int
+    name: str
+    project_count: int
