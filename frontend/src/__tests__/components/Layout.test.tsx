@@ -97,6 +97,19 @@ describe('Layout', () => {
         expect(links.length).toBeGreaterThan(0);
       });
     });
+
+    it('never lets the nav list scroll sideways', async () => {
+      // The collapsed rail keeps each label laid out (invisible) beside its
+      // icon, so the list is wider than the rail. overflow-y-auto alone makes
+      // the x axis scrollable too, and a trackpad swipe then slid every icon
+      // half out of the rail.
+      render(<Layout />);
+
+      await waitFor(() => {
+        const nav = document.querySelector('aside nav');
+        expect(nav).toHaveClass('overflow-y-auto', 'overflow-x-hidden');
+      });
+    });
   });
 
   describe('navigation', () => {
