@@ -4257,6 +4257,35 @@ export interface PrinterMaintenanceOverview {
   warning_count: number;
 }
 
+// Maintenance → Hours tab (lifetime hours history)
+export interface HourMachine {
+  id: number;
+  printer_id: number | null;
+  name: string;
+  model: string | null;
+  retired: boolean;
+  current_hours: number | null;
+}
+
+export interface HourReading {
+  id: number;
+  machine_id: number;
+  reading_date: string; // YYYY-MM-DD
+  hours: number;
+  source: 'manual' | 'auto';
+}
+
+export interface HoursOverview {
+  today: string; // the server's date
+  machines: HourMachine[];
+  readings: HourReading[];
+}
+
+export interface HourImportBody {
+  new_machines: { key: string; name: string; model: string | null }[];
+  readings: { machine_id?: number; key?: string; reading_date: string; hours: number }[];
+}
+
 export interface MaintenanceHistory {
   id: number;
   printer_maintenance_id: number;
@@ -8428,6 +8457,23 @@ export const api = {
       `/maintenance/printers/${printerId}/hours?total_hours=${totalHours}`,
       { method: 'PATCH' }
     ),
+  getPrinterHours: () => request<HoursOverview>('/maintenance/hours'),
+  saveHourReadings: (readingDate: string, entries: { machine_id: number; hours: number | null }[]) =>
+    request<HoursOverview>('/maintenance/hours/readings', {
+      method: 'POST',
+      body: JSON.stringify({ reading_date: readingDate, entries }),
+    }),
+  deleteHourReadings: (readingDate: string) =>
+    request<HoursOverview>(`/maintenance/hours/readings?reading_date=${encodeURIComponent(readingDate)}`, {
+      method: 'DELETE',
+    }),
+  importHourReadings: (body: HourImportBody) =>
+    request<{ machines_created: number; readings_written: number }>('/maintenance/hours/import', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  deleteHourMachine: (machineId: number) =>
+    request<{ status: string }>(`/maintenance/hours/machines/${machineId}`, { method: 'DELETE' }),
   assignMaintenanceType: (printerId: number, typeId: number) =>
     request<MaintenanceStatus>(`/maintenance/printers/${printerId}/assign/${typeId}`, {
       method: 'POST',
