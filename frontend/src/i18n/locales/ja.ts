@@ -3714,6 +3714,8 @@ export default {
       importUrl: '既存のオーバーレイURL',
       importAction: 'URLをインポート',
       importHint: 'URLをローカルでインポートし、トークンと設定をこのサーバーで再利用します。Bambuddyが認識しない設定は無視されます。',
+      rememberedHint: '選択内容はこのブラウザーに保存されます。トークンは保存されません。',
+      resetChoices: '選択をリセット',
       importError: '正のプリンター番号を含み、トークンが1つまでで、ユーザー名やパスワードを含まない有効なHTTP(S)オーバーレイURLを入力してください。',
       manualToken: '手動入力トークン',
       title: 'ストリームオーバーレイ',

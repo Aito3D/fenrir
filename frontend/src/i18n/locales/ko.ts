@@ -3537,6 +3537,8 @@ export default {
       importUrl: '기존 오버레이 URL',
       importAction: 'URL 가져오기',
       importHint: 'URL을 로컬에서 가져와 토큰과 설정을 이 서버에서 재사용합니다. Bambuddy가 인식하지 못하는 설정은 무시됩니다.',
+      rememberedHint: '선택 내용은 이 브라우저에 저장됩니다. 토큰은 저장되지 않습니다.',
+      resetChoices: '선택 초기화',
       importError: '양수 프린터 번호가 있고 토큰이 최대 하나이며 사용자 이름이나 비밀번호가 없는 유효한 HTTP(S) 오버레이 URL을 입력하세요.',
       manualToken: '토큰 직접 입력',
       title: '스트림 오버레이',

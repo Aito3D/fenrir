@@ -3746,6 +3746,8 @@ export default {
       importUrl: 'Existing overlay URL',
       importAction: 'Import URL',
       importHint: 'Import a URL locally to reuse its token and settings on this server. Settings Bambuddy doesn\'t recognise are ignored.',
+      rememberedHint: 'Your choices are remembered in this browser. The token is not.',
+      resetChoices: 'Reset choices',
       importError: 'Enter a valid HTTP(S) overlay URL with a positive printer number, at most one token and no user name or password.',
       manualToken: 'Manual token',
       title: 'Streaming Overlay',

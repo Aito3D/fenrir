@@ -3744,6 +3744,8 @@ export default {
       importUrl: 'Bestaande overlay-URL',
       importAction: 'URL importeren',
       importHint: 'Importeer een URL lokaal om het token en de instellingen op deze server te gebruiken. Instellingen die Bambuddy niet kent, worden genegeerd.',
+      rememberedHint: 'Je keuzes worden in deze browser onthouden. Het token niet.',
+      resetChoices: 'Keuzes herstellen',
       importError: 'Voer een geldige HTTP(S)-overlay-URL in met een positief printernummer, hoogstens één token en zonder gebruikersnaam of wachtwoord.',
       manualToken: 'Handmatig token',
       title: 'Streamingoverlay',

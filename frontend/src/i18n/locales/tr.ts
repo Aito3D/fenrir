@@ -3716,6 +3716,8 @@ export default {
       importUrl: 'Mevcut katman URL’si',
       importAction: 'URL’yi içe aktar',
       importHint: 'Belirteci ve ayarları bu sunucuda yeniden kullanmak için URL’yi yerel olarak içe aktarın. Bambuddy’nin tanımadığı ayarlar yok sayılır.',
+      rememberedHint: 'Seçimleriniz bu tarayıcıda hatırlanır. Belirteç hatırlanmaz.',
+      resetChoices: 'Seçimleri sıfırla',
       importError: 'Pozitif bir yazıcı numarası, en fazla bir belirteç içeren ve kullanıcı adı ya da parola içermeyen geçerli bir HTTP(S) kaplama URL’si girin.',
       manualToken: 'Manuel belirteç',
       title: 'Yayın Kaplaması',

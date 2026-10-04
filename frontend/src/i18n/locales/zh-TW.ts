@@ -3701,6 +3701,8 @@ export default {
       importUrl: '現有疊加層 URL',
       importAction: '匯入 URL',
       importHint: '在本機匯入 URL，以在此伺服器上重用其權杖和設定。Bambuddy 無法識別的設定將被忽略。',
+      rememberedHint: '你的選擇會儲存在此瀏覽器中，權杖不會。',
+      resetChoices: '重設選擇',
       importError: '請輸入有效的 HTTP(S) 疊加層 URL，需包含正整數印表機編號、最多一個權杖，且不含使用者名稱或密碼。',
       manualToken: '手動輸入權杖',
       title: '直播疊加層',

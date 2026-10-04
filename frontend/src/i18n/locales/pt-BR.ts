@@ -3701,6 +3701,8 @@ export default {
       importUrl: 'URL de sobreposição existente',
       importAction: 'Importar URL',
       importHint: 'Importe uma URL localmente para reutilizar o token e as configurações neste servidor. Configurações que o Bambuddy não reconhece são ignoradas.',
+      rememberedHint: 'Suas escolhas ficam salvas neste navegador. O token não.',
+      resetChoices: 'Redefinir escolhas',
       importError: 'Insira uma URL de sobreposição HTTP(S) válida com um número de impressora positivo, no máximo um token e sem usuário ou senha.',
       manualToken: 'Token manual',
       title: 'Sobreposição de transmissão',

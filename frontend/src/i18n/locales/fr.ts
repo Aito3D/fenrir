@@ -3702,6 +3702,8 @@ export default {
       importUrl: 'URL de superposition existante',
       importAction: 'Importer l’URL',
       importHint: 'Importez une URL localement pour réutiliser son jeton et ses réglages sur ce serveur. Les réglages que Bambuddy ne reconnaît pas sont ignorés.',
+      rememberedHint: 'Vos choix sont mémorisés dans ce navigateur. Le jeton ne l\'est pas.',
+      resetChoices: 'Réinitialiser les choix',
       importError: 'Saisissez une URL de superposition HTTP(S) valide avec un numéro d’imprimante positif, au plus un jeton et sans nom d’utilisateur ni mot de passe.',
       manualToken: 'Jeton manuel',
       title: 'Incrustation de diffusion',

@@ -3716,6 +3716,8 @@ export default {
       importUrl: 'URL de superposición existente',
       importAction: 'Importar URL',
       importHint: 'Importa una URL localmente para reutilizar su token y ajustes en este servidor. Los ajustes que Bambuddy no reconoce se ignoran.',
+      rememberedHint: 'Tus opciones se guardan en este navegador. El token no.',
+      resetChoices: 'Restablecer opciones',
       importError: 'Introduce una URL de superposición HTTP(S) válida con un número de impresora positivo, como máximo un token y sin usuario ni contraseña.',
       manualToken: 'Token manual',
       title: 'Superposición de emisión',

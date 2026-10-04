@@ -3743,6 +3743,8 @@ errors: {
       importUrl: 'Befintlig överläggs-URL',
       importAction: 'Importera URL',
       importHint: 'Importera en URL lokalt för att återanvända dess token och inställningar på den här servern. Inställningar som Bambuddy inte känner igen ignoreras.',
+      rememberedHint: 'Dina val sparas i den här webbläsaren. Token gör det inte.',
+      resetChoices: 'Återställ val',
       importError: 'Ange en giltig HTTP(S)-overlay-URL med ett positivt skrivarnummer, högst en token och utan användarnamn eller lösenord.',
       manualToken: 'Manuell token',
       title: 'Strömningsöverlägg',

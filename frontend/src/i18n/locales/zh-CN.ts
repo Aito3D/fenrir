@@ -3701,6 +3701,8 @@ export default {
       importUrl: '现有叠加层 URL',
       importAction: '导入 URL',
       importHint: '在本地导入 URL，以在此服务器上重用其令牌和设置。Bambuddy 无法识别的设置将被忽略。',
+      rememberedHint: '你的选择会保存在此浏览器中，令牌不会。',
+      resetChoices: '重置选择',
       importError: '请输入有效的 HTTP(S) 叠加层 URL，需包含正整数打印机编号、最多一个令牌，且不含用户名或密码。',
       manualToken: '手动输入令牌',
       title: '直播叠加层',
