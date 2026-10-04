@@ -1863,6 +1863,12 @@ export default {
       cooling: 'Soğutma',
       heating: 'Isıtma',
     },
+    storageWarning: {
+      storeOff: "Kart depolama kapalı",
+      storeOffHint: "Yazıcıda “Gönderilen dosyaları harici depolamaya kaydet” seçeneğini açın; aksi halde Bambu Studio baskıları 3MF olmadan arşivlenir (küçük resim, filament veya maliyet yok).",
+      noMedia: "Kart yok",
+      noMediaHint: "Bir SD kart veya USB bellek takın: olmadan Bambu Studio baskıları 3MF olmadan arşivlenir (küçük resim, filament veya maliyet yok).",
+    },
     noSdCard: 'SD Yok',
     door: {
       open: 'Açık',

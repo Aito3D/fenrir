@@ -1863,6 +1863,12 @@ export default {
       cooling: '製冷',
       heating: '加熱',
     },
+    storageWarning: {
+      storeOff: "記憶卡儲存已關閉",
+      storeOffHint: "請在印表機上開啟「將傳送的檔案儲存到外部儲存」，否則 Bambu Studio 的列印會在沒有 3MF 的情況下封存（無縮圖、線材與成本）。",
+      noMedia: "無記憶卡",
+      noMediaHint: "請插入 SD 卡或 USB 隨身碟：沒有時，Bambu Studio 的列印會在沒有 3MF 的情況下封存（無縮圖、線材與成本）。",
+    },
     noSdCard: '無SD',
     door: {
       open: '開',

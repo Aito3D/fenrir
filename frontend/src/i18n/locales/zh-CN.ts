@@ -1863,6 +1863,12 @@ export default {
       cooling: '制冷',
       heating: '加热',
     },
+    storageWarning: {
+      storeOff: "存储卡保存已关闭",
+      storeOffHint: "请在打印机上开启“将发送的文件存储到外部存储”，否则 Bambu Studio 的打印将在没有 3MF 的情况下归档（无缩略图、耗材和成本）。",
+      noMedia: "无存储卡",
+      noMediaHint: "请插入 SD 卡或 U 盘：没有存储卡时，Bambu Studio 的打印将在没有 3MF 的情况下归档（无缩略图、耗材和成本）。",
+    },
     noSdCard: '无SD',
     door: {
       open: '开',

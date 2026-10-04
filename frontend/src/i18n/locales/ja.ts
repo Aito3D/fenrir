@@ -1862,6 +1862,12 @@ export default {
       cooling: '冷却',
       heating: '加熱',
     },
+    storageWarning: {
+      storeOff: "カード保存オフ",
+      storeOffHint: "プリンターで「送信したファイルを外部ストレージに保存」をオンにしてください。オフのままだと Bambu Studio の印刷は 3MF なしで記録されます（サムネイル・フィラメント・コストなし）。",
+      noMedia: "カードなし",
+      noMediaHint: "SD カードまたは USB メモリを挿入してください。ないと Bambu Studio の印刷は 3MF なしで記録されます（サムネイル・フィラメント・コストなし）。",
+    },
     noSdCard: 'SDなし',
     door: {
       open: '開',

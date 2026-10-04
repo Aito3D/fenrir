@@ -797,6 +797,12 @@ export default {
       cooling: 'Kylning',
       heating: 'Uppvärmning',
     },
+    storageWarning: {
+      storeOff: "Kortlagring av",
+      storeOffHint: "Slå på ”Spara skickade filer på extern lagring” på skrivaren, annars arkiveras utskrifter från Bambu Studio utan sin 3MF (ingen miniatyr, filament eller kostnad).",
+      noMedia: "Inget kort",
+      noMediaHint: "Sätt i ett SD-kort eller USB-minne: utan det arkiveras utskrifter från Bambu Studio utan sin 3MF (ingen miniatyr, filament eller kostnad).",
+    },
     noSdCard: 'Inget SD-kort',
     door: {
       open: 'Öppen',

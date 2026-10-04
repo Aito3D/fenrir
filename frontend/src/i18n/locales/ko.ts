@@ -1820,6 +1820,12 @@ export default {
       cooling: '냉각',
       heating: '가열'
     },
+    storageWarning: {
+      storeOff: "카드 저장 꺼짐",
+      storeOffHint: "프린터에서 '보낸 파일을 외부 저장소에 저장'을 켜세요. 꺼져 있으면 Bambu Studio 출력이 3MF 없이 보관됩니다(썸네일, 필라멘트, 비용 없음).",
+      noMedia: "카드 없음",
+      noMediaHint: "SD 카드나 USB 메모리를 넣으세요. 없으면 Bambu Studio 출력이 3MF 없이 보관됩니다(썸네일, 필라멘트, 비용 없음).",
+    },
     noSdCard: 'SD 없음',
     door: {
       open: '열림',

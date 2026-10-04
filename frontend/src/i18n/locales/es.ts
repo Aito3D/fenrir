@@ -1863,6 +1863,12 @@ export default {
       cooling: 'Refrigeración',
       heating: 'Calentamiento',
     },
+    storageWarning: {
+      storeOff: "Almacenamiento en tarjeta desactivado",
+      storeOffHint: "Activa «Guardar los archivos enviados en el almacenamiento externo» en la impresora; si no, las impresiones de Bambu Studio se archivan sin su 3MF (sin miniatura, filamento ni coste).",
+      noMedia: "Sin tarjeta",
+      noMediaHint: "Inserta una tarjeta SD o una memoria USB: sin ella, las impresiones de Bambu Studio se archivan sin su 3MF (sin miniatura, filamento ni coste).",
+    },
     noSdCard: 'Sin SD',
     door: {
       open: 'Abierta',

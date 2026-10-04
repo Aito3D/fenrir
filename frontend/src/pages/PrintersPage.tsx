@@ -4018,6 +4018,23 @@ function PrinterCard({
                   {t('printers.connection.ethernet', 'Ethernet')}
                 </span>
               )}
+              {/* External storage warning: Bambu Studio prints on this printer
+                  will archive without their 3MF until it is resolved. */}
+              {status?.connected && status?.external_storage_warning && (
+                <span
+                  className="flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400"
+                  title={
+                    status.external_storage_warning === 'no_media'
+                      ? t('printers.storageWarning.noMediaHint')
+                      : t('printers.storageWarning.storeOffHint')
+                  }
+                >
+                  <HardDrive className="w-[var(--pc-i3,0.75rem)] h-[var(--pc-i3,0.75rem)]" />
+                  {status.external_storage_warning === 'no_media'
+                    ? t('printers.storageWarning.noMedia')
+                    : t('printers.storageWarning.storeOff')}
+                </span>
+              )}
               {/* WiFi signal indicator */}
               {status?.connected && !status?.wired_network && wifiSignal != null && (
                 <span

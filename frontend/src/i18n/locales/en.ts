@@ -1872,6 +1872,12 @@ export default {
       cooling: 'Cooling',
       heating: 'Heating',
     },
+    storageWarning: {
+      storeOff: "Card storage off",
+      storeOffHint: "Turn on \"Store sent files on external storage\" on the printer, or Bambu Studio prints archive without their 3MF (no thumbnail, filament or cost).",
+      noMedia: "No card",
+      noMediaHint: "Insert an SD card or USB stick: without one, Bambu Studio prints archive without their 3MF (no thumbnail, filament or cost).",
+    },
     noSdCard: 'No SD',
     door: {
       open: 'Open',

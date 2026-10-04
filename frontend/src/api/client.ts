@@ -648,6 +648,9 @@ export interface PrinterStatus {
   ams_exists: boolean;
   vt_tray: AMSTray[];  // Virtual tray / external spool(s)
   store_to_sdcard: boolean;  // Store sent files on SD card
+  // Why slicer-sent jobs will not reach the card, computed by the backend from
+  // positive evidence only: the option is off, or the printer reports an empty slot.
+  external_storage_warning?: 'store_off' | 'no_media' | null;
   timelapse: boolean;  // Timelapse recording active
   ipcam: boolean;  // Live view enabled
   wifi_signal: number | null;  // WiFi signal strength in dBm

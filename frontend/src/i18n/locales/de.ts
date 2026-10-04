@@ -1863,6 +1863,12 @@ export default {
       cooling: 'Kühlen',
       heating: 'Heizen',
     },
+    storageWarning: {
+      storeOff: "Kartenspeicher aus",
+      storeOffHint: "Aktiviere am Drucker „Gesendete Dateien auf externem Speicher ablegen“, sonst werden Bambu-Studio-Drucke ohne ihre 3MF archiviert (kein Vorschaubild, kein Filament, keine Kosten).",
+      noMedia: "Keine Karte",
+      noMediaHint: "Setze eine SD-Karte oder einen USB-Stick ein: Ohne werden Bambu-Studio-Drucke ohne ihre 3MF archiviert (kein Vorschaubild, kein Filament, keine Kosten).",
+    },
     noSdCard: 'Keine SD',
     door: {
       open: 'Offen',

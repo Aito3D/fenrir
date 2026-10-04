@@ -797,6 +797,12 @@ export default {
       cooling: 'Koelen',
       heating: 'Verwarmen',
     },
+    storageWarning: {
+      storeOff: "Kaartopslag uit",
+      storeOffHint: "Zet op de printer “Verzonden bestanden op externe opslag bewaren” aan, anders worden Bambu Studio-prints zonder hun 3MF gearchiveerd (geen miniatuur, filament of kosten).",
+      noMedia: "Geen kaart",
+      noMediaHint: "Plaats een SD-kaart of USB-stick: zonder worden Bambu Studio-prints zonder hun 3MF gearchiveerd (geen miniatuur, filament of kosten).",
+    },
     noSdCard: 'Geen SD',
     door: {
       open: 'Open',
