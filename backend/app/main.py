@@ -9,6 +9,7 @@ import re
 import secrets
 import time
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from logging.handlers import RotatingFileHandler
 from pathlib import Path, PurePosixPath
@@ -143,6 +144,7 @@ from backend.app.services.print_storage import (
     REASON_FTPS_COOLOFF,
     REASON_INTERNAL_HISTORY,
     REASON_INTERNAL_STORAGE,
+    StorageVerdict,
     external_storage_present,
     ftp_probe_paths,
     print_file_reachable_over_ftp,
@@ -4223,6 +4225,1620 @@ async def dispatch_outcome_confirmation(
     return True
 
 
+def _print_3mf_candidate_names(subtask_name: str, filename: str) -> list[str]:
+    """The 3MF filenames on_print_start tries for a print, best guess first, deduped."""
+    possible_names = []
+
+    # Bambu printers typically store files as "Name.gcode.3mf"
+    # The subtask_name is usually the best source for the filename
+    if subtask_name:
+        # Try common Bambu naming patterns
+        possible_names.append(f"{subtask_name}.gcode.3mf")
+        possible_names.append(f"{subtask_name}.3mf")
+
+    # Try original filename with .3mf extension
+    if filename:
+        # Extract just the filename part, not the full path
+        fname = filename.split("/")[-1] if "/" in filename else filename
+        if fname.endswith(".3mf"):
+            possible_names.append(fname)
+        elif fname.endswith(".gcode"):
+            base = fname.rsplit(".", 1)[0]
+            possible_names.append(f"{base}.gcode.3mf")
+            possible_names.append(f"{base}.3mf")
+        else:
+            possible_names.append(f"{fname}.gcode.3mf")
+            possible_names.append(f"{fname}.3mf")
+
+    # Also try with spaces converted to underscores (Bambu Studio may normalize filenames)
+    space_variants = []
+    for name in possible_names:
+        if " " in name:
+            space_variants.append(name.replace(" ", "_"))
+    possible_names.extend(space_variants)
+
+    # Remove duplicates while preserving order
+    seen = set()
+    possible_names = [x for x in possible_names if not (x in seen or seen.add(x))]
+    return possible_names
+
+
+async def _promote_expected_archive(
+    db,
+    printer,
+    printer_id: int,
+    data: dict,
+    filename: str,
+    subtask_name: str,
+    subtask_id,
+    notification_sent: bool,
+    logger,
+) -> bool:
+    """Reuse the archive a reprint / queue dispatch registered for this print.
+
+    on_print_start's expected-archive branch, moved verbatim. Returns True when
+    the print was attached to that archive and on_print_start must stop there;
+    False when there was no expected archive (or its row is gone) and the
+    normal lookup/creation should run.
+    """
+    # Check if this is an expected print from reprint/scheduled
+    # Build list of possible keys to check
+    expected_keys = []
+    if subtask_name:
+        expected_keys.append((printer_id, subtask_name))
+        expected_keys.append((printer_id, f"{subtask_name}.3mf"))
+        expected_keys.append((printer_id, f"{subtask_name}.gcode.3mf"))
+    if filename:
+        fname = filename.split("/")[-1] if "/" in filename else filename
+        expected_keys.append((printer_id, fname))
+        # Strip extensions to match
+        base = fname.replace(".gcode", "").replace(".3mf", "")
+        expected_keys.append((printer_id, base))
+        expected_keys.append((printer_id, f"{base}.3mf"))
+
+    expected_archive_id = None
+    for key in expected_keys:
+        expected_archive_id = _expected_prints.pop(key, None)
+        _expected_print_registered_at.pop(key, None)
+        if expected_archive_id:
+            # Clean up other possible keys for this print
+            for other_key in expected_keys:
+                _expected_prints.pop(other_key, None)
+                _expected_print_registered_at.pop(other_key, None)
+            break
+
+    if expected_archive_id:
+        # This is a reprint/scheduled print - use existing archive, don't create new one
+        logger.info("Using expected archive %s for print (skipping duplicate)", expected_archive_id)
+        from backend.app.models.archive import PrintArchive
+
+        result = await db.execute(select(PrintArchive).where(PrintArchive.id == expected_archive_id))
+        archive = result.scalar_one_or_none()
+
+        if archive:
+            # Update archive status to printing
+            archive.status = "printing"
+            archive.started_at = datetime.now(timezone.utc)
+
+            # The previous run's answer is still on this row and the
+            # completion prompt is gated on ``user_verdict is None`` (#1898),
+            # so without a reset the second run inherits the first run's
+            # verdict: no prompt at all, and a green "good" badge on a run
+            # nobody ever judged.
+            if archive.confirm_requested:
+                archive.user_verdict = None
+                archive.user_verdict_source = None
+                archive.user_verdict_at = None
+                archive.confirm_token = None
+                archive.confirm_token_used_at = None
+
+            # Same for the previous run's outcome. update_archive_status
+            # only ever sets a failure_reason, so run one's reason landed on
+            # run two's print-log row; and the old completed_at made a
+            # running reprint look old to the archive purge.
+            archive.failure_reason = None
+            archive.completed_at = None
+
+            # Reprint of an archive reuses the source row. Without resetting
+            # ``timelapse_path`` _scan_for_timelapse_with_retries early-returns
+            # ("already has timelapse") and _capture_finish_photo_from_timelapse
+            # extracts the *original* print's last frame, which then ships in
+            # the completion notification (#1707). Clear the path so the
+            # scanner runs fresh; also unlink the old video file so reprints
+            # don't accumulate orphans in the archive directory. Photos list
+            # is left alone — accumulating one finish photo per run is fine.
+            # The print-start baseline (#2704) is stale for the same reason:
+            # it describes the printer before the previous run. The capture
+            # below overwrites it, but clear it here too so an early failure
+            # can't leave the scan diffing against the wrong snapshot.
+            archive.timelapse_baseline = None
+            stale_timelapse_relpath = archive.timelapse_path
+            if stale_timelapse_relpath:
+                archive.timelapse_path = None
+                try:
+                    stale_path = app_settings.base_dir / stale_timelapse_relpath
+                    if stale_path.is_file():
+                        stale_path.unlink()
+                        logger.info(
+                            "Deleted stale timelapse %s on reprint of archive %s",
+                            stale_timelapse_relpath,
+                            expected_archive_id,
+                        )
+                except OSError as e:
+                    logger.warning(
+                        "Failed to delete stale timelapse %s on reprint: %s",
+                        stale_timelapse_relpath,
+                        e,
+                    )
+            # Persist a restart-stable id so a later restart resumes this
+            # archive by subtask_id instead of name-matching + duplicating
+            # it (#1485). The printer often hasn't echoed subtask_id back
+            # this soon after dispatch, so fall back to the id Fenrir
+            # minted when it sent the print command. Scoped to this
+            # expected-print branch on purpose: an expected match means
+            # Fenrir dispatched this exact print in this process, so the
+            # client's last-dispatch id genuinely belongs to it — using it
+            # for an externally-started print could mis-tag the archive.
+            effective_subtask_id = subtask_id
+            if not effective_subtask_id:
+                _client = printer_manager.get_client(printer_id)
+                _dispatched = getattr(_client, "last_dispatch_subtask_id", None) if _client else None
+                if _dispatched:
+                    effective_subtask_id = str(_dispatched).strip() or None
+            # Update on first-set OR on reprint (the queue dispatcher mints
+            # a fresh subtask_id per dispatch in bambu_mqtt:3647). Skipping
+            # the rewrite for reprints leaves the archive holding the FIRST
+            # run's id; if MQTT then reconnects mid-print, the reconciler
+            # (#1542) compares the stale stored id against the printer's
+            # live id, sees a mismatch, and synthesises a bogus PRINT
+            # COMPLETE — exactly the false-positive "Print Stopped" reported
+            # in #1807. Inequality check preserves the noop-on-stable-push
+            # behaviour the earlier `not archive.subtask_id` guard provided.
+            if effective_subtask_id and archive.subtask_id != effective_subtask_id:
+                archive.subtask_id = effective_subtask_id
+            # #1403 follow-up: VP-queue archives are created with
+            # printer_id=None at queue-add time (we don't know which
+            # printer will run the job yet). When the print actually
+            # starts on a specific printer the expected-archive lookup
+            # used to skip this assignment, leaving printer_id=None
+            # forever — which then disables the "Scan for timelapse"
+            # button in ArchivesPage (gated on !archive.printer_id).
+            if archive.printer_id != printer_id:
+                archive.printer_id = printer_id
+            await db.commit()
+
+            # Track as active print
+            _active_prints[(printer_id, archive.filename)] = archive.id
+            if subtask_name:
+                _active_prints[(printer_id, f"{subtask_name}.3mf")] = archive.id
+
+            # Start timelapse session if external camera is enabled (#1353).
+            # Queue / VP-dispatched prints land here in the expected-archive
+            # branch and used to skip start_session entirely — frames were
+            # never captured and the post-print stitch silently returned None.
+            _maybe_start_layer_timelapse(printer, printer_id, archive.id)
+
+            # Inject ams_mapping into usage tracker session — the session was created
+            # before expected-print promotion, so it may have ams_mapping=None when
+            # the MQTT request topic subscription failed (common on P1S/A1).
+            _stored_map = _print_ams_mappings.get(expected_archive_id)
+            _stored_plate_id = _print_plate_ids.get(expected_archive_id)
+            if _stored_map or _stored_plate_id is not None:
+                try:
+                    from backend.app.services.usage_tracker import _active_sessions
+
+                    _ut_session = _active_sessions.get(printer_id)
+                    if _ut_session and _stored_map and not _ut_session.ams_mapping:
+                        _ut_session.ams_mapping = _stored_map
+                        logger.info("[CALLBACK] Injected ams_mapping into usage tracker session: %s", _stored_map)
+                    # plate_id injection covers direct-Print of plate N of a multi-plate
+                    # 3MF — queue prints already capture it via the on_print_start queue
+                    # lookup, but direct-Print never goes through the queue (#1697).
+                    if _ut_session and _stored_plate_id is not None and _ut_session.plate_id is None:
+                        _ut_session.plate_id = _stored_plate_id
+                        logger.info("[CALLBACK] Injected plate_id into usage tracker session: %s", _stored_plate_id)
+                except Exception:
+                    pass
+
+            # Set up energy tracking (#941: persist start on archive row)
+            await _record_energy_start(archive, printer_id, db, context="expected-print")
+
+            await ws_manager.send_archive_updated(
+                {
+                    "id": archive.id,
+                    "status": "printing",
+                }
+            )
+
+            # Send notification with archive data (reprint/scheduled)
+            if not notification_sent:
+                # Use archive's created_by_id; fall back to the creator registered via
+                # register_expected_print (handles library-file-based queue items where
+                # the freshly-created archive has no created_by_id yet).
+                # Pop ALL matching keys so no stale entries remain in the dict.
+                fallback_creator = None
+                for key in expected_keys:
+                    popped = _expected_print_creators.pop(key, None)
+                    if fallback_creator is None:
+                        fallback_creator = popped
+                archive_data = {
+                    "print_time_seconds": archive.print_time_seconds,
+                    "created_by_id": archive.created_by_id or fallback_creator,
+                }
+                await _send_print_start_notification(printer_id, data, archive_data, logger)
+
+            # Extract printable objects from the archived 3MF file
+            _load_objects_from_archive(archive, printer_id, logger)
+
+            # Store Spoolman tracking data for per-filament usage reporting
+            try:
+                await _store_spoolman_print_data(
+                    printer_id,
+                    archive.id,
+                    archive.file_path,
+                    db,
+                    printer_manager,
+                    ams_mapping=_get_start_ams_mapping(data, archive.id),
+                    plate_id=_get_start_plate_id(archive.id),
+                )
+            except Exception as e:
+                logger.warning("[SPOOLMAN] Failed to store tracking data: %s", e)
+
+            # Capture timelapse file baseline for snapshot-diff on completion
+            # (mirrors the new-archive branch). Queue / VP-dispatched prints
+            # hit this branch — without the baseline the completion-time scan
+            # falls into its "take baseline now" fallback, which snapshots
+            # AFTER the new MP4 already exists and never matches a diff
+            # (#1403 follow-up — see pwostran's 2026-05-18 support bundle).
+            await _capture_timelapse_baseline_at_start(printer, printer_id, logger, archive_id=archive.id)
+
+            return True  # Skip creating a new archive
+
+        # Expected-print entry pointed at an archive row that no longer
+        # exists (deleted between dispatch and print start). Fall through
+        # to the normal lookup/creation below instead of dropping the
+        # print on the floor.
+        logger.warning(
+            "Expected archive %s not found in DB — falling through to archive creation",
+            expected_archive_id,
+        )
+    return False
+
+
+async def _resume_existing_archive(
+    db, printer_id: int, data: dict, filename: str, subtask_name: str, subtask_id, notification_sent: bool, logger
+) -> bool:
+    """Reattach this print to an archive row that is already "printing" (or stale-cancelled).
+
+    on_print_start's duplicate/restart guard, moved verbatim. Returns True when
+    the print was resumed onto an existing row and on_print_start must stop;
+    False when there is none, or the one found was stale and has just been
+    cancelled, so a new archive should be created.
+    """
+    # Check if there's already a "printing" archive for this printer/file
+    # This prevents duplicates when backend restarts during an active print
+    from backend.app.models.archive import PrintArchive
+
+    existing_archive: PrintArchive | None = None
+
+    # Preferred match: subtask_id equality. MQTT reports the same subtask_id
+    # across a backend restart for the same print, so this is the most
+    # reliable way to reattach. We also accept a previously stale-cancelled
+    # archive here so users upgrading mid-print get revived when the row
+    # their earlier Fenrir version wrongly cancelled reappears (#972).
+    if subtask_id:
+        by_id = await db.execute(
+            select(PrintArchive)
+            .where(PrintArchive.printer_id == printer_id)
+            .where(PrintArchive.subtask_id == subtask_id)
+            .where(PrintArchive.status.in_(["printing", "cancelled"]))
+            .order_by(PrintArchive.created_at.desc())
+            .limit(1)
+        )
+        candidate = by_id.scalar_one_or_none()
+        if candidate and (candidate.status == "printing" or (candidate.failure_reason or "").startswith("Stale")):
+            existing_archive = candidate
+
+    # Fallback match: name-based lookup. Kept as-is for prints whose
+    # subtask_id is missing ("0" / local / non-cloud prints).
+    if existing_archive is None:
+        check_name = subtask_name or filename.split("/")[-1].replace(".gcode", "").replace(".3mf", "")
+        existing = await db.execute(
+            select(PrintArchive)
+            .where(PrintArchive.printer_id == printer_id)
+            .where(PrintArchive.status == "printing")
+            .where(
+                or_(
+                    PrintArchive.print_name == check_name,
+                    PrintArchive.filename.in_(
+                        [
+                            f"{check_name}.3mf",
+                            f"{check_name}.gcode.3mf",
+                        ]
+                    ),
+                )
+            )
+            .order_by(PrintArchive.created_at.desc())
+            .limit(1)
+        )
+        existing_archive = existing.scalar_one_or_none()
+
+    if existing_archive:
+        # subtask_id match → always resume, regardless of age. Same print,
+        # just a backend restart. Revive if it was previously stale-cancelled.
+        subtask_match = bool(subtask_id and existing_archive.subtask_id == subtask_id)
+
+        if subtask_match:
+            if existing_archive.status == "cancelled":
+                logger.warning(
+                    "Reviving stale-cancelled archive %s — matching subtask_id %s confirms same print (#972)",
+                    existing_archive.id,
+                    subtask_id,
+                )
+                existing_archive.status = "printing"
+                existing_archive.failure_reason = None
+                await db.commit()
+            else:
+                logger.info("Resuming archive %s on subtask_id match (%s)", existing_archive.id, subtask_id)
+            _active_prints[(printer_id, existing_archive.filename)] = existing_archive.id
+            if existing_archive.energy_start_kwh is None:
+                await _record_energy_start(existing_archive, printer_id, db, context="subtask-resume")
+            if not notification_sent:
+                archive_data = {
+                    "print_time_seconds": existing_archive.print_time_seconds,
+                    "created_by_id": existing_archive.created_by_id,
+                }
+                await _send_print_start_notification(printer_id, data, archive_data, logger)
+            _load_objects_from_archive(existing_archive, printer_id, logger)
+            return True
+
+        # Name-match only (no subtask_id to anchor on): decide resume vs.
+        # stale from the printer's *current* progress, not wall-clock age.
+        # A genuinely long print used to trip a blind 4h cutoff and have its
+        # live archive cancelled + duplicated on every backend restart
+        # (#1485). If the printer reports real progress, this name-matched
+        # 'printing' archive IS that ongoing print — resume it whatever its
+        # age. Only treat it as a stale leftover when the printer clearly
+        # shows a different, freshly-started print: near-0% progress on an
+        # archive far too old to still be at 0%. Unknown progress (printer
+        # not connected) never cancels — resuming is the safe default.
+        archive_age = datetime.now(timezone.utc) - existing_archive.created_at.replace(tzinfo=timezone.utc)
+        live_status = printer_manager.get_status(printer_id)
+        live_progress = getattr(live_status, "progress", None) if live_status else None
+        looks_stale = live_progress is not None and live_progress < 1.0 and archive_age.total_seconds() > 2 * 60 * 60
+        if looks_stale:
+            logger.warning(
+                f"Found stale 'printing' archive {existing_archive.id} (age: {archive_age}, "
+                f"printer progress {live_progress:.0f}%) — marking cancelled and creating new archive"
+            )
+            existing_archive.status = "cancelled"
+            # Canonical key, not a sentence (issue #2974). "No status update
+            # received" is what both stale paths actually observed; which of
+            # the two it was is already carried by ``status`` -- cancelled
+            # here, the reconciled outcome at the reconnect site -- so one
+            # key loses no information and gives the Statistics breakdown a
+            # single bucket instead of two untranslatable prose strings.
+            existing_archive.failure_reason = "noStatusUpdate"
+            await db.commit()
+            # Fall through to create new archive (don't return)
+        else:
+            logger.info(f"Skipping duplicate - already have printing archive {existing_archive.id} for {check_name}")
+            # Track this as the active print
+            _active_prints[(printer_id, existing_archive.filename)] = existing_archive.id
+            # Attach subtask_id retroactively so future restarts can resume.
+            # Compare for inequality (not "is empty") to also pick up reprint
+            # dispatches that mint a fresh id — see #1807 for the bogus
+            # "Print Stopped" the strict-empty guard caused on reconnect.
+            if subtask_id and existing_archive.subtask_id != subtask_id:
+                existing_archive.subtask_id = subtask_id
+                await db.commit()
+            # Also set up energy tracking if not already tracked (#941: persisted column)
+            if existing_archive.energy_start_kwh is None:
+                await _record_energy_start(existing_archive, printer_id, db, context="existing-printing")
+            # Send notification with archive data (existing archive)
+            if not notification_sent:
+                archive_data = {
+                    "print_time_seconds": existing_archive.print_time_seconds,
+                    "created_by_id": existing_archive.created_by_id,
+                }
+                await _send_print_start_notification(printer_id, data, archive_data, logger)
+            # Extract printable objects from the archived 3MF file
+            _load_objects_from_archive(existing_archive, printer_id, logger)
+            return True
+    return False
+
+
+@dataclass
+class _Acquired:
+    """What _acquire_print_3mf found, and everything its search learned that the
+    archive-creation branches of on_print_start go on to read."""
+
+    downloaded_filename: str | None
+    temp_path: Path | None
+    content_verdict: str | None
+    candidate_rejected: bool
+    blocked_by_ftps_cooloff: bool
+    ftp_transfer_failed: bool
+    display_name_after_plate_reject: str | None
+    subtask_name: str
+    storage: StorageVerdict
+    probe_ran: bool
+    probe_names: list[str]
+    keeps_cache_mirror: bool
+    expected_md5: str | None
+    verify_plate: int | None
+    reported_remaining: object
+
+
+async def _acquire_print_3mf(
+    printer, printer_id: int, data: dict, filename: str, subtask_name: str, possible_names: list[str], logger
+) -> _Acquired:
+    """Find and download the running print's 3MF: cache reuse, the eMMC//cache
+    probe, the FTP sweep, the directory walk and the plate-mismatch retry.
+
+    on_print_start's acquisition block, moved verbatim. ``subtask_name`` may come
+    back corrected (or blanked) by the plate guard, so the caller must use the
+    returned one from here on.
+    """
+    from backend.app.services.bambu_ftp import list_files_async
+
+    # Try to find and download the 3MF file
+    temp_path = None
+    downloaded_filename = None
+
+    # Content verification inputs (#2104): filename search alone can land
+    # on a months-old same-name file elsewhere on the printer's storage
+    # (e.g. stale copy at / while the fresh slicer upload sits in /cache).
+    # Every accepted candidate below is judged by verify_3mf_candidate —
+    # md5 from the intercepted print command when available, otherwise a
+    # plate-prediction plausibility check; "rejected" candidates are
+    # discarded and the search continues with the next path.
+    _expected_md5 = (data.get("print_md5") or "").strip().lower() or None
+    _verify_plate = parse_plate_id(filename)
+    _reported_remaining = data.get("remaining_time")
+    content_verdict: str | None = None
+    candidate_rejected = False
+
+    async def _judge_candidate(candidate_path, source: str) -> str:
+        nonlocal candidate_rejected
+        # The md5 of a large 3MF in a worker thread, not on the event loop.
+        verdict, detail = await asyncio.to_thread(
+            verify_3mf_candidate, candidate_path, _expected_md5, _verify_plate, _reported_remaining
+        )
+        if verdict == "rejected":
+            candidate_rejected = True
+            logger.warning("[CALLBACK] Rejected 3MF candidate %s (%s): %s", candidate_path, source, detail)
+        else:
+            logger.info("[CALLBACK] 3MF candidate %s (%s): %s — %s", candidate_path, source, verdict, detail)
+        return verdict
+
+    # Cache check: cover endpoint may have already pulled this 3MF during
+    # the print (frontend opens the card and shows the thumbnail) — reuse
+    # that file instead of re-downloading 36MB over the same FTP link that
+    # just served it (#972). The cache keys on a normalized filename so
+    # variants like "X", "X.3mf", "X.gcode.3mf" all collapse to one entry.
+    for try_filename in possible_names:
+        if not try_filename.endswith(".3mf"):
+            continue
+        cached = get_cached_3mf(printer_id, try_filename)
+        if cached:
+            verdict = await _judge_candidate(cached, "cache reuse")
+            if verdict == "rejected":
+                continue  # Stale cached copy of a different job — go to FTP
+            logger.info("Reusing cached 3MF from %s (avoided duplicate FTP)", cached)
+            content_verdict = verdict
+            temp_path = cached
+            downloaded_filename = try_filename
+            break
+
+    # Does this printer keep the sliced file somewhere FTPS can reach? On
+    # H2-series and P2S the answer is routinely no — the file stays on
+    # internal eMMC and port 990 only ever serves external storage — and
+    # then the whole sweep below (six filenames x five directories x four
+    # retries, then the directory walk) is ~110 connections that cannot
+    # succeed. Skip it and say why (#2780).
+    storage = print_file_reachable_over_ftp(printer_manager.get_status(printer_id))
+
+    # Set when a lookup is abandoned because the printer's FTPS cool-off is
+    # running rather than because the file is somewhere unreachable. The
+    # distinction is the whole of #2957: one is permanent, the other clears
+    # in minutes with the file still sitting on the printer.
+    blocked_by_ftps_cooloff = False
+
+    # Set when a probe reached the printer and still came back without the
+    # file -- a timeout mid-transfer, a refused connection, anything that is
+    # not a clean "not here". A 550 raises FileNotOnPrinterError and is
+    # caught by name below, so a file that genuinely is not on the card
+    # leaves this False and schedules nothing. Anything else means the
+    # transfer, not the file, is what failed, and that does not last (#3063).
+    ftp_transfer_failed = False
+
+    # The print's name, for a fallback archive whose `subtask_name` the
+    # plate guard below had to disown. Display only, and deliberately kept
+    # apart from `subtask_name`: that variable is what every file lookup
+    # here is built from, and once a name has been shown to fetch another
+    # plate's 3MF it must not key `_active_prints` either, or the cover
+    # endpoint hands the same contradicted file to
+    # `_recover_fallback_archive` and fills the row in with it (#3126).
+    display_name_after_plate_reject: str | None = None
+
+    # Get FTP retry settings
+    ftp_retry_enabled, ftp_retry_count, ftp_retry_delay, ftp_timeout = await get_ftp_retry_settings()
+
+    # ...but "the printer put it on eMMC" is where it went, not whether we
+    # can read it. An H2D with a card in mirrors the job to /cache and
+    # serves it happily, and skipping on the URL alone cost that reporter
+    # every archive for two days (#2856). So ask the printer instead of
+    # guessing: the dispatch named the exact file, which is one connection
+    # walking five paths rather than the sweep's ~110. Only when the probe
+    # comes back empty does the verdict's reason stand.
+    #
+    # A touchscreen reprint names no file at all -- the printer reports
+    # `project_file.gcode.3mf` whatever the job was -- so there the print's
+    # own names stand in for it, and the /cache mirror has it under those
+    # (#6536). Every hit is judged like the sweep's: /cache and / keep stale
+    # same-name slices, and the md5 from the dispatch tells them apart.
+    probe_names = probe_filenames(storage.probe_filename, possible_names)
+    probe_ran = False
+    if not storage.reachable and not downloaded_filename and probe_names:
+        if ftps_handshake_blocked(printer.ip_address):
+            # Deliberately NOT recorded as a cool-off give-up. This branch
+            # only runs on an unreachable verdict, and that verdict is the
+            # honest, permanent reason the archive is empty — the probe was
+            # a long shot on top of it. Blaming the cool-off here would
+            # schedule a retry for a file sitting on internal eMMC, which is
+            # the sweep #2780 removed (#2957).
+            logger.debug(
+                "Not probing for %s on printer %s: its file service is not answering over TLS",
+                probe_names,
+                printer_id,
+            )
+        else:
+            probe_ran = True
+            found = await _probe_for_3mf(
+                printer_id,
+                printer.ip_address,
+                printer.access_code,
+                printer.model,
+                probe_names,
+                _judge_candidate,
+                ftp_timeout,
+            )
+            if found:
+                downloaded_filename, temp_path, probe_hit, content_verdict = found
+                cache_3mf_download(printer_id, downloaded_filename, temp_path)
+                # Naming the path, not just the file: a printer that keeps
+                # uploads around for weeks can serve a same-named copy of an
+                # earlier slice, and without the directory in the log that
+                # mismatch is invisible rather than merely rare (#1820).
+                logger.info(
+                    "Found %s at %s over FTPS for printer %s even though the printer reported %s",
+                    downloaded_filename,
+                    probe_hit,
+                    printer_id,
+                    storage.reason,
+                )
+
+    # Asked here, with no DB transaction open, rather than where the retry
+    # is scheduled: that is inside the fallback-archive writes, and an FTP
+    # listing there would pin a pooled connection for its duration (#2572).
+    keeps_cache_mirror = probe_ran and not downloaded_filename and await _printer_keeps_cache_mirror(printer)
+
+    if not storage.reachable and not downloaded_filename:
+        # Same opening words whether or not a probe ran, because that is
+        # the phrase support asks people to grep for — only the tail says
+        # which of the two happened.
+        logger.info(
+            "Skipping the 3MF lookup for printer %s: %s — %s",
+            printer_id,
+            storage.reason,
+            "no copy of it on external storage either"
+            if storage.probe_filename
+            else "the print file is not on storage Fenrir can read over FTPS, so no path would find it",
+        )
+
+    for try_filename in possible_names if not downloaded_filename and storage.reachable else []:
+        if not try_filename.endswith(".3mf"):
+            continue
+
+        # Root (/) is where BambuStudio/OrcaSlicer uploads land on A1/P1-series
+        # printers, so try it first — deferring it to last cost #972's reporter
+        # ~48 minutes of retries on /cache//model//data//data/Metadata before
+        # landing on the path that actually had the file.
+        remote_paths = ftp_probe_paths(try_filename)
+
+        temp_path = print_temp_path(printer_id, try_filename)
+
+        for remote_path in remote_paths:
+            if ftps_handshake_blocked(printer.ip_address):
+                # The printer's FTPS service is not completing a TLS
+                # handshake, so it has no path we could reach — walking the
+                # remaining candidates only re-runs the same failure
+                # (#2780). Fall through to the no-3MF archive now.
+                #
+                # Remember *why*, though. This is the one give-up that is
+                # temporary: the cool-off clears in minutes and the file was
+                # on the printer the whole time. The fallback archive is
+                # stamped with it so a retry can be scheduled, and so the
+                # Archives banner stops blaming storage (#2957).
+                blocked_by_ftps_cooloff = True
+                logger.warning(
+                    "Giving up on the 3MF for printer %s: its file service is not answering over TLS",
+                    printer_id,
+                )
+                break
+            logger.debug("Trying FTP download: %s", remote_path)
+            try:
+                if ftp_retry_enabled:
+                    downloaded = await with_ftp_retry(
+                        download_file_async,
+                        printer.ip_address,
+                        printer.access_code,
+                        remote_path,
+                        temp_path,
+                        timeout=ftp_timeout,
+                        socket_timeout=ftp_timeout,
+                        printer_model=printer.model,
+                        max_retries=ftp_retry_count,
+                        retry_delay=ftp_retry_delay,
+                        operation_name=f"Download 3MF from {remote_path}",
+                        cooloff_ip=printer.ip_address,
+                        non_retry_exceptions=(FileNotOnPrinterError,),
+                    )
+                else:
+                    downloaded = await download_file_async(
+                        printer.ip_address,
+                        printer.access_code,
+                        remote_path,
+                        temp_path,
+                        timeout=ftp_timeout,
+                        socket_timeout=ftp_timeout,
+                        printer_model=printer.model,
+                    )
+                if downloaded:
+                    verdict = await _judge_candidate(temp_path, remote_path)
+                    if verdict == "rejected":
+                        # Same-name impostor (e.g. stale copy at / while
+                        # the real upload sits in /cache) — discard and
+                        # keep walking the remaining paths.
+                        try:
+                            temp_path.unlink(missing_ok=True)
+                        except OSError:
+                            pass
+                        continue
+                    content_verdict = verdict
+                    downloaded_filename = try_filename
+                    logger.info("Downloaded: %s", remote_path)
+                    # Populate shared cache so the cover endpoint (if it
+                    # runs next) doesn't refetch the same 36MB over FTP.
+                    cache_3mf_download(printer_id, try_filename, temp_path)
+                    break
+                # with_ftp_retry returns None once it has spent its budget,
+                # and download_file_async returns False on a timeout, so an
+                # exhausted transfer arrives here rather than as an
+                # exception (#3063).
+                ftp_transfer_failed = True
+            except FileNotOnPrinterError:
+                # 550 — file isn't at this path. Advance to next candidate
+                # without burning the retry budget.
+                logger.debug("3MF not at %s (550), trying next path", remote_path)
+            except Exception as e:
+                ftp_transfer_failed = True
+                logger.debug("FTP download failed for %s: %s", remote_path, e)
+
+        if downloaded_filename or ftps_handshake_blocked(printer.ip_address):
+            break
+
+    # If still not found, try listing directories to find matching file
+    # Different printer models use different directory structures. Skipped
+    # when the printer's FTPS handshake is failing — the directory walk is
+    # five more connections that cannot get further than the download did.
+    if (
+        not downloaded_filename
+        and storage.reachable
+        and (filename or subtask_name)
+        and not ftps_handshake_blocked(printer.ip_address)
+    ):
+        search_term = (subtask_name or filename).lower().replace(".gcode", "").replace(".3mf", "")
+        logger.info("Direct FTP download failed, searching directories for '%s'", search_term)
+        search_dirs = ["/cache", "/model", "/data", "/data/Metadata", "/"]
+        for search_dir in search_dirs:
+            if downloaded_filename:
+                break
+            try:
+                dir_files = await list_files_async(
+                    printer.ip_address, printer.access_code, search_dir, printer_model=printer.model
+                )
+                threemf_files = [f.get("name") for f in dir_files if f.get("name", "").endswith(".3mf")]
+                if threemf_files:
+                    logger.info(
+                        f"Found {len(threemf_files)} 3MF files in {search_dir}: {threemf_files[:5]}{'...' if len(threemf_files) > 5 else ''}"
+                    )
+                for f in dir_files:
+                    if f.get("is_directory"):
+                        continue
+                    fname = f.get("name", "")
+                    # Normalize both for comparison (spaces and underscores are equivalent)
+                    fname_normalized = fname.lower().replace(" ", "_")
+                    search_normalized = search_term.replace(" ", "_")
+                    if fname.endswith(".3mf") and search_normalized in fname_normalized:
+                        logger.info("Found matching file in %s: %s", search_dir, fname)
+                        temp_path = print_temp_path(printer_id, fname)
+                        remote_full_path = posixpath.join(search_dir, fname)
+                        if ftp_retry_enabled:
+                            downloaded = await with_ftp_retry(
+                                download_file_async,
+                                printer.ip_address,
+                                printer.access_code,
+                                remote_full_path,
+                                temp_path,
+                                timeout=ftp_timeout,
+                                socket_timeout=ftp_timeout,
+                                printer_model=printer.model,
+                                max_retries=ftp_retry_count,
+                                retry_delay=ftp_retry_delay,
+                                operation_name=f"Download 3MF from {remote_full_path}",
+                                cooloff_ip=printer.ip_address,
+                            )
+                        else:
+                            downloaded = await download_file_async(
+                                printer.ip_address,
+                                printer.access_code,
+                                remote_full_path,
+                                temp_path,
+                                timeout=ftp_timeout,
+                                socket_timeout=ftp_timeout,
+                                printer_model=printer.model,
+                            )
+                        if downloaded:
+                            verdict = await _judge_candidate(temp_path, posixpath.join(search_dir, fname))
+                            if verdict == "rejected":
+                                try:
+                                    temp_path.unlink(missing_ok=True)
+                                except OSError:
+                                    pass
+                                continue
+                            content_verdict = verdict
+                            downloaded_filename = fname
+                            logger.info("Found and downloaded from %s: %s", search_dir, fname)
+                            cache_3mf_download(printer_id, fname, temp_path)
+                            break
+                        # The listing named the file, so it is on the card;
+                        # only the transfer failed (#3063).
+                        ftp_transfer_failed = True
+            except Exception as e:
+                logger.debug("Failed to list %s: %s", search_dir, e)
+
+    # Validate the downloaded 3MF actually matches the plate that's running
+    # (#1204): subtask_name lags across consecutive plates of the same model,
+    # so the first FTP candidate (built from subtask_name) can land on the
+    # previous plate's still-resident upload. Cross-check the slice_info
+    # plate index against the plate parsed from gcode_file (always fresh —
+    # it's the field whose change triggered this callback).
+    if downloaded_filename and temp_path:
+        expected_plate = parse_plate_id(filename)
+        actual_plate = peek_plate_index_in_3mf(temp_path) if expected_plate is not None else None
+        if expected_plate is not None and actual_plate is not None and actual_plate != expected_plate:
+            logger.warning(
+                "[CALLBACK] 3MF plate mismatch: downloaded %s reports plate %s but printer is "
+                "running plate %s — subtask_name=%r appears stale, retrying with corrected name",
+                downloaded_filename,
+                actual_plate,
+                expected_plate,
+                subtask_name,
+            )
+            corrected_subtask = swap_plate_suffix(subtask_name, expected_plate)
+            retry_succeeded = False
+            if corrected_subtask and corrected_subtask != subtask_name:
+                for try_filename in (f"{corrected_subtask}.gcode.3mf", f"{corrected_subtask}.3mf"):
+                    retry_temp_path = print_temp_path(printer_id, try_filename)
+                    for remote_path in ftp_probe_paths(try_filename):
+                        try:
+                            if ftp_retry_enabled:
+                                downloaded = await with_ftp_retry(
+                                    download_file_async,
+                                    printer.ip_address,
+                                    printer.access_code,
+                                    remote_path,
+                                    retry_temp_path,
+                                    timeout=ftp_timeout,
+                                    socket_timeout=ftp_timeout,
+                                    printer_model=printer.model,
+                                    max_retries=ftp_retry_count,
+                                    retry_delay=ftp_retry_delay,
+                                    operation_name=f"Re-download 3MF from {remote_path}",
+                                    cooloff_ip=printer.ip_address,
+                                    non_retry_exceptions=(FileNotOnPrinterError,),
+                                )
+                            else:
+                                downloaded = await download_file_async(
+                                    printer.ip_address,
+                                    printer.access_code,
+                                    remote_path,
+                                    retry_temp_path,
+                                    timeout=ftp_timeout,
+                                    socket_timeout=ftp_timeout,
+                                    printer_model=printer.model,
+                                )
+                            if (
+                                downloaded
+                                and peek_plate_index_in_3mf(retry_temp_path) == expected_plate
+                                and (
+                                    retry_verdict := await _judge_candidate(
+                                        retry_temp_path, f"plate-retry {remote_path}"
+                                    )
+                                )
+                                != "rejected"
+                            ):
+                                content_verdict = retry_verdict
+                                logger.info(
+                                    "[CALLBACK] Re-download succeeded with corrected name %s "
+                                    "(plate %s) — replacing wrong file",
+                                    try_filename,
+                                    expected_plate,
+                                )
+                                try:
+                                    temp_path.unlink(missing_ok=True)
+                                except OSError:
+                                    pass
+                                temp_path = retry_temp_path
+                                downloaded_filename = try_filename
+                                subtask_name = corrected_subtask
+                                cache_3mf_download(printer_id, try_filename, temp_path)
+                                retry_succeeded = True
+                                break
+                            elif downloaded:
+                                # Wrong plate again — discard and keep trying
+                                try:
+                                    retry_temp_path.unlink(missing_ok=True)
+                                except OSError:
+                                    pass
+                        except FileNotOnPrinterError:
+                            continue
+                        except Exception as e:
+                            logger.debug("Re-download failed for %s: %s", remote_path, e)
+                    if retry_succeeded:
+                        break
+            # If the retry didn't find a matching file, drop the wrong 3MF
+            # so the no-3MF fallback below creates an archive whose name
+            # at least reflects the right plate.
+            if not retry_succeeded:
+                logger.warning(
+                    "[CALLBACK] Could not re-download correct plate %s — falling back to no-3MF archive",
+                    expected_plate,
+                )
+                try:
+                    temp_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+                temp_path = None
+                downloaded_filename = None
+                # Whatever the sweep's transport did earlier, it is not why
+                # this archive ends up empty: a 3MF downloaded fine, it was
+                # just the wrong plate. Retrying would re-fetch that same
+                # contradicted file under the same stale names and hand it
+                # to _recover_fallback_archive, which checks that a
+                # candidate is a readable 3MF but not which plate it is --
+                # so the row would be filled in with another plate's
+                # filament and cost, the exact swap #2957 removed (#3063).
+                ftp_transfer_failed = False
+                # Disown the name for *lookups*: it has just been shown to
+                # fetch another plate's 3MF, and it keys `_active_prints`
+                # below, where the cover endpoint's own download of that
+                # same name would find this archive and fill it in with the
+                # file we are discarding here.
+                #
+                # Keep it for the *title*, which is a separate question.
+                # ``swap_plate_suffix`` returns None both for a name that
+                # carries no "- Plate N" / "_plate_N" suffix and for no
+                # name at all, and those are not the same situation: a name
+                # without a suffix holds no stale plate number to be wrong
+                # about. Blanking both uses at once dropped the project
+                # name too, and the row fell through to the gcode_file path
+                # titled "plate_1" though the real name was in hand.
+                # #1204's own premise is consecutive plates *of the same
+                # model*, so the project part is right either way (#3126).
+                display_name_after_plate_reject = corrected_subtask or subtask_name or None
+                subtask_name = corrected_subtask or ""
+
+    return _Acquired(
+        downloaded_filename=downloaded_filename,
+        temp_path=temp_path,
+        content_verdict=content_verdict,
+        candidate_rejected=candidate_rejected,
+        blocked_by_ftps_cooloff=blocked_by_ftps_cooloff,
+        ftp_transfer_failed=ftp_transfer_failed,
+        display_name_after_plate_reject=display_name_after_plate_reject,
+        subtask_name=subtask_name,
+        storage=storage,
+        probe_ran=probe_ran,
+        probe_names=probe_names,
+        keeps_cache_mirror=keeps_cache_mirror,
+        expected_md5=_expected_md5,
+        verify_plate=_verify_plate,
+        reported_remaining=_reported_remaining,
+    )
+
+
+async def _archive_downloaded_print(
+    db,
+    printer,
+    printer_id: int,
+    data: dict,
+    filename: str,
+    subtask_id,
+    acquired: _Acquired,
+    notification_sent: bool,
+    logger,
+) -> None:
+    """Create the archive from the downloaded 3MF and register the running print.
+
+    on_print_start's new-archive branch, moved verbatim (including the
+    ``finally`` that drops a temp file the 3MF cache no longer holds).
+    """
+    from backend.app.models.archive import PrintArchive
+    from backend.app.models.printer import Printer
+
+    temp_path = acquired.temp_path
+    downloaded_filename = acquired.downloaded_filename
+    content_verdict = acquired.content_verdict
+    subtask_name = acquired.subtask_name
+
+    try:
+        # Archive the file with status "printing"
+        service = ArchiveService(db)
+        archive = await service.archive_print(
+            printer_id=printer_id,
+            source_file=temp_path,
+            print_data={**data, "status": "printing"},
+            subtask_id=subtask_id,
+            # "verified" → True, "unverified" → False (accepted on
+            # filename alone). Rejected candidates never reach this call.
+            content_verified=content_verdict == "verified" if content_verdict else None,
+        )
+
+        if archive:
+            # Ask-for-outcome for a print Fenrir did not dispatch (#1898).
+            # Set on the row rather than passed to archive_print, which also
+            # serves the queue dispatcher — there the queue item decides.
+            # Guarded because this branch has no ``except``: an unhandled
+            # write error would take the _active_prints registration, the
+            # start notification, the energy reading and the timelapse
+            # baseline below it with it, and a missing prompt is by far the
+            # cheaper failure.
+            archive_id = archive.id
+            try:
+                if await _ask_outcome_for_external_print(db, printer_id, subtask_name):
+                    archive.confirm_requested = True
+                    await db.commit()
+            except Exception as e:
+                logger.warning("Could not flag archive %s for the outcome prompt: %s", archive_id, e)
+                # The rollback expires every loaded object, and on an async
+                # session reading one afterwards raises instead of
+                # reloading, so the two this branch goes on to use are
+                # fetched again. The archive itself was committed by
+                # archive_print; only the flag is lost.
+                try:
+                    await db.rollback()
+                    archive = await db.get(PrintArchive, archive_id)
+                    printer = await db.get(Printer, printer_id)
+                except Exception as reload_error:
+                    logger.warning(
+                        "Could not reload archive %s after the failed flag write: %s", archive_id, reload_error
+                    )
+
+            # Track this active print (use both original filename and downloaded filename)
+            _active_prints[(printer_id, downloaded_filename)] = archive.id
+            if filename and filename != downloaded_filename:
+                _active_prints[(printer_id, filename)] = archive.id
+            if subtask_name:
+                _active_prints[(printer_id, f"{subtask_name}.3mf")] = archive.id
+
+            logger.info("Created archive %s for %s", archive.id, downloaded_filename)
+
+            _maybe_start_layer_timelapse(printer, printer_id, archive.id)
+
+            # Record starting energy from smart plug if available (#941: persisted column)
+            await _record_energy_start(archive, printer_id, db, context="auto-archive")
+
+            await ws_manager.send_archive_created(
+                {
+                    "id": archive.id,
+                    "printer_id": archive.printer_id,
+                    "filename": archive.filename,
+                    "print_name": archive.print_name,
+                    "status": archive.status,
+                }
+            )
+
+            # MQTT relay - publish archive created
+            try:
+                await mqtt_relay.on_archive_created(
+                    archive_id=archive.id,
+                    print_name=archive.print_name,
+                    printer_name=printer.name,
+                    status=archive.status,
+                )
+            except Exception:
+                pass  # Don't fail if MQTT fails
+
+            # Send notification with archive data (new archive created)
+            if not notification_sent:
+                archive_data = {
+                    "print_time_seconds": archive.print_time_seconds,
+                    "created_by_id": archive.created_by_id,
+                }
+                await _send_print_start_notification(printer_id, data, archive_data, logger)
+
+            # Extract printable objects for skip object functionality
+            try:
+                from backend.app.services.archive import extract_printable_objects_from_3mf
+
+                client = printer_manager.get_client(printer_id)
+                if client:
+                    with open(temp_path, "rb") as f:
+                        threemf_data = f.read()
+                    # Extract with positions for UI overlay, scoped to the
+                    # plate that is printing — an all-plates 3MF carries
+                    # every plate's objects (#2522).
+                    printable_objects, bbox_all = extract_printable_objects_from_3mf(
+                        threemf_data,
+                        plate_number=resolve_plate_id(client.state),
+                        include_positions=True,
+                    )
+                    if printable_objects:
+                        # Store objects in printer state
+                        client.state.printable_objects = printable_objects
+                        client.state.printable_objects_bbox_all = bbox_all
+                        client.state.skipped_objects = []  # Reset skipped objects for new print
+                        logger.info("Loaded %s printable objects for printer %s", len(printable_objects), printer_id)
+            except Exception as e:
+                logger.debug("Failed to extract printable objects: %s", e)
+
+            # Store Spoolman tracking data for per-filament usage reporting
+            try:
+                await _store_spoolman_print_data(
+                    printer_id,
+                    archive.id,
+                    archive.file_path,
+                    db,
+                    printer_manager,
+                    ams_mapping=_get_start_ams_mapping(data, archive.id),
+                    plate_id=_get_start_plate_id(archive.id),
+                )
+            except Exception as e:
+                logger.warning("[SPOOLMAN] Failed to store tracking data: %s", e)
+
+            # Capture timelapse file baseline for snapshot-diff on completion
+            await _capture_timelapse_baseline_at_start(printer, printer_id, logger, archive_id=archive.id)
+    finally:
+        # Keep temp_path around until print completes so the cover endpoint
+        # can reuse it (#972). Cache eviction in on_print_complete deletes
+        # the file. If the cache entry was evicted early (file vanished),
+        # clean up any stragglers here to avoid leaking disk on retries.
+        cached_now = get_cached_3mf(printer_id, downloaded_filename) if downloaded_filename else None
+        if temp_path and temp_path.exists() and cached_now != temp_path:
+            temp_path.unlink()
+
+
+async def _create_fallback_archive(
+    db,
+    printer,
+    printer_id: int,
+    data: dict,
+    filename: str,
+    subtask_id,
+    possible_names: list[str],
+    acquired: _Acquired,
+    notification_sent: bool,
+    logger,
+) -> None:
+    """Track a print whose 3MF could not be had with a file-less archive row.
+
+    on_print_start's fallback branch, moved verbatim: the row, its
+    ``_active_prints`` keys, energy, events, the late-3MF retry scheduling, the
+    start notification and the timelapse baseline.
+    """
+    subtask_name = acquired.subtask_name
+    display_name_after_plate_reject = acquired.display_name_after_plate_reject
+    blocked_by_ftps_cooloff = acquired.blocked_by_ftps_cooloff
+    ftp_transfer_failed = acquired.ftp_transfer_failed
+    candidate_rejected = acquired.candidate_rejected
+    storage = acquired.storage
+    probe_ran = acquired.probe_ran
+    probe_names = acquired.probe_names
+    keeps_cache_mirror = acquired.keeps_cache_mirror
+    _expected_md5 = acquired.expected_md5
+    _verify_plate = acquired.verify_plate
+    _reported_remaining = acquired.reported_remaining
+
+    logger.warning("Could not find 3MF file for print: %s", filename or subtask_name)
+    # Create a fallback archive without 3MF data so the print is still tracked
+    # This commonly happens with P1S/A1 printers where FTP has file size limitations
+    try:
+        from backend.app.models.archive import PrintArchive
+
+        # Why the card is empty. The two temporary causes outrank the
+        # storage verdict because they say the sweep never got a fair
+        # answer: a cool-off skipped it at the transport, and a failed
+        # transfer reached the printer but never finished. Either way
+        # the file is still on the card, so reporting where the printer
+        # files its jobs would describe a setting that is not the
+        # problem (#2957, #3063).
+        if blocked_by_ftps_cooloff:
+            no_3mf_reason = REASON_FTPS_COOLOFF
+        elif storage.reachable and ftp_transfer_failed:
+            no_3mf_reason = REASON_FTP_TRANSFER_FAILED
+        else:
+            no_3mf_reason = storage.reason
+
+        # Derive print name from subtask_name or filename. The
+        # plate guard's disowned name comes second: it is a real name
+        # for a real print, and only the gcode_file path is left
+        # otherwise -- which titles the row "plate_1" (#3126).
+        print_name = subtask_name or display_name_after_plate_reject or filename
+        if print_name:
+            # Clean up the name (remove extensions, path parts)
+            print_name = print_name.split("/")[-1]
+            print_name = print_name.replace(".gcode.3mf", "").replace(".gcode", "").replace(".3mf", "")
+        else:
+            print_name = "Unknown Print"
+
+        # Recover estimated print time from MQTT (best-effort for notifications)
+        fallback_print_time = None
+        mqtt_remaining = data.get("remaining_time")
+        if mqtt_remaining and isinstance(mqtt_remaining, (int, float)) and mqtt_remaining > 0:
+            fallback_print_time = int(mqtt_remaining)
+        if fallback_print_time is None:
+            mc_remaining = (data.get("raw_data") or {}).get("mc_remaining_time")
+            if mc_remaining and isinstance(mc_remaining, (int, float)) and mc_remaining > 0:
+                fallback_print_time = int(mc_remaining * 60)
+
+        # Best-effort filament metadata from MQTT — see
+        # _extract_filament_data_from_mqtt. Without this the fallback
+        # archive's filament fields stayed NULL even though the AMS
+        # state at print start was sitting right there in `data`.
+        # The slicer's ams_mapping (when present) narrows the result
+        # to slots actually used by the print (#1533).
+        mqtt_filament_meta = _extract_filament_data_from_mqtt(data, _get_start_ams_mapping(data, None))
+
+        # Create minimal archive entry
+        fallback_archive = PrintArchive(
+            printer_id=printer_id,
+            filename=filename or f"{print_name}.3mf",
+            file_path="",  # Empty - no 3MF file available
+            file_size=0,
+            print_name=print_name,
+            print_time_seconds=fallback_print_time,
+            status="printing",
+            started_at=datetime.now(timezone.utc),
+            subtask_id=subtask_id,
+            confirm_requested=await _ask_outcome_for_external_print(db, printer_id, subtask_name),
+            filament_type=mqtt_filament_meta.get("filament_type"),
+            filament_color=mqtt_filament_meta.get("filament_color"),
+            extra_data={
+                "no_3mf_available": True,
+                # Why the card is empty, when we know -- see above. The
+                # banner reads this to stop telling H2/P2 owners to
+                # switch on a setting that is already on and would not
+                # have helped (#2780).
+                "no_3mf_reason": no_3mf_reason,
+                "original_subtask": subtask_name or display_name_after_plate_reject or "",
+                "_print_data": data,
+                # What print start knew, so a file that turns up later
+                # is judged the same way before it fills this card in.
+                "_recovery_check": _recovery_check(_expected_md5, _verify_plate, _reported_remaining),
+                # True when same-name candidates were found but all
+                # failed content verification — better no file than a
+                # wrong file polluting stats and duplicate groups.
+                **({"content_rejected": True} if candidate_rejected else {}),
+            },
+        )
+
+        db.add(fallback_archive)
+        await db.commit()
+        await db.refresh(fallback_archive)
+
+        logger.info("Created fallback archive %s for %s (no 3MF available)", fallback_archive.id, print_name)
+
+        _maybe_start_layer_timelapse(printer, printer_id, fallback_archive.id)
+
+        # Track as active print
+        _active_prints[(printer_id, fallback_archive.filename)] = fallback_archive.id
+        if filename:
+            _active_prints[(printer_id, filename)] = fallback_archive.id
+        if subtask_name:
+            _active_prints[(printer_id, f"{subtask_name}.3mf")] = fallback_archive.id
+            _active_prints[(printer_id, subtask_name)] = fallback_archive.id
+
+        # Record starting energy if smart plug available (#941: persisted column)
+        await _record_energy_start(fallback_archive, printer_id, db, context="fallback")
+
+        # Send WebSocket notification
+        await ws_manager.send_archive_created(
+            {
+                "id": fallback_archive.id,
+                "printer_id": fallback_archive.printer_id,
+                "filename": fallback_archive.filename,
+                "print_name": fallback_archive.print_name,
+                "status": fallback_archive.status,
+            }
+        )
+
+        # MQTT relay - publish archive created
+        try:
+            await mqtt_relay.on_archive_created(
+                archive_id=fallback_archive.id,
+                print_name=fallback_archive.print_name,
+                printer_name=printer.name,
+                status=fallback_archive.status,
+            )
+        except Exception:
+            pass  # Don't fail if MQTT fails
+
+        # Store Spoolman tracking data (may not work for fallback since no 3MF)
+        try:
+            await _store_spoolman_print_data(
+                printer_id,
+                fallback_archive.id,
+                fallback_archive.file_path,
+                db,
+                printer_manager,
+                ams_mapping=_get_start_ams_mapping(data, fallback_archive.id),
+                plate_id=_get_start_plate_id(fallback_archive.id),
+            )
+        except Exception as e:
+            logger.debug("[SPOOLMAN] Could not store tracking for fallback archive: %s", e)
+
+        # Both temporary give-ups are worth coming back for, and for
+        # the same reason: the file is on the printer and the last look
+        # failed at the transport rather than finding nothing. One waits
+        # out the handshake block (#2957), the other waits for the
+        # printer to stop being busy (#3063). Deliberately not scheduled
+        # for a storage verdict: a file on internal eMMC will not appear
+        # at any FTPS path however long we wait, and retrying it is
+        # exactly the sweep #2780 removed.
+        if no_3mf_reason in (REASON_FTPS_COOLOFF, REASON_FTP_TRANSFER_FAILED) and possible_names:
+            # `possible_names`, not the raw MQTT strings: it is the exact
+            # list this flow just tried, already stripped of any path
+            # (`filename` arrives as "/data/Metadata/plate_1.gcode" on
+            # some firmware) and deduped.
+            _schedule_fallback_3mf_retry(
+                printer_id=printer_id,
+                archive_id=fallback_archive.id,
+                filenames=list(possible_names),
+                reason=no_3mf_reason,
+            )
+        # An internal-storage miss is usually permanent (#2780) -- but
+        # not on a printer whose card mirrors its jobs to /cache, where
+        # the probe at +2 s can simply beat the copy (#6522). Retry only
+        # there, under the names the probe used, and judge what turns up
+        # against the dispatch md5 and the plate's predicted time, with
+        # the remaining time carried forward from print start.
+        elif probe_ran and no_3mf_reason in (REASON_INTERNAL_STORAGE, REASON_INTERNAL_HISTORY) and keeps_cache_mirror:
+            started = time.monotonic()
+
+            def _judge_late(candidate, remote=None):
+                remaining = None
+                if _reported_remaining:
+                    remaining = max(_reported_remaining - (time.monotonic() - started), 0) or None
+                verdict, detail = verify_3mf_candidate(candidate, _expected_md5, _verify_plate, remaining)
+                if verdict == "rejected":
+                    logger.warning("[RECOVER] Rejected late 3MF candidate %s: %s", remote or candidate, detail)
+                return verdict
+
+            _schedule_fallback_3mf_retry(
+                printer_id=printer_id,
+                archive_id=fallback_archive.id,
+                filenames=probe_names,
+                delays=_CACHE_MIRROR_RETRY_DELAYS_SECONDS,
+                reason=no_3mf_reason,
+                judge=_judge_late,
+            )
+
+        # Send notification without archive data (file not found)
+        if not notification_sent:
+            await _send_print_start_notification(printer_id, data, logger=logger)
+
+        # The same baseline the other two on_print_start branches take
+        # (#2704), and last for the same reason they are: it lists the
+        # printer's timelapse directory, so a slow card must not delay
+        # the _active_prints registration, the energy reading, the
+        # archive-created event or the start notification above it.
+        #
+        # This branch never took one, so every no-3MF archive reached
+        # completion with no baseline in memory and none on the row, and
+        # the completion scan fell into its "snapshot now" fallback --
+        # which runs after the printer has written the video, so the new
+        # file landed inside the baseline and no diff ever matched
+        # (#2957 follow-up).
+        #
+        # Skipped when the FTPS cool-off is what produced this fallback:
+        # the listing needs the same connection that just failed, so it
+        # could only record that the card was unreadable. The scan
+        # handles that case by refusing to choose between candidates.
+        if not blocked_by_ftps_cooloff:
+            await _capture_timelapse_baseline_at_start(printer, printer_id, logger, archive_id=fallback_archive.id)
+        return
+    except Exception as e:
+        logger.error("Failed to create fallback archive: %s", e)
+        # Send notification without archive data (file not found)
+        if not notification_sent:
+            await _send_print_start_notification(printer_id, data, logger=logger)
+        return
+
+
+async def _auto_archive_off_and_unexpected(printer_id: int, data: dict, notification_sent: bool, logger) -> bool:
+    """auto_archive is off: is this print one Fenrir did not dispatch?
+
+    on_print_start's auto_archive-disabled check, moved verbatim. Returns True
+    (after the start notification) for a truly external print, which is not
+    archived; False when an expected print is waiting to be promoted.
+    """
+    # auto-archive disabled — check if there's an expected print (dispatched
+    # by Fenrir via queue/reprint) that already has an archive to promote.
+    # If so, fall through to the expected-print handling below so the archive
+    # is tracked in _active_prints and usage tracking works at completion.
+    _fn = data.get("filename", "")
+    _sn = data.get("subtask_name", "")
+    _check_keys: list[tuple[int, str]] = []
+    if _sn:
+        _check_keys += [
+            (printer_id, _sn),
+            (printer_id, f"{_sn}.3mf"),
+            (printer_id, f"{_sn}.gcode.3mf"),
+        ]
+    if _fn:
+        _base_fn = _fn.split("/")[-1] if "/" in _fn else _fn
+        _check_keys.append((printer_id, _base_fn))
+        _no_archive_base = _base_fn.replace(".gcode", "").replace(".3mf", "")
+        _check_keys += [
+            (printer_id, _no_archive_base),
+            (printer_id, f"{_no_archive_base}.3mf"),
+        ]
+
+    _has_expected = any(k in _expected_prints for k in _check_keys)
+
+    if not _has_expected:
+        # No expected print — truly external print (started from slicer/touchscreen)
+        logger.info("[CALLBACK] Skipping archive - auto_archive: False, no expected print")
+        if not notification_sent:
+            _no_archive_creator: int | None = None
+            for _key in _check_keys:
+                _expected_prints.pop(_key, None)
+                _expected_print_registered_at.pop(_key, None)
+                popped_creator = _expected_print_creators.pop(_key, None)
+                if _no_archive_creator is None:
+                    _no_archive_creator = popped_creator
+            _creator_data = {"created_by_id": _no_archive_creator} if _no_archive_creator else None
+            await _send_print_start_notification(printer_id, data, _creator_data, logger)
+        return True
+    else:
+        logger.info("[CALLBACK] auto_archive disabled but expected print found — promoting archive")
+    return False
+
+
+async def _run_plate_check(db, printer, printer_id: int, logger) -> None:
+    """Pause the print if the camera sees objects on the build plate.
+
+    on_print_start's plate-detection block, moved verbatim, including the
+    commit that releases the pooled connection before the camera work (#2572).
+    """
+    logger.info("[PLATE CHECK] ENTERING plate detection code for printer %s", printer_id)
+    # Release the pooled DB connection before the plate-detection camera
+    # work (a 2.5s light-settle sleep + FTP/camera capture). Only the
+    # printer SELECT has run so far — nothing to persist — so this commit
+    # is a data-noop that ends the read transaction and returns the
+    # connection to the pool during the I/O (issue #2572). expire_on_commit
+    # =False keeps printer.* readable; on_plate_not_empty (rare) and the
+    # archive lookups below re-acquire a fresh connection on next execute.
+    await db.commit()
+    try:
+        from backend.app.services.plate_detection import check_plate_empty
+
+        # Build ROI tuple from printer settings if available
+        roi = None
+        if all(
+            [
+                printer.plate_detection_roi_x is not None,
+                printer.plate_detection_roi_y is not None,
+                printer.plate_detection_roi_w is not None,
+                printer.plate_detection_roi_h is not None,
+            ]
+        ):
+            roi = (
+                printer.plate_detection_roi_x,
+                printer.plate_detection_roi_y,
+                printer.plate_detection_roi_w,
+                printer.plate_detection_roi_h,
+            )
+
+        # Auto-turn on chamber light if it's off for better detection
+        light_was_off = False
+        client = printer_manager.get_client(printer_id)
+        if client and client.state:
+            light_was_off = not client.state.chamber_light
+            if light_was_off:
+                logger.info("[PLATE CHECK] Turning on chamber light for printer %s", printer_id)
+                client.set_chamber_light(True)
+                # Wait for light to physically turn on and camera to adjust exposure
+                await asyncio.sleep(2.5)
+
+        plate_photo_data = None
+        objects_detected = False
+        try:
+            logger.info("[PLATE CHECK] Running plate detection for printer %s", printer_id)
+            plate_result = await check_plate_empty(
+                printer_id=printer_id,
+                ip_address=printer.ip_address,
+                access_code=printer.access_code,
+                model=printer.model,
+                include_debug_image=False,
+                external_camera_url=printer.external_camera_url,
+                external_camera_type=printer.external_camera_type,
+                use_external=printer.external_camera_enabled,
+                roi=roi,
+                external_camera_snapshot_url=printer.external_camera_snapshot_url,
+            )
+
+            objects_detected = not plate_result.needs_calibration and not plate_result.is_empty
+            if objects_detected:
+                # Objects detected - pause the print!
+                logger.warning(
+                    f"[PLATE CHECK] Objects detected on plate for printer {printer_id}! "
+                    f"Confidence: {plate_result.confidence:.0%}, Diff: {plate_result.difference_percent:.1f}%"
+                )
+                pause_client = printer_manager.get_client(printer_id)
+                if pause_client:
+                    pause_client.pause_print()
+                    logger.info("[PLATE CHECK] Print paused for printer %s", printer_id)
+
+                # Snapshot while the light's still on — restoring it first
+                # would leave the notification with a dark photo.
+                try:
+                    plate_photo_data = await _capture_snapshot_for_notification(printer_id, printer, logger)
+                except Exception as snap_err:
+                    logger.warning("[PLATE CHECK] Failed to capture snapshot for printer %s: %s", printer_id, snap_err)
+        finally:
+            # Restore chamber light to original state as soon as the
+            # camera is done with it, whatever happened above.
+            if light_was_off and client:
+                logger.info("[PLATE CHECK] Restoring chamber light to off for printer %s", printer_id)
+                try:
+                    client.set_chamber_light(False)
+                except Exception as light_err:
+                    logger.warning(
+                        "[PLATE CHECK] Failed to restore chamber light for printer %s: %s",
+                        printer_id,
+                        light_err,
+                    )
+
+        if objects_detected:
+            # Send notification about plate not empty
+            await ws_manager.broadcast(
+                {
+                    "type": "plate_not_empty",
+                    "printer_id": printer_id,
+                    "printer_name": printer.name,
+                    "message": f"Objects detected on build plate! Print paused. (Diff: {plate_result.difference_percent:.1f}%)",
+                }
+            )
+
+            # Also send push notification
+            try:
+                await notification_service.on_plate_not_empty(
+                    printer_id=printer_id,
+                    printer_name=printer.name,
+                    db=db,
+                    difference_percent=plate_result.difference_percent,
+                    image_data=plate_photo_data,
+                )
+            except Exception as notif_err:
+                logger.warning("[PLATE CHECK] Failed to send notification: %s", notif_err)
+        else:
+            logger.info("[PLATE CHECK] Plate is empty for printer %s, proceeding with print", printer_id)
+    except Exception as plate_err:
+        # Don't block print on plate detection errors
+        logger.warning("[PLATE CHECK] Plate detection failed for printer %s: %s", printer_id, plate_err)
+
+
+async def _print_start_housekeeping(printer_id: int, data: dict, logger) -> None:
+    """Everything tied to a genuine start moment (skipped on catch-up).
+
+    on_print_start's ``not catch_up`` block, moved verbatim: per-print state
+    resets, the print-start event, missing-spool notice, MQTT relay, usage
+    tracker seeding and smart-plug power-on.
+    """
+    # Clear any stale user-stopped flag from previous print cycles
+    _user_stopped_printers.discard(printer_id)
+    # A new print starts its milestones from zero (#3211). The status path only
+    # resets on progress below 5 while not printing, which a printer that goes
+    # from FINISH at 100% straight into a new print at a preparation-phase 85%
+    # never shows. Not on catch-up: that is the fork's resume of a print already
+    # running across a Fenrir restart, and resetting there would repeat a
+    # milestone mid-print.
+    _last_progress_milestone[printer_id] = 0
+    _kill_switch_notification_tasks.pop(printer_id, None)
+
+    # #1721: drop any leftover pre-captured finish frame from a prior print
+    # so a never-consumed cache entry can't bleed into the new print's photo.
+    _stage22_finish_frames.pop(printer_id, None)
+    # #1867: same for the in-print frame bank — a queued print must not reuse
+    # the previous job's banked frame.
+    _inprint_frame_bank.pop(printer_id, None)
+    _inprint_frame_bank_ts.pop(printer_id, None)
+    # #2547: bind (or clear) the "this print ends with injected End G-code" flag,
+    # so a print Fenrir didn't dispatch drops the previous print's flag instead
+    # of inheriting it. Inside the catch-up gate (unlike upstream): a catch-up
+    # means this process just attached, so the in-memory flag store is empty and
+    # there is nothing stale to drop.
+    print_dispatch_context.adopt(printer_id)
+
+    # Cancel any active bed cooldown waiter for this printer
+    if _bed_cool_waiters.pop(printer_id, None):
+        logger.info("[BED-COOL] Cancelled bed cooldown waiter for printer %s (new print started)", printer_id)
+
+    # Clear cached cover images so the new print's thumbnail is fetched fresh
+    from backend.app.api.routes.printers import clear_cover_cache
+
+    clear_cover_cache(printer_id)
+
+    await ws_manager.send_print_start(printer_id, data)
+
+    # Notify when the print-start AMS mapping references tray slots without spool assignments.
+    await notify_missing_spool_assignments_on_print_start(printer_id, data, logger)
+
+    # MQTT relay - publish print start
+    try:
+        printer_info = printer_manager.get_printer(printer_id)
+        if printer_info:
+            await mqtt_relay.on_print_start(
+                printer_id,
+                printer_info.name,
+                printer_info.serial_number,
+                data.get("filename", ""),
+                data.get("subtask_name", ""),
+            )
+    except Exception:
+        pass  # Don't fail print start callback if MQTT fails
+
+    # Capture AMS tray remain%, the assignment snapshot, the dispatched plate
+    # and mapping, and the seeded tray-change log.
+    #
+    # Unconditional, for both inventory backends. This only *captures* — the
+    # writing is still split, with the internal tracker skipped at completion
+    # when Spoolman owns usage. Spoolman's own durable row (#1820) already
+    # carries its plate-scoped 3MF figures and stored mapping, but not the
+    # tray-change log, and that log is the only record of which spool fed
+    # which layers when AMS Filament Backup swaps trays mid-print. Capturing
+    # it on one side only would leave Spoolman users with the mid-print
+    # restart bug this fixes for everyone else. (Still inside the catch-up
+    # gate: restart recovery restores the persisted session instead of
+    # seeding a fresh capture — see _restore_usage_tracking_session.)
+    try:
+        async with async_session() as db:
+            from backend.app.api.routes.settings import get_setting
+            from backend.app.services.usage_tracker import on_print_start as usage_on_print_start
+
+            _spoolman_on = await get_setting(db, "spoolman_enabled")
+            await usage_on_print_start(
+                printer_id,
+                data,
+                printer_manager,
+                db=db,
+                spoolman_owns_usage=bool(_spoolman_on) and _spoolman_on.lower() == "true",
+            )
+    except Exception as e:
+        logger.warning("Usage tracker on_print_start failed: %s", e)
+
+    # Smart plug automation: turn on plug when print starts
+    try:
+        async with async_session() as db:
+            await smart_plug_manager.on_print_start(printer_id, db)
+    except Exception as e:
+        logger.warning("Smart plug on_print_start failed: %s", e)
+
+
 async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
     """Handle print start - archive the 3MF file immediately.
 
@@ -4245,94 +5861,7 @@ async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
     )
 
     if not catch_up:
-        # Clear any stale user-stopped flag from previous print cycles
-        _user_stopped_printers.discard(printer_id)
-        # A new print starts its milestones from zero (#3211). The status path only
-        # resets on progress below 5 while not printing, which a printer that goes
-        # from FINISH at 100% straight into a new print at a preparation-phase 85%
-        # never shows. Not on catch-up: that is the fork's resume of a print already
-        # running across a Fenrir restart, and resetting there would repeat a
-        # milestone mid-print.
-        _last_progress_milestone[printer_id] = 0
-        _kill_switch_notification_tasks.pop(printer_id, None)
-
-        # #1721: drop any leftover pre-captured finish frame from a prior print
-        # so a never-consumed cache entry can't bleed into the new print's photo.
-        _stage22_finish_frames.pop(printer_id, None)
-        # #1867: same for the in-print frame bank — a queued print must not reuse
-        # the previous job's banked frame.
-        _inprint_frame_bank.pop(printer_id, None)
-        _inprint_frame_bank_ts.pop(printer_id, None)
-        # #2547: bind (or clear) the "this print ends with injected End G-code" flag,
-        # so a print Fenrir didn't dispatch drops the previous print's flag instead
-        # of inheriting it. Inside the catch-up gate (unlike upstream): a catch-up
-        # means this process just attached, so the in-memory flag store is empty and
-        # there is nothing stale to drop.
-        print_dispatch_context.adopt(printer_id)
-
-        # Cancel any active bed cooldown waiter for this printer
-        if _bed_cool_waiters.pop(printer_id, None):
-            logger.info("[BED-COOL] Cancelled bed cooldown waiter for printer %s (new print started)", printer_id)
-
-        # Clear cached cover images so the new print's thumbnail is fetched fresh
-        from backend.app.api.routes.printers import clear_cover_cache
-
-        clear_cover_cache(printer_id)
-
-        await ws_manager.send_print_start(printer_id, data)
-
-        # Notify when the print-start AMS mapping references tray slots without spool assignments.
-        await notify_missing_spool_assignments_on_print_start(printer_id, data, logger)
-
-        # MQTT relay - publish print start
-        try:
-            printer_info = printer_manager.get_printer(printer_id)
-            if printer_info:
-                await mqtt_relay.on_print_start(
-                    printer_id,
-                    printer_info.name,
-                    printer_info.serial_number,
-                    data.get("filename", ""),
-                    data.get("subtask_name", ""),
-                )
-        except Exception:
-            pass  # Don't fail print start callback if MQTT fails
-
-        # Capture AMS tray remain%, the assignment snapshot, the dispatched plate
-        # and mapping, and the seeded tray-change log.
-        #
-        # Unconditional, for both inventory backends. This only *captures* — the
-        # writing is still split, with the internal tracker skipped at completion
-        # when Spoolman owns usage. Spoolman's own durable row (#1820) already
-        # carries its plate-scoped 3MF figures and stored mapping, but not the
-        # tray-change log, and that log is the only record of which spool fed
-        # which layers when AMS Filament Backup swaps trays mid-print. Capturing
-        # it on one side only would leave Spoolman users with the mid-print
-        # restart bug this fixes for everyone else. (Still inside the catch-up
-        # gate: restart recovery restores the persisted session instead of
-        # seeding a fresh capture — see _restore_usage_tracking_session.)
-        try:
-            async with async_session() as db:
-                from backend.app.api.routes.settings import get_setting
-                from backend.app.services.usage_tracker import on_print_start as usage_on_print_start
-
-                _spoolman_on = await get_setting(db, "spoolman_enabled")
-                await usage_on_print_start(
-                    printer_id,
-                    data,
-                    printer_manager,
-                    db=db,
-                    spoolman_owns_usage=bool(_spoolman_on) and _spoolman_on.lower() == "true",
-                )
-        except Exception as e:
-            logger.warning("Usage tracker on_print_start failed: %s", e)
-
-        # Smart plug automation: turn on plug when print starts
-        try:
-            async with async_session() as db:
-                await smart_plug_manager.on_print_start(printer_id, db)
-        except Exception as e:
-            logger.warning("Smart plug on_print_start failed: %s", e)
+        await _print_start_housekeeping(printer_id, data, logger)
 
     # Track if notification was sent (to avoid sending twice). Catch-up mode
     # marks it already-sent: the previous process notified at the real start.
@@ -4340,7 +5869,6 @@ async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
 
     async with async_session() as db:
         from backend.app.models.printer import Printer
-        from backend.app.services.bambu_ftp import list_files_async
 
         result = await db.execute(select(Printer).where(Printer.id == printer_id))
         printer = result.scalar_one_or_none()
@@ -4352,124 +5880,7 @@ async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
             f"[PLATE CHECK] printer_id={printer_id}, plate_detection_enabled={printer.plate_detection_enabled if printer else 'NO PRINTER'}"
         )
         if printer and printer.plate_detection_enabled and not catch_up:
-            logger.info("[PLATE CHECK] ENTERING plate detection code for printer %s", printer_id)
-            # Release the pooled DB connection before the plate-detection camera
-            # work (a 2.5s light-settle sleep + FTP/camera capture). Only the
-            # printer SELECT has run so far — nothing to persist — so this commit
-            # is a data-noop that ends the read transaction and returns the
-            # connection to the pool during the I/O (issue #2572). expire_on_commit
-            # =False keeps printer.* readable; on_plate_not_empty (rare) and the
-            # archive lookups below re-acquire a fresh connection on next execute.
-            await db.commit()
-            try:
-                from backend.app.services.plate_detection import check_plate_empty
-
-                # Build ROI tuple from printer settings if available
-                roi = None
-                if all(
-                    [
-                        printer.plate_detection_roi_x is not None,
-                        printer.plate_detection_roi_y is not None,
-                        printer.plate_detection_roi_w is not None,
-                        printer.plate_detection_roi_h is not None,
-                    ]
-                ):
-                    roi = (
-                        printer.plate_detection_roi_x,
-                        printer.plate_detection_roi_y,
-                        printer.plate_detection_roi_w,
-                        printer.plate_detection_roi_h,
-                    )
-
-                # Auto-turn on chamber light if it's off for better detection
-                light_was_off = False
-                client = printer_manager.get_client(printer_id)
-                if client and client.state:
-                    light_was_off = not client.state.chamber_light
-                    if light_was_off:
-                        logger.info("[PLATE CHECK] Turning on chamber light for printer %s", printer_id)
-                        client.set_chamber_light(True)
-                        # Wait for light to physically turn on and camera to adjust exposure
-                        await asyncio.sleep(2.5)
-
-                plate_photo_data = None
-                objects_detected = False
-                try:
-                    logger.info("[PLATE CHECK] Running plate detection for printer %s", printer_id)
-                    plate_result = await check_plate_empty(
-                        printer_id=printer_id,
-                        ip_address=printer.ip_address,
-                        access_code=printer.access_code,
-                        model=printer.model,
-                        include_debug_image=False,
-                        external_camera_url=printer.external_camera_url,
-                        external_camera_type=printer.external_camera_type,
-                        use_external=printer.external_camera_enabled,
-                        roi=roi,
-                        external_camera_snapshot_url=printer.external_camera_snapshot_url,
-                    )
-
-                    objects_detected = not plate_result.needs_calibration and not plate_result.is_empty
-                    if objects_detected:
-                        # Objects detected - pause the print!
-                        logger.warning(
-                            f"[PLATE CHECK] Objects detected on plate for printer {printer_id}! "
-                            f"Confidence: {plate_result.confidence:.0%}, Diff: {plate_result.difference_percent:.1f}%"
-                        )
-                        pause_client = printer_manager.get_client(printer_id)
-                        if pause_client:
-                            pause_client.pause_print()
-                            logger.info("[PLATE CHECK] Print paused for printer %s", printer_id)
-
-                        # Snapshot while the light's still on — restoring it first
-                        # would leave the notification with a dark photo.
-                        try:
-                            plate_photo_data = await _capture_snapshot_for_notification(printer_id, printer, logger)
-                        except Exception as snap_err:
-                            logger.warning(
-                                "[PLATE CHECK] Failed to capture snapshot for printer %s: %s", printer_id, snap_err
-                            )
-                finally:
-                    # Restore chamber light to original state as soon as the
-                    # camera is done with it, whatever happened above.
-                    if light_was_off and client:
-                        logger.info("[PLATE CHECK] Restoring chamber light to off for printer %s", printer_id)
-                        try:
-                            client.set_chamber_light(False)
-                        except Exception as light_err:
-                            logger.warning(
-                                "[PLATE CHECK] Failed to restore chamber light for printer %s: %s",
-                                printer_id,
-                                light_err,
-                            )
-
-                if objects_detected:
-                    # Send notification about plate not empty
-                    await ws_manager.broadcast(
-                        {
-                            "type": "plate_not_empty",
-                            "printer_id": printer_id,
-                            "printer_name": printer.name,
-                            "message": f"Objects detected on build plate! Print paused. (Diff: {plate_result.difference_percent:.1f}%)",
-                        }
-                    )
-
-                    # Also send push notification
-                    try:
-                        await notification_service.on_plate_not_empty(
-                            printer_id=printer_id,
-                            printer_name=printer.name,
-                            db=db,
-                            difference_percent=plate_result.difference_percent,
-                            image_data=plate_photo_data,
-                        )
-                    except Exception as notif_err:
-                        logger.warning("[PLATE CHECK] Failed to send notification: %s", notif_err)
-                else:
-                    logger.info("[PLATE CHECK] Plate is empty for printer %s, proceeding with print", printer_id)
-            except Exception as plate_err:
-                # Don't block print on plate detection errors
-                logger.warning("[PLATE CHECK] Plate detection failed for printer %s: %s", printer_id, plate_err)
+            await _run_plate_check(db, printer, printer_id, logger)
 
         if not printer:
             logger.info("[CALLBACK] Skipping archive - printer not found in database")
@@ -4478,46 +5889,8 @@ async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
             return
 
         if not printer.auto_archive:
-            # auto-archive disabled — check if there's an expected print (dispatched
-            # by Fenrir via queue/reprint) that already has an archive to promote.
-            # If so, fall through to the expected-print handling below so the archive
-            # is tracked in _active_prints and usage tracking works at completion.
-            _fn = data.get("filename", "")
-            _sn = data.get("subtask_name", "")
-            _check_keys: list[tuple[int, str]] = []
-            if _sn:
-                _check_keys += [
-                    (printer_id, _sn),
-                    (printer_id, f"{_sn}.3mf"),
-                    (printer_id, f"{_sn}.gcode.3mf"),
-                ]
-            if _fn:
-                _base_fn = _fn.split("/")[-1] if "/" in _fn else _fn
-                _check_keys.append((printer_id, _base_fn))
-                _no_archive_base = _base_fn.replace(".gcode", "").replace(".3mf", "")
-                _check_keys += [
-                    (printer_id, _no_archive_base),
-                    (printer_id, f"{_no_archive_base}.3mf"),
-                ]
-
-            _has_expected = any(k in _expected_prints for k in _check_keys)
-
-            if not _has_expected:
-                # No expected print — truly external print (started from slicer/touchscreen)
-                logger.info("[CALLBACK] Skipping archive - auto_archive: False, no expected print")
-                if not notification_sent:
-                    _no_archive_creator: int | None = None
-                    for _key in _check_keys:
-                        _expected_prints.pop(_key, None)
-                        _expected_print_registered_at.pop(_key, None)
-                        popped_creator = _expected_print_creators.pop(_key, None)
-                        if _no_archive_creator is None:
-                            _no_archive_creator = popped_creator
-                    _creator_data = {"created_by_id": _no_archive_creator} if _no_archive_creator else None
-                    await _send_print_start_notification(printer_id, data, _creator_data, logger)
+            if await _auto_archive_off_and_unexpected(printer_id, data, notification_sent, logger):
                 return
-            else:
-                logger.info("[CALLBACK] auto_archive disabled but expected print found — promoting archive")
 
         # Get the filename and subtask_name
         filename = data.get("filename", "")
@@ -4561,397 +5934,18 @@ async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
                 await _send_print_start_notification(printer_id, data, logger=logger)
             return
 
-        # Check if this is an expected print from reprint/scheduled
-        # Build list of possible keys to check
-        expected_keys = []
-        if subtask_name:
-            expected_keys.append((printer_id, subtask_name))
-            expected_keys.append((printer_id, f"{subtask_name}.3mf"))
-            expected_keys.append((printer_id, f"{subtask_name}.gcode.3mf"))
-        if filename:
-            fname = filename.split("/")[-1] if "/" in filename else filename
-            expected_keys.append((printer_id, fname))
-            # Strip extensions to match
-            base = fname.replace(".gcode", "").replace(".3mf", "")
-            expected_keys.append((printer_id, base))
-            expected_keys.append((printer_id, f"{base}.3mf"))
+        if await _promote_expected_archive(
+            db, printer, printer_id, data, filename, subtask_name, subtask_id, notification_sent, logger
+        ):
+            return
 
-        expected_archive_id = None
-        for key in expected_keys:
-            expected_archive_id = _expected_prints.pop(key, None)
-            _expected_print_registered_at.pop(key, None)
-            if expected_archive_id:
-                # Clean up other possible keys for this print
-                for other_key in expected_keys:
-                    _expected_prints.pop(other_key, None)
-                    _expected_print_registered_at.pop(other_key, None)
-                break
-
-        if expected_archive_id:
-            # This is a reprint/scheduled print - use existing archive, don't create new one
-            logger.info("Using expected archive %s for print (skipping duplicate)", expected_archive_id)
-            from backend.app.models.archive import PrintArchive
-
-            result = await db.execute(select(PrintArchive).where(PrintArchive.id == expected_archive_id))
-            archive = result.scalar_one_or_none()
-
-            if archive:
-                # Update archive status to printing
-                archive.status = "printing"
-                archive.started_at = datetime.now(timezone.utc)
-
-                # The previous run's answer is still on this row and the
-                # completion prompt is gated on ``user_verdict is None`` (#1898),
-                # so without a reset the second run inherits the first run's
-                # verdict: no prompt at all, and a green "good" badge on a run
-                # nobody ever judged.
-                if archive.confirm_requested:
-                    archive.user_verdict = None
-                    archive.user_verdict_source = None
-                    archive.user_verdict_at = None
-                    archive.confirm_token = None
-                    archive.confirm_token_used_at = None
-
-                # Same for the previous run's outcome. update_archive_status
-                # only ever sets a failure_reason, so run one's reason landed on
-                # run two's print-log row; and the old completed_at made a
-                # running reprint look old to the archive purge.
-                archive.failure_reason = None
-                archive.completed_at = None
-
-                # Reprint of an archive reuses the source row. Without resetting
-                # ``timelapse_path`` _scan_for_timelapse_with_retries early-returns
-                # ("already has timelapse") and _capture_finish_photo_from_timelapse
-                # extracts the *original* print's last frame, which then ships in
-                # the completion notification (#1707). Clear the path so the
-                # scanner runs fresh; also unlink the old video file so reprints
-                # don't accumulate orphans in the archive directory. Photos list
-                # is left alone — accumulating one finish photo per run is fine.
-                # The print-start baseline (#2704) is stale for the same reason:
-                # it describes the printer before the previous run. The capture
-                # below overwrites it, but clear it here too so an early failure
-                # can't leave the scan diffing against the wrong snapshot.
-                archive.timelapse_baseline = None
-                stale_timelapse_relpath = archive.timelapse_path
-                if stale_timelapse_relpath:
-                    archive.timelapse_path = None
-                    try:
-                        stale_path = app_settings.base_dir / stale_timelapse_relpath
-                        if stale_path.is_file():
-                            stale_path.unlink()
-                            logger.info(
-                                "Deleted stale timelapse %s on reprint of archive %s",
-                                stale_timelapse_relpath,
-                                expected_archive_id,
-                            )
-                    except OSError as e:
-                        logger.warning(
-                            "Failed to delete stale timelapse %s on reprint: %s",
-                            stale_timelapse_relpath,
-                            e,
-                        )
-                # Persist a restart-stable id so a later restart resumes this
-                # archive by subtask_id instead of name-matching + duplicating
-                # it (#1485). The printer often hasn't echoed subtask_id back
-                # this soon after dispatch, so fall back to the id Fenrir
-                # minted when it sent the print command. Scoped to this
-                # expected-print branch on purpose: an expected match means
-                # Fenrir dispatched this exact print in this process, so the
-                # client's last-dispatch id genuinely belongs to it — using it
-                # for an externally-started print could mis-tag the archive.
-                effective_subtask_id = subtask_id
-                if not effective_subtask_id:
-                    _client = printer_manager.get_client(printer_id)
-                    _dispatched = getattr(_client, "last_dispatch_subtask_id", None) if _client else None
-                    if _dispatched:
-                        effective_subtask_id = str(_dispatched).strip() or None
-                # Update on first-set OR on reprint (the queue dispatcher mints
-                # a fresh subtask_id per dispatch in bambu_mqtt:3647). Skipping
-                # the rewrite for reprints leaves the archive holding the FIRST
-                # run's id; if MQTT then reconnects mid-print, the reconciler
-                # (#1542) compares the stale stored id against the printer's
-                # live id, sees a mismatch, and synthesises a bogus PRINT
-                # COMPLETE — exactly the false-positive "Print Stopped" reported
-                # in #1807. Inequality check preserves the noop-on-stable-push
-                # behaviour the earlier `not archive.subtask_id` guard provided.
-                if effective_subtask_id and archive.subtask_id != effective_subtask_id:
-                    archive.subtask_id = effective_subtask_id
-                # #1403 follow-up: VP-queue archives are created with
-                # printer_id=None at queue-add time (we don't know which
-                # printer will run the job yet). When the print actually
-                # starts on a specific printer the expected-archive lookup
-                # used to skip this assignment, leaving printer_id=None
-                # forever — which then disables the "Scan for timelapse"
-                # button in ArchivesPage (gated on !archive.printer_id).
-                if archive.printer_id != printer_id:
-                    archive.printer_id = printer_id
-                await db.commit()
-
-                # Track as active print
-                _active_prints[(printer_id, archive.filename)] = archive.id
-                if subtask_name:
-                    _active_prints[(printer_id, f"{subtask_name}.3mf")] = archive.id
-
-                # Start timelapse session if external camera is enabled (#1353).
-                # Queue / VP-dispatched prints land here in the expected-archive
-                # branch and used to skip start_session entirely — frames were
-                # never captured and the post-print stitch silently returned None.
-                _maybe_start_layer_timelapse(printer, printer_id, archive.id)
-
-                # Inject ams_mapping into usage tracker session — the session was created
-                # before expected-print promotion, so it may have ams_mapping=None when
-                # the MQTT request topic subscription failed (common on P1S/A1).
-                _stored_map = _print_ams_mappings.get(expected_archive_id)
-                _stored_plate_id = _print_plate_ids.get(expected_archive_id)
-                if _stored_map or _stored_plate_id is not None:
-                    try:
-                        from backend.app.services.usage_tracker import _active_sessions
-
-                        _ut_session = _active_sessions.get(printer_id)
-                        if _ut_session and _stored_map and not _ut_session.ams_mapping:
-                            _ut_session.ams_mapping = _stored_map
-                            logger.info("[CALLBACK] Injected ams_mapping into usage tracker session: %s", _stored_map)
-                        # plate_id injection covers direct-Print of plate N of a multi-plate
-                        # 3MF — queue prints already capture it via the on_print_start queue
-                        # lookup, but direct-Print never goes through the queue (#1697).
-                        if _ut_session and _stored_plate_id is not None and _ut_session.plate_id is None:
-                            _ut_session.plate_id = _stored_plate_id
-                            logger.info("[CALLBACK] Injected plate_id into usage tracker session: %s", _stored_plate_id)
-                    except Exception:
-                        pass
-
-                # Set up energy tracking (#941: persist start on archive row)
-                await _record_energy_start(archive, printer_id, db, context="expected-print")
-
-                await ws_manager.send_archive_updated(
-                    {
-                        "id": archive.id,
-                        "status": "printing",
-                    }
-                )
-
-                # Send notification with archive data (reprint/scheduled)
-                if not notification_sent:
-                    # Use archive's created_by_id; fall back to the creator registered via
-                    # register_expected_print (handles library-file-based queue items where
-                    # the freshly-created archive has no created_by_id yet).
-                    # Pop ALL matching keys so no stale entries remain in the dict.
-                    fallback_creator = None
-                    for key in expected_keys:
-                        popped = _expected_print_creators.pop(key, None)
-                        if fallback_creator is None:
-                            fallback_creator = popped
-                    archive_data = {
-                        "print_time_seconds": archive.print_time_seconds,
-                        "created_by_id": archive.created_by_id or fallback_creator,
-                    }
-                    await _send_print_start_notification(printer_id, data, archive_data, logger)
-
-                # Extract printable objects from the archived 3MF file
-                _load_objects_from_archive(archive, printer_id, logger)
-
-                # Store Spoolman tracking data for per-filament usage reporting
-                try:
-                    await _store_spoolman_print_data(
-                        printer_id,
-                        archive.id,
-                        archive.file_path,
-                        db,
-                        printer_manager,
-                        ams_mapping=_get_start_ams_mapping(data, archive.id),
-                        plate_id=_get_start_plate_id(archive.id),
-                    )
-                except Exception as e:
-                    logger.warning("[SPOOLMAN] Failed to store tracking data: %s", e)
-
-                # Capture timelapse file baseline for snapshot-diff on completion
-                # (mirrors the new-archive branch). Queue / VP-dispatched prints
-                # hit this branch — without the baseline the completion-time scan
-                # falls into its "take baseline now" fallback, which snapshots
-                # AFTER the new MP4 already exists and never matches a diff
-                # (#1403 follow-up — see pwostran's 2026-05-18 support bundle).
-                await _capture_timelapse_baseline_at_start(printer, printer_id, logger, archive_id=archive.id)
-
-                return  # Skip creating a new archive
-
-            # Expected-print entry pointed at an archive row that no longer
-            # exists (deleted between dispatch and print start). Fall through
-            # to the normal lookup/creation below instead of dropping the
-            # print on the floor.
-            logger.warning(
-                "Expected archive %s not found in DB — falling through to archive creation",
-                expected_archive_id,
-            )
-
-        # Check if there's already a "printing" archive for this printer/file
-        # This prevents duplicates when backend restarts during an active print
-        from backend.app.models.archive import PrintArchive
-
-        existing_archive: PrintArchive | None = None
-
-        # Preferred match: subtask_id equality. MQTT reports the same subtask_id
-        # across a backend restart for the same print, so this is the most
-        # reliable way to reattach. We also accept a previously stale-cancelled
-        # archive here so users upgrading mid-print get revived when the row
-        # their earlier Fenrir version wrongly cancelled reappears (#972).
-        if subtask_id:
-            by_id = await db.execute(
-                select(PrintArchive)
-                .where(PrintArchive.printer_id == printer_id)
-                .where(PrintArchive.subtask_id == subtask_id)
-                .where(PrintArchive.status.in_(["printing", "cancelled"]))
-                .order_by(PrintArchive.created_at.desc())
-                .limit(1)
-            )
-            candidate = by_id.scalar_one_or_none()
-            if candidate and (candidate.status == "printing" or (candidate.failure_reason or "").startswith("Stale")):
-                existing_archive = candidate
-
-        # Fallback match: name-based lookup. Kept as-is for prints whose
-        # subtask_id is missing ("0" / local / non-cloud prints).
-        if existing_archive is None:
-            check_name = subtask_name or filename.split("/")[-1].replace(".gcode", "").replace(".3mf", "")
-            existing = await db.execute(
-                select(PrintArchive)
-                .where(PrintArchive.printer_id == printer_id)
-                .where(PrintArchive.status == "printing")
-                .where(
-                    or_(
-                        PrintArchive.print_name == check_name,
-                        PrintArchive.filename.in_(
-                            [
-                                f"{check_name}.3mf",
-                                f"{check_name}.gcode.3mf",
-                            ]
-                        ),
-                    )
-                )
-                .order_by(PrintArchive.created_at.desc())
-                .limit(1)
-            )
-            existing_archive = existing.scalar_one_or_none()
-
-        if existing_archive:
-            # subtask_id match → always resume, regardless of age. Same print,
-            # just a backend restart. Revive if it was previously stale-cancelled.
-            subtask_match = bool(subtask_id and existing_archive.subtask_id == subtask_id)
-
-            if subtask_match:
-                if existing_archive.status == "cancelled":
-                    logger.warning(
-                        "Reviving stale-cancelled archive %s — matching subtask_id %s confirms same print (#972)",
-                        existing_archive.id,
-                        subtask_id,
-                    )
-                    existing_archive.status = "printing"
-                    existing_archive.failure_reason = None
-                    await db.commit()
-                else:
-                    logger.info("Resuming archive %s on subtask_id match (%s)", existing_archive.id, subtask_id)
-                _active_prints[(printer_id, existing_archive.filename)] = existing_archive.id
-                if existing_archive.energy_start_kwh is None:
-                    await _record_energy_start(existing_archive, printer_id, db, context="subtask-resume")
-                if not notification_sent:
-                    archive_data = {
-                        "print_time_seconds": existing_archive.print_time_seconds,
-                        "created_by_id": existing_archive.created_by_id,
-                    }
-                    await _send_print_start_notification(printer_id, data, archive_data, logger)
-                _load_objects_from_archive(existing_archive, printer_id, logger)
-                return
-
-            # Name-match only (no subtask_id to anchor on): decide resume vs.
-            # stale from the printer's *current* progress, not wall-clock age.
-            # A genuinely long print used to trip a blind 4h cutoff and have its
-            # live archive cancelled + duplicated on every backend restart
-            # (#1485). If the printer reports real progress, this name-matched
-            # 'printing' archive IS that ongoing print — resume it whatever its
-            # age. Only treat it as a stale leftover when the printer clearly
-            # shows a different, freshly-started print: near-0% progress on an
-            # archive far too old to still be at 0%. Unknown progress (printer
-            # not connected) never cancels — resuming is the safe default.
-            archive_age = datetime.now(timezone.utc) - existing_archive.created_at.replace(tzinfo=timezone.utc)
-            live_status = printer_manager.get_status(printer_id)
-            live_progress = getattr(live_status, "progress", None) if live_status else None
-            looks_stale = (
-                live_progress is not None and live_progress < 1.0 and archive_age.total_seconds() > 2 * 60 * 60
-            )
-            if looks_stale:
-                logger.warning(
-                    f"Found stale 'printing' archive {existing_archive.id} (age: {archive_age}, "
-                    f"printer progress {live_progress:.0f}%) — marking cancelled and creating new archive"
-                )
-                existing_archive.status = "cancelled"
-                # Canonical key, not a sentence (issue #2974). "No status update
-                # received" is what both stale paths actually observed; which of
-                # the two it was is already carried by ``status`` -- cancelled
-                # here, the reconciled outcome at the reconnect site -- so one
-                # key loses no information and gives the Statistics breakdown a
-                # single bucket instead of two untranslatable prose strings.
-                existing_archive.failure_reason = "noStatusUpdate"
-                await db.commit()
-                # Fall through to create new archive (don't return)
-            else:
-                logger.info(
-                    f"Skipping duplicate - already have printing archive {existing_archive.id} for {check_name}"
-                )
-                # Track this as the active print
-                _active_prints[(printer_id, existing_archive.filename)] = existing_archive.id
-                # Attach subtask_id retroactively so future restarts can resume.
-                # Compare for inequality (not "is empty") to also pick up reprint
-                # dispatches that mint a fresh id — see #1807 for the bogus
-                # "Print Stopped" the strict-empty guard caused on reconnect.
-                if subtask_id and existing_archive.subtask_id != subtask_id:
-                    existing_archive.subtask_id = subtask_id
-                    await db.commit()
-                # Also set up energy tracking if not already tracked (#941: persisted column)
-                if existing_archive.energy_start_kwh is None:
-                    await _record_energy_start(existing_archive, printer_id, db, context="existing-printing")
-                # Send notification with archive data (existing archive)
-                if not notification_sent:
-                    archive_data = {
-                        "print_time_seconds": existing_archive.print_time_seconds,
-                        "created_by_id": existing_archive.created_by_id,
-                    }
-                    await _send_print_start_notification(printer_id, data, archive_data, logger)
-                # Extract printable objects from the archived 3MF file
-                _load_objects_from_archive(existing_archive, printer_id, logger)
-                return
+        if await _resume_existing_archive(
+            db, printer_id, data, filename, subtask_name, subtask_id, notification_sent, logger
+        ):
+            return
 
         # Build list of possible 3MF filenames to try
-        possible_names = []
-
-        # Bambu printers typically store files as "Name.gcode.3mf"
-        # The subtask_name is usually the best source for the filename
-        if subtask_name:
-            # Try common Bambu naming patterns
-            possible_names.append(f"{subtask_name}.gcode.3mf")
-            possible_names.append(f"{subtask_name}.3mf")
-
-        # Try original filename with .3mf extension
-        if filename:
-            # Extract just the filename part, not the full path
-            fname = filename.split("/")[-1] if "/" in filename else filename
-            if fname.endswith(".3mf"):
-                possible_names.append(fname)
-            elif fname.endswith(".gcode"):
-                base = fname.rsplit(".", 1)[0]
-                possible_names.append(f"{base}.gcode.3mf")
-                possible_names.append(f"{base}.3mf")
-            else:
-                possible_names.append(f"{fname}.gcode.3mf")
-                possible_names.append(f"{fname}.3mf")
-
-        # Also try with spaces converted to underscores (Bambu Studio may normalize filenames)
-        space_variants = []
-        for name in possible_names:
-            if " " in name:
-                space_variants.append(name.replace(" ", "_"))
-        possible_names.extend(space_variants)
-
-        # Remove duplicates while preserving order
-        seen = set()
-        possible_names = [x for x in possible_names if not (x in seen or seen.add(x))]
+        possible_names = _print_3mf_candidate_names(subtask_name, filename)
 
         logger.info("Trying filenames: %s", possible_names)
 
@@ -4967,824 +5961,17 @@ async def on_print_start(printer_id: int, data: dict, catch_up: bool = False):
         # a fresh connection, and expire_on_commit=False keeps printer.* readable.
         await db.commit()
 
-        # Try to find and download the 3MF file
-        temp_path = None
-        downloaded_filename = None
+        acquired = await _acquire_print_3mf(printer, printer_id, data, filename, subtask_name, possible_names, logger)
 
-        # Content verification inputs (#2104): filename search alone can land
-        # on a months-old same-name file elsewhere on the printer's storage
-        # (e.g. stale copy at / while the fresh slicer upload sits in /cache).
-        # Every accepted candidate below is judged by verify_3mf_candidate —
-        # md5 from the intercepted print command when available, otherwise a
-        # plate-prediction plausibility check; "rejected" candidates are
-        # discarded and the search continues with the next path.
-        _expected_md5 = (data.get("print_md5") or "").strip().lower() or None
-        _verify_plate = parse_plate_id(filename)
-        _reported_remaining = data.get("remaining_time")
-        content_verdict: str | None = None
-        candidate_rejected = False
-
-        async def _judge_candidate(candidate_path, source: str) -> str:
-            nonlocal candidate_rejected
-            # The md5 of a large 3MF in a worker thread, not on the event loop.
-            verdict, detail = await asyncio.to_thread(
-                verify_3mf_candidate, candidate_path, _expected_md5, _verify_plate, _reported_remaining
+        if not acquired.downloaded_filename or not acquired.temp_path:
+            await _create_fallback_archive(
+                db, printer, printer_id, data, filename, subtask_id, possible_names, acquired, notification_sent, logger
             )
-            if verdict == "rejected":
-                candidate_rejected = True
-                logger.warning("[CALLBACK] Rejected 3MF candidate %s (%s): %s", candidate_path, source, detail)
-            else:
-                logger.info("[CALLBACK] 3MF candidate %s (%s): %s — %s", candidate_path, source, verdict, detail)
-            return verdict
+            return
 
-        # Cache check: cover endpoint may have already pulled this 3MF during
-        # the print (frontend opens the card and shows the thumbnail) — reuse
-        # that file instead of re-downloading 36MB over the same FTP link that
-        # just served it (#972). The cache keys on a normalized filename so
-        # variants like "X", "X.3mf", "X.gcode.3mf" all collapse to one entry.
-        for try_filename in possible_names:
-            if not try_filename.endswith(".3mf"):
-                continue
-            cached = get_cached_3mf(printer_id, try_filename)
-            if cached:
-                verdict = await _judge_candidate(cached, "cache reuse")
-                if verdict == "rejected":
-                    continue  # Stale cached copy of a different job — go to FTP
-                logger.info("Reusing cached 3MF from %s (avoided duplicate FTP)", cached)
-                content_verdict = verdict
-                temp_path = cached
-                downloaded_filename = try_filename
-                break
-
-        # Does this printer keep the sliced file somewhere FTPS can reach? On
-        # H2-series and P2S the answer is routinely no — the file stays on
-        # internal eMMC and port 990 only ever serves external storage — and
-        # then the whole sweep below (six filenames x five directories x four
-        # retries, then the directory walk) is ~110 connections that cannot
-        # succeed. Skip it and say why (#2780).
-        storage = print_file_reachable_over_ftp(printer_manager.get_status(printer_id))
-
-        # Set when a lookup is abandoned because the printer's FTPS cool-off is
-        # running rather than because the file is somewhere unreachable. The
-        # distinction is the whole of #2957: one is permanent, the other clears
-        # in minutes with the file still sitting on the printer.
-        blocked_by_ftps_cooloff = False
-
-        # Set when a probe reached the printer and still came back without the
-        # file -- a timeout mid-transfer, a refused connection, anything that is
-        # not a clean "not here". A 550 raises FileNotOnPrinterError and is
-        # caught by name below, so a file that genuinely is not on the card
-        # leaves this False and schedules nothing. Anything else means the
-        # transfer, not the file, is what failed, and that does not last (#3063).
-        ftp_transfer_failed = False
-
-        # The print's name, for a fallback archive whose `subtask_name` the
-        # plate guard below had to disown. Display only, and deliberately kept
-        # apart from `subtask_name`: that variable is what every file lookup
-        # here is built from, and once a name has been shown to fetch another
-        # plate's 3MF it must not key `_active_prints` either, or the cover
-        # endpoint hands the same contradicted file to
-        # `_recover_fallback_archive` and fills the row in with it (#3126).
-        display_name_after_plate_reject: str | None = None
-
-        # Get FTP retry settings
-        ftp_retry_enabled, ftp_retry_count, ftp_retry_delay, ftp_timeout = await get_ftp_retry_settings()
-
-        # ...but "the printer put it on eMMC" is where it went, not whether we
-        # can read it. An H2D with a card in mirrors the job to /cache and
-        # serves it happily, and skipping on the URL alone cost that reporter
-        # every archive for two days (#2856). So ask the printer instead of
-        # guessing: the dispatch named the exact file, which is one connection
-        # walking five paths rather than the sweep's ~110. Only when the probe
-        # comes back empty does the verdict's reason stand.
-        #
-        # A touchscreen reprint names no file at all -- the printer reports
-        # `project_file.gcode.3mf` whatever the job was -- so there the print's
-        # own names stand in for it, and the /cache mirror has it under those
-        # (#6536). Every hit is judged like the sweep's: /cache and / keep stale
-        # same-name slices, and the md5 from the dispatch tells them apart.
-        probe_names = probe_filenames(storage.probe_filename, possible_names)
-        probe_ran = False
-        if not storage.reachable and not downloaded_filename and probe_names:
-            if ftps_handshake_blocked(printer.ip_address):
-                # Deliberately NOT recorded as a cool-off give-up. This branch
-                # only runs on an unreachable verdict, and that verdict is the
-                # honest, permanent reason the archive is empty — the probe was
-                # a long shot on top of it. Blaming the cool-off here would
-                # schedule a retry for a file sitting on internal eMMC, which is
-                # the sweep #2780 removed (#2957).
-                logger.debug(
-                    "Not probing for %s on printer %s: its file service is not answering over TLS",
-                    probe_names,
-                    printer_id,
-                )
-            else:
-                probe_ran = True
-                found = await _probe_for_3mf(
-                    printer_id,
-                    printer.ip_address,
-                    printer.access_code,
-                    printer.model,
-                    probe_names,
-                    _judge_candidate,
-                    ftp_timeout,
-                )
-                if found:
-                    downloaded_filename, temp_path, probe_hit, content_verdict = found
-                    cache_3mf_download(printer_id, downloaded_filename, temp_path)
-                    # Naming the path, not just the file: a printer that keeps
-                    # uploads around for weeks can serve a same-named copy of an
-                    # earlier slice, and without the directory in the log that
-                    # mismatch is invisible rather than merely rare (#1820).
-                    logger.info(
-                        "Found %s at %s over FTPS for printer %s even though the printer reported %s",
-                        downloaded_filename,
-                        probe_hit,
-                        printer_id,
-                        storage.reason,
-                    )
-
-        # Asked here, with no DB transaction open, rather than where the retry
-        # is scheduled: that is inside the fallback-archive writes, and an FTP
-        # listing there would pin a pooled connection for its duration (#2572).
-        keeps_cache_mirror = probe_ran and not downloaded_filename and await _printer_keeps_cache_mirror(printer)
-
-        if not storage.reachable and not downloaded_filename:
-            # Same opening words whether or not a probe ran, because that is
-            # the phrase support asks people to grep for — only the tail says
-            # which of the two happened.
-            logger.info(
-                "Skipping the 3MF lookup for printer %s: %s — %s",
-                printer_id,
-                storage.reason,
-                "no copy of it on external storage either"
-                if storage.probe_filename
-                else "the print file is not on storage Fenrir can read over FTPS, so no path would find it",
-            )
-
-        for try_filename in possible_names if not downloaded_filename and storage.reachable else []:
-            if not try_filename.endswith(".3mf"):
-                continue
-
-            # Root (/) is where BambuStudio/OrcaSlicer uploads land on A1/P1-series
-            # printers, so try it first — deferring it to last cost #972's reporter
-            # ~48 minutes of retries on /cache//model//data//data/Metadata before
-            # landing on the path that actually had the file.
-            remote_paths = ftp_probe_paths(try_filename)
-
-            temp_path = print_temp_path(printer_id, try_filename)
-
-            for remote_path in remote_paths:
-                if ftps_handshake_blocked(printer.ip_address):
-                    # The printer's FTPS service is not completing a TLS
-                    # handshake, so it has no path we could reach — walking the
-                    # remaining candidates only re-runs the same failure
-                    # (#2780). Fall through to the no-3MF archive now.
-                    #
-                    # Remember *why*, though. This is the one give-up that is
-                    # temporary: the cool-off clears in minutes and the file was
-                    # on the printer the whole time. The fallback archive is
-                    # stamped with it so a retry can be scheduled, and so the
-                    # Archives banner stops blaming storage (#2957).
-                    blocked_by_ftps_cooloff = True
-                    logger.warning(
-                        "Giving up on the 3MF for printer %s: its file service is not answering over TLS",
-                        printer_id,
-                    )
-                    break
-                logger.debug("Trying FTP download: %s", remote_path)
-                try:
-                    if ftp_retry_enabled:
-                        downloaded = await with_ftp_retry(
-                            download_file_async,
-                            printer.ip_address,
-                            printer.access_code,
-                            remote_path,
-                            temp_path,
-                            timeout=ftp_timeout,
-                            socket_timeout=ftp_timeout,
-                            printer_model=printer.model,
-                            max_retries=ftp_retry_count,
-                            retry_delay=ftp_retry_delay,
-                            operation_name=f"Download 3MF from {remote_path}",
-                            cooloff_ip=printer.ip_address,
-                            non_retry_exceptions=(FileNotOnPrinterError,),
-                        )
-                    else:
-                        downloaded = await download_file_async(
-                            printer.ip_address,
-                            printer.access_code,
-                            remote_path,
-                            temp_path,
-                            timeout=ftp_timeout,
-                            socket_timeout=ftp_timeout,
-                            printer_model=printer.model,
-                        )
-                    if downloaded:
-                        verdict = await _judge_candidate(temp_path, remote_path)
-                        if verdict == "rejected":
-                            # Same-name impostor (e.g. stale copy at / while
-                            # the real upload sits in /cache) — discard and
-                            # keep walking the remaining paths.
-                            try:
-                                temp_path.unlink(missing_ok=True)
-                            except OSError:
-                                pass
-                            continue
-                        content_verdict = verdict
-                        downloaded_filename = try_filename
-                        logger.info("Downloaded: %s", remote_path)
-                        # Populate shared cache so the cover endpoint (if it
-                        # runs next) doesn't refetch the same 36MB over FTP.
-                        cache_3mf_download(printer_id, try_filename, temp_path)
-                        break
-                    # with_ftp_retry returns None once it has spent its budget,
-                    # and download_file_async returns False on a timeout, so an
-                    # exhausted transfer arrives here rather than as an
-                    # exception (#3063).
-                    ftp_transfer_failed = True
-                except FileNotOnPrinterError:
-                    # 550 — file isn't at this path. Advance to next candidate
-                    # without burning the retry budget.
-                    logger.debug("3MF not at %s (550), trying next path", remote_path)
-                except Exception as e:
-                    ftp_transfer_failed = True
-                    logger.debug("FTP download failed for %s: %s", remote_path, e)
-
-            if downloaded_filename or ftps_handshake_blocked(printer.ip_address):
-                break
-
-        # If still not found, try listing directories to find matching file
-        # Different printer models use different directory structures. Skipped
-        # when the printer's FTPS handshake is failing — the directory walk is
-        # five more connections that cannot get further than the download did.
-        if (
-            not downloaded_filename
-            and storage.reachable
-            and (filename or subtask_name)
-            and not ftps_handshake_blocked(printer.ip_address)
-        ):
-            search_term = (subtask_name or filename).lower().replace(".gcode", "").replace(".3mf", "")
-            logger.info("Direct FTP download failed, searching directories for '%s'", search_term)
-            search_dirs = ["/cache", "/model", "/data", "/data/Metadata", "/"]
-            for search_dir in search_dirs:
-                if downloaded_filename:
-                    break
-                try:
-                    dir_files = await list_files_async(
-                        printer.ip_address, printer.access_code, search_dir, printer_model=printer.model
-                    )
-                    threemf_files = [f.get("name") for f in dir_files if f.get("name", "").endswith(".3mf")]
-                    if threemf_files:
-                        logger.info(
-                            f"Found {len(threemf_files)} 3MF files in {search_dir}: {threemf_files[:5]}{'...' if len(threemf_files) > 5 else ''}"
-                        )
-                    for f in dir_files:
-                        if f.get("is_directory"):
-                            continue
-                        fname = f.get("name", "")
-                        # Normalize both for comparison (spaces and underscores are equivalent)
-                        fname_normalized = fname.lower().replace(" ", "_")
-                        search_normalized = search_term.replace(" ", "_")
-                        if fname.endswith(".3mf") and search_normalized in fname_normalized:
-                            logger.info("Found matching file in %s: %s", search_dir, fname)
-                            temp_path = print_temp_path(printer_id, fname)
-                            remote_full_path = posixpath.join(search_dir, fname)
-                            if ftp_retry_enabled:
-                                downloaded = await with_ftp_retry(
-                                    download_file_async,
-                                    printer.ip_address,
-                                    printer.access_code,
-                                    remote_full_path,
-                                    temp_path,
-                                    timeout=ftp_timeout,
-                                    socket_timeout=ftp_timeout,
-                                    printer_model=printer.model,
-                                    max_retries=ftp_retry_count,
-                                    retry_delay=ftp_retry_delay,
-                                    operation_name=f"Download 3MF from {remote_full_path}",
-                                    cooloff_ip=printer.ip_address,
-                                )
-                            else:
-                                downloaded = await download_file_async(
-                                    printer.ip_address,
-                                    printer.access_code,
-                                    remote_full_path,
-                                    temp_path,
-                                    timeout=ftp_timeout,
-                                    socket_timeout=ftp_timeout,
-                                    printer_model=printer.model,
-                                )
-                            if downloaded:
-                                verdict = await _judge_candidate(temp_path, posixpath.join(search_dir, fname))
-                                if verdict == "rejected":
-                                    try:
-                                        temp_path.unlink(missing_ok=True)
-                                    except OSError:
-                                        pass
-                                    continue
-                                content_verdict = verdict
-                                downloaded_filename = fname
-                                logger.info("Found and downloaded from %s: %s", search_dir, fname)
-                                cache_3mf_download(printer_id, fname, temp_path)
-                                break
-                            # The listing named the file, so it is on the card;
-                            # only the transfer failed (#3063).
-                            ftp_transfer_failed = True
-                except Exception as e:
-                    logger.debug("Failed to list %s: %s", search_dir, e)
-
-        # Validate the downloaded 3MF actually matches the plate that's running
-        # (#1204): subtask_name lags across consecutive plates of the same model,
-        # so the first FTP candidate (built from subtask_name) can land on the
-        # previous plate's still-resident upload. Cross-check the slice_info
-        # plate index against the plate parsed from gcode_file (always fresh —
-        # it's the field whose change triggered this callback).
-        if downloaded_filename and temp_path:
-            expected_plate = parse_plate_id(filename)
-            actual_plate = peek_plate_index_in_3mf(temp_path) if expected_plate is not None else None
-            if expected_plate is not None and actual_plate is not None and actual_plate != expected_plate:
-                logger.warning(
-                    "[CALLBACK] 3MF plate mismatch: downloaded %s reports plate %s but printer is "
-                    "running plate %s — subtask_name=%r appears stale, retrying with corrected name",
-                    downloaded_filename,
-                    actual_plate,
-                    expected_plate,
-                    subtask_name,
-                )
-                corrected_subtask = swap_plate_suffix(subtask_name, expected_plate)
-                retry_succeeded = False
-                if corrected_subtask and corrected_subtask != subtask_name:
-                    for try_filename in (f"{corrected_subtask}.gcode.3mf", f"{corrected_subtask}.3mf"):
-                        retry_temp_path = print_temp_path(printer_id, try_filename)
-                        for remote_path in ftp_probe_paths(try_filename):
-                            try:
-                                if ftp_retry_enabled:
-                                    downloaded = await with_ftp_retry(
-                                        download_file_async,
-                                        printer.ip_address,
-                                        printer.access_code,
-                                        remote_path,
-                                        retry_temp_path,
-                                        timeout=ftp_timeout,
-                                        socket_timeout=ftp_timeout,
-                                        printer_model=printer.model,
-                                        max_retries=ftp_retry_count,
-                                        retry_delay=ftp_retry_delay,
-                                        operation_name=f"Re-download 3MF from {remote_path}",
-                                        cooloff_ip=printer.ip_address,
-                                        non_retry_exceptions=(FileNotOnPrinterError,),
-                                    )
-                                else:
-                                    downloaded = await download_file_async(
-                                        printer.ip_address,
-                                        printer.access_code,
-                                        remote_path,
-                                        retry_temp_path,
-                                        timeout=ftp_timeout,
-                                        socket_timeout=ftp_timeout,
-                                        printer_model=printer.model,
-                                    )
-                                if (
-                                    downloaded
-                                    and peek_plate_index_in_3mf(retry_temp_path) == expected_plate
-                                    and (
-                                        retry_verdict := await _judge_candidate(
-                                            retry_temp_path, f"plate-retry {remote_path}"
-                                        )
-                                    )
-                                    != "rejected"
-                                ):
-                                    content_verdict = retry_verdict
-                                    logger.info(
-                                        "[CALLBACK] Re-download succeeded with corrected name %s "
-                                        "(plate %s) — replacing wrong file",
-                                        try_filename,
-                                        expected_plate,
-                                    )
-                                    try:
-                                        temp_path.unlink(missing_ok=True)
-                                    except OSError:
-                                        pass
-                                    temp_path = retry_temp_path
-                                    downloaded_filename = try_filename
-                                    subtask_name = corrected_subtask
-                                    cache_3mf_download(printer_id, try_filename, temp_path)
-                                    retry_succeeded = True
-                                    break
-                                elif downloaded:
-                                    # Wrong plate again — discard and keep trying
-                                    try:
-                                        retry_temp_path.unlink(missing_ok=True)
-                                    except OSError:
-                                        pass
-                            except FileNotOnPrinterError:
-                                continue
-                            except Exception as e:
-                                logger.debug("Re-download failed for %s: %s", remote_path, e)
-                        if retry_succeeded:
-                            break
-                # If the retry didn't find a matching file, drop the wrong 3MF
-                # so the no-3MF fallback below creates an archive whose name
-                # at least reflects the right plate.
-                if not retry_succeeded:
-                    logger.warning(
-                        "[CALLBACK] Could not re-download correct plate %s — falling back to no-3MF archive",
-                        expected_plate,
-                    )
-                    try:
-                        temp_path.unlink(missing_ok=True)
-                    except OSError:
-                        pass
-                    temp_path = None
-                    downloaded_filename = None
-                    # Whatever the sweep's transport did earlier, it is not why
-                    # this archive ends up empty: a 3MF downloaded fine, it was
-                    # just the wrong plate. Retrying would re-fetch that same
-                    # contradicted file under the same stale names and hand it
-                    # to _recover_fallback_archive, which checks that a
-                    # candidate is a readable 3MF but not which plate it is --
-                    # so the row would be filled in with another plate's
-                    # filament and cost, the exact swap #2957 removed (#3063).
-                    ftp_transfer_failed = False
-                    # Disown the name for *lookups*: it has just been shown to
-                    # fetch another plate's 3MF, and it keys `_active_prints`
-                    # below, where the cover endpoint's own download of that
-                    # same name would find this archive and fill it in with the
-                    # file we are discarding here.
-                    #
-                    # Keep it for the *title*, which is a separate question.
-                    # ``swap_plate_suffix`` returns None both for a name that
-                    # carries no "- Plate N" / "_plate_N" suffix and for no
-                    # name at all, and those are not the same situation: a name
-                    # without a suffix holds no stale plate number to be wrong
-                    # about. Blanking both uses at once dropped the project
-                    # name too, and the row fell through to the gcode_file path
-                    # titled "plate_1" though the real name was in hand.
-                    # #1204's own premise is consecutive plates *of the same
-                    # model*, so the project part is right either way (#3126).
-                    display_name_after_plate_reject = corrected_subtask or subtask_name or None
-                    subtask_name = corrected_subtask or ""
-
-        if not downloaded_filename or not temp_path:
-            logger.warning("Could not find 3MF file for print: %s", filename or subtask_name)
-            # Create a fallback archive without 3MF data so the print is still tracked
-            # This commonly happens with P1S/A1 printers where FTP has file size limitations
-            try:
-                from backend.app.models.archive import PrintArchive
-
-                # Why the card is empty. The two temporary causes outrank the
-                # storage verdict because they say the sweep never got a fair
-                # answer: a cool-off skipped it at the transport, and a failed
-                # transfer reached the printer but never finished. Either way
-                # the file is still on the card, so reporting where the printer
-                # files its jobs would describe a setting that is not the
-                # problem (#2957, #3063).
-                if blocked_by_ftps_cooloff:
-                    no_3mf_reason = REASON_FTPS_COOLOFF
-                elif storage.reachable and ftp_transfer_failed:
-                    no_3mf_reason = REASON_FTP_TRANSFER_FAILED
-                else:
-                    no_3mf_reason = storage.reason
-
-                # Derive print name from subtask_name or filename. The
-                # plate guard's disowned name comes second: it is a real name
-                # for a real print, and only the gcode_file path is left
-                # otherwise -- which titles the row "plate_1" (#3126).
-                print_name = subtask_name or display_name_after_plate_reject or filename
-                if print_name:
-                    # Clean up the name (remove extensions, path parts)
-                    print_name = print_name.split("/")[-1]
-                    print_name = print_name.replace(".gcode.3mf", "").replace(".gcode", "").replace(".3mf", "")
-                else:
-                    print_name = "Unknown Print"
-
-                # Recover estimated print time from MQTT (best-effort for notifications)
-                fallback_print_time = None
-                mqtt_remaining = data.get("remaining_time")
-                if mqtt_remaining and isinstance(mqtt_remaining, (int, float)) and mqtt_remaining > 0:
-                    fallback_print_time = int(mqtt_remaining)
-                if fallback_print_time is None:
-                    mc_remaining = (data.get("raw_data") or {}).get("mc_remaining_time")
-                    if mc_remaining and isinstance(mc_remaining, (int, float)) and mc_remaining > 0:
-                        fallback_print_time = int(mc_remaining * 60)
-
-                # Best-effort filament metadata from MQTT — see
-                # _extract_filament_data_from_mqtt. Without this the fallback
-                # archive's filament fields stayed NULL even though the AMS
-                # state at print start was sitting right there in `data`.
-                # The slicer's ams_mapping (when present) narrows the result
-                # to slots actually used by the print (#1533).
-                mqtt_filament_meta = _extract_filament_data_from_mqtt(data, _get_start_ams_mapping(data, None))
-
-                # Create minimal archive entry
-                fallback_archive = PrintArchive(
-                    printer_id=printer_id,
-                    filename=filename or f"{print_name}.3mf",
-                    file_path="",  # Empty - no 3MF file available
-                    file_size=0,
-                    print_name=print_name,
-                    print_time_seconds=fallback_print_time,
-                    status="printing",
-                    started_at=datetime.now(timezone.utc),
-                    subtask_id=subtask_id,
-                    confirm_requested=await _ask_outcome_for_external_print(db, printer_id, subtask_name),
-                    filament_type=mqtt_filament_meta.get("filament_type"),
-                    filament_color=mqtt_filament_meta.get("filament_color"),
-                    extra_data={
-                        "no_3mf_available": True,
-                        # Why the card is empty, when we know -- see above. The
-                        # banner reads this to stop telling H2/P2 owners to
-                        # switch on a setting that is already on and would not
-                        # have helped (#2780).
-                        "no_3mf_reason": no_3mf_reason,
-                        "original_subtask": subtask_name or display_name_after_plate_reject or "",
-                        "_print_data": data,
-                        # What print start knew, so a file that turns up later
-                        # is judged the same way before it fills this card in.
-                        "_recovery_check": _recovery_check(_expected_md5, _verify_plate, _reported_remaining),
-                        # True when same-name candidates were found but all
-                        # failed content verification — better no file than a
-                        # wrong file polluting stats and duplicate groups.
-                        **({"content_rejected": True} if candidate_rejected else {}),
-                    },
-                )
-
-                db.add(fallback_archive)
-                await db.commit()
-                await db.refresh(fallback_archive)
-
-                logger.info("Created fallback archive %s for %s (no 3MF available)", fallback_archive.id, print_name)
-
-                _maybe_start_layer_timelapse(printer, printer_id, fallback_archive.id)
-
-                # Track as active print
-                _active_prints[(printer_id, fallback_archive.filename)] = fallback_archive.id
-                if filename:
-                    _active_prints[(printer_id, filename)] = fallback_archive.id
-                if subtask_name:
-                    _active_prints[(printer_id, f"{subtask_name}.3mf")] = fallback_archive.id
-                    _active_prints[(printer_id, subtask_name)] = fallback_archive.id
-
-                # Record starting energy if smart plug available (#941: persisted column)
-                await _record_energy_start(fallback_archive, printer_id, db, context="fallback")
-
-                # Send WebSocket notification
-                await ws_manager.send_archive_created(
-                    {
-                        "id": fallback_archive.id,
-                        "printer_id": fallback_archive.printer_id,
-                        "filename": fallback_archive.filename,
-                        "print_name": fallback_archive.print_name,
-                        "status": fallback_archive.status,
-                    }
-                )
-
-                # MQTT relay - publish archive created
-                try:
-                    await mqtt_relay.on_archive_created(
-                        archive_id=fallback_archive.id,
-                        print_name=fallback_archive.print_name,
-                        printer_name=printer.name,
-                        status=fallback_archive.status,
-                    )
-                except Exception:
-                    pass  # Don't fail if MQTT fails
-
-                # Store Spoolman tracking data (may not work for fallback since no 3MF)
-                try:
-                    await _store_spoolman_print_data(
-                        printer_id,
-                        fallback_archive.id,
-                        fallback_archive.file_path,
-                        db,
-                        printer_manager,
-                        ams_mapping=_get_start_ams_mapping(data, fallback_archive.id),
-                        plate_id=_get_start_plate_id(fallback_archive.id),
-                    )
-                except Exception as e:
-                    logger.debug("[SPOOLMAN] Could not store tracking for fallback archive: %s", e)
-
-                # Both temporary give-ups are worth coming back for, and for
-                # the same reason: the file is on the printer and the last look
-                # failed at the transport rather than finding nothing. One waits
-                # out the handshake block (#2957), the other waits for the
-                # printer to stop being busy (#3063). Deliberately not scheduled
-                # for a storage verdict: a file on internal eMMC will not appear
-                # at any FTPS path however long we wait, and retrying it is
-                # exactly the sweep #2780 removed.
-                if no_3mf_reason in (REASON_FTPS_COOLOFF, REASON_FTP_TRANSFER_FAILED) and possible_names:
-                    # `possible_names`, not the raw MQTT strings: it is the exact
-                    # list this flow just tried, already stripped of any path
-                    # (`filename` arrives as "/data/Metadata/plate_1.gcode" on
-                    # some firmware) and deduped.
-                    _schedule_fallback_3mf_retry(
-                        printer_id=printer_id,
-                        archive_id=fallback_archive.id,
-                        filenames=list(possible_names),
-                        reason=no_3mf_reason,
-                    )
-                # An internal-storage miss is usually permanent (#2780) -- but
-                # not on a printer whose card mirrors its jobs to /cache, where
-                # the probe at +2 s can simply beat the copy (#6522). Retry only
-                # there, under the names the probe used, and judge what turns up
-                # against the dispatch md5 and the plate's predicted time, with
-                # the remaining time carried forward from print start.
-                elif (
-                    probe_ran
-                    and no_3mf_reason in (REASON_INTERNAL_STORAGE, REASON_INTERNAL_HISTORY)
-                    and keeps_cache_mirror
-                ):
-                    started = time.monotonic()
-
-                    def _judge_late(candidate, remote=None):
-                        remaining = None
-                        if _reported_remaining:
-                            remaining = max(_reported_remaining - (time.monotonic() - started), 0) or None
-                        verdict, detail = verify_3mf_candidate(candidate, _expected_md5, _verify_plate, remaining)
-                        if verdict == "rejected":
-                            logger.warning("[RECOVER] Rejected late 3MF candidate %s: %s", remote or candidate, detail)
-                        return verdict
-
-                    _schedule_fallback_3mf_retry(
-                        printer_id=printer_id,
-                        archive_id=fallback_archive.id,
-                        filenames=probe_names,
-                        delays=_CACHE_MIRROR_RETRY_DELAYS_SECONDS,
-                        reason=no_3mf_reason,
-                        judge=_judge_late,
-                    )
-
-                # Send notification without archive data (file not found)
-                if not notification_sent:
-                    await _send_print_start_notification(printer_id, data, logger=logger)
-
-                # The same baseline the other two on_print_start branches take
-                # (#2704), and last for the same reason they are: it lists the
-                # printer's timelapse directory, so a slow card must not delay
-                # the _active_prints registration, the energy reading, the
-                # archive-created event or the start notification above it.
-                #
-                # This branch never took one, so every no-3MF archive reached
-                # completion with no baseline in memory and none on the row, and
-                # the completion scan fell into its "snapshot now" fallback --
-                # which runs after the printer has written the video, so the new
-                # file landed inside the baseline and no diff ever matched
-                # (#2957 follow-up).
-                #
-                # Skipped when the FTPS cool-off is what produced this fallback:
-                # the listing needs the same connection that just failed, so it
-                # could only record that the card was unreadable. The scan
-                # handles that case by refusing to choose between candidates.
-                if not blocked_by_ftps_cooloff:
-                    await _capture_timelapse_baseline_at_start(
-                        printer, printer_id, logger, archive_id=fallback_archive.id
-                    )
-                return
-            except Exception as e:
-                logger.error("Failed to create fallback archive: %s", e)
-                # Send notification without archive data (file not found)
-                if not notification_sent:
-                    await _send_print_start_notification(printer_id, data, logger=logger)
-                return
-
-        try:
-            # Archive the file with status "printing"
-            service = ArchiveService(db)
-            archive = await service.archive_print(
-                printer_id=printer_id,
-                source_file=temp_path,
-                print_data={**data, "status": "printing"},
-                subtask_id=subtask_id,
-                # "verified" → True, "unverified" → False (accepted on
-                # filename alone). Rejected candidates never reach this call.
-                content_verified=content_verdict == "verified" if content_verdict else None,
-            )
-
-            if archive:
-                # Ask-for-outcome for a print Fenrir did not dispatch (#1898).
-                # Set on the row rather than passed to archive_print, which also
-                # serves the queue dispatcher — there the queue item decides.
-                # Guarded because this branch has no ``except``: an unhandled
-                # write error would take the _active_prints registration, the
-                # start notification, the energy reading and the timelapse
-                # baseline below it with it, and a missing prompt is by far the
-                # cheaper failure.
-                archive_id = archive.id
-                try:
-                    if await _ask_outcome_for_external_print(db, printer_id, subtask_name):
-                        archive.confirm_requested = True
-                        await db.commit()
-                except Exception as e:
-                    logger.warning("Could not flag archive %s for the outcome prompt: %s", archive_id, e)
-                    # The rollback expires every loaded object, and on an async
-                    # session reading one afterwards raises instead of
-                    # reloading, so the two this branch goes on to use are
-                    # fetched again. The archive itself was committed by
-                    # archive_print; only the flag is lost.
-                    try:
-                        await db.rollback()
-                        archive = await db.get(PrintArchive, archive_id)
-                        printer = await db.get(Printer, printer_id)
-                    except Exception as reload_error:
-                        logger.warning(
-                            "Could not reload archive %s after the failed flag write: %s", archive_id, reload_error
-                        )
-
-                # Track this active print (use both original filename and downloaded filename)
-                _active_prints[(printer_id, downloaded_filename)] = archive.id
-                if filename and filename != downloaded_filename:
-                    _active_prints[(printer_id, filename)] = archive.id
-                if subtask_name:
-                    _active_prints[(printer_id, f"{subtask_name}.3mf")] = archive.id
-
-                logger.info("Created archive %s for %s", archive.id, downloaded_filename)
-
-                _maybe_start_layer_timelapse(printer, printer_id, archive.id)
-
-                # Record starting energy from smart plug if available (#941: persisted column)
-                await _record_energy_start(archive, printer_id, db, context="auto-archive")
-
-                await ws_manager.send_archive_created(
-                    {
-                        "id": archive.id,
-                        "printer_id": archive.printer_id,
-                        "filename": archive.filename,
-                        "print_name": archive.print_name,
-                        "status": archive.status,
-                    }
-                )
-
-                # MQTT relay - publish archive created
-                try:
-                    await mqtt_relay.on_archive_created(
-                        archive_id=archive.id,
-                        print_name=archive.print_name,
-                        printer_name=printer.name,
-                        status=archive.status,
-                    )
-                except Exception:
-                    pass  # Don't fail if MQTT fails
-
-                # Send notification with archive data (new archive created)
-                if not notification_sent:
-                    archive_data = {
-                        "print_time_seconds": archive.print_time_seconds,
-                        "created_by_id": archive.created_by_id,
-                    }
-                    await _send_print_start_notification(printer_id, data, archive_data, logger)
-
-                # Extract printable objects for skip object functionality
-                try:
-                    from backend.app.services.archive import extract_printable_objects_from_3mf
-
-                    client = printer_manager.get_client(printer_id)
-                    if client:
-                        with open(temp_path, "rb") as f:
-                            threemf_data = f.read()
-                        # Extract with positions for UI overlay, scoped to the
-                        # plate that is printing — an all-plates 3MF carries
-                        # every plate's objects (#2522).
-                        printable_objects, bbox_all = extract_printable_objects_from_3mf(
-                            threemf_data,
-                            plate_number=resolve_plate_id(client.state),
-                            include_positions=True,
-                        )
-                        if printable_objects:
-                            # Store objects in printer state
-                            client.state.printable_objects = printable_objects
-                            client.state.printable_objects_bbox_all = bbox_all
-                            client.state.skipped_objects = []  # Reset skipped objects for new print
-                            logger.info(
-                                "Loaded %s printable objects for printer %s", len(printable_objects), printer_id
-                            )
-                except Exception as e:
-                    logger.debug("Failed to extract printable objects: %s", e)
-
-                # Store Spoolman tracking data for per-filament usage reporting
-                try:
-                    await _store_spoolman_print_data(
-                        printer_id,
-                        archive.id,
-                        archive.file_path,
-                        db,
-                        printer_manager,
-                        ams_mapping=_get_start_ams_mapping(data, archive.id),
-                        plate_id=_get_start_plate_id(archive.id),
-                    )
-                except Exception as e:
-                    logger.warning("[SPOOLMAN] Failed to store tracking data: %s", e)
-
-                # Capture timelapse file baseline for snapshot-diff on completion
-                await _capture_timelapse_baseline_at_start(printer, printer_id, logger, archive_id=archive.id)
-        finally:
-            # Keep temp_path around until print completes so the cover endpoint
-            # can reuse it (#972). Cache eviction in on_print_complete deletes
-            # the file. If the cache entry was evicted early (file vanished),
-            # clean up any stragglers here to avoid leaking disk on retries.
-            cached_now = get_cached_3mf(printer_id, downloaded_filename) if downloaded_filename else None
-            if temp_path and temp_path.exists() and cached_now != temp_path:
-                temp_path.unlink()
+        await _archive_downloaded_print(
+            db, printer, printer_id, data, filename, subtask_id, acquired, notification_sent, logger
+        )
 
 
 _TIMELAPSE_VIDEO_EXTENSIONS = (".mp4", ".avi")
