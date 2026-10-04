@@ -3235,6 +3235,67 @@ class TestFilamentVendorAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_rescan_all_skips_fallback_and_deleted_archives(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session, tmp_path, monkeypatch
+    ):
+        """A no-3MF fallback (every H2 Studio print) is not a "File not found"
+        error, and a soft-deleted archive is not rescanned."""
+        from datetime import datetime, timezone
+
+        monkeypatch.setattr(settings, "base_dir", tmp_path)
+        printer = await printer_factory()
+        self._write_3mf(tmp_path / "archives" / "live.gcode.3mf", vendor="SUNLU")
+        live = await archive_factory(printer.id, file_path="archives/live.gcode.3mf")
+        await archive_factory(printer.id, file_path="", file_size=0)
+        gone = await archive_factory(printer.id, file_path="archives/gone.gcode.3mf", filament_vendor=None)
+        gone.deleted_at = datetime.now(timezone.utc)
+        await db_session.commit()
+
+        body = (await async_client.post("/api/v1/archives/rescan-all")).json()
+        assert body == {"updated": 1, "errors": []}
+        assert (await async_client.get(f"/api/v1/archives/{live.id}")).json()["filament_vendor"] == "SUNLU"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_rescan_all_parses_off_the_event_loop(
+        self, async_client: AsyncClient, archive_factory, printer_factory, tmp_path, monkeypatch
+    ):
+        """Parsing every 3MF on the loop froze MQTT, WebSocket and cameras."""
+        import threading
+
+        from backend.app.services.archive import ThreeMFParser
+
+        monkeypatch.setattr(settings, "base_dir", tmp_path)
+        printer = await printer_factory()
+        self._write_3mf(tmp_path / "archives" / "a.gcode.3mf")
+        await archive_factory(printer.id, file_path="archives/a.gcode.3mf")
+        threads: list = []
+        real_parse = ThreeMFParser.parse
+
+        def _parse(self):
+            threads.append(threading.current_thread())
+            return real_parse(self)
+
+        monkeypatch.setattr(ThreeMFParser, "parse", _parse)
+        await async_client.post("/api/v1/archives/rescan-all")
+        assert threads and all(t is not threading.main_thread() for t in threads)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_backfill_hashes_skips_fallback_archives(
+        self, async_client: AsyncClient, archive_factory, printer_factory, tmp_path, monkeypatch
+    ):
+        monkeypatch.setattr(settings, "base_dir", tmp_path)
+        printer = await printer_factory()
+        self._write_3mf(tmp_path / "archives" / "a.gcode.3mf")
+        await archive_factory(printer.id, file_path="archives/a.gcode.3mf", content_hash=None)
+        await archive_factory(printer.id, file_path="", file_size=0, content_hash=None)
+
+        body = (await async_client.post("/api/v1/archives/backfill-hashes")).json()
+        assert body == {"updated": 1, "errors": []}
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_archive_responses_carry_filament_vendor(
         self, async_client: AsyncClient, archive_factory, printer_factory
     ):

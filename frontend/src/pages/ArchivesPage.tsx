@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { settleWithConcurrency } from '../utils/concurrency';
+import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
@@ -35,8 +36,6 @@ import {
   Copy,
   Film,
   FileVideo,
-  ScanSearch,
-  QrCode,
   Camera,
   FileText,
   FileCode,
@@ -57,7 +56,6 @@ import {
   Zap,
   Cog,
   Archive as ArchiveIcon,
-  History,
   CheckCircle2,
   Columns,
   ChevronUp,
@@ -66,45 +64,36 @@ import {
   ThumbsDown,
 } from 'lucide-react';
 import { api } from '../api/client';
-import { SliceModal } from '../components/SliceModal';
-import { RunWithPipelineModal } from '../components/RunWithPipelineModal';
-import { openInSlicer, resolveDesktopSlicer, type SlicerType } from '../utils/slicer';
+import { resolveDesktopSlicer, type SlicerType } from '../utils/slicer';
 import { formatDateTime, formatDateOnly, parseUTCDate, type TimeFormat, formatDuration } from '../utils/date';
 import { getCurrencySymbol } from '../utils/currency';
 import { getBedTypeInfo } from '../utils/bedType';
 import { invalidateArchiveAndProjectViews } from '../utils/projectQueries';
 import { assignableProjects } from '../utils/projectTree';
-import { verdictSourceKey } from '../utils/verdictSource';
 import { usePageFileDrop } from '../hooks/usePageFileDrop';
 import { useFlipReorder } from '../hooks/useFlipReorder';
 import type { Archive, PrintLogEntry, ProjectListItem } from '../api/client';
-import { calculatorPrefillUrl, estimateArchiveSalePrice, type CalcConfig } from '../utils/archivePricing';
+import { estimateArchiveSalePrice, type CalcConfig } from '../utils/archivePricing';
 import { formatMoney } from '../utils/pricing';
 import { Card, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
 import { SkeletonGrid } from '../components/Skeleton';
-import { PrintModal } from '../components/PrintModal';
-import { ConfirmOutcomeDialog } from '../components/ConfirmOutcomeDialog';
 import { UploadModal } from '../components/UploadModal';
 import { PurgeArchivesModal } from '../components/PurgeArchivesModal';
 import { ConfirmModal } from '../components/ConfirmModal';
-import { EditArchiveModal, FAILURE_REASON_KEYS } from '../components/EditArchiveModal';
-import { PrintLogModal } from '../components/PrintLogModal';
+import { FAILURE_REASON_KEYS } from '../components/EditArchiveModal';
 import { ColumnConfigModal, type ColumnConfig } from '../components/ColumnConfigModal';
-import { ContextMenu, type ContextMenuItem } from '../components/ContextMenu';
+import type { ContextMenuItem } from '../components/ContextMenu';
 import { BatchTagModal } from '../components/BatchTagModal';
 import { BatchProjectModal } from '../components/BatchProjectModal';
 import { CalendarView } from '../components/CalendarView';
-import { QRCodeModal } from '../components/QRCodeModal';
-import { PhotoGalleryModal } from '../components/PhotoGalleryModal';
-import { ProjectPageModal } from '../components/ProjectPageModal';
-import { TimelapseViewer } from '../components/TimelapseViewer';
-import { ArchiveMediaDownloadModal } from '../components/ArchiveMediaDownloadModal';
 import { CompareArchivesModal } from '../components/CompareArchivesModal';
 import { PendingUploadsPanel } from '../components/PendingUploadsPanel';
 import { TagManagementModal } from '../components/TagManagementModal';
-import { PlatePickerModal } from '../components/PlatePickerModal';
-import type { PlateMetadata } from '../types/plates';
+import { useArchiveActions } from '../components/archives/useArchiveActions';
+import { buildArchiveMenuSections } from '../components/archives/archiveMenuItems';
+import { ArchiveModals } from '../components/archives/ArchiveModals';
+import { isSlicedFile, openInSlicerWithToken } from '../components/archives/archiveFileUtils';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import { formatFileSize } from '../utils/file';
@@ -232,54 +221,7 @@ function saveLogColumnConfig(config: Array<{ id: string; visible: boolean }>) {
   }
 }
 
-/**
- * Check if an archive represents a sliced/printable file.
- * Uses filename (.gcode, .gcode.3mf) as primary check, then falls back to
- * metadata — a .3mf with total_layers or print_time is sliced (contains gcode),
- * while a raw source .3mf (CAD export) has neither.
- */
-function isSlicedFile(archive: { filename?: string | null; total_layers?: number | null; print_time_seconds?: number | null }): boolean {
-  const filename = archive.filename;
-  if (filename) {
-    const lower = filename.toLowerCase();
-    if (lower.endsWith('.gcode') || lower.includes('.gcode.')) return true;
-  }
-  // .3mf can be either sliced or source — check for gcode metadata
-  if (archive.total_layers || archive.print_time_seconds) return true;
-  return false;
-}
-
 // formatDate imported from '../utils/date' - handles UTC conversion
-
-/**
- * Open an archive file in the slicer.
- * Fetches a short-lived download token, then builds a token-authenticated URL
- * that bypasses auth middleware (slicer protocol handlers can't send auth headers).
- */
-async function openInSlicerWithToken(
-  archiveId: number,
-  filename: string,
-  resourceType: 'file' | 'source',
-  slicer: SlicerType,
-): Promise<void> {
-  try {
-    if (resourceType === 'source') {
-      const { token } = await api.createSourceSlicerToken(archiveId);
-      const path = api.getSourceSlicerDownloadUrl(archiveId, token, filename);
-      openInSlicer(`${window.location.origin}${path}`, slicer);
-    } else {
-      const { token } = await api.createArchiveSlicerToken(archiveId);
-      const path = api.getArchiveSlicerDownloadUrl(archiveId, token, filename);
-      openInSlicer(`${window.location.origin}${path}`, slicer);
-    }
-  } catch {
-    // Fallback to direct URL (works when auth is disabled)
-    const path = resourceType === 'source'
-      ? api.getSource3mfForSlicer(archiveId, filename)
-      : api.getArchiveForSlicer(archiveId, filename);
-    openInSlicer(`${window.location.origin}${path}`, slicer);
-  }
-}
 
 function ArchiveCard({
   archive,
@@ -324,10 +266,37 @@ function ArchiveCard({
     console.log('ArchiveCard isHighlighted=true for archive:', archive.id);
   }
 
-  const queryClient = useQueryClient();
-  const { showToast } = useToast();
-  const { hasPermission, canModify } = useAuth();
-  const navigate = useNavigate();
+  const actions = useArchiveActions(archive, t);
+  const {
+    showToast,
+    hasPermission,
+    canModify,
+    navigate,
+    setShowReprint,
+    setShowConfirmOutcome,
+    setShowSliceModal,
+    setShowDeleteConfirm,
+    setShowEdit,
+    setShowPrintLog,
+    setShowTimelapse,
+    setShowPrinterMedia,
+    showTimelapseSelect,
+    setShowTimelapseSelect,
+    availableTimelapses,
+    setAvailableTimelapses,
+    setShowPhotos,
+    setContextMenu,
+    setPlatePickerPlates,
+    duplicateSequence,
+    verdictSourceHintKey,
+    originalArchiveId,
+    timelapseSelectMutation,
+    favoriteMutation,
+    linkedFolders,
+    assignProjectMutation,
+    handleContextMenu,
+  } = actions;
+
   // Name of the printer this archive's saved slicer AMS mapping was resolved
   // against, or undefined when there is none. Undefined also when the printer
   // has since been deleted — a mapping whose printer is gone can never be
@@ -339,43 +308,8 @@ function ArchiveCard({
     if (!saved || !Array.isArray(saved.mapping) || saved.printer_id == null) return undefined;
     return printerMap.get(saved.printer_id);
   }, [archive.extra_data, printerMap]);
-  const [showReprint, setShowReprint] = useState(false);
-  // Post-print outcome confirmation dialog (#1898)
-  const [showConfirmOutcome, setShowConfirmOutcome] = useState(false);
-  const [showSliceModal, setShowSliceModal] = useState(false);
-  const [showRunPipeline, setShowRunPipeline] = useState(false);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  // #1343: when true, the delete also drops the row from Quick Stats. Default
-  // off — soft delete preserves the archive's filament/time/cost contribution.
-  const [deletePurgeStats, setDeletePurgeStats] = useState(false);
-  // #1734: pre-flight count of related queue items so the confirm modal can
-  // tell the user how many will be removed and disable the button if any are
-  // currently printing (the server 409s in that case).
-  const deleteImpactQuery = useQuery({
-    queryKey: ['archive', archive.id, 'delete-impact'],
-    queryFn: () => api.getArchiveDeleteImpact(archive.id),
-    enabled: showDeleteConfirm,
-    staleTime: 0,
-  });
-  const [showEdit, setShowEdit] = useState(false);
-  const [showPrintLog, setShowPrintLog] = useState(false);
-  const [showTimelapse, setShowTimelapse] = useState(false);
-  const [showPrinterMedia, setShowPrinterMedia] = useState(false);
-  const [showTimelapseSelect, setShowTimelapseSelect] = useState(false);
-  const [availableTimelapses, setAvailableTimelapses] = useState<Array<{ name: string; path: string; size: number; mtime: string | null }>>([]);
-  const [showQRCode, setShowQRCode] = useState(false);
-  const [showPhotos, setShowPhotos] = useState(false);
-  const [showProjectPage, setShowProjectPage] = useState(false);
-  const [showDeleteSource3mfConfirm, setShowDeleteSource3mfConfirm] = useState(false);
-  const [showDeleteF3dConfirm, setShowDeleteF3dConfirm] = useState(false);
-  const [showDeleteTimelapseConfirm, setShowDeleteTimelapseConfirm] = useState(false);
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [currentPlateIndex, setCurrentPlateIndex] = useState<number | null>(null);
   const [showPlateNav, setShowPlateNav] = useState(false);
-  const [platePickerPlates, setPlatePickerPlates] = useState<PlateMetadata[] | null>(null);
-  const source3mfInputRef = useRef<HTMLInputElement>(null);
-  const f3dInputRef = useRef<HTMLInputElement>(null);
-  const timelapseInputRef = useRef<HTMLInputElement>(null);
 
   // Fetch plates data for multi-plate browsing (lazy - only when hovering)
   const { data: platesData } = useQuery({
@@ -384,13 +318,6 @@ function ArchiveCard({
     enabled: showPlateNav, // Only fetch when user hovers to see navigation
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes
   });
-
-  // Use pre-computed duplicate sequence and original archive ID from list response
-  const duplicateSequence = archive.duplicate_sequence ?? 0;
-  // Appended to the verdict badge's tooltip (#1898) so a verdict the
-  // plate-clear default recorded can be explained where it is shown.
-  const verdictSourceHintKey = verdictSourceKey(archive.user_verdict_source);
-  const originalArchiveId = archive.original_archive_id ?? null;
 
   // Suggested sale price from the calculator (machine cost only, no labor),
   // computed with the calculator printer matching this archive's printer.
@@ -432,240 +359,21 @@ function ArchiveCard({
     navigate(`/gcode-viewer?archive=${archive.id}`);
   };
 
-  const timelapseDeleteMutation = useMutation({
-    mutationFn: () => api.deleteArchiveTimelapse(archive.id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['archives'] });
-      showToast(t('archives.toast.timelapseRemoved'));
-    },
-    onError: (error: Error) => {
-      showToast(error.message || t('archives.toast.failedRemoveTimelapse'), 'error');
-    },
+  const menu = buildArchiveMenuSections({
+    archive,
+    t,
+    actions,
+    preferredSlicer,
+    useSlicerApi,
+    openGcodeViewer,
+    calcConfig,
+    printerName,
+    isSelected,
+    onSelect,
   });
-
-  const timelapseUploadMutation = useMutation({
-    mutationFn: (file: File) => api.uploadArchiveTimelapse(archive.id, file),
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['archives'] });
-      showToast(t('archives.toast.timelapseUploaded', { filename: data.filename }));
-    },
-    onError: (error: Error) => {
-      showToast(error.message || t('archives.toast.failedUploadTimelapse'), 'error');
-    },
-  });
-
-  const source3mfUploadMutation = useMutation({
-    mutationFn: (file: File) => api.uploadSource3mf(archive.id, file),
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['archives'] });
-      showToast(t('archives.toast.source3mfAttached', { filename: data.filename }));
-    },
-    onError: (error: Error) => {
-      showToast(error.message || t('archives.toast.failedUploadSource3mf'), 'error');
-    },
-  });
-
-  const source3mfDeleteMutation = useMutation({
-    mutationFn: () => api.deleteSource3mf(archive.id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['archives'] });
-      showToast(t('archives.toast.source3mfRemoved'));
-    },
-    onError: (error: Error) => {
-      showToast(error.message || t('archives.toast.failedRemoveSource3mf'), 'error');
-    },
-  });
-
-  const f3dUploadMutation = useMutation({
-    mutationFn: (file: File) => api.uploadF3d(archive.id, file),
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['archives'] });
-      showToast(t('archives.toast.f3dAttached', { filename: data.filename }));
-    },
-    onError: (error: Error) => {
-      showToast(error.message || t('archives.toast.failedUploadF3d'), 'error');
-    },
-  });
-
-  const f3dDeleteMutation = useMutation({
-    mutationFn: () => api.deleteF3d(archive.id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['archives'] });
-      showToast(t('archives.toast.f3dRemoved'));
-    },
-    onError: (error: Error) => {
-      showToast(error.message || t('archives.toast.failedRemoveF3d'), 'error');
-    },
-  });
-
-  const timelapseScanMutation = useMutation({
-    mutationFn: () => api.scanArchiveTimelapse(archive.id),
-    onSuccess: (data) => {
-      if (data.status === 'attached') {
-        queryClient.invalidateQueries({ queryKey: ['archives'] });
-        showToast(t('archives.toast.timelapseAttached', { filename: data.filename }));
-      } else if (data.status === 'exists') {
-        showToast(t('archives.toast.timelapseAlreadyAttached'));
-      } else if (data.status === 'not_found' && data.available_files && data.available_files.length > 0) {
-        // Show selection dialog
-        setAvailableTimelapses(data.available_files);
-        setShowTimelapseSelect(true);
-      } else {
-        showToast(data.message || t('archives.toast.noMatchingTimelapse'), 'warning');
-      }
-    },
-    onError: (error: Error) => {
-      showToast(error.message || t('archives.toast.failedScanTimelapse'), 'error');
-    },
-  });
-
-  const timelapseSelectMutation = useMutation({
-    mutationFn: (filename: string) => api.selectArchiveTimelapse(archive.id, filename),
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['archives'] });
-      showToast(t('archives.toast.timelapseAttached', { filename: data.filename }));
-      setShowTimelapseSelect(false);
-      setAvailableTimelapses([]);
-    },
-    onError: (error: Error) => {
-      showToast(error.message || t('archives.toast.failedAttachTimelapse'), 'error');
-    },
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: (purgeStats: boolean) => api.deleteArchive(archive.id, purgeStats),
-    onSuccess: () => {
-      // A deleted archive leaves its project too, so the project views have to
-      // be refreshed alongside the archive list (#2731).
-      invalidateArchiveAndProjectViews(queryClient);
-      showToast(t('archives.toast.archiveDeleted'));
-    },
-    onError: () => {
-      showToast(t('archives.toast.failedDeleteArchive'), 'error');
-    },
-  });
-
-  const favoriteMutation = useMutation({
-    mutationFn: () => api.toggleFavorite(archive.id),
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['archives'] });
-      showToast(data.is_favorite ? t('archives.toast.addedToFavorites') : t('archives.toast.removedFromFavorites'));
-    },
-  });
-
-  // Query for linked folders
-  const { data: linkedFolders } = useQuery({
-    queryKey: ['archive-folders', archive.id],
-    queryFn: () => api.getLibraryFoldersByArchive(archive.id),
-  });
-
-  const assignProjectMutation = useMutation({
-    mutationFn: (projectId: number | null) => api.updateArchive(archive.id, { project_id: projectId }),
-    onSuccess: () => {
-      invalidateArchiveAndProjectViews(queryClient);
-      showToast(t('archives.toast.projectUpdated'));
-    },
-    onError: () => {
-      showToast(t('archives.toast.failedUpdateProject'), 'error');
-    },
-  });
-
-  const handleContextMenu = (e: React.MouseEvent) => {
-    e.preventDefault();
-    setContextMenu({ x: e.clientX, y: e.clientY });
-  };
-
-  const isGcodeFile = isSlicedFile(archive);
 
   const contextMenuItems: ContextMenuItem[] = [
-    // For gcode files: show Print option
-    // For source files: show Slice as the primary action
-    ...(isGcodeFile ? [
-      {
-        label: t('common.print'),
-        icon: <Printer className="w-4 h-4" />,
-        onClick: () => setShowReprint(true),
-        disabled: !archive.file_path || !hasPermission('queue:create') || !canModify('archives', 'reprint', archive.created_by_id),
-        title: !archive.file_path
-          ? t('archives.card.noFileForReprint')
-          : !hasPermission('queue:create')
-            ? t('archives.permission.noAddToQueue')
-            : !canModify('archives', 'reprint', archive.created_by_id)
-              ? t('archives.permission.noReprint')
-              : undefined,
-      },
-      {
-        label: t('archives.menu.openInBambuStudio'),
-        icon: <ExternalLink className="w-4 h-4" />,
-        onClick: () => {
-          const filename = archive.print_name || archive.filename || 'model';
-          openInSlicerWithToken(archive.id, filename, 'file', preferredSlicer);
-        },
-        disabled: !archive.file_path,
-        title: !archive.file_path ? t('archives.card.noFileForReprint') : undefined,
-      },
-    ] : [
-      {
-        label: t('archives.menu.slice'),
-        icon: useSlicerApi ? <Cog className="w-4 h-4" /> : <ExternalLink className="w-4 h-4" />,
-        onClick: () => {
-          if (useSlicerApi) {
-            setShowSliceModal(true);
-          } else {
-            const filename = archive.print_name || archive.filename || 'model';
-            openInSlicerWithToken(archive.id, filename, 'file', preferredSlicer);
-          }
-        },
-      },
-      // Run-with-pipeline (#1425 PR B follow-up). Sources from archive's
-      // source 3MF (or file_path fallback). Only when slicer-api is on.
-      ...(useSlicerApi
-        ? [{
-            label: t('library.runWithPipeline.actionLabel'),
-            icon: <Play className="w-4 h-4" />,
-            onClick: () => setShowRunPipeline(true),
-            disabled: !hasPermission('pipelines:run'),
-            title: !hasPermission('pipelines:run')
-              ? t('library.runWithPipeline.noPermission')
-              : undefined,
-          }]
-        : []),
-    ]),
-    {
-      label: archive.external_url ? t('archives.menu.externalLink') : t('archives.menu.viewOnMakerWorld'),
-      icon: <Globe className="w-4 h-4" />,
-      onClick: () => {
-        openSafeExternalUrl(archive.external_url || archive.makerworld_url);
-      },
-      disabled: !archive.external_url && !archive.makerworld_url,
-    },
-    // Post-print outcome confirmation (#1898): completed prints only — the
-    // machine statuses already cover everything else.
-    ...(archive.status === 'completed'
-      ? [{
-          label: t('archives.menu.confirmOutcome'),
-          icon: archive.user_verdict === 'reject'
-            ? <ThumbsDown className="w-4 h-4" />
-            : <ThumbsUp className="w-4 h-4" />,
-          onClick: () => setShowConfirmOutcome(true),
-          disabled: !canModify('archives', 'update', archive.created_by_id),
-          title: !canModify('archives', 'update', archive.created_by_id)
-            ? t('archives.permission.noUpdateArchives')
-            : undefined,
-        }]
-      : []),
-    { label: '', divider: true, onClick: () => {} },
-    {
-      label: t('archives.menu.preview3d'),
-      icon: <Box className="w-4 h-4" />,
-      onClick: () => { openGcodeViewer(); },
-    },
-    {
-      label: t('archives.menu.viewTimelapse'),
-      icon: <Film className="w-4 h-4" />,
-      onClick: () => setShowTimelapse(true),
-      disabled: !archive.timelapse_path,
-    },
+    ...menu.head,
     {
       label: t('archives.media.download'),
       icon: <FileVideo className="w-4 h-4" />,
@@ -677,151 +385,7 @@ function ArchiveCard({
         ? t('printers.permission.noFiles')
         : undefined,
     },
-    {
-      label: t('archives.menu.scanForTimelapse'),
-      icon: <ScanSearch className="w-4 h-4" />,
-      onClick: () => timelapseScanMutation.mutate(),
-      disabled: !archive.printer_id || !!archive.timelapse_path || timelapseScanMutation.isPending || !canModify('archives', 'update', archive.created_by_id),
-      title: !canModify('archives', 'update', archive.created_by_id) ? t('archives.permission.noUpdateArchives') : undefined,
-    },
-    {
-      label: t('archives.menu.uploadTimelapse'),
-      icon: <Upload className="w-4 h-4" />,
-      onClick: () => timelapseInputRef.current?.click(),
-      disabled: !!archive.timelapse_path || !canModify('archives', 'update', archive.created_by_id),
-      title: !canModify('archives', 'update', archive.created_by_id) ? t('archives.permission.noUpdateArchives') : undefined,
-    },
-    ...(archive.timelapse_path ? [{
-      label: t('archives.menu.removeTimelapse'),
-      icon: <Trash2 className="w-4 h-4" />,
-      onClick: () => setShowDeleteTimelapseConfirm(true),
-      danger: true,
-      disabled: !canModify('archives', 'update', archive.created_by_id),
-      title: !canModify('archives', 'update', archive.created_by_id) ? t('archives.permission.noUpdateArchives') : undefined,
-    }] : []),
-    { label: '', divider: true, onClick: () => {} },
-    {
-      label: archive.source_3mf_path ? t('archives.menu.downloadSource3mf') : t('archives.menu.uploadSource3mf'),
-      icon: <FileCode className="w-4 h-4" />,
-      onClick: () => {
-        if (archive.source_3mf_path) {
-          api.downloadSource3mf(archive.id).catch((err) => {
-            console.error('Source 3MF download failed:', err);
-          });
-        } else {
-          source3mfInputRef.current?.click();
-        }
-      },
-      disabled: !archive.source_3mf_path && !canModify('archives', 'update', archive.created_by_id),
-      title: !archive.source_3mf_path && !canModify('archives', 'update', archive.created_by_id) ? t('archives.permission.noUploadFiles') : undefined,
-    },
-    ...(archive.source_3mf_path ? [{
-      label: t('archives.menu.replaceSource3mf'),
-      icon: <Upload className="w-4 h-4" />,
-      onClick: () => source3mfInputRef.current?.click(),
-      disabled: !canModify('archives', 'update', archive.created_by_id),
-      title: !canModify('archives', 'update', archive.created_by_id) ? t('archives.permission.noUpdateArchives') : undefined,
-    },
-    {
-      label: t('archives.menu.removeSource3mf'),
-      icon: <Trash2 className="w-4 h-4" />,
-      onClick: () => setShowDeleteSource3mfConfirm(true),
-      danger: true,
-      disabled: !canModify('archives', 'update', archive.created_by_id),
-      title: !canModify('archives', 'update', archive.created_by_id) ? t('archives.permission.noUpdateArchives') : undefined,
-    }] : []),
-    {
-      label: archive.f3d_path ? t('archives.menu.replaceF3d') : t('archives.menu.uploadF3d'),
-      icon: <Box className="w-4 h-4" />,
-      onClick: () => f3dInputRef.current?.click(),
-      disabled: !canModify('archives', 'update', archive.created_by_id),
-      title: !canModify('archives', 'update', archive.created_by_id) ? t('archives.permission.noUpdateArchives') : undefined,
-    },
-    ...(archive.f3d_path ? [{
-      label: t('archives.menu.downloadF3d'),
-      icon: <Download className="w-4 h-4" />,
-      onClick: () => {
-        api.downloadF3d(archive.id).catch((err) => {
-          console.error('F3D download failed:', err);
-        });
-      },
-    },
-    {
-      label: t('archives.menu.removeF3d'),
-      icon: <Trash2 className="w-4 h-4" />,
-      onClick: () => setShowDeleteF3dConfirm(true),
-      danger: true,
-      disabled: !canModify('archives', 'update', archive.created_by_id),
-      title: !canModify('archives', 'update', archive.created_by_id) ? t('archives.permission.noUpdateArchives') : undefined,
-    }] : []),
-    { label: '', divider: true, onClick: () => {} },
-    {
-      label: t('archives.menu.download'),
-      icon: <Download className="w-4 h-4" />,
-      onClick: () => {
-        api.downloadArchive(archive.id, `${archive.print_name || archive.filename}.3mf`).catch((err) => {
-          console.error('Archive download failed:', err);
-        });
-      },
-      disabled: !hasPermission('archives:read'),
-      title: !hasPermission('archives:read') ? t('archives.permission.noDownload') : undefined,
-    },
-    {
-      label: t('archives.menu.copyDownloadLink'),
-      icon: <Copy className="w-4 h-4" />,
-      onClick: () => {
-        const url = `${window.location.origin}${api.getArchiveDownload(archive.id)}`;
-        navigator.clipboard.writeText(url).then(() => {
-          showToast(t('archives.toast.linkCopied'));
-        }).catch(() => {
-          showToast(t('archives.toast.failedCopyLink'), 'error');
-        });
-      },
-      disabled: !hasPermission('archives:read'),
-      title: !hasPermission('archives:read') ? t('archives.permission.noCopyLink') : undefined,
-    },
-    {
-      label: t('archives.menu.qrCode'),
-      icon: <QrCode className="w-4 h-4" />,
-      onClick: () => setShowQRCode(true),
-    },
-    {
-      label: archive.photos?.length ? t('archives.menu.viewPhotosCount', { count: archive.photos.length }) : t('archives.menu.viewPhotos'),
-      icon: <Camera className="w-4 h-4" />,
-      onClick: () => setShowPhotos(true),
-      disabled: !archive.photos?.length,
-    },
-    {
-      label: t('archives.menu.projectPage'),
-      icon: <FileText className="w-4 h-4" />,
-      onClick: () => setShowProjectPage(true),
-    },
-    { label: '', divider: true, onClick: () => {} },
-    {
-      label: archive.is_favorite ? t('archives.menu.removeFromFavorites') : t('archives.menu.addToFavorites'),
-      // Preview the favourited state on hover so the row reads as clickable (#2791).
-      icon: <Star className={`w-4 h-4 ${archive.is_favorite ? 'fill-yellow-400 text-yellow-400' : canModify('archives', 'update', archive.created_by_id) ? 'group-hover:text-yellow-400' : ''}`} />,
-      onClick: () => favoriteMutation.mutate(),
-      disabled: !canModify('archives', 'update', archive.created_by_id),
-      title: !canModify('archives', 'update', archive.created_by_id) ? t('archives.permission.noUpdateArchives') : undefined,
-    },
-    {
-      label: t('archives.menu.edit'),
-      icon: <Pencil className="w-4 h-4" />,
-      onClick: () => setShowEdit(true),
-      disabled: !canModify('archives', 'update', archive.created_by_id),
-      title: !canModify('archives', 'update', archive.created_by_id) ? t('archives.permission.noUpdateArchives') : undefined,
-    },
-    {
-      label: t('archives.menu.printLog'),
-      icon: <History className="w-4 h-4" />,
-      onClick: () => setShowPrintLog(true),
-    },
-    ...(archive.project_id && archive.project_name ? [{
-      label: t('archives.menu.goToProject', { name: archive.project_name }),
-      icon: <FolderKanban className="w-4 h-4 text-bambu-green" />,
-      onClick: () => window.location.href = '/projects',
-    }] : []),
+    ...menu.body,
     {
       label: t('archives.menu.addToProject'),
       icon: <FolderKanban className="w-4 h-4" />,
@@ -882,29 +446,7 @@ function ArchiveCard({
         return items;
       })(),
     },
-    {
-      label: t('archives.menu.openInCalculator'),
-      icon: <Calculator className="w-4 h-4" />,
-      onClick: () => navigate(calculatorPrefillUrl(archive, calcConfig ?? null, [printerName, archive.sliced_for_model])),
-      disabled:
-        !hasPermission('calculator:read') ||
-        !archive.filament_used_grams ||
-        !(archive.actual_time_seconds || archive.print_time_seconds),
-    },
-    {
-      label: isSelected ? t('archives.menu.deselect') : t('archives.menu.select'),
-      icon: isSelected ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />,
-      onClick: () => onSelect(archive.id),
-    },
-    { label: '', divider: true, onClick: () => {} },
-    {
-      label: t('archives.menu.delete'),
-      icon: <Trash2 className="w-4 h-4" />,
-      onClick: () => setShowDeleteConfirm(true),
-      danger: true,
-      disabled: !canModify('archives', 'delete', archive.created_by_id),
-      title: !canModify('archives', 'delete', archive.created_by_id) ? t('archives.permission.noDelete') : undefined,
-    },
+    ...menu.tail,
   ];
 
   return (
@@ -943,6 +485,8 @@ function ArchiveCard({
                 : api.getArchiveThumbnail(archive.id)
             }
             alt={archive.print_name || archive.filename}
+            loading="lazy"
+            decoding="async"
             className="w-full h-full object-cover brightness-125 contrast-110"
           />
         ) : (
@@ -1569,335 +1113,72 @@ function ArchiveCard({
         </div>
       </CardContent>
 
-      {/* Edit Modal */}
-      {showEdit && (
-        <EditArchiveModal
-          archive={archive}
-          onClose={() => setShowEdit(false)}
-        />
-      )}
-
-      {/* Print Log Modal — opened from the "N prints" badge or context menu (#1378) */}
-      {showPrintLog && (
-        <PrintLogModal
-          archiveId={archive.id}
-          archiveName={archive.print_name || archive.filename}
-          onClose={() => setShowPrintLog(false)}
-        />
-      )}
-
-      {/* Plate picker — shown only for multi-plate archives on 3D Preview click */}
-      {platePickerPlates && (
-        <PlatePickerModal
-          plates={platePickerPlates}
-          onSelect={(plateIndex) => {
-            setPlatePickerPlates(null);
-            navigate(`/gcode-viewer?archive=${archive.id}&plate=${plateIndex}`);
-          }}
-          onClose={() => setPlatePickerPlates(null)}
-        />
-      )}
-
-      {/* Reprint Modal */}
-      {showReprint && (
-        <PrintModal
-          mode="create"
-          archiveId={archive.id}
-          archiveName={archive.print_name || archive.filename}
-          onClose={() => setShowReprint(false)}
-        />
-      )}
-
-      {/* Post-print outcome confirmation (#1898) */}
-      {showConfirmOutcome && (
-        <ConfirmOutcomeDialog
-          archiveId={archive.id}
-          onClose={() => setShowConfirmOutcome(false)}
-        />
-      )}
-
-      {/* Slice Modal */}
-      {showSliceModal && (
-        <SliceModal
-          source={{ kind: 'archive', id: archive.id, filename: archive.print_name || archive.filename || 'model' }}
-          onClose={() => setShowSliceModal(false)}
-        />
-      )}
-
-      {/* Run-with-Pipeline Modal (#1425 PR B). Sources from archive — backend
-          reads source_3mf_path, falls back to file_path. */}
-      {showRunPipeline && (
-        <RunWithPipelineModal
-          source={{ kind: 'archive', id: archive.id, filename: archive.print_name || archive.filename || 'model' }}
-          onClose={() => setShowRunPipeline(false)}
-        />
-      )}
-
-      {/* Delete Confirmation */}
-      {showDeleteConfirm && (
-        <ConfirmModal
-          title={t('archives.modal.deleteArchive')}
-          message={t('archives.modal.deleteConfirm', { name: archive.print_name || archive.filename })}
-          confirmText={t('archives.modal.deleteButton')}
-          variant="danger"
-          confirmDisabled={(deleteImpactQuery.data?.currently_printing ?? 0) > 0}
-          onConfirm={() => {
-            deleteMutation.mutate(deletePurgeStats);
-            setShowDeleteConfirm(false);
-            setDeletePurgeStats(false);
-          }}
-          onCancel={() => {
-            setShowDeleteConfirm(false);
-            setDeletePurgeStats(false);
-          }}
-        >
-          {/* #1734: warn the user when related queue items will also be removed,
-              and block the action entirely if any are currently printing. */}
-          {(deleteImpactQuery.data?.related_queue_items ?? 0) > 0 && (
-            <div
-              className={
-                (deleteImpactQuery.data?.currently_printing ?? 0) > 0
-                  ? 'text-sm text-red-600 dark:text-red-400 mb-2'
-                  : 'text-sm text-amber-600 dark:text-amber-400 mb-2'
-              }
-            >
-              {(deleteImpactQuery.data?.currently_printing ?? 0) > 0
-                ? t('archives.modal.deleteBlockedByPrinting', {
-                    count: deleteImpactQuery.data!.currently_printing,
-                  })
-                : t('archives.modal.deleteQueueItemsWarning', {
-                    count: deleteImpactQuery.data!.related_queue_items,
-                  })}
-            </div>
-          )}
-          {/* #1343: opt-in checkbox — by default the archive is soft-deleted,
-              so its filament / time / cost contribution stays in Quick Stats. */}
-          <label className="flex items-start gap-2 cursor-pointer text-sm text-bambu-gray">
-            <input
-              type="checkbox"
-              className="mt-0.5 accent-red-500"
-              checked={deletePurgeStats}
-              onChange={(e) => setDeletePurgeStats(e.target.checked)}
-            />
-            <span>{t('archives.modal.deletePurgeStats')}</span>
-          </label>
-        </ConfirmModal>
-      )}
-
-      {/* Delete Source 3MF Confirmation */}
-      {showDeleteSource3mfConfirm && (
-        <ConfirmModal
-          title={t('archives.modal.removeSource3mf')}
-          message={t('archives.modal.removeSource3mfConfirm', { name: archive.print_name || archive.filename })}
-          confirmText={t('archives.modal.removeButton')}
-          variant="danger"
-          onConfirm={() => {
-            source3mfDeleteMutation.mutate();
-            setShowDeleteSource3mfConfirm(false);
-          }}
-          onCancel={() => setShowDeleteSource3mfConfirm(false)}
-        />
-      )}
-
-      {/* Delete F3D Confirmation */}
-      {showDeleteF3dConfirm && (
-        <ConfirmModal
-          title={t('archives.modal.removeF3d')}
-          message={t('archives.modal.removeF3dConfirm', { name: archive.print_name || archive.filename })}
-          confirmText={t('archives.modal.removeButton')}
-          variant="danger"
-          onConfirm={() => {
-            f3dDeleteMutation.mutate();
-            setShowDeleteF3dConfirm(false);
-          }}
-          onCancel={() => setShowDeleteF3dConfirm(false)}
-        />
-      )}
-
-      {/* Delete Timelapse Confirmation */}
-      {showDeleteTimelapseConfirm && (
-        <ConfirmModal
-          title={t('archives.modal.removeTimelapse')}
-          message={t('archives.modal.removeTimelapseConfirm', { name: archive.print_name || archive.filename })}
-          confirmText={t('archives.modal.removeButton')}
-          variant="danger"
-          onConfirm={() => {
-            timelapseDeleteMutation.mutate();
-            setShowDeleteTimelapseConfirm(false);
-          }}
-          onCancel={() => setShowDeleteTimelapseConfirm(false)}
-        />
-      )}
-
-      {/* Context Menu */}
-      {contextMenu && (
-        <ContextMenu
-          x={contextMenu.x}
-          y={contextMenu.y}
-          items={contextMenuItems}
-          onClose={() => setContextMenu(null)}
-        />
-      )}
-
-      {/* Print Media Download Modal */}
-      {showPrinterMedia && (
-        <ArchiveMediaDownloadModal
-          archiveId={archive.id}
-          archiveName={archive.print_name || archive.filename}
-          printerName={printerName}
-          onClose={() => setShowPrinterMedia(false)}
-        />
-      )}
-
-      {/* Timelapse Viewer Modal */}
-      {showTimelapse && archive.timelapse_path && (
-        <TimelapseViewer
-          src={api.getArchiveTimelapse(archive.id)}
-          title={t('archives.modal.timelapse', { name: archive.print_name || archive.filename })}
-          downloadFilename={`${archive.print_name || archive.filename}_timelapse.mp4`}
-          archiveId={archive.id}
-          onClose={() => setShowTimelapse(false)}
-          onEdit={() => {
-            queryClient.invalidateQueries({ queryKey: ['archives'] });
-            setShowTimelapse(false);  // Close viewer to reload fresh video
-          }}
-        />
-      )}
-
-      {/* Timelapse Selection Modal */}
-      {showTimelapseSelect && availableTimelapses.length > 0 && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 animate-overlay-in">
-          <div className="bg-card-dark rounded-lg max-w-lg w-full max-h-[80vh] flex flex-col animate-modal-in">
-            <div className="flex items-center justify-between p-4 border-b border-gray-700">
-              <div>
-                <h3 className="text-lg font-semibold text-white">{t('archives.modal.selectTimelapse')}</h3>
-                <p className="text-sm text-gray-400 mt-1">
-                  {t('archives.modal.selectTimelapseDesc')}
-                </p>
-              </div>
-              <button
-                onClick={() => {
-                  setShowTimelapseSelect(false);
-                  setAvailableTimelapses([]);
-                }}
-                className="text-gray-400 hover:text-white p-1"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="overflow-y-auto flex-1 p-2">
-              {availableTimelapses.map((file) => (
-                <button
-                  key={file.name}
-                  onClick={() => timelapseSelectMutation.mutate(file.name)}
-                  disabled={timelapseSelectMutation.isPending}
-                  className="w-full text-left p-3 rounded-lg hover:bg-gray-700 transition-colors flex items-center gap-3 disabled:opacity-50"
-                >
-                  <Film className="w-8 h-8 text-bambu-green flex-shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-white font-medium truncate">{file.name}</p>
-                    <p className="text-sm text-gray-400">
-                      {formatFileSize(file.size)}
-                      {file.mtime && ` • ${formatDateTime(file.mtime, timeFormat)}`}
-                    </p>
+      <ArchiveModals
+        archive={archive}
+        t={t}
+        actions={actions}
+        printerName={printerName}
+        contextMenuItems={contextMenuItems}
+        photosRequireNonEmpty={true}
+        timelapseSelectModal={
+          <>
+            {/* Timelapse Selection Modal */}
+            {showTimelapseSelect && availableTimelapses.length > 0 && (
+              <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 animate-overlay-in">
+                <div className="bg-card-dark rounded-lg max-w-lg w-full max-h-[80vh] flex flex-col animate-modal-in">
+                  <div className="flex items-center justify-between p-4 border-b border-gray-700">
+                    <div>
+                      <h3 className="text-lg font-semibold text-white">{t('archives.modal.selectTimelapse')}</h3>
+                      <p className="text-sm text-gray-400 mt-1">
+                        {t('archives.modal.selectTimelapseDesc')}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setShowTimelapseSelect(false);
+                        setAvailableTimelapses([]);
+                      }}
+                      className="text-gray-400 hover:text-white p-1"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
                   </div>
-                </button>
-              ))}
-            </div>
-            <div className="p-4 border-t border-gray-700">
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  setShowTimelapseSelect(false);
-                  setAvailableTimelapses([]);
-                }}
-                className="w-full"
-              >
-                Cancel
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* QR Code Modal */}
-      {showQRCode && (
-        <QRCodeModal
-          archiveId={archive.id}
-          archiveName={archive.print_name || archive.filename}
-          onClose={() => setShowQRCode(false)}
-        />
-      )}
-
-      {/* Photo Gallery Modal */}
-      {showPhotos && archive.photos && archive.photos.length > 0 && (
-        <PhotoGalleryModal
-          archiveId={archive.id}
-          archiveName={archive.print_name || archive.filename}
-          photos={archive.photos}
-          onClose={() => setShowPhotos(false)}
-          onDelete={async (filename) => {
-            try {
-              await api.deleteArchivePhoto(archive.id, filename);
-              queryClient.invalidateQueries({ queryKey: ['archives'] });
-              showToast(t('archives.toast.photoDeleted'));
-            } catch {
-              showToast(t('archives.toast.failedDeletePhoto'), 'error');
-            }
-          }}
-        />
-      )}
-
-      {/* Project Page Modal */}
-      {showProjectPage && (
-        <ProjectPageModal
-          archiveId={archive.id}
-          archiveName={archive.print_name || archive.filename}
-          onClose={() => setShowProjectPage(false)}
-        />
-      )}
-
-      {/* Hidden file input for source 3MF upload */}
-      <input
-        ref={source3mfInputRef}
-        type="file"
-        accept=".3mf"
-        className="hidden"
-        onChange={(e) => {
-          const file = e.target.files?.[0];
-          if (file) {
-            source3mfUploadMutation.mutate(file);
-          }
-          e.target.value = '';
-        }}
-      />
-      {/* Hidden file input for F3D upload */}
-      <input
-        ref={f3dInputRef}
-        type="file"
-        accept=".f3d"
-        className="hidden"
-        onChange={(e) => {
-          const file = e.target.files?.[0];
-          if (file) {
-            f3dUploadMutation.mutate(file);
-          }
-          e.target.value = '';
-        }}
-      />
-      {/* Hidden file input for timelapse upload */}
-      <input
-        ref={timelapseInputRef}
-        type="file"
-        accept=".mp4,.avi,.mkv"
-        className="hidden"
-        onChange={(e) => {
-          const file = e.target.files?.[0];
-          if (file) {
-            timelapseUploadMutation.mutate(file);
-          }
-          e.target.value = '';
-        }}
+                  <div className="overflow-y-auto flex-1 p-2">
+                    {availableTimelapses.map((file) => (
+                      <button
+                        key={file.name}
+                        onClick={() => timelapseSelectMutation.mutate(file.name)}
+                        disabled={timelapseSelectMutation.isPending}
+                        className="w-full text-left p-3 rounded-lg hover:bg-gray-700 transition-colors flex items-center gap-3 disabled:opacity-50"
+                      >
+                        <Film className="w-8 h-8 text-bambu-green flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-white font-medium truncate">{file.name}</p>
+                          <p className="text-sm text-gray-400">
+                            {formatFileSize(file.size)}
+                            {file.mtime && ` • ${formatDateTime(file.mtime, timeFormat)}`}
+                          </p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                  <div className="p-4 border-t border-gray-700">
+                    <Button
+                      variant="secondary"
+                      onClick={() => {
+                        setShowTimelapseSelect(false);
+                        setAvailableTimelapses([]);
+                      }}
+                      className="w-full"
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
+        }
       />
     </Card>
   );
@@ -1930,51 +1211,30 @@ function ArchiveListRow({
   t: TFunction;
   onNavigateToArchive?: (archiveId: number) => void;
 }) {
-  const queryClient = useQueryClient();
-  const { showToast } = useToast();
-  const { hasPermission, canModify } = useAuth();
-  const [showEdit, setShowEdit] = useState(false);
-  const [showPrintLog, setShowPrintLog] = useState(false);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  // #1343: opt-in "Also remove from statistics" checkbox state. Default off
-  // — soft delete keeps the archive's contribution to Quick Stats.
-  const [deletePurgeStats, setDeletePurgeStats] = useState(false);
-  // #1734: pre-flight count of related queue items for the delete modal.
-  // Same shape as the card-view sibling above.
-  const deleteImpactQuery = useQuery({
-    queryKey: ['archive', archive.id, 'delete-impact'],
-    queryFn: () => api.getArchiveDeleteImpact(archive.id),
-    enabled: showDeleteConfirm,
-    staleTime: 0,
-  });
-  const navigate = useNavigate();
-  const [showReprint, setShowReprint] = useState(false);
-  // Post-print outcome confirmation dialog (#1898)
-  const [showConfirmOutcome, setShowConfirmOutcome] = useState(false);
-  const [showSliceModal, setShowSliceModal] = useState(false);
-  const [showRunPipeline, setShowRunPipeline] = useState(false);
-  const [showTimelapse, setShowTimelapse] = useState(false);
-  const [showPrinterMedia, setShowPrinterMedia] = useState(false);
-  const [showTimelapseSelect, setShowTimelapseSelect] = useState(false);
-  const [availableTimelapses, setAvailableTimelapses] = useState<Array<{ name: string; path: string; size: number; mtime: string | null }>>([]);
-  const [showQRCode, setShowQRCode] = useState(false);
-  const [showPhotos, setShowPhotos] = useState(false);
-  const [showProjectPage, setShowProjectPage] = useState(false);
-  const [showDeleteSource3mfConfirm, setShowDeleteSource3mfConfirm] = useState(false);
-  const [showDeleteF3dConfirm, setShowDeleteF3dConfirm] = useState(false);
-  const [showDeleteTimelapseConfirm, setShowDeleteTimelapseConfirm] = useState(false);
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
-  const source3mfInputRef = useRef<HTMLInputElement>(null);
-  const f3dInputRef = useRef<HTMLInputElement>(null);
-  const timelapseInputRef = useRef<HTMLInputElement>(null);
-  const [platePickerPlates, setPlatePickerPlates] = useState<PlateMetadata[] | null>(null);
-
-  // Use pre-computed duplicate sequence and original archive ID from list response
-  const duplicateSequence = archive.duplicate_sequence ?? 0;
-  // Appended to the verdict badge's tooltip (#1898) so a verdict the
-  // plate-clear default recorded can be explained where it is shown.
-  const verdictSourceHintKey = verdictSourceKey(archive.user_verdict_source);
-  const originalArchiveId = archive.original_archive_id ?? null;
+  const actions = useArchiveActions(archive, t);
+  const {
+    hasPermission,
+    canModify,
+    navigate,
+    setShowReprint,
+    setShowConfirmOutcome,
+    setShowDeleteConfirm,
+    setShowEdit,
+    setShowPrinterMedia,
+    showTimelapseSelect,
+    setShowTimelapseSelect,
+    availableTimelapses,
+    setAvailableTimelapses,
+    setContextMenu,
+    setPlatePickerPlates,
+    duplicateSequence,
+    verdictSourceHintKey,
+    originalArchiveId,
+    timelapseSelectMutation,
+    linkedFolders,
+    assignProjectMutation,
+    handleContextMenu,
+  } = actions;
 
   // 3D Preview click handler. Multi-plate archives show the plate picker
   // first; single-plate archives navigate straight into the viewer.
@@ -1991,382 +1251,22 @@ function ArchiveListRow({
     navigate(`/gcode-viewer?archive=${archive.id}`);
   };
 
-  const timelapseDeleteMutation = useMutation({
-    mutationFn: () => api.deleteArchiveTimelapse(archive.id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['archives'] });
-      showToast(t('archives.toast.timelapseRemoved'));
-    },
-    onError: (error: Error) => {
-      showToast(error.message || t('archives.toast.failedRemoveTimelapse'), 'error');
-    },
+  const menu = buildArchiveMenuSections({
+    archive,
+    t,
+    actions,
+    preferredSlicer,
+    useSlicerApi,
+    openGcodeViewer,
+    calcConfig,
+    printerName,
+    isSelected,
+    onSelect,
   });
-
-  const timelapseUploadMutation = useMutation({
-    mutationFn: (file: File) => api.uploadArchiveTimelapse(archive.id, file),
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['archives'] });
-      showToast(t('archives.toast.timelapseUploaded', { filename: data.filename }));
-    },
-    onError: (error: Error) => {
-      showToast(error.message || t('archives.toast.failedUploadTimelapse'), 'error');
-    },
-  });
-
-  const source3mfUploadMutation = useMutation({
-    mutationFn: (file: File) => api.uploadSource3mf(archive.id, file),
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['archives'] });
-      showToast(t('archives.toast.source3mfAttached', { filename: data.filename }));
-    },
-    onError: (error: Error) => {
-      showToast(error.message || t('archives.toast.failedUploadSource3mf'), 'error');
-    },
-  });
-
-  const source3mfDeleteMutation = useMutation({
-    mutationFn: () => api.deleteSource3mf(archive.id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['archives'] });
-      showToast(t('archives.toast.source3mfRemoved'));
-    },
-    onError: (error: Error) => {
-      showToast(error.message || t('archives.toast.failedRemoveSource3mf'), 'error');
-    },
-  });
-
-  const f3dUploadMutation = useMutation({
-    mutationFn: (file: File) => api.uploadF3d(archive.id, file),
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['archives'] });
-      showToast(t('archives.toast.f3dAttached', { filename: data.filename }));
-    },
-    onError: (error: Error) => {
-      showToast(error.message || t('archives.toast.failedUploadF3d'), 'error');
-    },
-  });
-
-  const f3dDeleteMutation = useMutation({
-    mutationFn: () => api.deleteF3d(archive.id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['archives'] });
-      showToast(t('archives.toast.f3dRemoved'));
-    },
-    onError: (error: Error) => {
-      showToast(error.message || t('archives.toast.failedRemoveF3d'), 'error');
-    },
-  });
-
-  const timelapseScanMutation = useMutation({
-    mutationFn: () => api.scanArchiveTimelapse(archive.id),
-    onSuccess: (data) => {
-      if (data.status === 'attached') {
-        queryClient.invalidateQueries({ queryKey: ['archives'] });
-        showToast(t('archives.toast.timelapseAttached', { filename: data.filename }));
-      } else if (data.status === 'exists') {
-        showToast(t('archives.toast.timelapseAlreadyAttached'));
-      } else if (data.status === 'not_found' && data.available_files && data.available_files.length > 0) {
-        setAvailableTimelapses(data.available_files);
-        setShowTimelapseSelect(true);
-      } else {
-        showToast(data.message || t('archives.toast.noMatchingTimelapse'), 'warning');
-      }
-    },
-    onError: (error: Error) => {
-      showToast(error.message || t('archives.toast.failedScanTimelapse'), 'error');
-    },
-  });
-
-  const timelapseSelectMutation = useMutation({
-    mutationFn: (filename: string) => api.selectArchiveTimelapse(archive.id, filename),
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['archives'] });
-      showToast(t('archives.toast.timelapseAttached', { filename: data.filename }));
-      setShowTimelapseSelect(false);
-      setAvailableTimelapses([]);
-    },
-    onError: (error: Error) => {
-      showToast(error.message || t('archives.toast.failedAttachTimelapse'), 'error');
-    },
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: (purgeStats: boolean) => api.deleteArchive(archive.id, purgeStats),
-    onSuccess: () => {
-      // A deleted archive leaves its project too, so the project views have to
-      // be refreshed alongside the archive list (#2731).
-      invalidateArchiveAndProjectViews(queryClient);
-      showToast(t('archives.toast.archiveDeleted'));
-    },
-    onError: () => {
-      showToast(t('archives.toast.failedDeleteArchive'), 'error');
-    },
-  });
-
-  const favoriteMutation = useMutation({
-    mutationFn: () => api.toggleFavorite(archive.id),
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['archives'] });
-      showToast(data.is_favorite ? t('archives.toast.addedToFavorites') : t('archives.toast.removedFromFavorites'));
-    },
-  });
-
-  // Query for linked folders
-  const { data: linkedFolders } = useQuery({
-    queryKey: ['archive-folders', archive.id],
-    queryFn: () => api.getLibraryFoldersByArchive(archive.id),
-  });
-
-  const assignProjectMutation = useMutation({
-    mutationFn: (projectId: number | null) => api.updateArchive(archive.id, { project_id: projectId }),
-    onSuccess: () => {
-      invalidateArchiveAndProjectViews(queryClient);
-      showToast(t('archives.toast.projectUpdated'));
-    },
-    onError: () => {
-      showToast(t('archives.toast.failedUpdateProject'), 'error');
-    },
-  });
-
-  const handleContextMenu = (e: React.MouseEvent) => {
-    e.preventDefault();
-    setContextMenu({ x: e.clientX, y: e.clientY });
-  };
-
-  const isGcodeFile = isSlicedFile(archive);
 
   const contextMenuItems: ContextMenuItem[] = [
-    ...(isGcodeFile ? [
-      {
-        label: t('common.print'),
-        icon: <Printer className="w-4 h-4" />,
-        onClick: () => setShowReprint(true),
-        disabled: !archive.file_path || !hasPermission('queue:create') || !canModify('archives', 'reprint', archive.created_by_id),
-        title: !archive.file_path
-          ? t('archives.card.noFileForReprint')
-          : !hasPermission('queue:create')
-            ? t('archives.permission.noAddToQueue')
-            : !canModify('archives', 'reprint', archive.created_by_id)
-              ? t('archives.permission.noReprint')
-              : undefined,
-      },
-      {
-        label: t('archives.menu.openInBambuStudio'),
-        icon: <ExternalLink className="w-4 h-4" />,
-        onClick: () => {
-          const filename = archive.print_name || archive.filename || 'model';
-          openInSlicerWithToken(archive.id, filename, 'file', preferredSlicer);
-        },
-        disabled: !archive.file_path,
-        title: !archive.file_path ? t('archives.card.noFileForReprint') : undefined,
-      },
-    ] : [
-      {
-        label: t('archives.menu.slice'),
-        icon: useSlicerApi ? <Cog className="w-4 h-4" /> : <ExternalLink className="w-4 h-4" />,
-        onClick: () => {
-          if (useSlicerApi) {
-            setShowSliceModal(true);
-          } else {
-            const filename = archive.print_name || archive.filename || 'model';
-            openInSlicerWithToken(archive.id, filename, 'file', preferredSlicer);
-          }
-        },
-      },
-      // Run-with-pipeline (#1425 PR B follow-up). Sources from archive's
-      // source 3MF (or file_path fallback). Only when slicer-api is on.
-      ...(useSlicerApi
-        ? [{
-            label: t('library.runWithPipeline.actionLabel'),
-            icon: <Play className="w-4 h-4" />,
-            onClick: () => setShowRunPipeline(true),
-            disabled: !hasPermission('pipelines:run'),
-            title: !hasPermission('pipelines:run')
-              ? t('library.runWithPipeline.noPermission')
-              : undefined,
-          }]
-        : []),
-    ]),
-    {
-      label: archive.external_url ? t('archives.menu.externalLink') : t('archives.menu.viewOnMakerWorld'),
-      icon: <Globe className="w-4 h-4" />,
-      onClick: () => {
-        openSafeExternalUrl(archive.external_url || archive.makerworld_url);
-      },
-      disabled: !archive.external_url && !archive.makerworld_url,
-    },
-    // Post-print outcome confirmation (#1898): completed prints only — the
-    // machine statuses already cover everything else.
-    ...(archive.status === 'completed'
-      ? [{
-          label: t('archives.menu.confirmOutcome'),
-          icon: archive.user_verdict === 'reject'
-            ? <ThumbsDown className="w-4 h-4" />
-            : <ThumbsUp className="w-4 h-4" />,
-          onClick: () => setShowConfirmOutcome(true),
-          disabled: !canModify('archives', 'update', archive.created_by_id),
-          title: !canModify('archives', 'update', archive.created_by_id)
-            ? t('archives.permission.noUpdateArchives')
-            : undefined,
-        }]
-      : []),
-    { label: '', divider: true, onClick: () => {} },
-    {
-      label: t('archives.menu.preview3d'),
-      icon: <Box className="w-4 h-4" />,
-      onClick: () => { openGcodeViewer(); },
-    },
-    {
-      label: t('archives.menu.viewTimelapse'),
-      icon: <Film className="w-4 h-4" />,
-      onClick: () => setShowTimelapse(true),
-      disabled: !archive.timelapse_path,
-    },
-    {
-      label: t('archives.menu.scanForTimelapse'),
-      icon: <ScanSearch className="w-4 h-4" />,
-      onClick: () => timelapseScanMutation.mutate(),
-      disabled: !archive.printer_id || !!archive.timelapse_path || timelapseScanMutation.isPending || !canModify('archives', 'update', archive.created_by_id),
-      title: !canModify('archives', 'update', archive.created_by_id) ? t('archives.permission.noUpdateArchives') : undefined,
-    },
-    {
-      label: t('archives.menu.uploadTimelapse'),
-      icon: <Upload className="w-4 h-4" />,
-      onClick: () => timelapseInputRef.current?.click(),
-      disabled: !!archive.timelapse_path || !canModify('archives', 'update', archive.created_by_id),
-      title: !canModify('archives', 'update', archive.created_by_id) ? t('archives.permission.noUpdateArchives') : undefined,
-    },
-    ...(archive.timelapse_path ? [{
-      label: t('archives.menu.removeTimelapse'),
-      icon: <Trash2 className="w-4 h-4" />,
-      onClick: () => setShowDeleteTimelapseConfirm(true),
-      danger: true,
-      disabled: !canModify('archives', 'update', archive.created_by_id),
-      title: !canModify('archives', 'update', archive.created_by_id) ? t('archives.permission.noUpdateArchives') : undefined,
-    }] : []),
-    { label: '', divider: true, onClick: () => {} },
-    {
-      label: archive.source_3mf_path ? t('archives.menu.downloadSource3mf') : t('archives.menu.uploadSource3mf'),
-      icon: <FileCode className="w-4 h-4" />,
-      onClick: () => {
-        if (archive.source_3mf_path) {
-          api.downloadSource3mf(archive.id).catch((err) => {
-            console.error('Source 3MF download failed:', err);
-          });
-        } else {
-          source3mfInputRef.current?.click();
-        }
-      },
-      disabled: !archive.source_3mf_path && !canModify('archives', 'update', archive.created_by_id),
-      title: !archive.source_3mf_path && !canModify('archives', 'update', archive.created_by_id) ? t('archives.permission.noUploadFiles') : undefined,
-    },
-    ...(archive.source_3mf_path ? [{
-      label: t('archives.menu.replaceSource3mf'),
-      icon: <Upload className="w-4 h-4" />,
-      onClick: () => source3mfInputRef.current?.click(),
-      disabled: !canModify('archives', 'update', archive.created_by_id),
-      title: !canModify('archives', 'update', archive.created_by_id) ? t('archives.permission.noUpdateArchives') : undefined,
-    },
-    {
-      label: t('archives.menu.removeSource3mf'),
-      icon: <Trash2 className="w-4 h-4" />,
-      onClick: () => setShowDeleteSource3mfConfirm(true),
-      danger: true,
-      disabled: !canModify('archives', 'update', archive.created_by_id),
-      title: !canModify('archives', 'update', archive.created_by_id) ? t('archives.permission.noUpdateArchives') : undefined,
-    }] : []),
-    {
-      label: archive.f3d_path ? t('archives.menu.replaceF3d') : t('archives.menu.uploadF3d'),
-      icon: <Box className="w-4 h-4" />,
-      onClick: () => f3dInputRef.current?.click(),
-      disabled: !canModify('archives', 'update', archive.created_by_id),
-      title: !canModify('archives', 'update', archive.created_by_id) ? t('archives.permission.noUpdateArchives') : undefined,
-    },
-    ...(archive.f3d_path ? [{
-      label: t('archives.menu.downloadF3d'),
-      icon: <Download className="w-4 h-4" />,
-      onClick: () => {
-        api.downloadF3d(archive.id).catch((err) => {
-          console.error('F3D download failed:', err);
-        });
-      },
-    },
-    {
-      label: t('archives.menu.removeF3d'),
-      icon: <Trash2 className="w-4 h-4" />,
-      onClick: () => setShowDeleteF3dConfirm(true),
-      danger: true,
-      disabled: !canModify('archives', 'update', archive.created_by_id),
-      title: !canModify('archives', 'update', archive.created_by_id) ? t('archives.permission.noUpdateArchives') : undefined,
-    }] : []),
-    { label: '', divider: true, onClick: () => {} },
-    {
-      label: t('archives.menu.download'),
-      icon: <Download className="w-4 h-4" />,
-      onClick: () => {
-        api.downloadArchive(archive.id, `${archive.print_name || archive.filename}.3mf`).catch((err) => {
-          console.error('Archive download failed:', err);
-        });
-      },
-      disabled: !hasPermission('archives:read'),
-      title: !hasPermission('archives:read') ? t('archives.permission.noDownload') : undefined,
-    },
-    {
-      label: t('archives.menu.copyDownloadLink'),
-      icon: <Copy className="w-4 h-4" />,
-      onClick: () => {
-        const url = `${window.location.origin}${api.getArchiveDownload(archive.id)}`;
-        navigator.clipboard.writeText(url).then(() => {
-          showToast(t('archives.toast.linkCopied'));
-        }).catch(() => {
-          showToast(t('archives.toast.failedCopyLink'), 'error');
-        });
-      },
-      disabled: !hasPermission('archives:read'),
-      title: !hasPermission('archives:read') ? t('archives.permission.noCopyLink') : undefined,
-    },
-    {
-      label: t('archives.menu.qrCode'),
-      icon: <QrCode className="w-4 h-4" />,
-      onClick: () => setShowQRCode(true),
-    },
-    {
-      label: archive.photos?.length ? t('archives.menu.viewPhotosCount', { count: archive.photos.length }) : t('archives.menu.viewPhotos'),
-      icon: <Camera className="w-4 h-4" />,
-      onClick: () => setShowPhotos(true),
-      disabled: !archive.photos?.length,
-    },
-    {
-      label: t('archives.menu.projectPage'),
-      icon: <FileText className="w-4 h-4" />,
-      onClick: () => setShowProjectPage(true),
-    },
-    { label: '', divider: true, onClick: () => {} },
-    {
-      label: archive.is_favorite ? t('archives.menu.removeFromFavorites') : t('archives.menu.addToFavorites'),
-      // Preview the favourited state on hover so the row reads as clickable (#2791).
-      icon: <Star className={`w-4 h-4 ${archive.is_favorite ? 'fill-yellow-400 text-yellow-400' : canModify('archives', 'update', archive.created_by_id) ? 'group-hover:text-yellow-400' : ''}`} />,
-      onClick: () => favoriteMutation.mutate(),
-      disabled: !canModify('archives', 'update', archive.created_by_id),
-      title: !canModify('archives', 'update', archive.created_by_id) ? t('archives.permission.noUpdateArchives') : undefined,
-    },
-    {
-      label: t('archives.menu.edit'),
-      icon: <Pencil className="w-4 h-4" />,
-      onClick: () => setShowEdit(true),
-      disabled: !canModify('archives', 'update', archive.created_by_id),
-      title: !canModify('archives', 'update', archive.created_by_id) ? t('archives.permission.noUpdateArchives') : undefined,
-    },
-    {
-      label: t('archives.menu.printLog'),
-      icon: <History className="w-4 h-4" />,
-      onClick: () => setShowPrintLog(true),
-    },
-    ...(archive.project_id && archive.project_name ? [{
-      label: t('archives.menu.goToProject', { name: archive.project_name }),
-      icon: <FolderKanban className="w-4 h-4 text-bambu-green" />,
-      onClick: () => window.location.href = '/projects',
-    }] : []),
+    ...menu.head,
+    ...menu.body,
     {
       label: t('archives.menu.addToProject'),
       icon: <FolderKanban className="w-4 h-4" />,
@@ -2419,29 +1319,7 @@ function ArchiveListRow({
         return items;
       })(),
     },
-    {
-      label: t('archives.menu.openInCalculator'),
-      icon: <Calculator className="w-4 h-4" />,
-      onClick: () => navigate(calculatorPrefillUrl(archive, calcConfig ?? null, [printerName, archive.sliced_for_model])),
-      disabled:
-        !hasPermission('calculator:read') ||
-        !archive.filament_used_grams ||
-        !(archive.actual_time_seconds || archive.print_time_seconds),
-    },
-    {
-      label: isSelected ? t('archives.menu.deselect') : t('archives.menu.select'),
-      icon: isSelected ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />,
-      onClick: () => onSelect(archive.id),
-    },
-    { label: '', divider: true, onClick: () => {} },
-    {
-      label: t('archives.menu.delete'),
-      icon: <Trash2 className="w-4 h-4" />,
-      onClick: () => setShowDeleteConfirm(true),
-      danger: true,
-      disabled: !canModify('archives', 'delete', archive.created_by_id),
-      title: !canModify('archives', 'delete', archive.created_by_id) ? t('archives.permission.noDelete') : undefined,
-    },
+    ...menu.tail,
   ];
 
   return (
@@ -2468,6 +1346,8 @@ function ArchiveListRow({
             <img
               src={api.getArchiveThumbnail(archive.id)}
               alt=""
+              loading="lazy"
+              decoding="async"
               className="w-10 h-10 object-cover rounded brightness-125 contrast-110"
             />
           ) : (
@@ -2693,322 +1573,59 @@ function ArchiveListRow({
         </div>
       </div>
 
-      {/* Edit Modal */}
-      {showEdit && (
-        <EditArchiveModal
-          archive={archive}
-          onClose={() => setShowEdit(false)}
-        />
-      )}
-
-      {/* Print Log Modal — opened from the "N prints" badge or context menu (#1378) */}
-      {showPrintLog && (
-        <PrintLogModal
-          archiveId={archive.id}
-          archiveName={archive.print_name || archive.filename}
-          onClose={() => setShowPrintLog(false)}
-        />
-      )}
-
-      {/* Plate picker — shown only for multi-plate archives on 3D Preview click */}
-      {platePickerPlates && (
-        <PlatePickerModal
-          plates={platePickerPlates}
-          onSelect={(plateIndex) => {
-            setPlatePickerPlates(null);
-            navigate(`/gcode-viewer?archive=${archive.id}&plate=${plateIndex}`);
-          }}
-          onClose={() => setPlatePickerPlates(null)}
-        />
-      )}
-
-      {/* Reprint Modal */}
-      {showReprint && (
-        <PrintModal
-          mode="create"
-          archiveId={archive.id}
-          archiveName={archive.print_name || archive.filename}
-          onClose={() => setShowReprint(false)}
-        />
-      )}
-
-      {/* Post-print outcome confirmation (#1898) */}
-      {showConfirmOutcome && (
-        <ConfirmOutcomeDialog
-          archiveId={archive.id}
-          onClose={() => setShowConfirmOutcome(false)}
-        />
-      )}
-
-      {/* Slice Modal */}
-      {showSliceModal && (
-        <SliceModal
-          source={{ kind: 'archive', id: archive.id, filename: archive.print_name || archive.filename || 'model' }}
-          onClose={() => setShowSliceModal(false)}
-        />
-      )}
-
-      {/* Run-with-Pipeline Modal (#1425 PR B). Sources from archive — backend
-          reads source_3mf_path, falls back to file_path. */}
-      {showRunPipeline && (
-        <RunWithPipelineModal
-          source={{ kind: 'archive', id: archive.id, filename: archive.print_name || archive.filename || 'model' }}
-          onClose={() => setShowRunPipeline(false)}
-        />
-      )}
-
-      {/* Delete Confirmation */}
-      {showDeleteConfirm && (
-        <ConfirmModal
-          title={t('archives.modal.deleteArchive')}
-          message={t('archives.modal.deleteConfirm', { name: archive.print_name || archive.filename })}
-          confirmText={t('archives.modal.deleteButton')}
-          variant="danger"
-          confirmDisabled={(deleteImpactQuery.data?.currently_printing ?? 0) > 0}
-          onConfirm={() => {
-            deleteMutation.mutate(deletePurgeStats);
-            setShowDeleteConfirm(false);
-            setDeletePurgeStats(false);
-          }}
-          onCancel={() => {
-            setShowDeleteConfirm(false);
-            setDeletePurgeStats(false);
-          }}
-        >
-          {/* #1734: warn the user when related queue items will also be removed,
-              and block the action entirely if any are currently printing. */}
-          {(deleteImpactQuery.data?.related_queue_items ?? 0) > 0 && (
-            <div
-              className={
-                (deleteImpactQuery.data?.currently_printing ?? 0) > 0
-                  ? 'text-sm text-red-600 dark:text-red-400 mb-2'
-                  : 'text-sm text-amber-600 dark:text-amber-400 mb-2'
-              }
-            >
-              {(deleteImpactQuery.data?.currently_printing ?? 0) > 0
-                ? t('archives.modal.deleteBlockedByPrinting', {
-                    count: deleteImpactQuery.data!.currently_printing,
-                  })
-                : t('archives.modal.deleteQueueItemsWarning', {
-                    count: deleteImpactQuery.data!.related_queue_items,
-                  })}
-            </div>
-          )}
-          {/* #1343: opt-in checkbox — by default the archive is soft-deleted,
-              so its filament / time / cost contribution stays in Quick Stats. */}
-          <label className="flex items-start gap-2 cursor-pointer text-sm text-bambu-gray">
-            <input
-              type="checkbox"
-              className="mt-0.5 accent-red-500"
-              checked={deletePurgeStats}
-              onChange={(e) => setDeletePurgeStats(e.target.checked)}
-            />
-            <span>{t('archives.modal.deletePurgeStats')}</span>
-          </label>
-        </ConfirmModal>
-      )}
-
-      {/* Delete Source 3MF Confirmation */}
-      {showDeleteSource3mfConfirm && (
-        <ConfirmModal
-          title={t('archives.modal.removeSource3mf')}
-          message={t('archives.modal.removeSource3mfConfirm', { name: archive.print_name || archive.filename })}
-          confirmText={t('archives.modal.removeButton')}
-          variant="danger"
-          onConfirm={() => {
-            source3mfDeleteMutation.mutate();
-            setShowDeleteSource3mfConfirm(false);
-          }}
-          onCancel={() => setShowDeleteSource3mfConfirm(false)}
-        />
-      )}
-
-      {/* Delete F3D Confirmation */}
-      {showDeleteF3dConfirm && (
-        <ConfirmModal
-          title={t('archives.modal.removeF3d')}
-          message={t('archives.modal.removeF3dConfirm', { name: archive.print_name || archive.filename })}
-          confirmText={t('archives.modal.removeButton')}
-          variant="danger"
-          onConfirm={() => {
-            f3dDeleteMutation.mutate();
-            setShowDeleteF3dConfirm(false);
-          }}
-          onCancel={() => setShowDeleteF3dConfirm(false)}
-        />
-      )}
-
-      {/* Delete Timelapse Confirmation */}
-      {showDeleteTimelapseConfirm && (
-        <ConfirmModal
-          title={t('archives.modal.removeTimelapse')}
-          message={t('archives.modal.removeTimelapseConfirm', { name: archive.print_name || archive.filename })}
-          confirmText={t('archives.modal.removeButton')}
-          variant="danger"
-          onConfirm={() => {
-            timelapseDeleteMutation.mutate();
-            setShowDeleteTimelapseConfirm(false);
-          }}
-          onCancel={() => setShowDeleteTimelapseConfirm(false)}
-        />
-      )}
-
-      {/* Context Menu */}
-      {contextMenu && (
-        <ContextMenu
-          x={contextMenu.x}
-          y={contextMenu.y}
-          items={contextMenuItems}
-          onClose={() => setContextMenu(null)}
-        />
-      )}
-
-      {/* Print Media Download Modal */}
-      {showPrinterMedia && (
-        <ArchiveMediaDownloadModal
-          archiveId={archive.id}
-          archiveName={archive.print_name || archive.filename}
-          printerName={printerName}
-          onClose={() => setShowPrinterMedia(false)}
-        />
-      )}
-
-      {/* Timelapse Viewer Modal */}
-      {showTimelapse && archive.timelapse_path && (
-        <TimelapseViewer
-          src={api.getArchiveTimelapse(archive.id)}
-          title={t('archives.modal.timelapse', { name: archive.print_name || archive.filename })}
-          downloadFilename={`${archive.print_name || archive.filename}_timelapse.mp4`}
-          archiveId={archive.id}
-          onClose={() => setShowTimelapse(false)}
-          onEdit={() => {
-            queryClient.invalidateQueries({ queryKey: ['archives'] });
-            setShowTimelapse(false);
-          }}
-        />
-      )}
-
-      {/* Timelapse Selection Modal */}
-      {showTimelapseSelect && availableTimelapses.length > 0 && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 animate-overlay-in">
-          <div className="bg-card-dark rounded-lg max-w-lg w-full max-h-[80vh] flex flex-col animate-modal-in">
-            <div className="flex items-center justify-between p-4 border-b border-gray-700">
-              <div>
-                <h3 className="text-lg font-semibold text-white">{t('archives.modal.selectTimelapse')}</h3>
-                <p className="text-sm text-gray-400 mt-1">
-                  {t('archives.modal.selectTimelapseDesc')}
-                </p>
-              </div>
-              <button
-                onClick={() => {
-                  setShowTimelapseSelect(false);
-                  setAvailableTimelapses([]);
-                }}
-                className="text-gray-400 hover:text-white p-1"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="overflow-y-auto flex-1 p-2">
-              {availableTimelapses.map((file) => (
-                <button
-                  key={file.name}
-                  onClick={() => timelapseSelectMutation.mutate(file.name)}
-                  disabled={timelapseSelectMutation.isPending}
-                  className="w-full text-left p-3 rounded-lg hover:bg-gray-700 transition-colors mb-1"
-                >
-                  <div className="font-medium text-white">{file.name}</div>
-                  <div className="text-sm text-gray-400 flex gap-3">
-                    <span>{formatFileSize(file.size)}</span>
-                    {file.mtime && (
-                      <span>{formatDateOnly(file.mtime)}</span>
-                    )}
+      <ArchiveModals
+        archive={archive}
+        t={t}
+        actions={actions}
+        printerName={printerName}
+        contextMenuItems={contextMenuItems}
+        photosRequireNonEmpty={false}
+        timelapseSelectModal={
+          <>
+            {/* Timelapse Selection Modal */}
+            {showTimelapseSelect && availableTimelapses.length > 0 && (
+              <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 animate-overlay-in">
+                <div className="bg-card-dark rounded-lg max-w-lg w-full max-h-[80vh] flex flex-col animate-modal-in">
+                  <div className="flex items-center justify-between p-4 border-b border-gray-700">
+                    <div>
+                      <h3 className="text-lg font-semibold text-white">{t('archives.modal.selectTimelapse')}</h3>
+                      <p className="text-sm text-gray-400 mt-1">
+                        {t('archives.modal.selectTimelapseDesc')}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setShowTimelapseSelect(false);
+                        setAvailableTimelapses([]);
+                      }}
+                      className="text-gray-400 hover:text-white p-1"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
                   </div>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* QR Code Modal */}
-      {showQRCode && (
-        <QRCodeModal
-          archiveId={archive.id}
-          archiveName={archive.print_name || archive.filename}
-          onClose={() => setShowQRCode(false)}
-        />
-      )}
-
-      {/* Photo Gallery Modal */}
-      {showPhotos && archive.photos && (
-        <PhotoGalleryModal
-          archiveId={archive.id}
-          archiveName={archive.print_name || archive.filename}
-          photos={archive.photos}
-          onClose={() => setShowPhotos(false)}
-          onDelete={async (filename) => {
-            try {
-              await api.deleteArchivePhoto(archive.id, filename);
-              queryClient.invalidateQueries({ queryKey: ['archives'] });
-              showToast(t('archives.toast.photoDeleted'));
-            } catch {
-              showToast(t('archives.toast.failedDeletePhoto'), 'error');
-            }
-          }}
-        />
-      )}
-
-      {/* Project Page Modal */}
-      {showProjectPage && (
-        <ProjectPageModal
-          archiveId={archive.id}
-          archiveName={archive.print_name || archive.filename}
-          onClose={() => setShowProjectPage(false)}
-        />
-      )}
-
-      {/* Hidden file input for source 3MF upload */}
-      <input
-        ref={source3mfInputRef}
-        type="file"
-        accept=".3mf"
-        className="hidden"
-        onChange={(e) => {
-          const file = e.target.files?.[0];
-          if (file) {
-            source3mfUploadMutation.mutate(file);
-          }
-          e.target.value = '';
-        }}
-      />
-      {/* Hidden file input for F3D upload */}
-      <input
-        ref={f3dInputRef}
-        type="file"
-        accept=".f3d"
-        className="hidden"
-        onChange={(e) => {
-          const file = e.target.files?.[0];
-          if (file) {
-            f3dUploadMutation.mutate(file);
-          }
-          e.target.value = '';
-        }}
-      />
-      {/* Hidden file input for timelapse upload */}
-      <input
-        ref={timelapseInputRef}
-        type="file"
-        accept=".mp4,.avi,.mkv"
-        className="hidden"
-        onChange={(e) => {
-          const file = e.target.files?.[0];
-          if (file) {
-            timelapseUploadMutation.mutate(file);
-          }
-          e.target.value = '';
-        }}
+                  <div className="overflow-y-auto flex-1 p-2">
+                    {availableTimelapses.map((file) => (
+                      <button
+                        key={file.name}
+                        onClick={() => timelapseSelectMutation.mutate(file.name)}
+                        disabled={timelapseSelectMutation.isPending}
+                        className="w-full text-left p-3 rounded-lg hover:bg-gray-700 transition-colors mb-1"
+                      >
+                        <div className="font-medium text-white">{file.name}</div>
+                        <div className="text-sm text-gray-400 flex gap-3">
+                          <span>{formatFileSize(file.size)}</span>
+                          {file.mtime && (
+                            <span>{formatDateOnly(file.mtime)}</span>
+                          )}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
+        }
       />
     </>
   );
@@ -3036,6 +1653,11 @@ const collections: { id: Collection; label: string; icon: React.ReactNode }[] = 
   { id: 'failed', label: 'Failed Prints', icon: <AlertCircle className="w-4 h-4" /> },
   { id: 'duplicates', label: 'Duplicates', icon: <Copy className="w-4 h-4" /> },
 ];
+
+// Duplicate-group key: members of a group share their original's id.
+function dupGroupKeyOf(a: { id: number; duplicate_sequence?: number | null; original_archive_id?: number | null }): number {
+  return (a.duplicate_sequence ?? 0) > 0 && a.original_archive_id ? a.original_archive_id : a.id;
+}
 
 export function ArchivesPage() {
   const { t } = useTranslation();
@@ -3088,7 +1710,9 @@ export function ArchivesPage() {
     () => localStorage.getItem('archiveNo3MFWarningDismissed') === 'true',
   );
   const { data: no3MFWarning } = useQuery({
-    queryKey: ['archives', 'no-3mf-warning'],
+    // Outside the ['archives'] prefix: it has its own staleness, and riding
+    // along on every archive event refetched it with the list.
+    queryKey: ['archive-no-3mf-warning'],
     queryFn: api.getNo3MFWarning,
     staleTime: 5 * 60 * 1000,
     enabled: !no3MFWarningDismissed,
@@ -3208,14 +1832,19 @@ export function ArchivesPage() {
   // behind it. Both keys sit under ['archives'] so every existing
   // invalidateQueries({ queryKey: ['archives'] }) refreshes both.
   const headSize = Math.max(pageSize, ARCHIVE_HEAD_MIN);
+  const fullQuery = useQuery({
+    queryKey: ['archives', filterPrinter],
+    queryFn: () => api.getAllArchives(filterPrinter || undefined),
+    // Archive WebSocket events keep it fresh; a refetch on every return to the
+    // tab re-downloaded the whole list (~1 MB gzipped at 6k archives).
+    refetchOnWindowFocus: false,
+  });
+  // Only until the full list is in: after that the head paints nothing, and
+  // keeping it enabled made every ['archives'] invalidation fetch it too.
   const headQuery = useQuery({
     queryKey: ['archives', filterPrinter, 'head', headSize],
     queryFn: () => api.getArchives(filterPrinter || undefined, undefined, headSize),
-    enabled: pageSize !== -1,
-  });
-  const fullQuery = useQuery({
-    queryKey: ['archives', filterPrinter],
-    queryFn: () => api.getArchives(filterPrinter || undefined),
+    enabled: pageSize !== -1 && !fullQuery.data,
   });
   // The head holds only the newest rows. Any order other than newest-first,
   // or "show all", would be misleading over them, so those never show it —
@@ -3520,14 +2149,23 @@ export function ArchivesPage() {
   );
 
   const bulkDeleteMutation = useMutation({
+    // A few at a time, every result kept: all at once contended for the
+    // database's single writer, and one failure used to read as a total
+    // failure while most rows were already gone (no refresh, stale selection).
     mutationFn: async (ids: number[]) => {
-      await Promise.all(ids.map((id) => api.deleteArchive(id)));
-      return ids.length;
+      const results = await settleWithConcurrency(ids, 4, (id) => api.deleteArchive(id));
+      const deleted = ids.filter((_, index) => results[index].status === 'fulfilled');
+      return { deleted, total: ids.length };
     },
-    onSuccess: (count) => {
+    onSuccess: ({ deleted, total }) => {
       invalidateArchiveAndProjectViews(queryClient);
-      setSelectedIds(new Set());
-      showToast(`${count} archive${count !== 1 ? 's' : ''} deleted`);
+      const gone = new Set(deleted);
+      setSelectedIds((prev) => new Set([...prev].filter((id) => !gone.has(id))));
+      if (deleted.length < total) {
+        showToast(t('archives.page.someArchivesNotDeleted', { failed: total - deleted.length, total }), 'error');
+      } else {
+        showToast(t('archives.page.archivesDeleted', { count: deleted.length }));
+      }
     },
     onError: () => {
       showToast(t('archives.toast.failedDeleteArchives'), 'error');
@@ -3697,48 +2335,61 @@ export function ArchivesPage() {
     [printers],
   );
 
-  // Extract unique materials and colors from archives
-  const uniqueMaterials = [...new Set(
-    archives?.flatMap(a => a.filament_type?.split(', ') || []).filter(Boolean) || []
-  )].sort();
+  // Extract unique materials and colors from archives. Memoized on the list:
+  // over ~6k archives these passes (and the filter/sort below) ran on every
+  // render -- each keystroke, hover and refetch.
+  const uniqueMaterials = useMemo(
+    () => [...new Set(archives?.flatMap(a => a.filament_type?.split(', ') || []).filter(Boolean) || [])].sort(),
+    [archives],
+  );
 
-  const uniqueColors = [...new Set(
-    archives?.flatMap(a => a.filament_color?.split(',') || []).filter(Boolean) || []
-  )];
+  const uniqueColors = useMemo(
+    () => [...new Set(archives?.flatMap(a => a.filament_color?.split(',') || []).filter(Boolean) || [])],
+    [archives],
+  );
 
-  const uniqueTags = [...new Set(
-    archives?.flatMap(a => a.tags?.split(',').map(t => t.trim()) || []).filter(Boolean) || []
-  )].sort();
+  const uniqueTags = useMemo(
+    () => [...new Set(archives?.flatMap(a => a.tags?.split(',').map(t => t.trim()) || []).filter(Boolean) || [])].sort(),
+    [archives],
+  );
 
   // When sorting by date, a duplicate group surfaces at its MOST RECENT
   // member's position — and "Hide duplicates" shows that newest member.
   // Without this, a fresh reprint of an identical file sorts by the
   // original's old date (or is hidden entirely with "Hide duplicates" on)
   // and looks like it was never archived.
-  const dupGroupKey = (a: NonNullable<typeof archives>[number]) =>
-    (a.duplicate_sequence ?? 0) > 0 && a.original_archive_id ? a.original_archive_id : a.id;
-  const groupLatest = new Map<number, { t: number; id: number }>();
-  for (const a of archives || []) {
-    if (a.duplicate_count > 0) {
-      const key = dupGroupKey(a);
+  // Each archive's created time, parsed once per list rather than on every
+  // comparison of the sort; and each duplicate group's newest member.
+  const { createdMs, groupLatest } = useMemo(() => {
+    const created = new Map<number, number>();
+    const latest = new Map<number, { t: number; id: number }>();
+    for (const a of archives || []) {
       const t = parseUTCDate(a.created_at)?.getTime() || 0;
-      const prev = groupLatest.get(key);
-      if (!prev || t >= prev.t) {
-        groupLatest.set(key, { t, id: a.id });
+      created.set(a.id, t);
+      if (a.duplicate_count > 0) {
+        const key = dupGroupKeyOf(a);
+        const prev = latest.get(key);
+        if (!prev || t >= prev.t) {
+          latest.set(key, { t, id: a.id });
+        }
       }
     }
-  }
-  const dateSortTime = (a: NonNullable<typeof archives>[number]) => {
-    const own = parseUTCDate(a.created_at)?.getTime() || 0;
-    if (a.duplicate_count === 0) return own;
-    return Math.max(groupLatest.get(dupGroupKey(a))?.t ?? 0, own);
-  };
+    return { createdMs: created, groupLatest: latest };
+  }, [archives]);
 
-  const filteredArchives = archives
+  const filteredArchives = useMemo(() => {
+    const now = new Date();
+    const searchLower = search.toLowerCase();
+    const createdOf = (a: NonNullable<typeof archives>[number]) => createdMs.get(a.id) ?? 0;
+    const dateSortTime = (a: NonNullable<typeof archives>[number]) => {
+      const own = createdOf(a);
+      if (a.duplicate_count === 0) return own;
+      return Math.max(groupLatest.get(dupGroupKeyOf(a))?.t ?? 0, own);
+    };
+    return archives
     ?.filter((a) => {
       // Collection filter
-      const now = new Date();
-      const archiveDate = parseUTCDate(a.created_at) || new Date(0);
+      const archiveDate = new Date(createdOf(a));
       let matchesCollection = true;
 
       switch (collection) {
@@ -3769,7 +2420,7 @@ export function ArchivesPage() {
       }
 
       // Search filter
-      const matchesSearch = (a.print_name || a.filename).toLowerCase().includes(search.toLowerCase());
+      const matchesSearch = (a.print_name || a.filename).toLowerCase().includes(searchLower);
 
       // Material filter
       const matchesMaterial = !filterMaterial ||
@@ -3802,7 +2453,7 @@ export function ArchivesPage() {
       // looks like it was never archived.
       const matchesHideDuplicates =
         collection === 'duplicates' || !hideDuplicates || a.duplicate_count === 0 ||
-        a.id === groupLatest.get(dupGroupKey(a))?.id;
+        a.id === groupLatest.get(dupGroupKeyOf(a))?.id;
 
       // Tag filter
       const archiveTags = a.tags?.split(',').map(t => t.trim()) || [];
@@ -3823,12 +2474,12 @@ export function ArchivesPage() {
           // newest time and cluster together; tiebreak by own date.
           const diff = dateSortTime(b) - dateSortTime(a);
           if (diff !== 0) return diff;
-          return (parseUTCDate(b.created_at)?.getTime() || 0) - (parseUTCDate(a.created_at)?.getTime() || 0);
+          return createdOf(b) - createdOf(a);
         }
         case 'date-asc': {
           const diff = dateSortTime(a) - dateSortTime(b);
           if (diff !== 0) return diff;
-          return (parseUTCDate(a.created_at)?.getTime() || 0) - (parseUTCDate(b.created_at)?.getTime() || 0);
+          return createdOf(a) - createdOf(b);
         }
         case 'name-asc':
           return (a.print_name || a.filename).localeCompare(b.print_name || b.filename);
@@ -3842,6 +2493,10 @@ export function ArchivesPage() {
           return 0;
       }
     });
+  }, [
+    archives, createdMs, groupLatest, collection, search, filterMaterial, filterColors, colorFilterMode,
+    filterFavorites, hideFailed, filterUnconfirmed, hideDuplicates, filterTag, filterFileType, sortBy,
+  ]);
 
   // Pagination
   const totalFiltered = filteredArchives?.length || 0;

@@ -2266,6 +2266,7 @@ export default {
       toggledFavorites: "Избранное изменено для записей: {{count}}",
       failedUpdateFavorites: "Не удалось обновить избранное",
       archivesDeleted: "Удалено записей: {{count}}",
+      someArchivesNotDeleted: "Не удалось удалить архивы: {{failed}} из {{total}}",
       failedDeleteArchives: "Не удалось удалить записи из архива",
       photoDeleted: "Фотография удалена",
       failedDeletePhoto: "Не удалось удалить фотографию",

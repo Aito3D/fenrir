@@ -2,16 +2,21 @@ import asyncio
 import io
 import json
 import logging
+import os
 import re as _re
+import shutil
+import tempfile
+import uuid
 import zipfile
 from collections import defaultdict
+from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal
 from html import escape as html_escape
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,10 +38,10 @@ from backend.app.models.filament import Filament
 from backend.app.models.printer import Printer
 from backend.app.models.spool_usage_history import SpoolUsageHistory
 from backend.app.models.user import User
-from backend.app.schemas.archive import ArchiveResponse, ArchiveSlim, ArchiveStats, ArchiveUpdate
+from backend.app.schemas.archive import ArchiveResponse, ArchiveSlim, ArchiveStats, ArchiveUpdate, ProjectPageUpdate
 from backend.app.schemas.print_log import PrintLogResponse
 from backend.app.schemas.slicer import SliceRequest
-from backend.app.services.archive import ArchiveService
+from backend.app.services.archive import ArchiveService, claimed_timelapse_stems
 from backend.app.services.bambu_ftp import ftps_handshake_blocked, list_files_result_async
 from backend.app.services.design_settings import overrides_from_config
 from backend.app.services.filament_requirements import annotate_rack_groups
@@ -53,7 +58,7 @@ from backend.app.services.print_storage import (
     REASON_INTERNAL_STORAGE,
     REASON_NO_EXTERNAL_STORAGE,
 )
-from backend.app.services.printer_media import VIDEO_SUFFIXES, match_ipcam_chunks
+from backend.app.services.printer_media import TIMELAPSE_DIRECTORIES, VIDEO_SUFFIXES, match_ipcam_chunks
 from backend.app.utils.archive_paths import archive_photos_dir, find_archive_photo
 from backend.app.utils.dates import local_day_bounds
 from backend.app.utils.http import build_content_disposition, download_error_response, safe_download_filename
@@ -74,6 +79,69 @@ _PRINTER_MEDIA_LIST_TIMEOUT_SECONDS = 8.0
 
 # Path of the embedded slicer config inside a BambuStudio/OrcaSlicer 3MF.
 _PROJECT_SETTINGS_PATH = "Metadata/project_settings.config"
+
+
+# rescan-all / backfill-hashes commit this often, so a long run keeps its
+# progress and never holds one write transaction for minutes.
+_RESCAN_COMMIT_EVERY = 100
+
+# Caps for the uploads that are still read into memory (their consumers take
+# bytes). 3MF, source and F3D uploads stream to disk under
+# ``library_max_upload_bytes`` instead.
+_UPLOAD_PHOTO_MAX_BYTES = 50 * 1024 * 1024
+_UPLOAD_AUDIO_MAX_BYTES = 200 * 1024 * 1024
+
+
+def _upload_too_large(max_bytes: int) -> HTTPException:
+    return HTTPException(status_code=413, detail=f"Upload exceeds the maximum size of {max_bytes} bytes")
+
+
+async def _read_upload_capped(file: UploadFile, max_bytes: int) -> bytes:
+    """Read an upload in chunks, refusing it with 413 past *max_bytes*.
+
+    ``await file.read()`` held any size whole in memory: a multi-GB upload, or
+    a few concurrent large ones, could OOM-kill a small server.
+    """
+    if file.size is not None and file.size > max_bytes:
+        raise _upload_too_large(max_bytes)
+    chunks: list[bytes] = []
+    total = 0
+    while chunk := await file.read(1 << 20):
+        total += len(chunk)
+        if total > max_bytes:
+            raise _upload_too_large(max_bytes)
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+async def _stream_upload(file: UploadFile, dest: Path, validate_as: str | None = None) -> int:
+    """Stream an upload to *dest* under the library's size cap (413 past it).
+
+    *validate_as* is the filename to run the print-file check against; it only
+    needs the first bytes, so it runs on the first chunk and a bad file is
+    refused before the rest is read. *dest* is removed on any failure.
+    """
+    from backend.app.api.routes.library import _stream_upload_to_path, validate_print_file_upload
+
+    on_first = (lambda chunk: validate_print_file_upload(validate_as, chunk)) if validate_as else None
+    total, _sha = await _stream_upload_to_path(file, dest, settings.library_max_upload_bytes, on_first_chunk=on_first)
+    return total
+
+
+@contextmanager
+def _upload_temp_file(safe_filename: str):
+    """A private temp path for one uploaded file, removed with its folder after.
+
+    Uploads used to share ``archive/temp/<name>``: two people uploading
+    ``plate_1.3mf`` at once overwrote, and then deleted, each other's file.
+    """
+    root = settings.archive_dir / "temp" / "uploads"
+    root.mkdir(parents=True, exist_ok=True)
+    folder = Path(tempfile.mkdtemp(dir=root))
+    try:
+        yield folder / safe_filename
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
 
 
 def _safe_filename(filename: str) -> str:
@@ -153,26 +221,15 @@ def _match_timelapse_by_timestamp(
     return best_video, best_diff
 
 
-async def _claimed_timelapse_stems(db, printer_id: int | None, exclude_archive_id: int) -> set[str]:
-    """Video filenames already attached to another archive of this printer (#2704).
+def _owner_scope(user: User | None, can_read_all: bool) -> int | None:
+    """The owner to scope cross-archive lookups to, or None for everyone's.
 
-    Lets the baseline diff drop a previous print's late-landing video from the
-    candidate list without ordering the candidates — ordering could only be done
-    on mtime or the filename timestamp, and both come from a clock the printer
-    can't sync in LAN-only mode. ``attach_timelapse`` stores the video under the
-    printer's own filename and the MP4 conversion keeps the stem, so the stem of
-    ``timelapse_path`` is what was claimed.
+    A caller limited to their own archives must not learn about other users'
+    through "similar" or "duplicate" lists either.
     """
-    if printer_id is None:
-        return set()
-    rows = await db.execute(
-        select(PrintArchive.timelapse_path).where(
-            PrintArchive.printer_id == printer_id,
-            PrintArchive.id != exclude_archive_id,
-            PrintArchive.timelapse_path.is_not(None),
-        )
-    )
-    return {Path(p).stem for p in rows.scalars().all() if p}
+    if can_read_all or user is None:
+        return None
+    return user.id
 
 
 def _ensure_archive_visible(
@@ -335,6 +392,37 @@ def _list_extra_data(extra_data: dict | None) -> dict | None:
     return {k: v for k, v in extra_data.items() if k != "_print_data"}
 
 
+async def _load_linked_folders(db: AsyncSession, archive_ids: list[int]) -> dict[int, dict]:
+    """``{archive_id: {"id", "name"}}`` -- each archive's first linked library
+    folder by name, in one query for the whole page."""
+    from backend.app.models.library import LibraryFolder
+
+    if not archive_ids:
+        return {}
+    linked: dict[int, dict] = {}
+    for chunk_start in range(0, len(archive_ids), 500):
+        chunk = archive_ids[chunk_start : chunk_start + 500]
+        rows = await db.execute(
+            select(LibraryFolder.archive_id, LibraryFolder.id, LibraryFolder.name)
+            .where(LibraryFolder.archive_id.in_(chunk))
+            .order_by(LibraryFolder.name)
+        )
+        for archive_id, folder_id, name in rows.all():
+            linked.setdefault(archive_id, {"id": folder_id, "name": name})
+    return linked
+
+
+def _response_list_extra_data(archive: PrintArchive) -> dict | None:
+    """The list's extra_data: the SQL-slimmed value when the query loaded it
+    (the full column is then deferred and must not be touched), else the full
+    column minus ``_print_data``."""
+    from sqlalchemy import inspect as sa_inspect
+
+    if "extra_data" in sa_inspect(archive).unloaded:
+        return archive.list_extra_data
+    return _list_extra_data(archive.extra_data)
+
+
 def archive_to_response(
     archive: PrintArchive,
     duplicates: list[dict] | None = None,
@@ -343,6 +431,7 @@ def archive_to_response(
     original_archive_id: int | None = None,
     run_aggregate: dict | None = None,
     include_print_data: bool = True,
+    linked_folder: dict | None = None,
 ) -> dict:
     """Convert archive model to response dict with computed fields."""
     data = {
@@ -362,6 +451,7 @@ def archive_to_response(
         "duplicate_count": duplicate_count if duplicates is None else len(duplicates),
         "duplicate_sequence": duplicate_sequence,
         "original_archive_id": original_archive_id,
+        "linked_folder": linked_folder,
         "print_name": archive.print_name,
         "plate_id": archive.plate_id,
         "print_time_seconds": archive.print_time_seconds,
@@ -379,7 +469,7 @@ def archive_to_response(
         "status": archive.status,
         "started_at": archive.started_at,
         "completed_at": archive.completed_at,
-        "extra_data": archive.extra_data if include_print_data else _list_extra_data(archive.extra_data),
+        "extra_data": archive.extra_data if include_print_data else _response_list_extra_data(archive),
         "makerworld_url": archive.makerworld_url,
         "designer": archive.designer,
         "external_url": archive.external_url,
@@ -438,6 +528,8 @@ async def list_archives(
             Permission.ARCHIVES_READ_OWN,
         )
     ),
+    can_read_library_all: bool = Depends(probe_permissions_if_auth_enabled(Permission.LIBRARY_READ_ALL)),
+    can_read_library_own: bool = Depends(probe_permissions_if_auth_enabled(Permission.LIBRARY_READ_OWN)),
 ):
     """List archived prints."""
     user, can_read_all = auth_result
@@ -451,6 +543,7 @@ async def list_archives(
         limit=limit,
         offset=offset,
         visible_to_user_id=visible_to_user_id,
+        slim_extra=True,
     )
 
     # Get sets of duplicate hashes and duplicate (name, hash) pairs (efficient single queries)
@@ -521,6 +614,11 @@ async def list_archives(
                 duplicate_meta_by_archive_id.setdefault(archive_id, (sequence, original_id, duplicate_count))
 
     run_aggregates = await _load_run_aggregates(db, [a.id for a in archives])
+    # The folder badge, batched: each card used to fetch it on mount (one
+    # request per archive). Same permission as the endpoint the cards called.
+    linked_folders = (
+        await _load_linked_folders(db, [a.id for a in archives]) if can_read_library_all or can_read_library_own else {}
+    )
 
     # Build response with duplicate sequence and original archive ID pre-computed
     result = []
@@ -548,6 +646,7 @@ async def list_archives(
                 original_archive_id=original_archive_id,
                 run_aggregate=run_aggregates.get(a.id),
                 include_print_data=False,
+                linked_folder=linked_folders.get(a.id),
             )
         )
     return result
@@ -599,14 +698,19 @@ async def no_3mf_warning(
     ]
     if user is not None and not can_read_all:
         conditions.append(PrintArchive.created_by_id == user.id)
-    result = await db.execute(select(PrintArchive.extra_data).where(*conditions))
+    # The two keys, read in SQL: decoding every row's whole extra_data (with
+    # its ~9 KB _print_data snapshot) for a month of archives cost ~12 MB of
+    # JSON parsing on the event loop per banner check.
+    result = await db.execute(
+        select(
+            PrintArchive.extra_data["no_3mf_available"].as_boolean(),
+            PrintArchive.extra_data["no_3mf_reason"].as_string(),
+        ).where(*conditions, PrintArchive.extra_data["no_3mf_available"].as_boolean().is_(True))
+    )
     reasons: set[str] = set()
     has_fallback = False
-    for (extra_data,) in result.all():
-        if not extra_data or not extra_data.get("no_3mf_available"):
-            continue
+    for _available, reason in result.all():
         has_fallback = True
-        reason = extra_data.get("no_3mf_reason")
         if reason:
             reasons.add(reason)
     if not has_fallback:
@@ -1065,8 +1169,6 @@ async def export_archives(
 
     Returns a downloadable file with archive data.
     """
-    from datetime import datetime
-
     from fastapi.responses import StreamingResponse
 
     from backend.app.services.export import ExportService
@@ -1404,19 +1506,35 @@ async def get_archive_stats(
     )
 
 
+# Live plug totals: each plug gets its own deadline and they are read
+# concurrently; the sum is reused briefly, since stats are refetched on every
+# print start and completion and the lifetime counter barely moves in a minute.
+_LIVE_PLUG_TIMEOUT_SECONDS = 5.0
+_LIVE_PLUG_CACHE_SECONDS = 60.0
+_live_plug_total_cache: dict[str, tuple[float, float]] = {}
+
+
 async def _sum_live_plug_totals(db: AsyncSession) -> float:
     """Sum the live lifetime counter from every smart plug.
 
     Used for all-time "total consumption" mode. Only the current value is
     available so this can't be date-filtered — use `_sum_snapshot_deltas` for
-    that case.
+    that case. Plugs are read concurrently with a timeout each (one after
+    another, a slow Home Assistant held the request for tens of seconds); a
+    plug that does not answer in time counts as 0.
     """
+    import time as _time
+
     from backend.app.api.routes.settings import get_setting
     from backend.app.models.smart_plug import SmartPlug
     from backend.app.services.homeassistant import homeassistant_service
     from backend.app.services.mqtt_relay import mqtt_relay
     from backend.app.services.rest_smart_plug import rest_smart_plug_service
     from backend.app.services.tasmota import tasmota_service
+
+    cached = _live_plug_total_cache.get("total")
+    if cached is not None and _time.monotonic() - cached[0] < _LIVE_PLUG_CACHE_SECONDS:
+        return cached[1]
 
     plugs_result = await db.execute(select(SmartPlug))
     plugs = list(plugs_result.scalars().all())
@@ -1425,25 +1543,31 @@ async def _sum_live_plug_totals(db: AsyncSession) -> float:
     ha_token = await get_setting(db, "ha_token") or ""
     homeassistant_service.configure(ha_url, ha_token)
 
-    total = 0.0
-    for plug in plugs:
+    async def _plug_total(plug) -> float:
         if plug.plug_type == "tasmota":
             energy = await tasmota_service.get_energy(plug)
-            if energy and energy.get("total") is not None:
-                total += energy["total"]
-        elif plug.plug_type == "homeassistant":
+            return energy["total"] if energy and energy.get("total") is not None else 0.0
+        if plug.plug_type == "homeassistant":
             energy = await homeassistant_service.get_energy(plug)
-            if energy and energy.get("total") is not None:
-                total += energy["total"]
-        elif plug.plug_type == "mqtt":
+            return energy["total"] if energy and energy.get("total") is not None else 0.0
+        if plug.plug_type == "mqtt":
             # MQTT plugs only expose today's counter, not lifetime.
             mqtt_data = mqtt_relay.smart_plug_service.get_plug_data(plug.id)
-            if mqtt_data and mqtt_data.energy is not None:
-                total += mqtt_data.energy
-        elif plug.plug_type == "rest":
+            return mqtt_data.energy if mqtt_data and mqtt_data.energy is not None else 0.0
+        if plug.plug_type == "rest":
             energy = await rest_smart_plug_service.get_energy(plug)
-            if energy and energy.get("today") is not None:
-                total += energy["today"]
+            return energy["today"] if energy and energy.get("today") is not None else 0.0
+        return 0.0
+
+    async def _bounded(plug) -> float:
+        try:
+            return await asyncio.wait_for(_plug_total(plug), _LIVE_PLUG_TIMEOUT_SECONDS)
+        except Exception as e:
+            logger.debug("Energy total from plug %s unavailable: %s", getattr(plug, "id", "?"), e)
+            return 0.0
+
+    total = float(sum(await asyncio.gather(*(_bounded(plug) for plug in plugs))))
+    _live_plug_total_cache["total"] = (_time.monotonic(), total)
     return total
 
 
@@ -1672,6 +1796,7 @@ async def get_archive(
         content_hash=archive.content_hash,
         print_name=archive.print_name,
         makerworld_model_id=makerworld_id,
+        owner_id=_owner_scope(user, can_read_all),
     )
     run_aggregates = await _load_run_aggregates(db, [archive.id])
     return archive_to_response(archive, duplicates, run_aggregate=run_aggregates.get(archive.id))
@@ -1763,7 +1888,7 @@ async def find_similar_archives(
 
     service = ArchiveComparisonService(db)
     try:
-        return await service.find_similar_archives(archive_id, limit=limit)
+        return await service.find_similar_archives(archive_id, limit=limit, owner_id=_owner_scope(user, can_read_all))
     except ValueError as e:
         raise HTTPException(404, str(e))
 
@@ -2108,24 +2233,36 @@ async def rescan_all_archives(
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_ALL),
 ):
-    """Rescan all archives and update their metadata."""
+    """Rescan all archives and update their metadata.
+
+    Live archives with a 3MF only: a no-3MF fallback has nothing to rescan
+    (reporting it as "File not found" flooded the result on H2 installs), and a
+    soft-deleted archive is gone. Each parse runs in a worker thread -- on the
+    event loop a few thousand of them froze MQTT, the WebSocket and the cameras
+    for minutes -- and progress is committed in batches.
+    """
+    from sqlalchemy.orm import defer
+
     from backend.app.services.archive import ThreeMFParser
 
-    result = await db.execute(select(PrintArchive))
+    result = await db.execute(
+        select(PrintArchive)
+        .options(defer(PrintArchive.extra_data))
+        .where(PrintArchive.deleted_at.is_(None), PrintArchive.file_path != "")
+    )
     archives = list(result.scalars().all())
 
     updated = 0
     errors = []
 
-    for archive in archives:
+    for index, archive in enumerate(archives, start=1):
         try:
             file_path = settings.base_dir / archive.file_path
             if not file_path.is_file():
                 errors.append({"id": archive.id, "error": "File not found"})
                 continue
 
-            parser = ThreeMFParser(file_path)
-            metadata = parser.parse()
+            metadata = await asyncio.to_thread(lambda path=file_path: ThreeMFParser(path).parse())
 
             if metadata.get("filament_type"):
                 archive.filament_type = metadata["filament_type"]
@@ -2150,6 +2287,8 @@ async def rescan_all_archives(
         except Exception as e:
             logger.exception("Failed to rescan archive %s: %s", archive.id, e)
             errors.append({"id": archive.id, "error": "Failed to parse 3MF file"})
+        if index % _RESCAN_COMMIT_EVERY == 0:
+            await db.commit()
 
     await db.commit()
     return {"updated": updated, "errors": errors}
@@ -2177,6 +2316,7 @@ async def get_archive_duplicates(
         content_hash=archive.content_hash,
         print_name=archive.print_name,
         makerworld_model_id=makerworld_id,
+        owner_id=_owner_scope(user, can_read_all),
     )
     return {"duplicates": duplicates, "count": len(duplicates)}
 
@@ -2186,25 +2326,41 @@ async def backfill_content_hashes(
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_ALL),
 ):
-    """Compute and store content hashes for all archives missing them."""
-    result = await db.execute(select(PrintArchive).where(PrintArchive.content_hash.is_(None)))
+    """Compute and store content hashes for all archives missing them.
+
+    Same shape as rescan-all: live archives with a 3MF, hashed in a worker
+    thread, committed in batches.
+    """
+    from sqlalchemy.orm import defer
+
+    result = await db.execute(
+        select(PrintArchive)
+        .options(defer(PrintArchive.extra_data))
+        .where(
+            PrintArchive.content_hash.is_(None),
+            PrintArchive.deleted_at.is_(None),
+            PrintArchive.file_path != "",
+        )
+    )
     archives = list(result.scalars().all())
 
     updated = 0
     errors = []
 
-    for archive in archives:
+    for index, archive in enumerate(archives, start=1):
         try:
             file_path = settings.base_dir / archive.file_path
             if not file_path.is_file():
                 errors.append({"id": archive.id, "error": "File not found"})
                 continue
 
-            archive.content_hash = ArchiveService.compute_file_hash(file_path)
+            archive.content_hash = await asyncio.to_thread(ArchiveService.compute_file_hash, file_path)
             updated += 1
         except Exception as e:
             logger.exception("Failed to compute hash for archive %s: %s", archive.id, e)
             errors.append({"id": archive.id, "error": "Failed to compute hash"})
+        if index % _RESCAN_COMMIT_EVERY == 0:
+            await db.commit()
 
     await db.commit()
     return {"updated": updated, "errors": errors}
@@ -2322,7 +2478,7 @@ async def download_archive(
 @router.get("/{archive_id}/file/{filename}")
 async def download_archive_with_filename(
     archive_id: int,
-    filename: str,
+    filename: str,  # noqa: ARG001 -- path segment only: slicers detect the format from the URL's filename
     db: AsyncSession = Depends(get_db),
     auth_result: tuple[User | None, bool] = Depends(
         require_ownership_permission(
@@ -2377,7 +2533,7 @@ async def create_archive_slicer_token(
 async def download_archive_for_slicer(
     archive_id: int,
     token: str,
-    filename: str,
+    filename: str,  # noqa: ARG001 -- path segment only: slicers detect the format from the URL's filename
     db: AsyncSession = Depends(get_db),
 ):
     """Download 3MF file using a slicer download token.
@@ -2472,11 +2628,11 @@ async def get_archive_printer_media(
     async with database.async_session() as db:
         archive = _ensure_archive_visible(await ArchiveService(db).get_archive(archive_id), user, can_read_all)
         printer = None
-        claimed_timelapse_stems: set[str] = set()
+        claimed_stems: set[str] = set()
         if archive.printer_id is not None:
             printer = (await db.execute(select(Printer).where(Printer.id == archive.printer_id))).scalar_one_or_none()
             if printer is not None and archive.timelapse_path is None:
-                claimed_timelapse_stems = await _claimed_timelapse_stems(db, archive.printer_id, archive_id)
+                claimed_stems = await claimed_timelapse_stems(db, archive.printer_id, archive_id)
 
     local_timelapse = None
     if archive.timelapse_path:
@@ -2519,7 +2675,7 @@ async def get_archive_printer_media(
     if local_timelapse is None:
         videos: list[dict] = []
         any_timelapse_directory_available = False
-        for timelapse_dir in ("/timelapse", "/timelapse/video", "/record", "/recording"):
+        for timelapse_dir in TIMELAPSE_DIRECTORIES:
             if ftps_handshake_blocked(printer.ip_address):
                 break
             listing = await list_files_result_async(
@@ -2546,7 +2702,7 @@ async def get_archive_printer_media(
                 file
                 for file in videos
                 if str(file.get("name") or "") not in baseline
-                and Path(str(file.get("name") or "")).stem not in claimed_timelapse_stems
+                and Path(str(file.get("name") or "")).stem not in claimed_stems
             ]
             if archive.timelapse_baseline is not None:
                 candidate = eligible[0] if len(eligible) == 1 else None
@@ -2721,6 +2877,172 @@ async def delete_timelapse(
     return {"status": "deleted"}
 
 
+async def _pull_and_attach_timelapse(
+    printer, archive_id: int, remote_path: str, name: str, expected_size: int | None
+) -> dict:
+    """Download a timelapse from the printer, attach it, then delete the original.
+
+    Shared by the automatic scan and the manual selection. In order: the
+    download (with the configured FTP retries), a check that the printer has
+    finished writing the file (#2704), the attach in a fresh short session, and
+    only then the delete on the printer -- a size-verified transfer committed to
+    the archive is the only thing that makes removing the original safe.
+    Raises HTTPException 500 on a failed download or attach, 409 while the
+    printer is still writing.
+    """
+    from backend.app.core.database import async_session
+    from backend.app.services.bambu_ftp import (
+        delete_archived_timelapse,
+        download_file_bytes_async,
+        get_ftp_retry_settings,
+        remote_file_settled,
+        with_ftp_retry,
+    )
+
+    ftp_retry_enabled, ftp_retry_count, ftp_retry_delay, ftp_timeout = await get_ftp_retry_settings()
+
+    if ftp_retry_enabled:
+        timelapse_data = await with_ftp_retry(
+            download_file_bytes_async,
+            printer.ip_address,
+            printer.access_code,
+            remote_path,
+            socket_timeout=ftp_timeout,
+            printer_model=printer.model,
+            expected_size=expected_size,
+            max_retries=ftp_retry_count,
+            retry_delay=ftp_retry_delay,
+            operation_name=f"Download timelapse {name}",
+            cooloff_ip=printer.ip_address,
+        )
+    else:
+        timelapse_data = await download_file_bytes_async(
+            printer.ip_address,
+            printer.access_code,
+            remote_path,
+            socket_timeout=ftp_timeout,
+            printer_model=printer.model,
+            expected_size=expected_size,
+        )
+
+    if not timelapse_data:
+        raise HTTPException(500, "Failed to download timelapse")
+
+    # Confirm the printer has finished writing before we commit to this file and
+    # delete the original: matching the listing's size proves we got what it
+    # said, not that the file was complete (#2704).
+    if not await remote_file_settled(
+        printer.ip_address,
+        printer.access_code,
+        remote_path,
+        len(timelapse_data),
+        printer_model=printer.model,
+    ):
+        raise HTTPException(409, "The printer is still writing this video — try again in a moment")
+
+    # Attach in a fresh short session (the read session was released before FTP).
+    async with async_session() as db:
+        success = await ArchiveService(db).attach_timelapse(archive_id, timelapse_data, name)
+    if not success:
+        raise HTTPException(500, "Failed to attach timelapse")
+
+    # Safe now, and only now: the transfer matched the size the listing reported
+    # and the bytes are committed to the archive (#2704).
+    await delete_archived_timelapse(
+        printer.ip_address,
+        printer.access_code,
+        remote_path,
+        verified=expected_size is not None,
+        printer_model=printer.model,
+        printer_name=printer.name,
+    )
+
+    return {
+        "status": "attached",
+        "message": f"Timelapse '{name}' attached successfully",
+        "filename": name,
+    }
+
+
+def _match_timelapse_by_clock(archive: PrintArchive, base_name: str, video_files: list[dict]) -> dict | None:
+    """The scan's clock-based strategies 1-4, first match wins.
+
+    Only for archives without a print-start baseline: every one of these reads
+    the printer's clock, which a LAN-only printer can't sync (#2704).
+    """
+    # Strategy 1: Match by print name in filename
+    for f in video_files:
+        fname = f.get("name", "")
+        if base_name.lower() in fname.lower():
+            return f
+
+    # Strategy 2: Match by timestamp proximity against print START time.
+    # Bambu timelapse filename embeds the print start time in printer-local clock.
+    # See _match_timelapse_by_timestamp for the offset-search rationale and why we
+    # intentionally don't try to match filename against end time here.
+    if archive.started_at:
+        candidate, diff = _match_timelapse_by_timestamp(video_files, archive.started_at)
+        if candidate is not None:
+            logger.info("Matched timelapse by timestamp: %s (diff: %s)", candidate.get("name"), diff)
+            return candidate
+
+    # Strategy 3: Use file modification time from FTP listing
+    # This handles cases where printer's filename timestamp is wrong but file mtime is correct
+    if archive.started_at or archive.completed_at or archive.created_at:
+        archive_end = archive.completed_at or archive.created_at
+        best_match = None
+        best_diff = timedelta(hours=24)
+
+        for f in video_files:
+            mtime = f.get("mtime")
+            if mtime:
+                # Timelapse file should be modified during or shortly after the print
+                # The mtime should be close to completion time (video finishes when print ends)
+                if archive_end:
+                    diff = abs(mtime - archive_end)
+                    if diff < best_diff:
+                        best_diff = diff
+                        best_match = f
+                        logger.debug(
+                            f"Timelapse mtime match candidate: {f.get('name')}, mtime: {mtime}, diff from end: {diff}"
+                        )
+
+        if best_match and best_diff < timedelta(hours=2):
+            logger.info("Matched timelapse by file mtime: %s (diff: %s)", best_match.get("name"), best_diff)
+            return best_match
+
+    # Strategy 4: If only one timelapse exists and archive was recently completed, use it
+    # This handles cases where printer clock is wrong or timezone issues exist
+    if len(video_files) == 1:
+        archive_completed = archive.completed_at or archive.created_at
+        if archive_completed:
+            if archive_completed.tzinfo is None:
+                archive_completed = archive_completed.replace(tzinfo=timezone.utc)
+            time_since_completion = datetime.now(timezone.utc) - archive_completed
+            # If archive was completed within the last hour, assume the single timelapse is for it
+            if time_since_completion < timedelta(hours=1):
+                logger.info("Using single timelapse file as fallback: %s", video_files[0].get("name"))
+                return video_files[0]
+
+    return None
+
+
+def _timelapse_choices(video_files: list[dict]) -> list[dict]:
+    """The videos offered for manual selection, most recent first."""
+    available_files = [
+        {
+            "name": f.get("name"),
+            "path": f.get("path"),
+            "size": f.get("size"),
+            "mtime": f.get("mtime").isoformat() if f.get("mtime") else None,
+        }
+        for f in video_files
+    ]
+    # Sort by mtime descending (most recent first)
+    available_files.sort(key=lambda x: x.get("mtime") or "", reverse=True)
+    return available_files
+
+
 @router.post("/{archive_id}/timelapse/scan")
 async def scan_timelapse(
     archive_id: int,
@@ -2730,13 +3052,8 @@ async def scan_timelapse(
     from backend.app.core.database import async_session
     from backend.app.models.printer import Printer
     from backend.app.services.bambu_ftp import (
-        delete_archived_timelapse,
-        download_file_bytes_async,
         ftps_handshake_blocked,
-        get_ftp_retry_settings,
         list_files_async,
-        remote_file_settled,
-        with_ftp_retry,
     )
 
     # Read the archive + printer in a short session and release the pooled DB
@@ -2767,7 +3084,7 @@ async def scan_timelapse(
     # Scan timelapse directory on printer
     # Different printer models use different paths
     files = []
-    for timelapse_path in ["/timelapse", "/timelapse/video", "/record", "/recording"]:
+    for timelapse_path in TIMELAPSE_DIRECTORIES:
         if ftps_handshake_blocked(printer.ip_address):
             break
         try:
@@ -2813,7 +3130,7 @@ async def scan_timelapse(
     if used_baseline:
         baseline = set(archive.timelapse_baseline)
         async with async_session() as db:
-            claimed = await _claimed_timelapse_stems(db, archive.printer_id, archive_id)
+            claimed = await claimed_timelapse_stems(db, archive.printer_id, archive_id)
         candidates = [
             f for f in video_files if f.get("name", "") not in baseline and Path(f.get("name", "")).stem not in claimed
         ]
@@ -2827,158 +3144,27 @@ async def scan_timelapse(
         else:
             logger.info("Baseline shows no unclaimed new video on the printer for archive %s", archive_id)
 
-    # Strategy 1: Match by print name in filename
+    # Strategies 1-4 read the printer's clock, so a baseline (when there is
+    # one) is authoritative and they are skipped.
     if not used_baseline:
-        for f in video_files:
-            fname = f.get("name", "")
-            if base_name.lower() in fname.lower():
-                matching_file = f
-                break
-
-    # Strategy 2: Match by timestamp proximity against print START time.
-    # Bambu timelapse filename embeds the print start time in printer-local clock.
-    # See _match_timelapse_by_timestamp for the offset-search rationale and why we
-    # intentionally don't try to match filename against end time here.
-    if not used_baseline and not matching_file and archive.started_at:
-        candidate, diff = _match_timelapse_by_timestamp(video_files, archive.started_at)
-        if candidate is not None:
-            matching_file = candidate
-            logger.info("Matched timelapse by timestamp: %s (diff: %s)", candidate.get("name"), diff)
-
-    # Strategy 3: Use file modification time from FTP listing
-    # This handles cases where printer's filename timestamp is wrong but file mtime is correct
-    if not used_baseline and not matching_file and (archive.started_at or archive.completed_at or archive.created_at):
-        from datetime import datetime, timedelta
-
-        _archive_start = archive.started_at
-        archive_end = archive.completed_at or archive.created_at
-        best_match = None
-        best_diff = timedelta(hours=24)
-
-        for f in video_files:
-            mtime = f.get("mtime")
-            if mtime:
-                # Timelapse file should be modified during or shortly after the print
-                # The mtime should be close to completion time (video finishes when print ends)
-                if archive_end:
-                    diff = abs(mtime - archive_end)
-                    if diff < best_diff:
-                        best_diff = diff
-                        best_match = f
-                        logger.debug(
-                            f"Timelapse mtime match candidate: {f.get('name')}, mtime: {mtime}, diff from end: {diff}"
-                        )
-
-        if best_match and best_diff < timedelta(hours=2):
-            matching_file = best_match
-            logger.info("Matched timelapse by file mtime: %s (diff: %s)", best_match.get("name"), best_diff)
-
-    # Strategy 4: If only one timelapse exists and archive was recently completed, use it
-    # This handles cases where printer clock is wrong or timezone issues exist
-    if not used_baseline and not matching_file and len(video_files) == 1:
-        from datetime import datetime, timedelta, timezone
-
-        archive_completed = archive.completed_at or archive.created_at
-        if archive_completed:
-            if archive_completed.tzinfo is None:
-                archive_completed = archive_completed.replace(tzinfo=timezone.utc)
-            time_since_completion = datetime.now(timezone.utc) - archive_completed
-            # If archive was completed within the last hour, assume the single timelapse is for it
-            if time_since_completion < timedelta(hours=1):
-                matching_file = video_files[0]
-                logger.info("Using single timelapse file as fallback: %s", video_files[0].get("name"))
+        matching_file = _match_timelapse_by_clock(archive, base_name, video_files)
 
     # Note: We intentionally don't use a "most recent file" fallback because
     # we can't verify if timelapse was actually enabled for this print.
     # Instead, return the list of available files for manual selection.
 
     if not matching_file:
-        # Return available files for manual selection
-        available_files = [
-            {
-                "name": f.get("name"),
-                "path": f.get("path"),
-                "size": f.get("size"),
-                "mtime": f.get("mtime").isoformat() if f.get("mtime") else None,
-            }
-            for f in video_files
-        ]
-        # Sort by mtime descending (most recent first)
-        available_files.sort(key=lambda x: x.get("mtime") or "", reverse=True)
         return {
             "status": "not_found",
             "message": "No matching timelapse found - please select manually",
-            "available_files": available_files,
+            "available_files": _timelapse_choices(video_files),
         }
 
     # Download the timelapse - use the full path from the file listing
     remote_path = matching_file.get("path") or f"/timelapse/{matching_file['name']}"
-
-    # Get FTP retry settings
-    ftp_retry_enabled, ftp_retry_count, ftp_retry_delay, ftp_timeout = await get_ftp_retry_settings()
-
-    if ftp_retry_enabled:
-        timelapse_data = await with_ftp_retry(
-            download_file_bytes_async,
-            printer.ip_address,
-            printer.access_code,
-            remote_path,
-            socket_timeout=ftp_timeout,
-            printer_model=printer.model,
-            expected_size=matching_file.get("size"),
-            max_retries=ftp_retry_count,
-            retry_delay=ftp_retry_delay,
-            operation_name=f"Download timelapse {matching_file['name']}",
-            cooloff_ip=printer.ip_address,
-        )
-    else:
-        timelapse_data = await download_file_bytes_async(
-            printer.ip_address,
-            printer.access_code,
-            remote_path,
-            socket_timeout=ftp_timeout,
-            printer_model=printer.model,
-            expected_size=matching_file.get("size"),
-        )
-
-    if not timelapse_data:
-        raise HTTPException(500, "Failed to download timelapse")
-
-    # Confirm the printer has finished writing before we commit to this file and
-    # delete the original: matching the listing's size proves we got what it
-    # said, not that the file was complete (#2704).
-    if not await remote_file_settled(
-        printer.ip_address,
-        printer.access_code,
-        remote_path,
-        len(timelapse_data),
-        printer_model=printer.model,
-    ):
-        raise HTTPException(409, "The printer is still writing this video — try again in a moment")
-
-    # Attach in a fresh short session (the read session was released before FTP).
-    async with async_session() as db:
-        success = await ArchiveService(db).attach_timelapse(archive_id, timelapse_data, matching_file["name"])
-
-    if not success:
-        raise HTTPException(500, "Failed to attach timelapse")
-
-    # Safe now, and only now: the transfer matched the size the listing reported
-    # and the bytes are committed to the archive (#2704).
-    await delete_archived_timelapse(
-        printer.ip_address,
-        printer.access_code,
-        remote_path,
-        verified=matching_file.get("size") is not None,
-        printer_model=printer.model,
-        printer_name=printer.name,
+    return await _pull_and_attach_timelapse(
+        printer, archive_id, remote_path, matching_file["name"], matching_file.get("size")
     )
-
-    return {
-        "status": "attached",
-        "message": f"Timelapse '{matching_file['name']}' attached successfully",
-        "filename": matching_file["name"],
-    }
 
 
 @router.post("/{archive_id}/timelapse/select")
@@ -2991,12 +3177,7 @@ async def select_timelapse(
     from backend.app.core.database import async_session
     from backend.app.models.printer import Printer
     from backend.app.services.bambu_ftp import (
-        delete_archived_timelapse,
-        download_file_bytes_async,
-        get_ftp_retry_settings,
         list_files_async,
-        remote_file_settled,
-        with_ftp_retry,
     )
 
     # Read the archive + printer in a short session and release the pooled DB
@@ -3019,7 +3200,7 @@ async def select_timelapse(
     files = []
     remote_path = None
     expected_size = None
-    for timelapse_dir in ["/timelapse", "/timelapse/video", "/record", "/recording"]:
+    for timelapse_dir in TIMELAPSE_DIRECTORIES:
         try:
             files = await list_files_async(
                 printer.ip_address, printer.access_code, timelapse_dir, printer_model=printer.model
@@ -3038,69 +3219,7 @@ async def select_timelapse(
         raise HTTPException(404, f"Timelapse '{filename}' not found on printer")
 
     # Download and attach
-    ftp_retry_enabled, ftp_retry_count, ftp_retry_delay, ftp_timeout = await get_ftp_retry_settings()
-
-    if ftp_retry_enabled:
-        timelapse_data = await with_ftp_retry(
-            download_file_bytes_async,
-            printer.ip_address,
-            printer.access_code,
-            remote_path,
-            socket_timeout=ftp_timeout,
-            printer_model=printer.model,
-            expected_size=expected_size,
-            max_retries=ftp_retry_count,
-            retry_delay=ftp_retry_delay,
-            operation_name=f"Download timelapse {filename}",
-            cooloff_ip=printer.ip_address,
-        )
-    else:
-        timelapse_data = await download_file_bytes_async(
-            printer.ip_address,
-            printer.access_code,
-            remote_path,
-            socket_timeout=ftp_timeout,
-            printer_model=printer.model,
-            expected_size=expected_size,
-        )
-
-    if not timelapse_data:
-        raise HTTPException(500, "Failed to download timelapse")
-
-    # Confirm the printer has finished writing before we commit to this file and
-    # delete the original: matching the listing's size proves we got what it
-    # said, not that the file was complete (#2704).
-    if not await remote_file_settled(
-        printer.ip_address,
-        printer.access_code,
-        remote_path,
-        len(timelapse_data),
-        printer_model=printer.model,
-    ):
-        raise HTTPException(409, "The printer is still writing this video — try again in a moment")
-
-    # Attach in a fresh short session (the read session was released before FTP).
-    async with async_session() as db:
-        success = await ArchiveService(db).attach_timelapse(archive_id, timelapse_data, filename)
-    if not success:
-        raise HTTPException(500, "Failed to attach timelapse")
-
-    # Safe now, and only now: the transfer matched the size the listing reported
-    # and the bytes are committed to the archive (#2704).
-    await delete_archived_timelapse(
-        printer.ip_address,
-        printer.access_code,
-        remote_path,
-        verified=expected_size is not None,
-        printer_model=printer.model,
-        printer_name=printer.name,
-    )
-
-    return {
-        "status": "attached",
-        "message": f"Timelapse '{filename}' attached successfully",
-        "filename": filename,
-    }
+    return await _pull_and_attach_timelapse(printer, archive_id, remote_path, filename, expected_size)
 
 
 @router.post("/{archive_id}/timelapse/upload")
@@ -3119,7 +3238,7 @@ async def upload_timelapse(
     if not file.filename or not file.filename.endswith((".mp4", ".avi", ".mkv")):
         raise HTTPException(400, "File must be a video file (.mp4, .avi, .mkv)")
 
-    content = await file.read()
+    content = await _read_upload_capped(file, settings.library_max_upload_bytes)
     safe_filename = _safe_filename(file.filename)
     success = await service.attach_timelapse(archive_id, content, safe_filename)
 
@@ -3218,7 +3337,6 @@ async def process_timelapse(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_ALL),
 ):
     """Process timelapse with trim, speed, and optional audio overlay."""
-    import shutil
     import tempfile
 
     from backend.app.schemas.timelapse import ProcessResponse
@@ -3249,21 +3367,27 @@ async def process_timelapse(
         if not audio.filename.lower().endswith((".mp3", ".wav", ".m4a", ".aac", ".ogg")):
             raise HTTPException(400, "Audio must be .mp3, .wav, .m4a, .aac, or .ogg")
 
-        audio_content = await audio.read()
+        audio_content = await _read_upload_capped(audio, _UPLOAD_AUDIO_MAX_BYTES)
         # Extract and validate suffix to prevent path injection
         suffix = Path(audio.filename).suffix.lower()
         if suffix not in (".mp3", ".wav", ".m4a", ".aac", ".ogg"):
             raise HTTPException(400, "Invalid audio file extension")
-        audio_temp_path = Path(tempfile.gettempdir()) / f"audio_{archive_id}{suffix}"
-        audio_temp_path.write_bytes(audio_content)
+        # A unique name: two edits of one archive shared audio_<id>.ext.
+        fd, audio_name = tempfile.mkstemp(prefix=f"audio_{archive_id}_", suffix=suffix)
+        audio_temp_path = Path(audio_name)
+        with os.fdopen(fd, "wb") as audio_file:
+            audio_file.write(audio_content)
 
+    temp_output = None
     try:
         processor = TimelapseProcessor(timelapse_path)
 
         # Determine output path
         if save_mode == "replace":
-            # Process to temp file first, then replace
-            temp_output = Path(tempfile.gettempdir()) / f"processed_{archive_id}.mp4"
+            # Process to a temp file beside the original, then swap it in: a
+            # unique name (two edits of one archive shared processed_<id>.mp4)
+            # on the same filesystem, so the swap is an atomic rename.
+            temp_output = archive_dir / f".processing_{uuid.uuid4().hex}.mp4"
             output_path = temp_output
         else:
             # Save as new file alongside original
@@ -3291,7 +3415,7 @@ async def process_timelapse(
         # Handle save mode
         if save_mode == "replace":
             # Replace original file
-            shutil.move(str(output_path), str(timelapse_path))
+            os.replace(output_path, timelapse_path)
             final_path = archive.timelapse_path
             message = "Timelapse replaced successfully"
         else:
@@ -3310,9 +3434,12 @@ async def process_timelapse(
         logger.error("Timelapse processing failed: %s", e)
         raise HTTPException(500, f"Processing failed: {str(e)}")
     finally:
-        # Cleanup temp audio file
-        if audio_temp_path and audio_temp_path.exists():
-            audio_temp_path.unlink()
+        # Clean up the temp audio, and a temp output a failed or cancelled run
+        # left behind (after a successful replace it has already been moved).
+        if audio_temp_path:
+            audio_temp_path.unlink(missing_ok=True)
+        if temp_output is not None:
+            temp_output.unlink(missing_ok=True)
 
 
 # ============================================
@@ -3353,7 +3480,7 @@ async def upload_photo(
     photo_path = photos_dir / photo_filename  # SEC-PATH-OK: photo_filename = uuid.uuid4().hex[:8] + ext
 
     # Save file
-    content = await file.read()
+    content = await _read_upload_capped(file, _UPLOAD_PHOTO_MAX_BYTES)
     photo_path.write_bytes(content)
 
     # Update archive photos list (create new list to trigger SQLAlchemy change detection)
@@ -3765,6 +3892,118 @@ async def get_qrcode(
     )
 
 
+_DEFAULT_BUILD_VOLUME = {"x": 256, "y": 256, "z": 256}
+
+
+def _zip_has_mesh(zf: zipfile.ZipFile, names: list[str]) -> bool:
+    """Whether any ``.model`` entry carries actual mesh data."""
+    for name in names:
+        if name.endswith(".model"):
+            try:
+                content = zf.read(name).decode("utf-8")
+                if "<vertex" in content or "<mesh" in content:
+                    return True
+            except Exception:
+                pass  # Skip unreadable .model entries in archive
+    return False
+
+
+def _read_project_settings(zf: zipfile.ZipFile, names: list[str]) -> dict | None:
+    """``Metadata/project_settings.config`` as a dict, or None if absent or malformed."""
+    if "Metadata/project_settings.config" not in names:
+        return None
+    try:
+        return json.loads(zf.read("Metadata/project_settings.config").decode("utf-8"))
+    except Exception:
+        return None  # Skip malformed project_settings.config
+
+
+def _apply_printable_volume(config_data: dict, volume: dict) -> None:
+    """Set *volume*'s x/y from ``printable_area`` and z from
+    ``printable_height``, each only when it parses."""
+    # Parse printable_area: ['0x0', '256x0', '256x256', '0x256']
+    printable_area = config_data.get("printable_area", [])
+    if printable_area and len(printable_area) >= 3:
+        max_x = 0
+        max_y = 0
+        for coord in printable_area:
+            if "x" in coord:
+                parts = coord.split("x")
+                if len(parts) == 2:
+                    try:
+                        x, y = int(parts[0]), int(parts[1])
+                        max_x = max(max_x, x)
+                        max_y = max(max_y, y)
+                    except ValueError:
+                        pass  # Skip non-numeric printable_area coordinate
+        if max_x > 0 and max_y > 0:
+            volume["x"] = max_x
+            volume["y"] = max_y
+
+    printable_height = config_data.get("printable_height")
+    if printable_height:
+        try:
+            volume["z"] = int(printable_height)
+        except (ValueError, TypeError):
+            pass  # Skip unparseable printable_height value
+
+
+def _source_3mf_info(zf_path: Path) -> tuple[bool, list[str], dict]:
+    """Mesh presence, filament colours and build volume of a source 3MF."""
+    found_mesh = False
+    colors: list[str] = []
+    volume = dict(_DEFAULT_BUILD_VOLUME)
+    try:
+        with zipfile.ZipFile(zf_path, "r") as zf:
+            names = zf.namelist()
+            found_mesh = _zip_has_mesh(zf, names)
+            config_data = _read_project_settings(zf, names)
+            if config_data is not None:
+                try:
+                    _apply_printable_volume(config_data, volume)
+                    for color in config_data.get("filament_colour", []) or []:
+                        if color and isinstance(color, str):
+                            colors.append(color)
+                except Exception:
+                    pass  # Skip malformed project_settings.config
+    except zipfile.BadZipFile:
+        pass  # File is not a valid zip/3MF archive
+    return found_mesh, colors, volume
+
+
+def _slice_info_filament_colors(zf: zipfile.ZipFile, names: list[str]) -> list[str]:
+    """Colours of the filaments a sliced plate uses, indexed by tool (gaps get
+    the default green); empty when slice_info is absent or malformed."""
+    import defusedxml.ElementTree as ET
+
+    slice_colors: list[str] = []
+    if "Metadata/slice_info.config" not in names:
+        return slice_colors
+    try:
+        root = ET.fromstring(zf.read("Metadata/slice_info.config").decode("utf-8"))
+        filament_map: dict[int, str] = {}
+        for f in root.findall(".//filament"):
+            fid = f.get("id")
+            fcolor = f.get("color")
+            try:
+                used_amount = float(f.get("used_g", "0"))
+            except (ValueError, TypeError):
+                used_amount = 0
+            if fid is not None and fcolor:
+                try:
+                    tool_id = int(fid) - 1
+                    if tool_id >= 0 and used_amount > 0:
+                        filament_map[tool_id] = fcolor
+                except ValueError:
+                    pass  # Skip filament entry with non-numeric ID
+        if filament_map:
+            for i in range(max(filament_map.keys()) + 1):
+                slice_colors.append(filament_map.get(i, "#00AE42"))
+    except Exception:
+        pass  # Skip malformed slice_info.config XML
+    return slice_colors
+
+
 @router.get("/{archive_id}/capabilities")
 async def get_archive_capabilities(
     archive_id: int,
@@ -3777,8 +4016,6 @@ async def get_archive_capabilities(
     ),
 ):
     """Check what viewing capabilities are available for this 3MF file."""
-    import defusedxml.ElementTree as ET
-
     user, can_read_all = auth_result
     service = ArchiveService(db)
     archive = _ensure_archive_visible(await service.get_archive(archive_id), user, can_read_all)
@@ -3790,7 +4027,7 @@ async def get_archive_capabilities(
     has_model = False
     has_gcode = False
     has_source = False
-    build_volume = {"x": 256, "y": 256, "z": 256}  # Default to X1/P1 size
+    build_volume = dict(_DEFAULT_BUILD_VOLUME)  # Default to X1/P1 size
     filament_colors: list[str] = []
 
     # Check if source 3MF exists - this is where actual mesh data typically lives
@@ -3800,82 +4037,14 @@ async def get_archive_capabilities(
         if source_path.exists():
             has_source = True
 
-    # Helper function to check for mesh data and extract colors from a 3MF file
-    def extract_3mf_info(zf_path: Path) -> tuple[bool, list[str], dict]:
-        """Extract mesh presence, colors, and build volume from a 3MF file."""
-        found_mesh = False
-        colors: list[str] = []
-        volume = {"x": 256, "y": 256, "z": 256}
-
-        try:
-            with zipfile.ZipFile(zf_path, "r") as zf:
-                names = zf.namelist()
-
-                # Check for 3D model - look for actual mesh data
-                for name in names:
-                    if name.endswith(".model"):
-                        try:
-                            content = zf.read(name).decode("utf-8")
-                            if "<vertex" in content or "<mesh" in content:
-                                found_mesh = True
-                                break
-                        except Exception:
-                            pass  # Skip unreadable .model entries in archive
-
-                # Extract filament colors from project_settings.config
-                if "Metadata/project_settings.config" in names:
-                    try:
-                        config_content = zf.read("Metadata/project_settings.config").decode("utf-8")
-                        config_data = json.loads(config_content)
-
-                        # Parse printable_area: ['0x0', '256x0', '256x256', '0x256']
-                        printable_area = config_data.get("printable_area", [])
-                        if printable_area and len(printable_area) >= 3:
-                            max_x = 0
-                            max_y = 0
-                            for coord in printable_area:
-                                if "x" in coord:
-                                    parts = coord.split("x")
-                                    if len(parts) == 2:
-                                        try:
-                                            x, y = int(parts[0]), int(parts[1])
-                                            max_x = max(max_x, x)
-                                            max_y = max(max_y, y)
-                                        except ValueError:
-                                            pass  # Skip non-numeric printable_area coordinate
-                            if max_x > 0 and max_y > 0:
-                                volume["x"] = max_x
-                                volume["y"] = max_y
-
-                        # Parse printable_height
-                        printable_height = config_data.get("printable_height")
-                        if printable_height:
-                            try:
-                                volume["z"] = int(printable_height)
-                            except (ValueError, TypeError):
-                                pass  # Skip unparseable printable_height value
-
-                        # Extract filament colors
-                        raw_colors = config_data.get("filament_colour", [])
-                        if raw_colors:
-                            for color in raw_colors:
-                                if color and isinstance(color, str):
-                                    colors.append(color)
-                    except Exception:
-                        pass  # Skip malformed project_settings.config
-        except zipfile.BadZipFile:
-            pass  # File is not a valid zip/3MF archive
-
-        return found_mesh, colors, volume
-
     # First check source 3MF for mesh data and colors (preferred for 3D model viewing)
     if has_source and source_path:
-        source_has_mesh, source_colors, source_volume = extract_3mf_info(source_path)
+        source_has_mesh, source_colors, source_volume = _source_3mf_info(source_path)
         if source_has_mesh:
             has_model = True
         if source_colors:
             filament_colors = source_colors
-        if source_volume["x"] != 256 or source_volume["y"] != 256 or source_volume["z"] != 256:
+        if source_volume != _DEFAULT_BUILD_VOLUME:
             build_volume = source_volume
 
     try:
@@ -3889,93 +4058,25 @@ async def get_archive_capabilities(
 
             # Check for 3D model in sliced file (fallback if no source)
             if not has_model:
-                for name in names:
-                    if name.endswith(".model"):
-                        try:
-                            content = zf.read(name).decode("utf-8")
-                            if "<vertex" in content or "<mesh" in content:
-                                has_model = True
-                                break
-                        except Exception:
-                            pass  # Skip unreadable .model entries in archive
+                has_model = _zip_has_mesh(zf, names)
 
-            # Extract filament colors from slice_info.config (for gcode preview)
-            # These are the actual filaments used in the print, indexed by tool/extruder
-            slice_colors: list[str] = []
-            if "Metadata/slice_info.config" in names:
-                try:
-                    slice_content = zf.read("Metadata/slice_info.config").decode("utf-8")
-                    root = ET.fromstring(slice_content)
+            # Use slice_info colors (the filaments the print actually used,
+            # indexed by tool) if we don't have colors from source yet
+            if not filament_colors:
+                filament_colors = _slice_info_filament_colors(zf, names) or filament_colors
 
-                    filaments = root.findall(".//filament")
-                    filament_map: dict[int, str] = {}
-                    for f in filaments:
-                        fid = f.get("id")
-                        fcolor = f.get("color")
-                        used_g = f.get("used_g", "0")
-                        try:
-                            used_amount = float(used_g)
-                        except (ValueError, TypeError):
-                            used_amount = 0
-
-                        if fid is not None and fcolor:
-                            try:
-                                tool_id = int(fid) - 1
-                                if tool_id >= 0 and used_amount > 0:
-                                    filament_map[tool_id] = fcolor
-                            except ValueError:
-                                pass  # Skip filament entry with non-numeric ID
-
-                    if filament_map:
-                        max_tool = max(filament_map.keys())
-                        for i in range(max_tool + 1):
-                            slice_colors.append(filament_map.get(i, "#00AE42"))
-                except Exception:
-                    pass  # Skip malformed slice_info.config XML
-
-            # Use slice_info colors if we don't have colors from source yet
-            if not filament_colors and slice_colors:
-                filament_colors = slice_colors
-
-            # Extract build volume from sliced file if not already set from source
+            # Extract build volume from sliced file if not already set from
+            # source, and its project colours as the last fallback. One guard
+            # for both, as before: a malformed value skips the rest.
             if build_volume["x"] == 256 and build_volume["y"] == 256:
-                if "Metadata/project_settings.config" in names:
+                config_data = _read_project_settings(zf, names)
+                if config_data is not None:
                     try:
-                        config_content = zf.read("Metadata/project_settings.config").decode("utf-8")
-                        config_data = json.loads(config_content)
-
-                        printable_area = config_data.get("printable_area", [])
-                        if printable_area and len(printable_area) >= 3:
-                            max_x = 0
-                            max_y = 0
-                            for coord in printable_area:
-                                if "x" in coord:
-                                    parts = coord.split("x")
-                                    if len(parts) == 2:
-                                        try:
-                                            x, y = int(parts[0]), int(parts[1])
-                                            max_x = max(max_x, x)
-                                            max_y = max(max_y, y)
-                                        except ValueError:
-                                            pass  # Skip non-numeric printable_area coordinate
-                            if max_x > 0 and max_y > 0:
-                                build_volume["x"] = max_x
-                                build_volume["y"] = max_y
-
-                        printable_height = config_data.get("printable_height")
-                        if printable_height:
-                            try:
-                                build_volume["z"] = int(printable_height)
-                            except (ValueError, TypeError):
-                                pass  # Skip unparseable printable_height value
-
-                        # Fallback colors from project_settings if still empty
+                        _apply_printable_volume(config_data, build_volume)
                         if not filament_colors:
-                            raw_colors = config_data.get("filament_colour", [])
-                            if raw_colors:
-                                for color in raw_colors:
-                                    if color and isinstance(color, str):
-                                        filament_colors.append(color)
+                            for color in config_data.get("filament_colour", []) or []:
+                                if color and isinstance(color, str):
+                                    filament_colors.append(color)
                     except Exception:
                         pass  # Skip malformed project_settings.config
 
@@ -4039,14 +4140,22 @@ async def get_gcode(
             else:
                 selected = default_plate_gcode_name(gcode_files)
 
-            gcode_content = zf.read(selected).decode("utf-8")
-            return Response(content=gcode_content, media_type="text/plain")
     except zipfile.BadZipFile:
         raise HTTPException(400, "Invalid 3MF file")
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(500, f"Error extracting G-code: {str(e)}")
+
+    # Streamed in chunks from a sync generator, which Starlette iterates in its
+    # thread pool: a plate's G-code can be hundreds of MB, and reading and
+    # decoding it whole on the event loop stalled every printer's MQTT.
+    def _chunks():
+        with zipfile.ZipFile(file_path, "r") as zf, zf.open(selected) as member:
+            while chunk := member.read(1 << 20):
+                yield chunk
+
+    return StreamingResponse(_chunks(), media_type="text/plain; charset=utf-8")
 
 
 @router.get("/{archive_id}/plate-preview")
@@ -4154,20 +4263,13 @@ async def upload_archive(
 
     # Save uploaded file temporarily — strip directory components to prevent path traversal
     safe_filename = _safe_filename(file.filename)
-    temp_path = (
-        settings.archive_dir / "temp" / safe_filename
-    )  # SEC-PATH-OK: safe_filename = _safe_filename(...) basename-stripped above
-    temp_path.parent.mkdir(parents=True, exist_ok=True)
-
-    try:
-        content = await file.read()
+    # SEC-PATH-OK: safe_filename = _safe_filename(...) basename-stripped above
+    with _upload_temp_file(safe_filename) as temp_path:
         # #1401: same content validation as library upload — catches
         # raw-gcode-renamed-to-.3mf and other unprintable shapes before
-        # archiving them and offering them up for print.
-        from backend.app.api.routes.library import validate_print_file_upload
-
-        validate_print_file_upload(file.filename, content)
-        temp_path.write_bytes(content)
+        # archiving them and offering them up for print. Streamed to disk
+        # under the size cap rather than read into memory whole.
+        await _stream_upload(file, temp_path, file.filename)
 
         service = ArchiveService(db)
         archive = await service.archive_print(
@@ -4181,9 +4283,6 @@ async def upload_archive(
             raise HTTPException(400, "Failed to archive file")
 
         return ArchiveResponse.model_validate(archive)
-    finally:
-        if temp_path.exists():
-            temp_path.unlink()
 
 
 @router.post("/upload-bulk")
@@ -4206,7 +4305,6 @@ async def upload_archives_bulk(
     prefer_filename_for_name applies to every file in the batch. See
     upload_archive for the flag's lineage.
     """
-    from backend.app.api.routes.library import validate_print_file_upload
 
     results = []
     errors = []
@@ -4217,48 +4315,43 @@ async def upload_archives_bulk(
             continue
 
         safe_filename = _safe_filename(file.filename)
-        temp_path = (
-            settings.archive_dir / "temp" / safe_filename
-        )  # SEC-PATH-OK: safe_filename = _safe_filename(...) basename-stripped above
-        temp_path.parent.mkdir(parents=True, exist_ok=True)
-
-        try:
-            content = await file.read()
-            # #1401: bulk-upload variant of the library validation. Collect
-            # the rejection per-file rather than aborting the whole batch
-            # so one bad file in a 10-file drag-drop doesn't lose the
-            # other nine.
+        # SEC-PATH-OK: safe_filename = _safe_filename(...) basename-stripped above
+        with _upload_temp_file(safe_filename) as temp_path:
             try:
-                validate_print_file_upload(file.filename, content)
-            except HTTPException as exc:
-                errors.append({"filename": file.filename, "error": exc.detail})
-                continue
-            temp_path.write_bytes(content)
+                # #1401: bulk-upload variant of the library validation. Collect
+                # the rejection (bad content, or over the size cap) per-file
+                # rather than aborting the whole batch so one bad file in a
+                # 10-file drag-drop doesn't lose the other nine.
+                try:
+                    await _stream_upload(file, temp_path, file.filename)
+                except HTTPException as exc:
+                    errors.append({"filename": file.filename, "error": exc.detail})
+                    continue
 
-            service = ArchiveService(db)
-            archive = await service.archive_print(
-                printer_id=printer_id,
-                source_file=temp_path,
-                created_by_id=current_user.id if current_user else None,
-                prefer_filename_for_name=prefer_filename_for_name,
-            )
-
-            if archive:
-                results.append(
-                    {
-                        "filename": file.filename,
-                        "id": archive.id,
-                        "status": "success",
-                    }
+                service = ArchiveService(db)
+                archive = await service.archive_print(
+                    printer_id=printer_id,
+                    source_file=temp_path,
+                    created_by_id=current_user.id if current_user else None,
+                    prefer_filename_for_name=prefer_filename_for_name,
                 )
-            else:
-                errors.append({"filename": file.filename, "error": "Failed to process"})
-        except Exception as e:
-            logger.exception("Failed to upload archive %s: %s", file.filename, e)
-            errors.append({"filename": file.filename, "error": "Failed to process file"})
-        finally:
-            if temp_path.exists():
-                temp_path.unlink()
+
+                if archive:
+                    results.append(
+                        {
+                            "filename": file.filename,
+                            "id": archive.id,
+                            "status": "success",
+                        }
+                    )
+                else:
+                    errors.append({"filename": file.filename, "error": "Failed to process"})
+            except Exception as e:
+                logger.exception("Failed to upload archive %s: %s", file.filename, e)
+                errors.append({"filename": file.filename, "error": "Failed to process file"})
+                # A failed flush or commit leaves the session needing a rollback;
+                # without one every later file in the batch failed with it.
+                await db.rollback()
 
     return {
         "uploaded": len(results),
@@ -4284,8 +4377,6 @@ async def get_archive_plates(
     Returns a list of plates with their index, name, thumbnail availability,
     and filament requirements. For single-plate exports, returns a single plate.
     """
-    import re
-
     import defusedxml.ElementTree as ET
 
     user, can_read_all = auth_result
@@ -4348,7 +4439,7 @@ async def get_archive_plates(
                     and "no_light" not in n
                 ]
                 plate_name_candidates = plate_json_files + plate_png_files
-                plate_re = re.compile(r"^Metadata/plate_(\d+)\.(json|png)$")
+                plate_re = _re.compile(r"^Metadata/plate_(\d+)\.(json|png)$")
                 seen_indices: set[int] = set()
                 for name in plate_name_candidates:
                     match = plate_re.match(name)
@@ -4511,7 +4602,7 @@ async def get_archive_plates(
             # Parse plate_*.json for object lists when slice_info is missing
             plate_json_objects: dict[int, list[str]] = {}
             for name in namelist:
-                match = re.match(r"^Metadata/plate_(\d+)\.json$", name)
+                match = _re.match(r"^Metadata/plate_(\d+)\.json$", name)
                 if not match:
                     continue
                 try:
@@ -4590,6 +4681,7 @@ async def get_archive_plates(
 async def get_plate_thumbnail(
     archive_id: int,
     plate_index: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     auth_result: tuple[User | None, bool] = Depends(
         require_media_token_ownership(
@@ -4611,12 +4703,27 @@ async def get_plate_thumbnail(
     if not file_path.is_file():
         raise HTTPException(404, "Archive file not found")
 
-    try:
+    # Revalidated by ETag (the 3MF's mtime and size, and the plate): hovering a
+    # card or switching plates re-requests the image, and each request used to
+    # reopen the zip on the event loop. "no-cache" because a 3MF filled in
+    # later can replace the file behind the same URL.
+    stat = file_path.stat()
+    etag = f'"{stat.st_mtime_ns:x}-{stat.st_size:x}-{plate_index}"'
+    cache_headers = {"ETag": etag, "Cache-Control": "private, no-cache"}
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers=cache_headers)
+
+    def _read_plate_png() -> bytes | None:
         with zipfile.ZipFile(file_path, "r") as zf:
             thumb_path = f"Metadata/plate_{plate_index}.png"
             if thumb_path in zf.namelist():
-                data = zf.read(thumb_path)
-                return Response(content=data, media_type="image/png")
+                return zf.read(thumb_path)
+        return None
+
+    try:
+        data = await asyncio.to_thread(_read_plate_png)
+        if data is not None:
+            return Response(content=data, media_type="image/png", headers=cache_headers)
     except Exception:
         pass  # Fall through to 404 if archive is unreadable or thumbnail missing
 
@@ -5011,7 +5118,7 @@ async def get_project_page(
 @router.patch("/{archive_id}/project-page")
 async def update_project_page(
     archive_id: int,
-    update_data: dict,
+    update_data: ProjectPageUpdate,
     db: AsyncSession = Depends(get_db),
     auth_result: tuple[User | None, bool] = Depends(
         require_ownership_permission(
@@ -5032,13 +5139,20 @@ async def update_project_page(
         raise HTTPException(404, "Archive file not found")
 
     parser = ProjectPageParser(file_path)
-    success = parser.update_metadata(update_data)
+    # Re-zipping a large 3MF takes seconds: off the event loop.
+    success = await asyncio.to_thread(parser.update_metadata, update_data.model_dump(exclude_unset=True))
 
     if not success:
         raise HTTPException(500, "Failed to update project page")
 
+    # The file changed, so does what the row says about it (duplicate
+    # detection matches on content_hash).
+    archive.file_size = file_path.stat().st_size
+    archive.content_hash = await asyncio.to_thread(ArchiveService.compute_file_hash, file_path)
+    await db.commit()
+
     # Return updated data
-    data = parser.parse(archive_id)
+    data = await asyncio.to_thread(parser.parse, archive_id)
     return data
 
 
@@ -5089,6 +5203,45 @@ async def get_project_image(
 
 
 def _resolve_source_3mf_path(archive: PrintArchive, source_filename: str) -> Path:
+    return _resolve_attachment_path(archive, "source", source_filename)
+
+
+async def _stream_attachment(file: UploadFile, path: Path, validate_as: str | None = None) -> None:
+    """Stream an upload to *path* without ever leaving a half-written file there.
+
+    Written beside the target and swapped in with ``os.replace``, so a full
+    disk, a 413 or a crash leaves either the old file or the new one, never a
+    truncated mix -- the target may be the very file being replaced.
+    """
+    import os
+
+    tmp = path.with_name(f".{path.name}.part")
+    try:
+        await _stream_upload(file, tmp, validate_as)
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+def _drop_replaced_attachment(old_relpath: str | None, new_relpath: str) -> None:
+    """Remove the file an upload replaced, once the new one is committed.
+
+    Only after the commit, so a rejected or failed upload never costs the old
+    file; and only when the path differs, since a same-name upload replaced it
+    in place. Never anything outside the data volume.
+    """
+    if not old_relpath or old_relpath == new_relpath:
+        return
+    old_path = settings.base_dir / old_relpath  # SEC-PATH-OK: resolve()+relative_to(base_dir) checked below
+    try:
+        old_path.resolve().relative_to(settings.base_dir.resolve())
+    except ValueError:
+        logger.warning("Not deleting %s: outside the data directory", old_path)
+        return
+    old_path.unlink(missing_ok=True)
+
+
+def _resolve_attachment_path(archive: PrintArchive, kind: str, attachment_filename: str) -> Path:
     """Resolve where to write a source 3MF for ``archive``.
 
     Normal archives nest the source under ``<archive_file_dir>/source/``.
@@ -5109,9 +5262,13 @@ def _resolve_source_3mf_path(archive: PrintArchive, source_filename: str) -> Pat
     """
     if archive.file_path:
         archive_file = settings.base_dir / archive.file_path
-        source_dir = archive_file.parent / "source"
+        source_dir = archive_file.parent / kind
     else:
+        # The source keeps the folder it has always had; anything else nests
+        # inside it, so deleting the archive removes it too (#2968).
         source_dir = settings.base_dir / "archive" / "no_source" / str(archive.id)
+        if kind != "source":
+            source_dir = source_dir / kind  # SEC-PATH-OK: kind is the literal "source" or "f3d" from our callers
 
     # Containment check via resolve() — catches absolute file_path, `..`
     # traversal, and any other shape that escapes the data volume — but we
@@ -5126,12 +5283,12 @@ def _resolve_source_3mf_path(archive: PrintArchive, source_filename: str) -> Pat
     except ValueError as exc:
         raise HTTPException(
             500,
-            f"Archive {archive.id} resolves to a path outside the data directory; cannot attach source.",
+            f"Archive {archive.id} resolves to a path outside the data directory; cannot attach {kind}.",
         ) from exc
 
     source_dir.mkdir(parents=True, exist_ok=True)
     return (
-        source_dir / source_filename
+        source_dir / attachment_filename
     )  # SEC-PATH-OK: callers pass _safe_filename(...) basename-stripped; source_dir resolve+relative_to checked above
 
 
@@ -5159,26 +5316,20 @@ async def upload_source_3mf(
     source_filename = _safe_filename(file.filename)
     source_path = _resolve_source_3mf_path(archive, source_filename)
 
-    # Delete old source file if exists
-    if archive.source_3mf_path:
-        old_source_path = settings.base_dir / archive.source_3mf_path
-        if old_source_path.exists():
-            old_source_path.unlink()
-
-    content = await file.read()
     # #1401: validate zip header on source 3MF uploads too — source files
     # are uploaded for reprint and slicing, so an invalid one breaks the
     # same downstream paths as a bad sliced file.
-    from backend.app.api.routes.library import validate_print_file_upload
-
-    validate_print_file_upload(file.filename, content)
-    source_path.write_bytes(content)
+    # The old source goes only once the new one is in place and committed: a
+    # rejected or failed upload used to cost the only copy.
+    old_source = archive.source_3mf_path
+    await _stream_attachment(file, source_path, file.filename)
 
     # Update archive with source path (relative to base_dir)
     archive.source_3mf_path = str(source_path.relative_to(settings.base_dir))
 
     await db.commit()
     await db.refresh(archive)
+    _drop_replaced_attachment(old_source, archive.source_3mf_path)
 
     return {
         "status": "uploaded",
@@ -5373,25 +5524,17 @@ async def upload_source_3mf_by_name(
     source_filename = safe_filename
     source_path = _resolve_source_3mf_path(archive, source_filename)
 
-    # Delete old source file if exists
-    if archive.source_3mf_path:
-        old_source_path = settings.base_dir / archive.source_3mf_path
-        if old_source_path.exists():
-            old_source_path.unlink()
-
-    content = await file.read()
     # #1401: same zip-header check as the other upload routes — the
     # match-by-name endpoint is used by slicer post-processing scripts,
     # so a misconfigured script is exactly how a bad 3MF would slip in.
-    from backend.app.api.routes.library import validate_print_file_upload
-
-    validate_print_file_upload(file.filename, content)
-    source_path.write_bytes(content)
+    old_source = archive.source_3mf_path
+    await _stream_attachment(file, source_path, file.filename)
 
     # Update archive with source path
     archive.source_3mf_path = str(source_path.relative_to(settings.base_dir))
     await db.commit()
     await db.refresh(archive)
+    _drop_replaced_attachment(old_source, archive.source_3mf_path)
 
     return {
         "status": "uploaded",
@@ -5458,30 +5601,21 @@ async def upload_f3d(
     if not file.filename or not file.filename.endswith(".f3d"):
         raise HTTPException(400, "File must be a .f3d file")
 
-    # Get archive directory and create f3d subdirectory
-    file_path = settings.base_dir / archive.file_path
-    archive_dir = file_path.parent
-    f3d_dir = archive_dir / "f3d"
-    f3d_dir.mkdir(exist_ok=True)
-
-    # Delete old F3D file if exists
-    if archive.f3d_path:
-        old_f3d_path = settings.base_dir / archive.f3d_path
-        if old_f3d_path.exists():
-            old_f3d_path.unlink()
-
-    # Save the F3D file - preserve original filename, strip directory components
+    # Save the F3D file - preserve original filename, strip directory components.
+    # The folder comes from the shared resolver: a fallback archive has no
+    # file_path, and deriving the folder from it wrote outside the data volume.
     f3d_filename = _safe_filename(file.filename)
-    f3d_path = f3d_dir / f3d_filename  # SEC-PATH-OK: f3d_filename = _safe_filename(...) basename-stripped above
+    f3d_path = _resolve_attachment_path(archive, "f3d", f3d_filename)
 
-    content = await file.read()
-    f3d_path.write_bytes(content)
+    old_f3d = archive.f3d_path
+    await _stream_attachment(file, f3d_path)
 
     # Update archive with F3D path (relative to base_dir)
     archive.f3d_path = str(f3d_path.relative_to(settings.base_dir))
 
     await db.commit()
     await db.refresh(archive)
+    _drop_replaced_attachment(old_f3d, archive.f3d_path)
 
     return {
         "status": "uploaded",

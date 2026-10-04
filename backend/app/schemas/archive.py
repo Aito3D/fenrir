@@ -107,6 +107,10 @@ class ArchiveResponse(BaseModel):
     duplicate_count: int = 0  # Quick count for list views
     duplicate_sequence: int = 0  # 0 = original, 1+ = nth duplicate
     original_archive_id: int | None = None  # ID of the first/original archive
+    # First library folder linked to this archive ({id, name}), for the card's
+    # folder badge. List responses only, and only for callers who may read the
+    # library; None otherwise.
+    linked_folder: dict | None = None
 
     # Object count (computed from extra_data.printable_objects)
     object_count: int | None = None

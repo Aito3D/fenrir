@@ -112,6 +112,19 @@ export function withStreamToken(url: string): string {
 }
 
 /** Append the media token to a URL if available (for <img>/<video> src). */
+// Archive thumbnail cache-busting. A per-load stamp plus a per-archive counter,
+// so the URL is stable between renders (the browser cache works) but moves
+// whenever the image may have changed: a new archive can reuse a deleted one's
+// id (e97d697d9), and a 3MF filled in later or rescanned replaces the cover.
+// `?v=${Date.now()}` built a new URL on every render, re-downloading every
+// thumbnail on every hover, keystroke and refetch.
+const THUMBNAIL_LOAD_STAMP = Date.now();
+const thumbnailBumps = new Map<number, number>();
+
+export function bumpArchiveThumbnail(id: number): void {
+  thumbnailBumps.set(id, (thumbnailBumps.get(id) ?? 0) + 1);
+}
+
 export function withMediaToken(url: string): string {
   if (!mediaToken) return url;
   const sep = url.includes('?') ? '&' : '?';
@@ -868,6 +881,9 @@ export interface Archive {
   duplicate_count: number;
   duplicate_sequence: number;  // 0 = original, 1+ = nth duplicate
   original_archive_id: number | null;  // ID of the first/original archive
+  // First linked library folder, for the card's folder badge (list responses;
+  // null without library read permission).
+  linked_folder?: { id: number; name: string } | null;
   object_count: number | null;
   print_name: string | null;
   plate_id: number | null;  // Selected plate of a multi-plate 3MF (#2603)
@@ -6561,6 +6577,24 @@ export const api = {
     if (dateTo) params.set('date_to', dateTo);
     return request<Archive[]>(`/archives/?${params}`);
   },
+  // Every archive, in pages: one limit=10000 request silently dropped the
+  // oldest archives once an install passed 10,000. Offset paging over a live
+  // newest-first list can repeat a row when one is added between pages, so
+  // ids are kept once.
+  getAllArchives: async (printerId?: number, pageSize = 10000): Promise<Archive[]> => {
+    const rows: Archive[] = [];
+    const seen = new Set<number>();
+    for (let offset = 0; ; offset += pageSize) {
+      const page = await api.getArchives(printerId, undefined, pageSize, offset);
+      for (const row of page) {
+        if (!seen.has(row.id)) {
+          seen.add(row.id);
+          rows.push(row);
+        }
+      }
+      if (page.length < pageSize) return rows;
+    }
+  },
   getArchivesSlim: (dateFrom?: string, dateTo?: string, createdById?: number) => {
     const params = new URLSearchParams();
     if (dateFrom) params.set('date_from', dateFrom);
@@ -6640,8 +6674,12 @@ export const api = {
   // from listings, but its filament / time / cost / energy contribution
   // stays in Quick Stats. Pass purgeStats=true to hard-delete and drop the
   // row from statistics too.
-  deleteArchive: (id: number, purgeStats: boolean = false) =>
-    request<void>(`/archives/${id}${purgeStats ? '?purge_stats=true' : ''}`, { method: 'DELETE' }),
+  deleteArchive: async (id: number, purgeStats: boolean = false) => {
+    await request<void>(`/archives/${id}${purgeStats ? '?purge_stats=true' : ''}`, { method: 'DELETE' });
+    // The id can be handed to the next archive (e97d697d9): its cover must
+    // not come from the browser cache.
+    bumpArchiveThumbnail(id);
+  },
 
   // ========== Archive auto-purge (#1008 follow-up) ==========
   previewArchivePurge: (olderThanDays: number, purgeStats: boolean = false) =>
@@ -6788,7 +6826,8 @@ export const api = {
     request<{ updated: number; errors: Array<{ id: number; error: string }> }>('/archives/backfill-hashes', {
       method: 'POST',
     }),
-  getArchiveThumbnail: (id: number) => withMediaToken(`${API_BASE}/archives/${id}/thumbnail?v=${Date.now()}`),
+  getArchiveThumbnail: (id: number) =>
+    withMediaToken(`${API_BASE}/archives/${id}/thumbnail?v=${THUMBNAIL_LOAD_STAMP}-${thumbnailBumps.get(id) ?? 0}`),
   getArchivePlateThumbnail: (id: number, plateIndex: number) =>
     withMediaToken(`${API_BASE}/archives/${id}/plate-thumbnail/${plateIndex}`),
   getArchiveDownload: (id: number) => `${API_BASE}/archives/${id}/download`,

@@ -2310,6 +2310,7 @@ export default {
       toggledFavorites: 'Favoris mis à jour pour {{count}} archive(s)',
       failedUpdateFavorites: 'Échec mise à jour favoris',
       archivesDeleted: '{{count}} archive(s) supprimée(s)',
+      someArchivesNotDeleted: "{{failed}} archives sur {{total}} n'ont pas pu être supprimées",
       failedDeleteArchives: 'Échec suppression',
       photoDeleted: 'Photo supprimée',
       failedDeletePhoto: 'Échec suppression photo',

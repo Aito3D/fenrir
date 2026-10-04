@@ -16,7 +16,7 @@ import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core import database as _database
@@ -52,15 +52,53 @@ def _age_cutoff(now: datetime, older_than_days: int) -> datetime:
 def _last_activity_expr():
     """Most-recent timestamp on an archive row.
 
-    Reprints reuse the archive row and update ``completed_at``/``started_at`` but
-    leave ``created_at`` pinned to the first print, so purging on ``created_at``
-    would evict recently-reprinted archives. Use the latest of the three instead.
+    Reprints reuse the archive row and update ``started_at`` (and later
+    ``completed_at``) but leave ``created_at`` pinned to the first print, so
+    purging on ``created_at`` would evict recently-reprinted archives. The
+    latest of the three counts -- a CASE rather than ``coalesce``, which took
+    the *first* non-null one: a reprint running right now still had its old
+    ``completed_at``, so it aged by that and could be purged mid-print. Each
+    column falls back to ``created_at`` so a NULL never wins; CASE keeps it
+    portable (SQLite's ``max()`` and PostgreSQL's ``greatest()`` differ).
     """
-    return func.coalesce(
-        PrintArchive.completed_at,
-        PrintArchive.started_at,
-        PrintArchive.created_at,
+    created = PrintArchive.created_at
+    completed = func.coalesce(PrintArchive.completed_at, created)
+    started = func.coalesce(PrintArchive.started_at, created)
+    return case(
+        (and_(completed >= started, completed >= created), completed),
+        (started >= created, started),
+        else_=created,
     )
+
+
+def _eligible_clause(cutoff: datetime, purge_stats: bool):
+    """Which archives a purge may take: shared by the preview and the purge,
+    so the count the dialog shows is the count that goes.
+
+    Never a favourite (the purge dialog tells people to favourite what they
+    want to keep), never a print still running, and never an archive with a
+    queued or running job -- deleting it deleted the job with it.
+    """
+    from backend.app.models.print_queue import PrintQueueItem
+
+    active_job = (
+        select(PrintQueueItem.id)
+        .where(PrintQueueItem.archive_id == PrintArchive.id, PrintQueueItem.status.in_(("pending", "printing")))
+        .exists()
+    )
+    clause = and_(
+        _last_activity_expr() < cutoff,
+        or_(PrintArchive.is_favorite.is_(None), PrintArchive.is_favorite.is_(False)),
+        or_(PrintArchive.status.is_(None), PrintArchive.status != "printing"),
+        ~active_job,
+    )
+    if not purge_stats:
+        # Soft-delete mode must also skip rows already soft-deleted, otherwise
+        # a repeat sweeper run keeps re-touching the same rows. Hard-delete
+        # mode doesn't filter -- already-soft-deleted rows are eligible for
+        # promotion to hard-delete when the user opts in.
+        clause = and_(clause, PrintArchive.deleted_at.is_(None))
+    return clause
 
 
 class ArchivePurgeService:
@@ -201,16 +239,11 @@ class ArchivePurgeService:
             }
         now = datetime.now(timezone.utc)
         cutoff = _age_cutoff(now, older_than_days)
-        last_activity = _last_activity_expr()
-        clause = last_activity < cutoff
+        clause = _eligible_clause(cutoff, purge_stats)
 
         count_stmt = select(func.count(PrintArchive.id)).where(clause)
         size_stmt = select(func.coalesce(func.sum(PrintArchive.file_size), 0)).where(clause)
-        sample_stmt = select(PrintArchive.filename).where(clause).order_by(last_activity).limit(sample_limit)
-        if not purge_stats:
-            count_stmt = count_stmt.where(PrintArchive.deleted_at.is_(None))
-            size_stmt = size_stmt.where(PrintArchive.deleted_at.is_(None))
-            sample_stmt = sample_stmt.where(PrintArchive.deleted_at.is_(None))
+        sample_stmt = select(PrintArchive.filename).where(clause).order_by(_last_activity_expr()).limit(sample_limit)
 
         count_result = await db.execute(count_stmt)
         count = int(count_result.scalar() or 0)
@@ -258,13 +291,7 @@ class ArchivePurgeService:
         now = datetime.now(timezone.utc)
         cutoff = _age_cutoff(now, older_than_days)
 
-        # Soft-delete mode must also skip rows already soft-deleted, otherwise
-        # a repeat sweeper run keeps re-touching the same rows. Hard-delete
-        # mode doesn't filter — already-soft-deleted rows are eligible for
-        # promotion to hard-delete when the user opts in.
-        select_stmt = select(PrintArchive.id).where(_last_activity_expr() < cutoff)
-        if not purge_stats:
-            select_stmt = select_stmt.where(PrintArchive.deleted_at.is_(None))
+        select_stmt = select(PrintArchive.id).where(_eligible_clause(cutoff, purge_stats))
         id_result = await db.execute(select_stmt)
         ids = [row[0] for row in id_result.all()]
         if not ids:

@@ -264,3 +264,62 @@ class TestReconcileStaleActivePrints:
         # Only the second archive is recorded as reconciled (first raised).
         assert count == 1
         assert mock_complete.await_count == 2
+
+
+class TestReconciledStatus:
+    """What a synthesised completion reports (2026-10-04).
+
+    It was always "aborted", so a print that finished normally while Fenrir
+    was restarting or disconnected became a failure: Failure Analysis and the
+    stats counted it, its log row got no filament and the billing took the
+    partial-run path. A FINISH or FAILED that still names this job is proof of
+    how it ended; anything else stays "aborted".
+    """
+
+    def test_finish_of_this_job_is_completed(self):
+        from backend.app.main import _reconciled_status
+
+        assert _reconciled_status(_archive(subtask_id="ABC123"), _state("FINISH", subtask_id="ABC123")) == "completed"
+
+    def test_failed_of_this_job_is_failed(self):
+        from backend.app.main import _reconciled_status
+
+        assert _reconciled_status(_archive(subtask_id="ABC123"), _state("FAILED", subtask_id="ABC123")) == "failed"
+
+    def test_finish_matched_by_name_when_ids_are_missing(self):
+        from backend.app.main import _reconciled_status
+
+        archive = _archive(subtask_id=None, print_name="ghost")
+        assert _reconciled_status(archive, _state("FINISH", subtask_name="ghost")) == "completed"
+
+    @pytest.mark.parametrize(
+        "state",
+        [
+            _state("FINISH", subtask_id="OTHER"),  # a later job finished
+            _state("FINISH"),  # nothing names the job
+            _state("IDLE", subtask_id="ABC123"),
+            _state("RUNNING", subtask_id="OTHER", subtask_name="x"),
+        ],
+    )
+    def test_anything_else_stays_aborted(self, state):
+        from backend.app.main import _reconciled_status
+
+        assert _reconciled_status(_archive(subtask_id="ABC123"), state) == "aborted"
+
+    @pytest.mark.asyncio
+    async def test_the_synthesised_completion_carries_it(self):
+        from backend.app.main import reconcile_stale_active_prints
+
+        done = _archive(subtask_id="ABC123")
+        with patch("backend.app.main.printer_manager") as mock_pm:
+            mock_pm.get_status.return_value = _state("FINISH", subtask_id="ABC123", subtask_name="ghost")
+            with patch("backend.app.main.async_session") as mock_session:
+                session_ctx = AsyncMock()
+                session_ctx.execute = AsyncMock(return_value=MagicMock(scalars=lambda: MagicMock(all=lambda: [done])))
+                mock_session.return_value.__aenter__.return_value = session_ctx
+                with patch("backend.app.main.on_print_complete", new=AsyncMock()) as mock_complete:
+                    await reconcile_stale_active_prints(printer_id=1)
+        payload = mock_complete.call_args.args[1]
+        assert payload["status"] == "completed"
+        assert payload["progress"] == 100
+        assert payload["_reconciled"] is True

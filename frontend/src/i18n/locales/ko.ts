@@ -2245,6 +2245,7 @@ export default {
       toggledFavorites: '{{count}}개 아카이브의 즐겨찾기가 변경됨',
       failedUpdateFavorites: '즐겨찾기 업데이트 실패',
       archivesDeleted: '{{count}}개 아카이브가 삭제됨',
+      someArchivesNotDeleted: "{{total}}개 중 {{failed}}개의 보관 항목을 삭제하지 못했습니다",
       failedDeleteArchives: '아카이브 삭제 실패',
       photoDeleted: '사진이 삭제됨',
       failedDeletePhoto: '사진 삭제 실패'

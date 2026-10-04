@@ -255,3 +255,80 @@ async def test_auto_purge_skipped_when_disabled(
 
     db_session.expire_all()
     assert await db_session.get(PrintArchive, stale_id) is not None
+
+
+async def _old(archive_factory, printer_id, name, **fields):
+    archive = await archive_factory(printer_id, print_name=name, file_size=100)
+    archive.created_at = datetime.now(timezone.utc) - timedelta(days=400)
+    for key, value in fields.items():
+        setattr(archive, key, value)
+    return archive
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_purge_keeps_favourites(async_client: AsyncClient, archive_factory, printer_factory, db_session):
+    """The purge dialog says "favourite anything you want to keep"."""
+    printer = await printer_factory()
+    await _old(archive_factory, printer.id, "Fav", is_favorite=True)
+    await _old(archive_factory, printer.id, "Plain")
+    await db_session.commit()
+
+    preview = (await async_client.get("/api/v1/archives/purge/preview?older_than_days=365")).json()
+    assert preview["count"] == 1
+    assert preview["total_bytes"] == 100
+
+    body = (await async_client.post("/api/v1/archives/purge", json={"older_than_days": 365})).json()
+    assert body["deleted"] == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_purge_keeps_a_printing_archive(async_client: AsyncClient, archive_factory, printer_factory, db_session):
+    printer = await printer_factory()
+    await _old(archive_factory, printer.id, "Running", status="printing")
+    await db_session.commit()
+
+    assert (await async_client.get("/api/v1/archives/purge/preview?older_than_days=365")).json()["count"] == 0
+    assert (await async_client.post("/api/v1/archives/purge", json={"older_than_days": 365})).json()["deleted"] == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_purge_keeps_an_archive_with_a_queued_job(
+    async_client: AsyncClient, archive_factory, printer_factory, db_session
+):
+    """Purging it deleted the pending reprint along with it."""
+    from backend.app.models.print_queue import PrintQueueItem
+
+    printer = await printer_factory()
+    queued = await _old(archive_factory, printer.id, "Queued")
+    done = await _old(archive_factory, printer.id, "Done")
+    await db_session.commit()
+    db_session.add(PrintQueueItem(printer_id=printer.id, archive_id=queued.id, status="pending"))
+    db_session.add(PrintQueueItem(printer_id=printer.id, archive_id=done.id, status="completed"))
+    await db_session.commit()
+
+    assert (await async_client.get("/api/v1/archives/purge/preview?older_than_days=365")).json()["count"] == 1
+    assert (await async_client.post("/api/v1/archives/purge", json={"older_than_days": 365})).json()["deleted"] == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_a_reprint_counts_from_its_latest_start(
+    async_client: AsyncClient, archive_factory, printer_factory, db_session
+):
+    """A reprint resets started_at but not completed_at, so the old completion
+    date used to win and a reprint started today could be purged."""
+    now = datetime.now(timezone.utc)
+    printer = await printer_factory()
+    await _old(
+        archive_factory,
+        printer.id,
+        "Reprinted",
+        completed_at=now - timedelta(days=400),
+        started_at=now - timedelta(days=1),
+    )
+    await db_session.commit()
+
+    assert (await async_client.get("/api/v1/archives/purge/preview?older_than_days=365")).json()["count"] == 0

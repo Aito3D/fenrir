@@ -1059,3 +1059,14 @@ def books_agrees_with_the_imported_quote(request, monkeypatch):
 
     monkeypatch.setattr(aito_routes, "_with_books_quote_snapshot", _books_agrees)
     yield
+
+
+@pytest.fixture(autouse=True)
+def _reset_live_plug_total_cache():
+    """The archive stats' live plug total is cached for a minute; one test's
+    plug values must not answer another's."""
+    from backend.app.api.routes import archives
+
+    archives._live_plug_total_cache.clear()
+    yield
+    archives._live_plug_total_cache.clear()

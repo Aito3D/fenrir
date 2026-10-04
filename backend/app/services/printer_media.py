@@ -28,6 +28,9 @@ from backend.app.services.bambu_ftp import (
 logger = logging.getLogger(__name__)
 
 VIDEO_SUFFIXES = (".mp4", ".avi", ".mkv")
+# Where Bambu firmware writes timelapse videos on the card, in the order every
+# timelapse lookup (scan, selection list, print-completion attach) walks them.
+TIMELAPSE_DIRECTORIES = ("/timelapse", "/timelapse/video", "/record", "/recording")
 MAX_PRINTER_ZIP_BYTES = 10 * 1024**3
 PRINTER_ZIP_FREE_SPACE_RESERVE = 256 * 1024**2
 _STALE_BUNDLE_SECONDS = 60 * 60

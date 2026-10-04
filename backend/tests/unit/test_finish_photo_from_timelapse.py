@@ -42,7 +42,7 @@ async def _fake_session(archive):
 def fake_archive():
     """Mutable archive stand-in. Tests flip `.timelapse_path` to simulate
     the timelapse-attach task writing to the DB."""
-    return SimpleNamespace(id=42, timelapse_path=None)
+    return SimpleNamespace(id=42, timelapse_path=None, deleted_at=None)
 
 
 @pytest.fixture(autouse=True)

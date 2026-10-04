@@ -96,10 +96,10 @@ REASON_FTPS_COOLOFF = "ftps_cooloff"
 # knows an attempt was made and failed in transit rather than answering 550.
 REASON_FTP_TRANSFER_FAILED = "ftp_transfer_failed"
 
-# Where a sliced file has ever been found over FTPS, in the order the sweep in
-# `main.py` tries them -- root first, which is where A1/P1-series uploads land
-# (#972), then `/cache`, which is where the H2D keeps its copy of an eMMC job
-# (#2856).
+# Where a sliced file has ever been found over FTPS, in the order every lookup
+# tries them (the sweep and the probes in `main.py` all use ftp_probe_paths) --
+# root first, which is where A1/P1-series uploads land (#972), then `/cache`,
+# which is where the H2 series keeps its copy of an eMMC job (#2856).
 _PROBE_DIRECTORIES = ("/", "/cache/", "/model/", "/data/", "/data/Metadata/")
 
 # Longest name worth probing for. Every filesystem the printer could be serving

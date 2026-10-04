@@ -12,6 +12,44 @@ from backend.app.utils.ffmpeg_output import NO_FFMPEG_OUTPUT, summarize_ffmpeg_s
 logger = logging.getLogger(__name__)
 
 
+# A trim/re-encode of a long timelapse takes minutes on a small server; past
+# this it is treated as stalled. ffprobe and single-frame grabs are quick.
+PROCESS_TIMEOUT_SECONDS = 30 * 60
+PROBE_TIMEOUT_SECONDS = 60
+
+
+async def _run(cmd: list[str], timeout: float) -> tuple[int | None, bytes, bytes]:
+    """Run ffmpeg/ffprobe and return ``(returncode, stdout, stderr)``.
+
+    The child is killed (and reaped) when it overruns *timeout* -- returned as
+    ``(None, b"", b"")`` -- and when the awaiting request is cancelled, which
+    otherwise leaves ffmpeg running after the browser has gone away.
+    """
+    process = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout)
+    except TimeoutError:
+        logger.error("%s did not finish within %ss; killed", cmd[0], timeout)
+        await _kill(process)
+        return None, b"", b""
+    except asyncio.CancelledError:
+        await _kill(process)
+        raise
+    return process.returncode, stdout, stderr
+
+
+async def _kill(process) -> None:
+    try:
+        process.kill()
+    except ProcessLookupError:
+        pass
+    await process.wait()
+
+
 class TimelapseProcessor:
     """Service for processing timelapse videos with FFmpeg."""
 
@@ -36,14 +74,9 @@ class TimelapseProcessor:
             str(self.input_path),
         ]
 
-        process = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, stderr = await process.communicate()
+        returncode, stdout, stderr = await _run(cmd, PROBE_TIMEOUT_SECONDS)
 
-        if process.returncode != 0:
+        if returncode != 0:
             # Summarised once and used for both: the raise carried a second,
             # bare ``stderr.decode()`` that could itself raise UnicodeDecodeError
             # on the bytes ffprobe copies out of a broken file (#2968).
@@ -124,12 +157,7 @@ class TimelapseProcessor:
                 ]
 
                 async with semaphore:
-                    process = await asyncio.create_subprocess_exec(
-                        *cmd,
-                        stdout=asyncio.subprocess.PIPE,
-                        stderr=asyncio.subprocess.PIPE,
-                    )
-                    await process.communicate()
+                    await _run(cmd, PROBE_TIMEOUT_SECONDS)
 
                 if output_path.exists():
                     return (timestamp, output_path.read_bytes())
@@ -234,15 +262,9 @@ class TimelapseProcessor:
         logger.info("Processing timelapse: %s", " ".join(cmd))
 
         # Run FFmpeg
-        process = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
+        returncode, _, stderr = await _run(cmd, PROCESS_TIMEOUT_SECONDS)
 
-        _, stderr = await process.communicate()
-
-        if process.returncode != 0:
+        if returncode != 0:
             logger.error("FFmpeg processing failed: %s", summarize_ffmpeg_stderr(stderr) or NO_FFMPEG_OUTPUT)
             return False
 
