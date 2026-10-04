@@ -49,6 +49,12 @@ describe('ProjectListPage', () => {
     expect(screen.getAllByText('drone').length).toBeGreaterThan(0);
   });
 
+  it('makes the title a keyboard-reachable link', async () => {
+    render(<ProjectListPage />);
+    const link = await screen.findByRole('link', { name: 'Support caméra' });
+    expect(link).toHaveAttribute('href', '/projects/1');
+  });
+
   it('defaults to active projects', async () => {
     render(<ProjectListPage />);
     await screen.findByText('P-0001');

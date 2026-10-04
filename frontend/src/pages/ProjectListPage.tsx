@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { ChevronLeft, ChevronRight, LayoutGrid, List, Plus, Search } from 'lucide-react';
 import { api, type ProjectSearchItem } from '../api/client';
@@ -198,7 +198,12 @@ export function ProjectListPage() {
                     <ProjectCodeChip code={project.code} />
                   </td>
                   <td className="px-4 py-3">
-                    <div className="font-medium text-white">{project.name}</div>
+                    <Link
+                      to={`/projects/${project.id}`}
+                      className={`rounded font-medium text-white hover:underline ${focusRingCls}`}
+                    >
+                      {project.name}
+                    </Link>
                     {project.description && (
                       <div className="line-clamp-1 text-xs text-bambu-gray">{project.description}</div>
                     )}
