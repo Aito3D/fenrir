@@ -200,6 +200,7 @@ const DE_COGNATES = [
 const FR_COGNATES = [
   'Message',  // aito.track.paymentMethods.appMessage — same word in French
   'Auto ({{resolved}})', 'Backend & Auth',  // real words/terms in this locale
+  'Machines',  // maintenance.hours.machines — same word in French
   'Scan',  // aito.serviceScan3D — "Scan" is the term in this locale too
   'Urgent',  // aito.urgent — same word in French (adjectif : « urgent »)
   'Terminal',  // aito.payment.cellTerminal — same word in French (« terminal de paiement »)
@@ -342,6 +343,7 @@ const JA_COGNATES = [
 
 // Portuguese (BR) cognates.
 const PT_BR_COGNATES = [
+  'manual',  // maintenance.hours.manual — same word in this locale
   '{{hours}} h ≈ {{days}} d',  // aito.backlogShort — hour/day unit abbreviations are the same in this locale
   'Manual',  // aito.priceManual — same word in Portuguese
   'Apps',  // notifications badge for messages from connected apps — same word
@@ -461,6 +463,7 @@ const KO_COGNATES = [
 
 // Spanish cognates — words/phrases that are genuinely identical in Spanish.
 const ES_COGNATES = [
+  'manual',  // maintenance.hours.manual — same word in this locale
   '{{hours}} h ≈ {{days}} d',  // aito.backlogShort — hour/day unit abbreviations are the same in this locale
   'Manual',  // aito.priceManual — same word in Spanish (adjetivo « manual »)
   'Auto', 'Auto ({{resolved}})',  // real words/terms in this locale
@@ -606,6 +609,7 @@ const UK_COGNATES = [
 // are used untranslated by Dutch slicer users. Each entry below was
 // checked individually against the Dutch translation in #2891.
 const NL_COGNATES = [
+  'Machines', 'Machines: {{n}}',  // maintenance.hours.* — same word in Dutch
   '<b>{{count}}</b> project', // aito.clientHistoryProjects_one: the Dutch singular is the same word
   // Fork keys (calculator / filament-profiles): formulas, units and loanwords
   // that are the same word in Dutch.

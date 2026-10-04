@@ -43,6 +43,7 @@ import { Card, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
 import { Toggle } from '../components/Toggle';
 import { ConfirmModal } from '../components/ConfirmModal';
+import { HoursTab } from '../components/maintenance/hours/HoursTab';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useStaggeredEntrance } from '../hooks/useStaggeredEntrance';
@@ -1092,7 +1093,7 @@ function SettingsSection({
   );
 }
 
-type TabType = 'status' | 'settings';
+type TabType = 'status' | 'settings' | 'hours';
 
 export function MaintenancePage() {
   const { t } = useTranslation();
@@ -1258,6 +1259,8 @@ export function MaintenancePage() {
               {totalWarning > 0 && <span className="text-amber-700 dark:text-amber-400">{t('maintenance.warningCount', { count: totalWarning })}</span>}
               {totalDue === 0 && totalWarning === 0 && <span className="text-bambu-green">{t('maintenance.allOk')}</span>}
             </>
+          ) : activeTab === 'hours' ? (
+            t('maintenance.hours.subtitle')
           ) : (
             t('maintenance.configureSettings')
           )}
@@ -1286,10 +1289,22 @@ export function MaintenancePage() {
         >
           {t('maintenance.settingsTab')}
         </button>
+        <button
+          onClick={() => setActiveTab('hours')}
+          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+            activeTab === 'hours'
+              ? 'text-bambu-green border-bambu-green'
+              : 'text-bambu-gray border-transparent hover:text-white'
+          }`}
+        >
+          {t('maintenance.hours.tab')}
+        </button>
       </div>
 
       {/* Tab content */}
-      {activeTab === 'status' ? (
+      {activeTab === 'hours' ? (
+        <HoursTab />
+      ) : activeTab === 'status' ? (
         <div ref={statusListRef} className="space-y-6">
           {overview && overview.length > 0 ? (
             [...overview].sort((a, b) => {
