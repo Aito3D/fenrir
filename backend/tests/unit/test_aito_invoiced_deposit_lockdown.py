@@ -12,6 +12,16 @@ from backend.tests.unit.test_aito_invoice_create import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _fresh_rate_limiter():
+    """The counter-payment limiter is a module global shared across tests on a worker."""
+    from backend.app.api.routes import aito as aito_routes
+
+    aito_routes._ai_rate_limit_calls.clear()
+    yield
+    aito_routes._ai_rate_limit_calls.clear()
+
+
 async def _project(db, **fields) -> AitoProject:
     base = {
         "description": "x",
