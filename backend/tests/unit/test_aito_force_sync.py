@@ -48,6 +48,14 @@ def stubs(monkeypatch):
     state = {"credit": 0.0, "invoices": [], "flush": True, "settled": None, "reconciled": []}
 
     async def flush_and_wait(project_id, *a, **k):
+        # Like the worker: a pending card comes back settled (nothing changed).
+        from backend.app.core import database as dbmod
+
+        async with dbmod.async_session() as other:
+            row = await other.get(AitoProject, project_id)
+            if row.quote_sync_state == "pending":
+                row.quote_sync_state = "locked" if row.quote_invoiced else "idle"
+                await other.commit()
         return state["flush"]
 
     async def read_customer_credit(db, customer_id, cache=None):
@@ -73,6 +81,11 @@ def stubs(monkeypatch):
     monkeypatch.setattr("backend.app.services.aito_force_sync.read_customer_credit", read_customer_credit)
     monkeypatch.setattr(zoho_service, "list_project_invoices", list_project_invoices)
     monkeypatch.setattr("backend.app.services.aito_invoice_sweep.settle_with_deposits", settle)
+
+    async def zoho_configured(db):
+        return True
+
+    monkeypatch.setattr(zoho_service, "is_configured", zoho_configured)
     monkeypatch.setattr(heimdall_service, "is_configured", is_configured)
     monkeypatch.setattr("backend.app.services.aito_payment_links.reconcile_payment_links", reconcile)
     return state
@@ -167,6 +180,18 @@ async def test_no_quote_skips_every_zoho_step(async_client, db_session, stubs):
     steps = _by_key(r.json())
     assert steps["quote"]["detail"] == {"reason": "no_quote"}
     assert steps["invoice"]["outcome"] == "skipped"
+    await db_session.refresh(p)
+    assert p.quote_sync_state == "idle"
+    queued = (
+        (
+            await db_session.execute(
+                select(AitoEvent).where(AitoEvent.project_id == p.id, AitoEvent.kind == "sync.queued")
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert queued == []
 
 
 @pytest.mark.asyncio
@@ -191,3 +216,104 @@ async def test_records_one_event(async_client, db_session, stubs):
     )
     assert len(rows) == 1
     assert rows[0].detail["steps"]["quote"] == "in_sync"
+
+
+def _leave_row(monkeypatch, **columns):
+    """A flush that lands as the worker would: columns written and committed
+    through a separate session before the waiter is released."""
+    from backend.app.core import database as dbmod
+
+    async def flush_and_wait(project_id, *a, **k):
+        async with dbmod.async_session() as other:
+            row = await other.get(AitoProject, project_id)
+            for k_, v in columns.items():
+                setattr(row, k_, v)
+            await other.commit()
+        return True
+
+    monkeypatch.setattr(aito_quote_sync, "flush_and_wait", flush_and_wait)
+
+
+@pytest.mark.asyncio
+async def test_pending_after_flush_without_error_is_rate_limited(async_client, db_session, stubs, monkeypatch):
+    p = await _project(db_session, quote_sync_state="idle", quote_invoiced=False)
+    _leave_row(monkeypatch, quote_sync_state="pending", quote_sync_error=None)
+    r = await async_client.post(f"/api/v1/aito/{p.id}/force-sync")
+    steps = _by_key(r.json())
+    assert steps["quote"] == {"key": "quote", "outcome": "failed", "detail": {"reason": "rate_limited"}}
+    assert steps["credit"]["detail"] == {"reason": "rate_limited"}
+    assert steps["credit"]["outcome"] == "skipped"
+    assert steps["invoice"] == {"key": "invoice", "outcome": "skipped", "detail": {"reason": "rate_limited"}}
+
+
+@pytest.mark.asyncio
+async def test_pending_after_flush_with_error_is_upstream(async_client, db_session, stubs, monkeypatch):
+    p = await _project(db_session, quote_sync_state="idle", quote_invoiced=False)
+    _leave_row(monkeypatch, quote_sync_state="pending", quote_sync_error="Books is down")
+    r = await async_client.post(f"/api/v1/aito/{p.id}/force-sync")
+    assert _by_key(r.json())["quote"] == {
+        "key": "quote",
+        "outcome": "failed",
+        "detail": {"reason": "upstream", "message": "Books is down"},
+    }
+
+
+@pytest.mark.asyncio
+async def test_cleared_error_counts_as_fixed(async_client, db_session, stubs, monkeypatch):
+    p = await _project(db_session, quote_sync_state="error", quote_sync_error="boom", quote_invoiced=False)
+    _leave_row(monkeypatch, quote_sync_state="idle", quote_sync_error=None)
+    r = await async_client.post(f"/api/v1/aito/{p.id}/force-sync")
+    assert _by_key(r.json())["quote"] == {"key": "quote", "outcome": "fixed", "detail": {"error_cleared": True}}
+
+
+@pytest.mark.asyncio
+async def test_failed_deposit_application_is_failed(async_client, db_session, stubs, monkeypatch):
+    p = await _project(db_session)
+    invoice = {"id": "INV1", "number": "FA-1", "balance": 7000.0, "status": "draft", "due_date": ""}
+    stubs["invoices"] = [invoice]
+
+    async def settle(db, project_id, quote_id, inv, quote_number=None):
+        return inv, None
+
+    monkeypatch.setattr("backend.app.services.aito_invoice_sweep.settle_with_deposits", settle)
+    r = await async_client.post(f"/api/v1/aito/{p.id}/force-sync")
+    assert _by_key(r.json())["invoice"] == {"key": "invoice", "outcome": "failed", "detail": {"reason": "unreachable"}}
+
+
+@pytest.mark.asyncio
+async def test_unreachable_credit_fails_and_unconfigured_zoho_skips(async_client, db_session, stubs, monkeypatch):
+    p = await _project(db_session)
+    stubs["credit"] = None
+    r = await async_client.post(f"/api/v1/aito/{p.id}/force-sync")
+    assert _by_key(r.json())["credit"] == {"key": "credit", "outcome": "failed", "detail": {"reason": "unreachable"}}
+
+    async def not_configured(db):
+        return False
+
+    monkeypatch.setattr(zoho_service, "is_configured", not_configured)
+    r = await async_client.post(f"/api/v1/aito/{p.id}/force-sync")
+    assert _by_key(r.json())["credit"] == {
+        "key": "credit",
+        "outcome": "skipped",
+        "detail": {"reason": "not_configured"},
+    }
+
+
+@pytest.mark.asyncio
+async def test_links_pass_that_visited_nothing_is_rate_limited(async_client, db_session, stubs, monkeypatch):
+    p = await _project(db_session)
+
+    async def heimdall_on(db):
+        return True
+
+    async def reconcile(db, **kw):
+        return 0
+
+    monkeypatch.setattr(heimdall_service, "is_configured", heimdall_on)
+    monkeypatch.setattr("backend.app.services.aito_payment_links.reconcile_payment_links", reconcile)
+    r = await async_client.post(f"/api/v1/aito/{p.id}/force-sync")
+    assert _by_key(r.json())["payment_links"] == {
+        "key": "payment_links",
+        "outcome": "skipped",
+        "detail": {"reason": "rate_limited"},
+    }

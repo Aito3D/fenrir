@@ -59,9 +59,18 @@ async def _quote_step(db: AsyncSession, project: AitoProject, *, queued: bool, b
         return StepResult("quote", "failed", {"reason": "timeout"})
     await db.refresh(project)  # the worker committed in its own session
     after = quote_snapshot(project)
+    if after["state"] == "pending":
+        # The worker's attempt did not land: a 429 leaves the card pending with
+        # no error (the worker already armed the throttle), a transient upstream
+        # failure below the failure budget leaves it pending with the error set.
+        if after["error"]:
+            return StepResult("quote", "failed", {"reason": "upstream", "message": after["error"]})
+        return StepResult("quote", "failed", {"reason": "rate_limited"})
     if after["state"] == "error" or (after["state"] == "locked" and not project.quote_invoiced and after["error"]):
         return StepResult("quote", "failed", {"reason": "refused", "message": after["error"] or ""})
     changed = {k: {"before": before[k], "after": after[k]} for k in ("total", "status") if before[k] != after[k]}
+    if (before["state"] == "error" or before["error"]) and not after["error"]:
+        changed["error_cleared"] = True
     return StepResult("quote", "fixed", changed) if changed else StepResult("quote", "in_sync")
 
 
@@ -69,6 +78,8 @@ async def _credit_step(db: AsyncSession, project: AitoProject) -> StepResult:
     client_id = project.client_id
     if not client_id:
         return StepResult("credit", "skipped", {"reason": "no_client"})
+    if not await zoho_service.is_configured(db):
+        return StepResult("credit", "skipped", {"reason": "not_configured"})
     before = project.customer_credit_total
     after = await read_customer_credit(db, client_id)
     if after is None:
@@ -94,6 +105,10 @@ async def _invoice_step(db: AsyncSession, project: AitoProject) -> StepResult:
     remaining = None
     if float(newest.get("balance") or 0) > 0:
         fresh, remaining = await aito_invoice_sweep.settle_with_deposits(db, project_id, quote_id, newest, quote_number)
+    before, after = float(newest.get("balance") or 0), float(fresh.get("balance") or 0)
+    if before > 0 and remaining is None:
+        # settle_with_deposits swallows its failures and answers (invoice, None)
+        return StepResult("invoice", "failed", {"reason": "unreachable"})
     await db.refresh(project)
     project.invoice_status = fresh.get("status") or None
     project.invoice_balance = float(fresh.get("balance") or 0)
@@ -101,7 +116,6 @@ async def _invoice_step(db: AsyncSession, project: AitoProject) -> StepResult:
     if remaining is not None:
         project.customer_credit_total = remaining
     await db.commit()
-    before, after = float(newest.get("balance") or 0), float(fresh.get("balance") or 0)
     if after < before:
         return StepResult(
             "invoice",
@@ -122,11 +136,17 @@ async def _link_rows(db: AsyncSession, project_id: int) -> list[tuple]:
     return sorted((r.id, r.document_kind, r.status, r.amount, r.heimdall_id or "", r.sync_error or "") for r in rows)
 
 
-async def _links_step(db: AsyncSession, project_id: int) -> StepResult:
+async def _links_step(db: AsyncSession, project: AitoProject) -> StepResult:
+    project_id = project.id
+    visitable = bool(project.quote_number) and project.quote_sync_state != "unmanaged"
     if not await heimdall_service.is_configured(db):
         return StepResult("payment_links", "skipped", {"reason": "not_configured"})
     before = await _link_rows(db, project_id)
-    await aito_payment_links.reconcile_payment_links(db, only_project_id=project_id, force=True)
+    visited = await aito_payment_links.reconcile_payment_links(db, only_project_id=project_id, force=True)
+    if visited == 0 and visitable:
+        # Heimdall is configured and the card has a quote, so a pass that
+        # visited nothing stood down for the links throttle.
+        return StepResult("payment_links", "skipped", {"reason": "rate_limited"})
     after = await _link_rows(db, project_id)
     errors = [row[5] for row in after if row[5]]
     if errors:
@@ -150,7 +170,10 @@ async def run_force_sync(
             results.append(StepResult(key, "skipped", {"reason": "rate_limited"}))
             continue
         try:
-            results.append(await step())
+            result = await step()
+            results.append(result)
+            if result.outcome == "failed" and result.detail.get("reason") == "rate_limited":
+                throttled = True  # the quote worker already armed the throttle
         except ZohoRateLimited as e:
             aito_quote_sync._arm_rate_limit_throttle(e)
             throttled = True
@@ -160,7 +183,7 @@ async def run_force_sync(
         except ZohoUpstreamError as e:
             results.append(StepResult(key, "failed", {"reason": "upstream", "message": str(e)}))
     try:
-        results.append(await _links_step(db, project_id))
+        results.append(await _links_step(db, project))
     except Exception as e:  # noqa: BLE001 - a report, never a 500
         logger.warning("Force sync: payment links for project %s failed: %s", project_id, e)
         results.append(StepResult("payment_links", "failed", {"reason": "upstream", "message": str(e)}))
