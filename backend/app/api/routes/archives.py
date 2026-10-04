@@ -239,6 +239,17 @@ async def _claimed_timelapse_stems(db, printer_id: int | None, exclude_archive_i
     return {Path(p).stem for p in rows.scalars().all() if p}
 
 
+def _owner_scope(user: User | None, can_read_all: bool) -> int | None:
+    """The owner to scope cross-archive lookups to, or None for everyone's.
+
+    A caller limited to their own archives must not learn about other users'
+    through "similar" or "duplicate" lists either.
+    """
+    if can_read_all or user is None:
+        return None
+    return user.id
+
+
 def _ensure_archive_visible(
     archive: PrintArchive | None,
     user: User | None,
@@ -1736,6 +1747,7 @@ async def get_archive(
         content_hash=archive.content_hash,
         print_name=archive.print_name,
         makerworld_model_id=makerworld_id,
+        owner_id=_owner_scope(user, can_read_all),
     )
     run_aggregates = await _load_run_aggregates(db, [archive.id])
     return archive_to_response(archive, duplicates, run_aggregate=run_aggregates.get(archive.id))
@@ -1827,7 +1839,7 @@ async def find_similar_archives(
 
     service = ArchiveComparisonService(db)
     try:
-        return await service.find_similar_archives(archive_id, limit=limit)
+        return await service.find_similar_archives(archive_id, limit=limit, owner_id=_owner_scope(user, can_read_all))
     except ValueError as e:
         raise HTTPException(404, str(e))
 
@@ -2241,6 +2253,7 @@ async def get_archive_duplicates(
         content_hash=archive.content_hash,
         print_name=archive.print_name,
         makerworld_model_id=makerworld_id,
+        owner_id=_owner_scope(user, can_read_all),
     )
     return {"duplicates": duplicates, "count": len(duplicates)}
 

@@ -1306,12 +1306,16 @@ class ArchiveService:
         content_hash: str | None = None,
         print_name: str | None = None,
         makerworld_model_id: str | None = None,
+        owner_id: int | None = None,
     ) -> list[dict]:
         """Find duplicate archives based on hash or name matching.
 
         Returns list of dicts with id, print_name, created_at, match_type.
+        ``owner_id`` limits the matches to that user's archives (a caller who
+        may only read their own).
         """
         duplicates = []
+        scope = [] if owner_id is None else [PrintArchive.created_by_id == owner_id]
 
         # First, find exact matches by content hash
         if content_hash:
@@ -1322,6 +1326,7 @@ class ArchiveService:
                         PrintArchive.content_hash == content_hash,
                         PrintArchive.id != archive_id,
                         PrintArchive.deleted_at.is_(None),
+                        *scope,
                     )
                 )
                 .order_by(PrintArchive.created_at.desc())
@@ -1341,7 +1346,7 @@ class ArchiveService:
         # Prefer strict name+hash matching when hash exists; fallback to name-only for legacy/manual
         # archives that may not have a content_hash.
         if print_name or makerworld_model_id:
-            conditions = [PrintArchive.id != archive_id, PrintArchive.deleted_at.is_(None)]
+            conditions = [PrintArchive.id != archive_id, PrintArchive.deleted_at.is_(None), *scope]
 
             name_conditions = []
             if print_name:

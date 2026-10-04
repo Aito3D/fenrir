@@ -181,6 +181,7 @@ class ArchiveComparisonService:
         self,
         archive_id: int,
         limit: int = 10,
+        owner_id: int | None = None,
     ) -> list[dict]:
         """Find archives with similar settings for comparison.
 
@@ -190,6 +191,10 @@ class ArchiveComparisonService:
 
         Returns:
             List of similar archives with match reasons
+
+        ``owner_id`` limits the matches to that user's archives -- set for a
+        caller who may only read their own, who otherwise got other users'
+        archive names, status and dates here.
         """
         # Get the reference archive
         result = await self.db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
@@ -200,6 +205,7 @@ class ArchiveComparisonService:
 
         # Find similar archives
         similar = []
+        scope = [] if owner_id is None else [PrintArchive.created_by_id == owner_id]
 
         # By same print name (soft-deleted archives are hidden from the UI
         # per #1343 so they must not surface here as "similar" either).
@@ -210,6 +216,7 @@ class ArchiveComparisonService:
                     PrintArchive.id != archive_id,
                     PrintArchive.print_name == reference.print_name,
                     PrintArchive.deleted_at.is_(None),
+                    *scope,
                 )
                 .order_by(PrintArchive.created_at.desc())
                 .limit(limit)
@@ -236,6 +243,7 @@ class ArchiveComparisonService:
                     PrintArchive.id != archive_id,
                     PrintArchive.content_hash == reference.content_hash,
                     PrintArchive.deleted_at.is_(None),
+                    *scope,
                 )
                 .order_by(PrintArchive.created_at.desc())
                 .limit(limit - len(similar))
@@ -262,6 +270,8 @@ class ArchiveComparisonService:
                 .where(
                     PrintArchive.id != archive_id,
                     PrintArchive.filament_type == reference.filament_type,
+                    PrintArchive.deleted_at.is_(None),
+                    *scope,
                 )
                 .order_by(PrintArchive.created_at.desc())
                 .limit(limit - len(similar))

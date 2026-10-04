@@ -2346,3 +2346,56 @@ class TestLibraryAddToQueueOwnership(TestOwnershipPermissionsSetup):
         )
         # READ_ALL sees it and reaches the on-disk check.
         assert admin.json()["detail"]["errors"][0]["error"] == "File not found on disk"
+
+
+class TestSimilarAndDuplicatesOwnership(TestOwnershipPermissionsSetup):
+    """/similar and the duplicates list only name archives the caller may see.
+
+    Both checked visibility of the reference archive only, then listed every
+    archive sharing its name, hash or filament: a READ_OWN operator got other
+    users' archive ids, names, status and dates.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_read_own_operator_sees_only_their_own(
+        self, async_client, auth_setup, archive_factory, printer_factory, db_session
+    ):
+        printer = await printer_factory()
+        mine = await archive_factory(
+            printer.id, print_name="Bracket", content_hash="h1", created_by_id=auth_setup["operator_user"]["id"]
+        )
+        mine_too = await archive_factory(
+            printer.id, print_name="Bracket", content_hash="h1", created_by_id=auth_setup["operator_user"]["id"]
+        )
+        theirs = await archive_factory(
+            printer.id, print_name="Bracket", content_hash="h1", created_by_id=auth_setup["operator2_user"]["id"]
+        )
+        await db_session.commit()
+        headers = {"Authorization": f"Bearer {auth_setup['operator_token']}"}
+
+        similar = await async_client.get(f"/api/v1/archives/{mine.id}/similar", headers=headers)
+        assert similar.status_code == 200, similar.text
+        ids = {row["archive"]["id"] for row in similar.json()}
+        assert mine_too.id in ids
+        assert theirs.id not in ids
+
+        dupes = await async_client.get(f"/api/v1/archives/{mine.id}/duplicates", headers=headers)
+        assert theirs.id not in {d["id"] for d in dupes.json()["duplicates"]}
+        detail = await async_client.get(f"/api/v1/archives/{mine.id}", headers=headers)
+        assert theirs.id not in {d["id"] for d in (detail.json().get("duplicates") or [])}
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_an_admin_still_sees_everyone_s(
+        self, async_client, auth_setup, archive_factory, printer_factory, db_session
+    ):
+        printer = await printer_factory()
+        mine = await archive_factory(printer.id, print_name="Hook", created_by_id=auth_setup["operator_user"]["id"])
+        theirs = await archive_factory(printer.id, print_name="Hook", created_by_id=auth_setup["operator2_user"]["id"])
+        await db_session.commit()
+
+        similar = await async_client.get(
+            f"/api/v1/archives/{mine.id}/similar", headers={"Authorization": f"Bearer {auth_setup['admin_token']}"}
+        )
+        assert theirs.id in {row["archive"]["id"] for row in similar.json()}
