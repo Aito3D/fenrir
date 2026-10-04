@@ -1,3 +1,4 @@
+import { ProjectHeader } from '../components/projects/ProjectHeader';
 import { useState, useMemo } from 'react';
 import DOMPurify from 'dompurify';
 import { useParams, useNavigate, Link } from 'react-router-dom';
@@ -15,7 +16,6 @@ import {
   Printer,
   ChevronRight,
   FileText,
-  Tag,
   Calendar,
   AlertTriangle,
   Save,
@@ -25,7 +25,6 @@ import {
   History,
   FolderTree,
   Copy,
-  Layers,
   ExternalLink,
   ShoppingCart,
   FolderOpen,
@@ -525,12 +524,7 @@ export function ProjectDetailPage() {
               className="w-4 h-4 rounded-full shrink-0"
               style={{ backgroundColor: project.color || '#6b7280' }}
             />
-            <div>
-              <h1 className="text-2xl font-bold text-white">{project.name}</h1>
-              {project.description && (
-                <p className="text-bambu-gray mt-1">{project.description}</p>
-              )}
-            </div>
+            <ProjectHeader key={project.updated_at} project={project} />
           </div>
           <StatusBadge status={project.status} t={t} />
         </div>
@@ -880,22 +874,8 @@ export function ProjectDetailPage() {
         </Card>
       )}
 
-      {/* Parent project link */}
-      {project.parent_id && project.parent_name && (
-        <div className="flex items-center gap-2 text-sm">
-          <Layers className="w-4 h-4 text-bambu-gray" />
-          <span className="text-bambu-gray">{t('projectDetail.partOf')}</span>
-          <Link
-            to={`/projects/${project.parent_id}`}
-            className="text-bambu-green hover:underline"
-          >
-            {project.parent_name}
-          </Link>
-        </div>
-      )}
-
       {/* Meta info row - Tags, Due Date, Priority */}
-      {(project.tags || project.due_date || project.priority !== 'normal') && (
+      {(project.due_date || project.priority !== 'normal') && (
         <div className="flex flex-wrap items-center gap-4">
           {/* Priority */}
           {project.priority && project.priority !== 'normal' && (
@@ -915,23 +895,6 @@ export function ProjectDetailPage() {
                   ({getDueDateStatus(project.due_date, t)!.label})
                 </span>
               )}
-            </div>
-          )}
-
-          {/* Tags */}
-          {project.tags && (
-            <div className="flex items-center gap-2">
-              <Tag className="w-4 h-4 text-bambu-gray" />
-              <div className="flex flex-wrap gap-1">
-                {project.tags.split(',').map((tag, index) => (
-                  <span
-                    key={index}
-                    className="px-2 py-0.5 bg-bambu-dark-tertiary text-bambu-gray text-xs rounded"
-                  >
-                    {tag.trim()}
-                  </span>
-                ))}
-              </div>
             </div>
           )}
         </div>
@@ -1556,6 +1519,7 @@ export function ProjectDetailPage() {
       {/* Edit Modal */}
       {showEditModal && (
         <ProjectModal
+          pdm
           t={t}
           currencySymbol={currency}
           project={{
