@@ -354,3 +354,38 @@ def _verdict(project_url: str | None, state: object | None) -> StorageVerdict:
         return StorageVerdict(reachable=False, reason=REASON_NO_EXTERNAL_STORAGE)
 
     return _REACHABLE
+
+
+# Printer-card warnings. Slugs, like the reasons above: the frontend maps each
+# to its own text and advice.
+WARNING_STORE_OFF = "store_off"
+WARNING_NO_MEDIA = "no_media"
+
+
+def external_storage_warning(state: object | None, model: str | None) -> str | None:
+    """Why this printer's slicer-sent jobs will not reach its card, or None.
+
+    ``no_media`` -- the printer reports an empty slot, so there is nothing for
+    either the job or its /cache mirror to land on. ``store_off`` -- "Store sent
+    files on external storage" is off, which kept every Studio print on H2C05,
+    H2S03 and X2D01 out of reach (2026-10-03).
+
+    Only on positive evidence, like the verdict above: ``sdcard`` and
+    ``store_to_sdcard`` both default to False before the printer says anything,
+    and a warning built on a default would show on every printer at startup.
+    Models without a slot never warn, and models whose toggle cannot be
+    reached (P1-series, #2524) are never told to flip it.
+    """
+    from backend.app.utils.printer_models import has_external_storage, has_remote_storage_toggle
+
+    if state is None or not getattr(state, "connected", False) or not has_external_storage(model):
+        return None
+    if getattr(state, "sdcard_reported", False) and not getattr(state, "sdcard", False):
+        return WARNING_NO_MEDIA
+    if (
+        getattr(state, "home_flag_reported", False)
+        and not getattr(state, "store_to_sdcard", False)
+        and has_remote_storage_toggle(model)
+    ):
+        return WARNING_STORE_OFF
+    return None

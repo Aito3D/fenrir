@@ -15,6 +15,7 @@ from backend.app.services.bambu_mqtt import (
     PrinterState,
     get_stage_name,
 )
+from backend.app.services.print_storage import external_storage_warning
 from backend.app.utils.ams_humidity import ams_humidity_percent
 from backend.app.utils.kprofile_lookup import build_slot_k_resolver
 
@@ -1631,6 +1632,7 @@ def printer_state_to_dict(
         # WiFi signal strength
         "wifi_signal": state.wifi_signal,
         "wired_network": state.wired_network,
+        "external_storage_warning": external_storage_warning(state, model),
         "door_open": state.door_open,
         # AMS Filament Backup state (auto-switch to second spool). Tri-state:
         # True / False / None. None = unknown or unsupported (A1 family). UI

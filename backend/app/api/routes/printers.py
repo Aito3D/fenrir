@@ -61,7 +61,12 @@ from backend.app.services.bambu_ftp import (
     get_storage_info_async,
     list_files_result_async,
 )
-from backend.app.services.print_storage import ftp_probe_paths, print_file_reachable_over_ftp, probe_filenames
+from backend.app.services.print_storage import (
+    external_storage_warning,
+    ftp_probe_paths,
+    print_file_reachable_over_ftp,
+    probe_filenames,
+)
 from backend.app.services.printer_diagnostic import run_connection_diagnostic
 from backend.app.services.printer_manager import (
     display_temperatures,
@@ -774,6 +779,7 @@ async def get_printer_status(
         vt_tray=vt_tray,
         sdcard=state.sdcard,
         store_to_sdcard=state.store_to_sdcard,
+        external_storage_warning=external_storage_warning(state, printer.model),
         timelapse=state.timelapse,
         ipcam=state.ipcam,
         wifi_signal=state.wifi_signal,

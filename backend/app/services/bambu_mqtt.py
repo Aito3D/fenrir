@@ -918,6 +918,9 @@ class PrinterState:
     # a storage gate turns into a regression for every printer whose firmware
     # simply doesn't publish the field (#2780).
     sdcard_reported: bool = False
+    # True once a status carried home_flag. `store_to_sdcard` reads False until
+    # then, and that default must not read as "the option is off".
+    home_flag_reported: bool = False
     store_to_sdcard: bool = False  # Store sent files on SD card (home_flag bit 11)
     # Scheme+path of a `project_file` dispatch seen on the request topic, from
     # whoever sent it (the slicer or us). Bambu states where the sliced file
@@ -5084,6 +5087,7 @@ class BambuMQTTClient:
                     f"[{self.serial_number}] store_to_sdcard changed: {self.state.store_to_sdcard} -> {store_to_sdcard}"
                 )
             self.state.store_to_sdcard = store_to_sdcard
+            self.state.home_flag_reported = True
 
         # Door open detection — source depends on printer family:
         #   X1 series (X1, X1C, X1E): home_flag bit 23

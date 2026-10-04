@@ -661,6 +661,33 @@ class TestPrintersAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_status_reports_an_external_storage_warning(self, async_client: AsyncClient, printer_factory):
+        """The printer card's storage warning comes from the REST route too, so
+        it shows on the first load rather than after the next status push."""
+        from unittest.mock import MagicMock, patch
+
+        from backend.app.services.bambu_mqtt import PrinterState
+
+        printer = await printer_factory(model="H2C")
+
+        state = PrinterState()
+        state.connected = True
+        state.sdcard = True
+        state.sdcard_reported = True
+        state.store_to_sdcard = False
+        state.home_flag_reported = True
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_status = MagicMock(return_value=state)
+            mock_pm.is_awaiting_plate_clear = MagicMock(return_value=False)
+
+            response = await async_client.get(f"/api/v1/printers/{printer.id}/status")
+
+        assert response.status_code == 200
+        assert response.json()["external_storage_warning"] == "store_off"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_status_reports_switch_readiness_on_the_first_load(self, async_client: AsyncClient, printer_factory):
         """``ready`` has to be computed by the REST route, not just the WebSocket.
 

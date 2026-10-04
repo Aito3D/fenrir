@@ -55,7 +55,7 @@
 
 > [!IMPORTANT]
 > **H2-series and P2S owners — how you send a print decides what gets archived.**
-> Bambu Studio's **Print** button sends sliced files to the printer's internal memory, which Fenrir cannot read — so those prints archive with a name and timing but no thumbnail, filament total or cost. The printer's "Store sent files on external storage" option does not change it (measured on an H2C and an H2D with it enabled); [BambuStudio#10481](https://github.com/bambulab/BambuStudio/issues/10481) tracks the default upstream.
+> Bambu Studio's **Print** button sends sliced files to the printer's internal memory, which Fenrir cannot read directly. With a card in and the printer's "Store sent files on external storage" option on, most H2 printers also keep a copy of their last eight jobs in the card's `/cache` folder, and Fenrir archives from that copy — touchscreen reprints included. Without a card, or on a printer that keeps no `/cache` copy, those prints archive with a name and timing but no thumbnail, filament total or cost; the printer card on the Printers page warns when the option is off or the slot is empty. [BambuStudio#10481](https://github.com/bambulab/BambuStudio/issues/10481) tracks the default upstream.
 > **Start the print from Fenrir, or slice in OrcaSlicer** — both put the file on the card in one step. Staying in Bambu Studio means using **Send** with **External** picked and starting the print afterwards, because Print itself offers no choice. All of them need a card or stick in the printer; X1 and P1 series are unaffected.
 > [Why this happens →](https://wiki.bambuddy.cool/reference/troubleshooting/#archive-card-has-only-a-name)
 

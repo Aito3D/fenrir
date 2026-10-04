@@ -396,6 +396,9 @@ class PrinterStatus(BaseModel):
     vt_tray: list[AMSTray] = []  # Virtual tray / external spool(s)
     sdcard: bool = False  # SD card inserted
     store_to_sdcard: bool = False  # Store sent files on SD card
+    # Why slicer-sent jobs will not reach the card: "store_off" (the printer's
+    # "Store sent files on external storage" is off) or "no_media" (empty slot).
+    external_storage_warning: str | None = None
     timelapse: bool = False  # Timelapse recording active
     ipcam: bool = False  # Live view enabled
     wifi_signal: int | None = None  # WiFi signal strength in dBm
