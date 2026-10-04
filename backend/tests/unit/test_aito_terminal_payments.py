@@ -1264,6 +1264,10 @@ _AMBIGUOUS_ANSWERS = [
     pytest.param(lambda: httpx.Response(202, json=[_payment()]), id="202-list"),
     pytest.param(lambda: httpx.Response(202, json=_payment_without("id")), id="202-missing-id"),
     pytest.param(lambda: httpx.Response(202, json=_payment_without("amount")), id="202-missing-amount"),
+    # T-098: an id that cannot be stored or reused is as unreadable as no id.
+    pytest.param(lambda: httpx.Response(202, json=_payment(id=None)), id="202-null-id"),
+    pytest.param(lambda: httpx.Response(202, json=_payment(id="h" * 37)), id="202-oversized-id"),
+    pytest.param(lambda: httpx.Response(202, json=_payment(id="h-1/../ping")), id="202-path-id"),
 ]
 
 

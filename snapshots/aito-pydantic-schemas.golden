@@ -3931,19 +3931,6 @@
     "default": null,
     "title": "Client Email"
    },
-   "client_id": {
-    "anyOf": [
-     {
-      "maxLength": 50,
-      "type": "string"
-     },
-     {
-      "type": "null"
-     }
-    ],
-    "default": null,
-    "title": "Client Id"
-   },
    "client_is_company": {
     "anyOf": [
      {
@@ -3955,19 +3942,6 @@
     ],
     "default": null,
     "title": "Client Is Company"
-   },
-   "client_name": {
-    "anyOf": [
-     {
-      "maxLength": 200,
-      "type": "string"
-     },
-     {
-      "type": "null"
-     }
-    ],
-    "default": null,
-    "title": "Client Name"
    },
    "client_phone": {
     "anyOf": [

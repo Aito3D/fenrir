@@ -903,3 +903,98 @@ nested test times out with the re-entry branch disabled.
 
 - Golden probes re-recorded: none (35/35 match).
 - SURFACE.md sections regenerated: `backend/app/services/aito_terminal_payments.py` signatures. The `poll_open_terminal_payments` line now reads `async def poll_open_terminal_payments(`: the signature gained `serve_due_pushes` and wraps, and the generator keeps the first line only. `reconcile_payment_links` was already wrapped, so its line is unchanged.
+
+## 2026-10-04 — campaign 23, T-173: additive internal export AitoDialogFooter (sanctioned re-baseline, not a behavior change)
+
+Sanctions commit <this commit> "refactor(loop-17): T-173 share the stacked
+Aito dialogs' footer". The error line plus secondary/confirm-with-spinner
+footer copied into MergeProjectModal, TransferClientModal, TaskTransferModal
+and WatchModal moved into the new component
+`frontend/src/components/aito/AitoDialogFooter.tsx`. Per-dialog differences are
+explicit props: the confirm's label, disabled rule and handler; `onCancel` for
+the Cancel button; `secondary` for the slot's replacement (TaskTransfer's Back
+step, Watch's Stop watching, which has no Cancel); `errorTitle` for Watch's
+`title` on the error line; `status` for TaskTransfer's own left side (the error
+plus the saving hint); `confirmSpinner={false}` for the move dialog's Next.
+Back and Cancel still share one slot, so the step change keeps the same
+<button> and its focus. Pinned before the extraction by
+`frontend/src/__tests__/components/AitoDialogFooterPin.test.tsx` (footer
+outerHTML in disabled, idle, pending and error states for all four dialogs,
+both transfer modes and both steps, saves in flight, watched/unwatched, and the
+Back-to-Cancel focus hand-off), byte-identical after. No locale changes.
+
+- SURFACE.md sections regenerated: "Frontend exported symbols" (+1 line, additions only).
+- Golden probes re-recorded: none (35/35 match).
+
+## T-098 — a Heimdall answer with a null, oversized or oddly-formed payment id is unreadable (user-approved 2026-10-03)
+
+Sanctions commit <this commit> "refactor(loop-17): T-098 refuse a malformed
+Heimdall payment id (user-approved behavior change)". `_to_view` stored
+`str(data["id"])` from the unauthenticated response body: a JSON null became
+the id "None", an id over 36 characters overflowed the String(36)
+`heimdall_id` columns (a commit failure on PostgreSQL after Heimdall had
+already acted), and ids with `/`, `..`, spaces or `?#` were stored and reused
+in later PATCH/cancel/GET paths. The id must now match `[A-Za-z0-9_-]{1,36}`
+(Heimdall's UUIDs and every id the test doubles use). A JSON integer is still
+read as its decimal string, which keeps the `heimdall-wire` golden's
+`200-id-numeric` case unchanged. Anything else (null, empty, oversized, a
+character outside the class, a bool/float/list/object) raises a ValueError
+inside `_to_view`'s existing parse guard. That guard already turns a body
+missing its `id` into `HeimdallAmbiguous("Heimdall returned an unexpected
+payment shape: ...")`, so callers take the path they already take for an
+unreadable 2xx answer. A terminal charge or invoice link stays a pending,
+unminted reservation with a `sync_error` and is replayed under the same
+idempotency key. The link route answers 502 `upstream`. Pinned by
+`test_to_view_treats_a_malformed_payment_id_as_an_unreadable_answer` and
+`test_create_link_raises_heimdall_ambiguous_on_a_malformed_payment_id`
+(`backend/tests/unit/test_heimdall_client.py`), three new
+`test_start_leaves_the_reservation_pending_on_an_ambiguous_answer` params
+(`202-null-id`, `202-oversized-id`, `202-path-id`,
+`backend/tests/unit/test_aito_terminal_payments.py`) and
+`test_a_malformed_heimdall_id_leaves_the_link_a_pending_reservation_with_a_sync_error`
+(`backend/tests/unit/test_aito_invoice_link_api.py`). All fail on the old
+code. Well-formed ids are pinned to flow through verbatim by
+`test_to_view_keeps_a_well_formed_payment_id_verbatim` and
+`test_to_view_still_reads_an_integer_payment_id_as_its_decimal_string`.
+
+- Golden probes re-recorded: none (35/35 match).
+- SURFACE.md lines: none (`_PAYMENT_ID_RE` and `_validate_payment_id` are private).
+
+## T-154 — a PATCH /aito/{id} carrying client_id/client_name is refused with 422 (user-approved 2026-10-03)
+
+Sanctions commit <this commit> "refactor(loop-17): T-154 PATCH no longer
+re-points a card at another contact (user-approved behavior change)".
+`update_project` wrote `client_id`/`client_name` from the body. That skipped
+transfer-client's invoiced-card 409, its client push flag and its
+social/contact clearing, so a direct API caller could re-point any card,
+invoiced or not. The current UI never sends either key on the PATCH: only
+description, shipping, the LTA and the sync retry use it. Ownership travels
+through PUT /{id}/transfer-client, and creates through POST /aito/. Both
+fields are removed from `AitoProjectUpdate`. The schema inherits
+`extra="ignore"`, so a removed field would have been dropped silently and
+answered 200. A `mode="before"` model validator therefore refuses a body that
+carries either key, null included, with FastAPI's standard 422 ("... cannot
+be changed here; use PUT /aito/{id}/transfer-client"). This happens before
+the handler runs, so nothing is written and an `expected_version` claim is
+not spent. Any other unknown key is still ignored. The route stops writing
+the two keys. Its client_id-needs-a-name check now reads the stored row,
+which is all it could ever see once the body lost those keys, so a legacy
+card stored with an id and no name still refuses every PATCH, as before.
+Pinned by `backend/tests/unit/test_aito_update_client_fields.py`: 9 of its
+12 tests fail on the old code, and the other 3 pin the unchanged parts
+(other client fields still written, other unknown keys still ignored, the
+stored-row check). Tests that pinned the old acceptance were changed to
+expect the 422, in `test_aito_routes.py`:
+`test_update_refuses_to_replace_the_whole_client_snapshot`,
+`test_update_refuses_clearing_the_whole_client_snapshot`,
+`test_update_refuses_renaming_the_client_without_resending_the_id`,
+`test_update_project_refuses_a_client_id_at_the_column_cap` and
+`test_project_update_refuses_even_a_client_id_at_the_column_cap`.
+`test_update_with_description_omitted_still_writes_the_other_fields` now
+writes `client_email` instead of `client_name`. The `AitoProjectUpdate` field
+order and schema hash pins in `test_aito_schema_client_contact.py` drop the
+two fields, and the new schema equals the old one minus exactly those two
+properties.
+
+- Golden probes re-recorded: `aito-pydantic-schemas` (the `client_id` and `client_name` properties of AitoProjectUpdate removed, 26 lines) and `app-openapi-index` (the same two properties of the PATCH body, 2 lines). The other 33 match unchanged.
+- SURFACE.md lines: the `AitoProjectUpdate` field list loses `"client_id": "str | None"` and `"client_name": "str | None"` (2 deletions).

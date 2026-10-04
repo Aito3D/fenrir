@@ -862,9 +862,7 @@ print(json.dumps(out, indent=1, sort_keys=True))" 2>/dev/null```
   "client_contact_name": "str | None",
   "client_contact_person_id": "str | None",
   "client_email": "str | None",
-  "client_id": "str | None",
   "client_is_company": "bool | None",
-  "client_name": "str | None",
   "client_phone": "str | None",
   "client_social_handle": "str | None",
   "client_social_network": "str | None",
@@ -1696,6 +1694,7 @@ os.environ.get("AITO_TRACK_COLLAPSED_PROXY"
 1 export function agingTextCls
 1 export function AiSummaryPanel
 1 export function AiTextField
+1 export function AitoDialogFooter
 1 export function AitoDialogShell
 1 export function AitoPage
 1 export function AitoTrackEntryPage

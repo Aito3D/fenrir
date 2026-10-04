@@ -187,10 +187,11 @@ _FIELD_ORDER = {
         "tasks",
     ],
     AitoClientTransfer: _CLIENT,
+    # T-154: no client_id/client_name — ownership moves through transfer-client.
     AitoProjectUpdate: _SOCIAL
     + _SHIPPING
     + ["description"]
-    + _CLIENT
+    + [f for f in _CLIENT if f not in ("client_id", "client_name")]
     + ["client_contact_name", "shipping_lta", "expected_version"],
     AitoClientEdit: _SOCIAL
     + [
@@ -211,7 +212,7 @@ _FIELD_ORDER = {
 _SCHEMA_SHA256 = {
     AitoProjectCreate: "91e4d68599ffe724fcc1ce41652013cb4b33125c7197cbf729b882d90f7d8d0f",
     AitoClientTransfer: "617ea1452080ca6ff6ec41043506990d57a4f0848ebfb591712317dcaccfb366",
-    AitoProjectUpdate: "6c7325041b02011c62abdab96f1b1137d4b30cd9f8c013e1f3841b73085bb67d",
+    AitoProjectUpdate: "b068b6760da4381ebbbccd6ec60960b2fc914680d35ac24e82d2b9e4ac688ece",
     AitoClientEdit: "f40a0c00a70ea75f79109794c93b2eb3889c0373d6d73f03468fabc8d7d7ba8b",
 }
 

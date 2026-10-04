@@ -4087,13 +4087,10 @@ async def update_project(
     # new value against itself and return [].
     changes = diff_fields(project, fields)
 
-    # The client fields are a snapshot, so consistency has to hold for the MERGED
-    # row, not just the payload: a lone {"client_name": null} passes any
-    # payload-only check while leaving client_id pointing at a contact with no
-    # name attached.
-    merged_client_id = fields.get("client_id", project.client_id)
-    merged_client_name = fields.get("client_name", project.client_name)
-    if merged_client_id is not None and not merged_client_name:
+    # The client snapshot must stay consistent: a client_id with no name
+    # attached is refused. The body can no longer carry either key (T-154,
+    # the schema 422s them), so this guards the stored row as it always did.
+    if project.client_id is not None and not project.client_name:
         raise HTTPException(status_code=422, detail="client_name is required when client_id is set")
 
     # Only fetched when the payload actually mentions a shipping column: an
@@ -4138,8 +4135,6 @@ async def update_project(
     if "description" in fields:
         project.description = fields["description"].strip()
     for key in (
-        "client_id",
-        "client_name",
         "client_phone",
         "client_email",
         "client_is_company",

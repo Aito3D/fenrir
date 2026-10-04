@@ -1,8 +1,7 @@
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, UserRoundPen } from 'lucide-react';
-import { Button } from '../Button';
+import { UserRoundPen } from 'lucide-react';
 import { api, ApiError, type AitoProject, type ZohoContact, type ZohoContactPerson } from '../../api/client';
 import { useDismissableDialog } from '../../hooks/useDismissableDialog';
 import { useToast } from '../../contexts/ToastContext';
@@ -15,6 +14,7 @@ import {
   type ClientDraft,
 } from '../../utils/clientDraft';
 import { AitoDialogShell } from './AitoDialogShell';
+import { AitoDialogFooter } from './AitoDialogFooter';
 import { ClientCombobox } from './ClientCombobox';
 import { ContactPersonPicker } from './ContactPersonPicker';
 
@@ -157,25 +157,14 @@ export function TransferClientModal({
         )}
       </div>
 
-      <footer className="flex items-center justify-between gap-3 border-t border-bambu-dark-tertiary px-6 py-3">
-        <p role="alert" className="min-w-0 truncate text-xs text-red-400">
-          {error}
-        </p>
-        <div className="flex flex-none items-center gap-2">
-          <Button variant="secondary" size="sm" onClick={requestClose} disabled={transfer.isPending}>
-            {t('common.cancel')}
-          </Button>
-          <Button
-            variant="primary"
-            size="sm"
-            disabled={!changed || personPending || transfer.isPending}
-            onClick={() => draft && transfer.mutate(draft)}
-          >
-            {transfer.isPending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
-            {t('aito.transferClientConfirm')}
-          </Button>
-        </div>
-      </footer>
+      <AitoDialogFooter
+        error={error}
+        pending={transfer.isPending}
+        onCancel={requestClose}
+        confirmLabel={t('aito.transferClientConfirm')}
+        confirmDisabled={!changed || personPending || transfer.isPending}
+        onConfirm={() => draft && transfer.mutate(draft)}
+      />
     </AitoDialogShell>
   );
 }

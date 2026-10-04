@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, MoveRight, Split } from 'lucide-react';
+import { MoveRight, Split } from 'lucide-react';
 import { Button } from '../Button';
 import { api, ApiError, type AitoProject } from '../../api/client';
 import { useDismissableDialog } from '../../hooks/useDismissableDialog';
@@ -12,6 +12,7 @@ import { replaceProject } from '../../utils/aitoOptimistic';
 import { taskTotal, type TaskDraft } from '../../utils/taskDraft';
 import { focusRingCls } from '../formStyles';
 import { AitoDialogShell } from './AitoDialogShell';
+import { AitoDialogFooter } from './AitoDialogFooter';
 import { CandidatePicker } from './CandidatePicker';
 import { AITO_SERVICE_LABEL_KEYS, serviceDotCls, taskSteps } from './services';
 
@@ -120,6 +121,30 @@ export function TaskTransferModal({
         ? t('aito.transferNoteMoveAll')
         : null;
 
+  // Split confirms in one go; move first steps to the target list (no request, no spinner), then confirms.
+  const confirm =
+    mode === 'split'
+      ? {
+          confirmLabel: t('aito.splitConfirm'),
+          confirmDisabled: pickedIds.length === 0 || allTicked || savesPending || transfer.isPending,
+          onConfirm: () => transfer.mutate(null),
+        }
+      : step === 'pick-tasks'
+        ? {
+            confirmLabel: t('aito.transferPickTarget'),
+            confirmDisabled: pickedIds.length === 0 || savesPending,
+            onConfirm: () => {
+              setError(null);
+              setStep('pick-target');
+            },
+            confirmSpinner: false,
+          }
+        : {
+            confirmLabel: t('aito.moveConfirm'),
+            confirmDisabled: targetId === null || savesPending || transfer.isPending,
+            onConfirm: () => targetId !== null && transfer.mutate(targetId),
+          };
+
   return (
     <AitoDialogShell
       label={title}
@@ -219,15 +244,22 @@ export function TaskTransferModal({
         />
       )}
 
-      <footer className="flex items-center justify-between gap-3 border-t border-bambu-dark-tertiary px-6 py-3">
-        <div className="min-w-0">
-          <p role="alert" className="truncate text-xs text-red-400">
-            {error}
-          </p>
-          {savesPending && !error && <p className="truncate text-xs text-bambu-gray">{t('aito.transferSavingHint')}</p>}
-        </div>
-        <div className="flex flex-none items-center gap-2">
-          {step === 'pick-target' ? (
+      <AitoDialogFooter
+        status={
+          <div className="min-w-0">
+            <p role="alert" className="truncate text-xs text-red-400">
+              {error}
+            </p>
+            {savesPending && !error && (
+              <p className="truncate text-xs text-bambu-gray">{t('aito.transferSavingHint')}</p>
+            )}
+          </div>
+        }
+        pending={transfer.isPending}
+        onCancel={requestClose}
+        // Back takes Cancel's slot, so the step change keeps the same <button> (and its focus).
+        secondary={
+          step === 'pick-target' ? (
             <Button
               variant="secondary"
               size="sm"
@@ -239,46 +271,10 @@ export function TaskTransferModal({
             >
               {t('aito.transferBack')}
             </Button>
-          ) : (
-            <Button variant="secondary" size="sm" onClick={requestClose} disabled={transfer.isPending}>
-              {t('common.cancel')}
-            </Button>
-          )}
-          {mode === 'split' ? (
-            <Button
-              variant="primary"
-              size="sm"
-              disabled={pickedIds.length === 0 || allTicked || savesPending || transfer.isPending}
-              onClick={() => transfer.mutate(null)}
-            >
-              {transfer.isPending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
-              {t('aito.splitConfirm')}
-            </Button>
-          ) : step === 'pick-tasks' ? (
-            <Button
-              variant="primary"
-              size="sm"
-              disabled={pickedIds.length === 0 || savesPending}
-              onClick={() => {
-                setError(null);
-                setStep('pick-target');
-              }}
-            >
-              {t('aito.transferPickTarget')}
-            </Button>
-          ) : (
-            <Button
-              variant="primary"
-              size="sm"
-              disabled={targetId === null || savesPending || transfer.isPending}
-              onClick={() => targetId !== null && transfer.mutate(targetId)}
-            >
-              {transfer.isPending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
-              {t('aito.moveConfirm')}
-            </Button>
-          )}
-        </div>
-      </footer>
+          ) : undefined
+        }
+        {...confirm}
+      />
     </AitoDialogShell>
   );
 }

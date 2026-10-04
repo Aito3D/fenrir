@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Merge } from 'lucide-react';
-import { Button } from '../Button';
+import { Merge } from 'lucide-react';
 import { api, ApiError, type AitoProject } from '../../api/client';
 import { useDismissableDialog } from '../../hooks/useDismissableDialog';
 import { useToast } from '../../contexts/ToastContext';
 import { AitoDialogShell } from './AitoDialogShell';
+import { AitoDialogFooter } from './AitoDialogFooter';
 import { CandidatePicker } from './CandidatePicker';
 import { mergeCandidates } from './mergeCandidates';
 
@@ -79,25 +79,14 @@ export function MergeProjectModal({ project, onClose }: { project: AitoProject; 
         }}
       />
 
-      <footer className="flex items-center justify-between gap-3 border-t border-bambu-dark-tertiary px-6 py-3">
-        <p role="alert" className="min-w-0 truncate text-xs text-red-400">
-          {error}
-        </p>
-        <div className="flex flex-none items-center gap-2">
-          <Button variant="secondary" size="sm" onClick={requestClose} disabled={merge.isPending}>
-            {t('common.cancel')}
-          </Button>
-          <Button
-            variant="primary"
-            size="sm"
-            disabled={selected === null || merge.isPending}
-            onClick={() => selected && merge.mutate(selected.id)}
-          >
-            {merge.isPending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
-            {t('aito.mergeConfirm')}
-          </Button>
-        </div>
-      </footer>
+      <AitoDialogFooter
+        error={error}
+        pending={merge.isPending}
+        onCancel={requestClose}
+        confirmLabel={t('aito.mergeConfirm')}
+        confirmDisabled={selected === null || merge.isPending}
+        onConfirm={() => selected && merge.mutate(selected.id)}
+      />
     </AitoDialogShell>
   );
 }

@@ -8,6 +8,7 @@ import { useDismissableDialog } from '../../hooks/useDismissableDialog';
 import { useToast } from '../../contexts/ToastContext';
 import { NOTIFICATION_KINDS, UNKNOWN_KIND } from '../notificationKinds';
 import { AitoDialogShell } from './AitoDialogShell';
+import { AitoDialogFooter } from './AitoDialogFooter';
 
 /** A beat past .animate-modal-out's 150ms — the margin MergeProjectModal gives. */
 const MODAL_OUT_MS = 170;
@@ -133,30 +134,24 @@ export function WatchModal({ project, onClose }: { project: AitoProject; onClose
         )}
       </div>
 
-      <footer className="flex items-center justify-between gap-3 border-t border-bambu-dark-tertiary px-6 py-3">
-        <p role="alert" className="min-w-0 truncate text-xs text-red-400" title={error ?? undefined}>
-          {error}
-        </p>
-        <div className="flex flex-none items-center gap-2">
-          {watching && (
+      <AitoDialogFooter
+        error={error}
+        errorTitle
+        pending={save.isPending}
+        secondary={
+          watching && (
             <Button variant="secondary" size="sm" onClick={() => save.mutate([])} disabled={save.isPending}>
               {t('inbox.watchStop')}
             </Button>
-          )}
-          <Button
-            variant="primary"
-            size="sm"
-            // Unticking everything on a watched card is a stop, and Save says so by sending [].
-            disabled={!ready || save.isPending || (toSend.length === 0 && !watching)}
-            // An untouched auto-watch already delivers what Settings enables:
-            // saving it as a list would freeze it, so Save just closes.
-            onClick={() => (followsSettings ? requestClose() : save.mutate(toSend))}
-          >
-            {save.isPending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
-            {t('inbox.watchSave')}
-          </Button>
-        </div>
-      </footer>
+          )
+        }
+        confirmLabel={t('inbox.watchSave')}
+        // Unticking everything on a watched card is a stop, and Save says so by sending [].
+        confirmDisabled={!ready || save.isPending || (toSend.length === 0 && !watching)}
+        // An untouched auto-watch already delivers what Settings enables:
+        // saving it as a list would freeze it, so Save just closes.
+        onConfirm={() => (followsSettings ? requestClose() : save.mutate(toSend))}
+      />
     </AitoDialogShell>
   );
 }

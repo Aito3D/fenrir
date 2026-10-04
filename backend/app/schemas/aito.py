@@ -522,17 +522,11 @@ class AitoProjectUpdate(AitoShippingInput, AitoClientSocialInput, _OptionalClien
     owned by the /move endpoint and deliberately not accepted here."""
 
     description: str | None = Field(default=None, min_length=1, max_length=10_000)
-    # 50, matching the AitoProject.client_id column (String(50)) and
-    # AitoProjectCreate.client_id above — bounded here (the WRITE path) and
-    # not on a response model, for the same reason AitoTaskCreate/Update's
-    # description/cost caps sit off of AitoTaskBase (see that class's
-    # comment): AitoProjectResponse.client_id is its own independent field,
-    # not inherited from either create/update schema, so it keeps reading
-    # back an already-stored over-length value unchanged rather than 500ing.
-    # No character-class pattern — see AitoProjectCreate.client_id's comment
-    # for why quote_id's `^[A-Za-z0-9_-]+$` does not apply to this field.
-    client_id: str | None = Field(default=None, max_length=50)
-    client_name: str | None = Field(default=None, max_length=200)
+    # No client_id / client_name (T-154): which contact a card belongs to
+    # changes only through PUT /{id}/transfer-client (invoiced-card guard,
+    # client push flag, social/contact clearing) or PUT /{id}/client (the
+    # Books-first edit). `_refuse_ownership_keys` below turns either key into
+    # a 422 rather than letting `extra="ignore"` drop it silently.
     client_phone: str | None = Field(default=None, max_length=50)
     client_email: str | None = Field(default=None, max_length=200)
     client_is_company: bool | None = None
@@ -547,6 +541,18 @@ class AitoProjectUpdate(AitoShippingInput, AitoClientSocialInput, _OptionalClien
     # API-key callers that never fetched a version keep working; the frontend
     # always sends it.
     expected_version: int | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _refuse_ownership_keys(cls, data: object) -> object:
+        # Refused, not ignored: a caller still sending them would otherwise
+        # get a 200 for a re-point that never happened. Only these two keys:
+        # any other unknown key is still dropped by `extra="ignore"`.
+        if isinstance(data, dict):
+            sent = [key for key in ("client_id", "client_name") if key in data]
+            if sent:
+                raise ValueError(f"{' and '.join(sent)} cannot be changed here; use PUT /aito/{{id}}/transfer-client")
+        return data
 
     @field_validator("description")
     @classmethod
