@@ -93,7 +93,13 @@ export function BillingCard({
   if (!project.quote_number && !hasQuoteMessage && !justSynced) return null;
 
   const statusLabel = (status: string | null): string => quoteStatusText(t, status);
-  const quotePay = quoteDocument(project, depositPct, currency);
+  // Once the job is billed the deposit is moot: collect on the invoice. The
+  // backend cancels the link and refuses new deposit payments; the block only
+  // stays while a deposit tap is still on the terminal, so a payment in
+  // progress is never hidden mid-way.
+  const quoteTerminal = terminalFor(project, 'quote');
+  const depositInFlight = quoteTerminal != null && ['pending', 'processing'].includes(quoteTerminal.status);
+  const quotePay = project.quote_invoiced && !depositInFlight ? null : quoteDocument(project, depositPct, currency);
   const hasCredit = project.customer_credit_total != null && project.customer_credit_total > 0;
 
   return (
@@ -150,7 +156,7 @@ export function BillingCard({
               project={project}
               document={quotePay}
               link={project.payment_link ?? null}
-              terminal={terminalFor(project, 'quote')}
+              terminal={quoteTerminal}
               canUpdate={canUpdate}
               heimdallConfigured={heimdallConfigured}
             />

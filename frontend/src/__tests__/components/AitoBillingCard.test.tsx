@@ -295,3 +295,35 @@ describe('BillingCard on a card whose quote is being created', () => {
     expect(screen.queryByTestId('doc-quote')).not.toBeInTheDocument();
   });
 });
+
+describe('BillingCard deposit block once invoiced', () => {
+  it('hides Deposit due once the card is invoiced', async () => {
+    vi.spyOn(api, 'getAitoInvoice').mockResolvedValue(null);
+    vi.spyOn(api, 'getAitoRetainers').mockResolvedValue([]);
+    renderCard(project({ quote_invoiced: true, quote_total: 14000 }), { depositPct: 50 });
+    await waitFor(() => expect(screen.queryByText('Deposit due')).not.toBeInTheDocument());
+  });
+
+  it('keeps Deposit due while a deposit tap is still on the terminal', async () => {
+    vi.spyOn(api, 'getAitoInvoice').mockResolvedValue(null);
+    vi.spyOn(api, 'getAitoRetainers').mockResolvedValue([]);
+    renderCard(
+      project({
+        quote_invoiced: true,
+        quote_total: 14000,
+        terminal_payment: {
+          id: 1, document_kind: 'quote', document_number: 'DEV-2026-1234', status: 'processing', amount: 7000,
+          amount_confirmed: null, booking_status: null, booking_error: null, sync_error: null,
+          created_at: '2026-10-03T00:00:00', settled_at: null,
+        },
+      }),
+      { depositPct: 50 },
+    );
+    expect(await screen.findByText('Deposit due')).toBeInTheDocument();
+  });
+
+  it('still shows Deposit due before invoicing', () => {
+    renderCard(project({ quote_total: 14000 }), { depositPct: 50 });
+    expect(screen.getByText('Deposit due')).toBeInTheDocument();
+  });
+});

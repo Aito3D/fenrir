@@ -4915,6 +4915,27 @@ export interface AitoInvoiceEmailContent {
  *  onto the project like the quote fields are — an invoice's interesting
  *  field is whether it has been PAID, and a stored copy of that is wrong the
  *  moment the client pays. See schemas/aito.py:AitoInvoiceResponse. */
+export type AitoForceSyncStepKey = 'quote' | 'credit' | 'invoice' | 'payment_links';
+export type AitoForceSyncOutcome = 'in_sync' | 'fixed' | 'failed' | 'skipped';
+export interface AitoForceSyncStep {
+  key: AitoForceSyncStepKey;
+  outcome: AitoForceSyncOutcome;
+  detail: Record<string, unknown>;
+}
+export interface AitoForceSyncReport {
+  steps: AitoForceSyncStep[];
+}
+export interface AitoDepositCredit {
+  id: string;
+  number: string;
+  applicable: number;
+  total: number;
+}
+export interface AitoInvoiceDeposits {
+  invoice: { id: string; number: string; balance: number; currency_code: string } | null;
+  deposits: AitoDepositCredit[];
+}
+
 export interface AitoInvoice {
   id: string;
   number: string;
@@ -8681,6 +8702,11 @@ export const api = {
    *  is fixed, so without this the push a freshly-added task earns can fire
    *  before the task has a price and then wait out the full poll interval. */
   syncAitoProject: (projectId: number) => request<AitoProject>(`/aito/${projectId}/sync`, { method: 'POST' }),
+  forceSyncAitoProject: (projectId: number) =>
+    request<AitoForceSyncReport>(`/aito/${projectId}/force-sync`, { method: 'POST' }),
+  getAitoInvoiceDeposits: (projectId: number) => request<AitoInvoiceDeposits>(`/aito/${projectId}/invoice-deposits`),
+  applyAitoInvoiceDeposit: (projectId: number, body: { invoice_id: string; retainer_id: string; amount: number }) =>
+    request<AitoInvoice>(`/aito/${projectId}/invoice-deposits/apply`, { method: 'POST', body: JSON.stringify(body) }),
   reorderAitoTasks: (projectId: number, taskIds: number[]) =>
     request<AitoTask[]>(`/aito/${projectId}/tasks/reorder`, {
       method: 'PATCH',
