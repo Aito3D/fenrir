@@ -9644,6 +9644,8 @@ export default {
       print: 'Печать',
       forWhichOrder: 'Для какого заказа эта печать?',
       noOrder: 'Нет (внутренняя или тестовая печать)',
+      printFile: 'Печать {{name}}',
+      ordersUnavailable: 'Не удалось загрузить заказы — пока можно печатать только без заказа.',
       outdatedWarning: 'На основе {{source}} — с тех пор утверждена {{newer}}',
       printed: 'Напечатано {{printed}}/{{target}}',
       printedNoTarget: 'Напечатано: {{printed}}',

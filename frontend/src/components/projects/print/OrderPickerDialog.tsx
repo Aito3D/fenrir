@@ -11,13 +11,15 @@ type Choice = number | 'none' | null;
 interface Props {
   /** The project's open orders (not `done`), one row per linked task. */
   orders: ProjectOrderTask[];
+  /** The orders could not be loaded: say so; only "None" is offered. */
+  unavailable?: boolean;
   onConfirm: (taskId: number | null) => void;
   onCancel: () => void;
 }
 
 /** Which order a revision print is for: each open order's task, plus "None".
  *  A single open order comes preselected; confirming is still one click. */
-export function OrderPickerDialog({ orders, onConfirm, onCancel }: Props) {
+export function OrderPickerDialog({ orders, unavailable = false, onConfirm, onCancel }: Props) {
   const { t } = useTranslation();
   const [choice, setChoice] = useState<Choice>(orders.length === 1 ? orders[0].task_id : null);
   const dialogRef = useRef<HTMLFormElement>(null);
@@ -44,6 +46,11 @@ export function OrderPickerDialog({ orders, onConfirm, onCancel }: Props) {
         className="w-full max-w-lg space-y-4 rounded-xl border border-bambu-dark-tertiary bg-bambu-dark-secondary p-5 focus:outline-none"
       >
         <h2 className="text-lg font-semibold text-white">{title}</h2>
+        {unavailable && (
+          <p role="status" className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-400">
+            {t('projectsPdm.print.ordersUnavailable')}
+          </p>
+        )}
         <fieldset className="max-h-[50vh] space-y-2 overflow-y-auto">
           <legend className="sr-only">{title}</legend>
           {orders.map((o) => (

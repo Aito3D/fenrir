@@ -9969,6 +9969,8 @@ export default {
       print: 'Yazdır',
       forWhichOrder: 'Bu baskı hangi sipariş için?',
       noOrder: 'Yok (dahili veya test baskısı)',
+      printFile: '{{name}} dosyasını yazdır',
+      ordersUnavailable: 'Siparişler yüklenemedi — şimdilik yalnızca siparişsiz yazdırabilirsiniz.',
       outdatedWarning: '{{source}} temel alındı — o tarihten beri {{newer}} onaylandı',
       printed: '{{printed}}/{{target}} basıldı',
       printedNoTarget: '{{printed}} basıldı',

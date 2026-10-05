@@ -34,8 +34,11 @@ export function PrintRevisionFlow({ projectId, file, revisionWarning, onClose }:
   });
 
   if (canReadOrders && isPending) return null;
-  const openOrders = isError ? [] : (data?.orders ?? []).filter((o) => o.board_column !== 'done');
-  const chosen = taskId !== undefined ? taskId : openOrders.length === 0 ? null : undefined;
+  const openOrders = (data?.orders ?? []).filter((o) => o.board_column !== 'done');
+  // A failed orders fetch still goes through the picker (None only), so printing
+  // without a task is a conscious choice rather than a silently lost trace.
+  const ordersFailed = canReadOrders && isError;
+  const chosen = taskId !== undefined ? taskId : openOrders.length === 0 && !ordersFailed ? null : undefined;
 
   // Portalled out of the files tree: keep a stray drag over the dialogs from
   // reaching the section/item drop zones (which would upload a revision).
@@ -44,7 +47,7 @@ export function PrintRevisionFlow({ projectId, file, revisionWarning, onClose }:
   return createPortal(
     <div onDragOver={stopDrag} onDrop={stopDrag}>
       {chosen === undefined ? (
-        <OrderPickerDialog orders={openOrders} onConfirm={setTaskId} onCancel={onClose} />
+        <OrderPickerDialog orders={openOrders} unavailable={ordersFailed} onConfirm={setTaskId} onCancel={onClose} />
       ) : (
         <PrintModal
           mode="create"

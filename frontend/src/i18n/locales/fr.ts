@@ -10029,6 +10029,8 @@ export default {
       print: 'Imprimer',
       forWhichOrder: 'Pour quelle commande ?',
       noOrder: 'Aucune (impression interne ou test)',
+      printFile: 'Imprimer {{name}}',
+      ordersUnavailable: 'Impossible de charger les commandes — vous pouvez seulement imprimer sans commande pour l’instant.',
       outdatedWarning: 'Basé sur {{source}} — {{newer}} validée depuis',
       printed: '{{printed}}/{{target}} imprimées',
       printedNoTarget: '{{printed}} imprimées',

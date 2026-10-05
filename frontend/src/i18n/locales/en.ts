@@ -10100,6 +10100,8 @@ export default {
       print: 'Print',
       forWhichOrder: 'Which order is this print for?',
       noOrder: 'None (internal or test print)',
+      printFile: 'Print {{name}}',
+      ordersUnavailable: 'Orders could not be loaded — you can only print without an order for now.',
       outdatedWarning: 'Based on {{source}} — {{newer}} approved since',
       printed: '{{printed}}/{{target}} printed',
       printedNoTarget: '{{printed}} printed',

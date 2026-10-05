@@ -10043,6 +10043,8 @@ export default {
       print: '印刷',
       forWhichOrder: 'この印刷はどの注文向けですか?',
       noOrder: 'なし(社内用またはテスト印刷)',
+      printFile: '{{name}}を印刷',
+      ordersUnavailable: '注文を読み込めませんでした。現在は注文なしでのみ印刷できます。',
       outdatedWarning: '{{source}} に基づく — その後 {{newer}} が承認されました',
       printed: '{{printed}}/{{target}} 印刷済み',
       printedNoTarget: '{{printed}} 印刷済み',

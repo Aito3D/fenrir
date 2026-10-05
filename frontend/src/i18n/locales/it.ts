@@ -10029,6 +10029,8 @@ export default {
       print: 'Stampa',
       forWhichOrder: 'Per quale ordine è questa stampa?',
       noOrder: 'Nessuno (stampa interna o di prova)',
+      printFile: 'Stampa {{name}}',
+      ordersUnavailable: 'Impossibile caricare gli ordini: per ora puoi stampare solo senza ordine.',
       outdatedWarning: 'Basato su {{source}} — {{newer}} approvata da allora',
       printed: '{{printed}}/{{target}} stampate',
       printedNoTarget: '{{printed}} stampate',

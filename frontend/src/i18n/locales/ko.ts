@@ -9661,6 +9661,8 @@ export default {
       print: '인쇄',
       forWhichOrder: '이 인쇄는 어떤 주문용인가요?',
       noOrder: '없음(내부용 또는 테스트 인쇄)',
+      printFile: '{{name}} 인쇄',
+      ordersUnavailable: '주문을 불러올 수 없습니다. 지금은 주문 없이만 인쇄할 수 있습니다.',
       outdatedWarning: '{{source}} 기준 — 이후 {{newer}} 승인됨',
       printed: '{{printed}}/{{target}} 인쇄됨',
       printedNoTarget: '{{printed}} 인쇄됨',

@@ -3,7 +3,7 @@
  * order picker (open orders + "None"), and the queue POST that carries the
  * chosen task as `aito_task_id`.
  */
-import { describe, it, expect, beforeEach, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest';
 import { configure, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
@@ -11,6 +11,19 @@ import { render } from '../../../utils';
 import { server } from '../../../mocks/server';
 import { ProjectFilesPanel } from '../../../../components/projects/files/ProjectFilesPanel';
 import type { ProjectOrderTask } from '../../../../api/client';
+
+// null = real AuthProvider (auth disabled: every permission granted).
+let granted: Set<string> | null = null;
+vi.mock('../../../../contexts/AuthContext', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../../contexts/AuthContext')>();
+  return {
+    ...actual,
+    useAuth: () => {
+      const real = actual.useAuth();
+      return granted ? { ...real, hasPermission: (p: string) => granted!.has(p) } : real;
+    },
+  };
+});
 
 beforeAll(() => configure({ asyncUtilTimeout: 8000 }));
 afterAll(() => configure({ asyncUtilTimeout: 1000 }));
@@ -60,7 +73,11 @@ let bodies: Record<string, unknown>[];
 let treeGets: number;
 let ordersGets: number;
 
+let ordersFail: boolean;
+
 beforeEach(() => {
+  granted = null;
+  ordersFail = false;
   orders = [];
   outdated = false;
   bodies = [];
@@ -73,6 +90,7 @@ beforeEach(() => {
     }),
     http.get('/api/v1/projects/7/orders', () => {
       ordersGets += 1;
+      if (ordersFail) return HttpResponse.json({ detail: 'boom' }, { status: 500 });
       return HttpResponse.json({ orders });
     }),
     http.get('/api/v1/printers/', () =>
@@ -161,7 +179,8 @@ describe('Print from a project revision', () => {
     await user.click(within(dialog).getByRole('radio', { name: 'None (internal or test print)' }));
     await user.click(within(dialog).getByRole('button', { name: 'Confirm' }));
     const body = await submitModal(user);
-    expect(body.aito_task_id ?? null).toBeNull();
+    expect(body).toHaveProperty('aito_task_id');
+    expect(body.aito_task_id).toBeNull();
   }, 20000);
 
   it('Escape closes only the order picker', async () => {
@@ -186,7 +205,36 @@ describe('Print from a project revision', () => {
     expect(await screen.findByTestId('print-revision-warning')).toHaveTextContent('Based on Support R1 — R2 approved since');
     expect(screen.queryByRole('dialog', { name: 'Which order is this print for?' })).not.toBeInTheDocument();
     const body = await submitModal(user);
-    expect(body.aito_task_id ?? null).toBeNull();
+    expect(body).toHaveProperty('aito_task_id');
+    expect(body.aito_task_id).toBeNull();
     expect(body.library_file_id).toBe(60);
+  }, 20000);
+
+  it('hides Print without queue:create', async () => {
+    granted = new Set(['projects:read', 'projects:update', 'projects:delete', 'aito:read']);
+    const user = userEvent.setup();
+    const r3 = await openPrintRevision(user);
+    expect(within(r3).getByText('support.gcode.3mf')).toBeInTheDocument();
+    expect(within(r3).queryByRole('button', { name: /^Print/ })).not.toBeInTheDocument();
+  });
+
+  it('still asks when the orders fail to load, offering only None', async () => {
+    ordersFail = true;
+    const user = userEvent.setup();
+    const r3 = await openPrintRevision(user);
+    await user.click(within(r3).getByRole('button', { name: 'Print support.gcode.3mf' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Which order is this print for?' });
+    expect(within(dialog).getByText(/Orders could not be loaded/)).toBeInTheDocument();
+    const radios = within(dialog).getAllByRole('radio');
+    expect(radios).toHaveLength(1);
+    expect(radios[0]).toHaveAccessibleName('None (internal or test print)');
+    expect(radios[0]).not.toBeChecked();
+    expect(within(dialog).getByRole('button', { name: 'Confirm' })).toBeDisabled();
+    await user.click(radios[0]);
+    await user.click(within(dialog).getByRole('button', { name: 'Confirm' }));
+    const body = await submitModal(user);
+    expect(body).toHaveProperty('aito_task_id');
+    expect(body.aito_task_id).toBeNull();
   }, 20000);
 });

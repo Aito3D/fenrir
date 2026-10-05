@@ -10068,6 +10068,8 @@ export default {
       print: 'Printen',
       forWhichOrder: 'Voor welke bestelling is deze print?',
       noOrder: 'Geen (interne of testprint)',
+      printFile: '{{name}} printen',
+      ordersUnavailable: 'Bestellingen konden niet worden geladen — je kunt voorlopig alleen zonder bestelling printen.',
       outdatedWarning: 'Gebaseerd op {{source}} — {{newer}} sindsdien goedgekeurd',
       printed: '{{printed}}/{{target}} geprint',
       printedNoTarget: '{{printed}} geprint',

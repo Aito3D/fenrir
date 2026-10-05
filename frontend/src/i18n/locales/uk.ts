@@ -9665,6 +9665,8 @@ export default {
       print: 'Друк',
       forWhichOrder: 'Для якого замовлення цей друк?',
       noOrder: 'Немає (внутрішній або тестовий друк)',
+      printFile: 'Друкувати {{name}}',
+      ordersUnavailable: 'Не вдалося завантажити замовлення — поки що можна друкувати лише без замовлення.',
       outdatedWarning: 'На основі {{source}} — відтоді затверджено {{newer}}',
       printed: 'Надруковано {{printed}}/{{target}}',
       printedNoTarget: 'Надруковано: {{printed}}',

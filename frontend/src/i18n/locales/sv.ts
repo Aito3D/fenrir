@@ -10068,6 +10068,8 @@ errors: {
       print: 'Skriv ut',
       forWhichOrder: 'Vilken order gäller utskriften?',
       noOrder: 'Ingen (intern utskrift eller testutskrift)',
+      printFile: 'Skriv ut {{name}}',
+      ordersUnavailable: 'Beställningarna kunde inte läsas in — du kan bara skriva ut utan beställning just nu.',
       outdatedWarning: 'Baserad på {{source}} — {{newer}} har godkänts sedan dess',
       printed: '{{printed}}/{{target}} utskrivna',
       printedNoTarget: '{{printed}} utskrivna',

@@ -10027,6 +10027,8 @@ export default {
       print: '列印',
       forWhichOrder: '這次列印屬於哪張訂單?',
       noOrder: '無(內部或測試列印)',
+      printFile: '列印 {{name}}',
+      ordersUnavailable: '無法載入訂單——目前只能不關聯訂單進行列印。',
       outdatedWarning: '基於 {{source}} — 此後已核准 {{newer}}',
       printed: '已列印 {{printed}}/{{target}}',
       printedNoTarget: '已列印 {{printed}}',

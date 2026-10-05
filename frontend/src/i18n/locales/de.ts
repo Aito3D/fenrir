@@ -10044,6 +10044,8 @@ export default {
       print: 'Drucken',
       forWhichOrder: 'Für welchen Auftrag ist dieser Druck?',
       noOrder: 'Keiner (interner Druck oder Testdruck)',
+      printFile: '{{name}} drucken',
+      ordersUnavailable: 'Aufträge konnten nicht geladen werden — vorerst ist nur ein Druck ohne Auftrag möglich.',
       outdatedWarning: 'Basiert auf {{source}} — seitdem wurde {{newer}} freigegeben',
       printed: '{{printed}}/{{target}} gedruckt',
       printedNoTarget: '{{printed}} gedruckt',

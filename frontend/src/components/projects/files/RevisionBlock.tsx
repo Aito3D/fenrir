@@ -159,7 +159,7 @@ export function RevisionBlock({ item, revision, derivedOptions, actions }: Props
               <span className="text-xs text-bambu-gray">{formatSize(f.file_size)}</span>
               <span className="flex flex-wrap gap-1">
                 {canPrint && isPrintableFile(f.filename) && (
-                  <button type="button" className={btnCls} aria-label={`${t('projectsPdm.print.print')} ${f.filename}`}
+                  <button type="button" className={btnCls} aria-label={t('projectsPdm.print.printFile', { name: f.filename })}
                     onClick={() => setPrinting(f)}>
                     <Printer className="h-3.5 w-3.5" />{t('projectsPdm.print.print')}
                   </button>

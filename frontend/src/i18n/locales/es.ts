@@ -10052,6 +10052,8 @@ export default {
       print: 'Imprimir',
       forWhichOrder: '¿Para qué pedido es esta impresión?',
       noOrder: 'Ninguno (impresión interna o de prueba)',
+      printFile: 'Imprimir {{name}}',
+      ordersUnavailable: 'No se pudieron cargar los pedidos: por ahora solo puedes imprimir sin pedido.',
       outdatedWarning: 'Basado en {{source}} — {{newer}} aprobada desde entonces',
       printed: '{{printed}}/{{target}} impresas',
       printedNoTarget: '{{printed}} impresas',

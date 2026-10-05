@@ -10027,6 +10027,8 @@ export default {
       print: '打印',
       forWhichOrder: '这次打印属于哪个订单?',
       noOrder: '无(内部或测试打印)',
+      printFile: '打印 {{name}}',
+      ordersUnavailable: '无法加载订单——目前只能不关联订单进行打印。',
       outdatedWarning: '基于 {{source}} — 此后已批准 {{newer}}',
       printed: '已打印 {{printed}}/{{target}}',
       printedNoTarget: '已打印 {{printed}}',
