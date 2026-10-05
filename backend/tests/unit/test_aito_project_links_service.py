@@ -503,7 +503,7 @@ async def test_record_on_linked_orders_one_event_per_order(db_session):
     unrelated = await _order(db_session)
     await _task(db_session, unrelated)
 
-    count = await links.record_on_linked_orders(
+    order_ids = await links.record_on_linked_orders(
         db_session,
         project.id,
         "project.revision_added",
@@ -512,7 +512,7 @@ async def test_record_on_linked_orders_one_event_per_order(db_session):
         detail={"section": "impression"},
     )
 
-    assert count == 2
+    assert order_ids == sorted([order.id, second.id])
     events = await _events(db_session, "project.revision_added")
     assert sorted(e.project_id for e in events) == sorted([order.id, second.id])
     assert all(e.subject_label == "Support R2" for e in events)
@@ -520,6 +520,28 @@ async def test_record_on_linked_orders_one_event_per_order(db_session):
     # project travels in the detail instead.
     assert all(e.subject_type is None and e.subject_id is None for e in events)
     assert all(e.detail == {"project_id": project.id, "code": project.code, "section": "impression"} for e in events)
+
+
+@pytest.mark.asyncio
+async def test_record_on_linked_orders_skips_excluded_orders(db_session):
+    project = await _project(db_session)
+    order = await _order(db_session)
+    await _task(db_session, order, linked=project.id)
+    second = await _order(db_session)
+    await _task(db_session, second, linked=project.id)
+
+    order_ids = await links.record_on_linked_orders(
+        db_session,
+        project.id,
+        "project.revision_added",
+        actor=None,
+        subject_label="Support R1",
+        detail=None,
+        exclude_order_ids={order.id},
+    )
+
+    assert order_ids == [second.id]
+    assert [e.project_id for e in await _events(db_session, "project.revision_added")] == [second.id]
 
 
 # --- file drops ------------------------------------------------------------

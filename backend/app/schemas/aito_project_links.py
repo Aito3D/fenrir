@@ -85,4 +85,5 @@ class DroppedFileResult(BaseModel):
 
 class DropFilesResponse(BaseModel):
     project_id: int
+    code: str | None = None  # the project the files actually went to (the client's cached link may be stale)
     results: list[DroppedFileResult]

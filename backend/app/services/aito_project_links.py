@@ -12,12 +12,15 @@ Functions flush, never commit — the route owns the transaction.
 
 import logging
 from collections import defaultdict
+from collections.abc import Collection, Iterable
 from difflib import SequenceMatcher
 
 from fastapi import UploadFile
 from sqlalchemy import delete, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.core.websocket import ws_manager
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
 from backend.app.models.aito_task_delivery import AitoTaskDelivery
@@ -401,8 +404,11 @@ async def record_on_linked_orders(
     actor: str | None,
     subject_label: str | None,
     detail: dict | None,
-) -> int:
-    """One event per distinct active order with a task linked to the project.
+    exclude_order_ids: Collection[int] = (),
+) -> list[int]:
+    """One event per distinct active order with a task linked to the project
+    (minus ``exclude_order_ids``). Returns the order ids it wrote to, so the
+    caller can broadcast to them once committed.
 
     ``subject_type`` stays empty: on the order timeline "project" means the
     order itself, so the PDM project travels in ``detail`` (id and code)."""
@@ -415,12 +421,12 @@ async def record_on_linked_orders(
             .order_by(AitoTask.project_id)
         )
     ).scalars()
-    order_ids = list(order_ids)
+    order_ids = [order_id for order_id in order_ids if order_id not in exclude_order_ids]
     if not order_ids:
-        return 0
+        return []
     code = (await db.execute(select(Project.code).where(Project.id == project_id))).scalar_one_or_none()
     payload = {"project_id": project_id, "code": code, **(detail or {})}
-    recorded = 0
+    recorded: list[int] = []
     for order_id in order_ids:
         event = await aito_events.record(
             db,
@@ -432,8 +438,20 @@ async def record_on_linked_orders(
             detail=dict(payload),
         )
         if event is not None:
-            recorded += 1
+            recorded.append(order_id)
     return recorded
+
+
+async def broadcast_orders_changed(order_ids: Iterable[int], actor: str | None) -> None:
+    """Best-effort ``aito_changed`` per order, after commit (same payload as aito.py),
+    so open panels refetch their links, step summaries and timeline."""
+    for order_id in dict.fromkeys(order_ids):
+        try:
+            await ws_manager.broadcast_aito(
+                {"type": "aito_changed", "action": "task", "project_id": order_id, "actor": actor}
+            )
+        except Exception:
+            logger.warning("aito_changed broadcast failed for order %s", order_id, exc_info=True)
 
 
 # --- file drops (spec §4.3) -------------------------------------------------
@@ -493,6 +511,78 @@ async def _record_drop(
     )
 
 
+async def _find_item(db: AsyncSession, project_id: int, section: str, key: str) -> ProjectItem | None:
+    return (
+        await db.execute(
+            select(ProjectItem).where(
+                ProjectItem.project_id == project_id,
+                ProjectItem.section == section,
+                ProjectItem.name_key == key,
+            )
+        )
+    ).scalar_one_or_none()
+
+
+async def _item_for_drop(
+    db: AsyncSession, project: Project, section: str, key: str, name: str, user_id: int | None
+) -> tuple[ProjectItem, Project]:
+    """The item a dropped group goes to, created (and committed) if missing.
+
+    Two drops of the same new name can race between the lookup and the
+    create: the loser hits the name check (409) or the unique constraint, so
+    it re-reads the winner's item and adds its revision there instead of
+    failing. Returns the project too, re-read if the rollback expired it."""
+    project_id = project.id
+    item = await _find_item(db, project_id, section, key)
+    if item is not None:
+        return item, project
+    try:
+        item = await project_files.create_item(db, project, section=section, name=name, user_id=user_id)
+        await db.commit()
+        return item, project
+    except (IntegrityError, project_files.ProjectFilesError) as exc:
+        if isinstance(exc, project_files.ProjectFilesError) and exc.status_code != 409:
+            raise
+        await db.rollback()
+        project = await db.get(Project, project_id)
+        item = await _find_item(db, project_id, section, key)
+        if item is None or project is None:
+            raise project_files.ProjectFilesError(409, "This item was changed meanwhile; drop the files again") from exc
+        return item, project
+
+
+async def _fan_out_revision(
+    db: AsyncSession,
+    project_id: int,
+    revision_detail: dict,
+    subject_label: str,
+    *,
+    dropping_order_id: int,
+    actor: str | None,
+) -> list[int]:
+    """``project.revision_added`` on the project's OTHER linked orders (the
+    dropping order gets ``project.files_dropped``). Best effort, like the
+    project-page upload hook: the revision is already committed, so a failure
+    only costs the events."""
+    try:
+        async with db.begin_nested():
+            order_ids = await record_on_linked_orders(
+                db,
+                project_id,
+                "project.revision_added",
+                actor=actor,
+                subject_label=subject_label,
+                detail=revision_detail,
+                exclude_order_ids={dropping_order_id},
+            )
+        await db.commit()
+        return order_ids
+    except Exception:
+        logger.warning("project.revision_added fan-out failed for project %s", project_id, exc_info=True)
+        await db.rollback()
+        return []
+
+
 async def drop_files_on_task(
     db: AsyncSession, task: AitoTask, uploads: list[UploadFile], *, user_id: int | None, actor: str | None
 ) -> DropFilesResponse:
@@ -501,8 +591,11 @@ async def drop_files_on_task(
 
     Goes through the phase-2 service so streaming-before-DB, per-item locks and
     cleanup apply. ``add_revision`` rolls the whole session back on failure, so
-    each created item is committed first. If a later group fails, the groups
-    already stored are still recorded on the order before the error propagates."""
+    each created item is committed first. Each stored group is announced on the
+    project's other linked orders (``project.revision_added``, broadcast); if a
+    later group fails, the groups already stored are still recorded on the
+    dropping order before the error propagates. Broadcasting to the dropping
+    order itself is the route's job."""
     if task.linked_project_id is None:
         raise LinkError(409, "Task is not linked to a project")
     if not uploads:
@@ -520,34 +613,36 @@ async def drop_files_on_task(
         groups.setdefault(key, (name, []))[1].append(upload)
 
     results: list[DroppedFileResult] = []
+    notified: list[int] = []
     try:
         for (section, key), (name, group) in groups.items():
-            item = (
-                await db.execute(
-                    select(ProjectItem).where(
-                        ProjectItem.project_id == project_id,
-                        ProjectItem.section == section,
-                        ProjectItem.name_key == key,
-                    )
-                )
-            ).scalar_one_or_none()
-            if item is None:
-                item = await project_files.create_item(db, project, section=section, name=name, user_id=user_id)
-                await db.commit()
+            item, project = await _item_for_drop(db, project, section, key, name, user_id)
             item_id, item_name = item.id, item.name
             revision, _warnings = await project_files.add_revision(
                 db, project, item, group, note=None, derived_from_id=None, user_id=user_id
             )
+            revision_id, number = revision.id, revision.number
             results.extend(
                 DroppedFileResult(
                     filename=_base_name(upload),
                     section=section,
                     item_id=item_id,
                     item_name=item_name,
-                    revision_number=revision.number,
+                    revision_number=number,
                 )
                 for upload in group
             )
+            notified += await _fan_out_revision(
+                db,
+                project_id,
+                {"section": section, "item_id": item_id, "revision_id": revision_id},
+                f"{item_name} R{number}",
+                dropping_order_id=order_id,
+                actor=actor,
+            )
+            project = await db.get(Project, project_id)  # a failed fan-out rolls back and expires it
+            if project is None:
+                raise LinkError(409, "Task is not linked to a project")
     except Exception as exc:
         exc.stored_count = len(results)  # type: ignore[attr-defined]  # lets the route still broadcast
         raise
@@ -559,4 +654,5 @@ async def drop_files_on_task(
             except Exception:
                 logger.warning("project.files_dropped event failed for order %s", order_id, exc_info=True)
                 await db.rollback()
-    return DropFilesResponse(project_id=project_id, results=results)
+        await broadcast_orders_changed(notified, actor)
+    return DropFilesResponse(project_id=project_id, code=code, results=results)

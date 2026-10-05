@@ -5,8 +5,6 @@ never captured by a ``/aito/{project_id}`` route. Links are production
 metadata: nothing here touches the order's quote state or versioned fields.
 """
 
-import logging
-
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,7 +13,6 @@ from backend.app.api.routes.project_files import content_length_capped_route
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
-from backend.app.core.websocket import ws_manager
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
 from backend.app.models.user import User
@@ -29,8 +26,6 @@ from backend.app.schemas.aito_project_links import (
     TaskProjectLink,
 )
 from backend.app.services import aito_project_links as svc, project_files
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/aito", tags=["aito"])
 
@@ -55,12 +50,7 @@ def _actor(user: User | None) -> str | None:
 
 async def _broadcast_changed(order_id: int, actor: str | None) -> None:
     """Best-effort board refresh signal after commit (same payload as aito.py)."""
-    try:
-        await ws_manager.broadcast_aito(
-            {"type": "aito_changed", "action": "task", "project_id": order_id, "actor": actor}
-        )
-    except Exception:
-        logger.warning("aito_changed broadcast failed for order %s", order_id, exc_info=True)
+    await svc.broadcast_orders_changed([order_id], actor)
 
 
 async def _task(db: AsyncSession, task_id: int) -> AitoTask:
@@ -79,7 +69,10 @@ async def _task(db: AsyncSession, task_id: int) -> AitoTask:
 
 async def _task_link(db: AsyncSession, task: AitoTask) -> TaskProjectLink:
     links = await svc.order_links(db, task.project_id)
-    return next(t for t in links.tasks if t.task_id == task.id)
+    link = next((t for t in links.tasks if t.task_id == task.id), None)
+    if link is None:  # deleted or moved by someone else meanwhile
+        raise HTTPException(status_code=404, detail="Task not found")
+    return link
 
 
 async def _commit_link(db: AsyncSession, task: AitoTask, actor: str | None) -> TaskProjectLink:
@@ -93,6 +86,7 @@ async def _commit_link(db: AsyncSession, task: AitoTask, actor: str | None) -> T
 async def get_project_codes(
     db: AsyncSession = Depends(get_db),
     _: User | None = _aito_read,
+    __: User | None = _projects_read,
 ) -> dict[int, list[str]]:
     return await svc.codes_by_order(db)
 

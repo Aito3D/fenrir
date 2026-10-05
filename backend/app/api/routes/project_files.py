@@ -109,15 +109,18 @@ async def _record_linked(
     subject_label: str,
     detail: dict,
 ) -> None:
-    """Best-effort event on every order linked to the project. The revision change is
-    already stored (or committed here first), so a failure here only costs the event."""
+    """Best-effort event on every order linked to the project, then an
+    ``aito_changed`` broadcast to each so their open panels refresh. The revision
+    change is already stored (or committed here first), so a failure here only
+    costs the event."""
+    actor = user.username if user is not None else None
     try:
         async with db.begin_nested():
-            await aito_links.record_on_linked_orders(
+            order_ids = await aito_links.record_on_linked_orders(
                 db,
                 project_id,
                 kind,
-                actor=user.username if user is not None else None,
+                actor=actor,
                 subject_label=subject_label,
                 detail=detail,
             )
@@ -125,6 +128,8 @@ async def _record_linked(
     except Exception:
         logger.warning("%s event failed for project %s", kind, project_id, exc_info=True)
         await db.rollback()
+        return
+    await aito_links.broadcast_orders_changed(order_ids, actor)
 
 
 def _uid(user: User | None) -> int | None:
@@ -164,7 +169,9 @@ async def get_project_orders(
     project_id: int,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_READ),
+    __: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
 ):
+    """Aito orders/clients linking to the project: needs aito:read as well as projects:read."""
     return await aito_links.orders_for_project(db, (await _project(db, project_id)).id)
 
 

@@ -1,15 +1,25 @@
 """Aito task ↔ project link routes (spec §1.6, §4)."""
 
+from datetime import datetime, timedelta
+
 import pytest
+from fastapi import HTTPException
 from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.routes import aito_project_links as links_routes, project_files as files_routes
+from backend.app.core.auth import create_access_token, get_password_hash
+from backend.app.core.permissions import Permission
+from backend.app.core.websocket import ws_manager
 from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
+from backend.app.models.group import Group
+from backend.app.models.project_item import ProjectItem
+from backend.app.models.settings import Settings
+from backend.app.models.user import User
 from backend.app.services import aito_project_links as links_service, project_files as files_service, project_storage
 
 
@@ -379,3 +389,198 @@ async def test_project_linked_from_an_active_order_cannot_be_deleted(async_clien
     response = await async_client.delete(f"/api/v1/projects/{project['id']}")
     assert response.status_code == 409
     assert response.json()["detail"] == "This project is linked to Aito tasks; unlink them first"
+
+
+@pytest.fixture
+async def one_side_tokens(db_session):
+    """Auth on; one user with only projects:read, one with only aito:read."""
+    db_session.add(Settings(key="auth_enabled", value="true"))
+    groups = {
+        "projects": Group(name="pdm-projects-read", permissions=[Permission.PROJECTS_READ.value], is_system=False),
+        "aito": Group(name="pdm-aito-read", permissions=[Permission.AITO_READ.value], is_system=False),
+    }
+    db_session.add_all(groups.values())
+    await db_session.flush()
+    tokens = {}
+    for key, group in groups.items():
+        user = User(username=f"pdm-{key}-only", password_hash=get_password_hash("password"), is_active=True)
+        user.groups.append(group)
+        db_session.add(user)
+        tokens[key] = create_access_token(data={"sub": user.username})
+    await db_session.commit()
+    return tokens
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_project_orders_needs_aito_read_too(async_client: AsyncClient, one_side_tokens):
+    """F4: the orders card lists Aito orders/clients, so projects:read alone is not enough."""
+    response = await async_client.get(
+        "/api/v1/projects/1/orders", headers={"Authorization": f"Bearer {one_side_tokens['projects']}"}
+    )
+    assert response.status_code == 403
+    response = await async_client.get(
+        "/api/v1/projects/1/orders", headers={"Authorization": f"Bearer {one_side_tokens['aito']}"}
+    )
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_project_codes_needs_projects_read_too(async_client: AsyncClient, one_side_tokens):
+    """F4: the card chips show PDM project codes, so aito:read alone is not enough."""
+    response = await async_client.get(
+        "/api/v1/aito/project-codes", headers={"Authorization": f"Bearer {one_side_tokens['aito']}"}
+    )
+    assert response.status_code == 403
+
+
+@pytest.fixture
+def aito_broadcasts(monkeypatch):
+    """Every aito_changed order id broadcast during the test, in order."""
+    sent: list[int] = []
+
+    async def fake(message):
+        if message.get("type") == "aito_changed":
+            sent.append(message["project_id"])
+
+    monkeypatch.setattr(ws_manager, "broadcast_aito", fake)
+    return sent
+
+
+async def _two_linked_orders(async_client, db_session):
+    project = await _project(async_client)
+    orders, tasks = [], []
+    for _ in range(2):
+        order = await _order(db_session)
+        task = await _task(db_session, order)
+        await async_client.put(f"/api/v1/aito/tasks/{task.id}/project", json={"project_id": project["id"]})
+        orders.append(order)
+        tasks.append(task)
+    return project, orders, tasks
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_revision_upload_and_status_change_broadcast_to_linked_orders(
+    async_client: AsyncClient, db_session, aito_broadcasts
+):
+    """F5: an open Aito panel of every linked order refreshes its links/step summaries."""
+    project, orders, _tasks = await _two_linked_orders(async_client, db_session)
+    aito_broadcasts.clear()
+
+    revision_id = await _revision(async_client, project["id"])
+    assert sorted(aito_broadcasts) == sorted(o.id for o in orders)
+
+    aito_broadcasts.clear()
+    response = await async_client.patch(f"/api/v1/projects/revisions/{revision_id}", json={"status": "valide"})
+    assert response.status_code == 200
+    assert sorted(aito_broadcasts) == sorted(o.id for o in orders)
+
+    aito_broadcasts.clear()
+    await async_client.patch(f"/api/v1/projects/revisions/{revision_id}", json={"note": "n"})
+    assert aito_broadcasts == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_drop_fans_revision_events_out_to_other_linked_orders(
+    async_client: AsyncClient, db_session, aito_broadcasts
+):
+    """F8: a drop on order A's task tells order B about each new revision, like a project-page upload."""
+    project, (order_a, order_b), (task_a, _task_b) = await _two_linked_orders(async_client, db_session)
+    aito_broadcasts.clear()
+
+    response = await async_client.post(
+        f"/api/v1/aito/tasks/{task_a.id}/files",
+        files=[
+            ("files", ("a.stl", b"x", "application/octet-stream")),
+            ("files", ("b.ply", b"x", "application/octet-stream")),
+        ],
+    )
+    assert response.status_code == 201, response.text
+
+    def kinds(order):
+        return select(AitoEvent).where(AitoEvent.project_id == order.id).where(AitoEvent.kind.like("project.%"))
+
+    events_b = (await db_session.execute(kinds(order_b))).scalars().all()
+    added = sorted(e.subject_label for e in events_b if e.kind == "project.revision_added")
+    assert added == ["a R1", "b R1"]
+    assert all(e.detail["code"] == project["code"] for e in events_b)
+    events_a = (await db_session.execute(kinds(order_a))).scalars().all()
+    assert [e.kind for e in events_a] == ["project.files_dropped"]
+    assert set(aito_broadcasts) == {order_a.id, order_b.id}
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_linked_event_time_is_not_in_the_future(async_client: AsyncClient, db_session):
+    """F10: occurred_at is naive UTC like every other Aito event (record() uses utcnow)."""
+    before = datetime.utcnow()
+    order = await _order(db_session)
+    task = await _task(db_session, order)
+    project = await _project(async_client)
+    await async_client.put(f"/api/v1/aito/tasks/{task.id}/project", json={"project_id": project["id"]})
+    after = datetime.utcnow()
+
+    event = (await db_session.execute(select(AitoEvent).where(AitoEvent.kind == "task.project_linked"))).scalar_one()
+    assert event.occurred_at.tzinfo is None
+    assert before - timedelta(seconds=1) <= event.occurred_at <= after
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_task_link_missing_from_its_order_is_404(db_session, monkeypatch):
+    """F6: a task that vanished from its order's links is a 404, not a StopIteration 500."""
+    order = await _order(db_session)
+    task = await _task(db_session, order)
+
+    async def empty_links(_db, order_id):
+        return links_service.OrderProjectLinks(order_id=order_id, tasks=[])
+
+    monkeypatch.setattr(links_routes.svc, "order_links", empty_links)
+    with pytest.raises(HTTPException) as err:
+        await links_routes._task_link(db_session, task)
+    assert err.value.status_code == 404
+
+
+@pytest.mark.parametrize("skip_name_check", [False, True], ids=["name-check-409", "unique-constraint"])
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_concurrent_drop_creating_the_same_item_joins_it(
+    async_client: AsyncClient, db_session, monkeypatch, skip_name_check
+):
+    """F6: another drop creates the item between our lookup and our create: we add
+    a revision to that item instead of failing (409 from the name check, or the
+    unique constraint's IntegrityError when both passed the check)."""
+    order = await _order(db_session)
+    task = await _task(db_session, order)
+    project = await _project(async_client)
+    await async_client.put(f"/api/v1/aito/tasks/{task.id}/project", json={"project_id": project["id"]})
+
+    real_create = files_service.create_item
+
+    async def racing_create(db, project_row, *, section, name, user_id):
+        db_session.add(
+            ProjectItem(project_id=project_row.id, section=section, name=name, name_key=files_service._name_key(name))
+        )
+        await db_session.commit()
+        return await real_create(db, project_row, section=section, name=name, user_id=user_id)
+
+    async def no_check(*_a, **_k):
+        return None
+
+    monkeypatch.setattr(links_service.project_files, "create_item", racing_create)
+    if skip_name_check:
+        monkeypatch.setattr(files_service, "_require_item_name_free", no_check)
+
+    response = await async_client.post(
+        f"/api/v1/aito/tasks/{task.id}/files", files=[("files", ("a.stl", b"x", "application/octet-stream"))]
+    )
+    assert response.status_code == 201, response.text
+    [result] = response.json()["results"]
+    assert result["revision_number"] == 1
+    items = (
+        (await db_session.execute(select(ProjectItem).where(ProjectItem.project_id == project["id"]))).scalars().all()
+    )
+    assert [(i.name, i.id) for i in items] == [("a", result["item_id"])]
