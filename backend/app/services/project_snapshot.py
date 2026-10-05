@@ -14,6 +14,7 @@ import json
 import logging
 import re
 import zipfile
+import zlib
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -44,7 +45,13 @@ def _read(zf: zipfile.ZipFile, name: str) -> str | None:
         return None
     if info.file_size > _MAX_PART_BYTES:
         return None
-    return zf.read(name).decode("utf-8", errors="replace")
+    try:
+        data = zf.open(name).read(_MAX_PART_BYTES + 1)
+    except (zipfile.BadZipFile, RuntimeError, NotImplementedError, zlib.error, EOFError, OSError):
+        return None
+    if len(data) > _MAX_PART_BYTES:
+        return None
+    return data.decode("utf-8", errors="replace")
 
 
 def _load_config(raw: str | None) -> dict | None:
@@ -52,9 +59,11 @@ def _load_config(raw: str | None) -> dict | None:
         return None
     try:
         value = json.loads(raw)
-    except ValueError:
+    except (ValueError, RecursionError):
         return None
-    return value if isinstance(value, dict) else None
+    if not isinstance(value, dict) or not value:
+        return None
+    return value
 
 
 def _first(value):
@@ -90,28 +99,34 @@ def read_print_snapshot(path: Path) -> PrintSnapshot | None:
         zf = zipfile.ZipFile(path)
     except (zipfile.BadZipFile, OSError):
         return None
-    with zf:
-        names = set(zf.namelist())
-        config = _load_config(_read(zf, "Metadata/project_settings.config"))
-        slice_info = _read(zf, "Metadata/slice_info.config") or ""
-        model = _read(zf, "3D/3dmodel.model") or ""
-    slicer_name = slicer_version = None
-    application = _APPLICATION_RE.search(model)
-    if application:
-        name, dash, version = application.group(1).strip().rpartition("-")
-        slicer_name, slicer_version = (name, version) if dash and name else (application.group(1).strip(), None)
-    if slicer_version is None:
-        header = _CLIENT_VERSION_RE.search(slice_info)
-        if header and header.group(1):
-            slicer_version = header.group(1)
-    if slicer_version is None and config and config.get("version"):
-        slicer_version = str(config["version"])
-    sliced = any(n.startswith("Metadata/plate_") and n.endswith(".gcode") for n in names)
-    config_hash = (
-        hashlib.sha256(
-            json.dumps(config, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
-        ).hexdigest()
-        if config
-        else None
-    )
-    return PrintSnapshot(config, config_hash, slicer_name, slicer_version, _profile(config, sliced))
+    try:
+        with zf:
+            names = set(zf.namelist())
+            config = _load_config(_read(zf, "Metadata/project_settings.config"))
+            slice_info = _read(zf, "Metadata/slice_info.config") or ""
+            model = _read(zf, "3D/3dmodel.model") or ""
+        slicer_name = slicer_version = None
+        application = _APPLICATION_RE.search(model)
+        if application:
+            name, dash, version = application.group(1).strip().rpartition("-")
+            slicer_name, slicer_version = (name, version) if dash and name else (application.group(1).strip(), None)
+        if slicer_version is None:
+            header = _CLIENT_VERSION_RE.search(slice_info)
+            if header and header.group(1):
+                slicer_version = header.group(1)
+        if slicer_version is None and config and config.get("version"):
+            slicer_version = str(config["version"])
+        sliced = any(n.startswith("Metadata/plate_") and n.endswith(".gcode") for n in names)
+        config_hash = (
+            hashlib.sha256(
+                json.dumps(config, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode(
+                    "utf-8", errors="surrogatepass"
+                )
+            ).hexdigest()
+            if config
+            else None
+        )
+        return PrintSnapshot(config, config_hash, slicer_name, slicer_version, _profile(config, sliced))
+    except Exception:
+        logger.warning("Failed to read snapshot from %s", path, exc_info=True)
+        return PrintSnapshot(None, None, None, None, {"sliced": False})
