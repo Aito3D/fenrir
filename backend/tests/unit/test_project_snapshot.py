@@ -5,6 +5,8 @@ import json
 import struct
 import zipfile
 
+import pytest
+
 from backend.app.services.project_snapshot import is_3mf, read_print_snapshot
 
 CONFIG = {
@@ -91,16 +93,21 @@ def test_is_3mf():
 
 
 def test_surrogate_in_config_no_exception(tmp_path):
-    """Config with lone surrogate should not raise UnicodeEncodeError in hash."""
-    # Create config that decodes to a surrogate after lossy utf-8 replacement
-    config_bytes = b'{"a":"' + b"\xed\xa0\x80" + b'"}'  # UTF-8 encoded U+D800
+    """Config with lone surrogate (via escaped JSON) should not raise UnicodeEncodeError in hash."""
+    # Use literal escaped JSON form: json.loads will parse \ud800 as an actual surrogate
+    config_text = '{"a": "\\ud800"}'
+    # Precondition: verify that this config can't be round-tripped without surrogatepass
+    config_obj = json.loads(config_text)
+    with pytest.raises(UnicodeEncodeError):
+        json.dumps(config_obj, ensure_ascii=False).encode("utf-8")
+    # Now verify that our reader handles it gracefully
     path = tmp_path / "surrogate.3mf"
     with zipfile.ZipFile(path, "w") as zf:
-        zf.writestr("Metadata/project_settings.config", config_bytes)
+        zf.writestr("Metadata/project_settings.config", config_text)
     snap = read_print_snapshot(path)
     assert snap is not None
-    # The surrogate is in the config, but surrogatepass handles it in hash
-    assert snap.config_hash is not None or snap.config is None
+    assert snap.config == config_obj  # Successfully parsed the surrogate
+    assert snap.config_hash is not None  # surrogatepass allowed encoding it
     assert snap.print_profile == {"sliced": False}
 
 
@@ -115,21 +122,29 @@ def test_deeply_nested_json_no_exception(tmp_path):
     assert snap.print_profile == {"sliced": False}
 
 
-def test_corrupted_zip_entry_no_exception(tmp_path):
-    """Corrupted zip entry (bad CRC / understated file_size) should not raise BadZipFile."""
+def test_corrupted_zip_entry_crc_mismatch_no_exception(tmp_path):
+    """Corrupted zip entry (CRC mismatch) should not raise BadZipFile."""
     path = tmp_path / "bad_crc.3mf"
-    with zipfile.ZipFile(path, "w") as zf:
-        zf.writestr("Metadata/project_settings.config", '{"version":"1.0"}')
-    # Corrupt the CRC in the local file header
+    content = '{"version":"1.0"}'
+    # Use ZIP_STORED (no compression) so we can safely flip data bytes
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_STORED) as zf:
+        zf.writestr("Metadata/project_settings.config", content)
+    # Flip a byte in the stored data (not in headers)
     with open(path, "r+b") as f:
         data = bytearray(f.read())
-        # Find a CRC field (after the file name) and corrupt it
-        if len(data) > 30:
-            data[30:34] = b"\x00\x00\x00\x00"
-        f.seek(0)
-        f.write(data)
+        # Find the stored data: search for the JSON content and flip a byte
+        idx = data.find(b'{"version":"1.0"}')
+        if idx >= 0:
+            data[idx + 5] ^= 0xFF  # Flip one byte in the data
+            f.seek(0)
+            f.write(data)
+    # Precondition: verify this file would raise BadZipFile on normal read
+    with pytest.raises(zipfile.BadZipFile), zipfile.ZipFile(path) as zf:
+        zf.read("Metadata/project_settings.config")
+    # Verify our reader handles it gracefully
     snap = read_print_snapshot(path)
     assert snap is not None
+    assert snap.config is None
     assert snap.print_profile == {"sliced": False}
 
 
@@ -138,18 +153,26 @@ def test_encrypted_entry_no_exception(tmp_path):
     path = tmp_path / "encrypted.3mf"
     with zipfile.ZipFile(path, "w") as zf:
         zf.writestr("Metadata/project_settings.config", '{"version":"1.0"}')
-    # Set general-purpose flag bit 0 to indicate encryption
+    # Patch central directory (not local header) to set encryption flag
     with open(path, "r+b") as f:
         data = bytearray(f.read())
-        if len(data) > 6:
-            # Local file header is at offset 0, general purpose flag at offset 6-7
-            flags = struct.unpack("<H", data[6:8])[0]
+        # Find central directory header signature "PK\x01\x02"
+        cd_offset = data.rfind(b"PK\x01\x02")
+        if cd_offset >= 0:
+            # General purpose flags at offset +8 from signature
+            flags_offset = cd_offset + 8
+            flags = struct.unpack("<H", data[flags_offset : flags_offset + 2])[0]
             flags |= 0x01  # Set encryption bit
-            data[6:8] = struct.pack("<H", flags)
-        f.seek(0)
-        f.write(data)
+            data[flags_offset : flags_offset + 2] = struct.pack("<H", flags)
+            f.seek(0)
+            f.write(data)
+    # Precondition: verify this file would raise RuntimeError on normal read
+    with pytest.raises(RuntimeError, match="is encrypted|password"), zipfile.ZipFile(path) as zf:
+        zf.read("Metadata/project_settings.config")
+    # Verify our reader handles it gracefully
     snap = read_print_snapshot(path)
     assert snap is not None
+    assert snap.config is None
     assert snap.print_profile == {"sliced": False}
 
 
@@ -158,16 +181,24 @@ def test_bad_compression_method_no_exception(tmp_path):
     path = tmp_path / "bad_compression.3mf"
     with zipfile.ZipFile(path, "w") as zf:
         zf.writestr("Metadata/project_settings.config", '{"version":"1.0"}')
-    # Overwrite compression method with unsupported value (99)
+    # Patch central directory (not local header) to set bad compression method
     with open(path, "r+b") as f:
         data = bytearray(f.read())
-        if len(data) > 10:
-            # Local file header, compression method at offset 8-9
-            data[8:10] = struct.pack("<H", 99)
-        f.seek(0)
-        f.write(data)
+        # Find central directory header signature "PK\x01\x02"
+        cd_offset = data.rfind(b"PK\x01\x02")
+        if cd_offset >= 0:
+            # Compression method at offset +10 from signature
+            method_offset = cd_offset + 10
+            data[method_offset : method_offset + 2] = struct.pack("<H", 99)  # Unsupported method
+            f.seek(0)
+            f.write(data)
+    # Precondition: verify this file would raise NotImplementedError on normal read
+    with pytest.raises(NotImplementedError), zipfile.ZipFile(path) as zf:
+        zf.read("Metadata/project_settings.config")
+    # Verify our reader handles it gracefully
     snap = read_print_snapshot(path)
     assert snap is not None
+    assert snap.config is None
     assert snap.print_profile == {"sliced": False}
 
 
