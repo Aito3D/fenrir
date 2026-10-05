@@ -9,9 +9,11 @@ once it lives there — and every path that reaches the filesystem goes through
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import unicodedata
+from collections.abc import Iterator
 from datetime import datetime
 from pathlib import Path
 
@@ -128,18 +130,39 @@ def _fit_name(stem: str, suffix: str, ext: str) -> str:
     return f"{stem[:room].rstrip(' .') or 'f'}{suffix}{ext}"
 
 
-def unique_file_path(directory: Path, filename: str) -> Path:
-    """A free path for ``filename`` inside ``directory``: ``a.step``, ``a (2).step``…
+def _candidate_paths(directory: Path, filename: str) -> Iterator[Path]:
+    """``a.step``, ``a (2).step``, ``a (3).step``… inside ``directory``.
 
     The extension is split off first so truncating a long name never eats it."""
     raw_stem, ext = _split_extension(filename)
     stem = sanitize_component(raw_stem, fallback="fichier")
-    candidate = safe_join_under(directory, _fit_name(stem, "", ext), http=False)
+    yield safe_join_under(directory, _fit_name(stem, "", ext), http=False)
     counter = 2
-    while candidate.exists():
-        candidate = safe_join_under(directory, _fit_name(stem, f" ({counter})", ext), http=False)
+    while True:
+        yield safe_join_under(directory, _fit_name(stem, f" ({counter})", ext), http=False)
         counter += 1
-    return candidate
+
+
+def unique_file_path(directory: Path, filename: str) -> Path:
+    """A free path for ``filename`` inside ``directory``: ``a.step``, ``a (2).step``…
+
+    Only checks existence: two concurrent writers can get the same answer. Use
+    ``claim_unique_file_path`` when the name is about to be written."""
+    return next(path for path in _candidate_paths(directory, filename) if not path.exists())
+
+
+def claim_unique_file_path(directory: Path, filename: str) -> Path:
+    """Like ``unique_file_path``, but the name is reserved atomically: an empty
+    file is created with ``O_EXCL``, so a concurrent writer moves on to the next
+    name. The caller replaces the placeholder (``os.replace``) or unlinks it."""
+    for path in _candidate_paths(directory, filename):
+        try:
+            fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o666)
+        except FileExistsError:
+            continue
+        os.close(fd)
+        return path
+    raise AssertionError("unreachable: candidate paths never run out")  # pragma: no cover
 
 
 def move_to_trash(project, path: Path) -> Path | None:

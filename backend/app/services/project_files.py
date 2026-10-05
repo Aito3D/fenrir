@@ -14,6 +14,7 @@ import logging
 import os
 import shutil
 import uuid
+import weakref
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -56,11 +57,11 @@ from backend.app.schemas.project_files import (
 from backend.app.services.pdf_thumbnail import generate_pdf_thumbnail
 from backend.app.services.project_snapshot import PrintSnapshot, is_3mf, read_print_snapshot
 from backend.app.services.project_storage import (
+    claim_unique_file_path,
     item_dir,
     move_to_trash,
     revision_dir,
     sanitize_component,
-    unique_file_path,
 )
 from backend.app.services.stl_thumbnail import MIN_USABLE_STL_BYTES, generate_stl_thumbnail
 from backend.app.utils.safe_path import safe_join_under
@@ -80,6 +81,51 @@ class ProjectFilesError(Exception):
 
 def _now() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+# One lock per item, held across every operation that writes into or moves the
+# item's folder (uploads hold it from the first streamed byte to the commit), so
+# a rename, delete or fork never runs under a half-written upload. The app runs
+# in a single process; entries vanish once no coroutine holds or awaits them.
+_item_locks: weakref.WeakValueDictionary[int, asyncio.Lock] = weakref.WeakValueDictionary()
+
+
+def _item_lock(item_id: int) -> asyncio.Lock:
+    lock = _item_locks.get(item_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _item_locks[item_id] = lock
+    return lock
+
+
+async def _fresh_item(db: AsyncSession, item_id: int) -> ProjectItem:
+    """The item as committed now (the caller's copy may predate a rename made while it waited for the lock)."""
+    item = (
+        await db.execute(select(ProjectItem).where(ProjectItem.id == item_id).execution_options(populate_existing=True))
+    ).scalar_one_or_none()
+    if item is None:
+        raise ProjectFilesError(404, "Item not found")
+    return item
+
+
+async def _fresh_revision(db: AsyncSession, revision_id: int, item_id: int) -> ProjectRevision:
+    revision = (
+        await db.execute(
+            select(ProjectRevision)
+            .where(ProjectRevision.id == revision_id, ProjectRevision.item_id == item_id)
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one_or_none()
+    if revision is None:
+        raise ProjectFilesError(404, "Revision not found")
+    return revision
+
+
+async def _require_item_unchanged(db: AsyncSession, item_id: int, section: str, name: str) -> None:
+    """Right before an upload's DB step: the folder it streamed into must still be the item's."""
+    row = (await db.execute(select(ProjectItem.section, ProjectItem.name).where(ProjectItem.id == item_id))).first()
+    if row is None or (row.section, row.name) != (section, name):
+        raise ProjectFilesError(409, "This item was renamed or deleted during the upload; try again")
 
 
 def _name_key(name: str) -> str:
@@ -210,16 +256,22 @@ def _cleanup_written(written: list[_WrittenFile]) -> None:
 async def _stream_files(folder: Path, uploads: list[UploadFile]) -> list[_WrittenFile]:
     """Stream every upload into ``folder``, make thumbnails and read the 3MF snapshot.
 
-    Touches no database. On any failure everything written by THIS call (files,
+    Touches no database. Each upload streams to its own ``.{uuid}.part`` and the
+    final name is claimed atomically, so overlapping uploads of one filename
+    never share a file. On any failure everything written by THIS call (files,
     ``.part`` files, thumbnails) is removed before the exception propagates."""
     written: list[_WrittenFile] = []
     part: Path | None = None
     try:
         for upload in uploads:
-            dest = unique_file_path(folder, upload.filename or "fichier")
-            part = safe_join_under(folder, f"{dest.name}.part", http=False)
+            part = safe_join_under(folder, f".{uuid.uuid4().hex}.part", http=False)
             size, digest = await _stream_upload_to_path(upload, part, settings.library_max_upload_bytes)
-            part.rename(dest)
+            dest = claim_unique_file_path(folder, upload.filename or "fichier")
+            try:
+                os.replace(part, dest)
+            except BaseException:
+                dest.unlink(missing_ok=True)
+                raise
             part = None
             entry = _WrittenFile(path=dest, size=size, digest=digest)
             written.append(entry)
@@ -341,14 +393,31 @@ async def add_revision(
     (e.g. ``create_item``) first."""
     if not uploads:
         raise ProjectFilesError(400, "A revision needs at least one file")
+    async with _item_lock(item.id):
+        return await _add_revision_locked(
+            db, project, await _fresh_item(db, item.id), uploads, note, derived_from_id, user_id
+        )
+
+
+async def _add_revision_locked(
+    db: AsyncSession,
+    project: Project,
+    item: ProjectItem,
+    uploads: list[UploadFile],
+    note: str | None,
+    derived_from_id: int | None,
+    user_id: int | None,
+) -> tuple[ProjectRevision, list[DuplicateWarning]]:
     if derived_from_id is not None:
         await _check_derived_from(db, project, None, derived_from_id)
+    item_id, section, name = item.id, item.section, item.name
     number = item.last_revision_number + 1
-    folder = revision_dir(project, item.section, item.name, number)
+    folder = revision_dir(project, section, name, number)
     created_folder = not any(folder.iterdir())
     written: list[_WrittenFile] = []
     try:
         written = await _stream_files(folder, uploads)
+        await _require_item_unchanged(db, item_id, section, name)
         revision = ProjectRevision(
             item_id=item.id,
             number=number,
@@ -447,20 +516,26 @@ async def add_files_to_revision(
 ) -> list[DuplicateWarning]:
     if not uploads:
         raise ProjectFilesError(400, "No file")
-    await _require_editable_files(db, revision)
-    folder = revision_dir(project, item.section, item.name, revision.number)
-    written: list[_WrittenFile] = []
-    try:
-        written = await _stream_files(folder, uploads)
-        await _require_editable_files(db, revision)  # the revision may have been used while streaming
-        rows = await _add_file_rows(db, project, revision, written, user_id)
-        warnings = await _duplicate_warnings(db, item, revision, rows)
-        await db.commit()
-    except BaseException:
-        await db.rollback()
-        _cleanup_written(written)
-        raise
-    return warnings
+    async with _item_lock(item.id):
+        item = await _fresh_item(db, item.id)
+        revision = await _fresh_revision(db, revision.id, item.id)
+        await _require_editable_files(db, revision)
+        item_id, section, name = item.id, item.section, item.name
+        folder = revision_dir(project, section, name, revision.number)
+        written: list[_WrittenFile] = []
+        try:
+            written = await _stream_files(folder, uploads)
+            await _require_item_unchanged(db, item_id, section, name)
+            # the revision may have been validated or used while streaming
+            await _require_editable_files(db, await _fresh_revision(db, revision.id, item_id))
+            rows = await _add_file_rows(db, project, revision, written, user_id)
+            warnings = await _duplicate_warnings(db, item, revision, rows)
+            await db.commit()
+        except BaseException:
+            await db.rollback()
+            _cleanup_written(written)
+            raise
+        return warnings
 
 
 async def _delete_file_rows(
@@ -486,6 +561,14 @@ async def _restore_and_rollback(db: AsyncSession, moved: Path | None, original: 
 
 
 async def remove_file_from_revision(
+    db: AsyncSession, project: Project, item: ProjectItem, revision: ProjectRevision, file_id: int
+) -> None:
+    async with _item_lock(item.id):
+        item = await _fresh_item(db, item.id)
+        await _remove_file_locked(db, project, item, await _fresh_revision(db, revision.id, item.id), file_id)
+
+
+async def _remove_file_locked(
     db: AsyncSession, project: Project, item: ProjectItem, revision: ProjectRevision, file_id: int
 ) -> None:
     await _require_editable_files(db, revision)
@@ -521,6 +604,14 @@ async def _clear_links_to(db: AsyncSession, revision_ids: list[int]) -> None:
 
 
 async def delete_revision(db: AsyncSession, project: Project, item: ProjectItem, revision: ProjectRevision) -> None:
+    async with _item_lock(item.id):
+        item = await _fresh_item(db, item.id)
+        await _delete_revision_locked(db, project, item, await _fresh_revision(db, revision.id, item.id))
+
+
+async def _delete_revision_locked(
+    db: AsyncSession, project: Project, item: ProjectItem, revision: ProjectRevision
+) -> None:
     if await revision_is_used(db, revision.id):
         raise ProjectFilesError(409, "This revision was printed or delivered and cannot be deleted")
     folder = item_dir(project, item.section, item.name).joinpath(
@@ -546,6 +637,11 @@ async def _item_revision_ids(db: AsyncSession, item_id: int) -> list[int]:
 
 
 async def rename_item(db: AsyncSession, project: Project, item: ProjectItem, new_name: str) -> ProjectItem:
+    async with _item_lock(item.id):
+        return await _rename_item_locked(db, project, await _fresh_item(db, item.id), new_name)
+
+
+async def _rename_item_locked(db: AsyncSession, project: Project, item: ProjectItem, new_name: str) -> ProjectItem:
     from backend.app.api.routes.library import to_absolute_path
 
     clean, key = _clean_item_name(new_name)
@@ -594,6 +690,11 @@ async def rename_item(db: AsyncSession, project: Project, item: ProjectItem, new
 
 
 async def delete_item(db: AsyncSession, project: Project, item: ProjectItem) -> None:
+    async with _item_lock(item.id):
+        await _delete_item_locked(db, project, await _fresh_item(db, item.id))
+
+
+async def _delete_item_locked(db: AsyncSession, project: Project, item: ProjectItem) -> None:
     revision_ids = await _item_revision_ids(db, item.id)
     for revision_id in revision_ids:
         if await revision_is_used(db, revision_id):
@@ -640,7 +741,17 @@ async def fork_revision(
     """New item in the same section whose R1 is a copy of ``revision`` (spec §2.4).
 
     Files are copied BEFORE any row is written so the database write lock is
-    held only for the final flush and commit."""
+    held only for the final flush and commit. The source item stays locked
+    while its files are read."""
+    async with _item_lock(item.id):
+        item = await _fresh_item(db, item.id)
+        revision = await _fresh_revision(db, revision.id, item.id)
+        return await _fork_revision_locked(db, project, item, revision, new_name, user_id)
+
+
+async def _fork_revision_locked(
+    db: AsyncSession, project: Project, item: ProjectItem, revision: ProjectRevision, new_name: str, user_id: int | None
+) -> ProjectItem:
     from backend.app.api.routes.library import to_absolute_path
 
     section = item.section
@@ -684,10 +795,10 @@ async def fork_revision(
             src = source["path"]
             if src is None or not src.exists():
                 continue
-            dest = unique_file_path(folder, source["filename"])
-            await asyncio.to_thread(shutil.copy2, src, dest)
+            dest = claim_unique_file_path(folder, source["filename"])
             entry = {"source": source, "dest": dest, "thumb_rel": None, "thumb_abs": None}
-            copies.append(entry)
+            copies.append(entry)  # before the copy, so cleanup also removes the claimed placeholder
+            await asyncio.to_thread(shutil.copy2, src, dest)
             entry["thumb_rel"], entry["thumb_abs"] = await asyncio.to_thread(_copy_thumbnail, source["thumbnail_path"])
         if not copies:
             raise ProjectFilesError(409, "No file of this revision could be copied")
