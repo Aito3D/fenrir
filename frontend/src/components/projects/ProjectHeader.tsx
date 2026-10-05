@@ -15,12 +15,23 @@ import { ProjectTagEditor, splitTagDrafts } from './ProjectTagEditor';
 /** Code chip, title, description and tags, edited in place (spec §3.2).
  *  The title and description are reworded in French when the field is left,
  *  with an undo; tags come from the shared catalogue or AI suggestions. */
-export function ProjectHeader({ project }: { project: Project }) {
+export function ProjectHeader({
+  project,
+  onEditingChange,
+}: {
+  project: Project;
+  /** Lets the page give the form the full row while it is open. */
+  onEditingChange?: (editing: boolean) => void;
+}) {
   const { t } = useTranslation();
   const { hasPermission } = useAuth();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditingState] = useState(false);
+  const setEditing = (next: boolean) => {
+    setEditingState(next);
+    onEditingChange?.(next);
+  };
   const [title, setTitle] = useState(project.name);
   const [description, setDescription] = useState(project.description ?? '');
   const [tags, setTags] = useState<TagDraft[]>(project.tag_list ?? []);
@@ -55,7 +66,7 @@ export function ProjectHeader({ project }: { project: Project }) {
       <div className="min-w-0 space-y-2">
         <div className="flex items-center gap-3">
           <ProjectCodeChip code={project.code} className="text-sm" />
-          <h1 className="truncate text-2xl font-bold text-white">{project.name}</h1>
+          <h1 className="min-w-0 break-words text-2xl font-bold text-white">{project.name}</h1>
           {hasPermission('projects:update') && (
             <button
               type="button"
@@ -88,7 +99,8 @@ export function ProjectHeader({ project }: { project: Project }) {
           label={t('projectsPdm.titleLabel')}
           value={title}
           onChange={setTitle}
-          className="flex-1"
+          className="min-w-0 flex-1"
+          settleInitial
           correct={(text) => api.reformulateProjectText(text, 'title')}
         />
       </div>
@@ -98,6 +110,7 @@ export function ProjectHeader({ project }: { project: Project }) {
         onChange={setDescription}
         multiline
         rows={3}
+        settleInitial
         correct={(text) => api.reformulateProjectText(text, 'description')}
       />
       <ProjectTagEditor value={tags} onChange={setTags} title={title} description={description} />

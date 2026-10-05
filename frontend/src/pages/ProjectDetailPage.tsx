@@ -203,6 +203,7 @@ export function ProjectDetailPage() {
   const { showToast } = useToast();
   const { hasPermission } = useAuth();
   const [showEditModal, setShowEditModal] = useState(false);
+  const [headerEditing, setHeaderEditing] = useState(false);
   const [editingNotes, setEditingNotes] = useState(false);
   const [notesContent, setNotesContent] = useState('');
   const [printFile, setPrintFile] = useState<LibraryFileListItem | null>(null);
@@ -510,25 +511,24 @@ export function ProjectDetailPage() {
         <span className="text-white">{project.name}</span>
       </div>
 
-      {/* Header */}
-      <div className="flex items-start justify-between">
-        <div className="flex items-center gap-4 animate-rise-lg vt-page-title">
-          <button
-            onClick={() => navigate('/projects')}
-            className="p-2 rounded-lg bg-bambu-card hover:bg-bambu-dark-tertiary transition-colors"
-          >
-            <ArrowLeft className="w-5 h-5 text-bambu-gray" />
-          </button>
-          <div className="flex items-center gap-3">
-            <div
-              className="w-4 h-4 rounded-full shrink-0"
-              style={{ backgroundColor: project.color || '#6b7280' }}
-            />
-            <ProjectHeader key={project.updated_at} project={project} />
-          </div>
-          <StatusBadge status={project.status} t={t} />
+      {/* Header: wraps on phones (buttons drop below); while the title form is
+          open it takes the full row under the back button. */}
+      <div className="flex flex-wrap items-start gap-x-4 gap-y-3 animate-rise-lg vt-page-title">
+        <button
+          onClick={() => navigate('/projects')}
+          className="p-2 rounded-lg bg-bambu-card hover:bg-bambu-dark-tertiary transition-colors"
+        >
+          <ArrowLeft className="w-5 h-5 text-bambu-gray" />
+        </button>
+        <div
+          className="mt-3 w-4 h-4 rounded-full shrink-0"
+          style={{ backgroundColor: project.color || '#6b7280' }}
+        />
+        <div className={`min-w-0 ${headerEditing ? 'order-last basis-full' : 'flex-1 basis-56 sm:flex-initial sm:basis-auto'}`}>
+          <ProjectHeader key={project.id} project={project} onEditingChange={setHeaderEditing} />
         </div>
-        <div className="flex gap-2">
+        <StatusBadge status={project.status} t={t} />
+        <div className="flex gap-2 sm:ml-auto">
           <Button
             variant="secondary"
             onClick={handleExportProject}
