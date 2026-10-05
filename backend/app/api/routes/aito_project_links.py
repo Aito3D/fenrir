@@ -168,7 +168,7 @@ async def drop_task_files(
     user: User | None = _aito_update,
     __: User | None = _projects_update,
 ) -> DropFilesResponse:
-    """Drop files on a linked task: sorted into sections by extension, one revision per item name."""
+    """Drop printing files on a linked task: Impression, one revision per item name; others refuse the drop."""
     task = await _task(db, task_id)
     order_id = task.project_id
     try:

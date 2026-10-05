@@ -666,7 +666,8 @@ describe('FileManagerPage', () => {
       await waitFor(() => expect(screen.getByText('Benchy')).toBeInTheDocument());
       const listBenchy = actionTitlesOf(listRow('Benchy'));
       const listBracket = actionTitlesOf(listRow('bracket.stl'));
-      expect(listBenchy).toEqual(['Print', '3D Preview', 'Download', 'File details', 'Rename', 'Delete']);
+      // Fenrir: printable files also get Move to project (projects PDM phase 5).
+      expect(listBenchy).toEqual(['Print', '3D Preview', 'Download', 'File details', 'Rename', 'Move to project…', 'Delete']);
       expect(listBracket).toContain('Generate Thumbnail');
 
       await user.click(screen.getByTitle('Column view'));

@@ -1608,6 +1608,46 @@ describe('SettingsPage', () => {
       await waitFor(() => expect(screen.getByRole('button', { name: /^API Keys/ })).toBeInTheDocument());
     });
 
+    // Fenrir: Projects tab (auto-filing + legacy migration), settings:update + projects:update.
+    it('lists Projects alphabetically and opens its card', async () => {
+      server.use(
+        http.get('/api/v1/projects/legacy-migration/status', () =>
+          HttpResponse.json({ running: false, total: 0, done: 0, current: null, failures: [], pending: 0 })),
+      );
+      const user = userEvent.setup();
+      render(<SettingsPage />);
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Projects' })).toBeInTheDocument());
+      const labels = tabLabels().map((label) => label.replace(/\d+$/, ''));
+      const idx = labels.indexOf('Projects');
+      expect(labels.slice(1)).toEqual([...labels.slice(1)].sort((a, b) => a.localeCompare(b, 'en')));
+      expect(labels[idx - 1].localeCompare('Projects', 'en')).toBeLessThan(0);
+      await user.click(screen.getByRole('button', { name: 'Projects' }));
+      await waitFor(() => expect(document.getElementById('card-projects-filing')).not.toBeNull());
+      expect(window.location.search).toContain('tab=projects');
+    });
+
+    it('hides Projects from a user without settings:update', async () => {
+      signInWith(['settings:read', 'camera:view', 'projects:update']);
+      render(<SettingsPage />);
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Camera' })).toBeInTheDocument());
+      expect(screen.queryByRole('button', { name: 'Projects' })).toBeNull();
+    });
+
+    it('hides Projects from a user with settings:update but not projects:update', async () => {
+      signInWith(['settings:read', 'settings:update', 'camera:view']);
+      render(<SettingsPage />);
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Camera' })).toBeInTheDocument());
+      expect(screen.queryByRole('button', { name: 'Projects' })).toBeNull();
+    });
+
+    it('sends a Projects link to General for a user without settings:update', async () => {
+      signInWith(['settings:read', 'camera:view']);
+      window.history.replaceState({}, '', '/?tab=projects');
+      render(<SettingsPage />);
+      await waitFor(() => expect(window.location.search).not.toContain('tab=projects'));
+      expect(document.getElementById('card-projects-tab')).toBeNull();
+    });
+
     it.each(['#card-camera-tokens', '#card-stream-overlay'])('opens the Camera tab for an old API Keys link to %s', async (hash) => {
       window.history.replaceState({}, '', `/?tab=apikeys${hash}`);
       render(<SettingsPage />);

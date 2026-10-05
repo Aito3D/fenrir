@@ -10,7 +10,7 @@ import { RevisionBlock } from './RevisionBlock';
 import type { DerivedOption } from './RevisionBlock';
 import type { FileActions } from './useFileActions';
 import { filesFromDataTransfer } from './fileDrop';
-import { SECTION_LABEL_KEYS, STATUS_CHIP_CLS, STATUS_LABEL_KEYS, chipBase } from './filesUi';
+import { PRINTABLE_ACCEPT, SECTION_LABEL_KEYS, STATUS_CHIP_CLS, STATUS_LABEL_KEYS, chipBase, isSectionEnabled } from './filesUi';
 
 interface Props {
   item: ProjectItemOut;
@@ -23,7 +23,9 @@ const iconBtn = `inline-flex h-11 w-11 items-center justify-center rounded-lg te
 export function ItemRow({ item, derivedOptions, actions }: Props) {
   const { t } = useTranslation();
   const { hasPermission } = useAuth();
-  const canUpdate = hasPermission('projects:update');
+  // An item in a disabled section (projects hold printing files only for now) is
+  // read-only except delete: no upload, drop or rename.
+  const canUpdate = hasPermission('projects:update') && isSectionEnabled(item.section);
   const canDelete = hasPermission('projects:delete');
   const input = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
@@ -93,16 +95,20 @@ export function ItemRow({ item, derivedOptions, actions }: Props) {
         )}
         <span className="text-xs text-bambu-gray">{t('projectsPdm.files.fileCount', { count: fileCount })}</span>
         {busy && <span role="status" className="text-xs text-bambu-green">{t('projectsPdm.files.uploading')}</span>}
-        {canUpdate && (
+        {(canUpdate || (canDelete && !isSectionEnabled(item.section))) && (
           <span className="flex">
-            <button type="button" className={`${iconBtn} disabled:opacity-40`} aria-label={t('projectsPdm.files.newRevision')}
-              title={t('projectsPdm.files.newRevision')} disabled={busy} onClick={() => input.current?.click()}>
-              <Upload className="h-4 w-4" />
-            </button>
-            <button type="button" className={iconBtn} aria-label={t('projectsPdm.files.rename')}
-              title={t('projectsPdm.files.rename')} onClick={startRename}>
-              <Pencil className="h-4 w-4" />
-            </button>
+            {canUpdate && (
+              <>
+                <button type="button" className={`${iconBtn} disabled:opacity-40`} aria-label={t('projectsPdm.files.newRevision')}
+                  title={t('projectsPdm.files.newRevision')} disabled={busy} onClick={() => input.current?.click()}>
+                  <Upload className="h-4 w-4" />
+                </button>
+                <button type="button" className={iconBtn} aria-label={t('projectsPdm.files.rename')}
+                  title={t('projectsPdm.files.rename')} onClick={startRename}>
+                  <Pencil className="h-4 w-4" />
+                </button>
+              </>
+            )}
             {canDelete && (
               <button type="button" className={`${iconBtn} hover:text-red-400`} aria-label={t('projectsPdm.files.deleteItem')}
                 title={t('projectsPdm.files.deleteItem')} onClick={() => setConfirmDelete(true)}>
@@ -111,12 +117,14 @@ export function ItemRow({ item, derivedOptions, actions }: Props) {
             )}
           </span>
         )}
-        <input ref={input} type="file" multiple className="hidden" data-testid={`new-revision-input-${item.id}`}
-          onChange={(e) => {
-            const files = Array.from(e.target.files ?? []);
-            e.target.value = '';
-            if (files.length) void actions.uploadRevision(item.id, files);
-          }} />
+        {canUpdate && (
+          <input ref={input} type="file" multiple accept={PRINTABLE_ACCEPT} className="hidden" data-testid={`new-revision-input-${item.id}`}
+            onChange={(e) => {
+              const files = Array.from(e.target.files ?? []);
+              e.target.value = '';
+              if (files.length) void actions.uploadRevision(item.id, files);
+            }} />
+        )}
       </div>
       {(src || rowOutdated) && (
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-2 pb-2 pl-8 text-xs text-bambu-gray">

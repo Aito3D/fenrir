@@ -15,6 +15,7 @@ from backend.app.models.project import Project
 from backend.app.services import aito_project_links as links, project_storage
 from backend.app.services.aito_events import KINDS
 from backend.app.services.project_files import add_revision, create_item
+from backend.app.services.project_filing import section_for_filename
 from backend.app.services.project_tags import project_tag_refs
 
 
@@ -579,7 +580,7 @@ def _upload(name, data=b"x"):
     ],
 )
 def test_section_for_filename(name, section):
-    assert links.section_for_filename(name) == section
+    assert section_for_filename(name) == section
 
 
 @pytest.mark.parametrize(
@@ -608,20 +609,20 @@ async def test_drop_files_routes_by_extension_and_existing_name(db_session):
     response = await links.drop_files_on_task(
         db_session,
         task,
-        [_upload("plate.gcode.3mf"), _upload("scan.ply"), _upload("scan.obj"), _upload("scan.pdf")],
+        [_upload("plate.gcode.3mf"), _upload("Plate.gcode"), _upload("bracket.3mf"), _upload("bracket.bgcode")],
         user_id=None,
         actor="Paul",
     )
 
-    by_name = {(r.item_name, r.section): r for r in response.results}
-    assert by_name[("Plate", "impression")].item_id == item.id
-    assert by_name[("Plate", "impression")].revision_number == 2
-    assert by_name[("scan", "scan")].revision_number == 1
-    assert sorted(r.filename for r in response.results if r.section == "scan") == ["scan.obj", "scan.ply"]
-    assert by_name[("scan", "docs")].revision_number == 1
+    # every drop lands in Impression (projects hold printing files only for now)
+    assert {r.section for r in response.results} == {"impression"}
+    by_name = {r.filename: r for r in response.results}
+    assert by_name["plate.gcode.3mf"].item_id == item.id
+    assert by_name["plate.gcode.3mf"].revision_number == 2
     # two files of the same item name in one drop share ONE revision
-    scan_item_ids = {r.item_id for r in response.results if r.section == "scan"}
-    assert len(scan_item_ids) == 1
+    assert by_name["Plate.gcode"].item_id == item.id and by_name["Plate.gcode"].revision_number == 2
+    assert by_name["bracket.3mf"].item_id == by_name["bracket.bgcode"].item_id != item.id
+    assert by_name["bracket.3mf"].revision_number == 1
 
     events = await _events(db_session, "project.files_dropped")
     assert len(events) == 1

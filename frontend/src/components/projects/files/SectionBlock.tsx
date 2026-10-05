@@ -9,7 +9,7 @@ import { ItemRow } from './ItemRow';
 import type { DerivedOption } from './RevisionBlock';
 import type { FileActions } from './useFileActions';
 import { filesFromDataTransfer, itemNameFromFile, itemNameKey } from './fileDrop';
-import { SECTION_LABEL_KEYS } from './filesUi';
+import { PRINTABLE_ACCEPT, SECTION_LABEL_KEYS } from './filesUi';
 
 interface Props {
   section: ProjectSection;
@@ -37,7 +37,7 @@ export function SectionBlock({ section, items, derivedOptions, actions }: Props)
     setDragOver(false);
     if (!canUpdate) return;
     const dropped = filesFromDataTransfer(e.dataTransfer);
-    if (!dropped.length) return;
+    if (!dropped.length || !actions.acceptsFiles(dropped)) return;
     setOpen(true);
     const itemName = itemNameFromFile(dropped[0].name);
     const key = itemNameKey(itemName);
@@ -108,9 +108,13 @@ export function SectionBlock({ section, items, derivedOptions, actions }: Props)
                 className={`min-h-[44px] rounded-lg bg-bambu-dark-tertiary px-3 py-1.5 text-xs text-white md:min-h-0 ${focusRingCls}`}>
                 {files.length ? files.map((f) => f.name).join(', ') : t('projectsPdm.files.chooseFiles')}
               </button>
-              <input ref={chooser} type="file" multiple className="hidden" data-testid={`new-item-files-${section}`}
+              <input ref={chooser} type="file" multiple accept={PRINTABLE_ACCEPT} className="hidden" data-testid={`new-item-files-${section}`}
                 onChange={(e) => {
                   const picked = Array.from(e.target.files ?? []);
+                  if (!actions.acceptsFiles(picked)) {
+                    e.target.value = '';
+                    return;
+                  }
                   setFiles(picked);
                   if (picked.length && !name.trim()) setName(itemNameFromFile(picked[0].name));
                 }} />

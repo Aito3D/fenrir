@@ -697,6 +697,16 @@ class VirtualPrinterInstance:
                     logger.info("[VP %s] Archived: %s - %s", self.name, archive.id, archive.print_name)
                     await self._broadcast_archive_created(archive)
                     archived = True
+                    # Fenrir: a "P-0042_…" send also lands in that project (projects PDM
+                    # phase 5) as a copy; the archive stays as it is. Never raises.
+                    try:
+                        from backend.app.services.project_filing import auto_file_by_code
+
+                        await auto_file_by_code(
+                            db, filename=file_path.name, path=file_path, library_file=None, user_id=None
+                        )
+                    except Exception as exc:
+                        logger.warning("[VP %s] Auto-filing %s failed: %s", self.name, file_path.name, exc)
                 else:
                     logger.error("Failed to archive file: %s", file_path.name)
         except Exception as e:

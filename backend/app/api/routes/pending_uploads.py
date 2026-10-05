@@ -1,5 +1,6 @@
 """API routes for pending uploads (virtual printer queue mode)."""
 
+import logging  # Fenrir: auto-filing failures (projects PDM phase 5)
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -14,6 +15,8 @@ from backend.app.core.permissions import Permission
 from backend.app.models.pending_upload import PendingUpload
 from backend.app.models.user import User
 from backend.app.services.archive import ArchiveService, resolve_display_stem
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/pending-uploads", tags=["pending-uploads"])
 
@@ -294,6 +297,20 @@ async def archive_pending_upload(
         pending.project_id = request.project_id
 
     await db.commit()
+    # Fenrir: read before auto-filing below, whose failure path rolls the session back.
+    response = {
+        "id": archive.id,
+        "print_name": archive.print_name,
+        "filename": archive.filename,
+    }
+
+    # Fenrir: a "P-0042_…" file also lands in that project as a copy (projects PDM phase 5).
+    try:
+        from backend.app.services.project_filing import auto_file_by_code
+
+        await auto_file_by_code(db, filename=pending.filename, path=file_path, library_file=None, user_id=None)
+    except Exception:
+        logger.warning("Auto-filing pending upload %s failed", upload_id, exc_info=True)
 
     # Clean up temp file
     try:
@@ -301,11 +318,7 @@ async def archive_pending_upload(
     except OSError:
         pass  # Best-effort temp file cleanup after successful archive
 
-    return {
-        "id": archive.id,
-        "print_name": archive.print_name,
-        "filename": archive.filename,
-    }
+    return response
 
 
 @router.delete("/{upload_id}")

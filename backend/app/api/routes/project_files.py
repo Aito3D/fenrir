@@ -16,8 +16,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.background import BackgroundTask
 
-from backend.app.api.routes.library import to_absolute_path
-from backend.app.core.auth import RequirePermissionIfAuthEnabled, require_permission_if_auth_enabled, security
+from backend.app.api.routes.library import _ensure_library_file_visible, may_modify_library_file, to_absolute_path
+from backend.app.core.auth import (
+    RequirePermissionIfAuthEnabled,
+    require_ownership_permission,
+    require_permission_if_auth_enabled,
+    security,
+)
 from backend.app.core.config import settings
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
@@ -26,16 +31,20 @@ from backend.app.models.project import Project
 from backend.app.models.user import User
 from backend.app.schemas.aito_project_links import ProjectOrdersResponse
 from backend.app.schemas.project_files import (
+    ImportLibraryFilesRequest,
+    ImportLibraryFilesResponse,
+    LegacyMigrationStatus,
     ProjectItemCreate,
     ProjectItemFork,
     ProjectItemOut,
     ProjectItemRename,
     ProjectRevisionOut,
     ProjectRevisionUpdate,
+    ProjectSuggestionForFile,
     ProjectTreeResponse,
     RevisionUploadResponse,
 )
-from backend.app.services import aito_project_links as aito_links, project_files as svc
+from backend.app.services import aito_project_links as aito_links, project_files as svc, project_filing
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +97,8 @@ def _build_zip(paths_and_names: list[tuple[Path, str]], archive: Path) -> int:
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 upload_router = APIRouter(prefix="/projects", tags=["projects"], route_class=_ProjectUploadCappedRoute)
+# Phase 5: the File Manager side of the bridge (no upstream /library route shares these paths).
+library_router = APIRouter(prefix="/library", tags=["projects"])
 
 
 def _raise(exc: svc.ProjectFilesError):
@@ -155,6 +166,32 @@ async def _revision_out(db: AsyncSession, project: Project, revision_id: int) ->
     raise HTTPException(status_code=404, detail="Revision not found")
 
 
+# --- phase 5: legacy migration (literal paths, before the /{project_id} routes) ---
+
+
+@router.post("/legacy-migration/start", response_model=LegacyMigrationStatus, status_code=202)
+async def start_legacy_migration(
+    db: AsyncSession = Depends(get_db),
+    _settings: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
+    _projects: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
+):
+    """Move every not-yet-migrated project's legacy printing files into its tree,
+    in the background (one project at a time). 409 while a run is in progress."""
+    if not project_filing.start_legacy_migration():
+        raise HTTPException(status_code=409, detail="The legacy migration is already running")
+    return await project_filing.legacy_migration_status(db)
+
+
+@router.get("/legacy-migration/status", response_model=LegacyMigrationStatus)
+async def get_legacy_migration_status(
+    db: AsyncSession = Depends(get_db),
+    _settings: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
+    _projects: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
+):
+    """Progress of the current (or last) run; ``pending`` = projects still to migrate."""
+    return await project_filing.legacy_migration_status(db)
+
+
 @router.get("/{project_id}/tree", response_model=ProjectTreeResponse)
 async def get_tree(
     project_id: int,
@@ -184,6 +221,7 @@ async def create_item(
 ):
     project = await _project(db, project_id)
     try:
+        svc.require_enabled_section(body.section)  # projects hold printing files only for now
         item = await svc.create_item(db, project, section=body.section, name=body.name, user_id=_uid(user))
     except svc.ProjectFilesError as exc:
         _raise(exc)
@@ -229,7 +267,9 @@ async def upload_revision(
     user: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
 ):
     try:
+        svc.require_printable_uploads(files)
         item, project = await svc.get_item_for_project(db, item_id)
+        svc.require_enabled_section(item.section)
         revision, warnings = await svc.add_revision(
             db, project, item, files, note=note, derived_from_id=derived_from_id, user_id=_uid(user)
         )
@@ -274,7 +314,9 @@ async def add_files(
     user: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
 ):
     try:
+        svc.require_printable_uploads(files)
         revision, item, project = await svc.get_revision_bundle(db, revision_id)
+        svc.require_enabled_section(item.section)
         warnings = await svc.add_files_to_revision(db, project, item, revision, files, _uid(user))
     except svc.ProjectFilesError as exc:
         _raise(exc)
@@ -387,3 +429,78 @@ async def download_revision(
         media_type="application/zip",
         background=BackgroundTask(archive.unlink, missing_ok=True),
     )
+
+
+# --- phase 5: File Manager bridge ---------------------------------------------
+
+
+@router.post("/{project_id}/import-library-files", response_model=ImportLibraryFilesResponse)
+async def import_library_files(
+    project_id: int,
+    body: ImportLibraryFilesRequest,
+    db: AsyncSession = Depends(get_db),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(Permission.LIBRARY_UPDATE_ALL, Permission.LIBRARY_UPDATE_OWN)
+    ),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
+):
+    """Move File Manager files into the project (Impression). Same ownership rule
+    as ``/library/files/move``: files of others are skipped (``not_owner``) without
+    ``library:update_all``. Files the File Manager can't see (project files,
+    trashed, unknown ids) are skipped as ``not_found``."""
+    user, can_modify_all = auth_result
+    project = await _project(db, project_id)
+    file_ids = list(dict.fromkeys(body.file_ids))
+    rows = {
+        row.id: row
+        for row in (await db.execute(LibraryFile.file_manager().where(LibraryFile.id.in_(file_ids)))).scalars()
+    }
+    files: list[LibraryFile] = []
+    pre_skipped: list[dict] = []
+    for file_id in file_ids:
+        row = rows.get(file_id)
+        if row is None:
+            pre_skipped.append({"file_id": file_id, "code": "not_found", "reason": "file not found"})
+        elif not may_modify_library_file(row, user, can_modify_all):
+            pre_skipped.append({"file_id": file_id, "code": "not_owner", "reason": "not the file owner"})
+        else:
+            files.append(row)
+    try:
+        result = await project_filing.move_library_files_to_project(
+            db, project, files, item_id=body.item_id, new_item_name=body.new_item_name, user_id=_uid(user)
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except svc.ProjectFilesError as exc:
+        _raise(exc)
+
+    revisions: dict[int, dict] = {}
+    for entry in [*result.moved, *result.copied]:
+        revisions.setdefault(entry["revision_id"], entry)
+    for revision_id, entry in revisions.items():
+        await _record_linked(
+            db,
+            project_id,
+            "project.revision_added",
+            user,
+            f"{entry['item_name']} R{entry['revision_number']}",
+            {"section": entry["section"], "item_id": entry["item_id"], "revision_id": revision_id},
+        )
+    return ImportLibraryFilesResponse(moved=result.moved, copied=result.copied, skipped=pre_skipped + result.skipped)
+
+
+@library_router.get("/files/{file_id}/project-suggestions", response_model=list[ProjectSuggestionForFile])
+async def library_file_project_suggestions(
+    file_id: int,
+    limit: int = Query(default=5, ge=1, le=20),
+    db: AsyncSession = Depends(get_db),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(Permission.LIBRARY_READ_ALL, Permission.LIBRARY_READ_OWN)
+    ),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_READ),
+):
+    """Projects the file likely belongs to (code prefix, then item name, then project name)."""
+    user, can_read_all = auth_result
+    row = (await db.execute(LibraryFile.file_manager().where(LibraryFile.id == file_id))).scalar_one_or_none()
+    file = _ensure_library_file_visible(row, user, can_read_all)
+    return await project_filing.suggest_projects_for_filename(db, file.filename, limit)

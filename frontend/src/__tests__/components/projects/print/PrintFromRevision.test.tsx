@@ -137,6 +137,8 @@ describe('Print from a project revision', () => {
     expect(printIn('notes.pdf')).not.toBeInTheDocument();
     expect(within(r3).getByText('printed 2 times')).toBeInTheDocument();
 
+    // The modeling item now sits in the collapsed "Older files" group.
+    await user.click(screen.getByRole('button', { name: /Older files/ }));
     await user.click(screen.getByRole('button', { name: /Support$/ }));
     expect(within(screen.getByTestId('revision-2')).queryByRole('button', { name: /^Print/ })).not.toBeInTheDocument();
   });

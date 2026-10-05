@@ -61,6 +61,7 @@ from backend.app.schemas.library import (
     CombineFilesRequest,
     DuplicateCheckItem,
     ExternalFolderCreate,
+    FiledToProject,  # Fenrir: projects PDM phase 5
     FileDuplicate,
     FileHistoryEvent,
     FileHistoryResponse,
@@ -161,6 +162,13 @@ def _ensure_library_file_visible(
     if library_file.created_by_id is None or library_file.created_by_id != user.id:
         raise HTTPException(404, "File not found")
     return library_file
+
+
+# Fenrir: the per-file ownership rule of the bulk move (``move_files``), shared with
+# the project import route (project_files.py) so both apply exactly one rule.
+def may_modify_library_file(library_file: LibraryFile, user: User | None, can_modify_all: bool) -> bool:
+    """``can_modify_all`` (``*_all`` permission or auth off), else only the owner; ownerless needs ALL."""
+    return can_modify_all or (user is not None and library_file.created_by_id == user.id)
 
 
 def get_library_dir() -> Path:
@@ -2714,6 +2722,34 @@ class _ContentLengthCappedRoute(APIRoute):
         return route_handler
 
 
+async def _auto_file_upload(
+    db: AsyncSession, library_file: LibraryFile, file_path: Path, current_user: User | None
+) -> FiledToProject | None:
+    """Fenrir: auto-file a fresh upload by its project code; never fails the upload.
+
+    An uploader without ``projects:update`` (auth on) never files into a project."""
+    try:
+        from backend.app.services import project_filing
+
+        if current_user is not None and not current_user.has_permission(Permission.PROJECTS_UPDATE.value):
+            return None
+        filed = await project_filing.auto_file_by_code(
+            db,
+            filename=library_file.filename,
+            path=file_path,
+            library_file=library_file,
+            user_id=current_user.id if current_user else None,
+        )
+    except Exception:
+        logger.warning("Auto-filing upload %s failed", file_path.name, exc_info=True)
+        return None
+    if filed is None:
+        return None
+    return FiledToProject(
+        project_id=filed.project_id, code=filed.code, item_name=filed.item_name, revision_number=filed.revision_number
+    )
+
+
 async def upload_file(
     file: UploadFile = File(...),
     folder_id: int | None = None,
@@ -2878,7 +2914,7 @@ async def upload_file(
         await db.commit()
         await db.refresh(library_file)
 
-        return FileUploadResponse(
+        response = FileUploadResponse(
             id=library_file.id,
             filename=library_file.filename,
             file_type=library_file.file_type,
@@ -2887,6 +2923,10 @@ async def upload_file(
             duplicate_of=duplicate_of,
             metadata=library_file.file_metadata,
         )
+        # Fenrir: a printing file named "P-0042_…" goes into that project (projects PDM
+        # phase 5). Best-effort: the upload itself has already succeeded.
+        response.filed_to_project = await _auto_file_upload(db, library_file, file_path, current_user)
+        return response
     except HTTPException:
         raise
     except Exception as e:
@@ -6602,7 +6642,7 @@ async def move_files(
         if not file:
             continue
         # Ownership check
-        if not can_modify_all and file.created_by_id != user.id:
+        if not may_modify_library_file(file, user, can_modify_all):  # Fenrir: shared with the project import
             skipped += 1
             skipped_reasons.append({"file_id": file_id, "code": "not_owner", "reason": "not the file owner"})
             continue

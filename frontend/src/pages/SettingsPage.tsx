@@ -1,5 +1,5 @@
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Plus, Plug, AlertTriangle, RotateCcw, Bell, Download, RefreshCw, ExternalLink, Globe, Droplets, Thermometer, FileText, Edit2, Pencil, Send, CheckCircle, XCircle, History, Trash2, Zap, TrendingUp, Calendar, DollarSign, Power, PowerOff, Key, Copy, Database, X, Shield, Printer, Cylinder, Wifi, Home, Video, Users, Lock, Unlock, ChevronDown, Save, Mail, Flame, Layers, ListOrdered, Code, Search, Scale, Settings as SettingsIcon, ScanEye, Cog, QrCode, Heart, Briefcase, Workflow, UploadCloud, MonitorPlay, Info } from 'lucide-react';
+import { Loader2, Plus, Plug, AlertTriangle, RotateCcw, Bell, Download, RefreshCw, ExternalLink, Globe, Droplets, Thermometer, FileText, Edit2, Pencil, Send, CheckCircle, XCircle, History, Trash2, Zap, TrendingUp, Calendar, DollarSign, Power, PowerOff, Key, Copy, Database, X, Shield, Printer, Cylinder, Wifi, Home, Video, Users, Lock, Unlock, ChevronDown, Save, Mail, Flame, Layers, ListOrdered, Code, Search, Scale, Settings as SettingsIcon, ScanEye, Cog, QrCode, Heart, Briefcase, Workflow, UploadCloud, MonitorPlay, Info, FolderKanban } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
@@ -51,6 +51,7 @@ import { GitHubBackupSettings } from '../components/GitHubBackupSettings';
 import { ZohoSettings } from '../components/ZohoSettings';
 import { AiSettings } from '../components/AiSettings';
 import { HeimdallSettings } from '../components/HeimdallSettings';
+import { ProjectsSettingsCard, canManageProjectsSettings } from '../components/projects/filing/ProjectsSettingsCard'; // Fenrir: Projects tab
 import { FailureDetectionSettings } from '../components/FailureDetectionSettings';
 import { EmailSettings } from '../components/EmailSettings';
 import { LDAPSettings } from '../components/LDAPSettings';
@@ -71,7 +72,7 @@ import { availableEngines, hasEngineChoice, resolveEngine, type SliceEngineId } 
 import { NumberInput } from '../components/NumberInput';
 import { PrinterSearchPicker } from '../components/PrinterSearchPicker';
 
-const validTabs = ['general', 'plugs', 'sensors', 'notifications', 'queue', 'filament', 'camera', 'network', 'apikeys', 'virtual-printer', 'spoolbuddy', 'failure-detection', 'users', 'backup', 'zoho'] as const;
+const validTabs = ['general', 'plugs', 'sensors', 'notifications', 'queue', 'filament', 'camera', 'network', 'apikeys', 'virtual-printer', 'spoolbuddy', 'failure-detection', 'users', 'backup', 'zoho', 'projects'] as const; // Fenrir: + projects
 type TabType = typeof validTabs[number];
 interface SettingsTabEntry { tab: TabType; icon: LucideIcon; label: string; extra?: ReactNode }
 
@@ -286,6 +287,8 @@ export function SettingsPage() {
   // Camera tokens and the overlay builder used to live under API Keys; links
   // to them (bookmarks, the wiki, /camera-tokens) open the Camera tab instead.
   const canSeeApiKeysTab = hasPermission('api_keys:read') || hasPermission('settings:update');
+  // Fenrir: the Projects tab holds one card, gated like it (settings:update + projects:update).
+  const canSeeProjectsTab = canManageProjectsSettings(hasPermission);
   const isLegacyCameraLink = tabParam === 'apikeys'
     && ['#card-camera-tokens', '#card-stream-overlay'].includes(window.location.hash);
   const initialTab = isLegacyEmailTab ? 'users'
@@ -324,6 +327,12 @@ export function SettingsPage() {
     if (!authLoading && activeTab === 'apikeys' && !canSeeApiKeysTab) handleTabChange('camera');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, activeTab, canSeeApiKeysTab]);
+
+  // Fenrir: a Projects link for a user who may not see that tab opens General.
+  useEffect(() => {
+    if (!authLoading && activeTab === 'projects' && !canSeeProjectsTab) handleTabChange('general');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authLoading, activeTab, canSeeProjectsTab]);
 
   // Switch the Workflow tab's sub-tab and reflect it in the URL so deep-links work.
   const handleQueueSubTabChange = (sub: 'dispatch' | 'pipelines') => {
@@ -1634,6 +1643,10 @@ export function SettingsPage() {
     { tab: 'users', icon: Users, label: t('settings.tabs.users'), extra: authEnabled && <span className="w-2 h-2 rounded-full shrink-0 bg-green-400" /> },
     { tab: 'backup', icon: Database, label: t('settings.tabs.backup'), extra: statusDot(!!((cloudAuthStatus?.is_authenticated && githubBackupStatus?.configured && githubBackupStatus?.enabled) || settings?.local_backup_enabled)) },
     { tab: 'zoho', icon: Briefcase, label: t('settings.tabs.zoho') },
+    // Fenrir: Projects (auto-filing by code + legacy file migration).
+    ...(canSeeProjectsTab
+      ? [{ tab: 'projects', icon: FolderKanban, label: t('settings.tabs.projects') } as SettingsTabEntry]
+      : []),
   ] as SettingsTabEntry[]).sort((x, y) => x.label.localeCompare(y.label, i18n.language));
 
   return (
@@ -7833,6 +7846,13 @@ export function SettingsPage() {
           <ZohoSettings />
           <AiSettings />
           <HeimdallSettings />
+        </div>
+      )}
+
+      {/* Fenrir: Projects tab */}
+      {activeTab === 'projects' && (
+        <div id="card-projects-tab" className="space-y-3">
+          <ProjectsSettingsCard />
         </div>
       )}
 

@@ -79,7 +79,7 @@ const link = (task_id: number, id: number, code: string, task_title: string | nu
 const unlinkedTask = (task_id: number, task_title: string) => ({
   task_id, task_title, project: null, sections: {}, deliveries: [] as number[],
 });
-const fileDrop = () => ({ dataTransfer: { files: [new File(['x'], 'part.step')], types: ['Files'] } });
+const fileDrop = () => ({ dataTransfer: { files: [new File(['x'], 'part.3mf')], types: ['Files'] } });
 
 let codes: Record<string, string[]>;
 let links: ReturnType<typeof link>[];
@@ -94,7 +94,7 @@ beforeEach(() => {
     http.get(`/api/v1/aito/${ORDER}/project-links`, () => HttpResponse.json({ order_id: ORDER, tasks: links })),
     http.post('/api/v1/aito/tasks/:id/files', ({ params }) => {
       posted.push(String(params.id));
-      return HttpResponse.json({ project_id: 7, results: [{ filename: 'part.step', section: 'modelisation', item_id: 1, item_name: 'part', revision_number: 1 }] });
+      return HttpResponse.json({ project_id: 7, results: [{ filename: 'part.3mf', section: 'impression', item_id: 1, item_name: 'part', revision_number: 1 }] });
     }),
   );
 });
@@ -142,7 +142,7 @@ describe('card file drop', () => {
     render(<CardView project={project} onExpand={() => {}} />);
     fireEvent.drop(zone(), fileDrop());
     await waitFor(() => expect(posted).toEqual(['11']));
-    expect(spy).toHaveBeenCalledWith(11, [expect.objectContaining({ name: 'part.step' })]);
+    expect(spy).toHaveBeenCalledWith(11, [expect.objectContaining({ name: 'part.3mf' })]);
     expect(await screen.findByText('1 file added to P-0007')).toBeInTheDocument();
     spy.mockRestore();
   });
@@ -154,7 +154,7 @@ describe('card file drop', () => {
         HttpResponse.json({
           project_id: 9,
           code: 'P-0009',
-          results: [{ filename: 'part.step', section: 'modelisation', item_id: 1, item_name: 'part', revision_number: 1 }],
+          results: [{ filename: 'part.3mf', section: 'impression', item_id: 1, item_name: 'part', revision_number: 1 }],
         }),
       ),
     );
@@ -170,8 +170,26 @@ describe('card file drop', () => {
     const chooser = await screen.findByRole('dialog', { name: 'Which task are these files for?' });
     expect(posted).toEqual([]);
     expect(within(chooser).getAllByRole('button').map((b) => b.textContent)).toEqual(['BracketP-0007', 'ClipP-0008']);
+    // Printing files always go to Impression: no section picker in the chooser.
+    expect(within(chooser).queryByRole('combobox')).not.toBeInTheDocument();
+    expect(within(chooser).queryByRole('radio')).not.toBeInTheDocument();
     await userEvent.click(within(chooser).getByRole('button', { name: /Clip/ }));
     await waitFor(() => expect(posted).toEqual(['12']));
+  });
+
+  it('a drop holding a non-printing file toasts and neither asks which task nor uploads', async () => {
+    links = [link(11, 7, 'P-0007'), link(12, 8, 'P-0008')];
+    const linksSpy = vi.spyOn(api, 'getOrderProjectLinks');
+    render(<CardView project={project} onExpand={() => {}} />);
+    fireEvent.drop(zone(), {
+      dataTransfer: { files: [new File(['x'], 'part.3mf'), new File(['x'], 'part.stl')], types: ['Files'] },
+    });
+    expect(await screen.findByText('Only 3MF and G-code files can go into a project')).toBeInTheDocument();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(linksSpy).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(posted).toEqual([]);
+    linksSpy.mockRestore();
   });
 
   it('a press outside the chooser closes it without uploading', async () => {

@@ -1262,6 +1262,29 @@ export interface RevisionRef { id: number; item_id: number; item_name: string; s
 export interface ProjectFileOut { id: number; filename: string; file_type: string; file_size: number; file_hash: string | null; has_thumbnail: boolean; created_at: string }
 export interface ProjectRevisionOut { id: number; number: number; status: RevisionStatus; note: string | null; derived_from: RevisionRef | null; outdated_by: RevisionRef | null; print_profile: Record<string, unknown> | null; slicer_name: string | null; slicer_version: string | null; has_snapshot: boolean; used: boolean; print_count: number; files: ProjectFileOut[]; created_by: string | null; created_at: string; status_changed_at: string | null }
 export interface ProjectItemOut { id: number; section: ProjectSection; name: string; name_key: string; forked_from: RevisionRef | null; revisions: ProjectRevisionOut[] }
+// Fenrir: File Manager bridge (projects PDM phase 5)
+export interface FiledFileOut {
+  file_id: number; filename: string; section: string; item_id: number; item_name: string;
+  revision_id: number; revision_number: number; source_file_id: number | null;
+}
+export type ImportSkipCode =
+  | 'not_printable' | 'already_in_project' | 'trashed' | 'source_missing'
+  | 'copy_failed' | 'conflict' | 'not_found' | 'not_owner';
+export interface SkippedFileOut { file_id: number; code: ImportSkipCode | string; reason: string }
+export interface MoveToProjectResult { moved: FiledFileOut[]; copied: FiledFileOut[]; skipped: SkippedFileOut[] }
+export interface ImportLibraryFilesBody { file_ids: number[]; item_id?: number; new_item_name?: string }
+export interface ProjectSuggestionForFile {
+  project_id: number; code: string | null; name: string; item_id: number | null; item_name: string | null;
+  score: number; reason: 'code' | 'item_name' | 'project_name';
+}
+export interface LegacyMigrationStatus {
+  running: boolean; total: number; done: number;
+  current: { project_id: number; code: string | null } | null;
+  failures: { project_id: number; code: string | null; error: string }[];
+  pending: number;
+  /** The last finished run since the server started (projects migrated, failures not counted). */
+  last_run?: { projects: number; files_moved: number; files_copied: number; finished_at: string } | null;
+}
 export interface ProjectTreeResponse { project_id: number; code: string | null; sections: { section: ProjectSection; items: ProjectItemOut[] }[] }
 export interface DuplicateWarning { filename: string; same_as: string }
 
@@ -1489,6 +1512,7 @@ export type CalibrationMode = 'off' | 'on' | 'auto';
 // Settings types
 export interface AppSettings {
   auto_archive: boolean;
+  projects_auto_file_by_code: boolean; // Fenrir: file uploads named "P-0042_…" into that project
   save_thumbnails: boolean;
   capture_finish_photo: boolean;
   finish_photo_restore_plate: boolean;
@@ -9309,6 +9333,16 @@ export const api = {
     request<{ message: string }>(`/projects/${id}`, { method: 'DELETE' }),
   // Project files (PDM phase 2)
   getProjectTree: (projectId: number) => request<ProjectTreeResponse>(`/projects/${projectId}/tree`),
+  importLibraryFilesToProject: (projectId: number, body: ImportLibraryFilesBody) =>
+    request<MoveToProjectResult>(`/projects/${projectId}/import-library-files`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  getFileProjectSuggestions: (fileId: number) =>
+    request<ProjectSuggestionForFile[]>(`/library/files/${fileId}/project-suggestions`),
+  startLegacyMigration: () =>
+    request<LegacyMigrationStatus>('/projects/legacy-migration/start', { method: 'POST' }),
+  getLegacyMigrationStatus: () => request<LegacyMigrationStatus>('/projects/legacy-migration/status'),
   createProjectItem: (projectId: number, section: ProjectSection, name: string) =>
     request<ProjectItemOut>(`/projects/${projectId}/items`, { method: 'POST', body: JSON.stringify({ section, name }) }),
   renameProjectItem: (itemId: number, name: string) =>
@@ -10741,6 +10775,8 @@ export interface LibraryFileUploadResponse {
   thumbnail_path: string | null;
   duplicate_of: number | null;
   metadata: Record<string, unknown> | null;
+  // Fenrir: set when the upload was auto-filed by project code (projects PDM phase 5)
+  filed_to_project?: { project_id: number; code: string; item_name: string; revision_number: number } | null;
 }
 
 export interface DuplicateCheckItem {

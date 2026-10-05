@@ -112,7 +112,7 @@ beforeEach(() => {
       dropped = [String(params.id)];
       return HttpResponse.json({
         project_id: 7,
-        results: [{ filename: 'support.step', section: 'modelisation', item_id: 20, item_name: 'support', revision_number: 4 }],
+        results: [{ filename: 'support.3mf', section: 'impression', item_id: 20, item_name: 'support', revision_number: 4 }],
       });
     }),
     http.get('/api/v1/projects/7/tree', () => HttpResponse.json(tree)),
@@ -252,7 +252,7 @@ describe('TaskProjectRow', () => {
     await waitFor(() => expect(puts).toEqual([{ url: 'project', body: { project_id: null } }]));
   });
 
-  it('"suggest latest approved" checks the newest approved revision per item in the task sections, then saves them', async () => {
+  it('"suggest latest approved" checks the newest approved Printing revision per item, then saves them', async () => {
     const user = userEvent.setup();
     links = linked([]);
     renderRow();
@@ -262,13 +262,13 @@ describe('TaskProjectRow', () => {
     await within(dialog).findByRole('checkbox', { name: /Support R3/ });
     await user.click(within(dialog).getByRole('button', { name: 'Suggest latest approved' }));
     const box = (name: RegExp) => within(dialog).getByRole('checkbox', { name }) as HTMLInputElement;
-    expect(box(/Support R3/).checked).toBe(true);
-    expect(box(/Support R2/).checked).toBe(false);
-    expect(box(/Clip R1/).checked).toBe(true);
-    expect(box(/Clip R2/).checked).toBe(false);
-    expect(box(/Plate R1/).checked).toBe(false); // printing is not one of this task's services
+    // Projects hold printing files only for now: whatever the task's services,
+    // only Printing items are suggested; older Modeling items stay checkable.
+    expect(box(/Plate R1/).checked).toBe(true);
+    expect(box(/Support R3/).checked).toBe(false);
+    expect(box(/Clip R1/).checked).toBe(false);
     await user.click(within(dialog).getByRole('button', { name: 'Save' }));
-    await waitFor(() => expect(puts).toEqual([{ url: 'deliveries', body: { revision_ids: [3, 7] } }]));
+    await waitFor(() => expect(puts).toEqual([{ url: 'deliveries', body: { revision_ids: [6] } }]));
   });
 
   it('"reuse from order" replaces the checks with that task\'s deliveries', async () => {
@@ -295,10 +295,24 @@ describe('TaskProjectRow', () => {
     await screen.findByRole('link', { name: 'Drone bracket' });
     const zone = screen.getByTestId(`task-drop-${TASK}`);
     fireEvent.dragOver(zone, { dataTransfer: { types: ['Files'] } });
-    fireEvent.drop(zone, { dataTransfer: { files: [new File(['x'], 'support.step')], types: ['Files'] } });
+    fireEvent.drop(zone, { dataTransfer: { files: [new File(['x'], 'support.3mf')], types: ['Files'] } });
     await waitFor(() => expect(dropped).toEqual([String(TASK)]));
-    expect(spy).toHaveBeenCalledWith(TASK, [expect.objectContaining({ name: 'support.step' })]);
+    expect(spy).toHaveBeenCalledWith(TASK, [expect.objectContaining({ name: 'support.3mf' })]);
     expect(await screen.findByText('1 file added to P-0007')).toBeInTheDocument();
+    spy.mockRestore();
+  });
+
+  it('dropping a non-printing file on a linked task toasts and sends nothing', async () => {
+    links = linked();
+    const spy = vi.spyOn(api, 'dropFilesOnTask');
+    renderRow();
+    await screen.findByRole('link', { name: 'Drone bracket' });
+    fireEvent.drop(screen.getByTestId(`task-drop-${TASK}`), {
+      dataTransfer: { files: [new File(['x'], 'support.3mf'), new File(['x'], 'support.stl')], types: ['Files'] },
+    });
+    expect(await screen.findByText('Only 3MF and G-code files can go into a project')).toBeInTheDocument();
+    expect(spy).not.toHaveBeenCalled();
+    expect(dropped).toBeNull();
     spy.mockRestore();
   });
 
@@ -306,7 +320,7 @@ describe('TaskProjectRow', () => {
     renderRow();
     await screen.findByRole('button', { name: 'New project' });
     fireEvent.drop(screen.getByTestId(`task-drop-${TASK}`), {
-      dataTransfer: { files: [new File(['x'], 'support.step')], types: ['Files'] },
+      dataTransfer: { files: [new File(['x'], 'support.3mf')], types: ['Files'] },
     });
     expect(await screen.findByText('Link a project to this task first')).toBeInTheDocument();
     expect(dropped).toBeNull();

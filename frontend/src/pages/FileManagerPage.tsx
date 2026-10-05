@@ -58,6 +58,7 @@ import {
   Combine,
   Columns,
   ChevronRight as ChevronRightIcon,
+  FolderInput, // Fenrir: Move to project (projects PDM phase 5)
 } from 'lucide-react';
 import { api } from '../api/client';
 import { calculatorPrefillUrl, type CalcConfig } from '../utils/archivePricing';
@@ -70,6 +71,7 @@ import type {
   AppSettings,
   Archive,
   Permission,
+  LibraryFileUploadResponse, // Fenrir: projects PDM phase 5
 } from '../api/client';
 import { Button } from '../components/Button';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -100,6 +102,9 @@ import { formatFileSize } from '../utils/file';
 import { assignableProjects } from '../utils/projectTree';
 import { openInSlicer, resolveDesktopSlicer, type SlicerType } from '../utils/slicer';
 import { isSlicedLibraryFile, isSliceableLibraryFile } from '../utils/libraryFiles';
+// Fenrir: File Manager → project bridge (projects PDM phase 5)
+import { MoveToProjectModal } from '../components/projects/filing/MoveToProjectModal';
+import { isPrintableFilename } from '../components/projects/files/filesUi';
 
 // Rows per request. 100 keeps the first paint under a screenful of cards on
 // a wide monitor while the look-ahead sentinel fetches the next page before
@@ -1018,6 +1023,20 @@ function FolderTreeItem({ folder, selectedFolderId, onSelect, onDelete, onLink, 
   );
 }
 
+// Fenrir: who may move a file into a project (projects PDM phase 5) — printing
+// files only, the File Manager move right (ownership-aware) plus projects:update.
+function canMoveFileToProject(
+  file: LibraryFileListItem,
+  hasPermission: (permission: Permission) => boolean,
+  canModify: FileCardProps['canModify'],
+): boolean {
+  return (
+    isPrintableFilename(file.filename) &&
+    canModify('library', 'update', file.created_by_id) &&
+    hasPermission('projects:update')
+  );
+}
+
 // File Card
 interface FileCardProps {
   file: LibraryFileListItem;
@@ -1043,6 +1062,7 @@ interface FileCardProps {
   onManageTags?: (file: LibraryFileListItem) => void;
   onTagClick?: (tagId: number) => void;
   onHistory?: (file: LibraryFileListItem) => void;
+  onMoveToProject?: (file: LibraryFileListItem) => void; // Fenrir: projects PDM phase 5
   thumbnailVersion?: number;
   hasPermission: (permission: Permission) => boolean;
   canModify: (resource: 'queue' | 'archives' | 'library', action: 'update' | 'delete' | 'reprint', createdById: number | null | undefined) => boolean;
@@ -1055,7 +1075,7 @@ interface FileCardProps {
 // unioned: upstream's onOpenInSlicer/canSlice/onPreview and the fork's
 // onOpenInCalculator/onManageTags/onHistory all belong here. Taking either
 // side's list alone leaves the other's buttons wired to undefined.
-function FileCard({ file, isSelected, onSelect, onDelete, onDownload, onPrint, onSlice, onOpenInSlicer, onRunPipeline, useSlicerApi, desktopSlicer, canSlice, onPreview, onOpenInCalculator, onRename, onDetails, onGenerateThumbnail, onManageTags, onTagClick, onHistory, thumbnailVersion, hasPermission, canModify, authEnabled, showModified, t }: FileCardProps) {
+function FileCard({ file, isSelected, onSelect, onDelete, onDownload, onPrint, onSlice, onOpenInSlicer, onRunPipeline, useSlicerApi, desktopSlicer, canSlice, onPreview, onOpenInCalculator, onRename, onDetails, onGenerateThumbnail, onManageTags, onTagClick, onHistory, onMoveToProject, thumbnailVersion, hasPermission, canModify, authEnabled, showModified, t }: FileCardProps) {
   // Viewport coordinates rather than a flag, because the menu is rendered by
   // `ContextMenu` at `position: fixed` and anchored to the button (#2846). The
   // card it belongs to is only ~270px tall for a bare STL, which is shorter
@@ -1071,6 +1091,8 @@ function FileCard({ file, isSelected, onSelect, onDelete, onDownload, onPrint, o
   // open it. Shown greyed out rather than hidden, like every sibling entry.
   const canOpenInCalculator =
     hasPermission('calculator:read') && !!file.filament_used_grams && !!file.print_time_seconds;
+  // Fenrir: printing files only, with the File Manager move right plus projects:update.
+  const canMoveToProject = canMoveFileToProject(file, hasPermission, canModify);
 
   const menuItems: ContextMenuItem[] = [];
   if (onPrint && isSlicedLibraryFile(file)) {
@@ -1143,6 +1165,14 @@ function FileCard({ file, isSelected, onSelect, onDelete, onDownload, onPrint, o
       onClick: () => onRename(file),
       disabled: !canRename,
       title: !canRename ? t('fileManager.noPermissionRenameFile') : undefined,
+    });
+  }
+  if (onMoveToProject && canMoveToProject) {
+    // Fenrir: projects PDM phase 5
+    menuItems.push({
+      label: t('projectsPdm.filing.moveToProject'),
+      icon: <FolderInput className="w-4 h-4" />,
+      onClick: () => onMoveToProject(file),
     });
   }
   if (onManageTags) {
@@ -1344,7 +1374,8 @@ function FileCard({ file, isSelected, onSelect, onDelete, onDownload, onPrint, o
           </div>
         )}
         {(file.tags?.length ?? 0) > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1" {...stopRowActivation}>
+          // Fenrir: keep tags clear of the always-visible Move to project button (projects PDM phase 5).
+          <div className={`mt-2 flex flex-wrap gap-1${onMoveToProject && canMoveToProject ? ' pr-16' : ''}`} {...stopRowActivation}>
             {file.tags!.map((tg) => (
               <button
                 key={tg.id}
@@ -1364,6 +1395,20 @@ function FileCard({ file, isSelected, onSelect, onDelete, onDownload, onPrint, o
       </div>
 
       {/* Actions - hover-revealed with a mouse, always there without one (#2865) */}
+      {/* Fenrir: always-visible Move to project button, left of the hover-revealed ⋯ (projects PDM phase 5) */}
+      {onMoveToProject && canMoveToProject && (
+        <div className="absolute bottom-2 right-10" data-move-to-project {...stopRowActivation}>
+          <button
+            type="button"
+            onClick={() => onMoveToProject(file)}
+            className="p-1.5 rounded bg-bambu-dark-secondary/90 hover:bg-bambu-dark-tertiary text-bambu-gray hover:text-bambu-green"
+            title={t('projectsPdm.filing.moveToProject')}
+            aria-label={t('projectsPdm.filing.moveToProject')}
+          >
+            <FolderInput className="w-4 h-4" />
+          </button>
+        </div>
+      )}
       <div className="absolute bottom-2 right-2 transition-opacity can-hover:opacity-0 group-hover:opacity-100 group-focus-within:opacity-100" {...stopRowActivation}>
         <button
           onClick={(e) => {
@@ -1413,6 +1458,7 @@ interface FileActionStripProps {
   onGenerateThumbnail: (file: LibraryFileListItem) => void;
   thumbnailPending: boolean;
   onDelete: (id: number) => void;
+  onMoveToProject?: (file: LibraryFileListItem) => void; // Fenrir: projects PDM phase 5
   hasPermission: (permission: Permission) => boolean;
   canModify: (resource: 'queue' | 'archives' | 'library', action: 'update' | 'delete' | 'reprint', createdById: number | null | undefined) => boolean;
   // Roving tabindex for the columns view: only the focused row's buttons take
@@ -1421,7 +1467,7 @@ interface FileActionStripProps {
   t: TFunction;
 }
 
-function FileActionStrip({ file, onPrint, onSlice, onOpenInSlicer, onRunPipeline, useSlicerApi, desktopSlicer, canSlice, onPreview, onDetails, onDownload, onRename, onGenerateThumbnail, thumbnailPending, onDelete, hasPermission, canModify, tabIndex, t }: FileActionStripProps) {
+function FileActionStrip({ file, onPrint, onSlice, onOpenInSlicer, onRunPipeline, useSlicerApi, desktopSlicer, canSlice, onPreview, onDetails, onDownload, onRename, onGenerateThumbnail, thumbnailPending, onDelete, onMoveToProject, hasPermission, canModify, tabIndex, t }: FileActionStripProps) {
   const canRename = canModify('library', 'update', file.created_by_id);
   const canDelete = canModify('library', 'delete', file.created_by_id);
   return (
@@ -1543,6 +1589,19 @@ function FileActionStrip({ file, onPrint, onSlice, onOpenInSlicer, onRunPipeline
       >
         <Pencil className="w-4 h-4" />
       </button>
+      {/* Fenrir: Move to project (projects PDM phase 5) */}
+      {onMoveToProject && canMoveFileToProject(file, hasPermission, canModify) && (
+        <button
+          type="button"
+          tabIndex={tabIndex}
+          onClick={() => onMoveToProject(file)}
+          className="p-1.5 rounded transition-colors hover:bg-bambu-dark text-bambu-gray hover:text-bambu-green"
+          title={t('projectsPdm.filing.moveToProject')}
+          aria-label={t('projectsPdm.filing.moveToProject')}
+        >
+          <FolderInput className="w-4 h-4" />
+        </button>
+      )}
       {hasServerThumbnail(file.file_type) && (
         <button
           tabIndex={tabIndex}
@@ -1693,6 +1752,8 @@ export function FileManagerPage() {
   const [showNewFolderModal, setShowNewFolderModal] = useState(false);
   const [showExternalFolderModal, setShowExternalFolderModal] = useState(false);
   const [showMoveModal, setShowMoveModal] = useState(false);
+  // Fenrir: files headed for a project (projects PDM phase 5); null = closed.
+  const [moveToProjectIds, setMoveToProjectIds] = useState<number[] | null>(null);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [droppedFiles, setDroppedFiles] = useState<File[]>([]);
   const [showPurgeModal, setShowPurgeModal] = useState(false);
@@ -2465,6 +2526,17 @@ export function FileManagerPage() {
     queryClient.invalidateQueries({ queryKey: ['library-stats'] });
   };
 
+  // Fenrir: say where an upload named after a project code was filed (projects PDM phase 5).
+  const handleFileUploaded = (result: LibraryFileUploadResponse) => {
+    const filed = result.filed_to_project;
+    if (!filed) return;
+    queryClient.invalidateQueries({ queryKey: ['project-tree', filed.project_id] });
+    showToast(
+      t('projectsPdm.filing.filedToProject', { code: filed.code, item: filed.item_name, revision: filed.revision_number }),
+      'success',
+    );
+  };
+
   // Page-wide drag-and-drop upload (#1510). Disabled when the user lacks
   // library:upload so a non-uploader can't accidentally show the overlay,
   // and also disabled while the upload modal itself is open so drags into
@@ -2543,6 +2615,7 @@ export function FileManagerPage() {
     onGenerateThumbnail: (f: LibraryFileListItem) => singleThumbnailMutation.mutate(f.id),
     thumbnailPending: singleThumbnailMutation.isPending,
     onDelete: (id: number) => setDeleteConfirm({ type: 'file', id }),
+    onMoveToProject: (f: LibraryFileListItem) => setMoveToProjectIds([f.id]), // Fenrir: projects PDM phase 5
     hasPermission,
     canModify,
     t,
@@ -3563,6 +3636,19 @@ export function FileManagerPage() {
                       <MoveRight className="w-4 h-4 sm:mr-1" />
                       <span className="hidden sm:inline">{t('common.move')}</span>
                     </Button>
+                    {/* Fenrir: Move to project (projects PDM phase 5) — non-printable files come back as skipped */}
+                    {hasAnyPermission('library:update_own', 'library:update_all') && hasPermission('projects:update') && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => setMoveToProjectIds([...selectedFiles])}
+                        title={t('projectsPdm.filing.moveToProject')}
+                        aria-label={t('projectsPdm.filing.moveToProject')}
+                      >
+                        <FolderInput className="w-4 h-4 sm:mr-1" />
+                        <span className="hidden sm:inline">{t('projectsPdm.filing.moveToProject')}</span>
+                      </Button>
+                    )}
                     <Button
                       variant="secondary"
                       size="sm"
@@ -3858,6 +3944,7 @@ export function FileManagerPage() {
                     onManageTags={(f) => setSingleTagFile(f)}
                     onTagClick={toggleTagFilter}
                     onHistory={setHistoryFile}
+                    onMoveToProject={(f) => setMoveToProjectIds([f.id])} // Fenrir: projects PDM phase 5
                     thumbnailVersion={thumbnailVersions[file.id]}
                     hasPermission={hasPermission}
                     canModify={canModify}
@@ -4144,6 +4231,16 @@ export function FileManagerPage() {
         />
       )}
 
+      {/* Fenrir: Move to project (projects PDM phase 5) */}
+      {moveToProjectIds && (
+        <MoveToProjectModal
+          fileIds={moveToProjectIds}
+          fileName={moveToProjectIds.length === 1 ? files.find((f) => f.id === moveToProjectIds[0])?.filename : undefined}
+          onClose={() => setMoveToProjectIds(null)}
+          onMoved={() => setSelectedFiles([])}
+        />
+      )}
+
       {showUploadModal && (
         <FileUploadModal
           folderId={selectedFolderId}
@@ -4152,6 +4249,7 @@ export function FileManagerPage() {
             setDroppedFiles([]);
           }}
           onUploadComplete={handleUploadComplete}
+          onFileUploaded={handleFileUploaded} // Fenrir: projects PDM phase 5
           initialFiles={droppedFiles.length > 0 ? droppedFiles : undefined}
         />
       )}

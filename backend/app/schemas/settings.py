@@ -368,6 +368,11 @@ class AppSettings(BaseModel):
     camera_engine: Literal["ffmpeg", "go2rtc"] = Field(
         default="ffmpeg", description="Camera streaming engine: 'ffmpeg' or 'go2rtc'"
     )
+    # Fenrir: projects as a PDM (phase 5) — file "P-0042_…" printing files into that project.
+    projects_auto_file_by_code: bool = Field(
+        default=True,
+        description="File uploaded and slicer-sent printing files named 'P-0042_…' into that project's Impression section",
+    )
 
     # Preferred slicer application (server-side / API sidecar slicer)
     preferred_slicer: str = Field(
@@ -898,6 +903,7 @@ class AppSettingsUpdate(BaseModel):
     camera_quality: str | None = None
     camera_gpu_accel: bool | None = None
     camera_engine: str | None = None
+    projects_auto_file_by_code: bool | None = None  # Fenrir: projects PDM phase 5
     camera_light_mode: Literal["off", "all", "selected"] | None = None
     # Capped by camera_light.MAX_DELAY_SECONDS: the finish photo's budget
     # has no more to spare.

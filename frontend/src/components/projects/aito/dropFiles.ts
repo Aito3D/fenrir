@@ -5,6 +5,7 @@ import { api } from '../../../api/client';
 import type { LinkedProjectRef, TaskProjectLink } from '../../../api/client';
 import { useToast } from '../../../contexts/ToastContext';
 import { filesFromDataTransfer } from '../files/fileDrop';
+import { nonPrintableFiles } from '../files/filesUi';
 import { useInvalidateProjectLinks } from './useOrderProjectLinks';
 
 /** The modals a task row opens are portalled to <body>, but React still
@@ -20,13 +21,28 @@ export function isFileDrag(dt: DataTransfer | null): boolean {
   return !!dt && Array.from(dt.types ?? []).includes('Files');
 }
 
+/** False (with a toast) when a drop holds any non-printing file: projects hold
+ *  printing files only for now, and the server refuses such a drop whole. */
+export function useAcceptsPrintable() {
+  const { t } = useTranslation();
+  const { showToast } = useToast();
+  return (files: readonly File[]): boolean => {
+    if (nonPrintableFiles(files).length === 0) return true;
+    showToast(t('projectsPdm.files.onlyPrintable'), 'error');
+    return false;
+  };
+}
+
 /** Uploads dropped files onto one linked task and reports the outcome with a
- *  toast; the order's links, chips and project trees refresh afterwards. */
+ *  toast; the order's links, chips and project trees refresh afterwards.
+ *  Non-printing files toast and send nothing. */
 export function useUploadToTask() {
   const { t } = useTranslation();
   const { showToast } = useToast();
   const invalidate = useInvalidateProjectLinks();
+  const acceptsPrintable = useAcceptsPrintable();
   return async (orderId: number, taskId: number, project: LinkedProjectRef, files: File[]) => {
+    if (!acceptsPrintable(files)) return;
     let storedIn: number | undefined;
     try {
       const result = await api.dropFilesOnTask(taskId, files);
@@ -45,8 +61,8 @@ export function useUploadToTask() {
   };
 }
 
-/** Native file drop on one Aito task: linked → the files go to its project
- *  (section guessed server-side) and a toast says where; not linked → a toast
+/** Native file drop on one Aito task: linked → the printing files go to the
+ *  project's Impression section and a toast says where; not linked → a toast
  *  asks for a project first. `canDrop` false swallows the drop silently. */
 export function useTaskFileDrop({
   orderId,

@@ -11440,6 +11440,8 @@ app.include_router(external_links.router, prefix=app_settings.api_prefix)
 # Fenrir: projects as a PDM, phase 2 — project files. Before projects.router.
 app.include_router(project_files.router, prefix=app_settings.api_prefix)
 app.include_router(project_files.upload_router, prefix=app_settings.api_prefix)
+# Fenrir: phase 5 — /library/files/{id}/project-suggestions, before library.router.
+app.include_router(project_files.library_router, prefix=app_settings.api_prefix)
 # Fenrir: projects as a PDM. Before projects.router so /projects/search and
 # /projects/tags are not captured by /projects/{project_id}.
 app.include_router(projects_pdm.router, prefix=app_settings.api_prefix)
