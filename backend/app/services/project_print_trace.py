@@ -12,15 +12,17 @@ error because the timeline could not be written.
 """
 
 import logging
+from collections.abc import Collection
 from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
 from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile
+from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.project import Project
 from backend.app.models.project_item import ProjectItem, ProjectRevision
 from backend.app.services import aito_events
@@ -171,3 +173,58 @@ async def record_queued(db: AsyncSession, context: PrintContext, *, copies: int,
     from backend.app.services.aito_project_links import broadcast_orders_changed
 
     await broadcast_orders_changed([context.order_id], actor)
+
+
+@dataclass(frozen=True)
+class PrintCounts:
+    printed: int = 0
+    rejected: int = 0
+    queued: int = 0
+
+
+_QUEUED_STATUSES = ("pending", "printing")
+
+
+def _is_printed():
+    """Spec §4.2: completed and not rejected, or explicitly marked good."""
+    return or_(
+        (PrintArchive.status == "completed") & (func.coalesce(PrintArchive.user_verdict, "") != "reject"),
+        PrintArchive.user_verdict == "good",
+    )
+
+
+async def task_print_counts(db: AsyncSession, task_ids: Collection[int]) -> dict[int, PrintCounts]:
+    """printed / rejected / queued per task: one grouped query on the live
+    archives and one on the queue. Tasks without prints are absent."""
+    ids = list(task_ids)
+    if not ids:
+        return {}
+    printed = func.coalesce(func.sum(case((_is_printed(), PrintArchive.quantity), else_=0)), 0)
+    rejected = func.coalesce(func.sum(case((PrintArchive.user_verdict == "reject", PrintArchive.quantity), else_=0)), 0)
+    archive_rows = await db.execute(
+        select(PrintArchive.aito_task_id, printed, rejected)
+        .where(PrintArchive.aito_task_id.in_(ids), PrintArchive.deleted_at.is_(None))
+        .group_by(PrintArchive.aito_task_id)
+    )
+    queue_rows = await db.execute(
+        select(PrintQueueItem.aito_task_id, func.count(PrintQueueItem.id))
+        .where(PrintQueueItem.aito_task_id.in_(ids), PrintQueueItem.status.in_(_QUEUED_STATUSES))
+        .group_by(PrintQueueItem.aito_task_id)
+    )
+    counts = {tid: [int(p), int(r), 0] for tid, p, r in archive_rows}
+    for tid, queued in queue_rows:
+        counts.setdefault(tid, [0, 0, 0])[2] = int(queued)
+    return {tid: PrintCounts(*values) for tid, values in counts.items()}
+
+
+async def revision_print_counts(db: AsyncSession, revision_ids: Collection[int]) -> dict[int, int]:
+    """Printed quantity per revision (same rule as tasks); one grouped query."""
+    ids = list(revision_ids)
+    if not ids:
+        return {}
+    rows = await db.execute(
+        select(PrintArchive.revision_id, func.coalesce(func.sum(PrintArchive.quantity), 0))
+        .where(PrintArchive.revision_id.in_(ids), PrintArchive.deleted_at.is_(None), _is_printed())
+        .group_by(PrintArchive.revision_id)
+    )
+    return {rid: int(total) for rid, total in rows}

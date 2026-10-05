@@ -28,7 +28,10 @@ from backend.app.models.print_log import PrintLogEntry
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.project import Project
 from backend.app.models.project_bom import ProjectBOMItem
-from backend.app.models.project_item import ProjectItem  # Fenrir: PDM items block project deletion
+from backend.app.models.project_item import (  # Fenrir: PDM items block project deletion; revisions label archives
+    ProjectItem,
+    ProjectRevision,
+)
 from backend.app.models.project_tag import ProjectTag
 from backend.app.models.user import User
 from backend.app.schemas.project import (
@@ -975,6 +978,33 @@ async def delete_project(
     return {"message": "Project deleted"}
 
 
+async def _archive_trace_labels(db: AsyncSession, archives: Sequence[PrintArchive]) -> dict[int, dict]:
+    """Fenrir: revision label ("Item R3"), Aito task and its order per archive id, in two grouped queries."""
+    revision_ids = {a.revision_id for a in archives if a.revision_id is not None}
+    task_ids = {a.aito_task_id for a in archives if a.aito_task_id is not None}
+    labels: dict[int, str] = {}
+    if revision_ids:
+        rows = await db.execute(
+            select(ProjectRevision.id, ProjectRevision.number, ProjectItem.name)
+            .join(ProjectItem, ProjectItem.id == ProjectRevision.item_id)
+            .where(ProjectRevision.id.in_(revision_ids))
+        )
+        labels = {rid: f"{name} R{number}" for rid, number, name in rows}
+    orders: dict[int, int] = {}
+    if task_ids:
+        orders = dict(
+            (await db.execute(select(AitoTask.id, AitoTask.project_id).where(AitoTask.id.in_(task_ids)))).all()
+        )
+    return {
+        a.id: {
+            "revision_label": labels.get(a.revision_id) if a.revision_id is not None else None,
+            "aito_task_id": a.aito_task_id,
+            "order_id": orders.get(a.aito_task_id) if a.aito_task_id is not None else None,
+        }
+        for a in archives
+    }
+
+
 @router.get("/{project_id}/archives")
 async def list_project_archives(
     project_id: int,
@@ -1013,7 +1043,14 @@ async def list_project_archives(
     # suppressed consistently with the main archives list endpoint (#1608).
     run_aggregates = await _load_run_aggregates(db, [a.id for a in archives])
 
-    return [archive_to_response(a, run_aggregate=run_aggregates.get(a.id)) for a in archives]
+    # Fenrir: show which project revision / Aito task each print came from (one grouped lookup per page).
+    labels = await _archive_trace_labels(db, archives)
+    out = []
+    for a in archives:
+        data = archive_to_response(a, run_aggregate=run_aggregates.get(a.id))
+        data.update(labels.get(a.id, {"revision_label": None, "aito_task_id": None, "order_id": None}))
+        out.append(data)
+    return out
 
 
 @router.get("/{project_id}/queue")

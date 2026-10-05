@@ -5,10 +5,13 @@
 successful queue records ``print.queued_from_revision`` once on the task's order.
 """
 
+from datetime import datetime, timezone
+
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import select
+from sqlalchemy import event, select
 
+from backend.app.api.routes.projects import _archive_trace_labels
 from backend.app.core.websocket import ws_manager
 from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
@@ -16,8 +19,12 @@ from backend.app.models.aito_task import AitoTask
 from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile
 from backend.app.models.print_queue import PrintQueueItem
+from backend.app.models.project import Project
 from backend.app.services import project_storage
+from backend.app.services.aito_project_links import order_links
 from backend.app.services.print_batch import _clone_queue_item
+from backend.app.services.project_files import load_tree
+from backend.app.services.project_print_trace import PrintCounts, revision_print_counts, task_print_counts
 
 KIND = "print.queued_from_revision"
 
@@ -381,3 +388,167 @@ async def test_reprint_of_an_untraced_archive_is_unchanged(async_client: AsyncCl
 
     with_task = await async_client.post("/api/v1/queue/", json={"archive_id": archive_id, "aito_task_id": task.id})
     assert with_task.status_code == 400, with_task.text
+
+
+# --- counts (task 3) --------------------------------------------------------
+
+
+def _counted_archive(*, task_id=None, revision_id=None, project_id=None, **kwargs):
+    kwargs.setdefault("status", "completed")
+    kwargs.setdefault("print_name", "Part")
+    return PrintArchive(
+        filename="part.gcode.3mf",
+        file_path="archives/test/part.gcode.3mf",
+        file_size=1,
+        aito_task_id=task_id,
+        revision_id=revision_id,
+        project_id=project_id,
+        **kwargs,
+    )
+
+
+def _queue_item(task_id, status):
+    return PrintQueueItem(aito_task_id=task_id, status=status, position=1)
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_printed_count_follows_verdicts(db_session):
+    order = await _order(db_session)
+    task = await _task(db_session, order)
+    empty = await _task(db_session, order, title="Nothing")
+    db_session.add_all(
+        [
+            _counted_archive(task_id=task.id),  # completed -> printed
+            _counted_archive(task_id=task.id, user_verdict="reject"),  # completed+reject -> rejected only
+            _counted_archive(task_id=task.id, status="failed", user_verdict="good"),  # failed+good -> printed
+            _counted_archive(task_id=task.id, status="failed"),  # neither
+            _counted_archive(task_id=task.id, deleted_at=datetime.now(timezone.utc)),  # ignored
+            _counted_archive(task_id=task.id, quantity=4),  # counts 4
+        ]
+    )
+    await db_session.commit()
+
+    counts = await task_print_counts(db_session, [task.id, empty.id])
+    assert counts[task.id] == PrintCounts(printed=1 + 1 + 4, rejected=1, queued=0)
+    assert empty.id not in counts
+    assert await task_print_counts(db_session, []) == {}
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_queued_counts_pending_and_printing_only(db_session):
+    order = await _order(db_session)
+    task = await _task(db_session, order)
+    db_session.add_all(
+        [_queue_item(task.id, s) for s in ("pending", "printing", "completed", "failed", "skipped", "cancelled")]
+    )
+    await db_session.commit()
+
+    assert (await task_print_counts(db_session, [task.id]))[task.id] == PrintCounts(0, 0, 2)
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_link_target_mirrors_impression_quantity_and_counts(db_session):
+    order = await _order(db_session)
+    task = await _task(db_session, order)
+    task.impression_quantity = 10
+    other = await _task(db_session, order, title="Other")
+    db_session.add_all([_counted_archive(task_id=task.id, quantity=3), _queue_item(task.id, "pending")])
+    await db_session.commit()
+
+    links = {t.task_id: t for t in (await order_links(db_session, order.id)).tasks}
+    assert (links[task.id].printed, links[task.id].rejected, links[task.id].queued, links[task.id].target) == (
+        3,
+        0,
+        1,
+        10,
+    )
+    assert (links[other.id].printed, links[other.id].queued, links[other.id].target) == (0, 0, None)
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_revision_print_count_in_tree(async_client: AsyncClient, db_session):
+    project = await _project(async_client)
+    revision_id, _file_id = await _revision_file(async_client, db_session, project["id"])
+    db_session.add_all(
+        [
+            _counted_archive(revision_id=revision_id, quantity=2),
+            _counted_archive(revision_id=revision_id, user_verdict="reject"),
+            _counted_archive(revision_id=revision_id, deleted_at=datetime.now(timezone.utc)),
+        ]
+    )
+    await db_session.commit()
+
+    assert await revision_print_counts(db_session, [revision_id]) == {revision_id: 2}
+    tree = (await async_client.get(f"/api/v1/projects/{project['id']}/tree")).json()
+    revisions = [r for s in tree["sections"] for i in s["items"] for r in i["revisions"]]
+    assert [r["print_count"] for r in revisions] == [2]
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_project_archives_carry_revision_label_task_and_order(async_client: AsyncClient, db_session):
+    project = await _project(async_client)
+    revision_id, _file_id = await _revision_file(async_client, db_session, project["id"], item_name="Support")
+    order = await _order(db_session)
+    task = await _task(db_session, order, linked_project_id=project["id"])
+    db_session.add_all(
+        [
+            _counted_archive(task_id=task.id, revision_id=revision_id, project_id=project["id"], print_name="traced"),
+            _counted_archive(project_id=project["id"], print_name="plain"),
+        ]
+    )
+    await db_session.commit()
+
+    response = await async_client.get(f"/api/v1/projects/{project['id']}/archives")
+    assert response.status_code == 200, response.text
+    by_name = {a["print_name"]: a for a in response.json()}
+    traced, plain = by_name["traced"], by_name["plain"]
+    assert (traced["revision_label"], traced["aito_task_id"], traced["order_id"]) == ("Support R1", task.id, order.id)
+    assert (plain["revision_label"], plain["aito_task_id"], plain["order_id"]) == (None, None, None)
+
+
+async def _statements(db_session, call):
+    engine = db_session.bind.sync_engine
+    seen: list[str] = []
+
+    def _count(_conn, _cursor, statement, *_args):
+        seen.append(statement)
+
+    event.listen(engine, "before_cursor_execute", _count)
+    try:
+        await call()
+    finally:
+        event.remove(engine, "before_cursor_execute", _count)
+    return len(seen)
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_counts_use_a_fixed_number_of_queries(async_client: AsyncClient, db_session):
+    project = await _project(async_client)
+    revision_id, _file_id = await _revision_file(async_client, db_session, project["id"])
+    order = await _order(db_session)
+    first = await _task(db_session, order, linked_project_id=project["id"])
+    db_session.add(_counted_archive(task_id=first.id, revision_id=revision_id))
+    await db_session.commit()
+
+    async def probe():
+        await order_links(db_session, order.id)
+        await load_tree(db_session, await db_session.get(Project, project["id"]))
+        await _archive_trace_labels(db_session, list((await db_session.execute(select(PrintArchive))).scalars()))
+
+    baseline = await _statements(db_session, probe)
+
+    for n in range(5):
+        task = await _task(db_session, order, title=f"T{n}", linked_project_id=project["id"])
+        extra_revision, _ = await _revision_file(async_client, db_session, project["id"], item_name=f"Item{n}")
+        db_session.add_all(
+            [_counted_archive(task_id=task.id, revision_id=extra_revision), _queue_item(task.id, "pending")]
+        )
+    await db_session.commit()
+
+    assert await _statements(db_session, probe) <= baseline

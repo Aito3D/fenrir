@@ -54,6 +54,7 @@ class ProjectRevisionOut(BaseModel):
     created_by: str | None
     created_at: datetime
     status_changed_at: datetime | None
+    print_count: int = 0  # printed quantity from this revision's archives (phase 4)
 
 
 class ProjectItemOut(BaseModel):
