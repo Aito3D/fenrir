@@ -72,6 +72,9 @@ function makeFile(overrides: { id: number; filename: string; file_type?: string 
 describe('ProjectDetailPage', () => {
   beforeEach(() => {
     server.use(
+      http.get('/api/v1/projects/:id/tree', () => {
+        return HttpResponse.json({ project_id: 1, code: null, sections: [] });
+      }),
       http.get('/api/v1/projects/:id', () => {
         return HttpResponse.json(mockProject);
       }),

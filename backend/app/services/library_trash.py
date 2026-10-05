@@ -99,6 +99,8 @@ def _purge_filter(cutoff: datetime, include_never_printed: bool):
     return and_(
         LibraryFile.deleted_at.is_(None),
         LibraryFile.is_external.is_(False),
+        # Fenrir: project revision files are never purged; their bytes belong to the project (PDM §6.1).
+        LibraryFile.revision_id.is_(None),
         age_clause,
     )
 
@@ -345,6 +347,8 @@ class LibraryTrashService:
             select(LibraryFile).where(
                 LibraryFile.deleted_at.isnot(None),
                 LibraryFile.deleted_at < cutoff,
+                # Fenrir: never sweep project revision files (PDM §6.1).
+                LibraryFile.revision_id.is_(None),
             )
         )
         rows = result.scalars().all()
@@ -415,6 +419,8 @@ class LibraryTrashService:
         (e.g. "database is locked") must leave both the rows and their
         bytes in place, not just the rows.
         """
+        # Fenrir: project revision files are never hard-deleted from here (PDM §6.1).
+        rows = [row for row in rows if row.revision_id is None]
         if not rows:
             return 0
         pending_paths = [path for row in rows for path in self._disk_paths_for(row)]

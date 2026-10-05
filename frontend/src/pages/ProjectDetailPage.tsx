@@ -1,4 +1,5 @@
 import { ProjectHeader } from '../components/projects/ProjectHeader';
+import { ProjectFilesPanel } from '../components/projects/files/ProjectFilesPanel';
 import { useState, useMemo } from 'react';
 import DOMPurify from 'dompurify';
 import { useParams, useNavigate, Link } from 'react-router-dom';
@@ -548,6 +549,8 @@ export function ProjectDetailPage() {
           </Button>
         </div>
       </div>
+
+      <ProjectFilesPanel projectId={projectId} />
 
       {/* Progress bars (if targets set) */}
       {(project.target_count || project.target_parts_count || project.target_sets) && (

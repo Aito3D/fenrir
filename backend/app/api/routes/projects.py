@@ -26,6 +26,7 @@ from backend.app.models.print_log import PrintLogEntry
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.project import Project
 from backend.app.models.project_bom import ProjectBOMItem
+from backend.app.models.project_item import ProjectItem  # Fenrir: PDM items block project deletion
 from backend.app.models.project_tag import ProjectTag
 from backend.app.models.user import User
 from backend.app.schemas.project import (
@@ -940,6 +941,11 @@ async def delete_project(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
+    # Fenrir: a project that owns PDM items keeps them (and their files) until
+    # they are deleted or moved — nothing would clean their rows or folders up.
+    if (await db.execute(select(ProjectItem.id).where(ProjectItem.project_id == project_id).limit(1))).first():
+        raise HTTPException(status_code=409, detail="This project has files; delete or move its items first")
+
     # Sub-projects move up to the deleted project's own parent rather than
     # being cut loose at the top level, so deleting a middle layer collapses
     # the tree by one instead of scattering a branch (#1264). Left to the ORM
@@ -1039,7 +1045,12 @@ async def get_project_file_progress(
     files_result = await db.execute(
         select(LibraryFile.id, LibraryFile.file_hash, LibraryFile.filename)
         .join(LibraryFolder, LibraryFile.folder_id == LibraryFolder.id)
-        .where(LibraryFolder.project_id == project_id, LibraryFile.deleted_at.is_(None))
+        .where(
+            LibraryFolder.project_id == project_id,
+            LibraryFile.deleted_at.is_(None),
+            # Fenrir: project revision files are not File Manager files (PDM §6.1).
+            LibraryFile.revision_id.is_(None),
+        )
     )
     file_rows = files_result.all()
     if not file_rows:
@@ -1971,7 +1982,13 @@ async def export_project(
     for folder in linked_folders:
         # Get files in this folder
         files_result = await db.execute(
-            LibraryFile.active().where(LibraryFile.folder_id == folder.id).order_by(LibraryFile.filename)
+            LibraryFile.active()
+            .where(
+                LibraryFile.folder_id == folder.id,
+                # Fenrir: project revision files are not File Manager files (PDM §6.1).
+                LibraryFile.revision_id.is_(None),
+            )
+            .order_by(LibraryFile.filename)
         )
         files = files_result.scalars().all()
 

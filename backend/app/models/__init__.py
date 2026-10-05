@@ -44,6 +44,7 @@ from backend.app.models.printer_ha_sensor import PrinterHASensor
 from backend.app.models.printer_location import PrinterLocation
 from backend.app.models.printer_sensor_history import PrinterSensorHistory
 from backend.app.models.project import Project
+from backend.app.models.project_item import ProjectItem, ProjectRevision
 from backend.app.models.project_tag import ProjectTag
 from backend.app.models.scheduled_drying import ScheduledDrying
 from backend.app.models.settings import Settings
@@ -94,6 +95,8 @@ __all__ = [
     "UserInboxPreference",
     "Project",
     "ProjectTag",
+    "ProjectItem",
+    "ProjectRevision",
     "APIKey",
     "AMSSensorHistory",
     "PrinterSensorHistory",

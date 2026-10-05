@@ -976,7 +976,12 @@ async def list_folders(
     # Get file counts per folder
     file_counts_result = await db.execute(
         select(LibraryFile.folder_id, func.count(LibraryFile.id))
-        .where(LibraryFile.folder_id.isnot(None), LibraryFile.deleted_at.is_(None))
+        .where(
+            LibraryFile.folder_id.isnot(None),
+            LibraryFile.deleted_at.is_(None),
+            # Fenrir: project revision files are not File Manager files (PDM §6.1).
+            LibraryFile.revision_id.is_(None),
+        )
         .group_by(LibraryFile.folder_id)
     )
     file_counts = dict(file_counts_result.all())
@@ -2368,7 +2373,7 @@ async def list_files(
         )
 
     user, can_read_all = auth_result
-    query = LibraryFile.active().options(
+    query = LibraryFile.file_manager().options(
         selectinload(LibraryFile.created_by),
         selectinload(LibraryFile.tags),
     )
@@ -2406,7 +2411,12 @@ async def list_files(
         if hashes:
             dup_result = await db.execute(
                 select(LibraryFile.file_hash, func.count(LibraryFile.id))
-                .where(LibraryFile.file_hash.in_(hashes), LibraryFile.deleted_at.is_(None))
+                .where(
+                    LibraryFile.file_hash.in_(hashes),
+                    LibraryFile.deleted_at.is_(None),
+                    # Fenrir: project revision files are not File Manager files (PDM §6.1).
+                    LibraryFile.revision_id.is_(None),
+                )
                 .group_by(LibraryFile.file_hash)
             )
             hash_counts = {h: c - 1 for h, c in dup_result.all()}  # -1 to exclude self
@@ -2420,7 +2430,12 @@ async def list_files(
     if group_ids:
         count_result = await db.execute(
             select(LibraryFile.variant_group_id, func.count(LibraryFile.id))
-            .where(LibraryFile.variant_group_id.in_(group_ids), LibraryFile.deleted_at.is_(None))
+            .where(
+                LibraryFile.variant_group_id.in_(group_ids),
+                LibraryFile.deleted_at.is_(None),
+                # Fenrir: project revision files are not File Manager files (PDM §6.1).
+                LibraryFile.revision_id.is_(None),
+            )
             .group_by(LibraryFile.variant_group_id)
         )
         variant_counts = dict(count_result.all())
@@ -2499,7 +2514,7 @@ async def list_file_types(
         raise HTTPException(status_code=400, detail="internal_only and external_only are mutually exclusive")
     user, can_read_all = auth_result
     scoped = _apply_file_scope(
-        LibraryFile.active(),
+        LibraryFile.file_manager(),
         user=user,
         can_read_all=can_read_all,
         folder_id=folder_id,
@@ -2533,6 +2548,8 @@ async def check_file_duplicates(
         select(LibraryFile.file_hash, LibraryFile.id, LibraryFile.filename, LibraryFile.folder_id).where(
             LibraryFile.file_hash.in_(data.hashes),
             LibraryFile.deleted_at.is_(None),
+            # Fenrir: project revision files are not File Manager files (PDM §6.1).
+            LibraryFile.revision_id.is_(None),
         )
     )
     rows = result.all()
@@ -2766,7 +2783,14 @@ async def upload_file(
 
         # Check for duplicates
         dup_result = await db.execute(
-            select(LibraryFile.id).where(LibraryFile.file_hash == file_hash, LibraryFile.deleted_at.is_(None)).limit(1)
+            select(LibraryFile.id)
+            .where(
+                LibraryFile.file_hash == file_hash,
+                LibraryFile.deleted_at.is_(None),
+                # Fenrir: project revision files are not File Manager files (PDM §6.1).
+                LibraryFile.revision_id.is_(None),
+            )
+            .limit(1)
         )
         duplicate_of = dup_result.scalar()
 
@@ -3336,6 +3360,8 @@ async def batch_generate_stl_thumbnails(
 
     # Build query based on request
     query = LibraryFile.active().where(LibraryFile.file_type.in_(("stl", "pdf")))
+    # Fenrir: project revision files are not File Manager files (PDM §6.1).
+    query = query.where(LibraryFile.revision_id.is_(None))
 
     user, can_modify_all = auth_result
     if not can_modify_all:
@@ -5974,7 +6000,7 @@ async def update_file(
     """Update a file's metadata."""
     user, can_modify_all = auth_result
 
-    result = await db.execute(LibraryFile.active().where(LibraryFile.id == file_id))
+    result = await db.execute(LibraryFile.file_manager().where(LibraryFile.id == file_id))
     file = result.scalar_one_or_none()
 
     if not file:
@@ -6054,7 +6080,7 @@ async def delete_file(
     """
     user, can_modify_all = auth_result
 
-    result = await db.execute(LibraryFile.active().where(LibraryFile.id == file_id))
+    result = await db.execute(LibraryFile.file_manager().where(LibraryFile.id == file_id))
     file = result.scalar_one_or_none()
 
     if not file:
@@ -6568,7 +6594,7 @@ async def move_files(
 
     for file_id in data.file_ids:
         result = await db.execute(
-            LibraryFile.active().options(selectinload(LibraryFile.folder)).where(LibraryFile.id == file_id)
+            LibraryFile.file_manager().options(selectinload(LibraryFile.folder)).where(LibraryFile.id == file_id)
         )
         file = result.scalar_one_or_none()
         if not file:
@@ -6687,7 +6713,7 @@ async def bulk_delete(
     # control and can't be restored from trash anyway.
     now = datetime.now(timezone.utc)
     for file_id in data.file_ids:
-        result = await db.execute(LibraryFile.active().where(LibraryFile.id == file_id))
+        result = await db.execute(LibraryFile.file_manager().where(LibraryFile.id == file_id))
         file = result.scalar_one_or_none()
         if not file:
             continue
@@ -6770,7 +6796,11 @@ async def get_library_stats(
     # Stats exclude trashed files — users see counts/sizes for what's actually in the library.
     # Without LIBRARY_READ_ALL the stats reflect only the caller's own files —
     # match what the file list endpoint shows so the numbers stay consistent.
-    file_filters = [LibraryFile.deleted_at.is_(None)]
+    # Fenrir: project revision files are not File Manager files (PDM §6.1).
+    file_filters = [
+        LibraryFile.deleted_at.is_(None),
+        LibraryFile.revision_id.is_(None),
+    ]
     if user is not None and not can_read_all:
         file_filters.append(LibraryFile.created_by_id == user.id)
 

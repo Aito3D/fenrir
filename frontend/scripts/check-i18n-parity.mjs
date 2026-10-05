@@ -278,6 +278,7 @@ const IT_COGNATES = [
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
   'AMS Filament Backup',  // Bambu Lab product/firmware feature name
   'Email',  // common loanword in Italian, used verbatim in UI labels
+  '{{count}} file',  // projectsPdm.files.fileCount_one — "file" is the Italian IT term, invariable plural
   'Link',  // aito.payment.cellLink — "Link" is the Italian word too (see "Link di pagamento")
   'online',  // aito.payment.channelLink — same loanword used in "Paga online"
   'Pipeline', 'slicing',  // #1425 — Slicer Pipelines (cognate in IT)
