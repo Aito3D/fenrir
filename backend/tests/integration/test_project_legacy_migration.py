@@ -33,6 +33,39 @@ START = "/api/v1/projects/legacy-migration/start"
 STATUS = "/api/v1/projects/legacy-migration/status"
 
 
+@pytest.fixture
+async def test_engine(test_engine, tmp_path):
+    """A WAL file database instead of the shared ``:memory:`` engine.
+
+    The endpoint tests run the migration in a background task while the test
+    polls the status endpoint. Behind ``conftest.test_engine``'s StaticPool every
+    session shares ONE sqlite3 connection, so a poll's session closing (the auth
+    check, ``get_db``) rolled back the runner's flushed-but-uncommitted revision
+    INSERT; the runner's next flush + commit then kept the file rows pointing at
+    the vanished revision id, which SQLite reused for the next item's revision
+    ("Bracket.3mf" inside "Lid" R1). Production gives each session its own
+    connection to a WAL file, as this does. The parent fixture is requested only
+    for its model registration."""
+    from sqlalchemy import event
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from backend.app.core.database import Base
+
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'legacy.db'}")
+
+    @event.listens_for(engine.sync_engine, "connect")
+    def _pragmas(dbapi_conn, _record):
+        cursor = dbapi_conn.cursor()
+        cursor.execute("PRAGMA journal_mode = WAL")
+        cursor.execute("PRAGMA busy_timeout = 15000")
+        cursor.close()
+
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    yield engine
+    await engine.dispose()
+
+
 @pytest.fixture(autouse=True)
 def root(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "base_dir", tmp_path)
