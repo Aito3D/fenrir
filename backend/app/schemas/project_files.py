@@ -60,6 +60,8 @@ class ProjectItemOut(BaseModel):
     id: int
     section: str
     name: str
+    # Uniqueness key in its section (sanitised folder name, case-folded).
+    name_key: str
     forked_from: RevisionRef | None
     revisions: list[ProjectRevisionOut]
 

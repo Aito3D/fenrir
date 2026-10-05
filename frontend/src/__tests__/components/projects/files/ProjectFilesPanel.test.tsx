@@ -5,7 +5,7 @@ import { http, HttpResponse } from 'msw';
 import { render } from '../../../utils';
 import { server } from '../../../mocks/server';
 import { ProjectFilesPanel } from '../../../../components/projects/files/ProjectFilesPanel';
-import { itemNameFromFile } from '../../../../components/projects/files/fileDrop';
+import { itemNameFromFile, itemNameKey } from '../../../../components/projects/files/fileDrop';
 
 const ref = (id: number, item: string, section: string, number: number, status = 'valide') => ({
   id, item_id: id * 10, item_name: item, section, number, status,
@@ -22,8 +22,8 @@ const tree = {
   code: 'P-0007',
   sections: [
     { section: 'scan', items: [] },
-    { section: 'modelisation', items: [{ id: 20, section: 'modelisation', name: 'Support', forked_from: null, revisions: [rev({ id: 2, number: 2, status: 'valide' }), rev({ id: 1, number: 1, status: 'obsolete', used: true })] }] },
-    { section: 'impression', items: [{ id: 30, section: 'impression', name: 'Support X1C', forked_from: null, revisions: [rev({ id: 3, number: 1, derived_from: ref(1, 'Support', 'modelisation', 1, 'obsolete'), outdated_by: ref(2, 'Support', 'modelisation', 2), print_profile: { printer_model: 'Bambu Lab X1C', nozzle_diameter: '0.4', layer_height: '0.2', filament_types: ['PETG'], sliced: true }, has_snapshot: true, files: [{ id: 60, filename: 'support.gcode.3mf', file_type: 'gcode.3mf', file_size: 4096, file_hash: 'p', has_thumbnail: true, created_at: '2026-10-04T10:00:00Z' }] })] }] },
+    { section: 'modelisation', items: [{ id: 20, section: 'modelisation', name: 'Support', name_key: 'support', forked_from: null, revisions: [rev({ id: 2, number: 2, status: 'valide' }), rev({ id: 1, number: 1, status: 'obsolete', used: true })] }] },
+    { section: 'impression', items: [{ id: 30, section: 'impression', name: 'Support X1C', name_key: 'support x1c', forked_from: null, revisions: [rev({ id: 3, number: 1, derived_from: ref(1, 'Support', 'modelisation', 1, 'obsolete'), outdated_by: ref(2, 'Support', 'modelisation', 2), print_profile: { printer_model: 'Bambu Lab X1C', nozzle_diameter: '0.4', layer_height: '0.2', filament_types: ['PETG'], sliced: true }, has_snapshot: true, files: [{ id: 60, filename: 'support.gcode.3mf', file_type: 'gcode.3mf', file_size: 4096, file_hash: 'p', has_thumbnail: true, created_at: '2026-10-04T10:00:00Z' }] })] }] },
     { section: 'usinage', items: [] },
     { section: 'docs', items: [] },
   ],
@@ -43,7 +43,7 @@ beforeEach(() => {
     http.post('/api/v1/projects/7/items', async ({ request }) => {
       const body = (await request.json()) as { name: string };
       calls.push(`create:${body.name}`);
-      return HttpResponse.json({ id: 99, section: 'modelisation', name: body.name, forked_from: null, revisions: [] }, { status: 201 });
+      return HttpResponse.json({ id: 99, section: 'modelisation', name: body.name, name_key: body.name.toLowerCase(), forked_from: null, revisions: [] }, { status: 201 });
     }),
     http.get('/api/v1/projects/7/tree', () => HttpResponse.json(tree)),
     http.patch('/api/v1/projects/revisions/:id', async ({ request, params }) => {
@@ -64,6 +64,18 @@ describe('itemNameFromFile', () => {
     expect(itemNameFromFile('support.gcode.3mf')).toBe('support');
     expect(itemNameFromFile('scan_brut.ply')).toBe('scan_brut');
     expect(itemNameFromFile('README')).toBe('README');
+  });
+});
+
+describe('itemNameKey', () => {
+  it('normalises like the backend name_key', () => {
+    expect(itemNameKey('  Sup:port. ')).toBe('support');
+    expect(itemNameKey('cafe\u0301')).toBe('caf\u00e9');
+    expect(itemNameKey('..Plan..')).toBe('plan');
+    expect(itemNameKey('con')).toBe('_con');
+    expect(itemNameKey('Straße')).toBe('strasse');
+    expect(itemNameKey('a<b>c|d?e*f"g/h\\i')).toBe('abcdefghi');
+    expect(itemNameKey('???')).toBe('');
   });
 });
 
@@ -122,6 +134,13 @@ describe('ProjectFilesPanel', () => {
     render(<ProjectFilesPanel projectId={7} />);
     await screen.findByText('Support');
     drop(sectionOf('Modeling'), 'SUPPORT.stl');
+    await waitFor(() => expect(calls).toEqual(['upload:20']));
+  });
+
+  it('dropping on a section matches items on the backend name key', async () => {
+    render(<ProjectFilesPanel projectId={7} />);
+    await screen.findByText('Support');
+    drop(sectionOf('Modeling'), 'Sup:port.stl');
     await waitFor(() => expect(calls).toEqual(['upload:20']));
   });
 

@@ -194,3 +194,13 @@ async def test_project_with_items_cannot_be_deleted(async_client: AsyncClient, r
     assert (await async_client.delete(f"/api/v1/projects/items/{empty_item['id']}")).status_code == 204
     assert (await async_client.delete(f"/api/v1/projects/{empty['id']}")).status_code == 200
     assert (await async_client.get(f"/api/v1/projects/{empty['id']}")).status_code == 404
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_tree_exposes_the_item_name_key(async_client: AsyncClient, root):
+    project = await _project(async_client)
+    created = await _item(async_client, project["id"], name="Sup:port. ")
+    assert created["name_key"] == "support"
+    tree = (await async_client.get(f"/api/v1/projects/{project['id']}/tree")).json()
+    assert tree["sections"][1]["items"][0]["name_key"] == "support"

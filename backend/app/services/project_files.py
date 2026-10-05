@@ -964,6 +964,7 @@ async def load_tree(db: AsyncSession, project: Project) -> ProjectTreeResponse:
                 id=item.id,
                 section=item.section,
                 name=item.name,
+                name_key=item.name_key,
                 forked_from=_ref(fork_source, fork_item) if fork_source and fork_item else None,
                 revisions=[revision_out(rev, item) for rev in item_revisions],
             )

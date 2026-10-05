@@ -8,7 +8,7 @@ import { inputCls, focusRingCls } from '../../formStyles';
 import { ItemRow } from './ItemRow';
 import type { DerivedOption } from './RevisionBlock';
 import type { FileActions } from './useFileActions';
-import { filesFromDataTransfer, itemNameFromFile } from './fileDrop';
+import { filesFromDataTransfer, itemNameFromFile, itemNameKey } from './fileDrop';
 import { SECTION_LABEL_KEYS } from './filesUi';
 
 interface Props {
@@ -37,7 +37,8 @@ export function SectionBlock({ section, items, derivedOptions, actions }: Props)
     if (!dropped.length) return;
     setOpen(true);
     const itemName = itemNameFromFile(dropped[0].name);
-    const existing = items.find((i) => i.name.toLowerCase() === itemName.toLowerCase());
+    const key = itemNameKey(itemName);
+    const existing = items.find((i) => i.name_key === key);
     if (existing) await actions.uploadRevision(existing.id, dropped);
     else await actions.createItem(section, itemName, dropped);
   };

@@ -1257,7 +1257,7 @@ export type RevisionStatus = 'wip' | 'valide' | 'obsolete';
 export interface RevisionRef { id: number; item_id: number; item_name: string; section: ProjectSection; number: number; status: RevisionStatus }
 export interface ProjectFileOut { id: number; filename: string; file_type: string; file_size: number; file_hash: string | null; has_thumbnail: boolean; created_at: string }
 export interface ProjectRevisionOut { id: number; number: number; status: RevisionStatus; note: string | null; derived_from: RevisionRef | null; outdated_by: RevisionRef | null; print_profile: Record<string, unknown> | null; slicer_name: string | null; slicer_version: string | null; has_snapshot: boolean; used: boolean; files: ProjectFileOut[]; created_by: string | null; created_at: string; status_changed_at: string | null }
-export interface ProjectItemOut { id: number; section: ProjectSection; name: string; forked_from: RevisionRef | null; revisions: ProjectRevisionOut[] }
+export interface ProjectItemOut { id: number; section: ProjectSection; name: string; name_key: string; forked_from: RevisionRef | null; revisions: ProjectRevisionOut[] }
 export interface ProjectTreeResponse { project_id: number; code: string | null; sections: { section: ProjectSection; items: ProjectItemOut[] }[] }
 export interface DuplicateWarning { filename: string; same_as: string }
 
