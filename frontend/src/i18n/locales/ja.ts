@@ -10029,6 +10029,15 @@ export default {
       editDeliveries: '納品ファイルを編集',
       noProjectsFound: '一致するプロジェクトはありません',
       reuseFromOrderPlaceholder: '別の注文のファイルを再利用…',
+      events: {
+        projectLinked: 'プロジェクトをリンクしました',
+        projectUnlinked: 'プロジェクトのリンクを解除しました',
+        deliveriesChanged: '納品ファイルを更新しました',
+        revisionAdded: 'プロジェクトにリビジョンを追加しました',
+        revisionStatusChanged: 'リビジョンのステータスを変更しました',
+        filesDropped: '{{code}} にファイルを追加しました',
+        previousProject: '以前は {{code}}',
+      },
     },
   },
 };

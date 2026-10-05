@@ -10013,6 +10013,15 @@ export default {
       editDeliveries: '編輯已交付檔案',
       noProjectsFound: '沒有相符的專案',
       reuseFromOrderPlaceholder: '沿用其他訂單的檔案…',
+      events: {
+        projectLinked: '連結了專案',
+        projectUnlinked: '取消了專案連結',
+        deliveriesChanged: '更新了已交付檔案',
+        revisionAdded: '新增了專案修訂版',
+        revisionStatusChanged: '變更了修訂版狀態',
+        filesDropped: '將檔案新增至 {{code}}',
+        previousProject: '原為 {{code}}',
+      },
     },
   },
 };

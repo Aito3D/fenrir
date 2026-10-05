@@ -10054,6 +10054,15 @@ export default {
       editDeliveries: 'Geleverde bestanden bewerken',
       noProjectsFound: 'Geen overeenkomend project',
       reuseFromOrderPlaceholder: 'Bestanden van een andere bestelling hergebruiken…',
+      events: {
+        projectLinked: 'heeft een project gekoppeld',
+        projectUnlinked: 'heeft een project ontkoppeld',
+        deliveriesChanged: 'heeft de geleverde bestanden bijgewerkt',
+        revisionAdded: 'heeft een projectrevisie toegevoegd',
+        revisionStatusChanged: 'heeft de status van een revisie gewijzigd',
+        filesDropped: 'heeft bestanden aan {{code}} toegevoegd',
+        previousProject: 'eerder {{code}}',
+      },
     },
   },
 };

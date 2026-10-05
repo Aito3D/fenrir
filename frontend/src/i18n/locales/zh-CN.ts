@@ -10013,6 +10013,15 @@ export default {
       editDeliveries: '编辑已交付文件',
       noProjectsFound: '没有匹配的项目',
       reuseFromOrderPlaceholder: '沿用其他订单的文件…',
+      events: {
+        projectLinked: '关联了项目',
+        projectUnlinked: '取消了项目关联',
+        deliveriesChanged: '更新了已交付文件',
+        revisionAdded: '添加了项目修订版',
+        revisionStatusChanged: '更改了修订版状态',
+        filesDropped: '向 {{code}} 添加了文件',
+        previousProject: '原为 {{code}}',
+      },
     },
   },
 };

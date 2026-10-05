@@ -9630,6 +9630,15 @@ export default {
       editDeliveries: 'Изменить переданные файлы',
       noProjectsFound: 'Подходящих проектов нет',
       reuseFromOrderPlaceholder: 'Взять файлы из другого заказа…',
+      events: {
+        projectLinked: 'привязал проект',
+        projectUnlinked: 'отвязал проект',
+        deliveriesChanged: 'изменил переданные файлы',
+        revisionAdded: 'добавил ревизию проекта',
+        revisionStatusChanged: 'изменил статус ревизии',
+        filesDropped: 'добавил файлы в {{code}}',
+        previousProject: 'ранее {{code}}',
+      },
     },
   },
 };

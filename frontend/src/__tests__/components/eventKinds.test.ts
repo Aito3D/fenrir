@@ -349,3 +349,84 @@ describe('eventLabelKey', () => {
     expect(eventLabelKey(ev('no.such.kind', null))).toBeUndefined();
   });
 });
+
+describe('projects-as-PDM kinds', () => {
+  const t = i18n.getFixedT('en');
+  const ev = (kind: string, subject_label: string | null, detail: Record<string, unknown> | null) => ({
+    kind,
+    subject_id: null,
+    subject_label,
+    detail,
+  });
+
+  it('labels all six kinds with keys that exist in English', () => {
+    const kinds = [
+      'task.project_linked',
+      'task.project_unlinked',
+      'task.deliveries_changed',
+      'project.revision_added',
+      'project.revision_status_changed',
+      'project.files_dropped',
+    ];
+    for (const kind of kinds) {
+      const key = EVENT_LABEL_KEY[kind];
+      expect(key, kind).toMatch(/^projectsPdm\.aito\.events\./);
+      expect(i18n.exists(key, { lng: 'en' }), kind).toBe(true);
+    }
+  });
+
+  it('task.project_linked shows the code, and the previous one on a relink', () => {
+    expect(detailText('task.project_linked', { project_id: 2, code: 'P-0002', name: 'Couvercle' }, t)).toBe('P-0002');
+    expect(
+      detailText('task.project_linked', { project_id: 2, code: 'P-0002', previous_project_id: 1, previous_code: 'P-0001' }, t),
+    ).toBe('P-0002 · previously P-0001');
+  });
+
+  it('task.project_unlinked shows the code it left', () => {
+    expect(detailText('task.project_unlinked', { project_id: 1, code: 'P-0001' }, t)).toBe('P-0001');
+    expect(detailText('task.project_unlinked', { project_id: 1, code: null }, t)).toBeNull();
+  });
+
+  it('task.deliveries_changed lists added and removed revisions', () => {
+    expect(detailText('task.deliveries_changed', { added: ['Boitier R3', 'Plaque R1'], removed: ['Boitier R2'] }, t)).toBe(
+      '+ Boitier R3, Plaque R1 · − Boitier R2',
+    );
+    expect(detailText('task.deliveries_changed', { added: [], removed: ['Boitier R2'] }, t)).toBe('− Boitier R2');
+    expect(detailText('task.deliveries_changed', { added: [], removed: [] }, t)).toBeNull();
+  });
+
+  it('project.revision_added shows the code and the translated section', () => {
+    expect(
+      detailText('project.revision_added', { project_id: 1, code: 'P-0001', section: 'modelisation', item_id: 3 }, t),
+    ).toBe('P-0001 · Modeling');
+  });
+
+  it('project.revision_status_changed shows the translated statuses', () => {
+    expect(
+      detailText('project.revision_status_changed', { project_id: 1, code: 'P-0001', from: 'wip', to: 'valide' }, t),
+    ).toBe('P-0001 · In progress → Approved');
+  });
+
+  it('project.files_dropped shows the file count and sections, the label names the project', () => {
+    const detail = {
+      project_id: 1,
+      code: 'P-0001',
+      sections: ['impression', 'scan'],
+      results: [{ filename: 'a' }, { filename: 'b' }, { filename: 'c' }],
+    };
+    expect(detailText('project.files_dropped', detail, t)).toBe('3 files · Printing, Scan');
+    expect(detailText('project.files_dropped', { ...detail, results: [{ filename: 'a' }], sections: ['scan'] }, t)).toBe(
+      '1 file · Scan',
+    );
+    // The English "3 file(s)" subject is replaced by the label's own sentence.
+    const params = labelParams(ev('project.files_dropped', '3 file(s)', detail));
+    expect(params).toEqual({ code: 'P-0001' });
+    expect(t(EVENT_LABEL_KEY['project.files_dropped'], params ?? undefined)).toBe('added files to P-0001');
+  });
+
+  it('falls back to raw values without a translator', () => {
+    expect(detailText('project.revision_status_changed', { code: 'P-0001', from: 'wip', to: 'valide' })).toBe(
+      'P-0001 · wip → valide',
+    );
+  });
+});

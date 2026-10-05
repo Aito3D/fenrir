@@ -9955,6 +9955,15 @@ export default {
       editDeliveries: 'Teslim edilen dosyaları düzenle',
       noProjectsFound: 'Eşleşen proje yok',
       reuseFromOrderPlaceholder: 'Başka bir siparişin dosyalarını yeniden kullan…',
+      events: {
+        projectLinked: 'bir proje bağladı',
+        projectUnlinked: 'bir projenin bağlantısını kaldırdı',
+        deliveriesChanged: 'teslim edilen dosyaları güncelledi',
+        revisionAdded: 'projeye bir revizyon ekledi',
+        revisionStatusChanged: 'bir revizyonun durumunu değiştirdi',
+        filesDropped: '{{code}} projesine dosya ekledi',
+        previousProject: 'önceki: {{code}}',
+      },
     },
   },
 };

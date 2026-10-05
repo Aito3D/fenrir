@@ -10030,6 +10030,15 @@ export default {
       editDeliveries: 'Gelieferte Dateien bearbeiten',
       noProjectsFound: 'Kein passendes Projekt',
       reuseFromOrderPlaceholder: 'Dateien aus einem anderen Auftrag übernehmen…',
+      events: {
+        projectLinked: 'hat ein Projekt verknüpft',
+        projectUnlinked: 'hat eine Projektverknüpfung aufgehoben',
+        deliveriesChanged: 'hat die gelieferten Dateien geändert',
+        revisionAdded: 'hat eine Projektrevision hinzugefügt',
+        revisionStatusChanged: 'hat den Status einer Revision geändert',
+        filesDropped: 'hat Dateien zu {{code}} hinzugefügt',
+        previousProject: 'zuvor {{code}}',
+      },
     },
   },
 };

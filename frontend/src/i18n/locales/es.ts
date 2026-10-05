@@ -10038,6 +10038,15 @@ export default {
       editDeliveries: 'Editar archivos entregados',
       noProjectsFound: 'Ningún proyecto coincide',
       reuseFromOrderPlaceholder: 'Reutilizar archivos de otro pedido…',
+      events: {
+        projectLinked: 'vinculó un proyecto',
+        projectUnlinked: 'desvinculó un proyecto',
+        deliveriesChanged: 'actualizó los archivos entregados',
+        revisionAdded: 'añadió una revisión al proyecto',
+        revisionStatusChanged: 'cambió el estado de una revisión',
+        filesDropped: 'añadió archivos a {{code}}',
+        previousProject: 'antes {{code}}',
+      },
     },
   },
 };

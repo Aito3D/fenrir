@@ -10054,6 +10054,15 @@ errors: {
       editDeliveries: 'Redigera levererade filer',
       noProjectsFound: 'Inget matchande projekt',
       reuseFromOrderPlaceholder: 'Återanvänd filer från en annan order…',
+      events: {
+        projectLinked: 'länkade ett projekt',
+        projectUnlinked: 'avlänkade ett projekt',
+        deliveriesChanged: 'uppdaterade de levererade filerna',
+        revisionAdded: 'lade till en projektrevision',
+        revisionStatusChanged: 'ändrade status för en revision',
+        filesDropped: 'lade till filer i {{code}}',
+        previousProject: 'tidigare {{code}}',
+      },
     },
   },
 };

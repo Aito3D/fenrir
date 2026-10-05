@@ -10015,6 +10015,15 @@ export default {
       editDeliveries: 'Modifier les fichiers livrés',
       noProjectsFound: 'Aucun projet correspondant',
       reuseFromOrderPlaceholder: 'Reprendre les fichiers d’une autre commande…',
+      events: {
+        projectLinked: 'a lié un projet',
+        projectUnlinked: 'a délié un projet',
+        deliveriesChanged: 'a modifié les fichiers livrés',
+        revisionAdded: 'a ajouté une révision au projet',
+        revisionStatusChanged: 'a changé le statut d’une révision',
+        filesDropped: 'a ajouté des fichiers à {{code}}',
+        previousProject: 'auparavant {{code}}',
+      },
     },
   },
 };

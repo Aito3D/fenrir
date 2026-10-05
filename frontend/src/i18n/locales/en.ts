@@ -10086,6 +10086,15 @@ export default {
       editDeliveries: 'Edit delivered files',
       noProjectsFound: 'No matching project',
       reuseFromOrderPlaceholder: 'Reuse files from another order…',
+      events: {
+        projectLinked: 'linked a project',
+        projectUnlinked: 'unlinked a project',
+        deliveriesChanged: 'updated the delivered files',
+        revisionAdded: 'added a project revision',
+        revisionStatusChanged: 'changed a revision status',
+        filesDropped: 'added files to {{code}}',
+        previousProject: 'previously {{code}}',
+      },
     },
   },
 };

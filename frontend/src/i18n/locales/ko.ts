@@ -9647,6 +9647,15 @@ export default {
       editDeliveries: '납품 파일 편집',
       noProjectsFound: '일치하는 프로젝트가 없습니다',
       reuseFromOrderPlaceholder: '다른 주문의 파일 재사용…',
+      events: {
+        projectLinked: '프로젝트를 연결했습니다',
+        projectUnlinked: '프로젝트 연결을 해제했습니다',
+        deliveriesChanged: '납품 파일을 수정했습니다',
+        revisionAdded: '프로젝트에 리비전을 추가했습니다',
+        revisionStatusChanged: '리비전 상태를 변경했습니다',
+        filesDropped: '{{code}}에 파일을 추가했습니다',
+        previousProject: '이전: {{code}}',
+      },
     },
   },
 };
