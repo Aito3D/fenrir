@@ -241,6 +241,7 @@ async def bulk_assign(
     file_q = select(LibraryFile.id).where(
         LibraryFile.id.in_(payload.file_ids),
         LibraryFile.deleted_at.is_(None),
+        LibraryFile.revision_id.is_(None),  # Fenrir: project revision files are not File Manager files (PDM §6.1).
     )
     if user is not None and not can_update_all:
         file_q = file_q.where(LibraryFile.created_by_id == user.id)

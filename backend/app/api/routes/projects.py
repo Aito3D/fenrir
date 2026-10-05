@@ -1039,7 +1039,11 @@ async def get_project_file_progress(
     files_result = await db.execute(
         select(LibraryFile.id, LibraryFile.file_hash, LibraryFile.filename)
         .join(LibraryFolder, LibraryFile.folder_id == LibraryFolder.id)
-        .where(LibraryFolder.project_id == project_id, LibraryFile.deleted_at.is_(None))
+        .where(
+            LibraryFolder.project_id == project_id,
+            LibraryFile.deleted_at.is_(None),
+            LibraryFile.revision_id.is_(None),  # Fenrir: project revision files are not File Manager files (PDM §6.1).
+        )
     )
     file_rows = files_result.all()
     if not file_rows:
@@ -1971,7 +1975,14 @@ async def export_project(
     for folder in linked_folders:
         # Get files in this folder
         files_result = await db.execute(
-            LibraryFile.active().where(LibraryFile.folder_id == folder.id).order_by(LibraryFile.filename)
+            LibraryFile.active()
+            .where(
+                LibraryFile.folder_id == folder.id,
+                LibraryFile.revision_id.is_(
+                    None
+                ),  # Fenrir: project revision files are not File Manager files (PDM §6.1).
+            )
+            .order_by(LibraryFile.filename)
         )
         files = files_result.scalars().all()
 
