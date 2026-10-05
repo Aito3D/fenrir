@@ -60,7 +60,7 @@ export function NewProjectModal({ onClose, initialTitle = '', initialDescription
           e.preventDefault();
           if (title.trim()) create.mutate();
         }}
-        className="w-full max-w-lg space-y-4 rounded-xl bg-bambu-card p-5 focus:outline-none"
+        className="w-full max-w-lg space-y-4 rounded-xl border border-bambu-dark-tertiary bg-bambu-dark-secondary p-5 focus:outline-none"
       >
         <h2 className="text-lg font-semibold text-white">{t('projectsPdm.createTitle')}</h2>
         <AiTextField
