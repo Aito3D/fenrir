@@ -9,6 +9,8 @@ rather than following that setting: a summary can trade prose quality for
 price, but a correction that reformulates is a wrong correction.
 """
 
+import re
+
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -360,3 +362,72 @@ async def proofread_text(db: AsyncSession, text: str) -> tuple[str, str]:
     # same outcome as "nothing needed correcting": the caller sees its own
     # text unchanged, exactly as if the model had echoed it back.
     return unquoted or source, model
+
+
+# Projects as a PDM (spec §3.5): rewording, unlike proofread_text above. The
+# caller (AiTextField with an undo control) swaps the answer into the field,
+# so the prompts forbid adding information the operator did not write.
+REFORMULATE_MAX_CHARS = 2000
+_REFORMULATE_PROMPTS = {
+    "title": (
+        "Tu reformules le titre d'un projet de pièce imprimée en 3D, dans un atelier d'impression. "
+        "Réponds uniquement par le titre reformulé, en français, court (80 caractères au plus) et précis, "
+        "sans point final, sans guillemets et sans commentaire. N'ajoute aucune information absente du texte."
+    ),
+    "description": (
+        "Tu reformules la description d'un projet de pièce imprimée en 3D, dans un atelier d'impression. "
+        "Réponds uniquement par la description reformulée, en français, claire et concise (une à trois phrases), "
+        "sans guillemets et sans commentaire. N'ajoute aucune information absente du texte."
+    ),
+}
+_TAG_SYSTEM_PROMPT = (
+    "Tu proposes des étiquettes pour classer un projet de pièce imprimée en 3D. "
+    "Réponds uniquement par une liste d'étiquettes, une par ligne, cinq au maximum, sans commentaire. "
+    "Utilise en priorité les étiquettes existantes fournies, écrites exactement comme elles. "
+    "N'invente une nouvelle étiquette que si aucune existante ne convient, et deux au maximum. "
+    "Une étiquette fait un à trois mots."
+)
+TAG_PROMPT_MAX_EXISTING = 300
+
+
+async def reformulate_project_text(db: AsyncSession, text: str, field: str) -> tuple[str, str]:
+    """French rewording of a project title or description. Returns (text, model)."""
+    api_key = await _api_key(db)
+    model = (await _setting(db, "openrouter_model")).strip() or DEFAULT_MODEL
+    source = text.strip()[:REFORMULATE_MAX_CHARS]
+    answer = await _chat(
+        api_key,
+        model,
+        _REFORMULATE_PROMPTS[field],
+        source,
+        max_tokens=int(len(source) / 1.5) + 200,
+        raise_on_truncation=True,
+    )
+    return _unquote(answer, source) or source, model
+
+
+def parse_tag_lines(answer: str) -> list[str]:
+    """One name per line (commas also split); bullets, numbering and quotes stripped."""
+    names: list[str] = []
+    for line in answer.replace(",", "\n").splitlines():
+        name = re.sub(r"^\s*(?:[-*•·]+|\d+[.)])\s*", "", line).strip().strip("\"'«»“”").strip()
+        if name and len(name) <= 64:
+            names.append(name)
+    return names
+
+
+async def suggest_project_tag_names(
+    db: AsyncSession, title: str, description: str | None, existing: list[str]
+) -> tuple[list[str], str]:
+    """Raw tag names from the model (ranking is the caller's job). Returns (names, model)."""
+    api_key = await _api_key(db)
+    model = (await _setting(db, "openrouter_model")).strip() or DEFAULT_MODEL
+    user = "\n".join(
+        [
+            f"Titre : {title.strip()}",
+            f"Description : {(description or '').strip() or '—'}",
+            "Étiquettes existantes : " + (", ".join(existing[:TAG_PROMPT_MAX_EXISTING]) or "aucune"),
+        ]
+    )
+    answer = await _chat(api_key, model, _TAG_SYSTEM_PROMPT, user, max_tokens=120)
+    return parse_tag_lines(answer), model

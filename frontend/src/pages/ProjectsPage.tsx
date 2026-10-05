@@ -57,9 +57,11 @@ interface ProjectModalProps {
   isLoading: boolean;
   currencySymbol: string;
   t: TFunction;
+  // Fenrir projects as a PDM: header owns tags, no sub-projects.
+  pdm?: boolean;
 }
 
-export function ProjectModal({ project, onClose, onSave, isLoading, currencySymbol, t }: ProjectModalProps) {
+export function ProjectModal({ project, onClose, onSave, isLoading, currencySymbol, t, pdm = false }: ProjectModalProps) {
   const [name, setName] = useState(project?.name || '');
   const [description, setDescription] = useState(project?.description || '');
   const [color, setColor] = useState(project?.color || PROJECT_COLORS[0]);
@@ -139,7 +141,7 @@ export function ProjectModal({ project, onClose, onSave, isLoading, currencySymb
       target_sets: project ? (targetSets ? parseInt(targetSets, 10) : null) : (targetSets ? parseInt(targetSets, 10) : undefined),
       // Null clears the stored value on edit; undefined omits the key on create.
       // Sending undefined on edit would make an emptied field un-clearable.
-      tags: project ? (tags.trim() || null) : (tags.trim() || undefined),
+      ...(!pdm && { tags: project ? (tags.trim() || null) : (tags.trim() || undefined) }),
       due_date: project ? (dueDate || null) : (dueDate || undefined),
       priority,
       budget: budget.trim() ? parseFloat(budget) : null,
@@ -148,7 +150,7 @@ export function ProjectModal({ project, onClose, onSave, isLoading, currencySymb
       url: project ? (trimmedUrl || null) : (trimmedUrl || undefined),
       // The API reads 0 as "remove the parent" — null would be indistinguishable
       // from the field having been omitted (#1264).
-      parent_id: project ? (parentId ?? 0) : (parentId ?? undefined),
+      ...(!pdm && { parent_id: project ? (parentId ?? 0) : (parentId ?? undefined) }),
       ...(project && { status }),
     });
   };
@@ -213,24 +215,26 @@ export function ProjectModal({ project, onClose, onSave, isLoading, currencySymb
           </div>
 
           {/* #1264: Nest this project under another one */}
-          <div>
-            <label className="block text-sm font-medium text-white mb-1">
-              {t('projects.parentLabel')}
-            </label>
-            <select
-              value={parentId ?? ''}
-              onChange={(e) => setParentId(e.target.value ? parseInt(e.target.value, 10) : null)}
-              className="w-full bg-bambu-dark border border-bambu-dark-tertiary rounded px-3 py-2 text-white focus:outline-none focus:border-bambu-green"
-            >
-              <option value="">{t('projects.parentNone')}</option>
-              {parentOptions.map((option) => (
-                <option key={option.id} value={option.id}>
-                  {option.name}
-                </option>
-              ))}
-            </select>
-            <p className="text-xs text-bambu-gray mt-1">{t('projects.parentHint')}</p>
-          </div>
+          {!pdm && (
+            <div>
+              <label className="block text-sm font-medium text-white mb-1">
+                {t('projects.parentLabel')}
+              </label>
+              <select
+                value={parentId ?? ''}
+                onChange={(e) => setParentId(e.target.value ? parseInt(e.target.value, 10) : null)}
+                className="w-full bg-bambu-dark border border-bambu-dark-tertiary rounded px-3 py-2 text-white focus:outline-none focus:border-bambu-green"
+              >
+                <option value="">{t('projects.parentNone')}</option>
+                {parentOptions.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.name}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-bambu-gray mt-1">{t('projects.parentHint')}</p>
+            </div>
+          )}
 
           {/* #1155: Cover image — only available when editing an existing project,
               since uploading needs a project_id. New projects can add it after save. */}
@@ -356,18 +360,20 @@ export function ProjectModal({ project, onClose, onSave, isLoading, currencySymb
           </div>
 
           {/* Tags */}
-          <div>
-            <label className="block text-sm font-medium text-white mb-1">
-              {t('projects.tagsLabel')}
-            </label>
-            <input
-              type="text"
-              value={tags}
-              onChange={(e) => setTags(e.target.value)}
-              className="w-full bg-bambu-dark border border-bambu-dark-tertiary rounded px-3 py-2 text-white placeholder-bambu-gray focus:outline-none focus:border-bambu-green"
-              placeholder={t('projects.tagsPlaceholder')}
-            />
-          </div>
+          {!pdm && (
+            <div>
+              <label className="block text-sm font-medium text-white mb-1">
+                {t('projects.tagsLabel')}
+              </label>
+              <input
+                type="text"
+                value={tags}
+                onChange={(e) => setTags(e.target.value)}
+                className="w-full bg-bambu-dark border border-bambu-dark-tertiary rounded px-3 py-2 text-white placeholder-bambu-gray focus:outline-none focus:border-bambu-green"
+                placeholder={t('projects.tagsPlaceholder')}
+              />
+            </div>
+          )}
 
           {/* Due Date and Priority in a row */}
           <div className="grid grid-cols-2 gap-4">

@@ -49,7 +49,7 @@ const MaintenancePage = lazyWithReload(() => import('./pages/MaintenancePage').t
 const FinancePage = lazyWithReload(() => import('./pages/FinancePage').then(m => ({ default: m.FinancePage })));
 const CalculatorPage = lazyWithReload(() => import('./pages/CalculatorPage').then(m => ({ default: m.CalculatorPage })));
 const CalculatorQuotePage = lazyWithReload(() => import('./pages/CalculatorQuotePage').then(m => ({ default: m.CalculatorQuotePage })));
-const ProjectsPage = lazyWithReload(() => import('./pages/ProjectsPage').then(m => ({ default: m.ProjectsPage })));
+const ProjectListPage = lazyWithReload(() => import('./pages/ProjectListPage').then(m => ({ default: m.ProjectListPage })));
 const AitoPage = lazyWithReload(() => import('./pages/AitoPage').then(m => ({ default: m.AitoPage })));
 // Design bench for the Done celebration, dev-only in the literal sense: the
 // ternary is what keeps it out of production, not the route guard below.
@@ -283,7 +283,7 @@ const router = createBrowserRouter(
         <Route path="finance" element={<PermissionRoute permission="cost_centers:read_own"><FinancePage /></PermissionRoute>} />
         <Route path="maintenance" element={<MaintenancePage />} />
         <Route path="calculator" element={<PermissionRoute permission="calculator:read"><CalculatorPage /></PermissionRoute>} />
-        <Route path="projects" element={<ProjectsPage />} />
+        <Route path="projects" element={<ProjectListPage />} />
         <Route path="projects/:id" element={<ProjectDetailPage />} />
         <Route path="aito" element={<PermissionRoute permission="aito:read"><AitoPage /></PermissionRoute>} />
         <Route path="inventory" element={<InventoryPage />} />

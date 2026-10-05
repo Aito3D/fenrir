@@ -1143,8 +1143,36 @@ export interface ProjectChildPreview {
   total_cost: number;  // Filament + energy + BOM, matching the parent's cost card
 }
 
+export interface ProjectTagRef { id: number; name: string }
+export interface ProjectTagCount { id: number; name: string; project_count: number }
+export interface ProjectSearchItem {
+  id: number;
+  code: string | null;
+  name: string;
+  description: string | null;
+  status: string;
+  color: string | null;
+  cover_image_filename: string | null;
+  tags: ProjectTagRef[];
+  archive_count: number;
+  created_at: string;
+  updated_at: string;
+}
+export interface ProjectSearchResponse { items: ProjectSearchItem[]; total: number }
+export interface ProjectSearchParams {
+  q?: string;
+  tagIds?: number[];
+  tagMode?: 'any' | 'all';
+  status?: string;
+  limit?: number;
+  offset?: number;
+}
+export interface ProjectTagSuggestion { name: string; tag_id: number | null }
+
 export interface Project {
   id: number;
+  code: string | null;
+  tag_list: ProjectTagRef[];
   name: string;
   description: string | null;
   color: string | null;
@@ -1198,6 +1226,7 @@ export interface ArchivePreview {
 
 export interface ProjectListItem {
   id: number;
+  code: string | null;
   name: string;
   description: string | null;
   color: string | null;
@@ -1237,6 +1266,8 @@ export interface ProjectCreate {
   budget?: number | null;
   parent_id?: number;
   url?: string | null;  // #1155
+  tag_ids?: number[];
+  new_tag_names?: string[];
 }
 
 export interface ProjectUpdate {
@@ -1254,6 +1285,8 @@ export interface ProjectUpdate {
   budget?: number | null;
   parent_id?: number;
   url?: string | null;  // #1155 — explicit null clears the URL
+  tag_ids?: number[];
+  new_tag_names?: string[];
 }
 
 // BOM Types - Tracks sourced/purchased parts (hardware, electronics, etc.)
@@ -9180,6 +9213,27 @@ export const api = {
     if (status) params.set('status', status);
     return request<ProjectListItem[]>(`/projects/?${params}`);
   },
+  searchProjects: (p: ProjectSearchParams) => {
+    const params = new URLSearchParams();
+    if (p.q?.trim()) params.set('q', p.q.trim());
+    p.tagIds?.forEach((id) => params.append('tag_ids', String(id)));
+    if (p.tagMode) params.set('tag_mode', p.tagMode);
+    if (p.status) params.set('status', p.status);
+    if (p.limit !== undefined) params.set('limit', String(p.limit));
+    if (p.offset !== undefined) params.set('offset', String(p.offset));
+    return request<ProjectSearchResponse>(`/projects/search?${params}`);
+  },
+  getProjectTags: () => request<ProjectTagCount[]>('/projects/tags'),
+  reformulateProjectText: (text: string, field: 'title' | 'description') =>
+    request<{ text: string; model: string }>('/projects/ai/reformulate', {
+      method: 'POST',
+      body: JSON.stringify({ text, field }),
+    }),
+  suggestProjectTags: (title: string, description: string | null, excludeTagIds: number[]) =>
+    request<{ suggestions: ProjectTagSuggestion[]; model: string }>('/projects/ai/suggest-tags', {
+      method: 'POST',
+      body: JSON.stringify({ title, description, exclude_tag_ids: excludeTagIds }),
+    }),
   getProject: (id: number) => request<Project>(`/projects/${id}`),
   createProject: (data: ProjectCreate) =>
     request<Project>('/projects/', {

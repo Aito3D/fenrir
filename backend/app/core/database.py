@@ -363,6 +363,7 @@ async def init_db():
         printer_sensor_history,
         project,
         project_bom,
+        project_tag,
         scheduled_drying,
         settings,
         shopping_list,
@@ -6280,6 +6281,15 @@ async def run_migrations(conn):
             text("UPDATE printers SET camera_light_auto = :off WHERE camera_light_auto IS NULL"), {"off": False}
         )
 
+    # Projects as a PDM, phase 1 (2026-10-04, spec §7 step 1): permanent
+    # project codes, the projects-space folder name, and tags as rows of the
+    # shared library_tags catalogue. project_tags itself comes from create_all.
+    await _safe_execute(conn, "ALTER TABLE projects ADD COLUMN code VARCHAR(16)")
+    await _safe_execute(conn, "ALTER TABLE projects ADD COLUMN storage_dir VARCHAR(255)")
+    await _safe_execute(conn, "CREATE UNIQUE INDEX IF NOT EXISTS ix_projects_code ON projects (code)")
+    await _migrate_project_codes(conn)
+    await _migrate_project_tags(conn)
+
 
 async def _migrate_backfill_aito_document_numbers(conn) -> None:
     """One-time fill of `aito_projects.document_numbers` from history (2026-10-04).
@@ -6530,6 +6540,96 @@ async def _migrate_create_supplier_tables(conn) -> None:
     await _safe_execute(
         conn, "CREATE INDEX IF NOT EXISTS ix_print_log_entries_created_at ON print_log_entries (created_at)"
     )
+
+
+async def _migrate_project_codes(conn) -> None:
+    """Give every project without a code one, oldest first, and park the counter.
+
+    Codes follow ``created_at`` (then ``id``) so P-0001 is the shop's first
+    project. Rows that already carry a code keep it, and numbering continues
+    past the highest code or stored counter, whichever is larger — never
+    backwards, so a deleted project's code is not reissued. The counter row is
+    always written, which lets the insert listener lock it on PostgreSQL.
+    """
+    from sqlalchemy import text
+
+    from backend.app.services.project_codes import CODE_COUNTER_KEY, format_project_code, parse_project_code
+
+    async with conn.begin_nested():
+        rows = (await conn.execute(text("SELECT id, code FROM projects ORDER BY created_at, id"))).fetchall()
+        counter_row = (
+            await conn.execute(text("SELECT value FROM settings WHERE key = :key"), {"key": CODE_COUNTER_KEY})
+        ).first()
+        try:
+            stored = int(counter_row[0]) if counter_row else 0
+        except (TypeError, ValueError):
+            stored = 0
+        number = max([stored, *(parse_project_code(row.code) or 0 for row in rows)])
+        for row in rows:
+            if row.code:
+                continue
+            number += 1
+            await conn.execute(
+                text("UPDATE projects SET code = :code WHERE id = :id"),
+                {"code": format_project_code(number), "id": row.id},
+            )
+        params = {"key": CODE_COUNTER_KEY, "value": str(number)}
+        if counter_row is None:
+            await conn.execute(text("INSERT INTO settings (key, value) VALUES (:key, :value)"), params)
+        elif str(counter_row[0]) != str(number):
+            await conn.execute(text("UPDATE settings SET value = :value WHERE key = :key"), params)
+
+
+async def _migrate_project_tags(conn) -> None:
+    """Turn the comma-separated ``projects.tags`` into ``project_tags`` rows.
+
+    Get-or-create on ``library_tags.name_key`` so "Drone" and " drone " land on
+    one catalogue row, and an existing File Manager tag is reused. A project
+    that already has rows was converted on an earlier start and is skipped —
+    its ``tags`` column is the mirror by then. The column is rewritten as the
+    normalised mirror, not cleared (see services/project_tags.py).
+    """
+    from sqlalchemy import text
+
+    from backend.app.services.project_tags import split_tag_string, tag_mirror, tag_name_key
+
+    async with conn.begin_nested():
+        rows = (
+            await conn.execute(text("SELECT id, tags FROM projects WHERE tags IS NOT NULL AND TRIM(tags) <> ''"))
+        ).fetchall()
+        if not rows:
+            return
+        converted = {r[0] for r in (await conn.execute(text("SELECT DISTINCT project_id FROM project_tags"))).all()}
+        catalogue = {
+            r.name_key: (r.id, r.name)
+            for r in (await conn.execute(text("SELECT id, name, name_key FROM library_tags"))).fetchall()
+        }
+        for row in rows:
+            if row.id in converted:
+                continue
+            linked: dict[int, str] = {}
+            for name in split_tag_string(row.tags):
+                key = tag_name_key(name)
+                if key not in catalogue:
+                    await conn.execute(
+                        text("INSERT INTO library_tags (name, name_key) VALUES (:name, :key)"),
+                        {"name": name, "key": key},
+                    )
+                    new_id = (
+                        await conn.execute(text("SELECT id FROM library_tags WHERE name_key = :key"), {"key": key})
+                    ).scalar_one()
+                    catalogue[key] = (new_id, name)
+                tag_id, tag_name = catalogue[key]
+                linked[tag_id] = tag_name
+            for tag_id in linked:
+                await conn.execute(
+                    text("INSERT INTO project_tags (project_id, tag_id) VALUES (:project_id, :tag_id)"),
+                    {"project_id": row.id, "tag_id": tag_id},
+                )
+            await conn.execute(
+                text("UPDATE projects SET tags = :tags WHERE id = :id"),
+                {"tags": tag_mirror(list(linked.values())), "id": row.id},
+            )
 
 
 async def _migrate_supplier_name_key(conn) -> None:

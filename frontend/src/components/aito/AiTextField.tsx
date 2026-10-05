@@ -37,6 +37,14 @@ export interface AiTextFieldProps {
   rows?: number;
   /** Extra classes for the control itself (margins, mostly). */
   className?: string;
+  /** What the field sends its text to on blur. Defaults to the Aito
+   *  spell-check; the projects header passes its French rewording instead.
+   *  Same contract either way: the answer replaces the text, with undo. */
+  correct?: (text: string) => Promise<{ text: string }>;
+  /** Treat the text the field mounts with as already settled, so leaving a
+   *  pre-filled field the user never edited sends nothing. Off by default:
+   *  the Aito callers rely on proofreading stored text. */
+  settleInitial?: boolean;
 }
 
 /** A text field that spell-checks its own French when the user leaves it.
@@ -68,12 +76,14 @@ export function AiTextField({
   multiline = false,
   rows = 2,
   className = '',
+  correct = api.proofreadAitoText,
+  settleInitial = false,
 }: AiTextFieldProps) {
   const { t } = useTranslation();
 
   // Texts this field must not spend another call on: everything sent, every
   // answer received, and anything the user restored by hand.
-  const settledRef = useRef<Set<string>>(new Set());
+  const settledRef = useRef<Set<string>>(new Set(settleInitial && value.trim() ? [value.trim()] : []));
   // The live value, for the in-flight guard below: the mutation's callback
   // closes over the render that started it, which is exactly the stale value
   // that would clobber a keystroke typed since.
@@ -118,7 +128,7 @@ export function AiTextField({
   }, []);
 
   const mutation = useMutation({
-    mutationFn: (text: string) => api.proofreadAitoText(text),
+    mutationFn: (text: string) => correct(text),
     onSuccess: (data, sent) => {
       settledRef.current.add(data.text);
       // The field is gone — applying the correction now would run it through

@@ -11,7 +11,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
-from sqlalchemy import and_, case, func, or_, select, update
+from sqlalchemy import and_, case, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -26,6 +26,7 @@ from backend.app.models.print_log import PrintLogEntry
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.project import Project
 from backend.app.models.project_bom import ProjectBOMItem
+from backend.app.models.project_tag import ProjectTag
 from backend.app.models.user import User
 from backend.app.schemas.project import (
     ArchivePreview,
@@ -43,6 +44,12 @@ from backend.app.schemas.project import (
     ProjectStats,
     ProjectUpdate,
     TimelineEvent,
+)
+from backend.app.services.project_tags import (
+    UnknownTagError,
+    apply_project_tag_input,
+    project_tag_refs,
+    sync_project_tags_from_string,
 )
 from backend.app.utils.http import build_content_disposition
 from backend.app.utils.safe_path import safe_join_under
@@ -391,6 +398,27 @@ async def compute_subtree_stats(db: AsyncSession, root_id: int) -> _SubtreeRepor
     return _SubtreeReport(descendant_count=len(descendants), rollup=rollup, child_previews=previews)
 
 
+async def _write_project_tags(db: AsyncSession, project: Project, data, *, legacy_sent: bool) -> None:
+    """Apply tag input from a create/update payload. ``tag_ids``/``new_tag_names``
+    win; otherwise a legacy ``tags`` string (old clients, the edit modal) is
+    converted into rows."""
+    try:
+        if data.tag_ids is not None or data.new_tag_names:
+            tag_ids = data.tag_ids
+            if tag_ids is None:
+                # new names only: add to the current set instead of replacing it
+                tag_ids = [ref.id for ref in await _tag_list(db, project.id)]
+            await apply_project_tag_input(db, project, tag_ids=tag_ids, new_tag_names=data.new_tag_names or [])
+        elif legacy_sent:
+            await sync_project_tags_from_string(db, project)
+    except UnknownTagError as exc:
+        raise HTTPException(status_code=400, detail=f"Unknown tag ids: {exc.tag_ids}") from exc
+
+
+async def _tag_list(db: AsyncSession, project_id: int):
+    return (await project_tag_refs(db, [project_id]))[project_id]
+
+
 @router.get("", response_model=list[ProjectListResponse])
 @router.get("/", response_model=list[ProjectListResponse])
 async def list_projects(
@@ -489,6 +517,7 @@ async def list_projects(
         response.append(
             ProjectListResponse(
                 id=project.id,
+                code=project.code,
                 name=project.name,
                 description=project.description,
                 color=project.color,
@@ -551,12 +580,15 @@ async def create_project(
     )
     db.add(project)
     await db.flush()
+    await _write_project_tags(db, project, data, legacy_sent=bool(data.tags))
     await db.refresh(project)
 
     stats = await compute_project_stats(db, project.id, project.target_count, project.target_parts_count)
 
     return ProjectResponse(
         id=project.id,
+        code=project.code,
+        tag_list=await _tag_list(db, project.id),
         name=project.name,
         description=project.description,
         color=project.color,
@@ -606,6 +638,7 @@ async def list_templates(
         response.append(
             ProjectListResponse(
                 id=project.id,
+                code=project.code,
                 name=project.name,
                 description=project.description,
                 color=project.color,
@@ -665,6 +698,7 @@ async def create_project_from_template(
     )
     db.add(project)
     await db.flush()
+    await sync_project_tags_from_string(db, project)
 
     # Copy BOM items
     bom_result = await db.execute(select(ProjectBOMItem).where(ProjectBOMItem.project_id == template_id))
@@ -691,6 +725,8 @@ async def create_project_from_template(
 
     return ProjectResponse(
         id=project.id,
+        code=project.code,
+        tag_list=await _tag_list(db, project.id),
         name=project.name,
         description=project.description,
         color=project.color,
@@ -745,6 +781,8 @@ async def get_project(
 
     return ProjectResponse(
         id=project.id,
+        code=project.code,
+        tag_list=await _tag_list(db, project.id),
         name=project.name,
         description=project.description,
         color=project.color,
@@ -813,6 +851,8 @@ async def update_project(
     # silently revert to the stored value (#2536).
     if "tags" in data.model_fields_set:
         project.tags = data.tags
+    if "tag_ids" in data.model_fields_set or data.new_tag_names or "tags" in data.model_fields_set:
+        await _write_project_tags(db, project, data, legacy_sent="tags" in data.model_fields_set)
     if "due_date" in data.model_fields_set:
         project.due_date = data.due_date
     if data.priority is not None:
@@ -857,6 +897,8 @@ async def update_project(
 
     return ProjectResponse(
         id=project.id,
+        code=project.code,
+        tag_list=await _tag_list(db, project.id),
         name=project.name,
         description=project.description,
         color=project.color,
@@ -904,6 +946,7 @@ async def delete_project(
     # this would null their parent_id instead, which loses the grandparent.
     await db.execute(update(Project).where(Project.parent_id == project_id).values(parent_id=project.parent_id))
 
+    await db.execute(delete(ProjectTag).where(ProjectTag.project_id == project_id))
     await db.delete(project)
 
     return {"message": "Project deleted"}
@@ -1724,6 +1767,7 @@ async def create_template_from_project(
     )
     db.add(template)
     await db.flush()
+    await sync_project_tags_from_string(db, template)
 
     # Copy BOM items
     bom_result = await db.execute(select(ProjectBOMItem).where(ProjectBOMItem.project_id == project_id))
@@ -1750,6 +1794,8 @@ async def create_template_from_project(
 
     return ProjectResponse(
         id=template.id,
+        code=template.code,
+        tag_list=await _tag_list(db, template.id),
         name=template.name,
         description=template.description,
         color=template.color,
@@ -2027,6 +2073,7 @@ async def import_project(
     )
     db.add(project)
     await db.flush()
+    await sync_project_tags_from_string(db, project)
 
     # Create BOM items
     for idx, bom_data in enumerate(data.bom_items):
@@ -2075,6 +2122,8 @@ async def import_project(
 
     return ProjectResponse(
         id=project.id,
+        code=project.code,
+        tag_list=await _tag_list(db, project.id),
         name=project.name,
         description=project.description,
         color=project.color,
@@ -2154,6 +2203,7 @@ async def import_project_file(
     )
     db.add(project)
     await db.flush()
+    await sync_project_tags_from_string(db, project)
 
     # Create BOM items
     for idx, bom_data in enumerate(data.get("bom_items", [])):
@@ -2268,6 +2318,8 @@ async def import_project_file(
 
     return ProjectResponse(
         id=project.id,
+        code=project.code,
+        tag_list=await _tag_list(db, project.id),
         name=project.name,
         description=project.description,
         color=project.color,

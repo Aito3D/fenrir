@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, event, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.core.database import Base
@@ -13,6 +13,13 @@ class Project(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(255))
+    # Projects as a PDM (spec §1.1). ``code`` is the permanent, visible
+    # identifier (P-0042); nullable only because SQLite cannot add a NOT NULL
+    # column to existing rows — the startup migration fills every row and the
+    # before_insert listener below fills every new one. ``storage_dir`` is the
+    # folder name under the projects space, fixed at creation.
+    code: Mapped[str | None] = mapped_column(String(16), nullable=True, unique=True, index=True)
+    storage_dir: Mapped[str | None] = mapped_column(String(255), nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     color: Mapped[str | None] = mapped_column(String(20), nullable=True)  # Hex color for UI
     status: Mapped[str] = mapped_column(String(20), default="active")  # active, completed, archived
@@ -82,3 +89,15 @@ class Project(Base):
 from backend.app.models.archive import PrintArchive  # noqa: E402
 from backend.app.models.print_queue import PrintQueueItem  # noqa: E402
 from backend.app.models.project_bom import ProjectBOMItem  # noqa: E402
+
+
+@event.listens_for(Project, "before_insert")
+def _assign_project_code(_mapper, connection, target: Project) -> None:
+    """Every new project gets its code and folder name, whatever route created it."""
+    from backend.app.services.project_codes import allocate_code_number, format_project_code
+    from backend.app.services.project_storage import storage_dir_name
+
+    if not target.code:
+        target.code = format_project_code(allocate_code_number(connection))
+    if not target.storage_dir:
+        target.storage_dir = storage_dir_name(target.code, target.name)

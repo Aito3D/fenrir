@@ -269,6 +269,7 @@ const FR_COGNATES = [
   'Photos', '{{count}} photo', '{{count}} photos',  // file details photo strip (#3077) — same word in French
   'Version 2',  // stream overlay artwork picker (#3177) — same word in French
   'Total {{amount}}',  // aito.summaryTotal — same word in French
+  'Suggestions',  // projectsPdm.suggestionsLabel — same word in French
 ];
 
 // Italian cognates.
@@ -660,6 +661,7 @@ const NL_COGNATES = [
   'Link',  // aito.payment.cellLink — "Link" is the Dutch word too (see "Betaallink")
   'online',  // aito.payment.channelLink — same loanword used in "Betaal online"
   'Cheque',  // aito.payment.modeCheque / heimdall.paymentModeCheque — same word in Dutch
+  'Code',  // projectsPdm.colCode — same word in Dutch
 ];
 
 const IDENTICAL_TO_EN_ALLOWED = {

@@ -1,6 +1,7 @@
 from datetime import datetime
+from typing import Literal
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 
 def _validate_project_url(value: str | None) -> str | None:
@@ -18,6 +19,11 @@ def _validate_project_url(value: str | None) -> str | None:
     return trimmed
 
 
+class ProjectTagRef(BaseModel):
+    id: int
+    name: str
+
+
 class ProjectCreate(BaseModel):
     """Schema for creating a new project."""
 
@@ -29,6 +35,10 @@ class ProjectCreate(BaseModel):
     target_sets: int | None = None  # Copies-per-file target (#1897)
     notes: str | None = None
     tags: str | None = None
+    # Projects as a PDM (spec §1.2). When either is sent, it wins over the
+    # legacy ``tags`` string; ``tag_ids`` replaces the whole set.
+    tag_ids: list[int] | None = Field(default=None, max_length=200)
+    new_tag_names: list[str] | None = Field(default=None, max_length=20)
     due_date: datetime | None = None
     priority: str = "normal"
     budget: float | None = None
@@ -53,6 +63,10 @@ class ProjectUpdate(BaseModel):
     target_sets: int | None = None  # Copies-per-file target (#1897)
     notes: str | None = None
     tags: str | None = None
+    # Projects as a PDM (spec §1.2). When either is sent, it wins over the
+    # legacy ``tags`` string; ``tag_ids`` replaces the whole set.
+    tag_ids: list[int] | None = Field(default=None, max_length=200)
+    new_tag_names: list[str] | None = Field(default=None, max_length=20)
     due_date: datetime | None = None
     priority: str | None = None
     budget: float | None = None
@@ -115,6 +129,8 @@ class ProjectResponse(BaseModel):
     """Schema for project response."""
 
     id: int
+    code: str | None = None
+    tag_list: list[ProjectTagRef] = []
     name: str
     description: str | None
     color: str | None
@@ -169,6 +185,7 @@ class ProjectListResponse(BaseModel):
     """Schema for project list item (lighter weight)."""
 
     id: int
+    code: str | None = None
     name: str
     description: str | None
     color: str | None
@@ -333,3 +350,61 @@ class ProjectImport(BaseModel):
     budget: float | None = None
     bom_items: list[BOMItemExport] = []
     linked_folders: list[LinkedFolderExport] = []
+
+
+class ProjectSearchItem(BaseModel):
+    id: int
+    code: str | None
+    name: str
+    description: str | None
+    status: str
+    color: str | None
+    cover_image_filename: str | None
+    tags: list[ProjectTagRef]
+    archive_count: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class ProjectSearchResponse(BaseModel):
+    items: list[ProjectSearchItem]
+    total: int
+
+
+class ProjectTagCount(BaseModel):
+    id: int
+    name: str
+    project_count: int
+
+
+class ProjectTagSuggestion(BaseModel):
+    name: str
+    tag_id: int | None
+
+
+class ProjectReformulateRequest(BaseModel):
+    text: str = Field(..., max_length=2000)
+    field: Literal["title", "description"]
+
+    @field_validator("text")
+    @classmethod
+    def _not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("text must not be blank")
+        return v.strip()
+
+
+class ProjectReformulateResponse(BaseModel):
+    text: str
+    model: str
+
+
+class ProjectSuggestTagsRequest(BaseModel):
+    title: str = Field(..., min_length=1, max_length=255)
+    description: str | None = Field(default=None, max_length=2000)
+    exclude_tag_ids: list[int] = Field(default_factory=list, max_length=200)
+
+
+class ProjectSuggestTagsResponse(BaseModel):
+    suggestions: list[ProjectTagSuggestion]
+    model: str
