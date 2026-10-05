@@ -37,15 +37,26 @@ export function ItemRow({ item, derivedOptions, actions }: Props) {
   const src = newest?.derived_from;
 
   const onDrop = (e: DragEvent) => {
-    if (!canUpdate) return;
     e.preventDefault();
     e.stopPropagation();
     setDragOver(false);
+    if (!canUpdate) return;
     const files = filesFromDataTransfer(e.dataTransfer);
     if (files.length) void actions.uploadRevision(item.id, files);
   };
 
+  const renameDone = useRef(false);
+  const startRename = () => {
+    renameDone.current = false;
+    setRenaming(item.name);
+  };
+  const cancelRename = () => {
+    renameDone.current = true;
+    setRenaming(null);
+  };
   const submitRename = async () => {
+    if (renameDone.current) return;
+    renameDone.current = true;
     const name = (renaming ?? '').trim();
     setRenaming(null);
     if (name && name !== item.name) await actions.renameItem(item.id, name);
@@ -54,8 +65,8 @@ export function ItemRow({ item, derivedOptions, actions }: Props) {
   return (
     <li
       className={`rounded-lg border bg-bambu-dark/60 ${dragOver ? 'border-bambu-green' : 'border-bambu-dark-tertiary'}`}
-      onDragOver={(e) => { if (canUpdate) { e.preventDefault(); e.stopPropagation(); setDragOver(true); } }}
-      onDragLeave={() => setDragOver(false)}
+      onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); if (canUpdate) setDragOver(true); }}
+      onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragOver(false); }}
       onDrop={onDrop}
     >
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 p-2">
@@ -63,7 +74,7 @@ export function ItemRow({ item, derivedOptions, actions }: Props) {
           <form className="flex min-w-0 flex-1 basis-48 gap-2" onSubmit={(e) => { e.preventDefault(); void submitRename(); }}>
             <input autoFocus value={renaming} onChange={(e) => setRenaming(e.target.value)} onBlur={() => void submitRename()}
               aria-label={t('projectsPdm.files.rename')} className={inputCls}
-              onKeyDown={(e) => e.key === 'Escape' && setRenaming(null)} />
+              onKeyDown={(e) => e.key === 'Escape' && cancelRename()} />
           </form>
         ) : (
           <button type="button" aria-expanded={open} onClick={() => setOpen((o) => !o)}
@@ -85,7 +96,7 @@ export function ItemRow({ item, derivedOptions, actions }: Props) {
               <Upload className="h-4 w-4" />
             </button>
             <button type="button" className={iconBtn} aria-label={t('projectsPdm.files.rename')}
-              title={t('projectsPdm.files.rename')} onClick={() => setRenaming(item.name)}>
+              title={t('projectsPdm.files.rename')} onClick={startRename}>
               <Pencil className="h-4 w-4" />
             </button>
             {canDelete && (

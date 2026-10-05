@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { render } from '../../../utils';
@@ -31,17 +31,28 @@ const tree = {
 
 let patched: { url: string; body: unknown } | null;
 let uploaded: string | null;
+let calls: string[];
+let failUpload = false;
 
 beforeEach(() => {
   patched = null;
   uploaded = null;
+  calls = [];
+  failUpload = false;
   server.use(
+    http.post('/api/v1/projects/7/items', async ({ request }) => {
+      const body = (await request.json()) as { name: string };
+      calls.push(`create:${body.name}`);
+      return HttpResponse.json({ id: 99, section: 'modelisation', name: body.name, forked_from: null, revisions: [] }, { status: 201 });
+    }),
     http.get('/api/v1/projects/7/tree', () => HttpResponse.json(tree)),
     http.patch('/api/v1/projects/revisions/:id', async ({ request, params }) => {
       patched = { url: String(params.id), body: await request.json() };
       return HttpResponse.json(rev({ id: Number(params.id) }));
     }),
     http.post('/api/v1/projects/items/:id/revisions', async ({ params }) => {
+      calls.push(`upload:${params.id}`);
+      if (failUpload) return HttpResponse.json({ detail: 'boom' }, { status: 500 });
       uploaded = String(params.id);
       return HttpResponse.json({ revision: rev({ id: 9, number: 3 }), warnings: [{ filename: 'b.step', same_as: 'R1' }] }, { status: 201 });
     }),
@@ -101,5 +112,55 @@ describe('ProjectFilesPanel', () => {
     await userEvent.click(await screen.findByRole('button', { name: /Support X1C$/ }));
     expect(screen.getByText(/Bambu Lab X1C/)).toBeInTheDocument();
     expect(screen.getByText('Sliced')).toBeInTheDocument();
+  });
+
+  const drop = (el: Element, name: string) =>
+    fireEvent.drop(el, { dataTransfer: { files: [new File(['x'], name)], types: ['Files'] } });
+  const sectionOf = (label: string) => screen.getByRole('heading', { level: 3, name: new RegExp(`^${label}`) }).closest('section')!;
+
+  it('dropping on a section reuses an item with the same name, case-insensitively', async () => {
+    render(<ProjectFilesPanel projectId={7} />);
+    await screen.findByText('Support');
+    drop(sectionOf('Modeling'), 'SUPPORT.stl');
+    await waitFor(() => expect(calls).toEqual(['upload:20']));
+  });
+
+  it('dropping a new name on a section creates the item then uploads', async () => {
+    render(<ProjectFilesPanel projectId={7} />);
+    await screen.findByText('Support');
+    drop(sectionOf('Modeling'), 'bracket.stl');
+    await waitFor(() => expect(calls).toEqual(['create:bracket', 'upload:99']));
+  });
+
+  it('dropping on an item row uploads once and does not create an item', async () => {
+    render(<ProjectFilesPanel projectId={7} />);
+    const row = (await screen.findByRole('button', { name: /Support$/ })).closest('li')!;
+    drop(row, 'other.stl');
+    await waitFor(() => expect(calls).toEqual(['upload:20']));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(calls).toEqual(['upload:20']);
+  });
+
+  it('saves a note and a derived-from change with only that field', async () => {
+    render(<ProjectFilesPanel projectId={7} />);
+    await userEvent.click(await screen.findByRole('button', { name: /Support$/ }));
+    const r2 = screen.getByTestId('revision-2');
+    await userEvent.click(within(r2).getByRole('button', { name: 'What changed…' }));
+    const box = within(r2).getByLabelText('Note');
+    await userEvent.type(box, 'hello');
+    await userEvent.tab();
+    await waitFor(() => expect(patched).toEqual({ url: '2', body: { note: 'hello' } }));
+    await userEvent.selectOptions(within(r2).getByLabelText('Derived from'), '1');
+    await waitFor(() => expect(patched).toEqual({ url: '2', body: { derived_from_id: 1 } }));
+    await userEvent.selectOptions(within(r2).getByLabelText('Derived from'), 'Nothing');
+    await waitFor(() => expect(patched).toEqual({ url: '2', body: { derived_from_id: null } }));
+  });
+
+  it('shows the upload failure toast', async () => {
+    failUpload = true;
+    render(<ProjectFilesPanel projectId={7} />);
+    await screen.findByText('Support');
+    await userEvent.upload(screen.getByTestId('new-revision-input-20'), new File(['x'], 'b.step'));
+    expect(await screen.findByText(/Upload failed/)).toBeInTheDocument();
   });
 });

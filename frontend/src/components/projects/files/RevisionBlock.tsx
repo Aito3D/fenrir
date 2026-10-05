@@ -28,7 +28,7 @@ function formatSize(bytes: number): string {
 }
 
 export function RevisionBlock({ item, revision, derivedOptions, actions }: Props) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { hasPermission } = useAuth();
   const canUpdate = hasPermission('projects:update');
   const canDelete = hasPermission('projects:delete');
@@ -73,7 +73,7 @@ export function RevisionBlock({ item, revision, derivedOptions, actions }: Props
         </select>
         <span className="min-w-0 break-all text-xs text-bambu-gray">
           {[revision.created_by ? t('projectsPdm.files.byAuthor', { name: revision.created_by }) : null,
-            new Date(revision.created_at).toLocaleDateString()].filter(Boolean).join(' · ')}
+            new Date(revision.created_at).toLocaleDateString(i18n.language)].filter(Boolean).join(' · ')}
         </span>
       </div>
 

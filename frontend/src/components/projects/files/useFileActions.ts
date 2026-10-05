@@ -17,12 +17,12 @@ export function useFileActions(projectId: number) {
 
   const run = async <T,>(fn: () => Promise<T>, failKey: string): Promise<T | undefined> => {
     try {
-      const result = await fn();
-      await queryClient.invalidateQueries({ queryKey: ['project-tree', projectId] });
-      return result;
+      return await fn();
     } catch (e) {
       showToast(`${t(failKey)}: ${e instanceof Error ? e.message : ''}`, 'error');
       return undefined;
+    } finally {
+      await queryClient.invalidateQueries({ queryKey: ['project-tree', projectId] });
     }
   };
 
@@ -42,6 +42,7 @@ export function useFileActions(projectId: number) {
         const item = await api.createProjectItem(projectId, section, name);
         const res = await api.uploadProjectRevision(item.id, files);
         warn(res.warnings);
+        return true;
       }, upload),
     addFiles: (revisionId: number, files: File[]) =>
       run(async () => warn((await api.addProjectRevisionFiles(revisionId, files)).warnings), upload),

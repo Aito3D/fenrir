@@ -30,9 +30,9 @@ export function SectionBlock({ section, items, derivedOptions, actions }: Props)
   const chooser = useRef<HTMLInputElement>(null);
 
   const onDrop = async (e: DragEvent) => {
-    if (!canUpdate) return;
     e.preventDefault();
     setDragOver(false);
+    if (!canUpdate) return;
     const dropped = filesFromDataTransfer(e.dataTransfer);
     if (!dropped.length) return;
     setOpen(true);
@@ -45,17 +45,18 @@ export function SectionBlock({ section, items, derivedOptions, actions }: Props)
   const submit = async () => {
     const trimmed = name.trim();
     if (!trimmed || !files.length) return;
-    setCreating(false);
-    setName('');
-    setFiles([]);
-    await actions.createItem(section, trimmed, files);
+    if (await actions.createItem(section, trimmed, files)) {
+      setCreating(false);
+      setName('');
+      setFiles([]);
+    }
   };
 
   return (
     <section
       className={`rounded-xl border bg-bambu-card ${dragOver ? 'border-bambu-green' : 'border-bambu-dark-tertiary'}`}
-      onDragOver={(e) => { if (canUpdate) { e.preventDefault(); setDragOver(true); } }}
-      onDragLeave={() => setDragOver(false)}
+      onDragOver={(e) => { e.preventDefault(); if (canUpdate) setDragOver(true); }}
+      onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragOver(false); }}
       onDrop={(e) => void onDrop(e)}
     >
       <div className="flex flex-wrap items-center gap-2 p-2">
