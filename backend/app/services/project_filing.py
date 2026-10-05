@@ -19,19 +19,20 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.api.routes.library import to_absolute_path
 from backend.app.models.library import LibraryFile
 from backend.app.models.project import Project
 from backend.app.models.project_item import ProjectItem
 from backend.app.services import project_files
 from backend.app.services.project_files import RevisionSource
-from backend.app.services.project_storage import ENABLED_SECTIONS, is_printable_filename
+from backend.app.services.project_storage import ENABLED_SECTIONS, PRINTABLE_EXTENSIONS, is_printable_filename
 
 logger = logging.getLogger(__name__)
 
 _DROP_SECTIONS = {
     "scan": (".ply", ".obj", ".e57", ".xyz", ".pts"),
     "modelisation": (".step", ".stp", ".iges", ".igs", ".f3d", ".stl", ".sldprt"),
-    "impression": (".3mf", ".gcode", ".bgcode"),
+    "impression": PRINTABLE_EXTENSIONS,  # the one printable rule (project_storage)
     "usinage": (".nc", ".tap", ".dxf"),
 }
 _SECTION_BY_EXTENSION = {ext: section for section, exts in _DROP_SECTIONS.items() for ext in exts}
@@ -119,8 +120,6 @@ class _Candidate:
 
 
 def _source_path(file: LibraryFile) -> Path | None:
-    from backend.app.api.routes.library import to_absolute_path
-
     if file.is_external:
         return Path(file.file_path) if file.file_path else None
     try:
@@ -177,7 +176,8 @@ async def move_library_files_to_project(
     others are skipped (``not_printable``), as are project files
     (``already_in_project``), trashed files (``trashed``) and files missing on
     disk (``source_missing``). Target: ``item_id`` (an item of this project, in
-    an enabled section, else ValueError) or ``new_item_name`` (found or created)
+    an enabled section, else ValueError) or ``new_item_name`` (found or created;
+    a blank name is a ValueError)
     takes every file as one revision; otherwise files are grouped per item name
     from their filenames, each group becoming the next revision of the matching
     item (or R1 of a new one). A group that cannot be stored (copy error,
@@ -191,8 +191,11 @@ async def move_library_files_to_project(
     project_id = project.id
     target: ProjectItem | None = await _target_item(db, project, item_id) if item_id is not None else None
     target_item_id = target.id if target is not None else None
-    if new_item_name is not None and not new_item_name.strip():
-        raise ValueError("Item name must not be blank")
+    if new_item_name is not None:
+        try:
+            new_item_name, _key = project_files._clean_item_name(new_item_name)
+        except project_files.ProjectFilesError as exc:
+            raise ValueError(exc.detail) from exc
 
     # Classify while the caller's instances are loaded: commits and rollbacks below expire them.
     groups: dict[tuple[str, str], tuple[str, list[_Candidate]]] = {}
@@ -204,8 +207,8 @@ async def move_library_files_to_project(
         if file.deleted_at is not None:
             _skip(result, file_id, "trashed", "file is in the trash")
             continue
-        section = section_for_filename(filename)
-        if not is_printable_filename(filename) or section not in ENABLED_SECTIONS:
+        section = section_for_filename(filename)  # "impression" for every printable file
+        if not is_printable_filename(filename):
             _skip(result, file_id, "not_printable", "projects only accept printing files (.3mf, .gcode, .bgcode)")
             continue
         src = _source_path(file)
@@ -216,7 +219,7 @@ async def move_library_files_to_project(
         if target is not None:
             name, section = target.name, target.section
         else:
-            name = new_item_name.strip() if new_item_name is not None else item_name_for_filename(filename)
+            name = new_item_name if new_item_name is not None else item_name_for_filename(filename)
         key = (section, target.name_key if target is not None else project_files._name_key(name))
         groups.setdefault(key, (name, []))[1].append(candidate)
 
@@ -233,6 +236,9 @@ async def move_library_files_to_project(
             stored: list[_Candidate] = []
             for candidate in candidates:
                 row = rows.get(candidate.file_id)
+                if row is not None and row.deleted_at is not None:
+                    _skip(result, candidate.file_id, "trashed", "file is in the trash")
+                    continue
                 if row is None or row.file_path != candidate.file_path or row.revision_id is not None:
                     _skip(result, candidate.file_id, "conflict", "file changed while it was being moved")
                     continue
@@ -251,6 +257,10 @@ async def move_library_files_to_project(
                 db, project, item, sources, note=None, user_id=user_id
             )
         except (OSError, project_files.ProjectFilesError) as exc:
+            # Only a copy error or a genuine 409 race is a per-group skip; anything else
+            # (e.g. the target item deleted meanwhile, 404) is the whole call's error.
+            if isinstance(exc, project_files.ProjectFilesError) and exc.status_code != 409:
+                raise
             code = "copy_failed" if isinstance(exc, OSError) else "conflict"
             reason = str(exc.detail if isinstance(exc, project_files.ProjectFilesError) else exc)
             logger.warning("Moving files into project %s failed for item %r: %s", project_id, name, reason)

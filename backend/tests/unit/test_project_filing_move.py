@@ -8,6 +8,7 @@ import hashlib
 import io
 import uuid
 import zipfile
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -114,7 +115,7 @@ async def _revisions(db, project) -> list[tuple[str, str, int, list[str]]]:
 
 
 @pytest.mark.asyncio
-async def test_managed_move_keeps_row_and_references(db_session, root):
+async def test_move_keeps_row_id_and_references(db_session, root):
     project = await _project(db_session)
     group = FileVariantGroup(name="g")
     db_session.add(group)
@@ -152,7 +153,7 @@ async def test_managed_move_keeps_row_and_references(db_session, root):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("readonly", [True, False])
-async def test_external_file_is_copied_and_original_untouched(db_session, root, tmp_path, readonly):
+async def test_external_files_are_copied_not_moved(db_session, root, tmp_path, readonly):
     project = await _project(db_session)
     row = await _external(db_session, tmp_path, "Lid.gcode", readonly=readonly, data=b"G1 X0")
     file_id, folder_id, file_path = row.id, row.folder_id, row.file_path
@@ -328,7 +329,6 @@ async def test_skip_codes(db_session, root, tmp_path):
         user_id=None,
     )
     in_project = (await db_session.execute(select(LibraryFile).where(LibraryFile.revision_id == rev.id))).scalar_one()
-    from datetime import datetime
 
     trashed = await _managed(db_session, "t.gcode", deleted_at=datetime(2026, 1, 1))
     missing = await _managed(db_session, "m.gcode")
@@ -389,3 +389,115 @@ def test_printable_rule():
         assert project_storage.is_printable_filename(name)
     for name in ("a.stl", "b.pdf", "gcode", "", "c.3mf.zip"):
         assert not project_storage.is_printable_filename(name)
+
+
+@pytest.mark.asyncio
+async def test_atomicity_is_per_item_group(db_session, root, monkeypatch):
+    """Each item group commits on its own: a failing later group leaves earlier groups moved."""
+    project = await _project(db_session)
+    first = await _managed(db_session, "alpha.gcode", b"A")
+    second = [await _managed(db_session, "beta.3mf", threemf_bytes()), await _managed(db_session, "beta.gcode", b"B")]
+    second_before = [(f.id, f.file_path) for f in second]
+    first_id, first_old = first.id, to_absolute_path(first.file_path)
+    await db_session.commit()
+
+    real_copy = project_files._copy_hashing
+    calls = {"n": 0}
+
+    def flaky(src, dest):
+        calls["n"] += 1
+        if calls["n"] == 3:  # second copy of the second group
+            raise OSError("disk full")
+        return real_copy(src, dest)
+
+    monkeypatch.setattr(project_files, "_copy_hashing", flaky)
+
+    result = await _move(db_session, project, [first, *second])
+
+    assert [m["file_id"] for m in result.moved] == [first_id]
+    assert not first_old.exists()
+    assert sorted((s["file_id"], s["code"]) for s in result.skipped) == sorted(
+        (file_id, "copy_failed") for file_id, _ in second_before
+    )
+    for file_id, path in second_before:
+        fresh = (
+            await db_session.execute(
+                select(LibraryFile).where(LibraryFile.id == file_id).execution_options(populate_existing=True)
+            )
+        ).scalar_one()
+        assert (fresh.file_path, fresh.revision_id) == (path, None)
+        assert to_absolute_path(path).exists()
+    assert await _revisions(db_session, project) == [("impression", "alpha", 1, ["alpha.gcode"])]
+    stored = sorted(p.name for p in root.rglob("*") if p.is_file())
+    assert stored == ["alpha.gcode"]  # no stray copies from the failed group
+
+
+@pytest.mark.asyncio
+async def test_mixed_managed_and_external_in_one_group(db_session, root, tmp_path):
+    project = await _project(db_session)
+    managed = await _managed(db_session, "part.3mf", threemf_bytes())
+    external = await _external(db_session, tmp_path, "part.gcode", readonly=True, data=b"G1 ext")
+    managed_id, external_id, external_path = managed.id, external.id, external.file_path
+    await db_session.commit()
+
+    result = await _move(db_session, project, [managed, external])
+
+    assert [(m["file_id"], m["filename"]) for m in result.moved] == [(managed_id, "part.3mf")]
+    assert [(c["source_file_id"], c["filename"]) for c in result.copied] == [(external_id, "part.gcode")]
+    copy = await db_session.get(LibraryFile, result.copied[0]["file_id"])
+    assert to_absolute_path(copy.file_path).read_bytes() == b"G1 ext"
+    assert Path(external_path).read_bytes() == b"G1 ext"
+    assert result.moved[0]["revision_id"] == result.copied[0]["revision_id"]
+    assert await _revisions(db_session, project) == [("impression", "part", 1, ["part.3mf", "part.gcode"])]
+
+
+@pytest.mark.asyncio
+async def test_external_trashed_before_its_group_is_skipped(db_session, root, tmp_path, monkeypatch):
+    from backend.app.services import project_filing
+
+    project = await _project(db_session)
+    external = await _external(db_session, tmp_path, "lid.gcode", readonly=False)
+    external_id = external.id
+    await db_session.commit()
+    real_fresh_rows = project_filing._fresh_rows
+
+    async def trashed_meanwhile(db, file_ids):
+        rows = await real_fresh_rows(db, file_ids)
+        rows[external_id].deleted_at = datetime(2026, 1, 1)
+        return rows
+
+    monkeypatch.setattr(project_filing, "_fresh_rows", trashed_meanwhile)
+
+    result = await _move(db_session, project, [external])
+
+    assert result.copied == [] and [(s["file_id"], s["code"]) for s in result.skipped] == [(external_id, "trashed")]
+
+
+@pytest.mark.asyncio
+async def test_blank_new_item_name_raises_before_anything(db_session, root):
+    project = await _project(db_session)
+    row = await _managed(db_session, "a.gcode")
+    path = row.file_path
+    await db_session.commit()
+    with pytest.raises(ValueError):
+        await _move(db_session, project, [row], new_item_name="  ./  ")
+    assert to_absolute_path(path).exists()
+    assert (await db_session.execute(select(ProjectItem))).scalars().all() == []
+
+
+@pytest.mark.asyncio
+async def test_target_item_deleted_meanwhile_propagates(db_session, root, monkeypatch):
+    project = await _project(db_session)
+    item = await create_item(db_session, project, section="impression", name="Gone", user_id=None)
+    row = await _managed(db_session, "a.gcode")
+    path = row.file_path
+    await db_session.commit()
+
+    async def deleted(db, item_id):
+        raise project_files.ProjectFilesError(404, "Item not found")
+
+    monkeypatch.setattr(project_files, "_fresh_item", deleted)
+    with pytest.raises(project_files.ProjectFilesError) as exc:
+        await _move(db_session, project, [row], item_id=item.id)
+    assert exc.value.status_code == 404
+    assert to_absolute_path(path).exists()
