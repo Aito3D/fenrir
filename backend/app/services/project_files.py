@@ -12,11 +12,13 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import UploadFile
 from sqlalchemy import exists, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.routes.library import (
@@ -39,7 +41,7 @@ from backend.app.models.project import Project
 from backend.app.models.project_item import REVISION_STATUSES, SECTIONS, ProjectItem, ProjectRevision
 from backend.app.schemas.project_files import DuplicateWarning
 from backend.app.services.pdf_thumbnail import generate_pdf_thumbnail
-from backend.app.services.project_snapshot import is_3mf, read_print_snapshot
+from backend.app.services.project_snapshot import PrintSnapshot, is_3mf, read_print_snapshot
 from backend.app.services.project_storage import revision_dir, sanitize_component, unique_file_path
 from backend.app.services.stl_thumbnail import MIN_USABLE_STL_BYTES, generate_stl_thumbnail
 from backend.app.utils.safe_path import safe_join_under
@@ -116,93 +118,127 @@ async def create_item(
     return item
 
 
-async def _make_thumbnail(path: Path) -> tuple[str | None, dict | None]:
-    """Thumbnail (relative path) and 3MF metadata, the way the library upload makes them."""
+@dataclass
+class _WrittenFile:
+    path: Path
+    size: int
+    digest: str
+    thumbnail_rel: str | None = None
+    thumbnail_abs: Path | None = None
+    metadata: dict | None = None
+    snapshot: PrintSnapshot | None = None
+
+
+def _write_thumbnail(thumbnails_dir: Path, name: str, data: bytes) -> Path:
+    thumb_path = safe_join_under(thumbnails_dir, name, http=False)
+    thumb_path.write_bytes(data)
+    return thumb_path
+
+
+async def _make_thumbnail(path: Path) -> tuple[Path | None, dict | None]:
+    """Thumbnail (absolute path) and 3MF metadata, the way the library upload makes them."""
     thumbnails_dir = get_library_thumbnails_dir()
     lower = path.name.lower()
-    thumb: str | None = None
+    thumb: Path | None = None
     metadata: dict | None = None
     try:
         if lower.endswith(".3mf"):
             from backend.app.services.archive import ThreeMFParser
 
-            raw = ThreeMFParser(str(path)).parse()
+            raw = await asyncio.to_thread(lambda: ThreeMFParser(str(path)).parse())
             data = raw.get("_thumbnail_data")
             if data:
-                thumb_path = safe_join_under(
-                    thumbnails_dir, f"{uuid.uuid4().hex}{raw.get('_thumbnail_ext', '.png')}", http=False
+                thumb = await asyncio.to_thread(
+                    _write_thumbnail, thumbnails_dir, f"{uuid.uuid4().hex}{raw.get('_thumbnail_ext', '.png')}", data
                 )
-                thumb_path.write_bytes(data)
-                thumb = str(thumb_path)
             metadata = _without_print_name(_clean_3mf_metadata(raw))
         elif lower.endswith(".gcode"):
-            data = extract_gcode_thumbnail(path)
+            data = await asyncio.to_thread(extract_gcode_thumbnail, path)
             if data:
-                thumb_path = safe_join_under(thumbnails_dir, f"{uuid.uuid4().hex}.png", http=False)
-                thumb_path.write_bytes(data)
-                thumb = str(thumb_path)
+                thumb = await asyncio.to_thread(_write_thumbnail, thumbnails_dir, f"{uuid.uuid4().hex}.png", data)
         elif path.suffix.lower() in IMAGE_EXTENSIONS:
-            thumb = create_image_thumbnail(path, thumbnails_dir)
+            made = await asyncio.to_thread(create_image_thumbnail, path, thumbnails_dir)
+            thumb = Path(made) if made else None
         elif lower.endswith(".pdf"):
-            thumb = await asyncio.to_thread(generate_pdf_thumbnail, path, thumbnails_dir)
+            made = await asyncio.to_thread(generate_pdf_thumbnail, path, thumbnails_dir)
+            thumb = Path(made) if made else None
         elif lower.endswith(".stl") and MIN_USABLE_STL_BYTES <= path.stat().st_size <= STL_THUMBNAIL_MAX_BYTES:
             async with _stl_render_lock:
-                thumb = await asyncio.to_thread(generate_stl_thumbnail, path, thumbnails_dir)
+                made = await asyncio.to_thread(generate_stl_thumbnail, path, thumbnails_dir)
+            thumb = Path(made) if made else None
     except Exception:  # a thumbnail is a nicety; never fail the upload for it
         logger.warning("Thumbnail generation failed for %s", path.name, exc_info=True)
-    return (to_relative_path(thumb) if thumb else None), metadata
+    return thumb, metadata
 
 
-async def _write_files(
-    db: AsyncSession,
-    project: Project,
-    revision: ProjectRevision,
-    folder: Path,
-    uploads: list[UploadFile],
-    user_id: int | None,
-) -> list[LibraryFile]:
-    """Stream every upload into ``folder`` and create its rows. On any failure the
-    files written by THIS call are removed before the exception propagates."""
-    written: list[Path] = []
-    rows: list[LibraryFile] = []
+def _cleanup_written(written: list[_WrittenFile]) -> None:
+    for item in written:
+        item.path.unlink(missing_ok=True)
+        if item.thumbnail_abs is not None:
+            item.thumbnail_abs.unlink(missing_ok=True)
+
+
+async def _stream_files(folder: Path, uploads: list[UploadFile]) -> list[_WrittenFile]:
+    """Stream every upload into ``folder``, make thumbnails and read the 3MF snapshot.
+
+    Touches no database. On any failure everything written by THIS call (files,
+    ``.part`` files, thumbnails) is removed before the exception propagates."""
+    written: list[_WrittenFile] = []
+    part: Path | None = None
     try:
         for upload in uploads:
             dest = unique_file_path(folder, upload.filename or "fichier")
             part = safe_join_under(folder, f"{dest.name}.part", http=False)
-            written.append(part)
             size, digest = await _stream_upload_to_path(upload, part, settings.library_max_upload_bytes)
             part.rename(dest)
-            written[-1] = dest
-            thumb, metadata = await _make_thumbnail(dest)
-            row = LibraryFile(
-                project_id=project.id,
-                revision_id=revision.id,
-                folder_id=None,
-                is_external=False,
-                filename=dest.name,
-                file_path=to_relative_path(dest),
-                file_type=classify_file_type(dest.name, dest)[:10],
-                file_size=size,
-                file_hash=digest,
-                thumbnail_path=thumb,
-                file_metadata=metadata,
-                created_by_id=user_id,
-            )
-            db.add(row)
-            rows.append(row)
-            if revision.config_snapshot is None and revision.print_profile is None and is_3mf(dest.name):
-                snapshot = await asyncio.to_thread(read_print_snapshot, dest)
-                if snapshot is not None:
-                    revision.config_snapshot = snapshot.config
-                    revision.config_hash = snapshot.config_hash
-                    revision.slicer_name = snapshot.slicer_name
-                    revision.slicer_version = snapshot.slicer_version
-                    revision.print_profile = snapshot.print_profile
-        await db.flush()
+            part = None
+            entry = _WrittenFile(path=dest, size=size, digest=digest)
+            written.append(entry)
+            thumb, entry.metadata = await _make_thumbnail(dest)
+            if thumb is not None:
+                entry.thumbnail_abs = thumb
+                entry.thumbnail_rel = to_relative_path(thumb)
+            if is_3mf(dest.name):
+                entry.snapshot = await asyncio.to_thread(read_print_snapshot, dest)
     except BaseException:
-        for path in written:
-            path.unlink(missing_ok=True)
+        if part is not None:
+            part.unlink(missing_ok=True)
+        _cleanup_written(written)
         raise
+    return written
+
+
+async def _add_file_rows(
+    db: AsyncSession, project: Project, revision: ProjectRevision, written: list[_WrittenFile], user_id: int | None
+) -> list[LibraryFile]:
+    """Library rows for ``written`` (flushed); the first 3MF snapshot fills a revision that has none."""
+    rows: list[LibraryFile] = []
+    for entry in written:
+        file_type = (await asyncio.to_thread(classify_file_type, entry.path.name, entry.path))[:10]
+        row = LibraryFile(
+            project_id=project.id,
+            revision_id=revision.id,
+            folder_id=None,
+            is_external=False,
+            filename=entry.path.name,
+            file_path=to_relative_path(entry.path),
+            file_type=file_type,
+            file_size=entry.size,
+            file_hash=entry.digest,
+            thumbnail_path=entry.thumbnail_rel,
+            file_metadata=entry.metadata,
+            created_by_id=user_id,
+        )
+        db.add(row)
+        rows.append(row)
+        snap = entry.snapshot
+        if snap is not None and revision.config_snapshot is None and revision.print_profile is None:
+            revision.config_snapshot = snap.config
+            revision.config_hash = snap.config_hash
+            revision.slicer_name = snap.slicer_name
+            revision.slicer_version = snap.slicer_version
+            revision.print_profile = snap.print_profile
+    await db.flush()
     return rows
 
 
@@ -268,7 +304,12 @@ async def add_revision(
     derived_from_id: int | None,
     user_id: int | None,
 ) -> tuple[ProjectRevision, list[DuplicateWarning]]:
-    """New R{n} for ``item`` from ``uploads`` (≥ 1). Commits."""
+    """New R{n} for ``item`` from ``uploads`` (≥ 1). Commits.
+
+    Files are streamed before any row is written so the database write lock is
+    held only for the final flush and commit. On failure the caller's WHOLE
+    session is rolled back and its instances expire, so commit prior work
+    (e.g. ``create_item``) first."""
     if not uploads:
         raise ProjectFilesError(400, "A revision needs at least one file")
     if derived_from_id is not None:
@@ -276,28 +317,35 @@ async def add_revision(
     number = item.last_revision_number + 1
     folder = revision_dir(project, item.section, item.name, number)
     created_folder = not any(folder.iterdir())
-    revision = ProjectRevision(
-        item_id=item.id,
-        number=number,
-        status="wip",
-        note=(note or None),
-        derived_from_id=derived_from_id,
-        created_by_id=user_id,
-    )
+    written: list[_WrittenFile] = []
     try:
+        written = await _stream_files(folder, uploads)
+        revision = ProjectRevision(
+            item_id=item.id,
+            number=number,
+            status="wip",
+            note=(note or "").strip() or None,
+            derived_from_id=derived_from_id,
+            created_by_id=user_id,
+        )
         db.add(revision)
         item.last_revision_number = number
         await db.flush()
-        rows = await _write_files(db, project, revision, folder, uploads, user_id)
+        rows = await _add_file_rows(db, project, revision, written, user_id)
         warnings = await _duplicate_warnings(db, item, revision, rows)
         await db.commit()
-    except BaseException:
+    except BaseException as exc:
         await db.rollback()
+        _cleanup_written(written)
         if created_folder:
             try:
                 folder.rmdir()
             except OSError:
                 pass
+        if isinstance(exc, IntegrityError) and (
+            "uq_project_revisions_item_number" in str(exc) or "project_revisions.number" in str(exc)
+        ):
+            raise ProjectFilesError(409, "Another upload just created this revision number; try again") from exc
         raise
     return revision, warnings
 

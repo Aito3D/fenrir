@@ -204,3 +204,82 @@ async def test_revision_is_used_by_archive(db_session, root):
     db_session.add(PrintArchive(filename="p.3mf", file_path="x", file_size=1, library_file_id=file_id))
     await db_session.flush()
     assert await revision_is_used(db_session, rev.id)
+
+
+@pytest.mark.asyncio
+async def test_commit_failure_leaves_no_files_thumbnails_or_rows(db_session, root, monkeypatch, tmp_path):
+    thumbs = tmp_path / "thumbs"
+    thumbs.mkdir()
+    monkeypatch.setattr(project_files, "get_library_thumbnails_dir", lambda: thumbs)
+    project = await _project(db_session)
+    item = await create_item(db_session, project, section="impression", name="Support", user_id=None)
+    storage_dir, item_id = project.storage_dir, item.id
+    await db_session.commit()
+
+    real_commit = db_session.commit
+    calls = {"n": 0}
+
+    async def failing_commit():
+        calls["n"] += 1
+        if calls["n"] == 1:
+            assert list(thumbs.iterdir()), "the call should have written a thumbnail before the commit"
+            raise OSError("commit failed")
+        return await real_commit()
+
+    monkeypatch.setattr(db_session, "commit", failing_commit)
+    # a 3MF with a real thumbnail so the thumbnails dir gets a file
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as zf:
+        zf.writestr("Metadata/project_settings.config", '{"printer_model": "X"}')
+        zf.writestr("3D/3dmodel.model", "<model></model>")
+        zf.writestr("Metadata/plate_1.png", b"\x89PNG fake")
+    with pytest.raises(OSError):
+        await add_revision(
+            db_session,
+            project,
+            item,
+            [upload("plate.3mf", buffer.getvalue())],
+            note=None,
+            derived_from_id=None,
+            user_id=None,
+        )
+    folder = root / storage_dir / "Impression" / "Support" / "R1"
+    assert not folder.exists() or list(folder.iterdir()) == []
+    assert list(thumbs.iterdir()) == []
+    assert (await db_session.execute(select(ProjectRevision))).scalars().all() == []
+    assert (
+        await db_session.execute(select(ProjectItem.last_revision_number).where(ProjectItem.id == item_id))
+    ).scalar_one() == 0
+
+    item = (await db_session.execute(select(ProjectItem).where(ProjectItem.id == item_id))).scalar_one()
+    project = (await db_session.execute(select(Project).where(Project.id == item.project_id))).scalar_one()
+    rev, _ = await add_revision(
+        db_session,
+        project,
+        item,
+        [upload("plate.3mf", threemf_bytes())],
+        note=" n ",
+        derived_from_id=None,
+        user_id=None,
+    )
+    assert (rev.number, rev.note) == (1, "n")
+    names = [p.name for p in (root / storage_dir / "Impression" / "Support" / "R1").iterdir()]
+    assert names == ["plate.3mf"]
+
+
+@pytest.mark.asyncio
+async def test_nothing_is_written_to_the_db_before_streaming_finishes(db_session, root, monkeypatch):
+    project = await _project(db_session)
+    item = await create_item(db_session, project, section="scan", name="Mesh", user_id=None)
+    await db_session.commit()
+    real = project_files._stream_files
+    seen = {}
+
+    async def spy(folder, uploads):
+        seen["new"] = list(db_session.new)
+        seen["dirty"] = list(db_session.dirty)
+        return await real(folder, uploads)
+
+    monkeypatch.setattr(project_files, "_stream_files", spy)
+    await add_revision(db_session, project, item, [upload("a.ply")], note=None, derived_from_id=None, user_id=None)
+    assert seen == {"new": [], "dirty": []}
