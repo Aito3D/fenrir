@@ -22,10 +22,15 @@ pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
 
 def _3mf(size: int = 0) -> bytes:
+    # Fixed entry timestamps: writestr(name) stamps the current time, so two calls a second
+    # apart would produce different bytes and break byte-for-byte comparisons.
+    def entry(name: str) -> zipfile.ZipInfo:
+        return zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_STORED) as zf:
-        zf.writestr("3D/3dmodel.model", "<model/>" + "x" * size)
-        zf.writestr("Metadata/slice_info.config", "<config/>")
+        zf.writestr(entry("3D/3dmodel.model"), "<model/>" + "x" * size)
+        zf.writestr(entry("Metadata/slice_info.config"), "<config/>")
     return buf.getvalue()
 
 
