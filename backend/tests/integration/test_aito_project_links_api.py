@@ -2,10 +2,15 @@
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
+from sqlalchemy.exc import OperationalError
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.api.routes import aito_project_links as links_routes, project_files as files_routes
+from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
-from backend.app.services import project_storage
+from backend.app.services import aito_project_links as links_service, project_files as files_service, project_storage
 
 
 @pytest.fixture(autouse=True)
@@ -239,3 +244,105 @@ async def test_revision_events_on_every_linked_order(async_client: AsyncClient, 
         assert len(changed) == 1
         assert changed[0]["detail"]["from"] == "wip"
         assert changed[0]["detail"]["to"] == "valide"
+
+
+async def _linked_revision(async_client, db_session):
+    project = await _project(async_client)
+    order = await _order(db_session)
+    task = await _task(db_session, order)
+    await async_client.put(f"/api/v1/aito/tasks/{task.id}/project", json={"project_id": project["id"]})
+    return project, order, await _revision(async_client, project["id"])
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_status_change_survives_event_failure(async_client: AsyncClient, db_session, monkeypatch):
+    _project_row, order, revision_id = await _linked_revision(async_client, db_session)
+
+    async def boom(*_a, **_k):
+        raise RuntimeError("event store down")
+
+    monkeypatch.setattr(files_routes.aito_links, "record_on_linked_orders", boom)
+    response = await async_client.patch(f"/api/v1/projects/revisions/{revision_id}", json={"status": "valide"})
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "valide"
+
+    monkeypatch.undo()
+    tree = (await async_client.get(f"/api/v1/projects/{_project_row['id']}/tree")).json()
+    statuses = [r["status"] for sec in tree["sections"] for it in sec["items"] for r in it["revisions"]]
+    assert statuses == ["valide"]
+    kinds = (await db_session.execute(select(AitoEvent.kind).where(AitoEvent.project_id == order.id))).scalars().all()
+    assert "project.revision_status_changed" not in kinds
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_status_change_commit_failure_is_an_error(async_client: AsyncClient, db_session, monkeypatch):
+    project, _order_row, revision_id = await _linked_revision(async_client, db_session)
+    real_commit = AsyncSession.commit
+    state = {"fail": True}
+
+    async def flaky(self):
+        if state["fail"]:
+            raise OperationalError("COMMIT", {}, Exception("database is locked"))
+        return await real_commit(self)
+
+    monkeypatch.setattr(AsyncSession, "commit", flaky)
+    try:
+        response = await async_client.patch(f"/api/v1/projects/revisions/{revision_id}", json={"status": "valide"})
+        failed = response.status_code >= 400
+    except OperationalError:
+        failed = True
+    state["fail"] = False
+    assert failed
+    tree = (await async_client.get(f"/api/v1/projects/{project['id']}/tree")).json()
+    statuses = [r["status"] for sec in tree["sections"] for it in sec["items"] for r in it["revisions"]]
+    assert statuses == ["wip"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_drop_partial_failure_keeps_stored_group_and_records_once(
+    async_client: AsyncClient, db_session, monkeypatch
+):
+    order = await _order(db_session)
+    task = await _task(db_session, order)
+    project = await _project(async_client)
+    await async_client.put(f"/api/v1/aito/tasks/{task.id}/project", json={"project_id": project["id"]})
+
+    real = files_service.add_revision
+    calls = {"n": 0}
+
+    async def second_fails(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise files_service.ProjectFilesError(409, "boom")
+        return await real(*args, **kwargs)
+
+    broadcasts = []
+
+    async def fake_broadcast(order_id, actor):
+        broadcasts.append(order_id)
+
+    monkeypatch.setattr(links_service.project_files, "add_revision", second_fails)
+    monkeypatch.setattr(links_routes, "_broadcast_changed", fake_broadcast)
+
+    response = await async_client.post(
+        f"/api/v1/aito/tasks/{task.id}/files",
+        files=[
+            ("files", ("a.stl", b"x", "application/octet-stream")),
+            ("files", ("b.stl", b"x", "application/octet-stream")),
+        ],
+    )
+    assert response.status_code == 409
+    assert broadcasts == [order.id]
+
+    monkeypatch.undo()
+    tree = (await async_client.get(f"/api/v1/projects/{project['id']}/tree")).json()
+    stored = [(it["name"], len(it["revisions"])) for sec in tree["sections"] for it in sec["items"]]
+    assert ("a", 1) in stored
+    events = (
+        (await db_session.execute(select(AitoEvent).where(AitoEvent.kind == "project.files_dropped"))).scalars().all()
+    )
+    assert len(events) == 1
+    assert [r["filename"] for r in events[0].detail["results"]] == ["a.stl"]

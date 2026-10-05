@@ -183,6 +183,8 @@ async def drop_task_files(
         await db.rollback()
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
     except project_files.ProjectFilesError as exc:
+        if getattr(exc, "stored_count", 0):
+            await _broadcast_changed(order_id, _actor(user))
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
     await _broadcast_changed(order_id, _actor(user))
     return response

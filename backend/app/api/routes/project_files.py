@@ -108,14 +108,10 @@ async def _record_linked(
     user: User | None,
     subject_label: str,
     detail: dict,
-    *,
-    commit_first: bool = False,
 ) -> None:
     """Best-effort event on every order linked to the project. The revision change is
     already stored (or committed here first), so a failure here only costs the event."""
     try:
-        if commit_first:
-            await db.commit()
         async with db.begin_nested():
             await aito_links.record_on_linked_orders(
                 db,
@@ -308,24 +304,24 @@ async def update_revision(
         await svc.update_revision(db, project, revision, fields=fields, user_id=_uid(user))
     except svc.ProjectFilesError as exc:
         _raise(exc)
-    project_id = project.id
-    if revision.status != previous_status:
+    # Save the change first and OUTSIDE the best-effort event hook: a failed commit must surface.
+    await db.commit()
+    project_id, new_status, item_label = project.id, revision.status, f"{item.name} R{revision.number}"
+    if new_status != previous_status:
         await _record_linked(
             db,
             project_id,
             "project.revision_status_changed",
             user,
-            f"{item.name} R{revision.number}",
+            item_label,
             {
                 "section": item.section,
                 "item_id": item.id,
-                "revision_id": revision.id,
+                "revision_id": revision_id,
                 "from": previous_status,
-                "to": revision.status,
+                "to": new_status,
             },
-            commit_first=True,
         )
-    await db.commit()
     project = await _project(db, project_id)
     return await _revision_out(db, project, revision_id)
 

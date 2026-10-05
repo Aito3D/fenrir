@@ -547,6 +547,9 @@ async def drop_files_on_task(
                 )
                 for upload in group
             )
+    except Exception as exc:
+        exc.stored_count = len(results)  # type: ignore[attr-defined]  # lets the route still broadcast
+        raise
     finally:
         if results:
             try:
