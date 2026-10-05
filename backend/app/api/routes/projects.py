@@ -1042,7 +1042,8 @@ async def get_project_file_progress(
         .where(
             LibraryFolder.project_id == project_id,
             LibraryFile.deleted_at.is_(None),
-            LibraryFile.revision_id.is_(None),  # Fenrir: project revision files are not File Manager files (PDM §6.1).
+            # Fenrir: project revision files are not File Manager files (PDM §6.1).
+            LibraryFile.revision_id.is_(None),
         )
     )
     file_rows = files_result.all()
@@ -1978,9 +1979,8 @@ async def export_project(
             LibraryFile.active()
             .where(
                 LibraryFile.folder_id == folder.id,
-                LibraryFile.revision_id.is_(
-                    None
-                ),  # Fenrir: project revision files are not File Manager files (PDM §6.1).
+                # Fenrir: project revision files are not File Manager files (PDM §6.1).
+                LibraryFile.revision_id.is_(None),
             )
             .order_by(LibraryFile.filename)
         )

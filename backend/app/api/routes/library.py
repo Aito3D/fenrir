@@ -979,7 +979,8 @@ async def list_folders(
         .where(
             LibraryFile.folder_id.isnot(None),
             LibraryFile.deleted_at.is_(None),
-            LibraryFile.revision_id.is_(None),  # Fenrir: project revision files are not File Manager files (PDM §6.1).
+            # Fenrir: project revision files are not File Manager files (PDM §6.1).
+            LibraryFile.revision_id.is_(None),
         )
         .group_by(LibraryFile.folder_id)
     )
@@ -2372,7 +2373,7 @@ async def list_files(
         )
 
     user, can_read_all = auth_result
-    query = LibraryFile.file_manager().options(  # Fenrir: file_manager() hides project revision files (PDM §6.1).
+    query = LibraryFile.file_manager().options(
         selectinload(LibraryFile.created_by),
         selectinload(LibraryFile.tags),
     )
@@ -2413,9 +2414,8 @@ async def list_files(
                 .where(
                     LibraryFile.file_hash.in_(hashes),
                     LibraryFile.deleted_at.is_(None),
-                    LibraryFile.revision_id.is_(
-                        None
-                    ),  # Fenrir: project revision files are not File Manager files (PDM §6.1).
+                    # Fenrir: project revision files are not File Manager files (PDM §6.1).
+                    LibraryFile.revision_id.is_(None),
                 )
                 .group_by(LibraryFile.file_hash)
             )
@@ -2433,9 +2433,8 @@ async def list_files(
             .where(
                 LibraryFile.variant_group_id.in_(group_ids),
                 LibraryFile.deleted_at.is_(None),
-                LibraryFile.revision_id.is_(
-                    None
-                ),  # Fenrir: project revision files are not File Manager files (PDM §6.1).
+                # Fenrir: project revision files are not File Manager files (PDM §6.1).
+                LibraryFile.revision_id.is_(None),
             )
             .group_by(LibraryFile.variant_group_id)
         )
@@ -2515,7 +2514,7 @@ async def list_file_types(
         raise HTTPException(status_code=400, detail="internal_only and external_only are mutually exclusive")
     user, can_read_all = auth_result
     scoped = _apply_file_scope(
-        LibraryFile.file_manager(),  # Fenrir: file_manager() hides project revision files (PDM §6.1).
+        LibraryFile.file_manager(),
         user=user,
         can_read_all=can_read_all,
         folder_id=folder_id,
@@ -2549,7 +2548,8 @@ async def check_file_duplicates(
         select(LibraryFile.file_hash, LibraryFile.id, LibraryFile.filename, LibraryFile.folder_id).where(
             LibraryFile.file_hash.in_(data.hashes),
             LibraryFile.deleted_at.is_(None),
-            LibraryFile.revision_id.is_(None),  # Fenrir: project revision files are not File Manager files (PDM §6.1).
+            # Fenrir: project revision files are not File Manager files (PDM §6.1).
+            LibraryFile.revision_id.is_(None),
         )
     )
     rows = result.all()
@@ -2787,9 +2787,8 @@ async def upload_file(
             .where(
                 LibraryFile.file_hash == file_hash,
                 LibraryFile.deleted_at.is_(None),
-                LibraryFile.revision_id.is_(
-                    None
-                ),  # Fenrir: project revision files are not File Manager files (PDM §6.1).
+                # Fenrir: project revision files are not File Manager files (PDM §6.1).
+                LibraryFile.revision_id.is_(None),
             )
             .limit(1)
         )
@@ -3361,6 +3360,8 @@ async def batch_generate_stl_thumbnails(
 
     # Build query based on request
     query = LibraryFile.active().where(LibraryFile.file_type.in_(("stl", "pdf")))
+    # Fenrir: project revision files are not File Manager files (PDM §6.1).
+    query = query.where(LibraryFile.revision_id.is_(None))
 
     user, can_modify_all = auth_result
     if not can_modify_all:
@@ -6795,10 +6796,11 @@ async def get_library_stats(
     # Stats exclude trashed files — users see counts/sizes for what's actually in the library.
     # Without LIBRARY_READ_ALL the stats reflect only the caller's own files —
     # match what the file list endpoint shows so the numbers stay consistent.
+    # Fenrir: project revision files are not File Manager files (PDM §6.1).
     file_filters = [
         LibraryFile.deleted_at.is_(None),
         LibraryFile.revision_id.is_(None),
-    ]  # Fenrir: project revision files are not File Manager files (PDM §6.1).
+    ]
     if user is not None and not can_read_all:
         file_filters.append(LibraryFile.created_by_id == user.id)
 
