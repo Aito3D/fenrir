@@ -27,6 +27,9 @@ export function SectionBlock({ section, items, derivedOptions, actions }: Props)
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
   const [files, setFiles] = useState<File[]>([]);
+  // Item created by this form whose first upload failed: a retry only re-uploads.
+  const [createdId, setCreatedId] = useState<number | null>(null);
+  const [submitting, setSubmitting] = useState(false);
   const chooser = useRef<HTMLInputElement>(null);
 
   const onDrop = async (e: DragEvent) => {
@@ -39,17 +42,35 @@ export function SectionBlock({ section, items, derivedOptions, actions }: Props)
     const itemName = itemNameFromFile(dropped[0].name);
     const key = itemNameKey(itemName);
     const existing = items.find((i) => i.name_key === key);
-    if (existing) await actions.uploadRevision(existing.id, dropped);
-    else await actions.createItem(section, itemName, dropped);
+    if (existing) {
+      await actions.uploadRevision(existing.id, dropped);
+      return;
+    }
+    const id = await actions.createItem(section, itemName);
+    if (id !== undefined) await actions.uploadRevision(id, dropped);
+  };
+
+  const closeForm = () => {
+    setCreating(false);
+    setName('');
+    setFiles([]);
+    setCreatedId(null);
   };
 
   const submit = async () => {
     const trimmed = name.trim();
-    if (!trimmed || !files.length) return;
-    if (await actions.createItem(section, trimmed, files)) {
-      setCreating(false);
-      setName('');
-      setFiles([]);
+    if (!trimmed || !files.length || submitting) return;
+    setSubmitting(true);
+    try {
+      let id = createdId;
+      if (id === null) {
+        id = (await actions.createItem(section, trimmed)) ?? null;
+        if (id === null) return;
+        setCreatedId(id);
+      }
+      if (await actions.uploadRevision(id, files)) closeForm();
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -70,7 +91,7 @@ export function SectionBlock({ section, items, derivedOptions, actions }: Props)
           </button>
         </h3>
         {canUpdate && (
-          <button type="button" onClick={() => { setOpen(true); setCreating((c) => !c); }}
+          <button type="button" onClick={() => { setOpen(true); if (creating) closeForm(); else setCreating(true); }}
             className={`inline-flex min-h-[44px] items-center gap-1 rounded-lg px-2 py-1 text-xs text-bambu-green hover:bg-bambu-dark-tertiary md:min-h-0 ${focusRingCls}`}>
             <Plus className="h-3.5 w-3.5" />{t('projectsPdm.files.newItem')}
           </button>
@@ -80,22 +101,22 @@ export function SectionBlock({ section, items, derivedOptions, actions }: Props)
         <div className="space-y-2 px-2 pb-2">
           {creating && (
             <form className="flex flex-wrap items-center gap-2" onSubmit={(e) => { e.preventDefault(); void submit(); }}>
-              <input autoFocus value={name} onChange={(e) => setName(e.target.value)}
+              <input autoFocus value={name} onChange={(e) => setName(e.target.value)} disabled={createdId !== null}
                 aria-label={t('projectsPdm.files.itemNameLabel')} placeholder={t('projectsPdm.files.itemNameLabel')}
                 className={`${inputCls} min-w-0 flex-1 basis-40`} />
               <button type="button" onClick={() => chooser.current?.click()}
                 className={`min-h-[44px] rounded-lg bg-bambu-dark-tertiary px-3 py-1.5 text-xs text-white md:min-h-0 ${focusRingCls}`}>
                 {files.length ? files.map((f) => f.name).join(', ') : t('projectsPdm.files.chooseFiles')}
               </button>
-              <input ref={chooser} type="file" multiple className="hidden"
+              <input ref={chooser} type="file" multiple className="hidden" data-testid={`new-item-files-${section}`}
                 onChange={(e) => {
                   const picked = Array.from(e.target.files ?? []);
                   setFiles(picked);
                   if (picked.length && !name.trim()) setName(itemNameFromFile(picked[0].name));
                 }} />
-              <button type="submit" disabled={!name.trim() || !files.length}
+              <button type="submit" disabled={!name.trim() || !files.length || submitting}
                 className={`min-h-[44px] rounded-lg bg-bambu-green px-3 py-1.5 text-xs text-white disabled:opacity-50 md:min-h-0 ${focusRingCls}`}>
-                {t('projectsPdm.files.newItem')}
+                {submitting ? t('projectsPdm.files.uploading') : t('projectsPdm.files.newItem')}
               </button>
             </form>
           )}

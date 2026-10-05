@@ -175,6 +175,25 @@ describe('ProjectFilesPanel', () => {
     await waitFor(() => expect(patched).toEqual({ url: '2', body: { derived_from_id: null } }));
   });
 
+  it('retrying a new item after a failed first upload only retries the upload', async () => {
+    failUpload = true;
+    render(<ProjectFilesPanel projectId={7} />);
+    await screen.findByText('Support');
+    const section = sectionOf('Modeling');
+    await userEvent.click(within(section).getByRole('button', { name: 'New item' }));
+    await userEvent.type(within(section).getByLabelText('Item name'), 'bracket');
+    await userEvent.upload(within(section).getByTestId('new-item-files-modelisation'), new File(['x'], 'bracket.stl'));
+    const submit = () => within(section).getAllByRole('button', { name: 'New item' }).at(-1)!;
+    await userEvent.click(submit());
+    await waitFor(() => expect(calls).toEqual(['create:bracket', 'upload:99']));
+    expect(await screen.findByText(/Upload failed/)).toBeInTheDocument();
+    expect(within(section).getByLabelText('Item name')).toBeDisabled();
+    failUpload = false;
+    await userEvent.click(submit());
+    await waitFor(() => expect(calls).toEqual(['create:bracket', 'upload:99', 'upload:99']));
+    await waitFor(() => expect(within(section).queryByLabelText('Item name')).not.toBeInTheDocument());
+  });
+
   it('shows the upload failure toast', async () => {
     failUpload = true;
     render(<ProjectFilesPanel projectId={7} />);

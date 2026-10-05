@@ -29,21 +29,20 @@ export function useFileActions(projectId: number) {
   const upload = 'projectsPdm.files.uploadFailed';
   const save = 'projectsPdm.files.saveFailed';
 
+  /** True once the revision is uploaded. */
   const uploadRevision = (itemId: number, files: File[]) =>
     run(async () => {
       const res = await api.uploadProjectRevision(itemId, files);
       warn(res.warnings);
+      return true;
     }, upload);
 
   return {
     uploadRevision,
-    createItem: (section: ProjectSection, name: string, files: File[]) =>
-      run(async () => {
-        const item = await api.createProjectItem(projectId, section, name);
-        const res = await api.uploadProjectRevision(item.id, files);
-        warn(res.warnings);
-        return true;
-      }, upload),
+    /** Creates an empty item; resolves to its id. Upload with `uploadRevision`, so a failed upload
+     * is retried on the same item instead of creating it again. */
+    createItem: (section: ProjectSection, name: string) =>
+      run(async () => (await api.createProjectItem(projectId, section, name)).id, save),
     addFiles: (revisionId: number, files: File[]) =>
       run(async () => warn((await api.addProjectRevisionFiles(revisionId, files)).warnings), upload),
     removeFile: (revisionId: number, fileId: number) => run(() => api.removeProjectRevisionFile(revisionId, fileId), save),
