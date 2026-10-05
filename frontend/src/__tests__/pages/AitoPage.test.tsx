@@ -235,40 +235,13 @@ describe('AitoPage (backend board)', () => {
   // Delete moved off the board card into the expanded card (task 11) — the
   // card no longer offers it at all, so every one of these opens the panel
   // first via `openCard`, exactly like the panel tests below.
-  describe('smart search', () => {
-    it('fetches the trash only once the operator types, and opens a trashed card from the dropdown', async () => {
-      const trashFetches = vi.fn();
-      server.use(
-        http.get('/api/v1/aito/', () =>
-          HttpResponse.json([makeProject({ id: 10, description: 'On board', client_phone: null })]),
-        ),
-        http.get('/api/v1/aito/trash', () => {
-          trashFetches();
-          return HttpResponse.json([
-            makeProject({ id: 99, description: 'Trashed thing', status: 'deleted', client_phone: '40 50 60 70' }),
-          ]);
-        }),
-      );
-      const user = userEvent.setup();
-      render(<AitoPage />);
-      await screen.findByRole('button', { name: /On board/ });
-      expect(trashFetches).not.toHaveBeenCalled();
-
-      await user.type(screen.getAllByRole('combobox')[0], '40506070');
-      const option = await screen.findByRole('option', { name: /Trashed thing/ });
-      expect(trashFetches).toHaveBeenCalledTimes(1);
-      await user.click(option);
-
-      const panel = await screen.findByRole('dialog');
-      expect(within(panel).getByText('Trashed thing')).toBeInTheDocument();
-    });
-
+  describe('search shortcut', () => {
     it('/ focuses the search box, but not while typing in another field', async () => {
       server.use(http.get('/api/v1/aito/', () => HttpResponse.json([makeProject({ id: 10, description: 'On board' })])));
       const user = userEvent.setup();
       render(<AitoPage />);
       await screen.findByRole('button', { name: /On board/ });
-      const search = screen.getAllByRole('combobox')[0];
+      const search = screen.getAllByRole('searchbox')[0];
 
       await user.keyboard('/');
       expect(search).toHaveFocus();
@@ -1843,7 +1816,7 @@ describe('AitoPage (backend board)', () => {
       render(<AitoPage />);
       await screen.findByText('Support GoPro');
 
-      await user.type(screen.getByRole('combobox'), 'zzzz');
+      await user.type(screen.getByRole('searchbox'), 'zzzz');
 
       expect(screen.getByText(/no projects match|aucun projet ne correspond/i)).toBeInTheDocument();
       // Not the board-is-empty copy: the board is not empty, the query is.
@@ -1865,8 +1838,7 @@ describe('AitoPage (backend board)', () => {
     render(<AitoPage />);
     await screen.findByText('Support GoPro');
 
-    await user.type(screen.getByRole('combobox'), 'gopro');
-    // The dropdown repeats the matching card's text, so look at the card itself.
+    await user.type(screen.getByRole('searchbox'), 'gopro');
     expect(screen.getByRole('button', { name: /Support GoPro/ })).toBeInTheDocument();
     expect(screen.queryByText('Boîtier étanche')).not.toBeInTheDocument();
   });
@@ -1881,7 +1853,7 @@ describe('AitoPage (backend board)', () => {
     render(<AitoPage />);
     await screen.findByText('Boîtier étanche');
 
-    await user.type(screen.getByRole('combobox'), 'etanche');
+    await user.type(screen.getByRole('searchbox'), 'etanche');
     expect(screen.getByRole('button', { name: /Boîtier étanche/ })).toBeInTheDocument();
   });
 
@@ -1898,7 +1870,7 @@ describe('AitoPage (backend board)', () => {
     render(<AitoPage />);
     await screen.findByText('Support GoPro');
 
-    await user.type(screen.getByRole('combobox'), 'gopro');
+    await user.type(screen.getByRole('searchbox'), 'gopro');
     expect(screen.queryByText('Boîtier')).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /clear search|effacer la recherche/i }));
@@ -1918,7 +1890,7 @@ describe('AitoPage (backend board)', () => {
     await screen.findByText('Support GoPro');
     expect(screen.getAllByRole('button', { name: /drag|glisser/i }).length).toBeGreaterThan(0);
 
-    await user.type(screen.getByRole('combobox'), 'gopro');
+    await user.type(screen.getByRole('searchbox'), 'gopro');
     expect(screen.queryByRole('button', { name: /drag|glisser/i })).not.toBeInTheDocument();
   });
 
@@ -2006,7 +1978,7 @@ describe('AitoPage (backend board)', () => {
     await screen.findByRole('button', { name: /show done \(2\)/i });
     expect(within(screen.getByRole('heading', { level: 1 })).getByText('2')).toBeInTheDocument();
 
-    await user.type(screen.getByRole('combobox'), 'gopro');
+    await user.type(screen.getByRole('searchbox'), 'gopro');
 
     // One of the two archived cards matches...
     expect(screen.getByRole('button', { name: /show done \(1\)/i })).toBeInTheDocument();
@@ -2028,7 +2000,7 @@ describe('AitoPage (backend board)', () => {
     render(<AitoPage />);
     await screen.findByText('Support GoPro');
 
-    await user.type(screen.getByRole('combobox'), 'gopro');
+    await user.type(screen.getByRole('searchbox'), 'gopro');
     await user.click(screen.getByRole('button', { name: /show done/i }));
 
     expect(await screen.findByText('GoPro archivé')).toBeInTheDocument();
@@ -2071,10 +2043,10 @@ describe('follow-ups strip', () => {
     expect(screen.queryByText('Fresh quote')).not.toBeInTheDocument();
     expect(screen.queryByText('Waiting pickup')).not.toBeInTheDocument();
 
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'zzz' } });
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'zzz' } });
     expect(screen.queryByText('Stale quote')).not.toBeInTheDocument();
     expect(screen.getByText('No projects match your search')).toBeInTheDocument();
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: '' } });
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: '' } });
 
     fireEvent.click(chip);
     expect(screen.getByText('Fresh quote')).toBeInTheDocument();

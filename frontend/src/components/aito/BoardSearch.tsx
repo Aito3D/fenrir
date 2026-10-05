@@ -1,14 +1,9 @@
-import { useId, type ChangeEvent } from 'react';
 import { Search, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { useAitoSearch } from './search/AitoSearchContext';
-import { SearchResults } from './search/SearchResults';
-import { useSearchCombobox } from './search/useSearchCombobox';
 
-/** The board's search box. The query lives in `AitoPage`, which filters the
- *  board with it. Under an `AitoSearchContext` it is also a combobox whose
- *  dropdown ranks matches across board, Done and Trash; without one it is
- *  the plain input it always was. */
+/** The board's search box. Presentational — the query lives in `AitoPage`,
+ *  which is what filters with it, because both the board and the done grid
+ *  read the same one. */
 export function BoardSearch({
   value,
   onChange,
@@ -19,22 +14,6 @@ export function BoardSearch({
   className?: string;
 }) {
   const { t } = useTranslation();
-  const search = useAitoSearch();
-  const listboxId = useId();
-  const pick = (index: number) => {
-    const hit = search?.hits[index];
-    if (hit) search?.onSelect(hit.project.id);
-  };
-  const combobox = useSearchCombobox({
-    value,
-    onChange,
-    hitCount: search?.hits.length ?? 0,
-    onSelectIndex: pick,
-    listboxId,
-  });
-  const inputProps = search
-    ? combobox.inputProps
-    : { value, onChange: (event: ChangeEvent<HTMLInputElement>) => onChange(event.target.value) };
 
   return (
     <div className={`relative ${className}`}>
@@ -42,7 +21,8 @@ export function BoardSearch({
       <input
         type="search"
         data-aito-search-input=""
-        {...inputProps}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
         placeholder={t('aito.searchPlaceholder')}
         aria-label={t('aito.searchPlaceholder')}
         // The native clear affordance is suppressed in favour of the button
@@ -62,23 +42,6 @@ export function BoardSearch({
         >
           <X className="w-4 h-4" />
         </button>
-      )}
-      {search && combobox.open && (
-        <SearchResults
-          listboxId={listboxId}
-          hits={search.hits}
-          active={combobox.active}
-          optionId={combobox.optionId}
-          onPick={(index) => {
-            pick(index);
-            combobox.dismiss();
-          }}
-          onHover={combobox.setActive}
-          trash={search.trash}
-          // Right-aligned: the box sits at the toolbar's right edge, and a
-          // 190px tablet box needs a wider list than itself.
-          className="absolute right-0 top-full mt-1.5 z-40 w-full min-w-[min(26rem,calc(100vw-2rem))]"
-        />
       )}
     </div>
   );

@@ -198,7 +198,6 @@ const DE_COGNATES = [
 
 // French cognates — many UI labels overlap with English exactly.
 const FR_COGNATES = [
-  'Contact',  // aito.smartSearch.fields.contact — same word in this locale
   'Message',  // aito.track.paymentMethods.appMessage — same word in French
   'Auto ({{resolved}})', 'Backend & Auth',  // real words/terms in this locale
   'Machines',  // maintenance.hours.machines — same word in French
@@ -274,7 +273,6 @@ const FR_COGNATES = [
 
 // Italian cognates.
 const IT_COGNATES = [
-  'Social',  // aito.smartSearch.fields.social — same word in this locale
   'in {{folder}}', 'Auto ({{resolved}})',  // real words/terms in this locale
   '{{ams}} · Slot {{slot}}',  // #2587 runout slot label — "Slot" is the IT term too
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
@@ -612,8 +610,6 @@ const UK_COGNATES = [
 // are used untranslated by Dutch slicer users. Each entry below was
 // checked individually against the Dutch translation in #2891.
 const NL_COGNATES = [
-  'Contact',  // aito.smartSearch.fields.contact — same word in this locale
-  'Social',  // aito.smartSearch.fields.social — same word in this locale
   'Machines', 'Machines: {{n}}',  // maintenance.hours.* — same word in Dutch
   '<b>{{count}}</b> project', // aito.clientHistoryProjects_one: the Dutch singular is the same word
   // Fork keys (calculator / filament-profiles): formulas, units and loanwords
