@@ -168,3 +168,29 @@ async def test_zip_download_404_when_all_files_missing(async_client: AsyncClient
         path.unlink()
     response = await async_client.get(f"/api/v1/projects/revisions/{rev['id']}/download")
     assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_project_with_items_cannot_be_deleted(async_client: AsyncClient, root):
+    project = await _project(async_client)
+    item = await _item(async_client, project["id"])
+    rev = (await _upload(async_client, item["id"], ("a.step", b"geo"))).json()["revision"]
+    refused = await async_client.delete(f"/api/v1/projects/{project['id']}")
+    assert refused.status_code == 409
+    assert refused.json()["detail"] == "This project has files; delete or move its items first"
+    assert (await async_client.get(f"/api/v1/projects/{project['id']}")).status_code == 200
+    tree = (await async_client.get(f"/api/v1/projects/{project['id']}/tree")).json()
+    assert tree["sections"][1]["items"][0]["revisions"][0]["files"][0]["id"] == rev["files"][0]["id"]
+    one = await async_client.get(
+        f"/api/v1/projects/revisions/{rev['id']}/download", params={"file_id": rev["files"][0]["id"]}
+    )
+    assert one.content == b"geo"
+
+    # An empty item still counts; once it is gone the project deletes.
+    empty = await _project(async_client)
+    empty_item = await _item(async_client, empty["id"], name="Vide")
+    assert (await async_client.delete(f"/api/v1/projects/{empty['id']}")).status_code == 409
+    assert (await async_client.delete(f"/api/v1/projects/items/{empty_item['id']}")).status_code == 204
+    assert (await async_client.delete(f"/api/v1/projects/{empty['id']}")).status_code == 200
+    assert (await async_client.get(f"/api/v1/projects/{empty['id']}")).status_code == 404
