@@ -89,3 +89,49 @@ def test_move_to_trash_refuses_paths_outside_project(root, tmp_path_factory):
     outside = tmp_path_factory.mktemp("outside")
     with pytest.raises(PathTraversalError):
         move_to_trash(_P(), outside)
+
+
+@pytest.mark.parametrize("ext", [".stl", ".gcode.3mf"])
+def test_unique_file_path_long_names_keep_extension(root, ext):
+    folder = root / "R1"
+    folder.mkdir()
+    name = "a" * 300 + ext
+    first = unique_file_path(folder, name)
+    assert first.name.endswith(ext) and len(first.name) <= 100
+    first.write_bytes(b"x")
+    second = unique_file_path(folder, name)
+    assert second != first
+    assert second.name.endswith(f" (2){ext}") and len(second.name) <= 100
+
+
+def test_move_to_trash_refuses_project_root(root):
+    project = _P()
+    revision_dir(project, "scan", "Mesh", 1)
+    with pytest.raises(PathTraversalError):
+        move_to_trash(project, root / "P-0001_support")
+
+
+def test_move_to_trash_refuses_paths_already_in_trash(root):
+    project = _P()
+    rev = revision_dir(project, "scan", "Mesh", 1)
+    moved = move_to_trash(project, rev)
+    with pytest.raises(PathTraversalError):
+        move_to_trash(project, moved)
+
+
+def test_move_to_trash_twice_same_second_gets_distinct_names(root):
+    project = _P()
+    first = move_to_trash(project, revision_dir(project, "scan", "Mesh", 1))
+    second = move_to_trash(project, revision_dir(project, "scan", "Mesh", 1))
+    assert first != second and first.exists() and second.exists()
+
+
+def test_move_to_trash_refuses_symlink_pointing_outside(root, tmp_path_factory):
+    project = _P()
+    rev = revision_dir(project, "scan", "Mesh", 1)
+    outside = tmp_path_factory.mktemp("outside")
+    link = rev / "link"
+    link.symlink_to(outside, target_is_directory=True)
+    with pytest.raises(PathTraversalError):
+        move_to_trash(project, link)
+    assert outside.exists()

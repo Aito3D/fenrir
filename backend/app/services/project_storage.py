@@ -109,26 +109,37 @@ def revision_dir(project, section: str, item_name: str, number: int) -> Path:
     return path
 
 
+_EXTENSION = re.compile(r"\.[\w+-]{1,20}")
+
+
 def _split_extension(name: str) -> tuple[str, str]:
+    """``(stem, extension)``; ``.gcode.3mf`` is one extension. Odd suffixes count as no extension."""
     if name.lower().endswith(_GCODE_3MF) and len(name) > len(_GCODE_3MF):
         return name[: -len(_GCODE_3MF)], name[-len(_GCODE_3MF) :]
     stem, dot, ext = name.rpartition(".")
-    return (stem, f".{ext}") if dot and stem else (name, "")
+    if dot and stem and _EXTENSION.fullmatch(f".{ext}"):
+        return stem, f".{ext}"
+    return name, ""
+
+
+def _fit_name(stem: str, suffix: str, ext: str) -> str:
+    """``stem + suffix + ext`` with the stem trimmed so the whole stays within the component limit."""
+    room = max(MAX_COMPONENT_CHARS - len(suffix) - len(ext), 1)
+    return f"{stem[:room].rstrip(' .') or 'f'}{suffix}{ext}"
 
 
 def unique_file_path(directory: Path, filename: str) -> Path:
-    """A free path for ``filename`` inside ``directory``: ``a.step``, ``a (2).step``…"""
-    name = sanitize_component(filename, fallback="fichier")
-    candidate = safe_join_under(directory, name, http=False)
-    if not candidate.exists():
-        return candidate
-    stem, ext = _split_extension(name)
+    """A free path for ``filename`` inside ``directory``: ``a.step``, ``a (2).step``…
+
+    The extension is split off first so truncating a long name never eats it."""
+    raw_stem, ext = _split_extension(filename)
+    stem = sanitize_component(raw_stem, fallback="fichier")
+    candidate = safe_join_under(directory, _fit_name(stem, "", ext), http=False)
     counter = 2
-    while True:
-        candidate = safe_join_under(directory, f"{stem} ({counter}){ext}", http=False)
-        if not candidate.exists():
-            return candidate
+    while candidate.exists():
+        candidate = safe_join_under(directory, _fit_name(stem, f" ({counter})", ext), http=False)
         counter += 1
+    return candidate
 
 
 def move_to_trash(project, path: Path) -> Path | None:
@@ -139,9 +150,13 @@ def move_to_trash(project, path: Path) -> Path | None:
     resolved = path.resolve()
     if resolved != project_root and project_root not in resolved.parents:
         raise PathTraversalError("Path is outside the project folder")
+    relative = resolved.relative_to(project_root)
+    if not relative.parts:
+        raise PathTraversalError("Cannot trash the project folder itself")
+    if relative.parts[0] == TRASH_DIRNAME:
+        raise PathTraversalError("Path is already in the trash")
     if not resolved.exists():
         return None
-    relative = resolved.relative_to(project_root)
     stamp = datetime.now().strftime("%Y%m%d%H%M%S")
     target_parent = resolve_in_projects(project_root.name, TRASH_DIRNAME, *relative.parts[:-1])
     target_parent.mkdir(parents=True, exist_ok=True)
