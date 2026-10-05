@@ -14,7 +14,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from backend.app.api.routes.library_variants import normalize_model_name, resolve_variant_model
-from backend.app.core.auth import RequirePermissionIfAuthEnabled, require_ownership_permission
+from backend.app.core.auth import (
+    RequirePermissionIfAuthEnabled,
+    probe_permissions_if_auth_enabled,  # Fenrir
+    require_ownership_permission,
+)
 from backend.app.core.config import settings
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
@@ -816,8 +820,13 @@ async def add_to_queue(
     data: PrintQueueItemCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_CREATE),
+    # Fenrir: queueing for an Aito task writes on its order, so it also needs
+    # aito:read (API keys follow their scope rules, which deny it).
+    can_read_aito: bool = Depends(probe_permissions_if_auth_enabled(Permission.AITO_READ)),
 ):
     """Add an item to the print queue."""
+    if data.aito_task_id is not None and not can_read_aito:  # Fenrir
+        raise HTTPException(403, "Queueing for an Aito task requires aito:read")
     # Normalize target_model (e.g., "Bambu Lab X1E" / "C13" -> "X1E").
     # normalize_model_name resolves internal codes first: the previous
     # `normalize_printer_model(x) or normalize_printer_model_id(x)` chain never

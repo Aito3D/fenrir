@@ -12,10 +12,12 @@ from httpx import AsyncClient
 from sqlalchemy import event, select
 
 from backend.app.api.routes.projects import _archive_trace_labels
+from backend.app.core.auth import generate_api_key
 from backend.app.core.websocket import ws_manager
 from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
+from backend.app.models.api_key import APIKey
 from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile
 from backend.app.models.print_queue import PrintQueueItem
@@ -624,3 +626,63 @@ async def test_reprint_cannot_move_an_archive_to_another_task(async_client: Asyn
     assert same.json()["aito_task_id"] == owner.id
     unset = await async_client.post("/api/v1/queue/", json={"archive_id": archive_id})
     assert unset.status_code == 200, unset.text
+
+
+async def _login(client: AsyncClient, username: str, password: str) -> dict[str, str]:
+    login = await client.post("/api/v1/auth/login", json={"username": username, "password": password})
+    assert login.status_code == 200, login.text
+    return {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+
+async def _user_with(client: AsyncClient, admin: dict[str, str], username: str, permissions: list[str]):
+    group = await client.post(
+        "/api/v1/groups/", headers=admin, json={"name": f"grp_{username}", "permissions": permissions}
+    )
+    assert group.status_code in (200, 201), group.text
+    created = await client.post(
+        "/api/v1/users/",
+        headers=admin,
+        json={"username": username, "password": "UserPass1!", "group_ids": [group.json()["id"]]},
+    )
+    assert created.status_code in (200, 201), created.text
+    return await _login(client, username, "UserPass1!")
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_queueing_for_a_task_needs_aito_read(async_client: AsyncClient, db_session):
+    """The queue call writes an event on the task's order, so it needs aito:read too."""
+    project = await _project(async_client)
+    _revision_id, file_id = await _revision_file(async_client, db_session, project["id"])
+    order = await _order(db_session)
+    task = await _task(db_session, order, linked_project_id=project["id"])
+    full_key, key_hash, key_prefix = generate_api_key()
+    db_session.add(APIKey(name="queue-key", key_hash=key_hash, key_prefix=key_prefix, can_queue=True, enabled=True))
+    await db_session.commit()
+
+    setup = await async_client.post(
+        "/api/v1/auth/setup",
+        json={"auth_enabled": True, "admin_username": "traceadmin", "admin_password": "AdminPass1!"},
+    )
+    assert setup.status_code == 200, setup.text
+    admin = await _login(async_client, "traceadmin", "AdminPass1!")
+    queue_only = await _user_with(async_client, admin, "queueonly", ["queue:create", "library:read_all"])
+    with_aito = await _user_with(async_client, admin, "queueaito", ["queue:create", "library:read_all", "aito:read"])
+    for_task = {"library_file_id": file_id, "aito_task_id": task.id}
+
+    denied = await async_client.post("/api/v1/queue/", json=for_task, headers=queue_only)
+    assert denied.status_code == 403, denied.text
+    by_key = await async_client.post("/api/v1/queue/", json=for_task, headers={"X-API-Key": full_key})
+    assert by_key.status_code == 403, by_key.text
+    assert await _items(db_session, library_file_id=file_id) == []
+    assert await _events(db_session, order.id) == []
+
+    plain = await async_client.post("/api/v1/queue/", json={"library_file_id": file_id}, headers=queue_only)
+    assert plain.status_code == 200, plain.text
+    plain_key = await async_client.post(
+        "/api/v1/queue/", json={"library_file_id": file_id}, headers={"X-API-Key": full_key}
+    )
+    assert plain_key.status_code == 200, plain_key.text
+    allowed = await async_client.post("/api/v1/queue/", json=for_task, headers=with_aito)
+    assert allowed.status_code == 200, allowed.text
+    assert allowed.json()["aito_task_id"] == task.id
