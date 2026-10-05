@@ -364,6 +364,7 @@ async def test_engine():
         printer_location,
         project,
         project_bom,
+        project_item,
         project_tag,
         scheduled_drying,
         settings,

@@ -363,6 +363,7 @@ async def init_db():
         printer_sensor_history,
         project,
         project_bom,
+        project_item,
         project_tag,
         scheduled_drying,
         settings,
@@ -6289,6 +6290,12 @@ async def run_migrations(conn):
     await _safe_execute(conn, "CREATE UNIQUE INDEX IF NOT EXISTS ix_projects_code ON projects (code)")
     await _migrate_project_codes(conn)
     await _migrate_project_tags(conn)
+
+    # Projects as a PDM, phase 2 (spec §1.5): project revision files are
+    # library_files rows with revision_id set. project_items /
+    # project_revisions come from create_all.
+    await _safe_execute(conn, "ALTER TABLE library_files ADD COLUMN revision_id INTEGER")
+    await _safe_execute(conn, "CREATE INDEX IF NOT EXISTS ix_library_files_revision_id ON library_files (revision_id)")
 
 
 async def _migrate_backfill_aito_document_numbers(conn) -> None:

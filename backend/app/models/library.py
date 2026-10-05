@@ -182,6 +182,13 @@ class LibraryFile(Base):
     # User tracking (Issue #206)
     created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
+    # Fenrir projects as a PDM (spec §1.5): set when this file belongs to a
+    # project revision. Such files live in the projects space and are hidden
+    # from the File Manager (see ``file_manager()``).
+    revision_id: Mapped[int | None] = mapped_column(
+        ForeignKey("project_revisions.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+
     # Soft-delete / trash bin (Issue #1008). When non-null, the file is in the
     # trash and should not appear in normal listings. A background sweeper
     # hard-deletes rows whose deleted_at is older than the retention window.
@@ -222,6 +229,17 @@ class LibraryFile(Base):
         must use ``select(LibraryFile)`` directly.
         """
         return select(cls).where(cls.deleted_at.is_(None))
+
+    @classmethod
+    def file_manager(cls) -> "Select[tuple[LibraryFile]]":
+        """``active()`` minus project revision files — the File Manager's view.
+
+        Projects are the only door to their files (spec §6.1); listing and
+        bulk endpoints of the File Manager start from this instead of
+        ``active()``. By-id routes (download, thumbnail, preview, print) keep
+        ``active()`` so project files still preview and print.
+        """
+        return cls.active().where(cls.revision_id.is_(None))
 
 
 class LibraryTag(Base):
