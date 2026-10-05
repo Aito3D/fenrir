@@ -75,6 +75,7 @@ from backend.app.api.routes import (
     printer_locations,
     printer_sensor_history,
     printers,
+    project_files,
     projects,
     projects_pdm,
     scheduled_dryings,
@@ -11433,6 +11434,9 @@ app.include_router(announcements.router, prefix=app_settings.api_prefix)
 app.include_router(maintenance.router, prefix=app_settings.api_prefix)
 app.include_router(printer_hours.router, prefix=app_settings.api_prefix)
 app.include_router(external_links.router, prefix=app_settings.api_prefix)
+# Fenrir: projects as a PDM, phase 2 — project files. Before projects.router.
+app.include_router(project_files.router, prefix=app_settings.api_prefix)
+app.include_router(project_files.upload_router, prefix=app_settings.api_prefix)
 # Fenrir: projects as a PDM. Before projects.router so /projects/search and
 # /projects/tags are not captured by /projects/{project_id}.
 app.include_router(projects_pdm.router, prefix=app_settings.api_prefix)
