@@ -13,6 +13,7 @@ from backend.app.core.websocket import ws_manager
 from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
+from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.services import project_storage
@@ -167,9 +168,13 @@ async def test_task_linked_to_another_project_is_400(async_client: AsyncClient, 
     task = await _task(db_session, order, linked_project_id=other["id"])
     unlinked = await _task(db_session, order, title="Libre")
 
+    details = set()
     for task_id in (task.id, unlinked.id, 99999):
         response = await async_client.post("/api/v1/queue/", json={"library_file_id": file_id, "aito_task_id": task_id})
         assert response.status_code == 400, response.text
+        details.add(response.json()["detail"])
+    # Same message whether the task exists or not.
+    assert details == {"This Aito task can't be used for this file"}
     assert await _items(db_session, library_file_id=file_id) == []
     assert await _events(db_session, order.id) == []
 
@@ -313,3 +318,66 @@ async def test_variants_of_one_revision_carry_it_and_mixed_ones_are_400(
             "/api/v1/queue/", json={"variants": [{"library_file_id": h2s}, {"library_file_id": mixed}]}
         )
         assert response.status_code == 400, response.text
+        assert "same project revision" in response.json()["detail"]
+
+
+async def _archive(db, *, revision_id=None):
+    archive = PrintArchive(
+        filename="reprint.gcode.3mf",
+        print_name="Reprint",
+        file_path="archives/test/reprint.gcode.3mf",
+        file_size=1,
+        status="completed",
+        revision_id=revision_id,
+    )
+    db.add(archive)
+    await db.commit()
+    return archive.id
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_reprint_of_a_traced_archive_keeps_its_revision_and_task(
+    async_client: AsyncClient, db_session, broadcasts
+):
+    project = await _project(async_client)
+    revision_id, _file_id = await _revision_file(async_client, db_session, project["id"], item_name="Support")
+    archive_id = await _archive(db_session, revision_id=revision_id)
+    order = await _order(db_session)
+    task = await _task(db_session, order, linked_project_id=project["id"])
+    other = await _project(async_client, name="Autre")
+    wrong = await _task(db_session, order, linked_project_id=other["id"], title="Autre")
+
+    plain = await async_client.post("/api/v1/queue/", json={"archive_id": archive_id})
+    assert plain.status_code == 200, plain.text
+    assert (plain.json()["revision_id"], plain.json()["aito_task_id"]) == (revision_id, None)
+    assert (await db_session.get(PrintQueueItem, plain.json()["id"])).project_id == project["id"]
+
+    rejected = await async_client.post("/api/v1/queue/", json={"archive_id": archive_id, "aito_task_id": wrong.id})
+    assert rejected.status_code == 400, rejected.text
+
+    traced = await async_client.post(
+        "/api/v1/queue/", json={"archive_id": archive_id, "aito_task_id": task.id, "quantity": 2}
+    )
+    assert traced.status_code == 200, traced.text
+    items = await _items(db_session, archive_id=archive_id, aito_task_id=task.id)
+    assert len(items) == 2 and {i.revision_id for i in items} == {revision_id}
+    (event,) = await _events(db_session, order.id)
+    assert event.detail["revision_label"] == "Support R1" and event.detail["copies"] == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_reprint_of_an_untraced_archive_is_unchanged(async_client: AsyncClient, db_session):
+    project = await _project(async_client)
+    archive_id = await _archive(db_session)
+    order = await _order(db_session)
+    task = await _task(db_session, order, linked_project_id=project["id"])
+
+    response = await async_client.post("/api/v1/queue/", json={"archive_id": archive_id})
+    assert response.status_code == 200, response.text
+    (item,) = await _items(db_session, archive_id=archive_id)
+    assert (item.revision_id, item.aito_task_id, item.project_id) == (None, None, None)
+
+    with_task = await async_client.post("/api/v1/queue/", json={"archive_id": archive_id, "aito_task_id": task.id})
+    assert with_task.status_code == 400, with_task.text

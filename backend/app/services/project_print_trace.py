@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
+from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile
 from backend.app.models.project import Project
 from backend.app.models.project_item import ProjectItem, ProjectRevision
@@ -27,6 +28,7 @@ from backend.app.services import aito_events
 logger = logging.getLogger(__name__)
 
 QUEUED_KIND = "print.queued_from_revision"
+TASK_UNUSABLE = "This Aito task can't be used for this file"
 
 
 class PrintTraceError(ValueError):
@@ -49,12 +51,17 @@ class PrintContext:
     task_title: str | None = None
 
 
-async def file_revision_id(db: AsyncSession, library_file_id: int | None) -> int | None:
-    if library_file_id is None:
-        return None
-    return (
-        await db.execute(select(LibraryFile.revision_id).where(LibraryFile.id == library_file_id))
-    ).scalar_one_or_none()
+async def _source_revision_id(db: AsyncSession, library_file_id: int | None, archive_id: int | None) -> int | None:
+    """The revision of the source: the library file's, else the archive's (a reprint)."""
+    if library_file_id is not None:
+        return (
+            await db.execute(select(LibraryFile.revision_id).where(LibraryFile.id == library_file_id))
+        ).scalar_one_or_none()
+    if archive_id is not None:
+        return (
+            await db.execute(select(PrintArchive.revision_id).where(PrintArchive.id == archive_id))
+        ).scalar_one_or_none()
+    return None
 
 
 async def resolve_print_context(
@@ -62,17 +69,21 @@ async def resolve_print_context(
     library_file_id: int | None,
     aito_task_id: int | None,
     project_id: int | None,
+    *,
+    archive_id: int | None = None,
 ) -> PrintContext:
-    """Revision, task and project for a queue item made from ``library_file_id``.
+    """Revision, task and project for a queue item made from ``library_file_id``
+    (or, for a reprint, from ``archive_id``).
 
-    - ``revision_id`` is the file's revision (None for a non-project file).
+    - ``revision_id`` is the file's revision (None for a non-project file); a
+      reprint takes the archive's, so a traced print stays traced.
     - ``project_id`` defaults to the revision's project when not given.
     - ``aito_task_id`` requires a revision file and must name an existing task
       whose order is not trashed and whose linked project is the revision's
       project; every failure is a 400 (an unknown or trashed task included, so
       the caller cannot tell the two apart).
     """
-    revision_id = await file_revision_id(db, library_file_id)
+    revision_id = await _source_revision_id(db, library_file_id, archive_id)
     bundle = None
     if revision_id is not None:
         bundle = (
@@ -107,11 +118,11 @@ async def resolve_print_context(
             .where(AitoTask.id == aito_task_id)
         )
     ).first()
-    if row is None or row[1] == "deleted":
-        raise PrintTraceError(400, "Aito task not found")
+    # One message for unknown, trashed and wrongly linked tasks, so the 400
+    # never reveals whether a task id exists.
+    if row is None or row[1] == "deleted" or row[0].linked_project_id != project.id:
+        raise PrintTraceError(400, TASK_UNUSABLE)
     task = row[0]
-    if task.linked_project_id != project.id:
-        raise PrintTraceError(400, "The Aito task is not linked to this file's project")
     return PrintContext(
         revision_id=context.revision_id,
         aito_task_id=task.id,

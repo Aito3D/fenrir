@@ -54,6 +54,8 @@ from backend.app.services.print_batch import (
     refresh_batch_status_for_item,
 )
 from backend.app.services.print_cost_estimate import estimate_queue_source_cost
+
+# Fenrir: production traceability (projects as a PDM, phase 4).
 from backend.app.services.project_print_trace import PrintTraceError, record_queued, resolve_print_context
 from backend.app.services.queue_position import lock_queue_positions, max_queue_position
 from backend.app.utils.printer_models import (
@@ -915,7 +917,9 @@ async def add_to_queue(
             raise HTTPException(400, "Alternatives must all come from the same project revision, or none")
         trace_file_id = variant_specs[0][1].id
     try:
-        trace = await resolve_print_context(db, trace_file_id, data.aito_task_id, data.project_id)
+        trace = await resolve_print_context(
+            db, trace_file_id, data.aito_task_id, data.project_id, archive_id=data.archive_id
+        )
     except PrintTraceError as e:
         raise HTTPException(e.status_code, e.detail) from e
 
