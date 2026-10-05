@@ -90,6 +90,9 @@ export function useAitoPageMutations() {
        *  (see NewProjectDrawer.create): the server summarises them itself. */
       regenerateDescription: boolean;
       placeholder: AitoProject;
+      /** A seeded drawer the user never edited: the stored draft is still the
+       *  operator's own unrelated one, so success leaves it in place. */
+      keepStoredDraft?: boolean;
     }
   >({
     mutationFn: ({ description, draft, tasks, shipping, dueDate, regenerateDescription }) =>
@@ -116,7 +119,7 @@ export function useAitoPageMutations() {
     transform: (previous, { placeholder }) => applyCreate(previous, placeholder),
     // No flash: the placeholder is REMOVED on failure rather than reverted in
     // place, so there is no card left to ring.
-    onSuccess: (created, { placeholder, draft }) => {
+    onSuccess: (created, { placeholder, draft, keepStoredDraft }) => {
       queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) =>
         replaceProject(prev, created, placeholder.id),
       );
@@ -124,7 +127,7 @@ export function useAitoPageMutations() {
       // The card exists now — the drawer's persisted localStorage draft
       // would otherwise reopen next time with a task list and client that
       // were already turned into this project.
-      clearNewProjectDraft();
+      if (!keepStoredDraft) clearNewProjectDraft();
     },
     onError: () => {
       showToast(t('aito.createFailed'), 'error');
