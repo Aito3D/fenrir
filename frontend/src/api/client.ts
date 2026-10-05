@@ -1252,6 +1252,15 @@ export interface ProjectListItem {
   cover_image_filename: string | null;  // #1155
 }
 
+export type ProjectSection = 'scan' | 'modelisation' | 'impression' | 'usinage' | 'docs';
+export type RevisionStatus = 'wip' | 'valide' | 'obsolete';
+export interface RevisionRef { id: number; item_id: number; item_name: string; section: ProjectSection; number: number; status: RevisionStatus }
+export interface ProjectFileOut { id: number; filename: string; file_type: string; file_size: number; file_hash: string | null; has_thumbnail: boolean; created_at: string }
+export interface ProjectRevisionOut { id: number; number: number; status: RevisionStatus; note: string | null; derived_from: RevisionRef | null; outdated_by: RevisionRef | null; print_profile: Record<string, unknown> | null; slicer_name: string | null; slicer_version: string | null; has_snapshot: boolean; used: boolean; files: ProjectFileOut[]; created_by: string | null; created_at: string; status_changed_at: string | null }
+export interface ProjectItemOut { id: number; section: ProjectSection; name: string; forked_from: RevisionRef | null; revisions: ProjectRevisionOut[] }
+export interface ProjectTreeResponse { project_id: number; code: string | null; sections: { section: ProjectSection; items: ProjectItemOut[] }[] }
+export interface DuplicateWarning { filename: string; same_as: string }
+
 export interface ProjectCreate {
   name: string;
   description?: string;
@@ -9247,6 +9256,81 @@ export const api = {
     }),
   deleteProject: (id: number) =>
     request<{ message: string }>(`/projects/${id}`, { method: 'DELETE' }),
+  // Project files (PDM phase 2)
+  getProjectTree: (projectId: number) => request<ProjectTreeResponse>(`/projects/${projectId}/tree`),
+  createProjectItem: (projectId: number, section: ProjectSection, name: string) =>
+    request<ProjectItemOut>(`/projects/${projectId}/items`, { method: 'POST', body: JSON.stringify({ section, name }) }),
+  renameProjectItem: (itemId: number, name: string) =>
+    request<ProjectItemOut>(`/projects/items/${itemId}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
+  deleteProjectItem: (itemId: number) => request<void>(`/projects/items/${itemId}`, { method: 'DELETE' }),
+  forkProjectItem: (itemId: number, revisionId: number, name: string) =>
+    request<ProjectItemOut>(`/projects/items/${itemId}/fork`, {
+      method: 'POST',
+      body: JSON.stringify({ revision_id: revisionId, name }),
+    }),
+  uploadProjectRevision: async (
+    itemId: number,
+    files: File[],
+    opts: { note?: string; derivedFromId?: number } = {},
+  ): Promise<{ revision: ProjectRevisionOut; warnings: DuplicateWarning[] }> => {
+    const formData = new FormData();
+    files.forEach((file) => formData.append('files', file));
+    if (opts.note) formData.append('note', opts.note);
+    if (opts.derivedFromId !== undefined) formData.append('derived_from_id', String(opts.derivedFromId));
+    const headers: Record<string, string> = {};
+    if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+    const response = await fetch(`${API_BASE}/projects/items/${itemId}/revisions`, { method: 'POST', headers, body: formData });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.detail || `HTTP ${response.status}`);
+    }
+    return response.json();
+  },
+  addProjectRevisionFiles: async (
+    revisionId: number,
+    files: File[],
+    
+  ): Promise<{ warnings: DuplicateWarning[] }> => {
+    const formData = new FormData();
+    files.forEach((file) => formData.append('files', file));
+    const headers: Record<string, string> = {};
+    if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+    const response = await fetch(`${API_BASE}/projects/revisions/${revisionId}/files`, { method: 'POST', headers, body: formData });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.detail || `HTTP ${response.status}`);
+    }
+    return response.json();
+  },
+  removeProjectRevisionFile: (revisionId: number, fileId: number) =>
+    request<void>(`/projects/revisions/${revisionId}/files/${fileId}`, { method: 'DELETE' }),
+  updateProjectRevision: (
+    revisionId: number,
+    data: { status?: RevisionStatus; note?: string | null; derived_from_id?: number | null },
+  ) =>
+    request<ProjectRevisionOut>(`/projects/revisions/${revisionId}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteProjectRevision: (revisionId: number) => request<void>(`/projects/revisions/${revisionId}`, { method: 'DELETE' }),
+  downloadProjectRevision: async (revisionId: number, fileId?: number, filename?: string): Promise<void> => {
+    const headers: Record<string, string> = {};
+    if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+    const query = fileId !== undefined ? `?file_id=${fileId}` : '';
+    const response = await fetch(`${API_BASE}/projects/revisions/${revisionId}/download${query}`, { headers });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.detail || `HTTP ${response.status}`);
+    }
+    const disposition = response.headers.get('Content-Disposition');
+    const downloadFilename = parseContentDispositionFilename(disposition) || filename || `revision_${revisionId}`;
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = downloadFilename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+  },
   getProjectArchives: (id: number, limit = 100, offset = 0) =>
     request<Archive[]>(`/projects/${id}/archives?limit=${limit}&offset=${offset}`),
   // Completed-run counts per library file (#1897); files with 0 runs are omitted
