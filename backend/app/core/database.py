@@ -6305,6 +6305,21 @@ async def run_migrations(conn):
         conn, "CREATE INDEX IF NOT EXISTS ix_aito_tasks_linked_project_id ON aito_tasks (linked_project_id)"
     )
 
+    # Projects as a PDM, phase 4 (production traceability): revision and Aito
+    # task ids on queue items and print archives. No FK, like library_file_id.
+    await _safe_execute(conn, "ALTER TABLE print_queue ADD COLUMN revision_id INTEGER")
+    await _safe_execute(conn, "ALTER TABLE print_queue ADD COLUMN aito_task_id INTEGER")
+    await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN revision_id INTEGER")
+    await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN aito_task_id INTEGER")
+    await _safe_execute(conn, "CREATE INDEX IF NOT EXISTS ix_print_queue_revision_id ON print_queue (revision_id)")
+    await _safe_execute(conn, "CREATE INDEX IF NOT EXISTS ix_print_queue_aito_task_id ON print_queue (aito_task_id)")
+    await _safe_execute(
+        conn, "CREATE INDEX IF NOT EXISTS ix_print_archives_revision_id ON print_archives (revision_id)"
+    )
+    await _safe_execute(
+        conn, "CREATE INDEX IF NOT EXISTS ix_print_archives_aito_task_id ON print_archives (aito_task_id)"
+    )
+
 
 async def _migrate_backfill_aito_document_numbers(conn) -> None:
     """One-time fill of `aito_projects.document_numbers` from history (2026-10-04).

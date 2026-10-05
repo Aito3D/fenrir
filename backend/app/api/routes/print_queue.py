@@ -835,6 +835,9 @@ async def add_to_queue(
                 400, "Cannot combine variants with archive_id or library_file_id — the variants are the files"
             )
         variant_specs = await _resolve_queue_variants(db, data.variants, current_user)
+        # Fenrir: same permanence rule for a cross-model candidate set (phase 4).
+        if data.cleanup_library_after_dispatch and any(f.revision_id is not None for _, f, _ in variant_specs):
+            raise HTTPException(400, "Project files are never deleted after printing")
         # Mirror the first candidate onto the item so the queue listing, the SJF
         # grouping and the "Any H2S" label have something before a printer is
         # picked. Resolution overwrites it with whichever candidate actually runs.
@@ -885,6 +888,9 @@ async def add_to_queue(
         if not library_file:
             raise HTTPException(400, "Library file not found")
         _assert_can_queue_library_file(library_file, current_user)
+        # Fenrir: project revision files are permanent (projects as a PDM, phase 4).
+        if data.cleanup_library_after_dispatch and library_file.revision_id is not None:
+            raise HTTPException(400, "Project files are never deleted after printing")
         # Bambu SD card is FAT32/exFAT — illegal filename chars would 553 at
         # FTP upload time (#1540). Reject at queue time so the user gets the
         # actionable error before waiting in queue.

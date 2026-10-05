@@ -20,6 +20,11 @@ class PrintArchive(Base):
     library_file_id: Mapped[int | None] = mapped_column(
         ForeignKey("library_files.id", ondelete="SET NULL"), nullable=True
     )
+    # Fenrir projects as a PDM, phase 4 (production traceability): the project
+    # revision and Aito task this run printed, copied from the queue item at
+    # dispatch. Plain integers, no FK: history outlives revisions and tasks.
+    revision_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    aito_task_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     cost_center_id: Mapped[int | None] = mapped_column(
         ForeignKey("cost_centers.id", ondelete="SET NULL"), nullable=True
     )

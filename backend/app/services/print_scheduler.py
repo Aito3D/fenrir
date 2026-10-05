@@ -7916,6 +7916,12 @@ class PrintScheduler:
             # queue row.
             if archive.plate_id is None and item.plate_id is not None:
                 archive.plate_id = item.plate_id
+            # Fenrir: same rule for the project revision / Aito task trace
+            # (projects as a PDM, phase 4) -- a traced archive keeps its trace.
+            if archive.revision_id is None and item.revision_id is not None:
+                archive.revision_id = item.revision_id
+            if archive.aito_task_id is None and item.aito_task_id is not None:
+                archive.aito_task_id = item.aito_task_id
 
             # Ask-for-outcome opt-in rides from the queue item to the archive
             # the same way (#1898); never cleared here so a reprint of an
@@ -7983,11 +7989,19 @@ class PrintScheduler:
                 )
                 if archive:
                     item.archive_id = archive.id
+                    # Fenrir: production traceability (projects as a PDM, phase 4).
+                    archive.revision_id = item.revision_id
+                    archive.aito_task_id = item.aito_task_id
                     if item.confirm_outcome:
                         archive.confirm_requested = True  # ask-for-outcome opt-in (#1898)
                     if budget_reservation is not None:
                         budget_reservation.print_archive_id = archive.id
-                    if item.cleanup_library_after_dispatch and not library_file.is_external:
+                    # Fenrir: a project revision file is never consumed (phase 4).
+                    if (
+                        item.cleanup_library_after_dispatch
+                        and not library_file.is_external
+                        and library_file.revision_id is None
+                    ):
                         consumed_library_file_id = library_file.id
                         item.library_file_id = None
                         cleanup_disk_paths.append(file_path)

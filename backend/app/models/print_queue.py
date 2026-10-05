@@ -41,6 +41,12 @@ class PrintQueueItem(Base):
     billing_run_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id", ondelete="SET NULL"), nullable=True)
     batch_id: Mapped[int | None] = mapped_column(ForeignKey("print_batches.id", ondelete="SET NULL"), nullable=True)
+    # Fenrir projects as a PDM, phase 4 (production traceability): the project
+    # revision this job prints (copied from the library file at queue time,
+    # never from the client) and the Aito task it prints for. Plain integers,
+    # no FK, so deleting a revision or a task never touches print history.
+    revision_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    aito_task_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
 
     # Scheduling
     position: Mapped[int] = mapped_column(Integer, default=0)  # Queue order
