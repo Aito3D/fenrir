@@ -6205,6 +6205,12 @@ async def run_migrations(conn):
         f"{_aito_quote_status_confirmed_default}",
     )
 
+    # Migration: document numbers for the board search (2026-10-04). Nullable;
+    # existing cards are backfilled once from the numbers their timeline
+    # already recorded (see the function).
+    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN document_numbers TEXT")
+    await _migrate_backfill_aito_document_numbers(conn)
+
     # Migration: a settled terminal charge whose event/acceptance failed is
     # re-driven by the sweep (2026-09-26). Nullable, no backfill: existing
     # rows read NULL, i.e. nothing owed.
@@ -6273,6 +6279,68 @@ async def run_migrations(conn):
         await conn.execute(
             text("UPDATE printers SET camera_light_auto = :off WHERE camera_light_auto IS NULL"), {"off": False}
         )
+
+
+async def _migrate_backfill_aito_document_numbers(conn) -> None:
+    """One-time fill of `aito_projects.document_numbers` from history (2026-10-04).
+
+    The live code stores a number wherever an invoice or retainer is in hand,
+    but the invoice sweep never revisits a paid (balance 0) or trashed card
+    and quote sync stops reading a locked estimate, so a card settled before
+    the column existed would never become searchable by its numbers. The
+    timeline already recorded them: every event that touched an invoice or a
+    retainer (invoice create, invoice poll adoption, deposit apply, the
+    sweep's settle, manual and counter payments, document emails) carries
+    `invoice_number` and/or `retainer_number` in `detail`.
+
+    Only rows still NULL are filled, oldest event first, with the exact
+    semantics of `remember_document_numbers` (dedupe, blanks ignored, newest
+    20 kept). Gated by a settings marker like the retainer unlock below: a
+    card that has no numbers yet stays NULL, and re-scanning the whole event
+    table on every boot for it would be wasted work.
+    """
+    import json
+    from types import SimpleNamespace
+
+    from sqlalchemy import text
+
+    from backend.app.services.aito_search import remember_document_numbers
+
+    marker = "aito_document_numbers_backfill_done"
+    if (await conn.execute(text("SELECT value FROM settings WHERE key = :k"), {"k": marker})).scalar_one_or_none():
+        return
+    rows = await conn.execute(
+        text(
+            "SELECT e.project_id, e.detail FROM aito_events e "
+            "JOIN aito_projects p ON p.id = e.project_id "
+            "WHERE p.document_numbers IS NULL AND e.detail IS NOT NULL "
+            "ORDER BY e.project_id, e.occurred_at, e.id"
+        )
+    )
+    found: dict[int, SimpleNamespace] = {}
+    for project_id, detail in rows:
+        if isinstance(detail, str):
+            try:
+                detail = json.loads(detail)
+            except ValueError:
+                continue
+        if not isinstance(detail, dict):
+            continue
+        holder = found.setdefault(project_id, SimpleNamespace(document_numbers=None))
+        remember_document_numbers(holder, detail.get("retainer_number"), detail.get("invoice_number"))
+    if is_sqlite():
+        marker_sql = "INSERT OR IGNORE INTO settings (key, value) VALUES (:key, :value)"
+    else:
+        marker_sql = "INSERT INTO settings (key, value) VALUES (:key, :value) ON CONFLICT (key) DO NOTHING"
+    async with conn.begin_nested():
+        for project_id, holder in found.items():
+            if holder.document_numbers is None:
+                continue
+            await conn.execute(
+                text("UPDATE aito_projects SET document_numbers = :n WHERE id = :p AND document_numbers IS NULL"),
+                {"n": holder.document_numbers, "p": project_id},
+            )
+        await conn.execute(text(marker_sql), {"key": marker, "value": "1"})
 
 
 async def _migrate_unlock_retainer_locked_quotes(conn) -> None:

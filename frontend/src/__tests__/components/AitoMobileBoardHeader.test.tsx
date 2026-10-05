@@ -1,8 +1,11 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createRef, useState } from 'react';
-import { screen } from '@testing-library/react';
+import { fireEvent, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
+import { makeProject } from '../fixtures/aitoProject';
+import { searchProjects } from '../../utils/aitoSearch';
+import { AitoSearchContext } from '../../components/aito/search/AitoSearchContext';
 import { MobileBoardHeader } from '../../components/aito/MobileBoardHeader';
 import { COLUMNS } from '../../components/aito/columns';
 import type { ColumnSummary } from '../../utils/aitoMobileBoard';
@@ -65,6 +68,13 @@ describe('MobileBoardHeader', () => {
     expect(toggle).toHaveFocus();
   });
 
+  it('hides the native search-cancel glyph beside the custom clear button', async () => {
+    const user = userEvent.setup();
+    render(<Harness />);
+    await user.click(screen.getByRole('button', { name: 'Search' }));
+    expect(screen.getByTestId('aito-mobile-search').className).toContain('[&::-webkit-search-cancel-button]:hidden');
+  });
+
   it('clear empties the query and closes the row', async () => {
     const user = userEvent.setup();
     render(<Harness />);
@@ -97,5 +107,46 @@ describe('MobileBoardHeader', () => {
     await user.click(screen.getByRole('button', { name: 'More options' }));
     expect(onOpenColumns).toHaveBeenCalledOnce();
     expect(onOpenMore).toHaveBeenCalledOnce();
+  });
+
+  it('shows the smart-search dropdown below the row, and an IME-cancel Escape does not fold it', async () => {
+    const user = userEvent.setup();
+    const onSelect = vi.fn();
+    const projects = [makeProject({ id: 5, description: 'Support GoPro', client_name: 'Dupont' })];
+    function WithSearch() {
+      const [q, setQ] = useState('');
+      return (
+        <AitoSearchContext.Provider
+          value={{ hits: q.trim() ? searchProjects(projects, q) : [], trash: 'ready', onSelect }}
+        >
+          <MobileBoardHeader
+            columns={summaries}
+            current={0}
+            pending={false}
+            search={q}
+            onSearchChange={setQ}
+            onJump={() => {}}
+            onOpenColumns={() => {}}
+            columnsOpen={false}
+            onOpenMore={() => {}}
+            moreOpen={false}
+            pickerRef={createRef()}
+            moreRef={createRef()}
+          />
+        </AitoSearchContext.Provider>
+      );
+    }
+    render(<WithSearch />);
+    const toggle = screen.getByRole('button', { name: 'Search' });
+    await user.click(toggle);
+    const input = screen.getByTestId('aito-mobile-search');
+    await user.type(input, 'gopro');
+    expect(await screen.findByRole('option', { name: /Support GoPro/ })).toBeInTheDocument();
+
+    fireEvent.keyDown(input, { key: 'Escape', isComposing: true });
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+
+    await user.click(screen.getByRole('option', { name: /Support GoPro/ }));
+    expect(onSelect).toHaveBeenCalledWith(5);
   });
 });

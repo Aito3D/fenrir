@@ -33,6 +33,7 @@ from backend.app.services.aito_quote_sync import (
     run_sync_once,
     sync_project,
 )
+from backend.app.services.aito_search import document_numbers_of
 from backend.app.services.aito_shipping import SERVICE_LABELS
 from backend.app.services.zoho import ZohoUnreachable, ZohoUpstreamError, zoho_service
 from backend.tests.aito_request_fixture import direct_request
@@ -7118,6 +7119,33 @@ async def test_sweep_reads_the_customers_unspent_deposits_beside_the_estimates_r
     assert project.retainer_paid_total == 28500.0
     assert project.customer_credit_total == 10700.0
     assert project.quote_sync_state == "idle"
+
+
+@pytest.mark.asyncio
+async def test_sync_project_remembers_the_estimates_retainer_numbers(db_session):
+    """A deposit number a customer quotes back finds the card: the retainers
+    attached to the estimate are stored for the board search on every sync,
+    from the estimate read already in hand."""
+    project = await _project_with_quote(db_session, impression_cost=1000)
+    project.quote_status = "accepted"
+    project.quote_sync_state = "idle"
+    await db_session.commit()
+    await _configure_zoho(db_session)
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): _accepted_estimate_with_retainer(),
+                ("GET", "/estimates/E1/comments"): {"comments": []},
+                ("GET", "/customerpayments"): {"customerpayments": _PAYMENTS},
+            }
+        )
+    )
+    zoho_service.invalidate_token()
+
+    await sync_project(db_session, project)
+    await db_session.refresh(project)
+
+    assert "RET-00268" in document_numbers_of(project)
 
 
 @pytest.mark.asyncio

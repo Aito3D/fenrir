@@ -867,6 +867,11 @@ class AitoProjectResponse(BaseModel):
     # future call site that forgot it should fail loudly, not validate a
     # silently-blanked field.
     shipping_service_name: str | None
+    # Search-only extras (services/aito_search.py). `search_text` is derived
+    # from the task rows on every response; `document_numbers` is stored.
+    # Required, never defaulted — see `_to_response`.
+    search_text: str
+    document_numbers: list[str]
     # Content-fields revision — see AitoProject.version. The detail panel
     # echoes this back as expected_version on PATCH.
     version: int

@@ -24,7 +24,8 @@ import { formatPhone } from '../utils/clientDraft';
 import type { ClientDraft } from '../utils/clientDraft';
 import type { TaskDraft } from '../utils/taskDraft';
 import type { ShippingDraft } from '../utils/shippingDraft';
-import { matchesSearch } from '../utils/aitoSearch';
+import { matchesSearch, searchProjects } from '../utils/aitoSearch';
+import { AitoSearchContext, type AitoSearchValue } from '../components/aito/search/AitoSearchContext';
 import { FollowupStrip } from '../components/aito/FollowupStrip';
 import { followups, type FollowupKey } from '../utils/aitoFollowups';
 import { localDateKey } from '../utils/date';
@@ -185,7 +186,8 @@ export function AitoPage() {
     () => (followup && !isMobile ? new Set(buckets[followup].ids) : null),
     [buckets, followup, isMobile],
   );
-  const filtering = search.trim().length > 0 || followupIds !== null;
+  const searching = search.trim() !== '';
+  const filtering = searching || followupIds !== null;
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const { open: openCard, close: closeCard } = useCardMorph(setExpandedId);
   const { showToast } = useToast();
@@ -199,9 +201,11 @@ export function AitoPage() {
   const trashQuery = useQuery({
     queryKey: ['aito-trash'],
     queryFn: api.getAitoTrash,
-    // Also while a `?card=` link is pending: a card missing from the board may
-    // be in the trash, and the toast has to say which.
-    enabled: view === 'trash' || cardParam !== null,
+    // Also while a `?card=` link is pending (a card missing from the board may
+    // be in the trash, and the toast has to say which) and while the operator
+    // is searching (the dropdown ranks trashed cards too). Same key as
+    // TrashGrid, so one fetch serves all.
+    enabled: view === 'trash' || cardParam !== null || searching,
   });
 
   // The link the board was refetched for. A miss is never decided from the
@@ -211,6 +215,39 @@ export function AitoPage() {
   const cardRefetchedFor = useRef<string | null>(null);
   const refetchBoard = aitoQuery.refetch;
   const refetchTrash = trashQuery.refetch;
+
+  const searchValue = useMemo<AitoSearchValue>(
+    () => ({
+      hits: searching ? searchProjects([...(aitoQuery.data ?? []), ...(trashQuery.data ?? [])], search) : [],
+      // Cached rows win: a failed background refetch still searched them.
+      trash: trashQuery.data ? 'ready' : trashQuery.isError ? 'error' : 'loading',
+      // Blur first so the phone keyboard does not stay up over the drawer.
+      onSelect: (id: number) => {
+        (document.activeElement as HTMLElement | null)?.blur();
+        openCard(id);
+      },
+    }),
+    [searching, search, aitoQuery.data, trashQuery.data, trashQuery.isError, openCard],
+  );
+
+  // `/` jumps to the search box, as on most sites with one. Not while typing
+  // in a field, and not while a panel or modal is up: the box sits behind it.
+  const overlayOpen = expandedId !== null || showModal || showImport;
+  useEffect(() => {
+    if (overlayOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== '/' || event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      if (target && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))) return;
+      const input = document.querySelector<HTMLInputElement>('[data-aito-search-input]');
+      if (!input) return;
+      event.preventDefault();
+      input.focus();
+      input.select();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [overlayOpen]);
 
   // The plain `setExpandedId`, not `openCard`: the morph needs a source card
   // on screen, and a link arrives with nothing clicked.
@@ -503,10 +540,11 @@ export function AitoPage() {
     ) : null;
 
   return (
-    // The celebration layer wraps the whole page — board AND detail panel —
-    // because Finish -> Done is offered on both, and its canvas has to be
-    // able to paint over either. Confetti: chosen from the five propositions
-    // on the /aito/fx bench.
+    <AitoSearchContext.Provider value={searchValue}>
+    {/* The celebration layer wraps the whole page — board AND detail panel —
+        because Finish -> Done is offered on both, and its canvas has to be
+        able to paint over either. Confetti: chosen from the five propositions
+        on the /aito/fx bench. */}
     <CelebrationProvider variant="confetti">
       {/* Full-height page so the columns run the height of the screen and each
           one scrolls its own cards. The offsets mirror the shell exactly
@@ -935,5 +973,6 @@ export function AitoPage() {
       )}
       </div>
     </CelebrationProvider>
+    </AitoSearchContext.Provider>
   );
 }

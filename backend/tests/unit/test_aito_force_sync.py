@@ -8,6 +8,7 @@ from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
 from backend.app.services import aito_quote_sync
 from backend.app.services.aito_invoice_sweep import DepositSettlement, settle_deposits as real_settle_deposits
+from backend.app.services.aito_search import document_numbers_of
 from backend.app.services.heimdall import heimdall_service
 from backend.app.services.zoho import ZohoRateLimited, zoho_service
 
@@ -142,6 +143,8 @@ async def test_deposit_applied_to_invoice_is_fixed(async_client, db_session, stu
         "balance_after": 0.0,
         "currency_code": "XPF",
     }
+    await db_session.refresh(p)
+    assert document_numbers_of(p) == ["FA-1"]
 
 
 @pytest.mark.asyncio

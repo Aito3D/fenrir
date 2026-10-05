@@ -464,6 +464,8 @@ export function placeholderProject(fields: {
     shipping_lta: null,
     shipping_service_name: null,
     tracking_configured: false,
+    search_text: '',
+    document_numbers: [],
     version: 0,
     created_at: now,
     updated_at: now,

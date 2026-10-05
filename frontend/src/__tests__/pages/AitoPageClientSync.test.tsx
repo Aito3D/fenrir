@@ -297,7 +297,7 @@ describe('AitoPage: create-project → Zoho sync wiring', () => {
 
     await openDrawer(user);
 
-    const combobox = screen.getByRole('combobox', { name: /client/i });
+    const combobox = screen.getByRole('combobox', { name: /^client$/i });
     await user.clear(combobox);
     await user.type(combobox, 'Jean');
     await user.click(await screen.findByRole('option', { name: /Jean DUPONT/i }, { timeout: 3000 }));
@@ -345,7 +345,7 @@ describe('AitoPage: create-project → Zoho sync wiring', () => {
 
     await openDrawer(user);
 
-    const combobox = screen.getByRole('combobox', { name: /client/i });
+    const combobox = screen.getByRole('combobox', { name: /^client$/i });
     await user.clear(combobox);
     await user.type(combobox, 'Jean');
     await user.click(await screen.findByRole('option', { name: /Jean DUPONT/i }, { timeout: 3000 }));
@@ -395,7 +395,7 @@ describe('AitoPage: create-project → Zoho sync wiring', () => {
 
     await openDrawer(user);
 
-    const combobox = screen.getByRole('combobox', { name: /client/i });
+    const combobox = screen.getByRole('combobox', { name: /^client$/i });
     await user.clear(combobox);
     await user.type(combobox, 'ACME');
     await user.click(await screen.findByRole('option', { name: /ACME SARL/i }, { timeout: 3000 }));
@@ -427,7 +427,7 @@ describe('AitoPage: create-project → Zoho sync wiring', () => {
 
     await openDrawer(user);
 
-    const combobox = screen.getByRole('combobox', { name: /client/i });
+    const combobox = screen.getByRole('combobox', { name: /^client$/i });
     await user.clear(combobox);
     await user.type(combobox, 'Jean');
     await user.click(await screen.findByRole('option', { name: /Jean DUPONT/i }, { timeout: 3000 }));

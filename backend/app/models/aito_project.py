@@ -117,6 +117,12 @@ class AitoProject(Base):
     invoice_balance: Mapped[float | None] = mapped_column(Float, nullable=True)
     invoice_due_date: Mapped[str | None] = mapped_column(String(10), nullable=True)
     invoice_checked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Zoho invoice / retainer numbers this card has been billed under, as a
+    # JSON array of strings (services/aito_search.remember_document_numbers).
+    # Sticky and capped at 20 — a customer quoting an old number should still
+    # find the card. Background fact like invoice_status: never edited, not in
+    # VERSIONED_FIELDS. Only the board search reads it.
+    document_numbers: Mapped[str | None] = mapped_column(Text, nullable=True)
     # The estimate's expiry_date as Books reports it, copied back like
     # quote_date (services/aito_quote_sync._apply_estimate). Books is the
     # source of truth: the payment link's expiry is derived from this, so an

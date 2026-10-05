@@ -1,8 +1,11 @@
-import { useEffect, useRef, useState, type RefObject } from 'react';
+import { useEffect, useId, type ChangeEvent, useRef, useState, type RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronDown, MoreHorizontal, Search, X } from 'lucide-react';
 import type { ColumnSummary } from '../../utils/aitoMobileBoard';
 import { ColumnStrip } from './ColumnStrip';
+import { useAitoSearch } from './search/AitoSearchContext';
+import { SearchResults } from './search/SearchResults';
+import { useSearchCombobox } from './search/useSearchCombobox';
 
 export function ColumnCountPill({ count, pending }: { count: number; pending: boolean }) {
   return (
@@ -71,6 +74,20 @@ export function MobileBoardHeader({
   const inputRef = useRef<HTMLInputElement>(null);
   const searchButtonRef = useRef<HTMLButtonElement>(null);
   const active = columns[current];
+  const smart = useAitoSearch();
+  const listboxId = useId();
+  const combobox = useSearchCombobox({
+    value: search,
+    onChange: onSearchChange,
+    hitCount: smart?.hits.length ?? 0,
+    onSelectIndex: (index) => {
+      const hit = smart?.hits[index];
+      if (hit) smart?.onSelect(hit.project.id);
+    },
+    listboxId,
+    // Escape on a closed dropdown keeps its old meaning here: fold the row.
+    escapeClears: false,
+  });
 
   useEffect(() => {
     if (searchOpen) inputRef.current?.focus({ preventScroll: true });
@@ -148,17 +165,21 @@ export function MobileBoardHeader({
               ref={inputRef}
               data-testid="aito-mobile-search"
               type="search"
-              value={search}
-              onChange={(event) => onSearchChange(event.target.value)}
+              {...(smart
+                ? combobox.inputProps
+                : { value: search, onChange: (event: ChangeEvent<HTMLInputElement>) => onSearchChange(event.target.value) })}
               onKeyDown={(event) => {
-                if (event.key === 'Escape') {
+                if (smart) combobox.inputProps.onKeyDown?.(event);
+                // An IME-cancel Escape must not fold the row.
+                if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+                if (event.key === 'Escape' && !event.isPropagationStopped()) {
                   event.stopPropagation();
                   closeSearch();
                 }
               }}
               placeholder={t('aito.searchPlaceholder')}
               aria-label={t('aito.searchPlaceholder')}
-              className="flex-1 min-w-0 bg-transparent text-sm text-white placeholder:text-bambu-gray outline-none"
+              className="flex-1 min-w-0 bg-transparent text-sm text-white placeholder:text-bambu-gray outline-none [&::-webkit-search-cancel-button]:hidden"
             />
             <button
               type="button"
@@ -174,6 +195,22 @@ export function MobileBoardHeader({
           </div>
         </div>
       </div>
+
+      {smart && searchOpen && combobox.open && (
+        <SearchResults
+          listboxId={listboxId}
+          hits={smart.hits}
+          active={combobox.active}
+          optionId={combobox.optionId}
+          onPick={(index) => {
+            smart.onSelect(smart.hits[index].project.id);
+            combobox.dismiss();
+          }}
+          onHover={combobox.setActive}
+          trash={smart.trash}
+          className="mx-3 mb-2.5"
+        />
+      )}
 
       {/* The strip: the header's bottom edge — a window of one column. */}
       <ColumnStrip columns={columns} from={current} to={current} onJump={onJump} />

@@ -4907,6 +4907,13 @@ export interface AitoProject {
   shipping_lta: string | null;
   /** The Books item's display name; null when the catalogue never resolved. */
   shipping_service_name: string | null;
+  /** Task titles, colours and step notes, one per line, capped at 2,000
+   *  chars — only the board search reads it. Derived server-side on every
+   *  response; refreshed on the next board refetch after a task edit. */
+  search_text: string;
+  /** Zoho invoice / retainer numbers this card was billed under. Sticky;
+   *  only the board search reads it. */
+  document_numbers: string[];
   /** Whether this card has a public tracking link configured. The token
    *  itself is minted by the Copy-link route, the pickup-SMS draft, or the
    *  quote sync — not only by `regenerateAitoTrackingToken` — but it is

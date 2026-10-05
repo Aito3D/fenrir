@@ -6,12 +6,14 @@ import time
 from datetime import datetime
 
 import pytest
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from backend.app.models.aito_project import AitoProject
 from backend.app.services import aito_events, aito_invoice_sweep, aito_quote_sync
 from backend.app.services.aito_invoice_sweep import sweep_invoices
+from backend.app.services.aito_search import document_numbers_of
 from backend.app.services.zoho import ZohoRateLimited, ZohoUpstreamError, zoho_service
 
 
@@ -101,6 +103,7 @@ async def test_selection_and_field_writes(db_session, monkeypatch):
     row = await db_session.get(AitoProject, open_id)
     assert (row.invoice_status, row.invoice_balance, row.invoice_due_date) == ("partially_paid", 40.0, "2026-03-01")
     assert isinstance(row.invoice_checked_at, datetime)
+    assert document_numbers_of(row) == ["INV-1"]
     for other_id in other_ids:
         assert (await db_session.get(AitoProject, other_id)).invoice_checked_at is None
 
@@ -1059,3 +1062,82 @@ async def test_the_overdue_event_stays_out_of_the_story(async_client, db_session
 
     assert "project.due.overdue" not in await kinds("story")
     assert (await kinds("detail")).count("project.due.overdue") == 1
+
+
+@pytest.mark.asyncio
+async def test_a_second_pass_keeps_one_copy_of_the_number(db_session, monkeypatch):
+    project = await _project(db_session)
+    project_id = project.id
+    monkeypatch.setattr(zoho_service, "list_project_invoices", _fake({"EST1": [_invoice(10.0)]}, []))
+    await sweep_invoices(db_session, force=True)
+    await sweep_invoices(db_session, force=True)
+    db_session.expire_all()
+    assert document_numbers_of(await db_session.get(AitoProject, project_id)) == ["INV-1"]
+
+
+@pytest.mark.asyncio
+async def test_a_number_written_mid_pass_survives_the_sweep(db_session, monkeypatch):
+    from backend.app.services.aito_search import remember_document_numbers
+
+    project = await _project(db_session)
+    project_id = project.id
+    fake = _fake({"EST1": [_invoice(10.0)]}, [])
+
+    async def list_invoices(db, quote_id, client_id):
+        # Another writer appends a number after the pass picked its targets.
+        other = await db.get(AitoProject, project_id)
+        remember_document_numbers(other, "RET-9")
+        await db.commit()
+        return await fake(db, quote_id, client_id)
+
+    monkeypatch.setattr(zoho_service, "list_project_invoices", list_invoices)
+    await sweep_invoices(db_session, force=True)
+    db_session.expire_all()
+    assert document_numbers_of(await db_session.get(AitoProject, project_id)) == ["RET-9", "INV-1"]
+
+
+@pytest.mark.asyncio
+async def test_a_document_numbers_refresh_failure_skips_that_project_but_keeps_going(
+    db_session, test_engine, monkeypatch
+):
+    """The document_numbers reload runs inside the per-project guard: an
+    OperationalError out of it (SQLite "database is locked" on its SELECT or
+    on an autoflush) costs only that project, exactly like a failed commit
+    (T-027), instead of escaping the loop and aborting the whole pass."""
+    good = await _project(db_session, quote_id="EST-GOOD")
+    bad = await _project(db_session, quote_id="EST-BAD")
+    later = await _project(db_session, quote_id="EST-LATER")
+    good_id, bad_id, later_id = good.id, bad.id, later.id
+    monkeypatch.setattr(
+        zoho_service,
+        "list_project_invoices",
+        _fake(
+            {"EST-GOOD": [_invoice(10.0)], "EST-BAD": [_invoice(20.0)], "EST-LATER": [_invoice(30.0)]},
+            [],
+        ),
+    )
+    original_refresh = db_session.refresh
+
+    async def _flaky_refresh(instance, attribute_names=None, **kw):
+        # inspect().identity reads the key without loading: a plain `.id`
+        # on a row expired by the bad project's rollback would lazy-load.
+        if sa_inspect(instance).identity == (bad_id,):
+            raise OperationalError("UPDATE", {}, Exception("database is locked"))
+        await original_refresh(instance, attribute_names=attribute_names, **kw)
+
+    monkeypatch.setattr(db_session, "refresh", _flaky_refresh)
+
+    updated = await sweep_invoices(db_session, force=True)
+
+    assert updated == 2
+    maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with maker() as fresh:
+        good_row = await fresh.get(AitoProject, good_id)
+        assert good_row.invoice_balance == 10.0
+        assert document_numbers_of(good_row) == ["INV-1"]
+        bad_row = await fresh.get(AitoProject, bad_id)
+        assert bad_row.invoice_checked_at is None
+        assert bad_row.invoice_balance is None
+        later_row = await fresh.get(AitoProject, later_id)
+        assert later_row.invoice_balance == 30.0
+        assert later_row.invoice_checked_at is not None

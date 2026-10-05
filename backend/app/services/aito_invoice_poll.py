@@ -64,6 +64,7 @@ from backend.app.services.aito_poll_watermark import (
     read_since,
 )
 from backend.app.services.aito_quote_sync import _lock_project
+from backend.app.services.aito_search import remember_document_numbers
 from backend.app.services.zoho import (
     ZohoNotConfiguredError,
     ZohoRateLimited,
@@ -246,6 +247,7 @@ async def _adopt(db: AsyncSession, row: dict, project: AitoProject) -> bool:
     project.invoice_status = status
     project.invoice_balance = balance
     project.invoice_due_date = due
+    remember_document_numbers(project, row.get("number"))
     project.invoice_checked_at = utc_now_naive()
     if managed:
         # Same helper, same invariants as the quote sweep's own invoiced

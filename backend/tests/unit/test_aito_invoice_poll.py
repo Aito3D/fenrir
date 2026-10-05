@@ -16,6 +16,7 @@ from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
 from backend.app.services import aito_invoice_poll
 from backend.app.services.aito_invoice_poll import POLL_SINCE_SETTING, poll_invoices
+from backend.app.services.aito_search import document_numbers_of
 from backend.app.services.zoho import ModifiedSinceRows, ZohoRateLimited, ZohoUpstreamError, zoho_service
 
 
@@ -195,6 +196,7 @@ async def test_adopts_an_invoice_by_its_aito_reference(db_session, monkeypatch):
     db_session.expire_all()
     row = await db_session.get(AitoProject, pid)
     assert (row.invoice_status, row.invoice_balance, row.invoice_due_date) == ("paid", 0.0, "2026-09-21")
+    assert document_numbers_of(row) == ["FA-26-4367"]
     assert row.quote_invoiced is True
     assert row.quote_sync_state == "locked"
     assert isinstance(row.invoice_checked_at, datetime)

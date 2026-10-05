@@ -127,6 +127,7 @@ from backend.app.services.aito_quote_sync import (
     request_immediate_sync,
 )
 from backend.app.services.aito_retainers import list_project_retainers
+from backend.app.services.aito_search import document_numbers_of, remember_document_numbers, task_search_text
 from backend.app.services.aito_send_guard import DuplicateSendGuard
 from backend.app.services.aito_shipping import (
     SERVICE_LABELS,
@@ -486,6 +487,8 @@ def _to_response(
     payment_link: AitoPaymentLinkView | None,
     invoice_payment_link: AitoPaymentLinkView | None,
     terminal_payment: AitoTerminalPaymentView | None,
+    *,
+    search_text: str,
 ) -> AitoProjectResponse:
     """`summary`, `shipping_names`, `external_url`, `payment_link`,
     `invoice_payment_link` and `terminal_payment` are all required, never
@@ -497,7 +500,9 @@ def _to_response(
     shipping_names map, or a blank external_url when one is configured, would
     blank a card's badges — or its shipping service name, or its tracking
     link — and nothing would fail. Requiring all of them makes every call
-    site state its intent instead of forgetting one silently.
+    site state its intent instead of forgetting one silently. `search_text` is
+    required for the same reason: a response written into the board cache
+    without it would silently drop the card's task notes from search.
 
     `shipping_names` and `external_url` are each resolved ONCE per request by
     the caller (`_shipping_names`, `_external_url`), not per row: both are one
@@ -583,9 +588,17 @@ def _to_response(
         shipping_price=p.shipping_price,
         shipping_lta=p.shipping_lta,
         shipping_service_name=shipping_names.get(p.shipping_service or ""),
+        search_text=search_text,
+        document_numbers=document_numbers_of(p),
         created_at=p.created_at,
         updated_at=p.updated_at,
     )
+
+
+async def _search_text_for(db: AsyncSession, project_id: int) -> str:
+    """One card's task text, for single-project responses — the board list
+    derives it from the task rows it already loaded instead."""
+    return task_search_text((await _tasks_by_project(db, [project_id])).get(project_id, ()))
 
 
 async def _project_response(
@@ -616,6 +629,7 @@ async def _project_response(
         link_view(await current_link(db, p.id)),
         link_view(await current_link(db, p.id, kind="invoice")),
         terminal_view(await current_terminal_payment(db, p.id)),
+        search_text=await _search_text_for(db, p.id),
     )
 
 
@@ -1166,6 +1180,7 @@ async def list_projects(
             link_view(links.get(p.id)),
             link_view(invoice_links.get(p.id)),
             terminal_view(terminals.get(p.id)),
+            search_text=task_search_text(task_rows.get(p.id, ())),
         )
         for p in projects
     ]
@@ -1198,6 +1213,7 @@ async def list_trash(
             link_view(links.get(p.id)),
             link_view(invoice_links.get(p.id)),
             terminal_view(terminals.get(p.id)),
+            search_text=task_search_text(task_rows.get(p.id, ())),
         )
         for p in projects
     ]
@@ -2762,6 +2778,7 @@ async def create_invoice(
             # sweep's own selection. Books is the authority and Books has just
             # confirmed — there is nothing to wait for.
             project.quote_invoiced = True
+            remember_document_numbers(project, created.get("invoice_number"))
             if credit is not None:
                 project.customer_credit_total = credit
             await record(
@@ -3919,7 +3936,7 @@ async def import_legacy_projects(
     # project can have a shipment — an empty map is correct here, not merely
     # a shortcut.
     external_url = await _external_url(db)
-    return [_to_response(p, TaskSummary(), {}, external_url, None, None, None) for p in created]
+    return [_to_response(p, TaskSummary(), {}, external_url, None, None, None, search_text="") for p in created]
 
 
 @router.patch("/{project_id}/move", response_model=AitoProjectResponse)
