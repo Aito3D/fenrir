@@ -68,6 +68,13 @@ describe('MobileBoardHeader', () => {
     expect(toggle).toHaveFocus();
   });
 
+  it('hides the native search-cancel glyph beside the custom clear button', async () => {
+    const user = userEvent.setup();
+    render(<Harness />);
+    await user.click(screen.getByRole('button', { name: 'Search' }));
+    expect(screen.getByTestId('aito-mobile-search').className).toContain('[&::-webkit-search-cancel-button]:hidden');
+  });
+
   it('clear empties the query and closes the row', async () => {
     const user = userEvent.setup();
     render(<Harness />);

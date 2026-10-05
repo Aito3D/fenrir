@@ -179,7 +179,7 @@ export function MobileBoardHeader({
               }}
               placeholder={t('aito.searchPlaceholder')}
               aria-label={t('aito.searchPlaceholder')}
-              className="flex-1 min-w-0 bg-transparent text-sm text-white placeholder:text-bambu-gray outline-none"
+              className="flex-1 min-w-0 bg-transparent text-sm text-white placeholder:text-bambu-gray outline-none [&::-webkit-search-cancel-button]:hidden"
             />
             <button
               type="button"
