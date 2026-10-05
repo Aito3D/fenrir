@@ -9289,7 +9289,7 @@ export const api = {
   addProjectRevisionFiles: async (
     revisionId: number,
     files: File[],
-    
+
   ): Promise<{ warnings: DuplicateWarning[] }> => {
     const formData = new FormData();
     files.forEach((file) => formData.append('files', file));

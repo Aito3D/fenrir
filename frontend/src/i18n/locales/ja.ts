@@ -10017,7 +10017,7 @@ export default {
       confirmDeleteItem: '{{name}}とすべてのリビジョンを削除しますか？ファイルはプロジェクトのごみ箱に移動します。',
       frozen: 'ファイルはロックされています：このリビジョンは印刷または納品済みです',
       duplicateWarning: '{{filename}}は{{revision}}と同一です',
-      byAuthor: '{{name}}',
+      byAuthor: '作成者: {{name}}',
       sliced: 'スライス済み',
       notSliced: '未スライス',
       saveFailed: '保存できませんでした',
