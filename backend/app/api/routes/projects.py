@@ -1952,22 +1952,26 @@ async def get_project_timeline(
             )
 
     # Get queue items
+    # Fenrir: PrintQueueItem has no print_name (reading it 500'd the timeline);
+    # name each item from its library file or reprinted archive, joined in.
     queue_result = await db.execute(
-        select(PrintQueueItem)
+        select(PrintQueueItem, LibraryFile.filename, PrintArchive.print_name, PrintArchive.filename)
+        .outerjoin(LibraryFile, LibraryFile.id == PrintQueueItem.library_file_id)
+        .outerjoin(PrintArchive, PrintArchive.id == PrintQueueItem.archive_id)
         .where(PrintQueueItem.project_id == project_id)
         .order_by(PrintQueueItem.created_at.desc())
         .limit(limit)
     )
-    queue_items = queue_result.scalars().all()
 
-    for item in queue_items:
+    for item, file_name, archive_print_name, archive_file_name in queue_result.all():
+        item_name = file_name or archive_print_name or archive_file_name or f"Print #{item.id}"  # Fenrir
         if item.status == "printing":
             events.append(
                 TimelineEvent(
                     event_type="print_started",
                     timestamp=item.started_at or item.created_at,
                     title="Print started",
-                    description=item.print_name,
+                    description=item_name,
                     metadata={"queue_item_id": item.id},
                 )
             )
@@ -1977,7 +1981,7 @@ async def get_project_timeline(
                     event_type="queued",
                     timestamp=item.created_at,
                     title="Added to queue",
-                    description=item.print_name,
+                    description=item_name,
                     metadata={"queue_item_id": item.id},
                 )
             )

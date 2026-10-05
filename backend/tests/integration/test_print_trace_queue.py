@@ -686,3 +686,36 @@ async def test_queueing_for_a_task_needs_aito_read(async_client: AsyncClient, db
     allowed = await async_client.post("/api/v1/queue/", json=for_task, headers=with_aito)
     assert allowed.status_code == 200, allowed.text
     assert allowed.json()["aito_task_id"] == task.id
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_timeline_names_queued_and_printing_items(async_client: AsyncClient, db_session):
+    """Queue items have no print_name: the timeline names them from their file or archive."""
+    project = await _project(async_client)
+    _revision_id, file_id = await _revision_file(async_client, db_session, project["id"])
+    archive = _counted_archive(project_id=project["id"], print_name="Support reprint", status="failed")
+    db_session.add(archive)
+    await db_session.commit()
+    db_session.add_all(
+        [
+            PrintQueueItem(project_id=project["id"], status="pending", position=1, library_file_id=file_id),
+            PrintQueueItem(project_id=project["id"], status="printing", position=2, archive_id=archive.id),
+            PrintQueueItem(project_id=project["id"], status="pending", position=3),
+        ]
+    )
+    await db_session.commit()
+
+    response = await async_client.get(f"/api/v1/projects/{project['id']}/timeline")
+    assert response.status_code == 200, response.text
+    queue_events = {
+        e["metadata"]["queue_item_id"]: (e["event_type"], e["description"])
+        for e in response.json()
+        if e["metadata"] and "queue_item_id" in e["metadata"]
+    }
+    items = await _items(db_session, project_id=project["id"])
+    assert [queue_events[i.id] for i in items] == [
+        ("queued", "part.gcode.3mf"),
+        ("print_started", "Support reprint"),
+        ("queued", f"Print #{items[2].id}"),
+    ]
