@@ -19,9 +19,11 @@ const project = {
 } as unknown as Project;
 
 let patched: Record<string, unknown> | null;
+let reformulated: string[];
 
 beforeEach(() => {
   patched = null;
+  reformulated = [];
   server.use(
     http.get('/api/v1/projects/tags', () => HttpResponse.json([{ id: 1, name: 'drone', project_count: 1 }])),
     http.patch('/api/v1/projects/5', async ({ request }) => {
@@ -32,6 +34,7 @@ beforeEach(() => {
     // the tag field leaves it as typed.
     http.post('/api/v1/projects/ai/reformulate', async ({ request }) => {
       const body = (await request.json()) as { text: string; field: string };
+      reformulated.push(`${body.field}:${body.text}`);
       const text = body.field === 'title' ? `${body.text} (reformulé)` : body.text;
       return HttpResponse.json({ text, model: 'm' });
     }),
@@ -66,5 +69,19 @@ describe('ProjectHeader', () => {
         new_tag_names: ['fixation'],
       }),
     );
+  });
+
+  it('does not send untouched stored text for rewording, but does send an edit', async () => {
+    render(<ProjectHeader project={project} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Edit title, description and tags' }));
+    const titleField = screen.getByRole('textbox', { name: 'Title' });
+    const descField = screen.getByRole('textbox', { name: 'Description' });
+    await userEvent.click(titleField);
+    await userEvent.click(descField);
+    await userEvent.tab();
+    expect(reformulated).toEqual([]);
+    await userEvent.type(titleField, ' 2');
+    await userEvent.tab();
+    await waitFor(() => expect(reformulated).toEqual(['title:Support caméra 2']));
   });
 });
