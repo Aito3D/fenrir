@@ -345,6 +345,14 @@ async def sweep_invoices(db: AsyncSession, *, force: bool = False) -> int:
         ]
         for project, project_id, quote_id, client_id, quote_number in targets:
             try:
+                # `remember_document_numbers` below READS the stored list.
+                # Reload just that column first: a rollback for an earlier
+                # project may have expired this row (a lazy-load would raise
+                # MissingGreenlet), and another writer may have appended a
+                # number since the pass began, which must not be overwritten.
+                # It runs before anything is staged on the session, so its
+                # SELECT never autoflushes this project's half-done writes.
+                await db.refresh(project, attribute_names=["document_numbers"])
                 invoices = await zoho_service.list_project_invoices(db, quote_id, client_id)
                 if invoices:
                     newest = invoices[0]
@@ -363,12 +371,6 @@ async def sweep_invoices(db: AsyncSession, *, force: bool = False) -> int:
                     project.invoice_status = status
                     project.invoice_balance = balance
                     project.invoice_due_date = due
-                    # `remember_document_numbers` READS the stored list. Reload
-                    # just that column first: a rollback for an earlier project
-                    # may have expired this row (a lazy-load would raise
-                    # MissingGreenlet), and another writer may have appended a
-                    # number since the pass began, which must not be overwritten.
-                    await db.refresh(project, attribute_names=["document_numbers"])
                     remember_document_numbers(project, newest.get("number"))
                     if credit is not None:
                         # The status reconcile stops reading a locked (invoiced)
@@ -396,6 +398,16 @@ async def sweep_invoices(db: AsyncSession, *, force: bool = False) -> int:
                 raise
             except (ZohoUpstreamError, ValueError, TypeError, KeyError) as exc:
                 logger.warning("Invoice sweep skipped project %s: %s", project_id, exc)
+                continue
+            except SQLAlchemyError as exc:
+                # A database error inside the body (the reload above, or a
+                # "database is locked" autoflush) costs only this project,
+                # exactly like a failed commit below (T-027).
+                logger.warning("Invoice sweep could not refresh project %s: %s", project_id, exc)
+                try:
+                    await db.rollback()
+                except SQLAlchemyError:
+                    pass
                 continue
             project.invoice_checked_at = _now()
             # T-027 (loop-9): commit this project's refresh on its own rather
