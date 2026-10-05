@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { useQuery } from '@tanstack/react-query';
@@ -170,6 +170,52 @@ describe('TaskProjectRow', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
+  it('a saved task missing from the loaded links (created after the fetch) counts as unlinked', async () => {
+    links = { order_id: ORDER, tasks: [] };
+    renderRow();
+    expect(await screen.findByRole('button', { name: 'New project' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Link an existing project' })).toBeInTheDocument();
+  });
+
+  it('Escape closes only the open dialog, never the panel listening on window', async () => {
+    const user = userEvent.setup();
+    const panelClose = vi.fn();
+    // The detail panel's useDismissableDialog: a bubble-phase window listener.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') panelClose();
+    };
+    window.addEventListener('keydown', onKey);
+    try {
+      links = linked([]);
+      renderRow();
+      await user.click(await screen.findByRole('button', { name: 'Edit delivered files' }));
+      expect(await screen.findByRole('dialog')).toHaveAttribute('aria-modal', 'true');
+      await user.keyboard('{Escape}');
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+
+      links = unlinked;
+      cleanup();
+      renderRow();
+      await user.click(await screen.findByRole('button', { name: 'New project' }));
+      await screen.findByRole('dialog');
+      await user.keyboard('{Escape}');
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+      expect(panelClose).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener('keydown', onKey);
+    }
+  });
+
+  it('a file dropped on a dialog opened from the row does not upload', async () => {
+    links = linked([]);
+    renderRow();
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit delivered files' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.drop(dialog, { dataTransfer: { files: [new File(['x'], 'support.step')], types: ['Files'] } });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(dropped).toBeNull();
+  });
+
   it('linking from a suggestion PUTs the project id and refetches the board codes', async () => {
     const user = userEvent.setup();
     renderRow();
@@ -190,7 +236,8 @@ describe('TaskProjectRow', () => {
     const nameLink = await screen.findByRole('link', { name: 'Drone bracket' });
     expect(nameLink).toHaveAttribute('href', '/projects/7');
     expect(screen.getByText('P-0007')).toBeInTheDocument();
-    expect(await screen.findByText('Support R3, Plan R1')).toBeInTheDocument();
+    expect(await screen.findByText('Support R3, Plan R1')).toHaveAttribute('title', 'Support R3, Plan R1');
+    expect(screen.getByText('Delivered files:')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'New project' })).not.toBeInTheDocument();
   });
 
@@ -294,6 +341,8 @@ describe('TaskStepList section summaries', () => {
         }}
       />,
     );
-    expect(screen.getByTestId('step-files-modelisation')).toHaveTextContent('Support R3 · Approved · Clip R1 · In progress');
+    const line = screen.getByTestId('step-files-modelisation');
+    expect(line).toHaveTextContent('Support R3 · Approved · Clip R1 · In progress');
+    expect(within(line).getByTitle('Support R3 · Approved · Clip R1 · In progress')).toBeInTheDocument();
   });
 });

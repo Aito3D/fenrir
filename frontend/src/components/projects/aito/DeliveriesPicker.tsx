@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { api } from '../../../api/client';
@@ -9,6 +10,7 @@ import { taskSteps } from '../../aito/services';
 import type { TaskDraft } from '../../../utils/taskDraft';
 import { SECTION_LABEL_KEYS, STATUS_LABEL_KEYS } from '../files/filesUi';
 import { useInvalidateProjectLinks } from './useOrderProjectLinks';
+import { useIsolatedEscape } from '../../../hooks/useIsolatedEscape';
 
 /** The services that own a project section (`maindoeuvre` has none, `docs`
  *  has no service). */
@@ -58,6 +60,8 @@ export function DeliveriesPicker({
   const { showToast } = useToast();
   const invalidate = useInvalidateProjectLinks();
   const [checked, setChecked] = useState(() => new Set(current));
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useIsolatedEscape(onClose, dialogRef);
 
   const { data: tree } = useQuery({ queryKey: ['project-tree', projectId], queryFn: () => api.getProjectTree(projectId) });
   const { data: orders } = useQuery({
@@ -109,23 +113,22 @@ export function DeliveriesPicker({
 
   const sections = (tree?.sections ?? []).filter((s) => s.items.some((i) => i.revisions.length > 0));
 
-  return (
+  // Portalled: the panel's task row is a file drop target and must not see
+  // drops (or stacking) from this modal.
+  return createPortal(
     <div
       className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4 animate-overlay-in"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
-      onKeyDown={(e) => {
-        if (e.key === 'Escape') {
-          e.stopPropagation();
-          onClose();
-        }
-      }}
     >
       <div
+        ref={dialogRef}
         role="dialog"
+        aria-modal="true"
+        tabIndex={-1}
         aria-label={t('projectsPdm.aito.deliveredFiles')}
-        className="flex max-h-[85vh] w-full max-w-md flex-col gap-3 rounded-xl bg-bambu-card p-5"
+        className="flex max-h-[85vh] w-full max-w-md flex-col gap-3 rounded-xl bg-bambu-card p-5 focus:outline-none"
       >
         <h2 className="text-lg font-semibold text-white">{t('projectsPdm.aito.deliveredFiles')}</h2>
         <div className="flex flex-wrap items-center gap-2">
@@ -196,6 +199,7 @@ export function DeliveriesPicker({
           </Button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

@@ -15,10 +15,13 @@ export function useOrderProjectLinks(orderId: number | undefined) {
   });
 }
 
-/** The link of one task, or undefined while loading / for an unsaved task. */
+/** The link of one task, or undefined while loading / for an unsaved task.
+ *  A saved task missing from loaded links (created after the fetch) is
+ *  unlinked — a task only gains a project through this API, which refetches. */
 export function useTaskProjectLink(orderId: number | undefined, taskId: number | null): TaskProjectLink | undefined {
   const { data } = useOrderProjectLinks(orderId);
-  return taskId === null ? undefined : data?.tasks.find((t) => t.task_id === taskId);
+  if (taskId === null || !data) return undefined;
+  return data.tasks.find((t) => t.task_id === taskId) ?? { task_id: taskId, project: null, sections: {}, deliveries: [] };
 }
 
 /** What a link, delivery or drop change makes stale: the order's links, the

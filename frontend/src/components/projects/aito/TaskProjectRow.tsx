@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
@@ -52,7 +53,7 @@ export function TaskProjectRow({
   taskId: number;
   link: TaskProjectLink | undefined;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { hasPermission } = useAuth();
   const { showToast } = useToast();
   const invalidate = useInvalidateProjectLinks();
@@ -83,11 +84,18 @@ export function TaskProjectRow({
     enabled: !!project && deliveries.length > 0,
     retry: false,
   });
-  const deliveredLabels = tree
-    ? tree.sections.flatMap((s) =>
-        s.items.flatMap((i) => i.revisions.filter((r) => deliveries.includes(r.id)).map((r) => `${i.name} R${r.number}`)),
-      )
-    : [];
+  const deliveredText =
+    deliveries.length === 0
+      ? t('projectsPdm.aito.deliveredNone')
+      : tree
+        ? tree.sections
+            .flatMap((s) =>
+              s.items.flatMap((i) =>
+                i.revisions.filter((r) => deliveries.includes(r.id)).map((r) => `${i.name} R${r.number}`),
+              ),
+            )
+            .join(', ')
+        : '…';
 
   if (!link) return null;
 
@@ -111,34 +119,37 @@ export function TaskProjectRow({
               </button>
             )}
           </>
+        ) : !canLink ? (
+          <span className="text-bambu-gray">—</span>
         ) : (
-          canLink && (
-            <>
-              {canCreate && (
-                <button type="button" className={smallBtn} onClick={() => setCreating(true)}>
-                  <FolderPlus aria-hidden="true" className="h-3 w-3" />
-                  {t('projectsPdm.aito.newProject')}
-                </button>
-              )}
-              <button
-                type="button"
-                className={smallBtn}
-                aria-expanded={picking}
-                onClick={() => setPicking((v) => !v)}
-              >
-                <Link2 aria-hidden="true" className="h-3 w-3" />
-                {t('projectsPdm.aito.linkExisting')}
+          <>
+            {canCreate && (
+              <button type="button" className={smallBtn} onClick={() => setCreating(true)}>
+                <FolderPlus aria-hidden="true" className="h-3 w-3" />
+                {t('projectsPdm.aito.newProject')}
               </button>
-            </>
-          )
+            )}
+            <button
+              type="button"
+              className={smallBtn}
+              aria-expanded={picking}
+              onClick={() => setPicking((v) => !v)}
+            >
+              <Link2 aria-hidden="true" className="h-3 w-3" />
+              {t('projectsPdm.aito.linkExisting')}
+            </button>
+          </>
         )}
       </div>
 
       {project && (
         <div className="flex items-center gap-2 text-bambu-gray">
-          <span className="flex-shrink-0">{t('projectsPdm.aito.deliveredFiles')}</span>
-          <span className="min-w-0 flex-1 truncate text-bambu-gray-light">
-            {deliveries.length === 0 ? t('projectsPdm.aito.deliveredNone') : deliveredLabels.join(', ')}
+          <span className="flex-shrink-0">
+            {/* French sets a space before the colon. */}
+            {`${t('projectsPdm.aito.deliveredFiles')}${i18n.language?.startsWith('fr') ? ' :' : ':'}`}
+          </span>
+          <span className="min-w-0 flex-1 truncate text-bambu-gray-light" title={deliveredText}>
+            {deliveredText}
           </span>
           {canLink && (
             <button
@@ -162,27 +173,33 @@ export function TaskProjectRow({
           onClose={() => setPicking(false)}
         />
       )}
-      {creating && (
-        <NewProjectModal
-          initialTitle={task.title.trim()}
-          initialDescription={taskDescription(task)}
-          onClose={() => setCreating(false)}
-          onCreated={(created) => linkMutation.mutate(created.id)}
-        />
-      )}
-      {confirmUnlink && project && (
-        <ConfirmModal
-          title={t('projectsPdm.aito.unlink')}
-          message={t('projectsPdm.aito.confirmUnlink', { name: project.code ?? project.name })}
-          confirmText={t('projectsPdm.aito.unlink')}
-          variant="warning"
-          isolateEscape
-          overlayZIndex="z-[60]"
-          isLoading={linkMutation.isPending}
-          onConfirm={() => linkMutation.mutate(null)}
-          onCancel={() => setConfirmUnlink(false)}
-        />
-      )}
+      {/* Modals are portalled out of the task row (a file drop target). */}
+      {creating &&
+        createPortal(
+          <NewProjectModal
+            initialTitle={task.title.trim()}
+            initialDescription={taskDescription(task)}
+            onClose={() => setCreating(false)}
+            onCreated={(created) => linkMutation.mutate(created.id)}
+          />,
+          document.body,
+        )}
+      {confirmUnlink &&
+        project &&
+        createPortal(
+          <ConfirmModal
+            title={t('projectsPdm.aito.unlink')}
+            message={t('projectsPdm.aito.confirmUnlink', { name: project.code ?? project.name })}
+            confirmText={t('projectsPdm.aito.unlink')}
+            variant="warning"
+            isolateEscape
+            overlayZIndex="z-[60]"
+            isLoading={linkMutation.isPending}
+            onConfirm={() => linkMutation.mutate(null)}
+            onCancel={() => setConfirmUnlink(false)}
+          />,
+          document.body,
+        )}
       {editingDeliveries && project && (
         <DeliveriesPicker
           orderId={orderId}

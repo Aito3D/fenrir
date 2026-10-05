@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -9,6 +9,7 @@ import { AiTextField } from '../aito/AiTextField';
 import { ProjectTagEditor, splitTagDrafts } from './ProjectTagEditor';
 import type { TagDraft } from './ProjectTagChips';
 import type { Project } from '../../api/client';
+import { useIsolatedEscape } from '../../hooks/useIsolatedEscape';
 
 interface NewProjectModalProps {
   onClose: () => void;
@@ -29,6 +30,9 @@ export function NewProjectModal({ onClose, initialTitle = '', initialDescription
   const [title, setTitle] = useState(initialTitle);
   const [description, setDescription] = useState(initialDescription);
   const [tags, setTags] = useState<TagDraft[]>([]);
+  const dialogRef = useRef<HTMLFormElement>(null);
+  // Escape closes this modal only — it also opens over Aito's detail panel.
+  useIsolatedEscape(onClose, dialogRef);
 
   const create = useMutation({
     mutationFn: () =>
@@ -47,13 +51,16 @@ export function NewProjectModal({ onClose, initialTitle = '', initialDescription
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 animate-overlay-in">
       <form
+        ref={dialogRef}
         role="dialog"
+        aria-modal="true"
+        tabIndex={-1}
         aria-label={t('projectsPdm.createTitle')}
         onSubmit={(e) => {
           e.preventDefault();
           if (title.trim()) create.mutate();
         }}
-        className="w-full max-w-lg space-y-4 rounded-xl bg-bambu-card p-5"
+        className="w-full max-w-lg space-y-4 rounded-xl bg-bambu-card p-5 focus:outline-none"
       >
         <h2 className="text-lg font-semibold text-white">{t('projectsPdm.createTitle')}</h2>
         <AiTextField

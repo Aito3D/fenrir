@@ -7,6 +7,13 @@ import { useToast } from '../../../contexts/ToastContext';
 import { filesFromDataTransfer } from '../files/fileDrop';
 import { useInvalidateProjectLinks } from './useOrderProjectLinks';
 
+/** The modals a task row opens are portalled to <body>, but React still
+ *  bubbles their events through the row: only a target really inside the
+ *  row's DOM counts as a drop on the task. */
+function inZone(e: DragEvent): boolean {
+  return e.currentTarget.contains(e.target as Node);
+}
+
 /** True for an OS file drag. dnd-kit reorders with pointer events, so a native
  *  drag carrying `Files` can only be a file drop. */
 export function isFileDrag(dt: DataTransfer | null): boolean {
@@ -36,7 +43,7 @@ export function useTaskFileDrop({
     if (!isFileDrag(e.dataTransfer)) return;
     // Always claim a file drag inside the row, or the browser opens the file.
     e.preventDefault();
-    if (canDrop && taskId !== null) setDragOver(true);
+    if (canDrop && taskId !== null && inZone(e)) setDragOver(true);
   };
   const onDragLeave = (e: DragEvent) => {
     if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragOver(false);
@@ -46,7 +53,7 @@ export function useTaskFileDrop({
     e.preventDefault();
     e.stopPropagation();
     setDragOver(false);
-    if (!canDrop || taskId === null) return;
+    if (!canDrop || taskId === null || !inZone(e)) return;
     const files = filesFromDataTransfer(e.dataTransfer);
     if (!files.length) return;
     const project = link?.project;

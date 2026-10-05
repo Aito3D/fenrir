@@ -248,7 +248,9 @@ export function TaskStepList({ task, onChange, canTick, sectionSummaries }: Task
                 {/* Same gutter spacers as the description above. */}
                 {canTick && <span aria-hidden="true" className="w-4 flex-shrink-0" />}
                 <span aria-hidden="true" className="w-0.5 flex-shrink-0" />
-                <span className="min-w-0 flex-1 truncate">{files}</span>
+                <span className="min-w-0 flex-1 truncate" title={files}>
+                  {files}
+                </span>
               </p>
             )}
           </li>
