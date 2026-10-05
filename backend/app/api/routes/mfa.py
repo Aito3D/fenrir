@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import hashlib
+import hmac
 import io
 import json
 import logging
@@ -522,20 +523,20 @@ def _assert_totp_not_replayed(totp_obj: pyotp.TOTP, totp_record: UserTOTP, code:
     wall-clock counter.  With valid_window=1, pyotp accepts codes from the
     previous 30-second step.  Using timecode(now) would store the wrong counter
     when the previous-window code is accepted, allowing immediate replay.
-    """
-    # Determine which time-step the accepted code belongs to.
-    now = datetime.now(timezone.utc)
-    accepted_counter: int | None = None
-    for offset in (0, -1):  # current window first, then previous
-        candidate_time = now.timestamp() + offset * totp_obj.interval
-        candidate_counter = totp_obj.timecode(datetime.fromtimestamp(candidate_time, tz=timezone.utc))
-        if totp_obj.at(candidate_counter) == code:
-            accepted_counter = candidate_counter
-            break
-    if accepted_counter is None:
-        accepted_counter = totp_obj.timecode(now)  # fallback (should not happen after verify())
 
-    totp_record.accept_counter(accepted_counter)
+    The candidates are the three steps ``verify(valid_window=1)`` accepts. Each
+    is compared with ``generate_otp(counter)``: ``TOTP.at()`` takes a Unix
+    timestamp, not a counter, and passing it one matched nothing, so every
+    code was stored under the wall-clock step and stayed replayable for one
+    more window. A code matching none of them was not verified, and is refused
+    rather than recorded under a guessed step.
+    """
+    current = totp_obj.timecode(datetime.now(timezone.utc))
+    for counter in (current, current - 1, current + 1):
+        if hmac.compare_digest(str(code), totp_obj.generate_otp(counter)):
+            totp_record.accept_counter(counter)
+            return
+    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid TOTP code")
 
 
 # ---------------------------------------------------------------------------
