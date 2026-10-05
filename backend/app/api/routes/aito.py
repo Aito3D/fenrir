@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
-from sqlalchemy import and_, case, func, or_, select, update
+from sqlalchemy import and_, case, delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,6 +29,7 @@ from backend.app.core.websocket import ws_manager
 from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
+from backend.app.models.aito_task_delivery import AitoTaskDelivery
 from backend.app.models.notification_inbox import AitoWatch
 from backend.app.models.user import User
 from backend.app.schemas.aito import (
@@ -3825,6 +3826,9 @@ async def delete_task(
         subject_id=task.id,
         subject_label=task.title,
     )
+    # Fenrir: delivery records have no FK, so they go with the task; otherwise a
+    # revision it delivered would stay "used" (files frozen) forever.
+    await db.execute(delete(AitoTaskDelivery).where(AitoTaskDelivery.task_id == task.id))
     await db.delete(task)
     await db.flush()  # so the deleted row is out of _summary_for's SELECT
     if project:
