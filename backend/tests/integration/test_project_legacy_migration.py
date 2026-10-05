@@ -299,6 +299,48 @@ async def test_failure_mid_project_then_rerun_completes_without_duplicates(db_se
 
 @pytest.mark.asyncio
 @pytest.mark.integration
+async def test_rerun_dedupes_external_copies_on_hash_and_name(db_session, tmp_path, monkeypatch, caplog):
+    """Two distinct external files with identical bytes but different names are
+    both migrated: the re-run skips only the one whose copy (same SHA-256 AND
+    same name) the project already holds, and logs that skip."""
+    project = await _project(db_session)
+    project_id = project.id
+    first = await _external(db_session, tmp_path, "Arm.gcode", b"G1 X0", project_id=project_id)
+    twin = await _external(db_session, tmp_path, "Leg.gcode", b"G1 X0", project_id=project_id)
+    first_id, twin_id = first.id, twin.id
+
+    real = project_files.add_revision_from_sources
+    calls = {"n": 0}
+
+    async def flaky(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 2:  # Arm is copied, the run dies before Leg
+            raise RuntimeError("disk on fire")
+        return await real(*args, **kwargs)
+
+    monkeypatch.setattr(project_files, "add_revision_from_sources", flaky)
+    with pytest.raises(RuntimeError):
+        await project_filing.migrate_project_legacy(db_session, await _fresh(db_session, Project, project_id))
+    assert [r[1] for r in await _revisions(db_session, project_id)] == ["Arm"]
+
+    monkeypatch.setattr(project_files, "add_revision_from_sources", real)
+    with caplog.at_level("INFO", logger="backend.app.services.project_filing"):
+        outcome = await project_filing.migrate_project_legacy(db_session, await _fresh(db_session, Project, project_id))
+    assert (outcome.revisions_created, outcome.files_moved, outcome.files_copied) == (1, 0, 1)
+    assert await _revisions(db_session, project_id) == [
+        ("impression", "Arm", 1, ["Arm.gcode"]),
+        ("impression", "Leg", 1, ["Leg.gcode"]),
+    ]
+    skips = [r.getMessage() for r in caplog.records if "already copied" in r.getMessage()]
+    assert skips == [
+        f"Legacy migration of project {project_id}: external file {first_id} ('Arm.gcode') already copied, skipping"
+    ]
+    for row_id in (first_id, twin_id):  # originals untouched
+        assert (await _fresh(db_session, LibraryFile, row_id)).revision_id is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
 async def test_incomplete_group_leaves_no_marker(db_session, monkeypatch):
     """A group skipped for a transient reason (copy error) keeps the project a candidate."""
     project = await _project(db_session)

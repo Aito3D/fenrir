@@ -569,10 +569,10 @@ async def _record_revision_added(db: AsyncSession, project_id: int, entry: dict,
 # project that failed half-way is re-run from what is left: moved managed files
 # carry ``revision_id`` and drop out of the query; a copied EXTERNAL original
 # stays as it was (by design), so it is skipped on a re-run when the project
-# already holds a revision file with the same SHA-256 (the copy's ``file_hash``
-# is the hash of the bytes it was copied from). Content-based on purpose: no
-# extra column, no reliance on an editable note, and an identical file already
-# in the project needs no second copy anyway.
+# already holds a revision file with the same SHA-256 AND the same filename (the
+# copy's ``file_hash`` is the hash of the bytes it was copied from). The name is
+# part of the key so two distinct external files that happen to share their
+# bytes both get migrated. No extra column, no reliance on an editable note.
 
 _RETRYABLE_SKIPS = ("copy_failed", "conflict")
 
@@ -636,14 +636,15 @@ def _sha256_file(path: Path) -> str:
 
 
 async def _already_copied(db: AsyncSession, project_id: int, files: list[LibraryFile]) -> set[int]:
-    """External files whose content the project already holds (copied by an earlier run)."""
-    externals = [(f.id, _source_path(f)) for f in files if f.is_external]
+    """External files the project already holds a copy of (an earlier run): same
+    SHA-256 and same filename as one of its revision files."""
+    externals = [(f.id, f.filename, _source_path(f)) for f in files if f.is_external]
     if not externals:
         return set()
     held = set(
         (
             await db.execute(
-                select(LibraryFile.file_hash).where(
+                select(LibraryFile.file_hash, LibraryFile.filename).where(
                     LibraryFile.project_id == project_id,
                     LibraryFile.revision_id.is_not(None),
                     LibraryFile.deleted_at.is_(None),
@@ -651,20 +652,26 @@ async def _already_copied(db: AsyncSession, project_id: int, files: list[Library
                 )
             )
         )
-        .scalars()
+        .tuples()
         .all()
     )
     if not held:
         return set()
     out: set[int] = set()
-    for file_id, path in externals:
+    for file_id, filename, path in externals:
         if path is None or not path.is_file():
             continue
         try:
             digest = await asyncio.to_thread(_sha256_file, path)
         except OSError:
             continue  # the move reports it (source_missing / copy_failed)
-        if digest in held:
+        if (digest, filename) in held:
+            logger.info(
+                "Legacy migration of project %s: external file %s (%r) already copied, skipping",
+                project_id,
+                file_id,
+                filename,
+            )
             out.add(file_id)
     return out
 
