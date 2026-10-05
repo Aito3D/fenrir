@@ -10004,6 +10004,8 @@ export default {
       newRevision: 'Nueva revisión',
       addFiles: 'Añadir archivos',
       removeFile: 'Quitar {{name}}',
+      remove: 'Quitar',
+      confirmRemoveFile: '¿Quitar {{name}} de {{label}}? El archivo se mueve a la papelera del proyecto.',
       statusLabel: 'Estado',
       statusWip: 'En curso',
       statusValide: 'Aprobado',

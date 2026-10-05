@@ -35,12 +35,15 @@ export function ItemRow({ item, derivedOptions, actions }: Props) {
   const fileCount = newest?.files.length ?? 0;
   const outdated = item.section === 'impression' && newest?.outdated_by && newest.derived_from ? newest : null;
   const src = newest?.derived_from;
+  const busy = actions.isBusy(item.id);
+  // Expanded, each revision block carries its own OUTDATED chip.
+  const rowOutdated = outdated && !open;
 
   const onDrop = (e: DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setDragOver(false);
-    if (!canUpdate) return;
+    if (!canUpdate || busy) return;
     const files = filesFromDataTransfer(e.dataTransfer);
     if (files.length) void actions.uploadRevision(item.id, files);
   };
@@ -89,10 +92,11 @@ export function ItemRow({ item, derivedOptions, actions }: Props) {
           </span>
         )}
         <span className="text-xs text-bambu-gray">{t('projectsPdm.files.fileCount', { count: fileCount })}</span>
+        {busy && <span role="status" className="text-xs text-bambu-green">{t('projectsPdm.files.uploading')}</span>}
         {canUpdate && (
           <span className="flex">
-            <button type="button" className={iconBtn} aria-label={t('projectsPdm.files.newRevision')}
-              title={t('projectsPdm.files.newRevision')} onClick={() => input.current?.click()}>
+            <button type="button" className={`${iconBtn} disabled:opacity-40`} aria-label={t('projectsPdm.files.newRevision')}
+              title={t('projectsPdm.files.newRevision')} disabled={busy} onClick={() => input.current?.click()}>
               <Upload className="h-4 w-4" />
             </button>
             <button type="button" className={iconBtn} aria-label={t('projectsPdm.files.rename')}
@@ -114,14 +118,14 @@ export function ItemRow({ item, derivedOptions, actions }: Props) {
             if (files.length) void actions.uploadRevision(item.id, files);
           }} />
       </div>
-      {(src || outdated) && (
+      {(src || rowOutdated) && (
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-2 pb-2 pl-8 text-xs text-bambu-gray">
           {src && (
             <span className="break-words">
               {t('projectsPdm.files.derivedFrom', { label: `${t(SECTION_LABEL_KEYS[src.section])} › ${src.item_name} R${src.number}` })}
             </span>
           )}
-          {outdated && src && newest.outdated_by && (
+          {rowOutdated && src && newest.outdated_by && (
             <span className={`${chipBase} whitespace-normal border-amber-500/40 bg-amber-500/10 text-amber-400`}>
               {t('projectsPdm.files.outdated', { source: `${src.item_name} R${src.number}`, newer: `R${newest.outdated_by.number}` })}
             </span>

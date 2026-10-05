@@ -37,6 +37,8 @@ export function RevisionBlock({ item, revision, derivedOptions, actions }: Props
   const [editingNote, setEditingNote] = useState(false);
   const [forking, setForking] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmRemove, setConfirmRemove] = useState<ProjectFileOut | null>(null);
+  const busy = actions.isBusy(item.id);
   const label = `R${revision.number}`;
   const editable = revision.status === 'wip' && !revision.used;
   const pp = revision.print_profile as Record<string, unknown> | null;
@@ -160,7 +162,7 @@ export function RevisionBlock({ item, revision, derivedOptions, actions }: Props
                 </button>
                 {canUpdate && editable && revision.files.length > 1 && (
                   <button type="button" className={btnCls} aria-label={t('projectsPdm.files.removeFile', { name: f.filename })}
-                    onClick={() => actions.removeFile(revision.id, f.id)}>
+                    onClick={() => setConfirmRemove(f)}>
                     <X className="h-3.5 w-3.5" />
                   </button>
                 )}
@@ -176,14 +178,14 @@ export function RevisionBlock({ item, revision, derivedOptions, actions }: Props
         </button>
         {canUpdate && editable && (
           <>
-            <button type="button" className={btnCls} onClick={() => addInput.current?.click()}>
+            <button type="button" className={`${btnCls} disabled:opacity-40`} disabled={busy} onClick={() => addInput.current?.click()}>
               <Plus className="h-3.5 w-3.5" />{t('projectsPdm.files.addFiles')}
             </button>
             <input ref={addInput} type="file" multiple className="hidden" data-testid={`add-files-input-${revision.id}`}
               onChange={(e) => {
                 const files = Array.from(e.target.files ?? []);
                 e.target.value = '';
-                if (files.length) actions.addFiles(revision.id, files);
+                if (files.length) actions.addFiles(item.id, revision.id, files);
               }} />
           </>
         )}
@@ -211,6 +213,16 @@ export function RevisionBlock({ item, revision, derivedOptions, actions }: Props
       {preview && (
         <ModelViewerModal libraryFileId={preview.id} title={preview.filename} fileType={preview.file_type}
           onClose={() => setPreview(null)} />
+      )}
+      {confirmRemove && (
+        <ConfirmModal
+          title={t('projectsPdm.files.removeFile', { name: confirmRemove.filename })}
+          message={t('projectsPdm.files.confirmRemoveFile', { name: confirmRemove.filename, label: `${item.name} ${label}` })}
+          confirmText={t('projectsPdm.files.remove')}
+          variant="danger"
+          onConfirm={() => { const fileId = confirmRemove.id; setConfirmRemove(null); void actions.removeFile(revision.id, fileId); }}
+          onCancel={() => setConfirmRemove(null)}
+        />
       )}
       {confirmDelete && (
         <ConfirmModal

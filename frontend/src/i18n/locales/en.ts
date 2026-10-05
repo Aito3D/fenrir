@@ -10052,6 +10052,8 @@ export default {
       newRevision: 'New revision',
       addFiles: 'Add files',
       removeFile: 'Remove {{name}}',
+      remove: 'Remove',
+      confirmRemoveFile: 'Remove {{name}} from {{label}}? The file moves to the project trash.',
       statusLabel: 'Status',
       statusWip: 'In progress',
       statusValide: 'Approved',

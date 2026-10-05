@@ -24,7 +24,10 @@ const tree = {
     { section: 'scan', items: [] },
     { section: 'modelisation', items: [{ id: 20, section: 'modelisation', name: 'Support', name_key: 'support', forked_from: null, revisions: [rev({ id: 2, number: 2, status: 'valide' }), rev({ id: 1, number: 1, status: 'obsolete', used: true })] }] },
     { section: 'impression', items: [{ id: 30, section: 'impression', name: 'Support X1C', name_key: 'support x1c', forked_from: null, revisions: [rev({ id: 3, number: 1, derived_from: ref(1, 'Support', 'modelisation', 1, 'obsolete'), outdated_by: ref(2, 'Support', 'modelisation', 2), print_profile: { printer_model: 'Bambu Lab X1C', nozzle_diameter: '0.4', layer_height: '0.2', filament_types: ['PETG'], sliced: true }, has_snapshot: true, files: [{ id: 60, filename: 'support.gcode.3mf', file_type: 'gcode.3mf', file_size: 4096, file_hash: 'p', has_thumbnail: true, created_at: '2026-10-04T10:00:00Z' }] })] }] },
-    { section: 'usinage', items: [] },
+    { section: 'usinage', items: [{ id: 40, section: 'usinage', name: 'Gabarit', name_key: 'gabarit', forked_from: null, revisions: [rev({ id: 4, number: 1, files: [
+      { id: 70, filename: 'gabarit.step', file_type: 'step', file_size: 10, file_hash: 'g1', has_thumbnail: false, created_at: '2026-10-04T10:00:00Z' },
+      { id: 71, filename: 'gabarit.pdf', file_type: 'pdf', file_size: 10, file_hash: 'g2', has_thumbnail: false, created_at: '2026-10-04T10:00:00Z' },
+    ] })] }] },
     { section: 'docs', items: [] },
   ],
 };
@@ -33,13 +36,19 @@ let patched: { url: string; body: unknown } | null;
 let uploaded: string | null;
 let calls: string[];
 let failUpload = false;
+let holdUpload: Promise<void> | null = null;
 
 beforeEach(() => {
   patched = null;
   uploaded = null;
   calls = [];
   failUpload = false;
+  holdUpload = null;
   server.use(
+    http.delete('/api/v1/projects/revisions/:rid/files/:fid', ({ params }) => {
+      calls.push(`remove:${params.rid}:${params.fid}`);
+      return new HttpResponse(null, { status: 204 });
+    }),
     http.post('/api/v1/projects/7/items', async ({ request }) => {
       const body = (await request.json()) as { name: string };
       calls.push(`create:${body.name}`);
@@ -52,6 +61,7 @@ beforeEach(() => {
     }),
     http.post('/api/v1/projects/items/:id/revisions', async ({ params }) => {
       calls.push(`upload:${params.id}`);
+      if (holdUpload) await holdUpload;
       if (failUpload) return HttpResponse.json({ detail: 'boom' }, { status: 500 });
       uploaded = String(params.id);
       return HttpResponse.json({ revision: rev({ id: 9, number: 3 }), warnings: [{ filename: 'b.step', same_as: 'R1' }] }, { status: 201 });
@@ -192,6 +202,42 @@ describe('ProjectFilesPanel', () => {
     await userEvent.click(submit());
     await waitFor(() => expect(calls).toEqual(['create:bracket', 'upload:99', 'upload:99']));
     await waitFor(() => expect(within(section).queryByLabelText('Item name')).not.toBeInTheDocument());
+  });
+
+  it('shows OUTDATED on the collapsed row, and only in the revision block once expanded', async () => {
+    render(<ProjectFilesPanel projectId={7} />);
+    const outdated = /Outdated — based on Support R1/;
+    expect(await screen.findAllByText(outdated)).toHaveLength(1);
+    await userEvent.click(screen.getByRole('button', { name: /Support X1C$/ }));
+    expect(screen.getAllByText(outdated)).toHaveLength(1);
+    expect(within(screen.getByTestId('revision-3')).getByText(outdated)).toBeInTheDocument();
+  });
+
+  it('asks before removing a file from a revision', async () => {
+    render(<ProjectFilesPanel projectId={7} />);
+    await userEvent.click(await screen.findByRole('button', { name: /Gabarit$/ }));
+    await userEvent.click(within(screen.getByTestId('revision-4')).getByRole('button', { name: 'Remove gabarit.pdf' }));
+    expect(screen.getByText('Remove gabarit.pdf from Gabarit R1? The file moves to the project trash.')).toBeInTheDocument();
+    expect(calls).toEqual([]);
+    await userEvent.click(screen.getByRole('button', { name: 'Remove' }));
+    await waitFor(() => expect(calls).toEqual(['remove:4:71']));
+  });
+
+  it('shows a busy state and blocks new uploads on an item while one runs', async () => {
+    let release!: () => void;
+    holdUpload = new Promise<void>((r) => { release = r; });
+    render(<ProjectFilesPanel projectId={7} />);
+    await screen.findByText('Support');
+    await userEvent.upload(screen.getByTestId('new-revision-input-20'), new File(['x'], 'b.step'));
+    const row = screen.getByRole('button', { name: /Support$/ }).closest('li')!;
+    expect(await within(row).findByText('Uploading…')).toBeInTheDocument();
+    expect(within(row).getByRole('button', { name: 'New revision' })).toBeDisabled();
+    drop(row, 'again.stl');
+    drop(sectionOf('Modeling'), 'Support.stl');
+    expect(calls).toEqual(['upload:20']);
+    release();
+    await waitFor(() => expect(within(row).queryByText('Uploading…')).not.toBeInTheDocument());
+    expect(within(row).getByRole('button', { name: 'New revision' })).toBeEnabled();
   });
 
   it('shows the upload failure toast', async () => {

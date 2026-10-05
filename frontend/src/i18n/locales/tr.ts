@@ -9921,6 +9921,8 @@ export default {
       newRevision: 'Yeni revizyon',
       addFiles: 'Dosya ekle',
       removeFile: '{{name}} dosyasını kaldır',
+      remove: 'Kaldır',
+      confirmRemoveFile: '{{name}} dosyası {{label}} revizyonundan kaldırılsın mı? Dosya proje çöp kutusuna taşınır.',
       statusLabel: 'Durum',
       statusWip: 'Devam ediyor',
       statusValide: 'Onaylandı',

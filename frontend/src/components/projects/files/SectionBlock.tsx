@@ -43,7 +43,7 @@ export function SectionBlock({ section, items, derivedOptions, actions }: Props)
     const key = itemNameKey(itemName);
     const existing = items.find((i) => i.name_key === key);
     if (existing) {
-      await actions.uploadRevision(existing.id, dropped);
+      if (!actions.isBusy(existing.id)) await actions.uploadRevision(existing.id, dropped);
       return;
     }
     const id = await actions.createItem(section, itemName);

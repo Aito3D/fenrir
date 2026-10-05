@@ -10020,6 +10020,8 @@ export default {
       newRevision: 'Nieuwe revisie',
       addFiles: 'Bestanden toevoegen',
       removeFile: '{{name}} verwijderen',
+      remove: 'Verwijderen',
+      confirmRemoveFile: '{{name}} uit {{label}} verwijderen? Het bestand gaat naar de prullenbak van het project.',
       statusLabel: 'Status',
       statusWip: 'In uitvoering',
       statusValide: 'Goedgekeurd',

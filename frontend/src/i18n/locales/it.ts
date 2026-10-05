@@ -9981,6 +9981,8 @@ export default {
       newRevision: 'Nuova revisione',
       addFiles: 'Aggiungi file',
       removeFile: 'Rimuovi {{name}}',
+      remove: 'Rimuovi',
+      confirmRemoveFile: 'Rimuovere {{name}} da {{label}}? Il file viene spostato nel cestino del progetto.',
       statusLabel: 'Stato',
       statusWip: 'In corso',
       statusValide: 'Approvato',

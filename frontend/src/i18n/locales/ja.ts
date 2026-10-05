@@ -9995,6 +9995,8 @@ export default {
       newRevision: '新しいリビジョン',
       addFiles: 'ファイルを追加',
       removeFile: '{{name}}を削除',
+      remove: '削除',
+      confirmRemoveFile: '{{label}}から{{name}}を削除しますか？ファイルはプロジェクトのゴミ箱に移動します。',
       statusLabel: 'ステータス',
       statusWip: '作業中',
       statusValide: '承認済み',

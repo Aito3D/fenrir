@@ -9613,6 +9613,8 @@ export default {
       newRevision: '새 리비전',
       addFiles: '파일 추가',
       removeFile: '{{name}} 제거',
+      remove: '제거',
+      confirmRemoveFile: '{{label}}에서 {{name}}을(를) 제거할까요? 파일은 프로젝트 휴지통으로 이동합니다.',
       statusLabel: '상태',
       statusWip: '진행 중',
       statusValide: '승인됨',

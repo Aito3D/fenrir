@@ -9979,6 +9979,8 @@ export default {
       newRevision: '新版本',
       addFiles: '新增檔案',
       removeFile: '移除 {{name}}',
+      remove: '移除',
+      confirmRemoveFile: '要從 {{label}} 中移除 {{name}} 嗎？檔案將移至專案資源回收筒。',
       statusLabel: '狀態',
       statusWip: '進行中',
       statusValide: '已核准',

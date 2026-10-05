@@ -10020,6 +10020,8 @@ errors: {
       newRevision: 'Ny revision',
       addFiles: 'Lägg till filer',
       removeFile: 'Ta bort {{name}}',
+      remove: 'Ta bort',
+      confirmRemoveFile: 'Ta bort {{name}} från {{label}}? Filen flyttas till projektets papperskorg.',
       statusLabel: 'Status',
       statusWip: 'Pågående',
       statusValide: 'Godkänd',

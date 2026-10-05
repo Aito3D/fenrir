@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { api } from '../../../api/client';
@@ -9,6 +10,21 @@ export function useFileActions(projectId: number) {
   const { t } = useTranslation();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
+  // Items with an upload in flight: their upload and drop actions are off meanwhile.
+  const [busyItems, setBusyItems] = useState<ReadonlySet<number>>(() => new Set());
+
+  const whileBusy = async <T,>(itemId: number, fn: () => Promise<T>): Promise<T> => {
+    setBusyItems((prev) => new Set(prev).add(itemId));
+    try {
+      return await fn();
+    } finally {
+      setBusyItems((prev) => {
+        const next = new Set(prev);
+        next.delete(itemId);
+        return next;
+      });
+    }
+  };
 
   const warn = (warnings: DuplicateWarning[]) =>
     warnings.forEach((w) =>
@@ -31,20 +47,25 @@ export function useFileActions(projectId: number) {
 
   /** True once the revision is uploaded. */
   const uploadRevision = (itemId: number, files: File[]) =>
-    run(async () => {
-      const res = await api.uploadProjectRevision(itemId, files);
-      warn(res.warnings);
-      return true;
-    }, upload);
+    whileBusy(itemId, () =>
+      run(async () => {
+        const res = await api.uploadProjectRevision(itemId, files);
+        warn(res.warnings);
+        return true;
+      }, upload),
+    );
 
   return {
+    isBusy: (itemId: number) => busyItems.has(itemId),
     uploadRevision,
     /** Creates an empty item; resolves to its id. Upload with `uploadRevision`, so a failed upload
      * is retried on the same item instead of creating it again. */
     createItem: (section: ProjectSection, name: string) =>
       run(async () => (await api.createProjectItem(projectId, section, name)).id, save),
-    addFiles: (revisionId: number, files: File[]) =>
-      run(async () => warn((await api.addProjectRevisionFiles(revisionId, files)).warnings), upload),
+    addFiles: (itemId: number, revisionId: number, files: File[]) =>
+      whileBusy(itemId, () =>
+        run(async () => warn((await api.addProjectRevisionFiles(revisionId, files)).warnings), upload),
+      ),
     removeFile: (revisionId: number, fileId: number) => run(() => api.removeProjectRevisionFile(revisionId, fileId), save),
     setStatus: (revisionId: number, status: RevisionStatus) => run(() => api.updateProjectRevision(revisionId, { status }), save),
     setNote: (revisionId: number, note: string | null) => run(() => api.updateProjectRevision(revisionId, { note }), save),

@@ -9981,6 +9981,8 @@ export default {
       newRevision: 'Nova revisão',
       addFiles: 'Adicionar arquivos',
       removeFile: 'Remover {{name}}',
+      remove: 'Remover',
+      confirmRemoveFile: 'Remover {{name}} de {{label}}? O arquivo vai para a lixeira do projeto.',
       statusLabel: 'Status',
       statusWip: 'Em andamento',
       statusValide: 'Aprovado',
