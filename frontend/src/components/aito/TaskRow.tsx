@@ -149,6 +149,9 @@ export function TaskRow({
   const sectionSummaries = link?.project
     ? (link.sections as Partial<Record<ServiceId, SectionRevisionSummary[]>>)
     : undefined;
+  const printCounts = link?.project
+    ? { printed: link.printed, rejected: link.rejected, queued: link.queued, target: link.target }
+    : undefined;
   // A control that greys out under the lock gets the reason as a tooltip —
   // one wrapper per control, since a disabled button cannot take focus and
   // the wrapper is what keyboard users land on. Unlocked, the control is
@@ -343,7 +346,13 @@ export function TaskRow({
             {editing ? (
               !collapsed && <TaskStepFields task={task} onChange={onChange} disabled={pending} />
             ) : (
-              <TaskStepList task={task} onChange={onChange} canTick={canTick} sectionSummaries={sectionSummaries} />
+              <TaskStepList
+                task={task}
+                onChange={onChange}
+                canTick={canTick}
+                sectionSummaries={sectionSummaries}
+                printCounts={printCounts}
+              />
             )}
           </div>
         </div>

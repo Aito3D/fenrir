@@ -8,7 +8,7 @@ import { ConfirmModal } from '../../ConfirmModal';
 import { ModelViewerModal } from '../../ModelViewerModal';
 import { inputCls, focusRingCls } from '../../formStyles';
 import type { FileActions } from './useFileActions';
-import { PREVIEWABLE_TYPES, STATUS_CHIP_CLS, STATUS_LABEL_KEYS, chipBase, isPrintableFile } from './filesUi';
+import { PREVIEWABLE_TYPES, STATUS_CHIP_CLS, STATUS_LABEL_KEYS, chipBase, isPrintableFile, printProfileLine } from './filesUi';
 import { PrintRevisionFlow } from '../print/PrintRevisionFlow';
 
 export interface DerivedOption { id: number; label: string }
@@ -45,11 +45,7 @@ export function RevisionBlock({ item, revision, derivedOptions, actions }: Props
   const label = `R${revision.number}`;
   const editable = revision.status === 'wip' && !revision.used;
   const pp = revision.print_profile as Record<string, unknown> | null;
-  const profileLine = pp
-    ? [pp.printer_model, pp.nozzle_diameter ? `${pp.nozzle_diameter} mm` : null, pp.layer_height ? `${pp.layer_height} mm` : null,
-        Array.isArray(pp.filament_types) ? pp.filament_types.join(', ') : null]
-        .filter(Boolean).join(' · ')
-    : '';
+  const profileLine = printProfileLine(pp);
   const slicer = [revision.slicer_name, revision.slicer_version].filter(Boolean).join(' ');
   const newer = revision.outdated_by;
   const src = revision.derived_from;

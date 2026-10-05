@@ -31,3 +31,16 @@ export function isPrintableFile(filename: string): boolean {
   const name = filename.toLowerCase();
   return name.endsWith('.3mf') || name.endsWith('.gcode');
 }
+
+/** One-line print profile summary: `X1C · 0.4 mm · 0.2 mm · PETG` ('' = none). */
+export function printProfileLine(profile: Record<string, unknown> | null): string {
+  if (!profile) return '';
+  return [
+    profile.printer_model,
+    profile.nozzle_diameter ? `${profile.nozzle_diameter} mm` : null,
+    profile.layer_height ? `${profile.layer_height} mm` : null,
+    Array.isArray(profile.filament_types) ? profile.filament_types.join(', ') : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}

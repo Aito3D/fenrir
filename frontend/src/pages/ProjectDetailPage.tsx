@@ -115,6 +115,13 @@ function StatCard({
   );
 }
 
+// Fenrir: which revision (and order) a print came from — tile caption and tooltip.
+function revisionCaption(archive: Archive, t: TFunction): string {
+  return [archive.revision_label, archive.order_id != null ? t('projectsPdm.aito.orderLabel', { id: archive.order_id }) : null]
+    .filter(Boolean)
+    .join(' · ');
+}
+
 function ArchiveGrid({ archives, t }: { archives: Archive[]; t: TFunction }) {
   if (archives.length === 0) {
     return (
@@ -131,6 +138,7 @@ function ArchiveGrid({ archives, t }: { archives: Archive[]; t: TFunction }) {
         <Link
           key={archive.id}
           to={`/archives?search=${encodeURIComponent(archive.print_name || '')}`}
+          title={archive.revision_label ? `${archive.print_name || 'Unknown'} · ${revisionCaption(archive, t)}` : undefined}
           className="group relative aspect-square rounded-lg bg-bambu-dark border border-bambu-dark-tertiary overflow-hidden hover:border-bambu-green transition-colors"
         >
           {archive.thumbnail_path ? (
@@ -160,6 +168,11 @@ function ArchiveGrid({ archives, t }: { archives: Archive[]; t: TFunction }) {
           {/* Name overlay on hover */}
           <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-2 opacity-0 group-hover:opacity-100 transition-opacity">
             <p className="text-xs text-white truncate">{archive.print_name || 'Unknown'}</p>
+            {archive.revision_label && (
+              <p data-testid={`archive-revision-${archive.id}`} className="text-[10px] text-white/80 truncate">
+                {revisionCaption(archive, t)}
+              </p>
+            )}
           </div>
         </Link>
       ))}
