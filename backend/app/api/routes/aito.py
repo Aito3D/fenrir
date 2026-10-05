@@ -5647,17 +5647,35 @@ async def merge_project(
     next_position = (highest + 1) if highest is not None else 0
     keep_ticks = target.quote_status == "accepted"
     copied_fields = list(AitoTaskBase.model_fields)
+    copies: list[tuple[int, AitoTask]] = []  # Fenrir: (source task id, its copy) for the PDM rows below
     for offset, row in enumerate(source_tasks):
         fields = {name: getattr(row, name) for name in copied_fields}
         for service in SERVICES:
             fields[f"{service}_done"] = getattr(row, f"{service}_done") if keep_ticks else False
-        db.add(AitoTask(project_id=project_id, position=next_position + offset, **fields))
+        # Fenrir: the PDM project link travels with the work (not an API field).
+        copy = AitoTask(
+            project_id=project_id, position=next_position + offset, linked_project_id=row.linked_project_id, **fields
+        )
+        db.add(copy)
+        copies.append((row.id, copy))
 
     was_pending = target.quote_sync_state == "pending"
     _mark_pending_if_ours(target)
     source.status = "deleted"
     _mark_pending_if_ours(source)
     await db.flush()  # so _summary_for's SELECT sees the copies
+    # Fenrir: what the client got stays with the work — each copy gets the
+    # source task's delivery rows (the source keeps its own, like its tasks).
+    if copies:
+        copy_by_source = {source_id: copy.id for source_id, copy in copies}
+        delivered = await db.execute(select(AitoTaskDelivery).where(AitoTaskDelivery.task_id.in_(list(copy_by_source))))
+        db.add_all(
+            AitoTaskDelivery(
+                task_id=copy_by_source[d.task_id], revision_id=d.revision_id, created_by_id=d.created_by_id
+            )
+            for d in delivered.scalars()
+        )
+        await db.flush()
     actor = _actor(current_user)
     await record(
         db,

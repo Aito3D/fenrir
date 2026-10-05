@@ -6,6 +6,8 @@ from sqlalchemy import select
 
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
+from backend.app.models.aito_task_delivery import AitoTaskDelivery
+from backend.app.models.project import Project
 
 
 async def _create_with_tasks(client, tasks, **overrides):
@@ -187,3 +189,36 @@ async def test_merge_tells_the_story_on_both_timelines(async_client, db_session)
     # The copied rows are real AitoTask rows on the target, not references.
     rows = (await db_session.execute(select(AitoTask).where(AitoTask.project_id == target["id"]))).scalars().all()
     assert len(rows) == 2
+
+
+@pytest.mark.asyncio
+async def test_merge_keeps_the_project_link_and_deliveries_with_the_work(async_client, db_session):
+    """Fenrir PDM: the copied task stays linked to its project and keeps the
+    revisions it delivered; the trashed source keeps its own rows (copy, not move)."""
+    target = await _create_with_tasks(async_client, [{"title": "Existing"}])
+    source = await _create_with_tasks(async_client, [{"title": "Linked part"}], description="Source card")
+    project = Project(name="Support")
+    db_session.add(project)
+    await db_session.flush()
+    source_task = (await db_session.execute(select(AitoTask).where(AitoTask.project_id == source["id"]))).scalar_one()
+    source_task.linked_project_id = project.id
+    db_session.add(AitoTaskDelivery(task_id=source_task.id, revision_id=4242))
+    await db_session.commit()
+
+    resp = await _merge(async_client, target["id"], source["id"])
+    assert resp.status_code == 200, resp.text
+
+    copied = (
+        await db_session.execute(
+            select(AitoTask).where(AitoTask.project_id == target["id"], AitoTask.title == "Linked part")
+        )
+    ).scalar_one()
+    assert copied.linked_project_id == project.id
+    delivered = (
+        await db_session.execute(select(AitoTaskDelivery.revision_id).where(AitoTaskDelivery.task_id == copied.id))
+    ).scalars()
+    assert list(delivered) == [4242]
+    kept = (
+        await db_session.execute(select(AitoTaskDelivery.revision_id).where(AitoTaskDelivery.task_id == source_task.id))
+    ).scalars()
+    assert list(kept) == [4242]
