@@ -319,6 +319,7 @@ async def order_links(db: AsyncSession, order_id: int) -> OrderProjectLinks:
         result.append(
             TaskProjectLink(
                 task_id=task.id,
+                task_title=task.title,
                 project=LinkedProjectRef(id=project.id, code=project.code, name=project.name) if project else None,
                 sections=dict(sections_by_project.get(project.id, {})) if project else {},
                 deliveries=deliveries.get(task.id, []),

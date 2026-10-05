@@ -1263,7 +1263,7 @@ export interface DuplicateWarning { filename: string; same_as: string }
 
 export interface LinkedProjectRef { id: number; code: string | null; name: string }
 export interface SectionRevisionSummary { item_id: number; item_name: string; number: number; status: string }
-export interface TaskProjectLink { task_id: number; project: LinkedProjectRef | null; sections: Record<string, SectionRevisionSummary[]>; deliveries: number[] }
+export interface TaskProjectLink { task_id: number; task_title: string | null; project: LinkedProjectRef | null; sections: Record<string, SectionRevisionSummary[]>; deliveries: number[] }
 export interface OrderProjectLinks { order_id: number; tasks: TaskProjectLink[] }
 export interface ProjectSuggestion { id: number; code: string | null; name: string; reason: 'same_client' | 'similar_title' }
 export interface TaskCreateProjectRequest { name: string; description?: string | null; tag_ids?: number[] | null; new_tag_names?: string[] | null }

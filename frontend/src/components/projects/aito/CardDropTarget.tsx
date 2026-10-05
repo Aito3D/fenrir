@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { DragEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Loader2 } from 'lucide-react';
@@ -24,13 +24,10 @@ interface Choice {
  *  Spread `handlers` and `className` on the shell and render `overlay` inside it. */
 export function useCardDrop({
   orderId,
-  taskTitles,
   onExpand,
   disabled = false,
 }: {
   orderId: number;
-  /** Task titles in card order, to label the chooser. */
-  taskTitles: string[];
   onExpand?: () => void;
   disabled?: boolean;
 }) {
@@ -41,6 +38,17 @@ export function useCardDrop({
   const [dragOver, setDragOver] = useState(false);
   const [busy, setBusy] = useState(false);
   const [choices, setChoices] = useState<Choice[] | null>(null);
+  const chooserRef = useRef<HTMLDivElement>(null);
+  const chooserOpen = choices !== null;
+  // Outside press dismisses the chooser and forgets the pending files.
+  useEffect(() => {
+    if (!chooserOpen) return;
+    const close = (e: PointerEvent) => {
+      if (!chooserRef.current?.contains(e.target as Node)) setChoices(null);
+    };
+    document.addEventListener('pointerdown', close);
+    return () => document.removeEventListener('pointerdown', close);
+  }, [chooserOpen]);
   const canDrop = !disabled && hasPermission('aito:update') && hasPermission('projects:update');
 
   const send = async (taskId: number, project: LinkedProjectRef, files: File[]) => {
@@ -73,9 +81,9 @@ export function useCardDrop({
       return;
     }
     setChoices(
-      links.map((l, i) => ({
+      links.map((l) => ({
         taskId: l.task_id,
-        title: taskTitles.length === links.length ? taskTitles[i] : (l.project as LinkedProjectRef).name,
+        title: l.task_title?.trim() || `#${l.task_id}`,
         project: l.project as LinkedProjectRef,
         files,
       })),
@@ -114,6 +122,7 @@ export function useCardDrop({
       )}
       {choices && (
         <div
+          ref={chooserRef}
           role="dialog"
           aria-label={t('projectsPdm.aito.dropChooseTask')}
           className="absolute inset-x-2 top-8 z-40 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary p-2 shadow-2xl"
@@ -138,7 +147,7 @@ export function useCardDrop({
                     void send(c.taskId, c.project, c.files);
                   }}
                 >
-                  <span className="truncate">{c.title || c.project.name}</span>
+                  <span className="truncate">{c.title}</span>
                   <ProjectCodeChip code={c.project.code} />
                 </button>
               </li>

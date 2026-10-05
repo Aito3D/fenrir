@@ -303,7 +303,6 @@ export function CardView({
 
   const cardDrop = useCardDrop({
     orderId: project.id,
-    taskTitles: taskSteps.map((step) => step.title?.trim() || ''),
     onExpand,
     disabled: overlay || placeholder,
   });

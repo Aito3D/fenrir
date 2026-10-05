@@ -73,8 +73,11 @@ const project: AitoProject = {
 };
 
 const ORDER = project.id;
-const link = (task_id: number, id: number, code: string) => ({
-  task_id, project: { id, code, name: `Project ${code}` }, sections: {}, deliveries: [] as number[],
+const link = (task_id: number, id: number, code: string, task_title: string | null = `Task ${task_id}`) => ({
+  task_id, task_title, project: { id, code, name: `Project ${code}` }, sections: {}, deliveries: [] as number[],
+});
+const unlinkedTask = (task_id: number, task_title: string) => ({
+  task_id, task_title, project: null, sections: {}, deliveries: [] as number[],
 });
 const fileDrop = () => ({ dataTransfer: { files: [new File(['x'], 'part.step')], types: ['Files'] } });
 
@@ -114,8 +117,15 @@ describe('card project chips', () => {
 
   it('shows no chips on a placeholder or overlay card', async () => {
     codes = { [ORDER]: ['P-0001'] };
-    render(<><CardView project={project} placeholder /><CardView project={project} overlay /></>);
-    await new Promise((r) => setTimeout(r, 50));
+    render(
+      <>
+        <CardView project={{ ...project, id: 99 }} onExpand={() => {}} />
+        <CardView project={project} placeholder />
+        <CardView project={project} overlay />
+      </>,
+    );
+    codes = { [ORDER]: ['P-0001'], 99: ['P-0099'] };
+    await screen.findByText('P-0099');
     expect(screen.queryByText('P-0001')).not.toBeInTheDocument();
   });
 });
@@ -135,13 +145,24 @@ describe('card file drop', () => {
   });
 
   it('several linked tasks ask which, then post to the picked one', async () => {
-    links = [link(11, 7, 'P-0007'), link(12, 8, 'P-0008')];
+    links = [link(11, 7, 'P-0007', 'Bracket'), unlinkedTask(13, 'Loose'), link(12, 8, 'P-0008', 'Clip')];
     render(<CardView project={project} onExpand={() => {}} />);
     fireEvent.drop(zone(), fileDrop());
     const chooser = await screen.findByRole('dialog', { name: 'Which task are these files for?' });
     expect(posted).toEqual([]);
+    expect(within(chooser).getAllByRole('button').map((b) => b.textContent)).toEqual(['BracketP-0007', 'ClipP-0008']);
     await userEvent.click(within(chooser).getByRole('button', { name: /Clip/ }));
     await waitFor(() => expect(posted).toEqual(['12']));
+  });
+
+  it('a press outside the chooser closes it without uploading', async () => {
+    links = [link(11, 7, 'P-0007'), link(12, 8, 'P-0008')];
+    render(<CardView project={project} onExpand={() => {}} />);
+    fireEvent.drop(zone(), fileDrop());
+    await screen.findByRole('dialog', { name: 'Which task are these files for?' });
+    fireEvent.pointerDown(document.body);
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(posted).toEqual([]);
   });
 
   it('no linked task toasts and opens the card', async () => {

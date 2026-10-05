@@ -387,6 +387,8 @@ async def test_order_links_sections_and_deliveries(db_session):
     assert result.order_id == order.id
     by_task = {t.task_id: t for t in result.tasks}
     assert set(by_task) == {linked.id, unlinked.id}
+    assert by_task[unlinked.id].task_title == "Libre"
+    assert by_task[linked.id].task_title == "Lié"
     assert by_task[unlinked.id].project is None
     assert by_task[unlinked.id].sections == {}
     assert by_task[unlinked.id].deliveries == []

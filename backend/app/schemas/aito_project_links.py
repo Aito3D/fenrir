@@ -23,6 +23,7 @@ class SectionRevisionSummary(BaseModel):
 
 class TaskProjectLink(BaseModel):
     task_id: int
+    task_title: str | None = None
     project: LinkedProjectRef | None
     # section -> newest revision of up to three items, newest activity first.
     sections: dict[str, list[SectionRevisionSummary]]
