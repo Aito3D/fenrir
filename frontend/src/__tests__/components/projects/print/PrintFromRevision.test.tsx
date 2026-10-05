@@ -167,6 +167,31 @@ describe('Print from a project revision', () => {
     await waitFor(() => expect(ordersGets).toBeGreaterThan(ordersBefore));
   }, 20000);
 
+  it('shows the picker busy while the orders load, then preselects the only order', async () => {
+    orders = [order({ task_id: 12 })];
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    server.use(
+      http.get('/api/v1/projects/7/orders', async () => {
+        await gate;
+        return HttpResponse.json({ orders });
+      }),
+    );
+    const user = userEvent.setup();
+    const r3 = await openPrintRevision(user);
+    await user.click(within(r3).getAllByRole('button', { name: /^Print/ })[0]);
+
+    const dialog = await screen.findByRole('dialog', { name: 'Which order is this print for?' });
+    expect(within(dialog).getByRole('status')).toHaveTextContent('Loading...');
+    expect(within(dialog).queryAllByRole('radio')).toHaveLength(0);
+    expect(within(dialog).getByRole('button', { name: 'Confirm' })).toBeDisabled();
+
+    release();
+    expect(await within(dialog).findByRole('radio', { name: 'Order #41 — ACME SARL — Support' })).toBeChecked();
+    expect(within(dialog).queryByRole('status')).not.toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Confirm' })).toBeEnabled();
+  }, 20000);
+
   it('"None" sends a null task', async () => {
     orders = [order({ task_id: 12 }), order({ task_id: 14, order_id: 42, task_title: 'Bras', client_name: 'Moana' })];
     const user = userEvent.setup();

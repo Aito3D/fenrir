@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { ProjectOrderTask } from '../../../api/client';
 import { Button } from '../../Button';
@@ -13,15 +14,20 @@ interface Props {
   orders: ProjectOrderTask[];
   /** The orders could not be loaded: say so; only "None" is offered. */
   unavailable?: boolean;
+  /** The orders are still loading: a busy shell, nothing to pick yet. */
+  loading?: boolean;
   onConfirm: (taskId: number | null) => void;
   onCancel: () => void;
 }
 
 /** Which order a revision print is for: each open order's task, plus "None".
- *  A single open order comes preselected; confirming is still one click. */
-export function OrderPickerDialog({ orders, unavailable = false, onConfirm, onCancel }: Props) {
+ *  A single open order comes preselected (also when it arrives after a busy
+ *  shell); confirming is still one click. */
+export function OrderPickerDialog({ orders, unavailable = false, loading = false, onConfirm, onCancel }: Props) {
   const { t } = useTranslation();
-  const [choice, setChoice] = useState<Choice>(orders.length === 1 ? orders[0].task_id : null);
+  // undefined = nothing picked yet, so the preselection follows `orders`.
+  const [picked, setChoice] = useState<Choice | undefined>(undefined);
+  const choice: Choice = loading ? null : picked !== undefined ? picked : orders.length === 1 ? orders[0].task_id : null;
   const dialogRef = useRef<HTMLFormElement>(null);
   // Escape closes this picker only, never the page or a host panel under it.
   useIsolatedEscape(onCancel, dialogRef);
@@ -51,35 +57,42 @@ export function OrderPickerDialog({ orders, unavailable = false, onConfirm, onCa
             {t('projectsPdm.print.ordersUnavailable')}
           </p>
         )}
-        <fieldset className="max-h-[50vh] space-y-2 overflow-y-auto">
-          <legend className="sr-only">{title}</legend>
-          {orders.map((o) => (
-            <label key={o.task_id} className={rowCls}>
+        {loading ? (
+          <p role="status" className="flex min-h-[44px] items-center gap-2 px-3 text-sm text-bambu-gray-light">
+            <Loader2 className="h-4 w-4 animate-spin text-bambu-green" aria-hidden="true" />
+            {t('common.loading')}
+          </p>
+        ) : (
+          <fieldset className="max-h-[50vh] space-y-2 overflow-y-auto">
+            <legend className="sr-only">{title}</legend>
+            {orders.map((o) => (
+              <label key={o.task_id} className={rowCls}>
+                <input
+                  type="radio"
+                  name="print-order"
+                  checked={choice === o.task_id}
+                  onChange={() => setChoice(o.task_id)}
+                  className="accent-bambu-green"
+                />
+                <span className="min-w-0 break-words">
+                  {[t('projectsPdm.aito.orderLabel', { id: o.order_id }), o.client_name, o.task_title || o.order_description]
+                    .filter(Boolean)
+                    .join(' — ')}
+                </span>
+              </label>
+            ))}
+            <label className={rowCls}>
               <input
                 type="radio"
                 name="print-order"
-                checked={choice === o.task_id}
-                onChange={() => setChoice(o.task_id)}
+                checked={choice === 'none'}
+                onChange={() => setChoice('none')}
                 className="accent-bambu-green"
               />
-              <span className="min-w-0 break-words">
-                {[t('projectsPdm.aito.orderLabel', { id: o.order_id }), o.client_name, o.task_title || o.order_description]
-                  .filter(Boolean)
-                  .join(' — ')}
-              </span>
+              <span className="text-bambu-gray-light">{t('projectsPdm.print.noOrder')}</span>
             </label>
-          ))}
-          <label className={rowCls}>
-            <input
-              type="radio"
-              name="print-order"
-              checked={choice === 'none'}
-              onChange={() => setChoice('none')}
-              className="accent-bambu-green"
-            />
-            <span className="text-bambu-gray-light">{t('projectsPdm.print.noOrder')}</span>
-          </label>
-        </fieldset>
+          </fieldset>
+        )}
         <div className="flex justify-end gap-2">
           <Button type="button" variant="secondary" onClick={onCancel}>
             {t('common.cancel')}
