@@ -1282,6 +1282,8 @@ export interface LegacyMigrationStatus {
   current: { project_id: number; code: string | null } | null;
   failures: { project_id: number; code: string | null; error: string }[];
   pending: number;
+  /** The last finished run since the server started (projects migrated, failures not counted). */
+  last_run?: { projects: number; files_moved: number; files_copied: number; finished_at: string } | null;
 }
 export interface ProjectTreeResponse { project_id: number; code: string | null; sections: { section: ProjectSection; items: ProjectItemOut[] }[] }
 export interface DuplicateWarning { filename: string; same_as: string }

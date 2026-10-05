@@ -23,29 +23,63 @@ type ItemChoice = 'auto' | 'new' | number;
 interface Props {
   /** The File Manager files to move (the first one drives the suggestions). */
   fileIds: number[];
+  /** The file's name when one file is moved (shown under the title). */
+  fileName?: string;
   onClose: () => void;
   /** After a successful move, before the dialog closes (clears the selection). */
   onMoved?: (result: MoveToProjectResult) => void;
 }
 
-/** One summary line for a move: files moved (copies included), the copy note,
- *  then the skipped count. */
-function moveResultMessage(
-  t: (key: string, opts?: Record<string, unknown>) => string,
-  result: MoveToProjectResult,
-  code: string,
-): string {
+type Translate = (key: string, opts?: Record<string, unknown>) => string;
+
+/** Skip codes from the backend → the short reason shown to the user. Copy
+ *  errors and concurrent changes read the same: try again. */
+const SKIP_REASON_KEYS: Record<string, string> = {
+  not_printable: 'notPrintable',
+  source_missing: 'sourceMissing',
+  already_in_project: 'alreadyInProject',
+  trashed: 'trashed',
+  not_found: 'notFound',
+  not_owner: 'notOwner',
+  copy_failed: 'retry',
+  conflict: 'retry',
+};
+
+/** Why files were skipped: one reason as is, several each with their count
+ *  ("not a 3MF/G-code file (2), file missing on disk (1)"). Unknown codes
+ *  show the backend's own reason. */
+function skipReasons(t: Translate, skipped: MoveToProjectResult['skipped']): string {
+  const counts = new Map<string, number>();
+  for (const s of skipped) {
+    const key = SKIP_REASON_KEYS[s.code];
+    const label = key ? t(`projectsPdm.filing.skipReason.${key}`) : s.reason || s.code;
+    counts.set(label, (counts.get(label) ?? 0) + 1);
+  }
+  if (counts.size === 1) return [...counts.keys()][0];
+  return [...counts.entries()].map(([reason, n]) => `${reason} (${n})`).join(', ');
+}
+
+/** One summary line for a move (the toast shows a single line): files moved
+ *  (copies included), the copy note, then the skipped count and why. */
+function moveResultMessage(t: Translate, result: MoveToProjectResult, code: string): string {
   const filed = result.moved.length + result.copied.length;
   const parts: string[] = [];
   if (filed > 0) parts.push(t('projectsPdm.filing.moved', { count: filed, code }));
   if (result.copied.length > 0) parts.push(t('projectsPdm.filing.copiedNote'));
-  if (result.skipped.length > 0) parts.push(t('projectsPdm.filing.skipped', { count: result.skipped.length }));
+  if (result.skipped.length > 0) {
+    parts.push(
+      t('projectsPdm.filing.skippedWithReasons', {
+        count: result.skipped.length,
+        reasons: skipReasons(t, result.skipped),
+      }),
+    );
+  }
   return parts.join(' · ');
 }
 
 /** File Manager → project: suggestions for the first file, a project search,
  *  then which Impression item the files go into. */
-export function MoveToProjectModal({ fileIds, onClose, onMoved }: Props) {
+export function MoveToProjectModal({ fileIds, fileName, onClose, onMoved }: Props) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
@@ -120,6 +154,8 @@ export function MoveToProjectModal({ fileIds, onClose, onMoved }: Props) {
   const canMove =
     project !== null && !move.isPending && (itemChoice !== 'new' || newItemName.trim() !== '');
   const title = t('projectsPdm.filing.moveTitle');
+  const subject =
+    fileIds.length === 1 && fileName ? fileName : t('projectsPdm.filing.fileCount', { count: fileIds.length });
   const suggestedIds = new Set(suggestions.map((s) => s.project_id));
   const results = debounced ? (search?.items ?? []).filter((p) => !suggestedIds.has(p.id)) : [];
 
@@ -141,7 +177,12 @@ export function MoveToProjectModal({ fileIds, onClose, onMoved }: Props) {
         onClick={(e) => e.stopPropagation()}
         className="flex max-h-[90vh] w-full max-w-lg flex-col gap-4 overflow-y-auto rounded-xl border border-bambu-dark-tertiary bg-bambu-dark-secondary p-5 focus:outline-none animate-modal-in"
       >
-        <h2 className="text-lg font-semibold text-white">{title}</h2>
+        <div className="min-w-0">
+          <h2 className="text-lg font-semibold text-white">{title}</h2>
+          <p className="mt-0.5 truncate text-sm text-bambu-gray" title={subject} data-testid="move-to-project-subject">
+            {subject}
+          </p>
+        </div>
 
         {suggestions.length > 0 && (
           <section className="space-y-1">
@@ -254,8 +295,9 @@ export function MoveToProjectModal({ fileIds, onClose, onMoved }: Props) {
                 value={newItemName}
                 onChange={(e) => setNewItemName(e.target.value)}
                 aria-label={t('projectsPdm.filing.newItem')}
+                placeholder={t('projectsPdm.filing.newItemPlaceholder')}
                 maxLength={200}
-                className="w-full rounded-md border border-bambu-dark-tertiary bg-bambu-dark px-3 py-2 text-sm text-white focus:border-bambu-green focus:outline-none"
+                className="w-full rounded-md border border-bambu-dark-tertiary bg-bambu-dark px-3 py-2 text-sm text-white placeholder:text-bambu-gray focus:border-bambu-green focus:outline-none"
               />
             )}
           </fieldset>

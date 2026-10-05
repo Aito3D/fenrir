@@ -1374,7 +1374,8 @@ function FileCard({ file, isSelected, onSelect, onDelete, onDownload, onPrint, o
           </div>
         )}
         {(file.tags?.length ?? 0) > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1" {...stopRowActivation}>
+          // Fenrir: keep tags clear of the always-visible Move to project button (projects PDM phase 5).
+          <div className={`mt-2 flex flex-wrap gap-1${onMoveToProject && canMoveToProject ? ' pr-16' : ''}`} {...stopRowActivation}>
             {file.tags!.map((tg) => (
               <button
                 key={tg.id}
@@ -4234,6 +4235,7 @@ export function FileManagerPage() {
       {moveToProjectIds && (
         <MoveToProjectModal
           fileIds={moveToProjectIds}
+          fileName={moveToProjectIds.length === 1 ? files.find((f) => f.id === moveToProjectIds[0])?.filename : undefined}
           onClose={() => setMoveToProjectIds(null)}
           onMoved={() => setSelectedFiles([])}
         />

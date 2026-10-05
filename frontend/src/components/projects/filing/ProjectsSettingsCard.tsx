@@ -68,6 +68,7 @@ function ProjectsSettingsCardBody() {
     : (settings?.projects_auto_file_by_code ?? true);
   const running = !!status?.running;
   const pending = status?.pending ?? 0;
+  const lastRun = !running ? status?.last_run : null;
 
   return (
     <Card id="card-projects-filing">
@@ -93,6 +94,16 @@ function ProjectsSettingsCardBody() {
 
         <div className="border-t border-bambu-dark-tertiary pt-4 space-y-3">
           <p className="text-sm font-medium text-white">{t('projectsPdm.filing.migrationTitle')}</p>
+          {lastRun && (
+            <p className="text-sm text-white" data-testid="legacy-migration-last-run">
+              {t('projectsPdm.filing.migrationLastRun', {
+                files: t('projectsPdm.filing.migrationLastRunFiles', {
+                  count: lastRun.files_moved + lastRun.files_copied,
+                }),
+                projects: t('projectsPdm.filing.migrationLastRunProjects', { count: lastRun.projects }),
+              })}
+            </p>
+          )}
           {!status ? (
             <Loader2 className="w-4 h-4 animate-spin text-bambu-gray" />
           ) : running ? (

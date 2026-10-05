@@ -40,15 +40,18 @@ vi.mock('../../contexts/AuthContext', async (importOriginal) => {
 vi.mock('../../components/projects/filing/MoveToProjectModal', () => ({
   MoveToProjectModal: ({
     fileIds,
+    fileName,
     onClose,
     onMoved,
   }: {
     fileIds: number[];
+    fileName?: string;
     onClose: () => void;
     onMoved?: (r: MoveToProjectResult) => void;
   }) => (
     <div data-testid="move-to-project-modal">
       <span data-testid="move-ids">{fileIds.join(',')}</span>
+      <span data-testid="move-name">{fileName ?? ''}</span>
       <button
         type="button"
         onClick={() => {
@@ -168,7 +171,27 @@ describe('FileManagerPage — Move to project', () => {
       await waitFor(() => expect(screen.getByText('bracket.3mf')).toBeInTheDocument());
       await user.click(within(card('bracket.3mf')).getByRole('button', { name: LABEL }));
       expect(await screen.findByTestId('move-ids')).toHaveTextContent(/^1$/);
+      expect(screen.getByTestId('move-name')).toHaveTextContent(/^bracket\.3mf$/);
       expect(screen.queryByText(/1 selected/i)).not.toBeInTheDocument();
+    });
+
+    it('reserves room for the card button in the tag row only when the button renders', async () => {
+      const tags = [
+        { id: 1, name: 'prototype' },
+        { id: 2, name: 'customer' },
+        { id: 3, name: 'test' },
+      ];
+      server.use(
+        http.get('/api/v1/library/files', () => HttpResponse.json(files.map((f) => ({ ...f, tags })))),
+      );
+      render(<FileManagerPage />);
+      await waitFor(() => expect(screen.getByText('bracket.3mf')).toBeInTheDocument());
+      const tagRow = (filename: string) =>
+        within(card(filename)).getAllByRole('button', { name: 'test' })[0].parentElement as HTMLElement;
+      expect(tagRow('bracket.3mf')).toHaveClass('pr-16');
+      expect(tagRow('lid.gcode')).toHaveClass('pr-16');
+      // No Move button on a .stl: the tags keep the full width.
+      expect(tagRow('bracket.stl')).not.toHaveClass('pr-16');
     });
 
     it('the card menu offers the entry on a printable file and opens the modal', async () => {

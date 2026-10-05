@@ -108,6 +108,39 @@ describe('ProjectsSettingsCard', () => {
     expect(screen.getByText('checksum mismatch')).toBeInTheDocument();
   });
 
+  it('shows the last run result after a run finishes', async () => {
+    statuses = [{
+      ...idle(0),
+      last_run: { projects: 2, files_moved: 3, files_copied: 1, finished_at: '2026-10-05T10:00:00' },
+    }];
+    serve();
+    render(<ProjectsSettingsCard />);
+    expect(await screen.findByText('Last run: 4 files moved into 2 projects')).toBeInTheDocument();
+    expect(screen.getByText('Nothing left to move')).toBeInTheDocument();
+  });
+
+  it('uses the singular in the last run result', async () => {
+    statuses = [{
+      ...idle(1, [{ project_id: 3, code: 'P-0003', error: 'disk on fire' }]),
+      last_run: { projects: 1, files_moved: 0, files_copied: 1, finished_at: '2026-10-05T10:00:00' },
+    }];
+    serve();
+    render(<ProjectsSettingsCard />);
+    expect(await screen.findByText('Last run: 1 file moved into 1 project')).toBeInTheDocument();
+    expect(screen.getByText('disk on fire')).toBeInTheDocument();
+  });
+
+  it('hides the last run result while a run is going', async () => {
+    statuses = [{
+      running: true, total: 2, done: 0, current: null, failures: [], pending: 2,
+      last_run: { projects: 2, files_moved: 3, files_copied: 1, finished_at: '2026-10-05T10:00:00' },
+    }];
+    serve();
+    render(<ProjectsSettingsCard />);
+    expect(await screen.findByText(/Moving 0\/2/)).toBeInTheDocument();
+    expect(screen.queryByTestId('legacy-migration-last-run')).not.toBeInTheDocument();
+  });
+
   it('says nothing is left to move', async () => {
     serve();
     render(<ProjectsSettingsCard />);

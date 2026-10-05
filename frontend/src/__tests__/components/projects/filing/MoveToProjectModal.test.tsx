@@ -59,10 +59,10 @@ function serve() {
   );
 }
 
-function renderModal(fileIds = [1, 2]) {
+function renderModal(fileIds = [1, 2], fileName?: string) {
   const onClose = vi.fn();
   const onMoved = vi.fn();
-  render(<MoveToProjectModal fileIds={fileIds} onClose={onClose} onMoved={onMoved} />);
+  render(<MoveToProjectModal fileIds={fileIds} fileName={fileName} onClose={onClose} onMoved={onMoved} />);
   return { onClose, onMoved };
 }
 
@@ -163,7 +163,7 @@ describe('MoveToProjectModal', () => {
     await user.click(screen.getByRole('button', { name: 'Move' }));
     expect(await screen.findByText(/2 files moved to P-0007/)).toBeInTheDocument();
     expect(screen.getByText(/External files are copied; the originals stay where they are/)).toBeInTheDocument();
-    expect(screen.getByText(/1 file skipped/)).toBeInTheDocument();
+    expect(screen.getByText(/1 file skipped: not a 3MF\/G-code file$/)).toBeInTheDocument();
   });
 
   it('reports only skips when nothing moved', async () => {
@@ -172,8 +172,56 @@ describe('MoveToProjectModal', () => {
     renderModal([2, 4]);
     await user.click(await screen.findByRole('button', { name: /Bracket job/ }));
     await user.click(screen.getByRole('button', { name: 'Move' }));
-    expect(await screen.findByText('2 files skipped')).toBeInTheDocument();
+    expect(
+      await screen.findByText('2 files skipped: not a 3MF/G-code file (1), in the trash (1)'),
+    ).toBeInTheDocument();
     expect(screen.queryByText(/moved to/)).not.toBeInTheDocument();
+  });
+
+  it('says why files were skipped, one count per reason; copy errors and conflicts read as retry', async () => {
+    importResult = {
+      moved: [],
+      copied: [],
+      skipped: [
+        { file_id: 1, code: 'not_printable', reason: 'x' },
+        { file_id: 2, code: 'not_printable', reason: 'x' },
+        { file_id: 3, code: 'source_missing', reason: 'x' },
+        { file_id: 4, code: 'already_in_project', reason: 'x' },
+        { file_id: 5, code: 'not_found', reason: 'x' },
+        { file_id: 6, code: 'not_owner', reason: 'x' },
+        { file_id: 7, code: 'copy_failed', reason: 'x' },
+        { file_id: 8, code: 'conflict', reason: 'x' },
+        { file_id: 9, code: 'brand_new_code', reason: 'server says why' },
+      ],
+    };
+    const user = userEvent.setup();
+    renderModal([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    await user.click(await screen.findByRole('button', { name: /Bracket job/ }));
+    await user.click(screen.getByRole('button', { name: 'Move' }));
+    expect(
+      await screen.findByText(
+        '9 files skipped: not a 3MF/G-code file (2), file missing on disk (1), already in a project (1), ' +
+          'file not found (1), not yours (1), could not be copied, try again (2), server says why (1)',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('shows the file name under the title for one file', async () => {
+    renderModal([5], 'bracket_v2.3mf');
+    expect(await screen.findByTestId('move-to-project-subject')).toHaveTextContent('bracket_v2.3mf');
+  });
+
+  it('shows the file count under the title for several files', async () => {
+    renderModal([1, 2, 3]);
+    expect(await screen.findByTestId('move-to-project-subject')).toHaveTextContent('3 files');
+  });
+
+  it('the new item name input has a placeholder', async () => {
+    const user = userEvent.setup();
+    renderModal([5]);
+    await user.click(await screen.findByRole('button', { name: /Other job/ }));
+    await user.click(await screen.findByRole('radio', { name: 'New item…' }));
+    expect(screen.getByRole('textbox', { name: 'New item…' })).toHaveAttribute('placeholder', 'Item name');
   });
 
   it('invalidates the File Manager and project caches', async () => {
