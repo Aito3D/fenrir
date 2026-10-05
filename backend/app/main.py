@@ -89,6 +89,7 @@ from backend.app.api.routes.maintenance import _get_printer_maintenance_internal
 from backend.app.api.routes.support import init_debug_logging
 from backend.app.core.config import APP_VERSION, settings as app_settings
 from backend.app.core.database import async_session, engine, init_db
+from backend.app.core.static_assets import AssetStaticFiles
 from backend.app.core.tasks import spawn_background_task
 from backend.app.core.websocket import ws_manager
 from backend.app.services import kprofile_drift, print_dispatch_context, slot_unlink_grace
@@ -10844,9 +10845,10 @@ app.include_router(spoolbuddy.router, prefix=app_settings.api_prefix)
 
 # Serve static files (React build)
 if app_settings.static_dir.exists() and any(app_settings.static_dir.iterdir()):
+    # Compressed, and cached for good where Vite hashed the name (#3175).
     app.mount(
         "/assets",
-        StaticFiles(directory=app_settings.static_dir / "assets"),
+        AssetStaticFiles(directory=app_settings.static_dir / "assets"),
         name="assets",
     )
     if (app_settings.static_dir / "img").exists():
