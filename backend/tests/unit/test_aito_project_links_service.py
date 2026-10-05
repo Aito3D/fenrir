@@ -156,6 +156,36 @@ async def test_relink_clears_deliveries(db_session):
 
 
 @pytest.mark.asyncio
+async def test_link_to_template_is_400(db_session):
+    template = await _project(db_session, name="Modele", is_template=True)
+    order = await _order(db_session)
+    task = await _task(db_session, order)
+    with pytest.raises(links.LinkError) as exc:
+        await links.link_task(db_session, task, template.id, actor="Paul")
+    assert exc.value.status_code == 400
+    assert task.linked_project_id is None
+
+
+@pytest.mark.asyncio
+async def test_move_between_projects_records_previous(db_session):
+    first = await _project(db_session)
+    second = await _project(db_session, name="Autre")
+    order = await _order(db_session)
+    task = await _task(db_session, order, linked=first.id)
+
+    await links.link_task(db_session, task, second.id, actor="Paul")
+
+    [event] = await _events(db_session, "task.project_linked")
+    assert event.detail == {
+        "project_id": second.id,
+        "code": second.code,
+        "name": "Autre",
+        "previous_project_id": first.id,
+        "previous_code": first.code,
+    }
+
+
+@pytest.mark.asyncio
 async def test_link_to_missing_project_is_404(db_session):
     order = await _order(db_session)
     task = await _task(db_session, order)

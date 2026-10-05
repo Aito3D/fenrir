@@ -23,6 +23,7 @@ from backend.app.core.permissions import Permission
 from backend.app.models.library import LibraryFile
 from backend.app.models.project import Project
 from backend.app.models.user import User
+from backend.app.schemas.aito_project_links import ProjectOrdersResponse
 from backend.app.schemas.project_files import (
     ProjectItemCreate,
     ProjectItemFork,
@@ -33,7 +34,7 @@ from backend.app.schemas.project_files import (
     ProjectTreeResponse,
     RevisionUploadResponse,
 )
-from backend.app.services import project_files as svc
+from backend.app.services import aito_project_links as aito_links, project_files as svc
 
 _UPLOAD_OVERHEAD_BYTES = 8 * 1024
 _upload_permission = require_permission_if_auth_enabled(Permission.PROJECTS_UPDATE)
@@ -118,6 +119,15 @@ async def get_tree(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_READ),
 ):
     return await svc.load_tree(db, await _project(db, project_id))
+
+
+@router.get("/{project_id}/orders", response_model=ProjectOrdersResponse)
+async def get_project_orders(
+    project_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_READ),
+):
+    return await aito_links.orders_for_project(db, (await _project(db, project_id)).id)
 
 
 @router.post("/{project_id}/items", response_model=ProjectItemOut, status_code=201)

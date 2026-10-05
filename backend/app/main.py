@@ -26,6 +26,7 @@ from starlette.responses import Response
 from backend.app.api.routes import (
     aito,
     aito_payments,
+    aito_project_links,
     ams_history,
     announcements,
     api_keys,
@@ -11393,6 +11394,7 @@ app.include_router(auth.router, prefix=app_settings.api_prefix)
 app.include_router(mfa.router, prefix=app_settings.api_prefix)
 app.include_router(bug_report.router, prefix=app_settings.api_prefix)
 app.include_router(calculator.router, prefix=app_settings.api_prefix)
+app.include_router(aito_project_links.router, prefix=app_settings.api_prefix)
 app.include_router(aito.router, prefix=app_settings.api_prefix)
 app.include_router(aito_payments.router, prefix=app_settings.api_prefix)
 app.include_router(inbox.router, prefix=app_settings.api_prefix)

@@ -77,7 +77,10 @@ async def link_task(db: AsyncSession, task: AitoTask, project_id: int | None, *,
     project = await db.get(Project, project_id) if project_id is not None else None
     if project_id is not None and project is None:
         raise LinkError(404, "Project not found")
+    if project is not None and project.is_template:
+        raise LinkError(400, "A template cannot be linked to a task")
 
+    previous = await db.get(Project, previous_id) if previous_id is not None else None
     if previous_id is not None:
         await _clear_deliveries(db, task.id)
     task.linked_project_id = project_id
@@ -85,9 +88,12 @@ async def link_task(db: AsyncSession, task: AitoTask, project_id: int | None, *,
 
     if project is not None:
         kind, detail = "task.project_linked", _project_detail(project.id, project)
+        if previous_id is not None:
+            detail["previous_project_id"] = previous_id
+            detail["previous_code"] = previous.code if previous else None
     else:
         kind = "task.project_unlinked"
-        detail = _project_detail(previous_id, await db.get(Project, previous_id))
+        detail = _project_detail(previous_id, previous)
     await aito_events.record(
         db,
         task.project_id,
