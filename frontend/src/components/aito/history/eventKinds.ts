@@ -78,6 +78,8 @@ export const EVENT_LABEL_KEY: Record<string, string> = {
   'project.revision_added': 'projectsPdm.aito.events.revisionAdded',
   'project.revision_status_changed': 'projectsPdm.aito.events.revisionStatusChanged',
   'project.files_dropped': 'projectsPdm.aito.events.filesDropped',
+  // Phase 4: print traceability.
+  'print.queued_from_revision': 'projectsPdm.print.eventQueued',
 };
 
 /** The transfer labels to use when the event does not say how many tasks moved. */
@@ -122,6 +124,15 @@ export function labelParams(
     return { code: text(detail.code) ?? '—' };
   }
 
+  if (event.kind === 'print.queued_from_revision') {
+    // "{{label}} ×{{copies}} queued": the revision's label and the copy count,
+    // each with a neutral fallback when the server's detail lacks it.
+    return {
+      label: text(detail.revision_label) ?? text(event.subject_label) ?? '—',
+      copies: typeof detail.copies === 'number' ? detail.copies : 1,
+    };
+  }
+
   if (event.kind === 'client.transferred') {
     return {
       from: text(detail.from_name) ?? '—',
@@ -160,6 +171,7 @@ const PDM_KINDS = new Set([
   'project.revision_added',
   'project.revision_status_changed',
   'project.files_dropped',
+  'print.queued_from_revision',
 ]);
 
 const PDM_SECTION_KEY: Record<string, string> = {
@@ -199,7 +211,7 @@ function pdmDetailText(kind: string, detail: Record<string, unknown>, t?: Transl
     return join([code, t ? t('projectsPdm.aito.events.previousProject', { code: previous }) : `← ${previous}`]);
   }
 
-  if (kind === 'task.project_unlinked') return code;
+  if (kind === 'task.project_unlinked' || kind === 'print.queued_from_revision') return code;
 
   if (kind === 'task.deliveries_changed') {
     const added = strings(detail.added);

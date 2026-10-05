@@ -864,6 +864,10 @@ export interface ArchivePrinterMedia {
 export type VerdictSource = 'dialog' | 'link' | 'plate_clear' | 'printer_card' | 'api' | 'reaction';
 
 export interface Archive {
+  // Fenrir: project archive list traceability (GET /projects/{id}/archives)
+  revision_label?: string | null;
+  aito_task_id?: number | null;
+  order_id?: number | null;
   id: number;
   printer_id: number | null;
   project_id: number | null;
@@ -1256,14 +1260,14 @@ export type ProjectSection = 'scan' | 'modelisation' | 'impression' | 'usinage' 
 export type RevisionStatus = 'wip' | 'valide' | 'obsolete';
 export interface RevisionRef { id: number; item_id: number; item_name: string; section: ProjectSection; number: number; status: RevisionStatus }
 export interface ProjectFileOut { id: number; filename: string; file_type: string; file_size: number; file_hash: string | null; has_thumbnail: boolean; created_at: string }
-export interface ProjectRevisionOut { id: number; number: number; status: RevisionStatus; note: string | null; derived_from: RevisionRef | null; outdated_by: RevisionRef | null; print_profile: Record<string, unknown> | null; slicer_name: string | null; slicer_version: string | null; has_snapshot: boolean; used: boolean; files: ProjectFileOut[]; created_by: string | null; created_at: string; status_changed_at: string | null }
+export interface ProjectRevisionOut { id: number; number: number; status: RevisionStatus; note: string | null; derived_from: RevisionRef | null; outdated_by: RevisionRef | null; print_profile: Record<string, unknown> | null; slicer_name: string | null; slicer_version: string | null; has_snapshot: boolean; used: boolean; print_count: number; files: ProjectFileOut[]; created_by: string | null; created_at: string; status_changed_at: string | null }
 export interface ProjectItemOut { id: number; section: ProjectSection; name: string; name_key: string; forked_from: RevisionRef | null; revisions: ProjectRevisionOut[] }
 export interface ProjectTreeResponse { project_id: number; code: string | null; sections: { section: ProjectSection; items: ProjectItemOut[] }[] }
 export interface DuplicateWarning { filename: string; same_as: string }
 
 export interface LinkedProjectRef { id: number; code: string | null; name: string }
 export interface SectionRevisionSummary { item_id: number; item_name: string; number: number; status: string }
-export interface TaskProjectLink { task_id: number; task_title: string | null; project: LinkedProjectRef | null; sections: Record<string, SectionRevisionSummary[]>; deliveries: number[] }
+export interface TaskProjectLink { task_id: number; task_title: string | null; project: LinkedProjectRef | null; sections: Record<string, SectionRevisionSummary[]>; deliveries: number[]; printed: number; rejected: number; queued: number; target: number | null }
 export interface OrderProjectLinks { order_id: number; tasks: TaskProjectLink[] }
 export interface ProjectSuggestion { id: number; code: string | null; name: string; reason: 'same_client' | 'similar_title' }
 export interface TaskCreateProjectRequest { name: string; description?: string | null; tag_ids?: number[] | null; new_tag_names?: string[] | null }
@@ -2772,6 +2776,8 @@ export interface DiscoveredTasmotaDevice {
 // Print Queue types
 export interface PrintQueueItem {
   id: number;
+  revision_id?: number | null;  // Fenrir: the library file's project revision
+  aito_task_id?: number | null;
   printer_id: number | null;  // null = unassigned
   target_model: string | null;  // Target printer model for model-based assignment
   target_location: string | null;  // Target location filter for model-based assignment
@@ -2927,6 +2933,7 @@ export interface PrintBatch {
 }
 
 export interface PrintQueueItemCreate {
+  aito_task_id?: number | null;  // Fenrir: the order task a revision-file print is for (null = internal/test)
   printer_id?: number | null;  // null = unassigned
   target_model?: string | null;  // Target printer model (mutually exclusive with printer_id)
   target_location?: string | null;  // Target location filter (only used with target_model)
