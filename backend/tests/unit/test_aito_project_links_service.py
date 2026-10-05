@@ -518,3 +518,99 @@ async def test_record_on_linked_orders_one_event_per_order(db_session):
     # project travels in the detail instead.
     assert all(e.subject_type is None and e.subject_id is None for e in events)
     assert all(e.detail == {"project_id": project.id, "code": project.code, "section": "impression"} for e in events)
+
+
+# --- file drops ------------------------------------------------------------
+
+
+def _upload(name, data=b"x"):
+    return UploadFile(filename=name, file=io.BytesIO(data))
+
+
+@pytest.mark.parametrize(
+    "name,section",
+    [
+        ("a.ply", "scan"),
+        ("a.obj", "scan"),
+        ("a.e57", "scan"),
+        ("a.xyz", "scan"),
+        ("a.pts", "scan"),
+        ("a.step", "modelisation"),
+        ("a.stp", "modelisation"),
+        ("a.iges", "modelisation"),
+        ("a.igs", "modelisation"),
+        ("a.f3d", "modelisation"),
+        ("a.stl", "modelisation"),
+        ("a.sldprt", "modelisation"),
+        ("a.3mf", "impression"),
+        ("a.gcode", "impression"),
+        ("a.bgcode", "impression"),
+        ("a.gcode.3mf", "impression"),
+        ("A.GCODE.3MF", "impression"),
+        ("a.nc", "usinage"),
+        ("a.tap", "usinage"),
+        ("a.dxf", "usinage"),
+        ("a.pdf", "docs"),
+        ("noext", "docs"),
+    ],
+)
+def test_section_for_filename(name, section):
+    assert links.section_for_filename(name) == section
+
+
+@pytest.mark.parametrize(
+    "name,expected",
+    [
+        ("plate.gcode.3mf", "plate"),
+        ("Plate.GCODE.3MF", "Plate"),
+        ("scan.ply", "scan"),
+        ("a.b.stl", "a.b"),
+        ("noext", "noext"),
+        (".hidden", ".hidden"),
+    ],
+)
+def test_item_name_for_filename(name, expected):
+    assert links.item_name_for_filename(name) == expected
+
+
+@pytest.mark.asyncio
+async def test_drop_files_routes_by_extension_and_existing_name(db_session):
+    project = await _project(db_session)
+    order = await _order(db_session)
+    task = await _task(db_session, order, linked=project.id)
+    item, _rev = await _revision(db_session, project, section="impression", name="Plate")
+    await db_session.commit()
+
+    response = await links.drop_files_on_task(
+        db_session,
+        task,
+        [_upload("plate.gcode.3mf"), _upload("scan.ply"), _upload("scan.obj"), _upload("scan.pdf")],
+        user_id=None,
+        actor="Paul",
+    )
+
+    by_name = {(r.item_name, r.section): r for r in response.results}
+    assert by_name[("Plate", "impression")].item_id == item.id
+    assert by_name[("Plate", "impression")].revision_number == 2
+    assert by_name[("scan", "scan")].revision_number == 1
+    assert sorted(r.filename for r in response.results if r.section == "scan") == ["scan.obj", "scan.ply"]
+    assert by_name[("scan", "docs")].revision_number == 1
+    # two files of the same item name in one drop share ONE revision
+    scan_item_ids = {r.item_id for r in response.results if r.section == "scan"}
+    assert len(scan_item_ids) == 1
+
+    events = await _events(db_session, "project.files_dropped")
+    assert len(events) == 1
+    assert events[0].project_id == order.id
+    assert events[0].detail["project_id"] == project.id
+    assert len(events[0].detail["results"]) == 4
+
+
+@pytest.mark.asyncio
+async def test_drop_files_requires_a_linked_task(db_session):
+    order = await _order(db_session)
+    task = await _task(db_session, order)
+    with pytest.raises(links.LinkError) as err:
+        await links.drop_files_on_task(db_session, task, [_upload("a.stl")], user_id=None, actor=None)
+    assert err.value.status_code == 409
+    assert await _events(db_session, "project.files_dropped") == []

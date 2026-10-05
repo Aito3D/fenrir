@@ -10,9 +10,11 @@ or bump the order's version. Deliberately independent of
 Functions flush, never commit — the route owns the transaction.
 """
 
+import logging
 from collections import defaultdict
 from difflib import SequenceMatcher
 
+from fastapi import UploadFile
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,6 +24,8 @@ from backend.app.models.aito_task_delivery import AitoTaskDelivery
 from backend.app.models.project import Project
 from backend.app.models.project_item import ProjectItem, ProjectRevision
 from backend.app.schemas.aito_project_links import (
+    DropFilesResponse,
+    DroppedFileResult,
     LinkedProjectRef,
     OrderProjectLinks,
     ProjectOrdersResponse,
@@ -31,8 +35,10 @@ from backend.app.schemas.aito_project_links import (
     TaskProjectLink,
 )
 from backend.app.schemas.project_files import RevisionRef
-from backend.app.services import aito_events
+from backend.app.services import aito_events, project_files
 from backend.app.services.project_tags import UnknownTagError, apply_project_tag_input
+
+logger = logging.getLogger(__name__)
 
 SIMILAR_TITLE_THRESHOLD = 0.45
 SECTION_SUMMARY_LIMIT = 3
@@ -427,3 +433,126 @@ async def record_on_linked_orders(
         if event is not None:
             recorded += 1
     return recorded
+
+
+# --- file drops (spec §4.3) -------------------------------------------------
+
+_DROP_SECTIONS = {
+    "scan": (".ply", ".obj", ".e57", ".xyz", ".pts"),
+    "modelisation": (".step", ".stp", ".iges", ".igs", ".f3d", ".stl", ".sldprt"),
+    "impression": (".3mf", ".gcode", ".bgcode"),
+    "usinage": (".nc", ".tap", ".dxf"),
+}
+_SECTION_BY_EXTENSION = {ext: section for section, exts in _DROP_SECTIONS.items() for ext in exts}
+
+
+def section_for_filename(name: str) -> str:
+    """Guess the project section from the extension (``.gcode.3mf`` ends in ``.3mf``); unknown -> docs."""
+    lowered = name.strip().lower()
+    dot = lowered.rfind(".")
+    return _SECTION_BY_EXTENSION.get(lowered[dot:], "docs") if dot >= 0 else "docs"
+
+
+def item_name_for_filename(name: str) -> str:
+    """File name without its extension (``.gcode.3mf`` counted whole); the full name if nothing is left."""
+    stripped = name.strip()
+    if stripped.lower().endswith(".gcode.3mf"):
+        stem = stripped[: -len(".gcode.3mf")]
+    else:
+        stem = stripped.rsplit(".", 1)[0] if "." in stripped else stripped
+    return stem if stem.strip() else stripped
+
+
+def _base_name(upload: UploadFile) -> str:
+    return (upload.filename or "").replace("\\", "/").rsplit("/", 1)[-1]
+
+
+async def _record_drop(
+    db: AsyncSession,
+    order_id: int,
+    project_id: int,
+    code: str | None,
+    results: list[DroppedFileResult],
+    actor: str | None,
+) -> None:
+    sections = sorted({r.section for r in results})
+    await aito_events.record(
+        db,
+        order_id,
+        "project.files_dropped",
+        actor_class=_actor_class(actor),
+        actor_name=actor,
+        subject_label=f"{len(results)} file(s)",
+        detail={
+            "project_id": project_id,
+            "code": code,
+            "sections": sections,
+            "results": [r.model_dump() for r in results],
+        },
+    )
+
+
+async def drop_files_on_task(
+    db: AsyncSession, task: AitoTask, uploads: list[UploadFile], *, user_id: int | None, actor: str | None
+) -> DropFilesResponse:
+    """Drop files on a linked task: each (section, item name) group becomes the next
+    revision of the existing item, or R1 of a new one. Commits.
+
+    Goes through the phase-2 service so streaming-before-DB, per-item locks and
+    cleanup apply. ``add_revision`` rolls the whole session back on failure, so
+    each created item is committed first. If a later group fails, the groups
+    already stored are still recorded on the order before the error propagates."""
+    if task.linked_project_id is None:
+        raise LinkError(409, "Task is not linked to a project")
+    if not uploads:
+        raise LinkError(400, "No files to drop")
+    project = await db.get(Project, task.linked_project_id)
+    if project is None:
+        raise LinkError(409, "Task is not linked to a project")
+    project_id, code, order_id = project.id, project.code, task.project_id
+
+    groups: dict[tuple[str, str], tuple[str, list[UploadFile]]] = {}
+    for upload in uploads:
+        filename = _base_name(upload)
+        name = item_name_for_filename(filename)
+        key = (section_for_filename(filename), project_files._name_key(name))
+        groups.setdefault(key, (name, []))[1].append(upload)
+
+    results: list[DroppedFileResult] = []
+    try:
+        for (section, key), (name, group) in groups.items():
+            item = (
+                await db.execute(
+                    select(ProjectItem).where(
+                        ProjectItem.project_id == project_id,
+                        ProjectItem.section == section,
+                        ProjectItem.name_key == key,
+                    )
+                )
+            ).scalar_one_or_none()
+            if item is None:
+                item = await project_files.create_item(db, project, section=section, name=name, user_id=user_id)
+                await db.commit()
+            item_id, item_name = item.id, item.name
+            revision, _warnings = await project_files.add_revision(
+                db, project, item, group, note=None, derived_from_id=None, user_id=user_id
+            )
+            results.extend(
+                DroppedFileResult(
+                    filename=_base_name(upload),
+                    section=section,
+                    item_id=item_id,
+                    item_name=item_name,
+                    revision_number=revision.number,
+                )
+                for upload in group
+            )
+    finally:
+        if results:
+            try:
+                await _record_drop(db, order_id, project_id, code, results, actor)
+                await db.commit()
+            except Exception:
+                logger.warning("project.files_dropped event failed for order %s", order_id, exc_info=True)
+                await db.rollback()
+    return DropFilesResponse(project_id=project_id, results=results)

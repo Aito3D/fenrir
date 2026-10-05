@@ -7,10 +7,11 @@ metadata: nothing here touches the order's quote state or versioned fields.
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.api.routes.project_files import content_length_capped_route
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
@@ -19,6 +20,7 @@ from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
 from backend.app.models.user import User
 from backend.app.schemas.aito_project_links import (
+    DropFilesResponse,
     OrderProjectLinks,
     ProjectSuggestion,
     TaskCreateProjectRequest,
@@ -26,15 +28,24 @@ from backend.app.schemas.aito_project_links import (
     TaskLinkRequest,
     TaskProjectLink,
 )
-from backend.app.services import aito_project_links as svc
+from backend.app.services import aito_project_links as svc, project_files
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/aito", tags=["aito"])
 
+# The file-drop route: same pre-body Content-Length gate as the project upload routes,
+# authorised with aito:update + projects:update.
+drop_router = APIRouter(
+    prefix="/aito",
+    tags=["aito"],
+    route_class=content_length_capped_route(Permission.AITO_UPDATE, Permission.PROJECTS_UPDATE),
+)
+
 _aito_read = RequirePermissionIfAuthEnabled(Permission.AITO_READ)
 _aito_update = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE)
 _projects_read = RequirePermissionIfAuthEnabled(Permission.PROJECTS_READ)
+_projects_update = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE)
 _projects_create = RequirePermissionIfAuthEnabled(Permission.PROJECTS_CREATE)
 
 
@@ -153,6 +164,28 @@ async def put_task_deliveries(
         await db.rollback()
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
     return await _commit_link(db, task, _actor(user))
+
+
+@drop_router.post("/tasks/{task_id}/files", status_code=201)
+async def drop_task_files(
+    task_id: int,
+    files: list[UploadFile] = File(...),
+    db: AsyncSession = Depends(get_db),
+    user: User | None = _aito_update,
+    __: User | None = _projects_update,
+) -> DropFilesResponse:
+    """Drop files on a linked task: sorted into sections by extension, one revision per item name."""
+    task = await _task(db, task_id)
+    order_id = task.project_id
+    try:
+        response = await svc.drop_files_on_task(db, task, files, user_id=user.id if user else None, actor=_actor(user))
+    except svc.LinkError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    except project_files.ProjectFilesError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    await _broadcast_changed(order_id, _actor(user))
+    return response
 
 
 @router.get("/{order_id}/project-links")

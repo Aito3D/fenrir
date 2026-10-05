@@ -183,3 +183,59 @@ async def test_project_links_codes_and_project_orders(async_client: AsyncClient,
     assert [d["id"] for d in row["deliveries"]] == [revision]
 
     assert (await async_client.get("/api/v1/projects/99999/orders")).status_code == 404
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_drop_files_endpoint(async_client: AsyncClient, db_session):
+    order = await _order(db_session)
+    task = await _task(db_session, order)
+    project = await _project(async_client)
+
+    unlinked = await async_client.post(
+        f"/api/v1/aito/tasks/{task.id}/files", files=[("files", ("a.stl", b"x", "application/octet-stream"))]
+    )
+    assert unlinked.status_code == 409
+
+    await async_client.put(f"/api/v1/aito/tasks/{task.id}/project", json={"project_id": project["id"]})
+    response = await async_client.post(
+        f"/api/v1/aito/tasks/{task.id}/files",
+        files=[("files", ("a.stl", b"x", "application/octet-stream"))],
+    )
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["project_id"] == project["id"]
+    assert body["results"][0]["section"] == "modelisation"
+
+    missing = await async_client.post(
+        "/api/v1/aito/tasks/999999/files", files=[("files", ("a.stl", b"x", "application/octet-stream"))]
+    )
+    assert missing.status_code == 404
+
+    events = (await async_client.get(f"/api/v1/aito/{order.id}/events", params={"depth": "story"})).json()
+    assert [e["kind"] for e in events["events"]].count("project.files_dropped") == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_revision_events_on_every_linked_order(async_client: AsyncClient, db_session):
+    project = await _project(async_client)
+    orders = [await _order(db_session), await _order(db_session)]
+    for order in orders:
+        task = await _task(db_session, order)
+        await async_client.put(f"/api/v1/aito/tasks/{task.id}/project", json={"project_id": project["id"]})
+
+    revision_id = await _revision(async_client, project["id"])
+    status = await async_client.patch(f"/api/v1/projects/revisions/{revision_id}", json={"status": "valide"})
+    assert status.status_code == 200, status.text
+    note_only = await async_client.patch(f"/api/v1/projects/revisions/{revision_id}", json={"note": "n"})
+    assert note_only.status_code == 200
+
+    for order in orders:
+        events = (await async_client.get(f"/api/v1/aito/{order.id}/events", params={"depth": "story"})).json()["events"]
+        added = [e for e in events if e["kind"] == "project.revision_added"]
+        changed = [e for e in events if e["kind"] == "project.revision_status_changed"]
+        assert len(added) == 1
+        assert len(changed) == 1
+        assert changed[0]["detail"]["from"] == "wip"
+        assert changed[0]["detail"]["to"] == "valide"

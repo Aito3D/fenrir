@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import tempfile
 import zipfile
@@ -36,28 +37,39 @@ from backend.app.schemas.project_files import (
 )
 from backend.app.services import aito_project_links as aito_links, project_files as svc
 
+logger = logging.getLogger(__name__)
+
 _UPLOAD_OVERHEAD_BYTES = 8 * 1024
-_upload_permission = require_permission_if_auth_enabled(Permission.PROJECTS_UPDATE)
 
 
-class _ProjectUploadCappedRoute(APIRoute):
-    """Rejects an over-cap multipart body from its Content-Length before Starlette
-    spools it — same gate as the library upload routes (``_ContentLengthCappedRoute``
-    in library.py), authorised with ``projects:update`` instead of ``library:upload``."""
+def content_length_capped_route(*permissions: Permission) -> type[APIRoute]:
+    """A route class that authorises with every one of ``permissions`` and rejects an
+    over-cap multipart body from its Content-Length before Starlette spools it — same
+    gate as the library upload routes (``_ContentLengthCappedRoute`` in library.py),
+    authorised with project permissions instead of ``library:upload``."""
+    checkers = [require_permission_if_auth_enabled(permission) for permission in permissions]
 
-    def get_route_handler(self):
-        original = super().get_route_handler()
+    class _CappedRoute(APIRoute):
+        def get_route_handler(self):
+            original = super().get_route_handler()
 
-        async def handler(request: Request) -> Response:
-            await _upload_permission(await security(request), request.headers.get("x-api-key"))
-            declared = request.headers.get("content-length")
-            if declared and declared.isdigit():
-                cap = settings.library_max_upload_bytes
-                if int(declared) > cap + _UPLOAD_OVERHEAD_BYTES:
-                    raise HTTPException(status_code=413, detail=f"Upload exceeds the maximum size of {cap} bytes")
-            return await original(request)
+            async def handler(request: Request) -> Response:
+                credentials = await security(request)
+                for checker in checkers:
+                    await checker(credentials, request.headers.get("x-api-key"))
+                declared = request.headers.get("content-length")
+                if declared and declared.isdigit():
+                    cap = settings.library_max_upload_bytes
+                    if int(declared) > cap + _UPLOAD_OVERHEAD_BYTES:
+                        raise HTTPException(status_code=413, detail=f"Upload exceeds the maximum size of {cap} bytes")
+                return await original(request)
 
-        return handler
+            return handler
+
+    return _CappedRoute
+
+
+_ProjectUploadCappedRoute = content_length_capped_route(Permission.PROJECTS_UPDATE)
 
 
 _STORED_SUFFIXES = (".3mf", ".zip", ".jpg", ".jpeg", ".png", ".step", ".stp")
@@ -87,6 +99,36 @@ async def _project(db: AsyncSession, project_id: int) -> Project:
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
     return project
+
+
+async def _record_linked(
+    db: AsyncSession,
+    project_id: int,
+    kind: str,
+    user: User | None,
+    subject_label: str,
+    detail: dict,
+    *,
+    commit_first: bool = False,
+) -> None:
+    """Best-effort event on every order linked to the project. The revision change is
+    already stored (or committed here first), so a failure here only costs the event."""
+    try:
+        if commit_first:
+            await db.commit()
+        async with db.begin_nested():
+            await aito_links.record_on_linked_orders(
+                db,
+                project_id,
+                kind,
+                actor=user.username if user is not None else None,
+                subject_label=subject_label,
+                detail=detail,
+            )
+        await db.commit()
+    except Exception:
+        logger.warning("%s event failed for project %s", kind, project_id, exc_info=True)
+        await db.rollback()
 
 
 def _uid(user: User | None) -> int | None:
@@ -190,7 +232,17 @@ async def upload_revision(
         )
     except svc.ProjectFilesError as exc:
         _raise(exc)
-    return RevisionUploadResponse(revision=await _revision_out(db, project, revision.id), warnings=warnings)
+    project_id, revision_id = project.id, revision.id
+    await _record_linked(
+        db,
+        project_id,
+        "project.revision_added",
+        user,
+        f"{item.name} R{revision.number}",
+        {"section": item.section, "item_id": item.id, "revision_id": revision_id},
+    )
+    project = await _project(db, project_id)  # a failed event commit rolls back and expires the instances
+    return RevisionUploadResponse(revision=await _revision_out(db, project, revision_id), warnings=warnings)
 
 
 @router.post("/items/{item_id}/fork", response_model=ProjectItemOut, status_code=201)
@@ -248,14 +300,33 @@ async def update_revision(
     user: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
 ):
     try:
-        revision, _item, project = await svc.get_revision_bundle(db, revision_id)
+        revision, item, project = await svc.get_revision_bundle(db, revision_id)
         fields = {key: getattr(body, key) for key in body.model_fields_set}
         if "status" in fields and fields["status"] is None:
             raise svc.ProjectFilesError(400, "status cannot be null")
+        previous_status = revision.status
         await svc.update_revision(db, project, revision, fields=fields, user_id=_uid(user))
     except svc.ProjectFilesError as exc:
         _raise(exc)
+    project_id = project.id
+    if revision.status != previous_status:
+        await _record_linked(
+            db,
+            project_id,
+            "project.revision_status_changed",
+            user,
+            f"{item.name} R{revision.number}",
+            {
+                "section": item.section,
+                "item_id": item.id,
+                "revision_id": revision.id,
+                "from": previous_status,
+                "to": revision.status,
+            },
+            commit_first=True,
+        )
     await db.commit()
+    project = await _project(db, project_id)
     return await _revision_out(db, project, revision_id)
 
 
