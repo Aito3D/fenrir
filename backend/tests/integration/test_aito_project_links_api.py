@@ -348,3 +348,34 @@ async def test_drop_partial_failure_keeps_stored_group_and_records_once(
     )
     assert len(events) == 1
     assert [r["filename"] for r in events[0].detail["results"]] == ["a.stl"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_project_linked_only_from_a_trashed_order_deletes(async_client: AsyncClient, db_session):
+    """F1: a trashed order's task can never be unlinked (its routes 404), so it must not block the delete."""
+    project = await _project(async_client)
+    order = await _order(db_session)
+    task = await _task(db_session, order)
+    await async_client.put(f"/api/v1/aito/tasks/{task.id}/project", json={"project_id": project["id"]})
+    order.status = "deleted"
+    await db_session.commit()
+
+    response = await async_client.delete(f"/api/v1/projects/{project['id']}")
+    assert response.status_code == 200, response.text
+    await db_session.refresh(task)
+    # The trashed task no longer points at a project id that may be reused.
+    assert task.linked_project_id is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_project_linked_from_an_active_order_cannot_be_deleted(async_client: AsyncClient, db_session):
+    project = await _project(async_client)
+    order = await _order(db_session)
+    task = await _task(db_session, order)
+    await async_client.put(f"/api/v1/aito/tasks/{task.id}/project", json={"project_id": project["id"]})
+
+    response = await async_client.delete(f"/api/v1/projects/{project['id']}")
+    assert response.status_code == 409
+    assert response.json()["detail"] == "This project is linked to Aito tasks; unlink them first"

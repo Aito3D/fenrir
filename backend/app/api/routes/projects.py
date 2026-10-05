@@ -20,6 +20,7 @@ from backend.app.core.auth import RequirePermissionIfAuthEnabled, require_media_
 from backend.app.core.config import settings
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
+from backend.app.models.aito_project import AitoProject  # Fenrir: only active orders' links block deletion
 from backend.app.models.aito_task import AitoTask  # Fenrir: Aito tasks linked to a project block its deletion
 from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile, LibraryFolder
@@ -947,10 +948,20 @@ async def delete_project(
     if (await db.execute(select(ProjectItem.id).where(ProjectItem.project_id == project_id).limit(1))).first():
         raise HTTPException(status_code=409, detail="This project has files; delete or move its items first")
 
-    # Fenrir: a project linked from Aito tasks is still in use (PDM §8).
-    linked = (await db.execute(select(AitoTask.id).where(AitoTask.linked_project_id == project_id).limit(1))).first()
+    # Fenrir: a project linked from Aito tasks of a live order is still in use
+    # (PDM §8). A trashed order's tasks cannot be unlinked (their routes 404),
+    # so they don't block; their links are cleared so the id is never reused.
+    linked = (
+        await db.execute(
+            select(AitoTask.id)
+            .join(AitoProject, AitoProject.id == AitoTask.project_id)
+            .where(AitoTask.linked_project_id == project_id, AitoProject.status != "deleted")
+            .limit(1)
+        )
+    ).first()
     if linked:
         raise HTTPException(status_code=409, detail="This project is linked to Aito tasks; unlink them first")
+    await db.execute(update(AitoTask).where(AitoTask.linked_project_id == project_id).values(linked_project_id=None))
 
     # Sub-projects move up to the deleted project's own parent rather than
     # being cut loose at the top level, so deleting a middle layer collapses
