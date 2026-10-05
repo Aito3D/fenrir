@@ -15,8 +15,15 @@ from backend.app.models.project_item import ProjectItem, ProjectRevision
 from backend.app.services import project_files, project_storage
 from backend.app.services.project_files import (
     ProjectFilesError,
+    add_files_to_revision,
     add_revision,
     create_item,
+    delete_item,
+    delete_revision,
+    fork_revision,
+    load_tree,
+    remove_file_from_revision,
+    rename_item,
     revision_is_used,
     update_revision,
 )
@@ -101,7 +108,6 @@ async def test_duplicate_hash_in_same_item_warns(db_session, root):
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="delete_revision lands in Task 5")
 async def test_numbers_never_reused_after_delete(db_session, root):
     project = await _project(db_session)
     item = await create_item(db_session, project, section="docs", name="Plan", user_id=None)
@@ -283,3 +289,149 @@ async def test_nothing_is_written_to_the_db_before_streaming_finishes(db_session
     monkeypatch.setattr(project_files, "_stream_files", spy)
     await add_revision(db_session, project, item, [upload("a.ply")], note=None, derived_from_id=None, user_id=None)
     assert seen == {"new": [], "dirty": []}
+
+
+async def _rev(db, project, section="modelisation", name="Support", files=None):
+    item = await create_item(db, project, section=section, name=name, user_id=None)
+    rev, _ = await add_revision(
+        db, project, item, files or [upload("a.step")], note=None, derived_from_id=None, user_id=None
+    )
+    return item, rev
+
+
+async def _mark_used(db, rev):
+    file_id = (await db.execute(select(LibraryFile.id).where(LibraryFile.revision_id == rev.id))).scalars().first()
+    db.add(PrintArchive(filename="x", file_path="x", file_size=1, library_file_id=file_id))
+    await db.flush()
+
+
+@pytest.mark.asyncio
+async def test_add_and_remove_files_on_unused_wip(db_session, root):
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project)
+    await add_files_to_revision(db_session, project, item, rev, [upload("b.step", b"b")], user_id=None)
+    files = (await db_session.execute(select(LibraryFile).where(LibraryFile.revision_id == rev.id))).scalars().all()
+    assert len(files) == 2
+    await remove_file_from_revision(db_session, project, item, rev, files[0].id)
+    remaining = (await db_session.execute(select(LibraryFile).where(LibraryFile.revision_id == rev.id))).scalars().all()
+    assert len(remaining) == 1
+    assert list((root / project.storage_dir / "_trash").rglob("a.step-*"))
+    with pytest.raises(ProjectFilesError) as last:
+        await remove_file_from_revision(db_session, project, item, rev, remaining[0].id)
+    assert last.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_used_or_validated_revision_files_are_frozen(db_session, root):
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project)
+    await update_revision(db_session, project, rev, fields={"status": "valide"}, user_id=None)
+    with pytest.raises(ProjectFilesError):
+        await add_files_to_revision(db_session, project, item, rev, [upload("c.step")], user_id=None)
+    item2, rev2 = await _rev(db_session, project, name="Autre")
+    await _mark_used(db_session, rev2)
+    with pytest.raises(ProjectFilesError) as used:
+        await delete_revision(db_session, project, item2, rev2)
+    assert used.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_delete_revision_moves_to_trash_and_clears_links(db_session, root):
+    project = await _project(db_session)
+    item, r1 = await _rev(db_session, project)
+    r2, _ = await add_revision(
+        db_session, project, item, [upload("b.step")], note=None, derived_from_id=r1.id, user_id=None
+    )
+    await delete_revision(db_session, project, item, r1)
+    assert (
+        await db_session.execute(select(ProjectRevision.derived_from_id).where(ProjectRevision.id == r2.id))
+    ).scalar_one() is None
+    assert not (root / project.storage_dir / "Modélisation" / "Support" / "R1").exists()
+    assert list((root / project.storage_dir / "_trash" / "Modélisation" / "Support").glob("R1-*"))
+    assert (await db_session.execute(select(LibraryFile).where(LibraryFile.revision_id == r1.id))).scalars().all() == []
+
+
+@pytest.mark.asyncio
+async def test_rename_item_moves_folder_and_paths(db_session, root):
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project)
+    await rename_item(db_session, project, item, "Support v2")
+    assert item.name == "Support v2"
+    new_dir = root / project.storage_dir / "Modélisation" / "Support v2" / "R1"
+    assert (new_dir / "a.step").exists()
+    row = (await db_session.execute(select(LibraryFile).where(LibraryFile.revision_id == rev.id))).scalar_one()
+    assert row.file_path.endswith("Support v2/R1/a.step")
+
+
+@pytest.mark.asyncio
+async def test_rename_item_rolls_folder_back_on_db_failure(db_session, root, monkeypatch):
+    project = await _project(db_session)
+    item, _rev1 = await _rev(db_session, project)
+    base = root / project.storage_dir  # the failed commit rolls back and expires ``project``
+
+    async def boom():
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(db_session, "commit", boom)
+    with pytest.raises(RuntimeError):
+        await rename_item(db_session, project, item, "Nouveau")
+    assert (base / "Modélisation" / "Support" / "R1" / "a.step").exists()
+    assert not (base / "Modélisation" / "Nouveau").exists()
+
+
+@pytest.mark.asyncio
+async def test_rename_item_conflicts(db_session, root):
+    project = await _project(db_session)
+    item, _ = await _rev(db_session, project)
+    await _rev(db_session, project, name="Autre")
+    with pytest.raises(ProjectFilesError) as taken:
+        await rename_item(db_session, project, item, "autre")
+    assert taken.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_delete_item_requires_unused_revisions(db_session, root):
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project)
+    await _mark_used(db_session, rev)
+    with pytest.raises(ProjectFilesError):
+        await delete_item(db_session, project, item)
+    free, _ = await _rev(db_session, project, name="Libre")
+    await delete_item(db_session, project, free)
+    assert (await db_session.execute(select(ProjectItem).where(ProjectItem.id == free.id))).first() is None
+
+
+@pytest.mark.asyncio
+async def test_fork_copies_files_into_new_item(db_session, root):
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project, files=[upload("a.step", b"geo")])
+    forked = await fork_revision(db_session, project, item, rev, "Support client B", user_id=None)
+    assert forked.forked_from_revision_id == rev.id and forked.section == "modelisation"
+    r1 = (await db_session.execute(select(ProjectRevision).where(ProjectRevision.item_id == forked.id))).scalar_one()
+    assert (r1.number, r1.derived_from_id) == (1, rev.id)
+    assert (root / project.storage_dir / "Modélisation" / "Support client B" / "R1" / "a.step").read_bytes() == b"geo"
+    assert (root / project.storage_dir / "Modélisation" / "Support" / "R1" / "a.step").exists()
+
+
+@pytest.mark.asyncio
+async def test_tree_orders_sections_newest_revision_first_and_flags_outdated(db_session, root):
+    project = await _project(db_session)
+    cad, c1 = await _rev(db_session, project)
+    imp = await create_item(db_session, project, section="impression", name="Support X1C", user_id=None)
+    p1, _ = await add_revision(
+        db_session, project, imp, [upload("p.3mf", threemf_bytes())], note=None, derived_from_id=c1.id, user_id=None
+    )
+    c2, _ = await add_revision(
+        db_session, project, cad, [upload("b.step")], note=None, derived_from_id=None, user_id=None
+    )
+    await update_revision(db_session, project, c2, fields={"status": "valide"}, user_id=None)
+    tree = await load_tree(db_session, project)
+    assert [s.section for s in tree.sections] == ["scan", "modelisation", "impression", "usinage", "docs"]
+    cad_out = tree.sections[1].items[0]
+    assert [r.number for r in cad_out.revisions] == [2, 1]
+    print_rev = tree.sections[2].items[0].revisions[0]
+    assert print_rev.derived_from.number == 1 and print_rev.derived_from.item_name == "Support"
+    assert print_rev.outdated_by.number == 2
+    assert print_rev.has_snapshot and print_rev.print_profile["printer_model"] == "Bambu Lab X1C"
+    assert print_rev.files[0].filename == "p.3mf"
+    assert cad_out.revisions[0].outdated_by is None  # only Impression revisions go outdated

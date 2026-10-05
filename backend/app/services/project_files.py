@@ -11,13 +11,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import shutil
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import UploadFile
-from sqlalchemy import exists, or_, select
+from sqlalchemy import delete, exists, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -39,10 +40,25 @@ from backend.app.models.library import LibraryFile
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.project import Project
 from backend.app.models.project_item import REVISION_STATUSES, SECTIONS, ProjectItem, ProjectRevision
-from backend.app.schemas.project_files import DuplicateWarning
+from backend.app.models.user import User
+from backend.app.schemas.project_files import (
+    DuplicateWarning,
+    ProjectFileOut,
+    ProjectItemOut,
+    ProjectRevisionOut,
+    ProjectSectionOut,
+    ProjectTreeResponse,
+    RevisionRef,
+)
 from backend.app.services.pdf_thumbnail import generate_pdf_thumbnail
 from backend.app.services.project_snapshot import PrintSnapshot, is_3mf, read_print_snapshot
-from backend.app.services.project_storage import revision_dir, sanitize_component, unique_file_path
+from backend.app.services.project_storage import (
+    item_dir,
+    move_to_trash,
+    revision_dir,
+    sanitize_component,
+    unique_file_path,
+)
 from backend.app.services.stl_thumbnail import MIN_USABLE_STL_BYTES, generate_stl_thumbnail
 from backend.app.utils.safe_path import safe_join_under
 
@@ -387,3 +403,371 @@ async def update_revision(
         revision.derived_from_id = target
     await db.flush()
     return revision
+
+
+async def _revision_files(db: AsyncSession, revision_id: int) -> list[LibraryFile]:
+    return list(
+        (await db.execute(select(LibraryFile).where(LibraryFile.revision_id == revision_id).order_by(LibraryFile.id)))
+        .scalars()
+        .all()
+    )
+
+
+async def _require_editable_files(db: AsyncSession, revision: ProjectRevision) -> None:
+    if revision.status != "wip":
+        raise ProjectFilesError(409, "Only an in-progress revision can change its files")
+    if await revision_is_used(db, revision.id):
+        raise ProjectFilesError(409, "This revision was printed or delivered; make a new revision instead")
+
+
+async def add_files_to_revision(
+    db: AsyncSession,
+    project: Project,
+    item: ProjectItem,
+    revision: ProjectRevision,
+    uploads: list[UploadFile],
+    user_id: int | None,
+) -> list[DuplicateWarning]:
+    if not uploads:
+        raise ProjectFilesError(400, "No file")
+    await _require_editable_files(db, revision)
+    folder = revision_dir(project, item.section, item.name, revision.number)
+    written: list[_WrittenFile] = []
+    try:
+        written = await _stream_files(folder, uploads)
+        rows = await _add_file_rows(db, project, revision, written, user_id)
+        warnings = await _duplicate_warnings(db, item, revision, rows)
+        await db.commit()
+    except BaseException:
+        await db.rollback()
+        _cleanup_written(written)
+        raise
+    return warnings
+
+
+async def remove_file_from_revision(
+    db: AsyncSession, project: Project, item: ProjectItem, revision: ProjectRevision, file_id: int
+) -> None:
+    await _require_editable_files(db, revision)
+    files = await _revision_files(db, revision.id)
+    target = next((f for f in files if f.id == file_id), None)
+    if target is None:
+        raise ProjectFilesError(404, "File not found in this revision")
+    if len(files) == 1:
+        raise ProjectFilesError(409, "A revision keeps at least one file; delete the revision instead")
+    from backend.app.api.routes.library import to_absolute_path
+
+    path = to_absolute_path(target.file_path)
+    await db.delete(target)
+    await db.flush()
+    moved = move_to_trash(project, path) if path is not None else None
+    try:
+        await db.commit()
+    except BaseException:
+        if moved is not None and path is not None:
+            shutil.move(str(moved), str(path))
+        raise
+
+
+async def _clear_links_to(db: AsyncSession, revision_ids: list[int]) -> None:
+    await db.execute(
+        update(ProjectRevision).where(ProjectRevision.derived_from_id.in_(revision_ids)).values(derived_from_id=None)
+    )
+    await db.execute(
+        update(ProjectItem)
+        .where(ProjectItem.forked_from_revision_id.in_(revision_ids))
+        .values(forked_from_revision_id=None)
+    )
+
+
+async def delete_revision(db: AsyncSession, project: Project, item: ProjectItem, revision: ProjectRevision) -> None:
+    if await revision_is_used(db, revision.id):
+        raise ProjectFilesError(409, "This revision was printed or delivered and cannot be deleted")
+    folder = item_dir(project, item.section, item.name).joinpath(
+        f"R{revision.number}"
+    )  # SEC-PATH-OK: fixed "R{int}" under a resolved item dir
+    await db.execute(delete(LibraryFile).where(LibraryFile.revision_id == revision.id))
+    await _clear_links_to(db, [revision.id])
+    await db.delete(revision)
+    await db.flush()
+    moved = move_to_trash(project, folder)
+    try:
+        await db.commit()
+    except BaseException:
+        if moved is not None:
+            shutil.move(str(moved), str(folder))
+        raise
+
+
+async def _item_revision_ids(db: AsyncSession, item_id: int) -> list[int]:
+    return list(
+        (await db.execute(select(ProjectRevision.id).where(ProjectRevision.item_id == item_id))).scalars().all()
+    )
+
+
+async def rename_item(db: AsyncSession, project: Project, item: ProjectItem, new_name: str) -> ProjectItem:
+    from backend.app.api.routes.library import to_absolute_path
+
+    clean = new_name.strip()[:255]
+    if not clean or sanitize_component(clean, fallback="") == "":
+        raise ProjectFilesError(400, "Item name must not be blank")
+    key = _name_key(clean)
+    if key != item.name_key:
+        taken = (
+            await db.execute(
+                select(ProjectItem.id).where(
+                    ProjectItem.project_id == project.id,
+                    ProjectItem.section == item.section,
+                    ProjectItem.name_key == key,
+                    ProjectItem.id != item.id,
+                )
+            )
+        ).first()
+        if taken:
+            raise ProjectFilesError(409, "An item with this name already exists in this section")
+    old_dir = item_dir(project, item.section, item.name)
+    new_dir = item_dir(project, item.section, clean)
+    moved = False
+    if old_dir != new_dir and old_dir.exists():
+        if new_dir.exists():
+            raise ProjectFilesError(409, "A folder with this name already exists")
+        old_dir.rename(new_dir)
+        moved = True
+    try:
+        if moved:
+            files = (
+                (
+                    await db.execute(
+                        select(LibraryFile).where(LibraryFile.revision_id.in_(await _item_revision_ids(db, item.id)))
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            for row in files:
+                current = to_absolute_path(row.file_path)
+                if current is not None and old_dir in current.parents:
+                    row.file_path = to_relative_path(
+                        new_dir.joinpath(current.relative_to(old_dir))
+                    )  # SEC-PATH-OK: relative part of a path already under old_dir
+        item.name = clean
+        item.name_key = key
+        await db.commit()
+    except BaseException:
+        if moved:
+            new_dir.rename(old_dir)
+        await db.rollback()
+        raise
+    return item
+
+
+async def delete_item(db: AsyncSession, project: Project, item: ProjectItem) -> None:
+    revision_ids = await _item_revision_ids(db, item.id)
+    for revision_id in revision_ids:
+        if await revision_is_used(db, revision_id):
+            raise ProjectFilesError(409, "A revision of this item was printed or delivered; the item cannot be deleted")
+    folder = item_dir(project, item.section, item.name)
+    if revision_ids:
+        await db.execute(delete(LibraryFile).where(LibraryFile.revision_id.in_(revision_ids)))
+        await _clear_links_to(db, revision_ids)
+        await db.execute(delete(ProjectRevision).where(ProjectRevision.id.in_(revision_ids)))
+    await db.delete(item)
+    await db.flush()
+    moved = move_to_trash(project, folder)
+    try:
+        await db.commit()
+    except BaseException:
+        if moved is not None:
+            shutil.move(str(moved), str(folder))
+        raise
+
+
+async def fork_revision(
+    db: AsyncSession, project: Project, item: ProjectItem, revision: ProjectRevision, new_name: str, user_id: int | None
+) -> ProjectItem:
+    """New item in the same section whose R1 is a copy of ``revision`` (spec §2.4)."""
+    from backend.app.api.routes.library import to_absolute_path
+
+    forked = await create_item(db, project, section=item.section, name=new_name, user_id=user_id)
+    forked.forked_from_revision_id = revision.id
+    folder = revision_dir(project, forked.section, forked.name, 1)
+    copied: list[Path] = []
+    try:
+        r1 = ProjectRevision(
+            item_id=forked.id, number=1, status="wip", derived_from_id=revision.id, created_by_id=user_id
+        )
+        r1.config_snapshot, r1.config_hash = revision.config_snapshot, revision.config_hash
+        r1.slicer_name, r1.slicer_version, r1.print_profile = (
+            revision.slicer_name,
+            revision.slicer_version,
+            revision.print_profile,
+        )
+        db.add(r1)
+        forked.last_revision_number = 1
+        await db.flush()
+        for source in await _revision_files(db, revision.id):
+            src = to_absolute_path(source.file_path)
+            if src is None or not src.exists():
+                continue
+            dest = unique_file_path(folder, source.filename)
+            await asyncio.to_thread(shutil.copy2, src, dest)
+            copied.append(dest)
+            db.add(
+                LibraryFile(
+                    project_id=project.id,
+                    revision_id=r1.id,
+                    folder_id=None,
+                    is_external=False,
+                    filename=dest.name,
+                    file_path=to_relative_path(dest),
+                    file_type=source.file_type,
+                    file_size=source.file_size,
+                    file_hash=source.file_hash,
+                    thumbnail_path=source.thumbnail_path,
+                    file_metadata=source.file_metadata,
+                    created_by_id=user_id,
+                )
+            )
+        await db.commit()
+    except BaseException:
+        for path in copied:
+            path.unlink(missing_ok=True)
+        await db.rollback()
+        raise
+    return forked
+
+
+def _ref(revision: ProjectRevision, item: ProjectItem) -> RevisionRef:
+    return RevisionRef(
+        id=revision.id,
+        item_id=item.id,
+        item_name=item.name,
+        section=item.section,
+        number=revision.number,
+        status=revision.status,
+    )
+
+
+async def load_tree(db: AsyncSession, project: Project) -> ProjectTreeResponse:
+    """The whole Fichiers view in one payload: one query per table + grouped usage checks."""
+    items = list(
+        (
+            await db.execute(
+                select(ProjectItem)
+                .where(ProjectItem.project_id == project.id)
+                .order_by(ProjectItem.position, ProjectItem.name_key)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    items_by_id = {item.id: item for item in items}
+    revisions = (
+        list(
+            (await db.execute(select(ProjectRevision).where(ProjectRevision.item_id.in_(items_by_id)))).scalars().all()
+        )
+        if items_by_id
+        else []
+    )
+    revisions_by_id = {rev.id: rev for rev in revisions}
+    files = (
+        list(
+            (
+                await db.execute(
+                    select(LibraryFile).where(LibraryFile.revision_id.in_(revisions_by_id)).order_by(LibraryFile.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if revisions_by_id
+        else []
+    )
+    files_by_revision: dict[int, list[LibraryFile]] = {}
+    for row in files:
+        files_by_revision.setdefault(row.revision_id, []).append(row)
+    file_ids = [row.id for row in files]
+    used_file_ids: set[int] = set()
+    if file_ids:
+        used_file_ids |= set(
+            (
+                await db.execute(
+                    select(PrintQueueItem.library_file_id).where(PrintQueueItem.library_file_id.in_(file_ids))
+                )
+            )
+            .scalars()
+            .all()
+        )
+        used_file_ids |= set(
+            (await db.execute(select(PrintArchive.library_file_id).where(PrintArchive.library_file_id.in_(file_ids))))
+            .scalars()
+            .all()
+        )
+    user_ids = {rev.created_by_id for rev in revisions if rev.created_by_id}
+    users = (
+        dict((await db.execute(select(User.id, User.username).where(User.id.in_(user_ids)))).all()) if user_ids else {}
+    )
+    newest_valide: dict[int, ProjectRevision] = {}
+    for rev in revisions:
+        if rev.status == "valide" and (
+            rev.item_id not in newest_valide or rev.number > newest_valide[rev.item_id].number
+        ):
+            newest_valide[rev.item_id] = rev
+
+    def revision_out(rev: ProjectRevision, item: ProjectItem) -> ProjectRevisionOut:
+        source = revisions_by_id.get(rev.derived_from_id) if rev.derived_from_id else None
+        source_item = items_by_id.get(source.item_id) if source else None
+        outdated_by = None
+        if item.section == "impression" and source is not None and source_item is not None:
+            newer = newest_valide.get(source.item_id)
+            if newer is not None and newer.number > source.number:
+                outdated_by = _ref(newer, source_item)
+        rev_files = files_by_revision.get(rev.id, [])
+        return ProjectRevisionOut(
+            id=rev.id,
+            number=rev.number,
+            status=rev.status,
+            note=rev.note,
+            derived_from=_ref(source, source_item) if source and source_item else None,
+            outdated_by=outdated_by,
+            print_profile=rev.print_profile,
+            slicer_name=rev.slicer_name,
+            slicer_version=rev.slicer_version,
+            has_snapshot=rev.config_snapshot is not None,
+            used=any(f.id in used_file_ids for f in rev_files),
+            files=[
+                ProjectFileOut(
+                    id=f.id,
+                    filename=f.filename,
+                    file_type=f.file_type,
+                    file_size=f.file_size,
+                    file_hash=f.file_hash,
+                    has_thumbnail=bool(f.thumbnail_path),
+                    created_at=f.created_at,
+                )
+                for f in rev_files
+            ],
+            created_by=users.get(rev.created_by_id),
+            created_at=rev.created_at,
+            status_changed_at=rev.status_changed_at,
+        )
+
+    by_section: dict[str, list[ProjectItemOut]] = {section: [] for section in SECTIONS}
+    for item in items:
+        item_revisions = sorted((r for r in revisions if r.item_id == item.id), key=lambda r: r.number, reverse=True)
+        fork_source = revisions_by_id.get(item.forked_from_revision_id) if item.forked_from_revision_id else None
+        fork_item = items_by_id.get(fork_source.item_id) if fork_source else None
+        by_section.setdefault(item.section, []).append(
+            ProjectItemOut(
+                id=item.id,
+                section=item.section,
+                name=item.name,
+                forked_from=_ref(fork_source, fork_item) if fork_source and fork_item else None,
+                revisions=[revision_out(rev, item) for rev in item_revisions],
+            )
+        )
+    return ProjectTreeResponse(
+        project_id=project.id,
+        code=project.code,
+        sections=[ProjectSectionOut(section=section, items=by_section[section]) for section in SECTIONS],
+    )
