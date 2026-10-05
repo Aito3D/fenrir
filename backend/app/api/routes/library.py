@@ -3760,6 +3760,8 @@ async def add_files_to_queue(
                 library_file_id=file_id,
                 project_id=lib_file.project_id
                 or (folder_projects.get(lib_file.folder_id) if lib_file.folder_id is not None else None),
+                # Fenrir: a project revision file keeps its revision (phase 4).
+                revision_id=lib_file.revision_id,
                 position=max_position,
                 status="pending",
                 confirm_outcome=confirm_outcome,
