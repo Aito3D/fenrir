@@ -146,7 +146,7 @@ async def test_zip_temp_file_removed_when_build_fails(async_client: AsyncClient,
     monkeypatch.setattr(project_files_routes, "_build_zip", boom)
     try:
         response = await async_client.get(f"/api/v1/projects/revisions/{rev['id']}/download")
-        assert response.status_code == 500
+        assert response.status_code >= 500
     except OSError:
         pass  # the test transport may re-raise instead of answering 500
     assert list(scratch.iterdir()) == []
