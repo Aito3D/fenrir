@@ -5,6 +5,10 @@ All notable changes to Bambuddy will be documented in this file.
 ## [1.2.6b1] - Unreleased
 
 ### Added
+- **The Cam Wall's tiles can be resized with the S / M / L / XL selector (#2735, requested by @cmerkle)** — The size selector on the Printers page used to grey out on the Cam Wall, and the tiles always sat up to four in a row, so a setup with two printers got two small tiles side by side.
+  - **On the Printers page:** while the Cam Wall is showing, the selector sizes the tiles: S fits up to five per row on a wide screen, M four (as before, and still the default), L two, and XL one tile across the full width. Tiles keep their 16:9 shape.
+  - **Remembered on its own:** the Cam Wall keeps its own size, so changing it leaves the card size alone, and the other way round.
+  - **On `/camwall`:** the standalone page uses the size last picked on the Printers page, and a kiosk URL can set it with `size=s`, `m`, `l` or `xl`.
 - **Printers can have a wear cost per printing hour, added to what each print costs (#694, requested by @wreuel)** — Print costs covered filament and energy, but not the printer itself: nozzles, belts, the hotend and eventually the machine. Print farms and anyone selling prints usually add an hourly amount for that.
   - **Setting it:** **Edit printer** has a new optional field, **Wear cost per printing hour**, for example 0.20 for a 600 printer you expect to last 3,000 hours. Empty or 0 leaves it off, so nothing changes until you set one.
   - **How it's costed:** each print's duration as shown in the Print Log, times the printer's rate. Failed and cancelled prints count, because they wore the printer too. A print closed after Bambuddy was offline has no known duration and gets none. The rate applies from the next print on and never rewrites earlier ones.

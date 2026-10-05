@@ -363,6 +363,12 @@ export default {
           'This Cam Wall link is no longer valid. The token may have expired or been revoked.',
         loadFailed: 'Could not load the printers.',
       },
+      tileSize: {
+        small: 'Small tiles',
+        medium: 'Medium tiles',
+        large: 'Large tiles',
+        extraLarge: 'Extra large tiles',
+      },
       noPrinters: 'No printers to show',
       noSignal: 'No signal',
       live: 'Live',
