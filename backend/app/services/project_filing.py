@@ -720,7 +720,7 @@ _legacy_state: dict = {}
 
 def reset_legacy_migration_state() -> None:
     _legacy_state.clear()
-    _legacy_state.update(running=False, total=0, done=0, current=None, failures=[])
+    _legacy_state.update(running=False, total=0, done=0, current=None, failures=[], last_run=None)
 
 
 reset_legacy_migration_state()
@@ -756,6 +756,7 @@ async def legacy_migration_status(db: AsyncSession) -> dict:
         "current": dict(state["current"]) if state["current"] else None,
         "failures": [dict(f) for f in state["failures"]],
         "pending": pending,
+        "last_run": dict(state["last_run"]) if state["last_run"] else None,
     }
 
 
@@ -763,6 +764,7 @@ async def _run_legacy_migration() -> None:
     from backend.app.core import database  # module attribute read at call time (tests patch it)
 
     state = _legacy_state
+    totals = {"projects": 0, "files_moved": 0, "files_copied": 0}
     try:
         async with database.async_session() as db:
             project_ids = await legacy_candidates(db)
@@ -777,6 +779,9 @@ async def _run_legacy_migration() -> None:
                         state["current"] = {"project_id": project_id, "code": code}
                         outcome = await migrate_project_legacy(db, project)
                         logger.info("Legacy migration of %s: %s", code, outcome)
+                        totals["projects"] += 1
+                        totals["files_moved"] += outcome.files_moved
+                        totals["files_copied"] += outcome.files_copied
                 except Exception as exc:
                     logger.warning("Legacy migration of project %s failed", project_id, exc_info=True)
                     detail = exc.detail if isinstance(exc, project_files.ProjectFilesError) else str(exc)
@@ -790,5 +795,6 @@ async def _run_legacy_migration() -> None:
     except Exception:
         logger.exception("Legacy project migration stopped")
     finally:
+        state["last_run"] = {**totals, "finished_at": project_files._now()}
         state["running"] = False
         state["current"] = None

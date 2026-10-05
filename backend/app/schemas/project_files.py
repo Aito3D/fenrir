@@ -167,9 +167,20 @@ class LegacyMigrationFailure(BaseModel):
     error: str
 
 
+class LegacyMigrationLastRun(BaseModel):
+    """The last finished run: projects migrated (failures not counted), managed
+    files moved and external files copied, and when it ended."""
+
+    projects: int
+    files_moved: int
+    files_copied: int
+    finished_at: datetime
+
+
 class LegacyMigrationStatus(BaseModel):
     """``GET /projects/legacy-migration/status``: ``pending`` is the number of
-    projects still to migrate (the current candidate count when idle)."""
+    projects still to migrate (the current candidate count when idle);
+    ``last_run`` is the last finished run since the server started (None before)."""
 
     running: bool
     total: int
@@ -177,3 +188,4 @@ class LegacyMigrationStatus(BaseModel):
     current: LegacyMigrationCurrent | None = None
     failures: list[LegacyMigrationFailure] = []
     pending: int
+    last_run: LegacyMigrationLastRun | None = None

@@ -382,7 +382,15 @@ async def test_start_and_status(async_client: AsyncClient, db_session, tmp_path)
     project_id, other_id = project.id, other.id
 
     idle = (await async_client.get(STATUS)).json()
-    assert idle == {"running": False, "total": 0, "done": 0, "current": None, "failures": [], "pending": 2}
+    assert idle == {
+        "running": False,
+        "total": 0,
+        "done": 0,
+        "current": None,
+        "failures": [],
+        "pending": 2,
+        "last_run": None,
+    }
 
     response = await async_client.post(START)
     assert response.status_code == 202, response.text
@@ -394,6 +402,14 @@ async def test_start_and_status(async_client: AsyncClient, db_session, tmp_path)
     for pid in (project_id, other_id):
         assert (await _fresh(db_session, Project, pid)).legacy_migrated_at is not None
     assert len(await _revisions(db_session, project_id)) == 3
+    # Bracket + Lid moved, Clip copied (project 1); Arm moved (project 2).
+    last_run = body["last_run"]
+    assert {k: last_run[k] for k in ("projects", "files_moved", "files_copied")} == {
+        "projects": 2,
+        "files_moved": 3,
+        "files_copied": 1,
+    }
+    assert datetime.fromisoformat(last_run["finished_at"]) <= datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 @pytest.mark.asyncio
@@ -411,6 +427,11 @@ async def test_start_records_failures(async_client: AsyncClient, db_session, mon
     body = await _wait_idle(async_client)
     assert body["done"] == 1 and body["pending"] == 1
     assert body["failures"] == [{"project_id": project_id, "code": code, "error": "disk on fire"}]
+    assert {k: body["last_run"][k] for k in ("projects", "files_moved", "files_copied")} == {
+        "projects": 0,
+        "files_moved": 0,
+        "files_copied": 0,
+    }
     assert (await _fresh(db_session, Project, project_id)).legacy_migrated_at is None
 
 
