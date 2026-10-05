@@ -20,6 +20,9 @@ class Project(Base):
     # folder name under the projects space, fixed at creation.
     code: Mapped[str | None] = mapped_column(String(16), nullable=True, unique=True, index=True)
     storage_dir: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Phase 5: set once the project's legacy printing files (linked File Manager
+    # files) were moved into its tree; NULL = still a migration candidate.
+    legacy_migrated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     color: Mapped[str | None] = mapped_column(String(20), nullable=True)  # Hex color for UI
     status: Mapped[str] = mapped_column(String(20), default="active")  # active, completed, archived

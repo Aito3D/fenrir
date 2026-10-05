@@ -154,3 +154,26 @@ class ProjectSuggestionForFile(BaseModel):
     item_name: str | None = None
     score: float
     reason: Literal["code", "item_name", "project_name"]
+
+
+class LegacyMigrationCurrent(BaseModel):
+    project_id: int
+    code: str | None = None
+
+
+class LegacyMigrationFailure(BaseModel):
+    project_id: int
+    code: str | None = None
+    error: str
+
+
+class LegacyMigrationStatus(BaseModel):
+    """``GET /projects/legacy-migration/status``: ``pending`` is the number of
+    projects still to migrate (the current candidate count when idle)."""
+
+    running: bool
+    total: int
+    done: int
+    current: LegacyMigrationCurrent | None = None
+    failures: list[LegacyMigrationFailure] = []
+    pending: int

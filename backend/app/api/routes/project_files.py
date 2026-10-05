@@ -33,6 +33,7 @@ from backend.app.schemas.aito_project_links import ProjectOrdersResponse
 from backend.app.schemas.project_files import (
     ImportLibraryFilesRequest,
     ImportLibraryFilesResponse,
+    LegacyMigrationStatus,
     ProjectItemCreate,
     ProjectItemFork,
     ProjectItemOut,
@@ -163,6 +164,32 @@ async def _revision_out(db: AsyncSession, project: Project, revision_id: int) ->
                 if rev.id == revision_id:
                     return rev
     raise HTTPException(status_code=404, detail="Revision not found")
+
+
+# --- phase 5: legacy migration (literal paths, before the /{project_id} routes) ---
+
+
+@router.post("/legacy-migration/start", response_model=LegacyMigrationStatus, status_code=202)
+async def start_legacy_migration(
+    db: AsyncSession = Depends(get_db),
+    _settings: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
+    _projects: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
+):
+    """Move every not-yet-migrated project's legacy printing files into its tree,
+    in the background (one project at a time). 409 while a run is in progress."""
+    if not project_filing.start_legacy_migration():
+        raise HTTPException(status_code=409, detail="The legacy migration is already running")
+    return await project_filing.legacy_migration_status(db)
+
+
+@router.get("/legacy-migration/status", response_model=LegacyMigrationStatus)
+async def get_legacy_migration_status(
+    db: AsyncSession = Depends(get_db),
+    _settings: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
+    _projects: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
+):
+    """Progress of the current (or last) run; ``pending`` = projects still to migrate."""
+    return await project_filing.legacy_migration_status(db)
 
 
 @router.get("/{project_id}/tree", response_model=ProjectTreeResponse)

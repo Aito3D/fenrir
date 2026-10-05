@@ -11,18 +11,20 @@ the original row and the file on the mount are never touched.
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
 import logging
 import re
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.routes.library import to_absolute_path
-from backend.app.models.library import LibraryFile
+from backend.app.models.library import LibraryFile, LibraryFolder
 from backend.app.models.project import Project
 from backend.app.models.project_item import ProjectItem
 from backend.app.schemas.project_files import ProjectSuggestionForFile
@@ -514,6 +516,23 @@ async def _auto_file_by_code(
 
 async def _record_auto_filed(db: AsyncSession, outcome: AutoFileResult, section: str, user_id: int | None) -> None:
     """Best-effort ``project.revision_added`` on the linked orders (as the import route does)."""
+    await _record_revision_added(
+        db,
+        outcome.project_id,
+        {
+            "section": section,
+            "item_id": outcome.item_id,
+            "item_name": outcome.item_name,
+            "revision_id": outcome.revision_id,
+            "revision_number": outcome.revision_number,
+        },
+        user_id,
+    )
+
+
+async def _record_revision_added(db: AsyncSession, project_id: int, entry: dict, user_id: int | None) -> None:
+    """Best-effort ``project.revision_added`` on the project's linked orders for one
+    moved/copied ``entry`` (a ``MoveToProjectResult`` entry); a failure only costs the event."""
     from backend.app.models.user import User
     from backend.app.services import aito_project_links as aito_links
 
@@ -523,15 +542,246 @@ async def _record_auto_filed(db: AsyncSession, outcome: AutoFileResult, section:
         async with db.begin_nested():
             order_ids = await aito_links.record_on_linked_orders(
                 db,
-                outcome.project_id,
+                project_id,
                 "project.revision_added",
                 actor=actor,
-                subject_label=f"{outcome.item_name} R{outcome.revision_number}",
-                detail={"section": section, "item_id": outcome.item_id, "revision_id": outcome.revision_id},
+                subject_label=f"{entry['item_name']} R{entry['revision_number']}",
+                detail={"section": entry["section"], "item_id": entry["item_id"], "revision_id": entry["revision_id"]},
             )
         await db.commit()
     except Exception:
-        logger.warning("project.revision_added event failed for project %s", outcome.project_id, exc_info=True)
+        logger.warning("project.revision_added event failed for project %s", project_id, exc_info=True)
         await db.rollback()
         return
     await aito_links.broadcast_orders_changed(order_ids, actor)
+
+
+# --- legacy migration: linked File Manager files into project trees ----------
+#
+# Printing files only (user decision 2026-10-05): a project's legacy printable
+# files -- File Manager files linked to it directly (``LibraryFile.project_id``)
+# or through a linked folder (``LibraryFolder.project_id``; direct link wins) --
+# move into its tree (Impression) with ``move_library_files_to_project``.
+# Non-printable files stay in the File Manager; the legacy ``attachments`` JSON,
+# its files and the cover image are not touched.
+#
+# Idempotency: ``projects.legacy_migrated_at`` marks a finished project. A
+# project that failed half-way is re-run from what is left: moved managed files
+# carry ``revision_id`` and drop out of the query; a copied EXTERNAL original
+# stays as it was (by design), so it is skipped on a re-run when the project
+# already holds a revision file with the same SHA-256 (the copy's ``file_hash``
+# is the hash of the bytes it was copied from). Content-based on purpose: no
+# extra column, no reliance on an editable note, and an identical file already
+# in the project needs no second copy anyway.
+
+_RETRYABLE_SKIPS = ("copy_failed", "conflict")
+
+
+class LegacyMigrationError(Exception):
+    """A project's migration stopped short; it keeps no marker and can be re-run."""
+
+
+@dataclass
+class LegacyMigrationOutcome:
+    revisions_created: int
+    files_moved: int
+    files_copied: int
+
+
+def _legacy_owner():
+    """The project a legacy file belongs to: its own link, else its folder's."""
+    return func.coalesce(LibraryFile.project_id, LibraryFolder.project_id)
+
+
+def _legacy_files_query():
+    return (
+        select(LibraryFile)
+        .outerjoin(LibraryFolder, LibraryFile.folder_id == LibraryFolder.id)
+        .where(LibraryFile.revision_id.is_(None), LibraryFile.deleted_at.is_(None))
+    )
+
+
+async def legacy_candidates(db: AsyncSession) -> list[int]:
+    """Projects not migrated yet that own at least one legacy printable file, by id."""
+    owner = _legacy_owner()
+    rows = await db.execute(
+        select(owner, LibraryFile.filename)
+        .select_from(LibraryFile)
+        .outerjoin(LibraryFolder, LibraryFile.folder_id == LibraryFolder.id)
+        .join(Project, Project.id == owner)
+        .where(
+            LibraryFile.revision_id.is_(None),
+            LibraryFile.deleted_at.is_(None),
+            Project.legacy_migrated_at.is_(None),
+        )
+    )
+    return sorted({project_id for project_id, filename in rows if is_printable_filename(filename)})
+
+
+async def _legacy_files(db: AsyncSession, project_id: int) -> list[LibraryFile]:
+    rows = (
+        (await db.execute(_legacy_files_query().where(_legacy_owner() == project_id).order_by(LibraryFile.id)))
+        .scalars()
+        .all()
+    )
+    return [row for row in rows if is_printable_filename(row.filename)]
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+async def _already_copied(db: AsyncSession, project_id: int, files: list[LibraryFile]) -> set[int]:
+    """External files whose content the project already holds (copied by an earlier run)."""
+    externals = [(f.id, _source_path(f)) for f in files if f.is_external]
+    if not externals:
+        return set()
+    held = set(
+        (
+            await db.execute(
+                select(LibraryFile.file_hash).where(
+                    LibraryFile.project_id == project_id,
+                    LibraryFile.revision_id.is_not(None),
+                    LibraryFile.deleted_at.is_(None),
+                    LibraryFile.file_hash.is_not(None),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not held:
+        return set()
+    out: set[int] = set()
+    for file_id, path in externals:
+        if path is None or not path.is_file():
+            continue
+        try:
+            digest = await asyncio.to_thread(_sha256_file, path)
+        except OSError:
+            continue  # the move reports it (source_missing / copy_failed)
+        if digest in held:
+            out.add(file_id)
+    return out
+
+
+async def migrate_project_legacy(db: AsyncSession, project: Project) -> LegacyMigrationOutcome:
+    """Move ``project``'s legacy printing files into its tree, then set
+    ``legacy_migrated_at``. Each revision commits on its own; on any error the
+    marker is not set (already-committed revisions stay; a re-run continues).
+    A group skipped for a transient reason (copy error, concurrent change)
+    raises ``LegacyMigrationError`` so the project stays a candidate."""
+    project_id = project.id
+    files = await _legacy_files(db, project_id)
+    done = await _already_copied(db, project_id, files)
+    to_move = [f for f in files if f.id not in done]
+    result = await move_library_files_to_project(db, project, to_move, item_id=None, new_item_name=None, user_id=None)
+
+    revisions: dict[int, dict] = {}
+    for entry in [*result.moved, *result.copied]:
+        revisions.setdefault(entry["revision_id"], entry)
+    for entry in revisions.values():
+        await _record_revision_added(db, project_id, entry, None)
+
+    retryable = [s for s in result.skipped if s["code"] in _RETRYABLE_SKIPS]
+    if retryable:
+        first = retryable[0]
+        raise LegacyMigrationError(
+            f"{len(retryable)} file(s) could not be moved ({first['code']}: {first['reason']}); run it again"
+        )
+    for skip in result.skipped:
+        logger.info("Legacy migration of project %s left file %s: %s", project_id, skip["file_id"], skip["code"])
+
+    fresh = await db.get(Project, project_id, populate_existing=True)
+    if fresh is None:
+        raise LegacyMigrationError("project deleted meanwhile")
+    fresh.legacy_migrated_at = project_files._now()
+    await db.commit()
+    return LegacyMigrationOutcome(
+        revisions_created=len(revisions), files_moved=len(result.moved), files_copied=len(result.copied)
+    )
+
+
+# Background runner (pattern: the discovery subnet scan): module-level state,
+# polled through GET /projects/legacy-migration/status.
+_legacy_state: dict = {}
+
+
+def reset_legacy_migration_state() -> None:
+    _legacy_state.clear()
+    _legacy_state.update(running=False, total=0, done=0, current=None, failures=[])
+
+
+reset_legacy_migration_state()
+
+
+def legacy_migration_status_running() -> bool:
+    return bool(_legacy_state["running"])
+
+
+def start_legacy_migration() -> bool:
+    """Spawn the runner; False when one is already running. Check-and-set has no
+    await in between, so two concurrent starts can't both win."""
+    from backend.app.core.tasks import spawn_background_task
+
+    if _legacy_state["running"]:
+        return False
+    reset_legacy_migration_state()
+    _legacy_state["running"] = True
+    spawn_background_task(_run_legacy_migration(), name="projects-legacy-migration")
+    return True
+
+
+async def legacy_migration_status(db: AsyncSession) -> dict:
+    state = _legacy_state
+    if state["running"]:
+        pending = max(state["total"] - state["done"], 0)
+    else:
+        pending = len(await legacy_candidates(db))
+    return {
+        "running": state["running"],
+        "total": state["total"],
+        "done": state["done"],
+        "current": dict(state["current"]) if state["current"] else None,
+        "failures": [dict(f) for f in state["failures"]],
+        "pending": pending,
+    }
+
+
+async def _run_legacy_migration() -> None:
+    from backend.app.core import database  # module attribute read at call time (tests patch it)
+
+    state = _legacy_state
+    try:
+        async with database.async_session() as db:
+            project_ids = await legacy_candidates(db)
+        state["total"] = len(project_ids)
+        for project_id in project_ids:
+            code = None
+            async with database.async_session() as db:
+                try:
+                    project = await db.get(Project, project_id)
+                    if project is not None and project.legacy_migrated_at is None:
+                        code = project.code
+                        state["current"] = {"project_id": project_id, "code": code}
+                        outcome = await migrate_project_legacy(db, project)
+                        logger.info("Legacy migration of %s: %s", code, outcome)
+                except Exception as exc:
+                    logger.warning("Legacy migration of project %s failed", project_id, exc_info=True)
+                    detail = exc.detail if isinstance(exc, project_files.ProjectFilesError) else str(exc)
+                    state["failures"].append({"project_id": project_id, "code": code, "error": str(detail)[:500]})
+                    try:
+                        await db.rollback()
+                    except Exception:
+                        logger.debug("Rollback after a failed legacy migration failed too", exc_info=True)
+            state["done"] += 1
+            state["current"] = None
+    except Exception:
+        logger.exception("Legacy project migration stopped")
+    finally:
+        state["running"] = False
+        state["current"] = None

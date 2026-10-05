@@ -6320,6 +6320,10 @@ async def run_migrations(conn):
         conn, "CREATE INDEX IF NOT EXISTS ix_print_archives_aito_task_id ON print_archives (aito_task_id)"
     )
 
+    # Projects as a PDM, phase 5 (File Manager bridge): when a project's legacy
+    # printing files were moved into its tree. NULL = not migrated yet.
+    await _safe_execute(conn, "ALTER TABLE projects ADD COLUMN legacy_migrated_at DATETIME")
+
 
 async def _migrate_backfill_aito_document_numbers(conn) -> None:
     """One-time fill of `aito_projects.document_numbers` from history (2026-10-04).
