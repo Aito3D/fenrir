@@ -96,6 +96,17 @@ SECTION_DIRS: dict[str, str] = {
 TRASH_DIRNAME = "_trash"
 _GCODE_3MF = ".gcode.3mf"
 
+# Projects hold printing files only for now (phase 5 scope): every other
+# section stays in the data model but is closed to new files. Re-enabling a
+# section is a change to these two constants.
+ENABLED_SECTIONS: tuple[str, ...] = ("impression",)
+PRINTABLE_EXTENSIONS: tuple[str, ...] = (".3mf", ".gcode", ".bgcode")  # ``.gcode.3mf`` ends in ``.3mf``
+
+
+def is_printable_filename(name: str) -> bool:
+    """A file projects accept today: ``.3mf`` (incl. ``.gcode.3mf``), ``.gcode`` or ``.bgcode``, any case."""
+    return (name or "").strip().lower().endswith(PRINTABLE_EXTENSIONS)
+
 
 def item_dir(project, section: str, item_name: str) -> Path:
     """``{storage_dir}/{Section}/{Item}`` — not created. KeyError on an unknown section."""

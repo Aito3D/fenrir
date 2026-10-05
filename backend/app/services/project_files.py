@@ -10,12 +10,14 @@ and undoes the disk change when the commit fails.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import os
 import shutil
 import uuid
 import weakref
-from dataclasses import dataclass
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -196,6 +198,20 @@ async def create_item(
 
 
 @dataclass
+class RevisionSource:
+    """A file on disk to copy into a new revision (``add_revision_from_sources``).
+
+    ``reuse_row`` is a managed library row to re-point at the copy (it keeps its
+    id, so queue items, archives and photos follow); ``None`` makes a new row.
+    ``row`` is filled in with the stored row once the revision is committed."""
+
+    path: Path
+    filename: str
+    reuse_row: LibraryFile | None = None
+    row: LibraryFile | None = field(default=None, init=False, compare=False, repr=False)
+
+
+@dataclass
 class _WrittenFile:
     path: Path
     size: int
@@ -204,6 +220,9 @@ class _WrittenFile:
     thumbnail_abs: Path | None = None
     metadata: dict | None = None
     snapshot: PrintSnapshot | None = None
+    source: RevisionSource | None = None
+    # file_path the reused row had when its copy started; the DB step refuses a row that moved meanwhile
+    reuse_file_path: str | None = None
 
 
 def _write_thumbnail(thumbnails_dir: Path, name: str, data: bytes) -> Path:
@@ -277,12 +296,7 @@ async def _stream_files(folder: Path, uploads: list[UploadFile]) -> list[_Writte
             part = None
             entry = _WrittenFile(path=dest, size=size, digest=digest)
             written.append(entry)
-            thumb, entry.metadata = await _make_thumbnail(dest)
-            if thumb is not None:
-                entry.thumbnail_abs = thumb
-                entry.thumbnail_rel = to_relative_path(thumb)
-            if is_3mf(dest.name):
-                entry.snapshot = await asyncio.to_thread(read_print_snapshot, dest)
+            await _post_process(entry)
     except BaseException:
         if part is not None:
             part.unlink(missing_ok=True)
@@ -291,28 +305,133 @@ async def _stream_files(folder: Path, uploads: list[UploadFile]) -> list[_Writte
     return written
 
 
+async def _post_process(entry: _WrittenFile, *, thumbnail: bool = True) -> None:
+    """Thumbnail + 3MF metadata (unless ``thumbnail`` is False) and the 3MF print snapshot of a stored file."""
+    if thumbnail:
+        thumb, entry.metadata = await _make_thumbnail(entry.path)
+        if thumb is not None:
+            entry.thumbnail_abs = thumb
+            entry.thumbnail_rel = to_relative_path(thumb)
+    if is_3mf(entry.path.name):
+        entry.snapshot = await asyncio.to_thread(read_print_snapshot, entry.path)
+
+
+def _copy_hashing(src: Path, dest: Path) -> tuple[int, str]:
+    """Copy ``src`` over ``dest`` in bounded chunks; returns (size, SHA-256 hex) of what was written."""
+    digest = hashlib.sha256()
+    size = 0
+    with open(src, "rb") as reader, open(dest, "wb") as writer:
+        while chunk := reader.read(1 << 20):
+            writer.write(chunk)
+            digest.update(chunk)
+            size += len(chunk)
+    try:
+        shutil.copystat(src, dest)
+    except OSError:
+        pass  # timestamps are a nicety
+    return size, digest.hexdigest()
+
+
+async def _copy_sources(folder: Path, sources: list[RevisionSource]) -> list[_WrittenFile]:
+    """Copy every source into ``folder`` (hashing while copying) and post-process it like an upload.
+
+    Touches no database. A reused row that already has a thumbnail keeps it
+    (and its metadata) instead of getting a second one. On any failure every
+    copy and thumbnail made by THIS call is removed; the sources are never touched."""
+    written: list[_WrittenFile] = []
+    try:
+        for source in sources:
+            reuse = source.reuse_row
+            dest = claim_unique_file_path(folder, source.filename)
+            entry = _WrittenFile(
+                path=dest,
+                size=0,
+                digest="",
+                source=source,
+                reuse_file_path=reuse.file_path if reuse is not None else None,
+            )
+            written.append(entry)  # before the copy, so cleanup also removes the claimed placeholder
+            entry.size, entry.digest = await asyncio.to_thread(_copy_hashing, source.path, dest)
+            await _post_process(entry, thumbnail=reuse is None or not reuse.thumbnail_path)
+    except BaseException:
+        _cleanup_written(written)
+        raise
+    return written
+
+
+async def _require_reuse_rows_unchanged(db: AsyncSession, written: list[_WrittenFile]) -> None:
+    """Each reused row must still be the live, unfiled file whose bytes were copied."""
+    expected = {
+        entry.source.reuse_row.id: entry.reuse_file_path
+        for entry in written
+        if entry.source is not None and entry.source.reuse_row is not None
+    }
+    if not expected:
+        return
+    current = {
+        row.id: row
+        for row in (
+            await db.execute(
+                select(LibraryFile.id, LibraryFile.file_path, LibraryFile.revision_id, LibraryFile.deleted_at).where(
+                    LibraryFile.id.in_(expected)
+                )
+            )
+        ).all()
+    }
+    for file_id, file_path in expected.items():
+        row = current.get(file_id)
+        if row is None or row.file_path != file_path or row.revision_id is not None or row.deleted_at is not None:
+            raise ProjectFilesError(409, "A file changed while it was being moved; try again")
+
+
 async def _add_file_rows(
     db: AsyncSession, project: Project, revision: ProjectRevision, written: list[_WrittenFile], user_id: int | None
 ) -> list[LibraryFile]:
-    """Library rows for ``written`` (flushed); the first 3MF snapshot fills a revision that has none."""
+    """Library rows for ``written`` (flushed); the first 3MF snapshot fills a revision that has none.
+
+    An entry whose source carries a ``reuse_row`` re-points that row at the copy
+    (same id; out of its File Manager folder and variant group) instead of
+    adding a new one."""
+    await _require_reuse_rows_unchanged(db, written)
     rows: list[LibraryFile] = []
     for entry in written:
         file_type = (await asyncio.to_thread(classify_file_type, entry.path.name, entry.path))[:10]
-        row = LibraryFile(
-            project_id=project.id,
-            revision_id=revision.id,
-            folder_id=None,
-            is_external=False,
-            filename=entry.path.name,
-            file_path=to_relative_path(entry.path),
-            file_type=file_type,
-            file_size=entry.size,
-            file_hash=entry.digest,
-            thumbnail_path=entry.thumbnail_rel,
-            file_metadata=entry.metadata,
-            created_by_id=user_id,
-        )
-        db.add(row)
+        reuse = entry.source.reuse_row if entry.source is not None else None
+        if reuse is None:
+            row = LibraryFile(
+                project_id=project.id,
+                revision_id=revision.id,
+                folder_id=None,
+                is_external=False,
+                filename=entry.path.name,
+                file_path=to_relative_path(entry.path),
+                file_type=file_type,
+                file_size=entry.size,
+                file_hash=entry.digest,
+                thumbnail_path=entry.thumbnail_rel,
+                file_metadata=entry.metadata,
+                created_by_id=user_id,
+            )
+            db.add(row)
+        else:
+            row = reuse
+            row.project_id = project.id
+            row.revision_id = revision.id
+            row.folder_id = None
+            row.is_external = False
+            row.variant_group_id = None
+            row.variant_position = 0
+            row.filename = entry.path.name
+            row.file_path = to_relative_path(entry.path)
+            row.file_type = file_type
+            row.file_size = entry.size
+            row.file_hash = entry.digest
+            if entry.thumbnail_rel is not None:
+                row.thumbnail_path = entry.thumbnail_rel
+            if entry.metadata is not None:
+                row.file_metadata = entry.metadata
+        if entry.source is not None:
+            entry.source.row = row
         rows.append(row)
         snap = entry.snapshot
         if snap is not None and revision.config_snapshot is None and revision.print_profile is None:
@@ -397,15 +516,54 @@ async def add_revision(
         raise ProjectFilesError(400, "A revision needs at least one file")
     async with _item_lock(item.id):
         return await _add_revision_locked(
-            db, project, await _fresh_item(db, item.id), uploads, note, derived_from_id, user_id
+            db,
+            project,
+            await _fresh_item(db, item.id),
+            lambda folder: _stream_files(folder, uploads),
+            note,
+            derived_from_id,
+            user_id,
         )
+
+
+async def add_revision_from_sources(
+    db: AsyncSession,
+    project: Project,
+    item: ProjectItem,
+    sources: list[RevisionSource],
+    *,
+    note: str | None,
+    user_id: int | None,
+) -> ProjectRevision:
+    """New R{n} for ``item`` from files already on disk (≥ 1). Commits.
+
+    Each source is copied into the revision folder (size and SHA-256 computed
+    while copying) and post-processed like an upload before any row is written;
+    then one short DB step creates the revision and updates each ``reuse_row``
+    or adds a new row. The sources themselves are never modified or removed —
+    unlinking a moved file's old bytes after the commit is the caller's job. On
+    failure the copies are deleted and the caller's WHOLE session is rolled back
+    (see ``add_revision``). Each source's ``row`` is set on success."""
+    if not sources:
+        raise ProjectFilesError(400, "A revision needs at least one file")
+    async with _item_lock(item.id):
+        revision, _warnings = await _add_revision_locked(
+            db,
+            project,
+            await _fresh_item(db, item.id),
+            lambda folder: _copy_sources(folder, sources),
+            note,
+            None,
+            user_id,
+        )
+        return revision
 
 
 async def _add_revision_locked(
     db: AsyncSession,
     project: Project,
     item: ProjectItem,
-    uploads: list[UploadFile],
+    write: Callable[[Path], Awaitable[list[_WrittenFile]]],
     note: str | None,
     derived_from_id: int | None,
     user_id: int | None,
@@ -418,7 +576,7 @@ async def _add_revision_locked(
     created_folder = not any(folder.iterdir())
     written: list[_WrittenFile] = []
     try:
-        written = await _stream_files(folder, uploads)
+        written = await write(folder)
         await _require_item_unchanged(db, item_id, section, name)
         revision = ProjectRevision(
             item_id=item.id,

@@ -17,7 +17,6 @@ from difflib import SequenceMatcher
 
 from fastapi import UploadFile
 from sqlalchemy import delete, func, select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.websocket import ws_manager
@@ -39,6 +38,7 @@ from backend.app.schemas.aito_project_links import (
 )
 from backend.app.schemas.project_files import RevisionRef
 from backend.app.services import aito_events, project_files, project_print_trace
+from backend.app.services.project_filing import find_or_create_item, item_name_for_filename, section_for_filename
 from backend.app.services.project_tags import UnknownTagError, apply_project_tag_input
 
 logger = logging.getLogger(__name__)
@@ -463,31 +463,6 @@ async def broadcast_orders_changed(order_ids: Iterable[int], actor: str | None) 
 
 # --- file drops (spec §4.3) -------------------------------------------------
 
-_DROP_SECTIONS = {
-    "scan": (".ply", ".obj", ".e57", ".xyz", ".pts"),
-    "modelisation": (".step", ".stp", ".iges", ".igs", ".f3d", ".stl", ".sldprt"),
-    "impression": (".3mf", ".gcode", ".bgcode"),
-    "usinage": (".nc", ".tap", ".dxf"),
-}
-_SECTION_BY_EXTENSION = {ext: section for section, exts in _DROP_SECTIONS.items() for ext in exts}
-
-
-def section_for_filename(name: str) -> str:
-    """Guess the project section from the extension (``.gcode.3mf`` ends in ``.3mf``); unknown -> docs."""
-    lowered = name.strip().lower()
-    dot = lowered.rfind(".")
-    return _SECTION_BY_EXTENSION.get(lowered[dot:], "docs") if dot >= 0 else "docs"
-
-
-def item_name_for_filename(name: str) -> str:
-    """File name without its extension (``.gcode.3mf`` counted whole); the full name if nothing is left."""
-    stripped = name.strip()
-    if stripped.lower().endswith(".gcode.3mf"):
-        stem = stripped[: -len(".gcode.3mf")]
-    else:
-        stem = stripped.rsplit(".", 1)[0] if "." in stripped else stripped
-    return stem if stem.strip() else stripped
-
 
 def _base_name(upload: UploadFile) -> str:
     return (upload.filename or "").replace("\\", "/").rsplit("/", 1)[-1]
@@ -516,46 +491,6 @@ async def _record_drop(
             "results": [r.model_dump() for r in results],
         },
     )
-
-
-async def _find_item(db: AsyncSession, project_id: int, section: str, key: str) -> ProjectItem | None:
-    return (
-        await db.execute(
-            select(ProjectItem).where(
-                ProjectItem.project_id == project_id,
-                ProjectItem.section == section,
-                ProjectItem.name_key == key,
-            )
-        )
-    ).scalar_one_or_none()
-
-
-async def _item_for_drop(
-    db: AsyncSession, project: Project, section: str, key: str, name: str, user_id: int | None
-) -> tuple[ProjectItem, Project]:
-    """The item a dropped group goes to, created (and committed) if missing.
-
-    Two drops of the same new name can race between the lookup and the
-    create: the loser hits the name check (409) or the unique constraint, so
-    it re-reads the winner's item and adds its revision there instead of
-    failing. Returns the project too, re-read if the rollback expired it."""
-    project_id = project.id
-    item = await _find_item(db, project_id, section, key)
-    if item is not None:
-        return item, project
-    try:
-        item = await project_files.create_item(db, project, section=section, name=name, user_id=user_id)
-        await db.commit()
-        return item, project
-    except (IntegrityError, project_files.ProjectFilesError) as exc:
-        if isinstance(exc, project_files.ProjectFilesError) and exc.status_code != 409:
-            raise
-        await db.rollback()
-        project = await db.get(Project, project_id)
-        item = await _find_item(db, project_id, section, key)
-        if item is None or project is None:
-            raise project_files.ProjectFilesError(409, "This item was changed meanwhile; drop the files again") from exc
-        return item, project
 
 
 async def _fan_out_revision(
@@ -623,7 +558,7 @@ async def drop_files_on_task(
     notified: list[int] = []
     try:
         for (section, key), (name, group) in groups.items():
-            item, project = await _item_for_drop(db, project, section, key, name, user_id)
+            item, project = await find_or_create_item(db, project, section, key, name, user_id)
             item_id, item_name = item.id, item.name
             revision, _warnings = await project_files.add_revision(
                 db, project, item, group, note=None, derived_from_id=None, user_id=user_id
