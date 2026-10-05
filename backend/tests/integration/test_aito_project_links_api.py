@@ -280,21 +280,23 @@ async def test_status_change_survives_event_failure(async_client: AsyncClient, d
 async def test_status_change_commit_failure_is_an_error(async_client: AsyncClient, db_session, monkeypatch):
     project, _order_row, revision_id = await _linked_revision(async_client, db_session)
     real_commit = AsyncSession.commit
-    state = {"fail": True}
+    calls = {"n": 0}
 
-    async def flaky(self):
-        if state["fail"]:
+    async def first_commit_fails(self):
+        calls["n"] += 1
+        if calls["n"] == 1:
             raise OperationalError("COMMIT", {}, Exception("database is locked"))
         return await real_commit(self)
 
-    monkeypatch.setattr(AsyncSession, "commit", flaky)
+    monkeypatch.setattr(AsyncSession, "commit", first_commit_fails)
     try:
         response = await async_client.patch(f"/api/v1/projects/revisions/{revision_id}", json={"status": "valide"})
-        failed = response.status_code >= 400
+        status_code = response.status_code
     except OperationalError:
-        failed = True
-    state["fail"] = False
-    assert failed
+        status_code = 500
+    assert calls["n"] >= 1
+    assert status_code >= 500
+    monkeypatch.undo()
     tree = (await async_client.get(f"/api/v1/projects/{project['id']}/tree")).json()
     statuses = [r["status"] for sec in tree["sections"] for it in sec["items"] for r in it["revisions"]]
     assert statuses == ["wip"]
