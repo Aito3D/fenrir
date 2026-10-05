@@ -20,6 +20,14 @@ from backend.app.services import timelapse_processor as tp
 pytestmark = pytest.mark.asyncio
 
 
+@pytest.fixture(autouse=True)
+def _ffmpeg_present(monkeypatch):
+    """The processor refuses to construct without an ffmpeg binary, and CI
+    runners have none. Every test here stubs the subprocess (or `process`)
+    itself, so a fake path is all the constructor needs."""
+    monkeypatch.setattr(tp, "get_ffmpeg_path", lambda: "/usr/bin/ffmpeg")
+
+
 class _HangingProcess:
     def __init__(self):
         self.killed = False
