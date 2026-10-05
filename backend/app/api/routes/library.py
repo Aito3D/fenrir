@@ -163,6 +163,13 @@ def _ensure_library_file_visible(
     return library_file
 
 
+# Fenrir: the per-file ownership rule of the bulk move (``move_files``), shared with
+# the project import route (project_files.py) so both apply exactly one rule.
+def may_modify_library_file(library_file: LibraryFile, user: User | None, can_modify_all: bool) -> bool:
+    """``can_modify_all`` (``*_all`` permission or auth off), else only the owner; ownerless needs ALL."""
+    return can_modify_all or (user is not None and library_file.created_by_id == user.id)
+
+
 def get_library_dir() -> Path:
     """Get the library storage directory."""
     base_dir = Path(app_settings.archive_dir)
@@ -6602,7 +6609,7 @@ async def move_files(
         if not file:
             continue
         # Ownership check
-        if not can_modify_all and file.created_by_id != user.id:
+        if not may_modify_library_file(file, user, can_modify_all):  # Fenrir: shared with the project import
             skipped += 1
             skipped_reasons.append({"file_id": file_id, "code": "not_owner", "reason": "not the file owner"})
             continue

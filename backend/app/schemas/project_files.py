@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 Section = Literal["scan", "modelisation", "impression", "usinage", "docs"]
 RevisionStatus = Literal["wip", "valide", "obsolete"]
@@ -107,3 +107,50 @@ class ProjectRevisionUpdate(BaseModel):
 class RevisionUploadResponse(BaseModel):
     revision: ProjectRevisionOut
     warnings: list[DuplicateWarning]
+
+
+# --- phase 5: File Manager bridge -------------------------------------------
+
+
+class ImportLibraryFilesRequest(BaseModel):
+    """Move File Manager files into a project (always the Impression section)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    file_ids: list[int] = Field(..., min_length=1, max_length=200)
+    item_id: int | None = None
+    new_item_name: str | None = Field(default=None, max_length=255)
+
+
+class FiledFileOut(BaseModel):
+    file_id: int
+    filename: str
+    section: str
+    item_id: int
+    item_name: str
+    revision_id: int
+    revision_number: int
+    # Copied external files only: the untouched original row.
+    source_file_id: int | None = None
+
+
+class SkippedFileOut(BaseModel):
+    file_id: int
+    code: str
+    reason: str
+
+
+class ImportLibraryFilesResponse(BaseModel):
+    moved: list[FiledFileOut]
+    copied: list[FiledFileOut]
+    skipped: list[SkippedFileOut]
+
+
+class ProjectSuggestionForFile(BaseModel):
+    project_id: int
+    code: str | None
+    name: str
+    item_id: int | None = None
+    item_name: str | None = None
+    score: float
+    reason: Literal["code", "item_name", "project_name"]

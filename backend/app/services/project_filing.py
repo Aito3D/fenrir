@@ -12,7 +12,9 @@ the original row and the file on the mount are never touched.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
+from difflib import SequenceMatcher
 from pathlib import Path
 
 from sqlalchemy import select
@@ -23,7 +25,9 @@ from backend.app.api.routes.library import to_absolute_path
 from backend.app.models.library import LibraryFile
 from backend.app.models.project import Project
 from backend.app.models.project_item import ProjectItem
+from backend.app.schemas.project_files import ProjectSuggestionForFile
 from backend.app.services import project_files
+from backend.app.services.project_codes import format_project_code
 from backend.app.services.project_files import RevisionSource
 from backend.app.services.project_storage import ENABLED_SECTIONS, PRINTABLE_EXTENSIONS, is_printable_filename
 
@@ -287,3 +291,104 @@ async def move_library_files_to_project(
             else:
                 result.moved.append(entry)
     return result
+
+
+# --- project codes in filenames and project suggestions ----------------------
+
+_FILENAME_CODE_RE = re.compile(r"^P-(\d{4,})[ _-]", re.IGNORECASE)
+SIMILAR_ITEM_THRESHOLD = 0.6
+SIMILAR_PROJECT_THRESHOLD = 0.45
+
+
+def project_code_from_filename(name: str) -> str | None:
+    """``P-0042`` from a filename starting with ``P-0042_``/``P-0042 ``/``P-0042-``
+    (case-insensitive, 4+ digits, normalised); None otherwise."""
+    match = _FILENAME_CODE_RE.match(name.strip())
+    return format_project_code(int(match.group(1))) if match else None
+
+
+def _name_without_code(name: str) -> str:
+    """The item name a file suggests, its leading project code stripped."""
+    item_name = item_name_for_filename(name)
+    match = _FILENAME_CODE_RE.match(item_name.strip())
+    rest = item_name.strip()[match.end() :] if match else item_name
+    return rest if rest.strip() else item_name
+
+
+async def suggest_projects_for_filename(
+    db: AsyncSession, filename: str, limit: int = 5
+) -> list[ProjectSuggestionForFile]:
+    """Projects a File Manager file likely belongs to, best first: the project
+    whose code prefixes the filename (score 1.0), then projects with an item
+    (in an enabled section) named like the file, then projects named like it.
+    Templates are never suggested; a project appears once, under its best
+    reason. Non-printable files get no suggestion."""
+    if not is_printable_filename(filename) or limit <= 0:
+        return []
+    out: list[ProjectSuggestionForFile] = []
+    seen: set[int] = set()
+
+    def add(suggestion: ProjectSuggestionForFile) -> None:
+        if suggestion.project_id not in seen:
+            seen.add(suggestion.project_id)
+            out.append(suggestion)
+
+    code = project_code_from_filename(filename)
+    if code is not None:
+        row = (
+            await db.execute(
+                select(Project.id, Project.code, Project.name).where(
+                    Project.code == code, Project.is_template.is_not(True)
+                )
+            )
+        ).first()
+        if row is not None:
+            add(ProjectSuggestionForFile(project_id=row[0], code=row[1], name=row[2], score=1.0, reason="code"))
+
+    name = _name_without_code(filename)
+    key = project_files._name_key(name)
+    if key:
+        rows = await db.execute(
+            select(ProjectItem.id, ProjectItem.name, ProjectItem.name_key, Project.id, Project.code, Project.name)
+            .join(Project, Project.id == ProjectItem.project_id)
+            .where(ProjectItem.section.in_(ENABLED_SECTIONS), Project.is_template.is_not(True))
+        )
+        scored = []
+        for item_id, item_name, item_key, project_id, project_code, project_name in rows:
+            ratio = SequenceMatcher(None, key, item_key or "").ratio()
+            if ratio >= SIMILAR_ITEM_THRESHOLD:
+                scored.append((ratio, project_id, item_id, item_name, project_code, project_name))
+        scored.sort(key=lambda r: (-r[0], r[1], r[2]))
+        for ratio, project_id, item_id, item_name, project_code, project_name in scored:
+            add(
+                ProjectSuggestionForFile(
+                    project_id=project_id,
+                    code=project_code,
+                    name=project_name,
+                    item_id=item_id,
+                    item_name=item_name,
+                    score=round(ratio, 4),
+                    reason="item_name",
+                )
+            )
+
+    folded = name.strip().casefold()
+    if folded:
+        rows = await db.execute(select(Project.id, Project.code, Project.name).where(Project.is_template.is_not(True)))
+        scored_projects = []
+        for project_id, project_code, project_name in rows:
+            ratio = SequenceMatcher(None, folded, (project_name or "").casefold()).ratio()
+            if ratio >= SIMILAR_PROJECT_THRESHOLD:
+                scored_projects.append((ratio, project_id, project_code, project_name))
+        scored_projects.sort(key=lambda r: (-r[0], r[1]))
+        for ratio, project_id, project_code, project_name in scored_projects:
+            add(
+                ProjectSuggestionForFile(
+                    project_id=project_id,
+                    code=project_code,
+                    name=project_name,
+                    score=round(ratio, 4),
+                    reason="project_name",
+                )
+            )
+    return out[:limit]
