@@ -160,6 +160,10 @@ KINDS: dict[str, str] = {
     "project.revision_added": "story",
     "project.revision_status_changed": "story",
     "project.files_dropped": "story",
+    # Phase 4 (production traceability): a revision file was queued for a
+    # task of this order. Story: "Support R3 x3 went to the printers" is the
+    # production half of the narrative. Once per POST /queue/ call.
+    "print.queued_from_revision": "story",
     # detail: everything a person did by hand.
     "task.added": "detail",
     "task.updated": "detail",

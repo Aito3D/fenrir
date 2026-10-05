@@ -56,6 +56,7 @@ from backend.app.schemas.project_files import (
     RevisionRef,
 )
 from backend.app.services.pdf_thumbnail import generate_pdf_thumbnail
+from backend.app.services.project_print_trace import revision_print_counts
 from backend.app.services.project_snapshot import PrintSnapshot, is_3mf, read_print_snapshot
 from backend.app.services.project_storage import (
     claim_unique_file_path,
@@ -915,6 +916,7 @@ async def load_tree(db: AsyncSession, project: Project) -> ProjectTreeResponse:
     users = (
         dict((await db.execute(select(User.id, User.username).where(User.id.in_(user_ids)))).all()) if user_ids else {}
     )
+    print_counts = await revision_print_counts(db, list(revisions_by_id))
     newest_valide: dict[int, ProjectRevision] = {}
     for rev in revisions:
         if rev.status == "valide" and (
@@ -958,6 +960,7 @@ async def load_tree(db: AsyncSession, project: Project) -> ProjectTreeResponse:
             created_by=users.get(rev.created_by_id),
             created_at=rev.created_at,
             status_changed_at=rev.status_changed_at,
+            print_count=print_counts.get(rev.id, 0),
         )
 
     by_section: dict[str, list[ProjectItemOut]] = {section: [] for section in SECTIONS}

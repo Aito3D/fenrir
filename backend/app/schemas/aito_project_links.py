@@ -28,6 +28,11 @@ class TaskProjectLink(BaseModel):
     # section -> newest revision of up to three items, newest activity first.
     sections: dict[str, list[SectionRevisionSummary]]
     deliveries: list[int]
+    # Production traceability (phase 4): quantities from the task's archives / queue.
+    printed: int = 0
+    rejected: int = 0
+    queued: int = 0
+    target: int | None = None  # the task's impression_quantity
 
 
 class OrderProjectLinks(BaseModel):

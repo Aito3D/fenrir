@@ -120,6 +120,10 @@ class PrintQueueItemCreate(BaseModel):
     batch_id: int | None = None
     # Project to associate the resulting archive with
     project_id: int | None = None
+    # Fenrir: the Aito task this print is for (projects as a PDM, phase 4). Only
+    # valid with a project revision file; revision_id itself is never accepted
+    # from the client -- it is derived from the library file.
+    aito_task_id: int | None = None
     cost_center_id: int | None = None
     estimated_cost: float | None = None
     # Which rack position each filament group prints from (#1784), as
@@ -196,6 +200,9 @@ class PrintQueueItemResponse(BaseModel):
     waiting_reason: str | None = None  # Why this job hasn't started yet (empty once it can)
     archive_id: int | None  # None if library_file_id is set (archive created at print start)
     library_file_id: int | None  # For queue items from library files
+    # Fenrir: production traceability (projects as a PDM, phase 4).
+    revision_id: int | None = None
+    aito_task_id: int | None = None
     cost_center_id: int | None = None
     estimated_cost: float | None = None
     position: int

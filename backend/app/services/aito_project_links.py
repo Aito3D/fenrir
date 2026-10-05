@@ -38,7 +38,7 @@ from backend.app.schemas.aito_project_links import (
     TaskProjectLink,
 )
 from backend.app.schemas.project_files import RevisionRef
-from backend.app.services import aito_events, project_files
+from backend.app.services import aito_events, project_files, project_print_trace
 from backend.app.services.project_tags import UnknownTagError, apply_project_tag_input
 
 logger = logging.getLogger(__name__)
@@ -316,8 +316,11 @@ async def order_links(db: AsyncSession, order_id: int) -> OrderProjectLinks:
         for task_id, revision_id in rows:
             deliveries[task_id].append(revision_id)
 
+    counts = await project_print_trace.task_print_counts(db, task_ids)
+    no_counts = project_print_trace.PrintCounts()
     result = []
     for task in tasks:
+        task_counts = counts.get(task.id, no_counts)
         project = projects.get(task.linked_project_id) if task.linked_project_id is not None else None
         result.append(
             TaskProjectLink(
@@ -326,6 +329,10 @@ async def order_links(db: AsyncSession, order_id: int) -> OrderProjectLinks:
                 project=LinkedProjectRef(id=project.id, code=project.code, name=project.name) if project else None,
                 sections=dict(sections_by_project.get(project.id, {})) if project else {},
                 deliveries=deliveries.get(task.id, []),
+                printed=task_counts.printed,
+                rejected=task_counts.rejected,
+                queued=task_counts.queued,
+                target=task.impression_quantity,
             )
         )
     return OrderProjectLinks(order_id=order_id, tasks=result)

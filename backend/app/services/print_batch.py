@@ -77,6 +77,9 @@ CLONED_SETTING_COLUMNS = (
     "preheat_override",
     "preheat_chamber_target_override",
     "skip_filament_check",
+    # Fenrir: production traceability (projects as a PDM, phase 4).
+    "revision_id",
+    "aito_task_id",
 )
 
 CLONED_VARIANT_COLUMNS = (

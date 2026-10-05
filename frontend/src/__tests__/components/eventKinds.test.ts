@@ -367,10 +367,11 @@ describe('projects-as-PDM kinds', () => {
       'project.revision_added',
       'project.revision_status_changed',
       'project.files_dropped',
+      'print.queued_from_revision',
     ];
     for (const kind of kinds) {
       const key = EVENT_LABEL_KEY[kind];
-      expect(key, kind).toMatch(/^projectsPdm\.aito\.events\./);
+      expect(key, kind).toMatch(/^projectsPdm\.(aito\.events|print)\./);
       expect(i18n.exists(key, { lng: 'en' }), kind).toBe(true);
     }
   });
@@ -422,6 +423,17 @@ describe('projects-as-PDM kinds', () => {
     const params = labelParams(ev('project.files_dropped', '3 file(s)', detail));
     expect(params).toEqual({ code: 'P-0001' });
     expect(t(EVENT_LABEL_KEY['project.files_dropped'], params ?? undefined)).toBe('added files to P-0001');
+  });
+
+  it('print.queued_from_revision names the revision and copies, detail is the project code', () => {
+    const detail = { revision_label: 'Support R3', copies: 3, project_id: 1, code: 'P-0001' };
+    const params = labelParams(ev('print.queued_from_revision', 'Support', detail));
+    expect(params).toEqual({ label: 'Support R3', copies: 3 });
+    expect(t(EVENT_LABEL_KEY['print.queued_from_revision'], params ?? undefined)).toBe('Support R3 ×3 queued');
+    expect(detailText('print.queued_from_revision', detail, t)).toBe('P-0001');
+    // Missing detail keys degrade instead of throwing.
+    expect(labelParams(ev('print.queued_from_revision', null, {}))).toEqual({ label: '—', copies: 1 });
+    expect(detailText('print.queued_from_revision', {}, t)).toBeNull();
   });
 
   it('falls back to raw values without a translator', () => {

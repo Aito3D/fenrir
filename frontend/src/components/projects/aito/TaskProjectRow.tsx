@@ -1,20 +1,22 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
-import type { ReactNode } from 'react';
+import type { DragEvent, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { FolderPlus, Link2, Pencil, Unlink } from 'lucide-react';
+import { FolderPlus, Link2, Pencil, Printer, Unlink } from 'lucide-react';
 import { api } from '../../../api/client';
-import type { TaskProjectLink } from '../../../api/client';
+import type { ProjectFileOut, TaskProjectLink } from '../../../api/client';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useToast } from '../../../contexts/ToastContext';
 import { ConfirmModal } from '../../ConfirmModal';
+import { PrintModal } from '../../PrintModal';
 import { focusRingCls } from '../../formStyles';
 import { taskSteps } from '../../aito/services';
 import type { TaskDraft } from '../../../utils/taskDraft';
 import { ProjectCodeChip } from '../ProjectCodeChip';
 import { NewProjectModal } from '../NewProjectModal';
+import { PrintRevisionPicker } from '../print/PrintRevisionPicker';
 import { DeliveriesPicker } from './DeliveriesPicker';
 import { ProjectLinkPicker } from './ProjectLinkPicker';
 import { useTaskFileDrop } from './dropFiles';
@@ -58,11 +60,14 @@ export function TaskProjectRow({
   const { showToast } = useToast();
   const invalidate = useInvalidateProjectLinks();
   const canLink = hasPermission('aito:update');
+  const canPrint = hasPermission('queue:create'); // POST /queue/'s own gate
   const canCreate = canLink && hasPermission('projects:create');
   const [creating, setCreating] = useState(false);
   const [picking, setPicking] = useState(false);
   const [confirmUnlink, setConfirmUnlink] = useState(false);
   const [editingDeliveries, setEditingDeliveries] = useState(false);
+  // 'pick' = the revision picker; a file = the print modal for it.
+  const [printing, setPrinting] = useState<'pick' | { file: ProjectFileOut; warning?: string } | null>(null);
   const project = link?.project ?? null;
   const deliveries = link?.deliveries ?? [];
 
@@ -99,6 +104,10 @@ export function TaskProjectRow({
 
   if (!link) return null;
 
+  // Portalled dialogs still bubble React events to the task's drop zone: keep a
+  // stray drag over them from uploading files into the project.
+  const stopDrag = (e: DragEvent) => e.stopPropagation();
+
   return (
     <div className="space-y-1 text-xs">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -112,8 +121,14 @@ export function TaskProjectRow({
             >
               {project.name}
             </Link>
+            {canPrint && (
+              <button type="button" className={`ml-auto ${smallBtn}`} onClick={() => setPrinting('pick')}>
+                <Printer aria-hidden="true" className="h-3 w-3" />
+                {t('projectsPdm.print.print')}
+              </button>
+            )}
             {canLink && (
-              <button type="button" className={`ml-auto ${smallBtn}`} onClick={() => setConfirmUnlink(true)}>
+              <button type="button" className={`${canPrint ? '' : 'ml-auto '}${smallBtn}`} onClick={() => setConfirmUnlink(true)}>
                 <Unlink aria-hidden="true" className="h-3 w-3" />
                 {t('projectsPdm.aito.unlink')}
               </button>
@@ -198,6 +213,33 @@ export function TaskProjectRow({
             onConfirm={() => linkMutation.mutate(null)}
             onCancel={() => setConfirmUnlink(false)}
           />,
+          document.body,
+        )}
+      {printing &&
+        project &&
+        createPortal(
+          <div onDragOver={stopDrag} onDrop={stopDrag}>
+            {printing === 'pick' ? (
+              <PrintRevisionPicker
+                projectId={project.id}
+                onPick={(file, warning) => setPrinting({ file, warning })}
+                onClose={() => setPrinting(null)}
+              />
+            ) : (
+              <PrintModal
+                mode="create"
+                libraryFileId={printing.file.id}
+                archiveName={printing.file.filename}
+                projectId={project.id}
+                aitoTaskId={taskId}
+                revisionWarning={printing.warning}
+                isolateEscape
+                onClose={() => setPrinting(null)}
+                // Links (counts), codes, the order timeline, tree and orders.
+                onSuccess={() => invalidate(orderId, [project.id])}
+              />
+            )}
+          </div>,
           document.body,
         )}
       {editingDeliveries && project && (

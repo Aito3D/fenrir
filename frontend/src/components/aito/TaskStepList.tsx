@@ -10,6 +10,8 @@ import { api } from '../../api/client';
 import type { RevisionStatus, SectionRevisionSummary } from '../../api/client';
 import type { TaskDraft } from '../../utils/taskDraft';
 import { STATUS_LABEL_KEYS } from '../projects/files/filesUi';
+import { PrintedCount } from '../projects/print/PrintedCount';
+import type { PrintCounts } from '../projects/print/PrintedCount';
 
 const DESCRIPTION_FIELD = {
   scan: 'scanDescription',
@@ -40,6 +42,10 @@ export interface TaskStepListProps {
    *  that owns the section. A step with a non-empty entry gets one muted line
    *  under its description (`Support R3 · Approved`). Absent = no lines. */
   sectionSummaries?: Partial<Record<ServiceId, SectionRevisionSummary[]>>;
+  /** The linked project's print counts for this task (spec §4.2), shown on
+   *  the Impression step. Reaching the target only SUGGESTS ticking the step
+   *  — through the same toggle a manual tick uses. Absent = no line. */
+  printCounts?: PrintCounts;
 }
 
 /** A task's steps, read-only apart from their Done toggles.
@@ -56,7 +62,7 @@ export interface TaskStepListProps {
  *  The toggle exists at all only when `canTick` — see that prop. The steps
  *  themselves always render, ticks included: what a project's quote is now
  *  does not unsay work that was done. */
-export function TaskStepList({ task, onChange, canTick, sectionSummaries }: TaskStepListProps) {
+export function TaskStepList({ task, onChange, canTick, sectionSummaries, printCounts }: TaskStepListProps) {
   const { t } = useTranslation();
   const currency = useCurrency();
   const steps = taskSteps(task);
@@ -121,6 +127,9 @@ export function TaskStepList({ task, onChange, canTick, sectionSummaries }: Task
     return meta;
   };
 
+  // The one tick path: the step's own toggle and the print-target suggestion.
+  const toggleStep = (service: ServiceId, done: boolean) => onChange({ ...task, done: { ...task.done, [service]: !done } });
+
   if (steps.length === 0) {
     return <p className="text-sm text-bambu-gray">{t('aito.noSteps')}</p>;
   }
@@ -181,7 +190,7 @@ export function TaskStepList({ task, onChange, canTick, sectionSummaries }: Task
               <button
                 type="button"
                 aria-pressed={done}
-                onClick={() => onChange({ ...task, done: { ...task.done, [service]: !done } })}
+                onClick={() => toggleStep(service, done)}
                 // hover uses bambu-dark-tertiary/40, NOT a white alpha: a white
                 // overlay on a white card is invisible in light mode. Same
                 // token the description's hover already uses in this panel.
@@ -250,6 +259,31 @@ export function TaskStepList({ task, onChange, canTick, sectionSummaries }: Task
                 <span aria-hidden="true" className="w-0.5 flex-shrink-0" />
                 <span className="min-w-0 flex-1 truncate" title={files}>
                   {files}
+                </span>
+              </p>
+            )}
+            {service === 'impression' && printCounts && (printCounts.printed > 0 || printCounts.rejected > 0 || printCounts.queued > 0) && (
+              <p
+                data-testid="step-prints-impression"
+                className="flex items-start gap-3 pr-1.5 pb-1 text-xs text-bambu-gray"
+              >
+                {/* Same gutter spacers as the description above. */}
+                {canTick && <span aria-hidden="true" className="w-4 flex-shrink-0" />}
+                <span aria-hidden="true" className="w-0.5 flex-shrink-0" />
+                <span className="min-w-0 flex-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                  <PrintedCount {...printCounts} />
+                  {canTick && !done && printCounts.target !== null && printCounts.target > 0 && printCounts.printed >= printCounts.target && (
+                    <span className="inline-flex items-center gap-1.5 text-bambu-green">
+                      <span>{t('projectsPdm.print.tickSuggestion')}</span>
+                      <button
+                        type="button"
+                        onClick={() => toggleStep(service, done)}
+                        className={`rounded-md border border-bambu-green/40 px-1.5 py-0.5 font-medium hover:bg-bambu-green/10 ${focusRingCls}`}
+                      >
+                        {t('projectsPdm.print.tickStep')}
+                      </button>
+                    </span>
+                  )}
                 </span>
               </p>
             )}

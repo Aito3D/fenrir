@@ -21,7 +21,7 @@ export function useOrderProjectLinks(orderId: number | undefined) {
 export function useTaskProjectLink(orderId: number | undefined, taskId: number | null): TaskProjectLink | undefined {
   const { data } = useOrderProjectLinks(orderId);
   if (taskId === null || !data) return undefined;
-  return data.tasks.find((t) => t.task_id === taskId) ?? { task_id: taskId, task_title: null, project: null, sections: {}, deliveries: [] };
+  return data.tasks.find((t) => t.task_id === taskId) ?? { task_id: taskId, task_title: null, project: null, sections: {}, deliveries: [], printed: 0, rejected: 0, queued: 0, target: null };
 }
 
 /** What a link, delivery or drop change makes stale: the order's links, the

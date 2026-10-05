@@ -95,6 +95,9 @@ export function PrintModal({
   projectId,
   cleanupLibraryAfterDispatch,
   variantFiles,
+  aitoTaskId, // Fenrir
+  revisionWarning, // Fenrir
+  isolateEscape = false, // Fenrir
 }: PrintModalProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -108,6 +111,8 @@ export function PrintModal({
   // Cross-model alternatives (#671). One candidate is not a choice, so a
   // single-entry list behaves exactly like an ordinary print.
   const isCrossModel = mode === 'create' && (variantFiles?.length ?? 0) > 1;
+  // Fenrir: only present when the caller set it, so upstream bodies keep their exact keys
+  const aitoTaskBody = aitoTaskId !== undefined ? { aito_task_id: aitoTaskId } : {};
   // Editing an already-queued cross-model item. The candidates are shown so the
   // dialog doesn't misrepresent the job as a plain "Any H2D" — which is what it
   // did before, offering a printer picker whose Save would have left a row with
@@ -851,11 +856,18 @@ export function PrintModal({
   // Close on Escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !isSubmitting) onClose();
+      if (e.key !== 'Escape') return;
+      // Fenrir: keep the key from a host dialog, even while submitting.
+      if (isolateEscape) e.stopPropagation();
+      if (!isSubmitting) onClose();
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose, isSubmitting]);
+    // Fenrir: when isolated, listen on `document` in the bubble phase: after a
+    // SlotPicker's document capture listener (which swallows Escape to close only
+    // its list) and before a host dialog's window listener.
+    const target: Window | Document = isolateEscape ? document : window;
+    target.addEventListener('keydown', handleKeyDown as EventListener);
+    return () => target.removeEventListener('keydown', handleKeyDown as EventListener);
+  }, [onClose, isSubmitting, isolateEscape]);
 
   const isMultiPlate = platesData?.is_multi_plate ?? false;
   const plates = platesData?.plates ?? [];
@@ -1245,6 +1257,7 @@ export function PrintModal({
           quantity,
           ...printOptions,
           project_id: projectId ?? undefined,
+          ...aitoTaskBody, // Fenrir
         });
         showToast(t('printModal.variants.queued', { count: candidates.length }), 'success');
         queryClient.invalidateQueries({ queryKey: ['queue'] });
@@ -1364,6 +1377,7 @@ export function PrintModal({
       estimated_cost: billingEnabled && selectedCostCenterId != null ? plateEstimatedCost : undefined,
       batch_id: autoBatchId ?? undefined,
       cleanup_library_after_dispatch: cleanupLibraryAfterDispatch,
+      ...aitoTaskBody, // Fenrir
       };
     };
 
@@ -1730,6 +1744,16 @@ export function PrintModal({
           </div>
 
           <form onSubmit={handleSubmit} className="p-4 space-y-4">
+            {/* Fenrir: project-revision warning (OUTDATED); never blocks submit */}
+            {revisionWarning && (
+              <div
+                data-testid="print-revision-warning"
+                className="p-3 bg-yellow-100 dark:bg-yellow-500/20 border border-yellow-500/50 rounded-lg text-sm text-yellow-800 dark:text-yellow-300 flex items-start gap-2"
+              >
+                <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+                <span>{revisionWarning}</span>
+              </div>
+            )}
             {/* Archive name */}
             <p className="text-sm text-bambu-gray">
               <span className="block text-bambu-gray mb-1">Print Job</span>

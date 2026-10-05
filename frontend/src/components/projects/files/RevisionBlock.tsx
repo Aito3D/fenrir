@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Download, Eye, GitFork, Plus, Trash2, X } from 'lucide-react';
+import { Download, Eye, GitFork, Plus, Printer, Trash2, X } from 'lucide-react';
 import { api } from '../../../api/client';
 import type { ProjectFileOut, ProjectItemOut, ProjectRevisionOut, RevisionStatus } from '../../../api/client';
 import { useAuth } from '../../../contexts/AuthContext';
@@ -8,7 +8,8 @@ import { ConfirmModal } from '../../ConfirmModal';
 import { ModelViewerModal } from '../../ModelViewerModal';
 import { inputCls, focusRingCls } from '../../formStyles';
 import type { FileActions } from './useFileActions';
-import { PREVIEWABLE_TYPES, STATUS_CHIP_CLS, STATUS_LABEL_KEYS, chipBase } from './filesUi';
+import { PREVIEWABLE_TYPES, STATUS_CHIP_CLS, STATUS_LABEL_KEYS, chipBase, isPrintableFile, printProfileLine } from './filesUi';
+import { PrintRevisionFlow } from '../print/PrintRevisionFlow';
 
 export interface DerivedOption { id: number; label: string }
 
@@ -32,21 +33,19 @@ export function RevisionBlock({ item, revision, derivedOptions, actions }: Props
   const { hasPermission } = useAuth();
   const canUpdate = hasPermission('projects:update');
   const canDelete = hasPermission('projects:delete');
+  const canPrint = hasPermission('queue:create'); // POST /queue/'s own gate
   const addInput = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<ProjectFileOut | null>(null);
   const [editingNote, setEditingNote] = useState(false);
   const [forking, setForking] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState<ProjectFileOut | null>(null);
+  const [printing, setPrinting] = useState<ProjectFileOut | null>(null);
   const busy = actions.isBusy(item.id);
   const label = `R${revision.number}`;
   const editable = revision.status === 'wip' && !revision.used;
   const pp = revision.print_profile as Record<string, unknown> | null;
-  const profileLine = pp
-    ? [pp.printer_model, pp.nozzle_diameter ? `${pp.nozzle_diameter} mm` : null, pp.layer_height ? `${pp.layer_height} mm` : null,
-        Array.isArray(pp.filament_types) ? pp.filament_types.join(', ') : null]
-        .filter(Boolean).join(' · ')
-    : '';
+  const profileLine = printProfileLine(pp);
   const slicer = [revision.slicer_name, revision.slicer_version].filter(Boolean).join(' ');
   const newer = revision.outdated_by;
   const src = revision.derived_from;
@@ -77,6 +76,9 @@ export function RevisionBlock({ item, revision, derivedOptions, actions }: Props
           {[revision.created_by ? t('projectsPdm.files.byAuthor', { name: revision.created_by }) : null,
             new Date(revision.created_at).toLocaleDateString(i18n.language)].filter(Boolean).join(' · ')}
         </span>
+        {revision.print_count > 0 && (
+          <span className="text-xs text-bambu-gray-light">{t('projectsPdm.print.printCount', { count: revision.print_count })}</span>
+        )}
       </div>
 
       {newer && src && (
@@ -152,6 +154,12 @@ export function RevisionBlock({ item, revision, derivedOptions, actions }: Props
               <span className="min-w-0 flex-1 basis-40 break-all text-sm text-white">{f.filename}</span>
               <span className="text-xs text-bambu-gray">{formatSize(f.file_size)}</span>
               <span className="flex flex-wrap gap-1">
+                {canPrint && isPrintableFile(f.filename) && (
+                  <button type="button" className={btnCls} aria-label={t('projectsPdm.print.printFile', { name: f.filename })}
+                    onClick={() => setPrinting(f)}>
+                    <Printer className="h-3.5 w-3.5" />{t('projectsPdm.print.print')}
+                  </button>
+                )}
                 {canPreview && (
                   <button type="button" className={btnCls} onClick={() => setPreview(f)}>
                     <Eye className="h-3.5 w-3.5" />{t('projectsPdm.files.preview')}
@@ -213,6 +221,16 @@ export function RevisionBlock({ item, revision, derivedOptions, actions }: Props
       {preview && (
         <ModelViewerModal libraryFileId={preview.id} title={preview.filename} fileType={preview.file_type}
           onClose={() => setPreview(null)} />
+      )}
+      {printing && (
+        <PrintRevisionFlow
+          projectId={actions.projectId}
+          file={printing}
+          revisionWarning={newer && src
+            ? t('projectsPdm.print.outdatedWarning', { source: `${src.item_name} R${src.number}`, newer: `R${newer.number}` })
+            : undefined}
+          onClose={() => setPrinting(null)}
+        />
       )}
       {confirmRemove && (
         <ConfirmModal

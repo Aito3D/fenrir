@@ -14,7 +14,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from backend.app.api.routes.library_variants import normalize_model_name, resolve_variant_model
-from backend.app.core.auth import RequirePermissionIfAuthEnabled, require_ownership_permission
+from backend.app.core.auth import (
+    RequirePermissionIfAuthEnabled,
+    probe_permissions_if_auth_enabled,  # Fenrir
+    require_ownership_permission,
+)
 from backend.app.core.config import settings
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
@@ -54,6 +58,9 @@ from backend.app.services.print_batch import (
     refresh_batch_status_for_item,
 )
 from backend.app.services.print_cost_estimate import estimate_queue_source_cost
+
+# Fenrir: production traceability (projects as a PDM, phase 4).
+from backend.app.services.project_print_trace import PrintTraceError, record_queued, resolve_print_context
 from backend.app.services.queue_position import lock_queue_positions, max_queue_position
 from backend.app.utils.printer_models import (
     is_gcode_compatible,
@@ -455,6 +462,9 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
         "waiting_reason": item.waiting_reason,
         "archive_id": item.archive_id,
         "library_file_id": item.library_file_id,
+        # Fenrir: production traceability (projects as a PDM, phase 4).
+        "revision_id": item.revision_id,
+        "aito_task_id": item.aito_task_id,
         "cost_center_id": item.cost_center_id,
         "estimated_cost": item.estimated_cost,
         "position": item.position,
@@ -810,8 +820,13 @@ async def add_to_queue(
     data: PrintQueueItemCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_CREATE),
+    # Fenrir: queueing for an Aito task writes on its order, so it also needs
+    # aito:read (API keys follow their scope rules, which deny it).
+    can_read_aito: bool = Depends(probe_permissions_if_auth_enabled(Permission.AITO_READ)),
 ):
     """Add an item to the print queue."""
+    if data.aito_task_id is not None and not can_read_aito:  # Fenrir
+        raise HTTPException(403, "Queueing for an Aito task requires aito:read")
     # Normalize target_model (e.g., "Bambu Lab X1E" / "C13" -> "X1E").
     # normalize_model_name resolves internal codes first: the previous
     # `normalize_printer_model(x) or normalize_printer_model_id(x)` chain never
@@ -835,6 +850,9 @@ async def add_to_queue(
                 400, "Cannot combine variants with archive_id or library_file_id — the variants are the files"
             )
         variant_specs = await _resolve_queue_variants(db, data.variants, current_user)
+        # Fenrir: same permanence rule for a cross-model candidate set (phase 4).
+        if data.cleanup_library_after_dispatch and any(f.revision_id is not None for _, f, _ in variant_specs):
+            raise HTTPException(400, "Project files are never deleted after printing")
         # Mirror the first candidate onto the item so the queue listing, the SJF
         # grouping and the "Any H2S" label have something before a printer is
         # picked. Resolution overwrites it with whichever candidate actually runs.
@@ -885,6 +903,9 @@ async def add_to_queue(
         if not library_file:
             raise HTTPException(400, "Library file not found")
         _assert_can_queue_library_file(library_file, current_user)
+        # Fenrir: project revision files are permanent (projects as a PDM, phase 4).
+        if data.cleanup_library_after_dispatch and library_file.revision_id is not None:
+            raise HTTPException(400, "Project files are never deleted after printing")
         # Bambu SD card is FAT32/exFAT — illegal filename chars would 553 at
         # FTP upload time (#1540). Reject at queue time so the user gets the
         # actionable error before waiting in queue.
@@ -894,6 +915,22 @@ async def add_to_queue(
             validate_print_filename(library_file.filename)
         except InvalidFilenameError as e:
             raise HTTPException(400, str(e)) from e
+
+    # Fenrir: revision + Aito task traceability (projects as a PDM, phase 4).
+    # revision_id comes from the file, never the client. Cross-model candidates
+    # carry their own files, so they must agree on one revision (or none).
+    trace_file_id = data.library_file_id
+    if variant_specs:
+        variant_revisions = {f.revision_id for _, f, _ in variant_specs}
+        if len(variant_revisions) > 1:
+            raise HTTPException(400, "Alternatives must all come from the same project revision, or none")
+        trace_file_id = variant_specs[0][1].id
+    try:
+        trace = await resolve_print_context(
+            db, trace_file_id, data.aito_task_id, data.project_id, archive_id=data.archive_id
+        )
+    except PrintTraceError as e:
+        raise HTTPException(e.status_code, e.detail) from e
 
     # Cross-model safety gate (#2578): a G-code 3MF sliced for one model must
     # not be queued for dispatch to an incompatible model. The UI can no longer
@@ -1170,7 +1207,9 @@ async def add_to_queue(
             preheat_chamber_target_override=data.preheat_chamber_target_override,
             gcode_injection=data.gcode_injection,
             cleanup_library_after_dispatch=data.cleanup_library_after_dispatch,
-            project_id=data.project_id,
+            project_id=trace.project_id,  # Fenrir: defaults to the revision's project
+            revision_id=trace.revision_id,  # Fenrir: phase 4 traceability
+            aito_task_id=trace.aito_task_id,
             position=start_position + i,
             status="pending",
             created_by_id=current_user.id if current_user else None,
@@ -1197,6 +1236,9 @@ async def add_to_queue(
             item.print_time_seconds = min(estimates) if estimates else None
 
     await db.commit()
+
+    # Fenrir: best-effort story event on the task's order (phase 4); never raises.
+    await record_queued(db, trace, copies=quantity, actor=current_user.username if current_user else None)
 
     # Refresh the first item for the response
     item = items[0]
