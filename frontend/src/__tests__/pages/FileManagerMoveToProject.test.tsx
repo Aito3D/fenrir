@@ -147,6 +147,21 @@ describe('FileManagerPage — Move to project', () => {
       expect(within(card('bracket.stl')).queryByRole('button', { name: LABEL })).not.toBeInTheDocument();
     });
 
+    it('keeps the card button visible on mouse devices (outside the hover-faded ⋯ cluster)', async () => {
+      render(<FileManagerPage />);
+      await waitFor(() => expect(screen.getByText('bracket.3mf')).toBeInTheDocument());
+      const c = card('bracket.3mf');
+      const button = within(c).getByRole('button', { name: LABEL });
+      // Every ancestor up to the card: none fades on hover-capable devices.
+      for (let el: HTMLElement | null = button; el && el !== c; el = el.parentElement) {
+        expect(el.className).not.toMatch(/can-hover:opacity-0|(^|\s)opacity-0/);
+      }
+      // The ⋯ cluster still fades, and does not contain the Move button.
+      const kebab = c.querySelector('.lucide-ellipsis-vertical')!.closest('div') as HTMLElement;
+      expect(kebab.className).toContain('can-hover:opacity-0');
+      expect(kebab.contains(button)).toBe(false);
+    });
+
     it('the card button opens the modal for that file only, without selecting the card', async () => {
       const user = userEvent.setup();
       render(<FileManagerPage />);

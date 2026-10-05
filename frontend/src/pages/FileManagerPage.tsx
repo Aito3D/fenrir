@@ -1394,9 +1394,9 @@ function FileCard({ file, isSelected, onSelect, onDelete, onDownload, onPrint, o
       </div>
 
       {/* Actions - hover-revealed with a mouse, always there without one (#2865) */}
-      <div className="absolute bottom-2 right-2 flex items-center gap-1 transition-opacity can-hover:opacity-0 group-hover:opacity-100 group-focus-within:opacity-100" {...stopRowActivation}>
-        {/* Fenrir: visible Move to project button (projects PDM phase 5) */}
-        {onMoveToProject && canMoveToProject && (
+      {/* Fenrir: always-visible Move to project button, left of the hover-revealed ⋯ (projects PDM phase 5) */}
+      {onMoveToProject && canMoveToProject && (
+        <div className="absolute bottom-2 right-10" data-move-to-project {...stopRowActivation}>
           <button
             type="button"
             onClick={() => onMoveToProject(file)}
@@ -1406,7 +1406,9 @@ function FileCard({ file, isSelected, onSelect, onDelete, onDownload, onPrint, o
           >
             <FolderInput className="w-4 h-4" />
           </button>
-        )}
+        </div>
+      )}
+      <div className="absolute bottom-2 right-2 transition-opacity can-hover:opacity-0 group-hover:opacity-100 group-focus-within:opacity-100" {...stopRowActivation}>
         <button
           onClick={(e) => {
             // No open/close toggle: the menu's own outside-mousedown handler
