@@ -56,6 +56,7 @@ export function useFileActions(projectId: number) {
     );
 
   return {
+    projectId,
     isBusy: (itemId: number) => busyItems.has(itemId),
     uploadRevision,
     /** Creates an empty item; resolves to its id. Upload with `uploadRevision`, so a failed upload

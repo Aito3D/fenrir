@@ -52,6 +52,12 @@ export interface PrintModalProps {
    * plate preview reads from it.
    */
   variantFiles?: VariantCandidate[];
+  /** Fenrir: the Aito order task a project-revision print is for. Sent as
+   *  `aito_task_id` on every queue body when set (null = internal/test print);
+   *  left undefined, the bodies are exactly upstream's. */
+  aitoTaskId?: number | null;
+  /** Fenrir: non-blocking warning shown at the top (e.g. the revision is OUTDATED). */
+  revisionWarning?: string;
 }
 
 /**

@@ -25,3 +25,9 @@ export const STATUS_CHIP_CLS: Record<RevisionStatus, string> = {
 export const PREVIEWABLE_TYPES = ['stl', '3mf', 'gcode.3mf', 'step', 'stp'];
 
 export const chipBase = 'inline-flex items-center whitespace-nowrap rounded-md border px-1.5 py-0.5 text-xs font-medium';
+
+/** Files the print queue can take straight from a revision (.3mf, .gcode.3mf, .gcode). */
+export function isPrintableFile(filename: string): boolean {
+  const name = filename.toLowerCase();
+  return name.endsWith('.3mf') || name.endsWith('.gcode');
+}
