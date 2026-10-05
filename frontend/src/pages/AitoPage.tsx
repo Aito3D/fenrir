@@ -219,7 +219,8 @@ export function AitoPage() {
   const searchValue = useMemo<AitoSearchValue>(
     () => ({
       hits: searching ? searchProjects([...(aitoQuery.data ?? []), ...(trashQuery.data ?? [])], search) : [],
-      trash: trashQuery.isError ? 'error' : trashQuery.data ? 'ready' : 'loading',
+      // Cached rows win: a failed background refetch still searched them.
+      trash: trashQuery.data ? 'ready' : trashQuery.isError ? 'error' : 'loading',
       // Blur first so the phone keyboard does not stay up over the drawer.
       onSelect: (id: number) => {
         (document.activeElement as HTMLElement | null)?.blur();
