@@ -100,19 +100,22 @@ beforeEach(() => {
 });
 
 describe('card project chips', () => {
-  it('shows the order codes', async () => {
-    codes = { [ORDER]: ['P-0001', 'P-0002'] };
+  it('shows a single order code as is', async () => {
+    codes = { [ORDER]: ['P-0001'] };
     render(<CardView project={project} onExpand={() => {}} />);
     expect(await screen.findByText('P-0001')).toBeInTheDocument();
-    expect(screen.getByText('P-0002')).toBeInTheDocument();
     expect(screen.queryByText(/^\+\d/)).not.toBeInTheDocument();
   });
 
-  it('collapses the third code into +1', async () => {
+  it('collapses every code after the first into +N, so the footer keeps the date', async () => {
     codes = { [ORDER]: ['P-0001', 'P-0002', 'P-0003'] };
     render(<CardView project={project} onExpand={() => {}} />);
-    expect(await screen.findByText('+1')).toBeInTheDocument();
-    expect(screen.queryByText('P-0003')).not.toBeInTheDocument();
+    expect(await screen.findByText('+2')).toBeInTheDocument();
+    expect(screen.getByText('P-0001')).toBeInTheDocument();
+    expect(screen.queryByText('P-0002')).not.toBeInTheDocument();
+    // The chips may shrink (and clip); the elapsed date never does.
+    expect(screen.getByTestId('aito-card-project-chips')).toHaveClass('min-w-0', 'overflow-hidden');
+    expect(screen.getByTestId('aito-card-elapsed')).toHaveClass('shrink-0');
   });
 
   it('shows no chips on a placeholder or overlay card', async () => {

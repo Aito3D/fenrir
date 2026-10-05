@@ -586,7 +586,7 @@ export function CardView({
                 <span
                   data-testid="aito-card-elapsed"
                   title={dateTitle}
-                  className={`text-xs tabular-nums whitespace-nowrap ${agingTextCls(project, age.at)}`}
+                  className={`text-xs tabular-nums whitespace-nowrap shrink-0 ${agingTextCls(project, age.at)}`}
                 >
                   {elapsed}
                 </span>
