@@ -20,6 +20,7 @@ from backend.app.core.auth import RequirePermissionIfAuthEnabled, require_media_
 from backend.app.core.config import settings
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
+from backend.app.models.aito_task import AitoTask  # Fenrir: Aito tasks linked to a project block its deletion
 from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile, LibraryFolder
 from backend.app.models.print_log import PrintLogEntry
@@ -945,6 +946,11 @@ async def delete_project(
     # they are deleted or moved — nothing would clean their rows or folders up.
     if (await db.execute(select(ProjectItem.id).where(ProjectItem.project_id == project_id).limit(1))).first():
         raise HTTPException(status_code=409, detail="This project has files; delete or move its items first")
+
+    # Fenrir: a project linked from Aito tasks is still in use (PDM §8).
+    linked = (await db.execute(select(AitoTask.id).where(AitoTask.linked_project_id == project_id).limit(1))).first()
+    if linked:
+        raise HTTPException(status_code=409, detail="This project is linked to Aito tasks; unlink them first")
 
     # Sub-projects move up to the deleted project's own parent rather than
     # being cut loose at the top level, so deleting a middle layer collapses

@@ -321,6 +321,7 @@ async def init_db():
         aito_payment_link,
         aito_project,
         aito_task,
+        aito_task_delivery,
         aito_terminal_payment,
         aito_tracking_view,
         ams_history,
@@ -6296,6 +6297,13 @@ async def run_migrations(conn):
     # project_revisions come from create_all.
     await _safe_execute(conn, "ALTER TABLE library_files ADD COLUMN revision_id INTEGER")
     await _safe_execute(conn, "CREATE INDEX IF NOT EXISTS ix_library_files_revision_id ON library_files (revision_id)")
+
+    # Projects as a PDM, phase 3 (spec §1.6): task -> project link.
+    # aito_task_deliveries comes from create_all.
+    await _safe_execute(conn, "ALTER TABLE aito_tasks ADD COLUMN linked_project_id INTEGER")
+    await _safe_execute(
+        conn, "CREATE INDEX IF NOT EXISTS ix_aito_tasks_linked_project_id ON aito_tasks (linked_project_id)"
+    )
 
 
 async def _migrate_backfill_aito_document_numbers(conn) -> None:

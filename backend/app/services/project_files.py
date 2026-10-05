@@ -37,6 +37,7 @@ from backend.app.api.routes.library import (
     to_relative_path,
 )
 from backend.app.core.config import settings
+from backend.app.models.aito_task_delivery import AitoTaskDelivery
 from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile, LibraryFileTag
 from backend.app.models.pipeline_run import PipelineRun
@@ -449,7 +450,7 @@ async def _add_revision_locked(
 
 
 # Every reference that makes a file "used" (printed, queued, batched, sliced).
-# Phases 3/4 add deliveries.
+# Files of delivered revisions (aito_task_deliveries) count too, see used_file_ids.
 _USAGE_COLUMNS = (
     PrintQueueItem.library_file_id,
     PrintArchive.library_file_id,
@@ -462,7 +463,12 @@ _USAGE_COLUMNS = (
 
 async def used_file_ids(db: AsyncSession, file_ids: Select) -> set[int]:
     """Which of ``file_ids`` (a select of library file ids) are used, in one query."""
-    query = union(*(select(column.label("file_id")).where(column.in_(file_ids)) for column in _USAGE_COLUMNS))
+    delivered = select(LibraryFile.id.label("file_id")).where(
+        LibraryFile.id.in_(file_ids), LibraryFile.revision_id.in_(select(AitoTaskDelivery.revision_id))
+    )
+    query = union(
+        *(select(column.label("file_id")).where(column.in_(file_ids)) for column in _USAGE_COLUMNS), delivered
+    )
     return set((await db.execute(query)).scalars().all())
 
 
