@@ -107,8 +107,9 @@ export function useAitoPageMutations() {
        *  (see NewProjectDrawer.create): the server summarises them itself. */
       regenerateDescription: boolean;
       placeholder: AitoProject;
-      /** A seeded drawer the user never edited: the stored draft is still the
-       *  operator's own unrelated one, so success leaves it in place. */
+      /** A create from a seeded drawer (new order from a project): such a
+       *  drawer never writes the stored draft, so what is stored is the
+       *  operator's own unrelated card and success leaves it in place. */
       keepStoredDraft?: boolean;
       /** A new order started from a PDM project (`?newFromProject=`): its
        *  first task is linked to this project once the order exists. */

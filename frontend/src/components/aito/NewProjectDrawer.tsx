@@ -61,15 +61,16 @@ export interface NewProjectDrawerProps {
      *  describe `tasks` — see `create` below. The server then summarises the
      *  tasks it actually creates. */
     regenerateDescription: boolean,
-    /** Passed only by a seeded drawer: `keepStoredDraft` is true while the
-     *  seeded draft was never edited, i.e. the stored draft is still the
-     *  operator's earlier, unrelated one and a successful create must not
-     *  wipe it. */
+    /** Passed only by a seeded drawer, always `{ keepStoredDraft: true }`:
+     *  a seeded drawer never wrote the stored draft, so what is stored is the
+     *  operator's own unrelated card and a successful create must not wipe
+     *  it. */
     options?: { keepStoredDraft: boolean },
   ) => void;
   /** Start from this instead of the persisted draft (a new order from a PDM
    *  project): the description as a hand-written summary, one task with this
-   *  title. The persisted draft is left alone until the user edits. */
+   *  title. A seeded drawer ignores, never writes and never clears the persisted draft
+   *  — closing it discards its edits. */
   seed?: { description: string; taskTitle: string };
 }
 
@@ -88,10 +89,6 @@ function seededDraft(seed: { description: string; taskTitle: string }): Persiste
     socialPrefilledFor: [],
   };
 }
-
-/** A client draft with its error-reveal flags dropped — Create's reveal
- *  touches only those and is not an edit. */
-const clientIdentity = (client: ClientDraft) => JSON.stringify({ ...client, blurred: null });
 
 type SectionId = 'work' | 'client';
 
@@ -199,12 +196,6 @@ export function NewProjectDrawer({ onClose, onCreate, seed }: NewProjectDrawerPr
   // Read once, like `persistence.initial`: a seed applies to the opening state.
   const [seedInitial] = useState<PersistedDraft | null>(() => (seed ? seededDraft(seed) : null));
   const restored = seedInitial ?? persistence.initial;
-  // True until the seeded draft differs from what it opened with. While true
-  // nothing is saved, so the operator's stored draft survives a seeded visit.
-  const seedPristineRef = useRef(seedInitial !== null);
-  // The default-contact draft the seeding effect below installs on its own —
-  // not a user choice, so it does not end a seeded draft's pristine state.
-  const autoClientRef = useRef<ClientDraft | null>(null);
   const [tasks, setTasks] = useState<TaskDraft[]>(() => restored?.tasks ?? [emptyTaskDraft()]);
   const [draft, setDraft] = useState<ClientDraft | null>(() => restored?.client ?? null);
   const [summaryText, setSummaryText] = useState(() => restored?.summaryText ?? '');
@@ -287,10 +278,7 @@ export function NewProjectDrawer({ onClose, onCreate, seed }: NewProjectDrawerPr
   // Seed the draft once the default contact is known. Also re-seeds after a
   // reset, which deliberately sets `draft` back to null.
   useEffect(() => {
-    if (draft || !defaultId) return;
-    const seeded = defaultClientDraft(defaultId, defaultName);
-    autoClientRef.current = seeded;
-    setDraft(seeded);
+    if (!draft && defaultId) setDraft(defaultClientDraft(defaultId, defaultName));
   }, [draft, defaultId, defaultName]);
 
   // Zoho never stores the social handle; the client's own past cards do.
@@ -357,18 +345,9 @@ export function NewProjectDrawer({ onClose, onCreate, seed }: NewProjectDrawerPr
   // about the social field), nothing else in this dependency list changes,
   // so without the tick the "seen" marker would never reach localStorage.
   useEffect(() => {
-    if (seedPristineRef.current && seedInitial) {
-      const auto = autoClientRef.current;
-      const untouched =
-        tasks === seedInitial.tasks &&
-        summaryText === seedInitial.summaryText &&
-        summaryEdited === seedInitial.summaryEdited &&
-        shipping === null &&
-        dueDate === '' &&
-        (draft === null || (auto !== null && clientIdentity(draft) === clientIdentity(auto)));
-      if (untouched) return;
-      seedPristineRef.current = false;
-    }
+    // A seeded drawer is a one-off: the stored draft is the operator's own
+    // half-written card and must survive it untouched.
+    if (seedInitial) return;
     persistence.save({
       tasks,
       client: draft,
@@ -430,7 +409,7 @@ export function NewProjectDrawer({ onClose, onCreate, seed }: NewProjectDrawerPr
   };
 
   const resetDraft = () => {
-    persistence.clear();
+    if (!seedInitial) persistence.clear();
     setTasks([emptyTaskDraft()]);
     setDraft(null); // re-seeded by the default-contact effect above
     setSummaryText('');
@@ -564,7 +543,7 @@ export function NewProjectDrawer({ onClose, onCreate, seed }: NewProjectDrawerPr
     const description = summaryText.trim() || buildFallbackSummary(tasks, serviceLabel);
     if (seedInitial) {
       onCreate(description, draft, tasks, revealedShipping, dueDate || null, regenerateDescription, {
-        keepStoredDraft: seedPristineRef.current,
+        keepStoredDraft: true,
       });
     } else {
       onCreate(description, draft, tasks, revealedShipping, dueDate || null, regenerateDescription);
