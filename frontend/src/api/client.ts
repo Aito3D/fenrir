@@ -1270,7 +1270,8 @@ export interface TaskCreateProjectRequest { name: string; description?: string |
 export interface ProjectOrderTask { task_id: number; task_title: string | null; order_id: number; order_description: string; client_name: string | null; board_column: string; created_at: string | null; deliveries: RevisionRef[] }
 export interface ProjectOrdersResponse { orders: ProjectOrderTask[] }
 export interface DroppedFileResult { filename: string; section: string; item_id: number; item_name: string; revision_number: number }
-export interface DropFilesResponse { project_id: number; results: DroppedFileResult[] }
+/** `project_id`/`code`: where the files actually went (a cached link may be stale). */
+export interface DropFilesResponse { project_id: number; code?: string | null; results: DroppedFileResult[] }
 
 export interface ProjectCreate {
   name: string;

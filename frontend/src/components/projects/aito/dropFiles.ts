@@ -27,13 +27,20 @@ export function useUploadToTask() {
   const { showToast } = useToast();
   const invalidate = useInvalidateProjectLinks();
   return async (orderId: number, taskId: number, project: LinkedProjectRef, files: File[]) => {
+    let storedIn: number | undefined;
     try {
       const result = await api.dropFilesOnTask(taskId, files);
-      showToast(t('projectsPdm.aito.dropped', { count: result.results.length, code: project.code ?? project.name }), 'success');
+      storedIn = result.project_id;
+      // The server's answer wins: someone may have relinked the task since our
+      // links were fetched (the invalidation below refetches them).
+      const code =
+        result.code ??
+        (result.project_id === project.id ? (project.code ?? project.name) : `#${result.project_id}`);
+      showToast(t('projectsPdm.aito.dropped', { count: result.results.length, code }), 'success');
     } catch (err) {
       showToast(err instanceof Error && err.message ? err.message : t('projectsPdm.files.uploadFailed'), 'error');
     } finally {
-      invalidate(orderId, [project.id]);
+      invalidate(orderId, [project.id, storedIn]);
     }
   };
 }

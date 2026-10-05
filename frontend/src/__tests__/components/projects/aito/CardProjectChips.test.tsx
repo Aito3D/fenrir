@@ -144,6 +144,22 @@ describe('card file drop', () => {
     spy.mockRestore();
   });
 
+  it('the toast names the project the server stored the files in, not a stale cached link', async () => {
+    links = [link(11, 7, 'P-0007')];
+    server.use(
+      http.post('/api/v1/aito/tasks/:id/files', () =>
+        HttpResponse.json({
+          project_id: 9,
+          code: 'P-0009',
+          results: [{ filename: 'part.step', section: 'modelisation', item_id: 1, item_name: 'part', revision_number: 1 }],
+        }),
+      ),
+    );
+    render(<CardView project={project} onExpand={() => {}} />);
+    fireEvent.drop(zone(), fileDrop());
+    expect(await screen.findByText('1 file added to P-0009')).toBeInTheDocument();
+  });
+
   it('several linked tasks ask which, then post to the picked one', async () => {
     links = [link(11, 7, 'P-0007', 'Bracket'), unlinkedTask(13, 'Loose'), link(12, 8, 'P-0008', 'Clip')];
     render(<CardView project={project} onExpand={() => {}} />);
