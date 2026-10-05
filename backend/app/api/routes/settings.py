@@ -234,6 +234,7 @@ _BOOL_SETTING_KEYS = frozenset(
         # Fork keys
         "camera_gpu_accel",
         "drying_no_auto_stop",
+        "projects_auto_file_by_code",
     }
 )
 

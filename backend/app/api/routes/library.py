@@ -61,6 +61,7 @@ from backend.app.schemas.library import (
     CombineFilesRequest,
     DuplicateCheckItem,
     ExternalFolderCreate,
+    FiledToProject,  # Fenrir: projects PDM phase 5
     FileDuplicate,
     FileHistoryEvent,
     FileHistoryResponse,
@@ -2721,6 +2722,34 @@ class _ContentLengthCappedRoute(APIRoute):
         return route_handler
 
 
+async def _auto_file_upload(
+    db: AsyncSession, library_file: LibraryFile, file_path: Path, current_user: User | None
+) -> FiledToProject | None:
+    """Fenrir: auto-file a fresh upload by its project code; never fails the upload.
+
+    An uploader without ``projects:update`` (auth on) never files into a project."""
+    try:
+        from backend.app.services import project_filing
+
+        if current_user is not None and not current_user.has_permission(Permission.PROJECTS_UPDATE.value):
+            return None
+        filed = await project_filing.auto_file_by_code(
+            db,
+            filename=library_file.filename,
+            path=file_path,
+            library_file=library_file,
+            user_id=current_user.id if current_user else None,
+        )
+    except Exception:
+        logger.warning("Auto-filing upload %s failed", file_path.name, exc_info=True)
+        return None
+    if filed is None:
+        return None
+    return FiledToProject(
+        project_id=filed.project_id, code=filed.code, item_name=filed.item_name, revision_number=filed.revision_number
+    )
+
+
 async def upload_file(
     file: UploadFile = File(...),
     folder_id: int | None = None,
@@ -2885,7 +2914,7 @@ async def upload_file(
         await db.commit()
         await db.refresh(library_file)
 
-        return FileUploadResponse(
+        response = FileUploadResponse(
             id=library_file.id,
             filename=library_file.filename,
             file_type=library_file.file_type,
@@ -2894,6 +2923,10 @@ async def upload_file(
             duplicate_of=duplicate_of,
             metadata=library_file.file_metadata,
         )
+        # Fenrir: a printing file named "P-0042_…" goes into that project (projects PDM
+        # phase 5). Best-effort: the upload itself has already succeeded.
+        response.filed_to_project = await _auto_file_upload(db, library_file, file_path, current_user)
+        return response
     except HTTPException:
         raise
     except Exception as e:

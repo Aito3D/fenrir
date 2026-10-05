@@ -333,6 +333,15 @@ class FileMoveRequest(BaseModel):
     folder_id: int | None = None  # None = move to root
 
 
+class FiledToProject(BaseModel):
+    """Fenrir: where an upload named "P-0042_…" was auto-filed (projects PDM phase 5)."""
+
+    project_id: int
+    code: str
+    item_name: str
+    revision_number: int
+
+
 class FileUploadResponse(BaseModel):
     """Schema for file upload response."""
 
@@ -343,6 +352,7 @@ class FileUploadResponse(BaseModel):
     thumbnail_path: str | None
     duplicate_of: int | None = None  # ID of existing file with same hash
     metadata: dict | None = None
+    filed_to_project: FiledToProject | None = None  # Fenrir: auto-filed by project code (no longer listed)
 
 
 class DuplicateCheckItem(BaseModel):

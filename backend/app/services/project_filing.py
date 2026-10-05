@@ -392,3 +392,146 @@ async def suggest_projects_for_filename(
                 )
             )
     return out[:limit]
+
+
+# --- auto-filing by project code ---------------------------------------------
+
+AUTO_FILE_SETTING_KEY = "projects_auto_file_by_code"
+
+
+@dataclass
+class AutoFileResult:
+    """Where ``auto_file_by_code`` put the file (``file_id``: the row now in the revision)."""
+
+    project_id: int
+    code: str
+    item_id: int
+    item_name: str
+    revision_id: int
+    revision_number: int
+    file_id: int
+
+
+async def auto_file_enabled(db: AsyncSession) -> bool:
+    """The ``projects_auto_file_by_code`` setting (default on)."""
+    from backend.app.api.routes.settings import get_setting, setting_is_true
+
+    value = await get_setting(db, AUTO_FILE_SETTING_KEY)
+    return True if value is None or value == "" else setting_is_true(value)
+
+
+async def auto_file_by_code(
+    db: AsyncSession,
+    *,
+    filename: str,
+    path: Path,
+    library_file: LibraryFile | None,
+    user_id: int | None,
+) -> AutoFileResult | None:
+    """File a printing file named ``P-0042_<name>…`` into project P-0042 >
+    Impression > ``<name>`` (an existing item is matched by ``name_key``) as its
+    next revision. A ``library_file`` is moved (a managed row keeps its id; an
+    external one is copied into a new row); without one, ``path`` is copied into
+    a new row and left in place.
+
+    Returns None — and leaves everything as it was — when the setting is off, the
+    file isn't printable, has no code, or the code names no (non-template)
+    project. Never raises: an error is logged, the session rolled back, and None
+    returned, so the upload or ingest that called it still succeeds."""
+    try:
+        return await _auto_file_by_code(db, filename=filename, path=path, library_file=library_file, user_id=user_id)
+    except Exception:
+        logger.warning("Auto-filing %r by project code failed", filename, exc_info=True)
+        try:
+            await db.rollback()
+        except Exception:
+            logger.debug("Rollback after a failed auto-filing failed too", exc_info=True)
+        return None
+
+
+async def _auto_file_by_code(
+    db: AsyncSession,
+    *,
+    filename: str,
+    path: Path,
+    library_file: LibraryFile | None,
+    user_id: int | None,
+) -> AutoFileResult | None:
+    if not is_printable_filename(filename):
+        return None
+    code = project_code_from_filename(filename)
+    if code is None or not await auto_file_enabled(db):
+        return None
+    project = (
+        await db.execute(select(Project).where(Project.code == code, Project.is_template.is_not(True)))
+    ).scalar_one_or_none()
+    if project is None:
+        return None
+    project_id = project.id
+    name = _name_without_code(filename)
+
+    if library_file is not None:
+        result = await move_library_files_to_project(
+            db, project, [library_file], item_id=None, new_item_name=name, user_id=user_id
+        )
+        filed = [*result.moved, *result.copied]
+        if not filed:
+            logger.info("Auto-filing %r into %s skipped: %s", filename, code, result.skipped)
+            return None
+        entry = filed[0]
+        outcome = AutoFileResult(
+            project_id=project_id,
+            code=code,
+            item_id=entry["item_id"],
+            item_name=entry["item_name"],
+            revision_id=entry["revision_id"],
+            revision_number=entry["revision_number"],
+            file_id=entry["file_id"],
+        )
+        section = entry["section"]
+    else:
+        section = section_for_filename(filename)  # "impression" for every printable file
+        clean, key = project_files._clean_item_name(name)
+        item, project = await find_or_create_item(db, project, section, key, clean, user_id)
+        item_id, item_name = item.id, item.name
+        source = RevisionSource(path=path, filename=filename)
+        revision = await project_files.add_revision_from_sources(
+            db, project, item, [source], note=None, user_id=user_id
+        )
+        outcome = AutoFileResult(
+            project_id=project_id,
+            code=code,
+            item_id=item_id,
+            item_name=item_name,
+            revision_id=revision.id,
+            revision_number=revision.number,
+            file_id=source.row.id,
+        )
+    logger.info("Auto-filed %r into %s > %s R%d", filename, code, outcome.item_name, outcome.revision_number)
+    await _record_auto_filed(db, outcome, section, user_id)
+    return outcome
+
+
+async def _record_auto_filed(db: AsyncSession, outcome: AutoFileResult, section: str, user_id: int | None) -> None:
+    """Best-effort ``project.revision_added`` on the linked orders (as the import route does)."""
+    from backend.app.models.user import User
+    from backend.app.services import aito_project_links as aito_links
+
+    try:
+        user = await db.get(User, user_id) if user_id is not None else None
+        actor = user.username if user is not None else None
+        async with db.begin_nested():
+            order_ids = await aito_links.record_on_linked_orders(
+                db,
+                outcome.project_id,
+                "project.revision_added",
+                actor=actor,
+                subject_label=f"{outcome.item_name} R{outcome.revision_number}",
+                detail={"section": section, "item_id": outcome.item_id, "revision_id": outcome.revision_id},
+            )
+        await db.commit()
+    except Exception:
+        logger.warning("project.revision_added event failed for project %s", outcome.project_id, exc_info=True)
+        await db.rollback()
+        return
+    await aito_links.broadcast_orders_changed(order_ids, actor)
