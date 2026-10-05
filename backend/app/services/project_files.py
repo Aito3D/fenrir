@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import UploadFile
-from sqlalchemy import delete, exists, or_, select, update
+from sqlalchemy import Select, delete, select, union, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -448,25 +448,27 @@ async def _add_revision_locked(
     return revision, warnings
 
 
+# Every reference that makes a file "used" (printed, queued, batched, sliced).
+# Phases 3/4 add deliveries.
+_USAGE_COLUMNS = (
+    PrintQueueItem.library_file_id,
+    PrintArchive.library_file_id,
+    PrintBatch.library_file_id,
+    PrintQueueVariant.library_file_id,
+    PipelineRun.source_library_file_id,
+    PipelineRun.sliced_library_file_id,
+)
+
+
+async def used_file_ids(db: AsyncSession, file_ids: Select) -> set[int]:
+    """Which of ``file_ids`` (a select of library file ids) are used, in one query."""
+    query = union(*(select(column.label("file_id")).where(column.in_(file_ids)) for column in _USAGE_COLUMNS))
+    return set((await db.execute(query)).scalars().all())
+
+
 async def revision_is_used(db: AsyncSession, revision_id: int) -> bool:
-    """Printed (queue or archive references one of its files). Phases 3/4 add deliveries."""
-    file_ids = select(LibraryFile.id).where(LibraryFile.revision_id == revision_id)
-    return bool(
-        (
-            await db.execute(
-                select(
-                    or_(
-                        exists().where(PrintQueueItem.library_file_id.in_(file_ids)),
-                        exists().where(PrintArchive.library_file_id.in_(file_ids)),
-                        exists().where(PrintBatch.library_file_id.in_(file_ids)),
-                        exists().where(PrintQueueVariant.library_file_id.in_(file_ids)),
-                        exists().where(PipelineRun.source_library_file_id.in_(file_ids)),
-                        exists().where(PipelineRun.sliced_library_file_id.in_(file_ids)),
-                    )
-                )
-            )
-        ).scalar()
-    )
+    """A file of the revision is used (see ``_USAGE_COLUMNS``)."""
+    return bool(await used_file_ids(db, select(LibraryFile.id).where(LibraryFile.revision_id == revision_id)))
 
 
 async def update_revision(
@@ -896,23 +898,13 @@ async def load_tree(db: AsyncSession, project: Project) -> ProjectTreeResponse:
     files_by_revision: dict[int, list[LibraryFile]] = {}
     for row in files:
         files_by_revision.setdefault(row.revision_id, []).append(row)
-    file_ids = [row.id for row in files]
-    used_file_ids: set[int] = set()
-    if file_ids:
-        used_file_ids |= set(
-            (
-                await db.execute(
-                    select(PrintQueueItem.library_file_id).where(PrintQueueItem.library_file_id.in_(file_ids))
-                )
-            )
-            .scalars()
-            .all()
+    used = (
+        await used_file_ids(
+            db, select(LibraryFile.id).where(LibraryFile.project_id == project.id, LibraryFile.revision_id.isnot(None))
         )
-        used_file_ids |= set(
-            (await db.execute(select(PrintArchive.library_file_id).where(PrintArchive.library_file_id.in_(file_ids))))
-            .scalars()
-            .all()
-        )
+        if files
+        else set()
+    )
     user_ids = {rev.created_by_id for rev in revisions if rev.created_by_id}
     users = (
         dict((await db.execute(select(User.id, User.username).where(User.id.in_(user_ids)))).all()) if user_ids else {}
@@ -944,7 +936,7 @@ async def load_tree(db: AsyncSession, project: Project) -> ProjectTreeResponse:
             slicer_name=rev.slicer_name,
             slicer_version=rev.slicer_version,
             has_snapshot=rev.config_snapshot is not None,
-            used=any(f.id in used_file_ids for f in rev_files),
+            used=any(f.id in used for f in rev_files),
             files=[
                 ProjectFileOut(
                     id=f.id,

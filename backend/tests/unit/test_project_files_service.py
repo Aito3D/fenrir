@@ -519,3 +519,21 @@ async def test_fork_with_no_copyable_file_is_refused(db_session, root):
         await fork_revision(db_session, project, item, rev, "Copie", user_id=None)
     assert err.value.status_code == 409
     assert not (base / "Copie").exists()
+
+
+@pytest.mark.asyncio
+async def test_tree_used_flag_matches_revision_is_used(db_session, root):
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project)
+    _item2, rev2 = await _rev(db_session, project, name="Autre")
+    file_id = (await db_session.execute(select(LibraryFile.id).where(LibraryFile.revision_id == rev.id))).scalar_one()
+    queue_item = PrintQueueItem(library_file_id=None)
+    db_session.add(queue_item)
+    await db_session.flush()
+    db_session.add(PrintQueueVariant(queue_item_id=queue_item.id, library_file_id=file_id, target_model="X1C"))
+    await db_session.flush()
+    tree = await load_tree(db_session, project)
+    used = {r.id: r.used for s in tree.sections for i in s.items for r in i.revisions}
+    assert used == {rev.id: True, rev2.id: False}
+    assert used[rev.id] == await revision_is_used(db_session, rev.id)
+    assert used[rev2.id] == await revision_is_used(db_session, rev2.id)
