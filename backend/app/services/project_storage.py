@@ -160,6 +160,12 @@ def move_to_trash(project, path: Path) -> Path | None:
     stamp = datetime.now().strftime("%Y%m%d%H%M%S")
     target_parent = resolve_in_projects(project_root.name, TRASH_DIRNAME, *relative.parts[:-1])
     target_parent.mkdir(parents=True, exist_ok=True)
-    target = unique_file_path(target_parent, f"{relative.parts[-1]}-{stamp}")
+    leaf = relative.parts[-1]
+    if resolved.is_dir():
+        trashed = f"{leaf}-{stamp}"
+    else:  # a file keeps its extension (``plate-<stamp>.gcode.3mf``)
+        stem, ext = _split_extension(leaf)
+        trashed = f"{stem}-{stamp}{ext}"
+    target = unique_file_path(target_parent, trashed)
     shutil.move(str(resolved), str(target))
     return target

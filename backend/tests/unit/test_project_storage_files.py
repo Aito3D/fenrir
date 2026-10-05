@@ -135,3 +135,16 @@ def test_move_to_trash_refuses_symlink_pointing_outside(root, tmp_path_factory):
     with pytest.raises(PathTraversalError):
         move_to_trash(project, link)
     assert outside.exists()
+
+
+def test_move_to_trash_keeps_a_files_extension(root):
+    project = _P()
+    folder = revision_dir(project, "scan", "Mesh", 1)
+    plate = folder / "plate.gcode.3mf"
+    plate.write_bytes(b"x")
+    step = folder / "a.step"
+    step.write_bytes(b"x")
+    moved_plate = move_to_trash(project, plate)
+    moved_step = move_to_trash(project, step)
+    assert moved_plate.name.startswith("plate-") and moved_plate.name.endswith(".gcode.3mf")
+    assert moved_step.name.startswith("a-") and moved_step.name.endswith(".step")

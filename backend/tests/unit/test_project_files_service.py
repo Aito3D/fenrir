@@ -10,6 +10,7 @@ from sqlalchemy import select
 
 from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile
+from backend.app.models.print_queue import PrintQueueItem, PrintQueueVariant
 from backend.app.models.project import Project
 from backend.app.models.project_item import ProjectItem, ProjectRevision
 from backend.app.services import project_files, project_storage
@@ -315,7 +316,7 @@ async def test_add_and_remove_files_on_unused_wip(db_session, root):
     await remove_file_from_revision(db_session, project, item, rev, files[0].id)
     remaining = (await db_session.execute(select(LibraryFile).where(LibraryFile.revision_id == rev.id))).scalars().all()
     assert len(remaining) == 1
-    assert list((root / project.storage_dir / "_trash").rglob("a.step-*"))
+    assert list((root / project.storage_dir / "_trash").rglob("a-*.step"))
     with pytest.raises(ProjectFilesError) as last:
         await remove_file_from_revision(db_session, project, item, rev, remaining[0].id)
     assert last.value.status_code == 409
@@ -435,3 +436,86 @@ async def test_tree_orders_sections_newest_revision_first_and_flags_outdated(db_
     assert print_rev.has_snapshot and print_rev.print_profile["printer_model"] == "Bambu Lab X1C"
     assert print_rev.files[0].filename == "p.3mf"
     assert cad_out.revisions[0].outdated_by is None  # only Impression revisions go outdated
+
+
+@pytest.mark.asyncio
+async def test_item_names_colliding_on_disk_are_conflicts(db_session, root):
+    project = await _project(db_session)
+    await create_item(db_session, project, section="scan", name="Support", user_id=None)
+    with pytest.raises(ProjectFilesError) as dotted:
+        await create_item(db_session, project, section="scan", name="Support.", user_id=None)
+    assert dotted.value.status_code == 409
+    await create_item(db_session, project, section="scan", name="caf\u00e9", user_id=None)
+    with pytest.raises(ProjectFilesError) as decomposed:
+        await create_item(db_session, project, section="scan", name="cafe\u0301", user_id=None)
+    assert decomposed.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_queue_variant_makes_a_revision_used(db_session, root):
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project)
+    file_id = (await db_session.execute(select(LibraryFile.id).where(LibraryFile.revision_id == rev.id))).scalar_one()
+    queue_item = PrintQueueItem(library_file_id=None)
+    db_session.add(queue_item)
+    await db_session.flush()
+    assert not await revision_is_used(db_session, rev.id)
+    db_session.add(PrintQueueVariant(queue_item_id=queue_item.id, library_file_id=file_id, target_model="X1C"))
+    await db_session.flush()
+    assert await revision_is_used(db_session, rev.id)
+
+
+@pytest.mark.asyncio
+async def test_case_only_rename(db_session, root):
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project)
+    await rename_item(db_session, project, item, "SUPPORT")
+    assert item.name == "SUPPORT"
+    assert (root / project.storage_dir / "Modélisation" / "SUPPORT" / "R1" / "a.step").exists()
+
+
+@pytest.mark.asyncio
+async def test_fork_writes_nothing_to_the_db_while_copying(db_session, root, monkeypatch):
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project)
+    await db_session.commit()
+    seen = {}
+    real = project_files.shutil.copy2
+
+    def spy(src, dst, *args, **kwargs):
+        seen["new"] = list(db_session.new)
+        seen["dirty"] = list(db_session.dirty)
+        return real(src, dst, *args, **kwargs)
+
+    monkeypatch.setattr(project_files.shutil, "copy2", spy)
+    await fork_revision(db_session, project, item, rev, "Copie", user_id=None)
+    assert seen == {"new": [], "dirty": []}
+
+
+@pytest.mark.asyncio
+async def test_fork_commit_failure_leaves_no_folder_or_rows(db_session, root, monkeypatch):
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project)
+    await db_session.commit()
+    base = root / project.storage_dir / "Modélisation"
+
+    async def boom():
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(db_session, "commit", boom)
+    with pytest.raises(RuntimeError):
+        await fork_revision(db_session, project, item, rev, "Copie", user_id=None)
+    assert not (base / "Copie").exists()
+    assert (await db_session.execute(select(ProjectItem).where(ProjectItem.name == "Copie"))).first() is None
+
+
+@pytest.mark.asyncio
+async def test_fork_with_no_copyable_file_is_refused(db_session, root):
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project)
+    base = root / project.storage_dir / "Modélisation"
+    (base / "Support" / "R1" / "a.step").unlink()
+    with pytest.raises(ProjectFilesError) as err:
+        await fork_revision(db_session, project, item, rev, "Copie", user_id=None)
+    assert err.value.status_code == 409
+    assert not (base / "Copie").exists()

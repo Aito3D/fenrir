@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import shutil
 import uuid
 from dataclasses import dataclass
@@ -36,8 +37,10 @@ from backend.app.api.routes.library import (
 )
 from backend.app.core.config import settings
 from backend.app.models.archive import PrintArchive
-from backend.app.models.library import LibraryFile
-from backend.app.models.print_queue import PrintQueueItem
+from backend.app.models.library import LibraryFile, LibraryFileTag
+from backend.app.models.pipeline_run import PipelineRun
+from backend.app.models.print_batch import PrintBatch
+from backend.app.models.print_queue import PrintQueueItem, PrintQueueVariant
 from backend.app.models.project import Project
 from backend.app.models.project_item import REVISION_STATUSES, SECTIONS, ProjectItem, ProjectRevision
 from backend.app.models.user import User
@@ -80,7 +83,28 @@ def _now() -> datetime:
 
 
 def _name_key(name: str) -> str:
-    return name.strip().lower()
+    """Uniqueness key = what the folder name will be (NFC, forbidden chars and dots stripped), case-folded."""
+    return sanitize_component(name.strip(), fallback="").casefold()
+
+
+def _clean_item_name(name: str) -> tuple[str, str]:
+    clean = name.strip()[:255]
+    key = _name_key(clean)
+    if not key:
+        raise ProjectFilesError(400, "Item name must not be blank")
+    return clean, key
+
+
+async def _require_item_name_free(
+    db: AsyncSession, project: Project, section: str, key: str, exclude_id: int | None = None
+) -> None:
+    query = select(ProjectItem.id).where(
+        ProjectItem.project_id == project.id, ProjectItem.section == section, ProjectItem.name_key == key
+    )
+    if exclude_id is not None:
+        query = query.where(ProjectItem.id != exclude_id)
+    if (await db.execute(query)).first():
+        raise ProjectFilesError(409, "An item with this name already exists in this section")
 
 
 async def get_item_for_project(db: AsyncSession, item_id: int) -> tuple[ProjectItem, Project]:
@@ -115,19 +139,8 @@ async def create_item(
 ) -> ProjectItem:
     if section not in SECTIONS:
         raise ProjectFilesError(400, f"Unknown section: {section}")
-    clean = name.strip()[:255]
-    if not clean or sanitize_component(clean, fallback="") == "":
-        raise ProjectFilesError(400, "Item name must not be blank")
-    key = _name_key(clean)
-    taken = (
-        await db.execute(
-            select(ProjectItem.id).where(
-                ProjectItem.project_id == project.id, ProjectItem.section == section, ProjectItem.name_key == key
-            )
-        )
-    ).first()
-    if taken:
-        raise ProjectFilesError(409, "An item with this name already exists in this section")
+    clean, key = _clean_item_name(name)
+    await _require_item_name_free(db, project, section, key)
     item = ProjectItem(project_id=project.id, section=section, name=clean, name_key=key, created_by_id=user_id)
     db.add(item)
     await db.flush()
@@ -376,6 +389,10 @@ async def revision_is_used(db: AsyncSession, revision_id: int) -> bool:
                     or_(
                         exists().where(PrintQueueItem.library_file_id.in_(file_ids)),
                         exists().where(PrintArchive.library_file_id.in_(file_ids)),
+                        exists().where(PrintBatch.library_file_id.in_(file_ids)),
+                        exists().where(PrintQueueVariant.library_file_id.in_(file_ids)),
+                        exists().where(PipelineRun.source_library_file_id.in_(file_ids)),
+                        exists().where(PipelineRun.sliced_library_file_id.in_(file_ids)),
                     )
                 )
             )
@@ -435,6 +452,7 @@ async def add_files_to_revision(
     written: list[_WrittenFile] = []
     try:
         written = await _stream_files(folder, uploads)
+        await _require_editable_files(db, revision)  # the revision may have been used while streaming
         rows = await _add_file_rows(db, project, revision, written, user_id)
         warnings = await _duplicate_warnings(db, item, revision, rows)
         await db.commit()
@@ -443,6 +461,28 @@ async def add_files_to_revision(
         _cleanup_written(written)
         raise
     return warnings
+
+
+async def _delete_file_rows(
+    db: AsyncSession, *, file_ids: list[int] | None = None, revision_ids: list[int] | None = None
+):
+    """Delete library rows (and their tag links: SQLite runs without FK enforcement)."""
+    if file_ids is None:
+        file_ids = list(
+            (await db.execute(select(LibraryFile.id).where(LibraryFile.revision_id.in_(revision_ids or []))))
+            .scalars()
+            .all()
+        )
+    if not file_ids:
+        return
+    await db.execute(delete(LibraryFileTag).where(LibraryFileTag.file_id.in_(file_ids)))
+    await db.execute(delete(LibraryFile).where(LibraryFile.id.in_(file_ids)))
+
+
+async def _restore_and_rollback(db: AsyncSession, moved: Path | None, original: Path | None) -> None:
+    if moved is not None and original is not None:
+        shutil.move(str(moved), str(original))
+    await db.rollback()
 
 
 async def remove_file_from_revision(
@@ -458,14 +498,14 @@ async def remove_file_from_revision(
     from backend.app.api.routes.library import to_absolute_path
 
     path = to_absolute_path(target.file_path)
-    await db.delete(target)
-    await db.flush()
-    moved = move_to_trash(project, path) if path is not None else None
+    moved: Path | None = None
     try:
+        await _delete_file_rows(db, file_ids=[target.id])
+        await db.flush()
+        moved = move_to_trash(project, path) if path is not None else None
         await db.commit()
     except BaseException:
-        if moved is not None and path is not None:
-            shutil.move(str(moved), str(path))
+        await _restore_and_rollback(db, moved, path)
         raise
 
 
@@ -486,16 +526,16 @@ async def delete_revision(db: AsyncSession, project: Project, item: ProjectItem,
     folder = item_dir(project, item.section, item.name).joinpath(
         f"R{revision.number}"
     )  # SEC-PATH-OK: fixed "R{int}" under a resolved item dir
-    await db.execute(delete(LibraryFile).where(LibraryFile.revision_id == revision.id))
-    await _clear_links_to(db, [revision.id])
-    await db.delete(revision)
-    await db.flush()
-    moved = move_to_trash(project, folder)
+    moved: Path | None = None
     try:
+        await _delete_file_rows(db, revision_ids=[revision.id])
+        await _clear_links_to(db, [revision.id])
+        await db.delete(revision)
+        await db.flush()
+        moved = move_to_trash(project, folder)
         await db.commit()
     except BaseException:
-        if moved is not None:
-            shutil.move(str(moved), str(folder))
+        await _restore_and_rollback(db, moved, folder)
         raise
 
 
@@ -508,30 +548,22 @@ async def _item_revision_ids(db: AsyncSession, item_id: int) -> list[int]:
 async def rename_item(db: AsyncSession, project: Project, item: ProjectItem, new_name: str) -> ProjectItem:
     from backend.app.api.routes.library import to_absolute_path
 
-    clean = new_name.strip()[:255]
-    if not clean or sanitize_component(clean, fallback="") == "":
-        raise ProjectFilesError(400, "Item name must not be blank")
-    key = _name_key(clean)
+    clean, key = _clean_item_name(new_name)
     if key != item.name_key:
-        taken = (
-            await db.execute(
-                select(ProjectItem.id).where(
-                    ProjectItem.project_id == project.id,
-                    ProjectItem.section == item.section,
-                    ProjectItem.name_key == key,
-                    ProjectItem.id != item.id,
-                )
-            )
-        ).first()
-        if taken:
-            raise ProjectFilesError(409, "An item with this name already exists in this section")
+        await _require_item_name_free(db, project, item.section, key, exclude_id=item.id)
     old_dir = item_dir(project, item.section, item.name)
     new_dir = item_dir(project, item.section, clean)
     moved = False
     if old_dir != new_dir and old_dir.exists():
         if new_dir.exists():
-            raise ProjectFilesError(409, "A folder with this name already exists")
-        old_dir.rename(new_dir)
+            if not os.path.samefile(old_dir, new_dir):
+                raise ProjectFilesError(409, "A folder with this name already exists")
+            # case-only rename on a case-insensitive filesystem: go through a temporary name
+            temp = old_dir.with_name(f".rename-{uuid.uuid4().hex}")
+            old_dir.rename(temp)
+            temp.rename(new_dir)
+        else:
+            old_dir.rename(new_dir)
         moved = True
     try:
         if moved:
@@ -567,72 +599,139 @@ async def delete_item(db: AsyncSession, project: Project, item: ProjectItem) -> 
         if await revision_is_used(db, revision_id):
             raise ProjectFilesError(409, "A revision of this item was printed or delivered; the item cannot be deleted")
     folder = item_dir(project, item.section, item.name)
-    if revision_ids:
-        await db.execute(delete(LibraryFile).where(LibraryFile.revision_id.in_(revision_ids)))
-        await _clear_links_to(db, revision_ids)
-        await db.execute(delete(ProjectRevision).where(ProjectRevision.id.in_(revision_ids)))
-    await db.delete(item)
-    await db.flush()
-    moved = move_to_trash(project, folder)
+    moved: Path | None = None
     try:
+        if revision_ids:
+            await _delete_file_rows(db, revision_ids=revision_ids)
+            await _clear_links_to(db, revision_ids)
+            await db.execute(delete(ProjectRevision).where(ProjectRevision.id.in_(revision_ids)))
+        await db.delete(item)
+        await db.flush()
+        moved = move_to_trash(project, folder)
         await db.commit()
     except BaseException:
-        if moved is not None:
-            shutil.move(str(moved), str(folder))
+        await _restore_and_rollback(db, moved, folder)
         raise
+
+
+def _copy_thumbnail(source_thumbnail: str | None) -> tuple[str | None, Path | None]:
+    """Own copy of a thumbnail (relative path, absolute path), so deleting one file never blanks the other."""
+    from backend.app.api.routes.library import to_absolute_path
+
+    src = to_absolute_path(source_thumbnail)
+    if src is None or not src.is_file():
+        return None, None
+    dest = safe_join_under(get_library_thumbnails_dir(), f"{uuid.uuid4().hex}{src.suffix}", http=False)
+    shutil.copy2(src, dest)
+    return to_relative_path(dest), dest
+
+
+def _remove_empty(*folders: Path) -> None:
+    for folder in folders:
+        try:
+            folder.rmdir()
+        except OSError:
+            pass
 
 
 async def fork_revision(
     db: AsyncSession, project: Project, item: ProjectItem, revision: ProjectRevision, new_name: str, user_id: int | None
 ) -> ProjectItem:
-    """New item in the same section whose R1 is a copy of ``revision`` (spec §2.4)."""
+    """New item in the same section whose R1 is a copy of ``revision`` (spec §2.4).
+
+    Files are copied BEFORE any row is written so the database write lock is
+    held only for the final flush and commit."""
     from backend.app.api.routes.library import to_absolute_path
 
-    forked = await create_item(db, project, section=item.section, name=new_name, user_id=user_id)
-    forked.forked_from_revision_id = revision.id
-    folder = revision_dir(project, forked.section, forked.name, 1)
-    copied: list[Path] = []
+    section = item.section
+    clean, key = _clean_item_name(new_name)
+    await _require_item_name_free(db, project, section, key)
+    new_item_dir = item_dir(project, section, clean)
+    if new_item_dir.exists():
+        raise ProjectFilesError(409, "A folder with this name already exists")
+    sources = [
+        {
+            "filename": f.filename,
+            "path": to_absolute_path(f.file_path),
+            "file_type": f.file_type,
+            "file_size": f.file_size,
+            "file_hash": f.file_hash,
+            "thumbnail_path": f.thumbnail_path,
+            "file_metadata": f.file_metadata,
+        }
+        for f in await _revision_files(db, revision.id)
+    ]
+    snapshot = (
+        revision.config_snapshot,
+        revision.config_hash,
+        revision.slicer_name,
+        revision.slicer_version,
+        revision.print_profile,
+    )
+    revision_id = revision.id
+    folder = revision_dir(project, section, clean, 1)
+    copies: list[dict] = []
+
+    def cleanup() -> None:
+        for entry in copies:
+            entry["dest"].unlink(missing_ok=True)
+            if entry["thumb_abs"] is not None:
+                entry["thumb_abs"].unlink(missing_ok=True)
+        _remove_empty(folder, new_item_dir)
+
     try:
-        r1 = ProjectRevision(
-            item_id=forked.id, number=1, status="wip", derived_from_id=revision.id, created_by_id=user_id
-        )
-        r1.config_snapshot, r1.config_hash = revision.config_snapshot, revision.config_hash
-        r1.slicer_name, r1.slicer_version, r1.print_profile = (
-            revision.slicer_name,
-            revision.slicer_version,
-            revision.print_profile,
-        )
-        db.add(r1)
-        forked.last_revision_number = 1
-        await db.flush()
-        for source in await _revision_files(db, revision.id):
-            src = to_absolute_path(source.file_path)
+        for source in sources:
+            src = source["path"]
             if src is None or not src.exists():
                 continue
-            dest = unique_file_path(folder, source.filename)
+            dest = unique_file_path(folder, source["filename"])
             await asyncio.to_thread(shutil.copy2, src, dest)
-            copied.append(dest)
+            entry = {"source": source, "dest": dest, "thumb_rel": None, "thumb_abs": None}
+            copies.append(entry)
+            entry["thumb_rel"], entry["thumb_abs"] = await asyncio.to_thread(_copy_thumbnail, source["thumbnail_path"])
+        if not copies:
+            raise ProjectFilesError(409, "No file of this revision could be copied")
+        forked = ProjectItem(
+            project_id=project.id,
+            section=section,
+            name=clean,
+            name_key=key,
+            created_by_id=user_id,
+            forked_from_revision_id=revision_id,
+            last_revision_number=1,
+        )
+        db.add(forked)
+        await db.flush()
+        r1 = ProjectRevision(
+            item_id=forked.id, number=1, status="wip", derived_from_id=revision_id, created_by_id=user_id
+        )
+        r1.config_snapshot, r1.config_hash, r1.slicer_name, r1.slicer_version, r1.print_profile = snapshot
+        db.add(r1)
+        await db.flush()
+        for entry in copies:
+            source = entry["source"]
             db.add(
                 LibraryFile(
                     project_id=project.id,
                     revision_id=r1.id,
                     folder_id=None,
                     is_external=False,
-                    filename=dest.name,
-                    file_path=to_relative_path(dest),
-                    file_type=source.file_type,
-                    file_size=source.file_size,
-                    file_hash=source.file_hash,
-                    thumbnail_path=source.thumbnail_path,
-                    file_metadata=source.file_metadata,
+                    filename=entry["dest"].name,
+                    file_path=to_relative_path(entry["dest"]),
+                    file_type=source["file_type"],
+                    file_size=source["file_size"],
+                    file_hash=source["file_hash"],
+                    thumbnail_path=entry["thumb_rel"],
+                    file_metadata=source["file_metadata"],
                     created_by_id=user_id,
                 )
             )
         await db.commit()
-    except BaseException:
-        for path in copied:
-            path.unlink(missing_ok=True)
+    except BaseException as exc:
         await db.rollback()
+        cleanup()
+        if isinstance(exc, IntegrityError):
+            raise ProjectFilesError(409, "An item with this name already exists in this section") from exc
         raise
     return forked
 
