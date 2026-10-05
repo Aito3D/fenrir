@@ -21,6 +21,9 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 _MAX_PART_BYTES = 8 * 1024 * 1024
+# The model part carries the meshes (often well above 8 MB); the Application
+# metadata sits in its header, so only its start is read.
+_MODEL_HEAD_BYTES = 64 * 1024
 _APPLICATION_RE = re.compile(r'<metadata\s+name="Application"\s*>([^<]+)</metadata>')
 _CLIENT_VERSION_RE = re.compile(r'key="X-BBL-Client-Version"\s+value="([^"]*)"')
 
@@ -38,6 +41,9 @@ def is_3mf(filename: str) -> bool:
     return filename.lower().endswith(".3mf")
 
 
+_READ_ERRORS = (zipfile.BadZipFile, RuntimeError, NotImplementedError, zlib.error, EOFError, OSError)
+
+
 def _read(zf: zipfile.ZipFile, name: str) -> str | None:
     try:
         info = zf.getinfo(name)
@@ -46,10 +52,21 @@ def _read(zf: zipfile.ZipFile, name: str) -> str | None:
     if info.file_size > _MAX_PART_BYTES:
         return None
     try:
-        data = zf.open(name).read(_MAX_PART_BYTES + 1)
-    except (zipfile.BadZipFile, RuntimeError, NotImplementedError, zlib.error, EOFError, OSError):
+        with zf.open(name) as part:
+            data = part.read(_MAX_PART_BYTES + 1)
+    except _READ_ERRORS:
         return None
     if len(data) > _MAX_PART_BYTES:
+        return None
+    return data.decode("utf-8", errors="replace")
+
+
+def _read_head(zf: zipfile.ZipFile, name: str, limit: int) -> str | None:
+    """The first ``limit`` bytes of a part, whatever its size (bounded read)."""
+    try:
+        with zf.open(name) as part:
+            data = part.read(limit)
+    except (KeyError, *_READ_ERRORS):
         return None
     return data.decode("utf-8", errors="replace")
 
@@ -104,7 +121,7 @@ def read_print_snapshot(path: Path) -> PrintSnapshot | None:
             names = set(zf.namelist())
             config = _load_config(_read(zf, "Metadata/project_settings.config"))
             slice_info = _read(zf, "Metadata/slice_info.config") or ""
-            model = _read(zf, "3D/3dmodel.model") or ""
+            model = _read_head(zf, "3D/3dmodel.model", _MODEL_HEAD_BYTES) or ""
         slicer_name = slicer_version = None
         application = _APPLICATION_RE.search(model)
         if application:

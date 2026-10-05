@@ -210,3 +210,26 @@ def test_empty_config_returns_none(tmp_path):
     assert snap.config is None
     assert snap.config_hash is None
     assert snap.print_profile == {"sliced": False}
+
+
+def test_big_model_part_still_yields_the_slicer(tmp_path):
+    header = '<?xml version="1.0"?>\n<model><metadata name="Application">BambuStudio-02.08.00.50</metadata>\n'
+    mesh = "<vertex x='1' y='2' z='3'/>\n" * (9 * 1024 * 1024 // 28)
+    model = header + mesh + "</model>"
+    assert len(model) > 8 * 1024 * 1024
+    path = tmp_path / "big.3mf"
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("Metadata/project_settings.config", json.dumps(CONFIG))
+        zf.writestr("3D/3dmodel.model", model)
+    snap = read_print_snapshot(path)
+    assert (snap.slicer_name, snap.slicer_version) == ("BambuStudio", "02.08.00.50")
+    assert snap.print_profile["printer_model"] == "Bambu Lab H2D"
+
+
+def test_big_config_part_is_still_skipped(tmp_path):
+    big = json.dumps({**CONFIG, "padding": "x" * (9 * 1024 * 1024)})
+    path = tmp_path / "big-config.3mf"
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("Metadata/project_settings.config", big)
+    snap = read_print_snapshot(path)
+    assert snap.config is None
