@@ -856,14 +856,17 @@ export function PrintModal({
   // Close on Escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !isSubmitting) {
-        if (isolateEscape) e.stopPropagation(); // Fenrir: keep the key from a host dialog
-        onClose();
-      }
+      if (e.key !== 'Escape') return;
+      // Fenrir: keep the key from a host dialog, even while submitting.
+      if (isolateEscape) e.stopPropagation();
+      if (!isSubmitting) onClose();
     };
-    // Fenrir: capture phase when isolated, so this runs before a host's window listener.
-    window.addEventListener('keydown', handleKeyDown, isolateEscape);
-    return () => window.removeEventListener('keydown', handleKeyDown, isolateEscape);
+    // Fenrir: when isolated, listen on `document` in the bubble phase: after a
+    // SlotPicker's document capture listener (which swallows Escape to close only
+    // its list) and before a host dialog's window listener.
+    const target: Window | Document = isolateEscape ? document : window;
+    target.addEventListener('keydown', handleKeyDown as EventListener);
+    return () => target.removeEventListener('keydown', handleKeyDown as EventListener);
   }, [onClose, isSubmitting, isolateEscape]);
 
   const isMultiPlate = platesData?.is_multi_plate ?? false;

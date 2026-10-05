@@ -2567,6 +2567,35 @@ describe('PrintModal — override survives "Any model" -> "Specific Printer" (#3
     expect(mockOnClose).toHaveBeenCalled();
   });
 
+  // Fenrir: the same guarantee when the modal isolates Escape from a host dialog.
+  it('isolateEscape: closes only the slot list on Escape, and the key never reaches a host', async () => {
+    const host = vi.fn();
+    window.addEventListener('keydown', host);
+    try {
+      const user = userEvent.setup();
+      render(
+        <PrintModal mode="edit-queue-item" archiveId={1} archiveName="Job" queueItem={anyP2SItem()}
+          onClose={mockOnClose} isolateEscape />,
+      );
+
+      await moveToPrinter01(user);
+      await user.click(await screen.findByText(/filament mapping/i));
+
+      await user.click(await screen.findByRole('combobox', { name: /printer slot for/i }));
+      await screen.findByRole('listbox');
+      await user.keyboard('{Escape}');
+
+      await waitFor(() => expect(screen.queryByRole('listbox')).not.toBeInTheDocument());
+      expect(mockOnClose).not.toHaveBeenCalled();
+
+      await user.keyboard('{Escape}');
+      expect(mockOnClose).toHaveBeenCalledTimes(1);
+      expect(host).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener('keydown', host);
+    }
+  });
+
   it('matches the chosen printer against the override and keeps it on the item', async () => {
     const user = userEvent.setup();
     render(<PrintModal mode="edit-queue-item" archiveId={1} archiveName="Job" queueItem={anyP2SItem()} onClose={mockOnClose} />);

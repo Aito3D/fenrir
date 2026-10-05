@@ -111,6 +111,30 @@ describe('PrintModal isolateEscape', () => {
     expect(host).not.toHaveBeenCalled();
   });
 
+  it('while submitting: stays open and still keeps the key from a host dialog', async () => {
+    // The queue POST never settles, so the modal stays in its submitting state.
+    server.use(http.post('/api/v1/queue/', () => new Promise<never>(() => {})));
+    const host = vi.fn();
+    window.addEventListener('keydown', host);
+    try {
+      const onClose = vi.fn();
+      const user = userEvent.setup();
+      render(
+        <PrintModal mode="create" libraryFileId={5} archiveName="support.gcode.3mf" projectId={7}
+          initialSelectedPrinterIds={[1]} onClose={onClose} isolateEscape />,
+      );
+      const button = await screen.findByRole('button', { name: /^print$/i });
+      await waitFor(() => expect(button).toBeEnabled());
+      await user.click(button);
+      await waitFor(() => expect(screen.getByRole('button', { name: /^cancel$/i })).toBeDisabled());
+      await user.keyboard('{Escape}');
+      expect(onClose).not.toHaveBeenCalled();
+      expect(host).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener('keydown', host);
+    }
+  }, 15000);
+
   it('keeps upstream behaviour without the prop', async () => {
     const { host, onClose } = await pressEscape({});
     expect(onClose).toHaveBeenCalledTimes(1);
