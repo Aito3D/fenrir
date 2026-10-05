@@ -9993,6 +9993,8 @@ errors: {
       chooseFiles: 'Välj filer',
       uploading: 'Laddar upp…',
       uploadFailed: 'Uppladdningen misslyckades',
+      onlyPrintable: 'Endast 3MF- och G-code-filer kan läggas i ett projekt',
+      otherSections: 'Äldre filer',
       newRevision: 'Ny revision',
       addFiles: 'Lägg till filer',
       removeFile: 'Ta bort {{name}}',

@@ -208,22 +208,22 @@ async def test_drop_files_endpoint(async_client: AsyncClient, db_session):
     project = await _project(async_client)
 
     unlinked = await async_client.post(
-        f"/api/v1/aito/tasks/{task.id}/files", files=[("files", ("a.stl", b"x", "application/octet-stream"))]
+        f"/api/v1/aito/tasks/{task.id}/files", files=[("files", ("a.3mf", b"x", "application/octet-stream"))]
     )
     assert unlinked.status_code == 409
 
     await async_client.put(f"/api/v1/aito/tasks/{task.id}/project", json={"project_id": project["id"]})
     response = await async_client.post(
         f"/api/v1/aito/tasks/{task.id}/files",
-        files=[("files", ("a.stl", b"x", "application/octet-stream"))],
+        files=[("files", ("a.3mf", b"x", "application/octet-stream"))],
     )
     assert response.status_code == 201, response.text
     body = response.json()
     assert body["project_id"] == project["id"]
-    assert body["results"][0]["section"] == "modelisation"
+    assert body["results"][0]["section"] == "impression"
 
     missing = await async_client.post(
-        "/api/v1/aito/tasks/999999/files", files=[("files", ("a.stl", b"x", "application/octet-stream"))]
+        "/api/v1/aito/tasks/999999/files", files=[("files", ("a.3mf", b"x", "application/octet-stream"))]
     )
     assert missing.status_code == 404
 
@@ -342,8 +342,8 @@ async def test_drop_partial_failure_keeps_stored_group_and_records_once(
     response = await async_client.post(
         f"/api/v1/aito/tasks/{task.id}/files",
         files=[
-            ("files", ("a.stl", b"x", "application/octet-stream")),
-            ("files", ("b.stl", b"x", "application/octet-stream")),
+            ("files", ("a.3mf", b"x", "application/octet-stream")),
+            ("files", ("b.3mf", b"x", "application/octet-stream")),
         ],
     )
     assert response.status_code == 409
@@ -357,7 +357,7 @@ async def test_drop_partial_failure_keeps_stored_group_and_records_once(
         (await db_session.execute(select(AitoEvent).where(AitoEvent.kind == "project.files_dropped"))).scalars().all()
     )
     assert len(events) == 1
-    assert [r["filename"] for r in events[0].detail["results"]] == ["a.stl"]
+    assert [r["filename"] for r in events[0].detail["results"]] == ["a.3mf"]
 
 
 @pytest.mark.asyncio
@@ -494,8 +494,8 @@ async def test_drop_fans_revision_events_out_to_other_linked_orders(
     response = await async_client.post(
         f"/api/v1/aito/tasks/{task_a.id}/files",
         files=[
-            ("files", ("a.stl", b"x", "application/octet-stream")),
-            ("files", ("b.ply", b"x", "application/octet-stream")),
+            ("files", ("a.3mf", b"x", "application/octet-stream")),
+            ("files", ("b.gcode", b"x", "application/octet-stream")),
         ],
     )
     assert response.status_code == 201, response.text
@@ -575,7 +575,7 @@ async def test_concurrent_drop_creating_the_same_item_joins_it(
         monkeypatch.setattr(files_service, "_require_item_name_free", no_check)
 
     response = await async_client.post(
-        f"/api/v1/aito/tasks/{task.id}/files", files=[("files", ("a.stl", b"x", "application/octet-stream"))]
+        f"/api/v1/aito/tasks/{task.id}/files", files=[("files", ("a.3mf", b"x", "application/octet-stream"))]
     )
     assert response.status_code == 201, response.text
     [result] = response.json()["results"]

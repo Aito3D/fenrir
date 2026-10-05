@@ -246,7 +246,6 @@ export function TaskProjectRow({
         <DeliveriesPicker
           orderId={orderId}
           taskId={taskId}
-          task={task}
           projectId={project.id}
           current={deliveries}
           onClose={() => setEditingDeliveries(false)}

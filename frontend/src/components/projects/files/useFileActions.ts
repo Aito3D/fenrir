@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { api } from '../../../api/client';
 import type { DuplicateWarning, ProjectSection, RevisionStatus } from '../../../api/client';
 import { useToast } from '../../../contexts/ToastContext';
+import { nonPrintableFiles } from './filesUi';
 
 /** Every file-panel mutation: run, invalidate the project tree, toast on failure. */
 export function useFileActions(projectId: number) {
@@ -45,28 +46,41 @@ export function useFileActions(projectId: number) {
   const upload = 'projectsPdm.files.uploadFailed';
   const save = 'projectsPdm.files.saveFailed';
 
+  /** False (with a toast) when any file is not a printing file: projects hold printing files
+   *  only for now, so nothing is sent. */
+  const acceptsFiles = (files: readonly File[]): boolean => {
+    if (nonPrintableFiles(files).length === 0) return true;
+    showToast(t('projectsPdm.files.onlyPrintable'), 'error');
+    return false;
+  };
+
   /** True once the revision is uploaded. */
-  const uploadRevision = (itemId: number, files: File[]) =>
-    whileBusy(itemId, () =>
+  const uploadRevision = async (itemId: number, files: File[]): Promise<boolean | undefined> => {
+    if (!acceptsFiles(files)) return undefined;
+    return whileBusy(itemId, () =>
       run(async () => {
         const res = await api.uploadProjectRevision(itemId, files);
         warn(res.warnings);
         return true;
       }, upload),
     );
+  };
 
   return {
     projectId,
+    acceptsFiles,
     isBusy: (itemId: number) => busyItems.has(itemId),
     uploadRevision,
     /** Creates an empty item; resolves to its id. Upload with `uploadRevision`, so a failed upload
      * is retried on the same item instead of creating it again. */
     createItem: (section: ProjectSection, name: string) =>
       run(async () => (await api.createProjectItem(projectId, section, name)).id, save),
-    addFiles: (itemId: number, revisionId: number, files: File[]) =>
-      whileBusy(itemId, () =>
+    addFiles: async (itemId: number, revisionId: number, files: File[]) => {
+      if (!acceptsFiles(files)) return;
+      await whileBusy(itemId, () =>
         run(async () => warn((await api.addProjectRevisionFiles(revisionId, files)).warnings), upload),
-      ),
+      );
+    },
     removeFile: (revisionId: number, fileId: number) => run(() => api.removeProjectRevisionFile(revisionId, fileId), save),
     setStatus: (revisionId: number, status: RevisionStatus) => run(() => api.updateProjectRevision(revisionId, { status }), save),
     setNote: (revisionId: number, note: string | null) => run(() => api.updateProjectRevision(revisionId, { note }), save),

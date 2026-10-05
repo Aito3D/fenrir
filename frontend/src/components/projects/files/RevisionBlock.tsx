@@ -8,7 +8,16 @@ import { ConfirmModal } from '../../ConfirmModal';
 import { ModelViewerModal } from '../../ModelViewerModal';
 import { inputCls, focusRingCls } from '../../formStyles';
 import type { FileActions } from './useFileActions';
-import { PREVIEWABLE_TYPES, STATUS_CHIP_CLS, STATUS_LABEL_KEYS, chipBase, isPrintableFile, printProfileLine } from './filesUi';
+import {
+  PREVIEWABLE_TYPES,
+  PRINTABLE_ACCEPT,
+  STATUS_CHIP_CLS,
+  STATUS_LABEL_KEYS,
+  chipBase,
+  isPrintableFile,
+  isSectionEnabled,
+  printProfileLine,
+} from './filesUi';
 import { PrintRevisionFlow } from '../print/PrintRevisionFlow';
 
 export interface DerivedOption { id: number; label: string }
@@ -31,7 +40,8 @@ function formatSize(bytes: number): string {
 export function RevisionBlock({ item, revision, derivedOptions, actions }: Props) {
   const { t, i18n } = useTranslation();
   const { hasPermission } = useAuth();
-  const canUpdate = hasPermission('projects:update');
+  // Disabled section (printing files only for now): read-only except delete; print and download stay.
+  const canUpdate = hasPermission('projects:update') && isSectionEnabled(item.section);
   const canDelete = hasPermission('projects:delete');
   const canPrint = hasPermission('queue:create'); // POST /queue/'s own gate
   const addInput = useRef<HTMLInputElement>(null);
@@ -189,7 +199,7 @@ export function RevisionBlock({ item, revision, derivedOptions, actions }: Props
             <button type="button" className={`${btnCls} disabled:opacity-40`} disabled={busy} onClick={() => addInput.current?.click()}>
               <Plus className="h-3.5 w-3.5" />{t('projectsPdm.files.addFiles')}
             </button>
-            <input ref={addInput} type="file" multiple className="hidden" data-testid={`add-files-input-${revision.id}`}
+            <input ref={addInput} type="file" multiple accept={PRINTABLE_ACCEPT} className="hidden" data-testid={`add-files-input-${revision.id}`}
               onChange={(e) => {
                 const files = Array.from(e.target.files ?? []);
                 e.target.value = '';

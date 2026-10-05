@@ -61,7 +61,9 @@ from backend.app.services.pdf_thumbnail import generate_pdf_thumbnail
 from backend.app.services.project_print_trace import revision_print_counts
 from backend.app.services.project_snapshot import PrintSnapshot, is_3mf, read_print_snapshot
 from backend.app.services.project_storage import (
+    ENABLED_SECTIONS,
     claim_unique_file_path,
+    is_printable_filename,
     item_dir,
     move_to_trash,
     revision_dir,
@@ -155,6 +157,26 @@ async def _require_item_name_free(
         query = query.where(ProjectItem.id != exclude_id)
     if (await db.execute(query)).first():
         raise ProjectFilesError(409, "An item with this name already exists in this section")
+
+
+def require_enabled_section(section: str) -> None:
+    """400 unless ``section`` takes new items/files today (``ENABLED_SECTIONS``).
+    Items already in a disabled section keep working (rename, delete, fork…)."""
+    if section not in ENABLED_SECTIONS:
+        raise ProjectFilesError(400, f"Section {section!r} does not accept files for now")
+
+
+def _upload_name(upload: UploadFile) -> str:
+    return (upload.filename or "").replace("\\", "/").rsplit("/", 1)[-1]
+
+
+def require_printable_uploads(uploads: list[UploadFile]) -> None:
+    """400 naming every non-printable upload (the whole request is refused, nothing written)."""
+    rejected = [_upload_name(upload) for upload in uploads if not is_printable_filename(_upload_name(upload))]
+    if rejected:
+        raise ProjectFilesError(
+            400, "Projects only accept printing files (.3mf, .gcode, .bgcode); refused: " + ", ".join(rejected)
+        )
 
 
 async def get_item_for_project(db: AsyncSession, item_id: int) -> tuple[ProjectItem, Project]:

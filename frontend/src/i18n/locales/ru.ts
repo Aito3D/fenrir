@@ -9569,6 +9569,8 @@ export default {
       chooseFiles: 'Выбрать файлы',
       uploading: 'Загрузка…',
       uploadFailed: 'Не удалось загрузить',
+      onlyPrintable: 'В проект можно добавлять только файлы 3MF и G-code',
+      otherSections: 'Старые файлы',
       newRevision: 'Новая ревизия',
       addFiles: 'Добавить файлы',
       removeFile: 'Убрать {{name}}',

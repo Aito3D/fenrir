@@ -21,7 +21,7 @@ async def _project(client):
     return (await client.post("/api/v1/projects/", json={"name": "Support caméra"})).json()
 
 
-async def _item(client, project_id, section="modelisation", name="Support"):
+async def _item(client, project_id, section="impression", name="Support"):
     response = await client.post(f"/api/v1/projects/{project_id}/items", json={"section": section, "name": name})
     assert response.status_code == 201, response.text
     return response.json()
@@ -40,7 +40,7 @@ async def _upload(client, item_id, *files, **form):
 async def test_full_flow_tree_status_download(async_client: AsyncClient, root):
     project = await _project(async_client)
     item = await _item(async_client, project["id"])
-    response = await _upload(async_client, item["id"], ("a.step", b"geo"), ("b.step", b"geo2"), note="v1")
+    response = await _upload(async_client, item["id"], ("a.gcode", b"geo"), ("b.gcode", b"geo2"), note="v1")
     assert response.status_code == 201, response.text
     rev = response.json()["revision"]
     assert rev["number"] == 1 and len(rev["files"]) == 2
@@ -48,13 +48,13 @@ async def test_full_flow_tree_status_download(async_client: AsyncClient, root):
     assert patched.json()["status"] == "valide"
     tree = (await async_client.get(f"/api/v1/projects/{project['id']}/tree")).json()
     assert tree["code"] == project["code"]
-    assert tree["sections"][1]["items"][0]["revisions"][0]["status"] == "valide"
+    assert tree["sections"][2]["items"][0]["revisions"][0]["status"] == "valide"
     one = await async_client.get(
         f"/api/v1/projects/revisions/{rev['id']}/download", params={"file_id": rev["files"][0]["id"]}
     )
     assert one.status_code == 200 and one.content == b"geo"
     zipped = await async_client.get(f"/api/v1/projects/revisions/{rev['id']}/download")
-    assert sorted(zipfile.ZipFile(io.BytesIO(zipped.content)).namelist()) == ["a.step", "b.step"]
+    assert sorted(zipfile.ZipFile(io.BytesIO(zipped.content)).namelist()) == ["a.gcode", "b.gcode"]
 
 
 @pytest.mark.asyncio
@@ -64,7 +64,7 @@ async def test_errors_map_to_http(async_client: AsyncClient):
     item = await _item(async_client, project["id"])
     assert (
         await async_client.post(
-            f"/api/v1/projects/{project['id']}/items", json={"section": "modelisation", "name": "support"}
+            f"/api/v1/projects/{project['id']}/items", json={"section": "impression", "name": "support"}
         )
     ).status_code == 409
     assert (
@@ -80,16 +80,17 @@ async def test_errors_map_to_http(async_client: AsyncClient):
 async def test_rename_fork_delete_and_files(async_client: AsyncClient, root):
     project = await _project(async_client)
     item = await _item(async_client, project["id"])
-    rev = (await _upload(async_client, item["id"], ("a.step", b"x"))).json()["revision"]
+    rev = (await _upload(async_client, item["id"], ("a.gcode", b"x"))).json()["revision"]
     renamed = await async_client.patch(f"/api/v1/projects/items/{item['id']}", json={"name": "Support v2"})
     assert renamed.json()["name"] == "Support v2"
     added = await async_client.post(
-        f"/api/v1/projects/revisions/{rev['id']}/files", files=[("files", ("b.step", b"x", "application/octet-stream"))]
+        f"/api/v1/projects/revisions/{rev['id']}/files",
+        files=[("files", ("b.gcode", b"x", "application/octet-stream"))],
     )
-    # same bytes as a.step but in the SAME revision: warnings only compare other revisions
+    # same bytes as a.gcode but in the SAME revision: warnings only compare other revisions
     assert added.status_code == 200 and added.json()["warnings"] == []
     tree = (await async_client.get(f"/api/v1/projects/{project['id']}/tree")).json()
-    files = tree["sections"][1]["items"][0]["revisions"][0]["files"]
+    files = tree["sections"][2]["items"][0]["revisions"][0]["files"]
     removed = await async_client.delete(f"/api/v1/projects/revisions/{rev['id']}/files/{files[0]['id']}")
     assert removed.status_code == 204
     forked = await async_client.post(
@@ -106,7 +107,7 @@ async def test_tree_isolated_per_project(async_client: AsyncClient):
     a = await _project(async_client)
     b = (await async_client.post("/api/v1/projects/", json={"name": "Autre"})).json()
     item = await _item(async_client, a["id"])
-    await _upload(async_client, item["id"], ("a.step", b"x"))
+    await _upload(async_client, item["id"], ("a.gcode", b"x"))
     tree_b = (await async_client.get(f"/api/v1/projects/{b['id']}/tree")).json()
     assert all(section["items"] == [] for section in tree_b["sections"])
 
@@ -117,7 +118,7 @@ async def test_upload_content_length_gate(async_client: AsyncClient, monkeypatch
     monkeypatch.setattr(settings, "library_max_upload_bytes", 1024)
     project = await _project(async_client)
     item = await _item(async_client, project["id"])
-    response = await _upload(async_client, item["id"], ("a.step", b"x" * 4 * 1024 * 3))
+    response = await _upload(async_client, item["id"], ("a.gcode", b"x" * 4 * 1024 * 3))
     assert response.status_code == 413
 
 
@@ -132,7 +133,7 @@ async def _revision_with_files(client, *files):
 @pytest.mark.asyncio
 @pytest.mark.integration
 async def test_zip_temp_file_removed_when_build_fails(async_client: AsyncClient, tmp_path, monkeypatch):
-    rev = await _revision_with_files(async_client, ("a.step", b"x"))
+    rev = await _revision_with_files(async_client, ("a.gcode", b"x"))
     scratch = tmp_path / "scratch"
     scratch.mkdir()
     real_mkstemp = project_files_routes.tempfile.mkstemp
@@ -155,7 +156,7 @@ async def test_zip_temp_file_removed_when_build_fails(async_client: AsyncClient,
 @pytest.mark.asyncio
 @pytest.mark.integration
 async def test_download_wrong_file_id_404(async_client: AsyncClient):
-    rev = await _revision_with_files(async_client, ("a.step", b"x"))
+    rev = await _revision_with_files(async_client, ("a.gcode", b"x"))
     response = await async_client.get(f"/api/v1/projects/revisions/{rev['id']}/download", params={"file_id": 999999})
     assert response.status_code == 404
 
@@ -163,8 +164,8 @@ async def test_download_wrong_file_id_404(async_client: AsyncClient):
 @pytest.mark.asyncio
 @pytest.mark.integration
 async def test_zip_download_404_when_all_files_missing(async_client: AsyncClient, root):
-    rev = await _revision_with_files(async_client, ("a.step", b"x"))
-    for path in root.rglob("a.step"):
+    rev = await _revision_with_files(async_client, ("a.gcode", b"x"))
+    for path in root.rglob("a.gcode"):
         path.unlink()
     response = await async_client.get(f"/api/v1/projects/revisions/{rev['id']}/download")
     assert response.status_code == 404
@@ -175,13 +176,13 @@ async def test_zip_download_404_when_all_files_missing(async_client: AsyncClient
 async def test_project_with_items_cannot_be_deleted(async_client: AsyncClient, root):
     project = await _project(async_client)
     item = await _item(async_client, project["id"])
-    rev = (await _upload(async_client, item["id"], ("a.step", b"geo"))).json()["revision"]
+    rev = (await _upload(async_client, item["id"], ("a.gcode", b"geo"))).json()["revision"]
     refused = await async_client.delete(f"/api/v1/projects/{project['id']}")
     assert refused.status_code == 409
     assert refused.json()["detail"] == "This project has files; delete or move its items first"
     assert (await async_client.get(f"/api/v1/projects/{project['id']}")).status_code == 200
     tree = (await async_client.get(f"/api/v1/projects/{project['id']}/tree")).json()
-    assert tree["sections"][1]["items"][0]["revisions"][0]["files"][0]["id"] == rev["files"][0]["id"]
+    assert tree["sections"][2]["items"][0]["revisions"][0]["files"][0]["id"] == rev["files"][0]["id"]
     one = await async_client.get(
         f"/api/v1/projects/revisions/{rev['id']}/download", params={"file_id": rev["files"][0]["id"]}
     )
@@ -203,4 +204,4 @@ async def test_tree_exposes_the_item_name_key(async_client: AsyncClient, root):
     created = await _item(async_client, project["id"], name="Sup:port. ")
     assert created["name_key"] == "support"
     tree = (await async_client.get(f"/api/v1/projects/{project['id']}/tree")).json()
-    assert tree["sections"][1]["items"][0]["name_key"] == "support"
+    assert tree["sections"][2]["items"][0]["name_key"] == "support"

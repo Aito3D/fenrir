@@ -8,7 +8,7 @@ import { useAuth } from '../../../contexts/AuthContext';
 import { useToast } from '../../../contexts/ToastContext';
 import { filesFromDataTransfer } from '../files/fileDrop';
 import { ProjectCodeChip } from '../ProjectCodeChip';
-import { inZone, isFileDrag, useUploadToTask } from './dropFiles';
+import { inZone, isFileDrag, useAcceptsPrintable, useUploadToTask } from './dropFiles';
 
 interface Choice {
   taskId: number;
@@ -35,6 +35,7 @@ export function useCardDrop({
   const { hasPermission } = useAuth();
   const { showToast } = useToast();
   const upload = useUploadToTask();
+  const acceptsPrintable = useAcceptsPrintable();
   const [dragOver, setDragOver] = useState(false);
   const [busy, setBusy] = useState(false);
   const [choices, setChoices] = useState<Choice[] | null>(null);
@@ -63,6 +64,7 @@ export function useCardDrop({
   };
 
   const handleDrop = async (files: File[]) => {
+    if (!acceptsPrintable(files)) return; // before asking which task
     setBusy(true);
     let links;
     try {

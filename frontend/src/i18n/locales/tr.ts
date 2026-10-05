@@ -9894,6 +9894,8 @@ export default {
       chooseFiles: 'Dosya seç',
       uploading: 'Yükleniyor…',
       uploadFailed: 'Yükleme başarısız',
+      onlyPrintable: 'Bir projeye yalnızca 3MF ve G-code dosyaları eklenebilir',
+      otherSections: 'Eski dosyalar',
       newRevision: 'Yeni revizyon',
       addFiles: 'Dosya ekle',
       removeFile: '{{name}} dosyasını kaldır',

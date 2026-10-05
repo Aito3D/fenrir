@@ -118,11 +118,10 @@ async def test_import_validation(async_client: AsyncClient, db_session):
 
     file = await _managed(db_session, "Arm.3mf")
     file_id = file.id
-    item = (
-        await async_client.post(
-            f"/api/v1/projects/{project['id']}/items", json={"section": "modelisation", "name": "Arm"}
-        )
-    ).json()
+    legacy = ProjectItem(project_id=project["id"], section="modelisation", name="Arm", name_key="arm")
+    db_session.add(legacy)  # disabled sections take no new items; an existing one may remain
+    await db_session.commit()
+    item = {"id": legacy.id}
     disabled = await async_client.post(url, json={"file_ids": [file_id], "item_id": item["id"]})
     assert disabled.status_code == 400
     both = await async_client.post(url, json={"file_ids": [file_id], "item_id": item["id"], "new_item_name": "X"})

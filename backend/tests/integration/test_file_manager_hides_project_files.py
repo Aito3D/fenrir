@@ -22,12 +22,12 @@ def root(tmp_path, monkeypatch):
 async def _project_file(client) -> tuple[dict, int, str]:
     project = (await client.post("/api/v1/projects/", json={"name": "Caché"})).json()
     item = (
-        await client.post(f"/api/v1/projects/{project['id']}/items", json={"section": "docs", "name": "Plan"})
+        await client.post(f"/api/v1/projects/{project['id']}/items", json={"section": "impression", "name": "Plan"})
     ).json()
     rev = (
         await client.post(
             f"/api/v1/projects/items/{item['id']}/revisions",
-            files=[("files", ("secret-plan.pdf", b"%PDF-1.4 projet", "application/pdf"))],
+            files=[("files", ("secret-plan.gcode", b"; gcode projet", "application/octet-stream"))],
         )
     ).json()["revision"]
     return project, rev["files"][0]["id"], rev["files"][0]["file_hash"]
@@ -54,7 +54,7 @@ async def test_file_manager_never_sees_project_files(async_client: AsyncClient, 
     assert dupes.json() == {"duplicates": {}}
 
     file_types = (await async_client.get("/api/v1/library/files/file-types")).json()
-    assert "pdf" not in file_types
+    assert "gcode" not in file_types
 
     assert (await async_client.delete(f"/api/v1/library/files/{file_id}")).status_code == 404
     assert (await async_client.put(f"/api/v1/library/files/{file_id}", json={"notes": "x"})).status_code == 404
@@ -126,7 +126,7 @@ async def test_trash_purge_and_sweep_never_touch_project_files(async_client: Asy
 
     preview = await library_trash_service.preview_purge(db_session, older_than_days=30, include_never_printed=True)
     assert preview["count"] == 1  # only the File Manager file
-    assert "secret-plan.pdf" not in preview["sample_filenames"]
+    assert "secret-plan.gcode" not in preview["sample_filenames"]
     assert await library_trash_service.purge_older_than(db_session, older_than_days=30) == 1
 
     db_session.expire_all()

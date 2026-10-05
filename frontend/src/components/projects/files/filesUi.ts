@@ -2,6 +2,30 @@ import type { ProjectSection, RevisionStatus } from '../../../api/client';
 
 export const SECTION_ORDER: ProjectSection[] = ['scan', 'modelisation', 'impression', 'usinage', 'docs'];
 
+/** Projects hold printing files only for now (2026-10-05): the other sections stay in the data
+ *  model and their existing items stay listed (read-only, under "Older files"), but take nothing
+ *  new. Mirror of `ENABLED_SECTIONS` / `PRINTABLE_EXTENSIONS` in backend `services/project_storage.py`:
+ *  re-enabling a section is a one-line change on each side. */
+export const ENABLED_SECTIONS: readonly ProjectSection[] = ['impression'];
+export const PRINTABLE_EXTENSIONS = ['.3mf', '.gcode', '.bgcode'] as const; // `.gcode.3mf` ends in `.3mf`
+/** `accept` for every project upload / drop input. */
+export const PRINTABLE_ACCEPT = PRINTABLE_EXTENSIONS.join(',');
+
+export function isSectionEnabled(section: ProjectSection): boolean {
+  return ENABLED_SECTIONS.includes(section);
+}
+
+/** A file a project accepts today: `.3mf` (incl. `.gcode.3mf`), `.gcode` or `.bgcode`, any case. */
+export function isPrintableFilename(name: string): boolean {
+  const lower = name.trim().toLowerCase();
+  return PRINTABLE_EXTENSIONS.some((ext) => lower.endsWith(ext));
+}
+
+/** The files a project would refuse (empty = all accepted). */
+export function nonPrintableFiles(files: readonly File[]): File[] {
+  return files.filter((f) => !isPrintableFilename(f.name));
+}
+
 export const SECTION_LABEL_KEYS: Record<ProjectSection, string> = {
   scan: 'projectsPdm.files.sectionScan',
   modelisation: 'projectsPdm.files.sectionModelisation',

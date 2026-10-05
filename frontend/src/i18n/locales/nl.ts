@@ -9993,6 +9993,8 @@ export default {
       chooseFiles: 'Bestanden kiezen',
       uploading: 'Uploaden…',
       uploadFailed: 'Upload mislukt',
+      onlyPrintable: 'Alleen 3MF- en G-code-bestanden kunnen in een project',
+      otherSections: 'Oudere bestanden',
       newRevision: 'Nieuwe revisie',
       addFiles: 'Bestanden toevoegen',
       removeFile: '{{name}} verwijderen',

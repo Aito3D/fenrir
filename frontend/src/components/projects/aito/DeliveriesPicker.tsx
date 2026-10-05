@@ -3,31 +3,22 @@ import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { api } from '../../../api/client';
-import type { ProjectSection, ProjectTreeResponse } from '../../../api/client';
+import type { ProjectTreeResponse } from '../../../api/client';
 import { Button } from '../../Button';
 import { useToast } from '../../../contexts/ToastContext';
-import { taskSteps } from '../../aito/services';
-import type { TaskDraft } from '../../../utils/taskDraft';
-import { SECTION_LABEL_KEYS, STATUS_LABEL_KEYS } from '../files/filesUi';
+import { ENABLED_SECTIONS, SECTION_LABEL_KEYS, STATUS_LABEL_KEYS } from '../files/filesUi';
 import { useInvalidateProjectLinks } from './useOrderProjectLinks';
 import { useIsolatedEscape } from '../../../hooks/useIsolatedEscape';
 
-/** The services that own a project section (`maindoeuvre` has none, `docs`
- *  has no service). */
-const SERVICE_SECTIONS: ProjectSection[] = ['scan', 'modelisation', 'impression', 'usinage'];
-
-/** Newest `valide` revision of every item in the task's service sections —
- *  the default delivery suggestion (spec §4.3). Returns, per item, the
- *  suggested revision id, so only those items' checks change. */
-function suggestLatestApproved(tree: ProjectTreeResponse, task: TaskDraft): Map<number, number> {
-  const sections = new Set<string>(
-    taskSteps(task)
-      .map((s) => s.service)
-      .filter((s) => (SERVICE_SECTIONS as string[]).includes(s)),
-  );
+/** Newest `valide` revision of every item in the enabled sections (Impression:
+ *  projects hold printing files only for now) — the default delivery suggestion
+ *  (spec §4.3). Returns, per item, the suggested revision id, so only those
+ *  items' checks change. Items left in a disabled section stay listed and
+ *  checkable, never suggested. */
+function suggestLatestApproved(tree: ProjectTreeResponse): Map<number, number> {
   const picks = new Map<number, number>();
   for (const section of tree.sections) {
-    if (!sections.has(section.section)) continue;
+    if (!ENABLED_SECTIONS.includes(section.section)) continue;
     for (const item of section.items) {
       const best = item.revisions
         .filter((r) => r.status === 'valide')
@@ -44,14 +35,12 @@ function suggestLatestApproved(tree: ProjectTreeResponse, task: TaskDraft): Map<
 export function DeliveriesPicker({
   orderId,
   taskId,
-  task,
   projectId,
   current,
   onClose,
 }: {
   orderId: number;
   taskId: number;
-  task: TaskDraft;
   projectId: number;
   current: number[];
   onClose: () => void;
@@ -96,7 +85,7 @@ export function DeliveriesPicker({
 
   const suggest = () => {
     if (!tree) return;
-    const picks = suggestLatestApproved(tree, task);
+    const picks = suggestLatestApproved(tree);
     setChecked((prev) => {
       const next = new Set(prev);
       for (const section of tree.sections) {

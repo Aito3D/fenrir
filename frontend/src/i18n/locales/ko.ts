@@ -9586,6 +9586,8 @@ export default {
       chooseFiles: '파일 선택',
       uploading: '업로드 중…',
       uploadFailed: '업로드 실패',
+      onlyPrintable: '프로젝트에는 3MF 및 G-code 파일만 넣을 수 있습니다',
+      otherSections: '이전 파일',
       newRevision: '새 리비전',
       addFiles: '파일 추가',
       removeFile: '{{name}} 제거',

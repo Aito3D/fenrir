@@ -9968,6 +9968,8 @@ export default {
       chooseFiles: 'ファイルを選択',
       uploading: 'アップロード中…',
       uploadFailed: 'アップロードに失敗しました',
+      onlyPrintable: 'プロジェクトに追加できるのは 3MF と G-code ファイルのみです',
+      otherSections: '以前のファイル',
       newRevision: '新しいリビジョン',
       addFiles: 'ファイルを追加',
       removeFile: '{{name}}を削除',

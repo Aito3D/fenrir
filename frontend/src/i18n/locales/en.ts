@@ -10025,6 +10025,8 @@ export default {
       chooseFiles: 'Choose files',
       uploading: 'Uploading…',
       uploadFailed: 'Upload failed',
+      onlyPrintable: 'Only 3MF and G-code files can go into a project',
+      otherSections: 'Older files',
       newRevision: 'New revision',
       addFiles: 'Add files',
       removeFile: 'Remove {{name}}',

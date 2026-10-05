@@ -9969,6 +9969,8 @@ export default {
       chooseFiles: 'Dateien auswählen',
       uploading: 'Wird hochgeladen…',
       uploadFailed: 'Upload fehlgeschlagen',
+      onlyPrintable: 'Nur 3MF- und G-Code-Dateien können in ein Projekt',
+      otherSections: 'Ältere Dateien',
       newRevision: 'Neue Revision',
       addFiles: 'Dateien hinzufügen',
       removeFile: '{{name}} entfernen',

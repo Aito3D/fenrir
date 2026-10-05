@@ -9952,6 +9952,8 @@ export default {
       chooseFiles: '选择文件',
       uploading: '上传中…',
       uploadFailed: '上传失败',
+      onlyPrintable: '项目只能包含 3MF 和 G-code 文件',
+      otherSections: '旧文件',
       newRevision: '新版本',
       addFiles: '添加文件',
       removeFile: '移除 {{name}}',

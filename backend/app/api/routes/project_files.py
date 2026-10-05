@@ -221,6 +221,7 @@ async def create_item(
 ):
     project = await _project(db, project_id)
     try:
+        svc.require_enabled_section(body.section)  # projects hold printing files only for now
         item = await svc.create_item(db, project, section=body.section, name=body.name, user_id=_uid(user))
     except svc.ProjectFilesError as exc:
         _raise(exc)
@@ -266,7 +267,9 @@ async def upload_revision(
     user: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
 ):
     try:
+        svc.require_printable_uploads(files)
         item, project = await svc.get_item_for_project(db, item_id)
+        svc.require_enabled_section(item.section)
         revision, warnings = await svc.add_revision(
             db, project, item, files, note=note, derived_from_id=derived_from_id, user_id=_uid(user)
         )
@@ -311,7 +314,9 @@ async def add_files(
     user: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
 ):
     try:
+        svc.require_printable_uploads(files)
         revision, item, project = await svc.get_revision_bundle(db, revision_id)
+        svc.require_enabled_section(item.section)
         warnings = await svc.add_files_to_revision(db, project, item, revision, files, _uid(user))
     except svc.ProjectFilesError as exc:
         _raise(exc)

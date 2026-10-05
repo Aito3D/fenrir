@@ -38,13 +38,14 @@ from backend.app.schemas.aito_project_links import (
 )
 from backend.app.schemas.project_files import RevisionRef
 from backend.app.services import aito_events, project_files, project_print_trace
-from backend.app.services.project_filing import find_or_create_item, item_name_for_filename, section_for_filename
+from backend.app.services.project_filing import find_or_create_item, item_name_for_filename
 from backend.app.services.project_tags import UnknownTagError, apply_project_tag_input
 
 logger = logging.getLogger(__name__)
 
 SIMILAR_TITLE_THRESHOLD = 0.45
 SECTION_SUMMARY_LIMIT = 3
+DROP_SECTION = "impression"  # drops land in Impression (projects hold printing files only for now)
 
 
 class LinkError(Exception):
@@ -528,8 +529,9 @@ async def _fan_out_revision(
 async def drop_files_on_task(
     db: AsyncSession, task: AitoTask, uploads: list[UploadFile], *, user_id: int | None, actor: str | None
 ) -> DropFilesResponse:
-    """Drop files on a linked task: each (section, item name) group becomes the next
-    revision of the existing item, or R1 of a new one. Commits.
+    """Drop printing files on a linked task: each item name becomes the next
+    Impression revision of the existing item, or R1 of a new one; any
+    non-printable file refuses the whole drop (400). Commits.
 
     Goes through the phase-2 service so streaming-before-DB, per-item locks and
     cleanup apply. ``add_revision`` rolls the whole session back on failure, so
@@ -546,12 +548,17 @@ async def drop_files_on_task(
     if project is None:
         raise LinkError(409, "Task is not linked to a project")
     project_id, code, order_id = project.id, project.code, task.project_id
+    # Printing files only for now, always in Impression: a drop with any other
+    # file is refused whole (400 naming them) before anything is written.
+    try:
+        project_files.require_printable_uploads(uploads)
+    except project_files.ProjectFilesError as exc:
+        raise LinkError(exc.status_code, exc.detail) from exc
 
     groups: dict[tuple[str, str], tuple[str, list[UploadFile]]] = {}
     for upload in uploads:
-        filename = _base_name(upload)
-        name = item_name_for_filename(filename)
-        key = (section_for_filename(filename), project_files._name_key(name))
+        name = item_name_for_filename(_base_name(upload))
+        key = (DROP_SECTION, project_files._name_key(name))
         groups.setdefault(key, (name, []))[1].append(upload)
 
     results: list[DroppedFileResult] = []
