@@ -500,3 +500,108 @@ describe('createMutation — stale summary', () => {
     );
   });
 });
+
+describe('createMutation — new order from a project', () => {
+  beforeEach(() => {
+    __resetBoardSync();
+    vi.restoreAllMocks();
+    vi.mocked(localStorage.removeItem).mockClear();
+  });
+
+  function setup() {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    client.setQueryData(['aito-projects'], []);
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>
+        <ToastProvider>{children}</ToastProvider>
+      </QueryClientProvider>
+    );
+    return renderHook(() => useAitoPageMutations(), { wrapper });
+  }
+
+  const vars = (extra: { linkProjectId?: number; keepStoredDraft?: boolean }) => ({
+    description: 'Support GoPro',
+    draft: defaultClientDraft('walkin', 'Walk-in'),
+    tasks: [],
+    shipping: null,
+    dueDate: null,
+    regenerateDescription: false,
+    placeholder: placeholderProject({
+      description: 'Support GoPro',
+      client_id: null,
+      client_name: 'Walk-in',
+      client_phone: null,
+      client_email: null,
+      client_is_company: false,
+    }),
+    ...extra,
+  });
+
+  it('links the first task by position even when the page unmounted before the create resolved', async () => {
+    let resolveCreate: (p: AitoProject) => void = () => {};
+    vi.spyOn(api, 'createAitoProject').mockImplementation(
+      () => new Promise<AitoProject>((resolve) => { resolveCreate = resolve; }),
+    );
+    vi.spyOn(api, 'getAitoTasks').mockResolvedValue([
+      { id: 502, position: 1 },
+      { id: 501, position: 0 },
+    ] as never);
+    const link = vi.spyOn(api, 'linkTaskProject').mockResolvedValue({} as never);
+    const { result, unmount } = setup();
+
+    act(() => {
+      result.current.createMutation.mutate(vars({ linkProjectId: 7 }));
+    });
+    await waitFor(() => expect(api.createAitoProject).toHaveBeenCalled());
+    unmount();
+    resolveCreate({ id: 77 } as AitoProject);
+
+    await waitFor(() => expect(link).toHaveBeenCalledWith(501, 7));
+    expect(api.getAitoTasks).toHaveBeenCalledWith(77);
+  });
+
+  it('an order with no task toasts that the link failed', async () => {
+    vi.spyOn(api, 'createAitoProject').mockResolvedValue({ id: 77 } as AitoProject);
+    vi.spyOn(api, 'getAitoTasks').mockResolvedValue([]);
+    const link = vi.spyOn(api, 'linkTaskProject');
+    const { result } = setup();
+
+    act(() => {
+      result.current.createMutation.mutate(vars({ linkProjectId: 7 }));
+    });
+    expect(await screen.findByText('Could not update the link')).toBeInTheDocument();
+    expect(link).not.toHaveBeenCalled();
+  });
+
+  it('makes no link without linkProjectId', async () => {
+    vi.spyOn(api, 'createAitoProject').mockResolvedValue({ id: 77 } as AitoProject);
+    const tasks = vi.spyOn(api, 'getAitoTasks');
+    const { result } = setup();
+    act(() => {
+      result.current.createMutation.mutate(vars({}));
+    });
+    await waitFor(() => expect(localStorage.removeItem).toHaveBeenCalledWith('aito.newProjectDraft.v1'));
+    expect(tasks).not.toHaveBeenCalled();
+  });
+
+  it('keepStoredDraft: false still clears the stored draft; true leaves it', async () => {
+    vi.spyOn(api, 'createAitoProject').mockResolvedValue({ id: 77 } as AitoProject);
+    const { result } = setup();
+
+    act(() => {
+      result.current.createMutation.mutate(vars({ keepStoredDraft: false }));
+    });
+    await waitFor(() => expect(localStorage.removeItem).toHaveBeenCalledWith('aito.newProjectDraft.v1'));
+
+    vi.mocked(localStorage.removeItem).mockClear();
+    act(() => {
+      result.current.createMutation.mutate(vars({ keepStoredDraft: true }));
+    });
+    await waitFor(() => expect(api.createAitoProject).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(result.current.createMutation.isSuccess).toBe(true));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(localStorage.removeItem).not.toHaveBeenCalledWith('aito.newProjectDraft.v1');
+  });
+});

@@ -96,6 +96,44 @@ describe('NewProjectDrawer seed', () => {
     expect(screen.getByLabelText('Project summary')).toHaveValue('Support caméra GoPro pour casque');
   });
 
+  it('Create after an edit hands onCreate keepStoredDraft: false', async () => {
+    const user = userEvent.setup();
+    const onCreate = vi.fn();
+    render(<NewProjectDrawer onClose={vi.fn()} onCreate={onCreate} seed={seed} />);
+    await screen.findByText(/Client account — Client de passage/);
+    await user.click(screen.getByRole('button', { name: 'Add Scan' }));
+    fireEvent.change(screen.getByLabelText('Scan Cost'), { target: { value: '10' } });
+    await user.click(screen.getByTestId('drawer-section-client'));
+    await user.type(screen.getByLabelText(/^phone$/i), '87123456');
+    await user.click(screen.getByRole('button', { name: /Create Project/i }));
+
+    expect(onCreate).toHaveBeenCalledWith(
+      'Support caméra GoPro pour casque',
+      expect.objectContaining({ id: DEFAULT_ID }),
+      [expect.objectContaining({ title: 'P-0042 Support GoPro', scanCost: 10 })],
+      null,
+      null,
+      false,
+      { keepStoredDraft: false },
+    );
+  });
+
+  it('a blocked Create on an untouched seed (reveal only) keeps it pristine: nothing saved', async () => {
+    // An untouched seed can never pass Create's gates (its task is unpriced,
+    // the walk-in default has no phone), so `keepStoredDraft: true` is only
+    // reachable through the reveal path — which must not count as an edit.
+    const user = userEvent.setup();
+    const onCreate = vi.fn();
+    const { unmount } = render(<NewProjectDrawer onClose={vi.fn()} onCreate={onCreate} seed={seed} />);
+    await screen.findByText(/Client account — Client de passage/);
+    await user.click(screen.getByRole('button', { name: /Create Project/i }));
+    expect(onCreate).not.toHaveBeenCalled();
+    await new Promise((r) => setTimeout(r, 600));
+    unmount();
+    expect(localStorage.setItem).not.toHaveBeenCalledWith(KEY, expect.anything());
+    expect(localStorage.getItem(KEY)).toBe(persisted);
+  });
+
   it('without a seed still restores the persisted draft', async () => {
     render(<NewProjectDrawer onClose={vi.fn()} onCreate={vi.fn()} />);
     expect(await screen.findByRole('heading', { level: 4, name: /Capot moteur/ })).toBeInTheDocument();

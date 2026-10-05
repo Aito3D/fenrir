@@ -98,15 +98,29 @@ describe('AitoPage ?newFromProject= link', () => {
     });
   });
 
-  it('links the created order\'s first task to the project, then drops the parameter', async () => {
+  it('drops the parameter on submit, then links the created order\'s first task to the project', async () => {
+    // The create is held open so the URL can be checked inside the
+    // create→link window: a reload there must not reopen the seeded drawer.
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    server.use(
+      http.post('/api/v1/aito/', async ({ request }) => {
+        createBodies.push(await request.json());
+        await held;
+        return HttpResponse.json(makeProject({ id: 77, description: 'Support caméra' }), { status: 201 });
+      }),
+    );
     const user = userEvent.setup();
     renderAt('/aito?newFromProject=7');
     await screen.findByTestId('drawer-seed');
     await user.click(screen.getByRole('button', { name: 'stub create' }));
 
+    await waitFor(() => expect(createBodies).toHaveLength(1));
+    expect(window.location.search).not.toContain('newFromProject');
+    expect(linkBodies).toEqual([]);
+    release();
+
     await waitFor(() => expect(linkBodies).toEqual([{ taskId: '501', body: { project_id: 7 } }]));
-    expect(createBodies).toHaveLength(1);
-    await waitFor(() => expect(window.location.search).not.toContain('newFromProject'));
     // The seeded drawer was never edited: the operator's stored draft stays.
     expect(localStorage.removeItem).not.toHaveBeenCalledWith('aito.newProjectDraft.v1');
   });

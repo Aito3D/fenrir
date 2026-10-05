@@ -10,6 +10,7 @@ import { shippingPayload } from '../utils/shippingDraft';
 import type { ShippingDraft } from '../utils/shippingDraft';
 import { clearNewProjectDraft } from './useNewProjectDraft';
 import { useOptimisticBoardMutation } from './useOptimisticBoardMutation';
+import { useInvalidateProjectLinks } from '../components/projects/aito/useOrderProjectLinks';
 import { applyCreate, applyDelete, replaceProject } from '../utils/aitoOptimistic';
 
 // Mirrors `_SHIPPING_PHONE_RE` in backend/app/api/routes/aito.py — POST
@@ -47,6 +48,7 @@ export function useAitoPageMutations() {
   const { t } = useTranslation();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
+  const invalidateProjectLinks = useInvalidateProjectLinks();
 
   /** Push edited contact details back to Zoho after the card exists.
    *
@@ -78,6 +80,21 @@ export function useAitoPageMutations() {
     }
   };
 
+  /** A seeded create's second half: the new order's first task joins the
+   *  project it was started from. A failure (an order with no task included)
+   *  leaves an ordinary card, linkable by hand from its panel, and says so. */
+  const linkFirstTask = async (orderId: number, projectId: number) => {
+    try {
+      const orderTasks = await api.getAitoTasks(orderId);
+      const first = [...orderTasks].sort((a, b) => a.position - b.position)[0];
+      if (!first) throw new Error('order has no task');
+      await api.linkTaskProject(first.id, projectId);
+      invalidateProjectLinks(orderId, [projectId]);
+    } catch {
+      showToast(t('projectsPdm.aito.linkFailed'), 'error');
+    }
+  };
+
   const createMutation = useOptimisticBoardMutation<
     AitoProject,
     {
@@ -93,6 +110,9 @@ export function useAitoPageMutations() {
       /** A seeded drawer the user never edited: the stored draft is still the
        *  operator's own unrelated one, so success leaves it in place. */
       keepStoredDraft?: boolean;
+      /** A new order started from a PDM project (`?newFromProject=`): its
+       *  first task is linked to this project once the order exists. */
+      linkProjectId?: number;
     }
   >({
     mutationFn: ({ description, draft, tasks, shipping, dueDate, regenerateDescription }) =>
@@ -119,7 +139,7 @@ export function useAitoPageMutations() {
     transform: (previous, { placeholder }) => applyCreate(previous, placeholder),
     // No flash: the placeholder is REMOVED on failure rather than reverted in
     // place, so there is no card left to ring.
-    onSuccess: (created, { placeholder, draft, keepStoredDraft }) => {
+    onSuccess: (created, { placeholder, draft, keepStoredDraft, linkProjectId }) => {
       queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) =>
         replaceProject(prev, created, placeholder.id),
       );
@@ -128,6 +148,10 @@ export function useAitoPageMutations() {
       // would otherwise reopen next time with a task list and client that
       // were already turned into this project.
       if (!keepStoredDraft) clearNewProjectDraft();
+      // Here, not in a per-call `mutate` callback: TanStack drops those when
+      // the page unmounts first, and an operator who leaves the board right
+      // after Create must still get the link.
+      if (linkProjectId !== undefined) void linkFirstTask(created.id, linkProjectId);
     },
     onError: () => {
       showToast(t('aito.createFailed'), 'error');
