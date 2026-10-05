@@ -34,6 +34,24 @@ export function phoneDigits(value: string): string {
   return all.length > 8 && all.startsWith('689') ? all.slice(3) : all;
 }
 
+/** How a French Polynesia number is written when dialled from abroad. */
+const COUNTRY_PREFIX = /^(?:\+689|00689|0689|\(689\))/;
+
+/** The typed term with its French Polynesia country prefix removed, or null
+ *  when it has none. Unlike `phoneDigits` (stored values) this strips at any
+ *  length: someone typing `+689 87` means the prefix, not a number. */
+export function withoutCountryPrefix(term: string): string | null {
+  const match = COUNTRY_PREFIX.exec(term);
+  return match ? term.slice(match[0].length) : null;
+}
+
+/** `phoneDigits` for what the user typed: the country prefix goes whatever
+ *  the length. */
+export function typedPhoneDigits(term: string): string {
+  const rest = withoutCountryPrefix(term);
+  return rest === null ? phoneDigits(term) : digits(rest);
+}
+
 /** Folded letters and digits only: `DEV-00123` → `dev00123`. */
 export function alnum(value: string): string {
   return fold(value).replace(/[^a-z0-9]/g, '');

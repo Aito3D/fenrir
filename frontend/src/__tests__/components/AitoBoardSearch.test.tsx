@@ -113,6 +113,17 @@ describe('BoardSearch combobox', () => {
     expect(screen.getByText('Try phone digits, a quote or invoice number')).toBeInTheDocument();
   });
 
+  it('stays closed while only a country or search prefix is typed', async () => {
+    render(<Harness />);
+    const input = screen.getByRole('combobox');
+    await userEvent.type(input, '+689');
+    expect(screen.queryByRole('listbox')).toBeNull();
+    expect(screen.queryByText('No order matches')).toBeNull();
+    expect(input).toHaveAttribute('aria-expanded', 'false');
+    await userEvent.type(input, ' 87 12');
+    expect(screen.getAllByRole('option')).toHaveLength(1);
+  });
+
   it('shows board hits and a quiet line when trash failed', async () => {
     render(<Harness trash="error" />);
     await userEvent.type(screen.getByRole('combobox'), 'gopro');

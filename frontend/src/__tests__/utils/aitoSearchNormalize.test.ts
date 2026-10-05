@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
-  alnum, digits, fold, foldWithMap, numericTail, phoneDigits, stripZeros, withinOneEdit,
+  alnum, digits, fold, foldWithMap, numericTail, phoneDigits, stripZeros, typedPhoneDigits, withinOneEdit,
+  withoutCountryPrefix,
 } from '../../utils/aitoSearchNormalize';
 
 describe('aitoSearchNormalize', () => {
@@ -20,6 +21,16 @@ describe('aitoSearchNormalize', () => {
     expect(phoneDigits('+689 87 12 34 56')).toBe('87123456');
     expect(phoneDigits('87 12 34 56')).toBe('87123456');
     expect(phoneDigits('689123')).toBe('689123');
+  });
+
+  it('strips a typed country prefix at any length', () => {
+    for (const prefix of ['+689', '00689', '0689', '(689)']) {
+      expect(withoutCountryPrefix(`${prefix}87`), prefix).toBe('87');
+      expect(typedPhoneDigits(`${prefix}87`), prefix).toBe('87');
+    }
+    expect(withoutCountryPrefix('87123456')).toBeNull();
+    expect(typedPhoneDigits('87.12.34.56')).toBe('87123456');
+    expect(typedPhoneDigits('68987123456')).toBe('87123456');
   });
 
   it('normalises identifiers', () => {

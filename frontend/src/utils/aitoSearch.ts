@@ -1,6 +1,8 @@
 import { parseUTCDate } from './date';
 import type { AitoProject } from '../api/client';
-import { alnum, digits, fold, foldWithMap, numericTail, phoneDigits, stripZeros, withinOneEdit } from './aitoSearchNormalize';
+import {
+  alnum, digits, fold, foldWithMap, numericTail, phoneDigits, stripZeros, typedPhoneDigits, withinOneEdit, withoutCountryPrefix,
+} from './aitoSearchNormalize';
 
 export type MatchKind = 'phone' | 'email' | 'number' | 'name' | 'text' | 'task';
 export type SearchField =
@@ -118,11 +120,32 @@ const DEFAULT_ALLOW = (f: IndexedField) => f.field !== 'cardId';
 
 const PHONE_SHAPED = /^\+?[\d.\-()]+$/;
 
+/** The start of `+689` typed so far: not a phone yet, not a word either. */
+const PARTIAL_PLUS_PREFIX = new Set(['+', '+6', '+68']);
+
+/** A token the following digit groups belong to: `+…`, or a spelled-out
+ *  country prefix (`00689`, `0689`, `(689)`). */
+function opensPhone(token: string): boolean {
+  return token.startsWith('+') || withoutCountryPrefix(token) !== null;
+}
+
+/** Still being typed, so it narrows nothing yet: a bare search prefix (`#`,
+ *  `tel:`), the start of a country prefix, or a country prefix followed by
+ *  too few digits to search a phone with. Dropped from the query — failing
+ *  the AND would blank the board on every keystroke. */
+function isPending(text: string): boolean {
+  if (PARTIAL_PLUS_PREFIX.has(text)) return true;
+  if (!PHONE_SHAPED.test(text)) return false;
+  const rest = withoutCountryPrefix(text);
+  return rest !== null && digits(rest).length < MIN_PHONE_DIGITS;
+}
+
 let lastQuery: string | null = null;
 let lastTerms: Term[] = [];
 
 /** Fold, split, and glue runs of digit-only tokens back together, so a phone
- *  read out in pairs (`87 12 34 56`) is one term. */
+ *  read out in pairs (`87 12 34 56`) is one term. Pending terms are left out
+ *  (see `isPending`). */
 function parse(query: string): Term[] {
   if (query === lastQuery) return lastTerms;
   const tokens: string[] = [];
@@ -131,24 +154,40 @@ function parse(query: string): Term[] {
     const numeric = PHONE_SHAPED.test(token);
     const piece = digits(token).length;
     const previous = tokens[tokens.length - 1];
+    const leadingCode = tokens.length === 1 && previous === '689';
     // Only short groups glue (`87 12 34 56`, `+689 87 12`): two 4-digit
     // numbers (`2638 1200`) are separate identifiers, not one phone.
     const glue =
-      numeric && previous !== undefined && PHONE_SHAPED.test(previous) && (previous.startsWith('+') || (piece <= 3 && lastPiece <= 3));
-    if (glue) tokens[tokens.length - 1] = previous + token;
+      numeric &&
+      previous !== undefined &&
+      PHONE_SHAPED.test(previous) &&
+      (opensPhone(previous) || leadingCode || (piece <= 3 && lastPiece <= 3));
+    // A query opening with a bare `689` and more groups is the country code
+    // read out (`689 87 12`).
+    if (glue) tokens[tokens.length - 1] = (leadingCode ? '+689' : previous) + token;
     else tokens.push(token);
     lastPiece = piece;
   }
-  lastTerms = tokens.map((token) => {
-    for (const { prefix, keep, allow } of PREFIXES) {
-      if (token.startsWith(prefix) && token.length > prefix.length) {
-        return { text: keep ? token : token.slice(prefix.length), allow };
+  lastTerms = tokens
+    .map((token): Term | null => {
+      for (const { prefix, keep, allow } of PREFIXES) {
+        if (token === prefix) return null;
+        if (token.startsWith(prefix)) {
+          const text = keep ? token : token.slice(prefix.length);
+          return isPending(text) ? null : { text, allow };
+        }
       }
-    }
-    return { text: token, allow: DEFAULT_ALLOW };
-  });
+      return isPending(token) ? null : { text: token, allow: DEFAULT_ALLOW };
+    })
+    .filter((term): term is Term => term !== null);
   lastQuery = query;
   return lastTerms;
+}
+
+/** True when the query narrows nothing: empty, whitespace, or only pending
+ *  terms (`+689`, `#`). The board shows every card; the dropdown shows none. */
+export function isPendingQuery(query: string): boolean {
+  return parse(query).length === 0;
 }
 
 function substring(field: IndexedField, term: string, word: number, sub: number): Match | null {
@@ -163,7 +202,7 @@ function matchField(field: IndexedField, term: string): Match | null {
   switch (field.kind) {
     case 'phone': {
       if (!PHONE_SHAPED.test(term)) return null;
-      const typed = phoneDigits(term);
+      const typed = typedPhoneDigits(term);
       if (digits(term).length < MIN_PHONE_DIGITS || typed.length < MIN_PHONE_DIGITS) return null;
       if (field.key === typed) return whole(SCORE.exact);
       if (field.key.endsWith(typed)) return whole(SCORE.phoneSuffix);

@@ -1,12 +1,13 @@
 import { useState, type ChangeEvent, type InputHTMLAttributes, type KeyboardEvent } from 'react';
+import { isPendingQuery } from '../../../utils/aitoSearch';
 
 export const MAX_RESULTS = 8;
 
 /** WAI-ARIA combobox state for the board search: open while focused with a
- *  query and not dismissed; ↑/↓ wrap through the visible rows; Enter picks
- *  the highlighted row or the first; Escape closes, then (unless
- *  `escapeClears` is false) clears. Escape is only stopped when it did
- *  something, so drawers and modals still get it otherwise. */
+ *  query that narrows something (not just `+689` or `#`) and not dismissed;
+ *  ↑/↓ wrap through the visible rows; Enter picks the highlighted row or the
+ *  first; Escape closes, then (unless `escapeClears` is false) clears.
+ *  Escape is only stopped when it did something, so drawers and modals still get it otherwise. */
 export function useSearchCombobox({
   value,
   onChange,
@@ -26,7 +27,7 @@ export function useSearchCombobox({
   const [dismissed, setDismissed] = useState(false);
   const [active, setActive] = useState(-1);
   const shown = Math.min(hitCount, MAX_RESULTS);
-  const open = focused && !dismissed && value.trim() !== '';
+  const open = focused && !dismissed && !isPendingQuery(value);
   const optionId = (index: number) => `${listboxId}-option-${index}`;
   const dismiss = () => {
     setDismissed(true);

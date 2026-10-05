@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { matchesSearch, searchProjects } from '../../utils/aitoSearch';
+import { isPendingQuery, matchesSearch, searchProjects } from '../../utils/aitoSearch';
 import type { AitoProject } from '../../api/client';
 
 const card = (over: Partial<AitoProject> = {}): AitoProject => ({
@@ -248,5 +248,43 @@ describe('searchProjects — number grouping and phone shape', () => {
     expect(searchProjects([quoteCard, phoneCard], 'dev2638').map((h) => h.project.id)).toEqual([1]);
     expect(searchProjects([phoneCard], 'DEV-2638')).toEqual([]);
     expect(searchProjects([phoneCard], 'tel:dev2638')).toEqual([]);
+  });
+});
+
+describe('searchProjects — country prefix and pending terms', () => {
+  const p = card({ client_phone: '+689 87 12 34 56' });
+
+  // Half-typed: only a country prefix, a prefix plus too few digits, or a
+  // bare search prefix. Dropped from the query, so the board keeps showing
+  // the card while the rest is typed.
+  const pending = [
+    '+', '+6', '+68', '+689', '00689', '0689', '(689)', '+689 87', '00689 8', '(689) 87',
+    '#', 'tel:', 'mail:', 'inv:', 'lta:', '@',
+  ];
+  it.each(pending)('treats %j as pending', (q) => {
+    expect(matchesSearch(p, q)).toBe(true);
+    expect(isPendingQuery(q)).toBe(true);
+    expect(searchProjects([p], q)).toEqual([]);
+  });
+
+  it('drops a pending term but keeps the others', () => {
+    expect(searchProjects([p], 'acme +689')[0]?.field).toBe('client');
+    expect(matchesSearch(p, 'zzzz +689')).toBe(false);
+    expect(matchesSearch(p, 'zzzz #')).toBe(false);
+    expect(isPendingQuery('acme +689')).toBe(false);
+  });
+
+  const typed = [
+    '+689 87 12', '+689 87 12 3', '+689 87 12 34', '+689 87 12 34 56',
+    '00689 87123456', '00689 87 12 34 56', '(689) 87123456', '0689 87 12 34 56', '689 87 12',
+  ];
+  it.each(typed)('strips the country prefix from %j', (q) => {
+    expect(matchesSearch(p, q)).toBe(true);
+    expect(searchProjects([p], q)[0]?.field).toBe('clientPhone');
+  });
+
+  it('still keeps 4-digit identifiers apart', () => {
+    const quoteCard = card({ quote_number: 'DEV-2638', description: 'Plaque 1200 mm', client_name: null });
+    expect(searchProjects([quoteCard], 'dev 2638 1200')).toHaveLength(1);
   });
 });
