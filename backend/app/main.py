@@ -7918,7 +7918,7 @@ async def on_print_complete(printer_id: int, data: dict):
     try:
         async with async_session() as db:
             from backend.app.models.archive import PrintArchive
-            from backend.app.services.print_log import write_log_entry
+            from backend.app.services.print_log import record_archive_wear, write_log_entry
 
             archive = await db.get(PrintArchive, archive_id)
             if archive:
@@ -7967,7 +7967,10 @@ async def on_print_complete(printer_id: int, data: dict):
                 if _run_cost is None and _run_status == "completed":
                     _run_cost = _est_cost
 
-                await write_log_entry(
+                from backend.app.models.printer import Printer as _Printer
+
+                _wear_rate = await db.scalar(select(_Printer.wear_cost_per_hour).where(_Printer.id == printer_id))
+                run_entry = await write_log_entry(
                     db,
                     archive_id=archive.id,
                     # Captured by _update_queue_status above; None for
@@ -7984,6 +7987,7 @@ async def on_print_complete(printer_id: int, data: dict):
                     filament_color=archive.filament_color,
                     filament_used_grams=_run_grams,
                     cost=_run_cost,
+                    wear_cost_per_hour=_wear_rate,
                     failure_reason=archive.failure_reason,
                     thumbnail_path=archive.thumbnail_path,
                     created_by_id=archive.created_by_id,
@@ -7992,6 +7996,7 @@ async def on_print_complete(printer_id: int, data: dict):
                     # log 0 duration instead of the whole disconnect gap (#2592).
                     reconciled=bool(data.get("_reconciled")),
                 )
+                await record_archive_wear(db, archive, run_entry)
                 await db.commit()
                 logger.info("[PRINT_LOG] Log entry written for archive %s", archive_id)
     except Exception as e:

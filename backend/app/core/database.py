@@ -5302,6 +5302,14 @@ async def run_migrations(conn):
     await _safe_execute(conn, "ALTER TABLE library_folders ADD COLUMN shared BOOLEAN DEFAULT FALSE")
     await _backfill_library_folder_owners(conn)
 
+    # Migration: printer wear cost per printing hour, and the wear cost of each
+    # run and archive (#694). Nullable: no printer has a rate until one is set,
+    # and earlier prints keep no wear cost.
+    float_type = "REAL" if is_sqlite() else "DOUBLE PRECISION"
+    await _safe_execute(conn, f"ALTER TABLE printers ADD COLUMN wear_cost_per_hour {float_type}")
+    await _safe_execute(conn, f"ALTER TABLE print_log_entries ADD COLUMN wear_cost {float_type}")
+    await _safe_execute(conn, f"ALTER TABLE print_archives ADD COLUMN wear_cost {float_type}")
+
 
 async def _backfill_snapshot_prices(conn) -> None:
     """Give the energy snapshots taken before #1251 the price set at upgrade.

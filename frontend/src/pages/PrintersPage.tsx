@@ -203,6 +203,7 @@ import { Collapsible } from '../components/Collapsible';
 import { ConnectionDiagnosticModal, DiagnosticChecklist } from '../components/ConnectionDiagnostic';
 import { getColorName, parseFilamentColor, isLightColor } from '../utils/colors';
 import { NumberInput } from '../components/NumberInput';
+import { getCurrencySymbol } from '../utils/currency';
 
 // The status filter's options, and the only values it may hold. One list so a
 // saved filter cannot be validated against a set the dropdown has since moved
@@ -8467,7 +8468,10 @@ function EditPrinterModal({
     location: printer.location || '',
     auto_archive: printer.auto_archive,
     is_active: printer.is_active,
+    wear_cost_per_hour: printer.wear_cost_per_hour ? String(printer.wear_cost_per_hour) : '',
   });
+  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.getSettings });
+  const currency = getCurrencySymbol(settings?.currency || 'USD');
 
   // Groups can be given a location (#1727), so a move changes who can use the
   // printer. Non-admins can't read groups; the server refuses their move instead.
@@ -8521,6 +8525,8 @@ function EditPrinterModal({
       location: form.location.trim() || null,
       auto_archive: form.auto_archive,
       is_active: form.is_active,
+      // Empty or 0 turns wear cost off for this printer (#694)
+      wear_cost_per_hour: Number(form.wear_cost_per_hour) > 0 ? Number(form.wear_cost_per_hour) : null,
     };
     // Only include access_code if it was changed
     if (form.access_code) {
@@ -8667,6 +8673,23 @@ function EditPrinterModal({
               <label htmlFor="edit_auto_archive" className="text-sm text-bambu-gray">
                 {t('printers.modal.autoArchiveLabel')}
               </label>
+            </div>
+            <div>
+              <label htmlFor="edit_wear_cost" className="block text-sm text-bambu-gray mb-1">
+                {t('printers.modal.wearCostLabel', { currency })}
+              </label>
+              <input
+                id="edit_wear_cost"
+                type="number"
+                min={0}
+                step="0.01"
+                inputMode="decimal"
+                className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                value={form.wear_cost_per_hour}
+                onChange={(e) => setForm({ ...form, wear_cost_per_hour: e.target.value })}
+                placeholder="0.00"
+              />
+              <p className="text-xs text-bambu-gray mt-1">{t('printers.modal.wearCostHelp')}</p>
             </div>
             {/* Maintenance Mode toggle (#1476) — checkbox is the inverse of
                 is_active because the user-facing concept is "is this printer
