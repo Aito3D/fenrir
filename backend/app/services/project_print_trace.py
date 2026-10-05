@@ -194,8 +194,8 @@ def _is_printed():
 
 
 async def task_print_counts(db: AsyncSession, task_ids: Collection[int]) -> dict[int, PrintCounts]:
-    """printed / rejected / queued per task: one grouped query on the live
-    archives and one on the queue. Tasks without prints are absent."""
+    """printed / rejected / queued per task, all in parts: one grouped query on
+    the live archives and one on the live queue rows. Tasks without prints are absent."""
     ids = list(task_ids)
     if not ids:
         return {}
@@ -206,15 +206,33 @@ async def task_print_counts(db: AsyncSession, task_ids: Collection[int]) -> dict
         .where(PrintArchive.aito_task_id.in_(ids), PrintArchive.deleted_at.is_(None))
         .group_by(PrintArchive.aito_task_id)
     )
+    # Queued is in parts too: each live queue row counts its source's parts —
+    # the library file's printable objects, or the reprinted archive's quantity.
+    # One row per live queue item (a handful), the file metadata path joined in.
     queue_rows = await db.execute(
-        select(PrintQueueItem.aito_task_id, func.count(PrintQueueItem.id))
+        select(
+            PrintQueueItem.aito_task_id,
+            LibraryFile.file_metadata["printable_objects"],
+            PrintArchive.quantity,
+        )
+        .outerjoin(LibraryFile, LibraryFile.id == PrintQueueItem.library_file_id)
+        .outerjoin(PrintArchive, PrintArchive.id == PrintQueueItem.archive_id)
         .where(PrintQueueItem.aito_task_id.in_(ids), PrintQueueItem.status.in_(_QUEUED_STATUSES))
-        .group_by(PrintQueueItem.aito_task_id)
     )
     counts = {tid: [int(p), int(r), 0] for tid, p, r in archive_rows}
-    for tid, queued in queue_rows:
-        counts.setdefault(tid, [0, 0, 0])[2] = int(queued)
+    for tid, printable_objects, archive_quantity in queue_rows:
+        counts.setdefault(tid, [0, 0, 0])[2] += _queued_parts(printable_objects, archive_quantity)
     return {tid: PrintCounts(*values) for tid, values in counts.items()}
+
+
+def _queued_parts(printable_objects, archive_quantity: int | None) -> int:
+    """Parts one queue row will print: the file's printable objects, else the
+    reprinted archive's quantity, else 1."""
+    if isinstance(printable_objects, dict) and printable_objects:
+        return len(printable_objects)
+    if archive_quantity and archive_quantity > 0:
+        return int(archive_quantity)
+    return 1
 
 
 async def revision_print_counts(db: AsyncSession, revision_ids: Collection[int]) -> dict[int, int]:

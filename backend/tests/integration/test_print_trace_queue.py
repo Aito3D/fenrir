@@ -552,3 +552,49 @@ async def test_counts_use_a_fixed_number_of_queries(async_client: AsyncClient, d
     await db_session.commit()
 
     assert await _statements(db_session, probe) <= baseline
+
+
+async def _file_with_parts(db, parts: int | None):
+    """A library file whose stored 3MF metadata lists ``parts`` printable objects (None: no metadata)."""
+    metadata = None if parts is None else {"printable_objects": {str(i + 1): f"Part {i + 1}" for i in range(parts)}}
+    row = LibraryFile(
+        filename=f"parts-{parts}.gcode.3mf",
+        file_path=f"/test/parts-{parts}.gcode.3mf",
+        file_type="gcode.3mf",
+        file_size=1,
+        file_metadata=metadata,
+    )
+    db.add(row)
+    await db.commit()
+    return row.id
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_queued_counts_parts_like_printed(db_session):
+    """Queued is in parts, like printed: a 5-part plate queued twice is 10."""
+    order = await _order(db_session)
+    task = await _task(db_session, order)
+    bare = await _task(db_session, order, title="Bare")
+    reprint = await _task(db_session, order, title="Reprint")
+    five = await _file_with_parts(db_session, 5)
+    none = await _file_with_parts(db_session, None)
+    archive = _counted_archive(quantity=3)
+    db_session.add(archive)
+    await db_session.commit()
+    db_session.add_all(
+        [
+            PrintQueueItem(aito_task_id=task.id, status="pending", position=1, library_file_id=five),
+            PrintQueueItem(aito_task_id=task.id, status="printing", position=2, library_file_id=five),
+            PrintQueueItem(aito_task_id=task.id, status="completed", position=3, library_file_id=five),
+            PrintQueueItem(aito_task_id=bare.id, status="pending", position=4, library_file_id=none),
+            PrintQueueItem(aito_task_id=bare.id, status="pending", position=5, library_file_id=none),
+            PrintQueueItem(aito_task_id=reprint.id, status="pending", position=6, archive_id=archive.id),
+        ]
+    )
+    await db_session.commit()
+
+    counts = await task_print_counts(db_session, [task.id, bare.id, reprint.id])
+    assert counts[task.id].queued == 10
+    assert counts[bare.id].queued == 2
+    assert counts[reprint.id].queued == 3
