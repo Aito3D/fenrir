@@ -15,7 +15,9 @@ export function isSectionEnabled(section: ProjectSection): boolean {
   return ENABLED_SECTIONS.includes(section);
 }
 
-/** A file a project accepts today: `.3mf` (incl. `.gcode.3mf`), `.gcode` or `.bgcode`, any case. */
+/** PROJECT rule: a file a project accepts today: `.3mf` (incl. `.gcode.3mf`), `.gcode` or `.bgcode`,
+ *  any case. Gates uploads, drops and "Move to project". Wider than `isPrintableFile` (the print-button
+ *  rule below) on purpose: a `.bgcode` belongs in a project even where no Print button is offered. */
 export function isPrintableFilename(name: string): boolean {
   const lower = name.trim().toLowerCase();
   return PRINTABLE_EXTENSIONS.some((ext) => lower.endsWith(ext));
@@ -50,7 +52,9 @@ export const PREVIEWABLE_TYPES = ['stl', '3mf', 'gcode.3mf', 'step', 'stp'];
 
 export const chipBase = 'inline-flex items-center whitespace-nowrap rounded-md border px-1.5 py-0.5 text-xs font-medium';
 
-/** Files the print queue can take straight from a revision (.3mf, .gcode.3mf, .gcode). */
+/** PRINT-BUTTON rule: files the print queue can take straight from a revision (.3mf, .gcode.3mf,
+ *  .gcode). No `.bgcode`: the revision Print button is not offered for it. Not the rule for what
+ *  a project accepts — that is `isPrintableFilename` above. */
 export function isPrintableFile(filename: string): boolean {
   const name = filename.toLowerCase();
   return name.endsWith('.3mf') || name.endsWith('.gcode');
