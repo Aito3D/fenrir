@@ -229,7 +229,7 @@ export function ProjectListPage() {
               <button
                 type="button"
                 onClick={() => open(project)}
-                className={`flex h-full w-full flex-col gap-2 rounded-xl bg-bambu-card p-4 text-left hover:bg-bambu-dark-secondary ${focusRingCls}`}
+                className={`flex h-full w-full flex-col gap-2 rounded-xl border border-bambu-dark-tertiary bg-bambu-card p-4 text-left hover:bg-bambu-dark-secondary ${focusRingCls}`}
               >
                 {project.cover_image_filename && (
                   <img

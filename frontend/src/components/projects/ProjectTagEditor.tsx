@@ -65,7 +65,7 @@ export function ProjectTagEditor({
   return (
     <div className="space-y-2">
       <ProjectTagChips tags={value} onRemove={(index) => onChange(value.filter((_, i) => i !== index))} />
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <input
           role="combobox"
           aria-expanded={draft.length > 0 && matches.length > 0}
@@ -81,7 +81,7 @@ export function ProjectTagEditor({
             }
           }}
           placeholder={t('projectsPdm.tagSearchPlaceholder')}
-          className={inputCls}
+          className={`${inputCls} min-w-[10rem] flex-1`}
         />
         <datalist id={listId}>
           {matches.slice(0, 20).map((tag) => (
