@@ -2,7 +2,8 @@
  * Settings → Projects card: the auto-filing toggle writes
  * projects_auto_file_by_code; the legacy-migration block shows the pending
  * count and a start button, polls progress while running, lists failures and
- * says when nothing is left. Hidden from users without settings:update.
+ * says when nothing is left. Hidden from users without settings:update and
+ * projects:update (the migration endpoints require both).
  */
 import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
 import { configure, screen, waitFor } from '@testing-library/react';
@@ -114,12 +115,15 @@ describe('ProjectsSettingsCard', () => {
     expect(screen.queryByRole('button', { name: 'Move them now' })).not.toBeInTheDocument();
   });
 
-  it('is hidden without settings:update', async () => {
+  it.each([
+    ['settings:update', ['settings:read', 'projects:read', 'projects:update']],
+    ['projects:update', ['settings:read', 'settings:update', 'projects:read']],
+  ])('is hidden without %s', async (_missing, permissions) => {
     server.use(
       http.get('*/api/v1/auth/status', () => HttpResponse.json({ auth_enabled: true, requires_setup: false })),
       http.get('/api/v1/auth/me', () => HttpResponse.json({
         id: 2, username: 'viewer', role: 'user', is_active: true, is_admin: false,
-        groups: [{ id: 2, name: 'Viewers' }], permissions: ['settings:read', 'projects:read'], created_at: '2026-01-01T00:00:00Z',
+        groups: [{ id: 2, name: 'Viewers' }], permissions, created_at: '2026-01-01T00:00:00Z',
       })),
     );
     setAuthToken('test-token');

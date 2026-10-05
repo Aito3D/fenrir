@@ -51,7 +51,7 @@ import { GitHubBackupSettings } from '../components/GitHubBackupSettings';
 import { ZohoSettings } from '../components/ZohoSettings';
 import { AiSettings } from '../components/AiSettings';
 import { HeimdallSettings } from '../components/HeimdallSettings';
-import { ProjectsSettingsCard } from '../components/projects/filing/ProjectsSettingsCard'; // Fenrir: Projects tab
+import { ProjectsSettingsCard, canManageProjectsSettings } from '../components/projects/filing/ProjectsSettingsCard'; // Fenrir: Projects tab
 import { FailureDetectionSettings } from '../components/FailureDetectionSettings';
 import { EmailSettings } from '../components/EmailSettings';
 import { LDAPSettings } from '../components/LDAPSettings';
@@ -287,8 +287,8 @@ export function SettingsPage() {
   // Camera tokens and the overlay builder used to live under API Keys; links
   // to them (bookmarks, the wiki, /camera-tokens) open the Camera tab instead.
   const canSeeApiKeysTab = hasPermission('api_keys:read') || hasPermission('settings:update');
-  // Fenrir: the Projects tab holds one card, gated on settings:update.
-  const canSeeProjectsTab = hasPermission('settings:update');
+  // Fenrir: the Projects tab holds one card, gated like it (settings:update + projects:update).
+  const canSeeProjectsTab = canManageProjectsSettings(hasPermission);
   const isLegacyCameraLink = tabParam === 'apikeys'
     && ['#card-camera-tokens', '#card-stream-overlay'].includes(window.location.hash);
   const initialTab = isLegacyEmailTab ? 'users'

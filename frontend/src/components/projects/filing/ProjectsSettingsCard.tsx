@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FolderKanban, Loader2 } from 'lucide-react';
 import { api } from '../../../api/client';
-import type { AppSettings, LegacyMigrationStatus } from '../../../api/client';
+import type { AppSettings, LegacyMigrationStatus, Permission } from '../../../api/client';
 import { Card, CardContent, CardHeader } from '../../Card';
 import { Button } from '../../Button';
 import { Toggle } from '../../Toggle';
@@ -11,14 +11,22 @@ import { useAuth } from '../../../contexts/AuthContext';
 
 const legacyMigrationStatusKey = ['projects', 'legacy-migration', 'status'] as const;
 
+/** The Projects settings card/tab is for users who may change settings and
+ *  projects: the legacy-migration endpoints require both permissions. */
+// eslint-disable-next-line react-refresh/only-export-components -- pure gate shared with the Settings tab list
+export function canManageProjectsSettings(hasPermission: (permission: Permission) => boolean): boolean {
+  return hasPermission('settings:update') && hasPermission('projects:update');
+}
+
 /** Settings → Projects: auto-filing by project code and the one-off move of
  *  old project files. Self-contained (own queries and mutations), shown only
- *  to users who may change settings. */
+ *  to users who may change settings AND projects (the migration endpoints
+ *  require both, see canManageProjectsSettings). */
 export function ProjectsSettingsCard() {
   const { loading, hasPermission } = useAuth();
   // hasPermission allows everything while auth is still loading, so wait for it
   // before deciding — otherwise a viewer would briefly see (and poll) the card.
-  if (loading || !hasPermission('settings:update')) return null;
+  if (loading || !canManageProjectsSettings(hasPermission)) return null;
   return <ProjectsSettingsCardBody />;
 }
 

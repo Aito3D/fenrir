@@ -1608,7 +1608,7 @@ describe('SettingsPage', () => {
       await waitFor(() => expect(screen.getByRole('button', { name: /^API Keys/ })).toBeInTheDocument());
     });
 
-    // Fenrir: Projects tab (auto-filing + legacy migration), settings:update only.
+    // Fenrir: Projects tab (auto-filing + legacy migration), settings:update + projects:update.
     it('lists Projects alphabetically and opens its card', async () => {
       server.use(
         http.get('/api/v1/projects/legacy-migration/status', () =>
@@ -1628,6 +1628,13 @@ describe('SettingsPage', () => {
 
     it('hides Projects from a user without settings:update', async () => {
       signInWith(['settings:read', 'camera:view', 'projects:update']);
+      render(<SettingsPage />);
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Camera' })).toBeInTheDocument());
+      expect(screen.queryByRole('button', { name: 'Projects' })).toBeNull();
+    });
+
+    it('hides Projects from a user with settings:update but not projects:update', async () => {
+      signInWith(['settings:read', 'settings:update', 'camera:view']);
       render(<SettingsPage />);
       await waitFor(() => expect(screen.getByRole('button', { name: 'Camera' })).toBeInTheDocument());
       expect(screen.queryByRole('button', { name: 'Projects' })).toBeNull();
