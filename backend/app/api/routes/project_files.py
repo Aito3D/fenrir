@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import tempfile
 import zipfile
@@ -56,6 +57,20 @@ class _ProjectUploadCappedRoute(APIRoute):
             return await original(request)
 
         return handler
+
+
+_STORED_SUFFIXES = (".3mf", ".zip", ".jpg", ".jpeg", ".png", ".step", ".stp")
+
+
+def _build_zip(paths_and_names: list[tuple[Path, str]], archive: Path) -> int:
+    """Blocking zip build (run in a thread). Returns the number of files written."""
+    written = 0
+    with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED, allowZip64=True) as zf:
+        for path, name in paths_and_names:
+            method = zipfile.ZIP_STORED if name.lower().endswith(_STORED_SUFFIXES) else zipfile.ZIP_DEFLATED
+            zf.write(path, arcname=name, compress_type=method)
+            written += 1
+    return written
 
 
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -266,14 +281,21 @@ async def download_revision(
         if row is None or path is None or not path.exists():
             raise HTTPException(status_code=404, detail="File not found")
         return FileResponse(str(path), filename=row.filename, media_type="application/octet-stream")
+    entries = []
+    for row in rows:
+        path = to_absolute_path(row.file_path)
+        if path is not None and path.exists():
+            entries.append((path, row.filename))
     fd, archive_name = tempfile.mkstemp(suffix=".zip")
     os.close(fd)
     archive = Path(archive_name)
-    with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED, allowZip64=True) as zf:
-        for row in rows:
-            path = to_absolute_path(row.file_path)
-            if path is not None and path.exists():
-                zf.write(path, arcname=row.filename)
+    try:
+        written = await asyncio.to_thread(_build_zip, entries, archive)
+        if written == 0:
+            raise HTTPException(status_code=404, detail="No file available on disk")
+    except BaseException:
+        archive.unlink(missing_ok=True)
+        raise
     name = f"{project.code or project.id}_{item.name}_R{revision.number}.zip"
     return FileResponse(
         str(archive),

@@ -6,6 +6,8 @@ import zipfile
 import pytest
 from httpx import AsyncClient
 
+from backend.app.api.routes import project_files as project_files_routes
+from backend.app.core.config import settings
 from backend.app.services import project_storage
 
 
@@ -107,3 +109,62 @@ async def test_tree_isolated_per_project(async_client: AsyncClient):
     await _upload(async_client, item["id"], ("a.step", b"x"))
     tree_b = (await async_client.get(f"/api/v1/projects/{b['id']}/tree")).json()
     assert all(section["items"] == [] for section in tree_b["sections"])
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_upload_content_length_gate(async_client: AsyncClient, monkeypatch):
+    monkeypatch.setattr(settings, "library_max_upload_bytes", 1024)
+    project = await _project(async_client)
+    item = await _item(async_client, project["id"])
+    response = await _upload(async_client, item["id"], ("a.step", b"x" * 4 * 1024 * 3))
+    assert response.status_code == 413
+
+
+async def _revision_with_files(client, *files):
+    project = await _project(client)
+    item = await _item(client, project["id"])
+    response = await _upload(client, item["id"], *files)
+    assert response.status_code == 201, response.text
+    return response.json()["revision"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_zip_temp_file_removed_when_build_fails(async_client: AsyncClient, tmp_path, monkeypatch):
+    rev = await _revision_with_files(async_client, ("a.step", b"x"))
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    real_mkstemp = project_files_routes.tempfile.mkstemp
+    monkeypatch.setattr(
+        project_files_routes.tempfile, "mkstemp", lambda suffix="": real_mkstemp(suffix=suffix, dir=scratch)
+    )
+
+    def boom(paths_and_names, archive):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(project_files_routes, "_build_zip", boom)
+    try:
+        response = await async_client.get(f"/api/v1/projects/revisions/{rev['id']}/download")
+        assert response.status_code == 500
+    except OSError:
+        pass  # the test transport may re-raise instead of answering 500
+    assert list(scratch.iterdir()) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_download_wrong_file_id_404(async_client: AsyncClient):
+    rev = await _revision_with_files(async_client, ("a.step", b"x"))
+    response = await async_client.get(f"/api/v1/projects/revisions/{rev['id']}/download", params={"file_id": 999999})
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_zip_download_404_when_all_files_missing(async_client: AsyncClient, root):
+    rev = await _revision_with_files(async_client, ("a.step", b"x"))
+    for path in root.rglob("a.step"):
+        path.unlink()
+    response = await async_client.get(f"/api/v1/projects/revisions/{rev['id']}/download")
+    assert response.status_code == 404
