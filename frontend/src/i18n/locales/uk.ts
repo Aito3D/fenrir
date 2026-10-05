@@ -864,7 +864,7 @@ export default {
         shippingPhone: 'Телефон отримувача',
         email: 'Е-пошта',
         quote: 'КП',
-        document: 'Рахунок',
+        document: 'Рахунок / аванс',
         lta: 'LTA',
         cardId: 'Картка',
         client: 'Клієнт',

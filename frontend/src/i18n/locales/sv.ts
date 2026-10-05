@@ -9215,7 +9215,7 @@ errors: {
         shippingPhone: 'Mottagarens telefon',
         email: 'E-post',
         quote: 'Offert',
-        document: 'Faktura',
+        document: 'Faktura / handpenning',
         lta: 'LTA',
         cardId: 'Kort',
         client: 'Kund',

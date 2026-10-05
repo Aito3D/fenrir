@@ -863,7 +863,7 @@ export default {
         shippingPhone: '收件人電話',
         email: '電子郵件',
         quote: '報價單',
-        document: '發票',
+        document: '發票 / 訂金',
         lta: 'LTA',
         cardId: '卡片',
         client: '客戶',

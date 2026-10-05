@@ -43,6 +43,13 @@ describe('BoardSearch combobox', () => {
     expect(screen.getByRole('combobox')).toHaveAttribute('aria-expanded', 'true');
   });
 
+  it('labels a document-number match as invoice or deposit', async () => {
+    const rows = [makeProject({ id: 9, description: 'Acompte', client_phone: null, client_email: null, document_numbers: ['RET-00268'] })];
+    render(<Harness rows={rows} />);
+    await userEvent.type(screen.getByRole('combobox'), 'RET-00268');
+    expect(screen.getByRole('option')).toHaveTextContent('Invoice / deposit');
+  });
+
   it('labels Done and Trash results', async () => {
     render(<Harness />);
     await userEvent.type(screen.getByRole('combobox'), 'du');

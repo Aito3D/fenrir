@@ -863,7 +863,7 @@ export default {
         shippingPhone: 'Alıcı telefonu',
         email: 'E-posta',
         quote: 'Teklif',
-        document: 'Fatura',
+        document: 'Fatura / kapora',
         lta: 'LTA',
         cardId: 'Kart',
         client: 'Müşteri',

@@ -867,7 +867,7 @@ export default {
         shippingPhone: 'Recipient phone',
         email: 'Email',
         quote: 'Quote',
-        document: 'Invoice',
+        document: 'Invoice / deposit',
         lta: 'LTA',
         cardId: 'Card',
         client: 'Client',

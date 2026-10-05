@@ -863,7 +863,7 @@ export default {
         shippingPhone: '수령인 전화',
         email: '이메일',
         quote: '견적',
-        document: '청구서',
+        document: '청구서 / 선금',
         lta: 'LTA',
         cardId: '카드',
         client: '고객',

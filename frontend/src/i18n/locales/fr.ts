@@ -863,7 +863,7 @@ export default {
         shippingPhone: 'Tél. destinataire',
         email: 'E-mail',
         quote: 'Devis',
-        document: 'Facture',
+        document: 'Facture / acompte',
         lta: 'LTA',
         cardId: 'Fiche',
         client: 'Client',

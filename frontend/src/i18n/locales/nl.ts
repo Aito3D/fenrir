@@ -9215,7 +9215,7 @@ export default {
         shippingPhone: 'Telefoon ontvanger',
         email: 'E-mail',
         quote: 'Offerte',
-        document: 'Factuur',
+        document: 'Factuur / aanbetaling',
         lta: 'LTA',
         cardId: 'Kaart',
         client: 'Klant',

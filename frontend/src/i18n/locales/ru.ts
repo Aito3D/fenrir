@@ -863,7 +863,7 @@ export default {
         shippingPhone: 'Телефон получателя',
         email: 'Эл. почта',
         quote: 'КП',
-        document: 'Счёт',
+        document: 'Счёт / аванс',
         lta: 'LTA',
         cardId: 'Карточка',
         client: 'Клиент',

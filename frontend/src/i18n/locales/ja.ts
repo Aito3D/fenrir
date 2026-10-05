@@ -863,7 +863,7 @@ export default {
         shippingPhone: '受取人の電話',
         email: 'メール',
         quote: '見積',
-        document: '請求書',
+        document: '請求書 / 前受金',
         lta: 'LTA',
         cardId: 'カード',
         client: '顧客',
