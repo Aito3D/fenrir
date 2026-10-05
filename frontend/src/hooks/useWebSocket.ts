@@ -643,6 +643,8 @@ export function useWebSocket() {
           }
           for (const id of aitoEventsDirtyRef.current) {
             queryClient.invalidateQueries({ queryKey: ['aito-events', id] });
+            // Fenrir PDM: links, step summaries and deliveries of an open panel.
+            queryClient.invalidateQueries({ queryKey: ['aito-project-links', id] });
           }
           aitoEventsDirtyRef.current.clear();
         }, 300);

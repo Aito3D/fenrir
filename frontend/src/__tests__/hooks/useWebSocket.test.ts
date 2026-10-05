@@ -918,6 +918,37 @@ describe('useWebSocket hook', () => {
       vi.useRealTimers();
     });
 
+    it("refreshes the order's project links (and the card codes) on any aito_changed", async () => {
+      // Another operator's link, delivery or drop — or a revision upload on
+      // the project page — must reach an open panel's step summaries.
+      vi.useFakeTimers();
+      const { useWebSocket } = await import('../../hooks/useWebSocket');
+      const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+      renderHook(() => useWebSocket(), {
+        wrapper: createWrapper(queryClient),
+      });
+
+      await vi.advanceTimersByTimeAsync(0);
+      const ws = wsInstances[wsInstances.length - 1]!;
+      act(() => {
+        ws.open();
+      });
+
+      act(() => {
+        ws.simulateMessage({ type: 'aito_changed', action: 'task', project_id: 44, actor: 'Marie' });
+      });
+      expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['aito-project-links', 44] });
+
+      await act(async () => {
+        vi.advanceTimersByTime(400);
+      });
+
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['aito-project-links', 44] });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['aito-project-codes'] });
+      vi.useRealTimers();
+    });
+
     it('invalidates the invoice card immediately on invoice-email, not just aito-events', async () => {
       // A second operator's open panel learns of a send through this alone:
       // the project row does not change (see test_send_never_moves_the_card),
