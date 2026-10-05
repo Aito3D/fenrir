@@ -598,3 +598,29 @@ async def test_queued_counts_parts_like_printed(db_session):
     assert counts[task.id].queued == 10
     assert counts[bare.id].queued == 2
     assert counts[reprint.id].queued == 3
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_reprint_cannot_move_an_archive_to_another_task(async_client: AsyncClient, db_session):
+    """The scheduler keeps the archive's own task, so a different one would be credited wrongly."""
+    project = await _project(async_client)
+    revision_id, _file_id = await _revision_file(async_client, db_session, project["id"])
+    order = await _order(db_session)
+    owner = await _task(db_session, order, linked_project_id=project["id"])
+    other = await _task(db_session, order, linked_project_id=project["id"], title="Autre")
+    archive_id = await _archive(db_session, revision_id=revision_id)
+    archive = await db_session.get(PrintArchive, archive_id)
+    archive.aito_task_id = owner.id
+    await db_session.commit()
+
+    moved = await async_client.post("/api/v1/queue/", json={"archive_id": archive_id, "aito_task_id": other.id})
+    assert moved.status_code == 400, moved.text
+    assert moved.json()["detail"] == "This Aito task can't be used for this file"
+    assert await _items(db_session, archive_id=archive_id) == []
+
+    same = await async_client.post("/api/v1/queue/", json={"archive_id": archive_id, "aito_task_id": owner.id})
+    assert same.status_code == 200, same.text
+    assert same.json()["aito_task_id"] == owner.id
+    unset = await async_client.post("/api/v1/queue/", json={"archive_id": archive_id})
+    assert unset.status_code == 200, unset.text

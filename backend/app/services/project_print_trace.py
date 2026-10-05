@@ -53,17 +53,24 @@ class PrintContext:
     task_title: str | None = None
 
 
-async def _source_revision_id(db: AsyncSession, library_file_id: int | None, archive_id: int | None) -> int | None:
-    """The revision of the source: the library file's, else the archive's (a reprint)."""
+async def _source_trace(
+    db: AsyncSession, library_file_id: int | None, archive_id: int | None
+) -> tuple[int | None, int | None]:
+    """(revision, task) of the source: the library file's revision (no task), else
+    the archive's revision and task (a reprint)."""
     if library_file_id is not None:
-        return (
+        revision_id = (
             await db.execute(select(LibraryFile.revision_id).where(LibraryFile.id == library_file_id))
         ).scalar_one_or_none()
+        return revision_id, None
     if archive_id is not None:
-        return (
-            await db.execute(select(PrintArchive.revision_id).where(PrintArchive.id == archive_id))
-        ).scalar_one_or_none()
-    return None
+        row = (
+            await db.execute(
+                select(PrintArchive.revision_id, PrintArchive.aito_task_id).where(PrintArchive.id == archive_id)
+            )
+        ).first()
+        return (row[0], row[1]) if row is not None else (None, None)
+    return None, None
 
 
 async def resolve_print_context(
@@ -83,9 +90,10 @@ async def resolve_print_context(
     - ``aito_task_id`` requires a revision file and must name an existing task
       whose order is not trashed and whose linked project is the revision's
       project; every failure is a 400 (an unknown or trashed task included, so
-      the caller cannot tell the two apart).
+      the caller cannot tell the two apart). A reprint of an archive that
+      already has a task only accepts that same task.
     """
-    revision_id = await _source_revision_id(db, library_file_id, archive_id)
+    revision_id, source_task_id = await _source_trace(db, library_file_id, archive_id)
     bundle = None
     if revision_id is not None:
         bundle = (
@@ -112,6 +120,10 @@ async def resolve_print_context(
     )
     if aito_task_id is None:
         return context
+    # A reprint stays on its archive's task (the scheduler keeps it), so another
+    # task would be credited with prints it never gets.
+    if source_task_id is not None and source_task_id != aito_task_id:
+        raise PrintTraceError(400, TASK_UNUSABLE)
 
     row = (
         await db.execute(
