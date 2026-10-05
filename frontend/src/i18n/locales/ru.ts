@@ -9626,6 +9626,10 @@ export default {
       newOrder: 'Новый заказ',
       orderLabel: 'Заказ №{{id}}',
       linkFailed: 'Не удалось обновить привязку',
+      confirmUnlink: 'Отвязать {{name}} от этой задачи? Список переданных файлов будет очищен.',
+      editDeliveries: 'Изменить переданные файлы',
+      noProjectsFound: 'Подходящих проектов нет',
+      reuseFromOrderPlaceholder: 'Взять файлы из другого заказа…',
     },
   },
 };

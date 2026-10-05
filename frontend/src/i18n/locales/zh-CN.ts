@@ -10009,6 +10009,10 @@ export default {
       newOrder: '新建订单',
       orderLabel: '订单 #{{id}}',
       linkFailed: '无法更新关联',
+      confirmUnlink: '要将 {{name}} 从此任务取消关联吗？已交付文件列表将被清空。',
+      editDeliveries: '编辑已交付文件',
+      noProjectsFound: '没有匹配的项目',
+      reuseFromOrderPlaceholder: '沿用其他订单的文件…',
     },
   },
 };

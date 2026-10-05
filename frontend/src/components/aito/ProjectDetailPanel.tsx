@@ -1175,7 +1175,7 @@ export function ProjectDetailPanel({
     return () => sendAitoPresence(null);
   }, [project.id]);
 
-  const { user, authEnabled } = useAuth();
+  const { user, authEnabled, hasPermission } = useAuth();
   // Per user: with auth off there is nobody to watch for (the server answers
   // `watching: false` anyway), so the request is not worth making.
   const watchAvailable = authEnabled && !!user;
@@ -1544,6 +1544,9 @@ export function ProjectDetailPanel({
                 // 'locked' sync state: a refused push is the operator's to
                 // fix, and its tasks stay open — see quoteSync.ts.
                 locked={project.quote_invoiced}
+                // The task ↔ PDM project line, file summaries and drops read
+                // project data, so they need projects:read on top of aito:read.
+                orderId={hasPermission('projects:read') ? project.id : undefined}
               />
             </div>
 

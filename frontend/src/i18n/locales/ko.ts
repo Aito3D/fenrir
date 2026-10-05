@@ -9643,6 +9643,10 @@ export default {
       newOrder: '새 주문',
       orderLabel: '주문 #{{id}}',
       linkFailed: '링크를 업데이트하지 못했습니다',
+      confirmUnlink: '이 작업에서 {{name}} 연결을 해제할까요? 납품 파일 목록이 지워집니다.',
+      editDeliveries: '납품 파일 편집',
+      noProjectsFound: '일치하는 프로젝트가 없습니다',
+      reuseFromOrderPlaceholder: '다른 주문의 파일 재사용…',
     },
   },
 };

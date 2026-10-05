@@ -10082,6 +10082,10 @@ export default {
       newOrder: 'New order',
       orderLabel: 'Order #{{id}}',
       linkFailed: 'Could not update the link',
+      confirmUnlink: 'Unlink {{name}} from this task? Its delivered files list is cleared.',
+      editDeliveries: 'Edit delivered files',
+      noProjectsFound: 'No matching project',
+      reuseFromOrderPlaceholder: 'Reuse files from another order…',
     },
   },
 };

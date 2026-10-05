@@ -10025,6 +10025,10 @@ export default {
       newOrder: '新規注文',
       orderLabel: '注文 #{{id}}',
       linkFailed: 'リンクを更新できませんでした',
+      confirmUnlink: 'このタスクから {{name}} のリンクを解除しますか？納品ファイルの一覧は消去されます。',
+      editDeliveries: '納品ファイルを編集',
+      noProjectsFound: '一致するプロジェクトはありません',
+      reuseFromOrderPlaceholder: '別の注文のファイルを再利用…',
     },
   },
 };

@@ -10009,6 +10009,10 @@ export default {
       newOrder: '新增訂單',
       orderLabel: '訂單 #{{id}}',
       linkFailed: '無法更新連結',
+      confirmUnlink: '要將 {{name}} 從此任務取消連結嗎？已交付檔案清單將被清除。',
+      editDeliveries: '編輯已交付檔案',
+      noProjectsFound: '沒有相符的專案',
+      reuseFromOrderPlaceholder: '沿用其他訂單的檔案…',
     },
   },
 };

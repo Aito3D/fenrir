@@ -7,7 +7,9 @@ import { Money } from '../calculator/shared';
 import { focusRingCls } from '../formStyles';
 import { useCurrency } from '../../hooks/useCurrency';
 import { api } from '../../api/client';
+import type { RevisionStatus, SectionRevisionSummary } from '../../api/client';
 import type { TaskDraft } from '../../utils/taskDraft';
+import { STATUS_LABEL_KEYS } from '../projects/files/filesUi';
 
 const DESCRIPTION_FIELD = {
   scan: 'scanDescription',
@@ -34,6 +36,10 @@ export interface TaskStepListProps {
    *  there is nothing for an inert control to explain. A step already ticked
    *  still renders as ticked, because that is stored history. */
   canTick: boolean;
+  /** The linked project's newest revisions per section, keyed by the service
+   *  that owns the section. A step with a non-empty entry gets one muted line
+   *  under its description (`Support R3 · Approved`). Absent = no lines. */
+  sectionSummaries?: Partial<Record<ServiceId, SectionRevisionSummary[]>>;
 }
 
 /** A task's steps, read-only apart from their Done toggles.
@@ -50,7 +56,7 @@ export interface TaskStepListProps {
  *  The toggle exists at all only when `canTick` — see that prop. The steps
  *  themselves always render, ticks included: what a project's quote is now
  *  does not unsay work that was done. */
-export function TaskStepList({ task, onChange, canTick }: TaskStepListProps) {
+export function TaskStepList({ task, onChange, canTick, sectionSummaries }: TaskStepListProps) {
   const { t } = useTranslation();
   const currency = useCurrency();
   const steps = taskSteps(task);
@@ -125,6 +131,9 @@ export function TaskStepList({ task, onChange, canTick }: TaskStepListProps) {
         const label = t(AITO_SERVICE_LABEL_KEYS[service]);
         const description = task[DESCRIPTION_FIELD[service]].trim();
         const meta = metaFor(service);
+        const files = (sectionSummaries?.[service] ?? [])
+          .map((s) => `${s.item_name} R${s.number} · ${t(STATUS_LABEL_KEYS[s.status as RevisionStatus] ?? s.status)}`)
+          .join(' · ');
         const row = (
           <>
             {/* The checkbox IS the affordance now. The old design put a "Done"
@@ -229,6 +238,17 @@ export function TaskStepList({ task, onChange, canTick }: TaskStepListProps) {
                 {canTick && <span aria-hidden="true" className="w-4 flex-shrink-0" />}
                 <span aria-hidden="true" className="w-0.5 flex-shrink-0" />
                 <span className="min-w-0 flex-1 whitespace-pre-wrap break-words">{description}</span>
+              </p>
+            )}
+            {files !== '' && (
+              <p
+                data-testid={`step-files-${service}`}
+                className="flex items-start gap-3 pr-1.5 pb-1 text-xs text-bambu-gray"
+              >
+                {/* Same gutter spacers as the description above. */}
+                {canTick && <span aria-hidden="true" className="w-4 flex-shrink-0" />}
+                <span aria-hidden="true" className="w-0.5 flex-shrink-0" />
+                <span className="min-w-0 flex-1 truncate">{files}</span>
               </p>
             )}
           </li>

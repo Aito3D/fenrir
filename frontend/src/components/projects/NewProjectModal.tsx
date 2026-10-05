@@ -8,16 +8,26 @@ import { useToast } from '../../contexts/ToastContext';
 import { AiTextField } from '../aito/AiTextField';
 import { ProjectTagEditor, splitTagDrafts } from './ProjectTagEditor';
 import type { TagDraft } from './ProjectTagChips';
+import type { Project } from '../../api/client';
+
+interface NewProjectModalProps {
+  onClose: () => void;
+  initialTitle?: string;
+  initialDescription?: string;
+  /** Given: called with the new project instead of navigating to it (an Aito
+   *  task links it and stays where it is). */
+  onCreated?: (project: Project) => void;
+}
 
 /** Create a project: title, description (both reworded in French on blur, with
  *  undo) and tags. No parent picker — sub-projects are not used (spec §0). */
-export function NewProjectModal({ onClose }: { onClose: () => void }) {
+export function NewProjectModal({ onClose, initialTitle = '', initialDescription = '', onCreated }: NewProjectModalProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
+  const [title, setTitle] = useState(initialTitle);
+  const [description, setDescription] = useState(initialDescription);
   const [tags, setTags] = useState<TagDraft[]>([]);
 
   const create = useMutation({
@@ -28,7 +38,8 @@ export function NewProjectModal({ onClose }: { onClose: () => void }) {
       queryClient.invalidateQueries({ queryKey: ['projects-search'] });
       queryClient.invalidateQueries({ queryKey: ['project-tags'] });
       onClose();
-      navigate(`/projects/${project.id}`);
+      if (onCreated) onCreated(project);
+      else navigate(`/projects/${project.id}`);
     },
     onError: () => showToast(t('projectsPdm.saveFailed'), 'error'),
   });

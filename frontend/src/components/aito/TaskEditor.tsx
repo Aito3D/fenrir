@@ -112,6 +112,9 @@ export interface TaskEditorProps {
    *  is the normal flow. The detail panel passes `project.quote_invoiced`;
    *  the create drawer has no invoice and passes nothing. */
   locked?: boolean;
+  /** The Aito order these tasks belong to — passed straight to each `TaskRow`
+   *  (see its own prop doc). The detail panel passes it; the drawer doesn't. */
+  orderId?: number;
 }
 
 /** The task list for one Aito project: a heading, each task's `TaskRow`, "+
@@ -134,6 +137,7 @@ export function TaskEditor({
   canDelete = true,
   onReorder,
   locked = false,
+  orderId,
 }: TaskEditorProps) {
   const { t } = useTranslation();
   const currency = useCurrency();
@@ -304,6 +308,7 @@ export function TaskEditor({
                 canTick,
                 pending,
                 locked,
+                orderId,
                 // The list-wide fold: while a drag is in flight EVERY row shows
                 // only its header line, so the user shuffles compact cards
                 // instead of scroll-fighting full-height ones. Rides the same

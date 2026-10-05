@@ -10026,6 +10026,10 @@ export default {
       newOrder: 'Neuer Auftrag',
       orderLabel: 'Auftrag #{{id}}',
       linkFailed: 'Verknüpfung konnte nicht aktualisiert werden',
+      confirmUnlink: '{{name}} von dieser Aufgabe lösen? Die Liste der gelieferten Dateien wird geleert.',
+      editDeliveries: 'Gelieferte Dateien bearbeiten',
+      noProjectsFound: 'Kein passendes Projekt',
+      reuseFromOrderPlaceholder: 'Dateien aus einem anderen Auftrag übernehmen…',
     },
   },
 };

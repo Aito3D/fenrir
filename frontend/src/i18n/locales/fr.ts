@@ -10011,6 +10011,10 @@ export default {
       newOrder: 'Nouvelle commande',
       orderLabel: 'Commande #{{id}}',
       linkFailed: 'Impossible de mettre à jour le lien',
+      confirmUnlink: 'Délier {{name}} de cette tâche ? La liste des fichiers livrés sera effacée.',
+      editDeliveries: 'Modifier les fichiers livrés',
+      noProjectsFound: 'Aucun projet correspondant',
+      reuseFromOrderPlaceholder: 'Reprendre les fichiers d’une autre commande…',
     },
   },
 };

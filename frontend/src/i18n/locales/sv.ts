@@ -10050,6 +10050,10 @@ errors: {
       newOrder: 'Ny order',
       orderLabel: 'Order nr {{id}}',
       linkFailed: 'Kunde inte uppdatera länken',
+      confirmUnlink: 'Koppla bort {{name}} från den här uppgiften? Listan över levererade filer töms.',
+      editDeliveries: 'Redigera levererade filer',
+      noProjectsFound: 'Inget matchande projekt',
+      reuseFromOrderPlaceholder: 'Återanvänd filer från en annan order…',
     },
   },
 };

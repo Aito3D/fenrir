@@ -10011,6 +10011,10 @@ export default {
       newOrder: 'Nuovo ordine',
       orderLabel: 'Ordine #{{id}}',
       linkFailed: 'Impossibile aggiornare il collegamento',
+      confirmUnlink: 'Scollegare {{name}} da questa attività? L\'elenco dei file consegnati verrà svuotato.',
+      editDeliveries: 'Modifica i file consegnati',
+      noProjectsFound: 'Nessun progetto corrispondente',
+      reuseFromOrderPlaceholder: 'Riutilizza i file di un altro ordine…',
     },
   },
 };

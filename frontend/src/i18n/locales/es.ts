@@ -10034,6 +10034,10 @@ export default {
       newOrder: 'Nuevo pedido',
       orderLabel: 'Pedido #{{id}}',
       linkFailed: 'No se pudo actualizar el vínculo',
+      confirmUnlink: '¿Desvincular {{name}} de esta tarea? Se borrará la lista de archivos entregados.',
+      editDeliveries: 'Editar archivos entregados',
+      noProjectsFound: 'Ningún proyecto coincide',
+      reuseFromOrderPlaceholder: 'Reutilizar archivos de otro pedido…',
     },
   },
 };

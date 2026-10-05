@@ -10050,6 +10050,10 @@ export default {
       newOrder: 'Nieuwe bestelling',
       orderLabel: 'Bestelling #{{id}}',
       linkFailed: 'Kon de koppeling niet bijwerken',
+      confirmUnlink: '{{name}} loskoppelen van deze taak? De lijst met geleverde bestanden wordt gewist.',
+      editDeliveries: 'Geleverde bestanden bewerken',
+      noProjectsFound: 'Geen overeenkomend project',
+      reuseFromOrderPlaceholder: 'Bestanden van een andere bestelling hergebruiken…',
     },
   },
 };

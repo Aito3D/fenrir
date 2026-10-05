@@ -9951,6 +9951,10 @@ export default {
       newOrder: 'Yeni sipariş',
       orderLabel: 'Sipariş #{{id}}',
       linkFailed: 'Bağlantı güncellenemedi',
+      confirmUnlink: '{{name}} bu görevden ayrılsın mı? Teslim edilen dosyalar listesi temizlenir.',
+      editDeliveries: 'Teslim edilen dosyaları düzenle',
+      noProjectsFound: 'Eşleşen proje yok',
+      reuseFromOrderPlaceholder: 'Başka bir siparişin dosyalarını yeniden kullan…',
     },
   },
 };
