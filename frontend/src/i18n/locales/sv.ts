@@ -6617,6 +6617,7 @@ errors: {
       webhook: 'Webhook',
       homeassistant: 'Home Assistant',
       bark: 'Bark',
+      gotify: 'Gotify',
     },
     // Provider descriptions
     providerDescriptions: {
@@ -6629,6 +6630,7 @@ errors: {
       webhook: 'Generisk HTTP POST till valfri URL',
       homeassistant: 'Permanenta notiser i Home Assistant-instrumentpanel',
       bark: 'iOS push-notiser via Bark (självhostbar)',
+      gotify: 'Push-notiser via din egen Gotify-server',
     },
     // NotificationProviderCard
     lastSuccess: 'Senast: {{date}}',
@@ -6772,6 +6774,8 @@ errors: {
     eventPriority: {
       sectionTitle: 'ntfy-prioritet',
       helpNtfy: 'Välj en prioritet för varje aktiverad händelse. ntfy använder dessa för att eskalera larm (ljud, synlighet, push-beteende). Nivåer som inte sätts här använder ntfy-serverns standard.',
+      sectionTitleGotify: 'Gotify-prioritet',
+      helpGotify: 'Välj en prioritet för varje aktiverad händelse. Bambuddy skickar Min, Låg, Standard, Hög och Brådskande till Gotify som 0, 2, 5, 8 och 10. I Gotifys Android-app spelar Standard och högre upp ett ljud, och Hög och Brådskande visas som popup.',
       min: 'Min',
       low: 'Låg',
       default: 'Standard',

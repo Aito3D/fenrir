@@ -6527,6 +6527,7 @@ export default {
       webhook: 'Webhook',
       homeassistant: 'Home Assistant',
       bark: 'Bark',
+      gotify: 'Gotify',
     },
     providerDescriptions: {
       email: 'SMTP e-posta bildirimleri',
@@ -6538,6 +6539,7 @@ export default {
       webhook: 'Herhangi bir URL\'ye genel HTTP POST',
       homeassistant: 'Home Assistant gösterge panelinde kalıcı bildirimler',
       bark: 'Bark ile iOS anlık bildirimleri (kendi sunucunuzda barındırılabilir)',
+      gotify: 'Kendi Gotify sunucunuz üzerinden anlık bildirimler',
     },
     lastSuccess: 'Son: {{date}}',
     error: 'Hata',
@@ -6670,6 +6672,8 @@ export default {
     eventPriority: {
       sectionTitle: 'ntfy Önceliği',
       helpNtfy: 'Her etkin olay için bir öncelik seçin. ntfy uyarıları kademelendirmek için bunları kullanır (ses, görünürlük, push davranışı). Burada ayarlanmamış seviyeler ntfy sunucu varsayılanını kullanır.',
+      sectionTitleGotify: 'Gotify Önceliği',
+      helpGotify: 'Her etkin olay için bir öncelik seçin. Bambuddy Min, Düşük, Varsayılan, Yüksek ve Acil seviyelerini Gotify\'a 0, 2, 5, 8 ve 10 olarak gönderir. Gotify Android uygulamasında Varsayılan ve üzeri ses çalar, Yüksek ve Acil açılır pencere olarak görünür.',
       min: 'Min',
       low: 'Düşük',
       default: 'Varsayılan',

@@ -6289,7 +6289,8 @@ export default {
       discord: 'Discord',
       webhook: 'Webhook',
       homeassistant: 'Home Assistant',
-      bark: 'Bark'
+      bark: 'Bark',
+      gotify: 'Gotify'
     },
     providerDescriptions: {
       email: 'SMTP 이메일 알림',
@@ -6300,7 +6301,8 @@ export default {
       callmebot: 'CallMeBot을 통한 무료 WhatsApp 알림',
       webhook: '모든 URL에 일반 HTTP POST',
       homeassistant: 'Home Assistant 대시보드의 지속적인 알림',
-      bark: 'Bark를 통한 iOS 푸시 알림(셀프 호스팅 가능)'
+      bark: 'Bark를 통한 iOS 푸시 알림(셀프 호스팅 가능)',
+      gotify: '직접 운영하는 Gotify 서버를 통한 푸시 알림'
     },
     lastSuccess: '마지막: {{date}}',
     error: '오류',
@@ -6433,6 +6435,8 @@ export default {
     eventPriority: {
       sectionTitle: 'ntfy 우선순위',
       helpNtfy: '각 활성화된 이벤트에 대한 우선순위를 선택하세요. ntfy는 이를 사용하여 알림을 에스컬레이션합니다(소리, 가시성, 푸시 동작). 여기서 설정되지 않은 수준은 ntfy 서버 기본값을 사용합니다.',
+      sectionTitleGotify: 'Gotify 우선순위',
+      helpGotify: '각 활성화된 이벤트에 대한 우선순위를 선택하세요. Bambuddy는 최소, 낮음, 기본값, 높음, 긴급을 Gotify에 0, 2, 5, 8, 10으로 보냅니다. Gotify Android 앱에서는 기본값 이상이면 소리가 나고, 높음과 긴급은 팝업으로 표시됩니다.',
       min: '최소',
       low: '낮음',
       default: '기본값',

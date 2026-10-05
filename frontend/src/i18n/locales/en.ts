@@ -6621,6 +6621,7 @@ export default {
       webhook: 'Webhook',
       homeassistant: 'Home Assistant',
       bark: 'Bark',
+      gotify: 'Gotify',
     },
     // Provider descriptions
     providerDescriptions: {
@@ -6633,6 +6634,7 @@ export default {
       webhook: 'Generic HTTP POST to any URL',
       homeassistant: 'Persistent notifications in Home Assistant dashboard',
       bark: 'iOS push notifications via Bark (self-hostable)',
+      gotify: 'Push notifications via your own Gotify server',
     },
     // NotificationProviderCard
     lastSuccess: 'Last: {{date}}',
@@ -6776,6 +6778,8 @@ export default {
     eventPriority: {
       sectionTitle: 'ntfy Priority',
       helpNtfy: 'Pick a priority for each enabled event. ntfy uses these to escalate alerts (sound, visibility, push behavior). Levels not set here use the ntfy server default.',
+      sectionTitleGotify: 'Gotify Priority',
+      helpGotify: 'Pick a priority for each enabled event. Bambuddy sends Min, Low, Default, High and Urgent to Gotify as 0, 2, 5, 8 and 10. In the Gotify Android app, Default and above play a sound, and High and Urgent pop up.',
       min: 'Min',
       low: 'Low',
       default: 'Default',

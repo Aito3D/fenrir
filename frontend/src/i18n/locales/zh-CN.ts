@@ -6554,6 +6554,7 @@ export default {
       webhook: 'Webhook',
       homeassistant: 'Home Assistant',
       bark: 'Bark',
+      gotify: 'Gotify',
     },
     // Provider descriptions
     providerDescriptions: {
@@ -6566,6 +6567,7 @@ export default {
       webhook: '通用 HTTP POST 到任意 URL',
       homeassistant: 'Home Assistant 仪表板中的持久通知',
       bark: '通过 Bark 推送 iOS 通知（可自建服务器）',
+      gotify: '通过你自己的 Gotify 服务器推送通知',
     },
     // NotificationProviderCard
     lastSuccess: '上次：{{date}}',
@@ -6709,6 +6711,8 @@ export default {
     eventPriority: {
       sectionTitle: 'ntfy 优先级',
       helpNtfy: '为每个已启用的事件选择优先级。ntfy 使用它来升级提醒（声音、可见性、推送行为）。此处未设置的级别将使用 ntfy 服务器默认值。',
+      sectionTitleGotify: 'Gotify 优先级',
+      helpGotify: '为每个已启用的事件选择优先级。Bambuddy 将最低、低、默认、高和紧急分别以 0、2、5、8、10 发送给 Gotify。在 Gotify Android 应用中，默认及以上会播放提示音，高和紧急会以弹出通知显示。',
       min: '最低',
       low: '低',
       default: '默认',

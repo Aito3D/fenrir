@@ -6609,6 +6609,7 @@ export default {
       webhook: "Webhook",
       homeassistant: "Home Assistant",
       bark: "Bark",
+      gotify: "Gotify",
     },
     // Provider descriptions
     providerDescriptions: {
@@ -6621,6 +6622,7 @@ export default {
       webhook: "Універсальний HTTP POST-запит на будь-який URL",
       homeassistant: "Постійні сповіщення на інформаційній панелі Home Assistant.",
       bark: "Push-сповіщення iOS через Bark із можливістю самостійного розгортання",
+      gotify: "Push-сповіщення через ваш власний сервер Gotify",
     },
     // NotificationProviderCard
     lastSuccess: "Останнє успішне надсилання: {{date}}",
@@ -6764,6 +6766,8 @@ export default {
     eventPriority: {
       sectionTitle: "Пріоритет ntfy",
       helpNtfy: "Виберіть пріоритет для кожної ввімкненої події. ntfy використовує їх для ескалації сповіщень (звук, видимість, поведінка push). Для рівнів, які тут не встановлено, використовується сервер ntfy за замовчуванням.",
+      sectionTitleGotify: "Пріоритет Gotify",
+      helpGotify: "Виберіть пріоритет для кожної ввімкненої події. Bambuddy надсилає до Gotify рівні «Мін», «Низький», «За замовчуванням», «Високий» і «Терміново» як 0, 2, 5, 8 і 10. У застосунку Gotify для Android рівні від «За замовчуванням» і вище відтворюють звук, а «Високий» і «Терміново» з’являються у спливному вікні.",
       min: "Мін",
       low: "Низький",
       default: "За замовчуванням",

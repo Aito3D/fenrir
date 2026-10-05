@@ -6569,6 +6569,7 @@ export default {
       webhook: 'Webhook',
       homeassistant: 'Home Assistant',
       bark: 'Bark',
+      gotify: 'Gotify',
     },
     // Provider descriptions
     providerDescriptions: {
@@ -6581,6 +6582,7 @@ export default {
       webhook: '任意のURLへの汎用HTTP POST',
       homeassistant: 'Home Assistantダッシュボードの永続通知',
       bark: 'Bark経由のiOSプッシュ通知（セルフホスト可能）',
+      gotify: '自分の Gotify サーバー経由のプッシュ通知',
     },
     // NotificationProviderCard
     lastSuccess: '最終: {{date}}',
@@ -6724,6 +6726,8 @@ export default {
     eventPriority: {
       sectionTitle: 'ntfy 優先度',
       helpNtfy: '有効な各イベントに優先度を選択してください。ntfy はこれを使って通知の挙動（音、表示、プッシュ動作）を切り替えます。ここで設定していないレベルは ntfy サーバーのデフォルトを使用します。',
+      sectionTitleGotify: 'Gotify 優先度',
+      helpGotify: '有効な各イベントに優先度を選択してください。Bambuddy は最小・低・デフォルト・高・緊急を Gotify に 0・2・5・8・10 として送信します。Gotify の Android アプリでは、デフォルト以上で音が鳴り、高と緊急はポップアップ表示されます。',
       min: '最小',
       low: '低',
       default: 'デフォルト',
