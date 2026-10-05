@@ -1261,6 +1261,18 @@ export interface ProjectItemOut { id: number; section: ProjectSection; name: str
 export interface ProjectTreeResponse { project_id: number; code: string | null; sections: { section: ProjectSection; items: ProjectItemOut[] }[] }
 export interface DuplicateWarning { filename: string; same_as: string }
 
+export interface LinkedProjectRef { id: number; code: string | null; name: string }
+export interface SectionRevisionSummary { item_id: number; item_name: string; number: number; status: string }
+export interface TaskProjectLink { task_id: number; task_title: string | null; project: LinkedProjectRef | null; sections: Record<string, SectionRevisionSummary[]>; deliveries: number[] }
+export interface OrderProjectLinks { order_id: number; tasks: TaskProjectLink[] }
+export interface ProjectSuggestion { id: number; code: string | null; name: string; reason: 'same_client' | 'similar_title' }
+export interface TaskCreateProjectRequest { name: string; description?: string | null; tag_ids?: number[] | null; new_tag_names?: string[] | null }
+export interface ProjectOrderTask { task_id: number; task_title: string | null; order_id: number; order_description: string; client_name: string | null; board_column: string; created_at: string | null; deliveries: RevisionRef[] }
+export interface ProjectOrdersResponse { orders: ProjectOrderTask[] }
+export interface DroppedFileResult { filename: string; section: string; item_id: number; item_name: string; revision_number: number }
+/** `project_id`/`code`: where the files actually went (a cached link may be stale). */
+export interface DropFilesResponse { project_id: number; code?: string | null; results: DroppedFileResult[] }
+
 export interface ProjectCreate {
   name: string;
   description?: string;
@@ -5207,6 +5219,8 @@ export interface AitoTask {
   maindoeuvre_done: boolean;
   created_at: string;
   updated_at: string;
+  /** Read-only: the PDM project this task links to (set via linkTaskProject). */
+  linked_project_id: number | null;
 }
 
 export type AitoTaskCreate = Omit<
@@ -5221,6 +5235,7 @@ export type AitoTaskCreate = Omit<
   | 'impression_done'
   | 'usinage_done'
   | 'maindoeuvre_done'
+  | 'linked_project_id'
 > & {
   scan_done?: boolean;
   modelisation_done?: boolean;
@@ -8893,6 +8908,35 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ message }),
     }),
+  getAitoProjectCodes: () => request<Record<string, string[]>>('/aito/project-codes'),
+  getOrderProjectLinks: (orderId: number) => request<OrderProjectLinks>(`/aito/${orderId}/project-links`),
+  getTaskProjectSuggestions: (taskId: number) =>
+    request<ProjectSuggestion[]>(`/aito/tasks/${taskId}/project-suggestions`),
+  linkTaskProject: (taskId: number, projectId: number | null) =>
+    request<TaskProjectLink>(`/aito/tasks/${taskId}/project`, {
+      method: 'PUT',
+      body: JSON.stringify({ project_id: projectId }),
+    }),
+  createTaskProject: (taskId: number, data: TaskCreateProjectRequest) =>
+    request<TaskProjectLink>(`/aito/tasks/${taskId}/project`, { method: 'POST', body: JSON.stringify(data) }),
+  setTaskDeliveries: (taskId: number, revisionIds: number[]) =>
+    request<TaskProjectLink>(`/aito/tasks/${taskId}/deliveries`, {
+      method: 'PUT',
+      body: JSON.stringify({ revision_ids: revisionIds }),
+    }),
+  dropFilesOnTask: async (taskId: number, files: File[]): Promise<DropFilesResponse> => {
+    const formData = new FormData();
+    files.forEach((file) => formData.append('files', file));
+    const headers: Record<string, string> = {};
+    if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+    const response = await fetch(`${API_BASE}/aito/tasks/${taskId}/files`, { method: 'POST', headers, body: formData });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.detail || `HTTP ${response.status}`);
+    }
+    return response.json();
+  },
+  getProjectOrders: (projectId: number) => request<ProjectOrdersResponse>(`/projects/${projectId}/orders`),
   getAitoTasks: (projectId: number) => request<AitoTask[]>(`/aito/${projectId}/tasks`),
   createAitoTask: (projectId: number, data: AitoTaskCreate) =>
     request<AitoTask>(`/aito/${projectId}/tasks`, { method: 'POST', body: JSON.stringify(data) }),

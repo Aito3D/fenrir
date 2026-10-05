@@ -11,6 +11,8 @@ import { formatElapsedTime, parseUTCDate } from '../../utils/date';
 import { prefersReducedMotion } from '../../utils/motion';
 import { ageAnchor, agingTextCls } from '../../utils/aitoAging';
 import { isFinished, needsClientContact } from '../../utils/aitoBoard';
+import { useCardDrop } from '../projects/aito/CardDropTarget';
+import { CardProjectChips } from '../projects/aito/CardProjectChips';
 import { hoverRevealDelay, markHoverWarm } from './hoverWarmth';
 
 export interface CardViewProps {
@@ -299,9 +301,17 @@ export function CardView({
   const awaitingContact = needsClientContact(project);
   const contactShown = contactNameStandsOut(project.client_name, project.client_contact_name);
 
+  const cardDrop = useCardDrop({
+    orderId: project.id,
+    onExpand,
+    disabled: overlay || placeholder,
+  });
+
   return (
     <div
       data-testid="aito-card-shell"
+      title={cardDrop.title}
+      {...cardDrop.handlers}
       // The dwell starts and ends here, on the whole card: once open, the
       // reveal lives until the pointer leaves the card entirely, so moving
       // down onto the footer's buttons does not collapse it and pull the
@@ -321,9 +331,10 @@ export function CardView({
       // The shell holds the collapsed height while the card floats, so the
       // column's layout does not change. It carries no card styling and no
       // `data-aito-card*` — it is space, nothing else.
-      className="relative"
+      className={`relative rounded-xl ${cardDrop.className}`}
       style={expanded && shellHeight !== null ? { height: shellHeight } : undefined}
     >
+      {cardDrop.overlay}
       <div
         ref={cardRef}
         data-aito-card
@@ -568,13 +579,14 @@ export function CardView({
                     {t('aito.awaitingContact')}
                   </span>
                 )}
+                {!overlay && !placeholder && <CardProjectChips orderId={project.id} />}
                 {footerNote && <span className="text-xs text-bambu-gray truncate">{footerNote}</span>}
                 {/* How long the job has been open, on the heat ramp
                     (utils/aitoAging). */}
                 <span
                   data-testid="aito-card-elapsed"
                   title={dateTitle}
-                  className={`text-xs tabular-nums whitespace-nowrap ${agingTextCls(project, age.at)}`}
+                  className={`text-xs tabular-nums whitespace-nowrap shrink-0 ${agingTextCls(project, age.at)}`}
                 >
                   {elapsed}
                 </span>

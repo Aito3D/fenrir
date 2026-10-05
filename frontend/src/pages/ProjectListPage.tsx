@@ -175,7 +175,7 @@ export function ProjectListPage() {
       )}
 
       {items.length > 0 && view === 'table' && (
-        <div className="overflow-x-auto rounded-xl bg-bambu-card">
+        <div className="overflow-x-auto rounded-xl border border-bambu-dark-tertiary bg-bambu-dark-secondary">
           <table className="w-full text-left text-sm">
             <thead className="text-xs uppercase text-bambu-gray">
               <tr>
@@ -229,7 +229,7 @@ export function ProjectListPage() {
               <button
                 type="button"
                 onClick={() => open(project)}
-                className={`flex h-full w-full flex-col gap-2 rounded-xl border border-bambu-dark-tertiary bg-bambu-card p-4 text-left hover:bg-bambu-dark-secondary ${focusRingCls}`}
+                className={`flex h-full w-full flex-col gap-2 rounded-xl border border-bambu-dark-tertiary bg-bambu-dark-secondary p-4 text-left hover:bg-bambu-dark-tertiary ${focusRingCls}`}
               >
                 {project.cover_image_filename && (
                   <img

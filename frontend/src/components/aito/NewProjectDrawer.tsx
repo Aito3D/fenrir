@@ -18,6 +18,7 @@ import { focusRingCls, inputCls, labelCls } from '../formStyles';
 import { useCurrency } from '../../hooks/useCurrency';
 import { useDismissableDialog } from '../../hooks/useDismissableDialog';
 import { useNewProjectDraft } from '../../hooks/useNewProjectDraft';
+import type { PersistedDraft } from '../../hooks/useNewProjectDraft';
 import { useToast } from '../../contexts/ToastContext';
 import { buildFallbackSummary, tasksSignature } from '../../utils/aitoSummary';
 import {
@@ -60,7 +61,33 @@ export interface NewProjectDrawerProps {
      *  describe `tasks` — see `create` below. The server then summarises the
      *  tasks it actually creates. */
     regenerateDescription: boolean,
+    /** Passed only by a seeded drawer, always `{ keepStoredDraft: true }`:
+     *  a seeded drawer never wrote the stored draft, so what is stored is the
+     *  operator's own unrelated card and a successful create must not wipe
+     *  it. */
+    options?: { keepStoredDraft: boolean },
   ) => void;
+  /** Start from this instead of the persisted draft (a new order from a PDM
+   *  project): the description as a hand-written summary, one task with this
+   *  title. A seeded drawer ignores, never writes and never clears the persisted draft
+   *  — closing it discards its edits. */
+  seed?: { description: string; taskTitle: string };
+}
+
+/** Everything a seeded drawer opens with, in the persisted-draft shape so the
+ *  state initialisers below read one source either way. */
+function seededDraft(seed: { description: string; taskTitle: string }): PersistedDraft {
+  return {
+    tasks: [{ ...emptyTaskDraft(), title: seed.taskTitle }],
+    client: null,
+    summaryText: seed.description,
+    // The project's own words: a summary pass must not replace them.
+    summaryEdited: seed.description.trim() !== '',
+    summarySignature: '',
+    shipping: null,
+    dueDate: '',
+    socialPrefilledFor: [],
+  };
 }
 
 type SectionId = 'work' | 'client';
@@ -163,17 +190,20 @@ function Section({
  *    `clientRevealed`), or once they have asked to create. That is why Create
  *    is `aria-disabled` rather than `disabled`: a disabled button swallows the
  *    click, and the click is exactly what reveals why it is disabled. */
-export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
+export function NewProjectDrawer({ onClose, onCreate, seed }: NewProjectDrawerProps) {
   const { t } = useTranslation();
   const persistence = useNewProjectDraft();
-  const [tasks, setTasks] = useState<TaskDraft[]>(() => persistence.initial?.tasks ?? [emptyTaskDraft()]);
-  const [draft, setDraft] = useState<ClientDraft | null>(() => persistence.initial?.client ?? null);
-  const [summaryText, setSummaryText] = useState(() => persistence.initial?.summaryText ?? '');
-  const [summaryEdited, setSummaryEdited] = useState(() => persistence.initial?.summaryEdited ?? false);
-  const summarySignatureRef = useRef(persistence.initial?.summarySignature ?? '');
+  // Read once, like `persistence.initial`: a seed applies to the opening state.
+  const [seedInitial] = useState<PersistedDraft | null>(() => (seed ? seededDraft(seed) : null));
+  const restored = seedInitial ?? persistence.initial;
+  const [tasks, setTasks] = useState<TaskDraft[]>(() => restored?.tasks ?? [emptyTaskDraft()]);
+  const [draft, setDraft] = useState<ClientDraft | null>(() => restored?.client ?? null);
+  const [summaryText, setSummaryText] = useState(() => restored?.summaryText ?? '');
+  const [summaryEdited, setSummaryEdited] = useState(() => restored?.summaryEdited ?? false);
+  const summarySignatureRef = useRef(restored?.summarySignature ?? '');
   const [generateNonce, setGenerateNonce] = useState(0);
-  const [shipping, setShipping] = useState<ShippingDraft | null>(() => persistence.initial?.shipping ?? null);
-  const [dueDate, setDueDate] = useState<string>(() => persistence.initial?.dueDate ?? '');
+  const [shipping, setShipping] = useState<ShippingDraft | null>(() => restored?.shipping ?? null);
+  const [dueDate, setDueDate] = useState<string>(() => restored?.dueDate ?? '');
   const [openSections, setOpenSections] = useState<Set<SectionId>>(() => new Set<SectionId>(['work']));
   // Seeded from the RESTORED rows, not empty. "Revealed" means "the user has
   // already left this surface", and a row that survived a close/reopen, a
@@ -182,7 +212,8 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
   // Empty here is what let a restored draft carrying a priced, undescribed
   // labour step render its error and keep Create live at the same time.
   const [revealedTaskKeys, setRevealedTaskKeys] = useState<Set<string>>(
-    () => new Set((persistence.initial?.tasks ?? []).map(rowKey)),
+    // A seeded row is new work, not one left in a previous session.
+    () => new Set(seedInitial ? [] : (restored?.tasks ?? []).map(rowKey)),
   );
   const [clientRevealed, setClientRevealed] = useState(false);
   const [creatingClient, setCreatingClient] = useState(false);
@@ -223,7 +254,7 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
   // mounts it while open), so a close/reopen with the same persisted client
   // would refill just the same way. Once per client id, for the life of the
   // draft, is only true if this list survives both of those.
-  const socialPrefilledForRef = useRef<string[]>(persistence.initial?.socialPrefilledFor ?? []);
+  const socialPrefilledForRef = useRef<string[]>(restored?.socialPrefilledFor ?? []);
   // Bumped whenever `socialPrefilledForRef` gains an id WITHOUT a paired
   // `setDraft` call (the prefill didn't apply — the operator already had an
   // opinion about the social field). The persistence effect below has no
@@ -314,6 +345,9 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
   // about the social field), nothing else in this dependency list changes,
   // so without the tick the "seen" marker would never reach localStorage.
   useEffect(() => {
+    // A seeded drawer is a one-off: the stored draft is the operator's own
+    // half-written card and must survive it untouched.
+    if (seedInitial) return;
     persistence.save({
       tasks,
       client: draft,
@@ -375,7 +409,7 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
   };
 
   const resetDraft = () => {
-    persistence.clear();
+    if (!seedInitial) persistence.clear();
     setTasks([emptyTaskDraft()]);
     setDraft(null); // re-seeded by the default-contact effect above
     setSummaryText('');
@@ -506,14 +540,14 @@ export function NewProjectDrawer({ onClose, onCreate }: NewProjectDrawerProps) {
     // say", and it is what keeps a duplicated card's copied description too.
     const regenerateDescription =
       !summaryEdited && (summaryText.trim() === '' || tasksSignature(tasks) !== summarySignatureRef.current);
-    onCreate(
-      summaryText.trim() || buildFallbackSummary(tasks, serviceLabel),
-      draft,
-      tasks,
-      revealedShipping,
-      dueDate || null,
-      regenerateDescription,
-    );
+    const description = summaryText.trim() || buildFallbackSummary(tasks, serviceLabel);
+    if (seedInitial) {
+      onCreate(description, draft, tasks, revealedShipping, dueDate || null, regenerateDescription, {
+        keepStoredDraft: true,
+      });
+    } else {
+      onCreate(description, draft, tasks, revealedShipping, dueDate || null, regenerateDescription);
+    }
   };
 
   const onClientCreated = (contact: ZohoContact, social: { network: SocialNetwork | null; handle: string }) => {

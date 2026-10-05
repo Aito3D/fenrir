@@ -340,6 +340,7 @@ async def test_engine():
         aito_client_rating,  # noqa: F401
         aito_project,  # noqa: F401
         aito_task,  # noqa: F401
+        aito_task_delivery,  # noqa: F401
         ams_history,
         ams_label,
         announcement,  # noqa: F401

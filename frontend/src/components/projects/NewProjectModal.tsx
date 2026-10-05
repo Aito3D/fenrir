@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -8,17 +8,31 @@ import { useToast } from '../../contexts/ToastContext';
 import { AiTextField } from '../aito/AiTextField';
 import { ProjectTagEditor, splitTagDrafts } from './ProjectTagEditor';
 import type { TagDraft } from './ProjectTagChips';
+import type { Project } from '../../api/client';
+import { useIsolatedEscape } from '../../hooks/useIsolatedEscape';
+
+interface NewProjectModalProps {
+  onClose: () => void;
+  initialTitle?: string;
+  initialDescription?: string;
+  /** Given: called with the new project instead of navigating to it (an Aito
+   *  task links it and stays where it is). */
+  onCreated?: (project: Project) => void;
+}
 
 /** Create a project: title, description (both reworded in French on blur, with
  *  undo) and tags. No parent picker — sub-projects are not used (spec §0). */
-export function NewProjectModal({ onClose }: { onClose: () => void }) {
+export function NewProjectModal({ onClose, initialTitle = '', initialDescription = '', onCreated }: NewProjectModalProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
+  const [title, setTitle] = useState(initialTitle);
+  const [description, setDescription] = useState(initialDescription);
   const [tags, setTags] = useState<TagDraft[]>([]);
+  const dialogRef = useRef<HTMLFormElement>(null);
+  // Escape closes this modal only — it also opens over Aito's detail panel.
+  useIsolatedEscape(onClose, dialogRef);
 
   const create = useMutation({
     mutationFn: () =>
@@ -28,7 +42,8 @@ export function NewProjectModal({ onClose }: { onClose: () => void }) {
       queryClient.invalidateQueries({ queryKey: ['projects-search'] });
       queryClient.invalidateQueries({ queryKey: ['project-tags'] });
       onClose();
-      navigate(`/projects/${project.id}`);
+      if (onCreated) onCreated(project);
+      else navigate(`/projects/${project.id}`);
     },
     onError: () => showToast(t('projectsPdm.saveFailed'), 'error'),
   });
@@ -36,13 +51,16 @@ export function NewProjectModal({ onClose }: { onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 animate-overlay-in">
       <form
+        ref={dialogRef}
         role="dialog"
+        aria-modal="true"
+        tabIndex={-1}
         aria-label={t('projectsPdm.createTitle')}
         onSubmit={(e) => {
           e.preventDefault();
           if (title.trim()) create.mutate();
         }}
-        className="w-full max-w-lg space-y-4 rounded-xl bg-bambu-card p-5"
+        className="w-full max-w-lg space-y-4 rounded-xl border border-bambu-dark-tertiary bg-bambu-dark-secondary p-5 focus:outline-none"
       >
         <h2 className="text-lg font-semibold text-white">{t('projectsPdm.createTitle')}</h2>
         <AiTextField

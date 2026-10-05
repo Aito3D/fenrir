@@ -76,7 +76,7 @@ export function SectionBlock({ section, items, derivedOptions, actions }: Props)
 
   return (
     <section
-      className={`rounded-xl border bg-bambu-card ${dragOver ? 'border-bambu-green' : 'border-bambu-dark-tertiary'}`}
+      className={`rounded-xl border bg-bambu-dark-secondary ${dragOver ? 'border-bambu-green' : 'border-bambu-dark-tertiary'}`}
       onDragOver={(e) => { e.preventDefault(); if (canUpdate) setDragOver(true); }}
       onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragOver(false); }}
       onDrop={(e) => void onDrop(e)}

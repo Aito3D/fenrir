@@ -71,6 +71,13 @@ export const EVENT_LABEL_KEY: Record<string, string> = {
   'task.transferred_in': 'aito.history.taskTransferredIn',
   'client.transferred': 'aito.history.clientTransferred',
   'project.due.overdue': 'aito.history.projectDueOverdue',
+  // Fenrir projects as a PDM: task <-> project links and linked-project file activity.
+  'task.project_linked': 'projectsPdm.aito.events.projectLinked',
+  'task.project_unlinked': 'projectsPdm.aito.events.projectUnlinked',
+  'task.deliveries_changed': 'projectsPdm.aito.events.deliveriesChanged',
+  'project.revision_added': 'projectsPdm.aito.events.revisionAdded',
+  'project.revision_status_changed': 'projectsPdm.aito.events.revisionStatusChanged',
+  'project.files_dropped': 'projectsPdm.aito.events.filesDropped',
 };
 
 /** The transfer labels to use when the event does not say how many tasks moved. */
@@ -109,6 +116,12 @@ export function labelParams(
     return typeof detail.task_count === 'number' ? { label, count: detail.task_count } : { label };
   }
 
+  if (event.kind === 'project.files_dropped') {
+    // The label names the project; the server's English "3 file(s)" subject
+    // is dropped in favour of the translated count in `detailText`.
+    return { code: text(detail.code) ?? '—' };
+  }
+
   if (event.kind === 'client.transferred') {
     return {
       from: text(detail.from_name) ?? '—',
@@ -134,6 +147,84 @@ export function formatValue(value: unknown): string {
   if (value === null || value === undefined) return '—';
   if (typeof value === 'boolean') return value ? '✓' : '—';
   return String(value);
+}
+
+/** The i18next `t` (or any stand-in): `detailText` only needs it for the PDM
+ *  kinds, whose sections and revision statuses are app vocabulary. */
+export type Translate = (key: string, options?: Record<string, unknown>) => string;
+
+const PDM_KINDS = new Set([
+  'task.project_linked',
+  'task.project_unlinked',
+  'task.deliveries_changed',
+  'project.revision_added',
+  'project.revision_status_changed',
+  'project.files_dropped',
+]);
+
+const PDM_SECTION_KEY: Record<string, string> = {
+  scan: 'projectsPdm.files.sectionScan',
+  modelisation: 'projectsPdm.files.sectionModelisation',
+  impression: 'projectsPdm.files.sectionImpression',
+  usinage: 'projectsPdm.files.sectionUsinage',
+  docs: 'projectsPdm.files.sectionDocs',
+};
+
+const PDM_STATUS_KEY: Record<string, string> = {
+  wip: 'projectsPdm.files.statusWip',
+  valide: 'projectsPdm.files.statusValide',
+  obsolete: 'projectsPdm.files.statusObsolete',
+};
+
+/** The PDM kinds' detail line (spec §4.4). Every value is narrowed; without a
+ *  translator the raw section/status values are shown instead of labels. */
+function pdmDetailText(kind: string, detail: Record<string, unknown>, t?: Translate): string | null {
+  const str = (value: unknown) => (typeof value === 'string' && value ? value : null);
+  const vocab = (keys: Record<string, string>, value: unknown) => {
+    const raw = str(value);
+    if (!raw) return null;
+    return t && keys[raw] ? t(keys[raw]) : raw;
+  };
+  const strings = (value: unknown) =>
+    Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string' && !!v) : [];
+  const join = (parts: (string | null)[]) => {
+    const kept = parts.filter((p): p is string => !!p);
+    return kept.length ? kept.join(' · ') : null;
+  };
+  const code = str(detail.code);
+
+  if (kind === 'task.project_linked') {
+    const previous = str(detail.previous_code);
+    if (!previous) return code;
+    return join([code, t ? t('projectsPdm.aito.events.previousProject', { code: previous }) : `← ${previous}`]);
+  }
+
+  if (kind === 'task.project_unlinked') return code;
+
+  if (kind === 'task.deliveries_changed') {
+    const added = strings(detail.added);
+    const removed = strings(detail.removed);
+    return join([added.length ? `+ ${added.join(', ')}` : null, removed.length ? `− ${removed.join(', ')}` : null]);
+  }
+
+  if (kind === 'project.revision_added') return join([code, vocab(PDM_SECTION_KEY, detail.section)]);
+
+  if (kind === 'project.revision_status_changed') {
+    const from = vocab(PDM_STATUS_KEY, detail.from);
+    const to = vocab(PDM_STATUS_KEY, detail.to);
+    return join([code, from || to ? `${formatValue(from)} → ${formatValue(to)}` : null]);
+  }
+
+  if (kind === 'project.files_dropped') {
+    const count = Array.isArray(detail.results) ? detail.results.length : null;
+    const sections = strings(detail.sections).map((section) => vocab(PDM_SECTION_KEY, section) ?? section);
+    return join([
+      count === null ? null : t ? t('projectsPdm.files.fileCount', { count }) : String(count),
+      sections.length ? sections.join(', ') : null,
+    ]);
+  }
+
+  return null;
 }
 
 /** `detail` is stored on every event but the label alone only carries the
@@ -175,9 +266,13 @@ export function formatValue(value: unknown): string {
  *
  *  Deliberately returns plain text, not a translated sentence: the brief for
  *  this fix is explicit that no new i18n keys may be added, so the conflict
- *  sides are shown as bare values rather than composed into a phrase. */
-export function detailText(kind: string, detail: Record<string, unknown> | null): string | null {
+ *  sides are shown as bare values rather than composed into a phrase. The
+ *  PDM kinds (`pdmDetailText`) are the exception: their sections, statuses and
+ *  file counts are app vocabulary, translated through the optional `t`. */
+export function detailText(kind: string, detail: Record<string, unknown> | null, t?: Translate): string | null {
   if (!detail) return null;
+
+  if (PDM_KINDS.has(kind)) return pdmDetailText(kind, detail, t);
 
   if (kind === 'zoho.comment') {
     return typeof detail.text === 'string' && detail.text ? detail.text : null;

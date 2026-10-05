@@ -150,6 +150,16 @@ KINDS: dict[str, str] = {
     # A quote deposit whose retainer invoice was raised but whose payment
     # write failed: the operator has to finish it in Books by hand.
     "payment.manual.partial": "story",
+    # Fenrir projects as a PDM (spec §4.4): a task's link to a reusable
+    # project, the revisions it delivered, and file activity in a linked
+    # project fanned out to every order linking to it. Story: "client A got
+    # Support R3" is exactly the narrative the timeline exists to keep.
+    "task.project_linked": "story",
+    "task.project_unlinked": "story",
+    "task.deliveries_changed": "story",
+    "project.revision_added": "story",
+    "project.revision_status_changed": "story",
+    "project.files_dropped": "story",
     # detail: everything a person did by hand.
     "task.added": "detail",
     "task.updated": "detail",

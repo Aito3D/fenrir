@@ -23,6 +23,11 @@ class AitoTask(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     project_id: Mapped[int] = mapped_column(Integer, index=True)
+    # Fenrir projects as a PDM (spec §1.6): the reusable project this task
+    # works on. Distinct from ``project_id``, which is the ORDER (aito_projects).
+    # No FK on purpose, like project_id: tasks outlive a project delete (which
+    # is refused while links exist) and SQLite runs without FK enforcement.
+    linked_project_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     position: Mapped[int] = mapped_column(Integer, default=0)
     title: Mapped[str | None] = mapped_column(String(200), nullable=True)
     # The legacy task-level description column still exists in the DB; its data was

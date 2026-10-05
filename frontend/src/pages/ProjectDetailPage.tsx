@@ -1,5 +1,6 @@
 import { ProjectHeader } from '../components/projects/ProjectHeader';
 import { ProjectFilesPanel } from '../components/projects/files/ProjectFilesPanel';
+import { ProjectOrdersCard } from '../components/projects/aito/ProjectOrdersCard';
 import { useState, useMemo } from 'react';
 import DOMPurify from 'dompurify';
 import { useParams, useNavigate, Link } from 'react-router-dom';
@@ -551,6 +552,8 @@ export function ProjectDetailPage() {
       </div>
 
       <ProjectFilesPanel projectId={projectId} />
+
+      <ProjectOrdersCard projectId={projectId} />
 
       {/* Progress bars (if targets set) */}
       {(project.target_count || project.target_parts_count || project.target_sets) && (

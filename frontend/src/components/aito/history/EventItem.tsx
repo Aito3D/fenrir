@@ -62,7 +62,7 @@ export function EventItem({
   const changes = event.changes ?? [];
   const hasMany = changes.length > 1;
   const shown = expanded || !hasMany ? changes : changes.slice(0, 1);
-  const detail = detailText(event.kind, event.detail);
+  const detail = detailText(event.kind, event.detail, t);
 
   return (
     <li className={`relative pl-4 pb-3 ${animateIn ? 'animate-rise' : ''}`}>

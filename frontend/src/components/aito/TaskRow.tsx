@@ -13,6 +13,10 @@ import { focusRingCls } from '../formStyles';
 import { useCurrency } from '../../hooks/useCurrency';
 import { taskTotal } from '../../utils/taskDraft';
 import type { TaskDraft } from '../../utils/taskDraft';
+import type { SectionRevisionSummary } from '../../api/client';
+import { TaskDropZone, TaskProjectRow } from '../projects/aito/TaskProjectRow';
+import { useTaskProjectLink } from '../projects/aito/useOrderProjectLinks';
+import type { ServiceId } from './services';
 
 /** How long the removal fold plays before `onRemove` actually fires — matches
  *  the fold's `duration-200` below. */
@@ -76,6 +80,11 @@ export interface TaskRowProps {
    *  untouched (see TaskEditor's `locked`). The caller also forces `editing`
    *  off, so no form is ever on screen behind the greyed pencil. */
   locked?: boolean;
+  /** The Aito order (card) this task belongs to. Present only in the detail
+   *  panel, for a user who may read projects: the row then grows its "Projet"
+   *  line, per-step file summaries and a native file drop target. Absent (the
+   *  create drawer) = none of that, and no request. */
+  orderId?: number;
 }
 
 /** One task of a project: title/description, the five services (each
@@ -110,6 +119,7 @@ export function TaskRow({
   dragHandle,
   dragging = false,
   locked = false,
+  orderId,
 }: TaskRowProps) {
   const { t } = useTranslation();
   const currency = useCurrency();
@@ -135,6 +145,10 @@ export function TaskRow({
   const name = task.title.trim() || t('aito.taskFallbackName', { n: index + 1 });
   const finished = isTaskFinished(task);
   const steps = taskSteps(task);
+  const link = useTaskProjectLink(orderId, task.id);
+  const sectionSummaries = link?.project
+    ? (link.sections as Partial<Record<ServiceId, SectionRevisionSummary[]>>)
+    : undefined;
   // A control that greys out under the lock gets the reason as a tooltip —
   // one wrapper per control, since a disabled button cannot take focus and
   // the wrapper is what keyboard users land on. Unlocked, the control is
@@ -150,22 +164,7 @@ export function TaskRow({
       control
     );
 
-  return (
-    // The removal fold wrapper — the same grid 1fr↔0fr idiom as the body
-    // fold, wrapped around the WHOLE card so header, progress and body leave
-    // as one. `grid-rows-[1fr]` at rest so the flip to `0fr` transitions from
-    // a defined track size; the inner `overflow-hidden` is removal-only so
-    // the card's shadow is never clipped at rest. `inert` + pointer-events
-    // keep a folding row from taking one last click or Tab stop.
-    <div
-      inert={removing}
-      className={
-        removing
-          ? 'grid grid-rows-[0fr] opacity-0 transition-[grid-template-rows,opacity] duration-200 ease-[var(--ease-exit)] motion-reduce:transition-none pointer-events-none'
-          : 'grid grid-rows-[1fr]'
-      }
-    >
-    <div className={removing ? 'min-h-0 overflow-hidden' : 'min-h-0'}>
+  const card = (
     <div
       // Finishing the last step turns the whole row green. That is the largest
       // state change in the panel and it used to arrive on a single frame, so
@@ -320,6 +319,15 @@ export function TaskRow({
         }`}
       >
         <div className="min-h-0 overflow-hidden">
+          {orderId !== undefined && (
+            <div className="px-3 pb-2">
+              {task.id === null ? (
+                <p className="text-xs text-bambu-gray">{t('projectsPdm.aito.saveTaskFirst')}</p>
+              ) : (
+                <TaskProjectRow orderId={orderId} task={task} taskId={task.id} link={link} />
+              )}
+            </div>
+          )}
           <div className="px-3 pb-2">
             <ProjectProgress
               done={steps.filter((s) => s.done).length}
@@ -335,12 +343,39 @@ export function TaskRow({
             {editing ? (
               !collapsed && <TaskStepFields task={task} onChange={onChange} disabled={pending} />
             ) : (
-              <TaskStepList task={task} onChange={onChange} canTick={canTick} />
+              <TaskStepList task={task} onChange={onChange} canTick={canTick} sectionSummaries={sectionSummaries} />
             )}
           </div>
         </div>
       </div>
     </div>
+  );
+
+  return (
+    // The removal fold wrapper — the same grid 1fr↔0fr idiom as the body
+    // fold, wrapped around the WHOLE card so header, progress and body leave
+    // as one. `grid-rows-[1fr]` at rest so the flip to `0fr` transitions from
+    // a defined track size; the inner `overflow-hidden` is removal-only so
+    // the card's shadow is never clipped at rest. `inert` + pointer-events
+    // keep a folding row from taking one last click or Tab stop.
+    <div
+      inert={removing}
+      className={
+        removing
+          ? 'grid grid-rows-[0fr] opacity-0 transition-[grid-template-rows,opacity] duration-200 ease-[var(--ease-exit)] motion-reduce:transition-none pointer-events-none'
+          : 'grid grid-rows-[1fr]'
+      }
+    >
+    <div className={removing ? 'min-h-0 overflow-hidden' : 'min-h-0'}>
+    {orderId === undefined ? (
+      card
+    ) : (
+      // Same wrapper for the row's whole life (orderId never changes under a
+      // mounted row), so a task graduating from unsaved to saved keeps its tree.
+      <TaskDropZone orderId={orderId} taskId={task.id} link={link}>
+        {card}
+      </TaskDropZone>
+    )}
     </div>
     </div>
   );

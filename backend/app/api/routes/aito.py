@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
-from sqlalchemy import and_, case, func, or_, select, update
+from sqlalchemy import and_, case, delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,6 +29,7 @@ from backend.app.core.websocket import ws_manager
 from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
+from backend.app.models.aito_task_delivery import AitoTaskDelivery
 from backend.app.models.notification_inbox import AitoWatch
 from backend.app.models.user import User
 from backend.app.schemas.aito import (
@@ -3825,6 +3826,9 @@ async def delete_task(
         subject_id=task.id,
         subject_label=task.title,
     )
+    # Fenrir: delivery records have no FK, so they go with the task; otherwise a
+    # revision it delivered would stay "used" (files frozen) forever.
+    await db.execute(delete(AitoTaskDelivery).where(AitoTaskDelivery.task_id == task.id))
     await db.delete(task)
     await db.flush()  # so the deleted row is out of _summary_for's SELECT
     if project:
@@ -5643,17 +5647,35 @@ async def merge_project(
     next_position = (highest + 1) if highest is not None else 0
     keep_ticks = target.quote_status == "accepted"
     copied_fields = list(AitoTaskBase.model_fields)
+    copies: list[tuple[int, AitoTask]] = []  # Fenrir: (source task id, its copy) for the PDM rows below
     for offset, row in enumerate(source_tasks):
         fields = {name: getattr(row, name) for name in copied_fields}
         for service in SERVICES:
             fields[f"{service}_done"] = getattr(row, f"{service}_done") if keep_ticks else False
-        db.add(AitoTask(project_id=project_id, position=next_position + offset, **fields))
+        # Fenrir: the PDM project link travels with the work (not an API field).
+        copy = AitoTask(
+            project_id=project_id, position=next_position + offset, linked_project_id=row.linked_project_id, **fields
+        )
+        db.add(copy)
+        copies.append((row.id, copy))
 
     was_pending = target.quote_sync_state == "pending"
     _mark_pending_if_ours(target)
     source.status = "deleted"
     _mark_pending_if_ours(source)
     await db.flush()  # so _summary_for's SELECT sees the copies
+    # Fenrir: what the client got stays with the work — each copy gets the
+    # source task's delivery rows (the source keeps its own, like its tasks).
+    if copies:
+        copy_by_source = {source_id: copy.id for source_id, copy in copies}
+        delivered = await db.execute(select(AitoTaskDelivery).where(AitoTaskDelivery.task_id.in_(list(copy_by_source))))
+        db.add_all(
+            AitoTaskDelivery(
+                task_id=copy_by_source[d.task_id], revision_id=d.revision_id, created_by_id=d.created_by_id
+            )
+            for d in delivered.scalars()
+        )
+        await db.flush()
     actor = _actor(current_user)
     await record(
         db,

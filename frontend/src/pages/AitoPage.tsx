@@ -192,6 +192,17 @@ export function AitoPage() {
   // `?card=41` (an inbox row's link). Acted on once both lists can answer it,
   // then dropped from the URL — see the effect below.
   const [cardParam, clearCardParam] = useDeepLinkParam('card');
+  // `?newFromProject=7` (a PDM project page's "New order"): the create drawer
+  // opens seeded from that project, and the order it creates gets its first
+  // task linked to it (by the create mutation itself — see
+  // useAitoPageMutations). The parameter leaves the URL once the drawer is
+  // submitted or closed, so a reload never reopens it.
+  const [newFromProjectParam, clearNewFromProjectParam] = useDeepLinkParam('newFromProject');
+  const [projectSeed, setProjectSeed] = useState<{
+    projectId: number;
+    seed: { description: string; taskTitle: string };
+  } | null>(null);
+  const seedRequestedFor = useRef<string | null>(null);
 
   // Deleted projects. Fetched only while their view is on screen: the trash is
   // the one surface that needs them, its button carries no count, and the board
@@ -211,6 +222,33 @@ export function AitoPage() {
   const cardRefetchedFor = useRef<string | null>(null);
   const refetchBoard = aitoQuery.refetch;
   const refetchTrash = trashQuery.refetch;
+
+  useEffect(() => {
+    if (newFromProjectParam === null) {
+      seedRequestedFor.current = null;
+      return;
+    }
+    if (seedRequestedFor.current === newFromProjectParam) return;
+    seedRequestedFor.current = newFromProjectParam;
+    const projectId = Number(newFromProjectParam);
+    if (!canCreate || !Number.isInteger(projectId) || projectId <= 0) {
+      clearNewFromProjectParam();
+      return;
+    }
+    api.getProject(projectId).then(
+      (project) => {
+        setProjectSeed({
+          projectId,
+          seed: { description: project.description?.trim() || project.name, taskTitle: project.name },
+        });
+        setShowModal(true);
+      },
+      () => {
+        clearNewFromProjectParam();
+        showToast(t('common.errorLoading'), 'error');
+      },
+    );
+  }, [newFromProjectParam, canCreate, clearNewFromProjectParam, showToast, t]);
 
   // `/` jumps to the search box, as on most sites with one. Not while typing
   // in a field, and not while a panel or modal is up: the box sits behind it.
@@ -452,11 +490,17 @@ export function AitoPage() {
     shipping: ShippingDraft | null,
     dueDate: string | null,
     regenerateDescription: boolean,
+    options?: { keepStoredDraft: boolean },
   ) => {
     // Closed here, not in onSuccess: the whole point is that the modal does
     // not sit open through a round trip. The placeholder is what tells the
     // user their card exists.
     setShowModal(false);
+    const linkProjectId = projectSeed?.projectId;
+    if (projectSeed) {
+      setProjectSeed(null);
+      clearNewFromProjectParam();
+    }
     createMutation.mutate({
       description,
       draft,
@@ -464,6 +508,8 @@ export function AitoPage() {
       shipping,
       dueDate,
       regenerateDescription,
+      keepStoredDraft: options?.keepStoredDraft ?? false,
+      linkProjectId,
       // The placeholder carries the description as the drawer had it; when
       // the server regenerates one, `onSuccess` swaps the whole card in.
       placeholder: placeholderProject({
@@ -485,6 +531,14 @@ export function AitoPage() {
         tasks,
       }),
     });
+  };
+
+  const closeNewProjectDrawer = () => {
+    setShowModal(false);
+    if (projectSeed) {
+      setProjectSeed(null);
+      clearNewFromProjectParam();
+    }
   };
 
   // The in-production count and the print backlog, shown by the touch boards
@@ -863,7 +917,9 @@ export function AitoPage() {
       )}
       </div>
 
-      {showModal && <NewProjectDrawer onClose={() => setShowModal(false)} onCreate={createProject} />}
+      {showModal && (
+        <NewProjectDrawer onClose={closeNewProjectDrawer} onCreate={createProject} seed={projectSeed?.seed} />
+      )}
 
       {showImport && (
         <ImportQuoteDrawer

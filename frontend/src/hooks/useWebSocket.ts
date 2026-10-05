@@ -629,6 +629,7 @@ export function useWebSocket() {
         ) {
           queryClient.invalidateQueries({ queryKey: ['aito-invoice', message.project_id] });
         }
+        queryClient.invalidateQueries({ queryKey: ['aito-project-codes'] });
         if (aitoResyncTimeoutRef.current) clearTimeout(aitoResyncTimeoutRef.current);
         aitoResyncTimeoutRef.current = window.setTimeout(() => {
           aitoResyncTimeoutRef.current = null;
@@ -642,6 +643,8 @@ export function useWebSocket() {
           }
           for (const id of aitoEventsDirtyRef.current) {
             queryClient.invalidateQueries({ queryKey: ['aito-events', id] });
+            // Fenrir PDM: links, step summaries and deliveries of an open panel.
+            queryClient.invalidateQueries({ queryKey: ['aito-project-links', id] });
           }
           aitoEventsDirtyRef.current.clear();
         }, 300);

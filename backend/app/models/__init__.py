@@ -3,6 +3,7 @@ from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_payment_link import AitoPaymentLink
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
+from backend.app.models.aito_task_delivery import AitoTaskDelivery
 from backend.app.models.aito_terminal_payment import AitoTerminalPayment
 from backend.app.models.aito_tracking_view import AitoTrackingView
 from backend.app.models.ams_history import AMSSensorHistory
@@ -71,6 +72,7 @@ __all__ = [
     "AitoPaymentLink",
     "AitoProject",
     "AitoTask",
+    "AitoTaskDelivery",
     "AitoTerminalPayment",
     "AitoTrackingView",
     "Printer",

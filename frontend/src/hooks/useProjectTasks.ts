@@ -417,6 +417,8 @@ export function useProjectTasks(
       });
       tasksDirtyRef.current = true;
       invalidateTasksAndBoard();
+      // The new task's PDM link row (phase 3) is not in the cached links yet.
+      void queryClient.invalidateQueries({ queryKey: ['aito-project-links', projectId] });
     },
     onError: (_error, { draft }) => {
       // The placeholder never became a row. Remove it rather than leaving an
