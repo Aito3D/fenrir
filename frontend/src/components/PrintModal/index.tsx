@@ -97,6 +97,7 @@ export function PrintModal({
   variantFiles,
   aitoTaskId, // Fenrir
   revisionWarning, // Fenrir
+  isolateEscape = false, // Fenrir
 }: PrintModalProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -855,11 +856,15 @@ export function PrintModal({
   // Close on Escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !isSubmitting) onClose();
+      if (e.key === 'Escape' && !isSubmitting) {
+        if (isolateEscape) e.stopPropagation(); // Fenrir: keep the key from a host dialog
+        onClose();
+      }
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose, isSubmitting]);
+    // Fenrir: capture phase when isolated, so this runs before a host's window listener.
+    window.addEventListener('keydown', handleKeyDown, isolateEscape);
+    return () => window.removeEventListener('keydown', handleKeyDown, isolateEscape);
+  }, [onClose, isSubmitting, isolateEscape]);
 
   const isMultiPlate = platesData?.is_multi_plate ?? false;
   const plates = platesData?.plates ?? [];

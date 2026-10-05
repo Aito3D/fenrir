@@ -87,3 +87,33 @@ describe('PrintModal project-print props', () => {
     expect(body.library_file_id).toBe(5);
   }, 15000);
 });
+
+describe('PrintModal isolateEscape', () => {
+  // A host dialog's window listener, registered before the modal mounts.
+  async function pressEscape(extra: Record<string, unknown>) {
+    const host = vi.fn();
+    window.addEventListener('keydown', host);
+    const onClose = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <PrintModal mode="create" libraryFileId={5} archiveName="support.gcode.3mf" projectId={7}
+        initialSelectedPrinterIds={[1]} onClose={onClose} {...extra} />,
+    );
+    await screen.findByRole('button', { name: /^print$/i });
+    await user.keyboard('{Escape}');
+    window.removeEventListener('keydown', host);
+    return { host, onClose };
+  }
+
+  it('closes the modal without the key reaching a host dialog', async () => {
+    const { host, onClose } = await pressEscape({ isolateEscape: true });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(host).not.toHaveBeenCalled();
+  });
+
+  it('keeps upstream behaviour without the prop', async () => {
+    const { host, onClose } = await pressEscape({});
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(host).toHaveBeenCalled();
+  });
+});

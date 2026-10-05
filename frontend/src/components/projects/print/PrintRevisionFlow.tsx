@@ -56,6 +56,7 @@ export function PrintRevisionFlow({ projectId, file, revisionWarning, onClose }:
           projectId={projectId}
           aitoTaskId={chosen}
           revisionWarning={revisionWarning}
+          isolateEscape
           onClose={onClose}
           onSuccess={() => {
             queryClient.invalidateQueries({ queryKey: ['project-tree', projectId] });

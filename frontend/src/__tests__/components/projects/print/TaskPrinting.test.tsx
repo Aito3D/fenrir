@@ -38,6 +38,7 @@ vi.mock('../../../../components/PrintModal', () => ({
     projectId?: number;
     aitoTaskId?: number | null;
     revisionWarning?: string;
+    isolateEscape?: boolean;
     onSuccess?: () => void;
     onClose: () => void;
   }) => (
@@ -47,6 +48,7 @@ vi.mock('../../../../components/PrintModal', () => ({
       data-project={props.projectId}
       data-task={String(props.aitoTaskId)}
       data-warning={props.revisionWarning ?? ''}
+      data-isolate={String(!!props.isolateEscape)}
     >
       <button type="button" onClick={() => props.onSuccess?.()}>fake-success</button>
       <button type="button" onClick={props.onClose}>fake-close</button>
@@ -156,6 +158,11 @@ describe('PrintedCount', () => {
     expect(screen.getByTestId('printed-count')).toHaveTextContent(/^12 printed$/);
   });
 
+  it('uses the singular plural form for one', () => {
+    render(<PrintedCount {...counts({ rejected: 1, queued: 1 })} />);
+    expect(screen.getByTestId('printed-count')).toHaveTextContent('12/20 printed · 1 rejected · 1 queued');
+  });
+
   it('renders nothing with no prints and nothing queued', () => {
     render(<PrintedCount {...counts({ printed: 0, rejected: 0, queued: 0, target: 20 })} />);
     expect(screen.queryByTestId('printed-count')).not.toBeInTheDocument();
@@ -192,6 +199,9 @@ describe('Impression step counts and tick suggestion', () => {
     );
     expect(screen.queryByRole('button', { name: 'Tick' })).not.toBeInTheDocument();
     rerender(<TaskStepList task={task()} onChange={onChange} canTick={false} printCounts={counts({ printed: 21 })} />);
+    expect(screen.queryByRole('button', { name: 'Tick' })).not.toBeInTheDocument();
+    // A zero target is no target to reach.
+    rerender(<TaskStepList task={task()} onChange={onChange} canTick printCounts={counts({ printed: 3, target: 0 })} />);
     expect(screen.queryByRole('button', { name: 'Tick' })).not.toBeInTheDocument();
     expect(onChange).not.toHaveBeenCalled();
   });
@@ -230,6 +240,7 @@ describe('Print from an Aito task', () => {
     expect(modal.dataset.file).toBe('61');
     expect(modal.dataset.project).toBe('7');
     expect(modal.dataset.warning).toBe('');
+    expect(modal.dataset.isolate).toBe('true');
 
     // The tree has no observer once the picker is gone, so assert the
     // invalidation itself; the links query is live and refetches.
@@ -238,6 +249,8 @@ describe('Print from an Aito task', () => {
     await user.click(within(modal).getByRole('button', { name: 'fake-success' }));
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['aito-project-links', ORDER] });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['project-tree', 7] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['aito-events', ORDER] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['project-orders', 7] });
     await waitFor(() => expect(linkGets).toBeGreaterThan(linksBefore));
     invalidate.mockRestore();
   });

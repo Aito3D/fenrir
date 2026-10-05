@@ -58,6 +58,10 @@ export interface PrintModalProps {
   aitoTaskId?: number | null;
   /** Fenrir: non-blocking warning shown at the top (e.g. the revision is OUTDATED). */
   revisionWarning?: string;
+  /** Fenrir: Escape closes this modal only — the listener runs in the capture
+   *  phase and stops the key, so a host dialog under it (the Aito panel)
+   *  stays open. Default: upstream's bubbling listener. */
+  isolateEscape?: boolean;
 }
 
 /**

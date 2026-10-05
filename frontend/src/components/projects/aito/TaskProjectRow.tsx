@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import type { DragEvent, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { FolderPlus, Link2, Pencil, Printer, Unlink } from 'lucide-react';
 import { api } from '../../../api/client';
 import type { ProjectFileOut, TaskProjectLink } from '../../../api/client';
@@ -59,7 +59,6 @@ export function TaskProjectRow({
   const { hasPermission } = useAuth();
   const { showToast } = useToast();
   const invalidate = useInvalidateProjectLinks();
-  const queryClient = useQueryClient();
   const canLink = hasPermission('aito:update');
   const canPrint = hasPermission('queue:create'); // POST /queue/'s own gate
   const canCreate = canLink && hasPermission('projects:create');
@@ -234,11 +233,10 @@ export function TaskProjectRow({
                 projectId={project.id}
                 aitoTaskId={taskId}
                 revisionWarning={printing.warning}
+                isolateEscape
                 onClose={() => setPrinting(null)}
-                onSuccess={() => {
-                  void queryClient.invalidateQueries({ queryKey: ['aito-project-links', orderId] });
-                  void queryClient.invalidateQueries({ queryKey: ['project-tree', project.id] });
-                }}
+                // Links (counts), codes, the order timeline, tree and orders.
+                onSuccess={() => invalidate(orderId, [project.id])}
               />
             )}
           </div>,

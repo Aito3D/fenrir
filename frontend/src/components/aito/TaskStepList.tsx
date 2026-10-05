@@ -265,14 +265,14 @@ export function TaskStepList({ task, onChange, canTick, sectionSummaries, printC
             {service === 'impression' && printCounts && (printCounts.printed > 0 || printCounts.rejected > 0 || printCounts.queued > 0) && (
               <p
                 data-testid="step-prints-impression"
-                className="flex items-start gap-3 pr-1.5 pb-1 text-xs text-bambu-gray-light"
+                className="flex items-start gap-3 pr-1.5 pb-1 text-xs text-bambu-gray"
               >
                 {/* Same gutter spacers as the description above. */}
                 {canTick && <span aria-hidden="true" className="w-4 flex-shrink-0" />}
                 <span aria-hidden="true" className="w-0.5 flex-shrink-0" />
                 <span className="min-w-0 flex-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
                   <PrintedCount {...printCounts} />
-                  {canTick && !done && printCounts.target !== null && printCounts.printed >= printCounts.target && (
+                  {canTick && !done && printCounts.target !== null && printCounts.target > 0 && printCounts.printed >= printCounts.target && (
                     <span className="inline-flex items-center gap-1.5 text-bambu-green">
                       <span>{t('projectsPdm.print.tickSuggestion')}</span>
                       <button
