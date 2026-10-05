@@ -1,10 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { render } from '../../../utils';
 import { server } from '../../../mocks/server';
-import { api } from '../../../../api/client';
+import { api, setAuthToken } from '../../../../api/client';
 import { CardView } from '../../../../components/aito/CardView';
 import type { AitoProject } from '../../../../api/client';
 
@@ -198,5 +198,48 @@ describe('card file drop', () => {
     fireEvent.drop(zone(), { dataTransfer: { files: [], types: ['text/plain'] } });
     await new Promise((r) => setTimeout(r, 50));
     expect(posted).toEqual([]);
+  });
+});
+
+describe('card file drop permissions', () => {
+  const zone = () => screen.getByTestId('aito-card-shell');
+  let meServed: boolean;
+
+  const signInWith = (permissions: string[]) => {
+    meServed = false;
+    setAuthToken('test-token', 'session');
+    server.use(
+      http.get('*/api/v1/auth/status', () => HttpResponse.json({ auth_enabled: true, requires_setup: false })),
+      http.get('*/api/v1/auth/me', () => {
+        meServed = true;
+        return HttpResponse.json({ id: 1, username: 'op', is_admin: false, permissions });
+      }),
+    );
+  };
+
+  afterEach(() => {
+    setAuthToken(null);
+  });
+
+  it('drops with aito:update + projects:update + projects:read', async () => {
+    signInWith(['aito:read', 'aito:update', 'projects:read', 'projects:update']);
+    links = [link(11, 7, 'P-0007')];
+    render(<CardView project={project} onExpand={() => {}} />);
+    await waitFor(() => expect(meServed).toBe(true));
+    await new Promise((r) => setTimeout(r, 50));
+    fireEvent.drop(zone(), fileDrop());
+    await waitFor(() => expect(posted).toEqual(['11']));
+  });
+
+  it('ignores the drop without projects:read (the links it needs are unreadable)', async () => {
+    signInWith(['aito:read', 'aito:update', 'projects:update']);
+    links = [link(11, 7, 'P-0007')];
+    render(<CardView project={project} onExpand={() => {}} />);
+    await waitFor(() => expect(meServed).toBe(true));
+    await new Promise((r) => setTimeout(r, 50));
+    fireEvent.drop(zone(), fileDrop());
+    await new Promise((r) => setTimeout(r, 100));
+    expect(posted).toEqual([]);
+    expect(screen.queryByText('Link a project to this task first')).not.toBeInTheDocument();
   });
 });

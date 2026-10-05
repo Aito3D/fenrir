@@ -229,7 +229,8 @@ export function TaskDropZone({
 }) {
   const { t } = useTranslation();
   const { hasPermission } = useAuth();
-  const canDrop = hasPermission('aito:update') && hasPermission('projects:update');
+  // projects:read too: the task's link comes from the projects:read-gated links route.
+  const canDrop = hasPermission('aito:update') && hasPermission('projects:update') && hasPermission('projects:read');
   const { dragOver, ...handlers } = useTaskFileDrop({ orderId, taskId, link, canDrop });
   return (
     <div

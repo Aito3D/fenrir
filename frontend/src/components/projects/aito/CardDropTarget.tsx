@@ -49,7 +49,9 @@ export function useCardDrop({
     document.addEventListener('pointerdown', close);
     return () => document.removeEventListener('pointerdown', close);
   }, [chooserOpen]);
-  const canDrop = !disabled && hasPermission('aito:update') && hasPermission('projects:update');
+  // projects:read too: choosing a task needs the order's links (aito:read + projects:read).
+  const canDrop =
+    !disabled && hasPermission('aito:update') && hasPermission('projects:update') && hasPermission('projects:read');
 
   const send = async (taskId: number, project: LinkedProjectRef, files: File[]) => {
     setBusy(true);
