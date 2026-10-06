@@ -5135,6 +5135,9 @@ export default {
     materialNumber: 'Material-Nr.',
     materialNumberPlaceholder: 'z. B. 15',
     materialNumberHelp: 'Interne Einkaufsnummer - wird von allen Spulen dieses Produkts geteilt. Neue Spulen desselben Produkts übernehmen sie.',
+    lastDried: 'Zuletzt getrocknet',
+    lastDriedNow: 'Jetzt',
+    lastDriedHelp: 'Wird eingetragen, wenn ein AMS-Trocknungslauf mindestens zur Hälfte gelaufen ist. Für eine anderswo getrocknete Spule hier setzen.',
     materialNumberNone: 'Keine Materialnummer',
     // Suppliers (#2988): the master list and the per-spool assignments.
     suppliers: {

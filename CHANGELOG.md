@@ -5,6 +5,12 @@ All notable changes to Bambuddy will be documented in this file.
 ## [1.2.6b1] - Unreleased
 
 ### Added
+- **Each spool remembers when it was last dried (#2863, requested by @USER19464727)** — The AMS humidity describes the unit, not the spool, so once a spool left the AMS there was no telling whether it had been dried.
+  - **Filled in by AMS drying:** when an AMS drying run ends, every spool assigned to a slot of that AMS is marked with the date, the temperature (for runs Bambuddy started; the printer doesn't report it) and how long the run actually lasted.
+  - **Only real drying counts:** the run must have lasted at least half its length. One stopped before then, from Bambuddy, on the printer or because a print took priority, leaves the earlier record alone.
+  - **Where it shows:** a **Last dried** column in the inventory table, visible by default and sortable, and a line on the spool card. **Group similar** keeps a dried spool apart from undried copies of it.
+  - **Set by hand:** **Last dried** in the spool form (**Color & Cost**, when editing) takes a date or **Now** for a spool dried in an external dryer, and clearing it removes the record.
+  - **Spoolman too:** in Spoolman mode the record is kept in three extra fields on the spool. Git backups carry it as well. Wiki updated.
 - **Failure detection can send Obico a different Bambuddy address from External URL (#3235, requested and contributed by @chrisbennight in #3255)** — Obico's ML server fetches each snapshot from Bambuddy itself, and the only address Bambuddy could give it was **External URL**. When that is a public address behind a reverse proxy with its own login, the ML server can't get through, and detection reports a snapshot error on every check.
   - **The new setting:** **Settings → Failure Detection** has an optional **Bambuddy Internal URL**, used only for those snapshots. Point it at an address the ML server reaches directly, such as a Docker service name (`http://bambuddy:8000`) or a LAN address. Notifications, sign-in redirects and the other integrations keep using External URL.
   - **Empty uses External URL,** so nothing changes until you set it, and clearing it goes back to External URL.

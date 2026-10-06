@@ -5122,6 +5122,9 @@ export default {
     materialNumber: 'Malzeme No.',
     materialNumberPlaceholder: 'örn. 15',
     materialNumberHelp: 'Dahili satın alma numarası - bu ürünün tüm makaraları tarafından paylaşılır. Aynı ürünün yeni makaraları bu numarayı devralır.',
+    lastDried: 'Son kurutma',
+    lastDriedNow: 'Şimdi',
+    lastDriedHelp: 'Süresinin en az yarısı kadar çalışan bir AMS kurutması bittiğinde doldurulur. Başka yerde kurutulan bir makara için buradan ayarlayın.',
     materialNumberNone: 'Malzeme numarası yok',
     suppliers: {
       label: 'Tedarikçiler',

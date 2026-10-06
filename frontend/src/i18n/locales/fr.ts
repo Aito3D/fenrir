@@ -5123,6 +5123,9 @@ export default {
     materialNumber: 'N° matière',
     materialNumberPlaceholder: 'ex. 15',
     materialNumberHelp: 'Numéro d\'achat interne - partagé par toutes les bobines de ce produit. Les nouvelles bobines du même produit en héritent.',
+    lastDried: 'Dernier séchage',
+    lastDriedNow: 'Maintenant',
+    lastDriedHelp: 'Renseigné à la fin d\'un séchage AMS ayant duré au moins la moitié de sa durée. Indiquez-le ici pour une bobine séchée ailleurs.',
     materialNumberNone: 'Aucun numéro de matière',
     suppliers: {
       label: 'Fournisseurs',

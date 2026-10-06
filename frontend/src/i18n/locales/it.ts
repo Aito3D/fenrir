@@ -5122,6 +5122,9 @@ export default {
     materialNumber: 'N. materiale',
     materialNumberPlaceholder: 'es. 15',
     materialNumberHelp: 'Numero interno di acquisto - condiviso da tutte le bobine di questo prodotto. Le nuove bobine dello stesso prodotto lo ereditano.',
+    lastDried: 'Ultima essiccazione',
+    lastDriedNow: 'Ora',
+    lastDriedHelp: 'Compilato quando termina un\'essiccazione AMS durata almeno metà del tempo previsto. Impostalo qui per una bobina essiccata altrove.',
     materialNumberNone: 'Nessun numero materiale',
     suppliers: {
       label: 'Fornitori',

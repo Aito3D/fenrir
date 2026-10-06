@@ -5122,6 +5122,9 @@ export default {
     materialNumber: 'Nº do Material',
     materialNumberPlaceholder: 'ex. 15',
     materialNumberHelp: 'Número interno de compra - compartilhado por todos os carretéis deste produto. Novos carretéis do mesmo produto o herdam.',
+    lastDried: 'Última secagem',
+    lastDriedNow: 'Agora',
+    lastDriedHelp: 'Preenchido quando termina uma secagem no AMS que durou pelo menos metade do tempo previsto. Defina aqui para um carretel secado em outro lugar.',
     materialNumberNone: 'Sem número de material',
     suppliers: {
       label: 'Fornecedores',

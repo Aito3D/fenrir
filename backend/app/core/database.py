@@ -5310,6 +5310,13 @@ async def run_migrations(conn):
     await _safe_execute(conn, f"ALTER TABLE print_log_entries ADD COLUMN wear_cost {float_type}")
     await _safe_execute(conn, f"ALTER TABLE print_archives ADD COLUMN wear_cost {float_type}")
 
+    # Migration: when each spool was last dried, at what temperature and for
+    # how long (#2863). Nullable: no spool has a drying record until one ends.
+    datetime_type = "DATETIME" if is_sqlite() else "TIMESTAMP"
+    await _safe_execute(conn, f"ALTER TABLE spool ADD COLUMN last_dried_at {datetime_type}")
+    await _safe_execute(conn, "ALTER TABLE spool ADD COLUMN last_dried_temp INTEGER")
+    await _safe_execute(conn, f"ALTER TABLE spool ADD COLUMN last_dried_hours {float_type}")
+
 
 async def _backfill_snapshot_prices(conn) -> None:
     """Give the energy snapshots taken before #1251 the price set at upgrade.

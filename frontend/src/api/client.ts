@@ -3850,6 +3850,11 @@ export interface InventorySpool {
   note: string | null;
   added_full: boolean | null;
   last_used: string | null;
+  // Last drying (#2863): stamped when an AMS drying run of at least half its
+  // length ends, or set by hand. Temperature and hours are null when unknown.
+  last_dried_at?: string | null;
+  last_dried_temp?: number | null;
+  last_dried_hours?: number | null;
   encode_time: string | null;
   tag_uid: string | null;
   tray_uuid: string | null;

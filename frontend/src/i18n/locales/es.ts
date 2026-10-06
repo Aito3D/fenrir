@@ -5138,6 +5138,9 @@ export default {
     materialNumber: 'N.º de material',
     materialNumberPlaceholder: 'p. ej. 15',
     materialNumberHelp: 'Número interno de compras: compartido por todas las bobinas de este producto. Las bobinas nuevas del mismo producto lo heredan.',
+    lastDried: 'Último secado',
+    lastDriedNow: 'Ahora',
+    lastDriedHelp: 'Se rellena cuando termina un secado en el AMS que ha durado al menos la mitad de su duración. Indícalo aquí para una bobina secada en otro sitio.',
     materialNumberNone: 'Sin número de material',
     // Suppliers (#2988): the master list and the per-spool assignments.
     suppliers: {

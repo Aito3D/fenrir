@@ -10084,6 +10084,23 @@ async def lifespan(app: FastAPI):
 
     printer_manager.set_drying_complete_callback(on_drying_complete)
 
+    async def on_drying_cycle_end(printer_id: int, cycle):
+        """Mark the spools in an AMS that just finished drying as dried (#2863)."""
+        from backend.app.services.spool_drying import record_drying_cycle
+
+        try:
+            async with async_session() as db:
+                await record_drying_cycle(db, printer_id, cycle)
+        except Exception as e:
+            logging.getLogger(__name__).warning(
+                "Failed to record drying for printer %d (AMS %d): %s",
+                printer_id,
+                cycle.ams_id,
+                e,
+            )
+
+    printer_manager.set_drying_cycle_end_callback(on_drying_cycle_end)
+
     async def on_assignment_verified(printer_id: int, ams_id: int, tray_id: int, verified: bool, detail: dict):
         """Surface the read-back result of a spool assignment to the UI (#2582).
 

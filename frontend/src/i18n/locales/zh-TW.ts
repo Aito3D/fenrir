@@ -5122,6 +5122,9 @@ export default {
     materialNumber: '料號',
     materialNumberPlaceholder: '例如：15',
     materialNumberHelp: '內部採購編號 — 同一產品的所有料盤共用。同一產品的新料盤會自動繼承。',
+    lastDried: '上次烘乾',
+    lastDriedNow: '現在',
+    lastDriedHelp: 'AMS 烘乾執行至少一半時長後結束時自動填寫。在其他地方烘乾的料盤請在此設定。',
     materialNumberNone: '無料號',
     suppliers: {
       label: '供應商',

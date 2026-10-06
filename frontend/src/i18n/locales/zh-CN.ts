@@ -5122,6 +5122,9 @@ export default {
     materialNumber: '物料号',
     materialNumberPlaceholder: '例如 15',
     materialNumberHelp: '内部采购编号 — 同一产品的所有料盘共用。同一产品的新料盘会自动继承。',
+    lastDried: '上次烘干',
+    lastDriedNow: '现在',
+    lastDriedHelp: 'AMS 烘干运行至少一半时长后结束时自动填写。在其他地方烘干的料盘请在此设置。',
     materialNumberNone: '无物料号',
     suppliers: {
       label: '供应商',

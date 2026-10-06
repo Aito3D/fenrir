@@ -4920,6 +4920,9 @@ export default {
     materialNumber: '자재 번호',
     materialNumberPlaceholder: '예: 15',
     materialNumberHelp: '내부 구매 번호 - 이 제품의 모든 스풀이 공유합니다. 같은 제품의 새 스풀은 이 번호를 이어받습니다.',
+    lastDried: '마지막 건조',
+    lastDriedNow: '지금',
+    lastDriedHelp: 'AMS 건조가 예정 시간의 절반 이상 진행된 뒤 끝나면 기록됩니다. 다른 곳에서 건조한 스풀은 여기에서 설정하세요.',
     materialNumberNone: '자재 번호 없음',
     suppliers: {
       label: '공급업체',

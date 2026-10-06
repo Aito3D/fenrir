@@ -5175,6 +5175,9 @@ export default {
     materialNumber: 'Materiaalnr.',
     materialNumberPlaceholder: 'bijv. 15',
     materialNumberHelp: 'Intern inkoopnummer - gedeeld door alle spoelen van dit product. Nieuwe spoelen van hetzelfde product nemen het over.',
+    lastDried: 'Laatst gedroogd',
+    lastDriedNow: 'Nu',
+    lastDriedHelp: 'Wordt ingevuld wanneer een AMS-droogcyclus van minstens de helft van zijn duur eindigt. Stel het hier in voor een elders gedroogde spoel.',
     materialNumberNone: 'Geen materiaalnummer',
     // Suppliers (#2988): the master list and the per-spool assignments.
     suppliers: {
