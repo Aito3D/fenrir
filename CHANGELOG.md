@@ -5,6 +5,11 @@ All notable changes to Bambuddy will be documented in this file.
 ## [1.2.6b1] - Unreleased
 
 ### Added
+- **Failure detection can send Obico a different Bambuddy address from External URL (#3235, requested and contributed by @chrisbennight in #3255)** — Obico's ML server fetches each snapshot from Bambuddy itself, and the only address Bambuddy could give it was **External URL**. When that is a public address behind a reverse proxy with its own login, the ML server can't get through, and detection reports a snapshot error on every check.
+  - **The new setting:** **Settings → Failure Detection** has an optional **Bambuddy Internal URL**, used only for those snapshots. Point it at an address the ML server reaches directly, such as a Docker service name (`http://bambuddy:8000`) or a LAN address. Notifications, sign-in redirects and the other integrations keep using External URL.
+  - **Empty uses External URL,** so nothing changes until you set it, and clearing it goes back to External URL.
+  - **Checked on save:** the address must be a full `http://` or `https://` address. The field says so while it isn't, and the other Failure Detection settings still save in the meantime.
+  - **The warning shown when neither address is set** now reads "No address set for the ML API to fetch snapshots from" and names both settings.
 - **Gotify notification provider (#2743, requested by @MrCrunshy)** — Notifications can now go to your own Gotify server. Add a provider of type Gotify with the server URL and an application token; the token travels in a header, never in the URL.
   - **Per-event priority:** like ntfy, each enabled event can be set to Min, Low, Default, High or Urgent, sent to Gotify as 0, 2, 5, 8 and 10. Events left at Default go out at 5, which plays a sound in the Gotify Android app.
   - **Photo and tap action:** with External URL set, the camera snapshot shows as a large picture in the Android app, and tapping the outcome-confirmation notification opens the outcome dialog in Bambuddy.
