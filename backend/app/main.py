@@ -7077,8 +7077,12 @@ def _normalise_subtask_name(name: str) -> str:
     directory search normalises both sides before comparing. This exists so
     the completion check reads the same rule from the same place instead of
     growing its own, which is exactly how it came to disagree (#2829).
+
+    A space at either end is substituted too: ``Part .gcode.3mf`` is
+    dispatched as ``Part `` and echoed as ``Part_``. Underscores at the ends
+    are dropped after the substitution so both sides agree (#3241).
     """
-    return name.strip().replace(" ", "_").casefold()
+    return name.strip().replace(" ", "_").strip("_").casefold()
 
 
 def _subtask_names_match(expected: str, observed: str) -> bool:
@@ -7097,7 +7101,13 @@ def _subtask_names_match(expected: str, observed: str) -> bool:
     # echoes, and an archive whose own filename was recorded from a previous
     # truncated echo carries the marker too.
     for full, cut in ((expected_n, observed_n), (observed_n, expected_n)):
-        if cut.endswith(_SUBTASK_TRUNCATION_MARKER) and full.startswith(cut[: -len(_SUBTASK_TRUNCATION_MARKER)]):
+        if not cut.endswith(_SUBTASK_TRUNCATION_MARKER):
+            continue
+        # The full side has lost its edge underscores; a cut that lands right
+        # after one keeps it, so drop it here too (#3241). Nothing left before
+        # the marker is no evidence of anything, and must not match every name.
+        kept = cut[: -len(_SUBTASK_TRUNCATION_MARKER)].rstrip("_")
+        if kept and full.startswith(kept):
             return True
     return False
 

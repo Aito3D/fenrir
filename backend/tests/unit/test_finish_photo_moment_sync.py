@@ -910,6 +910,11 @@ class TestMaxZResolution:
         assert await self._resolve("Bracket_Left.gcode", archive_id) == 16.0
         assert await self._resolve("Bracket Left.gcode.3mf", archive_id) == 16.0
 
+    async def test_matches_a_file_name_that_ends_in_a_space(self, resolver_env):
+        """#3241: "Part .gcode.3mf" is echoed as "Part_"."""
+        archive_id = await self._archive(resolver_env, print_name="Part ", filename="Part .gcode.3mf")
+        assert await self._resolve("Part_", archive_id) == 16.0
+
     async def test_refuses_a_bound_archive_with_another_name(self, resolver_env):
         archive_id = await self._archive(resolver_env)
         assert await self._resolve("other", archive_id) is None
