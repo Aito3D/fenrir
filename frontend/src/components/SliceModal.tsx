@@ -486,9 +486,22 @@ export function SliceModal({ source, onClose, defaultAutoArrange = false }: Slic
   // Compatibility ground truth: the slicer's own `compatible_printers` list
   // on local-imported presets, plus the @BBL <code> name fallback for cloud
   // / standard presets via the backend Bambu printer-model registry.
+  // Plus, for printer presets saved under a name of their own, the preset
+  // each was saved from (#3250).
+  const printerParents = useMemo<Record<string, string>>(() => {
+    const out: Record<string, string> = {};
+    const data = presetsQuery.data;
+    if (!data) return out;
+    for (const tier of [data.local, data.orca_cloud, data.cloud, data.standard]) {
+      for (const p of tier.printer) {
+        if (p.inherits && !Object.hasOwn(out, p.name)) out[p.name] = p.inherits;
+      }
+    }
+    return out;
+  }, [presetsQuery.data]);
   const compatIndex = useMemo<PrinterCompatibilityIndex>(
-    () => buildCompatibilityIndex(printerModelsQuery.data ?? {}),
-    [printerModelsQuery.data],
+    () => buildCompatibilityIndex(printerModelsQuery.data ?? {}, printerParents),
+    [printerModelsQuery.data, printerParents],
   );
 
   // What the connected printers have loaded (#3172), for the two filters and
@@ -510,8 +523,17 @@ export function SliceModal({ source, onClose, defaultAutoArrange = false }: Slic
   // AMS says nothing about what an X1C job can start on. A profile whose
   // model can't be read keeps every connected printer.
   const spoolPrinters = useMemo(
-    () => printersOfModel(loadedPrinters, printerPresetModel(selectedPrinterName, printerModels)),
-    [loadedPrinters, selectedPrinterName, printerModels],
+    // The parent names the model reliably; the user's own name may not.
+    () => printersOfModel(
+      loadedPrinters,
+      printerPresetModel(
+        (selectedPrinterName && Object.hasOwn(printerParents, selectedPrinterName)
+          ? printerParents[selectedPrinterName]
+          : null) || selectedPrinterName,
+        printerModels,
+      ),
+    ),
+    [loadedPrinters, selectedPrinterName, printerModels, printerParents],
   );
   const filamentNameIndex = useMemo(
     () => (presetsQuery.data ? buildFilamentNameIndex(presetsQuery.data) : new Map()),

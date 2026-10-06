@@ -303,6 +303,8 @@ async def _fetch_orca_cloud_presets(
                 # which the picker treats as usable and auto-picks for a
                 # printer the profile was never built for.
                 preset.compatible_printers = _content_compatible_printers(content)
+            elif slot == "printer":
+                preset.inherits = _content_inherits(content)
             slots[slot].append(preset)
         _orca_cloud_cache[cache_key] = (now, slots)
         return slots, "ok"
@@ -329,8 +331,19 @@ async def _fetch_local_presets(db: AsyncSession) -> dict[str, list[UnifiedPreset
             # process / filament dropdowns by the selected printer without
             # falling back to the @BBL name matcher.
             preset.compatible_printers = _parse_compatible_printers(p.compatible_printers)
+        elif slot == "printer":
+            # The preset it was saved from (#3250); see UnifiedPreset.inherits.
+            preset.inherits = (p.inherits or "").strip() or None
         slots[slot].append(preset)
     return slots
+
+
+def _content_inherits(content: dict) -> str | None:
+    """The preset a profile was saved from, out of its content dict (#3250)."""
+    raw = content.get("inherits") if isinstance(content, dict) else None
+    if not isinstance(raw, str):
+        return None
+    return raw.strip() or None
 
 
 def _content_compatible_printers(content: dict) -> list[str] | None:
