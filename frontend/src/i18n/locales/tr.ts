@@ -1169,6 +1169,7 @@ export default {
       layer: '{{count}} katman',
       layers: '{{count}} katman',
       wearCost: 'Yazıcı aşınması',
+      costEstimate: 'Tahmin — nihai maliyet baskı bittiğinde belirlenir',
       object: '{{count}} nesne',
       objects: '{{count}} nesne',
       slicedFor: '{{model}} için dilimlendi',

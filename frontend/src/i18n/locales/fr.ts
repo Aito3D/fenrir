@@ -1169,6 +1169,7 @@ export default {
       layer: '{{count}} couche',
       layers: '{{count}} couches',
       wearCost: 'Usure de l\'imprimante',
+      costEstimate: 'Estimation : le coût final est fixé à la fin de l\'impression',
       object: '{{count}} objet',
       objects: '{{count}} objets',
       slicedFor: 'Découpé pour {{model}}',

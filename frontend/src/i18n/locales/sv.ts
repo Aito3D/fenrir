@@ -1174,6 +1174,7 @@ export default {
       layer: '{{count}} skikt',
       layers: '{{count}} skikt',
       wearCost: 'Skrivarslitage',
+      costEstimate: 'Uppskattning – den slutliga kostnaden fastställs när utskriften är klar',
       object: '{{count}} objekt',
       objects: '{{count}} objekt',
       slicedFor: 'Slicad för {{model}}',

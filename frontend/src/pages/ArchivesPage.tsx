@@ -1281,8 +1281,14 @@ function ArchiveCard({
           {(archive.cost != null || archive.energy_cost != null || archive.wear_cost != null) && (
             <div className="flex items-center gap-3 text-bambu-gray">
               {archive.cost != null && (
-                <div className="flex items-center gap-1.5">
+                // A running print's cost is an estimate until completion re-prices it (#3261)
+                <div
+                  className="flex items-center gap-1.5"
+                  title={archive.status === 'printing' ? t('archives.card.costEstimate') : undefined}
+                  data-testid="archive-cost"
+                >
                   <Coins className="w-3 h-3" />
+                  {archive.status === 'printing' && '~'}
                   {currency}{archive.cost.toFixed(2)}
                 </div>
               )}

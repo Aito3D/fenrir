@@ -1169,6 +1169,7 @@ export default {
       layer: '{{count}} capa',
       layers: '{{count}} capas',
       wearCost: 'Desgaste de la impresora',
+      costEstimate: 'Estimación: el coste final se fija cuando termina la impresión',
       object: '{{count}} objeto',
       objects: '{{count}} objetos',
       slicedFor: 'Laminado para {{model}}',

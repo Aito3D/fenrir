@@ -1169,6 +1169,7 @@ export default {
       layer: '{{count}} Schicht',
       layers: '{{count}} Schichten',
       wearCost: 'Druckerverschleiß',
+      costEstimate: 'Schätzung – die endgültigen Kosten stehen fest, wenn der Druck abgeschlossen ist',
       object: '{{count}} Objekt',
       objects: '{{count}} Objekte',
       slicedFor: 'Geslict für {{model}}',

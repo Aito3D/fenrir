@@ -1174,6 +1174,7 @@ export default {
       layer: '{{count}} laag',
       layers: '{{count}} lagen',
       wearCost: 'Printerslijtage',
+      costEstimate: 'Schatting — de definitieve kosten worden vastgesteld als de print klaar is',
       object: '{{count}} object',
       objects: '{{count}} objecten',
       slicedFor: 'Gesliced voor {{model}}',

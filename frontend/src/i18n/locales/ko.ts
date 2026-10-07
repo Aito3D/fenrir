@@ -1123,6 +1123,7 @@ export default {
       layer: '{{count}}층',
       layers: '{{count}}층',
       wearCost: '프린터 마모',
+      costEstimate: '예상치 — 최종 비용은 출력이 끝나면 확정됩니다',
       object: '{{count}}개 객체',
       objects: '{{count}}개 객체',
       slicedFor: '{{model}}용으로 슬라이싱됨',

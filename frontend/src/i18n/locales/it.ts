@@ -1169,6 +1169,7 @@ export default {
       layer: '{{count}} strato',
       layers: '{{count}} strati',
       wearCost: 'Usura della stampante',
+      costEstimate: 'Stima: il costo finale viene fissato al termine della stampa',
       object: '{{count}} oggetto',
       objects: '{{count}} oggetti',
       slicedFor: 'Sliced per {{model}}',

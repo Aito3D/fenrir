@@ -1169,6 +1169,7 @@ export default {
       layer: '{{count}} 層',
       layers: '{{count}} 層',
       wearCost: '印表機磨損',
+      costEstimate: '估算值——最終成本在列印完成時確定',
       object: '{{count}} 個物件',
       objects: '{{count}} 個物件',
       slicedFor: '為 {{model}} 切片',

@@ -1168,6 +1168,7 @@ export default {
       layer: '{{count}} レイヤー',
       layers: '{{count}} レイヤー',
       wearCost: 'プリンターの摩耗',
+      costEstimate: '見積もり — 最終コストは印刷完了時に確定します',
       object: '{{count}}オブジェクト',
       objects: '{{count}}オブジェクト',
       slicedFor: '{{model}}用にスライス',

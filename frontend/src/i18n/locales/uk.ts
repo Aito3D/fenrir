@@ -1173,6 +1173,7 @@ export default {
       layer: "{{count}} шар",
       layers: "Шарів: {{count}}",
       wearCost: 'Знос принтера',
+      costEstimate: 'Оцінка — остаточна вартість визначається після завершення друку',
       object: "{{count}} об’єкт",
       objects: "Об’єктів: {{count}}",
       slicedFor: "Нарізаний для {{model}}",

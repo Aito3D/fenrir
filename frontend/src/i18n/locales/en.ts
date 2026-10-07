@@ -1176,6 +1176,7 @@ export default {
       layer: '{{count}} layer',
       layers: '{{count}} layers',
       wearCost: 'Printer wear',
+      costEstimate: 'Estimate — the final cost is set when the print finishes',
       object: '{{count}} object',
       objects: '{{count}} objects',
       slicedFor: 'Sliced for {{model}}',

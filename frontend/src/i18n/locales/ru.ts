@@ -1124,6 +1124,7 @@ export default {
       layer: "{{count}} слой",
       layers: "{{count}} слоёв",
       wearCost: 'Износ принтера',
+      costEstimate: 'Оценка — итоговая стоимость определяется по завершении печати',
       object: "{{count}} объект",
       objects: "{{count}} объектов",
       slicedFor: "Нарезано для {{model}}",

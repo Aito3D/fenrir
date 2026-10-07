@@ -94,6 +94,9 @@ from backend.app.core.tasks import spawn_background_task
 from backend.app.core.websocket import ws_manager
 from backend.app.services import kprofile_drift, print_dispatch_context, slot_unlink_grace
 from backend.app.services.archive import ArchiveService, peek_plate_index_in_3mf, swap_plate_suffix
+from backend.app.services.archive_cost_estimate import (
+    schedule_archive_cost_estimate as _schedule_archive_cost_estimate,
+)
 from backend.app.services.archive_purge import archive_purge_service
 from backend.app.services.bambu_ftp import (
     FileNotOnPrinterError,
@@ -4556,6 +4559,16 @@ async def on_print_start(printer_id: int, data: dict):
                 except Exception as e:
                     logger.warning("[SPOOLMAN] Failed to store tracking data: %s", e)
 
+                # Price the print from its spools now rather than only at completion (#3261)
+                _schedule_archive_cost_estimate(
+                    printer_id,
+                    archive.id,
+                    printer_manager,
+                    ams_mapping=_get_start_ams_mapping(data, archive.id),
+                    plate_id=_get_start_plate_id(archive.id),
+                    session_factory=async_session,
+                )
+
                 # Capture timelapse file baseline for snapshot-diff on completion
                 # (mirrors the new-archive branch). Queue / VP-dispatched prints
                 # hit this branch — without the baseline the completion-time scan
@@ -5472,6 +5485,16 @@ async def on_print_start(printer_id: int, data: dict):
                     )
                 except Exception as e:
                     logger.warning("[SPOOLMAN] Failed to store tracking data: %s", e)
+
+                # Price the print from its spools now rather than only at completion (#3261)
+                _schedule_archive_cost_estimate(
+                    printer_id,
+                    archive.id,
+                    printer_manager,
+                    ams_mapping=_get_start_ams_mapping(data, archive.id),
+                    plate_id=_get_start_plate_id(archive.id),
+                    session_factory=async_session,
+                )
 
                 # Capture timelapse file baseline for snapshot-diff on completion
                 await _capture_timelapse_baseline_at_start(printer, printer_id, logger, archive_id=archive.id)
