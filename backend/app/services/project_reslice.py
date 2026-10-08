@@ -65,6 +65,18 @@ async def _slice(db: AsyncSession, **kwargs):
     return await slice_and_persist(db, **kwargs)
 
 
+async def _record_revision_added(db: AsyncSession, project_id: int, entry: dict, user_id: int | None) -> None:
+    """``project.revision_added`` on the linked Aito orders, through the helper shared with
+    auto-filing (imported lazily: project_filing pulls in the library route module).
+    Never raises: an event is not worth failing a revision that is already committed."""
+    from backend.app.services.project_filing import record_revision_added
+
+    try:
+        await record_revision_added(db, project_id, entry, user_id)
+    except Exception:
+        logger.warning("Re-trancher: project.revision_added failed for project %s", project_id, exc_info=True)
+
+
 async def _drop_intermediate(db: AsyncSession, file_id: int) -> None:
     """Hard-delete the slicer's loose library row and its bytes (row + file + thumbnail)."""
     from backend.app.services.library_trash import library_trash_service
@@ -126,8 +138,9 @@ async def run_reslice(db: AsyncSession, req: ResliceRequest, *, job_id: int | No
             pipeline_name=pipeline_name,
         )
         row = source.row
-        # Read everything before _drop_intermediate commits.
-        return {
+        # Read everything now: the event below and _drop_intermediate commit (or roll back,
+        # which expires every instance of the session).
+        result = {
             "project_id": project.id,
             "item_id": item.id,
             "revision_id": revision.id,
@@ -135,5 +148,16 @@ async def run_reslice(db: AsyncSession, req: ResliceRequest, *, job_id: int | No
             "file_id": row.id if row is not None else None,
             "filename": row.filename if row is not None else source.filename,
         }
+        entry = {
+            "section": item.section,
+            "item_id": item.id,
+            "item_name": item.name,
+            "revision_id": revision.id,
+            "revision_number": revision.number,
+        }
+        # Spec §4.4: the linked orders' history shows every new revision. Best-effort:
+        # the helper logs and swallows its own failures, and the revision is already committed.
+        await _record_revision_added(db, result["project_id"], entry, req.user_id)
+        return result
     finally:
         await _drop_intermediate(db, intermediate_id)

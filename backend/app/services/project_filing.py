@@ -516,7 +516,7 @@ async def _auto_file_by_code(
 
 async def _record_auto_filed(db: AsyncSession, outcome: AutoFileResult, section: str, user_id: int | None) -> None:
     """Best-effort ``project.revision_added`` on the linked orders (as the import route does)."""
-    await _record_revision_added(
+    await record_revision_added(
         db,
         outcome.project_id,
         {
@@ -530,9 +530,12 @@ async def _record_auto_filed(db: AsyncSession, outcome: AutoFileResult, section:
     )
 
 
-async def _record_revision_added(db: AsyncSession, project_id: int, entry: dict, user_id: int | None) -> None:
-    """Best-effort ``project.revision_added`` on the project's linked orders for one
-    moved/copied ``entry`` (a ``MoveToProjectResult`` entry); a failure only costs the event."""
+async def record_revision_added(db: AsyncSession, project_id: int, entry: dict, user_id: int | None) -> None:
+    """Best-effort ``project.revision_added`` on the project's linked orders for one new
+    revision. ``entry`` needs ``section``, ``item_id``, ``item_name``, ``revision_id`` and
+    ``revision_number`` (a ``MoveToProjectResult`` entry has them). Commits; a failure is
+    logged and rolled back (expiring the session's instances) and only costs the event.
+    Shared by auto-filing, the legacy migration and Re-trancher."""
     from backend.app.models.user import User
     from backend.app.services import aito_project_links as aito_links
 
@@ -692,7 +695,7 @@ async def migrate_project_legacy(db: AsyncSession, project: Project) -> LegacyMi
     for entry in [*result.moved, *result.copied]:
         revisions.setdefault(entry["revision_id"], entry)
     for entry in revisions.values():
-        await _record_revision_added(db, project_id, entry, None)
+        await record_revision_added(db, project_id, entry, None)
 
     retryable = [s for s in result.skipped if s["code"] in _RETRYABLE_SKIPS]
     if retryable:

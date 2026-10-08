@@ -394,3 +394,77 @@ async def test_reslice_needs_projects_update_library_upload_and_pipelines_read(
     # control: with all three the request gets past auth (and the revision does not exist)
     assert (await async_client.post(url, json=body, headers=users["full"])).status_code == 404
     assert fake_slicer["calls"] == []
+
+
+async def _linked_order(client: AsyncClient, db, project_id: int) -> int:
+    """An active Aito order with a task linked to the project (as in test_aito_project_links_api)."""
+    from backend.app.models.aito_project import AitoProject
+    from backend.app.models.aito_task import AitoTask
+
+    order = AitoProject(
+        description="Commande", board_column="devis", status="active", client_id="C1", client_name="ACME"
+    )
+    db.add(order)
+    await db.commit()
+    task = AitoTask(project_id=order.id, title="Support")
+    db.add(task)
+    await db.commit()
+    linked = await client.put(f"/api/v1/aito/tasks/{task.id}/project", json={"project_id": project_id})
+    assert linked.status_code == 200, linked.text
+    return order.id
+
+
+async def _revision_added_events(client: AsyncClient, order_id: int) -> list[dict]:
+    events = (await client.get(f"/api/v1/aito/{order_id}/events", params={"depth": "story"})).json()["events"]
+    return [e for e in events if e["kind"] == "project.revision_added"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_reslice_records_revision_added_on_linked_orders(async_client: AsyncClient, db_session, fake_slicer):
+    project, item, rev = await _source_revision(async_client)
+    order_id = await _linked_order(async_client, db_session, project["id"])
+    assert await _revision_added_events(async_client, order_id) == []  # R1 predates the link
+    pipeline_id = await _pipeline(db_session)
+    started = await async_client.post(
+        f"/api/v1/projects/revisions/{rev['id']}/reslice",
+        json={"file_id": rev["files"][0]["id"], "pipeline_id": pipeline_id},
+    )
+    job = await _wait(async_client, started.json()["job_id"])
+    assert job["status"] == "completed", job
+    added = [
+        e
+        for e in await _revision_added_events(async_client, order_id)
+        if e["detail"]["revision_id"] == job["result"]["revision_id"]
+    ]
+    assert len(added) == 1
+    assert added[0]["subject_label"] == "Support R2"
+    assert len(await _revision_added_events(async_client, order_id)) == 1  # nothing else recorded
+    assert added[0]["detail"]["item_id"] == item["id"] and added[0]["detail"]["project_id"] == project["id"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_failed_revision_event_does_not_fail_the_job(
+    async_client: AsyncClient, db_session, fake_slicer, roots, monkeypatch
+):
+    from backend.app.services import aito_project_links
+
+    project, item, rev = await _source_revision(async_client)
+    pipeline_id = await _pipeline(db_session)
+
+    async def boom(*_args, **_kwargs):
+        raise RuntimeError("event store down")
+
+    monkeypatch.setattr(aito_project_links, "record_on_linked_orders", boom)
+    started = await async_client.post(
+        f"/api/v1/projects/revisions/{rev['id']}/reslice",
+        json={"file_id": rev["files"][0]["id"], "pipeline_id": pipeline_id},
+    )
+    job = await _wait(async_client, started.json()["job_id"])
+    assert job["status"] == "completed", job
+    assert job["result"]["revision_number"] == 2
+    tree = (await async_client.get(f"/api/v1/projects/{project['id']}/tree")).json()
+    assert [r["number"] for s in tree["sections"] for i in s["items"] for r in i["revisions"]] == [2, 1]
+    assert await _sliced_rows(db_session) == []
+    assert not (roots / "library" / "sliced-1.gcode.3mf").exists()
