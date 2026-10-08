@@ -1260,7 +1260,8 @@ export type ProjectSection = 'scan' | 'modelisation' | 'impression' | 'usinage' 
 export type RevisionStatus = 'wip' | 'valide' | 'obsolete';
 export interface RevisionRef { id: number; item_id: number; item_name: string; section: ProjectSection; number: number; status: RevisionStatus }
 export interface ProjectFileOut { id: number; filename: string; file_type: string; file_size: number; file_hash: string | null; has_thumbnail: boolean; created_at: string }
-export interface ProjectRevisionOut { id: number; number: number; status: RevisionStatus; note: string | null; derived_from: RevisionRef | null; outdated_by: RevisionRef | null; print_profile: Record<string, unknown> | null; slicer_name: string | null; slicer_version: string | null; has_snapshot: boolean; used: boolean; print_count: number; files: ProjectFileOut[]; created_by: string | null; created_at: string; status_changed_at: string | null }
+export interface ProjectRevisionOut { id: number; number: number; status: RevisionStatus; note: string | null; derived_from: RevisionRef | null; outdated_by: RevisionRef | null; print_profile: Record<string, unknown> | null; slicer_name: string | null; slicer_version: string | null; has_snapshot: boolean; used: boolean; print_count: number; pipeline_name: string | null; files: ProjectFileOut[]; created_by: string | null; created_at: string; status_changed_at: string | null }
+export interface ResliceResult { project_id: number; item_id: number; revision_id: number; revision_number: number; file_id: number | null; filename: string }
 export interface ProjectItemOut { id: number; section: ProjectSection; name: string; name_key: string; forked_from: RevisionRef | null; revisions: ProjectRevisionOut[] }
 // Fenrir: File Manager bridge (projects PDM phase 5)
 export interface FiledFileOut {
@@ -2274,7 +2275,7 @@ export interface SliceJobProgress {
 export interface SliceJobState {
   job_id: number;
   status: SliceJobStatus;
-  kind: 'library_file' | 'archive';
+  kind: 'library_file' | 'archive' | 'project_revision';
   source_id: number;
   source_name: string;
   created_at: string;
@@ -2284,7 +2285,7 @@ export interface SliceJobState {
    * slicer emits its first frame (early "Initializing" phase) or when
    * the sidecar doesn't support progress. */
   progress: SliceJobProgress | null;
-  result?: SliceResponse | SliceArchiveResponse;
+  result?: SliceResponse | SliceArchiveResponse | ResliceResult;
   error_status?: number;
   error_detail?: string;
 }
@@ -9352,6 +9353,11 @@ export const api = {
     request<ProjectItemOut>(`/projects/items/${itemId}/fork`, {
       method: 'POST',
       body: JSON.stringify({ revision_id: revisionId, name }),
+    }),
+  resliceProjectRevision: (revisionId: number, body: { file_id: number; pipeline_id: number }) =>
+    request<{ job_id: number; status: string; status_url: string }>(`/projects/revisions/${revisionId}/reslice`, {
+      method: 'POST',
+      body: JSON.stringify(body),
     }),
   uploadProjectRevision: async (
     itemId: number,

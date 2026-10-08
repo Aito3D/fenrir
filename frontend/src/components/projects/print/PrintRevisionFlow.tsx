@@ -1,44 +1,30 @@
 import { useState } from 'react';
 import type { DragEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { api } from '../../../api/client';
+import { useQueryClient } from '@tanstack/react-query';
 import type { ProjectFileOut } from '../../../api/client';
-import { useAuth } from '../../../contexts/AuthContext';
 import { PrintModal } from '../../PrintModal';
 import { OrderPickerDialog } from './OrderPickerDialog';
+import { useOpenOrders } from './useOpenOrders';
 
 interface Props {
   projectId: number;
   file: ProjectFileOut;
   /** Non-blocking OUTDATED text for the print modal (spec §5.3). */
   revisionWarning?: string;
+  /** Order already chosen before slicing (null = none); skips the picker. */
+  initialTaskId?: number | null;
   onClose: () => void;
 }
 
 /** Print one revision file: pick the order it is for (skipped when the project
  *  has no open order), then the regular PrintModal with the task attached. */
-export function PrintRevisionFlow({ projectId, file, revisionWarning, onClose }: Props) {
+export function PrintRevisionFlow({ projectId, file, revisionWarning, initialTaskId, onClose }: Props) {
   const queryClient = useQueryClient();
-  const { hasPermission } = useAuth();
-  const canReadOrders = hasPermission('projects:read') && hasPermission('aito:read');
   // undefined = not chosen yet; null = no task (internal/test print).
-  const [taskId, setTaskId] = useState<number | null | undefined>(undefined);
+  const [taskId, setTaskId] = useState<number | null | undefined>(initialTaskId);
 
-  // Same key the link/delivery mutations invalidate.
-  const { data, isPending, isError } = useQuery({
-    queryKey: ['project-orders', projectId],
-    queryFn: () => api.getProjectOrders(projectId),
-    enabled: canReadOrders,
-    retry: false,
-  });
-
-  // While the orders load, the picker shows as a busy shell so Print never looks dead.
-  const ordersLoading = canReadOrders && isPending;
-  const openOrders = (data?.orders ?? []).filter((o) => o.board_column !== 'done');
-  // A failed orders fetch still goes through the picker (None only), so printing
-  // without a task is a conscious choice rather than a silently lost trace.
-  const ordersFailed = canReadOrders && isError;
+  const { openOrders, loading: ordersLoading, failed: ordersFailed } = useOpenOrders(projectId);
   const chosen =
     taskId !== undefined ? taskId : openOrders.length === 0 && !ordersFailed && !ordersLoading ? null : undefined;
 

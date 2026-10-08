@@ -10,6 +10,7 @@ import { http, HttpResponse } from 'msw';
 import { render } from '../../../utils';
 import { server } from '../../../mocks/server';
 import { ProjectFilesPanel } from '../../../../components/projects/files/ProjectFilesPanel';
+import { PrintRevisionFlow } from '../../../../components/projects/print/PrintRevisionFlow';
 import type { ProjectOrderTask } from '../../../../api/client';
 
 // null = real AuthProvider (auth disabled: every permission granted).
@@ -36,7 +37,7 @@ const file = (id: number, filename: string, file_type: string) => ({
 });
 const rev = (over: Record<string, unknown>) => ({
   id: 1, number: 1, status: 'wip', note: null, derived_from: null, outdated_by: null, print_profile: null,
-  slicer_name: null, slicer_version: null, has_snapshot: false, used: false, print_count: 0, created_by: 'paul',
+  slicer_name: null, slicer_version: null, has_snapshot: false, used: false, print_count: 0, pipeline_name: null, created_by: 'paul',
   created_at: '2026-10-04T10:00:00Z', status_changed_at: null, files: [file(50, 'support.step', 'step')],
   ...over,
 });
@@ -263,5 +264,15 @@ describe('Print from a project revision', () => {
     const body = await submitModal(user);
     expect(body).toHaveProperty('aito_task_id');
     expect(body.aito_task_id).toBeNull();
+  }, 20000);
+
+  it('skips the order picker when the order was chosen before slicing', async () => {
+    orders = [order({ task_id: 12 })];
+    const user = userEvent.setup();
+    render(<PrintRevisionFlow projectId={7} file={file(60, 'support.gcode.3mf', 'gcode.3mf')} initialTaskId={12} onClose={() => {}} />);
+    expect(screen.queryByRole('dialog', { name: 'Which order is this print for?' })).not.toBeInTheDocument();
+    const body = await submitModal(user);
+    expect(body.aito_task_id).toBe(12);
+    expect(body.library_file_id).toBe(60);
   }, 20000);
 });

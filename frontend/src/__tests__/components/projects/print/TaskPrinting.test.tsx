@@ -90,7 +90,7 @@ const file = (id: number, filename: string) => ({
 });
 const rev = (over: Record<string, unknown>) => ({
   id: 1, number: 1, status: 'wip', note: null, derived_from: null, outdated_by: null, print_profile: null,
-  slicer_name: null, slicer_version: null, has_snapshot: false, used: false, print_count: 0, created_by: 'paul',
+  slicer_name: null, slicer_version: null, has_snapshot: false, used: false, print_count: 0, pipeline_name: null, created_by: 'paul',
   created_at: '2026-10-04T10:00:00Z', status_changed_at: null, files: [],
   ...over,
 });

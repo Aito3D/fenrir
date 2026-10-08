@@ -358,7 +358,7 @@ function ConfirmStep({
   );
 }
 
-function IssueText({ issue }: { issue: PipelineEligibilityReport['issues'][number] }) {
+export function IssueText({ issue }: { issue: PipelineEligibilityReport['issues'][number] }) {
   const { t } = useTranslation();
   switch (issue.kind) {
     case 'printer_not_set':
