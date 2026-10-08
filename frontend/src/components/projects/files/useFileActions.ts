@@ -5,12 +5,14 @@ import { api } from '../../../api/client';
 import type { DuplicateWarning, ProjectSection, RevisionStatus } from '../../../api/client';
 import { useToast } from '../../../contexts/ToastContext';
 import { nonPrintableFiles } from './filesUi';
+import { useResliceJobs } from '../reslice/useResliceJobs';
 
 /** Every file-panel mutation: run, invalidate the project tree, toast on failure. */
 export function useFileActions(projectId: number) {
   const { t } = useTranslation();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
+  const reslice = useResliceJobs(projectId);
   // Items with an upload in flight: their upload and drop actions are off meanwhile.
   const [busyItems, setBusyItems] = useState<ReadonlySet<number>>(() => new Set());
 
@@ -68,6 +70,7 @@ export function useFileActions(projectId: number) {
 
   return {
     projectId,
+    reslice,
     acceptsFiles,
     isBusy: (itemId: number) => busyItems.has(itemId),
     uploadRevision,

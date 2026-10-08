@@ -63,6 +63,11 @@ class ProjectRevision(Base):
     slicer_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
     slicer_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
     print_profile: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Set when the revision came from a Re-trancher (spec §12.1); the name is
+    # copied so it survives the pipeline's deletion. No FK: the ALTER migration
+    # adds none, and fresh and migrated databases must match.
+    pipeline_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    pipeline_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
     status_changed_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     status_changed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)

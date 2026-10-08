@@ -55,6 +55,7 @@ class ProjectRevisionOut(BaseModel):
     created_at: datetime
     status_changed_at: datetime | None
     print_count: int = 0  # printed quantity from this revision's archives (phase 4)
+    pipeline_name: str | None = None  # set by Re-trancher (phase 6)
 
 
 class ProjectItemOut(BaseModel):
@@ -189,3 +190,18 @@ class LegacyMigrationStatus(BaseModel):
     failures: list[LegacyMigrationFailure] = []
     pending: int
     last_run: LegacyMigrationLastRun | None = None
+
+
+class ResliceBody(BaseModel):
+    """``POST /projects/revisions/{id}/reslice``: one 3MF of the revision and a saved pipeline."""
+
+    file_id: int
+    pipeline_id: int
+
+
+class ResliceStarted(BaseModel):
+    """202 body: poll ``status_url`` (``GET /slice-jobs/{job_id}``) until completed or failed."""
+
+    job_id: int
+    status: str
+    status_url: str

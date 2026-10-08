@@ -38,6 +38,7 @@ export function ItemRow({ item, derivedOptions, actions }: Props) {
   const outdated = item.section === 'impression' && newest?.outdated_by && newest.derived_from ? newest : null;
   const src = newest?.derived_from;
   const busy = actions.isBusy(item.id);
+  const run = actions.reslice.runFor(item.id);
   // Expanded, each revision block carries its own OUTDATED chip.
   const rowOutdated = outdated && !open;
 
@@ -126,6 +127,22 @@ export function ItemRow({ item, derivedOptions, actions }: Props) {
             }} />
         )}
       </div>
+      {run && (
+        <p role="status" className={`flex flex-wrap items-center gap-x-2 px-2 pb-2 pl-8 text-xs ${run.error ? 'text-red-400' : 'text-bambu-green'}`}>
+          <span className="min-w-0 break-words">
+            {run.error
+              ? t('projectsPdm.reslice.failed', { detail: run.error })
+              : run.percent !== null
+                ? t('projectsPdm.reslice.running', { percent: run.percent })
+                : t('projectsPdm.reslice.runningNoPercent')}
+          </span>
+          {run.error && (
+            <button type="button" className={`min-h-[44px] rounded underline md:min-h-0 ${focusRingCls}`} onClick={() => actions.reslice.dismiss(item.id)}>
+              {t('projectsPdm.reslice.dismiss')}
+            </button>
+          )}
+        </p>
+      )}
       {(src || rowOutdated) && (
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-2 pb-2 pl-8 text-xs text-bambu-gray">
           {src && (

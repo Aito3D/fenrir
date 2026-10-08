@@ -27,7 +27,7 @@ SliceJobStatus = Literal["pending", "running", "completed", "failed"]
 @dataclass(slots=True)
 class SliceJob:
     id: int
-    kind: Literal["library_file", "archive"]
+    kind: Literal["library_file", "archive", "project_revision"]
     source_id: int
     source_name: str
     # JWT user id that started the job, for per-row scoping of the polling
@@ -69,7 +69,7 @@ class SliceDispatchService:
     async def enqueue(
         self,
         *,
-        kind: Literal["library_file", "archive"],
+        kind: Literal["library_file", "archive", "project_revision"],
         source_id: int,
         source_name: str,
         owner_id: int | None = None,

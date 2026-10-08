@@ -114,3 +114,17 @@ async def test_existing_codes_are_kept_and_counter_moves_past_them(tmp_path):
         rows = dict((await conn.execute(text("SELECT name, code FROM projects"))).all())
     assert rows == {"Coded": "P-0050", "Uncoded": "P-0051"}
     await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_revision_pipeline_columns_are_added(tmp_path):
+    engine = await _engine(tmp_path)
+    async with engine.begin() as conn:
+        # create_all already made them: drop to stand for a phase-5 database.
+        await conn.execute(text("ALTER TABLE project_revisions DROP COLUMN pipeline_id"))
+        await conn.execute(text("ALTER TABLE project_revisions DROP COLUMN pipeline_name"))
+        await run_migrations(conn)
+        await run_migrations(conn)  # idempotent
+        cols = {row[1] for row in (await conn.execute(text("PRAGMA table_info(project_revisions)"))).all()}
+    assert {"pipeline_id", "pipeline_name"} <= cols
+    await engine.dispose()

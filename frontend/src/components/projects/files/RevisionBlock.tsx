@@ -1,6 +1,8 @@
 import { useRef, useState } from 'react';
+import type { DragEvent } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
-import { Download, Eye, GitFork, Plus, Printer, Trash2, X } from 'lucide-react';
+import { Download, Eye, GitFork, Plus, Printer, Scissors, Trash2, X } from 'lucide-react';
 import { api } from '../../../api/client';
 import type { ProjectFileOut, ProjectItemOut, ProjectRevisionOut, RevisionStatus } from '../../../api/client';
 import { useAuth } from '../../../contexts/AuthContext';
@@ -19,6 +21,7 @@ import {
   printProfileLine,
 } from './filesUi';
 import { PrintRevisionFlow } from '../print/PrintRevisionFlow';
+import { ResliceDialog } from '../reslice/ResliceDialog';
 
 export interface DerivedOption { id: number; label: string }
 
@@ -37,6 +40,11 @@ function formatSize(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
+const isResliceable = (f: ProjectFileOut) => f.filename.toLowerCase().endsWith('.3mf'); // incl. .gcode.3mf, as the backend
+// The dialogs are portalled out of the files tree: keep a stray drag over them from
+// reaching the section/item drop zones (which would upload a revision).
+const stopDrag = (e: DragEvent) => e.stopPropagation();
+
 export function RevisionBlock({ item, revision, derivedOptions, actions }: Props) {
   const { t, i18n } = useTranslation();
   const { hasPermission } = useAuth();
@@ -44,6 +52,9 @@ export function RevisionBlock({ item, revision, derivedOptions, actions }: Props
   const canUpdate = hasPermission('projects:update') && isSectionEnabled(item.section);
   const canDelete = hasPermission('projects:delete');
   const canPrint = hasPermission('queue:create'); // POST /queue/'s own gate
+  // POST /projects/revisions/{id}/reslice's gates.
+  const canReslice =
+    hasPermission('projects:update') && hasPermission('library:upload') && hasPermission('pipelines:read') && isSectionEnabled(item.section);
   const addInput = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<ProjectFileOut | null>(null);
   const [editingNote, setEditingNote] = useState(false);
@@ -51,6 +62,10 @@ export function RevisionBlock({ item, revision, derivedOptions, actions }: Props
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState<ProjectFileOut | null>(null);
   const [printing, setPrinting] = useState<ProjectFileOut | null>(null);
+  const [reslicing, setReslicing] = useState<number | null>(null); // source file id
+  const running = actions.reslice.runFor(item.id);
+  const resliceRunning = running !== undefined && running.error === null;
+  const resliceable = revision.files.filter(isResliceable);
   const busy = actions.isBusy(item.id);
   const label = `R${revision.number}`;
   const editable = revision.status === 'wip' && !revision.used;
@@ -137,12 +152,15 @@ export function RevisionBlock({ item, revision, derivedOptions, actions }: Props
         </select>
       </label>
 
-      {item.section === 'impression' && (profileLine || pp) && (
+      {item.section === 'impression' && (profileLine || pp || revision.pipeline_name) && (
         <p className="flex flex-wrap items-center gap-x-2 text-xs text-bambu-gray">
           {profileLine && <span className="break-words">{profileLine}</span>}
           {pp && <span className={pp.sliced ? 'text-bambu-green' : 'text-amber-400'}>
             {pp.sliced ? t('projectsPdm.files.sliced') : t('projectsPdm.files.notSliced')}</span>}
           {slicer && <span>{slicer}</span>}
+          {revision.pipeline_name && (
+            <span>{t('projectsPdm.reslice.viaPipeline', { name: revision.pipeline_name })}</span>
+          )}
         </p>
       )}
 
@@ -168,6 +186,12 @@ export function RevisionBlock({ item, revision, derivedOptions, actions }: Props
                   <button type="button" className={btnCls} aria-label={t('projectsPdm.print.printFile', { name: f.filename })}
                     onClick={() => setPrinting(f)}>
                     <Printer className="h-3.5 w-3.5" />{t('projectsPdm.print.print')}
+                  </button>
+                )}
+                {canReslice && isResliceable(f) && (
+                  <button type="button" className={`${btnCls} disabled:opacity-40`} disabled={resliceRunning}
+                    onClick={() => setReslicing(f.id)}>
+                    <Scissors className="h-3.5 w-3.5" />{t('projectsPdm.reslice.action')}
                   </button>
                 )}
                 {canPreview && (
@@ -241,6 +265,21 @@ export function RevisionBlock({ item, revision, derivedOptions, actions }: Props
             : undefined}
           onClose={() => setPrinting(null)}
         />
+      )}
+      {reslicing !== null && createPortal(
+        <div onDragOver={stopDrag} onDrop={stopDrag}>
+          <ResliceDialog
+            projectId={actions.projectId}
+            files={resliceable}
+            initialFileId={reslicing}
+            onClose={() => setReslicing(null)}
+            onStart={(fileId, pipelineId, queueTaskId) => {
+              setReslicing(null);
+              void actions.reslice.start(item.id, revision.id, fileId, pipelineId, queueTaskId);
+            }}
+          />
+        </div>,
+        document.body,
       )}
       {confirmRemove && (
         <ConfirmModal

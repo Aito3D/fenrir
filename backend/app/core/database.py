@@ -6324,6 +6324,11 @@ async def run_migrations(conn):
     # printing files were moved into its tree. NULL = not migrated yet.
     await _safe_execute(conn, "ALTER TABLE projects ADD COLUMN legacy_migrated_at DATETIME")
 
+    # Projects as a PDM, phase 6 (spec §12.1): revisions made by Re-trancher
+    # record the pipeline. No FK, like the phase 4 columns.
+    await _safe_execute(conn, "ALTER TABLE project_revisions ADD COLUMN pipeline_id INTEGER")
+    await _safe_execute(conn, "ALTER TABLE project_revisions ADD COLUMN pipeline_name VARCHAR(200)")
+
 
 async def _migrate_backfill_aito_document_numbers(conn) -> None:
     """One-time fill of `aito_projects.document_numbers` from history (2026-10-04).

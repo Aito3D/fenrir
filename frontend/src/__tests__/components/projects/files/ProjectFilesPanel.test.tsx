@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { delay, http, HttpResponse } from 'msw';
 import { render } from '../../../utils';
 import { server } from '../../../mocks/server';
 import { ProjectFilesPanel } from '../../../../components/projects/files/ProjectFilesPanel';
@@ -12,7 +12,7 @@ const ref = (id: number, item: string, section: string, number: number, status =
 });
 const rev = (over: Record<string, unknown>) => ({
   id: 1, number: 1, status: 'wip', note: null, derived_from: null, outdated_by: null, print_profile: null,
-  slicer_name: null, slicer_version: null, has_snapshot: false, used: false, created_by: 'paul',
+  slicer_name: null, slicer_version: null, pipeline_name: null, has_snapshot: false, used: false, created_by: 'paul',
   created_at: '2026-10-04T10:00:00Z', status_changed_at: null,
   files: [{ id: 50, filename: 'support.3mf', file_type: '3mf', file_size: 2048, file_hash: 'h', has_thumbnail: false, created_at: '2026-10-04T10:00:00Z' }],
   ...over,
@@ -323,5 +323,101 @@ describe('ProjectFilesPanel', () => {
     await screen.findByText('Support');
     await userEvent.upload(screen.getByTestId('new-revision-input-20'), new File(['x'], 'b.3mf'));
     expect(await screen.findByText(/Upload failed/)).toBeInTheDocument();
+  });
+  describe('Re-slice', () => {
+    const pipeline = { id: 3, name: 'H2D PETG', description: null, printer_preset: { source: 'local', id: '1' }, process_preset: { source: 'local', id: '2' }, filament_presets: [], bed_type: null, target_kind: 'printer_class', target_printer_id: null, target_model_class: 'H2D', fanout_strategy: 'max_parallel', created_by: null, created_at: '', updated_at: '' };
+    let started: unknown;
+    let job: Record<string, unknown>;
+    beforeEach(() => {
+      started = null;
+      job = { job_id: 9, status: 'running', kind: 'project_revision', source_id: 2, source_name: 'support.3mf', created_at: '', started_at: '', completed_at: null, progress: null };
+      server.use(
+        http.get('/api/v1/slicer-pipelines/', () => HttpResponse.json({ pipelines: [pipeline] })),
+        http.post('/api/v1/slicer-pipelines/3/check-eligibility', () => HttpResponse.json({ ok: true, target_kind: 'printer_class', target_printer_id: null, target_printer_name: null, target_model_class: 'H2D', issues: [], printer_reports: [] })),
+        http.get('/api/v1/projects/7/orders', () => HttpResponse.json({ orders: [] })),
+        http.post('/api/v1/projects/revisions/:id/reslice', async ({ request, params }) => {
+          started = { id: params.id, body: await request.json() };
+          return HttpResponse.json({ job_id: 9, status: 'pending', status_url: '/api/v1/slice-jobs/9' }, { status: 202 });
+        }),
+        http.get('/api/v1/slice-jobs/9', () => HttpResponse.json(job)),
+      );
+    });
+
+    const startReslice = async () => {
+      render(<ProjectFilesPanel projectId={7} />);
+      await userEvent.click(await screen.findByRole('button', { name: /Support$/ }));
+      await userEvent.click(within(screen.getByTestId('revision-2')).getByRole('button', { name: /Re-slice/ }));
+      await userEvent.click(await screen.findByRole('radio', { name: /H2D PETG/ }));
+      await userEvent.click(screen.getByRole('button', { name: 'Slice' }));
+      await waitFor(() => expect(started).toEqual({ id: '2', body: { file_id: 50, pipeline_id: 3 } }));
+      return screen.getByRole('button', { name: /Support$/ }).closest('li')!;
+    };
+
+    it('re-slices a 3MF from its revision and shows progress on the item', async () => {
+      const row = await startReslice();
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(await within(row).findByText('Slicing…')).toBeInTheDocument();
+      expect(within(screen.getByTestId('revision-2')).getByRole('button', { name: /Re-slice/ })).toBeDisabled();
+    });
+
+    it('shows a failed run on the item until dismissed', async () => {
+      job = { ...job, status: 'failed', error_status: 502, error_detail: 'Sidecar unreachable' };
+      const row = await startReslice();
+      expect(await within(row).findByText('Slicing failed: Sidecar unreachable', {}, { timeout: 4000 })).toBeInTheDocument();
+      expect(within(screen.getByTestId('revision-2')).getByRole('button', { name: /Re-slice/ })).toBeEnabled();
+      await userEvent.click(within(row).getByRole('button', { name: 'Dismiss' }));
+      expect(within(row).queryByText(/Slicing failed/)).not.toBeInTheDocument();
+    });
+
+    it('opens the print flow once a "Slice + queue" run finishes', async () => {
+      let libraryFetched: string | null = null;
+      // Slow tree on completion: the panel's run must still reach the print flow.
+      server.use(
+        http.get('/api/v1/projects/7/tree', async () => {
+          if (job.status === 'completed') await delay(80);
+          return HttpResponse.json(treeBody);
+        }),
+        http.get('/api/v1/printers/', () =>
+          HttpResponse.json([{ id: 1, name: 'X1 Carbon', model: 'X1C', ip_address: '192.168.1.100', enabled: true, is_active: true }])),
+        http.get('/api/v1/printers/:id/status', () => HttpResponse.json({ connected: true, state: 'IDLE', ams: [], vt_tray: [] })),
+        http.get('/api/v1/library/files/:id', ({ params }) => {
+          libraryFetched = String(params.id);
+          return HttpResponse.json({
+            id: Number(params.id), filename: 'support.gcode.3mf', print_name: null, file_type: '3mf', folder_id: null, project_id: 7,
+            file_hash: null, file_size_bytes: 1024, thumbnail_path: null, created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z',
+          });
+        }),
+        http.get('/api/v1/library/files/:id/plates', () => HttpResponse.json({ is_multi_plate: false, plates: [] })),
+        http.get('/api/v1/library/files/:id/filament-requirements', () => HttpResponse.json({ file_id: 60, filename: 'support.gcode.3mf', filaments: [] })),
+      );
+      render(<ProjectFilesPanel projectId={7} />);
+      await userEvent.click(await screen.findByRole('button', { name: /Support$/ }));
+      await userEvent.click(within(screen.getByTestId('revision-2')).getByRole('button', { name: /Re-slice/ }));
+      await userEvent.click(await screen.findByRole('radio', { name: /H2D PETG/ }));
+      // No open order: "Slice + queue" starts right away with no task.
+      await userEvent.click(screen.getByRole('button', { name: 'Slice + queue' }));
+      await waitFor(() => expect(started).toEqual({ id: '2', body: { file_id: 50, pipeline_id: 3 } }));
+      job = { ...job, status: 'completed', result: { project_id: 7, item_id: 20, revision_id: 2, revision_number: 2, file_id: 60, filename: 'support.gcode.3mf' } };
+      expect(await screen.findByText('Support R2 created', {}, { timeout: 4000 })).toBeInTheDocument();
+      // PrintRevisionFlow → PrintModal for the new file, the order picker skipped.
+      expect(await screen.findByRole('button', { name: /^print$/i }, { timeout: 4000 })).toBeInTheDocument();
+      await waitFor(() => expect(libraryFetched).toBe('60'));
+      expect(screen.queryByRole('dialog', { name: 'Which order is this print for?' })).not.toBeInTheDocument();
+    });
+
+    it('offers no Re-slice on G-code files', async () => {
+      render(<ProjectFilesPanel projectId={7} />);
+      await userEvent.click(await screen.findByRole('button', { name: /Gabarit$/ }));
+      expect(within(screen.getByTestId('revision-4')).getAllByRole('button', { name: /Re-slice/ })).toHaveLength(1);
+    });
+
+    it('shows the pipeline a revision was sliced with', async () => {
+      treeBody = { ...tree, sections: tree.sections.map((s) => (s.section !== 'impression' ? s : {
+        ...s, items: s.items.map((i) => (i.id !== 30 ? i : { ...i, revisions: i.revisions.map((r) => ({ ...r, pipeline_name: 'H2D PETG' })) })),
+      })) };
+      render(<ProjectFilesPanel projectId={7} />);
+      await userEvent.click(await screen.findByRole('button', { name: /Support X1C$/ }));
+      expect(within(screen.getByTestId('revision-3')).getByText('via H2D PETG')).toBeInTheDocument();
+    });
   });
 });

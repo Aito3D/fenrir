@@ -537,3 +537,60 @@ async def test_tree_used_flag_matches_revision_is_used(db_session, root):
     assert used == {rev.id: True, rev2.id: False}
     assert used[rev.id] == await revision_is_used(db_session, rev.id)
     assert used[rev2.id] == await revision_is_used(db_session, rev2.id)
+
+
+async def _impression_revisions(db, **second_fields):
+    project = await _project(db)
+    item = await create_item(db, project, section="impression", name="Support", user_id=None)
+    r1, _ = await add_revision(
+        db, project, item, [upload("a.3mf", threemf_bytes())], note=None, derived_from_id=None, user_id=None
+    )
+    r2, _ = await add_revision(
+        db, project, item, [upload("b.3mf", threemf_bytes())], note=None, derived_from_id=r1.id, user_id=None
+    )
+    r1.status = "valide"
+    r2.status = "valide"
+    for key, value in second_fields.items():
+        setattr(r2, key, value)
+    await db.commit()
+    return project, r1, r2
+
+
+@pytest.mark.asyncio
+async def test_same_item_derivation_is_never_outdated(db_session, root):
+    project, _r1, r2 = await _impression_revisions(db_session)
+    tree = await load_tree(db_session, project)
+    revs = {r.number: r for s in tree.sections for i in s.items for r in i.revisions}
+    assert revs[r2.number].derived_from is not None
+    assert revs[r2.number].outdated_by is None
+
+
+@pytest.mark.asyncio
+async def test_tree_exposes_pipeline_name(db_session, root):
+    project, _r1, r2 = await _impression_revisions(db_session, pipeline_name="H2D PETG")
+    tree = await load_tree(db_session, project)
+    revs = {r.number: r for s in tree.sections for i in s.items for r in i.revisions}
+    assert revs[r2.number].pipeline_name == "H2D PETG"
+
+
+@pytest.mark.asyncio
+async def test_revision_from_sources_records_derivation_and_pipeline(db_session, root, tmp_path):
+    project = await _project(db_session)
+    item, r1 = await _rev(db_session, project)
+    src = tmp_path / "out.gcode.3mf"
+    src.write_bytes(b"not really a zip")
+    rev = await project_files.add_revision_from_sources(
+        db_session,
+        project,
+        item,
+        [project_files.RevisionSource(path=src, filename="Support.gcode.3mf")],
+        note="Re-tranché depuis R1 · pipeline H2D",
+        user_id=None,
+        derived_from_id=r1.id,
+        pipeline_id=None,
+        pipeline_name="H2D",
+    )
+    assert rev.derived_from_id == r1.id
+    assert rev.pipeline_name == "H2D"
+    assert rev.status == "wip"
+    assert src.exists()  # sources are never touched
