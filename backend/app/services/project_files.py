@@ -556,6 +556,9 @@ async def add_revision_from_sources(
     *,
     note: str | None,
     user_id: int | None,
+    derived_from_id: int | None = None,
+    pipeline_id: int | None = None,
+    pipeline_name: str | None = None,
 ) -> ProjectRevision:
     """New R{n} for ``item`` from files already on disk (≥ 1). Commits.
 
@@ -565,7 +568,9 @@ async def add_revision_from_sources(
     or adds a new row. The sources themselves are never modified or removed —
     unlinking a moved file's old bytes after the commit is the caller's job. On
     failure the copies are deleted and the caller's WHOLE session is rolled back
-    (see ``add_revision``). Each source's ``row`` is set on success."""
+    (see ``add_revision``). Each source's ``row`` is set on success.
+
+    ``derived_from_id`` is checked like an upload's; the pipeline fields are set by Re-trancher."""
     if not sources:
         raise ProjectFilesError(400, "A revision needs at least one file")
     async with _item_lock(item.id):
@@ -575,8 +580,10 @@ async def add_revision_from_sources(
             await _fresh_item(db, item.id),
             lambda folder: _copy_sources(folder, sources),
             note,
-            None,
+            derived_from_id,
             user_id,
+            pipeline_id=pipeline_id,
+            pipeline_name=pipeline_name,
         )
         return revision
 
@@ -589,6 +596,9 @@ async def _add_revision_locked(
     note: str | None,
     derived_from_id: int | None,
     user_id: int | None,
+    *,
+    pipeline_id: int | None = None,
+    pipeline_name: str | None = None,
 ) -> tuple[ProjectRevision, list[DuplicateWarning]]:
     if derived_from_id is not None:
         await _check_derived_from(db, project, None, derived_from_id)
@@ -606,6 +616,8 @@ async def _add_revision_locked(
             status="wip",
             note=(note or "").strip() or None,
             derived_from_id=derived_from_id,
+            pipeline_id=pipeline_id,
+            pipeline_name=pipeline_name,
             created_by_id=user_id,
         )
         db.add(revision)

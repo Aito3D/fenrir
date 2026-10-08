@@ -23,7 +23,6 @@ can call ``trackJob`` directly.
 
 from __future__ import annotations
 
-import json
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
@@ -56,12 +55,12 @@ from backend.app.schemas.pipeline_run import (
     PipelineRunListResponse,
     PipelineRunResponse,
 )
-from backend.app.schemas.slicer import PresetRef, SliceRequest
 from backend.app.services.pipeline_eligibility import (
     EligibilityReport,
     check_pipeline_eligibility,
 )
 from backend.app.services.print_confirmation import confirm_outcome_for_new_queue_item
+from backend.app.services.slicer_pipeline_request import slice_request_from_pipeline
 
 logger = logging.getLogger(__name__)
 
@@ -152,25 +151,6 @@ def _make_status_lookup():
         return {"connected": state.connected, "raw_data": state.raw_data}
 
     return _lookup
-
-
-def _slice_request_from_pipeline(pipeline: SlicerPipeline) -> SliceRequest:
-    try:
-        raw_filaments = json.loads(pipeline.filament_presets_json or "[]")
-    except (json.JSONDecodeError, TypeError):
-        raw_filaments = []
-    filament_presets = [
-        PresetRef(source=r["source"], id=r["id"])
-        for r in raw_filaments
-        if isinstance(r, dict) and "source" in r and "id" in r
-    ]
-    return SliceRequest(
-        printer_preset=PresetRef(source=pipeline.printer_preset_source, id=pipeline.printer_preset_id),
-        process_preset=PresetRef(source=pipeline.process_preset_source, id=pipeline.process_preset_id),
-        filament_presets=filament_presets,
-        bed_type=pipeline.bed_type,
-        export_3mf=True,
-    )
 
 
 def _compute_job_status(
@@ -502,7 +482,7 @@ def _make_orchestration_callable(
             await session.commit()
             await _publish_run_event(session, run)
 
-            slice_request = _slice_request_from_pipeline(pipeline)
+            slice_request = slice_request_from_pipeline(pipeline)
             model_bytes = src_path.read_bytes()
 
             folder_id: int | None = None

@@ -571,3 +571,26 @@ async def test_tree_exposes_pipeline_name(db_session, root):
     tree = await load_tree(db_session, project)
     revs = {r.number: r for s in tree.sections for i in s.items for r in i.revisions}
     assert revs[r2.number].pipeline_name == "H2D PETG"
+
+
+@pytest.mark.asyncio
+async def test_revision_from_sources_records_derivation_and_pipeline(db_session, root, tmp_path):
+    project = await _project(db_session)
+    item, r1 = await _rev(db_session, project)
+    src = tmp_path / "out.gcode.3mf"
+    src.write_bytes(b"not really a zip")
+    rev = await project_files.add_revision_from_sources(
+        db_session,
+        project,
+        item,
+        [project_files.RevisionSource(path=src, filename="Support.gcode.3mf")],
+        note="Re-tranché depuis R1 · pipeline H2D",
+        user_id=None,
+        derived_from_id=r1.id,
+        pipeline_id=None,
+        pipeline_name="H2D",
+    )
+    assert rev.derived_from_id == r1.id
+    assert rev.pipeline_name == "H2D"
+    assert rev.status == "wip"
+    assert src.exists()  # sources are never touched
