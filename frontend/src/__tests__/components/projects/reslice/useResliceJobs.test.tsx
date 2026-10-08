@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { http, HttpResponse } from 'msw';
+import { delay, http, HttpResponse } from 'msw';
 import { server } from '../../../mocks/server';
 import { wrapper } from '../../../utils';
 import { useResliceJobs } from '../../../../components/projects/reslice/useResliceJobs';
@@ -84,3 +84,68 @@ describe('useResliceJobs', () => {
     expect(polls).toBe(0);
   });
 });
+
+// Real timers and a slow tree response: the completion must survive the poll effect
+// restarting (its run leaves `pending`, or another item starts a run) while the tree loads.
+describe('useResliceJobs with real timers', () => {
+  const slowTree = () =>
+    server.use(
+      http.get('/api/v1/projects/7/tree', async () => {
+        await delay(80);
+        return HttpResponse.json({ project_id: 7, code: 'P-0007', sections: [{ section: 'impression', items: [{ id: 20, section: 'impression', name: 'Support', name_key: 'support', forked_from: null, revisions: [{ id: 2, number: 2, files: [newFile] }] }] }] });
+      }),
+    );
+
+  beforeEach(() => {
+    vi.useRealTimers();
+    slowTree();
+  });
+
+  it('opens the print flow for a queued run when the tree loads slowly', async () => {
+    const { result } = renderHook(() => useResliceJobs(7), { wrapper });
+    jobState = completed(91);
+    await act(() => result.current.start(20, 1, 50, 3, 31));
+    await waitFor(() => expect(result.current.printNext).toEqual({ file: newFile, taskId: 31 }), { timeout: 4000 });
+    expect(result.current.runFor(20)).toBeUndefined();
+  });
+
+  it('lands a completion even when another item starts a run meanwhile', async () => {
+    let otherJob: Record<string, unknown> = { ...jobState, job_id: 6 };
+    let treeRequested = false;
+    let releaseTree!: () => void;
+    const treeGate = new Promise<void>((r) => { releaseTree = r; });
+    server.use(
+      http.post('/api/v1/projects/revisions/11/reslice', () => HttpResponse.json({ job_id: 6, status: 'pending', status_url: '/api/v1/slice-jobs/6' }, { status: 202 })),
+      http.get('/api/v1/slice-jobs/6', () => HttpResponse.json(otherJob)),
+      http.get('/api/v1/projects/7/tree', async () => {
+        treeRequested = true;
+        await treeGate;
+        return HttpResponse.json({ project_id: 7, code: 'P-0007', sections: [{ section: 'impression', items: [{ id: 20, section: 'impression', name: 'Support', name_key: 'support', forked_from: null, revisions: [{ id: 2, number: 2, files: [newFile] }] }] }] });
+      }),
+    );
+    const { result } = renderHook(() => useResliceJobs(7), { wrapper });
+    jobState = completed(91);
+    await act(() => result.current.start(20, 1, 50, 3, 31));
+    // Item 20's completion is waiting on the tree: start item 21 now (pending 0 → 1).
+    await waitFor(() => expect(treeRequested).toBe(true), { timeout: 4000 });
+    expect(result.current.runFor(20)).toBeUndefined();
+    await act(() => result.current.start(21, 11, 60, 3, undefined));
+    expect(result.current.runFor(21)).toMatchObject({ jobId: 6, error: null });
+    releaseTree();
+    await waitFor(() => expect(result.current.printNext).toEqual({ file: newFile, taskId: 31 }), { timeout: 4000 });
+    // The other run is still polled.
+    otherJob = { ...otherJob, status: 'failed', error_detail: 'boom' };
+    await waitFor(() => expect(result.current.runFor(21)?.error).toBe('boom'), { timeout: 4000 });
+  });
+
+  it('does nothing after unmount while the tree loads', async () => {
+    const { result, unmount } = renderHook(() => useResliceJobs(7), { wrapper });
+    jobState = completed(91);
+    await act(() => result.current.start(20, 1, 50, 3, 31));
+    await waitFor(() => expect(result.current.runFor(20)).toBeUndefined(), { timeout: 4000 });
+    unmount();
+    await new Promise((r) => setTimeout(r, 200)); // the tree resolves after unmount: no throw
+    expect(result.current.printNext).toBeNull();
+  });
+});
+

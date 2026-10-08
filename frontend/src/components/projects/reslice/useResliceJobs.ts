@@ -38,6 +38,16 @@ export function useResliceJobs(projectId: number): ResliceJobs {
   useEffect(() => {
     runsRef.current = runs;
   }, [runs]);
+  // Unmount-only guard for a completion in flight. Not the poll effect's `cancelled`: that
+  // effect restarts whenever the number of pending runs changes, which a completion itself
+  // causes (its run is removed before the tree loads) as does another item starting a run.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const update = useCallback((itemId: number, next: ResliceRun | null) => {
     setRuns((prev) => {
@@ -61,7 +71,7 @@ export function useResliceJobs(projectId: number): ResliceJobs {
   );
 
   const finish = useCallback(
-    async (run: ResliceRun, result: ResliceResult, isCancelled: () => boolean) => {
+    async (run: ResliceRun, result: ResliceResult) => {
       update(run.itemId, null);
       let tree: ProjectTreeResponse | undefined;
       try {
@@ -73,7 +83,7 @@ export function useResliceJobs(projectId: number): ResliceJobs {
       } catch {
         // The revision exists anyway; the panel refetches on its own.
       }
-      if (isCancelled()) return;
+      if (!mountedRef.current) return;
       const items = tree?.sections.flatMap((s) => s.items) ?? [];
       const file =
         result.file_id === null
@@ -96,7 +106,6 @@ export function useResliceJobs(projectId: number): ResliceJobs {
     if (pending === 0) return;
     let cancelled = false;
     let polling = false; // one poll round in flight at a time (see SliceJobTrackerContext)
-    const isCancelled = () => cancelled;
     const timer = setInterval(async () => {
       if (cancelled || polling) return;
       polling = true;
@@ -108,7 +117,7 @@ export function useResliceJobs(projectId: number): ResliceJobs {
             // Dismissed or replaced while the request was in flight.
             if (runsRef.current.get(run.itemId)?.jobId !== run.jobId) continue;
             if (state.status === 'completed' && state.result && 'revision_id' in state.result) {
-              await finish(run, state.result, isCancelled);
+              await finish(run, state.result);
             } else if (state.status === 'failed') {
               update(run.itemId, { ...run, error: state.error_detail || t('common.unknownError') });
             } else {

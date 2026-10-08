@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { delay, http, HttpResponse } from 'msw';
 import { render } from '../../../utils';
 import { server } from '../../../mocks/server';
 import { ProjectFilesPanel } from '../../../../components/projects/files/ProjectFilesPanel';
@@ -367,6 +367,42 @@ describe('ProjectFilesPanel', () => {
       expect(within(screen.getByTestId('revision-2')).getByRole('button', { name: /Re-slice/ })).toBeEnabled();
       await userEvent.click(within(row).getByRole('button', { name: 'Dismiss' }));
       expect(within(row).queryByText(/Slicing failed/)).not.toBeInTheDocument();
+    });
+
+    it('opens the print flow once a "Slice + queue" run finishes', async () => {
+      let libraryFetched: string | null = null;
+      // Slow tree on completion: the panel's run must still reach the print flow.
+      server.use(
+        http.get('/api/v1/projects/7/tree', async () => {
+          if (job.status === 'completed') await delay(80);
+          return HttpResponse.json(treeBody);
+        }),
+        http.get('/api/v1/printers/', () =>
+          HttpResponse.json([{ id: 1, name: 'X1 Carbon', model: 'X1C', ip_address: '192.168.1.100', enabled: true, is_active: true }])),
+        http.get('/api/v1/printers/:id/status', () => HttpResponse.json({ connected: true, state: 'IDLE', ams: [], vt_tray: [] })),
+        http.get('/api/v1/library/files/:id', ({ params }) => {
+          libraryFetched = String(params.id);
+          return HttpResponse.json({
+            id: Number(params.id), filename: 'support.gcode.3mf', print_name: null, file_type: '3mf', folder_id: null, project_id: 7,
+            file_hash: null, file_size_bytes: 1024, thumbnail_path: null, created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z',
+          });
+        }),
+        http.get('/api/v1/library/files/:id/plates', () => HttpResponse.json({ is_multi_plate: false, plates: [] })),
+        http.get('/api/v1/library/files/:id/filament-requirements', () => HttpResponse.json({ file_id: 60, filename: 'support.gcode.3mf', filaments: [] })),
+      );
+      render(<ProjectFilesPanel projectId={7} />);
+      await userEvent.click(await screen.findByRole('button', { name: /Support$/ }));
+      await userEvent.click(within(screen.getByTestId('revision-2')).getByRole('button', { name: /Re-slice/ }));
+      await userEvent.click(await screen.findByRole('radio', { name: /H2D PETG/ }));
+      // No open order: "Slice + queue" starts right away with no task.
+      await userEvent.click(screen.getByRole('button', { name: 'Slice + queue' }));
+      await waitFor(() => expect(started).toEqual({ id: '2', body: { file_id: 50, pipeline_id: 3 } }));
+      job = { ...job, status: 'completed', result: { project_id: 7, item_id: 20, revision_id: 2, revision_number: 2, file_id: 60, filename: 'support.gcode.3mf' } };
+      expect(await screen.findByText('Support R2 created', {}, { timeout: 4000 })).toBeInTheDocument();
+      // PrintRevisionFlow → PrintModal for the new file, the order picker skipped.
+      expect(await screen.findByRole('button', { name: /^print$/i }, { timeout: 4000 })).toBeInTheDocument();
+      await waitFor(() => expect(libraryFetched).toBe('60'));
+      expect(screen.queryByRole('dialog', { name: 'Which order is this print for?' })).not.toBeInTheDocument();
     });
 
     it('offers no Re-slice on G-code files', async () => {
