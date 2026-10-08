@@ -198,6 +198,7 @@ const DE_COGNATES = [
 
 // French cognates — many UI labels overlap with English exactly.
 const FR_COGNATES = [
+  'via {{name}}',  // projectsPdm.reslice.viaPipeline
   'Message',  // aito.track.paymentMethods.appMessage — same word in French
   'Auto ({{resolved}})', 'Backend & Auth',  // real words/terms in this locale
   'Machines',  // maintenance.hours.machines — same word in French
@@ -345,6 +346,7 @@ const JA_COGNATES = [
 
 // Portuguese (BR) cognates.
 const PT_BR_COGNATES = [
+  'via {{name}}',  // projectsPdm.reslice.viaPipeline
   'manual',  // maintenance.hours.manual — same word in this locale
   '{{hours}} h ≈ {{days}} d',  // aito.backlogShort — hour/day unit abbreviations are the same in this locale
   'Manual',  // aito.priceManual — same word in Portuguese
@@ -506,6 +508,7 @@ const ES_COGNATES = [
 // Swedish cognates — technical UI labels that Swedish speakers use verbatim
 // from English (loanwords + acronyms + format strings). Curated, not a shortcut.
 const SV_COGNATES = [
+  'via {{name}}',  // projectsPdm.reslice.viaPipeline
   '{{hours}} h ≈ {{days}} d',  // aito.backlogShort — hour/day unit abbreviations are the same in this locale
   'MakerWorld: {{designer}}',
   'email',
@@ -611,6 +614,7 @@ const UK_COGNATES = [
 // are used untranslated by Dutch slicer users. Each entry below was
 // checked individually against the Dutch translation in #2891.
 const NL_COGNATES = [
+  'via {{name}}',  // projectsPdm.reslice.viaPipeline
   'Machines', 'Machines: {{n}}',  // maintenance.hours.* — same word in Dutch
   '<b>{{count}}</b> project', // aito.clientHistoryProjects_one: the Dutch singular is the same word
   // Fork keys (calculator / filament-profiles): formulas, units and loanwords
