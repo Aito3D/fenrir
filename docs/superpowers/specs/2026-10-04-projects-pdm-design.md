@@ -511,9 +511,9 @@ job (`slice_and_persist` / slice job progress), not the `PipelineRun` row.
   - automatic note « Re-tranché depuis R{n} · pipeline {name} »;
   - config snapshot parsed like any upload (§5.1);
   - file written into the project tree under the phase 2 rules (stream to disk before any DB
-    write, per-item lock) and hidden from the File Manager (§6.1). The intermediate
-    `LibraryFile` produced by the slicer is either written straight as the revision file or
-    removed; no loose copy is left in the File Manager.
+    write, per-item lock) and hidden from the File Manager (§6.1). The slicer output is
+    copied into the revision, then the intermediate `LibraryFile` the slice job created is
+    deleted (row and file) in the same request; no loose copy is left in the File Manager.
 - **Trancher + file:** after the revision is saved, the queue item is created through the phase 4
   print path, so it carries `library_file_id`, `project_id`, `revision_id` and `aito_task_id`.
 - **OUTDATED rule fix (§5.3):** a revision whose `derived_from` is another revision of the
@@ -574,8 +574,11 @@ is weak. Visual restyling is out of scope.
 - **"Tous les projets"** — table: thumbnail, code + title, clients, last activity; sorted by
   latest activity. Tag and status filters stay. The table / grid toggle is removed.
 - **Backend:** `ProjectSearchItem` gains `thumbnail_url`, `client_names`, `open_orders`
-  (number + client) and printed-vs-target counts; a flag or endpoint returns the "En
-  production" set unpaginated.
+  (number + client) and printed-vs-target counts; a new literal route
+  `GET /projects/in-production` (registered before `/{project_id}`) returns the "En production"
+  set unpaginated.
+- **Open order** (here and in the Résumé / Commandes cards): an Aito order that is not archived and
+  whose card is not in the Done column.
 
 #### 12.2.4 Out of scope
 
