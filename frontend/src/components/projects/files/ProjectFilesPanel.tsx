@@ -9,6 +9,7 @@ import { ItemRow } from './ItemRow';
 import { SectionBlock } from './SectionBlock';
 import type { DerivedOption } from './RevisionBlock';
 import { useFileActions } from './useFileActions';
+import { PrintRevisionFlow } from '../print/PrintRevisionFlow';
 import type { FileActions } from './useFileActions';
 import { ENABLED_SECTIONS, SECTION_LABEL_KEYS, SECTION_ORDER, isSectionEnabled } from './filesUi';
 
@@ -40,6 +41,14 @@ export function ProjectFilesPanel({ projectId }: { projectId: number }) {
         <SectionBlock key={section} section={section} items={bySection.get(section) ?? []} derivedOptions={derivedOptions} actions={actions} />
       ))}
       {legacy.length > 0 && <OlderFiles sections={legacy} derivedOptions={derivedOptions} actions={actions} />}
+      {actions.reslice.printNext && (
+        <PrintRevisionFlow
+          projectId={projectId}
+          file={actions.reslice.printNext.file}
+          initialTaskId={actions.reslice.printNext.taskId}
+          onClose={actions.reslice.clearPrintNext}
+        />
+      )}
     </div>
   );
 }

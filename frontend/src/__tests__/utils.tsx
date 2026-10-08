@@ -78,6 +78,11 @@ export * from '@testing-library/react';
 export { customRender as render };
 
 /**
+ * The providers `render` uses, for `renderHook(..., { wrapper })`.
+ */
+export { AllProviders as wrapper };
+
+/**
  * Create a test QueryClient with custom configuration.
  */
 export { createTestQueryClient };
