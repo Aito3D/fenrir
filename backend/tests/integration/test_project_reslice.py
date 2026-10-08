@@ -61,10 +61,15 @@ def roots(tmp_path, monkeypatch):
 
 
 def _3mf(tag: str = "src") -> bytes:
+    # Fixed entry timestamps: tests compare two builds byte for byte, and on a
+    # slow runner the two calls can fall in different seconds.
+    def entry(name: str) -> zipfile.ZipInfo:
+        return zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
-        zf.writestr("3D/3dmodel.model", f"<model>{tag}</model>")
-        zf.writestr("Metadata/project_settings.config", json.dumps({"printer_model": "Bambu Lab H2D"}))
+        zf.writestr(entry("3D/3dmodel.model"), f"<model>{tag}</model>")
+        zf.writestr(entry("Metadata/project_settings.config"), json.dumps({"printer_model": "Bambu Lab H2D"}))
     return buf.getvalue()
 
 
