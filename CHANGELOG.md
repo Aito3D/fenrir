@@ -5,6 +5,12 @@ All notable changes to Bambuddy will be documented in this file.
 ## [1.2.6b1] - Unreleased
 
 ### Added
+- **Spoolman mode uses Spoolman 0.27's native tags (#3168, requested and contributed by @Niko11111 in #3252)** — Spoolman 0.27 links NFC tags to spools itself: a spool can hold several tags, and Spoolman makes sure no two spools share one. Bambuddy kept its single tag per spool in its own `extra.tag` field, so neither side saw the other's links, a Bambu spool could hold only one of its identifiers, and every SpoolBuddy scan loaded the whole inventory.
+  - **Faster scans:** on Spoolman 0.27 or later, a scan asks Spoolman for the tag directly instead of loading every spool (17 ms instead of 88 ms on a 278-spool install). The old lookup is kept as a fallback for spools linked before.
+  - **Tags collect themselves:** a spool found by a scan or an AMS read gets what was read added to its tags. A Bambu spool collects its tray UUID and the chip UID of each side over time. The AMS also finds a spool linked by its chip alone.
+  - **Linking adds instead of replacing:** linking, unlinking, **Clear RFID Tag** and writing a tag with SpoolBuddy keep Spoolman's tags in step. A tag another active spool holds is refused as before. A tag still held by an archived spool, which is used up or replaced, moves to the active one.
+  - **Copying existing tags:** when Spoolman supports native tags, **Settings → Filament** shows a **Spoolman native tags** section. **Check tags** shows what would be copied and any conflicts, and **Copy tags** copies the tags. Archived spools and AMS slot IDs are left out, and a tag another active spool holds is reported, never moved.
+  - **Nothing lost on older versions:** `extra.tag` is still written everywhere, so readers that only know it and a downgrade to an older Spoolman lose nothing. Older Spoolman versions behave as before.
 - **Each spool remembers when it was last dried (#2863, requested by @USER19464727)** — The AMS humidity describes the unit, not the spool, so once a spool left the AMS there was no telling whether it had been dried.
   - **Filled in by AMS drying:** when an AMS drying run ends, every spool assigned to a slot of that AMS is marked with the date, the temperature (for runs Bambuddy started; the printer doesn't report it) and how long the run actually lasted.
   - **Only real drying counts:** the run must have lasted at least half its length. One stopped before then, from Bambuddy, on the printer or because a print took priority, leaves the earlier record alone.
