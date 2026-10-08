@@ -1363,8 +1363,8 @@ class TestWebRTCOfferAPIKeyPrinterScope:
 
         response, mock = await self._offer(async_client, printer.id, {"X-API-Key": full_key})
 
-        assert response.status_code == 403
-        assert f"printer {printer.id}" in response.json()["detail"]
+        assert response.status_code == 404  # #1727: a printer outside the key's scope reads as missing
+        assert response.json()["detail"] == "Printer not found"
         mock.ensure_stream.assert_not_awaited()
         mock.webrtc_offer.assert_not_awaited()
 
@@ -1380,7 +1380,7 @@ class TestWebRTCOfferAPIKeyPrinterScope:
 
         response, mock = await self._offer(async_client, printer.id, {"Authorization": f"Bearer {full_key}"})
 
-        assert response.status_code == 403
+        assert response.status_code == 404  # #1727: a printer outside the key's scope reads as missing
         mock.webrtc_offer.assert_not_awaited()
 
     @pytest.mark.asyncio

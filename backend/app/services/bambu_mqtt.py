@@ -86,6 +86,22 @@ def parse_ams_filament_backup_from_cfg(cfg_raw: object) -> bool | None:
         return None
 
 
+def parse_ams_filament_backup_from_home_flag(home_flag: object) -> bool | None:
+    """Extract AMS Filament Backup state from a push_status ``print.home_flag`` value.
+
+    Bambu Studio reads bit 10 for every family (DeviceManager.cpp
+    ``parse_home_flag``: ``SetAutoRefillEnabled((flag >> 10) & 0x1)``). It's
+    the only source on the P1S, P1P, A1 and A1 Mini, which never send ``cfg``
+    (#3259). On every printer that sends both, the two bits agree in all
+    captured snapshots, ON and OFF alike. Returns ``None`` for anything that
+    isn't an integer.
+    """
+    if isinstance(home_flag, bool) or not isinstance(home_flag, int):
+        return None
+    # Negative values are the 32-bit flag read as signed; bit 10 is the same.
+    return bool((home_flag >> 10) & 1)
+
+
 def is_printer_status_frame(print_data: dict) -> bool:
     """True when a ``print`` payload is the printer reporting its own state.
 
@@ -686,6 +702,26 @@ def resolve_rack_plan_mapping(
     return wire, None
 
 
+@dataclass(frozen=True)
+class DryingCycleEnd:
+    """What Fenrir saw of one AMS drying cycle, reported when it ends (#2863).
+
+    ``peak_minutes`` is the highest ``dry_time`` observed during the cycle and
+    ``remaining_minutes`` the last one before the drop to 0. ``start_seen`` says
+    whether the countdown was watched from its first minute; when it was not
+    (Fenrir started mid-cycle) the peak is only a lower bound on the length.
+    ``target_temp`` / ``target_hours`` are known only for cycles Fenrir itself
+    started, because the printer never echoes them.
+    """
+
+    ams_id: int
+    remaining_minutes: int
+    peak_minutes: int
+    start_seen: bool
+    target_temp: int | None = None
+    target_hours: int | None = None
+
+
 @dataclass
 class MQTTLogEntry:
     """Log entry for MQTT message debugging."""
@@ -1255,6 +1291,7 @@ class BambuMQTTClient:
         on_print_progress: Callable[[int], None] | None = None,
         on_bed_temp_update: Callable[[float], None] | None = None,
         on_drying_complete: Callable[[int], None] | None = None,
+        on_drying_cycle_end: Callable[[DryingCycleEnd], None] | None = None,
         on_print_running_observed: Callable[[dict], None] | None = None,
         on_finish_photo_moment: Callable[[dict], None] | None = None,
         on_assignment_verified: Callable[[int, int, bool, dict], None] | None = None,
@@ -1287,6 +1324,9 @@ class BambuMQTTClient:
         # the drying cycle just finished (auto- or manually-triggered).
         # Receives the AMS id of the unit that finished drying.
         self.on_drying_complete = on_drying_complete
+        # #2863: fired on the same edge with what was seen of the cycle, so the
+        # spools in that AMS can be stamped as dried.
+        self.on_drying_cycle_end = on_drying_cycle_end
         # #1485 follow-up: fired the first time we see RUNNING state in a
         # session WHEN on_print_start was suppressed (Fenrir started mid-
         # print, the #1304 first-push guard skipped the start event). Lets
@@ -1347,6 +1387,11 @@ class BambuMQTTClient:
         # is indistinguishable from the firmware abandoning it — so the cycle-end
         # log would otherwise blame the printer for our own decision (#2770).
         self._drying_stops_sent: set[int] = set()
+        # Per-AMS record of the cycle in progress: the highest dry_time seen,
+        # whether its first minute was observed, and the target we sent for it.
+        # The target is copied here when the countdown starts because a stop
+        # drops _drying_targets before the cycle ends (#2863).
+        self._dry_cycles: dict[int, dict[str, object]] = {}
         # Stage numbers this printer has reported that STAGE_NAMES has no entry
         # for, so each is reported once rather than on every transition into it.
         self._unnamed_stages_seen: set[int] = set()
@@ -1460,6 +1505,12 @@ class BambuMQTTClient:
         # Key: module_name, Value: timestamp when command was sent
         self._xcam_hold_start: dict[str, float] = {}
         self._xcam_hold_time: float = 3.0  # Ignore incoming data for 3 seconds after command
+
+        # True once the printer has sent `cfg`; from then on AMS Filament Backup
+        # is read from cfg only, never from home_flag (#3259).
+        self._backup_cfg_seen: bool = False
+        # Last home_flag written by the #3259 probe log below.
+        self._backup_home_flag_logged: int | None = None
 
         # Track last requested tray ID for H2D dual-nozzle printers
         # H2D only reports slot number (0-3) in tray_now, not global tray ID
@@ -2312,6 +2363,14 @@ class BambuMQTTClient:
             # DeviceManager.cpp:4961 SetAutoRefillEnabled(get_flag_bits(cfg, 18))
             # and live H2D ON/OFF capture 2026-06-20.
             #
+            # Families without cfg (P1S, P1P, A1, A1 Mini) carry it in home_flag
+            # bit 10 (#3259). That's read only from a full status report (the
+            # same >30-key test as the developer-mode probe) and only while the
+            # printer has never sent cfg: H2D firmware also sends small
+            # heartbeat frames with a partial home_flag (bits 8-9 clear with a
+            # card inserted, which is why the SD-card badge was removed), and
+            # printers that send cfg must keep reading it alone.
+            #
             # Hold-timer guard: when the user just toggled via the badge, the
             # next 1-2 push_status frames may still carry the printer's OLD cfg
             # for ~3 s before the firmware reflects the change. Without this
@@ -2320,11 +2379,32 @@ class BambuMQTTClient:
             # `"cfg": "0"` back, which read as "printer says backup is OFF" and
             # stuck on every family that doesn't repeat `cfg` in its periodic
             # frames — P1S, A1, A1 Mini, A2L (#3040).
-            new_backup = (
-                parse_ams_filament_backup_from_cfg(print_data.get("cfg"))
-                if is_printer_status_frame(print_data)
-                else None
-            )
+            new_backup = None
+            if is_printer_status_frame(print_data):
+                if "cfg" in print_data:
+                    self._backup_cfg_seen = True
+                    new_backup = parse_ams_filament_backup_from_cfg(print_data["cfg"])
+                elif not self._backup_cfg_seen and len(print_data) > 30:
+                    new_backup = parse_ams_filament_backup_from_home_flag(print_data.get("home_flag"))
+                # Probe for #3259: does bit 10 stay right in the small update
+                # frames these printers send between full reports? Logged on
+                # every change, so a heartbeat that clears bit 10 shows up as
+                # a flip. Remove once a P1S capture answers it.
+                home_flag = print_data.get("home_flag")
+                if (
+                    not self._backup_cfg_seen
+                    and isinstance(home_flag, int)
+                    and not isinstance(home_flag, bool)
+                    and home_flag != self._backup_home_flag_logged
+                ):
+                    self._backup_home_flag_logged = home_flag
+                    logger.debug(
+                        "[%s] home_flag probe: 0x%08X bit10=%d keys=%d",
+                        self.serial_number,
+                        home_flag & 0xFFFFFFFF,
+                        (home_flag >> 10) & 1,
+                        len(print_data),
+                    )
             if new_backup is not None and new_backup != self.state.ams_filament_backup:
                 hold_start = self._xcam_hold_start.get("print_option_auto_switch_filament")
                 if hold_start is not None and (time.time() - hold_start) <= self._xcam_hold_time:
@@ -2938,31 +3018,37 @@ class BambuMQTTClient:
             self.state.print_options.filament_tangle_detect = bool(xcam_data.get("filament_tangle_detect"))
 
     @staticmethod
-    def _resolve_local_slot_from_mapping(local_slot: int, mapping_raw: list | None) -> int | None:
+    def _resolve_local_slot_from_mapping(
+        local_slot: int, mapping_raw: list | None, units: list[int] | None = None
+    ) -> int | None:
         """Resolve a local AMS slot ID to a global tray ID using the MQTT mapping field.
 
         The MQTT mapping field is an array of snow-encoded values:
         each entry = ams_hw_id * 256 + slot_id (65535 = unmapped).
 
         Finds entries where the local slot matches, then computes the global tray ID.
+        When several match and ``units`` is given (the AMS units on the active
+        extruder of a dual-nozzle printer), only those units' trays count.
         Returns the global ID if exactly one AMS matches, or None if ambiguous/unavailable.
         """
         if not isinstance(mapping_raw, list) or not mapping_raw:
             return None
 
-        candidates: set[int] = set()
+        candidates: dict[int, int] = {}  # global tray ID -> AMS unit
         for value in mapping_raw:
             if not isinstance(value, int) or value >= 65535:
                 continue
             ams_hw_id = value >> 8
             slot = value & 0xFF
             if 0 <= ams_hw_id <= 3 and (slot & 0x03) == local_slot:
-                candidates.add(ams_hw_id * 4 + local_slot)
+                candidates[ams_hw_id * 4 + local_slot] = ams_hw_id
             elif 128 <= ams_hw_id <= 135 and local_slot == 0:
-                candidates.add(ams_hw_id)
+                candidates[ams_hw_id] = ams_hw_id
 
+        if len(candidates) > 1 and units:
+            candidates = {tray: unit for tray, unit in candidates.items() if unit in units}
         if len(candidates) == 1:
-            return candidates.pop()
+            return next(iter(candidates))
         return None
 
     def _maybe_trigger_external_spool_change(self):
@@ -3242,7 +3328,26 @@ class BambuMQTTClient:
                                     except ValueError:
                                         pass  # Skip AMS IDs that aren't valid integers
 
-                            if len(ams_on_extruder) == 1:
+                            # Several AMS (or none the map knows of) leave the
+                            # slot ambiguous. The printer's own mapping names the
+                            # trays the running print uses: one of them at this
+                            # slot is the one feeding (#3242). Only while a print
+                            # runs: an idle H2 keeps reporting the previous
+                            # print's mapping.
+                            mapped_tray = None
+                            if len(ams_on_extruder) != 1 and self._was_running and not self._completion_triggered:
+                                mapped_tray = self._resolve_local_slot_from_mapping(
+                                    parsed_tray_now, self.state.raw_data.get("mapping"), ams_on_extruder
+                                )
+
+                            if mapped_tray is not None:
+                                if self.state.tray_now != mapped_tray:
+                                    logger.debug(
+                                        f"[{self.serial_number}] H2D tray_now: AMS {ams_on_extruder} on extruder "
+                                        f"{active_ext}, slot {parsed_tray_now} -> global ID {mapped_tray} (from mapping)"
+                                    )
+                                self.state.tray_now = mapped_tray
+                            elif len(ams_on_extruder) == 1:
                                 # Single AMS on this extruder - unambiguous
                                 active_ams_id = ams_on_extruder[0]
                                 if 128 <= active_ams_id <= 135:
@@ -3289,19 +3394,24 @@ class BambuMQTTClient:
                                         )
                                         self.state.tray_now = resolved
                                     else:
-                                        # Genuinely ambiguous - use slot as-is (will be wrong for non-first AMS)
-                                        logger.warning(
-                                            f"[{self.serial_number}] H2D tray_now: multiple AMS {ams_on_extruder} on extruder {active_ext}, "
-                                            f"no snow field, using slot {parsed_tray_now} (may be incorrect)"
+                                        # Genuinely ambiguous. This is the second between a
+                                        # filament change reaching the AMS report and the
+                                        # extruder's snow, which then names the tray. Using
+                                        # the bare slot would point at AMS 0 and put that
+                                        # tray in the usage change log (#3242), so keep the
+                                        # current tray until snow arrives.
+                                        logger.debug(
+                                            f"[{self.serial_number}] H2D tray_now: multiple AMS {ams_on_extruder} on "
+                                            f"extruder {active_ext}, slot {parsed_tray_now} is ambiguous without snow, "
+                                            f"keeping {current_tray}"
                                         )
-                                        self.state.tray_now = parsed_tray_now
                             else:
-                                # No AMS on this extruder - use slot as-is
-                                logger.warning(
+                                # No AMS on this extruder that the map knows of: the
+                                # slot can't be placed, keep the current tray (#3242)
+                                logger.debug(
                                     f"[{self.serial_number}] H2D tray_now: no AMS on extruder {active_ext}, "
-                                    f"using slot {parsed_tray_now}"
+                                    f"slot {parsed_tray_now} can't be placed without snow, keeping {self.state.tray_now}"
                                 )
-                                self.state.tray_now = parsed_tray_now
                 elif not self._is_dual_nozzle and 0 <= parsed_tray_now <= 3:
                     # Single-nozzle printer with tray_now in 0-3 range.
                     # #1822: H2S firmware reports tray_now as the AMS's idle
@@ -3750,8 +3860,22 @@ class BambuMQTTClient:
                     ams_unit.get("dry_status"),
                 )
                 continue
+            seen_before = ams_id in self._previous_dry_times
             previous = self._previous_dry_times.get(ams_id, 0)
             self._previous_dry_times[ams_id] = current
+            if current > 0:
+                cycle = self._dry_cycles.get(ams_id)
+                if cycle is None or previous == 0:
+                    cycle = {
+                        "peak": current,
+                        # A rise from an observed 0 is the cycle's first minute.
+                        # A first sighting already counting down is not.
+                        "start_seen": seen_before,
+                        "target": self._drying_targets.get(ams_id),
+                    }
+                    self._dry_cycles[ams_id] = cycle
+                elif current > int(cycle["peak"]):
+                    cycle["peak"] = current
             # Stall detection: stamp value CHANGES only — a live countdown
             # decrements once a minute, so repeats of the same value within
             # the minute must not refresh the stamp, and a frame without a
@@ -3768,6 +3892,9 @@ class BambuMQTTClient:
                 self._log_drying_cycle_end(ams_id, previous, ams_unit, self._drying_targets.pop(ams_id, None))
                 if self.on_drying_complete:
                     self.on_drying_complete(ams_id)
+                cycle = self._dry_cycles.pop(ams_id, None) or {"peak": previous, "start_seen": False, "target": None}
+                if self.on_drying_cycle_end:
+                    self.on_drying_cycle_end(self._drying_cycle_end(ams_id, previous, cycle))
 
         # Create a hash of relevant AMS data to detect changes.
         # Hash the MERGED state, not the raw incoming ams_list: a removal signalled
@@ -3804,6 +3931,27 @@ class BambuMQTTClient:
         # it would miss exactly the confirmation we are after.
         if self._pending_assignments:
             self._check_assignment_verifications()
+
+    @staticmethod
+    def _drying_cycle_end(ams_id: int, remaining: int, cycle: dict[str, object]) -> DryingCycleEnd:
+        """Build the cycle-end report from the record kept while it ran."""
+        target = cycle.get("target")
+        target_temp: int | None = None
+        target_hours: int | None = None
+        if isinstance(target, dict):
+            try:
+                target_temp = int(target.get("temp") or 0) or None
+                target_hours = int(target.get("duration_hours") or 0) or None
+            except (TypeError, ValueError):
+                target_temp = target_hours = None
+        return DryingCycleEnd(
+            ams_id=ams_id,
+            remaining_minutes=remaining,
+            peak_minutes=max(int(cycle.get("peak") or 0), remaining),
+            start_seen=bool(cycle.get("start_seen")),
+            target_temp=target_temp,
+            target_hours=target_hours,
+        )
 
     def _log_drying_cycle_end(
         self,
@@ -6703,6 +6851,10 @@ class BambuMQTTClient:
                 "duration_hours": int(duration),
             }
             self._drying_stops_sent.discard(ams_id)
+            # A start sent while a cycle is still counting down replaces it
+            # without dry_time passing through 0; begin a fresh record so the
+            # new target and length are the ones reported (#2863).
+            self._dry_cycles.pop(ams_id, None)
         else:
             self._drying_targets.pop(ams_id, None)
             # Remember that this cycle's end is ours, so the cycle-end log

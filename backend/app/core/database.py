@@ -6329,6 +6329,238 @@ async def run_migrations(conn):
     await _safe_execute(conn, "ALTER TABLE project_revisions ADD COLUMN pipeline_id INTEGER")
     await _safe_execute(conn, "ALTER TABLE project_revisions ADD COLUMN pipeline_name VARCHAR(200)")
 
+    # Migration: printer-scoped groups (#1727). Defaults off, so no existing
+    # group narrows anyone's printers on upgrade; the group_printers table
+    # itself comes from create_all(). The backfill covers a table create_all()
+    # already gave the column, where the ALTER is swallowed as a duplicate.
+    await _safe_execute(conn, "ALTER TABLE groups ADD COLUMN restrict_printers BOOLEAN DEFAULT FALSE")
+    async with conn.begin_nested():
+        await conn.execute(
+            text("UPDATE groups SET restrict_printers = :off WHERE restrict_printers IS NULL"), {"off": False}
+        )
+
+    # Migration: camera-stream and websocket tokens record who minted them, so
+    # they carry that caller's printer scope (#1727). Camera tokens minted
+    # before this have no principal at all (username NULL; every new one sets
+    # it, "" for API keys and auth-off), and would now resolve to no printers.
+    # They live 60 minutes; dropping them sends the browser to mint a new one.
+    await _safe_execute(conn, "ALTER TABLE auth_ephemeral_tokens ADD COLUMN api_key_id INTEGER")
+    async with conn.begin_nested():
+        await conn.execute(
+            text("DELETE FROM auth_ephemeral_tokens WHERE token_type = :t AND username IS NULL"),
+            {"t": "camera_stream"},
+        )
+
+    # Migration: electricity price on each energy snapshot, and where and when a
+    # print's starting counter was read (#1251), so energy is costed at the
+    # price of the hour it was used rather than at today's price.
+    if is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE smart_plug_energy_snapshots ADD COLUMN price_per_kwh REAL")
+        await _safe_execute(conn, "ALTER TABLE smart_plug_energy_snapshots ADD COLUMN kwh_to_date REAL")
+        await _safe_execute(conn, "ALTER TABLE smart_plug_energy_snapshots ADD COLUMN cost_to_date REAL")
+        await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN energy_start_price REAL")
+        await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN energy_start_at DATETIME")
+    else:
+        await _safe_execute(
+            conn, "ALTER TABLE smart_plug_energy_snapshots ADD COLUMN IF NOT EXISTS price_per_kwh DOUBLE PRECISION"
+        )
+        await _safe_execute(
+            conn, "ALTER TABLE smart_plug_energy_snapshots ADD COLUMN IF NOT EXISTS kwh_to_date DOUBLE PRECISION"
+        )
+        await _safe_execute(
+            conn, "ALTER TABLE smart_plug_energy_snapshots ADD COLUMN IF NOT EXISTS cost_to_date DOUBLE PRECISION"
+        )
+        await _safe_execute(
+            conn, "ALTER TABLE print_archives ADD COLUMN IF NOT EXISTS energy_start_price DOUBLE PRECISION"
+        )
+        await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN IF NOT EXISTS energy_start_at TIMESTAMP")
+    await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN energy_start_plug_id INTEGER")
+    await _backfill_snapshot_prices(conn)
+
+    # Migration: library folder ownership and sharing (#3201).
+    await _safe_execute(
+        conn, "ALTER TABLE library_folders ADD COLUMN created_by_id INTEGER REFERENCES users(id) ON DELETE SET NULL"
+    )
+    await _safe_execute(conn, "ALTER TABLE library_folders ADD COLUMN shared BOOLEAN DEFAULT FALSE")
+    await _backfill_library_folder_owners(conn)
+
+    # Migration: printer wear cost per printing hour, and the wear cost of each
+    # run and archive (#694). Nullable: no printer has a rate until one is set,
+    # and earlier prints keep no wear cost.
+    float_type = "REAL" if is_sqlite() else "DOUBLE PRECISION"
+    await _safe_execute(conn, f"ALTER TABLE printers ADD COLUMN wear_cost_per_hour {float_type}")
+    await _safe_execute(conn, f"ALTER TABLE print_log_entries ADD COLUMN wear_cost {float_type}")
+    await _safe_execute(conn, f"ALTER TABLE print_archives ADD COLUMN wear_cost {float_type}")
+
+    # Migration: when each spool was last dried, at what temperature and for
+    # how long (#2863). Nullable: no spool has a drying record until one ends.
+    datetime_type = "DATETIME" if is_sqlite() else "TIMESTAMP"
+    await _safe_execute(conn, f"ALTER TABLE spool ADD COLUMN last_dried_at {datetime_type}")
+    await _safe_execute(conn, "ALTER TABLE spool ADD COLUMN last_dried_temp INTEGER")
+    await _safe_execute(conn, f"ALTER TABLE spool ADD COLUMN last_dried_hours {float_type}")
+
+
+async def _backfill_snapshot_prices(conn) -> None:
+    """Give the energy snapshots taken before #1251 the price set at upgrade.
+
+    Until now every kWh in the Statistics was costed at the price set right
+    now, so changing it re-costed all of history. Writing today's price onto
+    the existing rows keeps those figures where they stand, and from here on a
+    new price applies only to the energy used after it was set.
+
+    The running totals start from the raw counter: at one price throughout,
+    the energy to date is the counter and its cost the counter times the price.
+    A reset in that old history then shows as a drop, which the Statistics
+    treat as nothing, exactly as they already did for the energy figure. One
+    UPDATE on both databases, however long the history is.
+
+    Gated to run once: snapshots taken later always carry a price, and a NULL
+    one after this has run would mean something else, not "before #1251".
+    """
+    from sqlalchemy import text
+
+    flag = "_backfill_1251_snapshot_prices_done"
+
+    async with conn.begin_nested():
+        already = (
+            await conn.execute(text('SELECT value FROM settings WHERE "key" = :k'), {"k": flag})
+        ).scalar_one_or_none()
+        if already:
+            return
+
+        raw = (
+            await conn.execute(text('SELECT value FROM settings WHERE "key" = :k'), {"k": "energy_cost_per_kwh"})
+        ).scalar_one_or_none()
+        try:
+            price = float(raw) if raw else 0.15
+        except (TypeError, ValueError):
+            price = 0.15
+
+        await conn.execute(
+            text(
+                "UPDATE smart_plug_energy_snapshots "
+                "SET price_per_kwh = :p, kwh_to_date = lifetime_kwh, cost_to_date = lifetime_kwh * :p "
+                "WHERE price_per_kwh IS NULL"
+            ),
+            {"p": price},
+        )
+        await conn.execute(
+            text('INSERT INTO settings ("key", value) VALUES (:k, :v)'),
+            {"k": flag, "v": "true"},
+        )
+
+
+async def _backfill_library_folder_owners(conn) -> None:
+    """Give the folders made before #3201 an owner, or share them.
+
+    Folders had no owner, and every library:read_own user saw all of them. A
+    folder whose files, all the way down and trashed ones included, belong to
+    one user becomes that user's own folder, hidden from the others. An empty
+    folder inside such a folder goes with it, so it doesn't leave a shared
+    hole in someone's private tree. Every other folder (empty, several
+    uploaders, files without an owner, external, or linked to a project or
+    archive) is shared, so it stays visible to everyone as before. So are the
+    top-level folders MakerWorld and Manyfold imports land in, which are
+    every importer's destination, not one user's folder.
+
+    Gated to run once: after it, a folder without an owner and not shared is
+    one an admin chose to make that way.
+    """
+    from sqlalchemy import text
+
+    flag = "_backfill_3201_folder_owners_done"
+
+    async with conn.begin_nested():
+        already = (
+            await conn.execute(text('SELECT value FROM settings WHERE "key" = :k'), {"k": flag})
+        ).scalar_one_or_none()
+        if already:
+            return
+
+        folders = (
+            await conn.execute(
+                text("SELECT id, parent_id, is_external, project_id, archive_id, name FROM library_folders")
+            )
+        ).all()
+        children: dict[int | None, list[int]] = {}
+        for fid, parent_id, *_ in folders:
+            children.setdefault(parent_id, []).append(fid)
+        own_owners: dict[int, set] = {}
+        for folder_id, owner_id in (
+            await conn.execute(
+                text("SELECT DISTINCT folder_id, created_by_id FROM library_files WHERE folder_id IS NOT NULL")
+            )
+        ).all():
+            own_owners.setdefault(folder_id, set()).add(owner_id)
+
+        # Owners of every file in each subtree, deepest folders first.
+        subtree_owners: dict[int, set] = {}
+
+        def owners_of(root: int) -> set:
+            # ``seen`` guards against a parent_id loop: startup must never hang.
+            order: list[int] = []
+            seen: set[int] = set()
+            stack = [root]
+            while stack:
+                fid = stack.pop()
+                if fid in seen:
+                    continue
+                seen.add(fid)
+                order.append(fid)
+                stack.extend(children.get(fid, []))
+            for fid in reversed(order):
+                if fid not in subtree_owners:
+                    acc = set(own_owners.get(fid, set()))
+                    for child in children.get(fid, []):
+                        acc |= subtree_owners.get(child, set())
+                    subtree_owners[fid] = acc
+            return subtree_owners[root]
+
+        info = {
+            fid: (parent_id, bool(is_ext), project_id, archive_id, name)
+            for fid, parent_id, is_ext, project_id, archive_id, name in folders
+        }
+        # services/model_providers/*/provider.py ``default_folder_name``.
+        import_folders = {"MakerWorld", "Manyfold"}
+        result: dict[int, int | None] = {}
+
+        # Top down, so an empty folder can follow its parent's owner.
+        stack = list(children.get(None, []))
+        # Folders whose parent is missing (shouldn't happen with the FK) are roots too.
+        stack.extend(
+            fid for fid, (parent_id, *_rest) in info.items() if parent_id is not None and parent_id not in info
+        )
+        while stack:
+            fid = stack.pop()
+            if fid in result:
+                continue
+            parent_id, is_ext, project_id, archive_id, name = info[fid]
+            owners = owners_of(fid)
+            owner = None
+            is_import_folder = parent_id is None and name in import_folders
+            if not is_ext and project_id is None and archive_id is None and not is_import_folder:
+                if len(owners) == 1 and None not in owners:
+                    owner = next(iter(owners))
+                elif not owners and parent_id is not None:
+                    owner = result.get(parent_id)
+            result[fid] = owner
+            stack.extend(children.get(fid, []))
+        for fid in info:
+            result.setdefault(fid, None)
+
+        owned = [{"id": fid, "o": owner} for fid, owner in result.items() if owner is not None]
+        if owned:
+            await conn.execute(
+                text("UPDATE library_folders SET created_by_id = :o, shared = FALSE WHERE id = :id"), owned
+            )
+        shared = [{"id": fid} for fid, owner in result.items() if owner is None]
+        if shared:
+            await conn.execute(text("UPDATE library_folders SET shared = TRUE WHERE id = :id"), shared)
+        await conn.execute(
+            text('INSERT INTO settings ("key", value) VALUES (:k, :v)'),
+            {"k": flag, "v": "true"},
+        )
+
 
 async def _migrate_backfill_aito_document_numbers(conn) -> None:
     """One-time fill of `aito_projects.document_numbers` from history (2026-10-04).
@@ -7218,6 +7450,13 @@ async def seed_notification_templates():
         await session.commit()
 
 
+# Groups holding any of these before #1620 could queue, start or run jobs that
+# went ahead on their own, so the upgrade lets them keep doing that.
+_QUEUE_REVIEW_BACKFILL_FROM = frozenset(
+    {"queue:create", "queue:update_own", "queue:update_all", "printers:control", "pipelines:run"}
+)
+
+
 async def seed_default_groups():
     """Seed default groups and migrate existing users to appropriate groups.
 
@@ -7234,6 +7473,7 @@ async def seed_default_groups():
 
     from backend.app.core.permissions import ALL_PERMISSIONS, DEFAULT_GROUPS
     from backend.app.models.group import Group
+    from backend.app.models.settings import Settings
     from backend.app.models.user import User
 
     logger = logging.getLogger(__name__)
@@ -7298,6 +7538,28 @@ async def seed_default_groups():
         # Get existing groups
         result = await session.execute(select(Group))
         existing_groups = {group.name: group for group in result.scalars().all()}
+
+        # The permission backfills below that reach custom groups run once
+        # each (#3238): an admin who takes a permission away from a group
+        # keeps it taken away. They used to run on every start, so a flag
+        # alone would hand everything back one last time on the upgrade that
+        # adds it. Whether a backfill already ran is read off the
+        # Administrators group as it was before this start changed anything:
+        # it holds every permission once a version that knew it has started,
+        # and each backfill shipped with the permission it is checked against.
+        # Taken now, because the Administrators sync below would otherwise make
+        # every later backfill look done on the very start that should run it.
+        # A wrong guess can only run a backfill once more, never skip one that
+        # is due.
+        admin_at_start = existing_groups.get("Administrators")
+        admin_perms_at_start = set(admin_at_start.permissions or []) if admin_at_start is not None else None
+
+        async def _backfill_due(flag_key: str, shipped_with: str) -> bool:
+            flag = (await session.execute(select(Settings).where(Settings.key == flag_key))).scalar_one_or_none()
+            if flag is not None:
+                return False
+            session.add(Settings(key=flag_key, value="true"))
+            return admin_perms_at_start is None or shipped_with not in admin_perms_at_start
 
         # Create default groups if they don't exist
         groups_created = []
@@ -7369,16 +7631,16 @@ async def seed_default_groups():
         await session.commit()
 
         # Migrate new permissions: grant printers:clear_plate to all groups with printers:control
-        result = await session.execute(select(Group))
-        all_groups = result.scalars().all()
-        for group in all_groups:
-            if (
-                group.permissions
-                and "printers:control" in group.permissions
-                and "printers:clear_plate" not in group.permissions
-            ):
-                group.permissions = [*group.permissions, "printers:clear_plate"]
-                logger.info("Added printers:clear_plate to group '%s' (has printers:control)", group.name)
+        if await _backfill_due("_backfill_446_clear_plate_permission_done", "printers:clear_plate"):
+            result = await session.execute(select(Group))
+            for group in result.scalars().all():
+                if (
+                    group.permissions
+                    and "printers:control" in group.permissions
+                    and "printers:clear_plate" not in group.permissions
+                ):
+                    group.permissions = [*group.permissions, "printers:clear_plate"]
+                    logger.info("Added printers:clear_plate to group '%s' (has printers:control)", group.name)
         await session.commit()
 
         # Migrate new permissions for MakerWorld integration: groups that
@@ -7387,25 +7649,52 @@ async def seed_default_groups():
         # groups that only have library:read get makerworld:view (browse
         # only). Matches the intent of DEFAULT_GROUPS without clobbering
         # any user-customised permission lists.
-        result = await session.execute(select(Group))
-        for group in result.scalars().all():
-            if not group.permissions:
-                continue
-            perms = list(group.permissions)
-            changed = False
-            if "library:upload" in perms:
-                for new_perm in ("makerworld:view", "makerworld:import"):
-                    if new_perm not in perms:
-                        perms.append(new_perm)
-                        changed = True
-                        logger.info("Added %s to group '%s' (has library:upload)", new_perm, group.name)
-            elif "library:read" in perms and "makerworld:view" not in perms:
-                perms.append("makerworld:view")
-                changed = True
-                logger.info("Added makerworld:view to group '%s' (has library:read)", group.name)
-            if changed:
-                group.permissions = perms
+        if await _backfill_due("_backfill_1099_makerworld_permissions_done", "makerworld:view"):
+            result = await session.execute(select(Group))
+            for group in result.scalars().all():
+                if not group.permissions:
+                    continue
+                perms = list(group.permissions)
+                changed = False
+                if "library:upload" in perms:
+                    for new_perm in ("makerworld:view", "makerworld:import"):
+                        if new_perm not in perms:
+                            perms.append(new_perm)
+                            changed = True
+                            logger.info("Added %s to group '%s' (has library:upload)", new_perm, group.name)
+                elif "library:read" in perms and "makerworld:view" not in perms:
+                    perms.append("makerworld:view")
+                    changed = True
+                    logger.info("Added makerworld:view to group '%s' (has library:read)", group.name)
+                if changed:
+                    group.permissions = perms
         await session.commit()
+
+        # Manyfold (#1471) is a second model source beside MakerWorld, so a
+        # group gets the same reach there it already has on MakerWorld. Runs
+        # once: an admin who later takes a Manyfold permission away keeps it
+        # taken away.
+        manyfold_flag = "_backfill_1471_manyfold_permissions_done"
+        flag_row = (await session.execute(select(Settings).where(Settings.key == manyfold_flag))).scalar_one_or_none()
+        if flag_row is None:
+            result = await session.execute(select(Group))
+            for group in result.scalars().all():
+                if not group.permissions:
+                    continue
+                perms = list(group.permissions)
+                added = [
+                    manyfold_perm
+                    for makerworld_perm, manyfold_perm in (
+                        ("makerworld:view", "manyfold:view"),
+                        ("makerworld:import", "manyfold:import"),
+                    )
+                    if makerworld_perm in perms and manyfold_perm not in perms
+                ]
+                if added:
+                    group.permissions = perms + added
+                    logger.info("Added %s to group '%s' (matches its MakerWorld access)", ", ".join(added), group.name)
+            session.add(Settings(key=manyfold_flag, value="true"))
+            await session.commit()
 
         # Backfill: sync the Administrators system group to ALL_PERMISSIONS.
         # Administrators' contract is full access to every feature — fresh
@@ -7449,6 +7738,10 @@ async def seed_default_groups():
         # include it in the DEFAULT_GROUPS bootstrap, so this keeps upgrades
         # consistent. Viewers do NOT get orca_cloud:auth (read-only role,
         # not expected to author slicer presets / sync to Orca Cloud).
+        #
+        # Unlike the backfills around it, this one runs on every start on
+        # purpose: it only touches system groups, whose permissions no one can
+        # edit, so it can never undo an admin's choice and keeps them repaired.
         for non_admin_group_name in ("Operators", "Viewers"):
             grp = (await session.execute(select(Group).where(Group.name == non_admin_group_name))).scalar_one_or_none()
             if grp is None or grp.permissions is None:
@@ -7472,22 +7765,23 @@ async def seed_default_groups():
         # inventory:forecast_read was added after initial seeding, so groups
         # that already have inventory:read (or inventory:update) need it added.
         # inventory:forecast_write goes to any group with inventory:update.
-        result = await session.execute(select(Group))
-        for group in result.scalars().all():
-            if not group.permissions:
-                continue
-            perms = list(group.permissions)
-            changed = False
-            if "inventory:read" in perms and "inventory:forecast_read" not in perms:
-                perms.append("inventory:forecast_read")
-                changed = True
-                logger.info("Added inventory:forecast_read to group '%s' (backfill)", group.name)
-            if "inventory:update" in perms and "inventory:forecast_write" not in perms:
-                perms.append("inventory:forecast_write")
-                changed = True
-                logger.info("Added inventory:forecast_write to group '%s' (backfill)", group.name)
-            if changed:
-                group.permissions = perms
+        if await _backfill_due("_backfill_1184_forecast_permissions_done", "inventory:forecast_read"):
+            result = await session.execute(select(Group))
+            for group in result.scalars().all():
+                if not group.permissions:
+                    continue
+                perms = list(group.permissions)
+                changed = False
+                if "inventory:read" in perms and "inventory:forecast_read" not in perms:
+                    perms.append("inventory:forecast_read")
+                    changed = True
+                    logger.info("Added inventory:forecast_read to group '%s' (backfill)", group.name)
+                if "inventory:update" in perms and "inventory:forecast_write" not in perms:
+                    perms.append("inventory:forecast_write")
+                    changed = True
+                    logger.info("Added inventory:forecast_write to group '%s' (backfill)", group.name)
+                if changed:
+                    group.permissions = perms
         await session.commit()
 
         # Backfill pipeline permissions (#1425) for non-admin groups.
@@ -7495,24 +7789,25 @@ async def seed_default_groups():
         #   - Operators: all three (matches fresh-install DEFAULT_GROUPS)
         #   - Any other group with library:read_own or settings:read:
         #     pipelines:read only
-        result = await session.execute(select(Group))
-        for group in result.scalars().all():
-            if not group.permissions or group.name == "Administrators":
-                continue
-            perms = list(group.permissions)
-            changed = False
-            if group.name == "Operators":
-                for new_perm in ("pipelines:read", "pipelines:write", "pipelines:run"):
-                    if new_perm not in perms:
-                        perms.append(new_perm)
-                        changed = True
-                        logger.info("Added %s to Operators group (backfill)", new_perm)
-            elif "pipelines:read" not in perms and ("library:read_own" in perms or "settings:read" in perms):
-                perms.append("pipelines:read")
-                changed = True
-                logger.info("Added pipelines:read to group '%s' (backfill)", group.name)
-            if changed:
-                group.permissions = perms
+        if await _backfill_due("_backfill_1425_pipeline_permissions_done", "pipelines:read"):
+            result = await session.execute(select(Group))
+            for group in result.scalars().all():
+                if not group.permissions or group.name == "Administrators":
+                    continue
+                perms = list(group.permissions)
+                changed = False
+                if group.name == "Operators":
+                    for new_perm in ("pipelines:read", "pipelines:write", "pipelines:run"):
+                        if new_perm not in perms:
+                            perms.append(new_perm)
+                            changed = True
+                            logger.info("Added %s to Operators group (backfill)", new_perm)
+                elif "pipelines:read" not in perms and ("library:read_own" in perms or "settings:read" in perms):
+                    perms.append("pipelines:read")
+                    changed = True
+                    logger.info("Added pipelines:read to group '%s' (backfill)", group.name)
+                if changed:
+                    group.permissions = perms
         await session.commit()
 
         # Backfill calculator permissions for non-admin system groups.
@@ -7536,6 +7831,24 @@ async def seed_default_groups():
             if changed:
                 grp.permissions = perms
         await session.commit()
+
+        # queue:start_unreviewed (#1620): jobs of users without it wait for
+        # someone to start them. Granted once to every group that could queue,
+        # start or run jobs before it existed, so nothing changes on upgrade. Once
+        # only: an admin removing it from a group is the whole point, and a
+        # per-boot backfill would hand it straight back.
+        review_flag = "_backfill_1620_queue_start_unreviewed_done"
+        if (await session.execute(select(Settings).where(Settings.key == review_flag))).scalar_one_or_none() is None:
+            result = await session.execute(select(Group))
+            for group in result.scalars().all():
+                perms = list(group.permissions or [])
+                if "queue:start_unreviewed" in perms:
+                    continue
+                if _QUEUE_REVIEW_BACKFILL_FROM.intersection(perms):
+                    group.permissions = [*perms, "queue:start_unreviewed"]
+                    logger.info("Added queue:start_unreviewed to group '%s' (#1620)", group.name)
+            session.add(Settings(key=review_flag, value="true"))
+            await session.commit()
 
         # Migrate existing users to groups if they're not already in any group
         if groups_created:

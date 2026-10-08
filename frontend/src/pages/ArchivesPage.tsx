@@ -54,6 +54,7 @@ import {
   Play,
   ClipboardList,
   Zap,
+  Wrench,
   Cog,
   Archive as ArchiveIcon,
   CheckCircle2,
@@ -68,6 +69,7 @@ import { resolveDesktopSlicer, type SlicerType } from '../utils/slicer';
 import { formatDateTime, formatDateOnly, parseUTCDate, type TimeFormat, formatDuration } from '../utils/date';
 import { getCurrencySymbol } from '../utils/currency';
 import { getBedTypeInfo } from '../utils/bedType';
+import { splitFilamentTypes } from '../utils/filamentTypes';
 import { invalidateArchiveAndProjectViews } from '../utils/projectQueries';
 import { assignableProjects } from '../utils/projectTree';
 import { usePageFileDrop } from '../hooks/usePageFileDrop';
@@ -131,6 +133,7 @@ const LOG_COLUMN_LABEL_KEYS: Record<string, string> = {
   cost: 'archives.log.cost',
   energy: 'archives.log.energy',
   energy_cost: 'archives.log.energyCost',
+  wear_cost: 'archives.log.wearCost',
 };
 
 // Defaults reproduce the previous seven columns in the same order, plus the
@@ -150,6 +153,7 @@ const DEFAULT_LOG_COLUMNS: Array<{ id: string; visible: boolean }> = [
   { id: 'cost', visible: false },
   { id: 'energy', visible: false },
   { id: 'energy_cost', visible: false },
+  { id: 'wear_cost', visible: false },
 ];
 
 /** Stored config merged with the defaults: unknown ids (removed columns) are
@@ -882,11 +886,17 @@ function ArchiveCard({
               </div>
             </div>
           ) : (
-            (archive.cost != null || archive.energy_cost != null) && (
+            (archive.cost != null || archive.energy_cost != null || archive.wear_cost != null) && (
               <div className="flex items-center gap-3 text-bambu-gray">
                 {archive.cost != null && (
-                  <div className="flex items-center gap-1.5">
+                  // A running print's cost is an estimate until completion re-prices it (#3261)
+                  <div
+                    className="flex items-center gap-1.5"
+                    title={archive.status === 'printing' ? t('archives.card.costEstimate') : undefined}
+                    data-testid="archive-cost"
+                  >
                     <Coins className="w-3 h-3" />
+                    {archive.status === 'printing' && '~'}
                     {currency}{archive.cost.toFixed(2)}
                   </div>
                 )}
@@ -894,6 +904,12 @@ function ArchiveCard({
                   <div className="flex items-center gap-1.5" title={`${t('stats.energyUsed')}: ${archive.energy_kwh?.toFixed(3) || 'N/A'} kWh`}>
                     <Zap className="w-3 h-3" />
                     {currency}{archive.energy_cost.toFixed(2)}
+                  </div>
+                )}
+                {archive.wear_cost != null && (
+                  <div className="flex items-center gap-1.5" title={t('archives.card.wearCost')}>
+                    <Wrench className="w-3 h-3" />
+                    {currency}{archive.wear_cost.toFixed(2)}
                   </div>
                 )}
               </div>
@@ -1670,9 +1686,12 @@ export function ArchivesPage() {
     const saved = localStorage.getItem('archiveFilterPrinter');
     return saved ? Number(saved) : null;
   });
-  const [filterMaterial, setFilterMaterial] = useState<string | null>(() =>
-    localStorage.getItem('archiveFilterMaterial')
-  );
+  const [filterMaterial, setFilterMaterial] = useState<string | null>(() => {
+    // A saved joined value ("PLA Basic,PLA") was once offered as a material of
+    // its own (#3262); it matches nothing now, and would hide every archive.
+    const saved = localStorage.getItem('archiveFilterMaterial');
+    return saved && !saved.includes(',') ? saved : null;
+  });
   const [filterColors, setFilterColors] = useState<Set<string>>(() => {
     const saved = localStorage.getItem('archiveFilterColors');
     return saved ? new Set(JSON.parse(saved)) : new Set();
@@ -1996,7 +2015,7 @@ export function ArchivesPage() {
   const handleLogSort = useCallback((colId: string) => {
     if (!SORTABLE_LOG_COLUMNS.has(colId)) return;
     setLogSort((prev) => {
-      const numericFirstDesc = ['date', 'completed_at', 'duration', 'filament_used', 'cost', 'energy', 'energy_cost'];
+      const numericFirstDesc = ['date', 'completed_at', 'duration', 'filament_used', 'cost', 'energy', 'energy_cost', 'wear_cost'];
       const next: LogSortState =
         prev.column === colId
           ? { column: colId, direction: prev.direction === 'asc' ? 'desc' : 'asc' }
@@ -2019,7 +2038,7 @@ export function ArchivesPage() {
   // Columns that hold a number and read better right-aligned. Kept as data so
   // the header and the body can't drift apart.
   const LOG_NUMERIC_COLUMNS = useMemo(
-    () => new Set(['duration', 'filament_used', 'cost', 'energy', 'energy_cost']),
+    () => new Set(['duration', 'filament_used', 'cost', 'energy', 'energy_cost', 'wear_cost']),
     [],
   );
 
@@ -2139,6 +2158,12 @@ export function ArchivesPage() {
           return (
             <span className="text-bambu-gray-light whitespace-nowrap tabular-nums">
               {entry.energy_cost != null ? `${currency}${entry.energy_cost.toFixed(2)}` : '—'}
+            </span>
+          );
+        case 'wear_cost':
+          return (
+            <span className="text-bambu-gray-light whitespace-nowrap tabular-nums">
+              {entry.wear_cost != null ? `${currency}${entry.wear_cost.toFixed(2)}` : '—'}
             </span>
           );
         default:
@@ -2339,7 +2364,7 @@ export function ArchivesPage() {
   // over ~6k archives these passes (and the filter/sort below) ran on every
   // render -- each keystroke, hover and refetch.
   const uniqueMaterials = useMemo(
-    () => [...new Set(archives?.flatMap(a => a.filament_type?.split(', ') || []).filter(Boolean) || [])].sort(),
+    () => [...new Set(archives?.flatMap(a => splitFilamentTypes(a.filament_type)) || [])].sort(),
     [archives],
   );
 
@@ -2424,7 +2449,7 @@ export function ArchivesPage() {
 
       // Material filter
       const matchesMaterial = !filterMaterial ||
-        (a.filament_type?.split(', ').includes(filterMaterial));
+        splitFilamentTypes(a.filament_type).includes(filterMaterial);
 
       // Color filter (AND: must have all selected colors, OR: must have any selected color)
       const archiveColors = a.filament_color?.split(',') || [];

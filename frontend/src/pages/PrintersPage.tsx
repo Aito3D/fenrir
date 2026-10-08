@@ -154,6 +154,7 @@ import {
   Minimize2,
   ThumbsUp,
   ThumbsDown,
+  KeyRound,
 } from 'lucide-react';
 import { ConfirmOutcomeDialog } from '../components/ConfirmOutcomeDialog';
 
@@ -201,6 +202,7 @@ import { Collapsible } from '../components/Collapsible';
 import { ConnectionDiagnosticModal, DiagnosticChecklist } from '../components/ConnectionDiagnostic';
 import { getColorName, parseFilamentColor, isLightColor } from '../utils/colors';
 import { NumberInput } from '../components/NumberInput';
+import { getCurrencySymbol } from '../utils/currency';
 
 // The status filter's options, and the only values it may hold. One list so a
 // saved filter cannot be validated against a set the dropdown has since moved
@@ -2147,7 +2149,7 @@ function PrinterCard({
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { showToast } = useToast();
-  const { hasPermission, canModify } = useAuth();
+  const { hasPermission, canModify, authEnabled, isAdmin } = useAuth();
   const [showMenu, setShowMenu] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteArchives, setDeleteArchives] = useState(true);
@@ -2624,13 +2626,13 @@ function PrinterCard({
   // Combine both sources: queue item user takes precedence, then reprint user
   const currentPrintUser = printingQueueItems?.[0]?.created_by_username || reprintUser?.username;
 
-  // Fetch last completed print for this printer
-  const { data: lastPrints } = useQuery({
-    queryKey: ['archives', printer.id, 'last'],
-    queryFn: () => api.getArchives(printer.id, 1, 0),
-    enabled: status?.connected && status?.state !== 'RUNNING',
+  // Last print of this printer. One shared request for every card on the page
+  // (the key is the same for all of them); each card picks its own row.
+  const { data: lastPrint } = useQuery({
+    queryKey: ['archives', 'last-per-printer'],
+    queryFn: () => api.getLastArchivePerPrinter(),
+    select: (archives) => archives.find((a) => a.printer_id === printer.id),
   });
-  const lastPrint = lastPrints?.[0];
   const isPrintingOrPaused = status?.state === 'RUNNING' || status?.state === 'PAUSE';
   const needsPlateClear = requirePlateClear && status?.awaiting_plate_clear === true;
   // Post-print outcome confirmation on the card (#1898): while the plate-clear
@@ -3731,6 +3733,18 @@ function PrinterCard({
             <Info className="w-[var(--pc-i4,1rem)] h-[var(--pc-i4,1rem)]" />
             {t('printers.printerInformation')}
           </button>
+          {authEnabled && isAdmin && (
+            <button
+              className="w-full px-4 py-2 text-left text-sm hover:bg-bambu-dark-tertiary flex items-center gap-2"
+              onClick={() => {
+                setShowMenu(false);
+                navigate(`/settings?tab=users&sub=printer-access&view=printers&printer=${printer.id}`);
+              }}
+            >
+              <KeyRound className="w-[var(--pc-i4,1rem)] h-[var(--pc-i4,1rem)]" />
+              {t('printerAccess.whoHasAccess')}
+            </button>
+          )}
           {/* Maintenance Mode toggle (#1476) — leverages backend is_active flag */}
           <button
             className={`w-full px-4 py-2 text-left text-sm flex items-center gap-2 ${
@@ -8426,6 +8440,7 @@ function EditPrinterModal({
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
+  const { authEnabled, isAdmin } = useAuth();
   const [form, setForm] = useState({
     name: printer.name,
     ip_address: printer.ip_address,
@@ -8434,7 +8449,29 @@ function EditPrinterModal({
     location: printer.location || '',
     auto_archive: printer.auto_archive,
     is_active: printer.is_active,
+    wear_cost_per_hour: printer.wear_cost_per_hour ? String(printer.wear_cost_per_hour) : '',
   });
+  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.getSettings });
+  const currency = getCurrencySymbol(settings?.currency || 'USD');
+
+  // Groups can be given a location (#1727), so a move changes who can use the
+  // printer. Non-admins can't read groups; the server refuses their move instead.
+  const { data: groups } = useQuery({
+    queryKey: ['groups'],
+    queryFn: () => api.getGroups(),
+    enabled: authEnabled && isAdmin,
+  });
+  const newLocation = form.location.trim();
+  const accessChangedFor =
+    newLocation !== (printer.location || '')
+      ? (groups ?? [])
+          .filter(
+            (g) =>
+              g.restrict_printers &&
+              (g.locations ?? []).some((loc) => loc === printer.location || loc === newLocation)
+          )
+          .map((g) => g.name)
+      : [];
 
   // Setup-time pre-flight — same warn-on-save as the Add-Printer dialog, so an
   // edit that breaks connectivity (e.g. a mistyped IP) is caught before save.
@@ -8465,9 +8502,12 @@ function EditPrinterModal({
       name: form.name,
       ip_address: form.ip_address,
       model: form.model || undefined,
-      location: form.location || undefined,
+      // null clears it; leaving it out kept the old location
+      location: form.location.trim() || null,
       auto_archive: form.auto_archive,
       is_active: form.is_active,
+      // Empty or 0 turns wear cost off for this printer (#694)
+      wear_cost_per_hour: Number(form.wear_cost_per_hour) > 0 ? Number(form.wear_cost_per_hour) : null,
     };
     // Only include access_code if it was changed
     if (form.access_code) {
@@ -8596,6 +8636,12 @@ function EditPrinterModal({
                 maxLength={100}
               />
               <p className="text-xs text-bambu-gray mt-1">{t('printers.locationHelp')}</p>
+              {accessChangedFor.length > 0 && (
+                <p className="flex items-start gap-1.5 text-xs text-yellow-700 dark:text-yellow-400 mt-1">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" />
+                  {t('printerAccess.moveWarning', { groups: accessChangedFor.join(', ') })}
+                </p>
+              )}
             </div>
             <div className="flex items-center gap-2">
               <input
@@ -8608,6 +8654,23 @@ function EditPrinterModal({
               <label htmlFor="edit_auto_archive" className="text-sm text-bambu-gray">
                 {t('printers.modal.autoArchiveLabel')}
               </label>
+            </div>
+            <div>
+              <label htmlFor="edit_wear_cost" className="block text-sm text-bambu-gray mb-1">
+                {t('printers.modal.wearCostLabel', { currency })}
+              </label>
+              <input
+                id="edit_wear_cost"
+                type="number"
+                min={0}
+                step="0.01"
+                inputMode="decimal"
+                className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                value={form.wear_cost_per_hour}
+                onChange={(e) => setForm({ ...form, wear_cost_per_hour: e.target.value })}
+                placeholder="0.00"
+              />
+              <p className="text-xs text-bambu-gray mt-1">{t('printers.modal.wearCostHelp')}</p>
             </div>
             {/* Maintenance Mode toggle (#1476) — checkbox is the inverse of
                 is_active because the user-facing concept is "is this printer
@@ -9893,7 +9956,7 @@ export function PrintersPage() {
                   ? 'bg-bambu-green text-white'
                   : 'text-white hover:bg-bambu-dark-tertiary'
               }`}
-              title={label === 'S' ? t('printers.cardSize.small') : label === 'M' ? t('printers.cardSize.medium') : label === 'L' ? t('printers.cardSize.large') : t('printers.cardSize.extraLarge')}
+              title={t(`printers.cardSize.${['small', 'medium', 'large', 'extraLarge'][index]}`)}
             >
               {label}
             </button>

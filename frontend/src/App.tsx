@@ -70,7 +70,7 @@ const AitoTrackEntryPage = lazyWithReload(() => import('./pages/AitoTrackEntryPa
 const GroupEditPage = lazyWithReload(() => import('./pages/GroupEditPage').then(m => ({ default: m.GroupEditPage })));
 const PrinterLocationsPage = lazyWithReload(() => import('./pages/PrinterLocationsPage').then(m => ({ default: m.PrinterLocationsPage })));
 const InventoryPage = lazyWithReload(() => import('./pages/InventoryPage'));
-const MakerworldPage = lazyWithReload(() => import('./pages/MakerworldPage').then(m => ({ default: m.MakerworldPage })));
+const ModelSourcesPage = lazyWithReload(() => import('./pages/ModelSourcesPage').then(m => ({ default: m.ModelSourcesPage })));
 const SystemInfoPage = lazyWithReload(() => import('./pages/SystemInfoPage').then(m => ({ default: m.SystemInfoPage })));
 const LoginPage = lazyWithReload(() => import('./pages/LoginPage').then(m => ({ default: m.LoginPage })));
 const ConnectAuthorizePage = lazyWithReload(() => import('./pages/ConnectAuthorizePage').then(m => ({ default: m.ConnectAuthorizePage })));
@@ -163,7 +163,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-function PermissionRoute({ permission, children }: { permission: string; children: React.ReactNode }) {
+function PermissionRoute({ permission, children }: { permission: string | string[]; children: React.ReactNode }) {
   // Permission-gated route: any user with the given permission can enter, not
   // just admins. Individual components below this guard apply their own
   // per-action permission checks. Used for pages where delegation is supported
@@ -185,7 +185,9 @@ function PermissionRoute({ permission, children }: { permission: string; childre
     return <Navigate to="/login" replace state={{ from: location }} />;
   }
 
-  if (!hasPermission(permission as Parameters<typeof hasPermission>[0])) {
+  // A list lets in anyone holding at least one of the permissions.
+  const required = (Array.isArray(permission) ? permission : [permission]) as Parameters<typeof hasPermission>[0][];
+  if (!required.some((p) => hasPermission(p))) {
     return <Navigate to="/" replace />;
   }
 
@@ -289,7 +291,9 @@ const router = createBrowserRouter(
         <Route path="inventory" element={<InventoryPage />} />
         <Route path="files" element={<FileManagerPage />} />
         <Route path="files/trash" element={<LibraryTrashPage />} />
-        <Route path="makerworld" element={<PermissionRoute permission="makerworld:view"><MakerworldPage /></PermissionRoute>} />
+        <Route path="model-sources" element={<PermissionRoute permission={['makerworld:view', 'manyfold:view']}><ModelSourcesPage /></PermissionRoute>} />
+        {/* The page was MakerWorld-only until Manyfold joined it (#1471); old links and bookmarks still land on that tab. */}
+        <Route path="makerworld" element={<Navigate to="/model-sources?tab=makerworld" replace />} />
         <Route path="settings" element={<PermissionRoute permission="settings:read"><SettingsPage /></PermissionRoute>} />
         <Route path="groups/new" element={<PermissionRoute permission="groups:create"><GroupEditPage /></PermissionRoute>} />
         <Route path="groups/:id/edit" element={<PermissionRoute permission="groups:update"><GroupEditPage /></PermissionRoute>} />

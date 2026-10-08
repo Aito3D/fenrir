@@ -46,6 +46,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from backend.app.api.routes import websocket as ws_route
 from backend.app.core.permissions import Permission
+from backend.app.core.printer_scope import ALL_PRINTERS
 from backend.app.core.websocket import ConnectionManager
 from backend.app.models.group import Group
 from backend.app.models.user import User
@@ -59,7 +60,11 @@ def _conn(aito_read: bool | None = True, *, stamped: bool = True):
     """A stand-in WebSocket-shaped object, matching the ``_conn`` helpers in
     ``test_ws_aito_presence.py`` / ``test_ws_broadcast_to_user.py``."""
     conn = SimpleNamespace()
-    conn.state = SimpleNamespace(aito_read=aito_read) if stamped else SimpleNamespace()
+    # Printer-bound broadcasts only reach a socket whose printer scope (#1727)
+    # is stamped, as routes/websocket.py does before connect().
+    conn.state = (
+        SimpleNamespace(aito_read=aito_read, fenrir_printer_scope=ALL_PRINTERS) if stamped else SimpleNamespace()
+    )
     conn.send_text = AsyncMock()
     return conn
 
@@ -323,7 +328,7 @@ async def test_connect_withholds_the_initial_presence_map_without_aito_read(monk
     monkeypatch.setattr(ws_route, "ws_manager", fresh_mgr)
     monkeypatch.setattr(ws_route, "async_session", session_maker)
     monkeypatch.setattr(ws_route, "is_auth_enabled", AsyncMock(return_value=True))
-    monkeypatch.setattr(ws_route, "verify_websocket_token", AsyncMock(return_value="endpoint-denied"))
+    monkeypatch.setattr(ws_route, "verify_websocket_token_principal", AsyncMock(return_value=("endpoint-denied", None)))
 
     ws = _FakeWebSocket()
     await ws_route.websocket_endpoint(ws, token="tok")
@@ -345,7 +350,9 @@ async def test_connect_sends_the_initial_presence_map_with_aito_read(monkeypatch
     monkeypatch.setattr(ws_route, "ws_manager", fresh_mgr)
     monkeypatch.setattr(ws_route, "async_session", session_maker)
     monkeypatch.setattr(ws_route, "is_auth_enabled", AsyncMock(return_value=True))
-    monkeypatch.setattr(ws_route, "verify_websocket_token", AsyncMock(return_value="endpoint-allowed"))
+    monkeypatch.setattr(
+        ws_route, "verify_websocket_token_principal", AsyncMock(return_value=("endpoint-allowed", None))
+    )
 
     ws = _FakeWebSocket()
     await ws_route.websocket_endpoint(ws, token="tok")
@@ -365,7 +372,7 @@ async def test_connect_sends_the_initial_presence_map_for_an_admin(monkeypatch, 
     monkeypatch.setattr(ws_route, "ws_manager", fresh_mgr)
     monkeypatch.setattr(ws_route, "async_session", session_maker)
     monkeypatch.setattr(ws_route, "is_auth_enabled", AsyncMock(return_value=True))
-    monkeypatch.setattr(ws_route, "verify_websocket_token", AsyncMock(return_value="endpoint-admin"))
+    monkeypatch.setattr(ws_route, "verify_websocket_token_principal", AsyncMock(return_value=("endpoint-admin", None)))
 
     ws = _FakeWebSocket()
     await ws_route.websocket_endpoint(ws, token="tok")
@@ -386,7 +393,7 @@ async def test_connect_sends_everything_when_auth_is_disabled(monkeypatch, test_
     monkeypatch.setattr(ws_route, "async_session", session_maker)
     monkeypatch.setattr(ws_route, "is_auth_enabled", AsyncMock(return_value=False))
     verify_spy = AsyncMock()
-    monkeypatch.setattr(ws_route, "verify_websocket_token", verify_spy)
+    monkeypatch.setattr(ws_route, "verify_websocket_token_principal", verify_spy)
 
     ws = _FakeWebSocket()
     await ws_route.websocket_endpoint(ws, token=None)
@@ -433,7 +440,7 @@ async def test_connect_stamps_aito_read_before_admitting_an_allowed_principal(mo
     monkeypatch.setattr(ws_route, "ws_manager", fresh_mgr)
     monkeypatch.setattr(ws_route, "async_session", session_maker)
     monkeypatch.setattr(ws_route, "is_auth_enabled", AsyncMock(return_value=True))
-    monkeypatch.setattr(ws_route, "verify_websocket_token", AsyncMock(return_value="t030-allowed"))
+    monkeypatch.setattr(ws_route, "verify_websocket_token_principal", AsyncMock(return_value=("t030-allowed", None)))
 
     ws = _FakeWebSocket()
     await ws_route.websocket_endpoint(ws, token="tok")
@@ -454,7 +461,7 @@ async def test_connect_stamps_aito_read_before_admitting_a_denied_principal(monk
     monkeypatch.setattr(ws_route, "ws_manager", fresh_mgr)
     monkeypatch.setattr(ws_route, "async_session", session_maker)
     monkeypatch.setattr(ws_route, "is_auth_enabled", AsyncMock(return_value=True))
-    monkeypatch.setattr(ws_route, "verify_websocket_token", AsyncMock(return_value="t030-denied"))
+    monkeypatch.setattr(ws_route, "verify_websocket_token_principal", AsyncMock(return_value=("t030-denied", None)))
 
     ws = _FakeWebSocket()
     await ws_route.websocket_endpoint(ws, token="tok")
@@ -475,7 +482,7 @@ async def test_connect_admits_with_fail_closed_aito_read_when_resolution_raises(
     monkeypatch.setattr(ws_route, "ws_manager", fresh_mgr)
     monkeypatch.setattr(ws_route, "async_session", session_maker)
     monkeypatch.setattr(ws_route, "is_auth_enabled", AsyncMock(return_value=True))
-    monkeypatch.setattr(ws_route, "verify_websocket_token", AsyncMock(return_value="whoever"))
+    monkeypatch.setattr(ws_route, "verify_websocket_token_principal", AsyncMock(return_value=("whoever", None)))
     monkeypatch.setattr(ws_route, "_resolve_principal_and_aito_read", AsyncMock(side_effect=RuntimeError("db blip")))
 
     ws = _FakeWebSocket()
@@ -519,7 +526,7 @@ async def _run_endpoint_with_messages(monkeypatch, test_engine, *, group_permiss
     monkeypatch.setattr(ws_route, "ws_manager", fresh_mgr)
     monkeypatch.setattr(ws_route, "async_session", session_maker)
     monkeypatch.setattr(ws_route, "is_auth_enabled", AsyncMock(return_value=True))
-    monkeypatch.setattr(ws_route, "verify_websocket_token", AsyncMock(return_value="t011-user"))
+    monkeypatch.setattr(ws_route, "verify_websocket_token_principal", AsyncMock(return_value=("t011-user", None)))
 
     ws = _MessageWebSocket(messages)
     await ws_route.websocket_endpoint(ws, token="tok")
@@ -622,7 +629,7 @@ def _wire(monkeypatch, session_maker, *, principal, auth=True):
     monkeypatch.setattr(ws_route, "ws_manager", fresh_mgr)
     monkeypatch.setattr(ws_route, "async_session", session_maker)
     monkeypatch.setattr(ws_route, "is_auth_enabled", AsyncMock(return_value=auth))
-    monkeypatch.setattr(ws_route, "verify_websocket_token", AsyncMock(return_value=principal))
+    monkeypatch.setattr(ws_route, "verify_websocket_token_principal", AsyncMock(return_value=(principal, None)))
     return fresh_mgr
 
 
@@ -815,10 +822,12 @@ async def test_resolve_denies_a_deactivated_admin(db_session):
 
 
 @pytest.mark.asyncio
-async def test_deactivated_user_connects_without_aito_data_but_with_printer_updates(monkeypatch, test_engine):
+async def test_deactivated_user_connects_without_aito_data_or_printer_updates(monkeypatch, test_engine):
     """A deactivated user whose ws token is still unexpired: the socket is
     admitted exactly as before (general websocket auth is out of scope), but
-    it gets no initial presence map, no Aito broadcast and no viewer entry."""
+    it gets no initial presence map, no Aito broadcast and no viewer entry.
+    Its printer scope (#1727) is empty too, fail-closed, so printer-bound
+    broadcasts stop reaching it as well."""
     session_maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     async with session_maker() as seed:
         group = Group(name="t071-connect-group", permissions=[Permission.AITO_READ.value])
@@ -839,7 +848,7 @@ async def test_deactivated_user_connects_without_aito_data_but_with_printer_upda
 
     assert ws.state.aito_read is False
     assert "aito_presence_state" not in _sent_types(ws)
-    assert seen["types"] == ["printer_status"]
+    assert seen["types"] == []
     assert seen["viewers"] == {}
     ws.close.assert_not_awaited()
 

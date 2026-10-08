@@ -8,7 +8,6 @@ from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.auth import (
-    RequirePermissionIfAuthEnabled,
     RequirePrinterPermissionIfAuthEnabled,
 )
 from backend.app.core.database import get_db
@@ -44,7 +43,7 @@ async def get_ams_history(
     ams_id: int,
     hours: int = Query(default=24, ge=1, le=168, description="Hours of history (1-168)"),
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.AMS_HISTORY_READ),
+    _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.AMS_HISTORY_READ),
 ):
     """Get AMS sensor history for a specific printer and AMS unit."""
     since = datetime.now(timezone.utc) - timedelta(hours=hours)

@@ -646,3 +646,152 @@ it.each([
   expect(new URL(shownUrl()).searchParams.has('logo')).toBe(false);
   expect(screen.getByLabelText('Upload logo')).toBeEnabled();
 });
+
+describe('StreamOverlayBuilder remembers its choices in this browser', () => {
+  const store = new Map<string, string>();
+  const KEY = 'bambuddy.streamOverlayBuilder';
+
+  beforeEach(() => {
+    store.clear();
+    vi.mocked(window.localStorage.getItem).mockImplementation((key: string) => store.get(key) ?? null);
+    vi.mocked(window.localStorage.setItem).mockImplementation((key: string, value: string) => {
+      store.set(key, value);
+    });
+    server.use(
+      http.get('/api/v1/printers', () => HttpResponse.json(printers)),
+      http.get('/api/v1/settings/overlay-logo', () => new HttpResponse(null, { status: 404 })),
+    );
+  });
+  afterEach(() => {
+    vi.mocked(window.localStorage.getItem).mockReset();
+    vi.mocked(window.localStorage.setItem).mockReset();
+  });
+
+  it('reopens with the fields, printer and look that were picked, and never stores the token', async () => {
+    const user = userEvent.setup();
+    const first = render(<StreamOverlayBuilder />);
+    await screen.findByRole('option', { name: 'P1S' });
+    await user.click(screen.getByLabelText('Nozzle'));
+    await user.click(screen.getByLabelText('Layer count'));
+    await user.selectOptions(screen.getByLabelText('Printer'), '2');
+    await user.selectOptions(screen.getByLabelText('Layout'), 'portrait');
+    fireEvent.change(screen.getByLabelText('From colour (hex)'), { target: { value: '#ff0000' } });
+    fireEvent.change(screen.getByLabelText('To colour (hex)'), { target: { value: '#0000ff' } });
+    await user.type(screen.getByLabelText('Manual token'), 'bblt_secret');
+    const withoutToken = (raw: string) => {
+      const url = new URL(raw);
+      url.searchParams.delete('token');
+      return url.toString();
+    };
+    const before = withoutToken(shownUrl());
+    first.unmount();
+
+    expect(store.get(KEY)).not.toContain('bblt_secret');
+    expect(store.get(KEY)).not.toContain('token');
+
+    render(<StreamOverlayBuilder />);
+    await screen.findByRole('option', { name: 'P1S' });
+    expect(screen.getByLabelText('Nozzle')).toBeChecked();
+    expect(screen.getByLabelText('Layer count')).not.toBeChecked();
+    expect(screen.getByLabelText('Printer')).toHaveValue('2');
+    expect(screen.getByLabelText('Layout')).toHaveValue('portrait');
+    expect(screen.getByLabelText('Manual token')).toHaveValue('');
+    // Same URL as before, minus the token that was not kept.
+    expect(shownUrl()).toBe(before);
+  });
+
+  it('falls back to the defaults for anything stored that does not check out', async () => {
+    store.set(KEY, JSON.stringify({
+      printerId: 99, fields: ['nozzle', 'evil'], size: 'huge', fps: 500, artwork: '7',
+      backgroundTransparency: -4, showCamera: 'no', layout: 'sideways', logo: 'yes', from: 'red', to: '#0000ff',
+    }));
+    render(<StreamOverlayBuilder />);
+    await screen.findByRole('option', { name: 'P1S' });
+
+    // Printer 99 no longer exists, so the first printer is used.
+    await waitFor(() => expect(screen.getByLabelText('Printer')).toHaveValue('1'));
+    const url = new URL(shownUrl());
+    expect(url.pathname).toBe('/overlay/1');
+    expect(url.searchParams.get('show')).toBe('nozzle');
+    expect(url.searchParams.get('fps')).toBe('30');
+    expect(url.searchParams.has('size')).toBe(false);
+    expect(url.searchParams.has('artwork')).toBe(false);
+    expect(url.searchParams.has('layout')).toBe(false);
+    expect(url.searchParams.has('camera')).toBe(false);
+    expect(url.searchParams.has('logo')).toBe(false);
+    expect(url.searchParams.has('progressFrom')).toBe(false);
+  });
+
+  it('starts from the defaults when the stored value is not JSON', async () => {
+    store.set(KEY, '{not json');
+    render(<StreamOverlayBuilder />);
+    await screen.findByRole('option', { name: 'P1S' });
+    expect(new URL(shownUrl()).searchParams.get('show')).toBe('filename,status,progress,layers,eta');
+  });
+
+  it('keeps working when the browser refuses to store anything', async () => {
+    vi.mocked(window.localStorage.setItem).mockImplementation((key: string) => {
+      if (key === KEY) throw new Error('QuotaExceededError');
+    });
+    const user = userEvent.setup();
+    render(<StreamOverlayBuilder />);
+    await screen.findByRole('option', { name: 'P1S' });
+    await user.click(screen.getByLabelText('Nozzle'));
+    expect(new URL(shownUrl()).searchParams.get('show')).toContain('nozzle');
+  });
+
+  it('says when a change is saved, once per burst of edits', async () => {
+    const user = userEvent.setup();
+    render(<StreamOverlayBuilder />);
+    await screen.findByRole('option', { name: 'P1S' });
+    await user.click(screen.getByLabelText('Nozzle'));
+    await user.click(screen.getByLabelText('Layer count'));
+    await user.selectOptions(screen.getByLabelText('Layout'), 'portrait');
+
+    await waitFor(() => expect(screen.getByText('Settings saved')).toBeInTheDocument());
+    // Give any later toast of the same burst time to appear before counting.
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    expect(screen.getAllByText('Settings saved')).toHaveLength(1);
+  });
+
+  it('does not claim a save when the page only opens, even when a deleted printer is replaced', async () => {
+    store.set(KEY, JSON.stringify({ printerId: 99, fields: ['nozzle'] }));
+    render(<StreamOverlayBuilder />);
+    await screen.findByRole('option', { name: 'P1S' });
+    await waitFor(() => expect(screen.getByLabelText('Printer')).toHaveValue('1'));
+    expect(JSON.parse(store.get(KEY)!).printerId).toBe(1);
+
+    await new Promise((resolve) => setTimeout(resolve, 900));
+    expect(screen.queryByText('Settings saved')).toBeNull();
+  });
+
+  it('does not claim a save the browser refused', async () => {
+    vi.mocked(window.localStorage.setItem).mockImplementation((key: string) => {
+      if (key === KEY) throw new Error('QuotaExceededError');
+    });
+    const user = userEvent.setup();
+    render(<StreamOverlayBuilder />);
+    await screen.findByRole('option', { name: 'P1S' });
+    await user.click(screen.getByLabelText('Nozzle'));
+
+    await new Promise((resolve) => setTimeout(resolve, 900));
+    expect(screen.queryByText('Settings saved')).toBeNull();
+  });
+
+  it('resets the choices to the defaults but keeps the token', async () => {
+    const user = userEvent.setup();
+    render(<StreamOverlayBuilder />);
+    await screen.findByRole('option', { name: 'P1S' });
+    const defaultUrl = shownUrl();
+    await user.click(screen.getByLabelText('Nozzle'));
+    await user.selectOptions(screen.getByLabelText('Printer'), '2');
+    await user.type(screen.getByLabelText('Manual token'), 'bblt_keep');
+    await user.click(screen.getByRole('button', { name: 'Reset choices' }));
+
+    const url = new URL(shownUrl());
+    expect(url.pathname).toBe('/overlay/1');
+    expect(url.searchParams.get('show')).toBe(new URL(defaultUrl).searchParams.get('show'));
+    expect(url.searchParams.get('token')).toBe('****');
+    expect(JSON.parse(store.get(KEY)!).fields).toEqual(['progress', 'layers', 'eta', 'filename', 'status']);
+  });
+});

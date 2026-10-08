@@ -360,5 +360,5 @@ class TestDeleteOldHistoryApiKeyPrinterAllowlist:
             params={"days": 30},
             headers={"X-API-Key": full_key},
         )
-        assert response.status_code == 403
-        assert f"printer {printer.id}" in response.json()["detail"]
+        assert response.status_code == 404  # #1727: a printer outside the key's scope reads as missing
+        assert response.json()["detail"] == "Printer not found"

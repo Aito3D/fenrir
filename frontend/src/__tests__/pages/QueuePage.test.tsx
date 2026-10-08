@@ -2,13 +2,14 @@
  * Tests for the QueuePage component.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { QueuePage } from '../../pages/QueuePage';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
+import { setAuthToken } from '../../api/client';
 
 // Mock queue data
 const mockQueueItems = [
@@ -718,7 +719,7 @@ describe('QueuePage', () => {
     });
 
     describe('stored mapping on the live printer (#3132)', () => {
-      const mappedItem = (amsMapping: number[]) => ({
+      const mappedItem = (amsMapping: number[], extra: Record<string, unknown> = {}) => ({
         ...mockQueueItems[0],
         id: 88,
         printer_id: 1,
@@ -738,11 +739,16 @@ describe('QueuePage', () => {
             force_color_match: false,
           },
         ],
+        ...extra,
       });
 
-      const useMappedPrinter = (amsMapping: number[], status: Record<string, unknown>) => {
+      const useMappedPrinter = (
+        amsMapping: number[],
+        status: Record<string, unknown>,
+        item: Record<string, unknown> = {},
+      ) => {
         server.use(
-          http.get('/api/v1/queue/', () => HttpResponse.json([mappedItem(amsMapping)])),
+          http.get('/api/v1/queue/', () => HttpResponse.json([mappedItem(amsMapping, item)])),
           http.get('/api/v1/library/files/19/plates', () =>
             HttpResponse.json({
               file_id: 19,
@@ -824,6 +830,74 @@ describe('QueuePage', () => {
           expect(within(row).getByText('A3 · Empty · Caramel')).toBeInTheDocument();
         });
         expect(within(row).getByTestId('filament-swatch')).toHaveAttribute('title', '#8E351B');
+      });
+
+      describe('AMS Filament Backup during the print', () => {
+        const printing = { status: 'printing', started_at: '2024-01-01T10:00:00Z' };
+
+        it('shows the backup spool the printer switched to', async () => {
+          // A3 ran out at layer 350 and the printer carried on from A2.
+          useMappedPrinter(
+            [2],
+            { connected: true, state: 'RUNNING', ams: amsWithEmptyA3, vt_tray: [], tray_change_log: [[2, 0], [1, 350]] },
+            printing,
+          );
+          const row = await mappedRow();
+
+          await waitFor(() => {
+            expect(within(row).getByText(/^A2 · PLA · /)).toBeInTheDocument();
+          });
+          expect(within(row).queryByText(/Empty/)).not.toBeInTheDocument();
+        });
+
+        it('follows a backup that ran out in turn', async () => {
+          useMappedPrinter(
+            [2],
+            {
+              connected: true,
+              state: 'RUNNING',
+              ams: amsWithEmptyA3,
+              vt_tray: [],
+              tray_change_log: [[2, 0], [1, 120], [0, 400]],
+            },
+            printing,
+          );
+          const row = await mappedRow();
+
+          await waitFor(() => {
+            expect(within(row).getByText(/^A1 · PLA · /)).toBeInTheDocument();
+          });
+          expect(within(row).queryByText(/^A2 · /)).not.toBeInTheDocument();
+        });
+
+        it('does not take a change to another mapped slot for a backup', async () => {
+          // Slot 2 of the job feeds from A2: switching there is a colour change.
+          useMappedPrinter(
+            [2, 1],
+            { connected: true, state: 'RUNNING', ams: amsWithEmptyA3, vt_tray: [], tray_change_log: [[2, 0], [1, 30]] },
+            printing,
+          );
+          const row = await mappedRow();
+
+          await waitFor(() => {
+            expect(within(row).getByText('A3 · Empty · Caramel')).toBeInTheDocument();
+          });
+        });
+
+        it('leaves a queued job pointed at its mapped slot', async () => {
+          // The log belongs to whatever the printer prints now, not this job.
+          useMappedPrinter([2], {
+            connected: true,
+            ams: amsWithEmptyA3,
+            vt_tray: [],
+            tray_change_log: [[2, 0], [1, 350]],
+          });
+          const row = await mappedRow();
+
+          await waitFor(() => {
+            expect(within(row).getByText('A3 · Empty · Caramel')).toBeInTheDocument();
+          });
+        });
       });
 
       it('never calls the external spool empty, having no presence signal', async () => {
@@ -1455,6 +1529,43 @@ describe('QueuePage', () => {
 
       await waitFor(() => {
         expect(screen.getByTitle('Start Print')).toBeInTheDocument();
+      });
+    });
+
+    // Without queue:start_unreviewed their jobs wait for staff to start them (#1620)
+    describe('waiting for review', () => {
+      const signInWith = (permissions: string[]) => {
+        setAuthToken('test-token', 'session');
+        server.use(
+          http.get('*/api/v1/auth/status', () => HttpResponse.json({ auth_enabled: true, requires_setup: false })),
+          http.get('*/api/v1/auth/me', () =>
+            HttpResponse.json({ id: 7, username: 'student', is_admin: false, permissions }),
+          ),
+          http.get('/api/v1/queue/', () =>
+            HttpResponse.json([{ ...mockQueueItems[0], manual_start: true, created_by_id: 7 }]),
+          ),
+        );
+      };
+
+      afterEach(() => {
+        setAuthToken(null);
+      });
+
+      it('tells a student their job waits for review and offers no start', async () => {
+        signInWith(['queue:read_own', 'queue:update_own', 'queue:delete_own']);
+        render(<QueuePage />);
+
+        expect(await screen.findByText('Waiting for review')).toBeInTheDocument();
+        const start = screen.getByTitle('Waiting for review: someone who manages the queue starts this job');
+        expect(start).toBeDisabled();
+      });
+
+      it('keeps the start button for users who may print without review', async () => {
+        signInWith(['queue:read_own', 'queue:update_own', 'queue:start_unreviewed']);
+        render(<QueuePage />);
+
+        expect(await screen.findByText('Staged')).toBeInTheDocument();
+        expect(screen.getByTitle('Start Print')).not.toBeDisabled();
       });
     });
   });

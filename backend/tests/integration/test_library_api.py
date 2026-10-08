@@ -2019,6 +2019,7 @@ endsolid cube"""
                         generate_stl_thumbnails=True,
                         db=session,
                         current_user=None,
+                        actor=None,  # upstream #3201: ownership actor, None with auth off
                     )
 
             async def _drive_batch():

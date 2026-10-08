@@ -584,7 +584,8 @@ class TestPrintersAPI:
                 headers=headers,
             )
 
-        assert denied.status_code == 403
+        # Out of scope reads as missing, so the id isn't confirmed (#1727)
+        assert denied.status_code == 404
         assert allowed.status_code == 200
         listing.assert_awaited_once()
 
@@ -748,6 +749,29 @@ class TestPrintersAPI:
             "0": {"ams_id": 0, "slot_id": 2, "has_filament": True},
             "1": {"ams_id": None, "slot_id": None, "has_filament": False},
         }
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_status_reports_the_trays_the_print_drew_from(self, async_client: AsyncClient, printer_factory):
+        """Restored after a restart as lists, recorded live as tuples: both serialise alike."""
+        from unittest.mock import MagicMock, patch
+
+        from backend.app.services.bambu_mqtt import PrinterState
+
+        printer = await printer_factory()
+
+        state = PrinterState()
+        state.connected = True
+        state.state = "RUNNING"
+        state.tray_change_log = [[2, 0], (1, 350)]
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_status = MagicMock(return_value=state)
+            mock_pm.is_awaiting_plate_clear = MagicMock(return_value=False)
+
+            response = await async_client.get(f"/api/v1/printers/{printer.id}/status")
+
+        assert response.json()["tray_change_log"] == [[2, 0], [1, 350]]
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -5307,8 +5331,9 @@ class TestPrinterControlAPIKeyPrinterScope:
                 headers=headers,
             )
 
-        assert response.status_code == 403, response.text
-        assert "printer" in response.json()["detail"].lower()
+        # #1727: a printer outside the key's scope reads as missing, never forbidden
+        assert response.status_code == 404, response.text
+        assert response.json()["detail"] == "Printer not found"
 
     @pytest.mark.asyncio
     @pytest.mark.integration

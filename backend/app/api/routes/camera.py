@@ -31,10 +31,11 @@ from websockets.exceptions import WebSocketException
 
 from backend.app.core import database
 from backend.app.core.auth import (
+    RequestPrinterScope,
     RequireCameraStreamTokenIfAuthEnabled,
     RequirePermissionIfAuthEnabled,
+    RequirePrinterPermissionIfAuthEnabled,
     authorize_api_key,
-    check_printer_access,
     create_camera_stream_token,
     is_auth_enabled,
     security,
@@ -44,6 +45,7 @@ from backend.app.core.auth import (
 from backend.app.core.database import async_session, get_db
 from backend.app.core.logging_filters import redact_url_credentials
 from backend.app.core.permissions import Permission
+from backend.app.core.printer_scope import PrinterScope
 from backend.app.models.api_key import APIKey
 from backend.app.models.printer import Printer
 from backend.app.models.settings import Settings
@@ -2359,6 +2361,7 @@ async def camera_grid_stream(
     force: bool = Query(False, description="Force restart producers with new quality settings"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
     api_key: APIKey | None = Depends(_grid_stream_api_key_if_auth_enabled),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Multiplexed camera stream for the camera grid.
 
@@ -2427,23 +2430,16 @@ async def camera_grid_stream(
         if len(printer_ids) > 30:
             raise HTTPException(400, "Maximum 30 printers per grid stream")
 
-        # An API key restricted to a printer_ids allowlist only ever sees the
-        # printers it is scoped to — the same boundary check_printer_access
-        # enforces on the single-printer camera routes. Ids outside the
-        # allowlist are dropped rather than rejecting the whole request, so a
-        # camera wall driven by a partially-restricted key keeps working for
-        # the printers it can see. This runs AFTER the 30-printer cap so the
-        # cap error a caller sees always reflects the ids they actually asked
-        # for, not the filtered set.
-        if api_key is not None:
-            allowed_ids = []
-            for pid in printer_ids:
-                try:
-                    check_printer_access(api_key, pid)
-                except HTTPException:
-                    continue
-                allowed_ids.append(pid)
-            printer_ids = allowed_ids
+        # The caller only ever sees the printers in its scope (#1727): an API
+        # key's printer_ids allowlist within its owner's scope, or a user's
+        # group-limited printers — the same boundary
+        # RequirePrinterPermissionIfAuthEnabled enforces on the single-printer
+        # camera routes. Ids outside it are dropped rather than rejecting the
+        # whole request, so a camera wall driven by a partially-restricted
+        # caller keeps working for the printers it can see. This runs AFTER
+        # the 30-printer cap so the cap error a caller sees always reflects
+        # the ids they actually asked for, not the filtered set.
+        printer_ids = printer_scope.filter_ids(printer_ids)
 
         # Start producers for all requested printers.
         # First, collect IDs that already have a live producer (fast path — no DB).
@@ -2746,22 +2742,27 @@ async def create_stream_token(
     """Create a reusable token for camera stream/snapshot access.
 
     Returns a token valid for 60 minutes that can be appended as ?token=xxx
-    to camera stream/snapshot URLs loaded via <img> tags.
+    to camera stream/snapshot URLs loaded via <img> tags. The token opens only
+    the printers its minter may see (#1727).
 
     Records the issuing principal on the token (T-154 / audit-security): the
     library-thumbnail routes resolve the caller behind this same token to
     apply LIBRARY_READ_ALL/OWN scoping, mirroring how ``/ws-token`` already
     records its principal for ``verify_websocket_token``.
 
-    Refuses printer-restricted API keys (T-001 / audit-security): the minted
-    token carries no printer allowlist, so a key with ``printer_ids`` set
-    would otherwise get a token that opens every printer's stream/snapshot.
-    Unrestricted keys, JWT users and the auth-disabled path are unchanged.
+    Refuses printer-restricted API keys (T-001 / audit-security): the fork's
+    camera routes that take this token as a bare pass must never see one
+    minted for a key with ``printer_ids`` set. Unrestricted keys record their
+    id so the token carries their owner's scope (#1727).
     """
     if api_key is not None and api_key.printer_ids is not None:
         raise HTTPException(403, "Stream tokens are not available for printer-restricted API keys")
-    username = current_user.username if current_user is not None else None
-    return {"token": await create_camera_stream_token(username)}
+    return {
+        "token": await create_camera_stream_token(
+            username=current_user.username if current_user is not None else None,
+            api_key_id=api_key.id if api_key is not None else None,
+        )
+    }
 
 
 @router.get("/{printer_id}/camera/stream")
@@ -2950,7 +2951,7 @@ async def camera_stream(
 @router.post("/{printer_id}/camera/stop")
 async def stop_camera_stream(
     printer_id: int,
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
+    _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.CAMERA_VIEW),
 ):
     """Hint that a single viewer has disconnected.
 
@@ -3145,17 +3146,17 @@ async def _snapshot_response(printer_id: int, printer: Printer) -> Response:
 
 async def _require_webrtc_printer_access(
     printer_id: int,
-    api_key: APIKey | None = Depends(_grid_stream_api_key_if_auth_enabled),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ) -> None:
-    """Enforce an API key's ``printer_ids`` allowlist on the WebRTC offer.
+    """Enforce the caller's printer scope (#1727) on the WebRTC offer.
 
-    Same ``check_printer_access`` boundary as ``RequirePrinterPermissionIfAuthEnabled``,
-    but resolved through ``_grid_stream_api_key_if_auth_enabled`` so that with
-    auth disabled an attached key is never looked at — auth-off requests keep
-    sailing through exactly as they did under the plain CAMERA_VIEW dependency.
+    Same boundary as ``RequirePrinterPermissionIfAuthEnabled``: an API key's
+    ``printer_ids`` allowlist within its owner's scope, or a user's
+    group-limited printers. With auth disabled the scope is every printer, so
+    auth-off requests keep sailing through exactly as they did under the plain
+    CAMERA_VIEW dependency.
     """
-    if api_key is not None:
-        check_printer_access(api_key, printer_id)
+    printer_scope.ensure(printer_id)
 
 
 @router.post("/{printer_id}/camera/webrtc")
@@ -3269,9 +3270,13 @@ async def camera_mse_stream(websocket: WebSocket, printer_id: int, token: str | 
         logger.error("MSE relay auth probe failed; refusing connection", exc_info=True)
         await websocket.close(code=_MSE_CLOSE_UNAUTHORIZED)
         return
-    if auth_required and (not token or not await verify_camera_stream_token(token)):
-        await websocket.close(code=_MSE_CLOSE_UNAUTHORIZED)
-        return
+    if auth_required:
+        # The token's minter may not see this printer (#1727): refused like a
+        # bad token, so the relay says nothing about which ids exist.
+        scope = await verify_camera_stream_token(token) if token else None
+        if scope is None or not scope.allows(printer_id):
+            await websocket.close(code=_MSE_CLOSE_UNAUTHORIZED)
+            return
 
     if not go2rtc_service.ready:
         await websocket.close(code=_MSE_CLOSE_UNAVAILABLE)
@@ -3309,7 +3314,7 @@ async def camera_mse_stream(websocket: WebSocket, printer_id: int, token: str | 
 async def test_camera(
     printer_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
+    _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.CAMERA_VIEW),
 ):
     """Test camera connection for a printer.
 
@@ -3330,7 +3335,7 @@ async def test_camera(
 async def diagnose_camera_route(
     printer_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
+    _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.CAMERA_VIEW),
 ):
     """Run staged diagnostics for a printer's camera path.
 
@@ -3364,7 +3369,7 @@ async def diagnose_camera_route(
 @router.get("/{printer_id}/camera/status")
 async def camera_status(
     printer_id: int,
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
+    _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.CAMERA_VIEW),
 ):
     """Get the status of an active camera stream.
 
@@ -3428,7 +3433,7 @@ async def camera_status(
 @router.get("/camera/hub-status")
 async def camera_hub_status(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
-    api_key: APIKey | None = Depends(_grid_stream_api_key_if_auth_enabled),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Debug endpoint: return the state of all shared camera producers.
 
@@ -3436,26 +3441,20 @@ async def camera_hub_status(
     counts, idle times, and frame counters.  Also includes FFmpeg process
     stats, system load, and circuit breaker status.
 
-    An API key restricted to a ``printer_ids`` allowlist only sees the
-    per-printer entries (grid producers, stderr summaries, per-printer status,
-    watchdog kills) of the printers it is scoped to — the same boundary
-    ``check_printer_access`` enforces on the grid stream. Such a key also gets
-    an empty ``ffmpeg_processes`` list (the tracked pids carry no printer id)
-    and a ``grid.producer_count`` covering only its visible producers. The
-    response shape and the host-wide fields are unchanged; unrestricted keys
-    and JWT/no-auth callers see every printer exactly as before.
+    A caller limited to certain printers (#1727: an API key's ``printer_ids``
+    allowlist, or a user's group-limited printers) only sees the per-printer
+    entries (grid producers, stderr summaries, per-printer status, watchdog
+    kills) of the printers in its scope — the same boundary the grid stream
+    enforces. Such a caller also gets an empty ``ffmpeg_processes`` list (the
+    tracked pids carry no printer id) and a ``grid.producer_count`` covering
+    only its visible producers. The response shape and the host-wide fields
+    are unchanged; unrestricted callers see every printer exactly as before.
     """
 
-    printer_restricted = api_key is not None and api_key.printer_ids is not None
+    printer_restricted = not printer_scope.is_unrestricted
 
     def _printer_visible(printer_id: int) -> bool:
-        if api_key is None:
-            return True
-        try:
-            check_printer_access(api_key, printer_id)
-        except HTTPException:
-            return False
-        return True
+        return printer_scope.allows(printer_id)
 
     def _stream_visible(stream_id: str) -> bool:
         # stream_id format: "{printer_id}-{uuid}" or "{printer_id}-ext-{uuid}".
@@ -3464,7 +3463,7 @@ async def camera_hub_status(
         try:
             printer_id = int(stream_id.split("-")[0])
         except (ValueError, IndexError):
-            return api_key is None or api_key.printer_ids is None
+            return not printer_restricted
         return _printer_visible(printer_id)
 
     now = time.monotonic()
@@ -3559,7 +3558,7 @@ async def test_external_camera(
     printer_id: int,
     body: ExternalCameraTestRequest,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.PRINTERS_UPDATE),
+    _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.PRINTERS_UPDATE),
 ):
     """Test external camera connection.
 
@@ -3585,7 +3584,7 @@ async def check_plate_empty(
     use_external: bool | None = None,
     include_debug_image: bool = False,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
+    _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.CAMERA_VIEW),
 ):
     """Check if the build plate is empty using camera vision.
 
@@ -3703,7 +3702,7 @@ async def calibrate_plate_detection(
     label: str | None = Query(default=None, max_length=200),
     use_external: bool | None = None,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
+    _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.CAMERA_VIEW),
 ):
     """Calibrate plate detection by capturing a reference image of the empty plate.
 
@@ -3776,7 +3775,7 @@ async def delete_plate_calibration(
     printer_id: int,
     plate_type: str | None = None,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
+    _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.CAMERA_VIEW),
 ):
     """Delete the plate detection calibration for a printer and plate type.
 
@@ -3817,7 +3816,7 @@ async def get_plate_detection_status(
     printer_id: int,
     plate_type: str | None = None,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
+    _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.CAMERA_VIEW),
 ):
     """Check plate detection status for a printer and plate type.
 
@@ -3861,7 +3860,7 @@ async def get_plate_detection_status(
 async def get_plate_references(
     printer_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
+    _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.CAMERA_VIEW),
 ):
     """Get all calibration references for a printer with metadata.
 
@@ -3926,7 +3925,7 @@ async def update_reference_label(
     index: int,
     label: str = Body(..., embed=True),
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
+    _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.CAMERA_VIEW),
 ):
     """Update the label for a calibration reference."""
     from backend.app.services.plate_detection import PlateDetector, is_plate_detection_available
@@ -3951,7 +3950,7 @@ async def delete_reference(
     printer_id: int,
     index: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
+    _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.CAMERA_VIEW),
 ):
     """Delete a specific calibration reference."""
     from backend.app.services.plate_detection import PlateDetector, is_plate_detection_available

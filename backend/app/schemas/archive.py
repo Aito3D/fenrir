@@ -162,6 +162,7 @@ class ArchiveResponse(BaseModel):
     # Energy tracking
     energy_kwh: float | None = None
     energy_cost: float | None = None
+    wear_cost: float | None = None  # Printer wear, #694
 
     created_at: datetime | None
 
@@ -208,6 +209,7 @@ class ArchiveSlim(BaseModel):
     cost: float | None
     energy_kwh: float | None = None
     energy_cost: float | None = None
+    wear_cost: float | None = None  # Printer wear, #694
     quantity: int = 1
     created_at: datetime | None
 
@@ -239,6 +241,8 @@ class ArchiveStats(BaseModel):
     # Energy stats
     total_energy_kwh: float = 0.0
     total_energy_cost: float = 0.0
+    # Printer wear across the runs counted above (#694)
+    total_wear_cost: float = 0.0
     # Set when the date-range query in "total consumption" mode is running on
     # incomplete snapshot history — e.g. right after a fresh upgrade before the
     # hourly snapshot loop has built up a baseline. Frontend shows a tooltip.

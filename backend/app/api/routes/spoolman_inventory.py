@@ -13,6 +13,7 @@ import logging
 import re
 import time
 from contextlib import asynccontextmanager
+from datetime import datetime
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Response
 from fastapi.responses import JSONResponse
@@ -23,6 +24,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from backend.app.api.routes._spoolman_helpers import (
+    BAMBU_LAST_DRIED_AT_KEY,
+    BAMBU_LAST_DRIED_HOURS_KEY,
+    BAMBU_LAST_DRIED_TEMP_KEY,
     NormalizedFilament,
     NormalizedVendorRef,
     _map_spoolman_spool,
@@ -35,9 +39,10 @@ from backend.app.api.routes._spoolman_helpers import (
     spoolman_price_weight,
     spoolman_tare,
 )
-from backend.app.core.auth import RequirePermissionIfAuthEnabled
+from backend.app.core.auth import RequestPrinterScope, RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
+from backend.app.core.printer_scope import PrinterScope
 from backend.app.core.websocket import ws_manager
 from backend.app.models.ams_label import AmsLabel
 from backend.app.models.printer import Printer
@@ -47,7 +52,7 @@ from backend.app.models.spoolman_k_profile import SpoolmanKProfile
 from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
 from backend.app.models.supplier import SpoolmanSpoolSupplier, Supplier
 from backend.app.models.user import User
-from backend.app.schemas.spool import SpoolFilamentPresetBase, SpoolKProfileBase
+from backend.app.schemas.spool import SpoolFilamentPresetBase, SpoolKProfileBase, naive_utc
 from backend.app.schemas.spoolman import SpoolmanFilamentPatch, SpoolmanSlotAssignmentEnriched
 from backend.app.schemas.supplier import SpoolSupplierLinkInput
 from backend.app.services import slot_unlink_grace
@@ -68,7 +73,7 @@ from backend.app.services.spoolman import (
     get_spoolman_client,
     init_spoolman_client,
 )
-from backend.app.services.spoolman_tracking import get_fallback_spool_tag_for_slot
+from backend.app.services.spoolman_tracking import get_fallback_spool_tag_for_slot, is_slot_fallback_tag
 from backend.app.services.tag_conflict import tag_already_linked
 from backend.app.utils.color_utils import spoolman_color_hex
 from backend.app.utils.filament_ids import (
@@ -383,6 +388,9 @@ class SpoolmanInventoryUpdate(BaseModel):
     # schema). Pass an empty string to clear; null/omitted leaves unchanged.
     slicer_filament: str | None = Field(None, max_length=128)
     slicer_filament_name: str | None = Field(None, max_length=255)
+    # Set by hand for a drying done outside an AMS; null clears it. Persisted
+    # to the spool's extra dict like the slicer preset (#2863).
+    last_dried_at: datetime | None = None
 
     @field_validator("rgba")
     @classmethod
@@ -393,6 +401,11 @@ class SpoolmanInventoryUpdate(BaseModel):
     @classmethod
     def validate_storage_location(cls, v: str | None) -> str | None:
         return _validate_storage_location(v)
+
+    @field_validator("last_dried_at")
+    @classmethod
+    def validate_last_dried_at(cls, v: datetime | None) -> datetime | None:
+        return naive_utc(v)
 
     @model_validator(mode="after")
     def validate_tag_fields(self) -> SpoolmanInventoryUpdate:
@@ -940,6 +953,15 @@ async def update_spool(
                 spool_weight=data.core_weight,
             )
 
+        # Spoolman 0.27+: the native tags go as well, or the spool would still be
+        # found by every one of them after "Clear RFID Tag". Only once the update
+        # went through, so a failed one leaves the spool as it was; a failure here
+        # is reported, and clearing again removes what is left.
+        if tag_nulled:
+            async with _translate_spoolman_errors():
+                await client.unlink_all_native_tags(fresh)
+            updated = {**updated, "tags": []}
+
     # Persist BambuStudio slicer preset AND color_name under spool.extra.
     # Spoolman has no native fields for these — color_name was confirmed
     # absent from the FilamentUpdateParameters schema in 0.23.1 (#1357), so
@@ -951,7 +973,8 @@ async def update_spool(
     sf_set = "slicer_filament" in data.model_fields_set
     sfn_set = "slicer_filament_name" in data.model_fields_set
     cn_set = "color_name" in data.model_fields_set
-    if sf_set or sfn_set or cn_set:
+    dried_set = "last_dried_at" in data.model_fields_set
+    if sf_set or sfn_set or cn_set or dried_set:
         # Ensure extra fields are registered (Spoolman rejects PATCHes with
         # unknown keys with HTTP 400). Idempotent if startup already ran this.
         if sf_set:
@@ -967,6 +990,13 @@ async def update_spool(
             new_extra["bambu_slicer_filament_name"] = json.dumps(data.slicer_filament_name or "")
         if cn_set:
             new_extra["bambu_color_name"] = json.dumps(data.color_name or "")
+        if dried_set:
+            # A hand-set date is not the AMS cycle the temperature and hours
+            # describe, so they are cleared with it, as in internal mode.
+            dried_at = data.last_dried_at.isoformat(timespec="seconds") if data.last_dried_at else ""
+            new_extra[BAMBU_LAST_DRIED_AT_KEY] = json.dumps(dried_at)
+            new_extra[BAMBU_LAST_DRIED_TEMP_KEY] = json.dumps("")
+            new_extra[BAMBU_LAST_DRIED_HOURS_KEY] = json.dumps("")
         async with _translate_spoolman_errors():
             updated = await client.merge_spool_extra(spool_id, new_extra)
 
@@ -1315,14 +1345,133 @@ async def link_tag_to_spoolman_spool(
         # Re-fetch inside the lock so cur_extra reflects any concurrent update.
         async with _translate_spoolman_errors():
             current = await client.get_spool(spool_id)
-        cur_extra = dict(current.get("extra") or {})
-        cur_extra["tag"] = tag_json
-        async with _translate_spoolman_errors():
-            updated = await client.update_spool_full(spool_id=spool_id, extra=cur_extra)
+
+        # Spoolman 0.27+: both identifiers become native tags of the spool, added to
+        # what it already carries rather than replacing it. Spoolman refuses a UID
+        # another spool holds with a 409 naming that spool, the same answer as above.
+        # Whatever this request added is taken back if anything after it fails, a
+        # refused second identifier or the extra.tag write, so the spool is left as
+        # it was found.
+        added: list[str] = []
+        try:
+            if await client.has_tag_api():
+                had = {t.get("uid") for t in current.get("tags") or []}
+                for field, uid in (("tray_uuid", data.tray_uuid), ("tag_uid", data.tag_uid)):
+                    if not uid:
+                        continue
+                    async with _translate_spoolman_errors():
+                        holder = await client.claim_native_tag(
+                            spool_id, uid.upper(), "bambu" if data.tray_uuid else None
+                        )
+                    if holder is not None and holder != spool_id:
+                        if holder < 0:
+                            # A filament or a location holds it: no spool to name or move it from.
+                            raise HTTPException(
+                                status_code=409,
+                                detail={
+                                    "code": "tag_linked_elsewhere",
+                                    "message": f"{field} is linked to a filament or location in Spoolman",
+                                    "field": field,
+                                },
+                            )
+                        raise tag_already_linked(field, holder)
+                    if uid.upper() not in had:
+                        added.append(uid.upper())
+
+            cur_extra = dict(current.get("extra") or {})
+            cur_extra["tag"] = tag_json
+            async with _translate_spoolman_errors():
+                updated = await client.update_spool_full(spool_id=spool_id, extra=cur_extra)
+        except HTTPException:
+            for uid_added in added:
+                try:
+                    await client.unlink_native_tag(spool_id, uid_added)
+                except (SpoolmanClientError, SpoolmanUnavailableError) as exc:
+                    logger.warning("Could not take back native tag %s from spool %s: %s", uid_added, spool_id, exc)
+            raise
 
     logger.info("Linked tag %s to Spoolman spool %s", tag, spool_id)
     await ws_manager.broadcast({"type": "inventory_changed"})
     return _map_spoolman_spool(updated)
+
+
+_HEX_TAG_RE = re.compile(r"^[0-9A-F]{8,64}$")
+_AMS_CHIP_UID_PADDING = "00000100"
+
+
+@router.post("/tags/migrate")
+async def migrate_tags_to_native(
+    dry_run: bool = Query(True, description="Only count what would move, change nothing"),
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+) -> dict:
+    """Move tags from Spoolman's extra.tag into its native tags (Spoolman 0.27+).
+
+    extra.tag itself is left as it is, so older readers keep working and a
+    downgrade loses nothing. A slot's fallback ID is not a physical tag and
+    stays behind. Archived spools are skipped, and a tag an archived spool still
+    holds moves to the active one. A tag Spoolman holds on another active spool
+    is reported as a conflict for the user to settle, never moved by guessing.
+    """
+    client = await _get_client(db)
+    if not await client.has_tag_api():
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "spoolman_without_tags", "message": "Spoolman 0.27 or later is required"},
+        )
+    serials = (await db.execute(select(Printer.serial_number))).scalars().all()
+    async with _translate_spoolman_errors():
+        spools = await client.get_all_spools(allow_archived=True)
+
+    # Who holds which native tag, from the listing: the dry run sees the same
+    # conflicts the real one would, and two spools sharing one extra.tag are
+    # caught on the second, with no request spent on either. Archived spools are
+    # listed only for this: nothing looks an archived spool up, so they get no
+    # tags, and one that still holds a tag gives it up to the active spool.
+    archived = {spool["id"] for spool in spools if spool.get("archived")}
+    native_holder = {t.get("uid"): spool["id"] for spool in spools for t in spool.get("tags") or []}
+    report: dict = {"dry_run": dry_run, "moved": [], "already": 0, "slot_ids": 0, "conflicts": []}
+    for spool in spools:
+        if spool["id"] in archived:
+            continue
+        tag = _extra_tag(spool)
+        if not _HEX_TAG_RE.match(tag) or set(tag) == {"0"}:
+            continue
+        if is_slot_fallback_tag(tag, serials):
+            report["slot_ids"] += 1
+            continue
+        # The AMS pads a Bambu chip's 4-byte UID to 8 bytes ("D3E68F32" arrives as
+        # "D3E68F3200000100"). The native tag is the chip's own UID, as the AMS
+        # sync stores it, so it matches what a reader sees.
+        bambu = len(tag) == 32
+        if len(tag) == 16 and tag.endswith(_AMS_CHIP_UID_PADDING):
+            tag, bambu = tag[:8], True
+        holder = native_holder.get(tag)
+        if holder == spool["id"]:
+            report["already"] += 1
+            continue
+        if holder in archived:
+            holder = None
+        if holder is None and not dry_run:
+            async with _translate_spoolman_errors():
+                holder = await client.claim_native_tag(spool["id"], tag, "bambu" if bambu else None)
+        if holder is not None:
+            report["conflicts"].append({"spool_id": spool["id"], "tag": tag, "holder": holder})
+            continue
+        native_holder[tag] = spool["id"]
+        report["moved"].append(spool["id"])
+
+    logger.info(
+        "Native tag migration (dry_run=%s): %d moved, %d already, %d slot ids, %d conflicts",
+        dry_run,
+        len(report["moved"]),
+        report["already"],
+        report["slot_ids"],
+        len(report["conflicts"]),
+    )
+    if not dry_run and report["moved"]:
+        await ws_manager.broadcast({"type": "inventory_changed"})
+    return report
 
 
 @router.get("/slot-assignments/all", response_model=list[SpoolmanSlotAssignmentEnriched])
@@ -1330,6 +1479,7 @@ async def get_all_spoolman_slot_assignments(
     printer_id: int | None = Query(None, gt=0),
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ) -> list[SpoolmanSlotAssignmentEnriched]:
     """Return all Spoolman slot assignments enriched with printer_name and ams_label.
 
@@ -1341,6 +1491,8 @@ async def get_all_spoolman_slot_assignments(
     query = select(SpoolmanSlotAssignment).options(selectinload(SpoolmanSlotAssignment.printer))
     if printer_id is not None:
         query = query.where(SpoolmanSlotAssignment.printer_id == printer_id)
+    if (clause := printer_scope.where_strict(SpoolmanSlotAssignment.printer_id)) is not None:
+        query = query.where(clause)
     result = await db.execute(query)
     slots = list(result.scalars().all())
 
@@ -1421,6 +1573,7 @@ async def get_all_spoolman_slot_assignments(
 async def sync_spoolman_ams_weights(
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Sync remaining weight back to Spoolman for all slot-assigned spools.
 
@@ -1435,7 +1588,8 @@ async def sync_spoolman_ams_weights(
     spool_lookup: dict[int, dict] = {s["id"]: s for s in raw_spools if s.get("id") is not None}
 
     result = await db.execute(select(SpoolmanSlotAssignment))
-    assignments = list(result.scalars().all())
+    # Only slots on printers the caller may see (#1727)
+    assignments = [a for a in result.scalars().all() if printer_scope.allows(a.printer_id)]
 
     synced = 0
     skipped = 0
@@ -1549,6 +1703,7 @@ async def assign_spoolman_slot(
     body: SpoolSlotAssignmentRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ) -> dict:
     """Assign a Spoolman spool to a printer AMS slot (stored in local DB only).
 
@@ -1557,6 +1712,7 @@ async def assign_spoolman_slot(
     """
 
     client = await _get_client(db)
+    printer_scope.ensure(body.printer_id)
     result = await db.execute(select(Printer).where(Printer.id == body.printer_id))
     printer = result.scalar_one_or_none()
     if not printer:
@@ -1865,6 +2021,7 @@ async def unassign_spoolman_slot(
     spoolman_spool_id: int = Path(..., gt=0),
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ) -> dict:
     """Remove the local slot assignment for a Spoolman spool.
 
@@ -1873,9 +2030,11 @@ async def unassign_spoolman_slot(
     client = await _get_client(db)
 
     try:
-        await db.execute(
-            delete(SpoolmanSlotAssignment).where(SpoolmanSlotAssignment.spoolman_spool_id == spoolman_spool_id)
-        )
+        # A slot on a printer the caller can't see stays assigned (#1727)
+        unassign = delete(SpoolmanSlotAssignment).where(SpoolmanSlotAssignment.spoolman_spool_id == spoolman_spool_id)
+        if (clause := printer_scope.where_strict(SpoolmanSlotAssignment.printer_id)) is not None:
+            unassign = unassign.where(clause)
+        await db.execute(unassign)
         await db.commit()
     except Exception as exc:
         await db.rollback()
@@ -1902,9 +2061,11 @@ async def get_spoolman_slot_assignment(
     tray_id: int = Query(..., ge=0, le=3),
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ) -> dict | None:
     """Return the Spoolman spool assigned to a specific printer slot, or null if unassigned."""
     client = await _get_client(db)
+    printer_scope.ensure(printer_id)
     result = await db.execute(select(Printer).where(Printer.id == printer_id))
     printer = result.scalar_one_or_none()
     if not printer:

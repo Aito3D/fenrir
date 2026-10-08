@@ -27,6 +27,7 @@ from fastapi import WebSocketDisconnect
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from backend.app.api.routes import camera as camera_route
+from backend.app.core.printer_scope import ALL_PRINTERS
 
 
 class _FakeClient:
@@ -87,7 +88,7 @@ def _mse_request() -> dict:
 def ready_go2rtc(monkeypatch):
     svc = MagicMock()
     svc.ready = True
-    svc.ensure_stream = AsyncMock(return_value=True)
+    svc.ensure_stream = AsyncMock(return_value=ALL_PRINTERS)
     svc.ws_url = MagicMock(side_effect=lambda name: f"ws://go2rtc/api/ws?src={name}")
     monkeypatch.setattr(camera_route, "go2rtc_service", svc)
     return svc
@@ -122,8 +123,8 @@ async def test_refuses_before_accept_without_a_token_when_auth_is_on(
     monkeypatch, session_maker, ready_go2rtc, printer_factory
 ):
     printer = await printer_factory(model="H2D")
-    monkeypatch.setattr(camera_route, "is_auth_enabled", AsyncMock(return_value=True))
-    verify = AsyncMock(return_value=True)
+    monkeypatch.setattr(camera_route, "is_auth_enabled", AsyncMock(return_value=ALL_PRINTERS))
+    verify = AsyncMock(return_value=ALL_PRINTERS)
     monkeypatch.setattr(camera_route, "verify_camera_stream_token", verify)
     client = _FakeClient([])
 
@@ -137,8 +138,8 @@ async def test_refuses_before_accept_without_a_token_when_auth_is_on(
 @pytest.mark.asyncio
 async def test_refuses_before_accept_with_an_invalid_token(monkeypatch, session_maker, ready_go2rtc, printer_factory):
     printer = await printer_factory(model="H2D")
-    monkeypatch.setattr(camera_route, "is_auth_enabled", AsyncMock(return_value=True))
-    monkeypatch.setattr(camera_route, "verify_camera_stream_token", AsyncMock(return_value=False))
+    monkeypatch.setattr(camera_route, "is_auth_enabled", AsyncMock(return_value=ALL_PRINTERS))
+    monkeypatch.setattr(camera_route, "verify_camera_stream_token", AsyncMock(return_value=None))
     client = _FakeClient([])
 
     await camera_route.camera_mse_stream(client, printer.id, token="stale")
@@ -150,7 +151,7 @@ async def test_refuses_before_accept_with_an_invalid_token(monkeypatch, session_
 @pytest.mark.asyncio
 async def test_closes_before_accept_when_go2rtc_is_not_ready(monkeypatch, session_maker, printer_factory):
     printer = await printer_factory(model="H2D")
-    monkeypatch.setattr(camera_route, "is_auth_enabled", AsyncMock(return_value=False))
+    monkeypatch.setattr(camera_route, "is_auth_enabled", AsyncMock(return_value=None))
     svc = MagicMock()
     svc.ready = False
     svc.ensure_stream = AsyncMock()
@@ -169,7 +170,7 @@ async def test_closes_before_accept_for_a_chamber_image_model(
     monkeypatch, session_maker, ready_go2rtc, printer_factory
 ):
     printer = await printer_factory(model="A1")
-    monkeypatch.setattr(camera_route, "is_auth_enabled", AsyncMock(return_value=False))
+    monkeypatch.setattr(camera_route, "is_auth_enabled", AsyncMock(return_value=None))
     client = _FakeClient([])
 
     await camera_route.camera_mse_stream(client, printer.id, token=None)
@@ -181,7 +182,7 @@ async def test_closes_before_accept_for_a_chamber_image_model(
 
 @pytest.mark.asyncio
 async def test_closes_before_accept_for_an_unknown_printer(monkeypatch, session_maker, ready_go2rtc):
-    monkeypatch.setattr(camera_route, "is_auth_enabled", AsyncMock(return_value=False))
+    monkeypatch.setattr(camera_route, "is_auth_enabled", AsyncMock(return_value=None))
     client = _FakeClient([])
 
     await camera_route.camera_mse_stream(client, 99999, token=None)
@@ -193,8 +194,8 @@ async def test_closes_before_accept_for_an_unknown_printer(monkeypatch, session_
 @pytest.mark.asyncio
 async def test_relays_the_mse_request_up_and_the_frames_down(monkeypatch, session_maker, ready_go2rtc, printer_factory):
     printer = await printer_factory(model="H2D")
-    monkeypatch.setattr(camera_route, "is_auth_enabled", AsyncMock(return_value=True))
-    monkeypatch.setattr(camera_route, "verify_camera_stream_token", AsyncMock(return_value=True))
+    monkeypatch.setattr(camera_route, "is_auth_enabled", AsyncMock(return_value=ALL_PRINTERS))
+    monkeypatch.setattr(camera_route, "verify_camera_stream_token", AsyncMock(return_value=ALL_PRINTERS))
     client = _FakeClient([_mse_request()])
     codec_msg = json.dumps({"type": "mse", "value": 'video/mp4; codecs="avc1.640029"'})
     upstream = _FakeUpstream([codec_msg, b"\x00init", b"\x00seg1"], client)
@@ -217,7 +218,7 @@ async def test_drops_client_messages_other_than_an_mse_request(
     """go2rtc's /api/ws also speaks webrtc/offer, hls, mp4, mjpeg… — the relay
     exists to carry MSE, so nothing else from the browser reaches it."""
     printer = await printer_factory(model="X1C")
-    monkeypatch.setattr(camera_route, "is_auth_enabled", AsyncMock(return_value=False))
+    monkeypatch.setattr(camera_route, "is_auth_enabled", AsyncMock(return_value=None))
     client = _FakeClient(
         [
             {"type": "websocket.receive", "text": json.dumps({"type": "webrtc/offer", "value": "v=0"})},
@@ -240,7 +241,7 @@ async def test_closes_the_client_when_go2rtc_refuses_the_socket(
     monkeypatch, session_maker, ready_go2rtc, printer_factory
 ):
     printer = await printer_factory(model="H2D")
-    monkeypatch.setattr(camera_route, "is_auth_enabled", AsyncMock(return_value=False))
+    monkeypatch.setattr(camera_route, "is_auth_enabled", AsyncMock(return_value=None))
 
     class _Refused:
         def __init__(self, url, **_kwargs):
@@ -266,7 +267,7 @@ async def test_a_client_that_disconnects_mid_stream_ends_the_relay(
     monkeypatch, session_maker, ready_go2rtc, printer_factory
 ):
     printer = await printer_factory(model="H2D")
-    monkeypatch.setattr(camera_route, "is_auth_enabled", AsyncMock(return_value=False))
+    monkeypatch.setattr(camera_route, "is_auth_enabled", AsyncMock(return_value=None))
     client = _FakeClient([_mse_request()])
 
     async def _raise_disconnect():

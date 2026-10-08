@@ -1,6 +1,7 @@
 import i18n, { type BackendModule, type ReadCallback } from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import LanguageDetector from 'i18next-browser-languagedetector';
+import { recoverFromMissingChunk } from '../utils/lazyPage';
 
 // English ships in the entry bundle: it is the fallback language and must be
 // available synchronously. Every other locale (~350 KB of source each) is
@@ -28,7 +29,7 @@ const LOCALE_LOADERS: Record<string, () => Promise<{ default: object }>> = {
 // Minimal i18next backend: resolves a language to its lazily imported
 // locale chunk. Combined with `partialBundledLanguages`, i18next only calls
 // this for languages missing from `resources` (i.e. everything but en).
-const lazyLocaleBackend: BackendModule = {
+export const localeBackend: BackendModule = {
   type: 'backend',
   init: () => {},
   read: (lng: string, _ns: string, callback: ReadCallback) => {
@@ -39,7 +40,12 @@ const lazyLocaleBackend: BackendModule = {
     }
     load().then(
       (mod) => callback(null, mod.default),
-      (err) => callback(err, null),
+      (err) => {
+        // A tab from before an update asks for a file the update deleted (#3175).
+        void recoverFromMissingChunk().then((reloading) => {
+          if (!reloading) callback(err, null);
+        });
+      },
     );
   },
 };
@@ -51,13 +57,14 @@ const resources = {
 const SUPPORTED_LNGS = ['en', 'de', 'es', 'fr', 'ja', 'it', 'ko', 'nl', 'pt-BR', 'ru', 'sv', 'tr', 'uk', 'zh-CN', 'zh-TW'];
 const APPLIANCE_CONSUMED_KEY = 'fenrir_appliance_locale_consumed';
 
-i18n
-  .use(lazyLocaleBackend)
+/** Settles once the language in use has loaded (or failed to). */
+export const i18nReady = i18n
+  .use(localeBackend)
   .use(LanguageDetector)
   .use(initReactI18next)
   .init({
     resources,
-    // resources only bundles en; other languages come from lazyLocaleBackend.
+    // resources only bundles en; other languages come from localeBackend.
     partialBundledLanguages: true,
     fallbackLng: 'en',
     supportedLngs: SUPPORTED_LNGS,

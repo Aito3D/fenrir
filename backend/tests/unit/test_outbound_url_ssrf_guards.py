@@ -253,13 +253,14 @@ def test_every_url_setting_is_either_guarded_or_explicitly_exempt():
     added per-incident rather than to the whole class of fields.
     """
     exempt = {
-        # Fenrir's own public address, not a destination it requests. It is
+        # Fenrir's own address, not a destination it requests. It is
         # rendered into notification bodies and OIDC redirect URIs, and handed
         # to Obico's ML server as the `img` parameter for that server to fetch
         # (obico_detection.py builds `{external_url}/api/v1/obico/cached-frame/
         # {nonce}`). Pointing it at a private address only breaks Fenrir's own
         # links; it cannot make Fenrir request anything it otherwise wouldn't.
         "external_url",
+        "fenrir_internal_url",
         # Guarded by assert_safe_spoolman_url at each consumer (spoolman.py,
         # location_service.py, inventory.py, spoolbuddy.py,
         # spoolman_inventory.py) rather than in the schema, keeping its
@@ -311,7 +312,7 @@ def test_opaque_failure_logs_the_body_for_the_operator(caplog):
 
 @pytest.mark.parametrize(
     "provider_label",
-    ["ntfy server", "Bark server", "webhook endpoint", "Home Assistant endpoint"],
+    ["ntfy server", "Bark server", "Gotify server", "webhook endpoint", "Home Assistant endpoint"],
 )
 def test_user_supplied_host_providers_use_the_opaque_path(provider_label: str):
     """Guards the mapping itself: each user-supplied-host provider must route
@@ -369,6 +370,7 @@ def test_provider_url_guard_permits_self_hosted_servers(url: str):
     [
         ("ntfy", {"server": "http://169.254.169.254", "topic": "t"}),
         ("bark", {"server": "http://169.254.169.254", "device_key": "k"}),
+        ("gotify", {"server": "http://169.254.169.254", "app_token": "t"}),
         ("webhook", {"webhook_url": "http://169.254.169.254/latest/meta-data/"}),
     ],
 )
@@ -591,6 +593,10 @@ GUARDED_BODY_URLS = {
     # Fork: Settings card's Heimdall test-connection button, guarded inline by
     # the field_validator in schemas.heimdall (same assert_safe_lan_service_url).
     ("HeimdallTestRequest", "base_url"),
+    # Manyfold (#1471): manyfold.config.normalize_url applies the LAN tier on
+    # save and test, and ManyfoldService._send re-checks every redirect hop.
+    ("ManyfoldConfigUpdate", "url"),
+    ("ManyfoldTestRequest", "url"),
     ("OIDCProviderCreate", "issuer_url"),  # public tier, via schemas.auth
     ("OIDCProviderCreate", "icon_url"),
     ("OIDCProviderUpdate", "issuer_url"),
@@ -617,6 +623,8 @@ GUARDED_BODY_URLS = {
 # Not a destination Fenrir requests — no guard applies.
 NOT_A_FETCH_TARGET = {
     ("AppSettingsUpdate", "external_url"),  # Fenrir's own address (see exempt list above)
+    ("AppSettingsUpdate", "external_url"),  # Fenrir's own address (see exempt list above)
+    ("AppSettingsUpdate", "fenrir_internal_url"),
     ("AppSettingsUpdate", "ldap_server_url"),  # ldap://, handed to an LDAP client
     ("ProjectCreate", "url"),  # stored link, rendered in the UI, never fetched
     ("ProjectUpdate", "url"),

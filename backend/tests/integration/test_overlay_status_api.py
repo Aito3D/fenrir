@@ -12,6 +12,7 @@ from __future__ import annotations
 import pytest
 from httpx import AsyncClient
 
+from backend.app.core.printer_scope import ALL_PRINTERS
 from backend.tests.overlay_helpers import mint_token, setup_admin
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
@@ -216,7 +217,7 @@ class TestOverlayTokenReachesTheVideo:
         jwt = await setup_admin(async_client, suffix="_video")
         overlay_token = await mint_token(async_client, jwt, scope="overlay")
 
-        assert await verify_camera_stream_token(overlay_token) is True
+        assert await verify_camera_stream_token(overlay_token) == ALL_PRINTERS  # admin-owned: every printer (#1727)
 
     async def test_overlay_gate_rejects_camera_stream(self, async_client: AsyncClient):
         from backend.app.core.auth import verify_overlay_token
@@ -224,4 +225,4 @@ class TestOverlayTokenReachesTheVideo:
         jwt = await setup_admin(async_client, suffix="_gate")
         stream_token = await mint_token(async_client, jwt, scope="camera_stream")
 
-        assert await verify_overlay_token(stream_token) is False
+        assert await verify_overlay_token(stream_token) is None

@@ -22,9 +22,10 @@ import time
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 
-from backend.app.core.auth import is_auth_enabled, verify_websocket_token
+from backend.app.core.auth import is_auth_enabled, principal_printer_scope, verify_websocket_token_principal
 from backend.app.core.database import async_session
 from backend.app.core.permissions import Permission
+from backend.app.core.printer_scope import ALL_PRINTERS, PrinterScope
 from backend.app.core.websocket import ws_manager
 from backend.app.models.user import User
 from backend.app.services.printer_manager import printer_manager, printer_state_to_dict
@@ -143,14 +144,27 @@ async def websocket_endpoint(websocket: WebSocket, token: str | None = Query(def
         return
 
     principal: str | None = None
+    api_key_id: int | None = None
+    printer_scope: PrinterScope = ALL_PRINTERS
     if auth_required:
         if not token:
             logger.info("WebSocket connect refused: no token (auth enabled)")
             await websocket.close(code=_WS_CLOSE_UNAUTHORIZED)
             return
-        principal = await verify_websocket_token(token)
-        if principal is None:
+        token_principal = await verify_websocket_token_principal(token)
+        if token_principal is None:
             logger.info("WebSocket connect refused: invalid or expired token")
+            await websocket.close(code=_WS_CLOSE_UNAUTHORIZED)
+            return
+        principal, api_key_id = token_principal
+        # Which printers this socket may hear about (#1727). Fail-closed: if
+        # it can't be worked out the socket is refused rather than admitted
+        # with every printer.
+        try:
+            async with async_session() as db:
+                printer_scope = await principal_printer_scope(db, principal, api_key_id)
+        except Exception:  # SEC-AUTH-EXC: scope lookup failure → refuse connect (fail-closed)
+            logger.error("WebSocket printer scope lookup failed; refusing connection", exc_info=True)
             await websocket.close(code=_WS_CLOSE_UNAUTHORIZED)
             return
 
@@ -163,6 +177,12 @@ async def websocket_endpoint(websocket: WebSocket, token: str | None = Query(def
     # reachable and — under the old fail-open default — treated as
     # permitted. Stamping everything first closes that window: nothing is
     # ever in active_connections without an aito_read value already set.
+    #
+    # Which printers this socket may hear about (#1727), stamped for the same
+    # reason: ws_manager refuses printer-bound messages to a socket without a
+    # scope, so nothing in active_connections is ever unfiltered.
+    websocket.state.fenrir_printer_scope = printer_scope
+    websocket.state.fenrir_scope_principal = (principal, api_key_id)
     #
     # Stash on connection state for any future per-message permission
     # logic; today the message handlers are read-only and only respond
@@ -205,7 +225,11 @@ async def websocket_endpoint(websocket: WebSocket, token: str | None = Query(def
 
     try:
         # Send initial status of all printers.
-        statuses = printer_manager.get_all_statuses()
+        statuses = {
+            pid: state
+            for pid, state in printer_manager.get_all_statuses().items()
+            if websocket.state.fenrir_printer_scope.allows(pid)
+        }
         for printer_id, state in statuses.items():
             await websocket.send_json(
                 {
@@ -240,7 +264,7 @@ async def websocket_endpoint(websocket: WebSocket, token: str | None = Query(def
             # Handle status request
             elif data.get("type") == "get_status":
                 printer_id = data.get("printer_id")
-                if printer_id:
+                if printer_id and websocket.state.fenrir_printer_scope.allows(printer_id):
                     state = printer_manager.get_status(printer_id)
                     if state:
                         await websocket.send_json(

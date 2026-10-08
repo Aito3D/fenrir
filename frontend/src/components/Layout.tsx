@@ -64,7 +64,8 @@ export const defaultNavItems: NavItem[] = [
   { id: 'projects', to: '/projects', icon: FolderKanban, labelKey: 'nav.projects' },
   { id: 'aito', to: '/aito', icon: Kanban, labelKey: 'nav.aito' },
   { id: 'files', to: '/files', icon: FolderOpen, labelKey: 'nav.files' },
-  { id: 'makerworld', to: '/makerworld', icon: Globe, labelKey: 'nav.makerworld' },
+  // Id kept from when the page was MakerWorld-only, so saved sidebar orders and hidden items still apply.
+  { id: 'makerworld', to: '/model-sources', icon: Globe, labelKey: 'nav.modelSources' },
   { id: 'profiles', to: '/profiles', icon: Cloud, labelKey: 'nav.profiles' },
   { id: 'filament-profiles', to: '/filament-profiles', icon: Droplets, labelKey: 'nav.filamentProfiles' },
   { id: 'maintenance', to: '/maintenance', icon: Wrench, labelKey: 'nav.maintenance' },
@@ -359,7 +360,7 @@ export function Layout() {
       inventory: 'inventory:read',
       finance: 'cost_centers:read_own',
       files: ['library:read', 'library:read_own', 'library:read_all'],
-      makerworld: 'makerworld:view',
+      makerworld: ['makerworld:view', 'manyfold:view'],
       calculator: 'calculator:read',
       aito: 'aito:read',
       settings: 'settings:read',

@@ -14,17 +14,19 @@ from starlette.background import BackgroundTask
 
 from backend.app.core import database
 from backend.app.core.auth import (
+    RequestPrinterScope,
     RequireOverlayTokenIfAuthEnabled,
     RequirePermissionIfAuthEnabled,
     RequirePrinterPermissionIfAuthEnabled,
     is_auth_enabled,
-    require_media_token_permission,
     require_media_token_printer_permission,
 )
 from backend.app.core.config import settings
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
+from backend.app.core.printer_scope import PrinterScope, location_grantees
 from backend.app.core.tasks import spawn_background_task
+from backend.app.core.websocket import ws_manager
 from backend.app.models.ams_label import AmsLabel
 from backend.app.models.printer import Printer
 from backend.app.models.slot_preset import SlotPresetMapping
@@ -145,15 +147,19 @@ def _serialize_printer(printer: Printer, *, include_secret: bool):
 @router.get("/")
 async def list_printers(
     user: User | None = RequirePermissionIfAuthEnabled(Permission.PRINTERS_READ),
+    printer_scope: PrinterScope = RequestPrinterScope,
     db: AsyncSession = Depends(get_db),
 ):
-    """List all configured printers.
+    """List the configured printers the caller may see (#1727).
 
     ``access_code`` is included in each item only when the caller is trusted
     to see it (Admin / Operator JWT, or auth-disabled mode). Viewers and
     API keys never receive it.
     """
-    result = await db.execute(select(Printer).order_by(Printer.name))
+    query = select(Printer).order_by(Printer.name)
+    if (clause := printer_scope.where_strict(Printer.id)) is not None:
+        query = query.where(clause)
+    result = await db.execute(query)
     printers = list(result.scalars().all())
     include_secret = await _caller_can_view_printer_secrets(user, db)
     return [_serialize_printer(p, include_secret=include_secret) for p in printers]
@@ -203,6 +209,10 @@ async def create_printer(
     await db.commit()
     await db.refresh(printer)
 
+    # A group given this location reaches the new printer straight away (#1727)
+    if await location_grantees(db, [printer.location]):
+        await ws_manager.refresh_printer_scopes()
+
     # Connect to the printer
     if printer.is_active:
         await printer_manager.connect_printer(printer)
@@ -233,6 +243,7 @@ async def get_available_filaments(
     model: str = Query(..., description="Target printer model"),
     location: str | None = Query(None, description="Optional location filter"),
     _=RequirePermissionIfAuthEnabled(Permission.QUEUE_CREATE),
+    printer_scope: PrinterScope = RequestPrinterScope,
     db: AsyncSession = Depends(get_db),
 ):
     """Get deduplicated list of filaments loaded across all active printers of a given model.
@@ -251,7 +262,7 @@ async def get_available_filaments(
         query = query.where(Printer.location == location)
 
     result = await db.execute(query)
-    printers_list = list(result.scalars().all())
+    printers_list = [p for p in result.scalars().all() if printer_scope.allows(p.id)]
 
     if not printers_list:
         return []
@@ -336,11 +347,12 @@ async def get_available_filaments(
 @router.get("/developer-mode-warnings")
 async def get_developer_mode_warnings(
     _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_READ),
+    printer_scope: PrinterScope = RequestPrinterScope,
     db: AsyncSession = Depends(get_db),
 ):
-    """Check if any connected printer lacks developer LAN mode."""
+    """Check if any connected printer the caller can see lacks developer LAN mode."""
     result = await db.execute(select(Printer).where(Printer.is_active == True))  # noqa: E712
-    printers = result.scalars().all()
+    printers = [p for p in result.scalars().all() if printer_scope.allows(p.id)]
     statuses = printer_manager.get_all_statuses()
 
     warnings = []
@@ -380,7 +392,7 @@ async def get_printer(
 async def update_printer(
     printer_id: int,
     printer_data: PrinterUpdate,
-    _=RequirePrinterPermissionIfAuthEnabled(Permission.PRINTERS_UPDATE),
+    user: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.PRINTERS_UPDATE),
     db: AsyncSession = Depends(get_db),
 ):
     """Update a printer."""
@@ -396,6 +408,18 @@ async def update_printer(
         url = update_data["external_camera_url"]
         if url and "***:***@" in url:
             del update_data["external_camera_url"]
+
+    # Groups can be given a location (#1727), so moving a printer between
+    # locations changes who can reach it. That is an access change and only an
+    # admin may make it; an API key never counts as one.
+    access_moved = False
+    if "location" in update_data and update_data["location"] != printer.location:
+        access_moved = bool(await location_grantees(db, [printer.location, update_data["location"]]))
+        if access_moved and await is_auth_enabled(db) and not (user is not None and user.is_admin):
+            raise HTTPException(
+                403,
+                "Moving this printer to another location changes which groups can access it. Only an admin can do that.",
+            )
 
     # Handle nested ROI object - flatten to individual columns
     if "plate_detection_roi" in update_data:
@@ -417,6 +441,9 @@ async def update_printer(
 
     await db.commit()
     await db.refresh(printer)
+
+    if access_moved:
+        await ws_manager.refresh_printer_scopes()
 
     # Reconnect if connection settings changed
     if any(k in update_data for k in ["ip_address", "access_code", "is_active"]):
@@ -444,6 +471,7 @@ async def delete_printer(
     from sqlalchemy import delete as sql_delete
 
     from backend.app.models.archive import PrintArchive
+    from backend.app.models.group import group_printers
     from backend.app.models.maintenance import MaintenanceHistory, PrinterMaintenance
     from backend.app.models.scheduled_drying import ScheduledDrying
     from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
@@ -469,6 +497,9 @@ async def delete_printer(
 
     # Delete scheduled drying runs for this printer (SQLite doesn't enforce FK cascades)
     await db.execute(sql_delete(ScheduledDrying).where(ScheduledDrying.printer_id == printer_id))
+
+    # Drop it from printer-scoped groups (SQLite doesn't enforce FK cascades)
+    await db.execute(sql_delete(group_printers).where(group_printers.c.printer_id == printer_id))
 
     # Delete maintenance history and items for this printer
     # (SQLite doesn't enforce FK cascades, so do it explicitly)
@@ -813,6 +844,7 @@ async def get_printer_status(
             for ext_id, slot in state.extruder_slots.items()
         },
         tray_now=tray_now,
+        tray_change_log=[[tray, layer] for tray, layer in state.tray_change_log],
         # Runout guidance (#2587): resolve the firmware's target/previous slot to a
         # global tray ID, but only while PAUSED — the moment the operator needs it.
         expected_tray=(
@@ -1142,7 +1174,7 @@ async def _running_print_archive_file(printer_id: int, state) -> Path | None:
 async def get_printer_cover(
     printer_id: int,
     view: str | None = None,
-    _: User | None = Depends(require_media_token_permission(Permission.PRINTERS_READ)),
+    _: User | None = Depends(require_media_token_printer_permission(Permission.PRINTERS_READ)),
 ):
     """Get the cover image for the current print job.
 
@@ -2719,7 +2751,7 @@ async def get_slot_spool_defaults(
     ams_id: int,
     tray_id: int,
     db: AsyncSession = Depends(get_db),
-    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_READ),
+    _=RequirePrinterPermissionIfAuthEnabled(Permission.PRINTERS_READ),
 ):
     """What the spool assigned to this slot is configured to use here.
 

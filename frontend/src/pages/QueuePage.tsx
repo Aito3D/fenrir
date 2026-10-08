@@ -123,6 +123,35 @@ function emptyMappedSlotLabel(status: PrinterStatus | undefined, trayId: number)
   return formatSlotLabel(amsId, slot, isHt, false);
 }
 
+/**
+ * The backup tray each mapped tray handed over to during the running print.
+ *
+ * With AMS Filament Backup on, a spool that runs out is replaced by an identical
+ * one in another slot, and the job's stored mapping still names the empty slot.
+ * The printer's tray log shows the switch: a tray the mapping doesn't name, right
+ * after the tray it took over from. A backup that runs out in turn hands over
+ * again, so the chain resolves to the slot the mapping named.
+ */
+function backupTrays(mapping: number[] | null | undefined, log: [number, number][] | undefined): Map<number, number> {
+  const backups = new Map<number, number>();
+  if (!mapping?.length || !log?.length) return backups;
+  const mapped = new Set(mapping.filter((tray) => tray >= 0));
+  // Backup tray -> the mapped tray it stands in for.
+  const standsInFor = new Map<number, number>();
+  let previous: number | undefined;
+  for (const [tray] of log) {
+    if (previous !== undefined && !mapped.has(tray) && !standsInFor.has(tray)) {
+      const original = mapped.has(previous) ? previous : standsInFor.get(previous);
+      if (original !== undefined) {
+        standsInFor.set(tray, original);
+        backups.set(original, tray);
+      }
+    }
+    previous = tray;
+  }
+  return backups;
+}
+
 function queueFilamentLabel(filament: QueueFilamentDisplay): string {
   return filament.slotLabel
     ? [
@@ -152,10 +181,15 @@ function resolveQueueFilaments(
   // slot. Once its live tray data is available, that is more specific than
   // either the queue override or the original slice. When the printer reports
   // that tray as empty, keep the intended colour but say the slot is empty.
+  // While the job prints, a slot whose spool ran out shows the backup spool the
+  // printer switched to instead.
+  const backups =
+    item.status === 'printing' ? backupTrays(item.ams_mapping, status?.tray_change_log) : new Map<number, number>();
   const resolveSlot = (planned: QueueFilamentDisplay): QueueFilamentDisplay => {
     const slotId = planned.slotId;
-    const mappedTrayId = slotId > 0 ? item.ams_mapping?.[slotId - 1] : undefined;
-    if (mappedTrayId == null || mappedTrayId < 0) return planned;
+    const storedTrayId = slotId > 0 ? item.ams_mapping?.[slotId - 1] : undefined;
+    if (storedTrayId == null || storedTrayId < 0) return planned;
+    const mappedTrayId = backups.get(storedTrayId) ?? storedTrayId;
     const loaded = loadedFilaments.find((filament) => filament.globalTrayId === mappedTrayId);
     if (loaded) {
       return {
@@ -556,6 +590,9 @@ function SortableQueueItem({
   etaNow?: number;
   t: (key: string, options?: Record<string, unknown>) => string;
 }) {
+  const { hasAnyPermission } = useAuth();
+  // Their waiting jobs are started by someone who manages the queue (#1620)
+  const awaitingReview = !hasAnyPermission('queue:update_all', 'queue:start_unreviewed');
   const hasPhysicalAmsMapping =
     item.printer_id != null && (item.ams_mapping?.some((trayId) => trayId >= 0) ?? false);
 
@@ -942,7 +979,7 @@ function SortableQueueItem({
             {item.manual_start && (
               <span className="text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 bg-purple-50 dark:bg-purple-500/10 text-purple-700 dark:text-purple-400 rounded-full border border-purple-200 dark:border-purple-500/20 flex items-center gap-1">
                 <Hand className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
-                {t('queue.badges.staged')}
+                {awaitingReview ? t('queue.badges.awaitingReview') : t('queue.badges.staged')}
               </span>
             )}
             {item.require_previous_success && (
@@ -1083,8 +1120,14 @@ function SortableQueueItem({
                     variant="ghost"
                     size="sm"
                     onClick={onStart}
-                    disabled={!canModify('queue', 'update', item.created_by_id)}
-                    title={!canModify('queue', 'update', item.created_by_id) ? t('queue.permissions.noStartPrint') : t('queue.actions.startPrint')}
+                    disabled={awaitingReview || !canModify('queue', 'update', item.created_by_id)}
+                    title={
+                      awaitingReview
+                        ? t('queue.permissions.awaitingReview')
+                        : !canModify('queue', 'update', item.created_by_id)
+                          ? t('queue.permissions.noStartPrint')
+                          : t('queue.actions.startPrint')
+                    }
                     className="text-bambu-green hover:text-bambu-green-light hover:bg-bambu-green/10 p-1.5 sm:p-2"
                   >
                     <Play className="w-4 h-4" />

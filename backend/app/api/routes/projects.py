@@ -16,10 +16,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from backend.app.api.routes.library import get_library_dir
-from backend.app.core.auth import RequirePermissionIfAuthEnabled, require_media_token_permission
+from backend.app.core.auth import RequestPrinterScope, RequirePermissionIfAuthEnabled, require_media_token_permission
 from backend.app.core.config import settings
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
+from backend.app.core.printer_scope import PrinterScope
 from backend.app.models.aito_project import AitoProject  # Fenrir: only active orders' links block deletion
 from backend.app.models.aito_task import AitoTask  # Fenrir: Aito tasks linked to a project block its deletion
 from backend.app.models.archive import PrintArchive
@@ -107,6 +108,7 @@ class _ProjectTotals:
     filament_cost: float = 0.0
     energy_kwh: float = 0.0
     energy_cost: float = 0.0
+    wear_cost: float = 0.0
     queued_prints: int = 0
     in_progress_prints: int = 0
     bom_total_items: int = 0
@@ -158,6 +160,7 @@ async def _load_totals(db: AsyncSession, project_ids: Sequence[int]) -> dict[int
             func.coalesce(func.sum(PrintLogEntry.cost), 0).label("total_filament_cost"),
             func.coalesce(func.sum(PrintLogEntry.energy_kwh), 0).label("total_energy"),
             func.coalesce(func.sum(PrintLogEntry.energy_cost), 0).label("total_energy_cost"),
+            func.coalesce(func.sum(PrintLogEntry.wear_cost), 0).label("total_wear_cost"),
             func.coalesce(func.sum(PrintArchive.quantity), 0).label("total_items"),
             # A completed run the user marked as reject (#1898) produced no
             # usable parts — keep it out of the good-parts count.
@@ -184,6 +187,7 @@ async def _load_totals(db: AsyncSession, project_ids: Sequence[int]) -> dict[int
         entry.filament_cost = float(row.total_filament_cost or 0)
         entry.energy_kwh = float(row.total_energy or 0)
         entry.energy_cost = float(row.total_energy_cost or 0)
+        entry.wear_cost = float(row.total_wear_cost or 0)
         entry.total_items = int(row.total_items or 0)
         entry.completed_items = int(row.completed_items or 0)
         entry.failed_runs = int(row.failed_runs or 0)
@@ -255,6 +259,7 @@ def _stats_from_totals(
         estimated_cost=round(totals.filament_cost, 2),
         total_energy_kwh=round(totals.energy_kwh, 3),
         total_energy_cost=round(totals.energy_cost, 3),
+        total_wear_cost=round(totals.wear_cost, 3),
         remaining_prints=remaining_prints,
         remaining_parts=remaining_parts,
         bom_total_items=totals.bom_total_items,
@@ -397,7 +402,13 @@ async def compute_subtree_stats(db: AsyncSession, root_id: int) -> _SubtreeRepor
                 completed_prints=child_stats.completed_prints,
                 total_print_time_hours=child_stats.total_print_time_hours,
                 total_filament_grams=child_stats.total_filament_grams,
-                total_cost=round(child_stats.estimated_cost + child_stats.total_energy_cost + child_stats.bom_cost, 2),
+                total_cost=round(
+                    child_stats.estimated_cost
+                    + child_stats.total_energy_cost
+                    + child_stats.total_wear_cost
+                    + child_stats.bom_cost,
+                    2,
+                ),
             )
         )
 
@@ -1012,6 +1023,7 @@ async def list_project_archives(
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_READ),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """List archives in a project."""
     # Verify project exists
@@ -1033,6 +1045,9 @@ async def list_project_archives(
         .limit(limit)
         .offset(offset)
     )
+    # Only archives from printers the caller may see (#1727)
+    if (clause := printer_scope.where(PrintArchive.printer_id)) is not None:
+        query = query.where(clause)
     result = await db.execute(query)
     archives = result.scalars().all()
 
@@ -1058,6 +1073,7 @@ async def list_project_queue(
     project_id: int,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_READ),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """List queue items in a project."""
     # Verify project exists
@@ -1067,6 +1083,8 @@ async def list_project_queue(
 
     # Get queue items
     query = select(PrintQueueItem).where(PrintQueueItem.project_id == project_id).order_by(PrintQueueItem.position)
+    if (clause := printer_scope.where(PrintQueueItem.printer_id)) is not None:
+        query = query.where(clause)
     result = await db.execute(query)
     items = result.scalars().all()
 
@@ -2128,7 +2146,7 @@ async def export_project(
 async def import_project(
     data: ProjectImport,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_CREATE),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_CREATE),
 ):
     """Import a project with optional BOM items and linked folders."""
     # Create the project
@@ -2181,12 +2199,15 @@ async def import_project(
             existing_folder.project_id = project.id
         else:
             # Create new folder linked to project
+            # A project's folder is shared, like every linked folder (#3201).
             new_folder = LibraryFolder(
                 name=folder_data.name,
                 project_id=project.id,
                 is_external=False,
                 external_readonly=False,
                 external_show_hidden=False,
+                created_by_id=current_user.id if current_user else None,
+                shared=True,
             )
             db.add(new_folder)
 
@@ -2229,7 +2250,7 @@ async def import_project(
 async def import_project_file(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_CREATE),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_CREATE),
 ):
     """Import a project from a ZIP or JSON file."""
     if not file.filename:
@@ -2324,12 +2345,15 @@ async def import_project_file(
             folder = existing_folder
         else:
             # Create new folder
+            # A project's folder is shared, like every linked folder (#3201).
             folder = LibraryFolder(
                 name=folder_name,
                 project_id=project.id,
                 is_external=False,
                 external_readonly=False,
                 external_show_hidden=False,
+                created_by_id=current_user.id if current_user else None,
+                shared=True,
             )
             db.add(folder)
             await db.flush()

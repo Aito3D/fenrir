@@ -10,9 +10,18 @@ from unittest.mock import patch
 
 import pytest
 
+from backend.app.core.printer_scope import ALL_PRINTERS, PrinterScope
+
 # ---------------------------------------------------------------------------
 # TestCleanupStaleFrameBuffers
 # ---------------------------------------------------------------------------
+
+
+def _scope_of(api_key):
+    """The printer scope RequestPrinterScope would resolve for ``api_key`` (#1727)."""
+    if api_key is None or api_key.printer_ids is None:
+        return ALL_PRINTERS
+    return PrinterScope(frozenset(api_key.printer_ids))
 
 
 class TestCleanupStaleFrameBuffers:
@@ -1348,7 +1357,7 @@ class TestStderrCategorization:
             # hub-status surfaces the bounded, most-recent-only summary for
             # the failing printer and leaves the live printer's summary
             # (raw dicts and per-printer aggregate) unaffected.
-            status = await cam.camera_hub_status(_=None, api_key=None)
+            status = await cam.camera_hub_status(_=None, printer_scope=ALL_PRINTERS)
             raw_failing_keys = [k for k in status["stderr_error_counts"] if k.startswith(f"{failing_pid}-")]
             assert raw_failing_keys == [last_stream_id]
             assert status["stderr_error_counts"][other_stream] == 5
@@ -1436,7 +1445,7 @@ class TestStderrCategorization:
             # and the new attempt hasn't written (or evicted) anything yet.
             assert stream_1 in cam._state.stderr_error_counts
             assert stream_2 not in cam._state.stderr_error_counts
-            status = await cam.camera_hub_status(_=None, api_key=None)
+            status = await cam.camera_hub_status(_=None, printer_scope=ALL_PRINTERS)
             assert status["per_printer_status"][str(failing_pid)]["error_counts"] == {"generic_error": 1}
 
             # Let the attempt finish — it should now replace the previous one.
@@ -1445,7 +1454,7 @@ class TestStderrCategorization:
 
             assert stream_2 in cam._state.stderr_error_counts
             assert stream_1 not in cam._state.stderr_error_counts
-            status = await cam.camera_hub_status(_=None, api_key=None)
+            status = await cam.camera_hub_status(_=None, printer_scope=ALL_PRINTERS)
             assert status["per_printer_status"][str(failing_pid)]["error_counts"] == {"generic_error": 1}
         finally:
             cam._state.stderr_error_counts.clear()
@@ -1655,7 +1664,14 @@ class TestGridStreamGenerateLoop:
             patch("backend.app.api.routes.camera.time", _FakeTime()),
         ):
             resp = await cam.camera_grid_stream(
-                request, ids=str(pid), fps=200, quality=15, scale=0.5, force=False, api_key=None
+                request,
+                ids=str(pid),
+                fps=200,
+                quality=15,
+                scale=0.5,
+                force=False,
+                api_key=None,
+                printer_scope=ALL_PRINTERS,
             )
 
             # generate() is an async generator function: calling it just builds
@@ -1715,7 +1731,14 @@ class TestGridStreamGenerateLoop:
                 patch("backend.app.api.routes.camera._ensure_producer", new=AsyncMock()) as mock_ensure,
             ):
                 resp = await cam.camera_grid_stream(
-                    request, ids=f"{pid_dead},{pid_alive}", fps=200, quality=15, scale=0.5, force=False, api_key=None
+                    request,
+                    ids=f"{pid_dead},{pid_alive}",
+                    fps=200,
+                    quality=15,
+                    scale=0.5,
+                    force=False,
+                    api_key=None,
+                    printer_scope=ALL_PRINTERS,
                 )
 
                 # Nothing has run yet — generate() only executes up to its
@@ -1792,7 +1815,14 @@ class TestGridStreamGenerateLoop:
                 patch("backend.app.api.routes.camera._ensure_producer", new=AsyncMock()) as mock_ensure,
             ):
                 resp = await cam.camera_grid_stream(
-                    request, ids=f"{pid_stuck},{pid_alive}", fps=200, quality=15, scale=0.5, force=False, api_key=None
+                    request,
+                    ids=f"{pid_stuck},{pid_alive}",
+                    fps=200,
+                    quality=15,
+                    scale=0.5,
+                    force=False,
+                    api_key=None,
+                    printer_scope=ALL_PRINTERS,
                 )
 
                 # The first (and only) chunk is the live entry's frame; the
@@ -1885,6 +1915,7 @@ class TestGridStreamGenerateLoop:
                     scale=0.5,
                     force=False,
                     api_key=None,
+                    printer_scope=ALL_PRINTERS,
                 )
 
                 # First pass: target's frame is yielded; no deaths yet.
@@ -1965,7 +1996,14 @@ class TestGridStreamGenerateLoop:
             patch("backend.app.api.routes.camera.asyncio.wait", new=wait_fn),
         ):
             resp = await cam.camera_grid_stream(
-                request, ids=str(pid), fps=10, quality=15, scale=0.5, force=False, api_key=None
+                request,
+                ids=str(pid),
+                fps=10,
+                quality=15,
+                scale=0.5,
+                force=False,
+                api_key=None,
+                printer_scope=ALL_PRINTERS,
             )
             chunk = await resp.body_iterator.__anext__()
             assert chunk == struct.pack("<II", pid, len(entry.frame)) + entry.frame
@@ -2009,7 +2047,14 @@ class TestGridStreamGenerateLoop:
             patch("backend.app.api.routes.camera.asyncio.wait", new=wait_fn),
         ):
             resp = await cam.camera_grid_stream(
-                request, ids=str(pid), fps=10, quality=15, scale=0.5, force=False, api_key=None
+                request,
+                ids=str(pid),
+                fps=10,
+                quality=15,
+                scale=0.5,
+                force=False,
+                api_key=None,
+                printer_scope=ALL_PRINTERS,
             )
             with pytest.raises(StopAsyncIteration):
                 await resp.body_iterator.__anext__()
@@ -2063,7 +2108,14 @@ class TestGridStreamGenerateLoop:
             patch("backend.app.services.printer_manager.printer_manager.get_status", new=get_status),
         ):
             resp = await cam.camera_grid_stream(
-                request, ids=str(pid), fps=10, quality=15, scale=0.5, force=False, api_key=None
+                request,
+                ids=str(pid),
+                fps=10,
+                quality=15,
+                scale=0.5,
+                force=False,
+                api_key=None,
+                printer_scope=ALL_PRINTERS,
             )
             first = await resp.body_iterator.__anext__()
             t_first = clock._t
@@ -2179,6 +2231,7 @@ class TestGridStreamGenerateLoop:
                     scale=0.5,
                     force=False,
                     api_key=None,
+                    printer_scope=ALL_PRINTERS,
                 )
 
                 # Step the loop, one outer-loop pass per __anext__() call (the
@@ -2258,6 +2311,7 @@ class TestGridStreamGenerateLoop:
                     scale=0.5,
                     force=False,
                     api_key=None,
+                    printer_scope=ALL_PRINTERS,
                 )
 
                 # Iteration 1 schedules the restart; several more all fall
@@ -2339,6 +2393,7 @@ class TestGridStreamGenerateLoop:
                     scale=0.5,
                     force=False,
                     api_key=None,
+                    printer_scope=ALL_PRINTERS,
                 )
 
                 # Step the loop until a failed restart attempt has pushed the
@@ -2450,6 +2505,7 @@ class TestGridStreamBackgroundRestarts:
             scale=0.5,
             force=False,
             api_key=None,
+            printer_scope=ALL_PRINTERS,
         )
 
     @pytest.mark.asyncio
@@ -2885,6 +2941,7 @@ class TestGridStreamAPIKeyPrinterScope:
                 scale=0.5,
                 force=False,
                 api_key=api_key,
+                printer_scope=_scope_of(api_key),
             )
 
             # The disallowed id was dropped before the hub was ever consulted.
@@ -2931,6 +2988,7 @@ class TestGridStreamAPIKeyPrinterScope:
                 scale=0.5,
                 force=False,
                 api_key=api_key,
+                printer_scope=_scope_of(api_key),
             )
 
             assert captured_ids == [pid_a, pid_b]
@@ -2991,7 +3049,7 @@ class TestHubStatusAPIKeyPrinterScope:
             patch.object(cam, "_state", self._seeded_state()),
             patch.object(cam._hub, "status", return_value=self._grid_status()),
         ):
-            return await cam.camera_hub_status(_=None, api_key=api_key)
+            return await cam.camera_hub_status(_=None, printer_scope=_scope_of(api_key))
 
     def _assert_sees_everything(self, status):
         a, b = self.PID_ALLOWED, self.PID_OTHER
@@ -3006,7 +3064,7 @@ class TestHubStatusAPIKeyPrinterScope:
 
     @pytest.mark.asyncio
     async def test_no_api_key_sees_every_printer(self):
-        """JWT / no-auth path (api_key=None) is unchanged."""
+        """JWT / no-auth path (api_key=None, printer_scope=ALL_PRINTERS) is unchanged."""
         self._assert_sees_everything(await self._call(None))
 
     @pytest.mark.asyncio
@@ -3107,7 +3165,14 @@ class TestGridStreamDoesNotForceProducerRestarts:
             patch("backend.app.api.routes.camera._ensure_producer", new=AsyncMock()) as mock_ensure,
         ):
             resp = await cam.camera_grid_stream(
-                request, ids=str(pid), fps=None, quality=None, scale=None, force=False, api_key=None
+                request,
+                ids=str(pid),
+                fps=None,
+                quality=None,
+                scale=None,
+                force=False,
+                api_key=None,
+                printer_scope=ALL_PRINTERS,
             )
             chunk = await resp.body_iterator.__anext__()
             assert chunk[:4] == struct.pack("<I", pid)
@@ -3143,7 +3208,15 @@ class TestGridStreamDoesNotForceProducerRestarts:
             patch("backend.app.api.routes.camera._ensure_producer", new=AsyncMock(return_value=entry)) as mock_ensure,
         ):
             resp = await cam.camera_grid_stream(
-                request, ids=str(pid), fps=None, quality=None, scale=None, force=True, _=None, api_key=None
+                request,
+                ids=str(pid),
+                fps=None,
+                quality=None,
+                scale=None,
+                force=True,
+                _=None,
+                api_key=None,
+                printer_scope=ALL_PRINTERS,
             )
             await resp.body_iterator.__anext__()
             with pytest.raises(StopAsyncIteration):
@@ -3198,6 +3271,7 @@ class TestGridStreamDoesNotForceProducerRestarts:
                     scale=0.5,
                     force=False,
                     api_key=None,
+                    printer_scope=ALL_PRINTERS,
                 )
                 for _ in range(20):
                     await resp.body_iterator.__anext__()
@@ -3271,7 +3345,14 @@ class TestGridStreamSpawnOutsideSession:
             patch("backend.app.api.routes.camera._ensure_producer", new=AsyncMock(side_effect=fake_ensure)),
         ):
             resp = await cam.camera_grid_stream(
-                request, ids=",".join(map(str, pids)), fps=200, quality=15, scale=0.5, force=False, api_key=None
+                request,
+                ids=",".join(map(str, pids)),
+                fps=200,
+                quality=15,
+                scale=0.5,
+                force=False,
+                api_key=None,
+                printer_scope=ALL_PRINTERS,
             )
             await resp.body_iterator.aclose()
 
@@ -3341,6 +3422,7 @@ class TestGridStreamLoadGateRefusal:
                 scale=0.5,
                 force=False,
                 api_key=None,
+                printer_scope=ALL_PRINTERS,
             )
         finally:
             for c in reversed(ctx):

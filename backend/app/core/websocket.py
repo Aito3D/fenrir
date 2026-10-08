@@ -8,6 +8,29 @@ from fastapi import WebSocket
 logger = logging.getLogger(__name__)
 
 
+def _message_printer_id(message: dict[str, Any]) -> int | None:
+    """The printer a broadcast is about, if any: top-level or inside ``data``."""
+    printer_id = message.get("printer_id")
+    if printer_id is None:
+        data = message.get("data")
+        if isinstance(data, dict):
+            printer_id = data.get("printer_id")
+    return printer_id if isinstance(printer_id, int) else None
+
+
+def _may_receive(connection: WebSocket, printer_id: int | None) -> bool:
+    """Whether ``connection``'s printer scope (#1727) covers ``printer_id``.
+
+    The scope is stamped on the socket at connect (``routes/websocket.py``).
+    A socket without one is refused anything printer-bound, so a connection
+    that slipped past the stamping can't receive every printer's events.
+    """
+    if printer_id is None:
+        return True
+    scope = getattr(connection.state, "fenrir_printer_scope", None)
+    return scope is not None and scope.allows(printer_id)
+
+
 class ConnectionManager:
     """Manages WebSocket connections and broadcasts."""
 
@@ -161,8 +184,11 @@ class ConnectionManager:
         ``active_connections`` before handing off to ``_fan_out`` — never
         across the actual I/O. See ``_fan_out`` for why.
         """
+        printer_id = _message_printer_id(message)
         async with self._lock:
-            connections = list(self.active_connections)
+            # A printer-bound message only reaches sockets whose stamped scope
+            # (#1727) covers that printer; see _may_receive.
+            connections = [conn for conn in self.active_connections if _may_receive(conn, printer_id)]
         if not connections:
             return
         data = json.dumps(message)
@@ -242,15 +268,53 @@ class ConnectionManager:
             return
 
         data = json.dumps(message)
+        printer_id = _message_printer_id(message)
         async with self._lock:
             connections = [
                 conn
                 for conn in self.active_connections
-                if getattr(conn.state, "fenrir_principal_user_id", None) == user_id
+                if getattr(conn.state, "fenrir_principal_user_id", None) == user_id and _may_receive(conn, printer_id)
             ]
         if not connections:
             return
         await self._fan_out(connections, data)
+
+    async def refresh_printer_scopes(self):
+        """Recompute every connection's printer scope (#1727).
+
+        Called after an admin changes which printers a group may see, or who
+        is in a group, so open dashboards stop (or start) receiving those
+        printers' events without a reconnect.
+        """
+        from backend.app.core.auth import is_auth_enabled, principal_printer_scope
+        from backend.app.core.database import async_session
+        from backend.app.core.printer_scope import ALL_PRINTERS, PrinterScope
+
+        async with self._lock:
+            connections = list(self.active_connections)
+        if not connections:
+            return
+        try:
+            async with async_session() as db:
+                auth_enabled = await is_auth_enabled(db)
+                for connection in connections:
+                    if not auth_enabled:
+                        connection.state.fenrir_printer_scope = ALL_PRINTERS
+                        continue
+                    username, api_key_id = getattr(connection.state, "fenrir_scope_principal", (None, None))
+                    connection.state.fenrir_printer_scope = await principal_printer_scope(db, username, api_key_id)
+        except Exception:  # SEC-AUTH-EXC: refresh failed → fail closed (empty scope, then disconnect to re-auth)
+            # The old scopes may be wider than what was just granted, so they
+            # can't be kept. Drop every socket to no printers and close it with
+            # the "unauthorised" code: the SPA mints a new token and reconnects,
+            # and its scope is worked out afresh at connect.
+            logger.warning("WebSocket printer scope refresh failed; disconnecting clients", exc_info=True)
+            for connection in connections:
+                connection.state.fenrir_printer_scope = PrinterScope(frozenset())
+                try:
+                    await connection.close(code=4401)
+                except Exception:  # noqa: BLE001 -- already gone; disconnect() cleans it up
+                    pass
 
     async def send_printer_status(self, printer_id: int, status: dict):
         """Send printer status update to all clients."""

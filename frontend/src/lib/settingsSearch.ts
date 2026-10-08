@@ -25,7 +25,7 @@ export type SettingsSearchTab =
   | 'failure-detection'
   | 'zoho';
 
-export type SettingsSearchSubTab = 'users' | 'email' | 'ldap' | 'oidc' | 'twofa' | 'security';
+export type SettingsSearchSubTab = 'users' | 'printer-access' | 'email' | 'ldap' | 'oidc' | 'twofa' | 'security';
 
 export type UsersSubTab = SettingsSearchSubTab;
 

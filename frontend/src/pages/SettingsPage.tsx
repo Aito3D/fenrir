@@ -55,6 +55,7 @@ import { ProjectsSettingsCard, canManageProjectsSettings } from '../components/p
 import { FailureDetectionSettings } from '../components/FailureDetectionSettings';
 import { EmailSettings } from '../components/EmailSettings';
 import { LDAPSettings } from '../components/LDAPSettings';
+import { PrinterAccessSettings } from '../components/PrinterAccessSettings';
 import { TwoFactorSettings } from '../components/TwoFactorSettings';
 import { OIDCProviderSettings } from '../components/OIDCProviderSettings';
 import { SecurityStatusCard } from '../components/SecurityStatusCard';
@@ -119,6 +120,7 @@ registerSettingsSearch({ labelKey: 'settings.tabs.spoolbuddy', tab: 'spoolbuddy'
 registerSettingsSearch({ labelKey: 'settings.currentUser', tab: 'users', subTab: 'users', keywords: 'current user profile password change', anchor: 'card-currentuser' });
 registerSettingsSearch({ labelKey: 'settings.users', tab: 'users', subTab: 'users', keywords: 'users accounts list', anchor: 'card-users' });
 registerSettingsSearch({ labelKey: 'settings.groups', tab: 'users', subTab: 'users', keywords: 'groups roles permissions administrators operators viewers', anchor: 'card-groups' });
+registerSettingsSearch({ labelKey: 'printerAccess.tab', tab: 'users', subTab: 'printer-access', keywords: 'printer access groups teams locations limit restrict scope who can see', anchor: 'card-printer-access' });
 registerSettingsSearch({ labelKey: 'settings.sessionPolicy.title', labelFallback: 'Session Policy', tab: 'users', subTab: 'users', keywords: 'session timeout expiry logout remember me jwt token lifetime', anchor: 'card-session-policy' });
 registerSettingsSearch({ labelKey: 'settings.email.smtpSettings', labelFallback: 'SMTP Configuration', tab: 'users', subTab: 'email', keywords: 'smtp email send server port password auth starttls ssl', anchor: 'card-smtp' });
 registerSettingsSearch({ labelKey: 'settings.ldap.title', labelFallback: 'LDAP Authentication', tab: 'users', subTab: 'ldap', keywords: 'ldap active directory ad authentication bind dn search base group mapping', anchor: 'card-ldap' });
@@ -295,7 +297,22 @@ export function SettingsPage() {
     : isLegacyCameraLink ? 'camera'
     : (tabParam && validTabs.includes(tabParam as TabType) ? tabParam as TabType : 'general');
   const [activeTab, setActiveTab] = useState<TabType>(initialTab);
-  const [usersSubTab, setUsersSubTab] = useState<UsersSubTab>(isLegacyEmailTab ? 'email' : 'users');
+  // Only Printer access is deep-linked (?tab=users&sub=printer-access), from the printer card menu
+  const [usersSubTab, setUsersSubTab] = useState<UsersSubTab>(
+    isLegacyEmailTab ? 'email' : tabParam === 'users' && searchParams.get('sub') === 'printer-access' ? 'printer-access' : 'users'
+  );
+  const selectUsersSubTab = (sub: UsersSubTab) => {
+    setUsersSubTab(sub);
+    if (sub === 'printer-access') {
+      searchParams.set('sub', 'printer-access');
+    } else {
+      for (const key of ['sub', 'view', 'group', 'printer']) searchParams.delete(key);
+    }
+    setSearchParams(searchParams, { replace: true });
+  };
+  // A link to Printer access lands non-admins on the Users sub-tab instead
+  const shownUsersSubTab: UsersSubTab =
+    usersSubTab === 'printer-access' && !(authEnabled && isAdmin) ? 'users' : usersSubTab;
   // Workflow tab sub-tabs (#1425): 'dispatch' = current Workflow content,
   // 'pipelines' = Slicer Pipelines management. URL: ?tab=queue&sub=pipelines.
   const initialQueueSub: 'dispatch' | 'pipelines' =
@@ -308,9 +325,10 @@ export function SettingsPage() {
     if (tab === 'users') {
       setUsersSubTab('users');
     }
+    // Sub-tab state belongs to the tab being left
+    for (const key of ['sub', 'view', 'group', 'printer']) searchParams.delete(key);
     if (tab === 'queue') {
       setQueueSubTab('dispatch');
-      searchParams.delete('sub');
     }
     if (tab === 'general') {
       searchParams.delete('tab');
@@ -434,6 +452,19 @@ export function SettingsPage() {
     refetchInterval: false,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
+  });
+
+  // Price sensors to suggest when the electricity price comes from Home
+  // Assistant (#1251): anything with a unit per kWh, MWh or Wh.
+  const { data: haPriceEntities } = useQuery({
+    queryKey: ['ha-price-entities'],
+    queryFn: async () =>
+      (await api.getBindableHAEntities()).filter(
+        (e) => e.domain === 'sensor' && /\/\s*[km]?wh$/i.test(e.unit_of_measurement ?? ''),
+      ),
+    enabled: activeTab === 'general' && settings?.energy_price_source === 'homeassistant' && !!settings?.ha_enabled,
+    staleTime: 60_000,
+    retry: false,
   });
 
   const handleStorageUsageRefresh = async () => {
@@ -1141,6 +1172,10 @@ export function SettingsPage() {
       // the baseline never lags behind a save regardless.
       serverBaselineRef.current = data;
       queryClient.setQueryData(['settings'], data);
+      // Choosing a price sensor reads it on save; show that price (#1251).
+      if (data.energy_price_source === 'homeassistant') {
+        setLocalSettings(prev => (prev ? { ...prev, energy_cost_per_kwh: data.energy_cost_per_kwh } : prev));
+      }
       // Don't call setLocalSettings(data) here — it would overwrite in-progress
       // user input (e.g. typing a hostname) with the stale saved snapshot,
       // causing the text field to reset mid-typing. Instead, let the useEffect
@@ -1208,8 +1243,11 @@ export function SettingsPage() {
       (baseline.finish_photo_restore_plate ?? true) !== (localSettings.finish_photo_restore_plate ?? true) ||
       baseline.default_filament_cost !== localSettings.default_filament_cost ||
       baseline.currency !== localSettings.currency ||
-      baseline.energy_cost_per_kwh !== localSettings.energy_cost_per_kwh ||
+      (localSettings.energy_price_source !== 'homeassistant' &&
+        baseline.energy_cost_per_kwh !== localSettings.energy_cost_per_kwh) ||
       baseline.energy_tracking_mode !== localSettings.energy_tracking_mode ||
+      (baseline.energy_price_source ?? 'fixed') !== (localSettings.energy_price_source ?? 'fixed') ||
+      (baseline.energy_price_ha_entity ?? '') !== (localSettings.energy_price_ha_entity ?? '') ||
       baseline.check_updates !== localSettings.check_updates ||
       (baseline.check_printer_firmware ?? true) !== (localSettings.check_printer_firmware ?? true) ||
       (baseline.include_beta_updates ?? false) !== (localSettings.include_beta_updates ?? false) ||
@@ -1332,8 +1370,16 @@ export function SettingsPage() {
         finish_photo_restore_plate: localSettings.finish_photo_restore_plate ?? true,
         default_filament_cost: localSettings.default_filament_cost,
         currency: localSettings.currency,
-        energy_cost_per_kwh: localSettings.energy_cost_per_kwh,
+        // A price read from Home Assistant is the server's to set; the copy
+        // here can be an hour old and would overwrite a newer reading (#1251).
+        ...(localSettings.energy_price_source === 'homeassistant'
+          ? {}
+          : { energy_cost_per_kwh: localSettings.energy_cost_per_kwh }),
         energy_tracking_mode: localSettings.energy_tracking_mode,
+        // Normalised: anything but 'homeassistant' (a value restored from a
+        // backup) is fixed, and the backend refuses unknown values outright.
+        energy_price_source: localSettings.energy_price_source === 'homeassistant' ? 'homeassistant' : 'fixed',
+        energy_price_ha_entity: localSettings.energy_price_ha_entity ?? '',
         check_updates: localSettings.check_updates,
         check_printer_firmware: localSettings.check_printer_firmware,
         include_beta_updates: localSettings.include_beta_updates,
@@ -1581,7 +1627,7 @@ export function SettingsPage() {
   const jumpToSetting = (entry: typeof searchIndex[number]) => {
     handleTabChange(entry.tab as TabType);
     if (entry.subTab) {
-      setUsersSubTab(entry.subTab as UsersSubTab);
+      selectUsersSubTab(entry.subTab as UsersSubTab);
     }
     setSettingsSearch('');
     // Scroll to the card after the tab has rendered
@@ -2250,7 +2296,47 @@ export function SettingsPage() {
               </div>
               <div>
                 <label className="block text-sm text-bambu-gray mb-1">
-                  {t('settings.electricityCost')}
+                  {t('settings.energyPriceSource')}
+                </label>
+                <select
+                  value={localSettings.energy_price_source === 'homeassistant' ? 'homeassistant' : 'fixed'}
+                  onChange={(e) => updateSetting('energy_price_source', e.target.value as 'fixed' | 'homeassistant')}
+                  className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                >
+                  <option value="fixed">{t('settings.energyPriceSourceFixed')}</option>
+                  <option value="homeassistant">{t('settings.energyPriceSourceHomeAssistant')}</option>
+                </select>
+                {localSettings.energy_price_source === 'homeassistant' && !localSettings.ha_enabled && (
+                  <p className="text-xs text-yellow-500 mt-1">{t('settings.energyPriceHaNotConfigured')}</p>
+                )}
+              </div>
+              {localSettings.energy_price_source === 'homeassistant' && (
+                <div>
+                  <label className="block text-sm text-bambu-gray mb-1">
+                    {t('settings.energyPriceHaEntity')}
+                  </label>
+                  <input
+                    type="text"
+                    list="ha-price-entities"
+                    value={localSettings.energy_price_ha_entity ?? ''}
+                    onChange={(e) => updateSetting('energy_price_ha_entity', e.target.value.trim())}
+                    placeholder="sensor.electricity_price"
+                    className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:border-bambu-green focus:outline-none"
+                  />
+                  <datalist id="ha-price-entities">
+                    {(haPriceEntities ?? []).map((e) => (
+                      <option key={e.entity_id} value={e.entity_id}>
+                        {`${e.friendly_name} (${e.state ?? '?'} ${e.unit_of_measurement ?? ''})`}
+                      </option>
+                    ))}
+                  </datalist>
+                </div>
+              )}
+              <div>
+                <label className="block text-sm text-bambu-gray mb-1">
+                  {localSettings.energy_price_source === 'homeassistant'
+                    ? t('settings.energyPriceLastRead')
+                    : t('settings.electricityCost')}
                 </label>
                 {/* Currency on the right: the left edge holds the calculator icon. */}
                 <div className="relative">
@@ -2261,13 +2347,19 @@ export function SettingsPage() {
                     onChange={(v) => updateSetting('energy_cost_per_kwh', v)}
                     integer={false}
                     fallback={0}
+                    disabled={localSettings.energy_price_source === 'homeassistant'}
                     style={{ paddingRight: `${Math.max(2, getCurrencySymbol(localSettings.currency).length * 0.6 + 1)}rem` }}
-                    className="w-full py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                    className="w-full py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none disabled:opacity-60"
                   />
                   <span className="absolute right-3 top-1/2 -translate-y-1/2 text-bambu-gray text-sm pointer-events-none">
                     {getCurrencySymbol(localSettings.currency)}
                   </span>
                 </div>
+                <p className="text-xs text-bambu-gray mt-1">
+                  {localSettings.energy_price_source === 'homeassistant'
+                    ? t('settings.energyPriceHaHint')
+                    : t('settings.energyPriceFixedHint')}
+                </p>
               </div>
               <div>
                 <label className="block text-sm text-bambu-gray mb-1">
@@ -6778,9 +6870,9 @@ export function SettingsPage() {
           {/* Sub-tab Navigation */}
           <div className="flex gap-1 border-b border-bambu-dark-tertiary">
             <button
-              onClick={() => setUsersSubTab('users')}
+              onClick={() => selectUsersSubTab('users')}
               className={`btn-press px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
-                usersSubTab === 'users'
+                shownUsersSubTab === 'users'
                   ? 'text-bambu-green border-bambu-green'
                   : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
               }`}
@@ -6788,10 +6880,23 @@ export function SettingsPage() {
               <Users className="w-4 h-4" />
               {t('settings.tabs.users')}
             </button>
+            {authEnabled && isAdmin && (
+              <button
+                onClick={() => selectUsersSubTab('printer-access')}
+                className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px flex items-center gap-2 ${
+                  shownUsersSubTab === 'printer-access'
+                    ? 'text-bambu-green border-bambu-green'
+                    : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
+                }`}
+              >
+                <Printer className="w-4 h-4" />
+                {t('printerAccess.tab')}
+              </button>
+            )}
             <button
-              onClick={() => setUsersSubTab('email')}
+              onClick={() => selectUsersSubTab('email')}
               className={`btn-press px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
-                usersSubTab === 'email'
+                shownUsersSubTab === 'email'
                   ? 'text-bambu-green border-bambu-green'
                   : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
               }`}
@@ -6803,9 +6908,9 @@ export function SettingsPage() {
               )}
             </button>
             <button
-              onClick={() => setUsersSubTab('ldap')}
+              onClick={() => selectUsersSubTab('ldap')}
               className={`btn-press px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
-                usersSubTab === 'ldap'
+                shownUsersSubTab === 'ldap'
                   ? 'text-bambu-green border-bambu-green'
                   : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
               }`}
@@ -6817,9 +6922,9 @@ export function SettingsPage() {
               )}
             </button>
             <button
-              onClick={() => setUsersSubTab('twofa')}
+              onClick={() => selectUsersSubTab('twofa')}
               className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px flex items-center gap-2 ${
-                usersSubTab === 'twofa'
+                shownUsersSubTab === 'twofa'
                   ? 'text-bambu-green border-bambu-green'
                   : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
               }`}
@@ -6836,9 +6941,9 @@ export function SettingsPage() {
             </button>
             {isAdmin && (
               <button
-                onClick={() => setUsersSubTab('oidc')}
+                onClick={() => selectUsersSubTab('oidc')}
                 className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px flex items-center gap-2 ${
-                  usersSubTab === 'oidc'
+                  shownUsersSubTab === 'oidc'
                     ? 'text-bambu-green border-bambu-green'
                     : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
                 }`}
@@ -6856,9 +6961,9 @@ export function SettingsPage() {
             )}
             {isAdmin && (
               <button
-                onClick={() => setUsersSubTab('security')}
+                onClick={() => selectUsersSubTab('security')}
                 className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px flex items-center gap-2 ${
-                  usersSubTab === 'security'
+                  shownUsersSubTab === 'security'
                     ? 'text-bambu-green border-bambu-green'
                     : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
                 }`}
@@ -6870,7 +6975,7 @@ export function SettingsPage() {
           </div>
 
           {/* Users Sub-tab */}
-          {usersSubTab === 'users' && (
+          {shownUsersSubTab === 'users' && (
           <>
           {/* Auth Toggle Header */}
           <Card>
@@ -7246,26 +7351,28 @@ export function SettingsPage() {
           </>
           )}
 
+          {shownUsersSubTab === 'printer-access' && <PrinterAccessSettings />}
+
           {/* Email Auth Sub-tab */}
-          {usersSubTab === 'email' && (
+          {shownUsersSubTab === 'email' && (
             <div className="max-w-5xl" id="card-smtp">
               <EmailSettings />
             </div>
           )}
 
-          {usersSubTab === 'ldap' && (
+          {shownUsersSubTab === 'ldap' && (
             <div className="max-w-5xl" id="card-ldap">
               <LDAPSettings />
             </div>
           )}
 
-          {usersSubTab === 'twofa' && (
+          {shownUsersSubTab === 'twofa' && (
             <div className="max-w-2xl">
               <TwoFactorSettings />
             </div>
           )}
 
-          {usersSubTab === 'oidc' && isAdmin && (
+          {shownUsersSubTab === 'oidc' && isAdmin && (
             <div className="max-w-3xl space-y-4">
               <Card>
                 <CardContent className="space-y-3 p-4">
@@ -7287,7 +7394,7 @@ export function SettingsPage() {
             </div>
           )}
 
-          {usersSubTab === 'security' && isAdmin && (
+          {shownUsersSubTab === 'security' && isAdmin && (
             <div className="max-w-3xl">
               <SecurityStatusCard />
             </div>

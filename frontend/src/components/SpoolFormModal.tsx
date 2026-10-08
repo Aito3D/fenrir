@@ -24,6 +24,7 @@ import { SupplierSection, type SupplierLinkDraft } from './spool-form/SupplierSe
 import { SpoolmanFilamentPicker } from './spool-form/SpoolmanFilamentPicker';
 import { PrinterProfilesSection } from './spool-form/PrinterProfilesSection';
 import { normaliseFlow } from '../utils/nozzleFlow';
+import { parseUTCDate, toDateTimeLocalValue } from '../utils/date';
 import { SpoolUsageHistory } from './SpoolUsageHistory';
 import { AssignToAmsModal } from './spoolbuddy/AssignToAmsModal';
 import {
@@ -83,6 +84,9 @@ export function SpoolFormModal({
   // through core_weight.
   const [coreWeightTouched, setCoreWeightTouched] = useState(false);
   const [locationIdTouched, setLocationIdTouched] = useState(false);
+  // Sent only when changed, so saving an unrelated edit cannot put back a
+  // drying date that an AMS run stamped while the form was open (#2863).
+  const [lastDriedTouched, setLastDriedTouched] = useState(false);
   // Supplier assignments (#2988). Held outside SpoolFormData — they are
   // relational and saved through their own replace-all endpoint. An untouched
   // create does not send them, so it keeps the backend's inherited
@@ -430,6 +434,10 @@ export function SpoolFormModal({
           low_stock_threshold_pct: spool.low_stock_threshold_pct ?? null,
           material_number: spool.material_number || '',
           location_id: spool.location_id ?? null,
+          last_dried_at: (() => {
+            const dried = isCopying ? null : parseUTCDate(spool.last_dried_at);
+            return dried ? toDateTimeLocalValue(dried) : '';
+          })(),
           spoolman_filament_id: null,
         });
         setPresetInputValue(spool.slicer_filament_name || spool.slicer_filament || '');
@@ -494,6 +502,7 @@ export function SpoolFormModal({
       // save) A's per-model overrides on B. Refilled by the fetch below.
       setModelPresets(new Map());
       setWeightTouched(false);
+      setLastDriedTouched(false);
       // A copy of a Spoolman spool with its own tare carries that tare, as it
       // would any other field shown in the form; one that inherits keeps
       // inheriting. Only Spoolman spools report the flag (#2908).
@@ -566,6 +575,7 @@ export function SpoolFormModal({
     if (key === 'weight_used') setWeightTouched(true);
     if (key === 'core_weight') setCoreWeightTouched(true);
     if (key === 'location_id') setLocationIdTouched(true);
+    if (key === 'last_dried_at') setLastDriedTouched(true);
     if (errors[key]) {
       setErrors(prev => ({ ...prev, [key]: undefined }));
     }
@@ -995,6 +1005,10 @@ export function SpoolFormModal({
       data.location_id = formData.location_id;
     }
 
+    if (isEditing && lastDriedTouched) {
+      data.last_dried_at = formData.last_dried_at ? new Date(formData.last_dried_at).toISOString() : null;
+    }
+
     if (isEditing) {
       updateMutation.mutate(data);
     } else if (quantity > 1) {
@@ -1188,6 +1202,7 @@ export function SpoolFormModal({
                   availableCategories={availableCategories}
                   availableMaterialNumbers={availableMaterialNumbers}
                   availableLocations={storageLocations}
+                  showLastDried={isEditing}
                   onCreateLocation={async (name) => {
                     try {
                       const created = await api.createLocation({ name });

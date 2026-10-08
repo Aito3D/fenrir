@@ -10,9 +10,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.routes.settings import get_setting
-from backend.app.core.auth import RequirePermissionIfAuthEnabled
+from backend.app.core.auth import (
+    RequestPrinterScope,
+    RequirePermissionIfAuthEnabled,
+    RequirePrinterPermissionIfAuthEnabled,
+)
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
+from backend.app.core.printer_scope import PrinterScope
 from backend.app.core.tasks import spawn_background_task
 from backend.app.models.printer import Printer
 from backend.app.models.smart_plug import SmartPlug
@@ -54,9 +59,13 @@ router = APIRouter(prefix="/smart-plugs", tags=["smart-plugs"])
 async def list_smart_plugs(
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SMART_PLUGS_READ),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
-    """List all smart plugs."""
-    result = await db.execute(select(SmartPlug).order_by(SmartPlug.name))
+    """List all smart plugs, minus those powering printers the caller can't see (#1727)."""
+    query = select(SmartPlug).order_by(SmartPlug.name)
+    if (clause := printer_scope.where(SmartPlug.printer_id)) is not None:
+        query = query.where(clause)
+    result = await db.execute(query)
     return list(result.scalars().all())
 
 
@@ -65,10 +74,12 @@ async def create_smart_plug(
     data: SmartPlugCreate,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SMART_PLUGS_CREATE),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Create a new smart plug."""
     # Validate printer_id if provided
     if data.printer_id:
+        printer_scope.ensure(data.printer_id)
         result = await db.execute(select(Printer).where(Printer.id == data.printer_id))
         if not result.scalar_one_or_none():
             raise HTTPException(400, "Printer not found")
@@ -229,7 +240,7 @@ async def _plugs_for_printer(db: AsyncSession, printer_id: int) -> list[SmartPlu
 async def get_smart_plug_by_printer(
     printer_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.SMART_PLUGS_READ),
+    _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.SMART_PLUGS_READ),
 ):
     """Get the main smart plug assigned to a printer.
 
@@ -244,7 +255,7 @@ async def get_smart_plug_by_printer(
 async def get_script_plugs_by_printer(
     printer_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.SMART_PLUGS_READ),
+    _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.SMART_PLUGS_READ),
 ):
     """Get all HA entities assigned to a printer for display on printer card.
 
@@ -507,11 +518,12 @@ async def get_smart_plug(
     plug_id: int,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SMART_PLUGS_READ),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Get a specific smart plug."""
     result = await db.execute(select(SmartPlug).where(SmartPlug.id == plug_id))
     plug = result.scalar_one_or_none()
-    if not plug:
+    if not plug or not printer_scope.allows(plug.printer_id):
         raise HTTPException(404, "Smart plug not found")
     return plug
 
@@ -522,11 +534,12 @@ async def update_smart_plug(
     data: SmartPlugUpdate,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SMART_PLUGS_UPDATE),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Update a smart plug."""
     result = await db.execute(select(SmartPlug).where(SmartPlug.id == plug_id))
     plug = result.scalar_one_or_none()
-    if not plug:
+    if not plug or not printer_scope.allows(plug.printer_id):
         raise HTTPException(404, "Smart plug not found")
 
     update_data = data.model_dump(exclude_unset=True)
@@ -534,6 +547,7 @@ async def update_smart_plug(
     # Validate new printer_id if being changed
     if "printer_id" in update_data and update_data["printer_id"]:
         new_printer_id = update_data["printer_id"]
+        printer_scope.ensure(new_printer_id)
 
         # Check printer exists
         result = await db.execute(select(Printer).where(Printer.id == new_printer_id))
@@ -613,11 +627,12 @@ async def delete_smart_plug(
     plug_id: int,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SMART_PLUGS_DELETE),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Delete a smart plug."""
     result = await db.execute(select(SmartPlug).where(SmartPlug.id == plug_id))
     plug = result.scalar_one_or_none()
-    if not plug:
+    if not plug or not printer_scope.allows(plug.printer_id):
         raise HTTPException(404, "Smart plug not found")
 
     plug_name = plug.name
@@ -657,11 +672,12 @@ async def control_smart_plug(
     control: SmartPlugControl,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SMART_PLUGS_CONTROL),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Manual control: on/off/toggle."""
     result = await db.execute(select(SmartPlug).where(SmartPlug.id == plug_id))
     plug = result.scalar_one_or_none()
-    if not plug:
+    if not plug or not printer_scope.allows(plug.printer_id):
         raise HTTPException(404, "Smart plug not found")
 
     # MQTT plugs are monitor-only - cannot control them
@@ -768,11 +784,12 @@ async def get_plug_status(
     plug_id: int,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SMART_PLUGS_READ),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Get current plug status from device including energy data."""
     result = await db.execute(select(SmartPlug).where(SmartPlug.id == plug_id))
     plug = result.scalar_one_or_none()
-    if not plug:
+    if not plug or not printer_scope.allows(plug.printer_id):
         raise HTTPException(404, "Smart plug not found")
 
     # Handle MQTT plugs - get data from subscription service

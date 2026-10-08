@@ -7,8 +7,10 @@
  * that surface. Appearance is configured in the URL. Tokens entered, imported, or created
  * here remain in component memory; existing credentials cannot be recovered.
  * The URL is the configuration so an OBS browser source needs no saved server-side profile.
+ * The choices that build it are remembered in this browser so the builder
+ * reopens as it was left; the token never is.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Copy, ExternalLink, Eye, EyeOff } from 'lucide-react';
 import { api, type Printer } from '../api/client';
@@ -44,6 +46,82 @@ const DEFAULT_FIELDS = ['progress', 'layers', 'eta', 'filename', 'status'];
 
 const DEFAULT_FPS = 15;
 
+// Everything that shapes the URL except the token, which stays in memory only.
+const STORAGE_KEY = 'bambuddy.streamOverlayBuilder';
+
+interface SavedChoices {
+  printerId: number | null;
+  fields: string[];
+  size: OverlaySize;
+  fps: number;
+  artwork: '1' | '2';
+  backgroundTransparency: number;
+  showCamera: boolean;
+  layout: OverlayLayout | 'both';
+  logo: boolean;
+  from: string;
+  to: string;
+}
+
+const DEFAULT_CHOICES: SavedChoices = {
+  printerId: null,
+  fields: DEFAULT_FIELDS,
+  size: 'medium',
+  fps: DEFAULT_FPS,
+  artwork: '1',
+  backgroundTransparency: 0,
+  showCamera: true,
+  layout: 'landscape',
+  logo: false,
+  from: '',
+  to: '',
+};
+
+/** The stored choices, each checked the way an imported URL is; anything off falls back to its default. */
+function loadChoices(): SavedChoices {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? 'null');
+  } catch {
+    return DEFAULT_CHOICES;
+  }
+  if (!raw || typeof raw !== 'object') return DEFAULT_CHOICES;
+  const v = raw as Record<string, unknown>;
+  const num = (value: unknown, min: number, max: number, fallback: number) =>
+    typeof value === 'number' && Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback;
+  const gradient = typeof v.from === 'string' && typeof v.to === 'string' && overlayGradient(v.from, v.to);
+  return {
+    printerId: typeof v.printerId === 'number' && Number.isSafeInteger(v.printerId) && v.printerId > 0 ? v.printerId : null,
+    fields: Array.isArray(v.fields)
+      ? v.fields.filter((field): field is string => FIELDS.some((f) => f.key === field))
+      : DEFAULT_FIELDS,
+    size: v.size === 'small' || v.size === 'large' ? v.size : 'medium',
+    fps: Math.round(num(v.fps, 1, 30, DEFAULT_FPS)),
+    artwork: v.artwork === '2' ? '2' : '1',
+    backgroundTransparency: num(v.backgroundTransparency, 0, 100, 0),
+    showCamera: v.showCamera !== false,
+    layout: v.layout === 'portrait' || v.layout === 'both' ? v.layout : 'landscape',
+    logo: v.logo === true,
+    from: gradient ? (v.from as string) : '',
+    to: gradient ? (v.to as string) : '',
+  };
+}
+
+// One toast once a burst of edits settles: typing a colour or dragging the
+// transparency slider changes the choices many times in a row.
+const SAVED_TOAST_DELAY_MS = 600;
+
+function saveChoices(choices: SavedChoices): boolean {
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(choices));
+    return true;
+  } catch {
+    // Private windows and full or blocked storage: the builder still works,
+    // it just starts from the defaults next time.
+    return false;
+  }
+}
+
 export function StreamOverlayBuilder({ onTokenCreated }: { onTokenCreated?: () => void }) {
   const { t } = useTranslation();
   const { showToast } = useToast();
@@ -56,18 +134,24 @@ export function StreamOverlayBuilder({ onTokenCreated }: { onTokenCreated?: () =
   const [importUrl, setImportUrl] = useState('');
   const [importError, setImportError] = useState(false);
 
+  const [saved] = useState(loadChoices);
+  const lastSavedRef = useRef<string | null>(null);
+  // Set when the builder itself replaces a remembered printer that no longer
+  // exists: that save is not the user's, so it gets no toast.
+  const quietSaveRef = useRef(false);
+  const savedToastRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [printers, setPrinters] = useState<Printer[]>([]);
-  const [printerId, setPrinterId] = useState<number | null>(null);
-  const [fields, setFields] = useState<string[]>(DEFAULT_FIELDS);
-  const [size, setSize] = useState<OverlaySize>('medium');
-  const [fps, setFps] = useState(DEFAULT_FPS);
+  const [printerId, setPrinterId] = useState<number | null>(saved.printerId);
+  const [fields, setFields] = useState<string[]>(saved.fields);
+  const [size, setSize] = useState<OverlaySize>(saved.size);
+  const [fps, setFps] = useState(saved.fps);
   // '1' is the original overlay; the renderer is picked by version, not by a
   // name like "updated" that stops being true once there's a newer one.
-  const [artwork, setArtwork] = useState<'1' | '2'>('1');
-  const [backgroundTransparency, setBackgroundTransparency] = useState(0);
-  const [showCamera, setShowCamera] = useState(true);
-  const [branding, setBranding] = useState(DEFAULT_BRANDING);
-  const [layout, setLayout] = useState<OverlayLayout | 'both'>('landscape');
+  const [artwork, setArtwork] = useState<'1' | '2'>(saved.artwork);
+  const [backgroundTransparency, setBackgroundTransparency] = useState(saved.backgroundTransparency);
+  const [showCamera, setShowCamera] = useState(saved.showCamera);
+  const [branding, setBranding] = useState({ ...DEFAULT_BRANDING, logo: saved.logo, from: saved.from, to: saved.to });
+  const [layout, setLayout] = useState<OverlayLayout | 'both'>(saved.layout);
   const [brandingImportRevision, setBrandingImportRevision] = useState(0);
   const [brandingBusy, setBrandingBusy] = useState(false);
   const [preview, setPreview] = useState(false);
@@ -79,7 +163,17 @@ export function StreamOverlayBuilder({ onTokenCreated }: { onTokenCreated?: () =
         const list = await api.getPrinters();
         if (cancelled) return;
         setPrinters(list);
-        if (list.length > 0) setPrinterId((current) => current ?? list[0].id);
+        // A remembered printer that has since been deleted falls back to the
+        // first one. An imported URL may name a printer of another server, so
+        // only the remembered id is checked.
+        if (list.length > 0) {
+          setPrinterId((current) => {
+            const next = current === null || (current === saved.printerId && !list.some((p) => p.id === current))
+              ? list[0].id : current;
+            if (next !== current) quietSaveRef.current = true;
+            return next;
+          });
+        }
       } catch {
         // A failed printer list only costs the picker its options — the builder
         // still works if the user types a printer number into the URL by hand,
@@ -90,7 +184,45 @@ export function StreamOverlayBuilder({ onTokenCreated }: { onTokenCreated?: () =
     return () => {
       cancelled = true;
     };
+  }, [saved.printerId]);
+
+  useEffect(() => {
+    const choices: SavedChoices = {
+      printerId, fields, size, fps, artwork, backgroundTransparency, showCamera, layout,
+      logo: branding.logo, from: branding.from, to: branding.to,
+    };
+    const serialized = JSON.stringify(choices);
+    if (serialized === lastSavedRef.current) return;
+    // The first pass only writes back what was just loaded.
+    const loading = lastSavedRef.current === null || quietSaveRef.current;
+    lastSavedRef.current = serialized;
+    quietSaveRef.current = false;
+    if (!saveChoices(choices) || loading) return;
+    if (savedToastRef.current) clearTimeout(savedToastRef.current);
+    savedToastRef.current = setTimeout(() => {
+      savedToastRef.current = null;
+      showToast(t('settings.toast.settingsSaved'));
+    }, SAVED_TOAST_DELAY_MS);
+  }, [printerId, fields, size, fps, artwork, backgroundTransparency, showCamera, layout, branding.logo, branding.from, branding.to, showToast, t]);
+
+  useEffect(() => () => {
+    if (savedToastRef.current) clearTimeout(savedToastRef.current);
   }, []);
+
+  const resetChoices = () => {
+    setPrinterId(printers[0]?.id ?? null);
+    setFields(DEFAULT_CHOICES.fields);
+    setSize(DEFAULT_CHOICES.size);
+    setFps(DEFAULT_CHOICES.fps);
+    setArtwork(DEFAULT_CHOICES.artwork);
+    setBackgroundTransparency(DEFAULT_CHOICES.backgroundTransparency);
+    setShowCamera(DEFAULT_CHOICES.showCamera);
+    setLayout(DEFAULT_CHOICES.layout);
+    // The uploaded logo stays on the server; only whether this URL uses it resets.
+    setBranding((current) => ({ ...current, logo: false, from: '', to: '' }));
+    setBrandingImportRevision((revision) => revision + 1);
+    setPreview(false);
+  };
 
   const outputs = useMemo(() => {
     const id = printerId ?? 1;
@@ -209,6 +341,13 @@ export function StreamOverlayBuilder({ onTokenCreated }: { onTokenCreated?: () =
           'Build the URL for a streaming overlay — a full-screen camera view with live print data drawn over it, for OBS, a wall display, or any browser source. Pick the fields you want and copy the URL.',
         )}
       </p>
+      <div className="-mt-2 mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-bambu-gray">
+        <span>{t('streamOverlay.builder.rememberedHint')}</span>
+        <button type="button" onClick={resetChoices} disabled={submittingToken || brandingBusy}
+          className="text-bambu-green hover:underline disabled:opacity-50">
+          {t('streamOverlay.builder.resetChoices')}
+        </button>
+      </div>
 
       <div className="mb-4 space-y-2">
         <label htmlFor="overlay-builder-import" className="block text-sm font-medium text-white">{t('streamOverlay.builder.importUrl')}</label>

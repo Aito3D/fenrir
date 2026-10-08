@@ -12,9 +12,14 @@ from sqlalchemy.orm import selectinload
 
 from backend.app.api.routes._spoolman_helpers import _map_spoolman_spool, spoolman_net_weight
 from backend.app.api.routes.spoolman_inventory import _clear_stale_tag_links
-from backend.app.core.auth import RequirePermissionIfAuthEnabled
+from backend.app.core.auth import (
+    RequestPrinterScope,
+    RequirePermissionIfAuthEnabled,
+    RequirePrinterPermissionIfAuthEnabled,
+)
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
+from backend.app.core.printer_scope import PrinterScope
 from backend.app.models.printer import Printer
 from backend.app.models.settings import Settings
 from backend.app.models.spool_assignment import SpoolAssignment
@@ -52,6 +57,8 @@ class SpoolmanStatus(BaseModel):
     enabled: bool
     connected: bool
     url: str | None
+    # Spoolman 0.27+ links tags natively; the settings offer the migration then.
+    native_tags: bool = False
 
 
 class SkippedSpool(BaseModel):
@@ -128,6 +135,7 @@ async def get_spoolman_status(
     enabled, url = sm["enabled"], sm["url"]
 
     connected = False
+    native_tags = False
     if enabled and url:
         client = await get_spoolman_client()
         if not client or client.base_url != url.rstrip("/"):
@@ -146,11 +154,14 @@ async def get_spoolman_status(
                 client = None
         if client:
             connected = await client.health_check()
+            # Asked once per client and cached, so the 30-second poll costs nothing more.
+            native_tags = connected and await client.has_tag_api()
 
     return SpoolmanStatus(
         enabled=enabled,
         connected=connected,
         url=url if url else None,
+        native_tags=native_tags,
     )
 
 
@@ -213,7 +224,7 @@ async def disconnect_spoolman(
 async def sync_printer_ams(
     printer_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_UPDATE),
+    _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.FILAMENTS_UPDATE),
 ):
     """Sync AMS data from a specific printer to Spoolman."""
     # Check if Spoolman is enabled and connected
@@ -449,6 +460,7 @@ async def sync_printer_ams(
 async def sync_all_printers(
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_UPDATE),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Sync AMS data from all connected printers to Spoolman."""
     # Check if Spoolman is enabled
@@ -470,7 +482,7 @@ async def sync_all_printers(
 
     # Get all active printers
     result = await db.execute(select(Printer).where(Printer.is_active.is_(True)))
-    printers = result.scalars().all()
+    printers = [p for p in result.scalars().all() if printer_scope.allows(p.id)]
 
     total_synced = 0
     all_skipped: list[SkippedSpool] = []
@@ -834,6 +846,7 @@ async def link_spool(
     request: LinkSpoolRequest,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_UPDATE),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Link a Spoolman spool to an AMS tag by setting Spoolman extra.tag."""
     sm = await get_spoolman_settings(db)
@@ -871,13 +884,36 @@ async def link_spool(
     # that field is user-managed in Spoolman. Slot assignment is stored locally.
     printer_context: tuple[int, int, int] | None = None
     if request.printer_id is not None and request.ams_id is not None and request.tray_id is not None:
+        printer_scope.ensure(request.printer_id)
         printer_result = await db.execute(select(Printer).where(Printer.id == request.printer_id))
         if not printer_result.scalar_one_or_none():
             raise HTTPException(status_code=404, detail="Printer not found")
         printer_context = (request.printer_id, request.ams_id, request.tray_id)
 
     try:
-        await client.merge_spool_extra(spool_id, {"tag": json.dumps(spool_tag)})
+        # Spoolman 0.27+: a tray UUID also becomes a native tag of the spool. The
+        # 16-character values this route takes are either a slot's fallback ID or
+        # the AMS's padded chip UID - neither is what a reader sees, so they stay in
+        # extra.tag only; the AMS sync adds the real chip UID when it reads the tag.
+        # The native link goes first, as the step Spoolman can refuse, so a refusal
+        # leaves extra.tag untouched; a failed extra.tag write takes back what was added.
+        added_native = False
+        if len(spool_tag) == 32 and await client.has_tag_api():
+            before = await client.get_spool(spool_id)
+            had = any(t.get("uid") == spool_tag for t in before.get("tags") or [])
+            holder = await client.claim_native_tag(spool_id, spool_tag, "bambu")
+            if holder is not None:
+                logger.warning("Native tag %s belongs to spool %s, left there", spool_tag, holder)
+            added_native = holder is None and not had
+        try:
+            await client.merge_spool_extra(spool_id, {"tag": json.dumps(spool_tag)})
+        except Exception:
+            if added_native:
+                try:
+                    await client.unlink_native_tag(spool_id, spool_tag)
+                except (SpoolmanClientError, SpoolmanUnavailableError) as exc:
+                    logger.warning("Could not take back native tag %s from spool %s: %s", spool_tag, spool_id, exc)
+            raise
     except SpoolmanNotFoundError:
         raise HTTPException(status_code=404, detail="Spool not found in Spoolman")
     except SpoolmanClientError:
@@ -1198,6 +1234,9 @@ async def unlink_spool(
     # deadlock (asyncio.Lock is not reentrant).
     try:
         await client.merge_spool_extra(spool_id, {"tag": json.dumps("")})
+        # And the native tags, so an unlinked spool is found by none of them.
+        if await client.has_tag_api():
+            await client.unlink_all_native_tags(await client.get_spool(spool_id))
     except SpoolmanNotFoundError:
         raise HTTPException(status_code=404, detail="Spool not found in Spoolman")
     except SpoolmanClientError:
@@ -1229,6 +1268,7 @@ async def create_spool_from_slot(
     req: CreateSpoolFromSlotRequest,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_UPDATE),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Explicit user action: create a Spoolman spool from an AMS slot's current tray data.
 
@@ -1250,6 +1290,7 @@ async def create_spool_from_slot(
     if not await client.health_check():
         raise HTTPException(status_code=503, detail="Spoolman is not reachable")
 
+    printer_scope.ensure(req.printer_id)
     result = await db.execute(select(Printer).where(Printer.id == req.printer_id))
     printer = result.scalar_one_or_none()
     if not printer:

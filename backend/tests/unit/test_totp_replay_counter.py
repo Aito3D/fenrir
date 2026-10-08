@@ -1,8 +1,8 @@
-"""`_assert_totp_not_replayed` records the time-step the code BELONGS to.
+"""`_matched_totp_counter` names the time-step the code BELONGS to.
 
 `verify(valid_window=1)` accepts the previous and next 30-second steps too, so
 the stored counter must be the matched step, not the wall-clock one. The
-helper used to pass a counter to `TOTP.at()`, which takes a Unix timestamp:
+helper's predecessor used to pass a counter to `TOTP.at()`, which takes a Unix timestamp:
 the lookup never matched, it fell back to `timecode(now)`, and a code used in
 the last seconds of its window was accepted again in the next window
 (CI: test_mfa_api.py::TestTOTPReplay::test_totp_replay_rejected_on_disable).
@@ -42,7 +42,9 @@ def _record(last_counter):
 def test_stores_the_counter_the_code_belongs_to(monkeypatch, offset):
     monkeypatch.setattr(mfa, "datetime", _frozen_at(STEP, 5).datetime)
     record = _record(None)
-    mfa._assert_totp_not_replayed(TOTP, record, TOTP.generate_otp(STEP + offset))
+    counter = mfa._matched_totp_counter(TOTP, TOTP.generate_otp(STEP + offset))
+    assert counter == STEP + offset
+    record.accept_counter(counter)
     assert record.last_totp_counter == STEP + offset
 
 
@@ -50,11 +52,13 @@ def test_a_code_used_at_the_end_of_its_window_is_refused_in_the_next(monkeypatch
     code = TOTP.generate_otp(STEP)
     monkeypatch.setattr(mfa, "datetime", _frozen_at(STEP, 29).datetime)
     record = _record(None)
-    mfa._assert_totp_not_replayed(TOTP, record, code)
+    record.accept_counter(mfa._matched_totp_counter(TOTP, code))
 
     monkeypatch.setattr(mfa, "datetime", _frozen_at(STEP + 1, 1).datetime)
+    counter = mfa._matched_totp_counter(TOTP, code)
+    assert counter == STEP  # still within valid_window=1, but already used
     with pytest.raises(HTTPException) as exc:
-        mfa._assert_totp_not_replayed(TOTP, record, code)
+        record.accept_counter(counter)
     assert exc.value.status_code == 400
     assert record.last_totp_counter == STEP
 
@@ -62,5 +66,5 @@ def test_a_code_used_at_the_end_of_its_window_is_refused_in_the_next(monkeypatch
 def test_the_next_steps_code_is_still_accepted(monkeypatch):
     monkeypatch.setattr(mfa, "datetime", _frozen_at(STEP + 1, 1).datetime)
     record = _record(STEP)
-    mfa._assert_totp_not_replayed(TOTP, record, TOTP.generate_otp(STEP + 1))
+    record.accept_counter(mfa._matched_totp_counter(TOTP, TOTP.generate_otp(STEP + 1)))
     assert record.last_totp_counter == STEP + 1

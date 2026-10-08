@@ -15,13 +15,20 @@ from sqlalchemy.orm import selectinload
 
 from backend.app.api.routes.library_variants import normalize_model_name, resolve_variant_model
 from backend.app.core.auth import (
+    ApiKeyActor,
+    QueueReviewRequired,
+    RequestActor,
+    RequestPrinterScope,
     RequirePermissionIfAuthEnabled,
+    RequirePrinterPermissionIfAuthEnabled,
+    may_start_queue_item,
     probe_permissions_if_auth_enabled,  # Fenrir
     require_ownership_permission,
 )
 from backend.app.core.config import settings
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
+from backend.app.core.printer_scope import PrinterScope, ensure_model_target_allowed
 from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile
 from backend.app.models.print_batch import PrintBatch, PrintBatchPlate
@@ -73,6 +80,9 @@ from backend.app.utils.threemf_tools import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/queue", tags=["queue"])
+
+# Answer to a caller who may not start a job that waits for review (#1620)
+_AWAITING_REVIEW = "This job waits for review: someone who can manage all queue jobs has to start it"
 
 
 def _variant_summaries(item: PrintQueueItem) -> list[QueueVariantSummary]:
@@ -163,7 +173,7 @@ def _extract_filament_types_from_3mf(file_path: Path, plate_id: int | None = Non
 _extract_print_time_from_3mf = extract_print_time_from_3mf
 
 
-def _assert_can_queue_archive(archive: PrintArchive, current_user: User | None) -> None:
+def _assert_can_queue_archive(archive: PrintArchive, current_user: User | ApiKeyActor | None) -> None:
     """Gate turning *archive* into a print. Raises rather than returning a verdict.
 
     Shared by every route that creates queue items from an archive, so a new
@@ -185,6 +195,7 @@ def _assert_can_queue_archive(archive: PrintArchive, current_user: User | None) 
       allows any archive, REPRINT_OWN allows own only, ownerless archives
       require REPRINT_ALL (fail-closed).
     """
+    # None is auth off. An API key arrives as its RequestActor, never None.
     if current_user is None:
         return
     if not current_user.has_permission(Permission.ARCHIVES_READ_ALL.value) and archive.created_by_id != current_user.id:
@@ -200,8 +211,9 @@ def _assert_can_queue_archive(archive: PrintArchive, current_user: User | None) 
         )
 
 
-def _assert_can_queue_library_file(library_file: LibraryFile, current_user: User | None) -> None:
+def _assert_can_queue_library_file(library_file: LibraryFile, current_user: User | ApiKeyActor | None) -> None:
     """Gate turning *library_file* into a print — LIBRARY_READ_ALL or ownership."""
+    # None is auth off. An API key arrives as its RequestActor, never None.
     if current_user is None:
         return
     if (
@@ -270,7 +282,9 @@ async def _is_orders_last_source(db: AsyncSession, item: PrintQueueItem) -> bool
     return survivor is None
 
 
-async def _assert_can_dispatch_batch_sources(db: AsyncSession, batch_id: int, current_user: User | None) -> None:
+async def _assert_can_dispatch_batch_sources(
+    db: AsyncSession, batch_id: int, current_user: User | ApiKeyActor | None
+) -> None:
     """Apply the ``POST /queue/`` source-file gates to everything a dispatch would print.
 
     Dispatching clones existing queue items, so without this it would be a
@@ -612,6 +626,7 @@ async def list_queue(
             Permission.QUEUE_READ_OWN,
         )
     ),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """List all queue items, optionally filtered by printer or status."""
     user, can_read_all = auth_result
@@ -635,6 +650,9 @@ async def list_queue(
     )
     if user is not None and not can_read_all:
         query = query.where(PrintQueueItem.created_by_id == user.id)
+    # Items bound to printers the caller can't see stay out (#1727)
+    if (clause := printer_scope.where(PrintQueueItem.printer_id)) is not None:
+        query = query.where(clause)
 
     if printer_id is not None:
         if printer_id == -1:
@@ -677,7 +695,7 @@ async def list_queue(
 async def _resolve_queue_variants(
     db: AsyncSession,
     specs: list[QueueVariantCreate],
-    current_user: User | None,
+    current_user: User | ApiKeyActor | None,
 ) -> list[tuple[QueueVariantCreate, LibraryFile, str]]:
     """Validate a cross-model candidate set and pair each file with its model (#671).
 
@@ -823,6 +841,9 @@ async def add_to_queue(
     # Fenrir: queueing for an Aito task writes on its order, so it also needs
     # aito:read (API keys follow their scope rules, which deny it).
     can_read_aito: bool = Depends(probe_permissions_if_auth_enabled(Permission.AITO_READ)),
+    printer_scope: PrinterScope = RequestPrinterScope,
+    review_required: bool = QueueReviewRequired,
+    actor: User | ApiKeyActor | None = RequestActor,
 ):
     """Add an item to the print queue."""
     if data.aito_task_id is not None and not can_read_aito:  # Fenrir
@@ -849,7 +870,7 @@ async def add_to_queue(
             raise HTTPException(
                 400, "Cannot combine variants with archive_id or library_file_id — the variants are the files"
             )
-        variant_specs = await _resolve_queue_variants(db, data.variants, current_user)
+        variant_specs = await _resolve_queue_variants(db, data.variants, actor)
         # Fenrir: same permanence rule for a cross-model candidate set (phase 4).
         if data.cleanup_library_after_dispatch and any(f.revision_id is not None for _, f, _ in variant_specs):
             raise HTTPException(400, "Project files are never deleted after printing")
@@ -869,9 +890,14 @@ async def add_to_queue(
     # Cannot specify both printer_id and target_model
     if data.printer_id and target_model_norm:
         raise HTTPException(400, "Cannot specify both printer_id and target_model")
+    if target_model_norm:
+        # The key itself, not its actor: the scheduler holds an any-printer job
+        # to its creator's printers, and a key may be limited to fewer of them.
+        ensure_model_target_allowed(current_user, printer_scope)
 
     # Validate printer exists (if assigned)
     if data.printer_id is not None:
+        printer_scope.ensure(data.printer_id)
         result = await db.execute(select(Printer).where(Printer.id == data.printer_id))
         if not result.scalar_one_or_none():
             raise HTTPException(400, "Printer not found")
@@ -893,7 +919,7 @@ async def add_to_queue(
         archive = result.scalar_one_or_none()
         if not archive:
             raise HTTPException(400, "Archive not found")
-        _assert_can_queue_archive(archive, current_user)
+        _assert_can_queue_archive(archive, actor)
 
     # Validate library file exists (if provided) and get it for filament extraction
     library_file = None
@@ -902,7 +928,7 @@ async def add_to_queue(
         library_file = result.scalar_one_or_none()
         if not library_file:
             raise HTTPException(400, "Library file not found")
-        _assert_can_queue_library_file(library_file, current_user)
+        _assert_can_queue_library_file(library_file, actor)
         # Fenrir: project revision files are permanent (projects as a PDM, phase 4).
         if data.cleanup_library_after_dispatch and library_file.revision_id is not None:
             raise HTTPException(400, "Project files are never deleted after printing")
@@ -1001,10 +1027,10 @@ async def add_to_queue(
         if existing_batch.status != "active":
             raise HTTPException(400, "Cannot add items to a non-active batch")
         if (
-            current_user is not None
+            actor is not None
             and existing_batch.created_by_id is not None
-            and existing_batch.created_by_id != current_user.id
-            and not current_user.has_permission(Permission.QUEUE_UPDATE_ALL.value)
+            and existing_batch.created_by_id != actor.id
+            and not actor.has_permission(Permission.QUEUE_UPDATE_ALL.value)
         ):
             raise HTTPException(404, "Batch not found")
         batch = existing_batch
@@ -1038,7 +1064,7 @@ async def add_to_queue(
             library_file_id=data.library_file_id,
             quantity=quantity,
             status="active",
-            created_by_id=current_user.id if current_user else None,
+            created_by_id=actor.id if actor else None,
         )
         db.add(batch)
         await db.flush()  # Get batch.id before creating items
@@ -1123,7 +1149,7 @@ async def add_to_queue(
         db,
         cost_center_id=data.cost_center_id,
         estimated_cost=trusted_estimated_cost,
-        current_user=current_user,
+        current_user=actor,
         quantity=quantity,
     )
 
@@ -1190,7 +1216,9 @@ async def add_to_queue(
             scheduled_time=data.scheduled_time,
             require_previous_success=data.require_previous_success,
             auto_off_after=data.auto_off_after,
-            manual_start=data.manual_start,
+            # Without queue:start_unreviewed the job waits for someone to
+            # start it, whatever the request asked for (#1620)
+            manual_start=data.manual_start or review_required,
             skip_filament_check=data.skip_filament_check,
             ams_mapping=ams_mapping_json,
             nozzle_rack_choice=nozzle_rack_choice_json,
@@ -1212,7 +1240,7 @@ async def add_to_queue(
             aito_task_id=trace.aito_task_id,
             position=start_position + i,
             status="pending",
-            created_by_id=current_user.id if current_user else None,
+            created_by_id=actor.id if actor else None,
             batch_id=batch_id,
             print_time_seconds=cached_print_time,
         )
@@ -1301,6 +1329,8 @@ async def bulk_update_queue_items(
             Permission.QUEUE_UPDATE_OWN,
         )
     ),
+    printer_scope: PrinterScope = RequestPrinterScope,
+    actor: User | ApiKeyActor | None = RequestActor,
 ):
     """Bulk update multiple queue items with the same values.
 
@@ -1319,13 +1349,14 @@ async def bulk_update_queue_items(
 
     # Validate printer_id if being changed
     if "printer_id" in update_data and update_data["printer_id"] is not None:
+        printer_scope.ensure(update_data["printer_id"])
         result = await db.execute(select(Printer).where(Printer.id == update_data["printer_id"]))
         if not result.scalar_one_or_none():
             raise HTTPException(400, "Printer not found")
 
-    # Fetch all items
+    # Fetch all items, minus any bound to a printer the caller can't see (#1727)
     result = await db.execute(select(PrintQueueItem).where(PrintQueueItem.id.in_(data.item_ids)))
-    items = result.scalars().all()
+    items = [item for item in result.scalars().all() if printer_scope.allows(item.printer_id)]
 
     updated_count = 0
     skipped_count = 0
@@ -1344,6 +1375,17 @@ async def bulk_update_queue_items(
             skipped_count += 1
             continue
 
+        # Clearing "wait for manual start" starts the job, which needs the
+        # same right as the start button (#1620)
+        if (
+            item.manual_start
+            and "manual_start" in update_data
+            and not update_data["manual_start"]
+            and not may_start_queue_item(user, can_modify_all, item.created_by_id)
+        ):
+            skipped_count += 1
+            continue
+
         item_update_data = update_data.copy()
         if validates_billing_fields:
             trusted_estimated_cost = await _trusted_item_estimated_cost(
@@ -1358,7 +1400,7 @@ async def bulk_update_queue_items(
                 db,
                 cost_center_id=item_update_data.get("cost_center_id", item.cost_center_id),
                 estimated_cost=trusted_estimated_cost,
-                current_user=user,
+                current_user=actor,
                 exclude_queue_item_id=item.id,
             )
 
@@ -1407,7 +1449,9 @@ def _validate_plate_targets(
     return plates
 
 
-async def _validate_batch_project(db: AsyncSession, project_id: int | None, current_user: User | None) -> None:
+async def _validate_batch_project(
+    db: AsyncSession, project_id: int | None, current_user: User | ApiKeyActor | None
+) -> None:
     """404 on a bogus project id rather than letting the FK blow up as a 500."""
     if project_id is None:
         return
@@ -1417,7 +1461,7 @@ async def _validate_batch_project(db: AsyncSession, project_id: int | None, curr
 
 
 async def _load_batch_for_write(
-    db: AsyncSession, batch_id: int, current_user: User | None, permission: Permission
+    db: AsyncSession, batch_id: int, current_user: User | ApiKeyActor | None, permission: Permission
 ) -> PrintBatch:
     """Fetch a batch the caller is allowed to modify, or 404.
 
@@ -1446,11 +1490,27 @@ async def _load_batch_for_write(
 _EXTERNAL_REF_TAKEN = "A batch for this external_source and external_ref already exists"
 
 
+async def _ensure_batch_in_scope(db: AsyncSession, batch_id: int, printer_scope: PrinterScope) -> None:
+    """404 a batch holding jobs on printers the caller can't see (#1727).
+
+    Cancelling or ungrouping acts on every member, so doing it to only the
+    visible ones would leave a batch that reads cancelled with jobs still
+    pending, and refusing outright is the honest answer.
+    """
+    if printer_scope.is_unrestricted:
+        return
+    result = await db.execute(select(PrintQueueItem.printer_id).where(PrintQueueItem.batch_id == batch_id))
+    if not all(printer_scope.allows(pid) for (pid,) in result.all()):
+        raise HTTPException(404, "Batch not found")
+
+
 @router.post("/batches", response_model=PrintBatchResponse)
 async def create_batch(
     data: PrintBatchCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_CREATE),
+    printer_scope: PrinterScope = RequestPrinterScope,
+    actor: User | ApiKeyActor | None = RequestActor,
 ):
     """Create a batch.
 
@@ -1470,7 +1530,7 @@ async def create_batch(
         raise HTTPException(400, "Batch name is required")
 
     plate_targets = _validate_plate_targets(data.plates)
-    await _validate_batch_project(db, data.project_id, current_user)
+    await _validate_batch_project(db, data.project_id, actor)
     if data.external_source is not None:
         existing = await db.execute(
             select(PrintBatch.id).where(
@@ -1487,7 +1547,7 @@ async def create_batch(
         library_file_id=data.library_file_id,
         quantity=len(data.item_ids) if data.item_ids else 1,
         status="active",
-        created_by_id=current_user.id if current_user else None,
+        created_by_id=actor.id if actor else None,
         project_id=data.project_id,
         due_date=data.due_date,
         notes=data.notes,
@@ -1527,10 +1587,12 @@ async def create_batch(
                 continue
             if item.batch_id is not None:
                 continue
+            if not printer_scope.allows(item.printer_id):
+                continue
             if (
-                current_user is not None
-                and item.created_by_id != current_user.id
-                and not current_user.has_permission(Permission.QUEUE_UPDATE_ALL.value)
+                actor is not None
+                and item.created_by_id != actor.id
+                and not actor.has_permission(Permission.QUEUE_UPDATE_ALL.value)
             ):
                 continue
             item.batch_id = batch.id
@@ -1550,6 +1612,7 @@ async def update_batch(
     data: PrintBatchUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_UPDATE_OWN),
+    actor: User | ApiKeyActor | None = RequestActor,
 ):
     """Edit an order's header or its per-plate targets while it runs (#342).
 
@@ -1559,11 +1622,11 @@ async def update_batch(
     explicit action, because silently deleting queued work on a number change
     would be a nasty surprise.
     """
-    batch = await _load_batch_for_write(db, batch_id, current_user, Permission.QUEUE_UPDATE_ALL)
+    batch = await _load_batch_for_write(db, batch_id, actor, Permission.QUEUE_UPDATE_ALL)
 
     plate_targets = _validate_plate_targets(data.plates)
     if data.project_id is not None:
-        await _validate_batch_project(db, data.project_id, current_user)
+        await _validate_batch_project(db, data.project_id, actor)
 
     if data.name is not None:
         if not data.name.strip():
@@ -1620,6 +1683,9 @@ async def dispatch_batch(
     data: PrintBatchDispatchRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_CREATE),
+    printer_scope: PrinterScope = RequestPrinterScope,
+    review_required: bool = QueueReviewRequired,
+    actor: User | ApiKeyActor | None = RequestActor,
 ):
     """Queue the runs this order still owes (#342).
 
@@ -1628,12 +1694,12 @@ async def dispatch_batch(
     overrides and print options the user already chose — and the validation
     those went through at creation time.
     """
-    batch = await _load_batch_for_write(db, batch_id, current_user, Permission.QUEUE_UPDATE_ALL)
+    batch = await _load_batch_for_write(db, batch_id, actor, Permission.QUEUE_UPDATE_ALL)
     if batch.status == "cancelled":
         raise HTTPException(400, "Cannot dispatch a cancelled batch")
 
     # Dispatch starts prints, so it must not be a weaker door than POST /queue/.
-    await _assert_can_dispatch_batch_sources(db, batch.id, current_user)
+    await _assert_can_dispatch_batch_sources(db, batch.id, actor)
 
     try:
         created = await dispatch_remaining(
@@ -1642,10 +1708,25 @@ async def dispatch_batch(
             plate_id=data.plate_id,
             only_plate=data.only_plate,
             limit=data.limit,
-            created_by_id=current_user.id if current_user else None,
+            created_by_id=actor.id if actor else None,
         )
     except BatchDispatchError as exc:
         raise HTTPException(400, str(exc)) from exc
+    # The clones inherit their templates' targets, which whoever queued them
+    # was allowed; the dispatcher has to be allowed them too (#1727).
+    try:
+        for item in created:
+            printer_scope.ensure(item.printer_id)
+            if item.printer_id is None:
+                ensure_model_target_allowed(current_user, printer_scope)
+    except HTTPException:
+        await db.rollback()
+        raise
+    # A clone copies its template's "wait for manual start", which is off once
+    # staff started the template; the dispatcher's own jobs still wait (#1620)
+    if review_required:
+        for item in created:
+            item.manual_start = True
 
     await db.commit()
     await db.refresh(batch)
@@ -1659,6 +1740,8 @@ async def ungroup_batch(
     batch_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_UPDATE_OWN),
+    printer_scope: PrinterScope = RequestPrinterScope,
+    actor: User | ApiKeyActor | None = RequestActor,
 ):
     """Disband a batch: clear batch_id from all members and delete the batch row.
 
@@ -1670,16 +1753,17 @@ async def ungroup_batch(
     if not batch:
         raise HTTPException(404, "Batch not found")
 
-    can_modify_all = current_user is None or current_user.has_permission(Permission.QUEUE_UPDATE_ALL.value)
-    if not can_modify_all and batch.created_by_id != (current_user.id if current_user else None):
+    can_modify_all = actor is None or actor.has_permission(Permission.QUEUE_UPDATE_ALL.value)
+    if not can_modify_all and batch.created_by_id != (actor.id if actor else None):
         raise HTTPException(404, "Batch not found")
+    await _ensure_batch_in_scope(db, batch_id, printer_scope)
 
     result = await db.execute(select(PrintQueueItem).where(PrintQueueItem.batch_id == batch_id))
     items = result.scalars().all()
     ungrouped = 0
     remaining = 0
     for item in items:
-        if not can_modify_all and item.created_by_id != (current_user.id if current_user else None):
+        if not can_modify_all and item.created_by_id != (actor.id if actor else None):
             remaining += 1
             continue
         item.batch_id = None
@@ -1781,12 +1865,14 @@ async def cancel_batch(
     batch_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_DELETE_ALL),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Cancel all pending items in a batch and mark batch as cancelled."""
     result = await db.execute(select(PrintBatch).where(PrintBatch.id == batch_id))
     batch = result.scalar_one_or_none()
     if not batch:
         raise HTTPException(404, "Batch not found")
+    await _ensure_batch_in_scope(db, batch_id, printer_scope)
 
     # Cancel all pending queue items in this batch
     result = await db.execute(
@@ -1903,6 +1989,7 @@ async def get_queue_item(
             Permission.QUEUE_READ_OWN,
         )
     ),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Get a specific queue item."""
     current_user, can_read_all = auth_result
@@ -1920,7 +2007,7 @@ async def get_queue_item(
         .where(PrintQueueItem.id == item_id)
     )
     item = result.scalar_one_or_none()
-    if not item:
+    if not item or not printer_scope.allows(item.printer_id):
         raise HTTPException(404, "Queue item not found")
     if (
         current_user is not None
@@ -1942,6 +2029,8 @@ async def update_queue_item(
             Permission.QUEUE_UPDATE_OWN,
         )
     ),
+    printer_scope: PrinterScope = RequestPrinterScope,
+    actor: User | ApiKeyActor | None = RequestActor,
 ):
     """Update a queue item."""
     user, can_modify_all = auth_result
@@ -1955,7 +2044,7 @@ async def update_queue_item(
         .where(PrintQueueItem.id == item_id)
     )
     item = result.scalar_one_or_none()
-    if not item:
+    if not item or not printer_scope.allows(item.printer_id):
         raise HTTPException(404, "Queue item not found")
 
     # Ownership check
@@ -1976,10 +2065,21 @@ async def update_queue_item(
 
     update_data = data.model_dump(exclude_unset=True)
 
+    # Clearing "wait for manual start" starts the job, which needs the same
+    # right as the start button (#1620)
+    if (
+        item.manual_start
+        and "manual_start" in update_data
+        and not update_data["manual_start"]
+        and not may_start_queue_item(user, can_modify_all, item.created_by_id)
+    ):
+        raise HTTPException(403, _AWAITING_REVIEW)
+
     # Normalize target_model if being updated (see add_to_queue for why the
     # code map has to run first).
     if "target_model" in update_data and update_data["target_model"]:
         update_data["target_model"] = normalize_model_name(update_data["target_model"])
+        ensure_model_target_allowed(user, printer_scope)
 
     # A cross-model item (#671) owns its own printer decision: each candidate
     # carries its model, and the resolver folds the winner onto the row at
@@ -2007,6 +2107,7 @@ async def update_queue_item(
 
     # Validate new printer_id if being changed (and not None)
     if "printer_id" in update_data and update_data["printer_id"] is not None:
+        printer_scope.ensure(update_data["printer_id"])
         result = await db.execute(select(Printer).where(Printer.id == update_data["printer_id"]))
         if not result.scalar_one_or_none():
             raise HTTPException(400, "Printer not found")
@@ -2035,6 +2136,14 @@ async def update_queue_item(
                 400,
                 f"File was sliced for {sliced_for} and cannot be dispatched to {update_data['target_model']} printers",
             )
+
+    # A job that now waits for any printer of a model keeps nothing that was
+    # resolved against one printer: the scheduler picks the printer and maps
+    # its trays then (#3239). The edit dialog omits both fields on such a move.
+    if new_target_model and not new_printer_id:
+        update_data["ams_mapping"] = None
+        if item.printer_id and "skip_filament_check" not in update_data:
+            update_data["skip_filament_check"] = False
 
     # Serialize ams_mapping to JSON for TEXT column storage
     if "ams_mapping" in update_data:
@@ -2080,7 +2189,7 @@ async def update_queue_item(
         db,
         cost_center_id=update_data.get("cost_center_id", item.cost_center_id),
         estimated_cost=trusted_estimated_cost,
-        current_user=user,
+        current_user=actor,
         exclude_queue_item_id=item.id,
     )
 
@@ -2114,6 +2223,7 @@ async def delete_queue_item(
             Permission.QUEUE_DELETE_OWN,
         )
     ),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Remove an item from the queue.
 
@@ -2128,7 +2238,7 @@ async def delete_queue_item(
 
     result = await db.execute(select(PrintQueueItem).where(PrintQueueItem.id == item_id))
     item = result.scalar_one_or_none()
-    if not item:
+    if not item or not printer_scope.allows(item.printer_id):
         raise HTTPException(404, "Queue item not found")
 
     # Ownership check
@@ -2179,12 +2289,14 @@ async def reorder_queue(
     data: PrintQueueReorder,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_UPDATE_ALL),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Bulk update positions for queue items."""
     for reorder_item in data.items:
         result = await db.execute(select(PrintQueueItem).where(PrintQueueItem.id == reorder_item.id))
         item = result.scalar_one_or_none()
-        if item and item.status == "pending":
+        # Jobs on printers the caller can't see keep their place (#1727)
+        if item and item.status == "pending" and printer_scope.allows(item.printer_id):
             item.position = reorder_item.position
 
     await db.commit()
@@ -2196,7 +2308,7 @@ async def reorder_queue(
 async def resume_queue_after_failure(
     printer_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_UPDATE_ALL),
+    _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.QUEUE_UPDATE_ALL),
 ):
     """Clear the previous-success gate for a printer and restore skipped items.
 
@@ -2260,13 +2372,14 @@ async def cancel_queue_item(
             Permission.QUEUE_UPDATE_OWN,
         )
     ),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Cancel a pending queue item."""
     user, can_modify_all = auth_result
 
     result = await db.execute(select(PrintQueueItem).where(PrintQueueItem.id == item_id))
     item = result.scalar_one_or_none()
-    if not item:
+    if not item or not printer_scope.allows(item.printer_id):
         raise HTTPException(404, "Queue item not found")
 
     # Ownership check
@@ -2307,6 +2420,7 @@ async def stop_queue_item(
             Permission.QUEUE_UPDATE_OWN,
         )
     ),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Stop an actively printing queue item.
 
@@ -2322,7 +2436,7 @@ async def stop_queue_item(
 
     result = await db.execute(select(PrintQueueItem).where(PrintQueueItem.id == item_id))
     item = result.scalar_one_or_none()
-    if not item:
+    if not item or not printer_scope.allows(item.printer_id):
         raise HTTPException(404, "Queue item not found")
 
     # Ownership check — mirrors /cancel. Ownerless items (created_by_id IS NULL)
@@ -2411,6 +2525,8 @@ async def start_queue_item(
             Permission.QUEUE_UPDATE_OWN,
         )
     ),
+    printer_scope: PrinterScope = RequestPrinterScope,
+    actor: User | ApiKeyActor | None = RequestActor,
 ):
     """Manually start a staged (manual_start) queue item.
 
@@ -2443,7 +2559,7 @@ async def start_queue_item(
         .where(PrintQueueItem.id == item_id)
     )
     item = result.scalar_one_or_none()
-    if not item:
+    if not item or not printer_scope.allows(item.printer_id):
         raise HTTPException(404, "Queue item not found")
 
     # Ownership check — softer than /cancel because /start is the entry point
@@ -2453,6 +2569,8 @@ async def start_queue_item(
     if not can_modify_all and user is not None:
         if item.created_by_id is not None and item.created_by_id != user.id:
             raise HTTPException(403, "You can only start your own queue items")
+    if not may_start_queue_item(user, can_modify_all, item.created_by_id):
+        raise HTTPException(403, _AWAITING_REVIEW)
 
     if item.status != "pending":
         raise HTTPException(400, f"Can only start pending items, current status: '{item.status}'")
@@ -2469,7 +2587,7 @@ async def start_queue_item(
         db,
         cost_center_id=item.cost_center_id,
         estimated_cost=item.estimated_cost,
-        current_user=user,
+        current_user=actor,
         exclude_queue_item_id=item.id,
     )
 

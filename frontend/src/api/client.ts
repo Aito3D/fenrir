@@ -481,6 +481,7 @@ export interface Printer {
   // RTSP-capable model (X1/H2/P2) — when camera_engine is 'go2rtc' these
   // printers stream via WebRTC instead of the MJPEG grid stream
   supports_rtsp?: boolean;
+  wear_cost_per_hour: number | null;  // Wear cost per printing hour (#694)
   created_at: string;
   updated_at: string;
 }
@@ -726,6 +727,10 @@ export interface PrinterStatus {
   extruder_slots: Record<string, ExtruderSlot>;
   // Currently loaded tray (global tray ID, 255 = no filament loaded, 254 = external spool)
   tray_now: number;
+  // The trays this print has drawn from, in order: [global tray ID, layer of the
+  // switch]. A tray outside the job's AMS mapping is a backup spool the printer
+  // switched to (AMS Filament Backup). Reset at the start of each print.
+  tray_change_log?: [number, number][];
   // Runout / filament-replacement guidance (#2587). Populated only while PAUSED.
   // Global tray IDs (ams_id*4+slot, 128-135 = AMS-HT, 254 = external), matching
   // the same numbering as tray_now so the AMS graphic can highlight them.
@@ -777,7 +782,7 @@ export interface PrinterCreate {
   ip_address: string;
   access_code: string;
   model?: string;
-  location?: string;
+  location?: string | null;
   auto_archive?: boolean;
   // Maintenance Mode flag (#1476). Backend already gates MQTT, queue dispatch,
   // scheduler, metrics and the print picker on this; toggling via PATCH
@@ -791,6 +796,7 @@ export interface PrinterCreate {
   camera_light_auto?: boolean;
   plate_detection_enabled?: boolean;
   plate_detection_roi?: PlateDetectionROI;
+  wear_cost_per_hour?: number | null;
 }
 
 // Plate Detection
@@ -929,6 +935,7 @@ export interface Archive {
   quantity: number;
   energy_kwh: number | null;
   energy_cost: number | null;
+  wear_cost: number | null;  // Printer wear (#694)
   created_at: string;
   // User tracking (Issue #206)
   created_by_id: number | null;
@@ -956,6 +963,7 @@ export interface ArchiveSlim {
   cost: number | null;
   energy_kwh: number | null;
   energy_cost: number | null;
+  wear_cost: number | null;  // Printer wear (#694)
   quantity: number;
   created_at: string;
 }
@@ -976,6 +984,7 @@ export interface PrintLogEntry {
   cost: number | null;
   energy_kwh: number | null;
   energy_cost: number | null;
+  wear_cost: number | null;  // Printer wear (#694)
   failure_reason: string | null;
   thumbnail_path: string | null;
   created_by_id: number | null;
@@ -1005,6 +1014,7 @@ export interface ArchiveStats {
   time_accuracy_by_printer: Record<string, number> | null;
   total_energy_kwh: number;
   total_energy_cost: number;
+  total_wear_cost: number;  // Printer wear (#694)
   // True when a date-filtered total-consumption query is running on incomplete
   // snapshot history (e.g. right after upgrade, before hourly snapshots have
   // a baseline). UI should explain why the number may undercount.
@@ -1123,6 +1133,7 @@ export interface ProjectStats {
   estimated_cost: number;
   total_energy_kwh: number;
   total_energy_cost: number;
+  total_wear_cost: number;  // Printer wear (#694)
   remaining_prints: number | null;  // Remaining plates
   remaining_parts: number | null;  // Remaining parts
   bom_total_items: number;
@@ -1521,6 +1532,10 @@ export interface AppSettings {
   currency: string;
   energy_cost_per_kwh: number;
   energy_tracking_mode: 'print' | 'total';
+  // Where the electricity price comes from (#1251). With 'homeassistant',
+  // energy_cost_per_kwh holds the sensor's last reading and is read-only.
+  energy_price_source: 'fixed' | 'homeassistant';
+  energy_price_ha_entity: string;
   check_updates: boolean;
   check_printer_firmware: boolean;
   include_beta_updates: boolean;
@@ -1705,6 +1720,7 @@ export interface AppSettings {
   ldap_default_group: string;
   obico_enabled: boolean;
   obico_ml_url: string;
+  fenrir_internal_url: string;
   obico_ml_token: string;
   obico_sensitivity: 'low' | 'medium' | 'high';
   obico_action: 'notify' | 'pause' | 'pause_and_off';
@@ -1875,6 +1891,69 @@ export interface MakerworldRecentImport {
   thumbnail_path: string | null;
   source_url: string | null;
   created_at: string;
+}
+
+// Manyfold integration (#1471): a self-hosted model library, browsed and
+// searched, with single files imported into the library.
+export interface ManyfoldConfig {
+  url: string;
+  client_id: string;
+  /** The secret itself is never returned. */
+  has_client_secret: boolean;
+  configured: boolean;
+}
+
+export interface ManyfoldConfigInput {
+  url: string;
+  client_id: string;
+  /** Empty or left out keeps the stored secret. */
+  client_secret?: string;
+}
+
+export interface ManyfoldStatus {
+  configured: boolean;
+  url: string;
+}
+
+export interface ManyfoldModelSummary {
+  id: string;
+  name: string;
+}
+
+export interface ManyfoldModelList {
+  total: number;
+  page: number;
+  has_next: boolean;
+  has_previous: boolean;
+  models: ManyfoldModelSummary[];
+}
+
+export interface ManyfoldFile {
+  id: string;
+  name: string;
+  mime: string;
+  importable: boolean;
+  /** Set while the file imported earlier is still in the library. */
+  library_file: { id: number; filename: string; folder_id: number | null } | null;
+}
+
+export interface ManyfoldModel {
+  id: string;
+  name: string;
+  caption: string | null;
+  description: string | null;
+  license: string | null;
+  tags: string[];
+  url: string;
+  has_preview: boolean;
+  files: ManyfoldFile[];
+}
+
+export interface ManyfoldImportResponse {
+  library_file_id: number;
+  filename: string;
+  folder_id: number | null;
+  was_existing: boolean;
 }
 
 export interface SlicerSetting {
@@ -2071,11 +2150,51 @@ export interface UnifiedPreset {
   // the process / filament dropdowns by the selected printer using this when
   // present (#1325).
   compatible_printers?: string[] | null;
+  // Printer presets only: the preset it was saved from, for the local and
+  // OrcaSlicer Cloud tiers (#3250).
+  inherits?: string | null;
 }
 export interface UnifiedPresetsBySlot {
   printer: UnifiedPreset[];
   process: UnifiedPreset[];
   filament: UnifiedPreset[];
+}
+// What is loaded in each connected printer, for the SliceModal's
+// "only connected printers" / "only loaded spools" filters (#3172).
+export interface LoadedSpoolPreset {
+  preset_id: string;
+  preset_name: string;
+  preset_source: string;
+  tray_info_idx?: string | null;
+}
+export interface LoadedSpoolTray {
+  ams_id: number;
+  tray_id: number;
+  tray_type: string | null;
+  tray_sub_brands: string | null;
+  tray_color: string | null;
+  tray_info_idx: string | null;
+  exists: boolean | null;
+  state: number | null;
+  saved_preset: LoadedSpoolPreset | null;
+}
+export interface LoadedSpoolUnit {
+  id: number;
+  is_ams_ht: boolean;
+  trays: LoadedSpoolTray[];
+}
+export interface LoadedSpoolPrinter {
+  id: number;
+  name: string;
+  model: string | null;
+  ams: LoadedSpoolUnit[];
+  // Holders with a spool in them; external_holders counts all of them (two
+  // on a dual-nozzle printer, labelled left and right).
+  external: LoadedSpoolTray[];
+  external_holders: number;
+}
+export interface LoadedSpoolsResponse {
+  printers: LoadedSpoolPrinter[];
 }
 export interface UnifiedPresetsResponse {
   // Priority order: local > orca_cloud > cloud > standard. No cross-tier
@@ -3218,7 +3337,7 @@ export interface Filament {
 }
 
 // Notification Provider types
-export type ProviderType = 'callmebot' | 'ntfy' | 'pushover' | 'telegram' | 'email' | 'discord' | 'webhook' | 'homeassistant' | 'bark';
+export type ProviderType = 'callmebot' | 'ntfy' | 'pushover' | 'telegram' | 'email' | 'discord' | 'webhook' | 'homeassistant' | 'bark' | 'gotify';
 // How a Telegram provider collects the outcome verdict (#3046)
 export type TelegramVerdictMode = 'buttons' | 'reactions' | 'both';
 
@@ -3781,6 +3900,15 @@ export interface SpoolmanStatus {
   enabled: boolean;
   connected: boolean;
   url: string | null;
+  native_tags?: boolean;  // Spoolman 0.27+ links tags natively
+}
+
+export interface SpoolmanTagMigrationReport {
+  dry_run: boolean;
+  moved: number[];
+  already: number;
+  slot_ids: number;
+  conflicts: Array<{ spool_id: number; tag: string; holder: number }>;  // holder -1: a filament holds the tag
 }
 
 export interface SkippedSpool {
@@ -3924,6 +4052,11 @@ export interface InventorySpool {
   note: string | null;
   added_full: boolean | null;
   last_used: string | null;
+  // Last drying (#2863): stamped when an AMS drying run of at least half its
+  // length ends, or set by hand. Temperature and hours are null when unknown.
+  last_dried_at?: string | null;
+  last_dried_temp?: number | null;
+  last_dried_hours?: number | null;
   encode_time: string | null;
   tag_uid: string | null;
   tray_uuid: string | null;
@@ -5573,7 +5706,7 @@ export type Permission =
   | 'archives:reprint_own' | 'archives:reprint_all' | 'archives:purge'
   | 'queue:read' | 'queue:read_own' | 'queue:read_all' | 'queue:create'
   | 'queue:update_own' | 'queue:update_all' | 'queue:delete_own' | 'queue:delete_all'
-  | 'queue:reorder'
+  | 'queue:reorder' | 'queue:start_unreviewed'
   | 'library:read' | 'library:read_own' | 'library:read_all' | 'library:upload'
   | 'library:update_own' | 'library:update_all' | 'library:delete_own' | 'library:delete_all'
   | 'library:purge'
@@ -5598,6 +5731,7 @@ export type Permission =
   | 'github:backup' | 'github:restore'
   | 'cloud:auth' | 'orca_cloud:auth'
   | 'makerworld:view' | 'makerworld:import'
+  | 'manyfold:view' | 'manyfold:import'
   | 'api_keys:read' | 'api_keys:create' | 'api_keys:update' | 'api_keys:delete'
   | 'users:read' | 'users:read_slim' | 'users:create' | 'users:update' | 'users:delete'
   | 'groups:read' | 'groups:create' | 'groups:update' | 'groups:delete'
@@ -5618,6 +5752,11 @@ export interface Group {
   description: string | null;
   permissions: Permission[];
   is_system: boolean;
+  /** Members only see the printers in printer_ids plus every printer in locations (#1727) */
+  restrict_printers: boolean;
+  printer_ids: number[];
+  /** Matched against Printer.location, so printers added there later are included */
+  locations: string[];
   user_count: number;
   created_at: string;
   updated_at: string;
@@ -5631,12 +5770,18 @@ export interface GroupCreate {
   name: string;
   description?: string;
   permissions: Permission[];
+  restrict_printers?: boolean;
+  printer_ids?: number[];
+  locations?: string[];
 }
 
 export interface GroupUpdate {
   name?: string;
   description?: string;
   permissions?: Permission[];
+  restrict_printers?: boolean;
+  printer_ids?: number[];
+  locations?: string[];
 }
 
 export interface PermissionInfo {
@@ -6691,6 +6836,8 @@ export const api = {
       if (page.length < pageSize) return rows;
     }
   },
+  // Latest archive of every printer in one request, for the printer cards.
+  getLastArchivePerPrinter: () => request<Archive[]>('/archives/last-per-printer'),
   getArchivesSlim: (dateFrom?: string, dateTo?: string, createdById?: number) => {
     const params = new URLSearchParams();
     if (dateFrom) params.set('date_from', dateFrom);
@@ -7572,6 +7719,36 @@ export const api = {
         folder_id: folder_id ?? null,
       }),
     }),
+  // Manyfold (#1471).
+  getManyfoldConfig: () => request<ManyfoldConfig>('/manyfold/config'),
+  updateManyfoldConfig: (data: ManyfoldConfigInput) =>
+    request<ManyfoldConfig>('/manyfold/config', { method: 'PUT', body: JSON.stringify(data) }),
+  deleteManyfoldConfig: () => request<void>('/manyfold/config', { method: 'DELETE' }),
+  testManyfoldConfig: (data: ManyfoldConfigInput) =>
+    request<{ model_count: number }>('/manyfold/config/test', { method: 'POST', body: JSON.stringify(data) }),
+  getManyfoldStatus: () => request<ManyfoldStatus>('/manyfold/status'),
+  listManyfoldModels: (query: string, page: number) => {
+    const params = new URLSearchParams({ page: String(page) });
+    if (query) params.set('q', query);
+    return request<ManyfoldModelList>(`/manyfold/models?${params.toString()}`);
+  },
+  getManyfoldModel: (modelId: string) =>
+    request<ManyfoldModel>(`/manyfold/models/${encodeURIComponent(modelId)}`),
+  /** The model's preview, or null when it has none. Fetched rather than used
+   *  as an <img src>: a failing protected <img> makes the app renew its media
+   *  token, and models without a preview answer 404. */
+  getManyfoldPreview: async (modelId: string): Promise<Blob | null> => {
+    const headers: Record<string, string> = {};
+    if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+    const response = await fetch(`${API_BASE}/manyfold/models/${encodeURIComponent(modelId)}/preview`, { headers });
+    if (!response.ok) return null;
+    return response.blob();
+  },
+  importManyfoldFile: (modelId: string, fileId: string, folderId: number | null) =>
+    request<ManyfoldImportResponse>('/manyfold/import', {
+      method: 'POST',
+      body: JSON.stringify({ model_id: modelId, file_id: fileId, folder_id: folderId }),
+    }),
   getCloudSettingDetail: (settingId: string) =>
     request<SlicerSettingDetail>(`/cloud/settings/${settingId}`),
   createCloudSetting: (data: SlicerSettingCreate) =>
@@ -8077,6 +8254,10 @@ export const api = {
 
   // Spoolman Integration
   getSpoolmanStatus: () => request<SpoolmanStatus>('/spoolman/status'),
+  migrateSpoolmanTags: (dryRun: boolean) =>
+    request<SpoolmanTagMigrationReport>(`/spoolman/inventory/tags/migrate?dry_run=${dryRun}`, {
+      method: 'POST',
+    }),
   connectSpoolman: () =>
     request<{ success: boolean; message: string }>('/spoolman/connect', {
       method: 'POST',
@@ -10284,6 +10465,8 @@ export const api = {
   // `@BBL <code>` suffix against the selected printer-preset name (#1325).
   getSlicerPrinterModels: () =>
     request<Record<string, string>>('/slicer/printer-models'),
+  getSlicerLoadedSpools: () =>
+    request<LoadedSpoolsResponse>('/slicer/loaded-spools'),
 
   /**
    * Effective values of a process preset, with its `inherits:` chain flattened
@@ -10496,6 +10679,13 @@ export interface LibraryFolderTree {
   // max(folder.updated_at, max(immediate-child file.updated_at)). Used by
   // the File Manager folder tree's "sort by recent activity" mode (#1770).
   latest_activity_at: string | null;
+  // Ownership (#3201). can_* are for the current user: what the File
+  // Manager may offer on this folder. The backend enforces the same rules.
+  created_by_id: number | null;
+  shared: boolean;
+  can_write: boolean;
+  can_rename: boolean;
+  can_delete: boolean;
   children: LibraryFolderTree[];
 }
 
@@ -10513,6 +10703,13 @@ export interface LibraryFolder {
   external_show_hidden: boolean;
   file_count: number;
   latest_activity_at: string | null;
+  // Ownership (#3201). can_* are for the current user: what the File
+  // Manager may offer on this folder. The backend enforces the same rules.
+  created_by_id: number | null;
+  shared: boolean;
+  can_write: boolean;
+  can_rename: boolean;
+  can_delete: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -10537,6 +10734,7 @@ export interface LibraryFolderUpdate {
   parent_id?: number | null;
   project_id?: number | null;  // 0 to unlink
   archive_id?: number | null;  // 0 to unlink
+  shared?: boolean;  // library:update_all only (#3201)
 }
 
 export interface LibraryFileDuplicate {
