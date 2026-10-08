@@ -55,6 +55,7 @@ class ProjectRevisionOut(BaseModel):
     created_at: datetime
     status_changed_at: datetime | None
     print_count: int = 0  # printed quantity from this revision's archives (phase 4)
+    pipeline_name: str | None = None  # set by Re-trancher (phase 6)
 
 
 class ProjectItemOut(BaseModel):

@@ -1108,7 +1108,12 @@ async def load_tree(db: AsyncSession, project: Project) -> ProjectTreeResponse:
         source = revisions_by_id.get(rev.derived_from_id) if rev.derived_from_id else None
         source_item = items_by_id.get(source.item_id) if source else None
         outdated_by = None
-        if item.section == "impression" and source is not None and source_item is not None:
+        if (
+            item.section == "impression"
+            and source is not None
+            and source_item is not None
+            and source.item_id != item.id  # a re-slice of its own item is never outdated (§12.1)
+        ):
             newer = newest_valide.get(source.item_id)
             if newer is not None and newer.number > source.number:
                 outdated_by = _ref(newer, source_item)
@@ -1120,6 +1125,7 @@ async def load_tree(db: AsyncSession, project: Project) -> ProjectTreeResponse:
             note=rev.note,
             derived_from=_ref(source, source_item) if source and source_item else None,
             outdated_by=outdated_by,
+            pipeline_name=rev.pipeline_name,
             print_profile=rev.print_profile,
             slicer_name=rev.slicer_name,
             slicer_version=rev.slicer_version,
