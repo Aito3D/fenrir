@@ -43,6 +43,7 @@ export function ProjectFilesPanel({ projectId }: { projectId: number }) {
       {legacy.length > 0 && <OlderFiles sections={legacy} derivedOptions={derivedOptions} actions={actions} />}
       {actions.reslice.printNext && (
         <PrintRevisionFlow
+          key={actions.reslice.printNext.file.id}
           projectId={projectId}
           file={actions.reslice.printNext.file}
           initialTaskId={actions.reslice.printNext.taskId}

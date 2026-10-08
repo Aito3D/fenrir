@@ -64,4 +64,25 @@ describe('ResliceDialog', () => {
     expect(await screen.findByText(/No saved pipeline/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Slice' })).toBeDisabled();
   });
+
+  it('Escape in the order step goes back to the pipeline step without closing', async () => {
+    orders = [{ task_id: 31, order_id: 203, client_name: 'Dupont', task_title: 'Support', order_description: null, board_column: 'printing' }];
+    const onClose = vi.fn();
+    render(<ResliceDialog projectId={7} files={[file(50, 'support.3mf')]} initialFileId={50} onStart={() => {}} onClose={onClose} />);
+    await userEvent.click(await screen.findByRole('radio', { name: /H2D PETG/ }));
+    await userEvent.click(screen.getByRole('button', { name: 'Slice + queue' }));
+    await screen.findByRole('radio', { name: /Dupont/ });
+    await userEvent.keyboard('{Escape}');
+    expect(await screen.findByRole('radio', { name: /H2D PETG/ })).toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('says the pipelines could not be loaded instead of "no saved pipeline"', async () => {
+    server.use(http.get('/api/v1/slicer-pipelines/', () => HttpResponse.json({ detail: 'boom' }, { status: 500 })));
+    render(<ResliceDialog projectId={7} files={[file(50, 'support.3mf')]} initialFileId={50} onStart={() => {}} onClose={() => {}} />);
+    expect(await screen.findByText('Could not load pipelines.')).toBeInTheDocument();
+    expect(screen.queryByText(/No saved pipeline/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Slice' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Slice + queue' })).toBeDisabled();
+  });
 });

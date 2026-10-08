@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { api } from '../../../api/client';
+import { api, ApiError } from '../../../api/client';
 import type { ProjectFileOut, ProjectTreeResponse, ResliceResult } from '../../../api/client';
 import { useToast } from '../../../contexts/ToastContext';
 
@@ -18,7 +18,8 @@ export interface ResliceJobs {
   runFor: (itemId: number) => ResliceRun | undefined;
   start: (itemId: number, revisionId: number, fileId: number, pipelineId: number, queueTaskId: number | null | undefined) => Promise<void>;
   dismiss: (itemId: number) => void;
-  /** Set when a "Trancher + file" run finished: the panel opens the print flow for it. */
+  /** Head of the queue of finished "Trancher + file" runs: the panel opens the print flow for it;
+   *  `clearPrintNext` drops it so the next one (if any) shows. */
   printNext: { file: ProjectFileOut; taskId: number | null } | null;
   clearPrintNext: () => void;
 }
@@ -33,7 +34,7 @@ export function useResliceJobs(projectId: number): ResliceJobs {
   const { showToast } = useToast();
   const queryClient = useQueryClient();
   const [runs, setRuns] = useState<ReadonlyMap<number, ResliceRun>>(() => new Map());
-  const [printNext, setPrintNext] = useState<ResliceJobs['printNext']>(null);
+  const [printQueue, setPrintQueue] = useState<NonNullable<ResliceJobs['printNext']>[]>([]);
   const runsRef = useRef(runs);
   useEffect(() => {
     runsRef.current = runs;
@@ -96,7 +97,10 @@ export function useResliceJobs(projectId: number): ResliceJobs {
         return;
       }
       showToast(t('projectsPdm.reslice.done', values), 'success');
-      if (run.queueTaskId !== undefined && file) setPrintNext({ file, taskId: run.queueTaskId });
+      if (run.queueTaskId !== undefined && file) {
+        const entry = { file, taskId: run.queueTaskId };
+        setPrintQueue((q) => [...q, entry]);
+      }
     },
     [projectId, queryClient, showToast, t, update],
   );
@@ -123,8 +127,14 @@ export function useResliceJobs(projectId: number): ResliceJobs {
             } else {
               update(run.itemId, { ...run, percent: state.progress ? Math.round(state.progress.total_percent) : null });
             }
-          } catch {
-            // transient: retry next tick
+          } catch (e) {
+            // A 404 means the job is gone (restart, expiry, no read permission): stop, don't spin forever.
+            if (e instanceof ApiError && e.status === 404) {
+              if (runsRef.current.get(run.itemId)?.jobId === run.jobId) {
+                update(run.itemId, { ...run, error: t('projectsPdm.reslice.jobLost') });
+              }
+            }
+            // anything else is transient: retry next tick
           }
         }
       } finally {
@@ -141,7 +151,7 @@ export function useResliceJobs(projectId: number): ResliceJobs {
     runFor: (itemId: number) => runs.get(itemId),
     start,
     dismiss: (itemId: number) => update(itemId, null),
-    printNext,
-    clearPrintNext: () => setPrintNext(null),
+    printNext: printQueue[0] ?? null,
+    clearPrintNext: () => setPrintQueue((q) => q.slice(1)),
   };
 }

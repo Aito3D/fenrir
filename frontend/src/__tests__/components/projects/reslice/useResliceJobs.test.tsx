@@ -47,6 +47,51 @@ describe('useResliceJobs', () => {
     expect(result.current.printNext).toBeNull();
   });
 
+  it('queues two completions in order, each with its own order', async () => {
+    const fileB = { ...newFile, id: 92, filename: 'b.gcode.3mf' };
+    let otherJob: Record<string, unknown> = { ...jobState, job_id: 6 };
+    server.use(
+      http.post('/api/v1/projects/revisions/11/reslice', () => HttpResponse.json({ job_id: 6, status: 'pending', status_url: '/api/v1/slice-jobs/6' }, { status: 202 })),
+      http.get('/api/v1/slice-jobs/6', () => HttpResponse.json(otherJob)),
+      http.get('/api/v1/projects/7/tree', () => HttpResponse.json({ project_id: 7, code: 'P-0007', sections: [{ section: 'impression', items: [
+        { id: 20, section: 'impression', name: 'Support', name_key: 'support', forked_from: null, revisions: [{ id: 2, number: 2, files: [newFile] }] },
+        { id: 21, section: 'impression', name: 'B', name_key: 'b', forked_from: null, revisions: [{ id: 3, number: 2, files: [fileB] }] },
+      ] }] })),
+    );
+    const { result } = renderHook(() => useResliceJobs(7), { wrapper });
+    await act(() => result.current.start(20, 1, 50, 3, 31));
+    await act(() => result.current.start(21, 11, 60, 3, 32));
+    jobState = completed(91);
+    await act(() => vi.advanceTimersByTimeAsync(1600));
+    await waitFor(() => expect(result.current.printNext).toEqual({ file: newFile, taskId: 31 }));
+    otherJob = { ...otherJob, status: 'completed', result: { project_id: 7, item_id: 21, revision_id: 3, revision_number: 2, file_id: 92, filename: 'b.gcode.3mf' } };
+    await act(() => vi.advanceTimersByTimeAsync(1600));
+    await waitFor(() => expect(result.current.runFor(21)).toBeUndefined());
+    expect(result.current.printNext).toEqual({ file: newFile, taskId: 31 });
+    act(() => result.current.clearPrintNext());
+    expect(result.current.printNext).toEqual({ file: fileB, taskId: 32 });
+    act(() => result.current.clearPrintNext());
+    expect(result.current.printNext).toBeNull();
+  });
+
+  it('reports a lost job (404) as an error until dismissed', async () => {
+    const { result } = renderHook(() => useResliceJobs(7), { wrapper });
+    await act(() => result.current.start(20, 1, 50, 3, undefined));
+    server.use(http.get('/api/v1/slice-jobs/5', () => HttpResponse.json({ detail: 'Job not found' }, { status: 404 })));
+    await act(() => vi.advanceTimersByTimeAsync(1600));
+    await waitFor(() => expect(result.current.runFor(20)?.error).toBe('Slicing status lost. Reload the page to see whether the new revision was created.'));
+    act(() => result.current.dismiss(20));
+    expect(result.current.runFor(20)).toBeUndefined();
+  });
+
+  it('keeps polling through a non-404 error', async () => {
+    const { result } = renderHook(() => useResliceJobs(7), { wrapper });
+    await act(() => result.current.start(20, 1, 50, 3, undefined));
+    server.use(http.get('/api/v1/slice-jobs/5', () => HttpResponse.json({ detail: 'x' }, { status: 500 })));
+    await act(() => vi.advanceTimersByTimeAsync(1600));
+    expect(result.current.runFor(20)?.error).toBeNull();
+  });
+
   it('does not open the print flow when the new file cannot be found', async () => {
     const { result } = renderHook(() => useResliceJobs(7), { wrapper });
     await act(() => result.current.start(20, 1, 50, 3, null));

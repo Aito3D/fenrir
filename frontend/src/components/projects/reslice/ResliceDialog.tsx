@@ -29,10 +29,11 @@ export function ResliceDialog({ projectId, files, initialFileId, onStart, onClos
   const [pipelineId, setPipelineId] = useState<number | null>(null);
   const [askOrder, setAskOrder] = useState(false);
   const dialogRef = useRef<HTMLFormElement>(null);
-  useIsolatedEscape(onClose, dialogRef);
+  // In the order step the picker owns Escape (back to this step); this dialog must not close too.
+  useIsolatedEscape(() => { if (!askOrder) onClose(); }, dialogRef);
   const { openOrders, loading: ordersLoading, failed: ordersFailed } = useOpenOrders(projectId);
 
-  const { data: pipelines, isPending } = useQuery({ queryKey: ['slicer-pipelines'], queryFn: api.listSlicerPipelines });
+  const { data: pipelines, isPending, isError: pipelinesFailed } = useQuery({ queryKey: ['slicer-pipelines'], queryFn: api.listSlicerPipelines });
   const { data: report } = useQuery({
     queryKey: ['pipeline-eligibility', pipelineId, fileId],
     queryFn: () => api.checkPipelineEligibility(pipelineId as number, { kind: 'libraryFile', id: fileId }),
@@ -95,6 +96,8 @@ export function ResliceDialog({ projectId, files, initialFileId, onStart, onClos
             <Loader2 className="h-4 w-4 animate-spin text-bambu-green" aria-hidden="true" />
             {t('common.loading')}
           </p>
+        ) : pipelinesFailed ? (
+          <p role="alert" className="text-sm text-red-400">{t('projectsPdm.reslice.pipelinesUnavailable')}</p>
         ) : list.length === 0 ? (
           <p className="text-sm text-bambu-gray-light">{t('projectsPdm.reslice.noPipelines')}</p>
         ) : (
