@@ -12,11 +12,13 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.routing import APIRoute
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.background import BackgroundTask
 
 from backend.app.api.routes.library import _ensure_library_file_visible, may_modify_library_file, to_absolute_path
+from backend.app.core import database
 from backend.app.core.auth import (
     RequirePermissionIfAuthEnabled,
     require_ownership_permission,
@@ -28,6 +30,7 @@ from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.models.library import LibraryFile
 from backend.app.models.project import Project
+from backend.app.models.slicer_pipeline import SlicerPipeline
 from backend.app.models.user import User
 from backend.app.schemas.aito_project_links import ProjectOrdersResponse
 from backend.app.schemas.project_files import (
@@ -42,9 +45,18 @@ from backend.app.schemas.project_files import (
     ProjectRevisionUpdate,
     ProjectSuggestionForFile,
     ProjectTreeResponse,
+    ResliceBody,
+    ResliceStarted,
     RevisionUploadResponse,
 )
-from backend.app.services import aito_project_links as aito_links, project_files as svc, project_filing
+from backend.app.services import (
+    aito_project_links as aito_links,
+    project_files as svc,
+    project_filing,
+    project_reslice,
+)
+from backend.app.services.slice_dispatch import http_exception_to_job_error, slice_dispatch
+from backend.app.services.slicer_pipeline_request import slice_request_from_pipeline
 
 logger = logging.getLogger(__name__)
 
@@ -335,6 +347,78 @@ async def remove_file(
         await svc.remove_file_from_revision(db, project, item, revision, file_id)
     except svc.ProjectFilesError as exc:
         _raise(exc)
+
+
+@router.post("/revisions/{revision_id}/reslice", response_model=ResliceStarted, status_code=202)
+async def reslice_revision(
+    revision_id: int,
+    body: ResliceBody,
+    db: AsyncSession = Depends(get_db),
+    user: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
+    _slice: User | None = RequirePermissionIfAuthEnabled(Permission.LIBRARY_UPLOAD),
+    _pipelines: User | None = RequirePermissionIfAuthEnabled(Permission.PIPELINES_READ),
+):
+    """Re-trancher (spec §12.1): slice one 3MF of this revision with a saved pipeline in the
+    background; the result becomes the next revision of the same item. Poll ``status_url``."""
+    try:
+        revision, item, _project = await svc.get_revision_bundle(db, revision_id)
+        svc.require_enabled_section(item.section)
+        source = (
+            await db.execute(
+                select(LibraryFile).where(LibraryFile.id == body.file_id, LibraryFile.revision_id == revision.id)
+            )
+        ).scalar_one_or_none()
+        if source is None:
+            raise svc.ProjectFilesError(404, "File not found in this revision")
+        if not project_reslice.is_resliceable(source.filename):
+            raise svc.ProjectFilesError(400, "Only 3MF files can be re-sliced")
+        pipeline = (
+            await db.execute(
+                select(SlicerPipeline).where(
+                    SlicerPipeline.id == body.pipeline_id, SlicerPipeline.is_deleted.is_(False)
+                )
+            )
+        ).scalar_one_or_none()
+        if pipeline is None:
+            raise svc.ProjectFilesError(404, "Pipeline not found")
+        try:
+            # Built here, not in the job: a pipeline the slicer cannot use is a 400, never a failed job.
+            slice_request = slice_request_from_pipeline(pipeline)
+        except ValidationError as exc:
+            raise svc.ProjectFilesError(400, "Pipeline has no usable filament preset") from exc
+        path = to_absolute_path(source.file_path)
+        if path is None or not path.exists():
+            raise svc.ProjectFilesError(404, "Source file missing on disk")
+    except svc.ProjectFilesError as exc:
+        _raise(exc)
+    req = project_reslice.ResliceRequest(
+        revision_id=revision.id,
+        revision_number=revision.number,
+        source_file_id=source.id,
+        source_filename=source.filename,
+        model_bytes=await asyncio.to_thread(path.read_bytes),
+        pipeline_id=pipeline.id,
+        slice_request=slice_request,
+        user_id=_uid(user),
+    )
+
+    async def _run(job_id: int) -> dict:
+        async with database.async_session() as task_db:
+            try:
+                return await project_reslice.run_reslice(task_db, req, job_id=job_id)
+            except svc.ProjectFilesError as exc:
+                raise http_exception_to_job_error(HTTPException(exc.status_code, exc.detail)) from exc
+            except HTTPException as exc:
+                raise http_exception_to_job_error(exc) from exc
+
+    job = await slice_dispatch.enqueue(
+        kind="project_revision",
+        source_id=revision.id,
+        source_name=source.filename,
+        owner_id=_uid(user),
+        run=_run,
+    )
+    return ResliceStarted(job_id=job.id, status=job.status, status_url=f"/api/v1/slice-jobs/{job.id}")
 
 
 @router.patch("/revisions/{revision_id}", response_model=ProjectRevisionOut)

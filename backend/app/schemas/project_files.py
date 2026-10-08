@@ -190,3 +190,18 @@ class LegacyMigrationStatus(BaseModel):
     failures: list[LegacyMigrationFailure] = []
     pending: int
     last_run: LegacyMigrationLastRun | None = None
+
+
+class ResliceBody(BaseModel):
+    """``POST /projects/revisions/{id}/reslice``: one 3MF of the revision and a saved pipeline."""
+
+    file_id: int
+    pipeline_id: int
+
+
+class ResliceStarted(BaseModel):
+    """202 body: poll ``status_url`` (``GET /slice-jobs/{job_id}``) until completed or failed."""
+
+    job_id: int
+    status: str
+    status_url: str
