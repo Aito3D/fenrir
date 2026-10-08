@@ -446,10 +446,11 @@ Each phase ships alone and keeps the app working.
    on queue and archives, printed count vs `impression_quantity`, OUTDATED.
 5. **File Manager bridge** — Move to project, suggestions, `P-0042_` auto-filing, migration
    step 2.
-6. **Pipeline slicing** — Slice / Slice + Queue on Modélisation STL/STEP revisions through the
-   existing `SlicerPipeline` run path; output becomes the next revision of a chosen Impression
-   item with `derived_from`, `pipeline_id` and `pipeline_name`; queue items carry
-   `revision_id` + `aito_task_id`. (The shop slices by hand today; this is an optimisation.)
+6. **Re-trancher** — *replaced 2026-10-05, see §12.1.* The original phase sliced Modélisation
+   STL/STEP revisions; projects now hold printing files only, so phase 6 re-slices project 3MF
+   revisions with a saved pipeline's presets instead.
+7. **Interface rework** — *added 2026-10-05, see §12.2.* Two-column detail page, slimmer files
+   view, "En production" list page.
 
 ## 10. Testing
 
@@ -470,3 +471,122 @@ Each phase ships alone and keeps the app working.
   checked against a sample before phase 2 is planned).
 - **Auto-filing target item:** phase 5 files `P-0042_*` uploads into Impression by name; whether
   operators want a confirmation toast with "move to another item" is to be seen in use.
+
+---
+
+## 12. Addendum 2026-10-05 — phases 6 and 7 after "printing files only"
+
+Agreed in chat with the operator on 2026-10-05 (visual companion mockups in
+`.superpowers/brainstorm/`, not tracked). Context: on 2026-10-05 the operator restricted projects
+to printing files (`.3mf`, `.gcode.3mf`, `.gcode`, `.bgcode`, section `impression` only; the
+other sections are disabled, not deleted). The original phase 6 input (Modélisation STL/STEP)
+therefore no longer exists.
+
+### 12.1 Phase 6 — Re-trancher
+
+**Goal:** re-slice a project 3MF (unsliced project file, or a sliced one for another printer)
+with a saved slicer pipeline, without leaving Fenrir. Bambu Studio stays the normal path; this
+saves the round trip on reprints and printer changes.
+
+**Why not a pipeline run:** `pipeline_runs` always ends by enqueueing (dispatch is its purpose)
+and saves its output as a loose File Manager file next to the source. A project re-slice reuses
+the pipeline's **presets** (`_slice_request_from_pipeline`) and the existing background slice
+job (`slice_and_persist` / slice job progress), not the `PipelineRun` row.
+
+- **Entry points:** "Re-trancher" in the ⋯ menu of an item row and of a revision line; it is the
+  row's main button when the item has no sliced revision. Only 3MF sources are eligible
+  (`.gcode` / `.bgcode` cannot be re-sliced).
+- **Dialog:** source file (the revision's 3MF, defaulting to the one clicked); saved pipeline
+  picker; the existing eligibility report shown as warnings, never blocking. Two buttons:
+  **Trancher** and **Trancher + file**. "Trancher + file" asks "pour quelle commande ?" up front
+  with the phase 4 picker (default: the only open linked task; "aucune" allowed).
+- **Execution:** a background slice job with the pipeline's printer / process / filament presets
+  and bed type. Progress is shown on the item row ("Tranchage… n %"). On failure the row shows
+  the error and nothing is created; no partial revision is ever written.
+- **Result:** the next revision of the **same item**:
+  - status `en_cours`;
+  - `derived_from` = the source revision;
+  - `pipeline_id` and `pipeline_name` stored on the revision (name copied, survives pipeline
+    deletion);
+  - automatic note « Re-tranché depuis R{n} · pipeline {name} »;
+  - config snapshot parsed like any upload (§5.1);
+  - file written into the project tree under the phase 2 rules (stream to disk before any DB
+    write, per-item lock) and hidden from the File Manager (§6.1). The intermediate
+    `LibraryFile` produced by the slicer is either written straight as the revision file or
+    removed; no loose copy is left in the File Manager.
+- **Trancher + file:** after the revision is saved, the queue item is created through the phase 4
+  print path, so it carries `library_file_id`, `project_id`, `revision_id` and `aito_task_id`.
+- **OUTDATED rule fix (§5.3):** a revision whose `derived_from` is another revision of the
+  **same item** is never outdated. Otherwise a re-sliced R4 would be flagged against its own item.
+- **Permissions:** `projects:update` plus the existing slicing permission.
+- **Data model:** `project_revisions` gains nullable `pipeline_id` (FK `slicer_pipelines`, SET
+  NULL) and `pipeline_name` — additive ALTER TABLE migrations.
+
+### 12.2 Phase 7 — Interface rework
+
+Driven by three complaints: the detail page is too busy, the files view is clunky, the list page
+is weak. Visual restyling is out of scope.
+
+#### 12.2.1 Detail page — two columns ("Atelier")
+
+- **Header:** code chip, title, tags, status; ⋯ menu for edit, AI reword, duplicate, archive.
+- **Main column:** files only (§12.2.2).
+- **Right rail**, top to bottom:
+  1. **Résumé** — the revision to print (latest `valide`, else newest), open orders, printed
+     count vs target. The existing three progress bars and the stats grid (print time,
+     filament) are condensed into this card.
+  2. **Commandes** — open orders first, finished ones collapsed (replaces `ProjectOrdersCard`
+     placement, same data).
+  3. **Notes** — edited in place.
+  4. **Links** — Impressions (archives + queue), BOM, Historique (timeline + project events),
+     Sous-projets; "Dossiers liés" (legacy linked library folders) only when the project has
+     some.
+- Each rail link opens a **side panel** sliding over the rail. The existing blocks move into
+  these panels with their behaviour unchanged.
+- **Phones:** the rail stacks above the files, Résumé first.
+- `ProjectDetailPage.tsx` (~1,600 lines) is split along these lines: rail cards and panels become
+  their own components under `components/projects/detail/`.
+
+#### 12.2.2 Files view
+
+- **One flat list of items**, no section header (only Impression is enabled). The disabled
+  sections stay as one collapsed "Autres fichiers (anciens)" line at the bottom.
+- **Item row:** thumbnail, name, recommended revision chip (`R4 · Validé`; latest `valide`, else
+  newest), one profile line (printer model, plates, print time, grams, times printed), one main
+  button ("Imprimer" on the recommended revision, or "Re-trancher" when nothing is sliced), ⋯
+  menu (Nouvelle révision, Aperçu 3D, Télécharger, Re-trancher, Renommer, Dupliquer en pièce,
+  Supprimer). OUTDATED chip as today.
+- **Revision history unfolds in place** on click: one compact line per revision with status chip
+  (click to change), printer, note, delivered orders, Imprimer, ⋯ (Aperçu, Télécharger,
+  Re-trancher, Dupliquer en pièce, Supprimer, "dérivé de", add / remove files).
+- **Drops:** a file dropped on a row creates a new revision of that item; dropped on the zone
+  below the list it creates a new item.
+- **Data:** print time and grams come from the metadata already extracted for library files;
+  plate count from `slice_info.config`. Missing values are omitted, never shown as 0.
+
+#### 12.2.3 List page — "En production" first
+
+- **Search** also matches client names, order numbers, item names and file names (the §3.1
+  promise; today it covers code, title, description, tags). Case-insensitive `LIKE` over joins,
+  SQLite and Postgres.
+- **"En production"** — projects linked to at least one task of an open order, as cards:
+  thumbnail, code + title, order number + client, printed vs target.
+- **"Tous les projets"** — table: thumbnail, code + title, clients, last activity; sorted by
+  latest activity. Tag and status filters stay. The table / grid toggle is removed.
+- **Backend:** `ProjectSearchItem` gains `thumbnail_url`, `client_names`, `open_orders`
+  (number + client) and printed-vs-target counts; a flag or endpoint returns the "En
+  production" set unpaginated.
+
+#### 12.2.4 Out of scope
+
+Visual restyling; the old `ProjectsPage.tsx`; re-enabling the disabled sections.
+
+### 12.3 Testing (phases 6 and 7)
+
+- pytest: re-slice happy path with the slicer stubbed, failure leaves no revision and no loose
+  `LibraryFile`, "Trancher + file" queue item carries `revision_id` + `aito_task_id`, OUTDATED
+  same-item rule, permissions; extended search (client, order number, item, file name), new list
+  fields, "En production" set.
+- Vitest: rail cards and side panels, item row (recommended revision, main button switch),
+  in-place revision lines, drops, both list zones, re-slice dialog.
+- `npm run check:i18n` for new keys in all 15 locales, French first.
