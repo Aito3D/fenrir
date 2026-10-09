@@ -797,6 +797,7 @@ async def add_files_to_revision(
         item_id, section, name = item.id, item.section, item.name
         folder = revision_dir(project, section, name, revision.number)
         written: list[_WrittenFile] = []
+        commit = _CommitOutcome()
         try:
             written = await _stream_files(folder, uploads)
             await _require_item_unchanged(db, item_id, section, name)
@@ -804,8 +805,10 @@ async def add_files_to_revision(
             await _require_editable_files(db, await _fresh_revision(db, revision.id, item_id))
             rows = await _add_file_rows(db, project, revision, written, user_id)
             warnings = await _duplicate_warnings(db, item, revision, rows)
-            await db.commit()
+            await _commit_through_cancel(db, commit)
         except BaseException:
+            if commit.landed:
+                raise
             await db.rollback()
             _cleanup_written(written)
             raise
@@ -941,6 +944,7 @@ async def _rename_item_locked(db: AsyncSession, project: Project, item: ProjectI
         else:
             old_dir.rename(new_dir)
         moved = True
+    commit = _CommitOutcome()
     try:
         if moved:
             files = (
@@ -960,8 +964,10 @@ async def _rename_item_locked(db: AsyncSession, project: Project, item: ProjectI
                     )  # SEC-PATH-OK: relative part of a path already under old_dir
         item.name = clean
         item.name_key = key
-        await db.commit()
+        await _commit_through_cancel(db, commit)
     except BaseException:
+        if commit.landed:
+            raise
         if moved:
             new_dir.rename(old_dir)
         await db.rollback()

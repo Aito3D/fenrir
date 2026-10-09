@@ -925,6 +925,106 @@ async def test_add_files_commit_failure_rolls_back_and_removes_the_written_files
 
 
 @pytest.mark.asyncio
+async def test_add_files_keeps_files_when_a_cancelled_commit_lands(db_session, root, monkeypatch, test_engine):
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project)
+    await db_session.commit()
+    base, rev_id = root / project.storage_dir, rev.id
+    in_flight, release = _commit_outlives_cancel(db_session, monkeypatch)
+    await _cancel_mid_commit(
+        add_files_to_revision(db_session, project, item, rev, [upload("b.step", b"b")], user_id=None),
+        in_flight,
+        release,
+    )
+    names = await _fresh_scalars(test_engine, select(LibraryFile.filename).where(LibraryFile.revision_id == rev_id))
+    assert sorted(names) == ["a.step", "b.step"]
+    folder = base / "Modélisation" / "Support" / "R1"
+    assert (folder / "a.step").read_bytes() == b"data"
+    assert (folder / "b.step").read_bytes() == b"b"  # the committed row still points at its bytes
+
+
+@pytest.mark.asyncio
+async def test_add_files_cleans_up_when_a_cancelled_commit_fails(db_session, root, monkeypatch, test_engine):
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project)
+    await db_session.commit()
+    base, rev_id = root / project.storage_dir, rev.id
+    in_flight, release = _commit_outlives_cancel(db_session, monkeypatch, fails=True)
+    await _cancel_mid_commit(
+        add_files_to_revision(db_session, project, item, rev, [upload("b.step", b"b")], user_id=None),
+        in_flight,
+        release,
+    )
+    names = await _fresh_scalars(test_engine, select(LibraryFile.filename).where(LibraryFile.revision_id == rev_id))
+    assert names == ["a.step"]
+    assert sorted(p.name for p in (base / "Modélisation" / "Support" / "R1").iterdir()) == ["a.step"]
+
+
+@pytest.mark.asyncio
+async def test_add_files_cleans_up_when_cancelled_before_the_commit(db_session, root, monkeypatch, test_engine):
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project)
+    await db_session.commit()
+    base, rev_id = root / project.storage_dir, rev.id
+    await _cancelled_before_commit(db_session, monkeypatch)
+    with pytest.raises(asyncio.CancelledError):
+        await add_files_to_revision(db_session, project, item, rev, [upload("b.step", b"b")], user_id=None)
+    names = await _fresh_scalars(test_engine, select(LibraryFile.filename).where(LibraryFile.revision_id == rev_id))
+    assert names == ["a.step"]
+    assert sorted(p.name for p in (base / "Modélisation" / "Support" / "R1").iterdir()) == ["a.step"]
+
+
+@pytest.mark.asyncio
+async def test_rename_item_keeps_the_new_folder_when_a_cancelled_commit_lands(
+    db_session, root, monkeypatch, test_engine
+):
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project)
+    await db_session.commit()
+    base, item_id, rev_id = root / project.storage_dir, item.id, rev.id
+    in_flight, release = _commit_outlives_cancel(db_session, monkeypatch)
+    await _cancel_mid_commit(rename_item(db_session, project, item, "Nouveau"), in_flight, release)
+    assert await _fresh_scalars(test_engine, select(ProjectItem.name).where(ProjectItem.id == item_id)) == ["Nouveau"]
+    paths = await _fresh_scalars(test_engine, select(LibraryFile.file_path).where(LibraryFile.revision_id == rev_id))
+    assert len(paths) == 1 and paths[0].endswith("Nouveau/R1/a.step")
+    assert (base / "Modélisation" / "Nouveau" / "R1" / "a.step").read_bytes() == b"data"
+    assert not (base / "Modélisation" / "Support").exists()  # the folder matches the committed paths
+
+
+@pytest.mark.asyncio
+async def test_rename_item_rolls_folder_back_when_a_cancelled_commit_fails(db_session, root, monkeypatch, test_engine):
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project)
+    await db_session.commit()
+    base, item_id, rev_id = root / project.storage_dir, item.id, rev.id
+    in_flight, release = _commit_outlives_cancel(db_session, monkeypatch, fails=True)
+    await _cancel_mid_commit(rename_item(db_session, project, item, "Nouveau"), in_flight, release)
+    assert await _fresh_scalars(test_engine, select(ProjectItem.name).where(ProjectItem.id == item_id)) == ["Support"]
+    paths = await _fresh_scalars(test_engine, select(LibraryFile.file_path).where(LibraryFile.revision_id == rev_id))
+    assert len(paths) == 1 and paths[0].endswith("Support/R1/a.step")
+    assert (base / "Modélisation" / "Support" / "R1" / "a.step").read_bytes() == b"data"
+    assert not (base / "Modélisation" / "Nouveau").exists()
+
+
+@pytest.mark.asyncio
+async def test_rename_item_rolls_folder_back_when_cancelled_before_the_commit(
+    db_session, root, monkeypatch, test_engine
+):
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project)
+    await db_session.commit()
+    base, item_id, rev_id = root / project.storage_dir, item.id, rev.id
+    await _cancelled_before_commit(db_session, monkeypatch)
+    with pytest.raises(asyncio.CancelledError):
+        await rename_item(db_session, project, item, "Nouveau")
+    assert await _fresh_scalars(test_engine, select(ProjectItem.name).where(ProjectItem.id == item_id)) == ["Support"]
+    paths = await _fresh_scalars(test_engine, select(LibraryFile.file_path).where(LibraryFile.revision_id == rev_id))
+    assert len(paths) == 1 and paths[0].endswith("Support/R1/a.step")
+    assert (base / "Modélisation" / "Support" / "R1" / "a.step").read_bytes() == b"data"
+    assert not (base / "Modélisation" / "Nouveau").exists()
+
+
+@pytest.mark.asyncio
 async def test_fork_gives_the_copy_its_own_thumbnail(db_session, root, monkeypatch, tmp_path):
     thumbs = tmp_path / "thumbs"
     thumbs.mkdir()
