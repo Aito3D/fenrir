@@ -163,22 +163,17 @@ def _uid(user: User | None) -> int | None:
 
 
 async def _item_out(db: AsyncSession, project: Project, item_id: int) -> ProjectItemOut:
-    tree = await svc.load_tree(db, project)
-    for section in tree.sections:
-        for item in section.items:
-            if item.id == item_id:
-                return item
-    raise HTTPException(status_code=404, detail="Item not found")
+    item = svc.find_item(await svc.load_tree(db, project), item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Item not found")
+    return item
 
 
 async def _revision_out(db: AsyncSession, project: Project, revision_id: int) -> ProjectRevisionOut:
-    tree = await svc.load_tree(db, project)
-    for section in tree.sections:
-        for item in section.items:
-            for rev in item.revisions:
-                if rev.id == revision_id:
-                    return rev
-    raise HTTPException(status_code=404, detail="Revision not found")
+    rev = svc.find_revision(await svc.load_tree(db, project), revision_id)
+    if rev is None:
+        raise HTTPException(status_code=404, detail="Revision not found")
+    return rev
 
 
 # --- phase 5: legacy migration (literal paths, before the /{project_id} routes) ---
@@ -519,10 +514,7 @@ async def import_library_files(
     except svc.ProjectFilesError as exc:
         _raise(exc)
 
-    revisions: dict[int, dict] = {}
-    for entry in [*result.moved, *result.copied]:
-        revisions.setdefault(entry["revision_id"], entry)
-    for revision_id, entry in revisions.items():
+    for revision_id, entry in result.revisions().items():
         await _record_linked(
             db,
             project_id,

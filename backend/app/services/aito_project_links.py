@@ -37,6 +37,7 @@ from backend.app.schemas.aito_project_links import (
 )
 from backend.app.schemas.project_files import RevisionRef
 from backend.app.services import aito_events, project_files, project_print_trace
+from backend.app.services.http_status_error import HttpStatusError
 from backend.app.services.project_filing import find_or_create_item, item_name_for_filename
 from backend.app.services.project_suggestions import SIMILAR_NAME_THRESHOLD, similar_projects
 from backend.app.services.project_tags import UnknownTagError, apply_project_tag_input
@@ -48,11 +49,8 @@ SECTION_SUMMARY_LIMIT = 3
 DROP_SECTION = "impression"  # drops land in Impression (projects hold printing files only for now)
 
 
-class LinkError(Exception):
-    def __init__(self, status_code: int, detail: str):
-        super().__init__(detail)
-        self.status_code = status_code
-        self.detail = detail
+class LinkError(HttpStatusError):
+    pass
 
 
 def _actor_class(actor: str | None) -> str:

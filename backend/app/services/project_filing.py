@@ -117,6 +117,14 @@ class MoveToProjectResult:
     copied: list[dict] = field(default_factory=list)
     skipped: list[dict] = field(default_factory=list)
 
+    def revisions(self) -> dict[int, dict]:
+        """The first ``moved`` then ``copied`` entry of each ``revision_id``, keyed
+        by it, in first-seen order."""
+        out: dict[int, dict] = {}
+        for entry in [*self.moved, *self.copied]:
+            out.setdefault(entry["revision_id"], entry)
+        return out
+
 
 @dataclass
 class _Candidate:
@@ -783,9 +791,7 @@ async def migrate_project_legacy(db: AsyncSession, project: Project) -> LegacyMi
     to_move = [f for f in files if f.id not in done]
     result = await move_library_files_to_project(db, project, to_move, item_id=None, new_item_name=None, user_id=None)
 
-    revisions: dict[int, dict] = {}
-    for entry in [*result.moved, *result.copied]:
-        revisions.setdefault(entry["revision_id"], entry)
+    revisions = result.revisions()
     for entry in revisions.values():
         await record_revision_added(db, project_id, entry, None)
 

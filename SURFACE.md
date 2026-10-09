@@ -297,13 +297,13 @@ async def used_file_ids(db: AsyncSession, file_ids: Select)
 class AutoFileResult
 class LegacyMigrationError(Exception)
 class LegacyMigrationOutcome
-class LinkError(Exception)
+class LinkError(HttpStatusError)
 class MoveToProjectResult
 class PrintContext
 class PrintCounts
 class PrintSnapshot
-class PrintTraceError(ValueError)
-class ProjectFilesError(Exception)
+class PrintTraceError(HttpStatusError, ValueError)
+class ProjectFilesError(HttpStatusError)
 class ResliceRequest
 class RevisionSource
 class UnknownTagError(ValueError)
@@ -313,6 +313,8 @@ def clean_item_name(name: str)
 def clean_tag_name(name: str)
 def content_length_capped_route(*permissions: Permission)
 def ensure_project_dir(project)
+def find_item(tree: ProjectTreeResponse, item_id: int)
+def find_revision(tree: ProjectTreeResponse, revision_id: int)
 def format_project_code(number: int)
 def get_project_attachments_dir(project_id: int)
 def is_3mf(filename: str)

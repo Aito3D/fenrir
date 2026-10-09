@@ -26,6 +26,7 @@ from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.project import Project
 from backend.app.models.project_item import ProjectItem, ProjectRevision
 from backend.app.services import aito_events
+from backend.app.services.http_status_error import HttpStatusError
 
 logger = logging.getLogger(__name__)
 
@@ -33,11 +34,8 @@ QUEUED_KIND = "print.queued_from_revision"
 TASK_UNUSABLE = "This Aito task can't be used for this file"
 
 
-class PrintTraceError(ValueError):
-    def __init__(self, status_code: int, detail: str):
-        super().__init__(detail)
-        self.status_code = status_code
-        self.detail = detail
+class PrintTraceError(HttpStatusError, ValueError):
+    pass
 
 
 @dataclass(frozen=True)

@@ -60,6 +60,7 @@ from backend.app.schemas.project_files import (
     RevisionRef,
 )
 from backend.app.services import project_storage
+from backend.app.services.http_status_error import HttpStatusError
 from backend.app.services.pdf_thumbnail import generate_pdf_thumbnail
 from backend.app.services.project_print_trace import revision_print_counts
 from backend.app.services.project_snapshot import PrintSnapshot, is_3mf, read_print_snapshot
@@ -81,11 +82,8 @@ logger = logging.getLogger(__name__)
 STL_THUMBNAIL_MAX_BYTES = 200 * 1024 * 1024
 
 
-class ProjectFilesError(Exception):
-    def __init__(self, status_code: int, detail: str):
-        super().__init__(detail)
-        self.status_code = status_code
-        self.detail = detail
+class ProjectFilesError(HttpStatusError):
+    pass
 
 
 def utcnow() -> datetime:
@@ -1485,3 +1483,22 @@ async def load_tree(db: AsyncSession, project: Project) -> ProjectTreeResponse:
         code=project.code,
         sections=_sections(rows),
     )
+
+
+def find_item(tree: ProjectTreeResponse, item_id: int) -> ProjectItemOut | None:
+    """The first item of ``tree`` with id ``item_id`` (sections in order), else None."""
+    for section in tree.sections:
+        for item in section.items:
+            if item.id == item_id:
+                return item
+    return None
+
+
+def find_revision(tree: ProjectTreeResponse, revision_id: int) -> ProjectRevisionOut | None:
+    """The first revision of ``tree`` with id ``revision_id`` (sections, items in order), else None."""
+    for section in tree.sections:
+        for item in section.items:
+            for rev in item.revisions:
+                if rev.id == revision_id:
+                    return rev
+    return None

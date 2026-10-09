@@ -914,3 +914,34 @@ async def test_find_or_create_item_lets_a_non_409_error_through_without_rolling_
     with pytest.raises(project_files.ProjectFilesError) as exc:
         await project_filing.find_or_create_item(db_session, project, "impression", "support", "Support", None)
     assert exc.value is error
+
+
+# --- MoveToProjectResult.revisions() -------------------------------------------
+
+
+def _entry(revision_id: int, tag: str) -> dict:
+    return {"revision_id": revision_id, "tag": tag}
+
+
+def test_revisions_empty_result_is_empty_dict():
+    assert MoveToProjectResult().revisions() == {}
+
+
+def test_revisions_first_wins_moved_before_copied_in_first_seen_order():
+    result = MoveToProjectResult(
+        moved=[_entry(7, "m1"), _entry(3, "m2"), _entry(7, "m3")],
+        copied=[_entry(3, "c1"), _entry(9, "c2"), _entry(9, "c3")],
+        skipped=[{"file_id": 1, "code": "x", "reason": "y", "revision_id": 42}],
+    )
+    revisions = result.revisions()
+    assert list(revisions) == [7, 3, 9]
+    assert [e["tag"] for e in revisions.values()] == ["m1", "m2", "c2"]
+    assert revisions[7] is result.moved[0]
+    assert revisions[9] is result.copied[1]
+
+
+def test_revisions_copied_only_and_does_not_mutate_lists():
+    copied = [_entry(5, "a"), _entry(5, "b")]
+    result = MoveToProjectResult(copied=copied)
+    assert result.revisions() == {5: copied[0]}
+    assert result.moved == [] and len(result.copied) == 2

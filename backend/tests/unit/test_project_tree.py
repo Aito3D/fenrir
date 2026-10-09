@@ -10,14 +10,18 @@ the source (the newest of several ``valide`` wins).
 from datetime import datetime
 
 import pytest
+from fastapi import HTTPException
 
+from backend.app.api.routes import project_files as routes
 from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile
 from backend.app.models.print_queue import PrintQueueItem, PrintQueueVariant
 from backend.app.models.project import Project
 from backend.app.models.project_item import ProjectItem, ProjectRevision
 from backend.app.models.user import User
-from backend.app.services.project_files import load_tree
+from backend.app.schemas.project_files import ProjectItemOut, ProjectRevisionOut, ProjectSectionOut, ProjectTreeResponse
+from backend.app.services import project_files as svc
+from backend.app.services.project_files import find_item, find_revision, load_tree
 
 T0 = datetime(2026, 1, 2, 3, 4, 5)
 T1 = datetime(2026, 2, 3, 4, 5, 6)
@@ -340,3 +344,62 @@ async def test_load_tree_of_an_empty_project_lists_every_section_empty(db_sessio
             {"section": section, "items": []} for section in ("scan", "modelisation", "impression", "usinage", "docs")
         ],
     }
+
+
+# --- find_item / find_revision (T-037) -----------------------------------------
+
+
+def _tree_of(*sections: list) -> ProjectTreeResponse:
+    return ProjectTreeResponse.model_construct(
+        project_id=1,
+        code="P-1",
+        sections=[ProjectSectionOut.model_construct(section=f"s{i}", items=items) for i, items in enumerate(sections)],
+    )
+
+
+def _item(item_id: int, *revision_ids: int, tag: str = "") -> ProjectItemOut:
+    revs = [ProjectRevisionOut.model_construct(id=rid, tag=f"{tag}r{rid}") for rid in revision_ids]
+    return ProjectItemOut.model_construct(id=item_id, name=f"{tag}i{item_id}", revisions=revs)
+
+
+def test_find_item_and_revision_search_every_section_and_item():
+    first, second, third = _item(1, 10, 11), _item(2), _item(3, 30)
+    tree = _tree_of([first], [], [second, third])
+    assert find_item(tree, 1) is first
+    assert find_item(tree, 3) is third
+    assert find_revision(tree, 11) is first.revisions[1]
+    assert find_revision(tree, 30) is third.revisions[0]
+
+
+def test_find_item_and_revision_return_none_when_missing():
+    tree = _tree_of([_item(1, 10)], [])
+    assert find_item(tree, 10) is None  # a revision id is not an item id
+    assert find_revision(tree, 1) is None  # nor the other way round
+    assert find_item(_tree_of(), 1) is None
+    assert find_revision(_tree_of(), 1) is None
+
+
+def test_find_item_and_revision_first_match_wins():
+    a, b = _item(5, 50, tag="a"), _item(5, 50, tag="b")
+    tree = _tree_of([a], [b])
+    assert find_item(tree, 5) is a
+    assert find_revision(tree, 50) is a.revisions[0]
+
+
+@pytest.mark.asyncio
+async def test_route_item_and_revision_out_404_when_the_id_is_not_in_the_tree(monkeypatch):
+    item = _item(1, 10)
+    tree = _tree_of([item])
+
+    async def fake_load_tree(_db, _project):
+        return tree
+
+    monkeypatch.setattr(svc, "load_tree", fake_load_tree)
+    assert await routes._item_out(None, None, 1) is item
+    assert await routes._revision_out(None, None, 10) is item.revisions[0]
+    with pytest.raises(HTTPException) as exc:
+        await routes._item_out(None, None, 2)
+    assert (exc.value.status_code, exc.value.detail) == (404, "Item not found")
+    with pytest.raises(HTTPException) as exc:
+        await routes._revision_out(None, None, 11)
+    assert (exc.value.status_code, exc.value.detail) == (404, "Revision not found")
