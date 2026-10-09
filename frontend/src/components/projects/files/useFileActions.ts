@@ -6,6 +6,7 @@ import type { DuplicateWarning, ProjectSection, RevisionStatus } from '../../../
 import { useToast } from '../../../contexts/ToastContext';
 import { useResliceJobs } from '../reslice/useResliceJobs';
 import { useAcceptsPrintable } from '../aito/dropFiles';
+import { projectKeys } from '../projectQueries';
 
 /** Every file-panel mutation: run, invalidate the project tree, toast on failure. */
 export function useFileActions(projectId: number) {
@@ -44,7 +45,7 @@ export function useFileActions(projectId: number) {
       showToast(`${t(failKey)}: ${e instanceof Error ? e.message : ''}`, 'error');
       return undefined;
     } finally {
-      await queryClient.invalidateQueries({ queryKey: ['project-tree', projectId] });
+      await queryClient.invalidateQueries({ queryKey: projectKeys.tree(projectId) });
     }
   };
 

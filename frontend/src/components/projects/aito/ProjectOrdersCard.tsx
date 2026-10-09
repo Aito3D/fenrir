@@ -1,15 +1,14 @@
 import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { ChevronRight, Plus, ShoppingCart } from 'lucide-react';
-import { api } from '../../../api/client';
 import type { ProjectOrderTask } from '../../../api/client';
 import { useAuth } from '../../../contexts/AuthContext';
 import { ALL_COLUMNS } from '../../aito/columns';
 import { Card, CardContent } from '../../Card';
 import { formatDateOnly } from '../../../utils/date';
 import { revisionLabel } from '../files/revisionLabel';
+import { useProjectOrders } from '../projectQueries';
 
 interface OrderGroup {
   orderId: number;
@@ -29,12 +28,7 @@ export function ProjectOrdersCard({ projectId }: { projectId: number }) {
   const canCreate = hasPermission('aito:create');
 
   // Same key the link/delivery mutations invalidate (useInvalidateProjectLinks).
-  const { data, isError } = useQuery({
-    queryKey: ['project-orders', projectId],
-    queryFn: () => api.getProjectOrders(projectId),
-    enabled: canRead && projectId > 0,
-    retry: false,
-  });
+  const { data, isError } = useProjectOrders(projectId, { enabled: canRead && projectId > 0, retry: false });
 
   const groups = useMemo<OrderGroup[]>(() => {
     const byOrder = new Map<number, OrderGroup>();

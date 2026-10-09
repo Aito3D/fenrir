@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import type { DragEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import type { ProjectFileOut } from '../../../api/client';
 import { PrintModal } from '../../PrintModal';
 import { OrderPickerDialog } from './OrderPickerDialog';
 import { useOpenOrders } from './useOpenOrders';
+import { projectKeys } from '../projectQueries';
+import { stopDrag } from '../dialogStyles';
 
 interface Props {
   projectId: number;
@@ -24,13 +25,8 @@ export function PrintRevisionFlow({ projectId, file, revisionWarning, initialTas
   // undefined = not chosen yet; null = no task (internal/test print).
   const [taskId, setTaskId] = useState<number | null | undefined>(initialTaskId);
 
-  const { openOrders, loading: ordersLoading, failed: ordersFailed } = useOpenOrders(projectId);
-  const chosen =
-    taskId !== undefined ? taskId : openOrders.length === 0 && !ordersFailed && !ordersLoading ? null : undefined;
-
-  // Portalled out of the files tree: keep a stray drag over the dialogs from
-  // reaching the section/item drop zones (which would upload a revision).
-  const stopDrag = (e: DragEvent) => e.stopPropagation();
+  const { openOrders, loading: ordersLoading, failed: ordersFailed, noOrderNeeded } = useOpenOrders(projectId);
+  const chosen = taskId !== undefined ? taskId : noOrderNeeded ? null : undefined;
 
   return createPortal(
     <div onDragOver={stopDrag} onDrop={stopDrag}>
@@ -53,8 +49,8 @@ export function PrintRevisionFlow({ projectId, file, revisionWarning, initialTas
           isolateEscape
           onClose={onClose}
           onSuccess={() => {
-            queryClient.invalidateQueries({ queryKey: ['project-tree', projectId] });
-            queryClient.invalidateQueries({ queryKey: ['project-orders', projectId] });
+            queryClient.invalidateQueries({ queryKey: projectKeys.tree(projectId) });
+            queryClient.invalidateQueries({ queryKey: projectKeys.orders(projectId) });
             queryClient.invalidateQueries({ queryKey: ['aito-project-links'] });
           }}
         />

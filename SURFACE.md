@@ -1237,17 +1237,23 @@ CREATE TABLE projects (
 ```regen: grep -rhoE --include='*.ts' --include='*.tsx' '^export (default function|default async function|async function|function|const|type|interface|class|enum) [A-Za-z0-9_]+' frontend/src/pages/ProjectDetailPage.tsx frontend/src/pages/ProjectListPage.tsx frontend/src/pages/ProjectsPage.tsx frontend/src/components/projects | sort | uniq -c | sed 's/^ *//'```
 ```
 1 export const chipBase
+1 export const DIALOG_CARD_CLS
 1 export const ENABLED_SECTIONS
+1 export const OVERLAY_CLS
 1 export const PREVIEWABLE_TYPES
 1 export const PRINTABLE_ACCEPT
 1 export const PRINTABLE_EXTENSIONS
+1 export const projectKeys
+1 export const RADIO_ROW_CLS
 1 export const SECTION_LABEL_KEYS
 1 export const SECTION_ORDER
 1 export const STATUS_CHIP_CLS
 1 export const STATUS_LABEL_KEYS
+1 export const stopDrag
 1 export function canManageProjectsSettings
 1 export function CardProjectChips
 1 export function DeliveriesPicker
+1 export function DialogShell
 1 export function filesFromDataTransfer
 1 export function inZone
 1 export function isFileDrag
@@ -1293,6 +1299,8 @@ CREATE TABLE projects (
 1 export function useOpenOrders
 1 export function useOrderProjectLinks
 1 export function useProjectCodes
+1 export function useProjectOrders
+1 export function useProjectTree
 1 export function useResliceJobs
 1 export function useTaskFileDrop
 1 export function useTaskProjectLink

@@ -7,6 +7,8 @@ import { api } from '../../../api/client';
 import type { MoveToProjectResult } from '../../../api/client';
 import { Button } from '../../Button';
 import { ProjectCodeChip } from '../ProjectCodeChip';
+import { projectKeys, useProjectTree } from '../projectQueries';
+import { OVERLAY_CLS } from '../dialogStyles';
 import { focusRingCls } from '../../formStyles';
 import { useToast } from '../../../contexts/ToastContext';
 import { useIsolatedEscape } from '../../../hooks/useIsolatedEscape';
@@ -106,12 +108,7 @@ export function MoveToProjectModal({ fileIds, fileName, onClose, onMoved }: Prop
     enabled: debounced !== '',
     retry: false,
   });
-  const { data: tree, isLoading: treeLoading } = useQuery({
-    queryKey: ['project-tree', project?.id],
-    queryFn: () => api.getProjectTree(project!.id),
-    enabled: project !== null,
-    retry: false,
-  });
+  const { data: tree, isLoading: treeLoading } = useProjectTree(project?.id, { enabled: project !== null, retry: false });
   const items = tree?.sections.find((s) => s.section === 'impression')?.items ?? [];
 
   const move = useMutation({
@@ -126,7 +123,7 @@ export function MoveToProjectModal({ fileIds, fileName, onClose, onMoved }: Prop
         ['library-files'],
         ['library-folders'],
         ['library-stats'],
-        ['project-tree', target.id],
+        projectKeys.tree(target.id),
         ['project-files', target.id],
         ['project-file-progress', target.id],
       ]) {
@@ -164,7 +161,7 @@ export function MoveToProjectModal({ fileIds, fileName, onClose, onMoved }: Prop
     'flex min-h-[40px] cursor-pointer items-center gap-3 rounded-lg border border-bambu-dark-tertiary px-3 py-2 text-sm text-white hover:bg-bambu-dark-tertiary has-[:checked]:border-bambu-green/60';
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 animate-overlay-in" onClick={onClose}>
+    <div className={OVERLAY_CLS} onClick={onClose}>
       <div
         ref={dialogRef}
         role="dialog"

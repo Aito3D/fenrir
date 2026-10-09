@@ -1,8 +1,6 @@
 import { useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { ChevronDown, ChevronRight } from 'lucide-react';
-import { api } from '../../../api/client';
 import type { ProjectItemOut, ProjectSection } from '../../../api/client';
 import { focusRingCls } from '../../formStyles';
 import { ItemRow } from './ItemRow';
@@ -13,11 +11,12 @@ import { PrintRevisionFlow } from '../print/PrintRevisionFlow';
 import type { FileActions } from './useFileActions';
 import { ENABLED_SECTIONS, SECTION_LABEL_KEYS, SECTION_ORDER, isSectionEnabled } from './filesUi';
 import { revisionLabel } from './revisionLabel';
+import { useProjectTree } from '../projectQueries';
 
 export function ProjectFilesPanel({ projectId }: { projectId: number }) {
   const { t } = useTranslation();
   const actions = useFileActions(projectId);
-  const { data: tree } = useQuery({ queryKey: ['project-tree', projectId], queryFn: () => api.getProjectTree(projectId) });
+  const { data: tree } = useProjectTree(projectId);
 
   const derivedOptions = useMemo<DerivedOption[]>(
     () =>

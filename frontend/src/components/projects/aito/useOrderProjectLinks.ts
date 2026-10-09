@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback } from 'react';
 import { api } from '../../../api/client';
 import type { TaskProjectLink } from '../../../api/client';
+import { projectKeys } from '../projectQueries';
 
 /** Every task of one Aito order with its linked project, per-section summary and
  *  delivered revision ids. One request per order, shared by all its task rows.
@@ -36,8 +37,8 @@ export function useInvalidateProjectLinks() {
       void queryClient.invalidateQueries({ queryKey: ['aito-events', orderId] });
       for (const id of new Set(projectIds)) {
         if (id == null) continue;
-        void queryClient.invalidateQueries({ queryKey: ['project-tree', id] });
-        void queryClient.invalidateQueries({ queryKey: ['project-orders', id] });
+        void queryClient.invalidateQueries({ queryKey: projectKeys.tree(id) });
+        void queryClient.invalidateQueries({ queryKey: projectKeys.orders(id) });
       }
     },
     [queryClient],

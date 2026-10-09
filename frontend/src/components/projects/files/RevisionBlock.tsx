@@ -1,5 +1,4 @@
 import { useRef, useState } from 'react';
-import type { DragEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { Download, Eye, GitFork, Plus, Printer, Scissors, Trash2, X } from 'lucide-react';
@@ -23,6 +22,7 @@ import {
 import { PrintRevisionFlow } from '../print/PrintRevisionFlow';
 import { ResliceDialog } from '../reslice/ResliceDialog';
 import { outdatedParams, revisionLabel } from './revisionLabel';
+import { stopDrag } from '../dialogStyles';
 
 export interface DerivedOption { id: number; label: string }
 
@@ -42,9 +42,6 @@ function formatSize(bytes: number): string {
 }
 
 const isResliceable = (f: ProjectFileOut) => f.filename.toLowerCase().endsWith('.3mf'); // incl. .gcode.3mf, as the backend
-// The dialogs are portalled out of the files tree: keep a stray drag over them from
-// reaching the section/item drop zones (which would upload a revision).
-const stopDrag = (e: DragEvent) => e.stopPropagation();
 
 export function RevisionBlock({ item, revision, derivedOptions, actions }: Props) {
   const { t, i18n } = useTranslation();

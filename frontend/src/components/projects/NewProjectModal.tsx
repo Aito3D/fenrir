@@ -10,6 +10,7 @@ import { ProjectTagEditor, splitTagDrafts } from './ProjectTagEditor';
 import type { TagDraft } from './ProjectTagChips';
 import type { Project } from '../../api/client';
 import { useIsolatedEscape } from '../../hooks/useIsolatedEscape';
+import { DIALOG_CARD_CLS, OVERLAY_CLS } from './dialogStyles';
 
 interface NewProjectModalProps {
   onClose: () => void;
@@ -49,7 +50,7 @@ export function NewProjectModal({ onClose, initialTitle = '', initialDescription
   });
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 animate-overlay-in">
+    <div className={OVERLAY_CLS}>
       <form
         ref={dialogRef}
         role="dialog"
@@ -60,7 +61,7 @@ export function NewProjectModal({ onClose, initialTitle = '', initialDescription
           e.preventDefault();
           if (title.trim()) create.mutate();
         }}
-        className="w-full max-w-lg space-y-4 rounded-xl border border-bambu-dark-tertiary bg-bambu-dark-secondary p-5 focus:outline-none"
+        className={DIALOG_CARD_CLS}
       >
         <h2 className="text-lg font-semibold text-white">{t('projectsPdm.createTitle')}</h2>
         <AiTextField
