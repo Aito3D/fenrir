@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { render } from '../utils';
@@ -104,5 +104,100 @@ describe('ProjectListPage', () => {
     render(<ProjectListPage />);
     await screen.findByText('P-0001');
     expect(screen.queryByText(/sub-project/i)).not.toBeInTheDocument();
+  });
+
+  it('pages through more than one page of results', async () => {
+    const offsets: Array<[string | null, string | null]> = [];
+    server.use(
+      http.get('/api/v1/projects/search', ({ request }) => {
+        const params = new URL(request.url).searchParams;
+        offsets.push([params.get('offset'), params.get('limit')]);
+        const offset = Number(params.get('offset'));
+        const count = Math.min(50, 120 - offset);
+        const items = Array.from({ length: count }, (_, i) =>
+          item(offset + i + 1, `P-${String(offset + i + 1).padStart(4, '0')}`, `Projet ${offset + i + 1}`),
+        );
+        return HttpResponse.json({ items, total: 120 });
+      }),
+    );
+    render(<ProjectListPage />);
+
+    expect(await screen.findByText('1–50 of 120')).toBeInTheDocument();
+    expect(offsets).toEqual([['0', '50']]);
+    const prev = screen.getByRole('button', { name: 'Previous page' });
+    const next = screen.getByRole('button', { name: 'Next page' });
+    expect(prev).toBeDisabled();
+    expect(next).toBeEnabled();
+
+    await userEvent.click(next);
+    expect(await screen.findByText('51–100 of 120')).toBeInTheDocument();
+    expect(offsets.at(-1)).toEqual(['50', '50']);
+    expect(await screen.findByText('P-0051')).toBeInTheDocument();
+    expect(prev).toBeEnabled();
+    expect(next).toBeEnabled();
+
+    await userEvent.click(next);
+    expect(await screen.findByText('101–120 of 120')).toBeInTheDocument();
+    expect(offsets.at(-1)).toEqual(['100', '50']);
+    expect(next).toBeDisabled();
+    expect(prev).toBeEnabled();
+
+    await userEvent.click(prev);
+    expect(await screen.findByText('51–100 of 120')).toBeInTheDocument();
+    expect(offsets.at(-1)).toEqual(['50', '50']);
+  });
+
+  it('hides the pager when every result fits on one page', async () => {
+    render(<ProjectListPage />);
+    await screen.findByText('P-0001');
+    expect(screen.queryByRole('button', { name: 'Next page' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/ of 2$/)).not.toBeInTheDocument();
+  });
+
+  it('renders grid cards with code, name, description, tags, print count and cover', async () => {
+    localStorage.setItem('projects-view', 'grid');
+    server.use(
+      http.get('/api/v1/projects/search', () =>
+        HttpResponse.json({
+          items: [
+            { ...item(1, 'P-0001', 'Support caméra', [{ id: 9, name: 'drone' }]), cover_image_filename: 'c.png' },
+            { ...item(4, 'P-0004', 'Boîtier'), description: null },
+          ],
+          total: 2,
+        }),
+      ),
+    );
+    render(<ProjectListPage />);
+
+    const first = await screen.findByRole('button', { name: /P-0001/ });
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+    expect(within(first).getByText('Support caméra')).toBeInTheDocument();
+    expect(within(first).getByText('Support caméra description')).toBeInTheDocument();
+    expect(within(first).getByText('drone')).toBeInTheDocument();
+    expect(within(first).getByText('Prints: 1')).toBeInTheDocument();
+    expect(within(first).getByText('Active')).toBeInTheDocument();
+    const cover = first.querySelector('img');
+    expect(cover?.getAttribute('src')).toContain('/api/v1/projects/1/cover-image');
+
+    const second = screen.getByRole('button', { name: /P-0004/ });
+    expect(within(second).getByText('Boîtier')).toBeInTheDocument();
+    expect(within(second).getByText('Prints: 4')).toBeInTheDocument();
+    expect(second.querySelector('img')).toBeNull();
+    expect(second.querySelector('p')).toBeNull();
+  });
+
+  it('opens the project when a grid card is clicked', async () => {
+    localStorage.setItem('projects-view', 'grid');
+    window.history.pushState({}, '', '/projects');
+    render(<ProjectListPage />);
+    await userEvent.click(await screen.findByRole('button', { name: /P-0002/ }));
+    expect(window.location.pathname).toBe('/projects/2');
+  });
+
+  it('opens the project when a table row is clicked', async () => {
+    window.history.pushState({}, '', '/projects');
+    render(<ProjectListPage />);
+    await userEvent.click(await screen.findByText('P-0002'));
+    expect(window.location.pathname).toBe('/projects/2');
   });
 });
