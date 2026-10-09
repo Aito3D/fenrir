@@ -10,6 +10,7 @@ from fastapi import UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.models.aito_task_delivery import AitoTaskDelivery
 from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile
 from backend.app.models.print_queue import PrintQueueItem, PrintQueueVariant
@@ -336,6 +337,81 @@ async def test_used_or_validated_revision_files_are_frozen(db_session, root):
     with pytest.raises(ProjectFilesError) as used:
         await delete_revision(db_session, project, item2, rev2)
     assert used.value.status_code == 409
+
+
+async def _used_after_the_pre_check(db_session, monkeypatch, make_used):
+    """``make_used`` commits a use of the revision right after delete_revision's pre-check passed."""
+    real = project_files.revision_is_used
+    calls = []
+
+    async def racing(db, revision_id):
+        used = await real(db, revision_id)
+        if not calls:
+            calls.append(revision_id)
+            await make_used(db, revision_id)
+            await db.commit()
+        return used
+
+    monkeypatch.setattr(project_files, "revision_is_used", racing)
+    return calls
+
+
+@pytest.mark.asyncio
+async def test_delete_revision_refuses_a_delivery_that_landed_after_the_pre_check(
+    db_session, root, monkeypatch, test_engine
+):
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project)
+    await db_session.commit()
+    base, rev_id = root / project.storage_dir, rev.id
+
+    async def deliver(db, revision_id):
+        db.add(AitoTaskDelivery(task_id=4242, revision_id=revision_id))
+
+    calls = await _used_after_the_pre_check(db_session, monkeypatch, deliver)
+    with pytest.raises(ProjectFilesError) as exc:
+        await delete_revision(db_session, project, item, rev)
+    assert calls == [rev_id]
+    assert (exc.value.status_code, exc.value.detail) == (
+        409,
+        "This revision was printed or delivered and cannot be deleted",
+    )
+    assert await _fresh_scalars(test_engine, select(ProjectRevision.id).where(ProjectRevision.id == rev_id)) == [rev_id]
+    assert await _fresh_scalars(test_engine, select(LibraryFile.filename).where(LibraryFile.revision_id == rev_id)) == [
+        "a.step"
+    ]
+    assert (base / "Modélisation" / "Support" / "R1" / "a.step").read_bytes() == b"data"
+    assert _trash_entries(base) == []
+
+
+@pytest.mark.asyncio
+async def test_delete_revision_refuses_a_print_that_landed_after_the_pre_check(
+    db_session, root, monkeypatch, test_engine
+):
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project)
+    await db_session.commit()
+    base, rev_id = root / project.storage_dir, rev.id
+
+    async def print_it(db, revision_id):
+        await _mark_used(db, await db.get(ProjectRevision, revision_id))
+
+    await _used_after_the_pre_check(db_session, monkeypatch, print_it)
+    with pytest.raises(ProjectFilesError) as exc:
+        await delete_revision(db_session, project, item, rev)
+    assert exc.value.status_code == 409
+    assert await _fresh_scalars(test_engine, select(ProjectRevision.id).where(ProjectRevision.id == rev_id)) == [rev_id]
+    assert (base / "Modélisation" / "Support" / "R1" / "a.step").read_bytes() == b"data"
+    assert _trash_entries(base) == []
+
+
+@pytest.mark.asyncio
+async def test_a_deleted_revision_without_files_is_unused_like_the_pre_check(db_session, root):
+    # revision_is_used only sees deliveries through the revision's files
+    db_session.add(AitoTaskDelivery(task_id=4242, revision_id=777))
+    await db_session.flush()
+    assert await revision_is_used(db_session, 777) is False
+    assert await project_files._deleted_revision_is_used(db_session, 777, []) is False
 
 
 @pytest.mark.asyncio
@@ -937,6 +1013,114 @@ async def test_repeated_cancellation_still_waits_for_the_commit(db_session, root
     with pytest.raises(asyncio.CancelledError):
         await task
     assert await _fresh_scalars(test_engine, select(ProjectRevision.id).where(ProjectRevision.id == rev_id)) == []
+    assert [p.name for p in _trash_entries(base)] == ["a.step"]
+
+
+# Event-loop shutdown (`docker stop`): asyncio.run cancels every remaining task,
+# the commit's own task included, while the worker thread still runs the
+# COMMIT. The patched commit records its task and hands the COMMIT to a gated
+# "worker thread" that the cancellation of the commit task does not stop.
+
+
+def _commit_task_cancelled_at_shutdown(db_session, monkeypatch):
+    real_commit = db_session.commit
+    in_flight, release = asyncio.Event(), asyncio.Event()
+    started: dict[str, asyncio.Task] = {}
+
+    async def worker_thread():
+        await release.wait()
+        await real_commit()
+
+    async def commit():
+        started["commit_task"] = asyncio.current_task()
+        started["worker"] = asyncio.ensure_future(worker_thread())
+        in_flight.set()
+        await asyncio.shield(started["worker"])
+
+    monkeypatch.setattr(db_session, "commit", commit)
+    return in_flight, release, started
+
+
+async def _shutdown_mid_commit(operation, in_flight, release, started):
+    task = asyncio.ensure_future(operation)
+    await in_flight.wait()
+    started["commit_task"].cancel()
+    task.cancel()
+    for _ in range(5):
+        await asyncio.sleep(0)
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    await started["worker"]  # the COMMIT the worker thread ran despite the shutdown
+
+
+@pytest.mark.asyncio
+async def test_add_revision_keeps_files_when_the_commit_task_is_cancelled_at_shutdown(
+    db_session, root, monkeypatch, test_engine
+):
+    project = await _project(db_session)
+    item = await create_item(db_session, project, section="scan", name="Mesh", user_id=None)
+    storage_dir, item_id = project.storage_dir, item.id
+    await db_session.commit()
+    in_flight, release, started = _commit_task_cancelled_at_shutdown(db_session, monkeypatch)
+    await _shutdown_mid_commit(
+        add_revision(db_session, project, item, [upload("a.ply")], note=None, derived_from_id=None, user_id=None),
+        in_flight,
+        release,
+        started,
+    )
+    rev_ids = await _fresh_scalars(test_engine, select(ProjectRevision.id).where(ProjectRevision.item_id == item_id))
+    assert len(rev_ids) == 1
+    paths = await _fresh_scalars(
+        test_engine, select(LibraryFile.file_path).where(LibraryFile.revision_id == rev_ids[0])
+    )
+    assert len(paths) == 1
+    assert (root / storage_dir / "Scan" / "Mesh" / "R1" / "a.ply").read_bytes() == b"data"
+
+
+@pytest.mark.asyncio
+async def test_delete_revision_stays_trashed_when_the_commit_task_is_cancelled_at_shutdown(
+    db_session, root, monkeypatch, test_engine
+):
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project)
+    await db_session.commit()
+    base, rev_id = root / project.storage_dir, rev.id
+    in_flight, release, started = _commit_task_cancelled_at_shutdown(db_session, monkeypatch)
+    await _shutdown_mid_commit(delete_revision(db_session, project, item, rev), in_flight, release, started)
+    assert await _fresh_scalars(test_engine, select(ProjectRevision.id).where(ProjectRevision.id == rev_id)) == []
+    assert await _fresh_scalars(test_engine, select(LibraryFile.id).where(LibraryFile.revision_id == rev_id)) == []
+    assert not (base / "Modélisation" / "Support" / "R1").exists()
+    assert [p.name for p in _trash_entries(base)] == ["a.step"]
+
+
+@pytest.mark.asyncio
+async def test_remove_file_stays_trashed_when_the_commit_task_is_cancelled_at_shutdown(
+    db_session, root, monkeypatch, test_engine
+):
+    project, item, rev, target_id = await _two_file_revision(db_session)
+    base, rev_id = root / project.storage_dir, rev.id
+    in_flight, release, started = _commit_task_cancelled_at_shutdown(db_session, monkeypatch)
+    await _shutdown_mid_commit(
+        remove_file_from_revision(db_session, project, item, rev, target_id), in_flight, release, started
+    )
+    kept = await _fresh_scalars(test_engine, select(LibraryFile.filename).where(LibraryFile.revision_id == rev_id))
+    assert kept == ["b.step"]
+    assert [p.name.startswith("a") for p in _trash_entries(base)] == [True]
+
+
+@pytest.mark.asyncio
+async def test_delete_item_stays_trashed_when_the_commit_task_is_cancelled_at_shutdown(
+    db_session, root, monkeypatch, test_engine
+):
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project)
+    await db_session.commit()
+    base, item_id = root / project.storage_dir, item.id
+    in_flight, release, started = _commit_task_cancelled_at_shutdown(db_session, monkeypatch)
+    await _shutdown_mid_commit(delete_item(db_session, project, item), in_flight, release, started)
+    assert await _fresh_scalars(test_engine, select(ProjectItem.id).where(ProjectItem.id == item_id)) == []
+    assert not (base / "Modélisation" / "Support").exists()
     assert [p.name for p in _trash_entries(base)] == ["a.step"]
 
 

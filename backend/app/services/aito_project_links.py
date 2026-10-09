@@ -233,6 +233,12 @@ async def set_deliveries(
         )
     db.add_all(AitoTaskDelivery(task_id=task.id, revision_id=rid, created_by_id=user_id) for rid in added)
     await db.flush()
+    # a revision may have been deleted since the validation above; the write lock is held now
+    if added:
+        still_there = set((await db.execute(select(ProjectRevision.id).where(ProjectRevision.id.in_(added)))).scalars())
+        gone = [rid for rid in added if rid not in still_there]
+        if gone:
+            raise LinkError(409, "Revisions deleted meanwhile: " + ", ".join(str(rid) for rid in gone))
 
     removed_bundles = await _revision_bundles(db, removed)
 

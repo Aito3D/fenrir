@@ -624,12 +624,24 @@ async def add_revision_from_sources(
 
 
 class _CommitOutcome:
-    """Whether ``_commit_through_cancel`` saw its commit reach the database."""
+    """Whether ``_commit_through_cancel`` saw its commit reach the database, or could not rule it out."""
 
-    __slots__ = ("landed",)
+    __slots__ = ("may_have_landed",)
 
     def __init__(self) -> None:
-        self.landed = False
+        self.may_have_landed = False
+
+
+class _CommitTask(asyncio.Task):
+    """The commit's own task; remembers being cancelled from outside (event-loop shutdown cancels every task)."""
+
+    cancel_requested = False
+
+    def cancel(self, *args, **kwargs) -> bool:
+        requested = super().cancel(*args, **kwargs)
+        if requested:
+            self.cancel_requested = True
+        return requested
 
 
 async def _commit_through_cancel(db: AsyncSession, outcome: _CommitOutcome) -> None:
@@ -640,21 +652,29 @@ async def _commit_through_cancel(db: AsyncSession, outcome: _CommitOutcome) -> N
     COMMIT. The commit runs as its own shielded task; when a CancelledError
     arrives first, this waits for that task to finish (further cancellations
     included, so the caller never touches the session while the commit is in
-    flight), sets ``outcome.landed`` if it committed, and re-raises the
-    original CancelledError either way: a cancellation is never swallowed, and
-    a commit that failed after it is undone exactly as a cancelled one was.
-    The caller's ``except`` must skip its rollback and filesystem undo when
-    ``outcome.landed`` is set, so disk and database agree. A commit that fails
-    on its own raises its own exception, unchanged.
+    flight), sets ``outcome.may_have_landed`` if it committed, and re-raises
+    the original CancelledError either way: a cancellation is never swallowed,
+    and a commit that failed after it is undone exactly as a cancelled one was.
+    When the commit task itself was cancelled from outside (``asyncio.run``
+    cancels every remaining task on shutdown), the worker thread may still
+    have run the COMMIT, so the outcome is unknown and ``may_have_landed`` is
+    set too: leaving the files in place is the safe side. The caller's
+    ``except`` must skip its rollback and filesystem undo when
+    ``outcome.may_have_landed`` is set, so disk never loses what the database
+    may hold. A commit that fails on its own raises its own exception,
+    unchanged.
     """
-    task = asyncio.ensure_future(db.commit())
+    task = _CommitTask(db.commit())
     try:
         await asyncio.shield(task)
     except asyncio.CancelledError:
         while not task.done():
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await asyncio.shield(task)
-        outcome.landed = not task.cancelled() and task.exception() is None
+        if task.cancelled():
+            outcome.may_have_landed = task.cancel_requested
+        else:
+            outcome.may_have_landed = task.exception() is None
         raise
 
 
@@ -698,7 +718,7 @@ async def _add_revision_locked(
         warnings = await _duplicate_warnings(db, item, revision, rows)
         await _commit_through_cancel(db, commit)
     except BaseException as exc:
-        if commit.landed:
+        if commit.may_have_landed:
             raise
         await db.rollback()
         _cleanup_written(written)
@@ -741,6 +761,25 @@ async def used_file_ids(db: AsyncSession, file_ids: Select) -> set[int]:
 async def revision_is_used(db: AsyncSession, revision_id: int) -> bool:
     """A file of the revision is used (see ``_USAGE_COLUMNS``)."""
     return bool(await used_file_ids(db, select(LibraryFile.id).where(LibraryFile.revision_id == revision_id)))
+
+
+async def _deleted_revision_is_used(db: AsyncSession, revision_id: int, file_ids: list[int]) -> bool:
+    """``revision_is_used`` for a revision whose file rows this transaction already deleted.
+
+    Usage references and deliveries outlive those rows, so they are matched by
+    the remembered ``file_ids``. Run after the delete is flushed (the SQLite
+    write lock is held then), it sees a use committed since the pre-check.
+    """
+    if not file_ids:
+        return False
+    if (
+        await db.execute(
+            select(AitoTaskDelivery.revision_id).where(AitoTaskDelivery.revision_id == revision_id).limit(1)
+        )
+    ).first() is not None:
+        return True
+    query = union(*(select(column.label("file_id")).where(column.in_(file_ids)) for column in _USAGE_COLUMNS))
+    return (await db.execute(query)).first() is not None
 
 
 async def update_revision(
@@ -807,7 +846,7 @@ async def add_files_to_revision(
             warnings = await _duplicate_warnings(db, item, revision, rows)
             await _commit_through_cancel(db, commit)
         except BaseException:
-            if commit.landed:
+            if commit.may_have_landed:
                 raise
             await db.rollback()
             _cleanup_written(written)
@@ -817,8 +856,8 @@ async def add_files_to_revision(
 
 async def _delete_file_rows(
     db: AsyncSession, *, file_ids: list[int] | None = None, revision_ids: list[int] | None = None
-):
-    """Delete library rows (and their tag links: SQLite runs without FK enforcement)."""
+) -> list[int]:
+    """Delete library rows (and their tag links: SQLite runs without FK enforcement); returns their ids."""
     if file_ids is None:
         file_ids = list(
             (await db.execute(select(LibraryFile.id).where(LibraryFile.revision_id.in_(revision_ids or []))))
@@ -826,9 +865,10 @@ async def _delete_file_rows(
             .all()
         )
     if not file_ids:
-        return
+        return file_ids
     await db.execute(delete(LibraryFileTag).where(LibraryFileTag.file_id.in_(file_ids)))
     await db.execute(delete(LibraryFile).where(LibraryFile.id.in_(file_ids)))
+    return file_ids
 
 
 async def _restore_and_rollback(db: AsyncSession, moved: Path | None, original: Path | None) -> None:
@@ -866,7 +906,7 @@ async def _remove_file_locked(
         moved = move_to_trash(project, path) if path is not None else None
         await _commit_through_cancel(db, commit)
     except BaseException:
-        if commit.landed:
+        if commit.may_have_landed:
             raise
         await _restore_and_rollback(db, moved, path)
         raise
@@ -900,14 +940,17 @@ async def _delete_revision_locked(
     moved: Path | None = None
     commit = _CommitOutcome()
     try:
-        await _delete_file_rows(db, revision_ids=[revision.id])
+        file_ids = await _delete_file_rows(db, revision_ids=[revision.id])
         await _clear_links_to(db, [revision.id])
         await db.delete(revision)
         await db.flush()
+        # a print or delivery may have landed since the pre-check; the write lock is held now
+        if await _deleted_revision_is_used(db, revision.id, file_ids):
+            raise ProjectFilesError(409, "This revision was printed or delivered and cannot be deleted")
         moved = move_to_trash(project, folder)
         await _commit_through_cancel(db, commit)
     except BaseException:
-        if commit.landed:
+        if commit.may_have_landed:
             raise
         await _restore_and_rollback(db, moved, folder)
         raise
@@ -966,7 +1009,7 @@ async def _rename_item_locked(db: AsyncSession, project: Project, item: ProjectI
         item.name_key = key
         await _commit_through_cancel(db, commit)
     except BaseException:
-        if commit.landed:
+        if commit.may_have_landed:
             raise
         if moved:
             new_dir.rename(old_dir)
@@ -998,7 +1041,7 @@ async def _delete_item_locked(db: AsyncSession, project: Project, item: ProjectI
         moved = move_to_trash(project, folder)
         await _commit_through_cancel(db, commit)
     except BaseException:
-        if commit.landed:
+        if commit.may_have_landed:
             raise
         await _restore_and_rollback(db, moved, folder)
         raise
@@ -1126,7 +1169,7 @@ async def _fork_revision_locked(
             )
         await _commit_through_cancel(db, commit)
     except BaseException as exc:
-        if commit.landed:
+        if commit.may_have_landed:
             raise
         await db.rollback()
         cleanup()

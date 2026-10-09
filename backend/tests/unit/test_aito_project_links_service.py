@@ -350,6 +350,36 @@ async def test_deliveries_replace_rows_and_record_labels(db_session):
 
 
 @pytest.mark.asyncio
+async def test_deliveries_refuse_a_revision_deleted_after_validation(db_session, monkeypatch):
+    project = await _project(db_session)
+    _item, r1 = await _revision(db_session, project, name="Support")
+    _mesh, m1 = await _revision(db_session, project, section="scan", name="Mesh brut")
+    order = await _order(db_session)
+    task = await _task(db_session, order, linked=project.id)
+    await db_session.commit()
+    gone_id = m1.id
+    real = links._revision_bundles
+    calls = []
+
+    async def racing(db, revision_ids):
+        bundles = await real(db, revision_ids)
+        if not calls:  # delete_revision commits between the validation and the insert
+            calls.append(list(revision_ids))
+            await db.execute(delete(ProjectRevision).where(ProjectRevision.id == gone_id))
+            await db.commit()
+        return bundles
+
+    monkeypatch.setattr(links, "_revision_bundles", racing)
+    with pytest.raises(links.LinkError) as exc:
+        await links.set_deliveries(db_session, task, [r1.id, gone_id], actor="Paul")
+    assert calls == [[r1.id, gone_id]]
+    assert (exc.value.status_code, exc.value.detail) == (409, f"Revisions deleted meanwhile: {gone_id}")
+    await db_session.rollback()  # the route rolls back on LinkError
+    assert (await db_session.execute(select(AitoTaskDelivery))).first() is None
+    assert await _events(db_session, "task.deliveries_changed") == []
+
+
+@pytest.mark.asyncio
 async def test_deliveries_unchanged_records_nothing(db_session):
     project = await _project(db_session)
     _item, r1 = await _revision(db_session, project)
