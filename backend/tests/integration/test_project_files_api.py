@@ -205,3 +205,76 @@ async def test_tree_exposes_the_item_name_key(async_client: AsyncClient, root):
     assert created["name_key"] == "support"
     tree = (await async_client.get(f"/api/v1/projects/{project['id']}/tree")).json()
     assert tree["sections"][2]["items"][0]["name_key"] == "support"
+
+
+def _zip_bytes(*names):
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as zf:
+        for name in names:
+            zf.writestr(zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0)), b"payload " + name.encode())
+    return buffer.getvalue()
+
+
+@pytest.fixture
+def zip_scratch(tmp_path, monkeypatch):
+    """Route the download's temp archive into a dedicated dir the test can inspect."""
+    scratch = tmp_path / "zip-scratch"
+    scratch.mkdir()
+    real_mkstemp = project_files_routes.tempfile.mkstemp
+    monkeypatch.setattr(
+        project_files_routes.tempfile, "mkstemp", lambda suffix="": real_mkstemp(suffix=suffix, dir=scratch)
+    )
+    return scratch
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_zip_download_removes_temp_archive_after_success(async_client: AsyncClient, zip_scratch):
+    rev = await _revision_with_files(async_client, ("a.3mf", _zip_bytes("3D/a.model")), ("b.gcode", b"g1"))
+    response = await async_client.get(f"/api/v1/projects/revisions/{rev['id']}/download")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/zip"
+    assert response.headers["content-length"] == str(len(response.content))
+    assert "attachment" in response.headers["content-disposition"]
+    assert sorted(zipfile.ZipFile(io.BytesIO(response.content)).namelist()) == ["a.3mf", "b.gcode"]
+    assert list(zip_scratch.iterdir()) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_zip_temp_archive_removed_when_send_fails_mid_body(async_client: AsyncClient, zip_scratch, monkeypatch):
+    rev = await _revision_with_files(async_client, ("a.gcode", b"x" * 4096))
+    real_handle_simple = project_files_routes.FileResponse._handle_simple
+    seen = []
+
+    async def cut_short(self, send, send_header_only, send_pathsend):
+        async def flaky_send(message):
+            seen.append(message["type"])
+            if message["type"] == "http.response.body":
+                raise OSError("client disconnected")
+            await send(message)
+
+        await real_handle_simple(self, flaky_send, send_header_only, send_pathsend)
+
+    monkeypatch.setattr(project_files_routes.FileResponse, "_handle_simple", cut_short)
+    try:
+        await async_client.get(f"/api/v1/projects/revisions/{rev['id']}/download")
+    except OSError:
+        pass  # the test transport re-raises the app's send failure
+    assert seen[:2] == ["http.response.start", "http.response.body"]
+    assert list(zip_scratch.iterdir()) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("range_header", "status"),
+    [("bytes=999999999-", 416), ("items=0-1", 400)],
+)
+async def test_zip_temp_archive_removed_on_rejected_range(async_client: AsyncClient, zip_scratch, range_header, status):
+    rev = await _revision_with_files(async_client, ("a.gcode", b"x"))
+    response = await async_client.get(
+        f"/api/v1/projects/revisions/{rev['id']}/download", headers={"Range": range_header}
+    )
+    assert response.status_code == status
+    assert list(zip_scratch.iterdir()) == []

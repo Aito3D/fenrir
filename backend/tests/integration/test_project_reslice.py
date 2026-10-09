@@ -473,3 +473,132 @@ async def test_failed_revision_event_does_not_fail_the_job(
     assert [r["number"] for s in tree["sections"] for i in s["items"] for r in i["revisions"]] == [2, 1]
     assert await _sliced_rows(db_session) == []
     assert not (roots / "library" / "sliced-1.gcode.3mf").exists()
+
+
+def _revision_numbers(tree: dict) -> list[int]:
+    return [r["number"] for s in tree["sections"] for i in s["items"] for r in i["revisions"]]
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_pipeline_deleted_before_the_job_runs_fails_with_404(
+    async_client: AsyncClient, db_session, fake_slicer, monkeypatch
+):
+    from sqlalchemy import update
+
+    project, item, rev = await _source_revision(async_client)
+    pipeline_id = await _pipeline(db_session)
+    real_run = project_reslice.run_reslice
+
+    async def delete_pipeline_then_run(db, req, **kwargs):
+        # Soft-delete lands after the route's checks, before the job reads the pipeline.
+        await db.execute(update(SlicerPipeline).where(SlicerPipeline.id == pipeline_id).values(is_deleted=True))
+        await db.commit()
+        return await real_run(db, req, **kwargs)
+
+    monkeypatch.setattr(project_reslice, "run_reslice", delete_pipeline_then_run)
+    started = await async_client.post(
+        f"/api/v1/projects/revisions/{rev['id']}/reslice",
+        json={"file_id": rev["files"][0]["id"], "pipeline_id": pipeline_id},
+    )
+    assert started.status_code == 202, started.text
+    job = await _wait(async_client, started.json()["job_id"])
+    assert job["status"] == "failed"
+    assert job["error_status"] == 404 and "Pipeline not found" in job["error_detail"], job
+    assert fake_slicer["calls"] == []  # never sliced
+    tree = (await async_client.get(f"/api/v1/projects/{project['id']}/tree")).json()
+    assert _revision_numbers(tree) == [1]
+    assert await _sliced_rows(db_session) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_slicer_output_missing_on_disk_fails_with_500_and_drops_the_row(
+    async_client: AsyncClient, db_session, fake_slicer, roots, monkeypatch
+):
+    project, item, rev = await _source_revision(async_client)
+    pipeline_id = await _pipeline(db_session)
+    fake = project_reslice._slice
+
+    async def slice_then_lose_output(db, **kwargs):
+        sliced = await fake(db, **kwargs)
+        (roots / "library" / sliced.name).unlink()
+        return sliced
+
+    monkeypatch.setattr(project_reslice, "_slice", slice_then_lose_output)
+    started = await async_client.post(
+        f"/api/v1/projects/revisions/{rev['id']}/reslice",
+        json={"file_id": rev["files"][0]["id"], "pipeline_id": pipeline_id},
+    )
+    job = await _wait(async_client, started.json()["job_id"])
+    assert job["status"] == "failed"
+    assert job["error_status"] == 500 and "The slicer output is missing on disk" in job["error_detail"], job
+    tree = (await async_client.get(f"/api/v1/projects/{project['id']}/tree")).json()
+    assert _revision_numbers(tree) == [1]
+    # Today the intermediate File Manager row is still hard-deleted (the finally runs).
+    assert await _sliced_rows(db_session) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_intermediate_drop_failure_keeps_the_job_and_session_alive(
+    async_client: AsyncClient, db_session, fake_slicer, monkeypatch
+):
+    from backend.app.models.project_item import ProjectRevision
+    from backend.app.services.library_trash import library_trash_service
+
+    project, item, rev = await _source_revision(async_client)
+    pipeline_id = await _pipeline(db_session)
+
+    async def boom(*_args, **_kwargs):
+        raise OSError("disk gone")
+
+    monkeypatch.setattr(library_trash_service, "hard_delete_many", boom)
+    real_run = project_reslice.run_reslice
+    follow_up: dict = {}
+
+    async def run_then_query(db, req, **kwargs):
+        result = await real_run(db, req, **kwargs)
+        # The same session still answers after _drop_intermediate rolled back.
+        follow_up["number"] = (
+            await db.execute(select(ProjectRevision.number).where(ProjectRevision.id == result["revision_id"]))
+        ).scalar_one()
+        return result
+
+    monkeypatch.setattr(project_reslice, "run_reslice", run_then_query)
+    started = await async_client.post(
+        f"/api/v1/projects/revisions/{rev['id']}/reslice",
+        json={"file_id": rev["files"][0]["id"], "pipeline_id": pipeline_id},
+    )
+    job = await _wait(async_client, started.json()["job_id"])
+    assert job["status"] == "completed", job
+    assert job["result"]["revision_number"] == 2
+    assert follow_up == {"number": 2}
+    tree = (await async_client.get(f"/api/v1/projects/{project['id']}/tree")).json()
+    assert _revision_numbers(tree) == [2, 1]
+    # The delete failed, so the intermediate row is left behind (logged, not raised).
+    assert [r.filename for r in await _sliced_rows(db_session)] == ["sliced-1.gcode.3mf"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_revision_added_helper_raising_does_not_fail_the_job(
+    async_client: AsyncClient, db_session, fake_slicer, monkeypatch
+):
+    from backend.app.services import project_filing
+
+    project, item, rev = await _source_revision(async_client)
+    pipeline_id = await _pipeline(db_session)
+
+    async def boom(*_args, **_kwargs):
+        raise RuntimeError("helper itself blew up")
+
+    monkeypatch.setattr(project_filing, "record_revision_added", boom)
+    started = await async_client.post(
+        f"/api/v1/projects/revisions/{rev['id']}/reslice",
+        json={"file_id": rev["files"][0]["id"], "pipeline_id": pipeline_id},
+    )
+    job = await _wait(async_client, started.json()["job_id"])
+    assert job["status"] == "completed", job
+    assert job["result"]["revision_number"] == 2
+    assert await _sliced_rows(db_session) == []

@@ -15,7 +15,7 @@ from fastapi.routing import APIRoute
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from starlette.background import BackgroundTask
+from starlette.types import Receive, Scope, Send
 
 from backend.app.api.routes.library import _ensure_library_file_visible, may_modify_library_file, to_absolute_path
 from backend.app.core import database
@@ -105,6 +105,20 @@ def _build_zip(paths_and_names: list[tuple[Path, str]], archive: Path) -> int:
             zf.write(path, arcname=name, compress_type=method)
             written += 1
     return written
+
+
+class _TempFileResponse(FileResponse):
+    """``FileResponse`` over a temp file that it deletes once the response ends.
+
+    The unlink runs in ``finally``, so the file also goes when the client drops
+    mid-body or Starlette answers a bad ``Range`` header (400/416) — both paths
+    return or raise before a ``BackgroundTask`` would run."""
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            Path(self.path).unlink(missing_ok=True)
 
 
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -507,12 +521,7 @@ async def download_revision(
         archive.unlink(missing_ok=True)
         raise
     name = f"{project.code or project.id}_{item.name}_R{revision.number}.zip"
-    return FileResponse(
-        str(archive),
-        filename=name,
-        media_type="application/zip",
-        background=BackgroundTask(archive.unlink, missing_ok=True),
-    )
+    return _TempFileResponse(str(archive), filename=name, media_type="application/zip")
 
 
 # --- phase 5: File Manager bridge ---------------------------------------------
