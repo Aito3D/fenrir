@@ -1,0 +1,2095 @@
+### exit: 0
+### stdout:
+{
+ "disk_layout": [
+  "projects/P-0001_support-camera-fx3",
+  "projects/P-0001_support-camera-fx3/Impression",
+  "projects/P-0001_support-camera-fx3/Impression/Pièce  principale",
+  "projects/P-0001_support-camera-fx3/Impression/Pièce  principale/R2",
+  "projects/P-0001_support-camera-fx3/Impression/Pièce  principale/R2/support.3mf",
+  "projects/P-0001_support-camera-fx3/_trash",
+  "projects/P-0001_support-camera-fx3/_trash/Impression",
+  "projects/P-0001_support-camera-fx3/_trash/Impression/Pièce  principale",
+  "projects/P-0001_support-camera-fx3/_trash/Impression/Pièce  principale/R1<SCRUBBED>",
+  "projects/P-0001_support-camera-fx3/_trash/Impression/Pièce  principale/R1<SCRUBBED>/support.3mf",
+  "projects/P-0001_support-camera-fx3/_trash/Impression/Pièce  principale/R3",
+  "projects/P-0001_support-camera-fx3/_trash/Impression/Pièce  principale/R3<SCRUBBED>",
+  "projects/P-0001_support-camera-fx3/_trash/Impression/Pièce  principale/R3<SCRUBBED>/extra.bgcode",
+  "projects/P-0001_support-camera-fx3/_trash/Impression/Pièce  principale/R3<SCRUBBED>/plate.gcode",
+  "projects/P-0001_support-camera-fx3/_trash/Impression/Pièce  principale/R3<SCRUBBED>/support.gcode.3mf",
+  "projects/P-0001_support-camera-fx3/_trash/Impression/Pièce  principale/R3/plate (2)<SCRUBBED>.gcode",
+  "projects/P-0001_support-camera-fx3/_trash/Impression/Pièce renommée<SCRUBBED>",
+  "projects/P-0001_support-camera-fx3/_trash/Impression/Pièce renommée<SCRUBBED>/R1",
+  "projects/P-0001_support-camera-fx3/_trash/Impression/Pièce renommée<SCRUBBED>/R1/support.3mf",
+  "projects/P-0003_autre-projet",
+  "projects/P-0003_autre-projet/Impression",
+  "projects/P-0003_autre-projet/Impression/boitier",
+  "projects/P-0003_autre-projet/Impression/boitier/R1",
+  "projects/P-0003_autre-projet/Impression/boitier/R1/boitier.3mf",
+  "projects/P-0003_autre-projet/Impression/boitier/R1/boitier.gcode"
+ ],
+ "steps": [
+  {
+   "body": {
+    "items": [],
+    "total": 0
+   },
+   "status": 200,
+   "step": "01-search-empty"
+  },
+  {
+   "body": [],
+   "status": 200,
+   "step": "02-tags-empty"
+  },
+  {
+   "body": {
+    "attachments": null,
+    "budget": null,
+    "children": [],
+    "code": "P-0001",
+    "color": null,
+    "cover_image_filename": null,
+    "created_at": "<SCRUBBED>",
+    "descendant_count": 0,
+    "description": "Support imprimé",
+    "due_date": null,
+    "id": 1,
+    "is_template": false,
+    "name": "Support caméra FX3",
+    "notes": null,
+    "parent_id": null,
+    "parent_name": null,
+    "priority": "normal",
+    "rollup_stats": null,
+    "stats": {
+     "bom_completed_items": 0,
+     "bom_cost": 0.0,
+     "bom_total_items": 0,
+     "completed_prints": 0,
+     "estimated_cost": 0.0,
+     "failed_prints": 0,
+     "in_progress_prints": 0,
+     "parts_progress_percent": null,
+     "progress_percent": null,
+     "queued_prints": 0,
+     "remaining_parts": null,
+     "remaining_prints": null,
+     "total_archives": 0,
+     "total_energy_cost": 0.0,
+     "total_energy_kwh": 0.0,
+     "total_filament_grams": 0.0,
+     "total_items": 0,
+     "total_print_time_hours": 0.0,
+     "total_wear_cost": 0.0
+    },
+    "status": "active",
+    "tag_list": [
+     {
+      "id": 2,
+      "name": "Caméra"
+     },
+     {
+      "id": 1,
+      "name": "drone"
+     }
+    ],
+    "tags": "Caméra, drone",
+    "target_count": null,
+    "target_parts_count": null,
+    "target_sets": null,
+    "template_source_id": null,
+    "updated_at": "<SCRUBBED>",
+    "url": null
+   },
+   "status": 200,
+   "step": "03-create-project"
+  },
+  {
+   "body": {
+    "attachments": null,
+    "budget": null,
+    "children": [],
+    "code": "P-0002",
+    "color": null,
+    "cover_image_filename": null,
+    "created_at": "<SCRUBBED>",
+    "descendant_count": 0,
+    "description": null,
+    "due_date": null,
+    "id": 2,
+    "is_template": false,
+    "name": "Boîtier électronique",
+    "notes": null,
+    "parent_id": null,
+    "parent_name": null,
+    "priority": "normal",
+    "rollup_stats": null,
+    "stats": {
+     "bom_completed_items": 0,
+     "bom_cost": 0.0,
+     "bom_total_items": 0,
+     "completed_prints": 0,
+     "estimated_cost": 0.0,
+     "failed_prints": 0,
+     "in_progress_prints": 0,
+     "parts_progress_percent": null,
+     "progress_percent": null,
+     "queued_prints": 0,
+     "remaining_parts": null,
+     "remaining_prints": null,
+     "total_archives": 0,
+     "total_energy_cost": 0.0,
+     "total_energy_kwh": 0.0,
+     "total_filament_grams": 0.0,
+     "total_items": 0,
+     "total_print_time_hours": 0.0,
+     "total_wear_cost": 0.0
+    },
+    "status": "active",
+    "tag_list": [
+     {
+      "id": 2,
+      "name": "Caméra"
+     },
+     {
+      "id": 3,
+      "name": "Électronique"
+     }
+    ],
+    "tags": "Caméra, Électronique",
+    "target_count": null,
+    "target_parts_count": null,
+    "target_sets": null,
+    "template_source_id": null,
+    "updated_at": "<SCRUBBED>",
+    "url": null
+   },
+   "status": 200,
+   "step": "04-create-project-2"
+  },
+  {
+   "body": {
+    "attachments": null,
+    "budget": null,
+    "children": [],
+    "code": "P-0001",
+    "color": null,
+    "cover_image_filename": null,
+    "created_at": "<SCRUBBED>",
+    "descendant_count": 0,
+    "description": "Support imprimé",
+    "due_date": null,
+    "id": 1,
+    "is_template": false,
+    "name": "Support caméra FX3",
+    "notes": null,
+    "parent_id": null,
+    "parent_name": null,
+    "priority": "normal",
+    "rollup_stats": null,
+    "stats": {
+     "bom_completed_items": 0,
+     "bom_cost": 0.0,
+     "bom_total_items": 0,
+     "completed_prints": 0,
+     "estimated_cost": 0.0,
+     "failed_prints": 0,
+     "in_progress_prints": 0,
+     "parts_progress_percent": null,
+     "progress_percent": null,
+     "queued_prints": 0,
+     "remaining_parts": null,
+     "remaining_prints": null,
+     "total_archives": 0,
+     "total_energy_cost": 0.0,
+     "total_energy_kwh": 0.0,
+     "total_filament_grams": 0.0,
+     "total_items": 0,
+     "total_print_time_hours": 0.0,
+     "total_wear_cost": 0.0
+    },
+    "status": "active",
+    "tag_list": [
+     {
+      "id": 2,
+      "name": "Caméra"
+     },
+     {
+      "id": 1,
+      "name": "drone"
+     }
+    ],
+    "tags": "Caméra, drone",
+    "target_count": null,
+    "target_parts_count": null,
+    "target_sets": null,
+    "template_source_id": null,
+    "updated_at": "<SCRUBBED>",
+    "url": null
+   },
+   "status": 200,
+   "step": "05-get-project"
+  },
+  {
+   "body": {
+    "items": [
+     {
+      "archive_count": 0,
+      "code": "P-0002",
+      "color": null,
+      "cover_image_filename": null,
+      "created_at": "<SCRUBBED>",
+      "description": null,
+      "id": 2,
+      "name": "Boîtier électronique",
+      "status": "active",
+      "tags": [
+       {
+        "id": 2,
+        "name": "Caméra"
+       },
+       {
+        "id": 3,
+        "name": "Électronique"
+       }
+      ],
+      "updated_at": "<SCRUBBED>"
+     },
+     {
+      "archive_count": 0,
+      "code": "P-0001",
+      "color": null,
+      "cover_image_filename": null,
+      "created_at": "<SCRUBBED>",
+      "description": "Support imprimé",
+      "id": 1,
+      "name": "Support caméra FX3",
+      "status": "active",
+      "tags": [
+       {
+        "id": 2,
+        "name": "Caméra"
+       },
+       {
+        "id": 1,
+        "name": "drone"
+       }
+      ],
+      "updated_at": "<SCRUBBED>"
+     }
+    ],
+    "total": 2
+   },
+   "status": 200,
+   "step": "06-search-q"
+  },
+  {
+   "body": {
+    "items": [
+     {
+      "archive_count": 0,
+      "code": "P-0002",
+      "color": null,
+      "cover_image_filename": null,
+      "created_at": "<SCRUBBED>",
+      "description": null,
+      "id": 2,
+      "name": "Boîtier électronique",
+      "status": "active",
+      "tags": [
+       {
+        "id": 2,
+        "name": "Caméra"
+       },
+       {
+        "id": 3,
+        "name": "Électronique"
+       }
+      ],
+      "updated_at": "<SCRUBBED>"
+     }
+    ],
+    "total": 1
+   },
+   "status": 200,
+   "step": "07-search-accent"
+  },
+  {
+   "body": [
+    {
+     "id": 2,
+     "name": "Caméra",
+     "project_count": 2
+    },
+    {
+     "id": 1,
+     "name": "drone",
+     "project_count": 1
+    },
+    {
+     "id": 3,
+     "name": "Électronique",
+     "project_count": 1
+    }
+   ],
+   "status": 200,
+   "step": "08-tags"
+  },
+  {
+   "body": {
+    "items": [
+     {
+      "archive_count": 0,
+      "code": "P-0002",
+      "color": null,
+      "cover_image_filename": null,
+      "created_at": "<SCRUBBED>",
+      "description": null,
+      "id": 2,
+      "name": "Boîtier électronique",
+      "status": "active",
+      "tags": [
+       {
+        "id": 2,
+        "name": "Caméra"
+       },
+       {
+        "id": 3,
+        "name": "Électronique"
+       }
+      ],
+      "updated_at": "<SCRUBBED>"
+     },
+     {
+      "archive_count": 0,
+      "code": "P-0001",
+      "color": null,
+      "cover_image_filename": null,
+      "created_at": "<SCRUBBED>",
+      "description": "Support imprimé",
+      "id": 1,
+      "name": "Support caméra FX3",
+      "status": "active",
+      "tags": [
+       {
+        "id": 2,
+        "name": "Caméra"
+       },
+       {
+        "id": 1,
+        "name": "drone"
+       }
+      ],
+      "updated_at": "<SCRUBBED>"
+     }
+    ],
+    "total": 2
+   },
+   "status": 200,
+   "step": "09-search-tag-all"
+  },
+  {
+   "body": {
+    "detail": [
+     {
+      "ctx": {
+       "ge": 1
+      },
+      "input": "0",
+      "loc": [
+       "query",
+       "limit"
+      ],
+      "msg": "Input should be greater than or equal to 1",
+      "type": "greater_than_equal"
+     }
+    ]
+   },
+   "status": 422,
+   "step": "10-search-bad-limit"
+  },
+  {
+   "body": {
+    "items": [],
+    "total": 0
+   },
+   "status": 200,
+   "step": "11-search-escape-like"
+  },
+  {
+   "body": {
+    "forked_from": null,
+    "id": 1,
+    "name": "Pièce / principale",
+    "name_key": "pièce  principale",
+    "revisions": [],
+    "section": "impression"
+   },
+   "status": 201,
+   "step": "12-create-item"
+  },
+  {
+   "body": {
+    "detail": "Section 'scan' does not accept files for now"
+   },
+   "status": 400,
+   "step": "13-create-item-disabled-section"
+  },
+  {
+   "body": {
+    "detail": "An item with this name already exists in this section"
+   },
+   "status": 409,
+   "step": "14-create-item-duplicate"
+  },
+  {
+   "body": {
+    "detail": [
+     {
+      "ctx": {
+       "error": {}
+      },
+      "input": "   ",
+      "loc": [
+       "body",
+       "name"
+      ],
+      "msg": "Value error, name must not be blank",
+      "type": "value_error"
+     }
+    ]
+   },
+   "status": 422,
+   "step": "15-create-item-blank-name"
+  },
+  {
+   "body": {
+    "detail": "Project not found"
+   },
+   "status": 404,
+   "step": "16-create-item-unknown-project"
+  },
+  {
+   "body": {
+    "revision": {
+     "created_at": "<SCRUBBED>",
+     "created_by": null,
+     "derived_from": null,
+     "files": [
+      {
+       "created_at": "<SCRUBBED>",
+       "file_hash": "6fcbee204296317adcec8904498e5adca6ea85d18f356f252cc96e04efb8a609",
+       "file_size": 531,
+       "file_type": "3mf",
+       "filename": "support.3mf",
+       "has_thumbnail": false,
+       "id": 1
+      }
+     ],
+     "has_snapshot": true,
+     "id": 1,
+     "note": "première version",
+     "number": 1,
+     "outdated_by": null,
+     "pipeline_name": null,
+     "print_count": 0,
+     "print_profile": {
+      "filament_types": [
+       "PLA"
+      ],
+      "layer_height": "0.2",
+      "nozzle_diameter": "0.4",
+      "printer_model": "Bambu Lab X1 Carbon",
+      "process_preset": "0.20mm Standard",
+      "sliced": false
+     },
+     "slicer_name": "BambuStudio",
+     "slicer_version": "01.10.01.50",
+     "status": "wip",
+     "status_changed_at": null,
+     "used": false
+    },
+    "warnings": []
+   },
+   "status": 201,
+   "step": "17-upload-revision"
+  },
+  {
+   "body": {
+    "detail": "Projects only accept printing files (.3mf, .gcode, .bgcode); refused: model.stl"
+   },
+   "status": 400,
+   "step": "18-upload-non-printable"
+  },
+  {
+   "body": {
+    "revision": {
+     "created_at": "<SCRUBBED>",
+     "created_by": null,
+     "derived_from": null,
+     "files": [
+      {
+       "created_at": "<SCRUBBED>",
+       "file_hash": "6fcbee204296317adcec8904498e5adca6ea85d18f356f252cc96e04efb8a609",
+       "file_size": 531,
+       "file_type": "3mf",
+       "filename": "support.3mf",
+       "has_thumbnail": false,
+       "id": 2
+      }
+     ],
+     "has_snapshot": true,
+     "id": 2,
+     "note": null,
+     "number": 2,
+     "outdated_by": null,
+     "pipeline_name": null,
+     "print_count": 0,
+     "print_profile": {
+      "filament_types": [
+       "PLA"
+      ],
+      "layer_height": "0.2",
+      "nozzle_diameter": "0.4",
+      "printer_model": "Bambu Lab X1 Carbon",
+      "process_preset": "0.20mm Standard",
+      "sliced": false
+     },
+     "slicer_name": "BambuStudio",
+     "slicer_version": "01.10.01.50",
+     "status": "wip",
+     "status_changed_at": null,
+     "used": false
+    },
+    "warnings": [
+     {
+      "filename": "support.3mf",
+      "same_as": "R1"
+     }
+    ]
+   },
+   "status": 201,
+   "step": "19-upload-duplicate-bytes"
+  },
+  {
+   "body": {
+    "revision": {
+     "created_at": "<SCRUBBED>",
+     "created_by": null,
+     "derived_from": {
+      "id": 1,
+      "item_id": 1,
+      "item_name": "Pièce / principale",
+      "number": 1,
+      "section": "impression",
+      "status": "wip"
+     },
+     "files": [
+      {
+       "created_at": "<SCRUBBED>",
+       "file_hash": "14b801fe1402fd208380b92885f73cf31b8133e748f596b49a123845e78ec0ce",
+       "file_size": 654,
+       "file_type": "gcode.3mf",
+       "filename": "support.gcode.3mf",
+       "has_thumbnail": false,
+       "id": 3
+      },
+      {
+       "created_at": "<SCRUBBED>",
+       "file_hash": "a4091cb4c39134292c73a1bf4c0ac1ef953cc33d2089fc4de09e8cc222d63694",
+       "file_size": 6,
+       "file_type": "gcode",
+       "filename": "plate.gcode",
+       "has_thumbnail": false,
+       "id": 4
+      }
+     ],
+     "has_snapshot": true,
+     "id": 3,
+     "note": null,
+     "number": 3,
+     "outdated_by": null,
+     "pipeline_name": null,
+     "print_count": 0,
+     "print_profile": {
+      "filament_types": [
+       "PLA"
+      ],
+      "layer_height": "0.2",
+      "nozzle_diameter": "0.4",
+      "printer_model": "Bambu Lab X1 Carbon",
+      "process_preset": "0.20mm Standard",
+      "sliced": true
+     },
+     "slicer_name": "BambuStudio",
+     "slicer_version": "01.10.01.50",
+     "status": "wip",
+     "status_changed_at": null,
+     "used": false
+    },
+    "warnings": []
+   },
+   "status": 201,
+   "step": "20-upload-derived"
+  },
+  {
+   "body": {
+    "detail": "Derived-from revision must belong to the same project"
+   },
+   "status": 400,
+   "step": "21-upload-bad-derived"
+  },
+  {
+   "body": {
+    "detail": "Item not found"
+   },
+   "status": 404,
+   "step": "22-upload-unknown-item"
+  },
+  {
+   "body": {
+    "code": "P-0001",
+    "project_id": 1,
+    "sections": [
+     {
+      "items": [],
+      "section": "scan"
+     },
+     {
+      "items": [],
+      "section": "modelisation"
+     },
+     {
+      "items": [
+       {
+        "forked_from": null,
+        "id": 1,
+        "name": "Pièce / principale",
+        "name_key": "pièce  principale",
+        "revisions": [
+         {
+          "created_at": "<SCRUBBED>",
+          "created_by": null,
+          "derived_from": {
+           "id": 1,
+           "item_id": 1,
+           "item_name": "Pièce / principale",
+           "number": 1,
+           "section": "impression",
+           "status": "wip"
+          },
+          "files": [
+           {
+            "created_at": "<SCRUBBED>",
+            "file_hash": "14b801fe1402fd208380b92885f73cf31b8133e748f596b49a123845e78ec0ce",
+            "file_size": 654,
+            "file_type": "gcode.3mf",
+            "filename": "support.gcode.3mf",
+            "has_thumbnail": false,
+            "id": 3
+           },
+           {
+            "created_at": "<SCRUBBED>",
+            "file_hash": "a4091cb4c39134292c73a1bf4c0ac1ef953cc33d2089fc4de09e8cc222d63694",
+            "file_size": 6,
+            "file_type": "gcode",
+            "filename": "plate.gcode",
+            "has_thumbnail": false,
+            "id": 4
+           }
+          ],
+          "has_snapshot": true,
+          "id": 3,
+          "note": null,
+          "number": 3,
+          "outdated_by": null,
+          "pipeline_name": null,
+          "print_count": 0,
+          "print_profile": {
+           "filament_types": [
+            "PLA"
+           ],
+           "layer_height": "0.2",
+           "nozzle_diameter": "0.4",
+           "printer_model": "Bambu Lab X1 Carbon",
+           "process_preset": "0.20mm Standard",
+           "sliced": true
+          },
+          "slicer_name": "BambuStudio",
+          "slicer_version": "01.10.01.50",
+          "status": "wip",
+          "status_changed_at": null,
+          "used": false
+         },
+         {
+          "created_at": "<SCRUBBED>",
+          "created_by": null,
+          "derived_from": null,
+          "files": [
+           {
+            "created_at": "<SCRUBBED>",
+            "file_hash": "6fcbee204296317adcec8904498e5adca6ea85d18f356f252cc96e04efb8a609",
+            "file_size": 531,
+            "file_type": "3mf",
+            "filename": "support.3mf",
+            "has_thumbnail": false,
+            "id": 2
+           }
+          ],
+          "has_snapshot": true,
+          "id": 2,
+          "note": null,
+          "number": 2,
+          "outdated_by": null,
+          "pipeline_name": null,
+          "print_count": 0,
+          "print_profile": {
+           "filament_types": [
+            "PLA"
+           ],
+           "layer_height": "0.2",
+           "nozzle_diameter": "0.4",
+           "printer_model": "Bambu Lab X1 Carbon",
+           "process_preset": "0.20mm Standard",
+           "sliced": false
+          },
+          "slicer_name": "BambuStudio",
+          "slicer_version": "01.10.01.50",
+          "status": "wip",
+          "status_changed_at": null,
+          "used": false
+         },
+         {
+          "created_at": "<SCRUBBED>",
+          "created_by": null,
+          "derived_from": null,
+          "files": [
+           {
+            "created_at": "<SCRUBBED>",
+            "file_hash": "6fcbee204296317adcec8904498e5adca6ea85d18f356f252cc96e04efb8a609",
+            "file_size": 531,
+            "file_type": "3mf",
+            "filename": "support.3mf",
+            "has_thumbnail": false,
+            "id": 1
+           }
+          ],
+          "has_snapshot": true,
+          "id": 1,
+          "note": "première version",
+          "number": 1,
+          "outdated_by": null,
+          "pipeline_name": null,
+          "print_count": 0,
+          "print_profile": {
+           "filament_types": [
+            "PLA"
+           ],
+           "layer_height": "0.2",
+           "nozzle_diameter": "0.4",
+           "printer_model": "Bambu Lab X1 Carbon",
+           "process_preset": "0.20mm Standard",
+           "sliced": false
+          },
+          "slicer_name": "BambuStudio",
+          "slicer_version": "01.10.01.50",
+          "status": "wip",
+          "status_changed_at": null,
+          "used": false
+         }
+        ],
+        "section": "impression"
+       }
+      ],
+      "section": "impression"
+     },
+     {
+      "items": [],
+      "section": "usinage"
+     },
+     {
+      "items": [],
+      "section": "docs"
+     }
+    ]
+   },
+   "status": 200,
+   "step": "23-tree"
+  },
+  {
+   "body": {
+    "created_at": "<SCRUBBED>",
+    "created_by": null,
+    "derived_from": null,
+    "files": [
+     {
+      "created_at": "<SCRUBBED>",
+      "file_hash": "6fcbee204296317adcec8904498e5adca6ea85d18f356f252cc96e04efb8a609",
+      "file_size": 531,
+      "file_type": "3mf",
+      "filename": "support.3mf",
+      "has_thumbnail": false,
+      "id": 1
+     }
+    ],
+    "has_snapshot": true,
+    "id": 1,
+    "note": "ok",
+    "number": 1,
+    "outdated_by": null,
+    "pipeline_name": null,
+    "print_count": 0,
+    "print_profile": {
+     "filament_types": [
+      "PLA"
+     ],
+     "layer_height": "0.2",
+     "nozzle_diameter": "0.4",
+     "printer_model": "Bambu Lab X1 Carbon",
+     "process_preset": "0.20mm Standard",
+     "sliced": false
+    },
+    "slicer_name": "BambuStudio",
+    "slicer_version": "01.10.01.50",
+    "status": "valide",
+    "status_changed_at": "<SCRUBBED>",
+    "used": false
+   },
+   "status": 200,
+   "step": "24-patch-status"
+  },
+  {
+   "body": {
+    "detail": "status cannot be null"
+   },
+   "status": 400,
+   "step": "25-patch-status-null"
+  },
+  {
+   "body": {
+    "detail": [
+     {
+      "ctx": {
+       "expected": "'wip', 'valide' or 'obsolete'"
+      },
+      "input": "weird",
+      "loc": [
+       "body",
+       "status"
+      ],
+      "msg": "Input should be 'wip', 'valide' or 'obsolete'",
+      "type": "literal_error"
+     }
+    ]
+   },
+   "status": 422,
+   "step": "26-patch-bad-status"
+  },
+  {
+   "body": {
+    "detail": "Revision not found"
+   },
+   "status": 404,
+   "step": "27-patch-unknown"
+  },
+  {
+   "body": {
+    "forked_from": {
+     "id": 1,
+     "item_id": 1,
+     "item_name": "Pièce / principale",
+     "number": 1,
+     "section": "impression",
+     "status": "valide"
+    },
+    "id": 2,
+    "name": "Pièce v2",
+    "name_key": "pièce v2",
+    "revisions": [
+     {
+      "created_at": "<SCRUBBED>",
+      "created_by": null,
+      "derived_from": {
+       "id": 1,
+       "item_id": 1,
+       "item_name": "Pièce / principale",
+       "number": 1,
+       "section": "impression",
+       "status": "valide"
+      },
+      "files": [
+       {
+        "created_at": "<SCRUBBED>",
+        "file_hash": "6fcbee204296317adcec8904498e5adca6ea85d18f356f252cc96e04efb8a609",
+        "file_size": 531,
+        "file_type": "3mf",
+        "filename": "support.3mf",
+        "has_thumbnail": false,
+        "id": 5
+       }
+      ],
+      "has_snapshot": true,
+      "id": 4,
+      "note": null,
+      "number": 1,
+      "outdated_by": null,
+      "pipeline_name": null,
+      "print_count": 0,
+      "print_profile": {
+       "filament_types": [
+        "PLA"
+       ],
+       "layer_height": "0.2",
+       "nozzle_diameter": "0.4",
+       "printer_model": "Bambu Lab X1 Carbon",
+       "process_preset": "0.20mm Standard",
+       "sliced": false
+      },
+      "slicer_name": "BambuStudio",
+      "slicer_version": "01.10.01.50",
+      "status": "wip",
+      "status_changed_at": null,
+      "used": false
+     }
+    ],
+    "section": "impression"
+   },
+   "status": 201,
+   "step": "28-fork"
+  },
+  {
+   "body": {
+    "detail": "Revision does not belong to this item"
+   },
+   "status": 400,
+   "step": "29-fork-wrong-item"
+  },
+  {
+   "body": {
+    "forked_from": {
+     "id": 1,
+     "item_id": 1,
+     "item_name": "Pièce / principale",
+     "number": 1,
+     "section": "impression",
+     "status": "valide"
+    },
+    "id": 2,
+    "name": "Pièce renommée",
+    "name_key": "pièce renommée",
+    "revisions": [
+     {
+      "created_at": "<SCRUBBED>",
+      "created_by": null,
+      "derived_from": {
+       "id": 1,
+       "item_id": 1,
+       "item_name": "Pièce / principale",
+       "number": 1,
+       "section": "impression",
+       "status": "valide"
+      },
+      "files": [
+       {
+        "created_at": "<SCRUBBED>",
+        "file_hash": "6fcbee204296317adcec8904498e5adca6ea85d18f356f252cc96e04efb8a609",
+        "file_size": 531,
+        "file_type": "3mf",
+        "filename": "support.3mf",
+        "has_thumbnail": false,
+        "id": 5
+       }
+      ],
+      "has_snapshot": true,
+      "id": 4,
+      "note": null,
+      "number": 1,
+      "outdated_by": null,
+      "pipeline_name": null,
+      "print_count": 0,
+      "print_profile": {
+       "filament_types": [
+        "PLA"
+       ],
+       "layer_height": "0.2",
+       "nozzle_diameter": "0.4",
+       "printer_model": "Bambu Lab X1 Carbon",
+       "process_preset": "0.20mm Standard",
+       "sliced": false
+      },
+      "slicer_name": "BambuStudio",
+      "slicer_version": "01.10.01.50",
+      "status": "wip",
+      "status_changed_at": null,
+      "used": false
+     }
+    ],
+    "section": "impression"
+   },
+   "status": 200,
+   "step": "30-rename"
+  },
+  {
+   "body": {
+    "detail": "An item with this name already exists in this section"
+   },
+   "status": 409,
+   "step": "31-rename-conflict"
+  },
+  {
+   "body": {
+    "warnings": []
+   },
+   "status": 200,
+   "step": "32-add-files"
+  },
+  {
+   "body": {
+    "detail": "Projects only accept printing files (.3mf, .gcode, .bgcode); refused: notes.txt"
+   },
+   "status": 400,
+   "step": "33-add-files-non-printable"
+  },
+  {
+   "body": {
+    "code": "P-0001",
+    "project_id": 1,
+    "sections": [
+     {
+      "items": [],
+      "section": "scan"
+     },
+     {
+      "items": [],
+      "section": "modelisation"
+     },
+     {
+      "items": [
+       {
+        "forked_from": null,
+        "id": 1,
+        "name": "Pièce / principale",
+        "name_key": "pièce  principale",
+        "revisions": [
+         {
+          "created_at": "<SCRUBBED>",
+          "created_by": null,
+          "derived_from": {
+           "id": 1,
+           "item_id": 1,
+           "item_name": "Pièce / principale",
+           "number": 1,
+           "section": "impression",
+           "status": "valide"
+          },
+          "files": [
+           {
+            "created_at": "<SCRUBBED>",
+            "file_hash": "14b801fe1402fd208380b92885f73cf31b8133e748f596b49a123845e78ec0ce",
+            "file_size": 654,
+            "file_type": "gcode.3mf",
+            "filename": "support.gcode.3mf",
+            "has_thumbnail": false,
+            "id": 3
+           },
+           {
+            "created_at": "<SCRUBBED>",
+            "file_hash": "a4091cb4c39134292c73a1bf4c0ac1ef953cc33d2089fc4de09e8cc222d63694",
+            "file_size": 6,
+            "file_type": "gcode",
+            "filename": "plate.gcode",
+            "has_thumbnail": false,
+            "id": 4
+           },
+           {
+            "created_at": "<SCRUBBED>",
+            "file_hash": "d6dd01b4ced28d4fc9f07f53a7122dcbf106b969069d91b618839f3e46790f6c",
+            "file_size": 4,
+            "file_type": "bgcode",
+            "filename": "extra.bgcode",
+            "has_thumbnail": false,
+            "id": 6
+           },
+           {
+            "created_at": "<SCRUBBED>",
+            "file_hash": "a4091cb4c39134292c73a1bf4c0ac1ef953cc33d2089fc4de09e8cc222d63694",
+            "file_size": 6,
+            "file_type": "gcode",
+            "filename": "plate (2).gcode",
+            "has_thumbnail": false,
+            "id": 7
+           }
+          ],
+          "has_snapshot": true,
+          "id": 3,
+          "note": null,
+          "number": 3,
+          "outdated_by": null,
+          "pipeline_name": null,
+          "print_count": 0,
+          "print_profile": {
+           "filament_types": [
+            "PLA"
+           ],
+           "layer_height": "0.2",
+           "nozzle_diameter": "0.4",
+           "printer_model": "Bambu Lab X1 Carbon",
+           "process_preset": "0.20mm Standard",
+           "sliced": true
+          },
+          "slicer_name": "BambuStudio",
+          "slicer_version": "01.10.01.50",
+          "status": "wip",
+          "status_changed_at": null,
+          "used": false
+         },
+         {
+          "created_at": "<SCRUBBED>",
+          "created_by": null,
+          "derived_from": null,
+          "files": [
+           {
+            "created_at": "<SCRUBBED>",
+            "file_hash": "6fcbee204296317adcec8904498e5adca6ea85d18f356f252cc96e04efb8a609",
+            "file_size": 531,
+            "file_type": "3mf",
+            "filename": "support.3mf",
+            "has_thumbnail": false,
+            "id": 2
+           }
+          ],
+          "has_snapshot": true,
+          "id": 2,
+          "note": null,
+          "number": 2,
+          "outdated_by": null,
+          "pipeline_name": null,
+          "print_count": 0,
+          "print_profile": {
+           "filament_types": [
+            "PLA"
+           ],
+           "layer_height": "0.2",
+           "nozzle_diameter": "0.4",
+           "printer_model": "Bambu Lab X1 Carbon",
+           "process_preset": "0.20mm Standard",
+           "sliced": false
+          },
+          "slicer_name": "BambuStudio",
+          "slicer_version": "01.10.01.50",
+          "status": "wip",
+          "status_changed_at": null,
+          "used": false
+         },
+         {
+          "created_at": "<SCRUBBED>",
+          "created_by": null,
+          "derived_from": null,
+          "files": [
+           {
+            "created_at": "<SCRUBBED>",
+            "file_hash": "6fcbee204296317adcec8904498e5adca6ea85d18f356f252cc96e04efb8a609",
+            "file_size": 531,
+            "file_type": "3mf",
+            "filename": "support.3mf",
+            "has_thumbnail": false,
+            "id": 1
+           }
+          ],
+          "has_snapshot": true,
+          "id": 1,
+          "note": "ok",
+          "number": 1,
+          "outdated_by": null,
+          "pipeline_name": null,
+          "print_count": 0,
+          "print_profile": {
+           "filament_types": [
+            "PLA"
+           ],
+           "layer_height": "0.2",
+           "nozzle_diameter": "0.4",
+           "printer_model": "Bambu Lab X1 Carbon",
+           "process_preset": "0.20mm Standard",
+           "sliced": false
+          },
+          "slicer_name": "BambuStudio",
+          "slicer_version": "01.10.01.50",
+          "status": "valide",
+          "status_changed_at": "<SCRUBBED>",
+          "used": false
+         }
+        ],
+        "section": "impression"
+       },
+       {
+        "forked_from": {
+         "id": 1,
+         "item_id": 1,
+         "item_name": "Pièce / principale",
+         "number": 1,
+         "section": "impression",
+         "status": "valide"
+        },
+        "id": 2,
+        "name": "Pièce renommée",
+        "name_key": "pièce renommée",
+        "revisions": [
+         {
+          "created_at": "<SCRUBBED>",
+          "created_by": null,
+          "derived_from": {
+           "id": 1,
+           "item_id": 1,
+           "item_name": "Pièce / principale",
+           "number": 1,
+           "section": "impression",
+           "status": "valide"
+          },
+          "files": [
+           {
+            "created_at": "<SCRUBBED>",
+            "file_hash": "6fcbee204296317adcec8904498e5adca6ea85d18f356f252cc96e04efb8a609",
+            "file_size": 531,
+            "file_type": "3mf",
+            "filename": "support.3mf",
+            "has_thumbnail": false,
+            "id": 5
+           }
+          ],
+          "has_snapshot": true,
+          "id": 4,
+          "note": null,
+          "number": 1,
+          "outdated_by": null,
+          "pipeline_name": null,
+          "print_count": 0,
+          "print_profile": {
+           "filament_types": [
+            "PLA"
+           ],
+           "layer_height": "0.2",
+           "nozzle_diameter": "0.4",
+           "printer_model": "Bambu Lab X1 Carbon",
+           "process_preset": "0.20mm Standard",
+           "sliced": false
+          },
+          "slicer_name": "BambuStudio",
+          "slicer_version": "01.10.01.50",
+          "status": "wip",
+          "status_changed_at": null,
+          "used": false
+         }
+        ],
+        "section": "impression"
+       }
+      ],
+      "section": "impression"
+     },
+     {
+      "items": [],
+      "section": "usinage"
+     },
+     {
+      "items": [],
+      "section": "docs"
+     }
+    ]
+   },
+   "status": 200,
+   "step": "34-tree-after"
+  },
+  {
+   "bytes": 654,
+   "headers": {
+    "content-disposition": "attachment; filename=\"support.gcode.3mf\"",
+    "content-length": "654",
+    "content-type": "application/octet-stream"
+   },
+   "status": 200,
+   "step": "35-download-one"
+  },
+  {
+   "bytes": 1112,
+   "headers": {
+    "content-disposition": "attachment; filename*=utf-8''P-0001_Pi%C3%A8ce%20/%20principale_R3.zip",
+    "content-length": "1112",
+    "content-type": "application/zip"
+   },
+   "status": 200,
+   "step": "36-download-zip"
+  },
+  {
+   "body": {
+    "detail": "File not found"
+   },
+   "status": 404,
+   "step": "37-download-unknown-file"
+  },
+  {
+   "body": null,
+   "status": 204,
+   "step": "38-remove-file"
+  },
+  {
+   "body": {
+    "detail": "File not found in this revision"
+   },
+   "status": 404,
+   "step": "39-remove-file-again"
+  },
+  {
+   "body": {
+    "orders": []
+   },
+   "status": 200,
+   "step": "40-orders-none"
+  },
+  {
+   "body": {
+    "current": null,
+    "done": 0,
+    "failures": [],
+    "last_run": null,
+    "pending": 0,
+    "running": false,
+    "total": 0
+   },
+   "status": 200,
+   "step": "41-legacy-status"
+  },
+  {
+   "body": {
+    "copied": [],
+    "moved": [],
+    "skipped": [
+     {
+      "code": "not_found",
+      "file_id": 999,
+      "reason": "file not found"
+     },
+     {
+      "code": "not_found",
+      "file_id": 998,
+      "reason": "file not found"
+     }
+    ]
+   },
+   "status": 200,
+   "step": "42-import-library-unknown"
+  },
+  {
+   "body": {
+    "detail": [
+     {
+      "ctx": {
+       "actual_length": 0,
+       "field_type": "List",
+       "min_length": 1
+      },
+      "input": [],
+      "loc": [
+       "body",
+       "file_ids"
+      ],
+      "msg": "List should have at least 1 item after validation, not 0",
+      "type": "too_short"
+     }
+    ]
+   },
+   "status": 422,
+   "step": "43-import-library-empty"
+  },
+  {
+   "body": {
+    "detail": [
+     {
+      "input": 1,
+      "loc": [
+       "body",
+       "nope"
+      ],
+      "msg": "Extra inputs are not permitted",
+      "type": "extra_forbidden"
+     }
+    ]
+   },
+   "status": 422,
+   "step": "44-import-library-extra-field"
+  },
+  {
+   "body": {
+    "detail": "File not found"
+   },
+   "status": 404,
+   "step": "45-library-suggestions-unknown"
+  },
+  {
+   "body": {
+    "detail": "OpenRouter is not configured"
+   },
+   "status": 409,
+   "step": "46-ai-reformulate-unconfigured"
+  },
+  {
+   "body": {
+    "detail": "OpenRouter is not configured"
+   },
+   "status": 409,
+   "step": "47-ai-suggest-tags-unconfigured"
+  },
+  {
+   "body": {
+    "detail": "File not found in this revision"
+   },
+   "status": 404,
+   "step": "48-reslice-unknown-pipeline"
+  },
+  {
+   "body": {
+    "detail": "This project has files; delete or move its items first"
+   },
+   "status": 409,
+   "step": "49-delete-project-with-items"
+  },
+  {
+   "body": {},
+   "status": 200,
+   "step": "50-project-codes-empty"
+  },
+  {
+   "body": [
+    {
+     "code": "P-0001",
+     "id": 1,
+     "name": "Support caméra FX3",
+     "reason": "similar_title"
+    }
+   ],
+   "status": 200,
+   "step": "51-suggestions"
+  },
+  {
+   "body": {
+    "deliveries": [],
+    "printed": 0,
+    "project": {
+     "code": "P-0001",
+     "id": 1,
+     "name": "Support caméra FX3"
+    },
+    "queued": 0,
+    "rejected": 0,
+    "sections": {
+     "impression": [
+      {
+       "item_id": 2,
+       "item_name": "Pièce renommée",
+       "number": 1,
+       "status": "wip"
+      },
+      {
+       "item_id": 1,
+       "item_name": "Pièce / principale",
+       "number": 3,
+       "status": "wip"
+      }
+     ]
+    },
+    "target": null,
+    "task_id": 1,
+    "task_title": "Support caméra"
+   },
+   "status": 200,
+   "step": "52-link"
+  },
+  {
+   "body": {
+    "detail": "Project not found"
+   },
+   "status": 404,
+   "step": "53-link-unknown-project"
+  },
+  {
+   "body": {
+    "detail": "Task not found"
+   },
+   "status": 404,
+   "step": "54-link-unknown-task"
+  },
+  {
+   "body": {
+    "1": [
+     "P-0001"
+    ]
+   },
+   "status": 200,
+   "step": "55-project-codes"
+  },
+  {
+   "body": {
+    "order_id": 1,
+    "tasks": [
+     {
+      "deliveries": [],
+      "printed": 0,
+      "project": {
+       "code": "P-0001",
+       "id": 1,
+       "name": "Support caméra FX3"
+      },
+      "queued": 0,
+      "rejected": 0,
+      "sections": {
+       "impression": [
+        {
+         "item_id": 2,
+         "item_name": "Pièce renommée",
+         "number": 1,
+         "status": "wip"
+        },
+        {
+         "item_id": 1,
+         "item_name": "Pièce / principale",
+         "number": 3,
+         "status": "wip"
+        }
+       ]
+      },
+      "target": null,
+      "task_id": 1,
+      "task_title": "Support caméra"
+     },
+     {
+      "deliveries": [],
+      "printed": 0,
+      "project": null,
+      "queued": 0,
+      "rejected": 0,
+      "sections": {},
+      "target": null,
+      "task_id": 2,
+      "task_title": "Autre pièce"
+     }
+    ]
+   },
+   "status": 200,
+   "step": "56-order-links"
+  },
+  {
+   "body": {
+    "orders": [
+     {
+      "board_column": "devis",
+      "client_name": "ACME",
+      "created_at": "<SCRUBBED>",
+      "deliveries": [],
+      "order_description": "Commande support",
+      "order_id": 1,
+      "task_id": 1,
+      "task_title": "Support caméra"
+     }
+    ]
+   },
+   "status": 200,
+   "step": "57-project-orders"
+  },
+  {
+   "body": {
+    "deliveries": [
+     1,
+     3
+    ],
+    "printed": 0,
+    "project": {
+     "code": "P-0001",
+     "id": 1,
+     "name": "Support caméra FX3"
+    },
+    "queued": 0,
+    "rejected": 0,
+    "sections": {
+     "impression": [
+      {
+       "item_id": 2,
+       "item_name": "Pièce renommée",
+       "number": 1,
+       "status": "wip"
+      },
+      {
+       "item_id": 1,
+       "item_name": "Pièce / principale",
+       "number": 3,
+       "status": "wip"
+      }
+     ]
+    },
+    "target": null,
+    "task_id": 1,
+    "task_title": "Support caméra"
+   },
+   "status": 200,
+   "step": "58-deliveries"
+  },
+  {
+   "body": {
+    "detail": "Task is not linked to a project"
+   },
+   "status": 409,
+   "step": "59-deliveries-foreign-revision"
+  },
+  {
+   "body": {
+    "deliveries": [],
+    "printed": 0,
+    "project": {
+     "code": "P-0003",
+     "id": 3,
+     "name": "Autre projet"
+    },
+    "queued": 0,
+    "rejected": 0,
+    "sections": {},
+    "target": null,
+    "task_id": 2,
+    "task_title": "Autre pièce"
+   },
+   "status": 201,
+   "step": "60-create-project-for-task"
+  },
+  {
+   "body": {
+    "detail": [
+     {
+      "ctx": {
+       "error": {}
+      },
+      "input": "  ",
+      "loc": [
+       "body",
+       "name"
+      ],
+      "msg": "Value error, name must not be blank",
+      "type": "value_error"
+     }
+    ]
+   },
+   "status": 422,
+   "step": "61-create-project-for-task-blank"
+  },
+  {
+   "body": {
+    "code": "P-0003",
+    "project_id": 3,
+    "results": [
+     {
+      "filename": "boitier.3mf",
+      "item_id": 3,
+      "item_name": "boitier",
+      "revision_number": 1,
+      "section": "impression"
+     },
+     {
+      "filename": "boitier.gcode",
+      "item_id": 3,
+      "item_name": "boitier",
+      "revision_number": 1,
+      "section": "impression"
+     }
+    ]
+   },
+   "status": 201,
+   "step": "62-drop-files"
+  },
+  {
+   "body": {
+    "detail": "Projects only accept printing files (.3mf, .gcode, .bgcode); refused: scan.ply"
+   },
+   "status": 400,
+   "step": "63-drop-non-printable"
+  },
+  {
+   "body": {
+    "deliveries": [],
+    "printed": 0,
+    "project": null,
+    "queued": 0,
+    "rejected": 0,
+    "sections": {},
+    "target": null,
+    "task_id": 1,
+    "task_title": "Support caméra"
+   },
+   "status": 200,
+   "step": "64-unlink"
+  },
+  {
+   "body": {
+    "order_id": 1,
+    "tasks": [
+     {
+      "deliveries": [],
+      "printed": 0,
+      "project": null,
+      "queued": 0,
+      "rejected": 0,
+      "sections": {},
+      "target": null,
+      "task_id": 1,
+      "task_title": "Support caméra"
+     },
+     {
+      "deliveries": [],
+      "printed": 0,
+      "project": {
+       "code": "P-0003",
+       "id": 3,
+       "name": "Autre projet"
+      },
+      "queued": 0,
+      "rejected": 0,
+      "sections": {
+       "impression": [
+        {
+         "item_id": 3,
+         "item_name": "boitier",
+         "number": 1,
+         "status": "wip"
+        }
+       ]
+      },
+      "target": null,
+      "task_id": 2,
+      "task_title": "Autre pièce"
+     }
+    ]
+   },
+   "status": 200,
+   "step": "65-order-links-final"
+  },
+  {
+   "body": {
+    "events": [
+     {
+      "actor_class": "system",
+      "actor_name": null,
+      "changes": null,
+      "detail": {
+       "code": "P-0001",
+       "name": "Support caméra FX3",
+       "project_id": 1
+      },
+      "id": 5,
+      "kind": "task.project_unlinked",
+      "note": null,
+      "occurred_at": "<SCRUBBED>",
+      "occurred_until": null,
+      "subject_id": 1,
+      "subject_label": "Support caméra",
+      "subject_type": "task"
+     },
+     {
+      "actor_class": "system",
+      "actor_name": null,
+      "changes": null,
+      "detail": {
+       "code": "P-0003",
+       "project_id": 3,
+       "results": [
+        {
+         "filename": "boitier.3mf",
+         "item_id": 3,
+         "item_name": "boitier",
+         "revision_number": 1,
+         "section": "impression"
+        },
+        {
+         "filename": "boitier.gcode",
+         "item_id": 3,
+         "item_name": "boitier",
+         "revision_number": 1,
+         "section": "impression"
+        }
+       ],
+       "sections": [
+        "impression"
+       ]
+      },
+      "id": 4,
+      "kind": "project.files_dropped",
+      "note": null,
+      "occurred_at": "<SCRUBBED>",
+      "occurred_until": null,
+      "subject_id": null,
+      "subject_label": "2 file(s)",
+      "subject_type": null
+     },
+     {
+      "actor_class": "system",
+      "actor_name": null,
+      "changes": null,
+      "detail": {
+       "code": "P-0003",
+       "name": "Autre projet",
+       "project_id": 3
+      },
+      "id": 3,
+      "kind": "task.project_linked",
+      "note": null,
+      "occurred_at": "<SCRUBBED>",
+      "occurred_until": null,
+      "subject_id": 2,
+      "subject_label": "Autre pièce",
+      "subject_type": "task"
+     },
+     {
+      "actor_class": "system",
+      "actor_name": null,
+      "changes": null,
+      "detail": {
+       "added": [
+        "Pièce / principale R1",
+        "Pièce / principale R3"
+       ],
+       "removed": []
+      },
+      "id": 2,
+      "kind": "task.deliveries_changed",
+      "note": null,
+      "occurred_at": "<SCRUBBED>",
+      "occurred_until": null,
+      "subject_id": 1,
+      "subject_label": "Support caméra",
+      "subject_type": "task"
+     },
+     {
+      "actor_class": "system",
+      "actor_name": null,
+      "changes": null,
+      "detail": {
+       "code": "P-0001",
+       "name": "Support caméra FX3",
+       "project_id": 1
+      },
+      "id": 1,
+      "kind": "task.project_linked",
+      "note": null,
+      "occurred_at": "<SCRUBBED>",
+      "occurred_until": null,
+      "subject_id": 1,
+      "subject_label": "Support caméra",
+      "subject_type": "task"
+     }
+    ],
+    "has_more": false
+   },
+   "status": 200,
+   "step": "66-events-story"
+  },
+  {
+   "body": {
+    "code": "P-0002",
+    "project_id": 2,
+    "sections": [
+     {
+      "items": [],
+      "section": "scan"
+     },
+     {
+      "items": [],
+      "section": "modelisation"
+     },
+     {
+      "items": [],
+      "section": "impression"
+     },
+     {
+      "items": [],
+      "section": "usinage"
+     },
+     {
+      "items": [],
+      "section": "docs"
+     }
+    ]
+   },
+   "status": 200,
+   "step": "67-tree-project-2"
+  },
+  {
+   "body": null,
+   "status": 204,
+   "step": "68-delete-revision-used"
+  },
+  {
+   "body": null,
+   "status": 204,
+   "step": "69-delete-revision"
+  },
+  {
+   "body": null,
+   "status": 204,
+   "step": "70-delete-item-fork"
+  },
+  {
+   "body": {
+    "detail": "Item not found"
+   },
+   "status": 404,
+   "step": "71-delete-item-unknown"
+  },
+  {
+   "body": {
+    "code": "P-0001",
+    "project_id": 1,
+    "sections": [
+     {
+      "items": [],
+      "section": "scan"
+     },
+     {
+      "items": [],
+      "section": "modelisation"
+     },
+     {
+      "items": [
+       {
+        "forked_from": null,
+        "id": 1,
+        "name": "Pièce / principale",
+        "name_key": "pièce  principale",
+        "revisions": [
+         {
+          "created_at": "<SCRUBBED>",
+          "created_by": null,
+          "derived_from": null,
+          "files": [
+           {
+            "created_at": "<SCRUBBED>",
+            "file_hash": "6fcbee204296317adcec8904498e5adca6ea85d18f356f252cc96e04efb8a609",
+            "file_size": 531,
+            "file_type": "3mf",
+            "filename": "support.3mf",
+            "has_thumbnail": false,
+            "id": 2
+           }
+          ],
+          "has_snapshot": true,
+          "id": 2,
+          "note": null,
+          "number": 2,
+          "outdated_by": null,
+          "pipeline_name": null,
+          "print_count": 0,
+          "print_profile": {
+           "filament_types": [
+            "PLA"
+           ],
+           "layer_height": "0.2",
+           "nozzle_diameter": "0.4",
+           "printer_model": "Bambu Lab X1 Carbon",
+           "process_preset": "0.20mm Standard",
+           "sliced": false
+          },
+          "slicer_name": "BambuStudio",
+          "slicer_version": "01.10.01.50",
+          "status": "wip",
+          "status_changed_at": null,
+          "used": false
+         }
+        ],
+        "section": "impression"
+       }
+      ],
+      "section": "impression"
+     },
+     {
+      "items": [],
+      "section": "usinage"
+     },
+     {
+      "items": [],
+      "section": "docs"
+     }
+    ]
+   },
+   "status": 200,
+   "step": "72-tree-final"
+  },
+  {
+   "body": {
+    "items": [
+     {
+      "archive_count": 0,
+      "code": "P-0003",
+      "color": null,
+      "cover_image_filename": null,
+      "created_at": "<SCRUBBED>",
+      "description": "créé depuis la carte",
+      "id": 3,
+      "name": "Autre projet",
+      "status": "active",
+      "tags": [
+       {
+        "id": 1,
+        "name": "drone"
+       }
+      ],
+      "updated_at": "<SCRUBBED>"
+     },
+     {
+      "archive_count": 0,
+      "code": "P-0002",
+      "color": null,
+      "cover_image_filename": null,
+      "created_at": "<SCRUBBED>",
+      "description": null,
+      "id": 2,
+      "name": "Boîtier électronique",
+      "status": "active",
+      "tags": [
+       {
+        "id": 2,
+        "name": "Caméra"
+       },
+       {
+        "id": 3,
+        "name": "Électronique"
+       }
+      ],
+      "updated_at": "<SCRUBBED>"
+     },
+     {
+      "archive_count": 0,
+      "code": "P-0001",
+      "color": null,
+      "cover_image_filename": null,
+      "created_at": "<SCRUBBED>",
+      "description": "Support imprimé",
+      "id": 1,
+      "name": "Support caméra FX3",
+      "status": "active",
+      "tags": [
+       {
+        "id": 2,
+        "name": "Caméra"
+       },
+       {
+        "id": 1,
+        "name": "drone"
+       }
+      ],
+      "updated_at": "<SCRUBBED>"
+     }
+    ],
+    "total": 3
+   },
+   "status": 200,
+   "step": "73-search-final"
+  }
+ ]
+}
+
+### stderr:
+

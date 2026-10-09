@@ -1,0 +1,51 @@
+### exit: 0
+### stdout:
+{
+ "perms": [
+  "aito:create",
+  "aito:delete",
+  "aito:read",
+  "aito:update",
+  "library:delete_all",
+  "library:delete_own",
+  "library:purge",
+  "library:read",
+  "library:read_all",
+  "library:read_own",
+  "library:update_all",
+  "library:update_own",
+  "library:upload",
+  "projects:create",
+  "projects:delete",
+  "projects:read",
+  "projects:update"
+ ],
+ "categories": {
+  "Projects": [
+   "projects:create",
+   "projects:delete",
+   "projects:read",
+   "projects:update"
+  ]
+ },
+ "default_groups": {
+  "Administrators": [
+   "projects:create",
+   "projects:delete",
+   "projects:read",
+   "projects:update"
+  ],
+  "Operators": [
+   "projects:create",
+   "projects:delete",
+   "projects:read",
+   "projects:update"
+  ],
+  "Viewers": [
+   "projects:read"
+  ]
+ }
+}
+
+### stderr:
+

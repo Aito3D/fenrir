@@ -1,0 +1,6042 @@
+### exit: 0
+### stdout:
+{
+ "ArchivePreview": {
+  "description": "Minimal archive data for project preview.",
+  "properties": {
+   "filament_color": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Filament Color"
+   },
+   "filament_type": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Filament Type"
+   },
+   "id": {
+    "title": "Id",
+    "type": "integer"
+   },
+   "print_name": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Print Name"
+   },
+   "status": {
+    "title": "Status",
+    "type": "string"
+   },
+   "thumbnail_path": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Thumbnail Path"
+   }
+  },
+  "required": [
+   "id",
+   "print_name",
+   "thumbnail_path",
+   "status"
+  ],
+  "title": "ArchivePreview",
+  "type": "object"
+ },
+ "BOMItemCreate": {
+  "description": "Schema for creating a BOM item.",
+  "properties": {
+   "archive_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Archive Id"
+   },
+   "name": {
+    "title": "Name",
+    "type": "string"
+   },
+   "quantity_needed": {
+    "default": 1,
+    "title": "Quantity Needed",
+    "type": "integer"
+   },
+   "remarks": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Remarks"
+   },
+   "sourcing_url": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Sourcing Url"
+   },
+   "stl_filename": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Stl Filename"
+   },
+   "unit_price": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Unit Price"
+   }
+  },
+  "required": [
+   "name"
+  ],
+  "title": "BOMItemCreate",
+  "type": "object"
+ },
+ "BOMItemExport": {
+  "description": "Schema for exporting a BOM item.",
+  "properties": {
+   "name": {
+    "title": "Name",
+    "type": "string"
+   },
+   "quantity_acquired": {
+    "title": "Quantity Acquired",
+    "type": "integer"
+   },
+   "quantity_needed": {
+    "title": "Quantity Needed",
+    "type": "integer"
+   },
+   "remarks": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Remarks"
+   },
+   "sourcing_url": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Sourcing Url"
+   },
+   "stl_filename": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Stl Filename"
+   },
+   "unit_price": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Unit Price"
+   }
+  },
+  "required": [
+   "name",
+   "quantity_needed",
+   "quantity_acquired",
+   "unit_price",
+   "sourcing_url",
+   "stl_filename",
+   "remarks"
+  ],
+  "title": "BOMItemExport",
+  "type": "object"
+ },
+ "BOMItemResponse": {
+  "description": "Schema for BOM item response.",
+  "properties": {
+   "archive_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Archive Id"
+   },
+   "archive_name": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Archive Name"
+   },
+   "created_at": {
+    "format": "date-time",
+    "title": "Created At",
+    "type": "string"
+   },
+   "id": {
+    "title": "Id",
+    "type": "integer"
+   },
+   "is_complete": {
+    "default": false,
+    "title": "Is Complete",
+    "type": "boolean"
+   },
+   "name": {
+    "title": "Name",
+    "type": "string"
+   },
+   "project_id": {
+    "title": "Project Id",
+    "type": "integer"
+   },
+   "quantity_acquired": {
+    "title": "Quantity Acquired",
+    "type": "integer"
+   },
+   "quantity_needed": {
+    "title": "Quantity Needed",
+    "type": "integer"
+   },
+   "remarks": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Remarks"
+   },
+   "sort_order": {
+    "title": "Sort Order",
+    "type": "integer"
+   },
+   "sourcing_url": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Sourcing Url"
+   },
+   "stl_filename": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Stl Filename"
+   },
+   "unit_price": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Unit Price"
+   },
+   "updated_at": {
+    "format": "date-time",
+    "title": "Updated At",
+    "type": "string"
+   }
+  },
+  "required": [
+   "id",
+   "project_id",
+   "name",
+   "quantity_needed",
+   "quantity_acquired",
+   "unit_price",
+   "sourcing_url",
+   "archive_id",
+   "stl_filename",
+   "remarks",
+   "sort_order",
+   "created_at",
+   "updated_at"
+  ],
+  "title": "BOMItemResponse",
+  "type": "object"
+ },
+ "BOMItemUpdate": {
+  "description": "Schema for updating a BOM item.",
+  "properties": {
+   "archive_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Archive Id"
+   },
+   "name": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Name"
+   },
+   "quantity_acquired": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Quantity Acquired"
+   },
+   "quantity_needed": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Quantity Needed"
+   },
+   "remarks": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Remarks"
+   },
+   "sourcing_url": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Sourcing Url"
+   },
+   "stl_filename": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Stl Filename"
+   },
+   "unit_price": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Unit Price"
+   }
+  },
+  "title": "BOMItemUpdate",
+  "type": "object"
+ },
+ "BatchAddArchives": {
+  "description": "Schema for batch adding archives to a project.",
+  "properties": {
+   "archive_ids": {
+    "items": {
+     "type": "integer"
+    },
+    "title": "Archive Ids",
+    "type": "array"
+   }
+  },
+  "required": [
+   "archive_ids"
+  ],
+  "title": "BatchAddArchives",
+  "type": "object"
+ },
+ "BatchAddQueueItems": {
+  "description": "Schema for batch adding queue items to a project.",
+  "properties": {
+   "queue_item_ids": {
+    "items": {
+     "type": "integer"
+    },
+    "title": "Queue Item Ids",
+    "type": "array"
+   }
+  },
+  "required": [
+   "queue_item_ids"
+  ],
+  "title": "BatchAddQueueItems",
+  "type": "object"
+ },
+ "DropFilesResponse": {
+  "$defs": {
+   "DroppedFileResult": {
+    "properties": {
+     "filename": {
+      "title": "Filename",
+      "type": "string"
+     },
+     "item_id": {
+      "title": "Item Id",
+      "type": "integer"
+     },
+     "item_name": {
+      "title": "Item Name",
+      "type": "string"
+     },
+     "revision_number": {
+      "title": "Revision Number",
+      "type": "integer"
+     },
+     "section": {
+      "title": "Section",
+      "type": "string"
+     }
+    },
+    "required": [
+     "filename",
+     "section",
+     "item_id",
+     "item_name",
+     "revision_number"
+    ],
+    "title": "DroppedFileResult",
+    "type": "object"
+   }
+  },
+  "properties": {
+   "code": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Code"
+   },
+   "project_id": {
+    "title": "Project Id",
+    "type": "integer"
+   },
+   "results": {
+    "items": {
+     "$ref": "#/$defs/DroppedFileResult"
+    },
+    "title": "Results",
+    "type": "array"
+   }
+  },
+  "required": [
+   "project_id",
+   "results"
+  ],
+  "title": "DropFilesResponse",
+  "type": "object"
+ },
+ "DroppedFileResult": {
+  "properties": {
+   "filename": {
+    "title": "Filename",
+    "type": "string"
+   },
+   "item_id": {
+    "title": "Item Id",
+    "type": "integer"
+   },
+   "item_name": {
+    "title": "Item Name",
+    "type": "string"
+   },
+   "revision_number": {
+    "title": "Revision Number",
+    "type": "integer"
+   },
+   "section": {
+    "title": "Section",
+    "type": "string"
+   }
+  },
+  "required": [
+   "filename",
+   "section",
+   "item_id",
+   "item_name",
+   "revision_number"
+  ],
+  "title": "DroppedFileResult",
+  "type": "object"
+ },
+ "DuplicateWarning": {
+  "properties": {
+   "filename": {
+    "title": "Filename",
+    "type": "string"
+   },
+   "same_as": {
+    "title": "Same As",
+    "type": "string"
+   }
+  },
+  "required": [
+   "filename",
+   "same_as"
+  ],
+  "title": "DuplicateWarning",
+  "type": "object"
+ },
+ "FiledFileOut": {
+  "properties": {
+   "file_id": {
+    "title": "File Id",
+    "type": "integer"
+   },
+   "filename": {
+    "title": "Filename",
+    "type": "string"
+   },
+   "item_id": {
+    "title": "Item Id",
+    "type": "integer"
+   },
+   "item_name": {
+    "title": "Item Name",
+    "type": "string"
+   },
+   "revision_id": {
+    "title": "Revision Id",
+    "type": "integer"
+   },
+   "revision_number": {
+    "title": "Revision Number",
+    "type": "integer"
+   },
+   "section": {
+    "title": "Section",
+    "type": "string"
+   },
+   "source_file_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Source File Id"
+   }
+  },
+  "required": [
+   "file_id",
+   "filename",
+   "section",
+   "item_id",
+   "item_name",
+   "revision_id",
+   "revision_number"
+  ],
+  "title": "FiledFileOut",
+  "type": "object"
+ },
+ "ImportLibraryFilesRequest": {
+  "additionalProperties": false,
+  "description": "Move File Manager files into a project (always the Impression section).",
+  "properties": {
+   "file_ids": {
+    "items": {
+     "type": "integer"
+    },
+    "maxItems": 200,
+    "minItems": 1,
+    "title": "File Ids",
+    "type": "array"
+   },
+   "item_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Item Id"
+   },
+   "new_item_name": {
+    "anyOf": [
+     {
+      "maxLength": 255,
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "New Item Name"
+   }
+  },
+  "required": [
+   "file_ids"
+  ],
+  "title": "ImportLibraryFilesRequest",
+  "type": "object"
+ },
+ "ImportLibraryFilesResponse": {
+  "$defs": {
+   "FiledFileOut": {
+    "properties": {
+     "file_id": {
+      "title": "File Id",
+      "type": "integer"
+     },
+     "filename": {
+      "title": "Filename",
+      "type": "string"
+     },
+     "item_id": {
+      "title": "Item Id",
+      "type": "integer"
+     },
+     "item_name": {
+      "title": "Item Name",
+      "type": "string"
+     },
+     "revision_id": {
+      "title": "Revision Id",
+      "type": "integer"
+     },
+     "revision_number": {
+      "title": "Revision Number",
+      "type": "integer"
+     },
+     "section": {
+      "title": "Section",
+      "type": "string"
+     },
+     "source_file_id": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Source File Id"
+     }
+    },
+    "required": [
+     "file_id",
+     "filename",
+     "section",
+     "item_id",
+     "item_name",
+     "revision_id",
+     "revision_number"
+    ],
+    "title": "FiledFileOut",
+    "type": "object"
+   },
+   "SkippedFileOut": {
+    "properties": {
+     "code": {
+      "title": "Code",
+      "type": "string"
+     },
+     "file_id": {
+      "title": "File Id",
+      "type": "integer"
+     },
+     "reason": {
+      "title": "Reason",
+      "type": "string"
+     }
+    },
+    "required": [
+     "file_id",
+     "code",
+     "reason"
+    ],
+    "title": "SkippedFileOut",
+    "type": "object"
+   }
+  },
+  "properties": {
+   "copied": {
+    "items": {
+     "$ref": "#/$defs/FiledFileOut"
+    },
+    "title": "Copied",
+    "type": "array"
+   },
+   "moved": {
+    "items": {
+     "$ref": "#/$defs/FiledFileOut"
+    },
+    "title": "Moved",
+    "type": "array"
+   },
+   "skipped": {
+    "items": {
+     "$ref": "#/$defs/SkippedFileOut"
+    },
+    "title": "Skipped",
+    "type": "array"
+   }
+  },
+  "required": [
+   "moved",
+   "copied",
+   "skipped"
+  ],
+  "title": "ImportLibraryFilesResponse",
+  "type": "object"
+ },
+ "LegacyMigrationCurrent": {
+  "properties": {
+   "code": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Code"
+   },
+   "project_id": {
+    "title": "Project Id",
+    "type": "integer"
+   }
+  },
+  "required": [
+   "project_id"
+  ],
+  "title": "LegacyMigrationCurrent",
+  "type": "object"
+ },
+ "LegacyMigrationFailure": {
+  "properties": {
+   "code": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Code"
+   },
+   "error": {
+    "title": "Error",
+    "type": "string"
+   },
+   "project_id": {
+    "title": "Project Id",
+    "type": "integer"
+   }
+  },
+  "required": [
+   "project_id",
+   "error"
+  ],
+  "title": "LegacyMigrationFailure",
+  "type": "object"
+ },
+ "LegacyMigrationLastRun": {
+  "description": "The last finished run: projects migrated (failures not counted), managed\nfiles moved and external files copied, and when it ended.",
+  "properties": {
+   "files_copied": {
+    "title": "Files Copied",
+    "type": "integer"
+   },
+   "files_moved": {
+    "title": "Files Moved",
+    "type": "integer"
+   },
+   "finished_at": {
+    "format": "date-time",
+    "title": "Finished At",
+    "type": "string"
+   },
+   "projects": {
+    "title": "Projects",
+    "type": "integer"
+   }
+  },
+  "required": [
+   "projects",
+   "files_moved",
+   "files_copied",
+   "finished_at"
+  ],
+  "title": "LegacyMigrationLastRun",
+  "type": "object"
+ },
+ "LegacyMigrationStatus": {
+  "$defs": {
+   "LegacyMigrationCurrent": {
+    "properties": {
+     "code": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Code"
+     },
+     "project_id": {
+      "title": "Project Id",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "project_id"
+    ],
+    "title": "LegacyMigrationCurrent",
+    "type": "object"
+   },
+   "LegacyMigrationFailure": {
+    "properties": {
+     "code": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Code"
+     },
+     "error": {
+      "title": "Error",
+      "type": "string"
+     },
+     "project_id": {
+      "title": "Project Id",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "project_id",
+     "error"
+    ],
+    "title": "LegacyMigrationFailure",
+    "type": "object"
+   },
+   "LegacyMigrationLastRun": {
+    "description": "The last finished run: projects migrated (failures not counted), managed\nfiles moved and external files copied, and when it ended.",
+    "properties": {
+     "files_copied": {
+      "title": "Files Copied",
+      "type": "integer"
+     },
+     "files_moved": {
+      "title": "Files Moved",
+      "type": "integer"
+     },
+     "finished_at": {
+      "format": "date-time",
+      "title": "Finished At",
+      "type": "string"
+     },
+     "projects": {
+      "title": "Projects",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "projects",
+     "files_moved",
+     "files_copied",
+     "finished_at"
+    ],
+    "title": "LegacyMigrationLastRun",
+    "type": "object"
+   }
+  },
+  "description": "``GET /projects/legacy-migration/status``: ``pending`` is the number of\nprojects still to migrate (the current candidate count when idle);\n``last_run`` is the last finished run since the server started (None before).",
+  "properties": {
+   "current": {
+    "anyOf": [
+     {
+      "$ref": "#/$defs/LegacyMigrationCurrent"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null
+   },
+   "done": {
+    "title": "Done",
+    "type": "integer"
+   },
+   "failures": {
+    "default": [],
+    "items": {
+     "$ref": "#/$defs/LegacyMigrationFailure"
+    },
+    "title": "Failures",
+    "type": "array"
+   },
+   "last_run": {
+    "anyOf": [
+     {
+      "$ref": "#/$defs/LegacyMigrationLastRun"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null
+   },
+   "pending": {
+    "title": "Pending",
+    "type": "integer"
+   },
+   "running": {
+    "title": "Running",
+    "type": "boolean"
+   },
+   "total": {
+    "title": "Total",
+    "type": "integer"
+   }
+  },
+  "required": [
+   "running",
+   "total",
+   "done",
+   "pending"
+  ],
+  "title": "LegacyMigrationStatus",
+  "type": "object"
+ },
+ "LinkedFolderExport": {
+  "description": "Schema for exporting a linked library folder.",
+  "properties": {
+   "name": {
+    "title": "Name",
+    "type": "string"
+   }
+  },
+  "required": [
+   "name"
+  ],
+  "title": "LinkedFolderExport",
+  "type": "object"
+ },
+ "LinkedProjectRef": {
+  "properties": {
+   "code": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Code"
+   },
+   "id": {
+    "title": "Id",
+    "type": "integer"
+   },
+   "name": {
+    "title": "Name",
+    "type": "string"
+   }
+  },
+  "required": [
+   "id",
+   "code",
+   "name"
+  ],
+  "title": "LinkedProjectRef",
+  "type": "object"
+ },
+ "OrderProjectLinks": {
+  "$defs": {
+   "LinkedProjectRef": {
+    "properties": {
+     "code": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Code"
+     },
+     "id": {
+      "title": "Id",
+      "type": "integer"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "code",
+     "name"
+    ],
+    "title": "LinkedProjectRef",
+    "type": "object"
+   },
+   "SectionRevisionSummary": {
+    "properties": {
+     "item_id": {
+      "title": "Item Id",
+      "type": "integer"
+     },
+     "item_name": {
+      "title": "Item Name",
+      "type": "string"
+     },
+     "number": {
+      "title": "Number",
+      "type": "integer"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "item_id",
+     "item_name",
+     "number",
+     "status"
+    ],
+    "title": "SectionRevisionSummary",
+    "type": "object"
+   },
+   "TaskProjectLink": {
+    "properties": {
+     "deliveries": {
+      "items": {
+       "type": "integer"
+      },
+      "title": "Deliveries",
+      "type": "array"
+     },
+     "printed": {
+      "default": 0,
+      "title": "Printed",
+      "type": "integer"
+     },
+     "project": {
+      "anyOf": [
+       {
+        "$ref": "#/$defs/LinkedProjectRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "queued": {
+      "default": 0,
+      "title": "Queued",
+      "type": "integer"
+     },
+     "rejected": {
+      "default": 0,
+      "title": "Rejected",
+      "type": "integer"
+     },
+     "sections": {
+      "additionalProperties": {
+       "items": {
+        "$ref": "#/$defs/SectionRevisionSummary"
+       },
+       "type": "array"
+      },
+      "title": "Sections",
+      "type": "object"
+     },
+     "target": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Target"
+     },
+     "task_id": {
+      "title": "Task Id",
+      "type": "integer"
+     },
+     "task_title": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Task Title"
+     }
+    },
+    "required": [
+     "task_id",
+     "project",
+     "sections",
+     "deliveries"
+    ],
+    "title": "TaskProjectLink",
+    "type": "object"
+   }
+  },
+  "properties": {
+   "order_id": {
+    "title": "Order Id",
+    "type": "integer"
+   },
+   "tasks": {
+    "items": {
+     "$ref": "#/$defs/TaskProjectLink"
+    },
+    "title": "Tasks",
+    "type": "array"
+   }
+  },
+  "required": [
+   "order_id",
+   "tasks"
+  ],
+  "title": "OrderProjectLinks",
+  "type": "object"
+ },
+ "ProjectChildPreview": {
+  "description": "A sub-project as listed on its parent's page.\n\nThe figures cover the child's *own* subtree, not just its own prints, so\nthe listed rows add up to the parent's roll-up minus the parent's own\nprints (#1264).",
+  "properties": {
+   "color": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Color"
+   },
+   "completed_prints": {
+    "default": 0,
+    "title": "Completed Prints",
+    "type": "integer"
+   },
+   "descendant_count": {
+    "default": 0,
+    "title": "Descendant Count",
+    "type": "integer"
+   },
+   "id": {
+    "title": "Id",
+    "type": "integer"
+   },
+   "name": {
+    "title": "Name",
+    "type": "string"
+   },
+   "progress_percent": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Progress Percent"
+   },
+   "status": {
+    "title": "Status",
+    "type": "string"
+   },
+   "total_archives": {
+    "default": 0,
+    "title": "Total Archives",
+    "type": "integer"
+   },
+   "total_cost": {
+    "default": 0.0,
+    "title": "Total Cost",
+    "type": "number"
+   },
+   "total_filament_grams": {
+    "default": 0.0,
+    "title": "Total Filament Grams",
+    "type": "number"
+   },
+   "total_print_time_hours": {
+    "default": 0.0,
+    "title": "Total Print Time Hours",
+    "type": "number"
+   }
+  },
+  "required": [
+   "id",
+   "name",
+   "color",
+   "status"
+  ],
+  "title": "ProjectChildPreview",
+  "type": "object"
+ },
+ "ProjectCreate": {
+  "description": "Schema for creating a new project.",
+  "properties": {
+   "budget": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Budget"
+   },
+   "color": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Color"
+   },
+   "description": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Description"
+   },
+   "due_date": {
+    "anyOf": [
+     {
+      "format": "date-time",
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Due Date"
+   },
+   "name": {
+    "title": "Name",
+    "type": "string"
+   },
+   "new_tag_names": {
+    "anyOf": [
+     {
+      "items": {
+       "type": "string"
+      },
+      "maxItems": 20,
+      "type": "array"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "New Tag Names"
+   },
+   "notes": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Notes"
+   },
+   "parent_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Parent Id"
+   },
+   "priority": {
+    "default": "normal",
+    "title": "Priority",
+    "type": "string"
+   },
+   "tag_ids": {
+    "anyOf": [
+     {
+      "items": {
+       "type": "integer"
+      },
+      "maxItems": 200,
+      "type": "array"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Tag Ids"
+   },
+   "tags": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Tags"
+   },
+   "target_count": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Target Count"
+   },
+   "target_parts_count": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Target Parts Count"
+   },
+   "target_sets": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Target Sets"
+   },
+   "url": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Url"
+   }
+  },
+  "required": [
+   "name"
+  ],
+  "title": "ProjectCreate",
+  "type": "object"
+ },
+ "ProjectExport": {
+  "$defs": {
+   "BOMItemExport": {
+    "description": "Schema for exporting a BOM item.",
+    "properties": {
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "quantity_acquired": {
+      "title": "Quantity Acquired",
+      "type": "integer"
+     },
+     "quantity_needed": {
+      "title": "Quantity Needed",
+      "type": "integer"
+     },
+     "remarks": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Remarks"
+     },
+     "sourcing_url": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Sourcing Url"
+     },
+     "stl_filename": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Stl Filename"
+     },
+     "unit_price": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Unit Price"
+     }
+    },
+    "required": [
+     "name",
+     "quantity_needed",
+     "quantity_acquired",
+     "unit_price",
+     "sourcing_url",
+     "stl_filename",
+     "remarks"
+    ],
+    "title": "BOMItemExport",
+    "type": "object"
+   },
+   "LinkedFolderExport": {
+    "description": "Schema for exporting a linked library folder.",
+    "properties": {
+     "name": {
+      "title": "Name",
+      "type": "string"
+     }
+    },
+    "required": [
+     "name"
+    ],
+    "title": "LinkedFolderExport",
+    "type": "object"
+   }
+  },
+  "description": "Schema for exporting a project.",
+  "properties": {
+   "bom_items": {
+    "default": [],
+    "items": {
+     "$ref": "#/$defs/BOMItemExport"
+    },
+    "title": "Bom Items",
+    "type": "array"
+   },
+   "budget": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Budget"
+   },
+   "color": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Color"
+   },
+   "description": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Description"
+   },
+   "due_date": {
+    "anyOf": [
+     {
+      "format": "date-time",
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Due Date"
+   },
+   "linked_folders": {
+    "default": [],
+    "items": {
+     "$ref": "#/$defs/LinkedFolderExport"
+    },
+    "title": "Linked Folders",
+    "type": "array"
+   },
+   "name": {
+    "title": "Name",
+    "type": "string"
+   },
+   "notes": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Notes"
+   },
+   "priority": {
+    "title": "Priority",
+    "type": "string"
+   },
+   "status": {
+    "title": "Status",
+    "type": "string"
+   },
+   "tags": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Tags"
+   },
+   "target_count": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Target Count"
+   },
+   "target_parts_count": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Target Parts Count"
+   },
+   "target_sets": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Target Sets"
+   }
+  },
+  "required": [
+   "name",
+   "description",
+   "color",
+   "status",
+   "target_count",
+   "target_parts_count",
+   "notes",
+   "tags",
+   "due_date",
+   "priority",
+   "budget"
+  ],
+  "title": "ProjectExport",
+  "type": "object"
+ },
+ "ProjectFileOut": {
+  "properties": {
+   "created_at": {
+    "format": "date-time",
+    "title": "Created At",
+    "type": "string"
+   },
+   "file_hash": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "File Hash"
+   },
+   "file_size": {
+    "title": "File Size",
+    "type": "integer"
+   },
+   "file_type": {
+    "title": "File Type",
+    "type": "string"
+   },
+   "filename": {
+    "title": "Filename",
+    "type": "string"
+   },
+   "has_thumbnail": {
+    "title": "Has Thumbnail",
+    "type": "boolean"
+   },
+   "id": {
+    "title": "Id",
+    "type": "integer"
+   }
+  },
+  "required": [
+   "id",
+   "filename",
+   "file_type",
+   "file_size",
+   "file_hash",
+   "has_thumbnail",
+   "created_at"
+  ],
+  "title": "ProjectFileOut",
+  "type": "object"
+ },
+ "ProjectFileProgress": {
+  "description": "Completed-run count for one library file inside a project (#1897).",
+  "properties": {
+   "completed_count": {
+    "title": "Completed Count",
+    "type": "integer"
+   },
+   "file_id": {
+    "title": "File Id",
+    "type": "integer"
+   }
+  },
+  "required": [
+   "file_id",
+   "completed_count"
+  ],
+  "title": "ProjectFileProgress",
+  "type": "object"
+ },
+ "ProjectImport": {
+  "$defs": {
+   "BOMItemExport": {
+    "description": "Schema for exporting a BOM item.",
+    "properties": {
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "quantity_acquired": {
+      "title": "Quantity Acquired",
+      "type": "integer"
+     },
+     "quantity_needed": {
+      "title": "Quantity Needed",
+      "type": "integer"
+     },
+     "remarks": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Remarks"
+     },
+     "sourcing_url": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Sourcing Url"
+     },
+     "stl_filename": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Stl Filename"
+     },
+     "unit_price": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Unit Price"
+     }
+    },
+    "required": [
+     "name",
+     "quantity_needed",
+     "quantity_acquired",
+     "unit_price",
+     "sourcing_url",
+     "stl_filename",
+     "remarks"
+    ],
+    "title": "BOMItemExport",
+    "type": "object"
+   },
+   "LinkedFolderExport": {
+    "description": "Schema for exporting a linked library folder.",
+    "properties": {
+     "name": {
+      "title": "Name",
+      "type": "string"
+     }
+    },
+    "required": [
+     "name"
+    ],
+    "title": "LinkedFolderExport",
+    "type": "object"
+   }
+  },
+  "description": "Schema for importing a project.",
+  "properties": {
+   "bom_items": {
+    "default": [],
+    "items": {
+     "$ref": "#/$defs/BOMItemExport"
+    },
+    "title": "Bom Items",
+    "type": "array"
+   },
+   "budget": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Budget"
+   },
+   "color": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Color"
+   },
+   "description": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Description"
+   },
+   "due_date": {
+    "anyOf": [
+     {
+      "format": "date-time",
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Due Date"
+   },
+   "linked_folders": {
+    "default": [],
+    "items": {
+     "$ref": "#/$defs/LinkedFolderExport"
+    },
+    "title": "Linked Folders",
+    "type": "array"
+   },
+   "name": {
+    "title": "Name",
+    "type": "string"
+   },
+   "notes": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Notes"
+   },
+   "priority": {
+    "default": "normal",
+    "title": "Priority",
+    "type": "string"
+   },
+   "status": {
+    "default": "active",
+    "title": "Status",
+    "type": "string"
+   },
+   "tags": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Tags"
+   },
+   "target_count": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Target Count"
+   },
+   "target_parts_count": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Target Parts Count"
+   },
+   "target_sets": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Target Sets"
+   }
+  },
+  "required": [
+   "name"
+  ],
+  "title": "ProjectImport",
+  "type": "object"
+ },
+ "ProjectItemCreate": {
+  "properties": {
+   "name": {
+    "maxLength": 255,
+    "title": "Name",
+    "type": "string"
+   },
+   "section": {
+    "enum": [
+     "scan",
+     "modelisation",
+     "impression",
+     "usinage",
+     "docs"
+    ],
+    "title": "Section",
+    "type": "string"
+   }
+  },
+  "required": [
+   "section",
+   "name"
+  ],
+  "title": "ProjectItemCreate",
+  "type": "object"
+ },
+ "ProjectItemFork": {
+  "properties": {
+   "name": {
+    "maxLength": 255,
+    "title": "Name",
+    "type": "string"
+   },
+   "revision_id": {
+    "title": "Revision Id",
+    "type": "integer"
+   }
+  },
+  "required": [
+   "revision_id",
+   "name"
+  ],
+  "title": "ProjectItemFork",
+  "type": "object"
+ },
+ "ProjectItemOut": {
+  "$defs": {
+   "ProjectFileOut": {
+    "properties": {
+     "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+     },
+     "file_hash": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "File Hash"
+     },
+     "file_size": {
+      "title": "File Size",
+      "type": "integer"
+     },
+     "file_type": {
+      "title": "File Type",
+      "type": "string"
+     },
+     "filename": {
+      "title": "Filename",
+      "type": "string"
+     },
+     "has_thumbnail": {
+      "title": "Has Thumbnail",
+      "type": "boolean"
+     },
+     "id": {
+      "title": "Id",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "id",
+     "filename",
+     "file_type",
+     "file_size",
+     "file_hash",
+     "has_thumbnail",
+     "created_at"
+    ],
+    "title": "ProjectFileOut",
+    "type": "object"
+   },
+   "ProjectRevisionOut": {
+    "properties": {
+     "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+     },
+     "created_by": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Created By"
+     },
+     "derived_from": {
+      "anyOf": [
+       {
+        "$ref": "#/$defs/RevisionRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "files": {
+      "items": {
+       "$ref": "#/$defs/ProjectFileOut"
+      },
+      "title": "Files",
+      "type": "array"
+     },
+     "has_snapshot": {
+      "title": "Has Snapshot",
+      "type": "boolean"
+     },
+     "id": {
+      "title": "Id",
+      "type": "integer"
+     },
+     "note": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Note"
+     },
+     "number": {
+      "title": "Number",
+      "type": "integer"
+     },
+     "outdated_by": {
+      "anyOf": [
+       {
+        "$ref": "#/$defs/RevisionRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "pipeline_name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Pipeline Name"
+     },
+     "print_count": {
+      "default": 0,
+      "title": "Print Count",
+      "type": "integer"
+     },
+     "print_profile": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Print Profile"
+     },
+     "slicer_name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Slicer Name"
+     },
+     "slicer_version": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Slicer Version"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     },
+     "status_changed_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Status Changed At"
+     },
+     "used": {
+      "title": "Used",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "id",
+     "number",
+     "status",
+     "note",
+     "derived_from",
+     "outdated_by",
+     "print_profile",
+     "slicer_name",
+     "slicer_version",
+     "has_snapshot",
+     "used",
+     "files",
+     "created_by",
+     "created_at",
+     "status_changed_at"
+    ],
+    "title": "ProjectRevisionOut",
+    "type": "object"
+   },
+   "RevisionRef": {
+    "properties": {
+     "id": {
+      "title": "Id",
+      "type": "integer"
+     },
+     "item_id": {
+      "title": "Item Id",
+      "type": "integer"
+     },
+     "item_name": {
+      "title": "Item Name",
+      "type": "string"
+     },
+     "number": {
+      "title": "Number",
+      "type": "integer"
+     },
+     "section": {
+      "title": "Section",
+      "type": "string"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "item_id",
+     "item_name",
+     "section",
+     "number",
+     "status"
+    ],
+    "title": "RevisionRef",
+    "type": "object"
+   }
+  },
+  "properties": {
+   "forked_from": {
+    "anyOf": [
+     {
+      "$ref": "#/$defs/RevisionRef"
+     },
+     {
+      "type": "null"
+     }
+    ]
+   },
+   "id": {
+    "title": "Id",
+    "type": "integer"
+   },
+   "name": {
+    "title": "Name",
+    "type": "string"
+   },
+   "name_key": {
+    "title": "Name Key",
+    "type": "string"
+   },
+   "revisions": {
+    "items": {
+     "$ref": "#/$defs/ProjectRevisionOut"
+    },
+    "title": "Revisions",
+    "type": "array"
+   },
+   "section": {
+    "title": "Section",
+    "type": "string"
+   }
+  },
+  "required": [
+   "id",
+   "section",
+   "name",
+   "name_key",
+   "forked_from",
+   "revisions"
+  ],
+  "title": "ProjectItemOut",
+  "type": "object"
+ },
+ "ProjectItemRename": {
+  "properties": {
+   "name": {
+    "maxLength": 255,
+    "title": "Name",
+    "type": "string"
+   }
+  },
+  "required": [
+   "name"
+  ],
+  "title": "ProjectItemRename",
+  "type": "object"
+ },
+ "ProjectListResponse": {
+  "$defs": {
+   "ArchivePreview": {
+    "description": "Minimal archive data for project preview.",
+    "properties": {
+     "filament_color": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Filament Color"
+     },
+     "filament_type": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Filament Type"
+     },
+     "id": {
+      "title": "Id",
+      "type": "integer"
+     },
+     "print_name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Print Name"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     },
+     "thumbnail_path": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Thumbnail Path"
+     }
+    },
+    "required": [
+     "id",
+     "print_name",
+     "thumbnail_path",
+     "status"
+    ],
+    "title": "ArchivePreview",
+    "type": "object"
+   }
+  },
+  "description": "Schema for project list item (lighter weight).",
+  "properties": {
+   "archive_count": {
+    "default": 0,
+    "title": "Archive Count",
+    "type": "integer"
+   },
+   "archives": {
+    "default": [],
+    "items": {
+     "$ref": "#/$defs/ArchivePreview"
+    },
+    "title": "Archives",
+    "type": "array"
+   },
+   "budget": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Budget"
+   },
+   "child_count": {
+    "default": 0,
+    "title": "Child Count",
+    "type": "integer"
+   },
+   "code": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Code"
+   },
+   "color": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Color"
+   },
+   "completed_count": {
+    "default": 0,
+    "title": "Completed Count",
+    "type": "integer"
+   },
+   "cover_image_filename": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Cover Image Filename"
+   },
+   "created_at": {
+    "format": "date-time",
+    "title": "Created At",
+    "type": "string"
+   },
+   "description": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Description"
+   },
+   "due_date": {
+    "anyOf": [
+     {
+      "format": "date-time",
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Due Date"
+   },
+   "failed_count": {
+    "default": 0,
+    "title": "Failed Count",
+    "type": "integer"
+   },
+   "id": {
+    "title": "Id",
+    "type": "integer"
+   },
+   "name": {
+    "title": "Name",
+    "type": "string"
+   },
+   "parent_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Parent Id"
+   },
+   "priority": {
+    "default": "normal",
+    "title": "Priority",
+    "type": "string"
+   },
+   "progress_percent": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Progress Percent"
+   },
+   "queue_count": {
+    "default": 0,
+    "title": "Queue Count",
+    "type": "integer"
+   },
+   "status": {
+    "title": "Status",
+    "type": "string"
+   },
+   "tags": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Tags"
+   },
+   "target_count": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Target Count"
+   },
+   "target_parts_count": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Target Parts Count"
+   },
+   "target_sets": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Target Sets"
+   },
+   "total_items": {
+    "default": 0,
+    "title": "Total Items",
+    "type": "integer"
+   },
+   "url": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Url"
+   }
+  },
+  "required": [
+   "id",
+   "name",
+   "description",
+   "color",
+   "status",
+   "target_count",
+   "created_at"
+  ],
+  "title": "ProjectListResponse",
+  "type": "object"
+ },
+ "ProjectOrderTask": {
+  "$defs": {
+   "RevisionRef": {
+    "properties": {
+     "id": {
+      "title": "Id",
+      "type": "integer"
+     },
+     "item_id": {
+      "title": "Item Id",
+      "type": "integer"
+     },
+     "item_name": {
+      "title": "Item Name",
+      "type": "string"
+     },
+     "number": {
+      "title": "Number",
+      "type": "integer"
+     },
+     "section": {
+      "title": "Section",
+      "type": "string"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "item_id",
+     "item_name",
+     "section",
+     "number",
+     "status"
+    ],
+    "title": "RevisionRef",
+    "type": "object"
+   }
+  },
+  "properties": {
+   "board_column": {
+    "title": "Board Column",
+    "type": "string"
+   },
+   "client_name": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Client Name"
+   },
+   "created_at": {
+    "anyOf": [
+     {
+      "format": "date-time",
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Created At"
+   },
+   "deliveries": {
+    "items": {
+     "$ref": "#/$defs/RevisionRef"
+    },
+    "title": "Deliveries",
+    "type": "array"
+   },
+   "order_description": {
+    "title": "Order Description",
+    "type": "string"
+   },
+   "order_id": {
+    "title": "Order Id",
+    "type": "integer"
+   },
+   "task_id": {
+    "title": "Task Id",
+    "type": "integer"
+   },
+   "task_title": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Task Title"
+   }
+  },
+  "required": [
+   "task_id",
+   "task_title",
+   "order_id",
+   "order_description",
+   "client_name",
+   "board_column",
+   "created_at",
+   "deliveries"
+  ],
+  "title": "ProjectOrderTask",
+  "type": "object"
+ },
+ "ProjectOrdersResponse": {
+  "$defs": {
+   "ProjectOrderTask": {
+    "properties": {
+     "board_column": {
+      "title": "Board Column",
+      "type": "string"
+     },
+     "client_name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Client Name"
+     },
+     "created_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Created At"
+     },
+     "deliveries": {
+      "items": {
+       "$ref": "#/$defs/RevisionRef"
+      },
+      "title": "Deliveries",
+      "type": "array"
+     },
+     "order_description": {
+      "title": "Order Description",
+      "type": "string"
+     },
+     "order_id": {
+      "title": "Order Id",
+      "type": "integer"
+     },
+     "task_id": {
+      "title": "Task Id",
+      "type": "integer"
+     },
+     "task_title": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Task Title"
+     }
+    },
+    "required": [
+     "task_id",
+     "task_title",
+     "order_id",
+     "order_description",
+     "client_name",
+     "board_column",
+     "created_at",
+     "deliveries"
+    ],
+    "title": "ProjectOrderTask",
+    "type": "object"
+   },
+   "RevisionRef": {
+    "properties": {
+     "id": {
+      "title": "Id",
+      "type": "integer"
+     },
+     "item_id": {
+      "title": "Item Id",
+      "type": "integer"
+     },
+     "item_name": {
+      "title": "Item Name",
+      "type": "string"
+     },
+     "number": {
+      "title": "Number",
+      "type": "integer"
+     },
+     "section": {
+      "title": "Section",
+      "type": "string"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "item_id",
+     "item_name",
+     "section",
+     "number",
+     "status"
+    ],
+    "title": "RevisionRef",
+    "type": "object"
+   }
+  },
+  "properties": {
+   "orders": {
+    "items": {
+     "$ref": "#/$defs/ProjectOrderTask"
+    },
+    "title": "Orders",
+    "type": "array"
+   }
+  },
+  "required": [
+   "orders"
+  ],
+  "title": "ProjectOrdersResponse",
+  "type": "object"
+ },
+ "ProjectReformulateRequest": {
+  "properties": {
+   "field": {
+    "enum": [
+     "title",
+     "description"
+    ],
+    "title": "Field",
+    "type": "string"
+   },
+   "text": {
+    "maxLength": 2000,
+    "title": "Text",
+    "type": "string"
+   }
+  },
+  "required": [
+   "text",
+   "field"
+  ],
+  "title": "ProjectReformulateRequest",
+  "type": "object"
+ },
+ "ProjectReformulateResponse": {
+  "properties": {
+   "model": {
+    "title": "Model",
+    "type": "string"
+   },
+   "text": {
+    "title": "Text",
+    "type": "string"
+   }
+  },
+  "required": [
+   "text",
+   "model"
+  ],
+  "title": "ProjectReformulateResponse",
+  "type": "object"
+ },
+ "ProjectResponse": {
+  "$defs": {
+   "ProjectChildPreview": {
+    "description": "A sub-project as listed on its parent's page.\n\nThe figures cover the child's *own* subtree, not just its own prints, so\nthe listed rows add up to the parent's roll-up minus the parent's own\nprints (#1264).",
+    "properties": {
+     "color": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Color"
+     },
+     "completed_prints": {
+      "default": 0,
+      "title": "Completed Prints",
+      "type": "integer"
+     },
+     "descendant_count": {
+      "default": 0,
+      "title": "Descendant Count",
+      "type": "integer"
+     },
+     "id": {
+      "title": "Id",
+      "type": "integer"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "progress_percent": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Progress Percent"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     },
+     "total_archives": {
+      "default": 0,
+      "title": "Total Archives",
+      "type": "integer"
+     },
+     "total_cost": {
+      "default": 0.0,
+      "title": "Total Cost",
+      "type": "number"
+     },
+     "total_filament_grams": {
+      "default": 0.0,
+      "title": "Total Filament Grams",
+      "type": "number"
+     },
+     "total_print_time_hours": {
+      "default": 0.0,
+      "title": "Total Print Time Hours",
+      "type": "number"
+     }
+    },
+    "required": [
+     "id",
+     "name",
+     "color",
+     "status"
+    ],
+    "title": "ProjectChildPreview",
+    "type": "object"
+   },
+   "ProjectStats": {
+    "description": "Statistics for a project.",
+    "properties": {
+     "bom_completed_items": {
+      "default": 0,
+      "title": "Bom Completed Items",
+      "type": "integer"
+     },
+     "bom_cost": {
+      "default": 0.0,
+      "title": "Bom Cost",
+      "type": "number"
+     },
+     "bom_total_items": {
+      "default": 0,
+      "title": "Bom Total Items",
+      "type": "integer"
+     },
+     "completed_prints": {
+      "default": 0,
+      "title": "Completed Prints",
+      "type": "integer"
+     },
+     "estimated_cost": {
+      "default": 0.0,
+      "title": "Estimated Cost",
+      "type": "number"
+     },
+     "failed_prints": {
+      "default": 0,
+      "title": "Failed Prints",
+      "type": "integer"
+     },
+     "in_progress_prints": {
+      "default": 0,
+      "title": "In Progress Prints",
+      "type": "integer"
+     },
+     "parts_progress_percent": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Parts Progress Percent"
+     },
+     "progress_percent": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Progress Percent"
+     },
+     "queued_prints": {
+      "default": 0,
+      "title": "Queued Prints",
+      "type": "integer"
+     },
+     "remaining_parts": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Remaining Parts"
+     },
+     "remaining_prints": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Remaining Prints"
+     },
+     "total_archives": {
+      "default": 0,
+      "title": "Total Archives",
+      "type": "integer"
+     },
+     "total_energy_cost": {
+      "default": 0.0,
+      "title": "Total Energy Cost",
+      "type": "number"
+     },
+     "total_energy_kwh": {
+      "default": 0.0,
+      "title": "Total Energy Kwh",
+      "type": "number"
+     },
+     "total_filament_grams": {
+      "default": 0.0,
+      "title": "Total Filament Grams",
+      "type": "number"
+     },
+     "total_items": {
+      "default": 0,
+      "title": "Total Items",
+      "type": "integer"
+     },
+     "total_print_time_hours": {
+      "default": 0.0,
+      "title": "Total Print Time Hours",
+      "type": "number"
+     },
+     "total_wear_cost": {
+      "default": 0.0,
+      "title": "Total Wear Cost",
+      "type": "number"
+     }
+    },
+    "title": "ProjectStats",
+    "type": "object"
+   },
+   "ProjectTagRef": {
+    "properties": {
+     "id": {
+      "title": "Id",
+      "type": "integer"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "name"
+    ],
+    "title": "ProjectTagRef",
+    "type": "object"
+   }
+  },
+  "description": "Schema for project response.",
+  "properties": {
+   "attachments": {
+    "anyOf": [
+     {
+      "items": {},
+      "type": "array"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Attachments"
+   },
+   "budget": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Budget"
+   },
+   "children": {
+    "default": [],
+    "items": {
+     "$ref": "#/$defs/ProjectChildPreview"
+    },
+    "title": "Children",
+    "type": "array"
+   },
+   "code": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Code"
+   },
+   "color": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Color"
+   },
+   "cover_image_filename": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Cover Image Filename"
+   },
+   "created_at": {
+    "format": "date-time",
+    "title": "Created At",
+    "type": "string"
+   },
+   "descendant_count": {
+    "default": 0,
+    "title": "Descendant Count",
+    "type": "integer"
+   },
+   "description": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Description"
+   },
+   "due_date": {
+    "anyOf": [
+     {
+      "format": "date-time",
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Due Date"
+   },
+   "id": {
+    "title": "Id",
+    "type": "integer"
+   },
+   "is_template": {
+    "default": false,
+    "title": "Is Template",
+    "type": "boolean"
+   },
+   "name": {
+    "title": "Name",
+    "type": "string"
+   },
+   "notes": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Notes"
+   },
+   "parent_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Parent Id"
+   },
+   "parent_name": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Parent Name"
+   },
+   "priority": {
+    "default": "normal",
+    "title": "Priority",
+    "type": "string"
+   },
+   "rollup_stats": {
+    "anyOf": [
+     {
+      "$ref": "#/$defs/ProjectStats"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null
+   },
+   "stats": {
+    "anyOf": [
+     {
+      "$ref": "#/$defs/ProjectStats"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null
+   },
+   "status": {
+    "title": "Status",
+    "type": "string"
+   },
+   "tag_list": {
+    "default": [],
+    "items": {
+     "$ref": "#/$defs/ProjectTagRef"
+    },
+    "title": "Tag List",
+    "type": "array"
+   },
+   "tags": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Tags"
+   },
+   "target_count": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Target Count"
+   },
+   "target_parts_count": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Target Parts Count"
+   },
+   "target_sets": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Target Sets"
+   },
+   "template_source_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Template Source Id"
+   },
+   "updated_at": {
+    "format": "date-time",
+    "title": "Updated At",
+    "type": "string"
+   },
+   "url": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Url"
+   }
+  },
+  "required": [
+   "id",
+   "name",
+   "description",
+   "color",
+   "status",
+   "target_count",
+   "created_at",
+   "updated_at"
+  ],
+  "title": "ProjectResponse",
+  "type": "object"
+ },
+ "ProjectRevisionOut": {
+  "$defs": {
+   "ProjectFileOut": {
+    "properties": {
+     "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+     },
+     "file_hash": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "File Hash"
+     },
+     "file_size": {
+      "title": "File Size",
+      "type": "integer"
+     },
+     "file_type": {
+      "title": "File Type",
+      "type": "string"
+     },
+     "filename": {
+      "title": "Filename",
+      "type": "string"
+     },
+     "has_thumbnail": {
+      "title": "Has Thumbnail",
+      "type": "boolean"
+     },
+     "id": {
+      "title": "Id",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "id",
+     "filename",
+     "file_type",
+     "file_size",
+     "file_hash",
+     "has_thumbnail",
+     "created_at"
+    ],
+    "title": "ProjectFileOut",
+    "type": "object"
+   },
+   "RevisionRef": {
+    "properties": {
+     "id": {
+      "title": "Id",
+      "type": "integer"
+     },
+     "item_id": {
+      "title": "Item Id",
+      "type": "integer"
+     },
+     "item_name": {
+      "title": "Item Name",
+      "type": "string"
+     },
+     "number": {
+      "title": "Number",
+      "type": "integer"
+     },
+     "section": {
+      "title": "Section",
+      "type": "string"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "item_id",
+     "item_name",
+     "section",
+     "number",
+     "status"
+    ],
+    "title": "RevisionRef",
+    "type": "object"
+   }
+  },
+  "properties": {
+   "created_at": {
+    "format": "date-time",
+    "title": "Created At",
+    "type": "string"
+   },
+   "created_by": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Created By"
+   },
+   "derived_from": {
+    "anyOf": [
+     {
+      "$ref": "#/$defs/RevisionRef"
+     },
+     {
+      "type": "null"
+     }
+    ]
+   },
+   "files": {
+    "items": {
+     "$ref": "#/$defs/ProjectFileOut"
+    },
+    "title": "Files",
+    "type": "array"
+   },
+   "has_snapshot": {
+    "title": "Has Snapshot",
+    "type": "boolean"
+   },
+   "id": {
+    "title": "Id",
+    "type": "integer"
+   },
+   "note": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Note"
+   },
+   "number": {
+    "title": "Number",
+    "type": "integer"
+   },
+   "outdated_by": {
+    "anyOf": [
+     {
+      "$ref": "#/$defs/RevisionRef"
+     },
+     {
+      "type": "null"
+     }
+    ]
+   },
+   "pipeline_name": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Pipeline Name"
+   },
+   "print_count": {
+    "default": 0,
+    "title": "Print Count",
+    "type": "integer"
+   },
+   "print_profile": {
+    "anyOf": [
+     {
+      "additionalProperties": true,
+      "type": "object"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Print Profile"
+   },
+   "slicer_name": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Slicer Name"
+   },
+   "slicer_version": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Slicer Version"
+   },
+   "status": {
+    "title": "Status",
+    "type": "string"
+   },
+   "status_changed_at": {
+    "anyOf": [
+     {
+      "format": "date-time",
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Status Changed At"
+   },
+   "used": {
+    "title": "Used",
+    "type": "boolean"
+   }
+  },
+  "required": [
+   "id",
+   "number",
+   "status",
+   "note",
+   "derived_from",
+   "outdated_by",
+   "print_profile",
+   "slicer_name",
+   "slicer_version",
+   "has_snapshot",
+   "used",
+   "files",
+   "created_by",
+   "created_at",
+   "status_changed_at"
+  ],
+  "title": "ProjectRevisionOut",
+  "type": "object"
+ },
+ "ProjectRevisionUpdate": {
+  "properties": {
+   "derived_from_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Derived From Id"
+   },
+   "note": {
+    "anyOf": [
+     {
+      "maxLength": 5000,
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Note"
+   },
+   "status": {
+    "anyOf": [
+     {
+      "enum": [
+       "wip",
+       "valide",
+       "obsolete"
+      ],
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Status"
+   }
+  },
+  "title": "ProjectRevisionUpdate",
+  "type": "object"
+ },
+ "ProjectSearchItem": {
+  "$defs": {
+   "ProjectTagRef": {
+    "properties": {
+     "id": {
+      "title": "Id",
+      "type": "integer"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "name"
+    ],
+    "title": "ProjectTagRef",
+    "type": "object"
+   }
+  },
+  "properties": {
+   "archive_count": {
+    "title": "Archive Count",
+    "type": "integer"
+   },
+   "code": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Code"
+   },
+   "color": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Color"
+   },
+   "cover_image_filename": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Cover Image Filename"
+   },
+   "created_at": {
+    "format": "date-time",
+    "title": "Created At",
+    "type": "string"
+   },
+   "description": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Description"
+   },
+   "id": {
+    "title": "Id",
+    "type": "integer"
+   },
+   "name": {
+    "title": "Name",
+    "type": "string"
+   },
+   "status": {
+    "title": "Status",
+    "type": "string"
+   },
+   "tags": {
+    "items": {
+     "$ref": "#/$defs/ProjectTagRef"
+    },
+    "title": "Tags",
+    "type": "array"
+   },
+   "updated_at": {
+    "format": "date-time",
+    "title": "Updated At",
+    "type": "string"
+   }
+  },
+  "required": [
+   "id",
+   "code",
+   "name",
+   "description",
+   "status",
+   "color",
+   "cover_image_filename",
+   "tags",
+   "archive_count",
+   "created_at",
+   "updated_at"
+  ],
+  "title": "ProjectSearchItem",
+  "type": "object"
+ },
+ "ProjectSearchResponse": {
+  "$defs": {
+   "ProjectSearchItem": {
+    "properties": {
+     "archive_count": {
+      "title": "Archive Count",
+      "type": "integer"
+     },
+     "code": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Code"
+     },
+     "color": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Color"
+     },
+     "cover_image_filename": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Cover Image Filename"
+     },
+     "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+     },
+     "description": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Description"
+     },
+     "id": {
+      "title": "Id",
+      "type": "integer"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     },
+     "tags": {
+      "items": {
+       "$ref": "#/$defs/ProjectTagRef"
+      },
+      "title": "Tags",
+      "type": "array"
+     },
+     "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "code",
+     "name",
+     "description",
+     "status",
+     "color",
+     "cover_image_filename",
+     "tags",
+     "archive_count",
+     "created_at",
+     "updated_at"
+    ],
+    "title": "ProjectSearchItem",
+    "type": "object"
+   },
+   "ProjectTagRef": {
+    "properties": {
+     "id": {
+      "title": "Id",
+      "type": "integer"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "name"
+    ],
+    "title": "ProjectTagRef",
+    "type": "object"
+   }
+  },
+  "properties": {
+   "items": {
+    "items": {
+     "$ref": "#/$defs/ProjectSearchItem"
+    },
+    "title": "Items",
+    "type": "array"
+   },
+   "total": {
+    "title": "Total",
+    "type": "integer"
+   }
+  },
+  "required": [
+   "items",
+   "total"
+  ],
+  "title": "ProjectSearchResponse",
+  "type": "object"
+ },
+ "ProjectSectionOut": {
+  "$defs": {
+   "ProjectFileOut": {
+    "properties": {
+     "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+     },
+     "file_hash": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "File Hash"
+     },
+     "file_size": {
+      "title": "File Size",
+      "type": "integer"
+     },
+     "file_type": {
+      "title": "File Type",
+      "type": "string"
+     },
+     "filename": {
+      "title": "Filename",
+      "type": "string"
+     },
+     "has_thumbnail": {
+      "title": "Has Thumbnail",
+      "type": "boolean"
+     },
+     "id": {
+      "title": "Id",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "id",
+     "filename",
+     "file_type",
+     "file_size",
+     "file_hash",
+     "has_thumbnail",
+     "created_at"
+    ],
+    "title": "ProjectFileOut",
+    "type": "object"
+   },
+   "ProjectItemOut": {
+    "properties": {
+     "forked_from": {
+      "anyOf": [
+       {
+        "$ref": "#/$defs/RevisionRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "id": {
+      "title": "Id",
+      "type": "integer"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "name_key": {
+      "title": "Name Key",
+      "type": "string"
+     },
+     "revisions": {
+      "items": {
+       "$ref": "#/$defs/ProjectRevisionOut"
+      },
+      "title": "Revisions",
+      "type": "array"
+     },
+     "section": {
+      "title": "Section",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "section",
+     "name",
+     "name_key",
+     "forked_from",
+     "revisions"
+    ],
+    "title": "ProjectItemOut",
+    "type": "object"
+   },
+   "ProjectRevisionOut": {
+    "properties": {
+     "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+     },
+     "created_by": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Created By"
+     },
+     "derived_from": {
+      "anyOf": [
+       {
+        "$ref": "#/$defs/RevisionRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "files": {
+      "items": {
+       "$ref": "#/$defs/ProjectFileOut"
+      },
+      "title": "Files",
+      "type": "array"
+     },
+     "has_snapshot": {
+      "title": "Has Snapshot",
+      "type": "boolean"
+     },
+     "id": {
+      "title": "Id",
+      "type": "integer"
+     },
+     "note": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Note"
+     },
+     "number": {
+      "title": "Number",
+      "type": "integer"
+     },
+     "outdated_by": {
+      "anyOf": [
+       {
+        "$ref": "#/$defs/RevisionRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "pipeline_name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Pipeline Name"
+     },
+     "print_count": {
+      "default": 0,
+      "title": "Print Count",
+      "type": "integer"
+     },
+     "print_profile": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Print Profile"
+     },
+     "slicer_name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Slicer Name"
+     },
+     "slicer_version": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Slicer Version"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     },
+     "status_changed_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Status Changed At"
+     },
+     "used": {
+      "title": "Used",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "id",
+     "number",
+     "status",
+     "note",
+     "derived_from",
+     "outdated_by",
+     "print_profile",
+     "slicer_name",
+     "slicer_version",
+     "has_snapshot",
+     "used",
+     "files",
+     "created_by",
+     "created_at",
+     "status_changed_at"
+    ],
+    "title": "ProjectRevisionOut",
+    "type": "object"
+   },
+   "RevisionRef": {
+    "properties": {
+     "id": {
+      "title": "Id",
+      "type": "integer"
+     },
+     "item_id": {
+      "title": "Item Id",
+      "type": "integer"
+     },
+     "item_name": {
+      "title": "Item Name",
+      "type": "string"
+     },
+     "number": {
+      "title": "Number",
+      "type": "integer"
+     },
+     "section": {
+      "title": "Section",
+      "type": "string"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "item_id",
+     "item_name",
+     "section",
+     "number",
+     "status"
+    ],
+    "title": "RevisionRef",
+    "type": "object"
+   }
+  },
+  "properties": {
+   "items": {
+    "items": {
+     "$ref": "#/$defs/ProjectItemOut"
+    },
+    "title": "Items",
+    "type": "array"
+   },
+   "section": {
+    "title": "Section",
+    "type": "string"
+   }
+  },
+  "required": [
+   "section",
+   "items"
+  ],
+  "title": "ProjectSectionOut",
+  "type": "object"
+ },
+ "ProjectStats": {
+  "description": "Statistics for a project.",
+  "properties": {
+   "bom_completed_items": {
+    "default": 0,
+    "title": "Bom Completed Items",
+    "type": "integer"
+   },
+   "bom_cost": {
+    "default": 0.0,
+    "title": "Bom Cost",
+    "type": "number"
+   },
+   "bom_total_items": {
+    "default": 0,
+    "title": "Bom Total Items",
+    "type": "integer"
+   },
+   "completed_prints": {
+    "default": 0,
+    "title": "Completed Prints",
+    "type": "integer"
+   },
+   "estimated_cost": {
+    "default": 0.0,
+    "title": "Estimated Cost",
+    "type": "number"
+   },
+   "failed_prints": {
+    "default": 0,
+    "title": "Failed Prints",
+    "type": "integer"
+   },
+   "in_progress_prints": {
+    "default": 0,
+    "title": "In Progress Prints",
+    "type": "integer"
+   },
+   "parts_progress_percent": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Parts Progress Percent"
+   },
+   "progress_percent": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Progress Percent"
+   },
+   "queued_prints": {
+    "default": 0,
+    "title": "Queued Prints",
+    "type": "integer"
+   },
+   "remaining_parts": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Remaining Parts"
+   },
+   "remaining_prints": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Remaining Prints"
+   },
+   "total_archives": {
+    "default": 0,
+    "title": "Total Archives",
+    "type": "integer"
+   },
+   "total_energy_cost": {
+    "default": 0.0,
+    "title": "Total Energy Cost",
+    "type": "number"
+   },
+   "total_energy_kwh": {
+    "default": 0.0,
+    "title": "Total Energy Kwh",
+    "type": "number"
+   },
+   "total_filament_grams": {
+    "default": 0.0,
+    "title": "Total Filament Grams",
+    "type": "number"
+   },
+   "total_items": {
+    "default": 0,
+    "title": "Total Items",
+    "type": "integer"
+   },
+   "total_print_time_hours": {
+    "default": 0.0,
+    "title": "Total Print Time Hours",
+    "type": "number"
+   },
+   "total_wear_cost": {
+    "default": 0.0,
+    "title": "Total Wear Cost",
+    "type": "number"
+   }
+  },
+  "title": "ProjectStats",
+  "type": "object"
+ },
+ "ProjectSuggestTagsRequest": {
+  "properties": {
+   "description": {
+    "anyOf": [
+     {
+      "maxLength": 2000,
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Description"
+   },
+   "exclude_tag_ids": {
+    "items": {
+     "type": "integer"
+    },
+    "maxItems": 200,
+    "title": "Exclude Tag Ids",
+    "type": "array"
+   },
+   "title": {
+    "maxLength": 255,
+    "minLength": 1,
+    "title": "Title",
+    "type": "string"
+   }
+  },
+  "required": [
+   "title"
+  ],
+  "title": "ProjectSuggestTagsRequest",
+  "type": "object"
+ },
+ "ProjectSuggestTagsResponse": {
+  "$defs": {
+   "ProjectTagSuggestion": {
+    "properties": {
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "tag_id": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Tag Id"
+     }
+    },
+    "required": [
+     "name",
+     "tag_id"
+    ],
+    "title": "ProjectTagSuggestion",
+    "type": "object"
+   }
+  },
+  "properties": {
+   "model": {
+    "title": "Model",
+    "type": "string"
+   },
+   "suggestions": {
+    "items": {
+     "$ref": "#/$defs/ProjectTagSuggestion"
+    },
+    "title": "Suggestions",
+    "type": "array"
+   }
+  },
+  "required": [
+   "suggestions",
+   "model"
+  ],
+  "title": "ProjectSuggestTagsResponse",
+  "type": "object"
+ },
+ "ProjectSuggestion": {
+  "properties": {
+   "code": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Code"
+   },
+   "id": {
+    "title": "Id",
+    "type": "integer"
+   },
+   "name": {
+    "title": "Name",
+    "type": "string"
+   },
+   "reason": {
+    "enum": [
+     "same_client",
+     "similar_title"
+    ],
+    "title": "Reason",
+    "type": "string"
+   }
+  },
+  "required": [
+   "id",
+   "code",
+   "name",
+   "reason"
+  ],
+  "title": "ProjectSuggestion",
+  "type": "object"
+ },
+ "ProjectSuggestionForFile": {
+  "properties": {
+   "code": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Code"
+   },
+   "item_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Item Id"
+   },
+   "item_name": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Item Name"
+   },
+   "name": {
+    "title": "Name",
+    "type": "string"
+   },
+   "project_id": {
+    "title": "Project Id",
+    "type": "integer"
+   },
+   "reason": {
+    "enum": [
+     "code",
+     "item_name",
+     "project_name"
+    ],
+    "title": "Reason",
+    "type": "string"
+   },
+   "score": {
+    "title": "Score",
+    "type": "number"
+   }
+  },
+  "required": [
+   "project_id",
+   "code",
+   "name",
+   "score",
+   "reason"
+  ],
+  "title": "ProjectSuggestionForFile",
+  "type": "object"
+ },
+ "ProjectTagCount": {
+  "properties": {
+   "id": {
+    "title": "Id",
+    "type": "integer"
+   },
+   "name": {
+    "title": "Name",
+    "type": "string"
+   },
+   "project_count": {
+    "title": "Project Count",
+    "type": "integer"
+   }
+  },
+  "required": [
+   "id",
+   "name",
+   "project_count"
+  ],
+  "title": "ProjectTagCount",
+  "type": "object"
+ },
+ "ProjectTagRef": {
+  "properties": {
+   "id": {
+    "title": "Id",
+    "type": "integer"
+   },
+   "name": {
+    "title": "Name",
+    "type": "string"
+   }
+  },
+  "required": [
+   "id",
+   "name"
+  ],
+  "title": "ProjectTagRef",
+  "type": "object"
+ },
+ "ProjectTagSuggestion": {
+  "properties": {
+   "name": {
+    "title": "Name",
+    "type": "string"
+   },
+   "tag_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Tag Id"
+   }
+  },
+  "required": [
+   "name",
+   "tag_id"
+  ],
+  "title": "ProjectTagSuggestion",
+  "type": "object"
+ },
+ "ProjectTreeResponse": {
+  "$defs": {
+   "ProjectFileOut": {
+    "properties": {
+     "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+     },
+     "file_hash": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "File Hash"
+     },
+     "file_size": {
+      "title": "File Size",
+      "type": "integer"
+     },
+     "file_type": {
+      "title": "File Type",
+      "type": "string"
+     },
+     "filename": {
+      "title": "Filename",
+      "type": "string"
+     },
+     "has_thumbnail": {
+      "title": "Has Thumbnail",
+      "type": "boolean"
+     },
+     "id": {
+      "title": "Id",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "id",
+     "filename",
+     "file_type",
+     "file_size",
+     "file_hash",
+     "has_thumbnail",
+     "created_at"
+    ],
+    "title": "ProjectFileOut",
+    "type": "object"
+   },
+   "ProjectItemOut": {
+    "properties": {
+     "forked_from": {
+      "anyOf": [
+       {
+        "$ref": "#/$defs/RevisionRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "id": {
+      "title": "Id",
+      "type": "integer"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "name_key": {
+      "title": "Name Key",
+      "type": "string"
+     },
+     "revisions": {
+      "items": {
+       "$ref": "#/$defs/ProjectRevisionOut"
+      },
+      "title": "Revisions",
+      "type": "array"
+     },
+     "section": {
+      "title": "Section",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "section",
+     "name",
+     "name_key",
+     "forked_from",
+     "revisions"
+    ],
+    "title": "ProjectItemOut",
+    "type": "object"
+   },
+   "ProjectRevisionOut": {
+    "properties": {
+     "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+     },
+     "created_by": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Created By"
+     },
+     "derived_from": {
+      "anyOf": [
+       {
+        "$ref": "#/$defs/RevisionRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "files": {
+      "items": {
+       "$ref": "#/$defs/ProjectFileOut"
+      },
+      "title": "Files",
+      "type": "array"
+     },
+     "has_snapshot": {
+      "title": "Has Snapshot",
+      "type": "boolean"
+     },
+     "id": {
+      "title": "Id",
+      "type": "integer"
+     },
+     "note": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Note"
+     },
+     "number": {
+      "title": "Number",
+      "type": "integer"
+     },
+     "outdated_by": {
+      "anyOf": [
+       {
+        "$ref": "#/$defs/RevisionRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "pipeline_name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Pipeline Name"
+     },
+     "print_count": {
+      "default": 0,
+      "title": "Print Count",
+      "type": "integer"
+     },
+     "print_profile": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Print Profile"
+     },
+     "slicer_name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Slicer Name"
+     },
+     "slicer_version": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Slicer Version"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     },
+     "status_changed_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Status Changed At"
+     },
+     "used": {
+      "title": "Used",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "id",
+     "number",
+     "status",
+     "note",
+     "derived_from",
+     "outdated_by",
+     "print_profile",
+     "slicer_name",
+     "slicer_version",
+     "has_snapshot",
+     "used",
+     "files",
+     "created_by",
+     "created_at",
+     "status_changed_at"
+    ],
+    "title": "ProjectRevisionOut",
+    "type": "object"
+   },
+   "ProjectSectionOut": {
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/$defs/ProjectItemOut"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "section": {
+      "title": "Section",
+      "type": "string"
+     }
+    },
+    "required": [
+     "section",
+     "items"
+    ],
+    "title": "ProjectSectionOut",
+    "type": "object"
+   },
+   "RevisionRef": {
+    "properties": {
+     "id": {
+      "title": "Id",
+      "type": "integer"
+     },
+     "item_id": {
+      "title": "Item Id",
+      "type": "integer"
+     },
+     "item_name": {
+      "title": "Item Name",
+      "type": "string"
+     },
+     "number": {
+      "title": "Number",
+      "type": "integer"
+     },
+     "section": {
+      "title": "Section",
+      "type": "string"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "item_id",
+     "item_name",
+     "section",
+     "number",
+     "status"
+    ],
+    "title": "RevisionRef",
+    "type": "object"
+   }
+  },
+  "properties": {
+   "code": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Code"
+   },
+   "project_id": {
+    "title": "Project Id",
+    "type": "integer"
+   },
+   "sections": {
+    "items": {
+     "$ref": "#/$defs/ProjectSectionOut"
+    },
+    "title": "Sections",
+    "type": "array"
+   }
+  },
+  "required": [
+   "project_id",
+   "code",
+   "sections"
+  ],
+  "title": "ProjectTreeResponse",
+  "type": "object"
+ },
+ "ProjectUpdate": {
+  "description": "Schema for updating a project.",
+  "properties": {
+   "budget": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Budget"
+   },
+   "color": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Color"
+   },
+   "description": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Description"
+   },
+   "due_date": {
+    "anyOf": [
+     {
+      "format": "date-time",
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Due Date"
+   },
+   "name": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Name"
+   },
+   "new_tag_names": {
+    "anyOf": [
+     {
+      "items": {
+       "type": "string"
+      },
+      "maxItems": 20,
+      "type": "array"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "New Tag Names"
+   },
+   "notes": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Notes"
+   },
+   "parent_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Parent Id"
+   },
+   "priority": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Priority"
+   },
+   "status": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Status"
+   },
+   "tag_ids": {
+    "anyOf": [
+     {
+      "items": {
+       "type": "integer"
+      },
+      "maxItems": 200,
+      "type": "array"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Tag Ids"
+   },
+   "tags": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Tags"
+   },
+   "target_count": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Target Count"
+   },
+   "target_parts_count": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Target Parts Count"
+   },
+   "target_sets": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Target Sets"
+   },
+   "url": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Url"
+   }
+  },
+  "title": "ProjectUpdate",
+  "type": "object"
+ },
+ "ResliceBody": {
+  "description": "``POST /projects/revisions/{id}/reslice``: one 3MF of the revision and a saved pipeline.",
+  "properties": {
+   "file_id": {
+    "title": "File Id",
+    "type": "integer"
+   },
+   "pipeline_id": {
+    "title": "Pipeline Id",
+    "type": "integer"
+   }
+  },
+  "required": [
+   "file_id",
+   "pipeline_id"
+  ],
+  "title": "ResliceBody",
+  "type": "object"
+ },
+ "ResliceStarted": {
+  "description": "202 body: poll ``status_url`` (``GET /slice-jobs/{job_id}``) until completed or failed.",
+  "properties": {
+   "job_id": {
+    "title": "Job Id",
+    "type": "integer"
+   },
+   "status": {
+    "title": "Status",
+    "type": "string"
+   },
+   "status_url": {
+    "title": "Status Url",
+    "type": "string"
+   }
+  },
+  "required": [
+   "job_id",
+   "status",
+   "status_url"
+  ],
+  "title": "ResliceStarted",
+  "type": "object"
+ },
+ "RevisionRef": {
+  "properties": {
+   "id": {
+    "title": "Id",
+    "type": "integer"
+   },
+   "item_id": {
+    "title": "Item Id",
+    "type": "integer"
+   },
+   "item_name": {
+    "title": "Item Name",
+    "type": "string"
+   },
+   "number": {
+    "title": "Number",
+    "type": "integer"
+   },
+   "section": {
+    "title": "Section",
+    "type": "string"
+   },
+   "status": {
+    "title": "Status",
+    "type": "string"
+   }
+  },
+  "required": [
+   "id",
+   "item_id",
+   "item_name",
+   "section",
+   "number",
+   "status"
+  ],
+  "title": "RevisionRef",
+  "type": "object"
+ },
+ "RevisionUploadResponse": {
+  "$defs": {
+   "DuplicateWarning": {
+    "properties": {
+     "filename": {
+      "title": "Filename",
+      "type": "string"
+     },
+     "same_as": {
+      "title": "Same As",
+      "type": "string"
+     }
+    },
+    "required": [
+     "filename",
+     "same_as"
+    ],
+    "title": "DuplicateWarning",
+    "type": "object"
+   },
+   "ProjectFileOut": {
+    "properties": {
+     "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+     },
+     "file_hash": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "File Hash"
+     },
+     "file_size": {
+      "title": "File Size",
+      "type": "integer"
+     },
+     "file_type": {
+      "title": "File Type",
+      "type": "string"
+     },
+     "filename": {
+      "title": "Filename",
+      "type": "string"
+     },
+     "has_thumbnail": {
+      "title": "Has Thumbnail",
+      "type": "boolean"
+     },
+     "id": {
+      "title": "Id",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "id",
+     "filename",
+     "file_type",
+     "file_size",
+     "file_hash",
+     "has_thumbnail",
+     "created_at"
+    ],
+    "title": "ProjectFileOut",
+    "type": "object"
+   },
+   "ProjectRevisionOut": {
+    "properties": {
+     "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+     },
+     "created_by": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Created By"
+     },
+     "derived_from": {
+      "anyOf": [
+       {
+        "$ref": "#/$defs/RevisionRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "files": {
+      "items": {
+       "$ref": "#/$defs/ProjectFileOut"
+      },
+      "title": "Files",
+      "type": "array"
+     },
+     "has_snapshot": {
+      "title": "Has Snapshot",
+      "type": "boolean"
+     },
+     "id": {
+      "title": "Id",
+      "type": "integer"
+     },
+     "note": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Note"
+     },
+     "number": {
+      "title": "Number",
+      "type": "integer"
+     },
+     "outdated_by": {
+      "anyOf": [
+       {
+        "$ref": "#/$defs/RevisionRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "pipeline_name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Pipeline Name"
+     },
+     "print_count": {
+      "default": 0,
+      "title": "Print Count",
+      "type": "integer"
+     },
+     "print_profile": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Print Profile"
+     },
+     "slicer_name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Slicer Name"
+     },
+     "slicer_version": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Slicer Version"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     },
+     "status_changed_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Status Changed At"
+     },
+     "used": {
+      "title": "Used",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "id",
+     "number",
+     "status",
+     "note",
+     "derived_from",
+     "outdated_by",
+     "print_profile",
+     "slicer_name",
+     "slicer_version",
+     "has_snapshot",
+     "used",
+     "files",
+     "created_by",
+     "created_at",
+     "status_changed_at"
+    ],
+    "title": "ProjectRevisionOut",
+    "type": "object"
+   },
+   "RevisionRef": {
+    "properties": {
+     "id": {
+      "title": "Id",
+      "type": "integer"
+     },
+     "item_id": {
+      "title": "Item Id",
+      "type": "integer"
+     },
+     "item_name": {
+      "title": "Item Name",
+      "type": "string"
+     },
+     "number": {
+      "title": "Number",
+      "type": "integer"
+     },
+     "section": {
+      "title": "Section",
+      "type": "string"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "item_id",
+     "item_name",
+     "section",
+     "number",
+     "status"
+    ],
+    "title": "RevisionRef",
+    "type": "object"
+   }
+  },
+  "properties": {
+   "revision": {
+    "$ref": "#/$defs/ProjectRevisionOut"
+   },
+   "warnings": {
+    "items": {
+     "$ref": "#/$defs/DuplicateWarning"
+    },
+    "title": "Warnings",
+    "type": "array"
+   }
+  },
+  "required": [
+   "revision",
+   "warnings"
+  ],
+  "title": "RevisionUploadResponse",
+  "type": "object"
+ },
+ "SectionRevisionSummary": {
+  "properties": {
+   "item_id": {
+    "title": "Item Id",
+    "type": "integer"
+   },
+   "item_name": {
+    "title": "Item Name",
+    "type": "string"
+   },
+   "number": {
+    "title": "Number",
+    "type": "integer"
+   },
+   "status": {
+    "title": "Status",
+    "type": "string"
+   }
+  },
+  "required": [
+   "item_id",
+   "item_name",
+   "number",
+   "status"
+  ],
+  "title": "SectionRevisionSummary",
+  "type": "object"
+ },
+ "SkippedFileOut": {
+  "properties": {
+   "code": {
+    "title": "Code",
+    "type": "string"
+   },
+   "file_id": {
+    "title": "File Id",
+    "type": "integer"
+   },
+   "reason": {
+    "title": "Reason",
+    "type": "string"
+   }
+  },
+  "required": [
+   "file_id",
+   "code",
+   "reason"
+  ],
+  "title": "SkippedFileOut",
+  "type": "object"
+ },
+ "TaskCreateProjectRequest": {
+  "properties": {
+   "description": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Description"
+   },
+   "name": {
+    "maxLength": 255,
+    "title": "Name",
+    "type": "string"
+   },
+   "new_tag_names": {
+    "anyOf": [
+     {
+      "items": {
+       "type": "string"
+      },
+      "maxItems": 20,
+      "type": "array"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "New Tag Names"
+   },
+   "tag_ids": {
+    "anyOf": [
+     {
+      "items": {
+       "type": "integer"
+      },
+      "maxItems": 200,
+      "type": "array"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Tag Ids"
+   }
+  },
+  "required": [
+   "name"
+  ],
+  "title": "TaskCreateProjectRequest",
+  "type": "object"
+ },
+ "TaskDeliveriesRequest": {
+  "properties": {
+   "revision_ids": {
+    "items": {
+     "type": "integer"
+    },
+    "maxItems": 200,
+    "title": "Revision Ids",
+    "type": "array"
+   }
+  },
+  "required": [
+   "revision_ids"
+  ],
+  "title": "TaskDeliveriesRequest",
+  "type": "object"
+ },
+ "TaskLinkRequest": {
+  "properties": {
+   "project_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Project Id"
+   }
+  },
+  "required": [
+   "project_id"
+  ],
+  "title": "TaskLinkRequest",
+  "type": "object"
+ },
+ "TaskProjectLink": {
+  "$defs": {
+   "LinkedProjectRef": {
+    "properties": {
+     "code": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Code"
+     },
+     "id": {
+      "title": "Id",
+      "type": "integer"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "code",
+     "name"
+    ],
+    "title": "LinkedProjectRef",
+    "type": "object"
+   },
+   "SectionRevisionSummary": {
+    "properties": {
+     "item_id": {
+      "title": "Item Id",
+      "type": "integer"
+     },
+     "item_name": {
+      "title": "Item Name",
+      "type": "string"
+     },
+     "number": {
+      "title": "Number",
+      "type": "integer"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "item_id",
+     "item_name",
+     "number",
+     "status"
+    ],
+    "title": "SectionRevisionSummary",
+    "type": "object"
+   }
+  },
+  "properties": {
+   "deliveries": {
+    "items": {
+     "type": "integer"
+    },
+    "title": "Deliveries",
+    "type": "array"
+   },
+   "printed": {
+    "default": 0,
+    "title": "Printed",
+    "type": "integer"
+   },
+   "project": {
+    "anyOf": [
+     {
+      "$ref": "#/$defs/LinkedProjectRef"
+     },
+     {
+      "type": "null"
+     }
+    ]
+   },
+   "queued": {
+    "default": 0,
+    "title": "Queued",
+    "type": "integer"
+   },
+   "rejected": {
+    "default": 0,
+    "title": "Rejected",
+    "type": "integer"
+   },
+   "sections": {
+    "additionalProperties": {
+     "items": {
+      "$ref": "#/$defs/SectionRevisionSummary"
+     },
+     "type": "array"
+    },
+    "title": "Sections",
+    "type": "object"
+   },
+   "target": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Target"
+   },
+   "task_id": {
+    "title": "Task Id",
+    "type": "integer"
+   },
+   "task_title": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Task Title"
+   }
+  },
+  "required": [
+   "task_id",
+   "project",
+   "sections",
+   "deliveries"
+  ],
+  "title": "TaskProjectLink",
+  "type": "object"
+ },
+ "TimelineEvent": {
+  "description": "Schema for a timeline event.",
+  "properties": {
+   "description": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Description"
+   },
+   "event_type": {
+    "title": "Event Type",
+    "type": "string"
+   },
+   "metadata": {
+    "anyOf": [
+     {
+      "additionalProperties": true,
+      "type": "object"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Metadata"
+   },
+   "timestamp": {
+    "format": "date-time",
+    "title": "Timestamp",
+    "type": "string"
+   },
+   "title": {
+    "title": "Title",
+    "type": "string"
+   }
+  },
+  "required": [
+   "event_type",
+   "timestamp",
+   "title"
+  ],
+  "title": "TimelineEvent",
+  "type": "object"
+ }
+}
+
+### stderr:
+

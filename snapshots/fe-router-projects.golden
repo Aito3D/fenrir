@@ -1,0 +1,11 @@
+### exit: 0
+### stdout:
+    88	<Route
+    89	path="projects"
+    90	element=ProjectListPage
+    91	<Route
+    92	path="projects/:id"
+    93	element=ProjectDetailPage
+
+### stderr:
+

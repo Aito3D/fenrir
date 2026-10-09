@@ -1,0 +1,33 @@
+### exit: 0
+### stdout:
+# Migration: Add project_id column to print_archives
+# Migration: Add project_id column to print_queue
+# Migration: Add notes column to projects (Phase 2)
+# Migration: Add attachments column to projects (Phase 3)
+# Migration: Add tags column to projects (Phase 4)
+# Migration: Add due_date column to projects (Phase 5)
+# Migration: Add priority column to projects (Phase 5)
+# Migration: Add budget column to projects (Phase 6)
+# Migration: Add is_template column to projects (Phase 8)
+# Migration: Add template_source_id column to projects (Phase 8)
+# Migration: Add parent_id column to projects (Phase 10)
+# Migration: Rename quantity_printed to quantity_acquired in project_bom_items
+# Migration: Add unit_price column to project_bom_items
+# Migration: Add sourcing_url column to project_bom_items
+# Migration: Rename notes to remarks in project_bom_items
+# Migration: Add target_parts_count column to projects for tracking total parts needed
+# Migration: Add url + cover_image_filename columns to projects (#1155).
+# Migration: Add project_id column to library_folders for linking folders to projects
+# Migration: Add project_id column to library_files
+# Migration: the outbox for pushing a project into its Zoho quote. The
+# Migration: invoiced flag on Aito projects (2026-08-03).
+# Migration: urgent flag on Aito projects (2026-08-04).
+# Migration: content-fields revision counter for optimistic concurrency
+# Migration: three-state board flag on Aito projects (2026-08-06).
+# Migration: promised delivery date (2026-09-04). Nullable, so no
+# Migration: payment-link ledger + the two project facts it reads
+# Migration: terminal (TPE) charges started from a project card (2026-09-23).
+# Migration: per-file print progress inside a project (#1897).
+
+### stderr:
+
