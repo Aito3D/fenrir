@@ -200,4 +200,62 @@ describe('ProjectListPage', () => {
     await userEvent.click(await screen.findByText('P-0002'));
     expect(window.location.pathname).toBe('/projects/2');
   });
+  it('sends the chosen status to the search', async () => {
+    render(<ProjectListPage />);
+    await screen.findByText('P-0001');
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Status' }), 'archived');
+    await waitFor(() => expect(lastSearch.get('status')).toBe('archived'));
+  });
+
+  it('sends tag_mode=all once two tags are selected and the mode is switched', async () => {
+    server.use(
+      http.get('/api/v1/projects/tags', () =>
+        HttpResponse.json([
+          { id: 9, name: 'drone', project_count: 1 },
+          { id: 11, name: 'client', project_count: 2 },
+        ]),
+      ),
+    );
+    render(<ProjectListPage />);
+    await screen.findByText('P-0001');
+    expect(screen.queryByDisplayValue('Any tag')).not.toBeInTheDocument(); // needs two tags
+    await userEvent.click(await screen.findByRole('button', { name: 'drone', pressed: false }));
+    await userEvent.click(screen.getByRole('button', { name: 'client', pressed: false }));
+    await waitFor(() => expect(lastSearch.getAll('tag_ids').sort()).toEqual(['11', '9']));
+    expect(lastSearch.get('tag_mode')).toBe('any');
+    await userEvent.selectOptions(screen.getByDisplayValue('Any tag'), 'all');
+    await waitFor(() => expect(lastSearch.get('tag_mode')).toBe('all'));
+  });
+
+  it('switches from the grid to the table view, listing rows, and remembers it', async () => {
+    localStorage.setItem('projects-view', 'grid');
+    render(<ProjectListPage />);
+    await screen.findByRole('button', { name: /P-0001/ });
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Table view' }));
+    const table = await screen.findByRole('table');
+    expect(within(table).getByText('P-0001')).toBeInTheDocument();
+    expect(within(table).getByText('P-0002')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Table view' })).toHaveAttribute('aria-pressed', 'true');
+    expect(localStorage.getItem('projects-view')).toBe('table');
+  });
+
+  it('opens the new-project modal and closes it with Escape without creating anything', async () => {
+    const posts: string[] = [];
+    server.use(
+      http.post('/api/v1/projects/', ({ request }) => {
+        posts.push(request.url);
+        return HttpResponse.json({}, { status: 500 });
+      }),
+    );
+    render(<ProjectListPage />);
+    await screen.findByText('P-0001');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'New project' }));
+    const dialog = await screen.findByRole('dialog', { name: 'New project' });
+    expect(within(dialog).getByRole('heading', { name: 'New project' })).toBeInTheDocument();
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(posts).toEqual([]);
+  });
 });

@@ -1884,3 +1884,36 @@ async def test_fork_maps_an_integrity_error_to_409_after_cleaning_up(db_session,
     )
     assert caught.value.__cause__ is error
     assert not (base / "Copie").exists()
+
+
+@pytest.mark.asyncio
+async def test_fork_refuses_a_name_whose_folder_already_exists(db_session, root):
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project)
+    await db_session.commit()
+    base = root / project.storage_dir / "Modélisation"
+    (base / "Copie").mkdir()
+    with pytest.raises(ProjectFilesError) as caught:
+        await fork_revision(db_session, project, item, rev, "Copie", user_id=None)
+    assert (caught.value.status_code, caught.value.detail) == (409, "A folder with this name already exists")
+    assert (await db_session.execute(select(ProjectItem).where(ProjectItem.name == "Copie"))).first() is None
+    assert list((base / "Copie").iterdir()) == []  # the pre-existing folder is left alone
+    assert (base / "Support" / "R1" / "a.step").exists()
+
+
+@pytest.mark.asyncio
+async def test_fork_integrity_error_removes_copied_thumbnail_and_keeps_the_source(
+    db_session, root, monkeypatch, tmp_path
+):
+    project, item, rev, thumbs, section_dir = await _fork_source_with_thumbnail(db_session, monkeypatch, tmp_path)
+    item_id = item.id
+    _commit_raises_integrity(db_session, monkeypatch, "UNIQUE constraint failed: project_items.name_key")
+    with pytest.raises(ProjectFilesError) as caught:
+        await fork_revision(db_session, project, item, rev, "Support B", user_id=None)
+    assert caught.value.status_code == 409
+    assert not (section_dir / "Support B").exists()
+    assert len(list(thumbs.iterdir())) == 1  # only the source's thumbnail remains
+    assert (section_dir / "Support" / "R1" / "plate.3mf").exists()
+    assert (await db_session.execute(select(ProjectItem).where(ProjectItem.name == "Support B"))).first() is None
+    assert (await db_session.execute(select(ProjectItem.id).where(ProjectItem.id == item_id))).scalar_one() == item_id
+    assert (await _revision_rows(db_session, item_id))[1] == 1  # the source revision keeps its one file row
