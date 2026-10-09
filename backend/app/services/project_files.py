@@ -217,6 +217,11 @@ async def create_item(
     item = ProjectItem(project_id=project.id, section=section, name=clean, name_key=key, created_by_id=user_id)
     db.add(item)
     await db.flush()
+    # The flush holds the write lock: a project deleted since it was read would
+    # strand this item (no FK enforcement), so refuse it and undo the insert.
+    if (await db.execute(select(Project.id).where(Project.id == project.id))).first() is None:
+        await db.rollback()
+        raise ProjectFilesError(404, "Project not found")
     return item
 
 

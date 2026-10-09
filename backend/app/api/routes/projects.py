@@ -986,6 +986,13 @@ async def delete_project(
     await db.execute(delete(ProjectTag).where(ProjectTag.project_id == project_id))
     await db.delete(project)
 
+    # Fenrir: the check above ran before this request held the write lock, so a
+    # drop or auto-filing could have committed an item since. The writes above
+    # hold it now: re-check, and the 409 rolls the whole delete back (get_db).
+    await db.flush()
+    if (await db.execute(select(ProjectItem.id).where(ProjectItem.project_id == project_id).limit(1))).first():
+        raise HTTPException(status_code=409, detail="This project has files; delete or move its items first")
+
     return {"message": "Project deleted"}
 
 
