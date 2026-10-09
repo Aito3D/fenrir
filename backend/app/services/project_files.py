@@ -928,6 +928,40 @@ async def _restore_and_rollback(db: AsyncSession, moved: Path | None, original: 
     await db.rollback()
 
 
+class _TrashGuard(_CommitGuard):
+    """``_committing`` whose undo puts back what ``trash()`` moved, then rolls back.
+
+    ``async with _committing_trash(db, project, path) as guard:`` whose body
+    calls ``guard.trash()`` (moves ``path`` to the project trash; a no-op when
+    ``path`` is None) and ends with ``await guard.commit()``. The undo is
+    ``_restore_and_rollback(db, moved, path)``, ``moved`` being None until
+    ``trash()`` ran.
+    """
+
+    def __init__(self, db: AsyncSession, project: Project, path: Path | None) -> None:
+        super().__init__(db, self._restore, None)
+        self._project = project
+        self._path = path
+        self._moved: Path | None = None
+
+    async def _restore(self) -> None:
+        await _restore_and_rollback(self._db, self._moved, self._path)
+
+    def trash(self) -> None:
+        self._moved = move_to_trash(self._project, self._path) if self._path is not None else None
+
+    async def commit(self) -> None:
+        await self._commit()
+
+    async def __aenter__(self) -> _TrashGuard:
+        return self
+
+
+def _committing_trash(db: AsyncSession, project: Project, path: Path | None) -> _TrashGuard:
+    """See ``_TrashGuard``."""
+    return _TrashGuard(db, project, path)
+
+
 async def remove_file_from_revision(
     db: AsyncSession, project: Project, item: ProjectItem, revision: ProjectRevision, file_id: int
 ) -> None:
@@ -949,16 +983,11 @@ async def _remove_file_locked(
     from backend.app.api.routes.library import to_absolute_path
 
     path = to_absolute_path(target.file_path)
-    moved: Path | None = None
-
-    async def undo() -> None:
-        await _restore_and_rollback(db, moved, path)
-
-    async with _committing(db, undo) as commit:
+    async with _committing_trash(db, project, path) as guard:
         await _delete_file_rows(db, file_ids=[target.id])
         await db.flush()
-        moved = move_to_trash(project, path) if path is not None else None
-        await commit()
+        guard.trash()
+        await guard.commit()
 
 
 async def _clear_links_to(db: AsyncSession, revision_ids: list[int]) -> None:
@@ -986,12 +1015,7 @@ async def _delete_revision_locked(
     folder = item_dir(project, item.section, item.name).joinpath(
         f"R{revision.number}"
     )  # SEC-PATH-OK: fixed "R{int}" under a resolved item dir
-    moved: Path | None = None
-
-    async def undo() -> None:
-        await _restore_and_rollback(db, moved, folder)
-
-    async with _committing(db, undo) as commit:
+    async with _committing_trash(db, project, folder) as guard:
         file_ids = await _delete_file_rows(db, revision_ids=[revision.id])
         await _clear_links_to(db, [revision.id])
         await db.delete(revision)
@@ -999,8 +1023,8 @@ async def _delete_revision_locked(
         # a print or delivery may have landed since the pre-check; the write lock is held now
         if await _deleted_revision_is_used(db, revision.id, file_ids):
             raise ProjectFilesError(409, "This revision was printed or delivered and cannot be deleted")
-        moved = move_to_trash(project, folder)
-        await commit()
+        guard.trash()
+        await guard.commit()
 
 
 async def _item_revision_ids(db: AsyncSession, item_id: int) -> list[int]:
@@ -1077,12 +1101,7 @@ async def _delete_item_locked(db: AsyncSession, project: Project, item: ProjectI
         if await revision_is_used(db, revision_id):
             raise ProjectFilesError(409, _ITEM_USED)
     folder = item_dir(project, item.section, item.name)
-    moved: Path | None = None
-
-    async def undo() -> None:
-        await _restore_and_rollback(db, moved, folder)
-
-    async with _committing(db, undo) as commit:
+    async with _committing_trash(db, project, folder) as guard:
         deleted_file_ids: dict[int, list[int]] = {}
         if revision_ids:
             for revision_id in revision_ids:
@@ -1095,8 +1114,8 @@ async def _delete_item_locked(db: AsyncSession, project: Project, item: ProjectI
         for revision_id, file_ids in deleted_file_ids.items():
             if await _deleted_revision_is_used(db, revision_id, file_ids):
                 raise ProjectFilesError(409, _ITEM_USED)
-        moved = move_to_trash(project, folder)
-        await commit()
+        guard.trash()
+        await guard.commit()
 
 
 def _copy_thumbnail(source_thumbnail: str | None) -> tuple[str | None, Path | None]:
@@ -1242,8 +1261,23 @@ def _ref(revision: ProjectRevision, item: ProjectItem) -> RevisionRef:
     )
 
 
-async def load_tree(db: AsyncSession, project: Project) -> ProjectTreeResponse:
-    """The whole Fichiers view in one payload: one query per table + grouped usage checks."""
+@dataclass
+class _TreeRows:
+    """Everything ``load_tree`` reads, keyed for the pure assembly helpers below."""
+
+    items: list[ProjectItem]
+    items_by_id: dict[int, ProjectItem]
+    revisions: list[ProjectRevision]
+    revisions_by_id: dict[int, ProjectRevision]
+    revisions_by_item: dict[int, list[ProjectRevision]]
+    files_by_revision: dict[int, list[LibraryFile]]
+    used: set[int]
+    users: dict[int, str]
+    print_counts: dict[int, int]
+
+
+async def _load_tree_rows(db: AsyncSession, project: Project) -> _TreeRows:
+    """One query per table + grouped usage checks."""
     items = list(
         (
             await db.execute(
@@ -1264,6 +1298,9 @@ async def load_tree(db: AsyncSession, project: Project) -> ProjectTreeResponse:
         else []
     )
     revisions_by_id = {rev.id: rev for rev in revisions}
+    revisions_by_item: dict[int, list[ProjectRevision]] = {}
+    for rev in revisions:
+        revisions_by_item.setdefault(rev.item_id, []).append(rev)
     files = (
         list(
             (
@@ -1292,63 +1329,96 @@ async def load_tree(db: AsyncSession, project: Project) -> ProjectTreeResponse:
         dict((await db.execute(select(User.id, User.username).where(User.id.in_(user_ids)))).all()) if user_ids else {}
     )
     print_counts = await revision_print_counts(db, list(revisions_by_id))
+    return _TreeRows(
+        items=items,
+        items_by_id=items_by_id,
+        revisions=revisions,
+        revisions_by_id=revisions_by_id,
+        revisions_by_item=revisions_by_item,
+        files_by_revision=files_by_revision,
+        used=used,
+        users=users,
+        print_counts=print_counts,
+    )
+
+
+def _newest_valide(revisions: list[ProjectRevision]) -> dict[int, ProjectRevision]:
+    """item id -> its highest-numbered ``valide`` revision."""
     newest_valide: dict[int, ProjectRevision] = {}
     for rev in revisions:
         if rev.status == "valide" and (
             rev.item_id not in newest_valide or rev.number > newest_valide[rev.item_id].number
         ):
             newest_valide[rev.item_id] = rev
+    return newest_valide
 
-    def revision_out(rev: ProjectRevision, item: ProjectItem) -> ProjectRevisionOut:
-        source = revisions_by_id.get(rev.derived_from_id) if rev.derived_from_id else None
-        source_item = items_by_id.get(source.item_id) if source else None
-        outdated_by = None
-        if (
-            item.section == "impression"
-            and source is not None
-            and source_item is not None
-            and source.item_id != item.id  # a re-slice of its own item is never outdated (§12.1)
-        ):
-            newer = newest_valide.get(source.item_id)
-            if newer is not None and newer.number > source.number:
-                outdated_by = _ref(newer, source_item)
-        rev_files = files_by_revision.get(rev.id, [])
-        return ProjectRevisionOut(
-            id=rev.id,
-            number=rev.number,
-            status=rev.status,
-            note=rev.note,
-            derived_from=_ref(source, source_item) if source and source_item else None,
-            outdated_by=outdated_by,
-            pipeline_name=rev.pipeline_name,
-            print_profile=rev.print_profile,
-            slicer_name=rev.slicer_name,
-            slicer_version=rev.slicer_version,
-            has_snapshot=rev.config_snapshot is not None,
-            used=any(f.id in used for f in rev_files),
-            files=[
-                ProjectFileOut(
-                    id=f.id,
-                    filename=f.filename,
-                    file_type=f.file_type,
-                    file_size=f.file_size,
-                    file_hash=f.file_hash,
-                    has_thumbnail=bool(f.thumbnail_path),
-                    created_at=f.created_at,
-                )
-                for f in rev_files
-            ],
-            created_by=users.get(rev.created_by_id),
-            created_at=rev.created_at,
-            status_changed_at=rev.status_changed_at,
-            print_count=print_counts.get(rev.id, 0),
-        )
 
+def _outdated_by(
+    item: ProjectItem,
+    source: ProjectRevision | None,
+    source_item: ProjectItem | None,
+    newest_valide: dict[int, ProjectRevision],
+) -> RevisionRef | None:
+    """§12.1: an Impression revision derived from another item's revision is outdated once that item
+    has a ``valide`` revision numbered above the source."""
+    if (
+        item.section == "impression"
+        and source is not None
+        and source_item is not None
+        and source.item_id != item.id  # a re-slice of its own item is never outdated (§12.1)
+    ):
+        newer = newest_valide.get(source.item_id)
+        if newer is not None and newer.number > source.number:
+            return _ref(newer, source_item)
+    return None
+
+
+def _revision_out(
+    rev: ProjectRevision, item: ProjectItem, rows: _TreeRows, newest_valide: dict[int, ProjectRevision]
+) -> ProjectRevisionOut:
+    source = rows.revisions_by_id.get(rev.derived_from_id) if rev.derived_from_id else None
+    source_item = rows.items_by_id.get(source.item_id) if source else None
+    rev_files = rows.files_by_revision.get(rev.id, [])
+    return ProjectRevisionOut(
+        id=rev.id,
+        number=rev.number,
+        status=rev.status,
+        note=rev.note,
+        derived_from=_ref(source, source_item) if source and source_item else None,
+        outdated_by=_outdated_by(item, source, source_item, newest_valide),
+        pipeline_name=rev.pipeline_name,
+        print_profile=rev.print_profile,
+        slicer_name=rev.slicer_name,
+        slicer_version=rev.slicer_version,
+        has_snapshot=rev.config_snapshot is not None,
+        used=any(f.id in rows.used for f in rev_files),
+        files=[
+            ProjectFileOut(
+                id=f.id,
+                filename=f.filename,
+                file_type=f.file_type,
+                file_size=f.file_size,
+                file_hash=f.file_hash,
+                has_thumbnail=bool(f.thumbnail_path),
+                created_at=f.created_at,
+            )
+            for f in rev_files
+        ],
+        created_by=rows.users.get(rev.created_by_id),
+        created_at=rev.created_at,
+        status_changed_at=rev.status_changed_at,
+        print_count=rows.print_counts.get(rev.id, 0),
+    )
+
+
+def _sections(rows: _TreeRows) -> list[ProjectSectionOut]:
+    """Every section in ``SECTIONS`` order; items as loaded, revisions newest first."""
+    newest_valide = _newest_valide(rows.revisions)
     by_section: dict[str, list[ProjectItemOut]] = {section: [] for section in SECTIONS}
-    for item in items:
-        item_revisions = sorted((r for r in revisions if r.item_id == item.id), key=lambda r: r.number, reverse=True)
-        fork_source = revisions_by_id.get(item.forked_from_revision_id) if item.forked_from_revision_id else None
-        fork_item = items_by_id.get(fork_source.item_id) if fork_source else None
+    for item in rows.items:
+        item_revisions = sorted(rows.revisions_by_item.get(item.id, []), key=lambda r: r.number, reverse=True)
+        fork_source = rows.revisions_by_id.get(item.forked_from_revision_id) if item.forked_from_revision_id else None
+        fork_item = rows.items_by_id.get(fork_source.item_id) if fork_source else None
         by_section.setdefault(item.section, []).append(
             ProjectItemOut(
                 id=item.id,
@@ -1356,11 +1426,17 @@ async def load_tree(db: AsyncSession, project: Project) -> ProjectTreeResponse:
                 name=item.name,
                 name_key=item.name_key,
                 forked_from=_ref(fork_source, fork_item) if fork_source and fork_item else None,
-                revisions=[revision_out(rev, item) for rev in item_revisions],
+                revisions=[_revision_out(rev, item, rows, newest_valide) for rev in item_revisions],
             )
         )
+    return [ProjectSectionOut(section=section, items=by_section[section]) for section in SECTIONS]
+
+
+async def load_tree(db: AsyncSession, project: Project) -> ProjectTreeResponse:
+    """The whole Fichiers view in one payload: one query per table + grouped usage checks."""
+    rows = await _load_tree_rows(db, project)
     return ProjectTreeResponse(
         project_id=project.id,
         code=project.code,
-        sections=[ProjectSectionOut(section=section, items=by_section[section]) for section in SECTIONS],
+        sections=_sections(rows),
     )

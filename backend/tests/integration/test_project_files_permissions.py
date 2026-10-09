@@ -156,3 +156,115 @@ async def test_route_lets_a_fully_permitted_caller_through(
 ):
     response = await _send(async_client, method, path, kwargs, await headers_for({g[0] for g in groups}))
     assert response.status_code not in (401, 403) and response.status_code < 500, response.text
+
+
+# API-key callers (T-208). Keys are legacy ownerless rows (user_id NULL), so the scope flags alone
+# decide; every flag is set explicitly, so a changed column default cannot widen a profile.
+_KEY_FLAGS = (
+    "can_queue",
+    "can_control_printer",
+    "can_read_status",
+    "can_manage_library",
+    "can_manage_inventory",
+    "can_manage_maintenance",
+    "can_manage_archives",
+    "can_manage_projects",
+    "can_access_cloud",
+    "can_update_energy_cost",
+    "can_send_notifications",
+)
+_KEY_PROFILES = {
+    "no scope": (),
+    "can_read_status": ("can_read_status",),
+    "can_manage_projects": ("can_manage_projects",),
+    "can_read_status+can_manage_projects": ("can_read_status", "can_manage_projects"),
+    "every scope": _KEY_FLAGS,
+}
+_READ = frozenset({"can_read_status", "can_read_status+can_manage_projects", "every scope"})
+_MANAGE = frozenset({"can_manage_projects", "can_read_status+can_manage_projects", "every scope"})
+_EVERY = frozenset({"every scope"})
+_NO_KEY = frozenset()
+
+# "METHOD path" -> (status a key that gets past auth receives, the profiles that get past auth).
+# Every other profile gets 403. aito:read / aito:update and settings:update are API-key-denied, so
+# the orders, legacy-migration and Aito link routes refuse every key, even one with every scope.
+_KEY_MATRIX = {
+    "GET /projects/987654/tree": (404, _READ),
+    "GET /projects/987654/orders": (None, _NO_KEY),
+    "POST /projects/987654/items": (404, _MANAGE),
+    "PATCH /projects/items/987654": (404, _MANAGE),
+    "DELETE /projects/items/987654": (404, _MANAGE),
+    "POST /projects/items/987654/fork": (404, _MANAGE),
+    "DELETE /projects/revisions/987654/files/1": (404, _MANAGE),
+    "PATCH /projects/revisions/987654": (404, _MANAGE),
+    "DELETE /projects/revisions/987654": (404, _MANAGE),
+    "GET /projects/revisions/987654/download": (404, _READ),
+    "POST /projects/987654/import-library-files": (404, _EVERY),
+    "POST /projects/revisions/987654/reslice": (404, _EVERY),
+    "POST /projects/legacy-migration/start": (None, _NO_KEY),
+    "GET /projects/legacy-migration/status": (None, _NO_KEY),
+    "POST /projects/items/987654/revisions": (404, _MANAGE),
+    "POST /projects/revisions/987654/files": (404, _MANAGE),
+    "GET /library/files/987654/project-suggestions": (404, _READ),
+    "GET /projects/search": (200, _READ),
+    "GET /projects/tags": (200, _READ),
+    "POST /projects/ai/reformulate": (409, _MANAGE),
+    "POST /projects/ai/suggest-tags": (409, _MANAGE),
+    "GET /aito/project-codes": (None, _NO_KEY),
+    "GET /aito/tasks/987654/project-suggestions": (None, _NO_KEY),
+    "PUT /aito/tasks/987654/project": (None, _NO_KEY),
+    "POST /aito/tasks/987654/project": (None, _NO_KEY),
+    "PUT /aito/tasks/987654/deliveries": (None, _NO_KEY),
+    "POST /aito/tasks/987654/files": (None, _NO_KEY),
+    "GET /aito/987654/project-links": (None, _NO_KEY),
+}
+
+
+def _key_cases():
+    for method, path, kwargs, _groups in _ROUTES:
+        passing_status, passing = _KEY_MATRIX[f"{method} {path}"]
+        for profile in _KEY_PROFILES:
+            expected = passing_status if profile in passing else 403
+            yield pytest.param(method, path, kwargs, profile, expected, id=f"{method} {path} key {profile}")
+
+
+@pytest.fixture
+async def key_for(db_session):
+    """Auth on; ``key_for(profile)`` is an X-API-Key header for an ownerless key holding exactly that profile."""
+    from backend.app.core.auth import generate_api_key
+    from backend.app.models.api_key import APIKey
+
+    db_session.add(Settings(key="auth_enabled", value="true"))
+
+    async def make(profile: str) -> dict[str, str]:
+        full_key, key_hash, key_prefix = generate_api_key()
+        flags = {flag: flag in _KEY_PROFILES[profile] for flag in _KEY_FLAGS}
+        db_session.add(
+            APIKey(name=f"key-matrix-{profile}", key_hash=key_hash, key_prefix=key_prefix, enabled=True, **flags)
+        )
+        await db_session.commit()
+        return {"X-API-Key": full_key}
+
+    return make
+
+
+def test_key_matrix_classifies_every_route():
+    assert set(_KEY_MATRIX) == {f"{m} {p}" for m, p, _k, _g in _ROUTES}
+
+
+def test_key_flags_cover_every_api_key_scope_column():
+    from backend.app.models.api_key import APIKey
+
+    assert set(_KEY_FLAGS) == {c.name for c in APIKey.__table__.columns if c.name.startswith("can_")}
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+@pytest.mark.parametrize(("method", "path", "kwargs", "profile", "expected"), list(_key_cases()))
+async def test_route_answers_an_api_key_per_its_scopes(
+    async_client: AsyncClient, key_for, method, path, kwargs, profile, expected
+):
+    response = await _send(async_client, method, path, kwargs, await key_for(profile))
+    assert response.status_code == expected, response.text
+    if expected == 403:
+        assert "API key" in response.json()["detail"]
