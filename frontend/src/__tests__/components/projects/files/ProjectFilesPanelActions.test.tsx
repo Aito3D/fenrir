@@ -3,12 +3,14 @@
  *  action sends, and what the panel shows once the tree is refetched. The refusals live in
  *  ProjectFilesPanel.test.tsx. Real timers; msw handlers record every request. */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, createEvent, fireEvent, renderHook, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
-import { render } from '../../../utils';
+import { render, wrapper } from '../../../utils';
 import { server } from '../../../mocks/server';
 import { ProjectFilesPanel } from '../../../../components/projects/files/ProjectFilesPanel';
+import { useFileActions } from '../../../../components/projects/files/useFileActions';
+import { api, setAuthToken } from '../../../../api/client';
 
 vi.mock('../../../../components/ModelViewerModal', () => ({
   ModelViewerModal: ({ title, libraryFileId, onClose }: { title: string; libraryFileId: number; onClose: () => void }) => (
@@ -446,5 +448,175 @@ describe('ProjectFilesPanel actions', () => {
       await userEvent.click(within(older).getByRole('button', { name: /Older files/ }));
       expect(within(older).queryByText('Plan')).not.toBeInTheDocument();
     });
+  });
+});
+
+/** True when a native `type` event fired by `fire` bubbles up to the document. */
+const reachesDocument = (type: 'dragover' | 'drop', fire: () => void) => {
+  let reached = false;
+  const listener = () => {
+    reached = true;
+  };
+  document.addEventListener(type, listener);
+  try {
+    fire();
+  } finally {
+    document.removeEventListener(type, listener);
+  }
+  return reached;
+};
+/** A dragleave whose `relatedTarget` is `to` (jsdom has no DragEvent to carry it). */
+const leaveTo = (el: Element, to: Element | null) => {
+  const ev = createEvent.dragLeave(el);
+  Object.defineProperty(ev, 'relatedTarget', { value: to });
+  fireEvent(el, ev);
+};
+
+describe('files panel drop zone handlers', () => {
+  const sectionEl = () => screen.getByRole('heading', { level: 3, name: /^Printing/ }).closest('section')!;
+  const textDrag = { dataTransfer: { types: ['text/plain'] } };
+
+  it('a section claims and highlights any drag, lets it bubble, and keeps the highlight while it moves inside', async () => {
+    render(<ProjectFilesPanel projectId={7} />);
+    await screen.findByText('Support');
+    const section = sectionEl();
+    let notPrevented = true;
+    expect(reachesDocument('dragover', () => (notPrevented = fireEvent.dragOver(section, textDrag)))).toBe(true);
+    expect(notPrevented).toBe(false);
+    expect(section.className).toContain('border-bambu-green');
+    leaveTo(section, rowOf(/Support$/));
+    expect(section.className).toContain('border-bambu-green');
+    leaveTo(section, null);
+    expect(section.className).not.toContain('border-bambu-green');
+  });
+
+  it('an item row claims and highlights any drag but stops it, and keeps the highlight while it moves inside', async () => {
+    render(<ProjectFilesPanel projectId={7} />);
+    await screen.findByText('Support');
+    const row = rowOf(/Support$/);
+    let notPrevented = true;
+    expect(reachesDocument('dragover', () => (notPrevented = fireEvent.dragOver(row, textDrag)))).toBe(false);
+    expect(notPrevented).toBe(false);
+    expect(row.className).toContain('border-bambu-green');
+    leaveTo(row, row.firstElementChild);
+    expect(row.className).toContain('border-bambu-green');
+    leaveTo(row, null);
+    expect(row.className).not.toContain('border-bambu-green');
+  });
+
+  it('a drop on a section is claimed and bubbles on; on an item row it is claimed and stopped', async () => {
+    render(<ProjectFilesPanel projectId={7} />);
+    await screen.findByText('Support');
+    const empty = { dataTransfer: { files: [], types: ['Files'] } };
+    const section = sectionEl();
+    fireEvent.dragOver(section);
+    let notPrevented = true;
+    expect(reachesDocument('drop', () => (notPrevented = fireEvent.drop(section, empty)))).toBe(true);
+    expect(notPrevented).toBe(false);
+    expect(section.className).not.toContain('border-bambu-green');
+    const row = rowOf(/Support$/);
+    fireEvent.dragOver(row);
+    notPrevented = true;
+    expect(reachesDocument('drop', () => (notPrevented = fireEvent.drop(row, empty)))).toBe(false);
+    expect(notPrevented).toBe(false);
+    expect(row.className).not.toContain('border-bambu-green');
+    await new Promise((r) => setTimeout(r, 50));
+    expect(mutations()).toEqual([]);
+  });
+
+  it('a legacy item claims and stops a drag but neither highlights nor takes the drop', async () => {
+    render(<ProjectFilesPanel projectId={7} />);
+    await screen.findByText('Support');
+    const older = screen.getByTestId('older-files');
+    await userEvent.click(within(older).getByRole('button', { name: /Older files/ }));
+    const row = within(older).getByRole('button', { name: /Plan$/ }).closest('li')!;
+    expect(reachesDocument('dragover', () => expect(fireEvent.dragOver(row)).toBe(false))).toBe(false);
+    expect(row.className).not.toContain('border-bambu-green');
+    const drop = { dataTransfer: { files: [new File(['x'], 'plan.3mf')], types: ['Files'] } };
+    expect(reachesDocument('drop', () => expect(fireEvent.drop(row, drop)).toBe(false))).toBe(false);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(mutations()).toEqual([]);
+  });
+
+  describe('without projects:update', () => {
+    afterEach(() => setAuthToken(null));
+
+    it('a section still claims a drag but neither highlights nor takes the drop', async () => {
+      let meServed = false;
+      setAuthToken('test-token', 'session');
+      server.use(
+        http.get('*/api/v1/auth/status', () => HttpResponse.json({ auth_enabled: true, requires_setup: false })),
+        http.get('*/api/v1/auth/me', () => {
+          meServed = true;
+          return HttpResponse.json({ id: 1, username: 'op', is_admin: false, permissions: ['projects:read'] });
+        }),
+      );
+      render(<ProjectFilesPanel projectId={7} />);
+      await waitFor(() => expect(meServed).toBe(true));
+      await screen.findByText('Support');
+      await waitFor(() => expect(screen.queryByRole('button', { name: /New item/ })).not.toBeInTheDocument());
+      const section = sectionEl();
+      expect(reachesDocument('dragover', () => expect(fireEvent.dragOver(section)).toBe(false))).toBe(true);
+      expect(section.className).not.toContain('border-bambu-green');
+      const row = rowOf(/Support$/);
+      expect(reachesDocument('dragover', () => expect(fireEvent.dragOver(row)).toBe(false))).toBe(false);
+      expect(row.className).not.toContain('border-bambu-green');
+      const drop = { dataTransfer: { files: [new File(['x'], 'bracket.3mf')], types: ['Files'] } };
+      expect(fireEvent.drop(section, drop)).toBe(false);
+      expect(fireEvent.drop(row, drop)).toBe(false);
+      await new Promise((r) => setTimeout(r, 50));
+      expect(mutations()).toEqual([]);
+    });
+  });
+});
+
+/** The hook alone: the refusal and failure branches the panel tests do not reach. */
+describe('useFileActions', () => {
+  afterEach(() => vi.restoreAllMocks());
+  const printable = () => new File(['x'], 'part.3mf');
+  const pdf = () => new File(['x'], 'plan.pdf');
+
+  it('addFiles refuses a non-printing file with a toast and sends nothing', async () => {
+    const add = vi.spyOn(api, 'addProjectRevisionFiles');
+    const { result } = renderHook(() => useFileActions(7), { wrapper });
+    await act(() => result.current.addFiles(40, 4, [printable(), pdf()]));
+    expect(await screen.findByText('Only 3MF and G-code files can go into a project')).toBeInTheDocument();
+    expect(add).not.toHaveBeenCalled();
+    expect(result.current.isBusy(40)).toBe(false);
+  });
+
+  it('acceptsFiles is true for printing files only, without a toast', () => {
+    const { result } = renderHook(() => useFileActions(7), { wrapper });
+    expect(result.current.acceptsFiles([printable()])).toBe(true);
+    expect(screen.queryByText('Only 3MF and G-code files can go into a project')).not.toBeInTheDocument();
+  });
+
+  it('a failed action thrown as a non-Error toasts the bare failure prefix and resolves undefined', async () => {
+    vi.spyOn(api, 'updateProjectRevision').mockRejectedValue('nope');
+    const { result } = renderHook(() => useFileActions(7), { wrapper });
+    let out: unknown = 'unset';
+    await act(async () => {
+      out = await result.current.setNote(4, 'hello');
+    });
+    expect(out).toBeUndefined();
+    expect(await screen.findByText('Could not save:')).toBeInTheDocument();
+  });
+
+  it('setDerived sends the derived revision id', async () => {
+    const update = vi.spyOn(api, 'updateProjectRevision').mockResolvedValue({} as never);
+    const { result } = renderHook(() => useFileActions(7), { wrapper });
+    await act(() => result.current.setDerived(4, 2));
+    expect(update).toHaveBeenCalledWith(4, { derived_from_id: 2 });
+  });
+
+  it('a failed download toasts the error message, or the bare prefix for a non-Error', async () => {
+    const download = vi.spyOn(api, 'downloadProjectRevision').mockRejectedValueOnce(new Error('gone'));
+    const { result } = renderHook(() => useFileActions(7), { wrapper });
+    await act(() => result.current.download(4, 71, 'gabarit.gcode'));
+    expect(await screen.findByText('Could not save: gone')).toBeInTheDocument();
+    download.mockRejectedValueOnce(42);
+    await act(() => result.current.download(4));
+    expect(await screen.findByText('Could not save:')).toBeInTheDocument();
+    expect(download).toHaveBeenLastCalledWith(4, undefined, undefined);
   });
 });

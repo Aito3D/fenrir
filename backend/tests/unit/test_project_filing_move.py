@@ -12,7 +12,7 @@ from datetime import datetime
 from pathlib import Path
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import delete, select, update
 
 from backend.app.api.routes.library import get_library_files_dir, to_absolute_path, to_relative_path
 from backend.app.core.config import settings
@@ -501,3 +501,368 @@ async def test_target_item_deleted_meanwhile_propagates(db_session, root, monkey
         await _move(db_session, project, [row], item_id=item.id)
     assert exc.value.status_code == 404
     assert to_absolute_path(path).exists()
+
+
+# --- pins for the split of move_library_files_to_project (T-029) -------------
+
+
+async def _fresh(db, file_id: int) -> LibraryFile:
+    return (
+        await db.execute(select(LibraryFile).where(LibraryFile.id == file_id).execution_options(populate_existing=True))
+    ).scalar_one()
+
+
+@pytest.mark.asyncio
+async def test_result_entries_are_exact_and_ordered(db_session, root, tmp_path):
+    """Skips in input order with their exact reasons; groups in first-seen order; every key of every entry."""
+    project = await _project(db_session)
+    lid = await _managed(db_session, "lid.gcode", b"L")
+    stl = await _managed(db_session, "mesh.stl", b"solid")
+    bracket = await _managed(db_session, "Bracket.3mf", threemf_bytes())
+    trashed = await _managed(db_session, "t.gcode", deleted_at=datetime(2026, 1, 1))
+    external = await _external(db_session, tmp_path, "bracket.gcode", readonly=True, data=b"G1 ext")
+    ids = {"lid": lid.id, "stl": stl.id, "bracket": bracket.id, "trashed": trashed.id, "external": external.id}
+    await db_session.commit()
+
+    result = await _move(db_session, project, [lid, stl, bracket, trashed, external])
+
+    assert result.skipped == [
+        {
+            "file_id": ids["stl"],
+            "code": "not_printable",
+            "reason": "projects only accept printing files (.3mf, .gcode, .bgcode)",
+        },
+        {"file_id": ids["trashed"], "code": "trashed", "reason": "file is in the trash"},
+    ]
+    items = {
+        i.name: i
+        for i in (await db_session.execute(select(ProjectItem).where(ProjectItem.project_id == project.id))).scalars()
+    }
+    revs = {
+        r.item_id: r
+        for r in (await db_session.execute(select(ProjectRevision).execution_options(populate_existing=True))).scalars()
+    }
+    lid_item, bracket_item = items["lid"], items["Bracket"]
+    copy_id = result.copied[0]["file_id"]
+    assert copy_id not in ids.values()
+    assert result.moved == [
+        {
+            "file_id": ids["lid"],
+            "filename": "lid.gcode",
+            "section": "impression",
+            "item_id": lid_item.id,
+            "item_name": "lid",
+            "revision_id": revs[lid_item.id].id,
+            "revision_number": 1,
+        },
+        {
+            "file_id": ids["bracket"],
+            "filename": "Bracket.3mf",
+            "section": "impression",
+            "item_id": bracket_item.id,
+            "item_name": "Bracket",
+            "revision_id": revs[bracket_item.id].id,
+            "revision_number": 1,
+        },
+    ]
+    assert result.copied == [
+        {
+            "file_id": copy_id,
+            "filename": "bracket.gcode",
+            "section": "impression",
+            "item_id": bracket_item.id,
+            "item_name": "Bracket",
+            "revision_id": revs[bracket_item.id].id,
+            "revision_number": 1,
+            "source_file_id": ids["external"],
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_item_id_and_new_item_name_together_raise_before_anything(db_session, root):
+    project = await _project(db_session)
+    item = await create_item(db_session, project, section="impression", name="Kit", user_id=None)
+    row = await _managed(db_session, "a.gcode")
+    item_id, path = item.id, row.file_path
+    await db_session.commit()
+    with pytest.raises(ValueError, match="^Pass either item_id or new_item_name, not both$"):
+        await _move(db_session, project, [row], item_id=item_id, new_item_name="Kit")
+    assert to_absolute_path(path).exists()
+    assert (await _fresh(db_session, row.id)).revision_id is None
+
+
+@pytest.mark.asyncio
+async def test_disabled_section_value_error_message(db_session, root):
+    project = await _project(db_session)
+    item = await create_item(db_session, project, section="scan", name="Mesh", user_id=None)
+    row = await _managed(db_session, "a.gcode")
+    await db_session.commit()
+    with pytest.raises(ValueError, match="^Section 'scan' does not accept files for now$"):
+        await _move(db_session, project, [row], item_id=item.id)
+
+
+@pytest.mark.asyncio
+async def test_blank_new_item_name_value_error_message(db_session, root):
+    project = await _project(db_session)
+    row = await _managed(db_session, "a.gcode")
+    await db_session.commit()
+    with pytest.raises(ValueError, match="^Item name must not be blank$"):
+        await _move(db_session, project, [row], new_item_name="   ")
+
+
+@pytest.mark.asyncio
+async def test_new_item_name_is_trimmed_and_finds_the_existing_item(db_session, root):
+    project = await _project(db_session)
+    item = await create_item(db_session, project, section="impression", name="Kit Complet", user_id=None)
+    await db_session.commit()
+    await add_revision_from_sources(
+        db_session,
+        project,
+        item,
+        [RevisionSource(path=await _write(root, "r1.gcode"), filename="r1.gcode", reuse_row=None)],
+        note=None,
+        user_id=None,
+    )
+    item_id = item.id
+    files = [await _managed(db_session, "a.gcode", b"1"), await _managed(db_session, "b.3mf", threemf_bytes())]
+    await db_session.commit()
+
+    result = await _move(db_session, project, files, new_item_name="  kit complet  ")
+
+    assert {(m["item_id"], m["item_name"], m["revision_number"]) for m in result.moved} == {(item_id, "Kit Complet", 2)}
+    assert await _revisions(db_session, project) == [
+        ("impression", "Kit Complet", 1, ["r1.gcode"]),
+        ("impression", "Kit Complet", 2, ["a.gcode", "b.3mf"]),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_per_filename_grouping_finds_an_existing_item_by_key(db_session, root):
+    project = await _project(db_session)
+    item = await create_item(db_session, project, section="impression", name="Bracket", user_id=None)
+    await db_session.commit()
+    await add_revision_from_sources(
+        db_session,
+        project,
+        item,
+        [RevisionSource(path=await _write(root, "r1.gcode"), filename="r1.gcode", reuse_row=None)],
+        note=None,
+        user_id=None,
+    )
+    item_id = item.id
+    row = await _managed(db_session, "BRACKET.gcode", b"2")
+    await db_session.commit()
+
+    result = await _move(db_session, project, [row])
+
+    assert [(m["item_id"], m["item_name"], m["revision_number"]) for m in result.moved] == [(item_id, "Bracket", 2)]
+    assert len((await db_session.execute(select(ProjectItem))).scalars().all()) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("change", ["path", "gone", "filed"])
+async def test_row_changed_before_its_group_is_a_conflict_skip(db_session, root, monkeypatch, change):
+    """A row moved, deleted or filed meanwhile is skipped as a conflict; its group-mates still go."""
+    from backend.app.services import project_filing
+
+    project = await _project(db_session)
+    changed = await _managed(db_session, "part.gcode", b"C")
+    mate = await _managed(db_session, "part.3mf", threemf_bytes())
+    changed_id, changed_path, mate_id = changed.id, changed.file_path, mate.id
+    await db_session.commit()
+    real_fresh_rows = project_filing._fresh_rows
+
+    async def changed_meanwhile(db, file_ids):
+        if change == "path":
+            await db.execute(
+                update(LibraryFile).where(LibraryFile.id == changed_id).values(file_path="elsewhere.gcode")
+            )
+        elif change == "gone":
+            await db.execute(delete(LibraryFile).where(LibraryFile.id == changed_id))
+        rows = await real_fresh_rows(db, file_ids)
+        if change == "filed":
+            rows[changed_id].revision_id = 12345  # in memory only: no such revision
+        return rows
+
+    monkeypatch.setattr(project_filing, "_fresh_rows", changed_meanwhile)
+
+    result = await _move(db_session, project, [changed, mate])
+
+    assert result.skipped == [
+        {"file_id": changed_id, "code": "conflict", "reason": "file changed while it was being moved"}
+    ]
+    assert [m["file_id"] for m in result.moved] == [mate_id]
+    assert to_absolute_path(changed_path).exists()  # its bytes are left alone
+    if change == "path":
+        fresh = await _fresh(db_session, changed_id)
+        assert (fresh.file_path, fresh.revision_id) == ("elsewhere.gcode", None)
+    elif change == "gone":
+        assert (await db_session.execute(select(LibraryFile).where(LibraryFile.id == changed_id))).first() is None
+
+
+@pytest.mark.asyncio
+async def test_a_group_with_nothing_left_creates_no_revision(db_session, root, monkeypatch):
+    from backend.app.services import project_filing
+
+    project = await _project(db_session)
+    row = await _managed(db_session, "solo.gcode", b"S")
+    row_id = row.id
+    await db_session.commit()
+    real_fresh_rows = project_filing._fresh_rows
+
+    async def gone(db, file_ids):
+        rows = await real_fresh_rows(db, file_ids)
+        rows.pop(row_id)
+        return rows
+
+    monkeypatch.setattr(project_filing, "_fresh_rows", gone)
+
+    result = await _move(db_session, project, [row])
+
+    assert result.moved == [] and result.copied == []
+    assert [s["code"] for s in result.skipped] == ["conflict"]
+    assert (await db_session.execute(select(ProjectRevision))).scalars().all() == []
+    # The (empty) item was found-or-created and committed before the rows were checked.
+    assert [i.name for i in (await db_session.execute(select(ProjectItem))).scalars()] == ["solo"]
+
+
+@pytest.mark.asyncio
+async def test_a_409_while_storing_skips_the_rest_of_the_group_as_conflict_and_goes_on(db_session, root, monkeypatch):
+    """A 409 skips only the group's still-pending files (no double skip), with the error detail;
+    earlier groups stay committed and later groups still go."""
+    from backend.app.services import project_filing
+
+    project = await _project(db_session)
+    first = await _managed(db_session, "alpha.gcode", b"A")
+    raced = await _managed(db_session, "beta.gcode", b"B1")
+    changed = await _managed(db_session, "beta.3mf", threemf_bytes())
+    last = await _managed(db_session, "gamma.gcode", b"G")
+    ids = [f.id for f in (first, raced, changed, last)]
+    raced_path = raced.file_path
+    await db_session.commit()
+    real_fresh_rows = project_filing._fresh_rows
+    real_add = project_files.add_revision_from_sources
+
+    async def changed_meanwhile(db, file_ids):
+        rows = await real_fresh_rows(db, file_ids)
+        if ids[2] in rows:
+            rows[ids[2]].file_path = "elsewhere.3mf"
+        return rows
+
+    async def racing_add(db, project, item, sources, **kwargs):
+        if item.name == "beta":
+            await db.rollback()
+            raise project_files.ProjectFilesError(409, "Revision number taken")
+        return await real_add(db, project, item, sources, **kwargs)
+
+    monkeypatch.setattr(project_filing, "_fresh_rows", changed_meanwhile)
+    monkeypatch.setattr(project_files, "add_revision_from_sources", racing_add)
+
+    result = await _move(db_session, project, [first, raced, changed, last])
+
+    assert [m["file_id"] for m in result.moved] == [ids[0], ids[3]]
+    assert result.skipped == [
+        {"file_id": ids[2], "code": "conflict", "reason": "file changed while it was being moved"},
+        {"file_id": ids[1], "code": "conflict", "reason": "Revision number taken"},
+    ]
+    fresh = await _fresh(db_session, ids[1])
+    assert (fresh.file_path, fresh.revision_id) == (raced_path, None)
+    assert [(r[1], r[2]) for r in await _revisions(db_session, project)] == [("alpha", 1), ("gamma", 1)]
+
+
+@pytest.mark.asyncio
+async def test_a_copy_failure_reason_is_the_os_error_text(db_session, root, monkeypatch):
+    project = await _project(db_session)
+    row = await _managed(db_session, "a.gcode", b"A")
+    row_id = row.id
+    await db_session.commit()
+
+    def broken(src, dest):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(project_files, "_copy_hashing", broken)
+    result = await _move(db_session, project, [row])
+    assert result.skipped == [{"file_id": row_id, "code": "copy_failed", "reason": "disk full"}]
+
+
+@pytest.mark.asyncio
+async def test_a_non_409_error_while_storing_propagates(db_session, root, monkeypatch):
+    project = await _project(db_session)
+    row = await _managed(db_session, "a.gcode", b"A")
+    path = row.file_path
+    await db_session.commit()
+
+    async def refused(*args, **kwargs):
+        raise project_files.ProjectFilesError(413, "Too big")
+
+    monkeypatch.setattr(project_files, "add_revision_from_sources", refused)
+    with pytest.raises(project_files.ProjectFilesError) as exc:
+        await _move(db_session, project, [row])
+    assert (exc.value.status_code, exc.value.detail) == (413, "Too big")
+    assert to_absolute_path(path).exists()
+
+
+@pytest.mark.asyncio
+async def test_a_project_gone_after_a_failed_group_is_a_404(db_session, root, monkeypatch):
+    project = await _project(db_session)
+    row = await _managed(db_session, "a.gcode", b"A")
+    await db_session.commit()
+
+    def broken(src, dest):
+        raise OSError("disk full")
+
+    real_get = db_session.get
+
+    async def project_gone(model, ident, **kwargs):
+        if model is Project:
+            return None
+        return await real_get(model, ident, **kwargs)
+
+    monkeypatch.setattr(project_files, "_copy_hashing", broken)
+    monkeypatch.setattr(db_session, "get", project_gone)
+    with pytest.raises(project_files.ProjectFilesError) as exc:
+        await _move(db_session, project, [row])
+    assert (exc.value.status_code, exc.value.detail) == (404, "Project not found")
+    assert isinstance(exc.value.__cause__, OSError)
+
+
+@pytest.mark.asyncio
+async def test_an_escaping_or_empty_source_path_is_source_missing(db_session, root, tmp_path):
+    project = await _project(db_session)
+    escaping = await _managed(db_session, "a.gcode")
+    escaping.file_path = "../../outside.gcode"
+    external = await _external(db_session, tmp_path, "b.gcode", readonly=True)
+    external.file_path = ""
+    await db_session.flush()
+    ids = [escaping.id, external.id]
+    await db_session.commit()
+
+    result = await _move(db_session, project, [escaping, external])
+
+    assert result.skipped == [
+        {"file_id": ids[0], "code": "source_missing", "reason": "source file missing on disk"},
+        {"file_id": ids[1], "code": "source_missing", "reason": "source file missing on disk"},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_old_bytes_that_cannot_be_removed_only_log(db_session, root, monkeypatch, caplog):
+    project = await _project(db_session)
+    row = await _managed(db_session, "a.gcode", b"A")
+    row_id, old = row.id, to_absolute_path(row.file_path)
+    await db_session.commit()
+    real_unlink = Path.unlink
+
+    def stubborn(self, missing_ok=False):
+        if self == old:
+            raise PermissionError("read-only")
+        return real_unlink(self, missing_ok=missing_ok)
+
+    monkeypatch.setattr(Path, "unlink", stubborn)
+    with caplog.at_level("WARNING", logger="backend.app.services.project_filing"):
+        result = await _move(db_session, project, [row])
+
+    assert [m["file_id"] for m in result.moved] == [row_id]
+    assert old.exists()
+    assert "couldn't remove the old file" in caplog.text

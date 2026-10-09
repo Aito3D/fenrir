@@ -317,6 +317,25 @@ describe('ProjectFilesPanel', () => {
     expect(within(row).getByRole('button', { name: 'New revision' })).toBeEnabled();
   });
 
+  it('a busy item still highlights under a drag, but takes no drop until the upload ends', async () => {
+    let release!: () => void;
+    holdUpload = new Promise<void>((r) => { release = r; });
+    render(<ProjectFilesPanel projectId={7} />);
+    await screen.findByText('Support');
+    await userEvent.upload(screen.getByTestId('new-revision-input-20'), new File(['x'], 'b.3mf'));
+    const row = screen.getByRole('button', { name: /Support$/ }).closest('li')!;
+    expect(await within(row).findByText('Uploading…')).toBeInTheDocument();
+    fireEvent.dragOver(row);
+    expect(row.className).toContain('border-bambu-green');
+    drop(row, 'again.3mf');
+    expect(row.className).not.toContain('border-bambu-green');
+    expect(calls).toEqual(['upload:20']);
+    release();
+    await waitFor(() => expect(within(row).queryByText('Uploading…')).not.toBeInTheDocument());
+    drop(row, 'again.3mf');
+    await waitFor(() => expect(calls).toEqual(['upload:20', 'upload:20']));
+  });
+
   it('shows the upload failure toast', async () => {
     failUpload = true;
     render(<ProjectFilesPanel projectId={7} />);

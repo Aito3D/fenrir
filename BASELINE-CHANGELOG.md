@@ -455,3 +455,4 @@ healthy.
 - Golden probes re-recorded: none (13/13 match).
 - SURFACE.md sections regenerated: none (`bash tools/gen_surface_c22.sh | diff - SURFACE.md` is empty; no new export).
 - 2026-10-09 T-024: re-baseline — additive internal export aito_project_links.record_and_broadcast (helper shared by routes/project_files._record_linked, project_filing.record_revision_added, aito_project_links._fan_out_revision); no behavior change.
+- 2026-10-09 T-026: re-baseline — additive internal export components/projects/files/useFileDropZone (drag/drop handlers shared by CardDropTarget, useTaskFileDrop, SectionBlock, ItemRow); no behavior change.

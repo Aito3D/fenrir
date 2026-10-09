@@ -1,25 +1,12 @@
-import { useState } from 'react';
-import type { DragEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../../../api/client';
 import type { LinkedProjectRef, TaskProjectLink } from '../../../api/client';
 import { useToast } from '../../../contexts/ToastContext';
-import { filesFromDataTransfer } from '../files/fileDrop';
 import { nonPrintableFiles } from '../files/filesUi';
+import { useFileDropZone } from '../files/useFileDropZone';
 import { useInvalidateProjectLinks } from './useOrderProjectLinks';
 
-/** The modals a task row opens are portalled to <body>, but React still
- *  bubbles their events through the row: only a target really inside the
- *  row's DOM counts as a drop on the task. */
-export function inZone(e: DragEvent): boolean {
-  return e.currentTarget.contains(e.target as Node);
-}
-
-/** True for an OS file drag. dnd-kit reorders with pointer events, so a native
- *  drag carrying `Files` can only be a file drop. */
-export function isFileDrag(dt: DataTransfer | null): boolean {
-  return !!dt && Array.from(dt.types ?? []).includes('Files');
-}
+export { inZone, isFileDrag } from '../files/useFileDropZone';
 
 /** False (with a toast) when a drop holds any non-printing file: projects hold
  *  printing files only for now, and the server refuses such a drop whole. */
@@ -78,32 +65,18 @@ export function useTaskFileDrop({
   const { t } = useTranslation();
   const { showToast } = useToast();
   const upload = useUploadToTask();
-  const [dragOver, setDragOver] = useState(false);
-
-  const onDragOver = (e: DragEvent) => {
-    if (!isFileDrag(e.dataTransfer)) return;
-    // Always claim a file drag inside the row, or the browser opens the file.
-    e.preventDefault();
-    if (canDrop && taskId !== null && inZone(e)) setDragOver(true);
-  };
-  const onDragLeave = (e: DragEvent) => {
-    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragOver(false);
-  };
-  const onDrop = async (e: DragEvent) => {
-    if (!isFileDrag(e.dataTransfer)) return;
-    e.preventDefault();
-    e.stopPropagation();
-    setDragOver(false);
-    if (!canDrop || taskId === null || !inZone(e)) return;
-    const files = filesFromDataTransfer(e.dataTransfer);
-    if (!files.length) return;
-    const project = link?.project;
-    if (!project) {
-      showToast(t('projectsPdm.aito.dropNeedsProject'), 'info');
-      return;
-    }
-    await upload(orderId, taskId, project, files);
-  };
-
-  return { dragOver, onDragOver, onDragLeave, onDrop: (e: DragEvent) => void onDrop(e) };
+  // Always claims a file drag inside the row, or the browser opens the file.
+  return useFileDropZone({
+    canDrop: canDrop && taskId !== null,
+    fileDragsOnly: true,
+    stopPropagation: 'drop',
+    onFiles: async (files) => {
+      const project = link?.project;
+      if (!project) {
+        showToast(t('projectsPdm.aito.dropNeedsProject'), 'info');
+        return;
+      }
+      await upload(orderId, taskId as number, project, files); // non-null: `canDrop` above
+    },
+  });
 }

@@ -1,5 +1,4 @@
 import { useRef, useState } from 'react';
-import type { DragEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronDown, ChevronRight, Pencil, Trash2, Upload } from 'lucide-react';
 import type { ProjectItemOut } from '../../../api/client';
@@ -9,7 +8,7 @@ import { inputCls, focusRingCls } from '../../formStyles';
 import { RevisionBlock } from './RevisionBlock';
 import type { DerivedOption } from './RevisionBlock';
 import type { FileActions } from './useFileActions';
-import { filesFromDataTransfer } from './fileDrop';
+import { useFileDropZone } from './useFileDropZone';
 import { PRINTABLE_ACCEPT, SECTION_LABEL_KEYS, STATUS_CHIP_CLS, STATUS_LABEL_KEYS, chipBase, isSectionEnabled } from './filesUi';
 
 interface Props {
@@ -31,7 +30,6 @@ export function ItemRow({ item, derivedOptions, actions }: Props) {
   const [open, setOpen] = useState(false);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [dragOver, setDragOver] = useState(false);
   const revisions = [...item.revisions].sort((a, b) => b.number - a.number);
   const newest = revisions[0];
   const fileCount = newest?.files.length ?? 0;
@@ -42,14 +40,13 @@ export function ItemRow({ item, derivedOptions, actions }: Props) {
   // Expanded, each revision block carries its own OUTDATED chip.
   const rowOutdated = outdated && !open;
 
-  const onDrop = (e: DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragOver(false);
-    if (!canUpdate || busy) return;
-    const files = filesFromDataTransfer(e.dataTransfer);
-    if (files.length) void actions.uploadRevision(item.id, files);
-  };
+  // Highlights while busy, but takes no drop until the upload ends; the drag never reaches the section.
+  const { dragOver, ...dropHandlers } = useFileDropZone({
+    canDrop: canUpdate && !busy,
+    canHighlight: canUpdate,
+    stopPropagation: 'dragOverAndDrop',
+    onFiles: (files) => void actions.uploadRevision(item.id, files),
+  });
 
   const renameDone = useRef(false);
   const startRename = () => {
@@ -71,9 +68,7 @@ export function ItemRow({ item, derivedOptions, actions }: Props) {
   return (
     <li
       className={`rounded-lg border bg-bambu-dark/60 ${dragOver ? 'border-bambu-green' : 'border-bambu-dark-tertiary'}`}
-      onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); if (canUpdate) setDragOver(true); }}
-      onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragOver(false); }}
-      onDrop={onDrop}
+      {...dropHandlers}
     >
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 p-2">
         {renaming !== null ? (

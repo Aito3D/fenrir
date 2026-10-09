@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { createEvent, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { render } from '../../../utils';
@@ -219,6 +219,82 @@ describe('card file drop', () => {
     fireEvent.drop(zone(), { dataTransfer: { files: [], types: ['text/plain'] } });
     await new Promise((r) => setTimeout(r, 50));
     expect(posted).toEqual([]);
+  });
+});
+
+/** True when a native `type` event fired by `fire` bubbles up to the document. */
+const reachesDocument = (type: 'dragover' | 'drop', fire: () => void) => {
+  let reached = false;
+  const listener = () => {
+    reached = true;
+  };
+  document.addEventListener(type, listener);
+  try {
+    fire();
+  } finally {
+    document.removeEventListener(type, listener);
+  }
+  return reached;
+};
+
+describe('card file drop zone handlers', () => {
+  const zone = () => screen.getByTestId('aito-card-shell');
+
+  it('claims a file drag, outlines the card with a title, and keeps it while the drag moves inside', () => {
+    render(<CardView project={project} onExpand={() => {}} />);
+    expect(zone()).not.toHaveAttribute('title');
+    let notPrevented = true;
+    expect(reachesDocument('dragover', () => (notPrevented = fireEvent.dragOver(zone(), { dataTransfer: { types: ['Files'] } })))).toBe(true);
+    expect(notPrevented).toBe(false);
+    expect(zone().className).toContain('outline-dashed');
+    expect(zone()).toHaveAttribute('title', 'Drop files to add them to the project');
+    // jsdom has no DragEvent, so `relatedTarget` is set on the event by hand.
+    const leaveInside = createEvent.dragLeave(zone());
+    Object.defineProperty(leaveInside, 'relatedTarget', { value: zone().firstElementChild });
+    fireEvent(zone(), leaveInside);
+    expect(zone().className).toContain('outline-dashed');
+    fireEvent.dragLeave(zone(), { relatedTarget: null });
+    expect(zone().className).not.toContain('outline-dashed');
+    expect(zone()).not.toHaveAttribute('title');
+  });
+
+  it('a non-file drag is neither outlined nor claimed, and its drop bubbles on', () => {
+    render(<CardView project={project} onExpand={() => {}} />);
+    fireEvent.dragOver(zone(), { dataTransfer: { types: ['text/plain'] } });
+    expect(zone().className).not.toContain('outline-dashed');
+    let notPrevented = false;
+    expect(
+      reachesDocument('drop', () => (notPrevented = fireEvent.drop(zone(), { dataTransfer: { files: [], types: ['text/plain'] } }))),
+    ).toBe(true);
+    expect(notPrevented).toBe(true);
+  });
+
+  it('a file drop is claimed, stops at the card and clears the outline', async () => {
+    links = [link(11, 7, 'P-0007')];
+    render(<CardView project={project} onExpand={() => {}} />);
+    fireEvent.dragOver(zone(), { dataTransfer: { types: ['Files'] } });
+    let notPrevented = true;
+    expect(reachesDocument('drop', () => (notPrevented = fireEvent.drop(zone(), fileDrop())))).toBe(false);
+    expect(notPrevented).toBe(false);
+    expect(zone().className).not.toContain('outline-dashed');
+    await waitFor(() => expect(posted).toEqual(['11']));
+  });
+
+  it('an empty file drop is claimed but asks nothing', async () => {
+    const onExpand = vi.fn();
+    render(<CardView project={project} onExpand={onExpand} />);
+    expect(fireEvent.drop(zone(), { dataTransfer: { files: [], types: ['Files'] } })).toBe(false);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(onExpand).not.toHaveBeenCalled();
+    expect(screen.queryByText('Link a project to this task first')).not.toBeInTheDocument();
+  });
+
+  it('an overlay card has no drop handlers at all', () => {
+    render(<CardView project={project} overlay />);
+    const shell = zone();
+    expect(fireEvent.dragOver(shell, { dataTransfer: { types: ['Files'] } })).toBe(true);
+    expect(shell.className).not.toContain('outline-dashed');
+    expect(reachesDocument('drop', () => fireEvent.drop(shell, fileDrop()))).toBe(true);
   });
 });
 

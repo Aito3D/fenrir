@@ -1276,6 +1276,7 @@ CREATE TABLE projects (
 1 export function useAcceptsPrintable
 1 export function useCardDrop
 1 export function useFileActions
+1 export function useFileDropZone
 1 export function useInvalidateProjectLinks
 1 export function useOpenOrders
 1 export function useOrderProjectLinks
