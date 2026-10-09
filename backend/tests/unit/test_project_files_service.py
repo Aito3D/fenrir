@@ -1783,6 +1783,92 @@ async def test_add_revision_keeps_any_other_integrity_error(db_session, root, mo
     assert folder.parent.is_dir() and not folder.exists()  # R1 was created, then removed by the undo
 
 
+async def _revision_rows(db_session, item_id: int) -> tuple[int, int]:
+    """(revisions of the item, file rows of those revisions) after the undo's rollback."""
+    revisions = (await db_session.execute(select(ProjectRevision.id).where(ProjectRevision.item_id == item_id))).all()
+    files = (
+        await db_session.execute(
+            select(LibraryFile.id)
+            .join(ProjectRevision, ProjectRevision.id == LibraryFile.revision_id)
+            .where(ProjectRevision.item_id == item_id)
+        )
+    ).all()
+    return len(revisions), len(files)
+
+
+@pytest.mark.asyncio
+async def test_add_revision_maps_the_named_revision_number_constraint_to_409(db_session, root, monkeypatch):
+    # PostgreSQL names the constraint instead of the columns.
+    project = await _project(db_session)
+    item = await create_item(db_session, project, section="scan", name="Mesh", user_id=None)
+    await db_session.commit()
+    item_id = item.id
+    folder = root / project.storage_dir / "Scan" / "Mesh" / "R1"
+    error = _commit_raises_integrity(
+        db_session, monkeypatch, 'duplicate key value violates unique constraint "uq_project_revisions_item_number"'
+    )
+    with pytest.raises(ProjectFilesError) as caught:
+        await add_revision(db_session, project, item, [upload("a.ply")], note=None, derived_from_id=None, user_id=None)
+    assert (caught.value.status_code, caught.value.detail) == (
+        409,
+        "Another upload just created this revision number; try again",
+    )
+    assert caught.value.__cause__ is error
+    assert not folder.exists()
+    assert await _revision_rows(db_session, item_id) == (0, 0)
+
+
+@pytest.mark.asyncio
+async def test_add_revision_still_maps_to_409_when_the_r_folder_cannot_be_removed(db_session, root, monkeypatch):
+    project = await _project(db_session)
+    item = await create_item(db_session, project, section="scan", name="Mesh", user_id=None)
+    await db_session.commit()
+    item_id = item.id
+    folder = root / project.storage_dir / "Scan" / "Mesh" / "R1"
+    error = _commit_raises_integrity(
+        db_session, monkeypatch, "UNIQUE constraint failed: project_revisions.item_id, project_revisions.number"
+    )
+    real_rmdir = Path.rmdir
+    refused: list[Path] = []
+
+    def rmdir(self, *args, **kwargs):
+        if self == folder:
+            refused.append(self)
+            raise OSError("busy")
+        return real_rmdir(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "rmdir", rmdir)
+    with pytest.raises(ProjectFilesError) as caught:
+        await add_revision(db_session, project, item, [upload("a.ply")], note=None, derived_from_id=None, user_id=None)
+    assert (caught.value.status_code, caught.value.detail) == (
+        409,
+        "Another upload just created this revision number; try again",
+    )
+    assert caught.value.__cause__ is error
+    assert refused == [folder]
+    assert folder.is_dir() and not any(folder.iterdir())  # the written file is gone; the empty R1 stays
+    assert await _revision_rows(db_session, item_id) == (0, 0)
+
+
+@pytest.mark.asyncio
+async def test_add_revision_leaves_a_pre_existing_r_folder_in_place_on_a_clash(db_session, root, monkeypatch):
+    project = await _project(db_session)
+    item = await create_item(db_session, project, section="scan", name="Mesh", user_id=None)
+    await db_session.commit()
+    item_id = item.id
+    folder = root / project.storage_dir / "Scan" / "Mesh" / "R1"
+    folder.mkdir(parents=True)
+    (folder / "leftover.txt").write_bytes(b"old")
+    _commit_raises_integrity(
+        db_session, monkeypatch, "UNIQUE constraint failed: project_revisions.item_id, project_revisions.number"
+    )
+    with pytest.raises(ProjectFilesError) as caught:
+        await add_revision(db_session, project, item, [upload("a.ply")], note=None, derived_from_id=None, user_id=None)
+    assert caught.value.status_code == 409
+    assert sorted(p.name for p in folder.iterdir()) == ["leftover.txt"]  # only what this upload wrote is removed
+    assert await _revision_rows(db_session, item_id) == (0, 0)
+
+
 @pytest.mark.asyncio
 async def test_fork_maps_an_integrity_error_to_409_after_cleaning_up(db_session, root, monkeypatch):
     project = await _project(db_session)

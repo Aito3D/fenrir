@@ -9,7 +9,8 @@ enforcement, nothing would cascade.
 Deleting an item races a print or delivery of one of its revisions the same way
 (T-077): ``delete_item`` re-checks usage once its delete holds the write lock.
 So does linking an Aito task to a project being deleted (T-078): ``link_task``
-re-checks the project once its link holds the write lock.
+re-checks the project once its link holds the write lock, and ``delete_project``
+re-checks live task links once its delete holds it (T-079).
 
 File-backed WAL SQLite with a connection per session, as in production: the
 in-memory test database hands every session one shared connection, which cannot
@@ -279,6 +280,53 @@ async def test_delete_item_without_a_racing_use_still_trashes_the_item(sessions,
     assert [p.name for p in (base / "_trash").rglob("a.step")] == ["a.step"]
 
 
+@pytest.mark.asyncio
+async def test_delete_item_refuses_a_use_of_a_later_revision_committed_after_the_pre_check(sessions, root, monkeypatch):
+    # Two revisions: the use lands on R2, after the pre-check has passed over both.
+    project_id, item_id, first_id, _, storage_dir = await _item_with_a_revision(sessions)
+    async with sessions() as db:
+        project = await db.get(Project, project_id)
+        second, _ = await project_files.add_revision(
+            db,
+            project,
+            await db.get(ProjectItem, item_id),
+            [UploadFile(filename="b.step", file=io.BytesIO(b"more"))],
+            note=None,
+            derived_from_id=None,
+            user_id=None,
+        )
+        await db.commit()
+        second_id = second.id
+
+    real = project_files.revision_is_used
+    checked: list[int] = []
+
+    async def racing(db, revision_id):
+        used = await real(db, revision_id)
+        checked.append(revision_id)
+        if revision_id == second_id:
+            async with sessions() as other:
+                other.add(AitoTaskDelivery(task_id=4242, revision_id=second_id))
+                await other.commit()
+        return used
+
+    monkeypatch.setattr(project_files, "revision_is_used", racing)
+    async with sessions() as db:
+        project = await db.get(Project, project_id)
+        with pytest.raises(project_files.ProjectFilesError) as caught:
+            await project_files.delete_item(db, project, await db.get(ProjectItem, item_id))
+
+    assert sorted(checked) == sorted([first_id, second_id])
+    assert (caught.value.status_code, caught.value.detail) == (409, ITEM_USED_DETAIL)
+    assert await _item_state(sessions, item_id, first_id) == (1, 1, 1)
+    assert await _item_state(sessions, item_id, second_id) == (1, 1, 1)
+    base = root / storage_dir / "Modélisation" / "Support"
+    assert (base / "R1" / "a.step").read_bytes() == b"data"
+    assert (base / "R2" / "b.step").read_bytes() == b"more"
+    trash = root / storage_dir / "_trash"
+    assert not trash.exists() or not any(p.is_file() for p in trash.rglob("*"))
+
+
 # --- link_task against a project deleted after it was read (T-078) -----------
 
 
@@ -384,3 +432,90 @@ async def test_link_task_without_a_racing_delete_still_links(sessions, monkeypat
 
     assert kinds == ["task.project_linked"]
     assert await _link_state(sessions, task_id) == (project_id, 1)
+
+
+# --- delete_project against a task link committed after its check (T-079) ----
+
+LINKED_DETAIL = "This project is linked to Aito tasks; unlink them first"
+
+
+async def _order_task(maker, status: str, linked: int | None) -> int:
+    """A task on a new order with ``status``, linked to ``linked``; returns the task id."""
+    async with maker() as db:
+        order = AitoProject(
+            description="Commande", board_column="devis", status=status, client_id="C1", client_name="ACME"
+        )
+        db.add(order)
+        await db.flush()
+        task = AitoTask(project_id=order.id, title="Support", linked_project_id=linked)
+        db.add(task)
+        await db.commit()
+        return task.id
+
+
+async def _linked_ids(maker, *task_ids: int) -> list[int | None]:
+    async with maker() as db:
+        return [
+            (await db.execute(select(AitoTask.linked_project_id).where(AitoTask.id == task_id))).scalar_one()
+            for task_id in task_ids
+        ]
+
+
+@pytest.mark.asyncio
+async def test_task_link_committed_after_the_delete_link_check_refuses_the_delete(sessions, monkeypatch):
+    project_id = await _new_project(sessions)
+    live_task = await _order_task(sessions, "active", None)
+    trashed_task = await _order_task(sessions, "deleted", project_id)
+
+    async with sessions() as db:
+        real_execute = db.execute
+        injected = False
+
+        async def execute(statement, *args, **kwargs):
+            nonlocal injected
+            result = await real_execute(statement, *args, **kwargs)
+            if not injected and "aito_tasks" in str(statement):
+                # The link check just found no live link: PUT /tasks/{id}/project commits one now.
+                injected = True
+                async with sessions() as other:
+                    (await other.get(AitoTask, live_task)).linked_project_id = project_id
+                    await other.commit()
+            return result
+
+        monkeypatch.setattr(db, "execute", execute)
+        with pytest.raises(HTTPException) as caught:
+            await projects_routes.delete_project(project_id, db=db, _=None)
+        await db.rollback()  # what get_db does with the exception
+
+    assert injected
+    assert (caught.value.status_code, caught.value.detail) == (409, LINKED_DETAIL)
+    assert await _counts(sessions, project_id) == (1, 0)
+    # The live link survives, and the rolled-back delete left the trashed order's link too.
+    assert await _linked_ids(sessions, live_task, trashed_task) == [project_id, project_id]
+
+
+@pytest.mark.asyncio
+async def test_delete_without_a_racing_link_clears_links_outside_live_orders(sessions):
+    project_id = await _new_project(sessions)
+    other_id = await _new_project(sessions, name="Autre")
+    trashed_task = await _order_task(sessions, "deleted", project_id)
+    live_unlinked = await _order_task(sessions, "active", None)
+    live_elsewhere = await _order_task(sessions, "active", other_id)
+    async with sessions() as db:
+        # A task whose order row is gone: the link check never sees it, the clear always did.
+        orphan = AitoTask(project_id=987654, title="Orpheline", linked_project_id=project_id)
+        db.add(orphan)
+        await db.commit()
+        orphan_task = orphan.id
+
+    async with sessions() as db:
+        assert await projects_routes.delete_project(project_id, db=db, _=None) == {"message": "Project deleted"}
+        await db.commit()
+
+    assert await _counts(sessions, project_id) == (0, 0)
+    assert await _linked_ids(sessions, trashed_task, orphan_task, live_unlinked, live_elsewhere) == [
+        None,
+        None,
+        None,
+        other_id,
+    ]

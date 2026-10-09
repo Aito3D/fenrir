@@ -965,17 +965,21 @@ async def delete_project(
     # Fenrir: a project linked from Aito tasks of a live order is still in use
     # (PDM §8). A trashed order's tasks cannot be unlinked (their routes 404),
     # so they don't block; their links are cleared so the id is never reused.
-    linked = (
-        await db.execute(
-            select(AitoTask.id)
-            .join(AitoProject, AitoProject.id == AitoTask.project_id)
-            .where(AitoTask.linked_project_id == project_id, AitoProject.status != "deleted")
-            .limit(1)
-        )
-    ).first()
-    if linked:
+    live_orders = select(AitoProject.id).where(AitoProject.status != "deleted")
+    live_link = select(AitoTask.id).where(
+        AitoTask.linked_project_id == project_id, AitoTask.project_id.in_(live_orders)
+    )
+    if (await db.execute(live_link.limit(1))).first():
         raise HTTPException(status_code=409, detail="This project is linked to Aito tasks; unlink them first")
-    await db.execute(update(AitoTask).where(AitoTask.linked_project_id == project_id).values(linked_project_id=None))
+    # Only links the check above let through are cleared: tasks outside a live
+    # order. With no concurrent writer that is every link left (the check just
+    # found no live one), so this clears the same rows an unrestricted UPDATE
+    # would; a live link committed since is left alone for the re-check below.
+    await db.execute(
+        update(AitoTask)
+        .where(AitoTask.linked_project_id == project_id, AitoTask.project_id.not_in(live_orders))
+        .values(linked_project_id=None)
+    )
 
     # Sub-projects move up to the deleted project's own parent rather than
     # being cut loose at the top level, so deleting a middle layer collapses
@@ -992,6 +996,9 @@ async def delete_project(
     await db.flush()
     if (await db.execute(select(ProjectItem.id).where(ProjectItem.project_id == project_id).limit(1))).first():
         raise HTTPException(status_code=409, detail="This project has files; delete or move its items first")
+    # Same for a task link made on a live order since the link check.
+    if (await db.execute(live_link.limit(1))).first():
+        raise HTTPException(status_code=409, detail="This project is linked to Aito tasks; unlink them first")
 
     return {"message": "Project deleted"}
 
