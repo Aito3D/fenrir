@@ -247,12 +247,14 @@ async def list_project_queue(
 async def list_project_tags(
 async def list_projects(
 async def list_templates(
+async def load_pipeline(db: AsyncSession, pipeline_id: int)
 async def load_tree(db: AsyncSession, project: Project)
 async def migrate_project_legacy(db: AsyncSession, project: Project)
 async def move_library_files_to_project(
 async def order_links(db: AsyncSession, order_id: int)
 async def orders_for_project(db: AsyncSession, project_id: int)
 async def post_task_project(
+async def prepare_reslice(db: AsyncSession, revision_id: int, body: ResliceBody, user_id: int | None)
 async def project_ids_with_tag(db: AsyncSession, tag_id: int)
 async def project_tag_refs(db: AsyncSession, project_ids: list[int])
 async def put_task_deliveries(
@@ -276,6 +278,7 @@ async def run_reslice(db: AsyncSession, req: ResliceRequest, *, job_id: int | No
 async def search_projects(
 async def set_deliveries(
 async def set_project_tags(db: AsyncSession, project: Project, tag_ids: list[int])
+async def similar_projects(
 async def start_legacy_migration(
 async def suggest_projects_for_filename(
 async def suggest_projects(db: AsyncSession, task: AitoTask, limit: int = 8)
@@ -1251,6 +1254,7 @@ CREATE TABLE projects (
 1 export function NewProjectModal
 1 export function nonPrintableFiles
 1 export function OrderPickerDialog
+1 export function outdatedParams
 1 export function PrintedCount
 1 export function printProfileLine
 1 export function PrintRevisionFlow
@@ -1269,6 +1273,7 @@ CREATE TABLE projects (
 1 export function ProjectTagEditor
 1 export function ResliceDialog
 1 export function RevisionBlock
+1 export function revisionLabel
 1 export function SectionBlock
 1 export function splitTagDrafts
 1 export function TaskDropZone

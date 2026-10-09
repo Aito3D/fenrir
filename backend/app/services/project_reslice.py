@@ -6,17 +6,21 @@ bytes, success or failure, so nothing is left in the File Manager."""
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.library import LibraryFile
 from backend.app.models.slicer_pipeline import SlicerPipeline
+from backend.app.schemas.project_files import ResliceBody
 from backend.app.schemas.slicer import SliceRequest
 from backend.app.services import project_files
 from backend.app.services.project_files import ProjectFilesError
+from backend.app.services.slicer_pipeline_request import slice_request_from_pipeline
 
 logger = logging.getLogger(__name__)
 
@@ -43,10 +47,10 @@ def reslice_note(source_number: int, pipeline_name: str) -> str:
 
 @dataclass(frozen=True)
 class ResliceRequest:
-    """Everything the background job needs, read by the route before it enqueues.
+    """Everything the background job needs, read by ``prepare_reslice`` before the route enqueues.
 
-    ``slice_request`` is built from the pipeline in the route, so a pipeline the
-    slicer cannot use is a 400 there, never a failed job."""
+    ``slice_request`` is built from the pipeline there, so a pipeline the
+    slicer cannot use is a 400 from the route, never a failed job."""
 
     revision_id: int
     revision_number: int
@@ -56,6 +60,58 @@ class ResliceRequest:
     pipeline_id: int
     slice_request: SliceRequest
     user_id: int | None
+
+
+async def load_pipeline(db: AsyncSession, pipeline_id: int) -> SlicerPipeline:
+    """The live (not deleted) pipeline ``pipeline_id``; ``ProjectFilesError`` 404 otherwise."""
+    pipeline = (
+        await db.execute(
+            select(SlicerPipeline).where(SlicerPipeline.id == pipeline_id, SlicerPipeline.is_deleted.is_(False))
+        )
+    ).scalar_one_or_none()
+    if pipeline is None:
+        raise ProjectFilesError(404, "Pipeline not found")
+    return pipeline
+
+
+async def prepare_reslice(db: AsyncSession, revision_id: int, body: ResliceBody, user_id: int | None) -> ResliceRequest:
+    """Validate a re-slice of ``body.file_id`` in revision ``revision_id`` and read its bytes.
+
+    Raises ``ProjectFilesError``, first failing check wins: revision 404, section 400,
+    file not in the revision 404, not a 3MF 400, pipeline 404, unusable preset 400,
+    source missing on disk 404."""
+    from backend.app.api.routes.library import to_absolute_path
+
+    revision, item, _project = await project_files.get_revision_bundle(db, revision_id)
+    project_files.require_enabled_section(item.section)
+    source = (
+        await db.execute(
+            select(LibraryFile).where(LibraryFile.id == body.file_id, LibraryFile.revision_id == revision.id)
+        )
+    ).scalar_one_or_none()
+    if source is None:
+        raise ProjectFilesError(404, "File not found in this revision")
+    if not is_resliceable(source.filename):
+        raise ProjectFilesError(400, "Only 3MF files can be re-sliced")
+    pipeline = await load_pipeline(db, body.pipeline_id)
+    try:
+        # Built here, not in the job: a pipeline the slicer cannot use is a 400, never a failed job.
+        slice_request = slice_request_from_pipeline(pipeline)
+    except ValidationError as exc:
+        raise ProjectFilesError(400, "Pipeline has no usable filament preset") from exc
+    path = to_absolute_path(source.file_path)
+    if path is None or not path.exists():
+        raise ProjectFilesError(404, "Source file missing on disk")
+    return ResliceRequest(
+        revision_id=revision.id,
+        revision_number=revision.number,
+        source_file_id=source.id,
+        source_filename=source.filename,
+        model_bytes=await asyncio.to_thread(path.read_bytes),
+        pipeline_id=pipeline.id,
+        slice_request=slice_request,
+        user_id=user_id,
+    )
 
 
 async def _slice(db: AsyncSession, **kwargs):
@@ -97,13 +153,7 @@ async def run_reslice(db: AsyncSession, req: ResliceRequest, *, job_id: int | No
     renamed into a conflict meanwhile) or the slicer's ``HTTPException``."""
     from backend.app.api.routes.library import to_absolute_path
 
-    pipeline = (
-        await db.execute(
-            select(SlicerPipeline).where(SlicerPipeline.id == req.pipeline_id, SlicerPipeline.is_deleted.is_(False))
-        )
-    ).scalar_one_or_none()
-    if pipeline is None:
-        raise ProjectFilesError(404, "Pipeline not found")
+    pipeline = await load_pipeline(db, req.pipeline_id)
     pipeline_id, pipeline_name = pipeline.id, pipeline.name
     sliced = await _slice(
         db,

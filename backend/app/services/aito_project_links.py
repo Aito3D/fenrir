@@ -13,7 +13,6 @@ Functions flush, never commit — the route owns the transaction.
 import logging
 from collections import defaultdict
 from collections.abc import Callable, Collection, Iterable
-from difflib import SequenceMatcher
 
 from fastapi import UploadFile
 from sqlalchemy import delete, func, select
@@ -39,11 +38,12 @@ from backend.app.schemas.aito_project_links import (
 from backend.app.schemas.project_files import RevisionRef
 from backend.app.services import aito_events, project_files, project_print_trace
 from backend.app.services.project_filing import find_or_create_item, item_name_for_filename
+from backend.app.services.project_suggestions import SIMILAR_NAME_THRESHOLD, similar_projects
 from backend.app.services.project_tags import UnknownTagError, apply_project_tag_input
 
 logger = logging.getLogger(__name__)
 
-SIMILAR_TITLE_THRESHOLD = 0.45
+SIMILAR_TITLE_THRESHOLD = SIMILAR_NAME_THRESHOLD
 SECTION_SUMMARY_LIMIT = 3
 DROP_SECTION = "impression"  # drops land in Impression (projects hold printing files only for now)
 
@@ -181,17 +181,7 @@ async def suggest_projects(db: AsyncSession, task: AitoTask, limit: int = 8) -> 
 
     title = (task.title or "").strip().casefold()
     if title and len(suggestions) < limit:
-        candidates = await db.execute(
-            select(Project.id, Project.code, Project.name).where(Project.is_template.is_not(True))
-        )
-        scored = []
-        for project_id, code, name in candidates:
-            if project_id in excluded:
-                continue
-            ratio = SequenceMatcher(None, title, (name or "").casefold()).ratio()
-            if ratio >= SIMILAR_TITLE_THRESHOLD:
-                scored.append((ratio, project_id, code, name))
-        scored.sort(key=lambda row: (-row[0], row[1]))
+        scored = await similar_projects(db, title, SIMILAR_TITLE_THRESHOLD, exclude=excluded)
         for _ratio, project_id, code, name in scored:
             add(project_id, code, name, "similar_title")
     return suggestions

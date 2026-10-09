@@ -21,6 +21,7 @@ import { DeliveriesPicker } from './DeliveriesPicker';
 import { ProjectLinkPicker } from './ProjectLinkPicker';
 import { useTaskFileDrop } from './dropFiles';
 import { useInvalidateProjectLinks } from './useOrderProjectLinks';
+import { revisionLabel } from '../files/revisionLabel';
 
 const DESCRIPTION_FIELD = {
   scan: 'scanDescription',
@@ -96,7 +97,7 @@ export function TaskProjectRow({
         ? tree.sections
             .flatMap((s) =>
               s.items.flatMap((i) =>
-                i.revisions.filter((r) => deliveries.includes(r.id)).map((r) => `${i.name} R${r.number}`),
+                i.revisions.filter((r) => deliveries.includes(r.id)).map((r) => revisionLabel(i.name, r.number)),
               ),
             )
             .join(', ')

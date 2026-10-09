@@ -12,6 +12,7 @@ import { useFileActions } from './useFileActions';
 import { PrintRevisionFlow } from '../print/PrintRevisionFlow';
 import type { FileActions } from './useFileActions';
 import { ENABLED_SECTIONS, SECTION_LABEL_KEYS, SECTION_ORDER, isSectionEnabled } from './filesUi';
+import { revisionLabel } from './revisionLabel';
 
 export function ProjectFilesPanel({ projectId }: { projectId: number }) {
   const { t } = useTranslation();
@@ -22,7 +23,7 @@ export function ProjectFilesPanel({ projectId }: { projectId: number }) {
     () =>
       (tree?.sections ?? []).flatMap((s) =>
         s.items.flatMap((item) =>
-          item.revisions.map((r) => ({ id: r.id, label: `${t(SECTION_LABEL_KEYS[s.section])} › ${item.name} R${r.number}` })),
+          item.revisions.map((r) => ({ id: r.id, label: `${t(SECTION_LABEL_KEYS[s.section])} › ${revisionLabel(item.name, r.number)}` })),
         ),
       ),
     [tree, t],

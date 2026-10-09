@@ -9,11 +9,13 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
 
+from backend.app.api.routes.library import to_absolute_path
 from backend.app.core.auth import create_access_token, get_password_hash
 from backend.app.core.config import settings as app_settings
 from backend.app.core.permissions import Permission
 from backend.app.models.group import Group
 from backend.app.models.library import LibraryFile
+from backend.app.models.project_item import ProjectItem
 from backend.app.models.settings import Settings
 from backend.app.models.slicer_pipeline import SlicerPipeline
 from backend.app.models.user import User
@@ -225,6 +227,44 @@ async def test_validation_errors(async_client: AsyncClient, db_session, fake_sli
     assert gcode_source.status_code == 400  # .gcode cannot be re-sliced
     assert (await async_client.post(url, json={"file_id": fid, "pipeline_id": 999999})).status_code == 404
     assert (await async_client.post(url, json={"file_id": fid, "pipeline_id": deleted_id})).status_code == 404
+    assert fake_slicer["calls"] == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_validation_check_order_and_messages(async_client: AsyncClient, db_session, fake_slicer):
+    """Pin: each check's status + detail, and that an earlier check wins over every later one
+    (revision, section, file in revision, 3MF only, pipeline, usable preset, bytes on disk)."""
+    _project, item, rev = await _source_revision(async_client)
+    gcode = await async_client.post(
+        f"/api/v1/projects/items/{item['id']}/revisions",
+        files=[("files", ("support.gcode", b"G1", "application/octet-stream"))],
+    )
+    gcode_rev = gcode.json()["revision"]
+    no_preset_id = await _pipeline(db_session, name="No filament", filament_presets_json="[]")
+    pipeline_id = await _pipeline(db_session)
+    url = f"/api/v1/projects/revisions/{rev['id']}/reslice"
+    fid = rev["files"][0]["id"]
+
+    async def post(target_url: str, file_id: int, pid: int) -> tuple[int, str]:
+        r = await async_client.post(target_url, json={"file_id": file_id, "pipeline_id": pid})
+        return r.status_code, r.json()["detail"]
+
+    assert await post("/api/v1/projects/revisions/999999/reslice", 999999, 999999) == (404, "Revision not found")
+    assert await post(url, gcode_rev["files"][0]["id"], 999999) == (404, "File not found in this revision")
+    gcode_url = f"/api/v1/projects/revisions/{gcode_rev['id']}/reslice"
+    assert await post(gcode_url, gcode_rev["files"][0]["id"], 999999) == (400, "Only 3MF files can be re-sliced")
+    assert await post(url, fid, 999999) == (404, "Pipeline not found")
+
+    source = (await db_session.execute(select(LibraryFile).where(LibraryFile.id == fid))).scalar_one()
+    to_absolute_path(source.file_path).unlink()
+    assert await post(url, fid, no_preset_id) == (400, "Pipeline has no usable filament preset")
+    assert await post(url, fid, pipeline_id) == (404, "Source file missing on disk")
+
+    db_item = (await db_session.execute(select(ProjectItem).where(ProjectItem.id == item["id"]))).scalar_one()
+    db_item.section = "scan"
+    await db_session.commit()
+    assert await post(url, 999999, 999999) == (400, "Section 'scan' does not accept files for now")
     assert fake_slicer["calls"] == []
 
 

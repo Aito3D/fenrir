@@ -32,6 +32,7 @@ from backend.app.services import project_files
 from backend.app.services.project_codes import format_project_code
 from backend.app.services.project_files import RevisionSource
 from backend.app.services.project_storage import ENABLED_SECTIONS, PRINTABLE_EXTENSIONS, is_printable_filename
+from backend.app.services.project_suggestions import SIMILAR_NAME_THRESHOLD, similar_projects
 
 logger = logging.getLogger(__name__)
 
@@ -378,7 +379,7 @@ def _add_result_entry(
 
 _FILENAME_CODE_RE = re.compile(r"^P-(\d{4,})[ _-]", re.IGNORECASE)
 SIMILAR_ITEM_THRESHOLD = 0.6
-SIMILAR_PROJECT_THRESHOLD = 0.45
+SIMILAR_PROJECT_THRESHOLD = SIMILAR_NAME_THRESHOLD
 
 
 def project_code_from_filename(name: str) -> str | None:
@@ -455,13 +456,7 @@ async def suggest_projects_for_filename(
 
     folded = name.strip().casefold()
     if folded:
-        rows = await db.execute(select(Project.id, Project.code, Project.name).where(Project.is_template.is_not(True)))
-        scored_projects = []
-        for project_id, project_code, project_name in rows:
-            ratio = SequenceMatcher(None, folded, (project_name or "").casefold()).ratio()
-            if ratio >= SIMILAR_PROJECT_THRESHOLD:
-                scored_projects.append((ratio, project_id, project_code, project_name))
-        scored_projects.sort(key=lambda r: (-r[0], r[1]))
+        scored_projects = await similar_projects(db, folded, SIMILAR_PROJECT_THRESHOLD)
         for ratio, project_id, project_code, project_name in scored_projects:
             add(
                 ProjectSuggestionForFile(

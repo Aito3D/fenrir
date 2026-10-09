@@ -22,6 +22,7 @@ import {
 } from './filesUi';
 import { PrintRevisionFlow } from '../print/PrintRevisionFlow';
 import { ResliceDialog } from '../reslice/ResliceDialog';
+import { outdatedParams, revisionLabel } from './revisionLabel';
 
 export interface DerivedOption { id: number; label: string }
 
@@ -108,7 +109,7 @@ export function RevisionBlock({ item, revision, derivedOptions, actions }: Props
 
       {newer && src && (
         <span className={`${chipBase} border-amber-500/40 bg-amber-500/10 text-amber-400 whitespace-normal`}>
-          {t('projectsPdm.files.outdated', { source: `${src.item_name} R${src.number}`, newer: `R${newer.number}` })}
+          {t('projectsPdm.files.outdated', outdatedParams(src, newer))}
         </span>
       )}
 
@@ -261,7 +262,7 @@ export function RevisionBlock({ item, revision, derivedOptions, actions }: Props
           projectId={actions.projectId}
           file={printing}
           revisionWarning={newer && src
-            ? t('projectsPdm.print.outdatedWarning', { source: `${src.item_name} R${src.number}`, newer: `R${newer.number}` })
+            ? t('projectsPdm.print.outdatedWarning', outdatedParams(src, newer))
             : undefined}
           onClose={() => setPrinting(null)}
         />
@@ -284,7 +285,7 @@ export function RevisionBlock({ item, revision, derivedOptions, actions }: Props
       {confirmRemove && (
         <ConfirmModal
           title={t('projectsPdm.files.removeFile', { name: confirmRemove.filename })}
-          message={t('projectsPdm.files.confirmRemoveFile', { name: confirmRemove.filename, label: `${item.name} ${label}` })}
+          message={t('projectsPdm.files.confirmRemoveFile', { name: confirmRemove.filename, label: revisionLabel(item.name, revision.number) })}
           confirmText={t('projectsPdm.files.remove')}
           variant="danger"
           onConfirm={() => { const fileId = confirmRemove.id; setConfirmRemove(null); void actions.removeFile(revision.id, fileId); }}
@@ -294,7 +295,7 @@ export function RevisionBlock({ item, revision, derivedOptions, actions }: Props
       {confirmDelete && (
         <ConfirmModal
           title={t('projectsPdm.files.deleteRevision')}
-          message={t('projectsPdm.files.confirmDeleteRevision', { label: `${item.name} ${label}` })}
+          message={t('projectsPdm.files.confirmDeleteRevision', { label: revisionLabel(item.name, revision.number) })}
           confirmText={t('projectsPdm.files.deleteRevision')}
           variant="danger"
           onConfirm={() => { setConfirmDelete(false); void actions.deleteRevision(revision.id); }}

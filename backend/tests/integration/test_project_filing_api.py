@@ -2,6 +2,7 @@
 
 import uuid
 from datetime import datetime, timezone
+from difflib import SequenceMatcher
 from pathlib import Path
 
 import pytest
@@ -278,6 +279,23 @@ async def test_suggestions_order_code_item_project(async_client: AsyncClient, db
 
     limited = (await async_client.get(_suggest_url(file.id), params={"limit": 2})).json()
     assert [s["project_id"] for s in limited] == [by_code["id"], by_item["id"]]
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_suggestions_project_name_ties_sort_by_id_and_round_the_score(async_client: AsyncClient, db_session):
+    # Pin: equal project-name ratios keep ascending project id, the compare is
+    # case-folded and the score is rounded to 4 decimals.
+    first = await _project(async_client, "BRACKET ARM STAND")
+    second = await _project(async_client, "bracket arm stand")
+    file = await _managed(db_session, "Bracket arm.3mf")
+    body = (await async_client.get(_suggest_url(file.id))).json()
+    assert [(s["project_id"], s["reason"]) for s in body] == [
+        (first["id"], "project_name"),
+        (second["id"], "project_name"),
+    ]
+    expected = round(SequenceMatcher(None, "bracket arm", "bracket arm stand").ratio(), 4)
+    assert [s["score"] for s in body] == [expected, expected]
 
 
 @pytest.mark.asyncio

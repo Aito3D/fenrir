@@ -7,6 +7,7 @@ import type { ProjectTreeResponse } from '../../../api/client';
 import { Button } from '../../Button';
 import { useToast } from '../../../contexts/ToastContext';
 import { ENABLED_SECTIONS, SECTION_LABEL_KEYS, STATUS_LABEL_KEYS } from '../files/filesUi';
+import { revisionLabel } from '../files/revisionLabel';
 import { useInvalidateProjectLinks } from './useOrderProjectLinks';
 import { useIsolatedEscape } from '../../../hooks/useIsolatedEscape';
 
@@ -165,7 +166,7 @@ export function DeliveriesPicker({
                           type="checkbox"
                           checked={checked.has(r.id)}
                           onChange={() => toggle(r.id)}
-                          aria-label={`${item.name} R${r.number} · ${t(STATUS_LABEL_KEYS[r.status])}`}
+                          aria-label={`${revisionLabel(item.name, r.number)} · ${t(STATUS_LABEL_KEYS[r.status])}`}
                           className="accent-bambu-green"
                         />
                         <span aria-hidden="true" className="tabular-nums">{`R${r.number}`}</span>

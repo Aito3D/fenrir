@@ -1028,3 +1028,6 @@ so it is not stranded.
 
 - Golden probes re-recorded: none (35/35 match).
 - SURFACE.md sections regenerated: none (`bash tools/gen_surface_aito23.sh` output identical to SURFACE.md).
+- 2026-10-09 T-193: re-baseline — additive internal export project_suggestions.similar_projects (one similar-project-name scan shared by suggest_projects and suggest_projects_for_filename); no behavior change.
+- 2026-10-09 T-198: re-baseline — additive internal exports project_reslice.load_pipeline and project_reslice.prepare_reslice (reslice validation moved out of the route; run_reslice and the route share the pipeline lookup); no behavior change.
+- 2026-10-09 T-203: re-baseline — additive internal exports revisionLabel and outdatedParams (components/projects/files/revisionLabel.ts; one helper for the 'ItemName Rn' label and the outdated {source, newer} params); no behavior change.

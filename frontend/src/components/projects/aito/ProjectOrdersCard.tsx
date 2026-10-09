@@ -9,6 +9,7 @@ import { useAuth } from '../../../contexts/AuthContext';
 import { ALL_COLUMNS } from '../../aito/columns';
 import { Card, CardContent } from '../../Card';
 import { formatDateOnly } from '../../../utils/date';
+import { revisionLabel } from '../files/revisionLabel';
 
 interface OrderGroup {
   orderId: number;
@@ -102,7 +103,7 @@ export function ProjectOrdersCard({ projectId }: { projectId: number }) {
                           key={rev.id}
                           className="rounded bg-bambu-green/10 px-1.5 py-0.5 text-[11px] text-bambu-green-light"
                         >
-                          {`${rev.item_name} R${rev.number}`}
+                          {revisionLabel(rev.item_name, rev.number)}
                         </span>
                       ))}
                     </li>

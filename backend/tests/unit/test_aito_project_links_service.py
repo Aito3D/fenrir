@@ -293,6 +293,19 @@ async def test_suggestions_deduplicate_same_client_and_title(db_session):
     assert [(s.id, s.reason) for s in suggestions] == [(project.id, "same_client")]
 
 
+@pytest.mark.asyncio
+async def test_similar_title_ties_sort_by_project_id_and_ignore_case(db_session):
+    # Pin: equal ratios keep ascending project id; the compare is case-folded.
+    first = await _project(db_session, name="SUPPORT GUIDON")
+    second = await _project(db_session, name="support guidon")
+    order = await _order(db_session, client_id="C9")
+    task = await _task(db_session, order, title="  Support Guidon ")
+
+    suggestions = await links.suggest_projects(db_session, task)
+
+    assert [(s.id, s.reason) for s in suggestions] == [(first.id, "similar_title"), (second.id, "similar_title")]
+
+
 # --- set_deliveries ---------------------------------------------------------
 
 

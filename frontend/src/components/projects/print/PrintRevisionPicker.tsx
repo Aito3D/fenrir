@@ -9,6 +9,7 @@ import { Button } from '../../Button';
 import { focusRingCls } from '../../formStyles';
 import { useIsolatedEscape } from '../../../hooks/useIsolatedEscape';
 import { STATUS_CHIP_CLS, STATUS_LABEL_KEYS, chipBase, isPrintableFile, printProfileLine } from '../files/filesUi';
+import { outdatedParams, revisionLabel } from '../files/revisionLabel';
 
 interface Props {
   projectId: number;
@@ -66,7 +67,7 @@ export function PrintRevisionPicker({ projectId, onPick, onClose }: Props) {
             entries.map(({ item, revision, files }) => {
               const newer = revision.outdated_by;
               const src = revision.derived_from;
-              const stale = newer && src ? { source: `${src.item_name} R${src.number}`, newer: `R${newer.number}` } : null;
+              const stale = newer && src ? outdatedParams(src, newer) : null;
               const profile = printProfileLine(revision.print_profile);
               return (
                 <div
@@ -75,7 +76,7 @@ export function PrintRevisionPicker({ projectId, onPick, onClose }: Props) {
                   className="space-y-1.5 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark p-3"
                 >
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-medium text-white">{`${item.name} R${revision.number}`}</span>
+                    <span className="text-sm font-medium text-white">{revisionLabel(item.name, revision.number)}</span>
                     <span className={`${chipBase} ${STATUS_CHIP_CLS[revision.status]}`}>{t(STATUS_LABEL_KEYS[revision.status])}</span>
                     {profile && <span className="text-xs text-bambu-gray">{profile}</span>}
                   </div>
