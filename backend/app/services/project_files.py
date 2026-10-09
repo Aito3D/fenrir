@@ -252,6 +252,8 @@ class _WrittenFile:
     source: RevisionSource | None = None
     # file_path the reused row had when its copy started; the DB step refuses a row that moved meanwhile
     reuse_file_path: str | None = None
+    # fork copies: the source revision's row, whose type, size, hash and metadata the new row repeats
+    copied_from: LibraryFile | None = None
 
 
 def _write_thumbnail(thumbnails_dir: Path, name: str, data: bytes) -> Path:
@@ -1216,18 +1218,7 @@ async def _fork_revision_locked(
     new_item_dir = item_dir(project, section, clean)
     if new_item_dir.exists():
         raise ProjectFilesError(409, "A folder with this name already exists")
-    sources = [
-        {
-            "filename": f.filename,
-            "path": _revision_file_path(f.file_path),
-            "file_type": f.file_type,
-            "file_size": f.file_size,
-            "file_hash": f.file_hash,
-            "thumbnail_path": f.thumbnail_path,
-            "file_metadata": f.file_metadata,
-        }
-        for f in await _revision_files(db, revision.id)
-    ]
+    sources = [(f, _revision_file_path(f.file_path)) for f in await _revision_files(db, revision.id)]
     snapshot = (
         revision.config_snapshot,
         revision.config_hash,
@@ -1237,18 +1228,12 @@ async def _fork_revision_locked(
     )
     revision_id = revision.id
     folder = revision_dir(project, section, clean, 1)
-    copies: list[dict] = []
-
-    def cleanup() -> None:
-        for entry in copies:
-            entry["dest"].unlink(missing_ok=True)
-            if entry["thumb_abs"] is not None:
-                entry["thumb_abs"].unlink(missing_ok=True)
-        _remove_empty(folder, new_item_dir)
+    copies: list[_WrittenFile] = []
 
     async def undo() -> None:
         await db.rollback()
-        cleanup()
+        _cleanup_written(copies)
+        _remove_empty(folder, new_item_dir)
 
     def translate(exc: BaseException) -> Exception | None:
         if isinstance(exc, IntegrityError):
@@ -1256,15 +1241,7 @@ async def _fork_revision_locked(
         return None
 
     async with _committing(db, undo, translate=translate) as commit:
-        for source in sources:
-            src = source["path"]
-            if src is None or not src.exists():
-                continue
-            dest = claim_unique_file_path(folder, source["filename"])
-            entry = {"source": source, "dest": dest, "thumb_rel": None, "thumb_abs": None}
-            copies.append(entry)  # before the copy, so cleanup also removes the claimed placeholder
-            await asyncio.to_thread(shutil.copy2, src, dest)
-            entry["thumb_rel"], entry["thumb_abs"] = await asyncio.to_thread(_copy_thumbnail, source["thumbnail_path"])
+        await _copy_fork_files(folder, sources, copies)
         if not copies:
             raise ProjectFilesError(409, "No file of this revision could be copied")
         forked = ProjectItem(
@@ -1284,23 +1261,45 @@ async def _fork_revision_locked(
         r1.config_snapshot, r1.config_hash, r1.slicer_name, r1.slicer_version, r1.print_profile = snapshot
         db.add(r1)
         await db.flush()
-        for entry in copies:
-            source = entry["source"]
-            db.add(
-                _new_library_row(
-                    project.id,
-                    r1.id,
-                    entry["dest"],
-                    file_type=source["file_type"],
-                    file_size=source["file_size"],
-                    file_hash=source["file_hash"],
-                    thumbnail_path=entry["thumb_rel"],
-                    file_metadata=source["file_metadata"],
-                    created_by_id=user_id,
-                )
-            )
+        _add_fork_rows(db, project.id, r1.id, copies, user_id)
         await commit()
     return forked
+
+
+async def _copy_fork_files(
+    folder: Path, sources: list[tuple[LibraryFile, Path | None]], copies: list[_WrittenFile]
+) -> None:
+    """Copy each readable source file and its thumbnail into ``folder``, appending to ``copies``
+    as it goes (so the caller's cleanup also removes a copy cut short). Touches no database."""
+    for source, src in sources:
+        if src is None or not src.exists():
+            continue
+        dest = claim_unique_file_path(folder, source.filename)
+        entry = _WrittenFile(path=dest, size=0, digest="", copied_from=source)
+        copies.append(entry)  # before the copy, so cleanup also removes the claimed placeholder
+        await asyncio.to_thread(shutil.copy2, src, dest)
+        entry.thumbnail_rel, entry.thumbnail_abs = await asyncio.to_thread(_copy_thumbnail, source.thumbnail_path)
+
+
+def _add_fork_rows(
+    db: AsyncSession, project_id: int, revision_id: int, copies: list[_WrittenFile], user_id: int | None
+) -> None:
+    """A new library row per fork copy, repeating its source row's type, size, hash and metadata."""
+    for entry in copies:
+        source = entry.copied_from  # always set on a fork copy
+        db.add(
+            _new_library_row(
+                project_id,
+                revision_id,
+                entry.path,
+                file_type=source.file_type,
+                file_size=source.file_size,
+                file_hash=source.file_hash,
+                thumbnail_path=entry.thumbnail_rel,
+                file_metadata=source.file_metadata,
+                created_by_id=user_id,
+            )
+        )
 
 
 def _ref(revision: ProjectRevision, item: ProjectItem) -> RevisionRef:

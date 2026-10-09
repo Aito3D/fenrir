@@ -9797,7 +9797,6 @@ export default {
     create: "Створити",
     tagsLabel: "Теги",
     tagSearchPlaceholder: "Знайти або створити тег…",
-    createTag: "Створити «{{name}}»",
     removeTag: "Видалити {{name}}",
     suggestTags: "Запропонувати теги",
     suggestionsLabel: "Пропозиції",
@@ -9811,7 +9810,6 @@ export default {
     saveFailed: "Не вдалося зберегти проєкт",
     codeChipLabel: "Код проєкту {{code}}",
     files: {
-      title: 'Файли',
       sectionScan: 'Скан',
       sectionModelisation: 'Моделювання',
       sectionImpression: 'Друк',
@@ -9820,7 +9818,6 @@ export default {
       emptySection: 'Елементів ще немає',
       newItem: 'Новий елемент',
       itemNameLabel: 'Назва елемента',
-      dropHint: 'Перетягніть файли сюди або натисніть, щоб вибрати',
       chooseFiles: 'Вибрати файли',
       uploading: 'Завантаження…',
       uploadFailed: 'Не вдалося завантажити',

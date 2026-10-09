@@ -1,6 +1,6 @@
 ### exit: 0
 ### stdout:
---- de projectsPdm (198 keys)
+--- de projectsPdm (195 keys)
 acceptSuggestion = "{{name}} hinzufügen"  placeholders={{name}}
 aiUnavailable = "KI nicht verfügbar"
 aito.confirmUnlink = "{{name}} von dieser Aufgabe lösen? Die Liste der gelieferten Dateien wird geleert."  placeholders={{name}}
@@ -44,7 +44,6 @@ colTags = "Tags"
 colTitle = "Titel"
 colUpdated = "Aktualisiert"
 create = "Erstellen"
-createTag = "„{{name}}“ erstellen"  placeholders={{name}}
 createTitle = "Neues Projekt"
 descriptionLabel = "Beschreibung"
 editHeader = "Titel, Beschreibung und Tags bearbeiten"
@@ -63,7 +62,6 @@ files.derivedFromLabel = "Abgeleitet von"
 files.derivedFromNone = "Nichts"
 files.download = "Herunterladen"
 files.downloadAll = "Alle herunterladen (ZIP)"
-files.dropHint = "Dateien hierher ziehen oder klicken zum Auswählen"
 files.duplicateWarning = "{{filename}} ist identisch mit {{revision}}"  placeholders={{filename}},{{revision}}
 files.emptySection = "Noch keine Elemente"
 files.fileCount_one = "{{count}} Datei"  placeholders={{count}}
@@ -95,7 +93,6 @@ files.statusLabel = "Status"
 files.statusObsolete = "Veraltet"
 files.statusValide = "Freigegeben"
 files.statusWip = "In Arbeit"
-files.title = "Dateien"
 files.uploadFailed = "Upload fehlgeschlagen"
 files.uploading = "Wird hochgeladen…"
 filing.autoFileHint = "Eine Datei namens „P-0042_support.3mf“ landet direkt im Projekt P-0042"
@@ -199,7 +196,7 @@ title = "Projekte"
 titleLabel = "Titel"
 viewGrid = "Rasteransicht"
 viewTable = "Tabellenansicht"
---- en projectsPdm (198 keys)
+--- en projectsPdm (195 keys)
 acceptSuggestion = "Add {{name}}"  placeholders={{name}}
 aiUnavailable = "AI unavailable"
 aito.confirmUnlink = "Unlink {{name}} from this task? Its delivered files list is cleared."  placeholders={{name}}
@@ -243,7 +240,6 @@ colTags = "Tags"
 colTitle = "Title"
 colUpdated = "Updated"
 create = "Create"
-createTag = "Create “{{name}}”"  placeholders={{name}}
 createTitle = "New project"
 descriptionLabel = "Description"
 editHeader = "Edit title, description and tags"
@@ -262,7 +258,6 @@ files.derivedFromLabel = "Derived from"
 files.derivedFromNone = "Nothing"
 files.download = "Download"
 files.downloadAll = "Download all (zip)"
-files.dropHint = "Drop files here or click to choose"
 files.duplicateWarning = "{{filename}} is identical to {{revision}}"  placeholders={{filename}},{{revision}}
 files.emptySection = "No items yet"
 files.fileCount_one = "{{count}} file"  placeholders={{count}}
@@ -294,7 +289,6 @@ files.statusLabel = "Status"
 files.statusObsolete = "Obsolete"
 files.statusValide = "Approved"
 files.statusWip = "In progress"
-files.title = "Files"
 files.uploadFailed = "Upload failed"
 files.uploading = "Uploading…"
 filing.autoFileHint = "A file named \"P-0042_support.3mf\" goes straight into project P-0042"
@@ -398,7 +392,7 @@ title = "Projects"
 titleLabel = "Title"
 viewGrid = "Grid view"
 viewTable = "Table view"
---- es projectsPdm (198 keys)
+--- es projectsPdm (195 keys)
 acceptSuggestion = "Añadir {{name}}"  placeholders={{name}}
 aiUnavailable = "IA no disponible"
 aito.confirmUnlink = "¿Desvincular {{name}} de esta tarea? Se borrará la lista de archivos entregados."  placeholders={{name}}
@@ -442,7 +436,6 @@ colTags = "Etiquetas"
 colTitle = "Título"
 colUpdated = "Actualizado"
 create = "Crear"
-createTag = "Crear «{{name}}»"  placeholders={{name}}
 createTitle = "Nuevo proyecto"
 descriptionLabel = "Descripción"
 editHeader = "Editar título, descripción y etiquetas"
@@ -461,7 +454,6 @@ files.derivedFromLabel = "Derivado de"
 files.derivedFromNone = "Nada"
 files.download = "Descargar"
 files.downloadAll = "Descargar todo (zip)"
-files.dropHint = "Suelta archivos aquí o haz clic para elegir"
 files.duplicateWarning = "{{filename}} es idéntico a {{revision}}"  placeholders={{filename}},{{revision}}
 files.emptySection = "Aún no hay elementos"
 files.fileCount_one = "{{count}} archivo"  placeholders={{count}}
@@ -493,7 +485,6 @@ files.statusLabel = "Estado"
 files.statusObsolete = "Obsoleto"
 files.statusValide = "Aprobado"
 files.statusWip = "En curso"
-files.title = "Archivos"
 files.uploadFailed = "Error al subir"
 files.uploading = "Subiendo…"
 filing.autoFileHint = "Un archivo llamado «P-0042_support.3mf» va directo al proyecto P-0042"
@@ -597,7 +588,7 @@ title = "Proyectos"
 titleLabel = "Título"
 viewGrid = "Vista de cuadrícula"
 viewTable = "Vista de tabla"
---- fr projectsPdm (198 keys)
+--- fr projectsPdm (195 keys)
 acceptSuggestion = "Ajouter {{name}}"  placeholders={{name}}
 aiUnavailable = "IA indisponible"
 aito.confirmUnlink = "Délier {{name}} de cette tâche ? La liste des fichiers livrés sera effacée."  placeholders={{name}}
@@ -641,7 +632,6 @@ colTags = "Étiquettes"
 colTitle = "Titre"
 colUpdated = "Mis à jour"
 create = "Créer"
-createTag = "Créer « {{name}} »"  placeholders={{name}}
 createTitle = "Nouveau projet"
 descriptionLabel = "Description"
 editHeader = "Modifier le titre, la description et les étiquettes"
@@ -660,7 +650,6 @@ files.derivedFromLabel = "Dérivé de"
 files.derivedFromNone = "Rien"
 files.download = "Télécharger"
 files.downloadAll = "Tout télécharger (zip)"
-files.dropHint = "Déposez des fichiers ici ou cliquez pour choisir"
 files.duplicateWarning = "{{filename}} est identique à {{revision}}"  placeholders={{filename}},{{revision}}
 files.emptySection = "Aucun élément"
 files.fileCount_one = "{{count}} fichier"  placeholders={{count}}
@@ -692,7 +681,6 @@ files.statusLabel = "Statut"
 files.statusObsolete = "Obsolète"
 files.statusValide = "Validé"
 files.statusWip = "En cours"
-files.title = "Fichiers"
 files.uploadFailed = "Échec de l'envoi"
 files.uploading = "Envoi…"
 filing.autoFileHint = "Un fichier nommé « P-0042_support.3mf » va directement dans le projet P-0042"
@@ -796,7 +784,7 @@ title = "Projets"
 titleLabel = "Titre"
 viewGrid = "Vue grille"
 viewTable = "Vue tableau"
---- it projectsPdm (198 keys)
+--- it projectsPdm (195 keys)
 acceptSuggestion = "Aggiungi {{name}}"  placeholders={{name}}
 aiUnavailable = "IA non disponibile"
 aito.confirmUnlink = "Scollegare {{name}} da questa attività? L'elenco dei file consegnati verrà svuotato."  placeholders={{name}}
@@ -840,7 +828,6 @@ colTags = "Tag"
 colTitle = "Titolo"
 colUpdated = "Aggiornato"
 create = "Crea"
-createTag = "Crea «{{name}}»"  placeholders={{name}}
 createTitle = "Nuovo progetto"
 descriptionLabel = "Descrizione"
 editHeader = "Modifica titolo, descrizione e tag"
@@ -859,7 +846,6 @@ files.derivedFromLabel = "Derivato da"
 files.derivedFromNone = "Niente"
 files.download = "Scarica"
 files.downloadAll = "Scarica tutto (zip)"
-files.dropHint = "Trascina i file qui o fai clic per scegliere"
 files.duplicateWarning = "{{filename}} è identico a {{revision}}"  placeholders={{filename}},{{revision}}
 files.emptySection = "Ancora nessun elemento"
 files.fileCount_one = "{{count}} file"  placeholders={{count}}
@@ -891,7 +877,6 @@ files.statusLabel = "Stato"
 files.statusObsolete = "Obsoleto"
 files.statusValide = "Approvato"
 files.statusWip = "In corso"
-files.title = "File"
 files.uploadFailed = "Caricamento non riuscito"
 files.uploading = "Caricamento…"
 filing.autoFileHint = "Un file chiamato «P-0042_support.3mf» finisce direttamente nel progetto P-0042"
@@ -995,7 +980,7 @@ title = "Progetti"
 titleLabel = "Titolo"
 viewGrid = "Vista griglia"
 viewTable = "Vista tabella"
---- ja projectsPdm (198 keys)
+--- ja projectsPdm (195 keys)
 acceptSuggestion = "{{name}}を追加"  placeholders={{name}}
 aiUnavailable = "AIは利用できません"
 aito.confirmUnlink = "このタスクから {{name}} のリンクを解除しますか？納品ファイルの一覧は消去されます。"  placeholders={{name}}
@@ -1039,7 +1024,6 @@ colTags = "タグ"
 colTitle = "タイトル"
 colUpdated = "更新日"
 create = "作成"
-createTag = "「{{name}}」を作成"  placeholders={{name}}
 createTitle = "新規プロジェクト"
 descriptionLabel = "説明"
 editHeader = "タイトル、説明、タグを編集"
@@ -1058,7 +1042,6 @@ files.derivedFromLabel = "派生元"
 files.derivedFromNone = "なし"
 files.download = "ダウンロード"
 files.downloadAll = "すべてダウンロード（zip）"
-files.dropHint = "ここにファイルをドロップ、またはクリックして選択"
 files.duplicateWarning = "{{filename}}は{{revision}}と同一です"  placeholders={{filename}},{{revision}}
 files.emptySection = "アイテムはまだありません"
 files.fileCount_one = "{{count}}件のファイル"  placeholders={{count}}
@@ -1090,7 +1073,6 @@ files.statusLabel = "ステータス"
 files.statusObsolete = "廃止"
 files.statusValide = "承認済み"
 files.statusWip = "作業中"
-files.title = "ファイル"
 files.uploadFailed = "アップロードに失敗しました"
 files.uploading = "アップロード中…"
 filing.autoFileHint = "「P-0042_support.3mf」という名前のファイルは、そのままプロジェクト P-0042 に入ります"
@@ -1194,7 +1176,7 @@ title = "プロジェクト"
 titleLabel = "タイトル"
 viewGrid = "グリッド表示"
 viewTable = "テーブル表示"
---- ko projectsPdm (198 keys)
+--- ko projectsPdm (195 keys)
 acceptSuggestion = "{{name}} 추가"  placeholders={{name}}
 aiUnavailable = "AI를 사용할 수 없음"
 aito.confirmUnlink = "이 작업에서 {{name}} 연결을 해제할까요? 납품 파일 목록이 지워집니다."  placeholders={{name}}
@@ -1238,7 +1220,6 @@ colTags = "태그"
 colTitle = "제목"
 colUpdated = "업데이트됨"
 create = "만들기"
-createTag = "“{{name}}” 만들기"  placeholders={{name}}
 createTitle = "새 프로젝트"
 descriptionLabel = "설명"
 editHeader = "제목, 설명 및 태그 편집"
@@ -1257,7 +1238,6 @@ files.derivedFromLabel = "파생 원본"
 files.derivedFromNone = "없음"
 files.download = "다운로드"
 files.downloadAll = "모두 다운로드(zip)"
-files.dropHint = "여기에 파일을 놓거나 클릭하여 선택"
 files.duplicateWarning = "{{filename}}은(는) {{revision}}과(와) 동일합니다"  placeholders={{filename}},{{revision}}
 files.emptySection = "아직 항목이 없습니다"
 files.fileCount_one = "파일 {{count}}개"  placeholders={{count}}
@@ -1289,7 +1269,6 @@ files.statusLabel = "상태"
 files.statusObsolete = "폐기됨"
 files.statusValide = "승인됨"
 files.statusWip = "진행 중"
-files.title = "파일"
 files.uploadFailed = "업로드 실패"
 files.uploading = "업로드 중…"
 filing.autoFileHint = "\"P-0042_support.3mf\"라는 파일은 바로 프로젝트 P-0042로 들어갑니다"
@@ -1393,7 +1372,7 @@ title = "프로젝트"
 titleLabel = "제목"
 viewGrid = "격자 보기"
 viewTable = "표 보기"
---- nl projectsPdm (198 keys)
+--- nl projectsPdm (195 keys)
 acceptSuggestion = "{{name}} toevoegen"  placeholders={{name}}
 aiUnavailable = "AI niet beschikbaar"
 aito.confirmUnlink = "{{name}} loskoppelen van deze taak? De lijst met geleverde bestanden wordt gewist."  placeholders={{name}}
@@ -1437,7 +1416,6 @@ colTags = "Tags"
 colTitle = "Titel"
 colUpdated = "Bijgewerkt"
 create = "Aanmaken"
-createTag = "„{{name}}” aanmaken"  placeholders={{name}}
 createTitle = "Nieuw project"
 descriptionLabel = "Beschrijving"
 editHeader = "Titel, beschrijving en tags bewerken"
@@ -1456,7 +1434,6 @@ files.derivedFromLabel = "Afgeleid van"
 files.derivedFromNone = "Niets"
 files.download = "Downloaden"
 files.downloadAll = "Alles downloaden (zip)"
-files.dropHint = "Sleep bestanden hierheen of klik om te kiezen"
 files.duplicateWarning = "{{filename}} is identiek aan {{revision}}"  placeholders={{filename}},{{revision}}
 files.emptySection = "Nog geen items"
 files.fileCount_one = "{{count}} bestand"  placeholders={{count}}
@@ -1488,7 +1465,6 @@ files.statusLabel = "Status"
 files.statusObsolete = "Verouderd"
 files.statusValide = "Goedgekeurd"
 files.statusWip = "In uitvoering"
-files.title = "Bestanden"
 files.uploadFailed = "Upload mislukt"
 files.uploading = "Uploaden…"
 filing.autoFileHint = "Een bestand met de naam \"P-0042_support.3mf\" gaat rechtstreeks naar project P-0042"
@@ -1592,7 +1568,7 @@ title = "Projecten"
 titleLabel = "Titel"
 viewGrid = "Rasterweergave"
 viewTable = "Tabelweergave"
---- ptBR projectsPdm (198 keys)
+--- ptBR projectsPdm (195 keys)
 acceptSuggestion = "Adicionar {{name}}"  placeholders={{name}}
 aiUnavailable = "IA indisponível"
 aito.confirmUnlink = "Desvincular {{name}} desta tarefa? A lista de arquivos entregues será apagada."  placeholders={{name}}
@@ -1636,7 +1612,6 @@ colTags = "Tags"
 colTitle = "Título"
 colUpdated = "Atualizado"
 create = "Criar"
-createTag = "Criar “{{name}}”"  placeholders={{name}}
 createTitle = "Novo projeto"
 descriptionLabel = "Descrição"
 editHeader = "Editar título, descrição e tags"
@@ -1655,7 +1630,6 @@ files.derivedFromLabel = "Derivado de"
 files.derivedFromNone = "Nada"
 files.download = "Baixar"
 files.downloadAll = "Baixar tudo (zip)"
-files.dropHint = "Solte arquivos aqui ou clique para escolher"
 files.duplicateWarning = "{{filename}} é idêntico a {{revision}}"  placeholders={{filename}},{{revision}}
 files.emptySection = "Nenhum item ainda"
 files.fileCount_one = "{{count}} arquivo"  placeholders={{count}}
@@ -1687,7 +1661,6 @@ files.statusLabel = "Status"
 files.statusObsolete = "Obsoleto"
 files.statusValide = "Aprovado"
 files.statusWip = "Em andamento"
-files.title = "Arquivos"
 files.uploadFailed = "Falha no envio"
 files.uploading = "Enviando…"
 filing.autoFileHint = "Um arquivo chamado \"P-0042_support.3mf\" vai direto para o projeto P-0042"
@@ -1791,7 +1764,7 @@ title = "Projetos"
 titleLabel = "Título"
 viewGrid = "Visualização em grade"
 viewTable = "Visualização em tabela"
---- ru projectsPdm (198 keys)
+--- ru projectsPdm (195 keys)
 acceptSuggestion = "Добавить {{name}}"  placeholders={{name}}
 aiUnavailable = "ИИ недоступен"
 aito.confirmUnlink = "Отвязать {{name}} от этой задачи? Список переданных файлов будет очищен."  placeholders={{name}}
@@ -1835,7 +1808,6 @@ colTags = "Метки"
 colTitle = "Название"
 colUpdated = "Обновлено"
 create = "Создать"
-createTag = "Создать «{{name}}»"  placeholders={{name}}
 createTitle = "Новый проект"
 descriptionLabel = "Описание"
 editHeader = "Изменить название, описание и метки"
@@ -1854,7 +1826,6 @@ files.derivedFromLabel = "Производная от"
 files.derivedFromNone = "Ничего"
 files.download = "Скачать"
 files.downloadAll = "Скачать всё (zip)"
-files.dropHint = "Перетащите файлы сюда или нажмите для выбора"
 files.duplicateWarning = "{{filename}} идентичен {{revision}}"  placeholders={{filename}},{{revision}}
 files.emptySection = "Элементов пока нет"
 files.fileCount_one = "Файлов: {{count}}"  placeholders={{count}}
@@ -1886,7 +1857,6 @@ files.statusLabel = "Статус"
 files.statusObsolete = "Устарело"
 files.statusValide = "Утверждено"
 files.statusWip = "В работе"
-files.title = "Файлы"
 files.uploadFailed = "Не удалось загрузить"
 files.uploading = "Загрузка…"
 filing.autoFileHint = "Файл с именем «P-0042_support.3mf» попадает сразу в проект P-0042"
@@ -1990,7 +1960,7 @@ title = "Проекты"
 titleLabel = "Название"
 viewGrid = "Вид сеткой"
 viewTable = "Табличный вид"
---- sv projectsPdm (198 keys)
+--- sv projectsPdm (195 keys)
 acceptSuggestion = "Lägg till {{name}}"  placeholders={{name}}
 aiUnavailable = "AI är inte tillgänglig"
 aito.confirmUnlink = "Koppla bort {{name}} från den här uppgiften? Listan över levererade filer töms."  placeholders={{name}}
@@ -2034,7 +2004,6 @@ colTags = "Taggar"
 colTitle = "Titel"
 colUpdated = "Uppdaterad"
 create = "Skapa"
-createTag = "Skapa ”{{name}}”"  placeholders={{name}}
 createTitle = "Nytt projekt"
 descriptionLabel = "Beskrivning"
 editHeader = "Redigera titel, beskrivning och taggar"
@@ -2053,7 +2022,6 @@ files.derivedFromLabel = "Härledd från"
 files.derivedFromNone = "Ingenting"
 files.download = "Ladda ner"
 files.downloadAll = "Ladda ner allt (zip)"
-files.dropHint = "Släpp filer här eller klicka för att välja"
 files.duplicateWarning = "{{filename}} är identisk med {{revision}}"  placeholders={{filename}},{{revision}}
 files.emptySection = "Inga objekt ännu"
 files.fileCount_one = "{{count}} fil"  placeholders={{count}}
@@ -2085,7 +2053,6 @@ files.statusLabel = "Status"
 files.statusObsolete = "Föråldrad"
 files.statusValide = "Godkänd"
 files.statusWip = "Pågående"
-files.title = "Filer"
 files.uploadFailed = "Uppladdningen misslyckades"
 files.uploading = "Laddar upp…"
 filing.autoFileHint = "En fil med namnet \"P-0042_support.3mf\" hamnar direkt i projekt P-0042"
@@ -2189,7 +2156,7 @@ title = "Projekt"
 titleLabel = "Titel"
 viewGrid = "Rutnätsvy"
 viewTable = "Tabellvy"
---- tr projectsPdm (198 keys)
+--- tr projectsPdm (195 keys)
 acceptSuggestion = "{{name}} ekle"  placeholders={{name}}
 aiUnavailable = "Yapay zekâ kullanılamıyor"
 aito.confirmUnlink = "{{name}} bu görevden ayrılsın mı? Teslim edilen dosyalar listesi temizlenir."  placeholders={{name}}
@@ -2233,7 +2200,6 @@ colTags = "Etiketler"
 colTitle = "Başlık"
 colUpdated = "Güncellendi"
 create = "Oluştur"
-createTag = "“{{name}}” oluştur"  placeholders={{name}}
 createTitle = "Yeni proje"
 descriptionLabel = "Açıklama"
 editHeader = "Başlığı, açıklamayı ve etiketleri düzenle"
@@ -2252,7 +2218,6 @@ files.derivedFromLabel = "Türetildiği kaynak"
 files.derivedFromNone = "Hiçbiri"
 files.download = "İndir"
 files.downloadAll = "Tümünü indir (zip)"
-files.dropHint = "Dosyaları buraya bırakın veya seçmek için tıklayın"
 files.duplicateWarning = "{{filename}}, {{revision}} ile aynı"  placeholders={{filename}},{{revision}}
 files.emptySection = "Henüz öğe yok"
 files.fileCount_one = "{{count}} dosya"  placeholders={{count}}
@@ -2284,7 +2249,6 @@ files.statusLabel = "Durum"
 files.statusObsolete = "Eski"
 files.statusValide = "Onaylandı"
 files.statusWip = "Devam ediyor"
-files.title = "Dosyalar"
 files.uploadFailed = "Yükleme başarısız"
 files.uploading = "Yükleniyor…"
 filing.autoFileHint = "\"P-0042_support.3mf\" adlı dosya doğrudan P-0042 projesine gider"
@@ -2388,7 +2352,7 @@ title = "Projeler"
 titleLabel = "Başlık"
 viewGrid = "Izgara görünümü"
 viewTable = "Tablo görünümü"
---- uk projectsPdm (198 keys)
+--- uk projectsPdm (195 keys)
 acceptSuggestion = "Додати {{name}}"  placeholders={{name}}
 aiUnavailable = "ШІ недоступний"
 aito.confirmUnlink = "Відв’язати {{name}} від цього завдання? Список переданих файлів буде очищено."  placeholders={{name}}
@@ -2432,7 +2396,6 @@ colTags = "Теги"
 colTitle = "Назва"
 colUpdated = "Оновлено"
 create = "Створити"
-createTag = "Створити «{{name}}»"  placeholders={{name}}
 createTitle = "Новий проєкт"
 descriptionLabel = "Опис"
 editHeader = "Редагувати назву, опис і теги"
@@ -2451,7 +2414,6 @@ files.derivedFromLabel = "Похідна від"
 files.derivedFromNone = "Нічого"
 files.download = "Завантажити"
 files.downloadAll = "Завантажити все (zip)"
-files.dropHint = "Перетягніть файли сюди або натисніть, щоб вибрати"
 files.duplicateWarning = "{{filename}} ідентичний {{revision}}"  placeholders={{filename}},{{revision}}
 files.emptySection = "Елементів ще немає"
 files.fileCount_one = "Файлів: {{count}}"  placeholders={{count}}
@@ -2483,7 +2445,6 @@ files.statusLabel = "Статус"
 files.statusObsolete = "Застаріло"
 files.statusValide = "Затверджено"
 files.statusWip = "У роботі"
-files.title = "Файли"
 files.uploadFailed = "Не вдалося завантажити"
 files.uploading = "Завантаження…"
 filing.autoFileHint = "Файл з назвою «P-0042_support.3mf» потрапляє просто в проєкт P-0042"
@@ -2587,7 +2548,7 @@ title = "Проєкти"
 titleLabel = "Назва"
 viewGrid = "Вигляд сіткою"
 viewTable = "Табличний вигляд"
---- zhCN projectsPdm (198 keys)
+--- zhCN projectsPdm (195 keys)
 acceptSuggestion = "添加 {{name}}"  placeholders={{name}}
 aiUnavailable = "AI 不可用"
 aito.confirmUnlink = "要将 {{name}} 从此任务取消关联吗？已交付文件列表将被清空。"  placeholders={{name}}
@@ -2631,7 +2592,6 @@ colTags = "标签"
 colTitle = "标题"
 colUpdated = "更新时间"
 create = "创建"
-createTag = "创建“{{name}}”"  placeholders={{name}}
 createTitle = "新建项目"
 descriptionLabel = "描述"
 editHeader = "编辑标题、描述和标签"
@@ -2650,7 +2610,6 @@ files.derivedFromLabel = "源自"
 files.derivedFromNone = "无"
 files.download = "下载"
 files.downloadAll = "全部下载（zip）"
-files.dropHint = "将文件拖放到此处，或点击选择"
 files.duplicateWarning = "{{filename}} 与 {{revision}} 相同"  placeholders={{filename}},{{revision}}
 files.emptySection = "暂无项目"
 files.fileCount_one = "{{count}} 个文件"  placeholders={{count}}
@@ -2682,7 +2641,6 @@ files.statusLabel = "状态"
 files.statusObsolete = "已作废"
 files.statusValide = "已批准"
 files.statusWip = "进行中"
-files.title = "文件"
 files.uploadFailed = "上传失败"
 files.uploading = "上传中…"
 filing.autoFileHint = "名为“P-0042_support.3mf”的文件会直接进入项目 P-0042"
@@ -2786,7 +2744,7 @@ title = "项目"
 titleLabel = "标题"
 viewGrid = "网格视图"
 viewTable = "表格视图"
---- zhTW projectsPdm (198 keys)
+--- zhTW projectsPdm (195 keys)
 acceptSuggestion = "新增 {{name}}"  placeholders={{name}}
 aiUnavailable = "AI 無法使用"
 aito.confirmUnlink = "要將 {{name}} 從此任務取消連結嗎？已交付檔案清單將被清除。"  placeholders={{name}}
@@ -2830,7 +2788,6 @@ colTags = "標籤"
 colTitle = "標題"
 colUpdated = "更新時間"
 create = "建立"
-createTag = "建立「{{name}}」"  placeholders={{name}}
 createTitle = "新增專案"
 descriptionLabel = "描述"
 editHeader = "編輯標題、描述與標籤"
@@ -2849,7 +2806,6 @@ files.derivedFromLabel = "衍生自"
 files.derivedFromNone = "無"
 files.download = "下載"
 files.downloadAll = "全部下載（zip）"
-files.dropHint = "將檔案拖放到此處，或點擊選擇"
 files.duplicateWarning = "{{filename}} 與 {{revision}} 相同"  placeholders={{filename}},{{revision}}
 files.emptySection = "尚無項目"
 files.fileCount_one = "{{count}} 個檔案"  placeholders={{count}}
@@ -2881,7 +2837,6 @@ files.statusLabel = "狀態"
 files.statusObsolete = "已作廢"
 files.statusValide = "已核准"
 files.statusWip = "進行中"
-files.title = "檔案"
 files.uploadFailed = "上傳失敗"
 files.uploading = "上傳中…"
 filing.autoFileHint = "名為「P-0042_support.3mf」的檔案會直接進入專案 P-0042"

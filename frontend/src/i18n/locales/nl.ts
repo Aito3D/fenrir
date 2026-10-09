@@ -10196,7 +10196,6 @@ export default {
     create: 'Aanmaken',
     tagsLabel: 'Tags',
     tagSearchPlaceholder: 'Tag zoeken of aanmaken…',
-    createTag: '„{{name}}” aanmaken',
     removeTag: '{{name}} verwijderen',
     suggestTags: 'Tags voorstellen',
     suggestionsLabel: 'Suggesties',
@@ -10210,7 +10209,6 @@ export default {
     saveFailed: 'Project kon niet worden opgeslagen',
     codeChipLabel: 'Projectcode {{code}}',
     files: {
-      title: 'Bestanden',
       sectionScan: '3D-scan',
       sectionModelisation: 'Modelleren',
       sectionImpression: 'Printen',
@@ -10219,7 +10217,6 @@ export default {
       emptySection: 'Nog geen items',
       newItem: 'Nieuw item',
       itemNameLabel: 'Itemnaam',
-      dropHint: 'Sleep bestanden hierheen of klik om te kiezen',
       chooseFiles: 'Bestanden kiezen',
       uploading: 'Uploaden…',
       uploadFailed: 'Upload mislukt',

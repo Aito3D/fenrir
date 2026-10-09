@@ -18,6 +18,7 @@ import re
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from pathlib import Path
+from typing import NamedTuple
 
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -397,6 +398,79 @@ def _name_without_code(name: str) -> str:
     return rest if rest.strip() else item_name
 
 
+class _Scored(NamedTuple):
+    """One project a suggestion pass matched, with the item that matched (item pass only)."""
+
+    ratio: float
+    project_id: int
+    code: str | None
+    name: str
+    item_id: int | None = None
+    item_name: str | None = None
+
+
+def _rank(scored: list[_Scored], reason: str) -> list[ProjectSuggestionForFile]:
+    """``scored`` as suggestions: best ratio first, ties by project id then item id,
+    the score rounded to 4 decimals."""
+    ranked = sorted(scored, key=lambda r: (-r.ratio, r.project_id, r.item_id or 0))
+    out = []
+    for row in ranked:
+        item = {} if row.item_id is None else {"item_id": row.item_id, "item_name": row.item_name}
+        out.append(
+            ProjectSuggestionForFile(
+                project_id=row.project_id,
+                code=row.code,
+                name=row.name,
+                **item,
+                score=round(row.ratio, 4),
+                reason=reason,
+            )
+        )
+    return out
+
+
+async def _code_suggestions(db: AsyncSession, filename: str) -> list[ProjectSuggestionForFile]:
+    """The non-template project whose code prefixes ``filename`` (score 1.0), if any."""
+    code = project_code_from_filename(filename)
+    if code is None:
+        return []
+    row = (
+        await db.execute(
+            select(Project.id, Project.code, Project.name).where(Project.code == code, Project.is_template.is_not(True))
+        )
+    ).first()
+    if row is None:
+        return []
+    return [ProjectSuggestionForFile(project_id=row[0], code=row[1], name=row[2], score=1.0, reason="code")]
+
+
+async def _item_name_suggestions(db: AsyncSession, name: str) -> list[ProjectSuggestionForFile]:
+    """Non-template projects with an item (in an enabled section) named like ``name``."""
+    key = project_files._name_key(name)
+    if not key:
+        return []
+    rows = await db.execute(
+        select(ProjectItem.id, ProjectItem.name, ProjectItem.name_key, Project.id, Project.code, Project.name)
+        .join(Project, Project.id == ProjectItem.project_id)
+        .where(ProjectItem.section.in_(ENABLED_SECTIONS), Project.is_template.is_not(True))
+    )
+    scored = []
+    for item_id, item_name, item_key, project_id, project_code, project_name in rows:
+        ratio = SequenceMatcher(None, key, item_key or "").ratio()
+        if ratio >= SIMILAR_ITEM_THRESHOLD:
+            scored.append(_Scored(ratio, project_id, project_code, project_name, item_id, item_name))
+    return _rank(scored, "item_name")
+
+
+async def _project_name_suggestions(db: AsyncSession, name: str) -> list[ProjectSuggestionForFile]:
+    """Non-template projects named like ``name``."""
+    folded = name.strip().casefold()
+    if not folded:
+        return []
+    scored = await similar_projects(db, folded, SIMILAR_PROJECT_THRESHOLD)
+    return _rank([_Scored(*row) for row in scored], "project_name")
+
+
 async def suggest_projects_for_filename(
     db: AsyncSession, filename: str, limit: int = 5
 ) -> list[ProjectSuggestionForFile]:
@@ -407,66 +481,18 @@ async def suggest_projects_for_filename(
     reason. Non-printable files get no suggestion."""
     if not is_printable_filename(filename) or limit <= 0:
         return []
+    name = _name_without_code(filename)
     out: list[ProjectSuggestionForFile] = []
     seen: set[int] = set()
-
-    def add(suggestion: ProjectSuggestionForFile) -> None:
-        if suggestion.project_id not in seen:
-            seen.add(suggestion.project_id)
-            out.append(suggestion)
-
-    code = project_code_from_filename(filename)
-    if code is not None:
-        row = (
-            await db.execute(
-                select(Project.id, Project.code, Project.name).where(
-                    Project.code == code, Project.is_template.is_not(True)
-                )
-            )
-        ).first()
-        if row is not None:
-            add(ProjectSuggestionForFile(project_id=row[0], code=row[1], name=row[2], score=1.0, reason="code"))
-
-    name = _name_without_code(filename)
-    key = project_files._name_key(name)
-    if key:
-        rows = await db.execute(
-            select(ProjectItem.id, ProjectItem.name, ProjectItem.name_key, Project.id, Project.code, Project.name)
-            .join(Project, Project.id == ProjectItem.project_id)
-            .where(ProjectItem.section.in_(ENABLED_SECTIONS), Project.is_template.is_not(True))
-        )
-        scored = []
-        for item_id, item_name, item_key, project_id, project_code, project_name in rows:
-            ratio = SequenceMatcher(None, key, item_key or "").ratio()
-            if ratio >= SIMILAR_ITEM_THRESHOLD:
-                scored.append((ratio, project_id, item_id, item_name, project_code, project_name))
-        scored.sort(key=lambda r: (-r[0], r[1], r[2]))
-        for ratio, project_id, item_id, item_name, project_code, project_name in scored:
-            add(
-                ProjectSuggestionForFile(
-                    project_id=project_id,
-                    code=project_code,
-                    name=project_name,
-                    item_id=item_id,
-                    item_name=item_name,
-                    score=round(ratio, 4),
-                    reason="item_name",
-                )
-            )
-
-    folded = name.strip().casefold()
-    if folded:
-        scored_projects = await similar_projects(db, folded, SIMILAR_PROJECT_THRESHOLD)
-        for ratio, project_id, project_code, project_name in scored_projects:
-            add(
-                ProjectSuggestionForFile(
-                    project_id=project_id,
-                    code=project_code,
-                    name=project_name,
-                    score=round(ratio, 4),
-                    reason="project_name",
-                )
-            )
+    for suggestions in (
+        await _code_suggestions(db, filename),
+        await _item_name_suggestions(db, name),
+        await _project_name_suggestions(db, name),
+    ):
+        for suggestion in suggestions:
+            if suggestion.project_id not in seen:
+                seen.add(suggestion.project_id)
+                out.append(suggestion)
     return out[:limit]
 
 

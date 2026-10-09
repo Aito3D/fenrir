@@ -16,7 +16,7 @@ from backend.app.models.project import Project
 from backend.app.models.project_item import ProjectItem
 from backend.app.models.settings import Settings
 from backend.app.models.user import User
-from backend.app.services.project_filing import project_code_from_filename
+from backend.app.services.project_filing import project_code_from_filename, suggest_projects_for_filename
 from backend.tests.project_fixtures import (
     api_project as _project,
     make_managed_library_file as _managed,
@@ -267,6 +267,62 @@ async def test_suggestions_project_name_ties_sort_by_id_and_round_the_score(asyn
     ]
     expected = round(SequenceMatcher(None, "bracket arm", "bracket arm stand").ratio(), 4)
     assert [s["score"] for s in body] == [expected, expected]
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_suggestions_item_name_pass_ranks_dedups_and_cuts(async_client: AsyncClient, db_session):
+    # Pin: the item-name pass sorts by ratio desc, then project id, then item id;
+    # a project appears once (its best item, lowest item id on a tie), never again
+    # under project_name; the threshold is 0.6; scores round to 4 decimals; the
+    # limit cuts the merged list.
+    async def item(project_id: int, name: str) -> int:
+        response = await async_client.post(
+            f"/api/v1/projects/{project_id}/items", json={"section": "impression", "name": name}
+        )
+        assert response.status_code == 201, response.text
+        return response.json()["id"]
+
+    tied = await _project(async_client, "Qx1")
+    tied_first_item = await item(tied["id"], "Bracket armz")
+    await item(tied["id"], "Bracket arms")
+    exact = await _project(async_client, "Qx2")
+    exact_item = await item(exact["id"], "Bracket arm")
+    later = await _project(async_client, "Bracket arm")
+    later_item = await item(later["id"], "Bracket armx")
+    weak = await _project(async_client, "Qx4")
+    await item(weak["id"], "Brk")
+    by_name = await _project(async_client, "Bracket arm stand")
+
+    file = await _managed(db_session, "Bracket arm.3mf")
+    body = (await async_client.get(_suggest_url(file.id))).json()
+    assert [(s["project_id"], s["reason"], s["item_id"]) for s in body] == [
+        (exact["id"], "item_name", exact_item),
+        (tied["id"], "item_name", tied_first_item),
+        (later["id"], "item_name", later_item),
+        (by_name["id"], "project_name", None),
+    ]
+    near = round(SequenceMatcher(None, "bracket arm", "bracket arms").ratio(), 4)
+    assert [s["score"] for s in body[:3]] == [1.0, near, near]
+    assert body[1]["item_name"] == "Bracket armz"
+    assert body[3]["score"] == round(SequenceMatcher(None, "bracket arm", "bracket arm stand").ratio(), 4)
+
+    limited = (await async_client.get(_suggest_url(file.id), params={"limit": 3})).json()
+    assert [s["project_id"] for s in limited] == [exact["id"], tied["id"], later["id"]]
+    assert await suggest_projects_for_filename(db_session, "Bracket arm.3mf", limit=0) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_suggestions_unknown_code_and_keyless_name(async_client: AsyncClient, db_session):
+    # Pin: a code prefix no project carries falls through to the name passes;
+    # a name with no item key ("." strips to nothing) skips the item pass only.
+    zeta = await _project(async_client, "Zeta")
+    dot = await _project(async_client, ".")
+    body = await suggest_projects_for_filename(db_session, "P-9999_Zeta.3mf")
+    assert [(s.project_id, s.reason, s.score, s.item_id) for s in body] == [(zeta["id"], "project_name", 1.0, None)]
+    body = await suggest_projects_for_filename(db_session, "..3mf")
+    assert [(s.project_id, s.reason, s.score) for s in body] == [(dot["id"], "project_name", 1.0)]
 
 
 @pytest.mark.asyncio

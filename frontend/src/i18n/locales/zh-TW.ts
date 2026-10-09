@@ -10155,7 +10155,6 @@ export default {
     create: '建立',
     tagsLabel: '標籤',
     tagSearchPlaceholder: '搜尋或建立標籤…',
-    createTag: '建立「{{name}}」',
     removeTag: '移除 {{name}}',
     suggestTags: '建議標籤',
     suggestionsLabel: '建議',
@@ -10169,7 +10168,6 @@ export default {
     saveFailed: '無法儲存專案',
     codeChipLabel: '專案編號 {{code}}',
     files: {
-      title: '檔案',
       sectionScan: '掃描',
       sectionModelisation: '建模',
       sectionImpression: '列印',
@@ -10178,7 +10176,6 @@ export default {
       emptySection: '尚無項目',
       newItem: '新增項目',
       itemNameLabel: '項目名稱',
-      dropHint: '將檔案拖放到此處，或點擊選擇',
       chooseFiles: '選擇檔案',
       uploading: '上傳中…',
       uploadFailed: '上傳失敗',
