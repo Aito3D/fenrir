@@ -7,6 +7,7 @@ hard limit, so startup does that on every install. The support bundle now counts
 descriptors by kind, so the next report shows what held them.
 """
 
+import os
 import resource
 import sqlite3
 from unittest.mock import MagicMock, patch
@@ -139,8 +140,13 @@ class TestDescriptorsInTheSupportBundle:
             db.close()
 
         assert info["num_fds"] > 0
-        assert info["fds_by_type"]["database"] >= 1
-        assert info["fds_by_type"]["database_wal"] >= 1
+        if os.path.isdir("/proc/self/fd"):
+            assert info["fds_by_type"]["database"] >= 1
+            assert info["fds_by_type"]["database_wal"] >= 1
+        else:
+            # The by-kind breakdown reads /proc and is documented as Linux only
+            # (macOS, Windows): there it is absent, never partial.
+            assert "fds_by_type" not in info
         assert set(info["fd_limit"]) == {"soft", "hard"}
         assert "secret-name" not in repr(info)
 

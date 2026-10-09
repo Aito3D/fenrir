@@ -1,0 +1,921 @@
+### exit: 0
+### stdout:
+{
+ "project_storage": {
+  "constants": {
+   "PROJECTS_DIRNAME": "projects",
+   "MAX_COMPONENT_CHARS": 100,
+   "SECTION_DIRS": {
+    "scan": "Scan",
+    "modelisation": "Modélisation",
+    "impression": "Impression",
+    "usinage": "Usinage",
+    "docs": "Docs"
+   },
+   "TRASH_DIRNAME": "_trash",
+   "ENABLED_SECTIONS": [
+    "impression"
+   ],
+   "PRINTABLE_EXTENSIONS": [
+    ".3mf",
+    ".gcode",
+    ".bgcode"
+   ],
+   "WINDOWS_RESERVED": [
+    "AUX",
+    "COM1",
+    "COM2",
+    "COM3",
+    "COM4",
+    "COM5",
+    "COM6",
+    "COM7",
+    "COM8",
+    "COM9",
+    "CON",
+    "LPT1",
+    "LPT2",
+    "LPT3",
+    "LPT4",
+    "LPT5",
+    "LPT6",
+    "LPT7",
+    "LPT8",
+    "LPT9",
+    "NUL",
+    "PRN"
+   ]
+  },
+  "slugify": {
+   "Support caméra FX3": "support-camera-fx3",
+   "  ": "projet",
+   "": "projet",
+   "Émile & Zoë – pièce n°3": "emile-zoe-piece-n3",
+   "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "---x---": "x",
+   "ÀÉÎÕÜ": "aeiou",
+   "日本語 title": "title",
+   "P-0042": "p-0042"
+  },
+  "slugify_max8": "support",
+  "sanitize_component": {
+   "Pièce": "Pièce",
+   " .hidden. ": "hidden",
+   "a/b\\c:d*e?f\"g<h>i|j": "abcdefghij",
+   "CON": "_CON",
+   "con.txt": "_con.txt",
+   "LPT1.gcode": "_LPT1.gcode",
+   "nul": "_nul",
+   "": "sans-nom",
+   "   ": "sans-nom",
+   "..": "sans-nom",
+   "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+   "tab\tnew\nline": "tabnewline",
+   "ends with dot.": "ends with dot",
+   "ends with space ": "ends with space",
+   "NFD é": "NFD é",
+   "ok name (2)": "ok name (2)"
+  },
+  "sanitize_fallback": "fichier",
+  "storage_dir_name": {
+   "P-0001": "P-0001_support-camera",
+   "P-0042": "P-0042_support-camera",
+   "P-123456": "P-123456_support-camera"
+  },
+  "is_printable_filename": {
+   "support.3mf": true,
+   "support.gcode.3mf": true,
+   "SUPPORT.GCODE.3MF": true,
+   "plate.gcode": true,
+   "plate.BGCODE": true,
+   "model.stl": false,
+   "model.STEP": false,
+   "scan.ply": false,
+   "notes.pdf": false,
+   "noext": false,
+   ".3mf": true,
+   " padded.3mf ": true,
+   "a.b.c.3mf": true,
+   "": false,
+   "x.3mf.bak": false,
+   "P-0042_support.3mf": true,
+   "p-0007 bracket.gcode": true,
+   "P-42_short.3mf": true,
+   "P-0042-dash.stl": false,
+   "P-0042support.3mf": true,
+   "nc.nc": false,
+   "tap.tap": false,
+   "dxf.DXF": false,
+   "weird.3MF ": true
+  },
+  "_split_extension": {
+   "support.3mf": [
+    "support",
+    ".3mf"
+   ],
+   "support.gcode.3mf": [
+    "support",
+    ".gcode.3mf"
+   ],
+   "SUPPORT.GCODE.3MF": [
+    "SUPPORT",
+    ".GCODE.3MF"
+   ],
+   "plate.gcode": [
+    "plate",
+    ".gcode"
+   ],
+   "plate.BGCODE": [
+    "plate",
+    ".BGCODE"
+   ],
+   "model.stl": [
+    "model",
+    ".stl"
+   ],
+   "model.STEP": [
+    "model",
+    ".STEP"
+   ],
+   "scan.ply": [
+    "scan",
+    ".ply"
+   ],
+   "notes.pdf": [
+    "notes",
+    ".pdf"
+   ],
+   "noext": [
+    "noext",
+    ""
+   ],
+   ".3mf": [
+    ".3mf",
+    ""
+   ],
+   " padded.3mf ": [
+    " padded.3mf ",
+    ""
+   ],
+   "a.b.c.3mf": [
+    "a.b.c",
+    ".3mf"
+   ],
+   "": [
+    "",
+    ""
+   ],
+   "x.3mf.bak": [
+    "x.3mf",
+    ".bak"
+   ],
+   "P-0042_support.3mf": [
+    "P-0042_support",
+    ".3mf"
+   ],
+   "p-0007 bracket.gcode": [
+    "p-0007 bracket",
+    ".gcode"
+   ],
+   "P-42_short.3mf": [
+    "P-42_short",
+    ".3mf"
+   ],
+   "P-0042-dash.stl": [
+    "P-0042-dash",
+    ".stl"
+   ],
+   "P-0042support.3mf": [
+    "P-0042support",
+    ".3mf"
+   ],
+   "nc.nc": [
+    "nc",
+    ".nc"
+   ],
+   "tap.tap": [
+    "tap",
+    ".tap"
+   ],
+   "dxf.DXF": [
+    "dxf",
+    ".DXF"
+   ],
+   "weird.3MF ": [
+    "weird.3MF ",
+    ""
+   ],
+   "archive.tar.gz": [
+    "archive.tar",
+    ".gz"
+   ],
+   "x.verylongextensionnamehere": [
+    "x.verylongextensionnamehere",
+    ""
+   ],
+   "x.ok+ext": [
+    "x",
+    ".ok+ext"
+   ],
+   "x.a-b": [
+    "x",
+    ".a-b"
+   ],
+   ".gcode.3mf": [
+    ".gcode",
+    ".3mf"
+   ]
+  },
+  "_fit_name": {
+   "short": "stem (2).3mf",
+   "long": "sssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss (12).gcode.3mf",
+   "empty": "f (2).3mf",
+   "dots": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa (2).3mf"
+  },
+  "unique_file_path": {
+   "a.3mf": "a (3).3mf",
+   "b.gcode.3mf": "b (2).gcode.3mf",
+   "c.3mf": "c.3mf",
+   "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.3mf": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.3mf",
+   "CON.3mf": "_CON.3mf",
+   "../../evil.3mf": "evil.3mf"
+  },
+  "claim_unique_file_path_sequence": [
+   "a (3).3mf",
+   "a (4).3mf",
+   "a (5).3mf"
+  ],
+  "claimed_exist": [
+   true,
+   true,
+   true
+  ],
+  "ensure_project_dir": "projects/P-0007_support-camera",
+  "storage_dir_assigned": "P-0007_support-camera",
+  "ensure_project_dir_no_code": "projects/P-9_vieux-projet",
+  "item_dir": "projects/P-0007_support-camera/Impression/Pièceune",
+  "item_dir_unknown_section": {
+   "__threw__": "KeyError: 'nope'"
+  },
+  "revision_dir": "projects/P-0007_support-camera/Impression/Pièce/R3",
+  "revision_dir_exists": true,
+  "move_to_trash_file": "projects/P-0007_support-camera/_trash/Impression/Pièce/R3/plate<SCRUBBED>.gcode.3mf",
+  "move_to_trash_dir": "projects/P-0007_support-camera/_trash/Impression/Pièce/R3<SCRUBBED>",
+  "move_to_trash_missing": "__none__",
+  "move_to_trash_outside": {
+   "__threw__": "PathTraversalError: Path is outside the project folder"
+  },
+  "move_to_trash_root": {
+   "__threw__": "PathTraversalError: Cannot trash the project folder itself"
+  },
+  "resolve_in_projects_traversal": {
+   "__threw__": "PathTraversalError: Path escapes the parent directory"
+  }
+ },
+ "project_codes": {
+  "CODE_COUNTER_KEY": "project_code_counter",
+  "format": {
+   "0": "P-0000",
+   "1": "P-0001",
+   "42": "P-0042",
+   "9999": "P-9999",
+   "10000": "P-10000",
+   "123456": "P-123456"
+  },
+  "parse": {
+   "P-0042": 42,
+   "P-42": 42,
+   "p-0042": 42,
+   "P-": "__none__",
+   "0042": "__none__",
+   "": "__none__",
+   "null": "__none__",
+   "P-0042_x": "__none__",
+   " P-0042": 42,
+   "P-00000": 0
+  }
+ },
+ "project_filing": {
+  "DROP_SECTIONS": {
+   "scan": [
+    ".ply",
+    ".obj",
+    ".e57",
+    ".xyz",
+    ".pts"
+   ],
+   "modelisation": [
+    ".step",
+    ".stp",
+    ".iges",
+    ".igs",
+    ".f3d",
+    ".stl",
+    ".sldprt"
+   ],
+   "impression": [
+    ".3mf",
+    ".gcode",
+    ".bgcode"
+   ],
+   "usinage": [
+    ".nc",
+    ".tap",
+    ".dxf"
+   ]
+  },
+  "SIMILAR_ITEM_THRESHOLD": 0.6,
+  "SIMILAR_PROJECT_THRESHOLD": 0.45,
+  "AUTO_FILE_SETTING_KEY": "projects_auto_file_by_code",
+  "RETRYABLE_SKIPS": [
+   "copy_failed",
+   "conflict"
+  ],
+  "section_for_filename": {
+   "support.3mf": "impression",
+   "support.gcode.3mf": "impression",
+   "SUPPORT.GCODE.3MF": "impression",
+   "plate.gcode": "impression",
+   "plate.BGCODE": "impression",
+   "model.stl": "modelisation",
+   "model.STEP": "modelisation",
+   "scan.ply": "scan",
+   "notes.pdf": "docs",
+   "noext": "docs",
+   ".3mf": "impression",
+   " padded.3mf ": "impression",
+   "a.b.c.3mf": "impression",
+   "": "docs",
+   "x.3mf.bak": "docs",
+   "P-0042_support.3mf": "impression",
+   "p-0007 bracket.gcode": "impression",
+   "P-42_short.3mf": "impression",
+   "P-0042-dash.stl": "modelisation",
+   "P-0042support.3mf": "impression",
+   "nc.nc": "usinage",
+   "tap.tap": "usinage",
+   "dxf.DXF": "usinage",
+   "weird.3MF ": "impression"
+  },
+  "item_name_for_filename": {
+   "support.3mf": "support",
+   "support.gcode.3mf": "support",
+   "SUPPORT.GCODE.3MF": "SUPPORT",
+   "plate.gcode": "plate",
+   "plate.BGCODE": "plate",
+   "model.stl": "model",
+   "model.STEP": "model",
+   "scan.ply": "scan",
+   "notes.pdf": "notes",
+   "noext": "noext",
+   ".3mf": ".3mf",
+   " padded.3mf ": "padded",
+   "a.b.c.3mf": "a.b.c",
+   "": "",
+   "x.3mf.bak": "x.3mf",
+   "P-0042_support.3mf": "P-0042_support",
+   "p-0007 bracket.gcode": "p-0007 bracket",
+   "P-42_short.3mf": "P-42_short",
+   "P-0042-dash.stl": "P-0042-dash",
+   "P-0042support.3mf": "P-0042support",
+   "nc.nc": "nc",
+   "tap.tap": "tap",
+   "dxf.DXF": "dxf",
+   "weird.3MF ": "weird"
+  },
+  "project_code_from_filename": {
+   "support.3mf": null,
+   "support.gcode.3mf": null,
+   "SUPPORT.GCODE.3MF": null,
+   "plate.gcode": null,
+   "plate.BGCODE": null,
+   "model.stl": null,
+   "model.STEP": null,
+   "scan.ply": null,
+   "notes.pdf": null,
+   "noext": null,
+   ".3mf": null,
+   " padded.3mf ": null,
+   "a.b.c.3mf": null,
+   "": null,
+   "x.3mf.bak": null,
+   "P-0042_support.3mf": "P-0042",
+   "p-0007 bracket.gcode": "P-0007",
+   "P-42_short.3mf": null,
+   "P-0042-dash.stl": "P-0042",
+   "P-0042support.3mf": null,
+   "nc.nc": null,
+   "tap.tap": null,
+   "dxf.DXF": null,
+   "weird.3MF ": null
+  },
+  "_name_without_code": {
+   "support.3mf": "support",
+   "support.gcode.3mf": "support",
+   "SUPPORT.GCODE.3MF": "SUPPORT",
+   "plate.gcode": "plate",
+   "plate.BGCODE": "plate",
+   "model.stl": "model",
+   "model.STEP": "model",
+   "scan.ply": "scan",
+   "notes.pdf": "notes",
+   "noext": "noext",
+   ".3mf": ".3mf",
+   " padded.3mf ": "padded",
+   "a.b.c.3mf": "a.b.c",
+   "": "",
+   "x.3mf.bak": "x.3mf",
+   "P-0042_support.3mf": "support",
+   "p-0007 bracket.gcode": "bracket",
+   "P-42_short.3mf": "P-42_short",
+   "P-0042-dash.stl": "dash",
+   "P-0042support.3mf": "P-0042support",
+   "nc.nc": "nc",
+   "tap.tap": "tap",
+   "dxf.DXF": "dxf",
+   "weird.3MF ": "weird"
+  }
+ },
+ "project_tags": {
+  "MAX_TAG_CHARS": 64,
+  "MAX_SUGGESTIONS": 5,
+  "MAX_NEW_SUGGESTIONS": 2,
+  "tag_name_key": {
+   "Drone": "drone",
+   " drone ": "drone",
+   "pièce, auto": "pièce, auto",
+   "": "",
+   ",": ",",
+   "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+   "A,B,C": "a,b,c",
+   "É́": "é́"
+  },
+  "clean_tag_name": {
+   "Drone": "Drone",
+   " drone ": "drone",
+   "pièce, auto": "pièce  auto",
+   "": "",
+   ",": "",
+   "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+   "A,B,C": "A B C",
+   "É́": "É́"
+  },
+  "split_tag_string": {
+   "drone,, Drone , pièce auto,": [
+    "drone",
+    "pièce auto"
+   ],
+   "": [],
+   "null": [],
+   " , ": [],
+   "a,A,b,B,a": [
+    "a",
+    "b"
+   ],
+   "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx,y": [
+    "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "y"
+   ]
+  },
+  "tag_mirror": {
+   "[]": null,
+   "[\"b\", \"A\", \"c\"]": "A, b, c",
+   "[\"Zed\", \"alpha\"]": "alpha, Zed",
+   "[\"dup\", \"Dup\"]": "dup, Dup"
+  },
+  "rank_tag_suggestions": {
+   "[[\"drone\", \"camera\", \"new one\", \"another\", \"third new\", \"support\"], []]": [
+    {
+     "name": "Drone",
+     "tag_id": 1
+    },
+    {
+     "name": "Support",
+     "tag_id": 3
+    },
+    {
+     "name": "camera",
+     "tag_id": null
+    },
+    {
+     "name": "new one",
+     "tag_id": null
+    }
+   ],
+   "[[\"DRONE\", \"Drone\", \"support\"], [1]]": [
+    {
+     "name": "Support",
+     "tag_id": 3
+    }
+   ],
+   "[[\"n1\", \"n2\", \"n3\", \"Cam\\u00e9ra\"], []]": [
+    {
+     "name": "Caméra",
+     "tag_id": 2
+    },
+    {
+     "name": "n1",
+     "tag_id": null
+    },
+    {
+     "name": "n2",
+     "tag_id": null
+    }
+   ],
+   "[[], []]": [],
+   "[[\"\", \" ,\", \"a,b\"], []]": [
+    {
+     "name": "a b",
+     "tag_id": null
+    }
+   ],
+   "[[\"Support\", \"drone\", \"cam\\u00e9ra\", \"n1\", \"n2\", \"n3\"], [2]]": [
+    {
+     "name": "Support",
+     "tag_id": 3
+    },
+    {
+     "name": "Drone",
+     "tag_id": 1
+    },
+    {
+     "name": "n1",
+     "tag_id": null
+    },
+    {
+     "name": "n2",
+     "tag_id": null
+    }
+   ]
+  }
+ },
+ "project_reslice": {
+  "is_resliceable": {
+   "support.3mf": true,
+   "support.gcode.3mf": true,
+   "SUPPORT.GCODE.3MF": true,
+   "plate.gcode": false,
+   "plate.BGCODE": false,
+   "model.stl": false,
+   "model.STEP": false,
+   "scan.ply": false,
+   "notes.pdf": false,
+   "noext": false,
+   ".3mf": true,
+   " padded.3mf ": false,
+   "a.b.c.3mf": true,
+   "": false,
+   "x.3mf.bak": false,
+   "P-0042_support.3mf": true,
+   "p-0007 bracket.gcode": false,
+   "P-42_short.3mf": true,
+   "P-0042-dash.stl": false,
+   "P-0042support.3mf": true,
+   "nc.nc": false,
+   "tap.tap": false,
+   "dxf.DXF": false,
+   "weird.3MF ": false
+  },
+  "output_filename": {
+   "support.3mf": "support.gcode.3mf",
+   "support.gcode.3mf": "support.gcode.3mf",
+   "SUPPORT.GCODE.3MF": "SUPPORT.gcode.3mf",
+   "plate.gcode": "plate.gcode.gcode.3mf",
+   "plate.BGCODE": "plate.BGCODE.gcode.3mf",
+   "model.stl": "model.stl.gcode.3mf",
+   "model.STEP": "model.STEP.gcode.3mf",
+   "scan.ply": "scan.ply.gcode.3mf",
+   "notes.pdf": "notes.pdf.gcode.3mf",
+   "noext": "noext.gcode.3mf",
+   ".3mf": "tranche.gcode.3mf",
+   " padded.3mf ": " padded.3mf .gcode.3mf",
+   "a.b.c.3mf": "a.b.c.gcode.3mf",
+   "": "tranche.gcode.3mf",
+   "x.3mf.bak": "x.3mf.bak.gcode.3mf",
+   "P-0042_support.3mf": "P-0042_support.gcode.3mf",
+   "p-0007 bracket.gcode": "p-0007 bracket.gcode.gcode.3mf",
+   "P-42_short.3mf": "P-42_short.gcode.3mf",
+   "P-0042-dash.stl": "P-0042-dash.stl.gcode.3mf",
+   "P-0042support.3mf": "P-0042support.gcode.3mf",
+   "nc.nc": "nc.nc.gcode.3mf",
+   "tap.tap": "tap.tap.gcode.3mf",
+   "dxf.DXF": "dxf.DXF.gcode.3mf",
+   "weird.3MF ": "weird.3MF .gcode.3mf"
+  },
+  "reslice_note": "Re-tranché depuis R3 · pipeline PLA rapide"
+ },
+ "project_files": {
+  "STL_THUMBNAIL_MAX_BYTES": 209715200,
+  "USAGE_COLUMNS": [
+   "PrintQueueItem.library_file_id",
+   "PrintArchive.library_file_id",
+   "PrintBatch.library_file_id",
+   "PrintQueueVariant.library_file_id",
+   "PipelineRun.source_library_file_id",
+   "PipelineRun.sliced_library_file_id"
+  ],
+  "require_enabled_section": {
+   "impression": "ok",
+   "scan": [
+    400,
+    "Section 'scan' does not accept files for now"
+   ],
+   "modelisation": [
+    400,
+    "Section 'modelisation' does not accept files for now"
+   ],
+   "usinage": [
+    400,
+    "Section 'usinage' does not accept files for now"
+   ],
+   "docs": [
+    400,
+    "Section 'docs' does not accept files for now"
+   ],
+   "nope": [
+    400,
+    "Section 'nope' does not accept files for now"
+   ]
+  },
+  "require_printable_uploads": {
+   "[\"a.3mf\"]": "ok",
+   "[\"a.3mf\", \"b.stl\"]": [
+    400,
+    "Projects only accept printing files (.3mf, .gcode, .bgcode); refused: b.stl"
+   ],
+   "[\"b.stl\"]": [
+    400,
+    "Projects only accept printing files (.3mf, .gcode, .bgcode); refused: b.stl"
+   ],
+   "[]": "ok",
+   "[\"c.gcode.3mf\", \"d.bgcode\", \"e.GCODE\"]": "ok"
+  },
+  "error_attrs": {
+   "status_code": 409,
+   "detail": "busy",
+   "str": "busy",
+   "stored_count": "__absent__"
+  }
+ },
+ "project_print_trace": {
+  "QUEUED_KIND": "print.queued_from_revision",
+  "TASK_UNUSABLE": "This Aito task can't be used for this file",
+  "QUEUED_STATUSES": [
+   "pending",
+   "printing"
+  ]
+ },
+ "aito_project_links": {
+  "SIMILAR_TITLE_THRESHOLD": 0.45,
+  "SECTION_SUMMARY_LIMIT": 3,
+  "DROP_SECTION": "impression",
+  "LinkError": {
+   "status_code": 409,
+   "detail": "conflict",
+   "str": "conflict"
+  }
+ },
+ "project_snapshot": {
+  "MAX_PART_BYTES": 8388608,
+  "MODEL_HEAD_BYTES": 65536,
+  "is_3mf": {
+   "support.3mf": true,
+   "support.gcode.3mf": true,
+   "SUPPORT.GCODE.3MF": true,
+   "plate.gcode": false,
+   "plate.BGCODE": false,
+   "model.stl": false,
+   "model.STEP": false,
+   "scan.ply": false,
+   "notes.pdf": false,
+   "noext": false,
+   ".3mf": true,
+   " padded.3mf ": false,
+   "a.b.c.3mf": true,
+   "": false,
+   "x.3mf.bak": false,
+   "P-0042_support.3mf": true,
+   "p-0007 bracket.gcode": false,
+   "P-42_short.3mf": true,
+   "P-0042-dash.stl": false,
+   "P-0042support.3mf": true,
+   "nc.nc": false,
+   "tap.tap": false,
+   "dxf.DXF": false,
+   "weird.3MF ": false
+  },
+  "read_print_snapshot": {
+   "full_sliced": {
+    "config": {
+     "printer_model": "Bambu Lab X1 Carbon",
+     "printer_settings_id": "X1C 0.4 nozzle",
+     "print_settings_id": "0.20mm Standard",
+     "filament_settings_id": [
+      "Bambu PLA Basic",
+      "Generic PETG"
+     ],
+     "filament_type": [
+      "PLA",
+      "PETG"
+     ],
+     "nozzle_diameter": [
+      "0.4"
+     ],
+     "layer_height": "0.2",
+     "version": "01.09.00.70",
+     "unrelated": {
+      "nested": [
+       1,
+       2
+      ]
+     }
+    },
+    "config_hash": "ec3cca9fd6be16426ef7c21dce3491dd496482b0d7ee684ab187885ac6362d83",
+    "slicer_name": "BambuStudio",
+    "slicer_version": "01.10.01.50",
+    "print_profile": {
+     "printer_model": "Bambu Lab X1 Carbon",
+     "printer_preset": "X1C 0.4 nozzle",
+     "process_preset": "0.20mm Standard",
+     "filament_presets": [
+      "Bambu PLA Basic",
+      "Generic PETG"
+     ],
+     "filament_types": [
+      "PLA",
+      "PETG"
+     ],
+     "nozzle_diameter": "0.4",
+     "layer_height": "0.2",
+     "sliced": true
+    }
+   },
+   "full_unsliced": {
+    "config": {
+     "printer_model": "Bambu Lab X1 Carbon",
+     "printer_settings_id": "X1C 0.4 nozzle",
+     "print_settings_id": "0.20mm Standard",
+     "filament_settings_id": [
+      "Bambu PLA Basic",
+      "Generic PETG"
+     ],
+     "filament_type": [
+      "PLA",
+      "PETG"
+     ],
+     "nozzle_diameter": [
+      "0.4"
+     ],
+     "layer_height": "0.2",
+     "version": "01.09.00.70",
+     "unrelated": {
+      "nested": [
+       1,
+       2
+      ]
+     }
+    },
+    "config_hash": "ec3cca9fd6be16426ef7c21dce3491dd496482b0d7ee684ab187885ac6362d83",
+    "slicer_name": "BambuStudio",
+    "slicer_version": "01.10.01.50",
+    "print_profile": {
+     "printer_model": "Bambu Lab X1 Carbon",
+     "printer_preset": "X1C 0.4 nozzle",
+     "process_preset": "0.20mm Standard",
+     "filament_presets": [
+      "Bambu PLA Basic",
+      "Generic PETG"
+     ],
+     "filament_types": [
+      "PLA",
+      "PETG"
+     ],
+     "nozzle_diameter": "0.4",
+     "layer_height": "0.2",
+     "sliced": false
+    }
+   },
+   "no_config": {
+    "config": null,
+    "config_hash": null,
+    "slicer_name": "BambuStudio",
+    "slicer_version": "01.10.01.50",
+    "print_profile": {
+     "sliced": false
+    }
+   },
+   "config_not_dict": {
+    "config": null,
+    "config_hash": null,
+    "slicer_name": "BambuStudio",
+    "slicer_version": "01.10.01.50",
+    "print_profile": {
+     "sliced": false
+    }
+   },
+   "config_empty_dict": {
+    "config": null,
+    "config_hash": null,
+    "slicer_name": null,
+    "slicer_version": null,
+    "print_profile": {
+     "sliced": false
+    }
+   },
+   "config_bad_json": {
+    "config": null,
+    "config_hash": null,
+    "slicer_name": null,
+    "slicer_version": null,
+    "print_profile": {
+     "sliced": false
+    }
+   },
+   "app_no_dash_version_from_slice": {
+    "config": null,
+    "config_hash": null,
+    "slicer_name": "OrcaSlicer",
+    "slicer_version": "02.00.00.11",
+    "print_profile": {
+     "sliced": false
+    }
+   },
+   "version_from_config_only": {
+    "config": {
+     "version": 7,
+     "layer_height": "0.12"
+    },
+    "config_hash": "65ac1028b7beb5c2d63f5f1808e133b4ba85e873deaf6028e28a9b0250e4d078",
+    "slicer_name": null,
+    "slicer_version": "7",
+    "print_profile": {
+     "layer_height": "0.12",
+     "sliced": false
+    }
+   },
+   "scalar_filament": {
+    "config": {
+     "filament_settings_id": "Solo",
+     "filament_type": "PLA",
+     "nozzle_diameter": "0.6"
+    },
+    "config_hash": "a84357487f05e84c251bef2e17643ff2c8e3a3eab64460e9568c8421b69f8777",
+    "slicer_name": null,
+    "slicer_version": null,
+    "print_profile": {
+     "filament_presets": [
+      "Solo"
+     ],
+     "filament_types": [
+      "PLA"
+     ],
+     "nozzle_diameter": "0.6",
+     "sliced": false
+    }
+   },
+   "empty_values": {
+    "config": {
+     "printer_model": "",
+     "layer_height": null,
+     "filament_type": []
+    },
+    "config_hash": "70356925376ca400c6cd5077f97ae7600368148b0980e2a5fccc9a6747f77491",
+    "slicer_name": null,
+    "slicer_version": null,
+    "print_profile": {
+     "sliced": false
+    }
+   },
+   "empty_zip": {
+    "config": null,
+    "config_hash": null,
+    "slicer_name": null,
+    "slicer_version": null,
+    "print_profile": {
+     "sliced": false
+    }
+   },
+   "gcode_plate_only": {
+    "config": null,
+    "config_hash": null,
+    "slicer_name": null,
+    "slicer_version": null,
+    "print_profile": {
+     "sliced": true
+    }
+   },
+   "not_a_zip": null,
+   "missing_file": null
+  },
+  "PrintSnapshot_fields": [
+   "config",
+   "config_hash",
+   "slicer_name",
+   "slicer_version",
+   "print_profile"
+  ]
+ }
+}
+
+### stderr:
+

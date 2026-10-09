@@ -353,3 +353,141 @@ async def test_uploader_without_projects_update_is_not_auto_filed(async_client: 
     assert response.json().get("filed_to_project") is None
     listed = await async_client.get("/api/v1/library/files", headers=headers)
     assert filename in [row["filename"] for row in listed.json()]
+
+
+# --- pending-upload archive under auth: the auto-filing permission gate (T-046) ----------
+
+
+async def _archive_pending_as(client: AsyncClient, db, permissions: list[str], tmp_path) -> dict:
+    """Archive a ``P-xxxx_support.3mf`` pending upload as a user holding exactly
+    ``permissions``, with auth on. The project (Impression > "support" at R1) and an
+    active Aito order linked to it are set up with auth still off."""
+    from backend.app.core.auth import create_access_token, get_password_hash
+    from backend.app.models.aito_project import AitoProject
+    from backend.app.models.aito_task import AitoTask
+    from backend.app.models.group import Group
+    from backend.app.models.settings import Settings
+    from backend.app.models.user import User
+
+    project, item_id = await _project_with_support_item(client, db)
+    order = AitoProject(
+        description="Commande", board_column="devis", status="active", client_id="C1", client_name="ACME"
+    )
+    db.add(order)
+    await db.commit()
+    task = AitoTask(project_id=order.id, title="Support")
+    db.add(task)
+    await db.commit()
+    linked = await client.put(f"/api/v1/aito/tasks/{task.id}/project", json={"project_id": project["id"]})
+    assert linked.status_code == 200, linked.text
+
+    filename = f"{project['code']}_support.3mf"
+    data = _3mf("pending-auth")
+    temp = tmp_path / "pending" / filename
+    temp.parent.mkdir()
+    temp.write_bytes(data)
+    pending = PendingUpload(
+        filename=filename, file_path=str(temp), file_size=len(data), source_ip="10.0.0.3", status="pending"
+    )
+    db.add(pending)
+    db.add(Settings(key="auth_enabled", value="true"))
+    group = Group(name=f"pending-archiver-{uuid.uuid4().hex[:8]}", permissions=permissions, is_system=False)
+    db.add(group)
+    await db.flush()
+    user = User(username=f"archiver-{uuid.uuid4().hex[:8]}", password_hash=get_password_hash("pw"), is_active=True)
+    user.groups.append(group)
+    db.add(user)
+    await db.commit()
+    headers = {"Authorization": f"Bearer {create_access_token(data={'sub': user.username})}"}
+
+    anonymous = await client.post(f"/api/v1/pending-uploads/{pending.id}/archive")
+    assert anonymous.status_code == 401, anonymous.text  # auth really is on
+    response = await client.post(f"/api/v1/pending-uploads/{pending.id}/archive", headers=headers)
+    return {
+        "response": response,
+        "project": project,
+        "item_id": item_id,
+        "order_id": order.id,
+        "filename": filename,
+        "data": data,
+        "temp": temp,
+    }
+
+
+async def _assert_pending_archive_filed_a_copy(db, run: dict) -> None:
+    """The archive succeeded AND a copy was filed as R2 of the "support" item, with
+    a ``project.revision_added`` event (no actor: the route passes user_id=None)."""
+    from backend.app.api.routes.library import to_absolute_path
+    from backend.app.models.aito_event import AitoEvent
+
+    response = run["response"]
+    assert response.status_code == 200, response.text
+    assert response.json()["filename"] == run["filename"]
+    archives = list((await db.execute(select(PrintArchive))).scalars())
+    assert [a.filename for a in archives] == [run["filename"]]
+
+    revisions = await _revisions(db, run["item_id"])
+    assert [r.number for r in revisions] == [1, 2]
+    items = list(
+        (await db.execute(select(ProjectItem).where(ProjectItem.project_id == run["project"]["id"]))).scalars()
+    )
+    assert [i.name for i in items] == ["support"]
+    copies = list(
+        (
+            await db.execute(
+                select(LibraryFile)
+                .where(LibraryFile.revision_id == revisions[1].id)
+                .execution_options(populate_existing=True)
+            )
+        ).scalars()
+    )
+    assert [c.filename for c in copies] == [run["filename"]]
+    assert copies[0].project_id == run["project"]["id"]
+    on_disk = to_absolute_path(copies[0].file_path)
+    assert on_disk is not None and on_disk.read_bytes() == run["data"]
+    assert not run["temp"].exists()  # the temp file is still cleaned up
+
+    events = list(
+        (
+            await db.execute(
+                select(AitoEvent).where(
+                    AitoEvent.project_id == run["order_id"], AitoEvent.kind == "project.revision_added"
+                )
+            )
+        ).scalars()
+    )
+    assert len(events) == 1  # R1 predates the link
+    assert events[0].subject_label == "support R2"
+    assert events[0].actor_name is None
+    assert events[0].detail["revision_id"] == revisions[1].id
+    assert events[0].detail["item_id"] == run["item_id"]
+    assert events[0].detail["project_id"] == run["project"]["id"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_pending_archive_without_projects_update_still_files_a_copy(
+    async_client: AsyncClient, db_session, tmp_path
+):
+    """PINNED CURRENT BEHAVIOR, not a desired contract (T-046): the archive route is
+    gated by queue:create only and calls auto_file_by_code with no projects:update
+    check, so a caller WITHOUT projects:update still gets the file filed into the
+    project as a new revision. Unlike the library upload path
+    (test_uploader_without_projects_update_is_not_auto_filed). If that gap is
+    closed, this test must change deliberately."""
+    from backend.app.core.permissions import Permission
+
+    run = await _archive_pending_as(async_client, db_session, [Permission.QUEUE_CREATE.value], tmp_path)
+    await _assert_pending_archive_filed_a_copy(db_session, run)
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_pending_archive_with_projects_update_files_a_copy(async_client: AsyncClient, db_session, tmp_path):
+    """The mirror case: a caller holding projects:update gets the same outcome."""
+    from backend.app.core.permissions import Permission
+
+    run = await _archive_pending_as(
+        async_client, db_session, [Permission.QUEUE_CREATE.value, Permission.PROJECTS_UPDATE.value], tmp_path
+    )
+    await _assert_pending_archive_filed_a_copy(db_session, run)

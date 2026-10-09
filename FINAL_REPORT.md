@@ -1,103 +1,130 @@
-# Refactor-loop campaign 22 — final report
+# Refactor loop — campaign 24 final report (Projects-as-PDM feature)
 
-**Scope:** camera wall (grid-stream slice of `backend/app/api/routes/camera.py`, `services/camera_fanout.py`, the CameraGrid components, the stream hooks, the decoder worker, the camera-wall slice of `PrintersPage.tsx`) plus the Aito card hover dwell (`components/aito/CardView.tsx`, `hoverWarmth.ts`).
-**Branch:** `auto-refactor-loop` in `../bambuddy-refactor`, cut from `main` at `a601a46357da1333ef46aa468b2cc6d239321513` (UPSTREAM, 2026-09-29). BASE = tag `refactor-base` (`4256972f4`, the setup commit).
-**Parameters:** TRIAGE P3 · MAX_ITER 12 · MAX_ROUNDS 3 · BATCH 3 · auto · grouped commits · merge at exit.
-**Ran:** 2026-09-29 → 2026-10-01.
+Campaign 24 · 2026-10-09 · worktree `../bambuddy-refactor`, branch `auto-refactor-loop` · BASE `refactor-base` = 7c347319e, cut from local main fd54f5560 (upstream merge of 2026-10-08).
+Parameters: SCOPE = the Projects-as-PDM feature (backend `project_*` / `projects_pdm` / `aito_project_links` routes, services, models, schemas and the PDM hunks of shared files; frontend `pages/Project*Page`, `components/projects/**` and PDM hunks of `client.ts` and friends) · TRIAGE P3 · MAX_ITER 12, raised to 15 when the user said "continue" after the first exit · MAX_ROUNDS 3 · BATCH 3 · auto · grouped commits · merge at exit.
 
-## Why the loop ended
-
-MAX_ROUNDS reached: round 3 was the last survey allowed, and its plan was worked to exhaustion. The iteration budget (12) was spent at the same moment. The campaign did not converge: every round still produced workable findings.
-
-## Numbers
+## Outcome
 
 | | |
 |---|---|
-| Iterations run | 12 (every one verified PASS by a blind verifier; `loop-1` … `loop-12` tags) |
-| Survey rounds | 3 (round 1 at setup, rounds 2 and 3 after the plan ran dry) |
-| Commits on the branch | 12 squashed iteration commits + the setup commit (`refactor-base`) + this report; `git log refactor-base..HEAD` |
-| Files changed since BASE | 23 files, +5670 / −508 lines (before this report) |
-| Tasks filed into the plan | 37 — 35 DONE, 2 declined by the user (WONTFIX-AUTO), 0 open, 0 blocked |
-| Findings diverted to TRIAGE.md | 22 (P3) |
+| Iterations run | 15 (`loop-1` … `loop-15`), every one verified blind and PASSED (iteration 5 needed one coverage follow-up) |
+| Survey rounds | 3 of 3 |
+| Commits on the branch | 15 squashed iteration commits + the setup commit + this report |
+| Tags | `refactor-base`, `loop-1` ba166f5c6, `loop-2` a65b04b1f, `loop-3` 3a72a9908, `loop-4` 57c30ca64, `loop-5` daf174098, `loop-6` fc62fd250, `loop-7` efc50af68, `loop-8` 580222f11, `loop-9` d49866835, `loop-10` 162ba954e, `loop-11` 2d3570336, `loop-12` 676f2a2d4, `loop-13` 0461bc03e, `loop-14` 5aaae1ca9, `loop-15` 5cbd743b6 |
+| Why the loop ended | first exit at iteration 12 on **MAX_ITER**; resumed with MAX_ITER 15; final exit on **MAX_ROUNDS** — the plan is empty and all three survey rounds are used |
+| Tasks | 54 filed in PLAN.md: **41 DONE, 0 OPEN, 13 BLOCKED** (behavior changes awaiting the user), 0 WONTFIX · 35 more in TRIAGE.md |
+| Diff since BASE | 43 files, +6,657 / −401 lines (≈5,000 of them tests) |
 
-### Coverage (scoped statements, the ratchet; both only ever went up)
+### Coverage (scoped statements, the ratchet)
 
-| Stack | BASE | Final |
+| | BASE | Final (loop-15) |
 |---|---|---|
-| Backend (`routes/camera.py` + `services/camera_fanout.py`) | 78.28 % (1474/1883) | 83.25 % (1655/1988) |
-| Frontend (18 scoped files) | 84.62 % (1392/1645) | 93.13 % (1559/1674) |
+| Backend | 90.00 % (3304/3671) | **92.79 %** (3498/3770) |
+| Frontend | 75.14 % (1288/1714) | **87.94 %** (1467/1668) |
 
-Notable per-file moves: `useStreamReconnect.ts` 71.9 → 90 %, `useWebRTCStream.ts` 67.4 → 92 % lines, `useMjpegStream.ts` 85 → 96.9 %, `CameraGridCard.tsx` 78.9 → 97.4 %, `CameraGrid.tsx` 81.3 → 92.5 %, `routes/camera.py` 73.0 → 79.3 % (whole file).
+Per-loop ratchet: BE 90.74 → 90.94 → 91.19 → 91.66 → 91.99 → 92.23 → 92.51 → 92.52 → 92.55 → 92.55 → 92.60 → 92.64 → 92.70 → 92.76 → 92.79; FE 75.14 → 75.14 → 84.42 → 84.42 → 85.88 → 86.27 → 86.27 → 86.27 → 86.27 → 87.11 → 87.17 → 87.17 → 87.17 → 87.17 → 87.94. Totals shrank where duplicates were removed (loop-5, loop-6); the ratio never dropped except transiently in loop-5 (fixed in the same iteration).
 
-### Tests
+### Other metrics
 
-| | BASE | Final |
+| | Before | After |
 |---|---|---|
-| Backend tests | 16 393 passed | 16 467 passed (+74), 1 skipped |
-| Frontend tests | 7 450 | 7 532 (+82) |
-| Golden probes | 13/13 | 13/13 at every one of the 12 gates |
-| SURFACE.md | 428 lines | regenerated identical at every gate; the only diffs vs BASE are the sanctioned T-001/T-003/T-004 route-signature and permission lines |
+| Backend tests | 18,957 passed, 1 failed (macOS-only) | 19,203 passed, 0 failed |
+| Frontend tests | 8,813 passed, 1 failed (load flake) | 8,948 passed, 0 failed |
+| known_broken | 1 (`test_fd_limit_2883` macOS KeyError) | 0 (fixed on the test side, T-001) |
+| Golden probes | 11 recorded | 11/11 matching at every verification |
+| SURFACE.md | 1,680 lines | unchanged except two sanctioned additive exports (below) |
+| Static gates | ruff, eslint, tsc, i18n parity clean | clean |
+| Security scanners | semgrep, bandit, gitleaks, npm audit | no in-scope hits; pip-audit (round 3, against the venv) lists advisories for python-multipart 0.0.26, starlette 0.52.1, requests 2.32.5 — dependency manifests are outside this campaign's scope, fix versions unchecked |
+| `move_library_files_to_project` complexity | C901 22 | 7 |
 
-Lint (ruff check/format, eslint, tsc, i18n parity for all 15 locales) and `npm run build` (Safari 16 baseline) were clean at every gate.
+## User-approved behavior changes
 
-### Known-broken tests: before → after
+**None.** The user did not answer any approval request during the campaign. BASELINE-CHANGELOG.md gained two *sanctioned additive exports* (not behavior changes): `aito_project_links.record_and_broadcast` (T-024) and `components/projects/files/useFileDropZone` (T-026).
 
-- Backend: none → none. `test_camera_grid_hub.py::test_restart_identity_check_prevents_stale_removal` was a `-n 10` load flake at setup; T-037 rewrote it as a deterministic event-gated race (passes 3× alone in ~2 s).
-- Frontend: `AppRouterAitoGuard.test.tsx` "with aito:read: mounts the Aito board at /aito" fails at BASE and still fails (its "auth disabled" sibling is intermittent). Out of scope for this campaign (Aito router, not camera wall) — see leads.
-- Load-sensitive flakes that pass alone (unchanged by the campaign, recorded for the next runner): ArchivesPage ZIP toast, ModelViewerModal #2725, FileUploadModal hashing, PrintModal, FileManagerPage paging, SettingsPage, LocationSensorOptionsModal; backend `test_aito_routes.py::test_import_accepts_a_thousand_projects` (240 s timeout under load) and `test_scheduler_concurrent_dispatch.py::test_check_queue_returns_without_awaiting_the_uploads`. Several verifier runs happened while other sessions pushed the load average past 150.
+## What each round found
 
-## User-approved behavior changes (16, all in BASELINE-CHANGELOG.md)
+- **Round 1 (setup):** 22 filed (tests 10, security 2, robustness 5, cleanliness 5) + T-001 by hand; 22 triaged; 4 held for approval.
+- **Round 2 (after loop-7):** 15 filed (tests 6, security 1, robustness 8, cleanliness 3); 6 triaged; 5 more held.
+- **Round 3 (after loop-12):** 16 filed (tests 5, security 1, robustness 5, cleanliness 2 + T-072); 7 triaged; 4 more held. Its 9 workable tasks were worked in iterations 13–15 after the resume.
 
-| Task | Change |
-|---|---|
-| T-001 | `create_stream_token` refuses printer-restricted API keys (403) instead of minting a printer-unbound token |
-| T-002 | the stream token is appended only to same-origin `/api/v1/` media srcs |
-| T-003 | grid-stream `?force=true` requires `settings:update` |
-| T-004 | hub-status diagnostics scoped to the API key's printer allowlist |
-| T-011 | grid-stream answers 503 + `Retry-After: 5` (not 404) when the load gate refuses every producer |
-| T-012 | SharedStreamHub waits for a dying producer's teardown for every caller |
-| T-013 | grid-stream producer restarts run as background tasks (tiles no longer freeze during a restart) |
-| T-016 | grid-stream request times out after 45 s when response headers never arrive, then reconnects |
-| T-017 | WebRTC `connect()` ignores a superseded attempt's rejection |
-| T-018 | `attemptReconnect` cancels a pending reconnect timer before re-arming |
-| T-019 | camera wall recovers from a render error (20 s auto-remount + Retry) instead of staying on the error text |
-| T-026 | `webrtc_offer` scoped to the API key's printer allowlist |
-| T-027 | a params-change replacement waits for the displaced producer's teardown |
-| T-053 | hub-status hides fleet-wide `ffmpeg_processes` and `producer_count` from printer-restricted keys |
-| T-054 | the single-camera fast lookup treats a producer frozen for >45 s as missing and replaces it |
-| T-055 | the camera-wall auto-remount backs off 20 → 40 → 80 → 160 → 300 s and resets after 60 s of stability |
+## Findings by auditor (PLAN.md)
 
-Declined by the user: T-048 (delete the dead `camera_fanout.py` — kept so upstream merges stay clean), T-052 (revoke camera stream tokens on logout — lives in core `auth.py`, outside scope).
-
-## Findings by auditor (filed into the plan)
-
-| Auditor | Filed | DONE | WONTFIX-AUTO | Triaged (never filed) |
+| Auditor | Filed | DONE | BLOCKED | Triaged (campaign-wide, by round) |
 |---|---|---|---|---|
-| audit-security | 8 | 7 | 1 (T-052) | 0 |
-| audit-robustness | 11 | 11 | 0 | 5 |
-| audit-cleanliness | 4 | 3 | 1 (T-048) | 12 |
-| audit-tests | 14 | 14 | 0 | 5 |
-| survey (hand-added) | 0 | — | — | — |
+| audit-tests | 21 | 21 | 0 | 7 (3 + 1 + 3) |
+| audit-robustness | 18 | 12 | 6 | 4 (2 + 2 + 0) |
+| audit-cleanliness | 10 | 7 | 3 | 24 (17 + 3 + 4) |
+| audit-security | 4 | 0 | 4 | 0 |
+| survey (hand-filed) | 1 | 1 | 0 | — |
 
-Triaged per round: round 1 → 5, round 2 → 13, round 3 → 4 (22 in all; `plan.py stats` reports the same 22 because nothing was promoted). Every one sits in TRIAGE.md with full evidence; promote one with `python tools/plan.py promote <id> --iteration N` (the flag is required). A copy of TRIAGE.md is in the main checkout under `plans/refactor-campaign22/`.
+Triaged total this campaign: **35** (TRIAGE.md holds every one with full evidence; promote with `python tools/plan.py promote T-xxx --iteration N`).
 
-## What each resurvey round found
+## What was done (41 tasks, by iteration)
 
-- **Round 1 (setup):** 25 findings — 20 filed, 5 triaged. All 6 behavior-change findings approved at setup.
-- **Round 2:** 22 findings — security 1 (T-026 WebRTC allowlist, approved), robustness 2 (T-027 approved, T-028 triaged), cleanliness 8 (all low → triaged; a 9th, "unused `useMediaToken` export", was dropped before ingest because SURFACE.md freezes it), tests 11 (7 filed, 4 triaged). Lesson: two auditors returned thin first passes (14 s and 34 s) and had to be resumed with an explicit "read these files in full" list.
-- **Round 3:** 12 findings — security 2 (T-053 approved, T-052 declined), robustness 2 (T-054, T-055 approved), cleanliness 4 (T-048 declined, 3 triaged), tests 4 (3 filed, T-056 triaged).
+1. **loop-1** T-001 macOS `fds_by_type` test gated on `/proc/self/fd` · T-002 28-route permission matrix (112 cases, `test_project_files_permissions.py`) · T-003 restore-from-trash rollback tests.
+2. **loop-2** T-013 `download_revision` temp zip removed in a `finally` (`_TempFileResponse`) · T-004 `run_reslice` failure branches (84 → 95 %) · T-005 `useResliceJobs` on real timers.
+3. **loop-3** T-007 AI route 502/409 tests (`projects_pdm.py` 100 %) · T-008 route edge cases · T-006 `ProjectDetailPageActions.test.tsx` + panel refusal tests (page 48 → 92 %).
+4. **loop-4** T-017 `allocate_code_number` takes the SQLite write lock before reading (race reproduced 20/20 → 0/40) · T-014 `_commit_through_cancel` keeps files when a cancelled commit lands (4 sites) · T-009 link-service branches.
+5. **loop-5** T-024 `record_and_broadcast` shared by three fan-out sites, per-site failure drift preserved (19 pin tests) · T-021 deterministic waits in two tests · T-020 files-panel action contracts (files/** 90 → 98 %) · coverage follow-up (+13 statements).
+6. **loop-6** T-025 `useFileActions` reuses `useAcceptsPrintable` · T-026 `useFileDropZone` for four drop zones, each site's quirks kept as parameters · T-029 `move_library_files_to_project` split (C901 22 → 7).
+7. **loop-7** T-031 `_new_library_row` / `_point_row_at` for the three LibraryFile row sites.
+8. **loop-8** T-046 pin of the pending-upload archive permission behavior · T-060/T-061 cancel-safe commits for add-files and rename.
+9. **loop-9** T-062 cancel-safe fork commit (all 7 sites) · T-049 remaining cancel-then-fail cases · T-047 rename recorder in the panel test.
+10. **loop-10** T-050 `postFormData` helper for the three upload methods (23 request-pin tests) · T-057 ProjectListPage pager/grid tests · T-058 ProjectLinkPicker tests (100 %).
+11. **loop-11** T-063 an outside-cancelled commit task counts as "may have landed" (`_CommitTask`) · T-065 `set_deliveries` / `_delete_revision_locked` post-flush re-checks · T-059 move-result toast tests.
+12. **loop-12** T-066 `delete_project` and `create_item` re-check each other after the write lock.
+13. **loop-13** T-077 `_delete_item_locked` post-flush usage re-check (3 race tests) · T-078 `link_task` re-checks the project after flush · T-070 one `_committing` context manager owns the commit guard at all seven sites (73 pins unchanged).
+14. **loop-14** T-079 `delete_project` clears only non-live-order links and re-checks live links after flush (the auditor's `status == 'deleted'` filter was not used: it would have stopped clearing orphan tasks' links, pinned by a control test) · T-082 / T-083 remaining delete-item race and add-revision IntegrityError cases.
+15. **loop-15** T-084 fork name-collision cases · T-086 `DeliveriesPicker` tests · T-088 ProjectListPage filter / view-switch / modal tests (97 %).
 
-## Leads for humans (not worked, deliberately)
+## Left for humans
 
-1. **Sibling `/{printer_id}/camera/*` routes** (stop, test, diagnose, status, plate-detection) still use the unscoped `CAMERA_VIEW` check and ignore an API key's printer allowlist — the same gap T-026 closed on `webrtc_offer`. Use the T-026 pattern (`_require_webrtc_printer_access`: auth-gated key lookup + `check_printer_access`), not `RequirePrinterPermissionIfAuthEnabled`, which validates keys even when auth is off.
-2. **T-052:** `verify_camera_stream_token` never re-checks the minting user, so a camera token keeps working for up to 60 min after logout/deactivation/permission loss. Needs a core `auth.py` change plus revocation hooks.
-3. **T-048:** `services/camera_fanout.py` is dead in production (only `shutdown_all_broadcasters` is called, over an always-empty registry); its docstrings still claim `/camera/stop` uses it. Kept to avoid upstream merge conflicts.
-4. **Builtin `TimeoutError` vs `asyncio.TimeoutError` on Python 3.10** at `_terminate_ffmpeg`, `_rtsp_mjpeg_frames` and `cleanup_orphaned_streams` (the same bug T-010 fixed inside the scoped slice).
-5. **npm audit:** the `brace-expansion` advisory remains after T-005 (no verified non-breaking fix version at the time).
-6. **AppRouterAitoGuard tests** fail at BASE and after (not camera-wall code).
-7. **T-019 wording:** the error fallback's countdown reuses `printers.cameraGrid.reconnecting` ("Reconnecting in Ns (attempt N)") because a new locale key would have broken the frozen i18n-parity golden; a dedicated string is a small follow-up.
-8. **T-053:** `ffmpeg_processes` is hidden entirely from restricted keys because OS pids carry no printer id; mapping pids to printers would need new bookkeeping.
+### OPEN
+None.
 
-## Preserved state
+### BLOCKED — behavior changes awaiting the user's decision (13)
+Each needs an explicit approve/decline; `python tools/plan.py show T-xxx` prints the auditor's `user-visible change:` note.
+- T-011 (security) API-key uploads skip the projects:update check when auto-filing by `P-0042_` prefix.
+- T-012 (security) archiving a pending upload auto-files with no project permission check (current behavior pinned by T-046).
+- T-015 (robustness) move-to-project aborts mid-loop on a non-OSError after earlier groups committed (would return 200 + skipped).
+- T-016 (robustness) a file drop failing on a later group returns a bare error (would return the partial result).
+- T-051 (cleanliness) delete the unused `inZone`/`isFileDrag` re-export from `dropFiles.ts` (export removal).
+- T-052 (cleanliness) the same three commit sites as T-060/061/062 — **already done** by those tasks; approve or decline for the record.
+- T-056 (security) cap path components by UTF-8 bytes (100 CJK chars = 300 bytes > ext4 NAME_MAX on the shop container).
+- T-064 (robustness) retry/sweep the sliced intermediate when `_drop_intermediate` fails.
+- T-067 (robustness) racing duplicate item create → 409 instead of 500.
+- T-072 (cleanliness) `_delete_item_locked` post-flush re-check — **already done** by T-077 (filed with behavior_change=false by robustness); approve or decline for the record.
+- T-076 (security) upload cap skipped when Content-Length is absent (chunked multipart spooled unbounded).
+- T-080 (robustness) `_commit_through_cancel` waits forever for a commit that never completes (bound the wait).
+- T-081 (robustness) the post-flush usage re-checks are SQLite-only; PostgreSQL needs row locks (and `print_queue.library_file_id ON DELETE CASCADE` hides a just-queued print from them).
 
-Per the user's choice, PLAN.md, TRIAGE.md, BASELINE.md, VERDICTS.log, BASELINE-CHANGELOG.md, SURFACE.md and the 12 `findings-audit-*-r{1,2,3}.json` files were copied to `plans/refactor-campaign22/` in the main checkout (gitignored) before this report was written.
+### WONTFIX-AUTO
+None.
+
+## Leads surfaced by workers and verifiers (not filed as tasks)
+- `_deleted_revision_is_used` short-circuits to False for a revision with no file rows, so a delivery on such a revision escapes the re-check (unclear whether such revisions can exist).
+- `fork_revision` builds a `ProjectItem` directly, outside `create_item`'s project re-check (robustness round 3 judged it safe: the item lock + `delete_project`'s items guard cover it).
+- Fan-out failure handling still differs across the three `record_and_broadcast` callers and `project_reslice`/`print_trace` (preserved on purpose; unifying = behavior change).
+- The files-panel drop zones claim non-file drags and SectionBlock lets drops bubble, unlike the board zones (preserved; unifying = behavior change).
+- `_drop_intermediate` failure leaves the sliced row in the File Manager for good (T-064).
+- `project_snapshot.py` line 60 size check looks unreachable (T-054 triaged); routes `_item_out`/`_revision_out` 404 raises look unreachable.
+- `useResliceJobs` has no injectable poll interval; its real-timer test file takes ~26 s.
+- `aito_task_deliveries.revision_id` and `aito_tasks.linked_project_id` have no FK; `projects.id` has no AUTOINCREMENT, so SQLite can reuse a deleted project's id.
+- A move-to-project group whose files all skip leaves its newly created item behind empty (pinned as current behavior).
+- `client.ts`: `postForBlob`/`uploadSpoolsCsv` still inline the bearer header (T-073 triaged); an object `detail` renders as `[object Object]`.
+- T-063 side effect accepted: shutdown cancelling a commit task before COMMIT leaves files with no rows.
+- No startup sweep for stale download zips (they have no distinctive prefix).
+- pip-audit advisories (see the metrics table) — out of scope here, worth a dependency bump.
+
+## Verifier log (VERDICTS.log, one line per iteration)
+1 PASS · 2 PASS (temp-zip subclass header-identical) · 3 PASS · 4 PASS · 5 FAIL on the ratchet arithmetic (dedup removed covered statements) → follow-up → PASS · 6 PASS (`npm run build` green) · 7 PASS · 8 PASS · 9 PASS (one out-of-scope load flake added to known_flaky) · 10 PASS (`npm run build` green) · 11 PASS · 12 PASS · 13 PASS (seven-site guard proven exception-identical by a scratch comparison) · 14 PASS (link-clearing UPDATE proven row-identical incl. orphan tasks) · 15 PASS.
+
+## Lessons for the next campaign
+- A dedup task on a well-covered file lowers the scoped ratio with zero lost tests; pair every dedup with a small coverage-adding test in the same iteration.
+- The test auditor returns thin first passes (≈1 minute); resume it with an explicit read-in-full list — it returned 4 and 3 more findings that way.
+- "Isolate this failure so the rest still runs" and "return the partial result" are behavior changes; "keep disk and DB consistent on a failure path" and "re-check after the write lock" were accepted by the verifier as bug fixes every time.
+- Auditor-suggested filters can themselves be behavior changes (T-079): a worker that pins the current row set first catches it.
+- macOS has no `timeout`; `/tmp` must be `.resolve()`d before `relative_to`; 204 responses carry `application/json` with an empty body.
+
+## Preserved loop state
+Copies of PLAN.md, TRIAGE.md, BASELINE.md, VERDICTS.log, BASELINE-CHANGELOG.md, the scope brief, the round briefs, all `findings-audit-*-r{1,2,3}.json` and the first-exit report (`FINAL_REPORT.campaign24-exit1.md`) are in the main checkout at `plans/refactor-campaign24/` (gitignored); the originals stay in the worktree until it is removed.

@@ -1,13 +1,18 @@
 """Project files API (spec §8)."""
 
 import io
+import json
 import zipfile
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 
 from backend.app.api.routes import project_files as project_files_routes
+from backend.app.api.routes.library import to_absolute_path
 from backend.app.core.config import settings
+from backend.app.models.library import LibraryFile
+from backend.app.models.slicer_pipeline import SlicerPipeline
 from backend.app.services import project_storage
 
 
@@ -205,3 +210,127 @@ async def test_tree_exposes_the_item_name_key(async_client: AsyncClient, root):
     assert created["name_key"] == "support"
     tree = (await async_client.get(f"/api/v1/projects/{project['id']}/tree")).json()
     assert tree["sections"][2]["items"][0]["name_key"] == "support"
+
+
+def _zip_bytes(*names):
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as zf:
+        for name in names:
+            zf.writestr(zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0)), b"payload " + name.encode())
+    return buffer.getvalue()
+
+
+@pytest.fixture
+def zip_scratch(tmp_path, monkeypatch):
+    """Route the download's temp archive into a dedicated dir the test can inspect."""
+    scratch = tmp_path / "zip-scratch"
+    scratch.mkdir()
+    real_mkstemp = project_files_routes.tempfile.mkstemp
+    monkeypatch.setattr(
+        project_files_routes.tempfile, "mkstemp", lambda suffix="": real_mkstemp(suffix=suffix, dir=scratch)
+    )
+    return scratch
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_zip_download_removes_temp_archive_after_success(async_client: AsyncClient, zip_scratch):
+    rev = await _revision_with_files(async_client, ("a.3mf", _zip_bytes("3D/a.model")), ("b.gcode", b"g1"))
+    response = await async_client.get(f"/api/v1/projects/revisions/{rev['id']}/download")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/zip"
+    assert response.headers["content-length"] == str(len(response.content))
+    assert "attachment" in response.headers["content-disposition"]
+    assert sorted(zipfile.ZipFile(io.BytesIO(response.content)).namelist()) == ["a.3mf", "b.gcode"]
+    assert list(zip_scratch.iterdir()) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_zip_temp_archive_removed_when_send_fails_mid_body(async_client: AsyncClient, zip_scratch, monkeypatch):
+    rev = await _revision_with_files(async_client, ("a.gcode", b"x" * 4096))
+    real_handle_simple = project_files_routes.FileResponse._handle_simple
+    seen = []
+
+    async def cut_short(self, send, send_header_only, send_pathsend):
+        async def flaky_send(message):
+            seen.append(message["type"])
+            if message["type"] == "http.response.body":
+                raise OSError("client disconnected")
+            await send(message)
+
+        await real_handle_simple(self, flaky_send, send_header_only, send_pathsend)
+
+    monkeypatch.setattr(project_files_routes.FileResponse, "_handle_simple", cut_short)
+    try:
+        await async_client.get(f"/api/v1/projects/revisions/{rev['id']}/download")
+    except OSError:
+        pass  # the test transport re-raises the app's send failure
+    assert seen[:2] == ["http.response.start", "http.response.body"]
+    assert list(zip_scratch.iterdir()) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("range_header", "status"),
+    [("bytes=999999999-", 416), ("items=0-1", 400)],
+)
+async def test_zip_temp_archive_removed_on_rejected_range(async_client: AsyncClient, zip_scratch, range_header, status):
+    rev = await _revision_with_files(async_client, ("a.gcode", b"x"))
+    response = await async_client.get(
+        f"/api/v1/projects/revisions/{rev['id']}/download", headers={"Range": range_header}
+    )
+    assert response.status_code == status
+    assert list(zip_scratch.iterdir()) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_fork_with_revision_of_another_item_is_400(async_client: AsyncClient):
+    project = await _project(async_client)
+    item_a = await _item(async_client, project["id"], name="Support")
+    item_b = await _item(async_client, project["id"], name="Autre")
+    rev_b = (await _upload(async_client, item_b["id"], ("a.gcode", b"x"))).json()["revision"]
+    response = await async_client.post(
+        f"/api/v1/projects/items/{item_a['id']}/fork", json={"revision_id": rev_b["id"], "name": "Variante"}
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Revision does not belong to this item"
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_revision_status_cannot_be_null(async_client: AsyncClient):
+    rev = await _revision_with_files(async_client, ("a.gcode", b"x"))
+    response = await async_client.patch(f"/api/v1/projects/revisions/{rev['id']}", json={"status": None})
+    assert response.status_code == 400
+    assert response.json()["detail"] == "status cannot be null"
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_reslice_source_missing_on_disk_is_404(async_client: AsyncClient, db_session, root):
+    project = await _project(async_client)
+    item = await _item(async_client, project["id"])
+    rev = (await _upload(async_client, item["id"], ("support.3mf", b"not-a-real-3mf"))).json()["revision"]
+    pipeline = SlicerPipeline(
+        name="H2D PETG",
+        printer_preset_source="local",
+        printer_preset_id="1",
+        process_preset_source="local",
+        process_preset_id="2",
+        filament_presets_json=json.dumps([{"source": "local", "id": "3"}]),
+    )
+    db_session.add(pipeline)
+    await db_session.commit()
+    source = (await db_session.execute(select(LibraryFile).where(LibraryFile.revision_id == rev["id"]))).scalar_one()
+    path = to_absolute_path(source.file_path)
+    assert path is not None and path.exists()
+    path.unlink()
+    response = await async_client.post(
+        f"/api/v1/projects/revisions/{rev['id']}/reslice",
+        json={"file_id": source.id, "pipeline_id": pipeline.id},
+    )
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Source file missing on disk"

@@ -1,0 +1,202 @@
+### exit: 0
+### stdout:
+{
+ "constants": {
+  "SECTION_ORDER": [
+   "scan",
+   "modelisation",
+   "impression",
+   "usinage",
+   "docs"
+  ],
+  "ENABLED_SECTIONS": [
+   "impression"
+  ],
+  "PRINTABLE_EXTENSIONS": [
+   ".3mf",
+   ".gcode",
+   ".bgcode"
+  ],
+  "PRINTABLE_ACCEPT": ".3mf,.gcode,.bgcode",
+  "SECTION_LABEL_KEYS": {
+   "scan": "projectsPdm.files.sectionScan",
+   "modelisation": "projectsPdm.files.sectionModelisation",
+   "impression": "projectsPdm.files.sectionImpression",
+   "usinage": "projectsPdm.files.sectionUsinage",
+   "docs": "projectsPdm.files.sectionDocs"
+  },
+  "STATUS_LABEL_KEYS": {
+   "wip": "projectsPdm.files.statusWip",
+   "valide": "projectsPdm.files.statusValide",
+   "obsolete": "projectsPdm.files.statusObsolete"
+  },
+  "STATUS_CHIP_CLS": {
+   "wip": "border-amber-500/40 bg-amber-500/10 text-amber-400",
+   "valide": "border-bambu-green/40 bg-bambu-green/10 text-bambu-green",
+   "obsolete": "border-bambu-dark-tertiary bg-bambu-dark text-bambu-gray"
+  },
+  "PREVIEWABLE_TYPES": [
+   "stl",
+   "3mf",
+   "gcode.3mf",
+   "step",
+   "stp"
+  ],
+  "chipBase": "inline-flex items-center whitespace-nowrap rounded-md border px-1.5 py-0.5 text-xs font-medium"
+ },
+ "exports": {
+  "filesUi": [
+   "ENABLED_SECTIONS",
+   "PREVIEWABLE_TYPES",
+   "PRINTABLE_ACCEPT",
+   "PRINTABLE_EXTENSIONS",
+   "SECTION_LABEL_KEYS",
+   "SECTION_ORDER",
+   "STATUS_CHIP_CLS",
+   "STATUS_LABEL_KEYS",
+   "chipBase",
+   "isPrintableFile",
+   "isPrintableFilename",
+   "isSectionEnabled",
+   "nonPrintableFiles",
+   "printProfileLine"
+  ],
+  "fileDrop": [
+   "filesFromDataTransfer",
+   "itemNameFromFile",
+   "itemNameKey"
+  ]
+ },
+ "isSectionEnabled": {
+  "scan": false,
+  "modelisation": false,
+  "impression": true,
+  "usinage": false,
+  "docs": false,
+  "nope": false
+ },
+ "statusLabelKey": {
+  "wip": "projectsPdm.files.statusWip",
+  "valide": "projectsPdm.files.statusValide",
+  "obsolete": "projectsPdm.files.statusObsolete",
+  "nope": "__undefined__"
+ },
+ "isPrintableFilename": {
+  "support.3mf": true,
+  "support.gcode.3mf": true,
+  "SUPPORT.GCODE.3MF": true,
+  "plate.gcode": true,
+  "plate.BGCODE": true,
+  "model.stl": false,
+  "model.STEP": false,
+  "scan.ply": false,
+  "notes.pdf": false,
+  "noext": false,
+  ".3mf": true,
+  " padded.3mf ": true,
+  "a.b.c.3mf": true,
+  "": false,
+  "x.3mf.bak": false,
+  "P-0042_support.3mf": true,
+  "Pièce / principale.3mf": true,
+  "weird.3MF ": true,
+  "archive.tar.gz": false,
+  "  spaced  name  .gcode": true
+ },
+ "isPrintableFile": {
+  "support.3mf": true,
+  "support.gcode.3mf": true,
+  "SUPPORT.GCODE.3MF": true,
+  "plate.gcode": true,
+  "plate.BGCODE": false,
+  "model.stl": false,
+  "model.STEP": false,
+  "scan.ply": false,
+  "notes.pdf": false,
+  "noext": false,
+  ".3mf": true,
+  " padded.3mf ": false,
+  "a.b.c.3mf": true,
+  "": false,
+  "x.3mf.bak": false,
+  "P-0042_support.3mf": true,
+  "Pièce / principale.3mf": true,
+  "weird.3MF ": false,
+  "archive.tar.gz": false,
+  "  spaced  name  .gcode": true
+ },
+ "nonPrintableFiles": [
+  "model.stl",
+  "model.STEP",
+  "scan.ply",
+  "notes.pdf",
+  "noext",
+  "x.3mf.bak",
+  "archive.tar.gz"
+ ],
+ "printProfileLine": {
+  "null": "",
+  "empty": "",
+  "full": "Bambu Lab X1 Carbon · 0.4 mm · 0.2 mm · PLA, PETG",
+  "partial": "P1S · 0.28 mm",
+  "unsliced_only": "",
+  "numbers": "0.6 mm · 0.12 mm · PETG",
+  "odd_types": "42"
+ },
+ "itemNameFromFile": {
+  "support.3mf": "support",
+  "support.gcode.3mf": "support",
+  "SUPPORT.GCODE.3MF": "SUPPORT",
+  "plate.gcode": "plate",
+  "plate.BGCODE": "plate",
+  "model.stl": "model",
+  "model.STEP": "model",
+  "scan.ply": "scan",
+  "notes.pdf": "notes",
+  "noext": "noext",
+  ".3mf": ".3mf",
+  " padded.3mf ": " padded",
+  "a.b.c.3mf": "a.b.c",
+  "": "",
+  "x.3mf.bak": "x.3mf",
+  "P-0042_support.3mf": "P-0042_support",
+  "Pièce / principale.3mf": "Pièce / principale",
+  "weird.3MF ": "weird",
+  "archive.tar.gz": "archive.tar",
+  "  spaced  name  .gcode": "  spaced  name  "
+ },
+ "itemNameKey": {
+  "support.3mf": "support.3mf",
+  "support.gcode.3mf": "support.gcode.3mf",
+  "SUPPORT.GCODE.3MF": "support.gcode.3mf",
+  "plate.gcode": "plate.gcode",
+  "plate.BGCODE": "plate.bgcode",
+  "model.stl": "model.stl",
+  "model.STEP": "model.step",
+  "scan.ply": "scan.ply",
+  "notes.pdf": "notes.pdf",
+  "noext": "noext",
+  ".3mf": "3mf",
+  " padded.3mf ": "padded.3mf",
+  "a.b.c.3mf": "a.b.c.3mf",
+  "": "",
+  "x.3mf.bak": "x.3mf.bak",
+  "P-0042_support.3mf": "p-0042_support.3mf",
+  "Pièce / principale.3mf": "pièce  principale.3mf",
+  "weird.3MF ": "weird.3mf",
+  "archive.tar.gz": "archive.tar.gz",
+  "  spaced  name  .gcode": "spaced  name  .gcode",
+  "Pièce": "pièce",
+  "PIÈCE": "pièce",
+  "piece": "piece",
+  "Straße": "strasse",
+  "STRASSE": "strasse",
+  "İstanbul": "i̇stanbul",
+  "ﬁle": "file",
+  "é": "é",
+  "é": "é"
+ }
+}
+
+### stderr:
+

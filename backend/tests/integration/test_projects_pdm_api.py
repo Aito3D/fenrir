@@ -7,7 +7,7 @@ from sqlalchemy import select
 from backend.app.api.routes import projects_pdm
 from backend.app.models.library import LibraryTag
 from backend.app.models.project_tag import ProjectTag
-from backend.app.services.openrouter import OpenRouterNotConfiguredError
+from backend.app.services.openrouter import OpenRouterNotConfiguredError, OpenRouterUpstreamError
 
 
 @pytest.mark.asyncio
@@ -240,6 +240,44 @@ async def test_reformulate_unconfigured_is_409(async_client: AsyncClient, monkey
     monkeypatch.setattr(projects_pdm, "reformulate_project_text", fake)
     response = await async_client.post("/api/v1/projects/ai/reformulate", json={"text": "x", "field": "description"})
     assert response.status_code == 409
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_reformulate_upstream_error_is_502(async_client: AsyncClient, monkeypatch):
+    async def fake(_db, _text, _field):
+        raise OpenRouterUpstreamError("upstream exploded")
+
+    monkeypatch.setattr(projects_pdm, "reformulate_project_text", fake)
+    response = await async_client.post("/api/v1/projects/ai/reformulate", json={"text": "x", "field": "title"})
+    assert response.status_code == 502
+    assert response.json()["detail"] == "upstream exploded"
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("exc", "status", "detail"),
+    [
+        (OpenRouterUpstreamError("upstream exploded"), 502, "upstream exploded"),
+        (OpenRouterNotConfiguredError(), 409, "OpenRouter is not configured"),
+    ],
+)
+async def test_suggest_tags_errors_map_to_status_and_apply_nothing(
+    async_client: AsyncClient, monkeypatch, db_session, exc, status, detail
+):
+    db_session.add(LibraryTag(name="Drone", name_key="drone"))
+    await db_session.commit()
+
+    async def fake(_db, _title, _description, _existing):
+        raise exc
+
+    monkeypatch.setattr(projects_pdm, "suggest_project_tag_names", fake)
+    response = await async_client.post("/api/v1/projects/ai/suggest-tags", json={"title": "Support drone"})
+    assert response.status_code == status
+    assert response.json()["detail"] == detail
+    tags = (await async_client.get("/api/v1/projects/tags")).json()
+    assert [(t["name"], t["project_count"]) for t in tags] == [("Drone", 0)]
 
 
 @pytest.mark.asyncio

@@ -15,7 +15,7 @@ from fastapi.routing import APIRoute
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from starlette.background import BackgroundTask
+from starlette.types import Receive, Scope, Send
 
 from backend.app.api.routes.library import _ensure_library_file_visible, may_modify_library_file, to_absolute_path
 from backend.app.core import database
@@ -107,6 +107,20 @@ def _build_zip(paths_and_names: list[tuple[Path, str]], archive: Path) -> int:
     return written
 
 
+class _TempFileResponse(FileResponse):
+    """``FileResponse`` over a temp file that it deletes once the response ends.
+
+    The unlink runs in ``finally``, so the file also goes when the client drops
+    mid-body or Starlette answers a bad ``Range`` header (400/416) — both paths
+    return or raise before a ``BackgroundTask`` would run."""
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            Path(self.path).unlink(missing_ok=True)
+
+
 router = APIRouter(prefix="/projects", tags=["projects"])
 upload_router = APIRouter(prefix="/projects", tags=["projects"], route_class=_ProjectUploadCappedRoute)
 # Phase 5: the File Manager side of the bridge (no upstream /library route shares these paths).
@@ -136,23 +150,15 @@ async def _record_linked(
     ``aito_changed`` broadcast to each so their open panels refresh. The revision
     change is already stored (or committed here first), so a failure here only
     costs the event."""
-    actor = user.username if user is not None else None
-    try:
-        async with db.begin_nested():
-            order_ids = await aito_links.record_on_linked_orders(
-                db,
-                project_id,
-                kind,
-                actor=actor,
-                subject_label=subject_label,
-                detail=detail,
-            )
-        await db.commit()
-    except Exception:
-        logger.warning("%s event failed for project %s", kind, project_id, exc_info=True)
-        await db.rollback()
-        return
-    await aito_links.broadcast_orders_changed(order_ids, actor)
+    await aito_links.record_and_broadcast(
+        db,
+        project_id,
+        kind,
+        actor=user.username if user is not None else None,
+        subject_label=subject_label,
+        detail=detail,
+        log=logger,
+    )
 
 
 def _uid(user: User | None) -> int | None:
@@ -507,12 +513,7 @@ async def download_revision(
         archive.unlink(missing_ok=True)
         raise
     name = f"{project.code or project.id}_{item.name}_R{revision.number}.zip"
-    return FileResponse(
-        str(archive),
-        filename=name,
-        media_type="application/zip",
-        background=BackgroundTask(archive.unlink, missing_ok=True),
-    )
+    return _TempFileResponse(str(archive), filename=name, media_type="application/zip")
 
 
 # --- phase 5: File Manager bridge ---------------------------------------------

@@ -4,8 +4,8 @@ import { useTranslation } from 'react-i18next';
 import { api } from '../../../api/client';
 import type { DuplicateWarning, ProjectSection, RevisionStatus } from '../../../api/client';
 import { useToast } from '../../../contexts/ToastContext';
-import { nonPrintableFiles } from './filesUi';
 import { useResliceJobs } from '../reslice/useResliceJobs';
+import { useAcceptsPrintable } from '../aito/dropFiles';
 
 /** Every file-panel mutation: run, invalidate the project tree, toast on failure. */
 export function useFileActions(projectId: number) {
@@ -13,6 +13,9 @@ export function useFileActions(projectId: number) {
   const { showToast } = useToast();
   const queryClient = useQueryClient();
   const reslice = useResliceJobs(projectId);
+  /** False (with a toast) when any file is not a printing file: projects hold printing files
+   *  only for now, so nothing is sent. */
+  const acceptsFiles = useAcceptsPrintable();
   // Items with an upload in flight: their upload and drop actions are off meanwhile.
   const [busyItems, setBusyItems] = useState<ReadonlySet<number>>(() => new Set());
 
@@ -47,14 +50,6 @@ export function useFileActions(projectId: number) {
 
   const upload = 'projectsPdm.files.uploadFailed';
   const save = 'projectsPdm.files.saveFailed';
-
-  /** False (with a toast) when any file is not a printing file: projects hold printing files
-   *  only for now, so nothing is sent. */
-  const acceptsFiles = (files: readonly File[]): boolean => {
-    if (nonPrintableFiles(files).length === 0) return true;
-    showToast(t('projectsPdm.files.onlyPrintable'), 'error');
-    return false;
-  };
 
   /** True once the revision is uploaded. */
   const uploadRevision = async (itemId: number, files: File[]): Promise<boolean | undefined> => {

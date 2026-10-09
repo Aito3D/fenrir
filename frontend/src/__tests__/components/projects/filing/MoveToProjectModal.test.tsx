@@ -178,6 +178,97 @@ describe('MoveToProjectModal', () => {
     expect(screen.queryByText(/moved to/)).not.toBeInTheDocument();
   });
 
+  it('one exact line for moved + copied + skipped, known and unknown reasons, as a warning', async () => {
+    importResult = {
+      moved: [filed(1), filed(2)],
+      copied: [filed(3)],
+      skipped: [
+        { file_id: 4, code: 'source_missing', reason: 'x' },
+        { file_id: 5, code: 'trashed', reason: 'x' },
+        { file_id: 6, code: 'source_missing', reason: 'x' },
+        { file_id: 7, code: 'quota_exceeded', reason: 'storage quota reached' },
+      ],
+    };
+    const user = userEvent.setup();
+    renderModal([1, 2, 3, 4, 5, 6, 7]);
+    await user.click(await screen.findByRole('button', { name: /Bracket job/ }));
+    await user.click(screen.getByRole('button', { name: 'Move' }));
+    expect(
+      await screen.findByText(
+        '3 files moved to P-0007 · External files are copied; the originals stay where they are · ' +
+          '4 files skipped: file missing on disk (2), in the trash (1), storage quota reached (1)',
+      ),
+    ).toBeInTheDocument();
+    const viewport = screen.getByTestId('toast-viewport');
+    expect(viewport.querySelector('svg.text-yellow-400')).not.toBeNull();
+    expect(viewport.querySelector('svg.text-green-400')).toBeNull();
+  });
+
+  it('an unknown code without a reason shows the code itself', async () => {
+    importResult = { moved: [], copied: [], skipped: [{ file_id: 2, code: 'brand_new_code', reason: '' }] };
+    const user = userEvent.setup();
+    renderModal([2]);
+    await user.click(await screen.findByRole('button', { name: /Bracket job/ }));
+    await user.click(screen.getByRole('button', { name: 'Move' }));
+    expect(await screen.findByText('1 file skipped: brand_new_code')).toBeInTheDocument();
+  });
+
+  it('all skipped: only the skipped line, as a warning, and the dialog still closes', async () => {
+    importResult = {
+      moved: [],
+      copied: [],
+      skipped: [
+        { file_id: 1, code: 'already_in_project', reason: 'x' },
+        { file_id: 2, code: 'already_in_project', reason: 'x' },
+        { file_id: 3, code: 'already_in_project', reason: 'x' },
+      ],
+    };
+    const user = userEvent.setup();
+    const { onClose, onMoved } = renderModal([1, 2, 3]);
+    await user.click(await screen.findByRole('button', { name: /Bracket job/ }));
+    await user.click(screen.getByRole('button', { name: 'Move' }));
+    expect(await screen.findByText('3 files skipped: already in a project')).toBeInTheDocument();
+    expect(screen.getByTestId('toast-viewport').querySelector('svg.text-yellow-400')).not.toBeNull();
+    expect(onMoved).toHaveBeenCalledWith(importResult);
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('a moved-only result is a success toast', async () => {
+    const user = userEvent.setup();
+    renderModal([1]);
+    await user.click(await screen.findByRole('button', { name: /Bracket job/ }));
+    await user.click(screen.getByRole('button', { name: 'Move' }));
+    expect(await screen.findByText('1 file moved to P-0007')).toBeInTheDocument();
+    expect(screen.getByTestId('toast-viewport').querySelector('svg.text-green-400')).not.toBeNull();
+  });
+
+  it('names a project without a code by its name', async () => {
+    server.use(
+      http.get('/api/v1/projects/search', () =>
+        HttpResponse.json({
+          items: [{ id: 12, code: null, name: 'Lamp shade', description: null, status: 'active', color: null, cover_image_filename: null, tags: [], archive_count: 0, created_at: '', updated_at: '' }],
+          total: 1,
+        }),
+      ),
+    );
+    const user = userEvent.setup();
+    renderModal([1]);
+    await user.type(await screen.findByPlaceholderText('Search a project…'), 'lamp');
+    await user.click(await screen.findByRole('button', { name: /Lamp shade/ }));
+    await user.click(screen.getByRole('button', { name: 'Move' }));
+    expect(await screen.findByText('1 file moved to Lamp shade')).toBeInTheDocument();
+  });
+
+  it('going back to the automatic item drops item_id from the request', async () => {
+    const user = userEvent.setup();
+    renderModal([5]);
+    await user.click(await screen.findByRole('button', { name: /Bracket job/ }));
+    expect(await screen.findByRole('radio', { name: 'Support X1C' })).toBeChecked();
+    await user.click(screen.getByRole('radio', { name: 'Automatic (from each file name)' }));
+    await user.click(screen.getByRole('button', { name: 'Move' }));
+    await waitFor(() => expect(importBody).toEqual({ file_ids: [5] }));
+  });
+
   it('says why files were skipped, one count per reason; copy errors and conflicts read as retry', async () => {
     importResult = {
       moved: [],
@@ -248,6 +339,23 @@ describe('MoveToProjectModal', () => {
     await user.click(await screen.findByRole('button', { name: /Bracket job/ }));
     await user.click(screen.getByRole('button', { name: 'Move' }));
     expect(await screen.findByText(/Project not found/)).toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(onMoved).not.toHaveBeenCalled();
+  });
+
+  it('a server error toasts as an error, stays open and reports nothing moved', async () => {
+    server.use(
+      http.post('/api/v1/projects/:id/import-library-files', () => new HttpResponse('boom', { status: 500 })),
+    );
+    const user = userEvent.setup();
+    const { onClose, onMoved } = renderModal();
+    await user.click(await screen.findByRole('button', { name: /Bracket job/ }));
+    await user.click(screen.getByRole('button', { name: 'Move' }));
+    expect(await screen.findByText('HTTP 500')).toBeInTheDocument();
+    const viewport = screen.getByTestId('toast-viewport');
+    expect(viewport.querySelector('svg.text-red-400')).not.toBeNull();
+    expect(screen.queryByText(/moved to/)).not.toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'Move to a project' })).toBeInTheDocument();
     expect(onClose).not.toHaveBeenCalled();
     expect(onMoved).not.toHaveBeenCalled();
   });

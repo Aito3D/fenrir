@@ -1,0 +1,20 @@
+### exit: 0
+### stdout:
+1 content_length_capped_route(*permissions: Permission)
+1 content_length_capped_route(Permission.AITO_UPDATE, Permission.PROJECTS_UPDATE)
+1 content_length_capped_route(Permission.PROJECTS_UPDATE)
+1 require_any_permission_if_auth_enabled(Permission.PROJECTS_CREATE, Permission.PROJECTS_UPDATE)
+1 require_ownership_permission(Permission.LIBRARY_READ_ALL, Permission.LIBRARY_READ_OWN)
+1 require_ownership_permission(Permission.LIBRARY_UPDATE_ALL, Permission.LIBRARY_UPDATE_OWN)
+2 RequirePermissionIfAuthEnabled(Permission.AITO_READ)
+1 RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE)
+1 RequirePermissionIfAuthEnabled(Permission.LIBRARY_UPLOAD)
+1 RequirePermissionIfAuthEnabled(Permission.PIPELINES_READ)
+6 RequirePermissionIfAuthEnabled(Permission.PROJECTS_CREATE)
+3 RequirePermissionIfAuthEnabled(Permission.PROJECTS_DELETE)
+17 RequirePermissionIfAuthEnabled(Permission.PROJECTS_READ)
+23 RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE)
+2 RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE)
+
+### stderr:
+

@@ -1,5 +1,4 @@
 import { useRef, useState } from 'react';
-import type { DragEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronDown, ChevronRight, Plus } from 'lucide-react';
 import type { ProjectItemOut, ProjectSection } from '../../../api/client';
@@ -8,7 +7,8 @@ import { inputCls, focusRingCls } from '../../formStyles';
 import { ItemRow } from './ItemRow';
 import type { DerivedOption } from './RevisionBlock';
 import type { FileActions } from './useFileActions';
-import { filesFromDataTransfer, itemNameFromFile, itemNameKey } from './fileDrop';
+import { itemNameFromFile, itemNameKey } from './fileDrop';
+import { useFileDropZone } from './useFileDropZone';
 import { PRINTABLE_ACCEPT, SECTION_LABEL_KEYS } from './filesUi';
 
 interface Props {
@@ -23,7 +23,6 @@ export function SectionBlock({ section, items, derivedOptions, actions }: Props)
   const { hasPermission } = useAuth();
   const canUpdate = hasPermission('projects:update');
   const [open, setOpen] = useState(items.length > 0);
-  const [dragOver, setDragOver] = useState(false);
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
   const [files, setFiles] = useState<File[]>([]);
@@ -32,12 +31,8 @@ export function SectionBlock({ section, items, derivedOptions, actions }: Props)
   const [submitting, setSubmitting] = useState(false);
   const chooser = useRef<HTMLInputElement>(null);
 
-  const onDrop = async (e: DragEvent) => {
-    e.preventDefault();
-    setDragOver(false);
-    if (!canUpdate) return;
-    const dropped = filesFromDataTransfer(e.dataTransfer);
-    if (!dropped.length || !actions.acceptsFiles(dropped)) return;
+  const onDropFiles = async (dropped: File[]) => {
+    if (!actions.acceptsFiles(dropped)) return;
     setOpen(true);
     const itemName = itemNameFromFile(dropped[0].name);
     const key = itemNameKey(itemName);
@@ -49,6 +44,7 @@ export function SectionBlock({ section, items, derivedOptions, actions }: Props)
     const id = await actions.createItem(section, itemName);
     if (id !== undefined) await actions.uploadRevision(id, dropped);
   };
+  const { dragOver, ...dropHandlers } = useFileDropZone({ canDrop: canUpdate, onFiles: onDropFiles });
 
   const closeForm = () => {
     setCreating(false);
@@ -77,9 +73,7 @@ export function SectionBlock({ section, items, derivedOptions, actions }: Props)
   return (
     <section
       className={`rounded-xl border bg-bambu-dark-secondary ${dragOver ? 'border-bambu-green' : 'border-bambu-dark-tertiary'}`}
-      onDragOver={(e) => { e.preventDefault(); if (canUpdate) setDragOver(true); }}
-      onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragOver(false); }}
-      onDrop={(e) => void onDrop(e)}
+      {...dropHandlers}
     >
       <div className="flex flex-wrap items-center gap-2 p-2">
         <h3 className="min-w-0 flex-1 basis-32 text-sm font-semibold text-white">

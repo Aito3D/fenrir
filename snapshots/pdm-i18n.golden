@@ -1,0 +1,3111 @@
+### exit: 0
+### stdout:
+--- de projectsPdm (198 keys)
+acceptSuggestion = "{{name}} hinzufügen"  placeholders={{name}}
+aiUnavailable = "KI nicht verfügbar"
+aito.confirmUnlink = "{{name}} von dieser Aufgabe lösen? Die Liste der gelieferten Dateien wird geleert."  placeholders={{name}}
+aito.deliveredFiles = "Gelieferte Dateien"
+aito.deliveredNone = "Noch nichts erfasst"
+aito.deliveriesSuggest = "Neueste freigegebene vorschlagen"
+aito.dropChooseTask = "Für welche Aufgabe sind diese Dateien?"
+aito.dropHere = "Dateien ablegen, um sie dem Projekt hinzuzufügen"
+aito.dropNeedsProject = "Verknüpfen Sie zuerst ein Projekt mit dieser Aufgabe"
+aito.dropped_one = "{{count}} Datei zu {{code}} hinzugefügt"  placeholders={{code}},{{count}}
+aito.dropped_other = "{{count}} Dateien zu {{code}} hinzugefügt"  placeholders={{code}},{{count}}
+aito.editDeliveries = "Gelieferte Dateien bearbeiten"
+aito.events.deliveriesChanged = "hat die gelieferten Dateien geändert"
+aito.events.filesDropped = "hat Dateien zu {{code}} hinzugefügt"  placeholders={{code}}
+aito.events.previousProject = "zuvor {{code}}"  placeholders={{code}}
+aito.events.projectLinked = "hat ein Projekt verknüpft"
+aito.events.projectUnlinked = "hat eine Projektverknüpfung aufgehoben"
+aito.events.revisionAdded = "hat eine Projektrevision hinzugefügt"
+aito.events.revisionStatusChanged = "hat den Status einer Revision geändert"
+aito.linkExisting = "Bestehendes Projekt verknüpfen"
+aito.linkFailed = "Verknüpfung konnte nicht aktualisiert werden"
+aito.newOrder = "Neuer Auftrag"
+aito.newProject = "Neues Projekt"
+aito.noProjectsFound = "Kein passendes Projekt"
+aito.orderLabel = "Auftrag #{{id}}"  placeholders={{id}}
+aito.ordersEmpty = "Noch kein Auftrag nutzt dieses Projekt"
+aito.ordersTitle = "Aufträge"
+aito.projectLabel = "Projekt"
+aito.reuseFromOrder = "Dateien aus Auftrag #{{order}} übernehmen"  placeholders={{order}}
+aito.reuseFromOrderPlaceholder = "Dateien aus einem anderen Auftrag übernehmen…"
+aito.saveTaskFirst = "Speichern Sie zuerst die Aufgabe"
+aito.searchProjects = "Projekte durchsuchen…"
+aito.suggestionSameClient = "Gleicher Kunde"
+aito.suggestionSimilar = "Ähnlicher Titel"
+aito.unlink = "Verknüpfung lösen"
+codeChipLabel = "Projektcode {{code}}"  placeholders={{code}}
+colCode = "Code"
+colPrints = "Drucke"
+colStatus = "Status"
+colTags = "Tags"
+colTitle = "Titel"
+colUpdated = "Aktualisiert"
+create = "Erstellen"
+createTag = "„{{name}}“ erstellen"  placeholders={{name}}
+createTitle = "Neues Projekt"
+descriptionLabel = "Beschreibung"
+editHeader = "Titel, Beschreibung und Tags bearbeiten"
+empty = "Noch keine Projekte"
+emptySearch = "Kein Projekt entspricht dieser Suche"
+files.addFiles = "Dateien hinzufügen"
+files.byAuthor = "von {{name}}"  placeholders={{name}}
+files.chooseFiles = "Dateien auswählen"
+files.confirmDeleteItem = "{{name}} und alle Revisionen löschen? Die Dateien wandern in den Papierkorb des Projekts."  placeholders={{name}}
+files.confirmDeleteRevision = "{{label}} löschen? Die Dateien wandern in den Papierkorb des Projekts."  placeholders={{label}}
+files.confirmRemoveFile = "{{name}} aus {{label}} entfernen? Die Datei wird in den Papierkorb des Projekts verschoben."  placeholders={{label}},{{name}}
+files.deleteItem = "Element löschen"
+files.deleteRevision = "Revision löschen"
+files.derivedFrom = "Abgeleitet von {{label}}"  placeholders={{label}}
+files.derivedFromLabel = "Abgeleitet von"
+files.derivedFromNone = "Nichts"
+files.download = "Herunterladen"
+files.downloadAll = "Alle herunterladen (ZIP)"
+files.dropHint = "Dateien hierher ziehen oder klicken zum Auswählen"
+files.duplicateWarning = "{{filename}} ist identisch mit {{revision}}"  placeholders={{filename}},{{revision}}
+files.emptySection = "Noch keine Elemente"
+files.fileCount_one = "{{count}} Datei"  placeholders={{count}}
+files.fileCount_other = "{{count}} Dateien"  placeholders={{count}}
+files.fork = "Als neues Element abspalten"
+files.forkNameLabel = "Name des neuen Elements"
+files.frozen = "Dateien gesperrt: Diese Revision wurde gedruckt oder geliefert"
+files.itemNameLabel = "Elementname"
+files.newItem = "Neues Element"
+files.newRevision = "Neue Revision"
+files.notSliced = "Nicht gesliced"
+files.noteLabel = "Notiz"
+files.notePlaceholder = "Was hat sich geändert…"
+files.onlyPrintable = "Nur 3MF- und G-Code-Dateien können in ein Projekt"
+files.otherSections = "Ältere Dateien"
+files.outdated = "Nicht aktuell – basiert auf {{source}}, seitdem wurde {{newer}} freigegeben"  placeholders={{newer}},{{source}}
+files.preview = "Vorschau"
+files.remove = "Entfernen"
+files.removeFile = "{{name}} entfernen"  placeholders={{name}}
+files.rename = "Umbenennen"
+files.saveFailed = "Speichern fehlgeschlagen"
+files.sectionDocs = "Dokumente"
+files.sectionImpression = "Druck"
+files.sectionModelisation = "Konstruktion"
+files.sectionScan = "3D-Scan"
+files.sectionUsinage = "Zerspanung"
+files.sliced = "Gesliced"
+files.statusLabel = "Status"
+files.statusObsolete = "Veraltet"
+files.statusValide = "Freigegeben"
+files.statusWip = "In Arbeit"
+files.title = "Dateien"
+files.uploadFailed = "Upload fehlgeschlagen"
+files.uploading = "Wird hochgeladen…"
+filing.autoFileHint = "Eine Datei namens „P-0042_support.3mf“ landet direkt im Projekt P-0042"
+filing.autoFileLabel = "Hochgeladene Dateien mit Projektcode im Namen einsortieren"
+filing.autoItem = "Automatisch (nach jedem Dateinamen)"
+filing.copiedNote = "Externe Dateien werden kopiert; die Originale bleiben, wo sie sind"
+filing.fileCount_one = "{{count}} Datei"  placeholders={{count}}
+filing.fileCount_other = "{{count}} Dateien"  placeholders={{count}}
+filing.filedToProject = "Abgelegt in {{code}} › {{item}} R{{revision}}"  placeholders={{code}},{{item}},{{revision}}
+filing.migrationFailures = "Fehlgeschlagen"
+filing.migrationLastRun = "Letzter Lauf: {{files}} {{projects}}"  placeholders={{files}},{{projects}}
+filing.migrationLastRunFiles_one = "{{count}} Datei verschoben"  placeholders={{count}}
+filing.migrationLastRunFiles_other = "{{count}} Dateien verschoben"  placeholders={{count}}
+filing.migrationLastRunProjects_one = "in {{count}} Projekt"  placeholders={{count}}
+filing.migrationLastRunProjects_other = "in {{count}} Projekten"  placeholders={{count}}
+filing.migrationNone = "Nichts mehr zu verschieben"
+filing.migrationPending_one = "{{count}} Projekt hat noch Dateien zum Verschieben"  placeholders={{count}}
+filing.migrationPending_other = "{{count}} Projekte haben noch Dateien zum Verschieben"  placeholders={{count}}
+filing.migrationRunning = "Verschiebe {{done}}/{{total}} — {{code}}"  placeholders={{code}},{{done}},{{total}}
+filing.migrationStart = "Jetzt verschieben"
+filing.migrationTitle = "Alte Projektdateien"
+filing.move = "Verschieben"
+filing.moveTitle = "In ein Projekt verschieben"
+filing.moveToProject = "In Projekt verschieben…"
+filing.moved_one = "{{count}} Datei nach {{code}} verschoben"  placeholders={{code}},{{count}}
+filing.moved_other = "{{count}} Dateien nach {{code}} verschoben"  placeholders={{code}},{{count}}
+filing.newItem = "Neues Element…"
+filing.newItemPlaceholder = "Name des Elements"
+filing.searchProject = "Projekt suchen…"
+filing.settingsTitle = "Projekte"
+filing.skipReason.alreadyInProject = "bereits in einem Projekt"
+filing.skipReason.notFound = "Datei nicht gefunden"
+filing.skipReason.notOwner = "nicht deine"
+filing.skipReason.notPrintable = "keine 3MF/G-Code-Datei"
+filing.skipReason.retry = "Kopieren fehlgeschlagen, bitte erneut versuchen"
+filing.skipReason.sourceMissing = "Datei fehlt auf dem Datenträger"
+filing.skipReason.trashed = "im Papierkorb"
+filing.skippedWithReasons_one = "{{count}} Datei übersprungen: {{reasons}}"  placeholders={{count}},{{reasons}}
+filing.skippedWithReasons_other = "{{count}} Dateien übersprungen: {{reasons}}"  placeholders={{count}},{{reasons}}
+filing.suggested = "Vorgeschlagen"
+filing.targetItem = "Element"
+newProject = "Neues Projekt"
+newTagBadge = "neu"
+nextPage = "Nächste Seite"
+noSuggestions = "Keine Vorschläge"
+pageRange = "{{from}}–{{to}} von {{total}}"  placeholders={{from}},{{total}},{{to}}
+prevPage = "Vorherige Seite"
+print.eventQueued = "{{label}} ×{{copies}} in die Warteschlange gestellt"  placeholders={{copies}},{{label}}
+print.forWhichOrder = "Für welchen Auftrag ist dieser Druck?"
+print.noOrder = "Keiner (interner Druck oder Testdruck)"
+print.noPrintFiles = "Noch keine Druckdatei in diesem Projekt"
+print.ordersUnavailable = "Aufträge konnten nicht geladen werden — vorerst ist nur ein Druck ohne Auftrag möglich."
+print.outdatedWarning = "Basiert auf {{source}} — seitdem wurde {{newer}} freigegeben"  placeholders={{newer}},{{source}}
+print.pickPrintFile = "Druckdatei auswählen"
+print.print = "Drucken"
+print.printCount_one = "{{count}} Mal gedruckt"  placeholders={{count}}
+print.printCount_other = "{{count}} Mal gedruckt"  placeholders={{count}}
+print.printFile = "{{name}} drucken"  placeholders={{name}}
+print.printed = "{{printed}}/{{target}} gedruckt"  placeholders={{printed}},{{target}}
+print.printedNoTarget = "{{printed}} gedruckt"  placeholders={{printed}}
+print.queued_one = "{{count}} in der Warteschlange"  placeholders={{count}}
+print.queued_other = "{{count}} in der Warteschlange"  placeholders={{count}}
+print.rejected_one = "{{count}} abgelehnt"  placeholders={{count}}
+print.rejected_other = "{{count}} abgelehnt"  placeholders={{count}}
+print.tickStep = "Abhaken"
+print.tickSuggestion = "Alle angeforderten Drucke sind fertig — Schritt abhaken?"
+removeTag = "{{name}} entfernen"  placeholders={{name}}
+reslice.action = "Neu slicen"
+reslice.dismiss = "Schließen"
+reslice.done = "{{name}} R{{number}} erstellt"  placeholders={{name}},{{number}}
+reslice.failed = "Slicen fehlgeschlagen: {{detail}}"  placeholders={{detail}}
+reslice.jobLost = "Slicing-Status verloren. Lade die Seite neu, um zu sehen, ob die neue Revision erstellt wurde."
+reslice.noPipelines = "Keine gespeicherte Pipeline. Lege eine unter Einstellungen → Workflow → Pipelines an."
+reslice.pipeline = "Pipeline"
+reslice.pipelinesUnavailable = "Pipelines konnten nicht geladen werden."
+reslice.queueSkipped = "{{name}} R{{number}} erstellt: Drucke sie über die Revision."  placeholders={{name}},{{number}}
+reslice.running = "Slicen… {{percent}} %"  placeholders={{percent}}
+reslice.runningNoPercent = "Slicen…"
+reslice.slice = "Slicen"
+reslice.sliceAndQueue = "Slicen + einreihen"
+reslice.source = "Quelldatei"
+reslice.startFailed = "Slicen konnte nicht gestartet werden"
+reslice.title = "{{name}} neu slicen"  placeholders={{name}}
+reslice.viaPipeline = "über {{name}}"  placeholders={{name}}
+reslice.warnings = "Vor dem Start prüfen"
+save = "Speichern"
+saveFailed = "Projekt konnte nicht gespeichert werden"
+saved = "Projekt gespeichert"
+searchPlaceholder = "Nach Code, Titel, Beschreibung oder Tag suchen…"
+statusAll = "Alle"
+statusFilterLabel = "Status"
+subtitle = "Jedes Teil, seine Dateien und sein Verlauf"
+suggestTags = "Tags vorschlagen"
+suggestionsLabel = "Vorschläge"
+tagModeAll = "Alle Tags"
+tagModeAny = "Beliebiger Tag"
+tagSearchPlaceholder = "Tag suchen oder erstellen…"
+tagsFilterLabel = "Tags"
+tagsLabel = "Tags"
+title = "Projekte"
+titleLabel = "Titel"
+viewGrid = "Rasteransicht"
+viewTable = "Tabellenansicht"
+--- en projectsPdm (198 keys)
+acceptSuggestion = "Add {{name}}"  placeholders={{name}}
+aiUnavailable = "AI unavailable"
+aito.confirmUnlink = "Unlink {{name}} from this task? Its delivered files list is cleared."  placeholders={{name}}
+aito.deliveredFiles = "Delivered files"
+aito.deliveredNone = "Nothing recorded yet"
+aito.deliveriesSuggest = "Suggest latest approved"
+aito.dropChooseTask = "Which task are these files for?"
+aito.dropHere = "Drop files to add them to the project"
+aito.dropNeedsProject = "Link a project to this task first"
+aito.dropped_one = "{{count}} file added to {{code}}"  placeholders={{code}},{{count}}
+aito.dropped_other = "{{count}} files added to {{code}}"  placeholders={{code}},{{count}}
+aito.editDeliveries = "Edit delivered files"
+aito.events.deliveriesChanged = "updated the delivered files"
+aito.events.filesDropped = "added files to {{code}}"  placeholders={{code}}
+aito.events.previousProject = "previously {{code}}"  placeholders={{code}}
+aito.events.projectLinked = "linked a project"
+aito.events.projectUnlinked = "unlinked a project"
+aito.events.revisionAdded = "added a project revision"
+aito.events.revisionStatusChanged = "changed a revision status"
+aito.linkExisting = "Link an existing project"
+aito.linkFailed = "Could not update the link"
+aito.newOrder = "New order"
+aito.newProject = "New project"
+aito.noProjectsFound = "No matching project"
+aito.orderLabel = "Order #{{id}}"  placeholders={{id}}
+aito.ordersEmpty = "No order uses this project yet"
+aito.ordersTitle = "Orders"
+aito.projectLabel = "Project"
+aito.reuseFromOrder = "Reuse the files from order #{{order}}"  placeholders={{order}}
+aito.reuseFromOrderPlaceholder = "Reuse files from another order…"
+aito.saveTaskFirst = "Save the task first"
+aito.searchProjects = "Search projects…"
+aito.suggestionSameClient = "Same client"
+aito.suggestionSimilar = "Similar title"
+aito.unlink = "Unlink"
+codeChipLabel = "Project code {{code}}"  placeholders={{code}}
+colCode = "Code"
+colPrints = "Prints"
+colStatus = "Status"
+colTags = "Tags"
+colTitle = "Title"
+colUpdated = "Updated"
+create = "Create"
+createTag = "Create “{{name}}”"  placeholders={{name}}
+createTitle = "New project"
+descriptionLabel = "Description"
+editHeader = "Edit title, description and tags"
+empty = "No projects yet"
+emptySearch = "No project matches this search"
+files.addFiles = "Add files"
+files.byAuthor = "by {{name}}"  placeholders={{name}}
+files.chooseFiles = "Choose files"
+files.confirmDeleteItem = "Delete {{name}} and all its revisions? Files move to the project trash."  placeholders={{name}}
+files.confirmDeleteRevision = "Delete {{label}}? Its files move to the project trash."  placeholders={{label}}
+files.confirmRemoveFile = "Remove {{name}} from {{label}}? The file moves to the project trash."  placeholders={{label}},{{name}}
+files.deleteItem = "Delete item"
+files.deleteRevision = "Delete revision"
+files.derivedFrom = "Derived from {{label}}"  placeholders={{label}}
+files.derivedFromLabel = "Derived from"
+files.derivedFromNone = "Nothing"
+files.download = "Download"
+files.downloadAll = "Download all (zip)"
+files.dropHint = "Drop files here or click to choose"
+files.duplicateWarning = "{{filename}} is identical to {{revision}}"  placeholders={{filename}},{{revision}}
+files.emptySection = "No items yet"
+files.fileCount_one = "{{count}} file"  placeholders={{count}}
+files.fileCount_other = "{{count}} files"  placeholders={{count}}
+files.fork = "Fork as new item"
+files.forkNameLabel = "New item name"
+files.frozen = "Files frozen: this revision was printed or delivered"
+files.itemNameLabel = "Item name"
+files.newItem = "New item"
+files.newRevision = "New revision"
+files.notSliced = "Not sliced"
+files.noteLabel = "Note"
+files.notePlaceholder = "What changed…"
+files.onlyPrintable = "Only 3MF and G-code files can go into a project"
+files.otherSections = "Older files"
+files.outdated = "Outdated — based on {{source}}, {{newer}} approved since"  placeholders={{newer}},{{source}}
+files.preview = "Preview"
+files.remove = "Remove"
+files.removeFile = "Remove {{name}}"  placeholders={{name}}
+files.rename = "Rename"
+files.saveFailed = "Could not save"
+files.sectionDocs = "Documents"
+files.sectionImpression = "Printing"
+files.sectionModelisation = "Modeling"
+files.sectionScan = "Scan"
+files.sectionUsinage = "Machining"
+files.sliced = "Sliced"
+files.statusLabel = "Status"
+files.statusObsolete = "Obsolete"
+files.statusValide = "Approved"
+files.statusWip = "In progress"
+files.title = "Files"
+files.uploadFailed = "Upload failed"
+files.uploading = "Uploading…"
+filing.autoFileHint = "A file named \"P-0042_support.3mf\" goes straight into project P-0042"
+filing.autoFileLabel = "File uploads named after a project code"
+filing.autoItem = "Automatic (from each file name)"
+filing.copiedNote = "External files are copied; the originals stay where they are"
+filing.fileCount_one = "{{count}} file"  placeholders={{count}}
+filing.fileCount_other = "{{count}} files"  placeholders={{count}}
+filing.filedToProject = "Filed into {{code}} › {{item}} R{{revision}}"  placeholders={{code}},{{item}},{{revision}}
+filing.migrationFailures = "Failed"
+filing.migrationLastRun = "Last run: {{files}} {{projects}}"  placeholders={{files}},{{projects}}
+filing.migrationLastRunFiles_one = "{{count}} file moved"  placeholders={{count}}
+filing.migrationLastRunFiles_other = "{{count}} files moved"  placeholders={{count}}
+filing.migrationLastRunProjects_one = "into {{count}} project"  placeholders={{count}}
+filing.migrationLastRunProjects_other = "into {{count}} projects"  placeholders={{count}}
+filing.migrationNone = "Nothing left to move"
+filing.migrationPending_one = "{{count}} project still has files to move"  placeholders={{count}}
+filing.migrationPending_other = "{{count}} projects still have files to move"  placeholders={{count}}
+filing.migrationRunning = "Moving {{done}}/{{total}} — {{code}}"  placeholders={{code}},{{done}},{{total}}
+filing.migrationStart = "Move them now"
+filing.migrationTitle = "Old project files"
+filing.move = "Move"
+filing.moveTitle = "Move to a project"
+filing.moveToProject = "Move to project…"
+filing.moved_one = "{{count}} file moved to {{code}}"  placeholders={{code}},{{count}}
+filing.moved_other = "{{count}} files moved to {{code}}"  placeholders={{code}},{{count}}
+filing.newItem = "New item…"
+filing.newItemPlaceholder = "Item name"
+filing.searchProject = "Search a project…"
+filing.settingsTitle = "Projects"
+filing.skipReason.alreadyInProject = "already in a project"
+filing.skipReason.notFound = "file not found"
+filing.skipReason.notOwner = "not yours"
+filing.skipReason.notPrintable = "not a 3MF/G-code file"
+filing.skipReason.retry = "could not be copied, try again"
+filing.skipReason.sourceMissing = "file missing on disk"
+filing.skipReason.trashed = "in the trash"
+filing.skippedWithReasons_one = "{{count}} file skipped: {{reasons}}"  placeholders={{count}},{{reasons}}
+filing.skippedWithReasons_other = "{{count}} files skipped: {{reasons}}"  placeholders={{count}},{{reasons}}
+filing.suggested = "Suggested"
+filing.targetItem = "Item"
+newProject = "New project"
+newTagBadge = "new"
+nextPage = "Next page"
+noSuggestions = "No suggestions"
+pageRange = "{{from}}–{{to}} of {{total}}"  placeholders={{from}},{{total}},{{to}}
+prevPage = "Previous page"
+print.eventQueued = "{{label}} ×{{copies}} queued"  placeholders={{copies}},{{label}}
+print.forWhichOrder = "Which order is this print for?"
+print.noOrder = "None (internal or test print)"
+print.noPrintFiles = "No print file in this project yet"
+print.ordersUnavailable = "Orders could not be loaded — you can only print without an order for now."
+print.outdatedWarning = "Based on {{source}} — {{newer}} approved since"  placeholders={{newer}},{{source}}
+print.pickPrintFile = "Choose a print file"
+print.print = "Print"
+print.printCount_one = "printed {{count}} time"  placeholders={{count}}
+print.printCount_other = "printed {{count}} times"  placeholders={{count}}
+print.printFile = "Print {{name}}"  placeholders={{name}}
+print.printed = "{{printed}}/{{target}} printed"  placeholders={{printed}},{{target}}
+print.printedNoTarget = "{{printed}} printed"  placeholders={{printed}}
+print.queued_one = "{{count}} queued"  placeholders={{count}}
+print.queued_other = "{{count}} queued"  placeholders={{count}}
+print.rejected_one = "{{count}} rejected"  placeholders={{count}}
+print.rejected_other = "{{count}} rejected"  placeholders={{count}}
+print.tickStep = "Tick"
+print.tickSuggestion = "All requested prints are done — tick the step?"
+removeTag = "Remove {{name}}"  placeholders={{name}}
+reslice.action = "Re-slice"
+reslice.dismiss = "Dismiss"
+reslice.done = "{{name}} R{{number}} created"  placeholders={{name}},{{number}}
+reslice.failed = "Slicing failed: {{detail}}"  placeholders={{detail}}
+reslice.jobLost = "Slicing status lost. Reload the page to see whether the new revision was created."
+reslice.noPipelines = "No saved pipeline. Create one in Settings → Workflow → Pipelines."
+reslice.pipeline = "Pipeline"
+reslice.pipelinesUnavailable = "Could not load pipelines."
+reslice.queueSkipped = "{{name}} R{{number}} created: print it from the revision."  placeholders={{name}},{{number}}
+reslice.running = "Slicing… {{percent}}%"  placeholders={{percent}}
+reslice.runningNoPercent = "Slicing…"
+reslice.slice = "Slice"
+reslice.sliceAndQueue = "Slice + queue"
+reslice.source = "Source file"
+reslice.startFailed = "Could not start slicing"
+reslice.title = "Re-slice {{name}}"  placeholders={{name}}
+reslice.viaPipeline = "via {{name}}"  placeholders={{name}}
+reslice.warnings = "Check before starting"
+save = "Save"
+saveFailed = "Could not save the project"
+saved = "Project saved"
+searchPlaceholder = "Search by code, title, description or tag…"
+statusAll = "All"
+statusFilterLabel = "Status"
+subtitle = "Every part, its files and its history"
+suggestTags = "Suggest tags"
+suggestionsLabel = "Suggestions"
+tagModeAll = "All tags"
+tagModeAny = "Any tag"
+tagSearchPlaceholder = "Search or create a tag…"
+tagsFilterLabel = "Tags"
+tagsLabel = "Tags"
+title = "Projects"
+titleLabel = "Title"
+viewGrid = "Grid view"
+viewTable = "Table view"
+--- es projectsPdm (198 keys)
+acceptSuggestion = "Añadir {{name}}"  placeholders={{name}}
+aiUnavailable = "IA no disponible"
+aito.confirmUnlink = "¿Desvincular {{name}} de esta tarea? Se borrará la lista de archivos entregados."  placeholders={{name}}
+aito.deliveredFiles = "Archivos entregados"
+aito.deliveredNone = "Nada registrado todavía"
+aito.deliveriesSuggest = "Proponer las últimas aprobadas"
+aito.dropChooseTask = "¿Para qué tarea son estos archivos?"
+aito.dropHere = "Suelta archivos para añadirlos al proyecto"
+aito.dropNeedsProject = "Vincula primero un proyecto a esta tarea"
+aito.dropped_one = "{{count}} archivo añadido a {{code}}"  placeholders={{code}},{{count}}
+aito.dropped_other = "{{count}} archivos añadidos a {{code}}"  placeholders={{code}},{{count}}
+aito.editDeliveries = "Editar archivos entregados"
+aito.events.deliveriesChanged = "actualizó los archivos entregados"
+aito.events.filesDropped = "añadió archivos a {{code}}"  placeholders={{code}}
+aito.events.previousProject = "antes {{code}}"  placeholders={{code}}
+aito.events.projectLinked = "vinculó un proyecto"
+aito.events.projectUnlinked = "desvinculó un proyecto"
+aito.events.revisionAdded = "añadió una revisión al proyecto"
+aito.events.revisionStatusChanged = "cambió el estado de una revisión"
+aito.linkExisting = "Vincular un proyecto existente"
+aito.linkFailed = "No se pudo actualizar el vínculo"
+aito.newOrder = "Nuevo pedido"
+aito.newProject = "Nuevo proyecto"
+aito.noProjectsFound = "Ningún proyecto coincide"
+aito.orderLabel = "Pedido #{{id}}"  placeholders={{id}}
+aito.ordersEmpty = "Ningún pedido usa este proyecto todavía"
+aito.ordersTitle = "Pedidos"
+aito.projectLabel = "Proyecto"
+aito.reuseFromOrder = "Reutilizar los archivos del pedido #{{order}}"  placeholders={{order}}
+aito.reuseFromOrderPlaceholder = "Reutilizar archivos de otro pedido…"
+aito.saveTaskFirst = "Guarda primero la tarea"
+aito.searchProjects = "Buscar proyectos…"
+aito.suggestionSameClient = "Mismo cliente"
+aito.suggestionSimilar = "Título parecido"
+aito.unlink = "Desvincular"
+codeChipLabel = "Código de proyecto {{code}}"  placeholders={{code}}
+colCode = "Código"
+colPrints = "Impresiones"
+colStatus = "Estado"
+colTags = "Etiquetas"
+colTitle = "Título"
+colUpdated = "Actualizado"
+create = "Crear"
+createTag = "Crear «{{name}}»"  placeholders={{name}}
+createTitle = "Nuevo proyecto"
+descriptionLabel = "Descripción"
+editHeader = "Editar título, descripción y etiquetas"
+empty = "Aún no hay proyectos"
+emptySearch = "Ningún proyecto coincide con esta búsqueda"
+files.addFiles = "Añadir archivos"
+files.byAuthor = "por {{name}}"  placeholders={{name}}
+files.chooseFiles = "Elegir archivos"
+files.confirmDeleteItem = "¿Eliminar {{name}} y todas sus revisiones? Los archivos pasan a la papelera del proyecto."  placeholders={{name}}
+files.confirmDeleteRevision = "¿Eliminar {{label}}? Sus archivos pasan a la papelera del proyecto."  placeholders={{label}}
+files.confirmRemoveFile = "¿Quitar {{name}} de {{label}}? El archivo se mueve a la papelera del proyecto."  placeholders={{label}},{{name}}
+files.deleteItem = "Eliminar elemento"
+files.deleteRevision = "Eliminar revisión"
+files.derivedFrom = "Derivado de {{label}}"  placeholders={{label}}
+files.derivedFromLabel = "Derivado de"
+files.derivedFromNone = "Nada"
+files.download = "Descargar"
+files.downloadAll = "Descargar todo (zip)"
+files.dropHint = "Suelta archivos aquí o haz clic para elegir"
+files.duplicateWarning = "{{filename}} es idéntico a {{revision}}"  placeholders={{filename}},{{revision}}
+files.emptySection = "Aún no hay elementos"
+files.fileCount_one = "{{count}} archivo"  placeholders={{count}}
+files.fileCount_other = "{{count}} archivos"  placeholders={{count}}
+files.fork = "Bifurcar como nuevo elemento"
+files.forkNameLabel = "Nombre del nuevo elemento"
+files.frozen = "Archivos bloqueados: esta revisión ya se imprimió o entregó"
+files.itemNameLabel = "Nombre del elemento"
+files.newItem = "Nuevo elemento"
+files.newRevision = "Nueva revisión"
+files.notSliced = "Sin laminar"
+files.noteLabel = "Nota"
+files.notePlaceholder = "Qué ha cambiado…"
+files.onlyPrintable = "Solo se pueden añadir archivos 3MF y G-code a un proyecto"
+files.otherSections = "Archivos antiguos"
+files.outdated = "Desactualizado: basado en {{source}}, desde entonces se aprobó {{newer}}"  placeholders={{newer}},{{source}}
+files.preview = "Vista previa"
+files.remove = "Quitar"
+files.removeFile = "Quitar {{name}}"  placeholders={{name}}
+files.rename = "Renombrar"
+files.saveFailed = "No se pudo guardar"
+files.sectionDocs = "Documentos"
+files.sectionImpression = "Impresión"
+files.sectionModelisation = "Modelado"
+files.sectionScan = "Escaneo"
+files.sectionUsinage = "Mecanizado"
+files.sliced = "Laminado"
+files.statusLabel = "Estado"
+files.statusObsolete = "Obsoleto"
+files.statusValide = "Aprobado"
+files.statusWip = "En curso"
+files.title = "Archivos"
+files.uploadFailed = "Error al subir"
+files.uploading = "Subiendo…"
+filing.autoFileHint = "Un archivo llamado «P-0042_support.3mf» va directo al proyecto P-0042"
+filing.autoFileLabel = "Archivar las subidas cuyo nombre lleva un código de proyecto"
+filing.autoItem = "Automático (según el nombre de cada archivo)"
+filing.copiedNote = "Los archivos externos se copian; los originales se quedan donde están"
+filing.fileCount_one = "{{count}} archivo"  placeholders={{count}}
+filing.fileCount_other = "{{count}} archivos"  placeholders={{count}}
+filing.filedToProject = "Archivado en {{code}} › {{item}} R{{revision}}"  placeholders={{code}},{{item}},{{revision}}
+filing.migrationFailures = "Con error"
+filing.migrationLastRun = "Última ejecución: {{files}} {{projects}}"  placeholders={{files}},{{projects}}
+filing.migrationLastRunFiles_one = "{{count}} archivo movido"  placeholders={{count}}
+filing.migrationLastRunFiles_other = "{{count}} archivos movidos"  placeholders={{count}}
+filing.migrationLastRunProjects_one = "en {{count}} proyecto"  placeholders={{count}}
+filing.migrationLastRunProjects_other = "en {{count}} proyectos"  placeholders={{count}}
+filing.migrationNone = "No queda nada por mover"
+filing.migrationPending_one = "{{count}} proyecto aún tiene archivos por mover"  placeholders={{count}}
+filing.migrationPending_other = "{{count}} proyectos aún tienen archivos por mover"  placeholders={{count}}
+filing.migrationRunning = "Moviendo {{done}}/{{total}} — {{code}}"  placeholders={{code}},{{done}},{{total}}
+filing.migrationStart = "Moverlos ahora"
+filing.migrationTitle = "Archivos de proyectos antiguos"
+filing.move = "Mover"
+filing.moveTitle = "Mover a un proyecto"
+filing.moveToProject = "Mover a un proyecto…"
+filing.moved_one = "{{count}} archivo movido a {{code}}"  placeholders={{code}},{{count}}
+filing.moved_other = "{{count}} archivos movidos a {{code}}"  placeholders={{code}},{{count}}
+filing.newItem = "Nuevo elemento…"
+filing.newItemPlaceholder = "Nombre del elemento"
+filing.searchProject = "Buscar un proyecto…"
+filing.settingsTitle = "Proyectos"
+filing.skipReason.alreadyInProject = "ya está en un proyecto"
+filing.skipReason.notFound = "archivo no encontrado"
+filing.skipReason.notOwner = "no es tuyo"
+filing.skipReason.notPrintable = "no es un archivo 3MF/G-code"
+filing.skipReason.retry = "no se pudo copiar, inténtalo de nuevo"
+filing.skipReason.sourceMissing = "archivo ausente del disco"
+filing.skipReason.trashed = "en la papelera"
+filing.skippedWithReasons_one = "{{count}} archivo omitido: {{reasons}}"  placeholders={{count}},{{reasons}}
+filing.skippedWithReasons_other = "{{count}} archivos omitidos: {{reasons}}"  placeholders={{count}},{{reasons}}
+filing.suggested = "Sugeridos"
+filing.targetItem = "Elemento"
+newProject = "Nuevo proyecto"
+newTagBadge = "nueva"
+nextPage = "Página siguiente"
+noSuggestions = "Sin sugerencias"
+pageRange = "{{from}}–{{to}} de {{total}}"  placeholders={{from}},{{total}},{{to}}
+prevPage = "Página anterior"
+print.eventQueued = "{{label}} ×{{copies}} puesto en cola"  placeholders={{copies}},{{label}}
+print.forWhichOrder = "¿Para qué pedido es esta impresión?"
+print.noOrder = "Ninguno (impresión interna o de prueba)"
+print.noPrintFiles = "Aún no hay archivos de impresión en este proyecto"
+print.ordersUnavailable = "No se pudieron cargar los pedidos: por ahora solo puedes imprimir sin pedido."
+print.outdatedWarning = "Basado en {{source}} — {{newer}} aprobada desde entonces"  placeholders={{newer}},{{source}}
+print.pickPrintFile = "Elegir un archivo de impresión"
+print.print = "Imprimir"
+print.printCount_one = "impreso {{count}} vez"  placeholders={{count}}
+print.printCount_other = "impreso {{count}} veces"  placeholders={{count}}
+print.printFile = "Imprimir {{name}}"  placeholders={{name}}
+print.printed = "{{printed}}/{{target}} impresas"  placeholders={{printed}},{{target}}
+print.printedNoTarget = "{{printed}} impresas"  placeholders={{printed}}
+print.queued_one = "{{count}} en cola"  placeholders={{count}}
+print.queued_other = "{{count}} en cola"  placeholders={{count}}
+print.rejected_one = "{{count}} rechazada"  placeholders={{count}}
+print.rejected_other = "{{count}} rechazadas"  placeholders={{count}}
+print.tickStep = "Marcar"
+print.tickSuggestion = "Se han hecho todas las impresiones solicitadas — ¿marcar el paso?"
+removeTag = "Quitar {{name}}"  placeholders={{name}}
+reslice.action = "Volver a laminar"
+reslice.dismiss = "Cerrar"
+reslice.done = "{{name}} R{{number}} creada"  placeholders={{name}},{{number}}
+reslice.failed = "Error al laminar: {{detail}}"  placeholders={{detail}}
+reslice.jobLost = "Se perdió el seguimiento del laminado. Recarga la página para ver si se creó la nueva revisión."
+reslice.noPipelines = "Ninguna pipeline guardada. Crea una en Ajustes → Flujo de trabajo → Pipelines."
+reslice.pipeline = "Pipeline"
+reslice.pipelinesUnavailable = "No se pudieron cargar las pipelines."
+reslice.queueSkipped = "{{name}} R{{number}} creada: imprímela desde la revisión."  placeholders={{name}},{{number}}
+reslice.running = "Laminando… {{percent}} %"  placeholders={{percent}}
+reslice.runningNoPercent = "Laminando…"
+reslice.slice = "Laminar"
+reslice.sliceAndQueue = "Laminar + cola"
+reslice.source = "Archivo de origen"
+reslice.startFailed = "No se pudo iniciar el laminado"
+reslice.title = "Volver a laminar {{name}}"  placeholders={{name}}
+reslice.viaPipeline = "mediante {{name}}"  placeholders={{name}}
+reslice.warnings = "Revisar antes de empezar"
+save = "Guardar"
+saveFailed = "No se pudo guardar el proyecto"
+saved = "Proyecto guardado"
+searchPlaceholder = "Buscar por código, título, descripción o etiqueta…"
+statusAll = "Todos"
+statusFilterLabel = "Estado"
+subtitle = "Cada pieza, sus archivos y su historial"
+suggestTags = "Sugerir etiquetas"
+suggestionsLabel = "Sugerencias"
+tagModeAll = "Todas las etiquetas"
+tagModeAny = "Cualquier etiqueta"
+tagSearchPlaceholder = "Buscar o crear una etiqueta…"
+tagsFilterLabel = "Etiquetas"
+tagsLabel = "Etiquetas"
+title = "Proyectos"
+titleLabel = "Título"
+viewGrid = "Vista de cuadrícula"
+viewTable = "Vista de tabla"
+--- fr projectsPdm (198 keys)
+acceptSuggestion = "Ajouter {{name}}"  placeholders={{name}}
+aiUnavailable = "IA indisponible"
+aito.confirmUnlink = "Délier {{name}} de cette tâche ? La liste des fichiers livrés sera effacée."  placeholders={{name}}
+aito.deliveredFiles = "Fichiers livrés"
+aito.deliveredNone = "Rien d'enregistré"
+aito.deliveriesSuggest = "Proposer les dernières validées"
+aito.dropChooseTask = "Pour quelle tâche sont ces fichiers ?"
+aito.dropHere = "Déposez des fichiers pour les ajouter au projet"
+aito.dropNeedsProject = "Liez d'abord un projet à cette tâche"
+aito.dropped_one = "{{count}} fichier ajouté à {{code}}"  placeholders={{code}},{{count}}
+aito.dropped_other = "{{count}} fichiers ajoutés à {{code}}"  placeholders={{code}},{{count}}
+aito.editDeliveries = "Modifier les fichiers livrés"
+aito.events.deliveriesChanged = "a modifié les fichiers livrés"
+aito.events.filesDropped = "a ajouté des fichiers à {{code}}"  placeholders={{code}}
+aito.events.previousProject = "auparavant {{code}}"  placeholders={{code}}
+aito.events.projectLinked = "a lié un projet"
+aito.events.projectUnlinked = "a délié un projet"
+aito.events.revisionAdded = "a ajouté une révision au projet"
+aito.events.revisionStatusChanged = "a changé le statut d’une révision"
+aito.linkExisting = "Lier un projet existant"
+aito.linkFailed = "Impossible de mettre à jour le lien"
+aito.newOrder = "Nouvelle commande"
+aito.newProject = "Nouveau projet"
+aito.noProjectsFound = "Aucun projet correspondant"
+aito.orderLabel = "Commande #{{id}}"  placeholders={{id}}
+aito.ordersEmpty = "Aucune commande n'utilise encore ce projet"
+aito.ordersTitle = "Commandes"
+aito.projectLabel = "Projet"
+aito.reuseFromOrder = "Reprendre les fichiers de la commande #{{order}}"  placeholders={{order}}
+aito.reuseFromOrderPlaceholder = "Reprendre les fichiers d’une autre commande…"
+aito.saveTaskFirst = "Enregistrez d'abord la tâche"
+aito.searchProjects = "Rechercher un projet…"
+aito.suggestionSameClient = "Même client"
+aito.suggestionSimilar = "Titre proche"
+aito.unlink = "Délier"
+codeChipLabel = "Code projet {{code}}"  placeholders={{code}}
+colCode = "Code"
+colPrints = "Impressions"
+colStatus = "Statut"
+colTags = "Étiquettes"
+colTitle = "Titre"
+colUpdated = "Mis à jour"
+create = "Créer"
+createTag = "Créer « {{name}} »"  placeholders={{name}}
+createTitle = "Nouveau projet"
+descriptionLabel = "Description"
+editHeader = "Modifier le titre, la description et les étiquettes"
+empty = "Aucun projet pour le moment"
+emptySearch = "Aucun projet ne correspond à cette recherche"
+files.addFiles = "Ajouter des fichiers"
+files.byAuthor = "par {{name}}"  placeholders={{name}}
+files.chooseFiles = "Choisir des fichiers"
+files.confirmDeleteItem = "Supprimer {{name}} et toutes ses révisions ? Les fichiers vont dans la corbeille du projet."  placeholders={{name}}
+files.confirmDeleteRevision = "Supprimer {{label}} ? Ses fichiers vont dans la corbeille du projet."  placeholders={{label}}
+files.confirmRemoveFile = "Retirer {{name}} de {{label}} ? Le fichier va dans la corbeille du projet."  placeholders={{label}},{{name}}
+files.deleteItem = "Supprimer l'élément"
+files.deleteRevision = "Supprimer la révision"
+files.derivedFrom = "Dérivé de {{label}}"  placeholders={{label}}
+files.derivedFromLabel = "Dérivé de"
+files.derivedFromNone = "Rien"
+files.download = "Télécharger"
+files.downloadAll = "Tout télécharger (zip)"
+files.dropHint = "Déposez des fichiers ici ou cliquez pour choisir"
+files.duplicateWarning = "{{filename}} est identique à {{revision}}"  placeholders={{filename}},{{revision}}
+files.emptySection = "Aucun élément"
+files.fileCount_one = "{{count}} fichier"  placeholders={{count}}
+files.fileCount_other = "{{count}} fichiers"  placeholders={{count}}
+files.fork = "Dupliquer en nouvel élément"
+files.forkNameLabel = "Nom du nouvel élément"
+files.frozen = "Fichiers figés : révision déjà imprimée ou livrée"
+files.itemNameLabel = "Nom de l'élément"
+files.newItem = "Nouvel élément"
+files.newRevision = "Nouvelle révision"
+files.notSliced = "Non tranché"
+files.noteLabel = "Note"
+files.notePlaceholder = "Ce qui a changé…"
+files.onlyPrintable = "Seuls les fichiers 3MF et G-code peuvent aller dans un projet"
+files.otherSections = "Autres fichiers (anciens)"
+files.outdated = "Pas à jour — basé sur {{source}}, {{newer}} validée depuis"  placeholders={{newer}},{{source}}
+files.preview = "Aperçu"
+files.remove = "Retirer"
+files.removeFile = "Retirer {{name}}"  placeholders={{name}}
+files.rename = "Renommer"
+files.saveFailed = "Impossible d'enregistrer"
+files.sectionDocs = "Docs"
+files.sectionImpression = "Impression"
+files.sectionModelisation = "Modélisation"
+files.sectionScan = "Scan"
+files.sectionUsinage = "Usinage"
+files.sliced = "Tranché"
+files.statusLabel = "Statut"
+files.statusObsolete = "Obsolète"
+files.statusValide = "Validé"
+files.statusWip = "En cours"
+files.title = "Fichiers"
+files.uploadFailed = "Échec de l'envoi"
+files.uploading = "Envoi…"
+filing.autoFileHint = "Un fichier nommé « P-0042_support.3mf » va directement dans le projet P-0042"
+filing.autoFileLabel = "Classer les fichiers nommés d'après un code projet"
+filing.autoItem = "Automatique (d'après le nom de chaque fichier)"
+filing.copiedNote = "Les fichiers externes sont copiés ; les originaux restent en place"
+filing.fileCount_one = "{{count}} fichier"  placeholders={{count}}
+filing.fileCount_other = "{{count}} fichiers"  placeholders={{count}}
+filing.filedToProject = "Classé dans {{code}} › {{item}} R{{revision}}"  placeholders={{code}},{{item}},{{revision}}
+filing.migrationFailures = "En échec"
+filing.migrationLastRun = "Dernière exécution : {{files}} {{projects}}"  placeholders={{files}},{{projects}}
+filing.migrationLastRunFiles_one = "{{count}} fichier déplacé"  placeholders={{count}}
+filing.migrationLastRunFiles_other = "{{count}} fichiers déplacés"  placeholders={{count}}
+filing.migrationLastRunProjects_one = "dans {{count}} projet"  placeholders={{count}}
+filing.migrationLastRunProjects_other = "dans {{count}} projets"  placeholders={{count}}
+filing.migrationNone = "Plus rien à déplacer"
+filing.migrationPending_one = "{{count}} projet a encore des fichiers à déplacer"  placeholders={{count}}
+filing.migrationPending_other = "{{count}} projets ont encore des fichiers à déplacer"  placeholders={{count}}
+filing.migrationRunning = "Déplacement {{done}}/{{total}} — {{code}}"  placeholders={{code}},{{done}},{{total}}
+filing.migrationStart = "Les déplacer maintenant"
+filing.migrationTitle = "Anciens fichiers de projets"
+filing.move = "Déplacer"
+filing.moveTitle = "Déplacer vers un projet"
+filing.moveToProject = "Déplacer vers un projet…"
+filing.moved_one = "{{count}} fichier déplacé vers {{code}}"  placeholders={{code}},{{count}}
+filing.moved_other = "{{count}} fichiers déplacés vers {{code}}"  placeholders={{code}},{{count}}
+filing.newItem = "Nouvel élément…"
+filing.newItemPlaceholder = "Nom de l'élément"
+filing.searchProject = "Rechercher un projet…"
+filing.settingsTitle = "Projets"
+filing.skipReason.alreadyInProject = "déjà dans un projet"
+filing.skipReason.notFound = "fichier introuvable"
+filing.skipReason.notOwner = "pas à vous"
+filing.skipReason.notPrintable = "pas un fichier 3MF/G-code"
+filing.skipReason.retry = "copie impossible, réessayez"
+filing.skipReason.sourceMissing = "fichier absent du disque"
+filing.skipReason.trashed = "dans la corbeille"
+filing.skippedWithReasons_one = "{{count}} fichier ignoré : {{reasons}}"  placeholders={{count}},{{reasons}}
+filing.skippedWithReasons_other = "{{count}} fichiers ignorés : {{reasons}}"  placeholders={{count}},{{reasons}}
+filing.suggested = "Suggérés"
+filing.targetItem = "Élément"
+newProject = "Nouveau projet"
+newTagBadge = "nouvelle"
+nextPage = "Page suivante"
+noSuggestions = "Aucune suggestion"
+pageRange = "{{from}}–{{to}} sur {{total}}"  placeholders={{from}},{{total}},{{to}}
+prevPage = "Page précédente"
+print.eventQueued = "{{label}} ×{{copies}} mis en file"  placeholders={{copies}},{{label}}
+print.forWhichOrder = "Pour quelle commande ?"
+print.noOrder = "Aucune (impression interne ou test)"
+print.noPrintFiles = "Aucun fichier d'impression dans ce projet"
+print.ordersUnavailable = "Impossible de charger les commandes — vous pouvez seulement imprimer sans commande pour l’instant."
+print.outdatedWarning = "Basé sur {{source}} — {{newer}} validée depuis"  placeholders={{newer}},{{source}}
+print.pickPrintFile = "Choisir un fichier d'impression"
+print.print = "Imprimer"
+print.printCount_one = "imprimé {{count}} fois"  placeholders={{count}}
+print.printCount_other = "imprimé {{count}} fois"  placeholders={{count}}
+print.printFile = "Imprimer {{name}}"  placeholders={{name}}
+print.printed = "{{printed}}/{{target}} imprimées"  placeholders={{printed}},{{target}}
+print.printedNoTarget = "{{printed}} imprimées"  placeholders={{printed}}
+print.queued_one = "{{count}} en file"  placeholders={{count}}
+print.queued_other = "{{count}} en file"  placeholders={{count}}
+print.rejected_one = "{{count}} rejetée"  placeholders={{count}}
+print.rejected_other = "{{count}} rejetées"  placeholders={{count}}
+print.tickStep = "Cocher"
+print.tickSuggestion = "Toutes les impressions demandées sont faites — cocher l'étape ?"
+removeTag = "Retirer {{name}}"  placeholders={{name}}
+reslice.action = "Re-trancher"
+reslice.dismiss = "Fermer"
+reslice.done = "{{name}} R{{number}} créée"  placeholders={{name}},{{number}}
+reslice.failed = "Échec du tranchage : {{detail}}"  placeholders={{detail}}
+reslice.jobLost = "Suivi du tranchage perdu. Rechargez la page pour voir si la nouvelle révision a été créée."
+reslice.noPipelines = "Aucune pipeline enregistrée. Créez-en une dans Réglages → Flux de travail → Pipelines."
+reslice.pipeline = "Pipeline"
+reslice.pipelinesUnavailable = "Impossible de charger les pipelines."
+reslice.queueSkipped = "{{name}} R{{number}} créée : imprimez-la depuis la révision."  placeholders={{name}},{{number}}
+reslice.running = "Tranchage… {{percent}} %"  placeholders={{percent}}
+reslice.runningNoPercent = "Tranchage…"
+reslice.slice = "Trancher"
+reslice.sliceAndQueue = "Trancher + file"
+reslice.source = "Fichier source"
+reslice.startFailed = "Impossible de lancer le tranchage"
+reslice.title = "Re-trancher {{name}}"  placeholders={{name}}
+reslice.viaPipeline = "via {{name}}"  placeholders={{name}}
+reslice.warnings = "À vérifier avant de lancer"
+save = "Enregistrer"
+saveFailed = "Impossible d'enregistrer le projet"
+saved = "Projet enregistré"
+searchPlaceholder = "Rechercher par code, titre, description ou étiquette…"
+statusAll = "Tous"
+statusFilterLabel = "Statut"
+subtitle = "Chaque pièce, ses fichiers et son historique"
+suggestTags = "Suggérer des étiquettes"
+suggestionsLabel = "Suggestions"
+tagModeAll = "Toutes"
+tagModeAny = "Au moins une"
+tagSearchPlaceholder = "Chercher ou créer une étiquette…"
+tagsFilterLabel = "Étiquettes"
+tagsLabel = "Étiquettes"
+title = "Projets"
+titleLabel = "Titre"
+viewGrid = "Vue grille"
+viewTable = "Vue tableau"
+--- it projectsPdm (198 keys)
+acceptSuggestion = "Aggiungi {{name}}"  placeholders={{name}}
+aiUnavailable = "IA non disponibile"
+aito.confirmUnlink = "Scollegare {{name}} da questa attività? L'elenco dei file consegnati verrà svuotato."  placeholders={{name}}
+aito.deliveredFiles = "File consegnati"
+aito.deliveredNone = "Ancora nulla registrato"
+aito.deliveriesSuggest = "Proponi le ultime approvate"
+aito.dropChooseTask = "Per quale attività sono questi file?"
+aito.dropHere = "Trascina i file per aggiungerli al progetto"
+aito.dropNeedsProject = "Collega prima un progetto a questa attività"
+aito.dropped_one = "{{count}} file aggiunto a {{code}}"  placeholders={{code}},{{count}}
+aito.dropped_other = "{{count}} file aggiunti a {{code}}"  placeholders={{code}},{{count}}
+aito.editDeliveries = "Modifica i file consegnati"
+aito.events.deliveriesChanged = "ha aggiornato i file consegnati"
+aito.events.filesDropped = "ha aggiunto file a {{code}}"  placeholders={{code}}
+aito.events.previousProject = "in precedenza {{code}}"  placeholders={{code}}
+aito.events.projectLinked = "ha collegato un progetto"
+aito.events.projectUnlinked = "ha scollegato un progetto"
+aito.events.revisionAdded = "ha aggiunto una revisione al progetto"
+aito.events.revisionStatusChanged = "ha cambiato lo stato di una revisione"
+aito.linkExisting = "Collega un progetto esistente"
+aito.linkFailed = "Impossibile aggiornare il collegamento"
+aito.newOrder = "Nuovo ordine"
+aito.newProject = "Nuovo progetto"
+aito.noProjectsFound = "Nessun progetto corrispondente"
+aito.orderLabel = "Ordine #{{id}}"  placeholders={{id}}
+aito.ordersEmpty = "Nessun ordine usa ancora questo progetto"
+aito.ordersTitle = "Ordini"
+aito.projectLabel = "Progetto"
+aito.reuseFromOrder = "Riutilizza i file dell'ordine #{{order}}"  placeholders={{order}}
+aito.reuseFromOrderPlaceholder = "Riutilizza i file di un altro ordine…"
+aito.saveTaskFirst = "Salva prima l'attività"
+aito.searchProjects = "Cerca progetti…"
+aito.suggestionSameClient = "Stesso cliente"
+aito.suggestionSimilar = "Titolo simile"
+aito.unlink = "Scollega"
+codeChipLabel = "Codice progetto {{code}}"  placeholders={{code}}
+colCode = "Codice"
+colPrints = "Stampe"
+colStatus = "Stato"
+colTags = "Tag"
+colTitle = "Titolo"
+colUpdated = "Aggiornato"
+create = "Crea"
+createTag = "Crea «{{name}}»"  placeholders={{name}}
+createTitle = "Nuovo progetto"
+descriptionLabel = "Descrizione"
+editHeader = "Modifica titolo, descrizione e tag"
+empty = "Nessun progetto ancora"
+emptySearch = "Nessun progetto corrisponde a questa ricerca"
+files.addFiles = "Aggiungi file"
+files.byAuthor = "di {{name}}"  placeholders={{name}}
+files.chooseFiles = "Scegli file"
+files.confirmDeleteItem = "Eliminare {{name}} e tutte le sue revisioni? I file vanno nel cestino del progetto."  placeholders={{name}}
+files.confirmDeleteRevision = "Eliminare {{label}}? I suoi file vanno nel cestino del progetto."  placeholders={{label}}
+files.confirmRemoveFile = "Rimuovere {{name}} da {{label}}? Il file viene spostato nel cestino del progetto."  placeholders={{label}},{{name}}
+files.deleteItem = "Elimina elemento"
+files.deleteRevision = "Elimina revisione"
+files.derivedFrom = "Derivato da {{label}}"  placeholders={{label}}
+files.derivedFromLabel = "Derivato da"
+files.derivedFromNone = "Niente"
+files.download = "Scarica"
+files.downloadAll = "Scarica tutto (zip)"
+files.dropHint = "Trascina i file qui o fai clic per scegliere"
+files.duplicateWarning = "{{filename}} è identico a {{revision}}"  placeholders={{filename}},{{revision}}
+files.emptySection = "Ancora nessun elemento"
+files.fileCount_one = "{{count}} file"  placeholders={{count}}
+files.fileCount_other = "{{count}} file"  placeholders={{count}}
+files.fork = "Duplica come nuovo elemento"
+files.forkNameLabel = "Nome del nuovo elemento"
+files.frozen = "File bloccati: questa revisione è già stata stampata o consegnata"
+files.itemNameLabel = "Nome dell'elemento"
+files.newItem = "Nuovo elemento"
+files.newRevision = "Nuova revisione"
+files.notSliced = "Non elaborato"
+files.noteLabel = "Nota"
+files.notePlaceholder = "Cosa è cambiato…"
+files.onlyPrintable = "In un progetto possono andare solo file 3MF e G-code"
+files.otherSections = "File precedenti"
+files.outdated = "Superato: basato su {{source}}, da allora è stata approvata {{newer}}"  placeholders={{newer}},{{source}}
+files.preview = "Anteprima"
+files.remove = "Rimuovi"
+files.removeFile = "Rimuovi {{name}}"  placeholders={{name}}
+files.rename = "Rinomina"
+files.saveFailed = "Impossibile salvare"
+files.sectionDocs = "Documenti"
+files.sectionImpression = "Stampa"
+files.sectionModelisation = "Modellazione"
+files.sectionScan = "Scansione"
+files.sectionUsinage = "Lavorazione meccanica"
+files.sliced = "Elaborato dallo slicer"
+files.statusLabel = "Stato"
+files.statusObsolete = "Obsoleto"
+files.statusValide = "Approvato"
+files.statusWip = "In corso"
+files.title = "File"
+files.uploadFailed = "Caricamento non riuscito"
+files.uploading = "Caricamento…"
+filing.autoFileHint = "Un file chiamato «P-0042_support.3mf» finisce direttamente nel progetto P-0042"
+filing.autoFileLabel = "Archivia i file caricati con un codice progetto nel nome"
+filing.autoItem = "Automatico (dal nome di ciascun file)"
+filing.copiedNote = "I file esterni vengono copiati; gli originali restano dove sono"
+filing.fileCount_one = "{{count}} file selezionato"  placeholders={{count}}
+filing.fileCount_other = "{{count}} file selezionati"  placeholders={{count}}
+filing.filedToProject = "Archiviato in {{code}} › {{item}} R{{revision}}"  placeholders={{code}},{{item}},{{revision}}
+filing.migrationFailures = "Non riuscito"
+filing.migrationLastRun = "Ultima esecuzione: {{files}} {{projects}}"  placeholders={{files}},{{projects}}
+filing.migrationLastRunFiles_one = "{{count}} file spostato"  placeholders={{count}}
+filing.migrationLastRunFiles_other = "{{count}} file spostati"  placeholders={{count}}
+filing.migrationLastRunProjects_one = "in {{count}} progetto"  placeholders={{count}}
+filing.migrationLastRunProjects_other = "in {{count}} progetti"  placeholders={{count}}
+filing.migrationNone = "Niente più da spostare"
+filing.migrationPending_one = "{{count}} progetto ha ancora file da spostare"  placeholders={{count}}
+filing.migrationPending_other = "{{count}} progetti hanno ancora file da spostare"  placeholders={{count}}
+filing.migrationRunning = "Spostamento {{done}}/{{total}} — {{code}}"  placeholders={{code}},{{done}},{{total}}
+filing.migrationStart = "Sposta ora"
+filing.migrationTitle = "Vecchi file dei progetti"
+filing.move = "Sposta"
+filing.moveTitle = "Sposta in un progetto"
+filing.moveToProject = "Sposta in un progetto…"
+filing.moved_one = "{{count}} file spostato in {{code}}"  placeholders={{code}},{{count}}
+filing.moved_other = "{{count}} file spostati in {{code}}"  placeholders={{code}},{{count}}
+filing.newItem = "Nuovo elemento…"
+filing.newItemPlaceholder = "Nome dell'elemento"
+filing.searchProject = "Cerca un progetto…"
+filing.settingsTitle = "Progetti"
+filing.skipReason.alreadyInProject = "già in un progetto"
+filing.skipReason.notFound = "file non trovato"
+filing.skipReason.notOwner = "non è tuo"
+filing.skipReason.notPrintable = "non è un file 3MF/G-code"
+filing.skipReason.retry = "copia non riuscita, riprova"
+filing.skipReason.sourceMissing = "file mancante sul disco"
+filing.skipReason.trashed = "nel cestino"
+filing.skippedWithReasons_one = "{{count}} file saltato: {{reasons}}"  placeholders={{count}},{{reasons}}
+filing.skippedWithReasons_other = "{{count}} file saltati: {{reasons}}"  placeholders={{count}},{{reasons}}
+filing.suggested = "Suggeriti"
+filing.targetItem = "Elemento"
+newProject = "Nuovo progetto"
+newTagBadge = "nuovo"
+nextPage = "Pagina successiva"
+noSuggestions = "Nessun suggerimento"
+pageRange = "{{from}}–{{to}} di {{total}}"  placeholders={{from}},{{total}},{{to}}
+prevPage = "Pagina precedente"
+print.eventQueued = "{{label}} ×{{copies}} messo in coda"  placeholders={{copies}},{{label}}
+print.forWhichOrder = "Per quale ordine è questa stampa?"
+print.noOrder = "Nessuno (stampa interna o di prova)"
+print.noPrintFiles = "Nessun file di stampa in questo progetto"
+print.ordersUnavailable = "Impossibile caricare gli ordini: per ora puoi stampare solo senza ordine."
+print.outdatedWarning = "Basato su {{source}} — {{newer}} approvata da allora"  placeholders={{newer}},{{source}}
+print.pickPrintFile = "Scegli un file di stampa"
+print.print = "Stampa"
+print.printCount_one = "stampato {{count}} volta"  placeholders={{count}}
+print.printCount_other = "stampato {{count}} volte"  placeholders={{count}}
+print.printFile = "Stampa {{name}}"  placeholders={{name}}
+print.printed = "{{printed}}/{{target}} stampate"  placeholders={{printed}},{{target}}
+print.printedNoTarget = "{{printed}} stampate"  placeholders={{printed}}
+print.queued_one = "{{count}} in coda"  placeholders={{count}}
+print.queued_other = "{{count}} in coda"  placeholders={{count}}
+print.rejected_one = "{{count}} scartata"  placeholders={{count}}
+print.rejected_other = "{{count}} scartate"  placeholders={{count}}
+print.tickStep = "Spunta"
+print.tickSuggestion = "Tutte le stampe richieste sono completate — spuntare il passaggio?"
+removeTag = "Rimuovi {{name}}"  placeholders={{name}}
+reslice.action = "Rielabora"
+reslice.dismiss = "Chiudi"
+reslice.done = "{{name}} R{{number}} creata"  placeholders={{name}},{{number}}
+reslice.failed = "Elaborazione non riuscita: {{detail}}"  placeholders={{detail}}
+reslice.jobLost = "Stato dello slicing perso. Ricarica la pagina per vedere se la nuova revisione è stata creata."
+reslice.noPipelines = "Nessuna pipeline salvata. Creane una in Impostazioni → Flusso → Pipeline."
+reslice.pipeline = "Pipeline"
+reslice.pipelinesUnavailable = "Impossibile caricare le pipeline."
+reslice.queueSkipped = "{{name}} R{{number}} creata: stampala dalla revisione."  placeholders={{name}},{{number}}
+reslice.running = "Elaborazione… {{percent}}%"  placeholders={{percent}}
+reslice.runningNoPercent = "Elaborazione…"
+reslice.slice = "Elabora"
+reslice.sliceAndQueue = "Elabora + coda"
+reslice.source = "File di origine"
+reslice.startFailed = "Impossibile avviare l'elaborazione"
+reslice.title = "Rielabora {{name}}"  placeholders={{name}}
+reslice.viaPipeline = "tramite {{name}}"  placeholders={{name}}
+reslice.warnings = "Da controllare prima di avviare"
+save = "Salva"
+saveFailed = "Impossibile salvare il progetto"
+saved = "Progetto salvato"
+searchPlaceholder = "Cerca per codice, titolo, descrizione o tag…"
+statusAll = "Tutti"
+statusFilterLabel = "Stato"
+subtitle = "Ogni pezzo, i suoi file e la sua cronologia"
+suggestTags = "Suggerisci tag"
+suggestionsLabel = "Suggerimenti"
+tagModeAll = "Tutti i tag"
+tagModeAny = "Almeno un tag"
+tagSearchPlaceholder = "Cerca o crea un tag…"
+tagsFilterLabel = "Tag"
+tagsLabel = "Tag"
+title = "Progetti"
+titleLabel = "Titolo"
+viewGrid = "Vista griglia"
+viewTable = "Vista tabella"
+--- ja projectsPdm (198 keys)
+acceptSuggestion = "{{name}}を追加"  placeholders={{name}}
+aiUnavailable = "AIは利用できません"
+aito.confirmUnlink = "このタスクから {{name}} のリンクを解除しますか？納品ファイルの一覧は消去されます。"  placeholders={{name}}
+aito.deliveredFiles = "納品ファイル"
+aito.deliveredNone = "まだ記録がありません"
+aito.deliveriesSuggest = "最新の承認済みを提案"
+aito.dropChooseTask = "これらのファイルはどのタスク用ですか？"
+aito.dropHere = "ファイルをドロップしてプロジェクトに追加"
+aito.dropNeedsProject = "先にこのタスクへプロジェクトをリンクしてください"
+aito.dropped_one = "{{count}}件のファイルを {{code}} に追加しました"  placeholders={{code}},{{count}}
+aito.dropped_other = "{{count}}件のファイルを {{code}} に追加しました"  placeholders={{code}},{{count}}
+aito.editDeliveries = "納品ファイルを編集"
+aito.events.deliveriesChanged = "納品ファイルを更新しました"
+aito.events.filesDropped = "{{code}} にファイルを追加しました"  placeholders={{code}}
+aito.events.previousProject = "以前は {{code}}"  placeholders={{code}}
+aito.events.projectLinked = "プロジェクトをリンクしました"
+aito.events.projectUnlinked = "プロジェクトのリンクを解除しました"
+aito.events.revisionAdded = "プロジェクトにリビジョンを追加しました"
+aito.events.revisionStatusChanged = "リビジョンのステータスを変更しました"
+aito.linkExisting = "既存のプロジェクトをリンク"
+aito.linkFailed = "リンクを更新できませんでした"
+aito.newOrder = "新規注文"
+aito.newProject = "新規プロジェクト"
+aito.noProjectsFound = "一致するプロジェクトはありません"
+aito.orderLabel = "注文 #{{id}}"  placeholders={{id}}
+aito.ordersEmpty = "このプロジェクトを使う注文はまだありません"
+aito.ordersTitle = "注文"
+aito.projectLabel = "プロジェクト"
+aito.reuseFromOrder = "注文 #{{order}} のファイルを再利用"  placeholders={{order}}
+aito.reuseFromOrderPlaceholder = "別の注文のファイルを再利用…"
+aito.saveTaskFirst = "先にタスクを保存してください"
+aito.searchProjects = "プロジェクトを検索…"
+aito.suggestionSameClient = "同じ顧客"
+aito.suggestionSimilar = "似たタイトル"
+aito.unlink = "リンク解除"
+codeChipLabel = "プロジェクトコード {{code}}"  placeholders={{code}}
+colCode = "コード"
+colPrints = "印刷"
+colStatus = "ステータス"
+colTags = "タグ"
+colTitle = "タイトル"
+colUpdated = "更新日"
+create = "作成"
+createTag = "「{{name}}」を作成"  placeholders={{name}}
+createTitle = "新規プロジェクト"
+descriptionLabel = "説明"
+editHeader = "タイトル、説明、タグを編集"
+empty = "プロジェクトはまだありません"
+emptySearch = "この検索に一致するプロジェクトはありません"
+files.addFiles = "ファイルを追加"
+files.byAuthor = "作成者: {{name}}"  placeholders={{name}}
+files.chooseFiles = "ファイルを選択"
+files.confirmDeleteItem = "{{name}}とすべてのリビジョンを削除しますか？ファイルはプロジェクトのごみ箱に移動します。"  placeholders={{name}}
+files.confirmDeleteRevision = "{{label}}を削除しますか？ファイルはプロジェクトのごみ箱に移動します。"  placeholders={{label}}
+files.confirmRemoveFile = "{{label}}から{{name}}を削除しますか？ファイルはプロジェクトのゴミ箱に移動します。"  placeholders={{label}},{{name}}
+files.deleteItem = "アイテムを削除"
+files.deleteRevision = "リビジョンを削除"
+files.derivedFrom = "{{label}}から派生"  placeholders={{label}}
+files.derivedFromLabel = "派生元"
+files.derivedFromNone = "なし"
+files.download = "ダウンロード"
+files.downloadAll = "すべてダウンロード（zip）"
+files.dropHint = "ここにファイルをドロップ、またはクリックして選択"
+files.duplicateWarning = "{{filename}}は{{revision}}と同一です"  placeholders={{filename}},{{revision}}
+files.emptySection = "アイテムはまだありません"
+files.fileCount_one = "{{count}}件のファイル"  placeholders={{count}}
+files.fileCount_other = "{{count}}件のファイル"  placeholders={{count}}
+files.fork = "新しいアイテムとして分岐"
+files.forkNameLabel = "新しいアイテム名"
+files.frozen = "ファイルはロックされています：このリビジョンは印刷または納品済みです"
+files.itemNameLabel = "アイテム名"
+files.newItem = "新規アイテム"
+files.newRevision = "新しいリビジョン"
+files.notSliced = "未スライス"
+files.noteLabel = "メモ"
+files.notePlaceholder = "変更内容…"
+files.onlyPrintable = "プロジェクトに追加できるのは 3MF と G-code ファイルのみです"
+files.otherSections = "以前のファイル"
+files.outdated = "古くなっています：{{source}}が基準で、その後{{newer}}が承認されました"  placeholders={{newer}},{{source}}
+files.preview = "プレビュー"
+files.remove = "削除"
+files.removeFile = "{{name}}を削除"  placeholders={{name}}
+files.rename = "名前を変更"
+files.saveFailed = "保存できませんでした"
+files.sectionDocs = "ドキュメント"
+files.sectionImpression = "印刷"
+files.sectionModelisation = "モデリング"
+files.sectionScan = "スキャン"
+files.sectionUsinage = "機械加工"
+files.sliced = "スライス済み"
+files.statusLabel = "ステータス"
+files.statusObsolete = "廃止"
+files.statusValide = "承認済み"
+files.statusWip = "作業中"
+files.title = "ファイル"
+files.uploadFailed = "アップロードに失敗しました"
+files.uploading = "アップロード中…"
+filing.autoFileHint = "「P-0042_support.3mf」という名前のファイルは、そのままプロジェクト P-0042 に入ります"
+filing.autoFileLabel = "プロジェクトコードを含む名前のアップロードを自動で振り分ける"
+filing.autoItem = "自動（各ファイル名から）"
+filing.copiedNote = "外部ファイルはコピーされ、元のファイルはそのまま残ります"
+filing.fileCount_one = "{{count}} 個のファイル"  placeholders={{count}}
+filing.fileCount_other = "{{count}} 個のファイル"  placeholders={{count}}
+filing.filedToProject = "{{code}} › {{item}} R{{revision}} に保存しました"  placeholders={{code}},{{item}},{{revision}}
+filing.migrationFailures = "失敗"
+filing.migrationLastRun = "前回の実行：{{projects}}{{files}}"  placeholders={{files}},{{projects}}
+filing.migrationLastRunFiles_one = "{{count}} 個のファイルを移動"  placeholders={{count}}
+filing.migrationLastRunFiles_other = "{{count}} 個のファイルを移動"  placeholders={{count}}
+filing.migrationLastRunProjects_one = "{{count}} 件のプロジェクトに"  placeholders={{count}}
+filing.migrationLastRunProjects_other = "{{count}} 件のプロジェクトに"  placeholders={{count}}
+filing.migrationNone = "移動するものはありません"
+filing.migrationPending_one = "{{count}} 件のプロジェクトに移動するファイルがまだあります"  placeholders={{count}}
+filing.migrationPending_other = "{{count}} 件のプロジェクトに移動するファイルがまだあります"  placeholders={{count}}
+filing.migrationRunning = "移動中 {{done}}/{{total}} — {{code}}"  placeholders={{code}},{{done}},{{total}}
+filing.migrationStart = "今すぐ移動"
+filing.migrationTitle = "旧プロジェクトのファイル"
+filing.move = "移動"
+filing.moveTitle = "プロジェクトへ移動"
+filing.moveToProject = "プロジェクトへ移動…"
+filing.moved_one = "{{count}} 件のファイルを {{code}} に移動しました"  placeholders={{code}},{{count}}
+filing.moved_other = "{{count}} 件のファイルを {{code}} に移動しました"  placeholders={{code}},{{count}}
+filing.newItem = "新しいアイテム…"
+filing.newItemPlaceholder = "アイテム名"
+filing.searchProject = "プロジェクトを検索…"
+filing.settingsTitle = "プロジェクト"
+filing.skipReason.alreadyInProject = "すでにプロジェクト内にあります"
+filing.skipReason.notFound = "ファイルが見つかりません"
+filing.skipReason.notOwner = "あなたのファイルではありません"
+filing.skipReason.notPrintable = "3MF/G-code ファイルではありません"
+filing.skipReason.retry = "コピーできませんでした。再試行してください"
+filing.skipReason.sourceMissing = "ディスク上にファイルがありません"
+filing.skipReason.trashed = "ゴミ箱にあります"
+filing.skippedWithReasons_one = "{{count}} 件のファイルをスキップ：{{reasons}}"  placeholders={{count}},{{reasons}}
+filing.skippedWithReasons_other = "{{count}} 件のファイルをスキップ：{{reasons}}"  placeholders={{count}},{{reasons}}
+filing.suggested = "おすすめ"
+filing.targetItem = "アイテム"
+newProject = "新規プロジェクト"
+newTagBadge = "新規"
+nextPage = "次のページ"
+noSuggestions = "提案はありません"
+pageRange = "{{total}}件中 {{from}}～{{to}}件"  placeholders={{from}},{{total}},{{to}}
+prevPage = "前のページ"
+print.eventQueued = "{{label}} ×{{copies}} をキューに追加しました"  placeholders={{copies}},{{label}}
+print.forWhichOrder = "この印刷はどの注文向けですか?"
+print.noOrder = "なし(社内用またはテスト印刷)"
+print.noPrintFiles = "このプロジェクトにはまだ印刷ファイルがありません"
+print.ordersUnavailable = "注文を読み込めませんでした。現在は注文なしでのみ印刷できます。"
+print.outdatedWarning = "{{source}} に基づく — その後 {{newer}} が承認されました"  placeholders={{newer}},{{source}}
+print.pickPrintFile = "印刷ファイルを選択"
+print.print = "印刷"
+print.printCount_one = "{{count}}回印刷済み"  placeholders={{count}}
+print.printCount_other = "{{count}}回印刷済み"  placeholders={{count}}
+print.printFile = "{{name}}を印刷"  placeholders={{name}}
+print.printed = "{{printed}}/{{target}} 印刷済み"  placeholders={{printed}},{{target}}
+print.printedNoTarget = "{{printed}} 印刷済み"  placeholders={{printed}}
+print.queued_one = "{{count}} 件キュー待ち"  placeholders={{count}}
+print.queued_other = "{{count}} 件キュー待ち"  placeholders={{count}}
+print.rejected_one = "{{count}} 件却下"  placeholders={{count}}
+print.rejected_other = "{{count}} 件却下"  placeholders={{count}}
+print.tickStep = "チェック"
+print.tickSuggestion = "依頼された印刷はすべて完了しました — 工程にチェックを入れますか?"
+removeTag = "{{name}}を削除"  placeholders={{name}}
+reslice.action = "再スライス"
+reslice.dismiss = "閉じる"
+reslice.done = "{{name}} R{{number}} を作成しました"  placeholders={{name}},{{number}}
+reslice.failed = "スライスに失敗しました: {{detail}}"  placeholders={{detail}}
+reslice.jobLost = "スライスの状況を追跡できなくなりました。ページを再読み込みして、新しいリビジョンが作成されたか確認してください。"
+reslice.noPipelines = "保存済みのパイプラインがありません。設定 → ワークフロー → パイプラインで作成してください。"
+reslice.pipeline = "パイプライン"
+reslice.pipelinesUnavailable = "パイプラインを読み込めませんでした。"
+reslice.queueSkipped = "{{name}} R{{number}} を作成しました。リビジョンから印刷してください。"  placeholders={{name}},{{number}}
+reslice.running = "スライス中… {{percent}}%"  placeholders={{percent}}
+reslice.runningNoPercent = "スライス中…"
+reslice.slice = "スライス"
+reslice.sliceAndQueue = "スライス＋キュー"
+reslice.source = "元ファイル"
+reslice.startFailed = "スライスを開始できませんでした"
+reslice.title = "{{name}} を再スライス"  placeholders={{name}}
+reslice.viaPipeline = "{{name}} 経由"  placeholders={{name}}
+reslice.warnings = "開始前に確認"
+save = "保存"
+saveFailed = "プロジェクトを保存できませんでした"
+saved = "プロジェクトを保存しました"
+searchPlaceholder = "コード、タイトル、説明、タグで検索…"
+statusAll = "すべて"
+statusFilterLabel = "ステータス"
+subtitle = "すべての部品、そのファイルと履歴"
+suggestTags = "タグを提案"
+suggestionsLabel = "提案"
+tagModeAll = "すべてのタグ"
+tagModeAny = "いずれかのタグ"
+tagSearchPlaceholder = "タグを検索または作成…"
+tagsFilterLabel = "タグ"
+tagsLabel = "タグ"
+title = "プロジェクト"
+titleLabel = "タイトル"
+viewGrid = "グリッド表示"
+viewTable = "テーブル表示"
+--- ko projectsPdm (198 keys)
+acceptSuggestion = "{{name}} 추가"  placeholders={{name}}
+aiUnavailable = "AI를 사용할 수 없음"
+aito.confirmUnlink = "이 작업에서 {{name}} 연결을 해제할까요? 납품 파일 목록이 지워집니다."  placeholders={{name}}
+aito.deliveredFiles = "납품 파일"
+aito.deliveredNone = "아직 기록된 내용이 없습니다"
+aito.deliveriesSuggest = "최신 승인본 제안"
+aito.dropChooseTask = "이 파일은 어떤 작업용인가요?"
+aito.dropHere = "파일을 놓아 프로젝트에 추가"
+aito.dropNeedsProject = "먼저 이 작업에 프로젝트를 연결하세요"
+aito.dropped_one = "파일 {{count}}개를 {{code}}에 추가했습니다"  placeholders={{code}},{{count}}
+aito.dropped_other = "파일 {{count}}개를 {{code}}에 추가했습니다"  placeholders={{code}},{{count}}
+aito.editDeliveries = "납품 파일 편집"
+aito.events.deliveriesChanged = "납품 파일을 수정했습니다"
+aito.events.filesDropped = "{{code}}에 파일을 추가했습니다"  placeholders={{code}}
+aito.events.previousProject = "이전: {{code}}"  placeholders={{code}}
+aito.events.projectLinked = "프로젝트를 연결했습니다"
+aito.events.projectUnlinked = "프로젝트 연결을 해제했습니다"
+aito.events.revisionAdded = "프로젝트에 리비전을 추가했습니다"
+aito.events.revisionStatusChanged = "리비전 상태를 변경했습니다"
+aito.linkExisting = "기존 프로젝트 연결"
+aito.linkFailed = "링크를 업데이트하지 못했습니다"
+aito.newOrder = "새 주문"
+aito.newProject = "새 프로젝트"
+aito.noProjectsFound = "일치하는 프로젝트가 없습니다"
+aito.orderLabel = "주문 #{{id}}"  placeholders={{id}}
+aito.ordersEmpty = "이 프로젝트를 사용하는 주문이 아직 없습니다"
+aito.ordersTitle = "주문"
+aito.projectLabel = "프로젝트"
+aito.reuseFromOrder = "주문 #{{order}}의 파일 재사용"  placeholders={{order}}
+aito.reuseFromOrderPlaceholder = "다른 주문의 파일 재사용…"
+aito.saveTaskFirst = "먼저 작업을 저장하세요"
+aito.searchProjects = "프로젝트 검색…"
+aito.suggestionSameClient = "같은 고객"
+aito.suggestionSimilar = "비슷한 제목"
+aito.unlink = "연결 해제"
+codeChipLabel = "프로젝트 코드 {{code}}"  placeholders={{code}}
+colCode = "코드"
+colPrints = "출력"
+colStatus = "상태"
+colTags = "태그"
+colTitle = "제목"
+colUpdated = "업데이트됨"
+create = "만들기"
+createTag = "“{{name}}” 만들기"  placeholders={{name}}
+createTitle = "새 프로젝트"
+descriptionLabel = "설명"
+editHeader = "제목, 설명 및 태그 편집"
+empty = "아직 프로젝트가 없습니다"
+emptySearch = "이 검색과 일치하는 프로젝트가 없습니다"
+files.addFiles = "파일 추가"
+files.byAuthor = "{{name}}"  placeholders={{name}}
+files.chooseFiles = "파일 선택"
+files.confirmDeleteItem = "{{name}}과(와) 모든 리비전을 삭제할까요? 파일은 프로젝트 휴지통으로 이동합니다."  placeholders={{name}}
+files.confirmDeleteRevision = "{{label}}을(를) 삭제할까요? 파일은 프로젝트 휴지통으로 이동합니다."  placeholders={{label}}
+files.confirmRemoveFile = "{{label}}에서 {{name}}을(를) 제거할까요? 파일은 프로젝트 휴지통으로 이동합니다."  placeholders={{label}},{{name}}
+files.deleteItem = "항목 삭제"
+files.deleteRevision = "리비전 삭제"
+files.derivedFrom = "{{label}}에서 파생"  placeholders={{label}}
+files.derivedFromLabel = "파생 원본"
+files.derivedFromNone = "없음"
+files.download = "다운로드"
+files.downloadAll = "모두 다운로드(zip)"
+files.dropHint = "여기에 파일을 놓거나 클릭하여 선택"
+files.duplicateWarning = "{{filename}}은(는) {{revision}}과(와) 동일합니다"  placeholders={{filename}},{{revision}}
+files.emptySection = "아직 항목이 없습니다"
+files.fileCount_one = "파일 {{count}}개"  placeholders={{count}}
+files.fileCount_other = "파일 {{count}}개"  placeholders={{count}}
+files.fork = "새 항목으로 분기"
+files.forkNameLabel = "새 항목 이름"
+files.frozen = "파일 잠김: 이 리비전은 이미 출력되었거나 납품되었습니다"
+files.itemNameLabel = "항목 이름"
+files.newItem = "새 항목"
+files.newRevision = "새 리비전"
+files.notSliced = "슬라이스 안 됨"
+files.noteLabel = "메모"
+files.notePlaceholder = "변경된 내용…"
+files.onlyPrintable = "프로젝트에는 3MF 및 G-code 파일만 넣을 수 있습니다"
+files.otherSections = "이전 파일"
+files.outdated = "오래됨 — {{source}} 기반, 이후 {{newer}} 승인됨"  placeholders={{newer}},{{source}}
+files.preview = "미리보기"
+files.remove = "제거"
+files.removeFile = "{{name}} 제거"  placeholders={{name}}
+files.rename = "이름 변경"
+files.saveFailed = "저장할 수 없습니다"
+files.sectionDocs = "문서"
+files.sectionImpression = "출력"
+files.sectionModelisation = "모델링"
+files.sectionScan = "스캔"
+files.sectionUsinage = "기계 가공"
+files.sliced = "슬라이스됨"
+files.statusLabel = "상태"
+files.statusObsolete = "폐기됨"
+files.statusValide = "승인됨"
+files.statusWip = "진행 중"
+files.title = "파일"
+files.uploadFailed = "업로드 실패"
+files.uploading = "업로드 중…"
+filing.autoFileHint = "\"P-0042_support.3mf\"라는 파일은 바로 프로젝트 P-0042로 들어갑니다"
+filing.autoFileLabel = "이름에 프로젝트 코드가 있는 업로드 파일을 자동 분류"
+filing.autoItem = "자동 (각 파일 이름 기준)"
+filing.copiedNote = "외부 파일은 복사되며 원본은 그대로 남습니다"
+filing.fileCount_one = "파일 {{count}}개"  placeholders={{count}}
+filing.fileCount_other = "파일 {{count}}개"  placeholders={{count}}
+filing.filedToProject = "{{code}} › {{item}} R{{revision}}에 분류됨"  placeholders={{code}},{{item}},{{revision}}
+filing.migrationFailures = "실패"
+filing.migrationLastRun = "마지막 실행: {{projects}} {{files}}"  placeholders={{files}},{{projects}}
+filing.migrationLastRunFiles_one = "파일 {{count}}개 이동"  placeholders={{count}}
+filing.migrationLastRunFiles_other = "파일 {{count}}개 이동"  placeholders={{count}}
+filing.migrationLastRunProjects_one = "프로젝트 {{count}}개에"  placeholders={{count}}
+filing.migrationLastRunProjects_other = "프로젝트 {{count}}개에"  placeholders={{count}}
+filing.migrationNone = "옮길 파일이 없습니다"
+filing.migrationPending_one = "프로젝트 {{count}}개에 아직 옮길 파일이 있습니다"  placeholders={{count}}
+filing.migrationPending_other = "프로젝트 {{count}}개에 아직 옮길 파일이 있습니다"  placeholders={{count}}
+filing.migrationRunning = "이동 중 {{done}}/{{total}} — {{code}}"  placeholders={{code}},{{done}},{{total}}
+filing.migrationStart = "지금 이동"
+filing.migrationTitle = "이전 프로젝트 파일"
+filing.move = "이동"
+filing.moveTitle = "프로젝트로 이동"
+filing.moveToProject = "프로젝트로 이동…"
+filing.moved_one = "파일 {{count}}개를 {{code}}(으)로 이동했습니다"  placeholders={{code}},{{count}}
+filing.moved_other = "파일 {{count}}개를 {{code}}(으)로 이동했습니다"  placeholders={{code}},{{count}}
+filing.newItem = "새 항목…"
+filing.newItemPlaceholder = "항목 이름"
+filing.searchProject = "프로젝트 검색…"
+filing.settingsTitle = "프로젝트"
+filing.skipReason.alreadyInProject = "이미 프로젝트에 있음"
+filing.skipReason.notFound = "파일을 찾을 수 없음"
+filing.skipReason.notOwner = "내 파일이 아님"
+filing.skipReason.notPrintable = "3MF/G-code 파일이 아님"
+filing.skipReason.retry = "복사하지 못했습니다. 다시 시도하세요"
+filing.skipReason.sourceMissing = "디스크에 파일이 없음"
+filing.skipReason.trashed = "휴지통에 있음"
+filing.skippedWithReasons_one = "파일 {{count}}개 건너뜀: {{reasons}}"  placeholders={{count}},{{reasons}}
+filing.skippedWithReasons_other = "파일 {{count}}개 건너뜀: {{reasons}}"  placeholders={{count}},{{reasons}}
+filing.suggested = "추천"
+filing.targetItem = "항목"
+newProject = "새 프로젝트"
+newTagBadge = "신규"
+nextPage = "다음 페이지"
+noSuggestions = "제안 없음"
+pageRange = "{{total}}개 중 {{from}}–{{to}}"  placeholders={{from}},{{total}},{{to}}
+prevPage = "이전 페이지"
+print.eventQueued = "{{label}} ×{{copies}} 대기열에 추가됨"  placeholders={{copies}},{{label}}
+print.forWhichOrder = "이 인쇄는 어떤 주문용인가요?"
+print.noOrder = "없음(내부용 또는 테스트 인쇄)"
+print.noPrintFiles = "이 프로젝트에는 아직 인쇄 파일이 없습니다"
+print.ordersUnavailable = "주문을 불러올 수 없습니다. 지금은 주문 없이만 인쇄할 수 있습니다."
+print.outdatedWarning = "{{source}} 기준 — 이후 {{newer}} 승인됨"  placeholders={{newer}},{{source}}
+print.pickPrintFile = "인쇄 파일 선택"
+print.print = "인쇄"
+print.printCount_one = "{{count}}회 인쇄됨"  placeholders={{count}}
+print.printCount_other = "{{count}}회 인쇄됨"  placeholders={{count}}
+print.printFile = "{{name}} 인쇄"  placeholders={{name}}
+print.printed = "{{printed}}/{{target}} 인쇄됨"  placeholders={{printed}},{{target}}
+print.printedNoTarget = "{{printed}} 인쇄됨"  placeholders={{printed}}
+print.queued_one = "{{count}}건 대기열"  placeholders={{count}}
+print.queued_other = "{{count}}건 대기열"  placeholders={{count}}
+print.rejected_one = "{{count}}건 거부됨"  placeholders={{count}}
+print.rejected_other = "{{count}}건 거부됨"  placeholders={{count}}
+print.tickStep = "체크"
+print.tickSuggestion = "요청된 인쇄가 모두 완료되었습니다 — 단계를 체크할까요?"
+removeTag = "{{name}} 제거"  placeholders={{name}}
+reslice.action = "다시 슬라이스"
+reslice.dismiss = "닫기"
+reslice.done = "{{name}} R{{number}} 생성됨"  placeholders={{name}},{{number}}
+reslice.failed = "슬라이스 실패: {{detail}}"  placeholders={{detail}}
+reslice.jobLost = "슬라이싱 상태를 잃었습니다. 페이지를 새로고침하여 새 리비전이 생성되었는지 확인하세요."
+reslice.noPipelines = "저장된 파이프라인이 없습니다. 설정 → 워크플로우 → 파이프라인에서 만드세요."
+reslice.pipeline = "파이프라인"
+reslice.pipelinesUnavailable = "파이프라인을 불러올 수 없습니다."
+reslice.queueSkipped = "{{name}} R{{number}} 생성됨: 리비전에서 출력하세요."  placeholders={{name}},{{number}}
+reslice.running = "슬라이스 중… {{percent}}%"  placeholders={{percent}}
+reslice.runningNoPercent = "슬라이스 중…"
+reslice.slice = "슬라이스"
+reslice.sliceAndQueue = "슬라이스 + 대기열"
+reslice.source = "원본 파일"
+reslice.startFailed = "슬라이스를 시작할 수 없습니다"
+reslice.title = "{{name}} 다시 슬라이스"  placeholders={{name}}
+reslice.viaPipeline = "{{name}} 경유"  placeholders={{name}}
+reslice.warnings = "시작 전 확인"
+save = "저장"
+saveFailed = "프로젝트를 저장할 수 없습니다"
+saved = "프로젝트가 저장되었습니다"
+searchPlaceholder = "코드, 제목, 설명 또는 태그로 검색…"
+statusAll = "전체"
+statusFilterLabel = "상태"
+subtitle = "모든 부품, 파일 및 이력"
+suggestTags = "태그 제안"
+suggestionsLabel = "제안"
+tagModeAll = "모든 태그"
+tagModeAny = "태그 중 하나"
+tagSearchPlaceholder = "태그 검색 또는 만들기…"
+tagsFilterLabel = "태그"
+tagsLabel = "태그"
+title = "프로젝트"
+titleLabel = "제목"
+viewGrid = "격자 보기"
+viewTable = "표 보기"
+--- nl projectsPdm (198 keys)
+acceptSuggestion = "{{name}} toevoegen"  placeholders={{name}}
+aiUnavailable = "AI niet beschikbaar"
+aito.confirmUnlink = "{{name}} loskoppelen van deze taak? De lijst met geleverde bestanden wordt gewist."  placeholders={{name}}
+aito.deliveredFiles = "Geleverde bestanden"
+aito.deliveredNone = "Nog niets vastgelegd"
+aito.deliveriesSuggest = "Laatste goedgekeurde voorstellen"
+aito.dropChooseTask = "Voor welke taak zijn deze bestanden?"
+aito.dropHere = "Zet bestanden neer om ze aan het project toe te voegen"
+aito.dropNeedsProject = "Koppel eerst een project aan deze taak"
+aito.dropped_one = "{{count}} bestand toegevoegd aan {{code}}"  placeholders={{code}},{{count}}
+aito.dropped_other = "{{count}} bestanden toegevoegd aan {{code}}"  placeholders={{code}},{{count}}
+aito.editDeliveries = "Geleverde bestanden bewerken"
+aito.events.deliveriesChanged = "heeft de geleverde bestanden bijgewerkt"
+aito.events.filesDropped = "heeft bestanden aan {{code}} toegevoegd"  placeholders={{code}}
+aito.events.previousProject = "eerder {{code}}"  placeholders={{code}}
+aito.events.projectLinked = "heeft een project gekoppeld"
+aito.events.projectUnlinked = "heeft een project ontkoppeld"
+aito.events.revisionAdded = "heeft een projectrevisie toegevoegd"
+aito.events.revisionStatusChanged = "heeft de status van een revisie gewijzigd"
+aito.linkExisting = "Bestaand project koppelen"
+aito.linkFailed = "Kon de koppeling niet bijwerken"
+aito.newOrder = "Nieuwe bestelling"
+aito.newProject = "Nieuw project"
+aito.noProjectsFound = "Geen overeenkomend project"
+aito.orderLabel = "Bestelling #{{id}}"  placeholders={{id}}
+aito.ordersEmpty = "Nog geen bestelling gebruikt dit project"
+aito.ordersTitle = "Bestellingen"
+aito.projectLabel = "Project"
+aito.reuseFromOrder = "Bestanden van bestelling #{{order}} hergebruiken"  placeholders={{order}}
+aito.reuseFromOrderPlaceholder = "Bestanden van een andere bestelling hergebruiken…"
+aito.saveTaskFirst = "Sla eerst de taak op"
+aito.searchProjects = "Projecten zoeken…"
+aito.suggestionSameClient = "Zelfde klant"
+aito.suggestionSimilar = "Gelijkaardige titel"
+aito.unlink = "Ontkoppelen"
+codeChipLabel = "Projectcode {{code}}"  placeholders={{code}}
+colCode = "Code"
+colPrints = "Afdrukken"
+colStatus = "Status"
+colTags = "Tags"
+colTitle = "Titel"
+colUpdated = "Bijgewerkt"
+create = "Aanmaken"
+createTag = "„{{name}}” aanmaken"  placeholders={{name}}
+createTitle = "Nieuw project"
+descriptionLabel = "Beschrijving"
+editHeader = "Titel, beschrijving en tags bewerken"
+empty = "Nog geen projecten"
+emptySearch = "Geen project komt overeen met deze zoekopdracht"
+files.addFiles = "Bestanden toevoegen"
+files.byAuthor = "door {{name}}"  placeholders={{name}}
+files.chooseFiles = "Bestanden kiezen"
+files.confirmDeleteItem = "{{name}} en alle revisies verwijderen? De bestanden gaan naar de prullenbak van het project."  placeholders={{name}}
+files.confirmDeleteRevision = "{{label}} verwijderen? De bestanden gaan naar de prullenbak van het project."  placeholders={{label}}
+files.confirmRemoveFile = "{{name}} uit {{label}} verwijderen? Het bestand gaat naar de prullenbak van het project."  placeholders={{label}},{{name}}
+files.deleteItem = "Item verwijderen"
+files.deleteRevision = "Revisie verwijderen"
+files.derivedFrom = "Afgeleid van {{label}}"  placeholders={{label}}
+files.derivedFromLabel = "Afgeleid van"
+files.derivedFromNone = "Niets"
+files.download = "Downloaden"
+files.downloadAll = "Alles downloaden (zip)"
+files.dropHint = "Sleep bestanden hierheen of klik om te kiezen"
+files.duplicateWarning = "{{filename}} is identiek aan {{revision}}"  placeholders={{filename}},{{revision}}
+files.emptySection = "Nog geen items"
+files.fileCount_one = "{{count}} bestand"  placeholders={{count}}
+files.fileCount_other = "{{count}} bestanden"  placeholders={{count}}
+files.fork = "Splitsen als nieuw item"
+files.forkNameLabel = "Naam van nieuw item"
+files.frozen = "Bestanden vergrendeld: deze revisie is al geprint of geleverd"
+files.itemNameLabel = "Itemnaam"
+files.newItem = "Nieuw item"
+files.newRevision = "Nieuwe revisie"
+files.notSliced = "Niet gesliced"
+files.noteLabel = "Notitie"
+files.notePlaceholder = "Wat is er veranderd…"
+files.onlyPrintable = "Alleen 3MF- en G-code-bestanden kunnen in een project"
+files.otherSections = "Oudere bestanden"
+files.outdated = "Achterhaald: gebaseerd op {{source}}, sindsdien is {{newer}} goedgekeurd"  placeholders={{newer}},{{source}}
+files.preview = "Voorbeeld"
+files.remove = "Verwijderen"
+files.removeFile = "{{name}} verwijderen"  placeholders={{name}}
+files.rename = "Hernoemen"
+files.saveFailed = "Opslaan mislukt"
+files.sectionDocs = "Documenten"
+files.sectionImpression = "Printen"
+files.sectionModelisation = "Modelleren"
+files.sectionScan = "3D-scan"
+files.sectionUsinage = "Bewerking"
+files.sliced = "Gesliced"
+files.statusLabel = "Status"
+files.statusObsolete = "Verouderd"
+files.statusValide = "Goedgekeurd"
+files.statusWip = "In uitvoering"
+files.title = "Bestanden"
+files.uploadFailed = "Upload mislukt"
+files.uploading = "Uploaden…"
+filing.autoFileHint = "Een bestand met de naam \"P-0042_support.3mf\" gaat rechtstreeks naar project P-0042"
+filing.autoFileLabel = "Uploads met een projectcode in de naam indelen"
+filing.autoItem = "Automatisch (op basis van elke bestandsnaam)"
+filing.copiedNote = "Externe bestanden worden gekopieerd; de originelen blijven staan waar ze staan"
+filing.fileCount_one = "{{count}} bestand"  placeholders={{count}}
+filing.fileCount_other = "{{count}} bestanden"  placeholders={{count}}
+filing.filedToProject = "Ingedeeld in {{code}} › {{item}} R{{revision}}"  placeholders={{code}},{{item}},{{revision}}
+filing.migrationFailures = "Mislukt"
+filing.migrationLastRun = "Laatste run: {{files}} {{projects}}"  placeholders={{files}},{{projects}}
+filing.migrationLastRunFiles_one = "{{count}} bestand verplaatst"  placeholders={{count}}
+filing.migrationLastRunFiles_other = "{{count}} bestanden verplaatst"  placeholders={{count}}
+filing.migrationLastRunProjects_one = "naar {{count}} project"  placeholders={{count}}
+filing.migrationLastRunProjects_other = "naar {{count}} projecten"  placeholders={{count}}
+filing.migrationNone = "Niets meer te verplaatsen"
+filing.migrationPending_one = "{{count}} project heeft nog bestanden om te verplaatsen"  placeholders={{count}}
+filing.migrationPending_other = "{{count}} projecten hebben nog bestanden om te verplaatsen"  placeholders={{count}}
+filing.migrationRunning = "Verplaatsen {{done}}/{{total}} — {{code}}"  placeholders={{code}},{{done}},{{total}}
+filing.migrationStart = "Nu verplaatsen"
+filing.migrationTitle = "Oude projectbestanden"
+filing.move = "Verplaatsen"
+filing.moveTitle = "Naar een project verplaatsen"
+filing.moveToProject = "Naar project verplaatsen…"
+filing.moved_one = "{{count}} bestand verplaatst naar {{code}}"  placeholders={{code}},{{count}}
+filing.moved_other = "{{count}} bestanden verplaatst naar {{code}}"  placeholders={{code}},{{count}}
+filing.newItem = "Nieuw onderdeel…"
+filing.newItemPlaceholder = "Naam van het item"
+filing.searchProject = "Zoek een project…"
+filing.settingsTitle = "Projecten"
+filing.skipReason.alreadyInProject = "al in een project"
+filing.skipReason.notFound = "bestand niet gevonden"
+filing.skipReason.notOwner = "niet van jou"
+filing.skipReason.notPrintable = "geen 3MF/G-code-bestand"
+filing.skipReason.retry = "kopiëren mislukt, probeer opnieuw"
+filing.skipReason.sourceMissing = "bestand ontbreekt op schijf"
+filing.skipReason.trashed = "in de prullenbak"
+filing.skippedWithReasons_one = "{{count}} bestand overgeslagen: {{reasons}}"  placeholders={{count}},{{reasons}}
+filing.skippedWithReasons_other = "{{count}} bestanden overgeslagen: {{reasons}}"  placeholders={{count}},{{reasons}}
+filing.suggested = "Voorgesteld"
+filing.targetItem = "Onderdeel"
+newProject = "Nieuw project"
+newTagBadge = "nieuw"
+nextPage = "Volgende pagina"
+noSuggestions = "Geen suggesties"
+pageRange = "{{from}}–{{to}} van {{total}}"  placeholders={{from}},{{total}},{{to}}
+prevPage = "Vorige pagina"
+print.eventQueued = "{{label}} ×{{copies}} in de wachtrij gezet"  placeholders={{copies}},{{label}}
+print.forWhichOrder = "Voor welke bestelling is deze print?"
+print.noOrder = "Geen (interne of testprint)"
+print.noPrintFiles = "Nog geen printbestand in dit project"
+print.ordersUnavailable = "Bestellingen konden niet worden geladen — je kunt voorlopig alleen zonder bestelling printen."
+print.outdatedWarning = "Gebaseerd op {{source}} — {{newer}} sindsdien goedgekeurd"  placeholders={{newer}},{{source}}
+print.pickPrintFile = "Kies een printbestand"
+print.print = "Printen"
+print.printCount_one = "{{count}} keer geprint"  placeholders={{count}}
+print.printCount_other = "{{count}} keer geprint"  placeholders={{count}}
+print.printFile = "{{name}} printen"  placeholders={{name}}
+print.printed = "{{printed}}/{{target}} geprint"  placeholders={{printed}},{{target}}
+print.printedNoTarget = "{{printed}} geprint"  placeholders={{printed}}
+print.queued_one = "{{count}} in de wachtrij"  placeholders={{count}}
+print.queued_other = "{{count}} in de wachtrij"  placeholders={{count}}
+print.rejected_one = "{{count}} afgekeurd"  placeholders={{count}}
+print.rejected_other = "{{count}} afgekeurd"  placeholders={{count}}
+print.tickStep = "Afvinken"
+print.tickSuggestion = "Alle gevraagde prints zijn klaar — de stap afvinken?"
+removeTag = "{{name}} verwijderen"  placeholders={{name}}
+reslice.action = "Opnieuw slicen"
+reslice.dismiss = "Sluiten"
+reslice.done = "{{name}} R{{number}} aangemaakt"  placeholders={{name}},{{number}}
+reslice.failed = "Slicen mislukt: {{detail}}"  placeholders={{detail}}
+reslice.jobLost = "Slicestatus kwijt. Laad de pagina opnieuw om te zien of de nieuwe revisie is aangemaakt."
+reslice.noPipelines = "Geen opgeslagen pipeline. Maak er een aan in Instellingen → Workflow → Pipelines."
+reslice.pipeline = "Pipeline"
+reslice.pipelinesUnavailable = "Pipelines konden niet worden geladen."
+reslice.queueSkipped = "{{name}} R{{number}} aangemaakt: print het vanuit de revisie."  placeholders={{name}},{{number}}
+reslice.running = "Slicen… {{percent}}%"  placeholders={{percent}}
+reslice.runningNoPercent = "Slicen…"
+reslice.slice = "Slicen"
+reslice.sliceAndQueue = "Slicen + wachtrij"
+reslice.source = "Bronbestand"
+reslice.startFailed = "Slicen kon niet worden gestart"
+reslice.title = "{{name}} opnieuw slicen"  placeholders={{name}}
+reslice.viaPipeline = "via {{name}}"  placeholders={{name}}
+reslice.warnings = "Controleren voor je start"
+save = "Opslaan"
+saveFailed = "Project kon niet worden opgeslagen"
+saved = "Project opgeslagen"
+searchPlaceholder = "Zoeken op code, titel, beschrijving of tag…"
+statusAll = "Alle"
+statusFilterLabel = "Status"
+subtitle = "Elk onderdeel, zijn bestanden en zijn geschiedenis"
+suggestTags = "Tags voorstellen"
+suggestionsLabel = "Suggesties"
+tagModeAll = "Alle tags"
+tagModeAny = "Een van de tags"
+tagSearchPlaceholder = "Tag zoeken of aanmaken…"
+tagsFilterLabel = "Tags"
+tagsLabel = "Tags"
+title = "Projecten"
+titleLabel = "Titel"
+viewGrid = "Rasterweergave"
+viewTable = "Tabelweergave"
+--- ptBR projectsPdm (198 keys)
+acceptSuggestion = "Adicionar {{name}}"  placeholders={{name}}
+aiUnavailable = "IA indisponível"
+aito.confirmUnlink = "Desvincular {{name}} desta tarefa? A lista de arquivos entregues será apagada."  placeholders={{name}}
+aito.deliveredFiles = "Arquivos entregues"
+aito.deliveredNone = "Nada registrado ainda"
+aito.deliveriesSuggest = "Sugerir as últimas aprovadas"
+aito.dropChooseTask = "Para qual tarefa são estes arquivos?"
+aito.dropHere = "Solte arquivos para adicioná-los ao projeto"
+aito.dropNeedsProject = "Vincule primeiro um projeto a esta tarefa"
+aito.dropped_one = "{{count}} arquivo adicionado a {{code}}"  placeholders={{code}},{{count}}
+aito.dropped_other = "{{count}} arquivos adicionados a {{code}}"  placeholders={{code}},{{count}}
+aito.editDeliveries = "Editar arquivos entregues"
+aito.events.deliveriesChanged = "atualizou os arquivos entregues"
+aito.events.filesDropped = "adicionou arquivos a {{code}}"  placeholders={{code}}
+aito.events.previousProject = "antes {{code}}"  placeholders={{code}}
+aito.events.projectLinked = "vinculou um projeto"
+aito.events.projectUnlinked = "desvinculou um projeto"
+aito.events.revisionAdded = "adicionou uma revisão ao projeto"
+aito.events.revisionStatusChanged = "alterou o status de uma revisão"
+aito.linkExisting = "Vincular um projeto existente"
+aito.linkFailed = "Não foi possível atualizar o vínculo"
+aito.newOrder = "Novo pedido"
+aito.newProject = "Novo projeto"
+aito.noProjectsFound = "Nenhum projeto correspondente"
+aito.orderLabel = "Pedido #{{id}}"  placeholders={{id}}
+aito.ordersEmpty = "Nenhum pedido usa este projeto ainda"
+aito.ordersTitle = "Pedidos"
+aito.projectLabel = "Projeto"
+aito.reuseFromOrder = "Reutilizar os arquivos do pedido #{{order}}"  placeholders={{order}}
+aito.reuseFromOrderPlaceholder = "Reutilizar arquivos de outro pedido…"
+aito.saveTaskFirst = "Salve a tarefa primeiro"
+aito.searchProjects = "Buscar projetos…"
+aito.suggestionSameClient = "Mesmo cliente"
+aito.suggestionSimilar = "Título parecido"
+aito.unlink = "Desvincular"
+codeChipLabel = "Código do projeto {{code}}"  placeholders={{code}}
+colCode = "Código"
+colPrints = "Impressões"
+colStatus = "Status"
+colTags = "Tags"
+colTitle = "Título"
+colUpdated = "Atualizado"
+create = "Criar"
+createTag = "Criar “{{name}}”"  placeholders={{name}}
+createTitle = "Novo projeto"
+descriptionLabel = "Descrição"
+editHeader = "Editar título, descrição e tags"
+empty = "Nenhum projeto ainda"
+emptySearch = "Nenhum projeto corresponde a esta busca"
+files.addFiles = "Adicionar arquivos"
+files.byAuthor = "por {{name}}"  placeholders={{name}}
+files.chooseFiles = "Escolher arquivos"
+files.confirmDeleteItem = "Excluir {{name}} e todas as suas revisões? Os arquivos vão para a lixeira do projeto."  placeholders={{name}}
+files.confirmDeleteRevision = "Excluir {{label}}? Os arquivos vão para a lixeira do projeto."  placeholders={{label}}
+files.confirmRemoveFile = "Remover {{name}} de {{label}}? O arquivo vai para a lixeira do projeto."  placeholders={{label}},{{name}}
+files.deleteItem = "Excluir item"
+files.deleteRevision = "Excluir revisão"
+files.derivedFrom = "Derivado de {{label}}"  placeholders={{label}}
+files.derivedFromLabel = "Derivado de"
+files.derivedFromNone = "Nada"
+files.download = "Baixar"
+files.downloadAll = "Baixar tudo (zip)"
+files.dropHint = "Solte arquivos aqui ou clique para escolher"
+files.duplicateWarning = "{{filename}} é idêntico a {{revision}}"  placeholders={{filename}},{{revision}}
+files.emptySection = "Nenhum item ainda"
+files.fileCount_one = "{{count}} arquivo"  placeholders={{count}}
+files.fileCount_other = "{{count}} arquivos"  placeholders={{count}}
+files.fork = "Bifurcar como novo item"
+files.forkNameLabel = "Nome do novo item"
+files.frozen = "Arquivos bloqueados: esta revisão já foi impressa ou entregue"
+files.itemNameLabel = "Nome do item"
+files.newItem = "Novo item"
+files.newRevision = "Nova revisão"
+files.notSliced = "Não fatiado"
+files.noteLabel = "Observação"
+files.notePlaceholder = "O que mudou…"
+files.onlyPrintable = "Somente arquivos 3MF e G-code podem ir para um projeto"
+files.otherSections = "Arquivos antigos"
+files.outdated = "Desatualizado: baseado em {{source}}, {{newer}} foi aprovada desde então"  placeholders={{newer}},{{source}}
+files.preview = "Pré-visualização"
+files.remove = "Remover"
+files.removeFile = "Remover {{name}}"  placeholders={{name}}
+files.rename = "Renomear"
+files.saveFailed = "Não foi possível salvar"
+files.sectionDocs = "Documentos"
+files.sectionImpression = "Impressão"
+files.sectionModelisation = "Modelagem"
+files.sectionScan = "Escaneamento"
+files.sectionUsinage = "Usinagem"
+files.sliced = "Fatiado"
+files.statusLabel = "Status"
+files.statusObsolete = "Obsoleto"
+files.statusValide = "Aprovado"
+files.statusWip = "Em andamento"
+files.title = "Arquivos"
+files.uploadFailed = "Falha no envio"
+files.uploading = "Enviando…"
+filing.autoFileHint = "Um arquivo chamado \"P-0042_support.3mf\" vai direto para o projeto P-0042"
+filing.autoFileLabel = "Arquivar uploads cujo nome tem um código de projeto"
+filing.autoItem = "Automático (pelo nome de cada arquivo)"
+filing.copiedNote = "Arquivos externos são copiados; os originais ficam onde estão"
+filing.fileCount_one = "{{count}} arquivo"  placeholders={{count}}
+filing.fileCount_other = "{{count}} arquivos"  placeholders={{count}}
+filing.filedToProject = "Arquivado em {{code}} › {{item}} R{{revision}}"  placeholders={{code}},{{item}},{{revision}}
+filing.migrationFailures = "Falhou"
+filing.migrationLastRun = "Última execução: {{files}} {{projects}}"  placeholders={{files}},{{projects}}
+filing.migrationLastRunFiles_one = "{{count}} arquivo movido"  placeholders={{count}}
+filing.migrationLastRunFiles_other = "{{count}} arquivos movidos"  placeholders={{count}}
+filing.migrationLastRunProjects_one = "em {{count}} projeto"  placeholders={{count}}
+filing.migrationLastRunProjects_other = "em {{count}} projetos"  placeholders={{count}}
+filing.migrationNone = "Nada mais para mover"
+filing.migrationPending_one = "{{count}} projeto ainda tem arquivos para mover"  placeholders={{count}}
+filing.migrationPending_other = "{{count}} projetos ainda têm arquivos para mover"  placeholders={{count}}
+filing.migrationRunning = "Movendo {{done}}/{{total}} — {{code}}"  placeholders={{code}},{{done}},{{total}}
+filing.migrationStart = "Mover agora"
+filing.migrationTitle = "Arquivos de projetos antigos"
+filing.move = "Mover"
+filing.moveTitle = "Mover para um projeto"
+filing.moveToProject = "Mover para um projeto…"
+filing.moved_one = "{{count}} arquivo movido para {{code}}"  placeholders={{code}},{{count}}
+filing.moved_other = "{{count}} arquivos movidos para {{code}}"  placeholders={{code}},{{count}}
+filing.newItem = "Novo item…"
+filing.newItemPlaceholder = "Nome do item"
+filing.searchProject = "Procurar um projeto…"
+filing.settingsTitle = "Projetos"
+filing.skipReason.alreadyInProject = "já está em um projeto"
+filing.skipReason.notFound = "arquivo não encontrado"
+filing.skipReason.notOwner = "não é seu"
+filing.skipReason.notPrintable = "não é um arquivo 3MF/G-code"
+filing.skipReason.retry = "não foi possível copiar, tente novamente"
+filing.skipReason.sourceMissing = "arquivo ausente no disco"
+filing.skipReason.trashed = "na lixeira"
+filing.skippedWithReasons_one = "{{count}} arquivo ignorado: {{reasons}}"  placeholders={{count}},{{reasons}}
+filing.skippedWithReasons_other = "{{count}} arquivos ignorados: {{reasons}}"  placeholders={{count}},{{reasons}}
+filing.suggested = "Sugeridos"
+filing.targetItem = "Elemento"
+newProject = "Novo projeto"
+newTagBadge = "nova"
+nextPage = "Próxima página"
+noSuggestions = "Nenhuma sugestão"
+pageRange = "{{from}}–{{to}} de {{total}}"  placeholders={{from}},{{total}},{{to}}
+prevPage = "Página anterior"
+print.eventQueued = "{{label}} ×{{copies}} colocado na fila"  placeholders={{copies}},{{label}}
+print.forWhichOrder = "Para qual pedido é esta impressão?"
+print.noOrder = "Nenhum (impressão interna ou de teste)"
+print.noPrintFiles = "Ainda não há arquivo de impressão neste projeto"
+print.ordersUnavailable = "Não foi possível carregar os pedidos — por enquanto você só pode imprimir sem pedido."
+print.outdatedWarning = "Baseado em {{source}} — {{newer}} aprovada desde então"  placeholders={{newer}},{{source}}
+print.pickPrintFile = "Escolher um arquivo de impressão"
+print.print = "Imprimir"
+print.printCount_one = "impresso {{count}} vez"  placeholders={{count}}
+print.printCount_other = "impresso {{count}} vezes"  placeholders={{count}}
+print.printFile = "Imprimir {{name}}"  placeholders={{name}}
+print.printed = "{{printed}}/{{target}} impressas"  placeholders={{printed}},{{target}}
+print.printedNoTarget = "{{printed}} impressas"  placeholders={{printed}}
+print.queued_one = "{{count}} na fila"  placeholders={{count}}
+print.queued_other = "{{count}} na fila"  placeholders={{count}}
+print.rejected_one = "{{count}} rejeitada"  placeholders={{count}}
+print.rejected_other = "{{count}} rejeitadas"  placeholders={{count}}
+print.tickStep = "Marcar"
+print.tickSuggestion = "Todas as impressões solicitadas foram feitas — marcar a etapa?"
+removeTag = "Remover {{name}}"  placeholders={{name}}
+reslice.action = "Refatiar"
+reslice.dismiss = "Fechar"
+reslice.done = "{{name}} R{{number}} criada"  placeholders={{name}},{{number}}
+reslice.failed = "Falha ao fatiar: {{detail}}"  placeholders={{detail}}
+reslice.jobLost = "Acompanhamento do fatiamento perdido. Recarregue a página para ver se a nova revisão foi criada."
+reslice.noPipelines = "Nenhuma pipeline salva. Crie uma em Configurações → Fluxo → Pipelines."
+reslice.pipeline = "Pipeline"
+reslice.pipelinesUnavailable = "Não foi possível carregar as pipelines."
+reslice.queueSkipped = "{{name}} R{{number}} criada: imprima-a pela revisão."  placeholders={{name}},{{number}}
+reslice.running = "Fatiando… {{percent}}%"  placeholders={{percent}}
+reslice.runningNoPercent = "Fatiando…"
+reslice.slice = "Fatiar"
+reslice.sliceAndQueue = "Fatiar + fila"
+reslice.source = "Arquivo de origem"
+reslice.startFailed = "Não foi possível iniciar o fatiamento"
+reslice.title = "Refatiar {{name}}"  placeholders={{name}}
+reslice.viaPipeline = "via {{name}}"  placeholders={{name}}
+reslice.warnings = "Verificar antes de iniciar"
+save = "Salvar"
+saveFailed = "Não foi possível salvar o projeto"
+saved = "Projeto salvo"
+searchPlaceholder = "Buscar por código, título, descrição ou tag…"
+statusAll = "Todos"
+statusFilterLabel = "Status"
+subtitle = "Cada peça, seus arquivos e seu histórico"
+suggestTags = "Sugerir tags"
+suggestionsLabel = "Sugestões"
+tagModeAll = "Todas as tags"
+tagModeAny = "Qualquer tag"
+tagSearchPlaceholder = "Buscar ou criar uma tag…"
+tagsFilterLabel = "Tags"
+tagsLabel = "Tags"
+title = "Projetos"
+titleLabel = "Título"
+viewGrid = "Visualização em grade"
+viewTable = "Visualização em tabela"
+--- ru projectsPdm (198 keys)
+acceptSuggestion = "Добавить {{name}}"  placeholders={{name}}
+aiUnavailable = "ИИ недоступен"
+aito.confirmUnlink = "Отвязать {{name}} от этой задачи? Список переданных файлов будет очищен."  placeholders={{name}}
+aito.deliveredFiles = "Переданные файлы"
+aito.deliveredNone = "Пока ничего не записано"
+aito.deliveriesSuggest = "Предложить последние утверждённые"
+aito.dropChooseTask = "Для какой задачи эти файлы?"
+aito.dropHere = "Перетащите файлы, чтобы добавить их в проект"
+aito.dropNeedsProject = "Сначала привяжите проект к этой задаче"
+aito.dropped_one = "Файлов добавлено в {{code}}: {{count}}"  placeholders={{code}},{{count}}
+aito.dropped_other = "Файлов добавлено в {{code}}: {{count}}"  placeholders={{code}},{{count}}
+aito.editDeliveries = "Изменить переданные файлы"
+aito.events.deliveriesChanged = "изменил переданные файлы"
+aito.events.filesDropped = "добавил файлы в {{code}}"  placeholders={{code}}
+aito.events.previousProject = "ранее {{code}}"  placeholders={{code}}
+aito.events.projectLinked = "привязал проект"
+aito.events.projectUnlinked = "отвязал проект"
+aito.events.revisionAdded = "добавил ревизию проекта"
+aito.events.revisionStatusChanged = "изменил статус ревизии"
+aito.linkExisting = "Привязать существующий проект"
+aito.linkFailed = "Не удалось обновить привязку"
+aito.newOrder = "Новый заказ"
+aito.newProject = "Новый проект"
+aito.noProjectsFound = "Подходящих проектов нет"
+aito.orderLabel = "Заказ №{{id}}"  placeholders={{id}}
+aito.ordersEmpty = "Этот проект пока не используется ни в одном заказе"
+aito.ordersTitle = "Заказы"
+aito.projectLabel = "Проект"
+aito.reuseFromOrder = "Взять файлы из заказа №{{order}}"  placeholders={{order}}
+aito.reuseFromOrderPlaceholder = "Взять файлы из другого заказа…"
+aito.saveTaskFirst = "Сначала сохраните задачу"
+aito.searchProjects = "Поиск проектов…"
+aito.suggestionSameClient = "Тот же клиент"
+aito.suggestionSimilar = "Похожее название"
+aito.unlink = "Отвязать"
+codeChipLabel = "Код проекта {{code}}"  placeholders={{code}}
+colCode = "Код"
+colPrints = "Печати"
+colStatus = "Статус"
+colTags = "Метки"
+colTitle = "Название"
+colUpdated = "Обновлено"
+create = "Создать"
+createTag = "Создать «{{name}}»"  placeholders={{name}}
+createTitle = "Новый проект"
+descriptionLabel = "Описание"
+editHeader = "Изменить название, описание и метки"
+empty = "Проектов пока нет"
+emptySearch = "Ни один проект не соответствует поиску"
+files.addFiles = "Добавить файлы"
+files.byAuthor = "автор: {{name}}"  placeholders={{name}}
+files.chooseFiles = "Выбрать файлы"
+files.confirmDeleteItem = "Удалить {{name}} и все его ревизии? Файлы попадут в корзину проекта."  placeholders={{name}}
+files.confirmDeleteRevision = "Удалить {{label}}? Файлы попадут в корзину проекта."  placeholders={{label}}
+files.confirmRemoveFile = "Убрать {{name}} из {{label}}? Файл будет перемещён в корзину проекта."  placeholders={{label}},{{name}}
+files.deleteItem = "Удалить элемент"
+files.deleteRevision = "Удалить ревизию"
+files.derivedFrom = "Производная от {{label}}"  placeholders={{label}}
+files.derivedFromLabel = "Производная от"
+files.derivedFromNone = "Ничего"
+files.download = "Скачать"
+files.downloadAll = "Скачать всё (zip)"
+files.dropHint = "Перетащите файлы сюда или нажмите для выбора"
+files.duplicateWarning = "{{filename}} идентичен {{revision}}"  placeholders={{filename}},{{revision}}
+files.emptySection = "Элементов пока нет"
+files.fileCount_one = "Файлов: {{count}}"  placeholders={{count}}
+files.fileCount_other = "Файлов: {{count}}"  placeholders={{count}}
+files.fork = "Выделить в новый элемент"
+files.forkNameLabel = "Название нового элемента"
+files.frozen = "Файлы заблокированы: эта ревизия уже напечатана или передана"
+files.itemNameLabel = "Название элемента"
+files.newItem = "Новый элемент"
+files.newRevision = "Новая ревизия"
+files.notSliced = "Не нарезано"
+files.noteLabel = "Заметка"
+files.notePlaceholder = "Что изменилось…"
+files.onlyPrintable = "В проект можно добавлять только файлы 3MF и G-code"
+files.otherSections = "Старые файлы"
+files.outdated = "Неактуально — основано на {{source}}, с тех пор утверждена {{newer}}"  placeholders={{newer}},{{source}}
+files.preview = "Предпросмотр"
+files.remove = "Убрать"
+files.removeFile = "Убрать {{name}}"  placeholders={{name}}
+files.rename = "Переименовать"
+files.saveFailed = "Не удалось сохранить"
+files.sectionDocs = "Документы"
+files.sectionImpression = "Печать"
+files.sectionModelisation = "Моделирование"
+files.sectionScan = "Скан"
+files.sectionUsinage = "Мехобработка"
+files.sliced = "Нарезано"
+files.statusLabel = "Статус"
+files.statusObsolete = "Устарело"
+files.statusValide = "Утверждено"
+files.statusWip = "В работе"
+files.title = "Файлы"
+files.uploadFailed = "Не удалось загрузить"
+files.uploading = "Загрузка…"
+filing.autoFileHint = "Файл с именем «P-0042_support.3mf» попадает сразу в проект P-0042"
+filing.autoFileLabel = "Раскладывать загрузки, в имени которых есть код проекта"
+filing.autoItem = "Автоматически (по имени каждого файла)"
+filing.copiedNote = "Внешние файлы копируются; оригиналы остаются на месте"
+filing.fileCount_one = "{{count}} файл"  placeholders={{count}}
+filing.fileCount_other = "Файлов: {{count}}"  placeholders={{count}}
+filing.filedToProject = "Помещён в {{code}} › {{item}} R{{revision}}"  placeholders={{code}},{{item}},{{revision}}
+filing.migrationFailures = "Сбой"
+filing.migrationLastRun = "Последний запуск: {{files}}, {{projects}}"  placeholders={{files}},{{projects}}
+filing.migrationLastRunFiles_one = "перемещено файлов — {{count}}"  placeholders={{count}}
+filing.migrationLastRunFiles_other = "перемещено файлов — {{count}}"  placeholders={{count}}
+filing.migrationLastRunProjects_one = "проектов — {{count}}"  placeholders={{count}}
+filing.migrationLastRunProjects_other = "проектов — {{count}}"  placeholders={{count}}
+filing.migrationNone = "Перемещать больше нечего"
+filing.migrationPending_one = "У {{count}} проекта ещё есть файлы для перемещения"  placeholders={{count}}
+filing.migrationPending_other = "У {{count}} проектов ещё есть файлы для перемещения"  placeholders={{count}}
+filing.migrationRunning = "Перемещение {{done}}/{{total}} — {{code}}"  placeholders={{code}},{{done}},{{total}}
+filing.migrationStart = "Переместить сейчас"
+filing.migrationTitle = "Старые файлы проектов"
+filing.move = "Переместить"
+filing.moveTitle = "Переместить в проект"
+filing.moveToProject = "Переместить в проект…"
+filing.moved_one = "{{count}} файл перемещён в {{code}}"  placeholders={{code}},{{count}}
+filing.moved_other = "{{count}} файлов перемещено в {{code}}"  placeholders={{code}},{{count}}
+filing.newItem = "Новый элемент…"
+filing.newItemPlaceholder = "Название элемента"
+filing.searchProject = "Найти проект…"
+filing.settingsTitle = "Проекты"
+filing.skipReason.alreadyInProject = "уже в проекте"
+filing.skipReason.notFound = "файл не найден"
+filing.skipReason.notOwner = "не ваш"
+filing.skipReason.notPrintable = "не файл 3MF/G-code"
+filing.skipReason.retry = "не удалось скопировать, повторите"
+filing.skipReason.sourceMissing = "файл отсутствует на диске"
+filing.skipReason.trashed = "в корзине"
+filing.skippedWithReasons_one = "Пропущен {{count}} файл ({{reasons}})"  placeholders={{count}},{{reasons}}
+filing.skippedWithReasons_other = "Пропущено файлов: {{count}} ({{reasons}})"  placeholders={{count}},{{reasons}}
+filing.suggested = "Предложенные"
+filing.targetItem = "Элемент"
+newProject = "Новый проект"
+newTagBadge = "новая"
+nextPage = "Следующая страница"
+noSuggestions = "Нет предложений"
+pageRange = "{{from}}–{{to}} из {{total}}"  placeholders={{from}},{{total}},{{to}}
+prevPage = "Предыдущая страница"
+print.eventQueued = "{{label}} ×{{copies}} поставлено в очередь"  placeholders={{copies}},{{label}}
+print.forWhichOrder = "Для какого заказа эта печать?"
+print.noOrder = "Нет (внутренняя или тестовая печать)"
+print.noPrintFiles = "В этом проекте пока нет файлов для печати"
+print.ordersUnavailable = "Не удалось загрузить заказы — пока можно печатать только без заказа."
+print.outdatedWarning = "На основе {{source}} — с тех пор утверждена {{newer}}"  placeholders={{newer}},{{source}}
+print.pickPrintFile = "Выберите файл для печати"
+print.print = "Печать"
+print.printCount_one = "Напечатано раз: {{count}}"  placeholders={{count}}
+print.printCount_other = "Напечатано раз: {{count}}"  placeholders={{count}}
+print.printFile = "Печать {{name}}"  placeholders={{name}}
+print.printed = "Напечатано {{printed}}/{{target}}"  placeholders={{printed}},{{target}}
+print.printedNoTarget = "Напечатано: {{printed}}"  placeholders={{printed}}
+print.queued_one = "В очереди: {{count}}"  placeholders={{count}}
+print.queued_other = "В очереди: {{count}}"  placeholders={{count}}
+print.rejected_one = "Отклонено: {{count}}"  placeholders={{count}}
+print.rejected_other = "Отклонено: {{count}}"  placeholders={{count}}
+print.tickStep = "Отметить"
+print.tickSuggestion = "Все запрошенные печати выполнены — отметить этап?"
+removeTag = "Удалить {{name}}"  placeholders={{name}}
+reslice.action = "Нарезать заново"
+reslice.dismiss = "Закрыть"
+reslice.done = "{{name}} R{{number}} создана"  placeholders={{name}},{{number}}
+reslice.failed = "Не удалось нарезать: {{detail}}"  placeholders={{detail}}
+reslice.jobLost = "Статус нарезки потерян. Перезагрузите страницу, чтобы узнать, создана ли новая ревизия."
+reslice.noPipelines = "Нет сохранённых пайплайнов. Создайте в Настройки → Рабочий процесс → Конвейеры."
+reslice.pipeline = "Пайплайн"
+reslice.pipelinesUnavailable = "Не удалось загрузить пайплайны."
+reslice.queueSkipped = "{{name}} R{{number}} создана: распечатайте её из ревизии."  placeholders={{name}},{{number}}
+reslice.running = "Нарезка… {{percent}}%"  placeholders={{percent}}
+reslice.runningNoPercent = "Нарезка…"
+reslice.slice = "Нарезать"
+reslice.sliceAndQueue = "Нарезать + в очередь"
+reslice.source = "Исходный файл"
+reslice.startFailed = "Не удалось запустить нарезку"
+reslice.title = "Нарезать заново {{name}}"  placeholders={{name}}
+reslice.viaPipeline = "через {{name}}"  placeholders={{name}}
+reslice.warnings = "Проверьте перед запуском"
+save = "Сохранить"
+saveFailed = "Не удалось сохранить проект"
+saved = "Проект сохранён"
+searchPlaceholder = "Поиск по коду, названию, описанию или метке…"
+statusAll = "Все"
+statusFilterLabel = "Статус"
+subtitle = "Каждая деталь, её файлы и история"
+suggestTags = "Предложить метки"
+suggestionsLabel = "Предложения"
+tagModeAll = "Все метки"
+tagModeAny = "Любая метка"
+tagSearchPlaceholder = "Найти или создать метку…"
+tagsFilterLabel = "Метки"
+tagsLabel = "Метки"
+title = "Проекты"
+titleLabel = "Название"
+viewGrid = "Вид сеткой"
+viewTable = "Табличный вид"
+--- sv projectsPdm (198 keys)
+acceptSuggestion = "Lägg till {{name}}"  placeholders={{name}}
+aiUnavailable = "AI är inte tillgänglig"
+aito.confirmUnlink = "Koppla bort {{name}} från den här uppgiften? Listan över levererade filer töms."  placeholders={{name}}
+aito.deliveredFiles = "Levererade filer"
+aito.deliveredNone = "Inget registrerat än"
+aito.deliveriesSuggest = "Föreslå senaste godkända"
+aito.dropChooseTask = "Vilken uppgift gäller filerna?"
+aito.dropHere = "Släpp filer för att lägga till dem i projektet"
+aito.dropNeedsProject = "Länka först ett projekt till den här uppgiften"
+aito.dropped_one = "{{count}} fil tillagd i {{code}}"  placeholders={{code}},{{count}}
+aito.dropped_other = "{{count}} filer tillagda i {{code}}"  placeholders={{code}},{{count}}
+aito.editDeliveries = "Redigera levererade filer"
+aito.events.deliveriesChanged = "uppdaterade de levererade filerna"
+aito.events.filesDropped = "lade till filer i {{code}}"  placeholders={{code}}
+aito.events.previousProject = "tidigare {{code}}"  placeholders={{code}}
+aito.events.projectLinked = "länkade ett projekt"
+aito.events.projectUnlinked = "avlänkade ett projekt"
+aito.events.revisionAdded = "lade till en projektrevision"
+aito.events.revisionStatusChanged = "ändrade status för en revision"
+aito.linkExisting = "Länka ett befintligt projekt"
+aito.linkFailed = "Kunde inte uppdatera länken"
+aito.newOrder = "Ny order"
+aito.newProject = "Nytt projekt"
+aito.noProjectsFound = "Inget matchande projekt"
+aito.orderLabel = "Order nr {{id}}"  placeholders={{id}}
+aito.ordersEmpty = "Ingen order använder det här projektet än"
+aito.ordersTitle = "Ordrar"
+aito.projectLabel = "Projekt"
+aito.reuseFromOrder = "Återanvänd filerna från order #{{order}}"  placeholders={{order}}
+aito.reuseFromOrderPlaceholder = "Återanvänd filer från en annan order…"
+aito.saveTaskFirst = "Spara uppgiften först"
+aito.searchProjects = "Sök projekt…"
+aito.suggestionSameClient = "Samma kund"
+aito.suggestionSimilar = "Liknande titel"
+aito.unlink = "Ta bort länk"
+codeChipLabel = "Projektkod {{code}}"  placeholders={{code}}
+colCode = "Kod"
+colPrints = "Utskrifter"
+colStatus = "Status"
+colTags = "Taggar"
+colTitle = "Titel"
+colUpdated = "Uppdaterad"
+create = "Skapa"
+createTag = "Skapa ”{{name}}”"  placeholders={{name}}
+createTitle = "Nytt projekt"
+descriptionLabel = "Beskrivning"
+editHeader = "Redigera titel, beskrivning och taggar"
+empty = "Inga projekt än"
+emptySearch = "Inget projekt matchar sökningen"
+files.addFiles = "Lägg till filer"
+files.byAuthor = "av {{name}}"  placeholders={{name}}
+files.chooseFiles = "Välj filer"
+files.confirmDeleteItem = "Ta bort {{name}} och alla dess revisioner? Filerna flyttas till projektets papperskorg."  placeholders={{name}}
+files.confirmDeleteRevision = "Ta bort {{label}}? Filerna flyttas till projektets papperskorg."  placeholders={{label}}
+files.confirmRemoveFile = "Ta bort {{name}} från {{label}}? Filen flyttas till projektets papperskorg."  placeholders={{label}},{{name}}
+files.deleteItem = "Ta bort objekt"
+files.deleteRevision = "Ta bort revision"
+files.derivedFrom = "Härledd från {{label}}"  placeholders={{label}}
+files.derivedFromLabel = "Härledd från"
+files.derivedFromNone = "Ingenting"
+files.download = "Ladda ner"
+files.downloadAll = "Ladda ner allt (zip)"
+files.dropHint = "Släpp filer här eller klicka för att välja"
+files.duplicateWarning = "{{filename}} är identisk med {{revision}}"  placeholders={{filename}},{{revision}}
+files.emptySection = "Inga objekt ännu"
+files.fileCount_one = "{{count}} fil"  placeholders={{count}}
+files.fileCount_other = "{{count}} filer"  placeholders={{count}}
+files.fork = "Förgrena som nytt objekt"
+files.forkNameLabel = "Nytt objektnamn"
+files.frozen = "Filer låsta: den här revisionen har skrivits ut eller levererats"
+files.itemNameLabel = "Objektnamn"
+files.newItem = "Nytt objekt"
+files.newRevision = "Ny revision"
+files.notSliced = "Inte skivad"
+files.noteLabel = "Anteckning"
+files.notePlaceholder = "Vad som ändrats…"
+files.onlyPrintable = "Endast 3MF- och G-code-filer kan läggas i ett projekt"
+files.otherSections = "Äldre filer"
+files.outdated = "Inaktuell – baserad på {{source}}, {{newer}} har godkänts sedan dess"  placeholders={{newer}},{{source}}
+files.preview = "Förhandsvisning"
+files.remove = "Ta bort"
+files.removeFile = "Ta bort {{name}}"  placeholders={{name}}
+files.rename = "Byt namn"
+files.saveFailed = "Kunde inte spara"
+files.sectionDocs = "Dokument"
+files.sectionImpression = "Utskrift"
+files.sectionModelisation = "Modellering"
+files.sectionScan = "Skanning"
+files.sectionUsinage = "Bearbetning"
+files.sliced = "Skivad"
+files.statusLabel = "Status"
+files.statusObsolete = "Föråldrad"
+files.statusValide = "Godkänd"
+files.statusWip = "Pågående"
+files.title = "Filer"
+files.uploadFailed = "Uppladdningen misslyckades"
+files.uploading = "Laddar upp…"
+filing.autoFileHint = "En fil med namnet \"P-0042_support.3mf\" hamnar direkt i projekt P-0042"
+filing.autoFileLabel = "Arkivera uppladdningar vars namn innehåller en projektkod"
+filing.autoItem = "Automatiskt (utifrån varje filnamn)"
+filing.copiedNote = "Externa filer kopieras; originalen ligger kvar där de är"
+filing.fileCount_one = "{{count}} fil"  placeholders={{count}}
+filing.fileCount_other = "{{count}} filer"  placeholders={{count}}
+filing.filedToProject = "Arkiverad i {{code}} › {{item}} R{{revision}}"  placeholders={{code}},{{item}},{{revision}}
+filing.migrationFailures = "Misslyckades"
+filing.migrationLastRun = "Senaste körning: {{files}} {{projects}}"  placeholders={{files}},{{projects}}
+filing.migrationLastRunFiles_one = "{{count}} fil flyttad"  placeholders={{count}}
+filing.migrationLastRunFiles_other = "{{count}} filer flyttade"  placeholders={{count}}
+filing.migrationLastRunProjects_one = "till {{count}} projekt"  placeholders={{count}}
+filing.migrationLastRunProjects_other = "till {{count}} projekt"  placeholders={{count}}
+filing.migrationNone = "Inget kvar att flytta"
+filing.migrationPending_one = "{{count}} projekt har fortfarande filer att flytta"  placeholders={{count}}
+filing.migrationPending_other = "{{count}} projekt har fortfarande filer att flytta"  placeholders={{count}}
+filing.migrationRunning = "Flyttar {{done}}/{{total}} — {{code}}"  placeholders={{code}},{{done}},{{total}}
+filing.migrationStart = "Flytta nu"
+filing.migrationTitle = "Gamla projektfiler"
+filing.move = "Flytta"
+filing.moveTitle = "Flytta till ett projekt"
+filing.moveToProject = "Flytta till projekt…"
+filing.moved_one = "{{count}} fil flyttad till {{code}}"  placeholders={{code}},{{count}}
+filing.moved_other = "{{count}} filer flyttade till {{code}}"  placeholders={{code}},{{count}}
+filing.newItem = "Nytt objekt…"
+filing.newItemPlaceholder = "Objektets namn"
+filing.searchProject = "Sök projekt…"
+filing.settingsTitle = "Projekt"
+filing.skipReason.alreadyInProject = "redan i ett projekt"
+filing.skipReason.notFound = "filen hittades inte"
+filing.skipReason.notOwner = "inte din"
+filing.skipReason.notPrintable = "inte en 3MF/G-code-fil"
+filing.skipReason.retry = "kunde inte kopieras, försök igen"
+filing.skipReason.sourceMissing = "filen saknas på disken"
+filing.skipReason.trashed = "i papperskorgen"
+filing.skippedWithReasons_one = "{{count}} fil hoppades över: {{reasons}}"  placeholders={{count}},{{reasons}}
+filing.skippedWithReasons_other = "{{count}} filer hoppades över: {{reasons}}"  placeholders={{count}},{{reasons}}
+filing.suggested = "Föreslagna"
+filing.targetItem = "Objekt"
+newProject = "Nytt projekt"
+newTagBadge = "ny"
+nextPage = "Nästa sida"
+noSuggestions = "Inga förslag"
+pageRange = "{{from}}–{{to}} av {{total}}"  placeholders={{from}},{{total}},{{to}}
+prevPage = "Föregående sida"
+print.eventQueued = "{{label}} ×{{copies}} lagd i kön"  placeholders={{copies}},{{label}}
+print.forWhichOrder = "Vilken order gäller utskriften?"
+print.noOrder = "Ingen (intern utskrift eller testutskrift)"
+print.noPrintFiles = "Ingen utskriftsfil i det här projektet ännu"
+print.ordersUnavailable = "Beställningarna kunde inte läsas in — du kan bara skriva ut utan beställning just nu."
+print.outdatedWarning = "Baserad på {{source}} — {{newer}} har godkänts sedan dess"  placeholders={{newer}},{{source}}
+print.pickPrintFile = "Välj en utskriftsfil"
+print.print = "Skriv ut"
+print.printCount_one = "utskriven {{count}} gång"  placeholders={{count}}
+print.printCount_other = "utskriven {{count}} gånger"  placeholders={{count}}
+print.printFile = "Skriv ut {{name}}"  placeholders={{name}}
+print.printed = "{{printed}}/{{target}} utskrivna"  placeholders={{printed}},{{target}}
+print.printedNoTarget = "{{printed}} utskrivna"  placeholders={{printed}}
+print.queued_one = "{{count}} i kön"  placeholders={{count}}
+print.queued_other = "{{count}} i kön"  placeholders={{count}}
+print.rejected_one = "{{count}} avvisad"  placeholders={{count}}
+print.rejected_other = "{{count}} avvisade"  placeholders={{count}}
+print.tickStep = "Bocka av"
+print.tickSuggestion = "Alla begärda utskrifter är klara — bocka av steget?"
+removeTag = "Ta bort {{name}}"  placeholders={{name}}
+reslice.action = "Slica om"
+reslice.dismiss = "Stäng"
+reslice.done = "{{name}} R{{number}} skapad"  placeholders={{name}},{{number}}
+reslice.failed = "Slicingen misslyckades: {{detail}}"  placeholders={{detail}}
+reslice.jobLost = "Slicingstatusen gick förlorad. Ladda om sidan för att se om den nya revisionen skapades."
+reslice.noPipelines = "Ingen sparad pipeline. Skapa en i Inställningar → Arbetsflöde → Pipelines."
+reslice.pipeline = "Pipeline"
+reslice.pipelinesUnavailable = "Det gick inte att läsa in pipelines."
+reslice.queueSkipped = "{{name}} R{{number}} skapad: skriv ut den från revisionen."  placeholders={{name}},{{number}}
+reslice.running = "Slicar… {{percent}} %"  placeholders={{percent}}
+reslice.runningNoPercent = "Slicar…"
+reslice.slice = "Slica"
+reslice.sliceAndQueue = "Slica + kö"
+reslice.source = "Källfil"
+reslice.startFailed = "Kunde inte starta slicingen"
+reslice.title = "Slica om {{name}}"  placeholders={{name}}
+reslice.viaPipeline = "via {{name}}"  placeholders={{name}}
+reslice.warnings = "Kontrollera innan start"
+save = "Spara"
+saveFailed = "Det gick inte att spara projektet"
+saved = "Projektet sparades"
+searchPlaceholder = "Sök efter kod, titel, beskrivning eller tagg…"
+statusAll = "Alla"
+statusFilterLabel = "Status"
+subtitle = "Varje del, dess filer och dess historik"
+suggestTags = "Föreslå taggar"
+suggestionsLabel = "Förslag"
+tagModeAll = "Alla taggar"
+tagModeAny = "Valfri tagg"
+tagSearchPlaceholder = "Sök eller skapa en tagg…"
+tagsFilterLabel = "Taggar"
+tagsLabel = "Taggar"
+title = "Projekt"
+titleLabel = "Titel"
+viewGrid = "Rutnätsvy"
+viewTable = "Tabellvy"
+--- tr projectsPdm (198 keys)
+acceptSuggestion = "{{name}} ekle"  placeholders={{name}}
+aiUnavailable = "Yapay zekâ kullanılamıyor"
+aito.confirmUnlink = "{{name}} bu görevden ayrılsın mı? Teslim edilen dosyalar listesi temizlenir."  placeholders={{name}}
+aito.deliveredFiles = "Teslim edilen dosyalar"
+aito.deliveredNone = "Henüz kayıt yok"
+aito.deliveriesSuggest = "Son onaylananları öner"
+aito.dropChooseTask = "Bu dosyalar hangi görev için?"
+aito.dropHere = "Projeye eklemek için dosyaları bırakın"
+aito.dropNeedsProject = "Önce bu göreve bir proje bağlayın"
+aito.dropped_one = "{{count}} dosya {{code}} projesine eklendi"  placeholders={{code}},{{count}}
+aito.dropped_other = "{{count}} dosya {{code}} projesine eklendi"  placeholders={{code}},{{count}}
+aito.editDeliveries = "Teslim edilen dosyaları düzenle"
+aito.events.deliveriesChanged = "teslim edilen dosyaları güncelledi"
+aito.events.filesDropped = "{{code}} projesine dosya ekledi"  placeholders={{code}}
+aito.events.previousProject = "önceki: {{code}}"  placeholders={{code}}
+aito.events.projectLinked = "bir proje bağladı"
+aito.events.projectUnlinked = "bir projenin bağlantısını kaldırdı"
+aito.events.revisionAdded = "projeye bir revizyon ekledi"
+aito.events.revisionStatusChanged = "bir revizyonun durumunu değiştirdi"
+aito.linkExisting = "Mevcut bir projeyi bağla"
+aito.linkFailed = "Bağlantı güncellenemedi"
+aito.newOrder = "Yeni sipariş"
+aito.newProject = "Yeni proje"
+aito.noProjectsFound = "Eşleşen proje yok"
+aito.orderLabel = "Sipariş #{{id}}"  placeholders={{id}}
+aito.ordersEmpty = "Bu projeyi kullanan sipariş henüz yok"
+aito.ordersTitle = "Siparişler"
+aito.projectLabel = "Proje"
+aito.reuseFromOrder = "#{{order}} numaralı siparişin dosyalarını yeniden kullan"  placeholders={{order}}
+aito.reuseFromOrderPlaceholder = "Başka bir siparişin dosyalarını yeniden kullan…"
+aito.saveTaskFirst = "Önce görevi kaydedin"
+aito.searchProjects = "Proje ara…"
+aito.suggestionSameClient = "Aynı müşteri"
+aito.suggestionSimilar = "Benzer başlık"
+aito.unlink = "Bağlantıyı kaldır"
+codeChipLabel = "Proje kodu {{code}}"  placeholders={{code}}
+colCode = "Kod"
+colPrints = "Baskılar"
+colStatus = "Durum"
+colTags = "Etiketler"
+colTitle = "Başlık"
+colUpdated = "Güncellendi"
+create = "Oluştur"
+createTag = "“{{name}}” oluştur"  placeholders={{name}}
+createTitle = "Yeni proje"
+descriptionLabel = "Açıklama"
+editHeader = "Başlığı, açıklamayı ve etiketleri düzenle"
+empty = "Henüz proje yok"
+emptySearch = "Bu aramayla eşleşen proje yok"
+files.addFiles = "Dosya ekle"
+files.byAuthor = "ekleyen: {{name}}"  placeholders={{name}}
+files.chooseFiles = "Dosya seç"
+files.confirmDeleteItem = "{{name}} ve tüm revizyonları silinsin mi? Dosyalar proje çöp kutusuna taşınır."  placeholders={{name}}
+files.confirmDeleteRevision = "{{label}} silinsin mi? Dosyaları proje çöp kutusuna taşınır."  placeholders={{label}}
+files.confirmRemoveFile = "{{name}} dosyası {{label}} revizyonundan kaldırılsın mı? Dosya proje çöp kutusuna taşınır."  placeholders={{label}},{{name}}
+files.deleteItem = "Öğeyi sil"
+files.deleteRevision = "Revizyonu sil"
+files.derivedFrom = "{{label}} revizyonundan türetildi"  placeholders={{label}}
+files.derivedFromLabel = "Türetildiği kaynak"
+files.derivedFromNone = "Hiçbiri"
+files.download = "İndir"
+files.downloadAll = "Tümünü indir (zip)"
+files.dropHint = "Dosyaları buraya bırakın veya seçmek için tıklayın"
+files.duplicateWarning = "{{filename}}, {{revision}} ile aynı"  placeholders={{filename}},{{revision}}
+files.emptySection = "Henüz öğe yok"
+files.fileCount_one = "{{count}} dosya"  placeholders={{count}}
+files.fileCount_other = "{{count}} dosya"  placeholders={{count}}
+files.fork = "Yeni öğe olarak ayır"
+files.forkNameLabel = "Yeni öğe adı"
+files.frozen = "Dosyalar kilitli: bu revizyon basıldı veya teslim edildi"
+files.itemNameLabel = "Öğe adı"
+files.newItem = "Yeni öğe"
+files.newRevision = "Yeni revizyon"
+files.notSliced = "Dilimlenmedi"
+files.noteLabel = "Not"
+files.notePlaceholder = "Ne değişti…"
+files.onlyPrintable = "Bir projeye yalnızca 3MF ve G-code dosyaları eklenebilir"
+files.otherSections = "Eski dosyalar"
+files.outdated = "Güncel değil — {{source}} temel alınmış, o zamandan beri {{newer}} onaylandı"  placeholders={{newer}},{{source}}
+files.preview = "Önizleme"
+files.remove = "Kaldır"
+files.removeFile = "{{name}} dosyasını kaldır"  placeholders={{name}}
+files.rename = "Yeniden adlandır"
+files.saveFailed = "Kaydedilemedi"
+files.sectionDocs = "Belgeler"
+files.sectionImpression = "Baskı"
+files.sectionModelisation = "Modelleme"
+files.sectionScan = "Tarama"
+files.sectionUsinage = "Talaşlı imalat"
+files.sliced = "Dilimlendi"
+files.statusLabel = "Durum"
+files.statusObsolete = "Eski"
+files.statusValide = "Onaylandı"
+files.statusWip = "Devam ediyor"
+files.title = "Dosyalar"
+files.uploadFailed = "Yükleme başarısız"
+files.uploading = "Yükleniyor…"
+filing.autoFileHint = "\"P-0042_support.3mf\" adlı dosya doğrudan P-0042 projesine gider"
+filing.autoFileLabel = "Adında proje kodu olan yüklemeleri dosyala"
+filing.autoItem = "Otomatik (her dosya adına göre)"
+filing.copiedNote = "Harici dosyalar kopyalanır; orijinaller olduğu yerde kalır"
+filing.fileCount_one = "{{count}} dosya"  placeholders={{count}}
+filing.fileCount_other = "{{count}} dosya"  placeholders={{count}}
+filing.filedToProject = "{{code}} › {{item}} R{{revision}} içine yerleştirildi"  placeholders={{code}},{{item}},{{revision}}
+filing.migrationFailures = "Başarısız"
+filing.migrationLastRun = "Son çalıştırma: {{projects}} {{files}}"  placeholders={{files}},{{projects}}
+filing.migrationLastRunFiles_one = "{{count}} dosya taşındı"  placeholders={{count}}
+filing.migrationLastRunFiles_other = "{{count}} dosya taşındı"  placeholders={{count}}
+filing.migrationLastRunProjects_one = "{{count}} projeye"  placeholders={{count}}
+filing.migrationLastRunProjects_other = "{{count}} projeye"  placeholders={{count}}
+filing.migrationNone = "Taşınacak bir şey kalmadı"
+filing.migrationPending_one = "{{count}} projenin taşınacak dosyaları hâlâ var"  placeholders={{count}}
+filing.migrationPending_other = "{{count}} projenin taşınacak dosyaları hâlâ var"  placeholders={{count}}
+filing.migrationRunning = "Taşınıyor {{done}}/{{total}} — {{code}}"  placeholders={{code}},{{done}},{{total}}
+filing.migrationStart = "Şimdi taşı"
+filing.migrationTitle = "Eski proje dosyaları"
+filing.move = "Taşı"
+filing.moveTitle = "Bir projeye taşı"
+filing.moveToProject = "Projeye taşı…"
+filing.moved_one = "{{count}} dosya {{code}} projesine taşındı"  placeholders={{code}},{{count}}
+filing.moved_other = "{{count}} dosya {{code}} projesine taşındı"  placeholders={{code}},{{count}}
+filing.newItem = "Yeni öğe…"
+filing.newItemPlaceholder = "Öğe adı"
+filing.searchProject = "Proje ara…"
+filing.settingsTitle = "Projeler"
+filing.skipReason.alreadyInProject = "zaten bir projede"
+filing.skipReason.notFound = "dosya bulunamadı"
+filing.skipReason.notOwner = "sizin değil"
+filing.skipReason.notPrintable = "3MF/G-code dosyası değil"
+filing.skipReason.retry = "kopyalanamadı, tekrar deneyin"
+filing.skipReason.sourceMissing = "dosya diskte yok"
+filing.skipReason.trashed = "çöp kutusunda"
+filing.skippedWithReasons_one = "{{count}} dosya atlandı: {{reasons}}"  placeholders={{count}},{{reasons}}
+filing.skippedWithReasons_other = "{{count}} dosya atlandı: {{reasons}}"  placeholders={{count}},{{reasons}}
+filing.suggested = "Önerilenler"
+filing.targetItem = "Öğe"
+newProject = "Yeni proje"
+newTagBadge = "yeni"
+nextPage = "Sonraki sayfa"
+noSuggestions = "Öneri yok"
+pageRange = "{{total}} içinde {{from}}–{{to}}"  placeholders={{from}},{{total}},{{to}}
+prevPage = "Önceki sayfa"
+print.eventQueued = "{{label}} ×{{copies}} kuyruğa eklendi"  placeholders={{copies}},{{label}}
+print.forWhichOrder = "Bu baskı hangi sipariş için?"
+print.noOrder = "Yok (dahili veya test baskısı)"
+print.noPrintFiles = "Bu projede henüz baskı dosyası yok"
+print.ordersUnavailable = "Siparişler yüklenemedi — şimdilik yalnızca siparişsiz yazdırabilirsiniz."
+print.outdatedWarning = "{{source}} temel alındı — o tarihten beri {{newer}} onaylandı"  placeholders={{newer}},{{source}}
+print.pickPrintFile = "Bir baskı dosyası seçin"
+print.print = "Yazdır"
+print.printCount_one = "{{count}} kez basıldı"  placeholders={{count}}
+print.printCount_other = "{{count}} kez basıldı"  placeholders={{count}}
+print.printFile = "{{name}} dosyasını yazdır"  placeholders={{name}}
+print.printed = "{{printed}}/{{target}} basıldı"  placeholders={{printed}},{{target}}
+print.printedNoTarget = "{{printed}} basıldı"  placeholders={{printed}}
+print.queued_one = "{{count}} kuyrukta"  placeholders={{count}}
+print.queued_other = "{{count}} kuyrukta"  placeholders={{count}}
+print.rejected_one = "{{count}} reddedildi"  placeholders={{count}}
+print.rejected_other = "{{count}} reddedildi"  placeholders={{count}}
+print.tickStep = "İşaretle"
+print.tickSuggestion = "İstenen tüm baskılar tamamlandı — adım işaretlensin mi?"
+removeTag = "{{name}} etiketini kaldır"  placeholders={{name}}
+reslice.action = "Yeniden dilimle"
+reslice.dismiss = "Kapat"
+reslice.done = "{{name}} R{{number}} oluşturuldu"  placeholders={{name}},{{number}}
+reslice.failed = "Dilimleme başarısız: {{detail}}"  placeholders={{detail}}
+reslice.jobLost = "Dilimleme durumu kayboldu. Yeni revizyonun oluşturulup oluşturulmadığını görmek için sayfayı yenileyin."
+reslice.noPipelines = "Kayıtlı pipeline yok. Ayarlar → İş Akışı → Pipeline'lar bölümünden oluşturun."
+reslice.pipeline = "Pipeline"
+reslice.pipelinesUnavailable = "Pipeline'lar yüklenemedi."
+reslice.queueSkipped = "{{name}} R{{number}} oluşturuldu: revizyondan yazdırın."  placeholders={{name}},{{number}}
+reslice.running = "Dilimleniyor… %{{percent}}"  placeholders={{percent}}
+reslice.runningNoPercent = "Dilimleniyor…"
+reslice.slice = "Dilimle"
+reslice.sliceAndQueue = "Dilimle + kuyruğa al"
+reslice.source = "Kaynak dosya"
+reslice.startFailed = "Dilimleme başlatılamadı"
+reslice.title = "{{name}} dosyasını yeniden dilimle"  placeholders={{name}}
+reslice.viaPipeline = "{{name}} ile"  placeholders={{name}}
+reslice.warnings = "Başlamadan önce kontrol edin"
+save = "Kaydet"
+saveFailed = "Proje kaydedilemedi"
+saved = "Proje kaydedildi"
+searchPlaceholder = "Kod, başlık, açıklama veya etiketle ara…"
+statusAll = "Tümü"
+statusFilterLabel = "Durum"
+subtitle = "Her parça, dosyaları ve geçmişi"
+suggestTags = "Etiket öner"
+suggestionsLabel = "Öneriler"
+tagModeAll = "Tüm etiketler"
+tagModeAny = "Herhangi bir etiket"
+tagSearchPlaceholder = "Etiket ara veya oluştur…"
+tagsFilterLabel = "Etiketler"
+tagsLabel = "Etiketler"
+title = "Projeler"
+titleLabel = "Başlık"
+viewGrid = "Izgara görünümü"
+viewTable = "Tablo görünümü"
+--- uk projectsPdm (198 keys)
+acceptSuggestion = "Додати {{name}}"  placeholders={{name}}
+aiUnavailable = "ШІ недоступний"
+aito.confirmUnlink = "Відв’язати {{name}} від цього завдання? Список переданих файлів буде очищено."  placeholders={{name}}
+aito.deliveredFiles = "Передані файли"
+aito.deliveredNone = "Поки нічого не записано"
+aito.deliveriesSuggest = "Запропонувати останні затверджені"
+aito.dropChooseTask = "Для якого завдання ці файли?"
+aito.dropHere = "Перетягніть файли, щоб додати їх до проєкту"
+aito.dropNeedsProject = "Спершу прив'яжіть проєкт до цього завдання"
+aito.dropped_one = "Файлів додано до {{code}}: {{count}}"  placeholders={{code}},{{count}}
+aito.dropped_other = "Файлів додано до {{code}}: {{count}}"  placeholders={{code}},{{count}}
+aito.editDeliveries = "Змінити передані файли"
+aito.events.deliveriesChanged = "змінив передані файли"
+aito.events.filesDropped = "додав файли до {{code}}"  placeholders={{code}}
+aito.events.previousProject = "раніше {{code}}"  placeholders={{code}}
+aito.events.projectLinked = "прив’язав проєкт"
+aito.events.projectUnlinked = "від’єднав проєкт"
+aito.events.revisionAdded = "додав ревізію проєкту"
+aito.events.revisionStatusChanged = "змінив статус ревізії"
+aito.linkExisting = "Прив'язати наявний проєкт"
+aito.linkFailed = "Не вдалося оновити прив'язку"
+aito.newOrder = "Нове замовлення"
+aito.newProject = "Новий проєкт"
+aito.noProjectsFound = "Відповідних проєктів немає"
+aito.orderLabel = "Замовлення №{{id}}"  placeholders={{id}}
+aito.ordersEmpty = "Жодне замовлення ще не використовує цей проєкт"
+aito.ordersTitle = "Замовлення"
+aito.projectLabel = "Проєкт"
+aito.reuseFromOrder = "Взяти файли із замовлення №{{order}}"  placeholders={{order}}
+aito.reuseFromOrderPlaceholder = "Взяти файли з іншого замовлення…"
+aito.saveTaskFirst = "Спершу збережіть завдання"
+aito.searchProjects = "Пошук проєктів…"
+aito.suggestionSameClient = "Той самий клієнт"
+aito.suggestionSimilar = "Схожа назва"
+aito.unlink = "Відв'язати"
+codeChipLabel = "Код проєкту {{code}}"  placeholders={{code}}
+colCode = "Код"
+colPrints = "Друки"
+colStatus = "Статус"
+colTags = "Теги"
+colTitle = "Назва"
+colUpdated = "Оновлено"
+create = "Створити"
+createTag = "Створити «{{name}}»"  placeholders={{name}}
+createTitle = "Новий проєкт"
+descriptionLabel = "Опис"
+editHeader = "Редагувати назву, опис і теги"
+empty = "Проєктів ще немає"
+emptySearch = "Жоден проєкт не відповідає пошуку"
+files.addFiles = "Додати файли"
+files.byAuthor = "автор: {{name}}"  placeholders={{name}}
+files.chooseFiles = "Вибрати файли"
+files.confirmDeleteItem = "Видалити {{name}} і всі його ревізії? Файли потраплять до кошика проєкту."  placeholders={{name}}
+files.confirmDeleteRevision = "Видалити {{label}}? Файли потраплять до кошика проєкту."  placeholders={{label}}
+files.confirmRemoveFile = "Прибрати {{name}} з {{label}}? Файл буде переміщено до кошика проєкту."  placeholders={{label}},{{name}}
+files.deleteItem = "Видалити елемент"
+files.deleteRevision = "Видалити ревізію"
+files.derivedFrom = "Похідна від {{label}}"  placeholders={{label}}
+files.derivedFromLabel = "Похідна від"
+files.derivedFromNone = "Нічого"
+files.download = "Завантажити"
+files.downloadAll = "Завантажити все (zip)"
+files.dropHint = "Перетягніть файли сюди або натисніть, щоб вибрати"
+files.duplicateWarning = "{{filename}} ідентичний {{revision}}"  placeholders={{filename}},{{revision}}
+files.emptySection = "Елементів ще немає"
+files.fileCount_one = "Файлів: {{count}}"  placeholders={{count}}
+files.fileCount_other = "Файлів: {{count}}"  placeholders={{count}}
+files.fork = "Виділити в новий елемент"
+files.forkNameLabel = "Назва нового елемента"
+files.frozen = "Файли заблоковано: цю ревізію вже надруковано або передано"
+files.itemNameLabel = "Назва елемента"
+files.newItem = "Новий елемент"
+files.newRevision = "Нова ревізія"
+files.notSliced = "Не нарізано"
+files.noteLabel = "Нотатка"
+files.notePlaceholder = "Що змінилося…"
+files.onlyPrintable = "До проєкту можна додавати лише файли 3MF і G-code"
+files.otherSections = "Старіші файли"
+files.outdated = "Неактуально — засновано на {{source}}, відтоді затверджено {{newer}}"  placeholders={{newer}},{{source}}
+files.preview = "Попередній перегляд"
+files.remove = "Прибрати"
+files.removeFile = "Прибрати {{name}}"  placeholders={{name}}
+files.rename = "Перейменувати"
+files.saveFailed = "Не вдалося зберегти"
+files.sectionDocs = "Документи"
+files.sectionImpression = "Друк"
+files.sectionModelisation = "Моделювання"
+files.sectionScan = "Скан"
+files.sectionUsinage = "Механообробка"
+files.sliced = "Нарізано"
+files.statusLabel = "Статус"
+files.statusObsolete = "Застаріло"
+files.statusValide = "Затверджено"
+files.statusWip = "У роботі"
+files.title = "Файли"
+files.uploadFailed = "Не вдалося завантажити"
+files.uploading = "Завантаження…"
+filing.autoFileHint = "Файл з назвою «P-0042_support.3mf» потрапляє просто в проєкт P-0042"
+filing.autoFileLabel = "Розкладати завантаження, у назві яких є код проєкту"
+filing.autoItem = "Автоматично (за назвою кожного файлу)"
+filing.copiedNote = "Зовнішні файли копіюються; оригінали залишаються на місці"
+filing.fileCount_one = "{{count}} файл"  placeholders={{count}}
+filing.fileCount_other = "Файлів: {{count}}"  placeholders={{count}}
+filing.filedToProject = "Додано до {{code}} › {{item}} R{{revision}}"  placeholders={{code}},{{item}},{{revision}}
+filing.migrationFailures = "Помилка"
+filing.migrationLastRun = "Останній запуск: {{files}}, {{projects}}"  placeholders={{files}},{{projects}}
+filing.migrationLastRunFiles_one = "переміщено файлів — {{count}}"  placeholders={{count}}
+filing.migrationLastRunFiles_other = "переміщено файлів — {{count}}"  placeholders={{count}}
+filing.migrationLastRunProjects_one = "проєктів — {{count}}"  placeholders={{count}}
+filing.migrationLastRunProjects_other = "проєктів — {{count}}"  placeholders={{count}}
+filing.migrationNone = "Нічого переміщувати"
+filing.migrationPending_one = "У {{count}} проєкту ще є файли для переміщення"  placeholders={{count}}
+filing.migrationPending_other = "У {{count}} проєктів ще є файли для переміщення"  placeholders={{count}}
+filing.migrationRunning = "Переміщення {{done}}/{{total}} — {{code}}"  placeholders={{code}},{{done}},{{total}}
+filing.migrationStart = "Перемістити зараз"
+filing.migrationTitle = "Старі файли проєктів"
+filing.move = "Перемістити"
+filing.moveTitle = "Перемістити до проєкту"
+filing.moveToProject = "Перемістити до проєкту…"
+filing.moved_one = "{{count}} файл переміщено до {{code}}"  placeholders={{code}},{{count}}
+filing.moved_other = "{{count}} файлів переміщено до {{code}}"  placeholders={{code}},{{count}}
+filing.newItem = "Новий елемент…"
+filing.newItemPlaceholder = "Назва елемента"
+filing.searchProject = "Шукати проєкт…"
+filing.settingsTitle = "Проєкти"
+filing.skipReason.alreadyInProject = "вже в проєкті"
+filing.skipReason.notFound = "файл не знайдено"
+filing.skipReason.notOwner = "не ваш"
+filing.skipReason.notPrintable = "не файл 3MF/G-code"
+filing.skipReason.retry = "не вдалося скопіювати, повторіть"
+filing.skipReason.sourceMissing = "файл відсутній на диску"
+filing.skipReason.trashed = "у кошику"
+filing.skippedWithReasons_one = "Пропущено {{count}} файл ({{reasons}})"  placeholders={{count}},{{reasons}}
+filing.skippedWithReasons_other = "Пропущено файлів: {{count}} ({{reasons}})"  placeholders={{count}},{{reasons}}
+filing.suggested = "Запропоновані"
+filing.targetItem = "Елемент"
+newProject = "Новий проєкт"
+newTagBadge = "новий"
+nextPage = "Наступна сторінка"
+noSuggestions = "Немає пропозицій"
+pageRange = "{{from}}–{{to}} з {{total}}"  placeholders={{from}},{{total}},{{to}}
+prevPage = "Попередня сторінка"
+print.eventQueued = "{{label}} ×{{copies}} поставлено в чергу"  placeholders={{copies}},{{label}}
+print.forWhichOrder = "Для якого замовлення цей друк?"
+print.noOrder = "Немає (внутрішній або тестовий друк)"
+print.noPrintFiles = "У цьому проєкті ще немає файлів для друку"
+print.ordersUnavailable = "Не вдалося завантажити замовлення — поки що можна друкувати лише без замовлення."
+print.outdatedWarning = "На основі {{source}} — відтоді затверджено {{newer}}"  placeholders={{newer}},{{source}}
+print.pickPrintFile = "Виберіть файл для друку"
+print.print = "Друк"
+print.printCount_one = "Надруковано разів: {{count}}"  placeholders={{count}}
+print.printCount_other = "Надруковано разів: {{count}}"  placeholders={{count}}
+print.printFile = "Друкувати {{name}}"  placeholders={{name}}
+print.printed = "Надруковано {{printed}}/{{target}}"  placeholders={{printed}},{{target}}
+print.printedNoTarget = "Надруковано: {{printed}}"  placeholders={{printed}}
+print.queued_one = "У черзі: {{count}}"  placeholders={{count}}
+print.queued_other = "У черзі: {{count}}"  placeholders={{count}}
+print.rejected_one = "Відхилено: {{count}}"  placeholders={{count}}
+print.rejected_other = "Відхилено: {{count}}"  placeholders={{count}}
+print.tickStep = "Позначити"
+print.tickSuggestion = "Усі запитані друки виконано — позначити етап?"
+removeTag = "Видалити {{name}}"  placeholders={{name}}
+reslice.action = "Нарізати знову"
+reslice.dismiss = "Закрити"
+reslice.done = "{{name}} R{{number}} створено"  placeholders={{name}},{{number}}
+reslice.failed = "Не вдалося нарізати: {{detail}}"  placeholders={{detail}}
+reslice.jobLost = "Стан нарізання втрачено. Перезавантажте сторінку, щоб побачити, чи створено нову ревізію."
+reslice.noPipelines = "Немає збережених пайплайнів. Створіть у Налаштування → Робочий процес → Конвеєри."
+reslice.pipeline = "Пайплайн"
+reslice.pipelinesUnavailable = "Не вдалося завантажити пайплайни."
+reslice.queueSkipped = "{{name}} R{{number}} створено: надрукуйте з ревізії."  placeholders={{name}},{{number}}
+reslice.running = "Нарізання… {{percent}}%"  placeholders={{percent}}
+reslice.runningNoPercent = "Нарізання…"
+reslice.slice = "Нарізати"
+reslice.sliceAndQueue = "Нарізати + в чергу"
+reslice.source = "Вихідний файл"
+reslice.startFailed = "Не вдалося запустити нарізання"
+reslice.title = "Нарізати знову {{name}}"  placeholders={{name}}
+reslice.viaPipeline = "через {{name}}"  placeholders={{name}}
+reslice.warnings = "Перевірте перед запуском"
+save = "Зберегти"
+saveFailed = "Не вдалося зберегти проєкт"
+saved = "Проєкт збережено"
+searchPlaceholder = "Пошук за кодом, назвою, описом або тегом…"
+statusAll = "Усі"
+statusFilterLabel = "Статус"
+subtitle = "Кожна деталь, її файли та історія"
+suggestTags = "Запропонувати теги"
+suggestionsLabel = "Пропозиції"
+tagModeAll = "Усі теги"
+tagModeAny = "Будь-який тег"
+tagSearchPlaceholder = "Знайти або створити тег…"
+tagsFilterLabel = "Теги"
+tagsLabel = "Теги"
+title = "Проєкти"
+titleLabel = "Назва"
+viewGrid = "Вигляд сіткою"
+viewTable = "Табличний вигляд"
+--- zhCN projectsPdm (198 keys)
+acceptSuggestion = "添加 {{name}}"  placeholders={{name}}
+aiUnavailable = "AI 不可用"
+aito.confirmUnlink = "要将 {{name}} 从此任务取消关联吗？已交付文件列表将被清空。"  placeholders={{name}}
+aito.deliveredFiles = "已交付文件"
+aito.deliveredNone = "尚无记录"
+aito.deliveriesSuggest = "推荐最新已批准版本"
+aito.dropChooseTask = "这些文件属于哪个任务？"
+aito.dropHere = "拖放文件以添加到项目"
+aito.dropNeedsProject = "请先将项目关联到此任务"
+aito.dropped_one = "已向 {{code}} 添加 {{count}} 个文件"  placeholders={{code}},{{count}}
+aito.dropped_other = "已向 {{code}} 添加 {{count}} 个文件"  placeholders={{code}},{{count}}
+aito.editDeliveries = "编辑已交付文件"
+aito.events.deliveriesChanged = "更新了已交付文件"
+aito.events.filesDropped = "向 {{code}} 添加了文件"  placeholders={{code}}
+aito.events.previousProject = "原为 {{code}}"  placeholders={{code}}
+aito.events.projectLinked = "关联了项目"
+aito.events.projectUnlinked = "取消了项目关联"
+aito.events.revisionAdded = "添加了项目修订版"
+aito.events.revisionStatusChanged = "更改了修订版状态"
+aito.linkExisting = "关联现有项目"
+aito.linkFailed = "无法更新关联"
+aito.newOrder = "新建订单"
+aito.newProject = "新建项目"
+aito.noProjectsFound = "没有匹配的项目"
+aito.orderLabel = "订单 #{{id}}"  placeholders={{id}}
+aito.ordersEmpty = "尚无订单使用此项目"
+aito.ordersTitle = "订单"
+aito.projectLabel = "项目"
+aito.reuseFromOrder = "沿用订单 #{{order}} 的文件"  placeholders={{order}}
+aito.reuseFromOrderPlaceholder = "沿用其他订单的文件…"
+aito.saveTaskFirst = "请先保存任务"
+aito.searchProjects = "搜索项目…"
+aito.suggestionSameClient = "同一客户"
+aito.suggestionSimilar = "标题相近"
+aito.unlink = "取消关联"
+codeChipLabel = "项目编号 {{code}}"  placeholders={{code}}
+colCode = "编号"
+colPrints = "打印"
+colStatus = "状态"
+colTags = "标签"
+colTitle = "标题"
+colUpdated = "更新时间"
+create = "创建"
+createTag = "创建“{{name}}”"  placeholders={{name}}
+createTitle = "新建项目"
+descriptionLabel = "描述"
+editHeader = "编辑标题、描述和标签"
+empty = "暂无项目"
+emptySearch = "没有项目匹配此搜索"
+files.addFiles = "添加文件"
+files.byAuthor = "作者：{{name}}"  placeholders={{name}}
+files.chooseFiles = "选择文件"
+files.confirmDeleteItem = "删除 {{name}} 及其所有版本？文件将移入项目回收站。"  placeholders={{name}}
+files.confirmDeleteRevision = "删除 {{label}}？其文件将移入项目回收站。"  placeholders={{label}}
+files.confirmRemoveFile = "要从 {{label}} 中移除 {{name}} 吗？文件将移至项目回收站。"  placeholders={{label}},{{name}}
+files.deleteItem = "删除条目"
+files.deleteRevision = "删除版本"
+files.derivedFrom = "源自 {{label}}"  placeholders={{label}}
+files.derivedFromLabel = "源自"
+files.derivedFromNone = "无"
+files.download = "下载"
+files.downloadAll = "全部下载（zip）"
+files.dropHint = "将文件拖放到此处，或点击选择"
+files.duplicateWarning = "{{filename}} 与 {{revision}} 相同"  placeholders={{filename}},{{revision}}
+files.emptySection = "暂无项目"
+files.fileCount_one = "{{count}} 个文件"  placeholders={{count}}
+files.fileCount_other = "{{count}} 个文件"  placeholders={{count}}
+files.fork = "另存为新条目"
+files.forkNameLabel = "新条目名称"
+files.frozen = "文件已锁定：此版本已打印或已交付"
+files.itemNameLabel = "条目名称"
+files.newItem = "新建条目"
+files.newRevision = "新版本"
+files.notSliced = "未切片"
+files.noteLabel = "备注"
+files.notePlaceholder = "改动说明…"
+files.onlyPrintable = "项目只能包含 3MF 和 G-code 文件"
+files.otherSections = "旧文件"
+files.outdated = "已过时：基于 {{source}}，此后 {{newer}} 已获批准"  placeholders={{newer}},{{source}}
+files.preview = "预览"
+files.remove = "移除"
+files.removeFile = "移除 {{name}}"  placeholders={{name}}
+files.rename = "重命名"
+files.saveFailed = "无法保存"
+files.sectionDocs = "文档"
+files.sectionImpression = "打印"
+files.sectionModelisation = "建模"
+files.sectionScan = "扫描"
+files.sectionUsinage = "机加工"
+files.sliced = "已切片"
+files.statusLabel = "状态"
+files.statusObsolete = "已作废"
+files.statusValide = "已批准"
+files.statusWip = "进行中"
+files.title = "文件"
+files.uploadFailed = "上传失败"
+files.uploading = "上传中…"
+filing.autoFileHint = "名为“P-0042_support.3mf”的文件会直接进入项目 P-0042"
+filing.autoFileLabel = "将文件名含项目编号的上传文件自动归档"
+filing.autoItem = "自动（按每个文件名）"
+filing.copiedNote = "外部文件会被复制，原文件保持原位"
+filing.fileCount_one = "{{count}} 个文件"  placeholders={{count}}
+filing.fileCount_other = "{{count}} 个文件"  placeholders={{count}}
+filing.filedToProject = "已归入 {{code}} › {{item}} R{{revision}}"  placeholders={{code}},{{item}},{{revision}}
+filing.migrationFailures = "失败"
+filing.migrationLastRun = "上次运行：{{files}}{{projects}}"  placeholders={{files}},{{projects}}
+filing.migrationLastRunFiles_one = "已移动 {{count}} 个文件"  placeholders={{count}}
+filing.migrationLastRunFiles_other = "已移动 {{count}} 个文件"  placeholders={{count}}
+filing.migrationLastRunProjects_one = "到 {{count}} 个项目"  placeholders={{count}}
+filing.migrationLastRunProjects_other = "到 {{count}} 个项目"  placeholders={{count}}
+filing.migrationNone = "没有需要移动的内容"
+filing.migrationPending_one = "仍有 {{count}} 个项目有文件待移动"  placeholders={{count}}
+filing.migrationPending_other = "仍有 {{count}} 个项目有文件待移动"  placeholders={{count}}
+filing.migrationRunning = "正在移动 {{done}}/{{total}} — {{code}}"  placeholders={{code}},{{done}},{{total}}
+filing.migrationStart = "立即移动"
+filing.migrationTitle = "旧项目文件"
+filing.move = "移动"
+filing.moveTitle = "移至项目"
+filing.moveToProject = "移至项目…"
+filing.moved_one = "已将 {{count}} 个文件移至 {{code}}"  placeholders={{code}},{{count}}
+filing.moved_other = "已将 {{count}} 个文件移至 {{code}}"  placeholders={{code}},{{count}}
+filing.newItem = "新建条目…"
+filing.newItemPlaceholder = "条目名称"
+filing.searchProject = "搜索项目…"
+filing.settingsTitle = "项目"
+filing.skipReason.alreadyInProject = "已在项目中"
+filing.skipReason.notFound = "未找到文件"
+filing.skipReason.notOwner = "不是你的文件"
+filing.skipReason.notPrintable = "不是 3MF/G-code 文件"
+filing.skipReason.retry = "无法复制，请重试"
+filing.skipReason.sourceMissing = "磁盘上缺少文件"
+filing.skipReason.trashed = "在回收站中"
+filing.skippedWithReasons_one = "已跳过 {{count}} 个文件：{{reasons}}"  placeholders={{count}},{{reasons}}
+filing.skippedWithReasons_other = "已跳过 {{count}} 个文件：{{reasons}}"  placeholders={{count}},{{reasons}}
+filing.suggested = "推荐"
+filing.targetItem = "条目"
+newProject = "新建项目"
+newTagBadge = "新"
+nextPage = "下一页"
+noSuggestions = "暂无建议"
+pageRange = "第 {{from}}–{{to}} 项，共 {{total}} 项"  placeholders={{from}},{{total}},{{to}}
+prevPage = "上一页"
+print.eventQueued = "{{label}} ×{{copies}} 已加入队列"  placeholders={{copies}},{{label}}
+print.forWhichOrder = "这次打印属于哪个订单?"
+print.noOrder = "无(内部或测试打印)"
+print.noPrintFiles = "此项目中还没有打印文件"
+print.ordersUnavailable = "无法加载订单——目前只能不关联订单进行打印。"
+print.outdatedWarning = "基于 {{source}} — 此后已批准 {{newer}}"  placeholders={{newer}},{{source}}
+print.pickPrintFile = "选择打印文件"
+print.print = "打印"
+print.printCount_one = "已打印 {{count}} 次"  placeholders={{count}}
+print.printCount_other = "已打印 {{count}} 次"  placeholders={{count}}
+print.printFile = "打印 {{name}}"  placeholders={{name}}
+print.printed = "已打印 {{printed}}/{{target}}"  placeholders={{printed}},{{target}}
+print.printedNoTarget = "已打印 {{printed}}"  placeholders={{printed}}
+print.queued_one = "{{count}} 个在队列中"  placeholders={{count}}
+print.queued_other = "{{count}} 个在队列中"  placeholders={{count}}
+print.rejected_one = "{{count}} 个被拒"  placeholders={{count}}
+print.rejected_other = "{{count}} 个被拒"  placeholders={{count}}
+print.tickStep = "勾选"
+print.tickSuggestion = "所有要求的打印均已完成 — 勾选该步骤?"
+removeTag = "移除 {{name}}"  placeholders={{name}}
+reslice.action = "重新切片"
+reslice.dismiss = "关闭"
+reslice.done = "已创建 {{name}} R{{number}}"  placeholders={{name}},{{number}}
+reslice.failed = "切片失败：{{detail}}"  placeholders={{detail}}
+reslice.jobLost = "切片状态已丢失。请刷新页面，查看新版本是否已创建。"
+reslice.noPipelines = "没有已保存的流水线。请在 设置 → 工作流 → 流水线 中创建。"
+reslice.pipeline = "流水线"
+reslice.pipelinesUnavailable = "无法加载流水线。"
+reslice.queueSkipped = "已创建 {{name}} R{{number}}：请从修订版打印。"  placeholders={{name}},{{number}}
+reslice.running = "切片中… {{percent}}%"  placeholders={{percent}}
+reslice.runningNoPercent = "切片中…"
+reslice.slice = "切片"
+reslice.sliceAndQueue = "切片并加入队列"
+reslice.source = "源文件"
+reslice.startFailed = "无法启动切片"
+reslice.title = "重新切片 {{name}}"  placeholders={{name}}
+reslice.viaPipeline = "通过 {{name}}"  placeholders={{name}}
+reslice.warnings = "开始前请检查"
+save = "保存"
+saveFailed = "无法保存项目"
+saved = "项目已保存"
+searchPlaceholder = "按编号、标题、描述或标签搜索…"
+statusAll = "全部"
+statusFilterLabel = "状态"
+subtitle = "每个零件、其文件和历史记录"
+suggestTags = "建议标签"
+suggestionsLabel = "建议"
+tagModeAll = "全部标签"
+tagModeAny = "任一标签"
+tagSearchPlaceholder = "搜索或创建标签…"
+tagsFilterLabel = "标签"
+tagsLabel = "标签"
+title = "项目"
+titleLabel = "标题"
+viewGrid = "网格视图"
+viewTable = "表格视图"
+--- zhTW projectsPdm (198 keys)
+acceptSuggestion = "新增 {{name}}"  placeholders={{name}}
+aiUnavailable = "AI 無法使用"
+aito.confirmUnlink = "要將 {{name}} 從此任務取消連結嗎？已交付檔案清單將被清除。"  placeholders={{name}}
+aito.deliveredFiles = "已交付檔案"
+aito.deliveredNone = "尚無記錄"
+aito.deliveriesSuggest = "建議最新已核准版本"
+aito.dropChooseTask = "這些檔案屬於哪個任務？"
+aito.dropHere = "拖放檔案以加入專案"
+aito.dropNeedsProject = "請先將專案連結到此任務"
+aito.dropped_one = "已將 {{count}} 個檔案加入 {{code}}"  placeholders={{code}},{{count}}
+aito.dropped_other = "已將 {{count}} 個檔案加入 {{code}}"  placeholders={{code}},{{count}}
+aito.editDeliveries = "編輯已交付檔案"
+aito.events.deliveriesChanged = "更新了已交付檔案"
+aito.events.filesDropped = "將檔案新增至 {{code}}"  placeholders={{code}}
+aito.events.previousProject = "原為 {{code}}"  placeholders={{code}}
+aito.events.projectLinked = "連結了專案"
+aito.events.projectUnlinked = "取消了專案連結"
+aito.events.revisionAdded = "新增了專案修訂版"
+aito.events.revisionStatusChanged = "變更了修訂版狀態"
+aito.linkExisting = "連結現有專案"
+aito.linkFailed = "無法更新連結"
+aito.newOrder = "新增訂單"
+aito.newProject = "新增專案"
+aito.noProjectsFound = "沒有相符的專案"
+aito.orderLabel = "訂單 #{{id}}"  placeholders={{id}}
+aito.ordersEmpty = "尚無訂單使用此專案"
+aito.ordersTitle = "訂單"
+aito.projectLabel = "專案"
+aito.reuseFromOrder = "沿用訂單 #{{order}} 的檔案"  placeholders={{order}}
+aito.reuseFromOrderPlaceholder = "沿用其他訂單的檔案…"
+aito.saveTaskFirst = "請先儲存任務"
+aito.searchProjects = "搜尋專案…"
+aito.suggestionSameClient = "相同客戶"
+aito.suggestionSimilar = "標題相近"
+aito.unlink = "取消連結"
+codeChipLabel = "專案編號 {{code}}"  placeholders={{code}}
+colCode = "編號"
+colPrints = "列印"
+colStatus = "狀態"
+colTags = "標籤"
+colTitle = "標題"
+colUpdated = "更新時間"
+create = "建立"
+createTag = "建立「{{name}}」"  placeholders={{name}}
+createTitle = "新增專案"
+descriptionLabel = "描述"
+editHeader = "編輯標題、描述與標籤"
+empty = "尚無專案"
+emptySearch = "沒有專案符合此搜尋"
+files.addFiles = "新增檔案"
+files.byAuthor = "作者：{{name}}"  placeholders={{name}}
+files.chooseFiles = "選擇檔案"
+files.confirmDeleteItem = "刪除 {{name}} 及其所有版本？檔案將移至專案資源回收筒。"  placeholders={{name}}
+files.confirmDeleteRevision = "刪除 {{label}}？其檔案將移至專案資源回收筒。"  placeholders={{label}}
+files.confirmRemoveFile = "要從 {{label}} 中移除 {{name}} 嗎？檔案將移至專案資源回收筒。"  placeholders={{label}},{{name}}
+files.deleteItem = "刪除項目"
+files.deleteRevision = "刪除版本"
+files.derivedFrom = "衍生自 {{label}}"  placeholders={{label}}
+files.derivedFromLabel = "衍生自"
+files.derivedFromNone = "無"
+files.download = "下載"
+files.downloadAll = "全部下載（zip）"
+files.dropHint = "將檔案拖放到此處，或點擊選擇"
+files.duplicateWarning = "{{filename}} 與 {{revision}} 相同"  placeholders={{filename}},{{revision}}
+files.emptySection = "尚無項目"
+files.fileCount_one = "{{count}} 個檔案"  placeholders={{count}}
+files.fileCount_other = "{{count}} 個檔案"  placeholders={{count}}
+files.fork = "另存為新項目"
+files.forkNameLabel = "新項目名稱"
+files.frozen = "檔案已鎖定：此版本已列印或已交付"
+files.itemNameLabel = "項目名稱"
+files.newItem = "新增項目"
+files.newRevision = "新版本"
+files.notSliced = "未切片"
+files.noteLabel = "備註"
+files.notePlaceholder = "變更說明…"
+files.onlyPrintable = "專案只能包含 3MF 和 G-code 檔案"
+files.otherSections = "舊檔案"
+files.outdated = "已過時：基於 {{source}}，此後 {{newer}} 已核准"  placeholders={{newer}},{{source}}
+files.preview = "預覽"
+files.remove = "移除"
+files.removeFile = "移除 {{name}}"  placeholders={{name}}
+files.rename = "重新命名"
+files.saveFailed = "無法儲存"
+files.sectionDocs = "文件"
+files.sectionImpression = "列印"
+files.sectionModelisation = "建模"
+files.sectionScan = "掃描"
+files.sectionUsinage = "機械加工"
+files.sliced = "已切片"
+files.statusLabel = "狀態"
+files.statusObsolete = "已作廢"
+files.statusValide = "已核准"
+files.statusWip = "進行中"
+files.title = "檔案"
+files.uploadFailed = "上傳失敗"
+files.uploading = "上傳中…"
+filing.autoFileHint = "名為「P-0042_support.3mf」的檔案會直接進入專案 P-0042"
+filing.autoFileLabel = "將檔名含專案編號的上傳檔案自動歸檔"
+filing.autoItem = "自動（依每個檔名）"
+filing.copiedNote = "外部檔案會被複製，原始檔案保留原位"
+filing.fileCount_one = "{{count}} 個檔案"  placeholders={{count}}
+filing.fileCount_other = "{{count}} 個檔案"  placeholders={{count}}
+filing.filedToProject = "已歸入 {{code}} › {{item}} R{{revision}}"  placeholders={{code}},{{item}},{{revision}}
+filing.migrationFailures = "失敗"
+filing.migrationLastRun = "上次執行：{{files}}{{projects}}"  placeholders={{files}},{{projects}}
+filing.migrationLastRunFiles_one = "已移動 {{count}} 個檔案"  placeholders={{count}}
+filing.migrationLastRunFiles_other = "已移動 {{count}} 個檔案"  placeholders={{count}}
+filing.migrationLastRunProjects_one = "到 {{count}} 個專案"  placeholders={{count}}
+filing.migrationLastRunProjects_other = "到 {{count}} 個專案"  placeholders={{count}}
+filing.migrationNone = "沒有需要移動的內容"
+filing.migrationPending_one = "仍有 {{count}} 個專案有檔案待移動"  placeholders={{count}}
+filing.migrationPending_other = "仍有 {{count}} 個專案有檔案待移動"  placeholders={{count}}
+filing.migrationRunning = "正在移動 {{done}}/{{total}} — {{code}}"  placeholders={{code}},{{done}},{{total}}
+filing.migrationStart = "立即移動"
+filing.migrationTitle = "舊專案檔案"
+filing.move = "移動"
+filing.moveTitle = "移至專案"
+filing.moveToProject = "移至專案…"
+filing.moved_one = "已將 {{count}} 個檔案移至 {{code}}"  placeholders={{code}},{{count}}
+filing.moved_other = "已將 {{count}} 個檔案移至 {{code}}"  placeholders={{code}},{{count}}
+filing.newItem = "新增項目…"
+filing.newItemPlaceholder = "項目名稱"
+filing.searchProject = "搜尋專案…"
+filing.settingsTitle = "專案"
+filing.skipReason.alreadyInProject = "已在專案中"
+filing.skipReason.notFound = "找不到檔案"
+filing.skipReason.notOwner = "不是你的檔案"
+filing.skipReason.notPrintable = "不是 3MF/G-code 檔案"
+filing.skipReason.retry = "無法複製，請重試"
+filing.skipReason.sourceMissing = "磁碟上缺少檔案"
+filing.skipReason.trashed = "在垃圾桶中"
+filing.skippedWithReasons_one = "已略過 {{count}} 個檔案：{{reasons}}"  placeholders={{count}},{{reasons}}
+filing.skippedWithReasons_other = "已略過 {{count}} 個檔案：{{reasons}}"  placeholders={{count}},{{reasons}}
+filing.suggested = "建議"
+filing.targetItem = "項目"
+newProject = "新增專案"
+newTagBadge = "新"
+nextPage = "下一頁"
+noSuggestions = "暫無建議"
+pageRange = "第 {{from}}–{{to}} 筆，共 {{total}} 筆"  placeholders={{from}},{{total}},{{to}}
+prevPage = "上一頁"
+print.eventQueued = "{{label}} ×{{copies}} 已加入佇列"  placeholders={{copies}},{{label}}
+print.forWhichOrder = "這次列印屬於哪張訂單?"
+print.noOrder = "無(內部或測試列印)"
+print.noPrintFiles = "此專案中尚無列印檔案"
+print.ordersUnavailable = "無法載入訂單——目前只能不關聯訂單進行列印。"
+print.outdatedWarning = "基於 {{source}} — 此後已核准 {{newer}}"  placeholders={{newer}},{{source}}
+print.pickPrintFile = "選擇列印檔案"
+print.print = "列印"
+print.printCount_one = "已列印 {{count}} 次"  placeholders={{count}}
+print.printCount_other = "已列印 {{count}} 次"  placeholders={{count}}
+print.printFile = "列印 {{name}}"  placeholders={{name}}
+print.printed = "已列印 {{printed}}/{{target}}"  placeholders={{printed}},{{target}}
+print.printedNoTarget = "已列印 {{printed}}"  placeholders={{printed}}
+print.queued_one = "{{count}} 個在佇列中"  placeholders={{count}}
+print.queued_other = "{{count}} 個在佇列中"  placeholders={{count}}
+print.rejected_one = "{{count}} 個被拒"  placeholders={{count}}
+print.rejected_other = "{{count}} 個被拒"  placeholders={{count}}
+print.tickStep = "勾選"
+print.tickSuggestion = "所有要求的列印均已完成 — 勾選此步驟?"
+removeTag = "移除 {{name}}"  placeholders={{name}}
+reslice.action = "重新切片"
+reslice.dismiss = "關閉"
+reslice.done = "已建立 {{name}} R{{number}}"  placeholders={{name}},{{number}}
+reslice.failed = "切片失敗：{{detail}}"  placeholders={{detail}}
+reslice.jobLost = "切片狀態已遺失。請重新載入頁面，確認新版本是否已建立。"
+reslice.noPipelines = "沒有已儲存的流程管線。請在 設定 → 工作流程 → 管線 中建立。"
+reslice.pipeline = "流程管線"
+reslice.pipelinesUnavailable = "無法載入流程管線。"
+reslice.queueSkipped = "已建立 {{name}} R{{number}}：請從修訂版列印。"  placeholders={{name}},{{number}}
+reslice.running = "切片中… {{percent}}%"  placeholders={{percent}}
+reslice.runningNoPercent = "切片中…"
+reslice.slice = "切片"
+reslice.sliceAndQueue = "切片並加入佇列"
+reslice.source = "來源檔案"
+reslice.startFailed = "無法啟動切片"
+reslice.title = "重新切片 {{name}}"  placeholders={{name}}
+reslice.viaPipeline = "透過 {{name}}"  placeholders={{name}}
+reslice.warnings = "開始前請檢查"
+save = "儲存"
+saveFailed = "無法儲存專案"
+saved = "專案已儲存"
+searchPlaceholder = "依編號、標題、描述或標籤搜尋…"
+statusAll = "全部"
+statusFilterLabel = "狀態"
+subtitle = "每個零件、其檔案與歷程"
+suggestTags = "建議標籤"
+suggestionsLabel = "建議"
+tagModeAll = "所有標籤"
+tagModeAny = "任一標籤"
+tagSearchPlaceholder = "搜尋或建立標籤…"
+tagsFilterLabel = "標籤"
+tagsLabel = "標籤"
+title = "專案"
+titleLabel = "標題"
+viewGrid = "格狀檢視"
+viewTable = "表格檢視"
+
+--- projectsPdm parity against en
+de: missing=[] extra=[]
+en: missing=[] extra=[]
+es: missing=[] extra=[]
+fr: missing=[] extra=[]
+it: missing=[] extra=[]
+ja: missing=[] extra=[]
+ko: missing=[] extra=[]
+nl: missing=[] extra=[]
+ptBR: missing=[] extra=[]
+ru: missing=[] extra=[]
+sv: missing=[] extra=[]
+tr: missing=[] extra=[]
+uk: missing=[] extra=[]
+zhCN: missing=[] extra=[]
+zhTW: missing=[] extra=[]
+
+--- projects namespace key set (en) and parity
+addFiles
+collapseSubProjects
+color
+completed
+coverImageAlt
+coverImageLabel
+coverImageRemove
+coverImageReplace
+coverImageUpload
+create
+createFirst
+createFirstButton
+deleteConfirm
+deleteProject
+description
+descriptionPlaceholder
+done
+dueDate
+editProject
+expandSubProjects
+export
+exportAll
+failed
+failedParts
+files
+import
+importProject
+inQueue
+lastModified
+loading
+namePlaceholder
+newProject
+noCreatePermission
+noDeletePermission
+noEditPermission
+noExportPermission
+noImportPermission
+noPrintsYet
+noProjects
+noProjectsFiltered
+noProjectsFilteredHelp
+openExternalUrl
+parentHint
+parentLabel
+parentNone
+partOf
+parts
+partsPrinted
+plates
+printJobs
+prints
+priority
+priorityHigh
+priorityLow
+priorityNormal
+priorityUrgent
+projectName
+removeFile
+statusActive
+statusArchived
+statusCompleted
+subProjectCount
+subProjectsOf
+subtitle
+tagsLabel
+tagsPlaceholder
+targetParts
+targetPartsHelp
+targetPartsPlaceholder
+targetPlates
+targetPlatesHelp
+targetPlatesPlaceholder
+targetSets
+targetSetsHelp
+targetSetsPlaceholder
+title
+toast.created
+toast.deleted
+toast.exported
+toast.importFailed
+toast.imported
+toast.multipleImported
+toast.updated
+urlInvalid
+urlLabel
+urlPlaceholder
+viewDetails
+de: missing=[]
+en: missing=[]
+es: missing=[]
+fr: missing=[]
+it: missing=[]
+ja: missing=[]
+ko: missing=[]
+nl: missing=[]
+ptBR: missing=[]
+ru: missing=[]
+sv: missing=[]
+tr: missing=[]
+uk: missing=[]
+zhCN: missing=[]
+zhTW: missing=[]
+
+### stderr:
+

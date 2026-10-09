@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.api.routes.library import to_absolute_path
 from backend.app.models.library import LibraryFile, LibraryFolder
 from backend.app.models.project import Project
-from backend.app.models.project_item import ProjectItem
+from backend.app.models.project_item import ProjectItem, ProjectRevision
 from backend.app.schemas.project_files import ProjectSuggestionForFile
 from backend.app.services import project_files
 from backend.app.services.project_codes import format_project_code
@@ -204,7 +204,37 @@ async def move_library_files_to_project(
             raise ValueError(exc.detail) from exc
 
     # Classify while the caller's instances are loaded: commits and rollbacks below expire them.
-    groups: dict[tuple[str, str], tuple[str, list[_Candidate]]] = {}
+    groups = _classify_files(result, files, target, new_item_name)
+
+    for (section, key), (name, candidates) in groups.items():
+        project, stored = await _store_group(
+            db,
+            result,
+            project,
+            project_id,
+            section,
+            key,
+            name,
+            candidates,
+            target_item_id=target_item_id,
+            user_id=user_id,
+        )
+        if stored is None:
+            continue
+        _unlink_old_bytes([c.src for c in stored.candidates if not c.is_external])
+        for candidate, source in zip(stored.candidates, stored.sources, strict=True):
+            _add_result_entry(result, candidate, source, section, stored)
+    return result
+
+
+_Groups = dict[tuple[str, str], tuple[str, list[_Candidate]]]
+
+
+def _classify_files(
+    result: MoveToProjectResult, files: list[LibraryFile], target: ProjectItem | None, new_item_name: str | None
+) -> _Groups:
+    """Skip what cannot go (into ``result``); group the rest by ``(section, name_key)`` -> ``(item name, files)``."""
+    groups: _Groups = {}
     for file in files:
         file_id, filename = file.id, file.filename
         if file.revision_id is not None:
@@ -228,71 +258,120 @@ async def move_library_files_to_project(
             name = new_item_name if new_item_name is not None else item_name_for_filename(filename)
         key = (section, target.name_key if target is not None else project_files._name_key(name))
         groups.setdefault(key, (name, []))[1].append(candidate)
+    return groups
 
-    for (section, key), (name, candidates) in groups.items():
-        pending = candidates  # what a failure below reports as skipped
-        try:
-            if target_item_id is not None:
-                item = await project_files._fresh_item(db, target_item_id)
-            else:
-                item, project = await find_or_create_item(db, project, section, key, name, user_id)
-            item_id_now, item_name = item.id, item.name
-            rows = await _fresh_rows(db, [c.file_id for c in candidates])
-            sources: list[RevisionSource] = []
-            stored: list[_Candidate] = []
-            for candidate in candidates:
-                row = rows.get(candidate.file_id)
-                if row is not None and row.deleted_at is not None:
-                    _skip(result, candidate.file_id, "trashed", "file is in the trash")
-                    continue
-                if row is None or row.file_path != candidate.file_path or row.revision_id is not None:
-                    _skip(result, candidate.file_id, "conflict", "file changed while it was being moved")
-                    continue
-                sources.append(
-                    RevisionSource(
-                        path=candidate.src,
-                        filename=candidate.filename,
-                        reuse_row=None if candidate.is_external else row,
-                    )
-                )
-                stored.append(candidate)
-            pending = stored
-            if not sources:
-                continue
-            revision = await project_files.add_revision_from_sources(
-                db, project, item, sources, note=None, user_id=user_id
-            )
-        except (OSError, project_files.ProjectFilesError) as exc:
-            # Only a copy error or a genuine 409 race is a per-group skip; anything else
-            # (e.g. the target item deleted meanwhile, 404) is the whole call's error.
-            if isinstance(exc, project_files.ProjectFilesError) and exc.status_code != 409:
-                raise
-            code = "copy_failed" if isinstance(exc, OSError) else "conflict"
-            reason = str(exc.detail if isinstance(exc, project_files.ProjectFilesError) else exc)
-            logger.warning("Moving files into project %s failed for item %r: %s", project_id, name, reason)
-            for candidate in pending:
-                _skip(result, candidate.file_id, code, reason)
-            refreshed = await db.get(Project, project_id)  # the rollback expired it
-            if refreshed is None:
-                raise project_files.ProjectFilesError(404, "Project not found") from exc
-            project = refreshed
+
+@dataclass
+class _StoredGroup:
+    """One group stored as a revision: its item, the revision and the files that went in."""
+
+    item_id: int
+    item_name: str
+    revision: ProjectRevision
+    candidates: list[_Candidate]
+    sources: list[RevisionSource]
+
+
+def _group_sources(
+    result: MoveToProjectResult, candidates: list[_Candidate], rows: dict[int, LibraryFile]
+) -> tuple[list[RevisionSource], list[_Candidate]]:
+    """The revision sources for the candidates whose rows are unchanged; the others are skipped."""
+    sources: list[RevisionSource] = []
+    stored: list[_Candidate] = []
+    for candidate in candidates:
+        row = rows.get(candidate.file_id)
+        if row is not None and row.deleted_at is not None:
+            _skip(result, candidate.file_id, "trashed", "file is in the trash")
             continue
-        _unlink_old_bytes([c.src for c in stored if not c.is_external])
-        for candidate, source in zip(stored, sources, strict=True):
-            entry = {
-                "file_id": source.row.id,
-                "filename": source.row.filename,
-                "section": section,
-                "item_id": item_id_now,
-                "item_name": item_name,
-                "revision_id": revision.id,
-                "revision_number": revision.number,
-            }
-            if candidate.is_external:
-                result.copied.append({**entry, "source_file_id": candidate.file_id})
-            else:
-                result.moved.append(entry)
-    return result
+        if row is None or row.file_path != candidate.file_path or row.revision_id is not None:
+            _skip(result, candidate.file_id, "conflict", "file changed while it was being moved")
+            continue
+        sources.append(
+            RevisionSource(
+                path=candidate.src,
+                filename=candidate.filename,
+                reuse_row=None if candidate.is_external else row,
+            )
+        )
+        stored.append(candidate)
+    return sources, stored
+
+
+async def _store_group(
+    db: AsyncSession,
+    result: MoveToProjectResult,
+    project: Project,
+    project_id: int,
+    section: str,
+    key: str,
+    name: str,
+    candidates: list[_Candidate],
+    *,
+    target_item_id: int | None,
+    user_id: int | None,
+) -> tuple[Project, _StoredGroup | None]:
+    """Store one group as a revision (committed). None when nothing was stored: every file
+    skipped, or the group failed (``copy_failed`` / ``conflict``, rolled back). Returns the
+    project too, re-read if a commit or rollback replaced it."""
+    pending = candidates  # what a failure below reports as skipped
+    try:
+        if target_item_id is not None:
+            item = await project_files._fresh_item(db, target_item_id)
+        else:
+            item, project = await find_or_create_item(db, project, section, key, name, user_id)
+        item_id_now, item_name = item.id, item.name
+        rows = await _fresh_rows(db, [c.file_id for c in candidates])
+        sources, stored = _group_sources(result, candidates, rows)
+        pending = stored
+        if not sources:
+            return project, None
+        revision = await project_files.add_revision_from_sources(db, project, item, sources, note=None, user_id=user_id)
+    except (OSError, project_files.ProjectFilesError) as exc:
+        # Only a copy error or a genuine 409 race is a per-group skip; anything else
+        # (e.g. the target item deleted meanwhile, 404) is the whole call's error.
+        if isinstance(exc, project_files.ProjectFilesError) and exc.status_code != 409:
+            raise
+        return await _skip_failed_group(db, result, project_id, name, pending, exc), None
+    return project, _StoredGroup(item_id_now, item_name, revision, stored, sources)
+
+
+async def _skip_failed_group(
+    db: AsyncSession,
+    result: MoveToProjectResult,
+    project_id: int,
+    name: str,
+    pending: list[_Candidate],
+    exc: OSError | project_files.ProjectFilesError,
+) -> Project:
+    """Report a failed group's pending files as skipped; returns the project re-read after the rollback."""
+    code = "copy_failed" if isinstance(exc, OSError) else "conflict"
+    reason = str(exc.detail if isinstance(exc, project_files.ProjectFilesError) else exc)
+    logger.warning("Moving files into project %s failed for item %r: %s", project_id, name, reason)
+    for candidate in pending:
+        _skip(result, candidate.file_id, code, reason)
+    refreshed = await db.get(Project, project_id)  # the rollback expired it
+    if refreshed is None:
+        raise project_files.ProjectFilesError(404, "Project not found") from exc
+    return refreshed
+
+
+def _add_result_entry(
+    result: MoveToProjectResult, candidate: _Candidate, source: RevisionSource, section: str, stored: _StoredGroup
+) -> None:
+    """A moved (managed, same row) or copied (external, new row) entry for one stored file."""
+    entry = {
+        "file_id": source.row.id,
+        "filename": source.row.filename,
+        "section": section,
+        "item_id": stored.item_id,
+        "item_name": stored.item_name,
+        "revision_id": stored.revision.id,
+        "revision_number": stored.revision.number,
+    }
+    if candidate.is_external:
+        result.copied.append({**entry, "source_file_id": candidate.file_id})
+    else:
+        result.moved.append(entry)
 
 
 # --- project codes in filenames and project suggestions ----------------------
@@ -536,27 +615,19 @@ async def record_revision_added(db: AsyncSession, project_id: int, entry: dict, 
     ``revision_number`` (a ``MoveToProjectResult`` entry has them). Commits; a failure is
     logged and rolled back (expiring the session's instances) and only costs the event.
     Shared by auto-filing, the legacy migration and Re-trancher."""
-    from backend.app.models.user import User
     from backend.app.services import aito_project_links as aito_links
 
-    try:
-        user = await db.get(User, user_id) if user_id is not None else None
-        actor = user.username if user is not None else None
-        async with db.begin_nested():
-            order_ids = await aito_links.record_on_linked_orders(
-                db,
-                project_id,
-                "project.revision_added",
-                actor=actor,
-                subject_label=f"{entry['item_name']} R{entry['revision_number']}",
-                detail={"section": entry["section"], "item_id": entry["item_id"], "revision_id": entry["revision_id"]},
-            )
-        await db.commit()
-    except Exception:
-        logger.warning("project.revision_added event failed for project %s", project_id, exc_info=True)
-        await db.rollback()
-        return
-    await aito_links.broadcast_orders_changed(order_ids, actor)
+    await aito_links.record_and_broadcast(
+        db,
+        project_id,
+        "project.revision_added",
+        actor_user_id=user_id,
+        describe=lambda: (
+            f"{entry['item_name']} R{entry['revision_number']}",
+            {"section": entry["section"], "item_id": entry["item_id"], "revision_id": entry["revision_id"]},
+        ),
+        log=logger,
+    )
 
 
 # --- legacy migration: linked File Manager files into project trees ----------

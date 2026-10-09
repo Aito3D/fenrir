@@ -176,9 +176,11 @@ async def test_rename_waits_for_a_running_upload_then_moves_its_files(sessions, 
     upload_task = asyncio.create_task(do_upload())
     await streaming.wait()
     rename_task = asyncio.create_task(do_rename())
-    for _ in range(20):
-        await asyncio.sleep(0.01)
-    assert not rename_task.done(), "rename must wait for the upload holding the item lock"
+    # The upload is parked on ``release`` while holding the item lock, so the rename
+    # can only still be pending here because it is blocked on that lock.
+    _done, pending = await asyncio.wait({rename_task}, timeout=0.2)
+    assert rename_task in pending, "rename must wait for the upload holding the item lock"
+    assert not upload_task.done()  # the lock holder is still parked on the event
     release.set()
     await upload_task
     renamed = await rename_task

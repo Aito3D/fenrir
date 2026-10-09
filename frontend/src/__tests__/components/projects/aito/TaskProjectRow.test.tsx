@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, createEvent, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { useQuery } from '@tanstack/react-query';
@@ -358,5 +358,106 @@ describe('TaskStepList section summaries', () => {
     const line = screen.getByTestId('step-files-modelisation');
     expect(line).toHaveTextContent('Support R3 · Approved · Clip R1 · In progress');
     expect(within(line).getByTitle('Support R3 · Approved · Clip R1 · In progress')).toBeInTheDocument();
+  });
+});
+
+/** True when a native `type` event fired by `fire` bubbles up to the document
+ *  (i.e. no handler on the way stopped its propagation). */
+const reachesDocument = (type: 'dragover' | 'drop', fire: () => void) => {
+  let reached = false;
+  const listener = () => {
+    reached = true;
+  };
+  document.addEventListener(type, listener);
+  try {
+    fire();
+  } finally {
+    document.removeEventListener(type, listener);
+  }
+  return reached;
+};
+
+describe('task file drop zone', () => {
+  const files = (...names: string[]) => ({ dataTransfer: { files: names.map((n) => new File(['x'], n)), types: ['Files'] } });
+  const linkedZone = async () => {
+    links = linked();
+    renderRow();
+    await screen.findByRole('link', { name: 'Drone bracket' });
+    return screen.getByTestId(`task-drop-${TASK}`);
+  };
+
+  it('claims a file drag, outlines the task with a title, and keeps it while the drag moves inside', async () => {
+    const zone = await linkedZone();
+    expect(zone).not.toHaveAttribute('title');
+    let notPrevented = true;
+    expect(reachesDocument('dragover', () => (notPrevented = fireEvent.dragOver(zone, files())))).toBe(true);
+    expect(notPrevented).toBe(false);
+    expect(zone.className).toContain('outline-dashed');
+    expect(zone).toHaveAttribute('title', 'Drop files to add them to the project');
+    // jsdom has no DragEvent, so `relatedTarget` is set on the event by hand.
+    const leaveInside = createEvent.dragLeave(zone);
+    Object.defineProperty(leaveInside, 'relatedTarget', { value: zone.firstElementChild });
+    fireEvent(zone, leaveInside);
+    expect(zone.className).toContain('outline-dashed');
+    fireEvent.dragLeave(zone, { relatedTarget: null });
+    expect(zone.className).not.toContain('outline-dashed');
+    expect(zone).not.toHaveAttribute('title');
+  });
+
+  it('ignores a non-file drag entirely: not claimed, no outline, nothing sent', async () => {
+    const zone = await linkedZone();
+    expect(fireEvent.dragOver(zone, { dataTransfer: { types: ['text/plain'] } })).toBe(true);
+    expect(zone.className).not.toContain('outline-dashed');
+    let notPrevented = false;
+    expect(
+      reachesDocument('drop', () => (notPrevented = fireEvent.drop(zone, { dataTransfer: { files: [], types: ['text/plain'] } }))),
+    ).toBe(true);
+    expect(notPrevented).toBe(true);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(dropped).toBeNull();
+  });
+
+  it('a file drop is claimed, stops at the task, and clears the outline', async () => {
+    const zone = await linkedZone();
+    fireEvent.dragOver(zone, files());
+    let notPrevented = true;
+    expect(reachesDocument('drop', () => (notPrevented = fireEvent.drop(zone, files('support.3mf'))))).toBe(false);
+    expect(notPrevented).toBe(false);
+    expect(zone.className).not.toContain('outline-dashed');
+    await waitFor(() => expect(dropped).toEqual([String(TASK)]));
+  });
+
+  it('an empty file drop on an unlinked task does nothing, not even the link hint', async () => {
+    renderRow();
+    await screen.findByRole('button', { name: 'New project' });
+    const zone = screen.getByTestId(`task-drop-${TASK}`);
+    expect(fireEvent.drop(zone, { dataTransfer: { files: [], types: ['Files'] } })).toBe(false);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByText('Link a project to this task first')).not.toBeInTheDocument();
+  });
+
+  it('an unsaved task claims a file drag but neither outlines nor takes it', async () => {
+    renderRow(task({ id: null }));
+    const zone = (await screen.findByText('Save the task first')).closest('div[class*="rounded-[.6rem]"]') as HTMLElement;
+    expect(zone).not.toBeNull();
+    expect(fireEvent.dragOver(zone, files())).toBe(false);
+    expect(zone.className).not.toContain('outline-dashed');
+    expect(fireEvent.drop(zone, files('support.3mf'))).toBe(false);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByText('Link a project to this task first')).not.toBeInTheDocument();
+    expect(dropped).toBeNull();
+  });
+
+  it('a failed upload that is not an Error, or has no message, toasts the generic failure', async () => {
+    const spy = vi.spyOn(api, 'dropFilesOnTask').mockRejectedValueOnce('nope').mockRejectedValueOnce(new Error(''));
+    const zone = await linkedZone();
+    fireEvent.drop(zone, files('support.3mf'));
+    expect(await screen.findByText('Upload failed')).toBeInTheDocument();
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    fireEvent.drop(zone, files('support.3mf'));
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getAllByText('Upload failed')).toHaveLength(2));
+    expect(dropped).toBeNull();
+    spy.mockRestore();
   });
 });

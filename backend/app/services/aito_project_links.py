@@ -12,7 +12,7 @@ Functions flush, never commit — the route owns the transaction.
 
 import logging
 from collections import defaultdict
-from collections.abc import Collection, Iterable
+from collections.abc import Callable, Collection, Iterable
 from difflib import SequenceMatcher
 
 from fastapi import UploadFile
@@ -95,6 +95,12 @@ async def link_task(db: AsyncSession, task: AitoTask, project_id: int | None, *,
         await _clear_deliveries(db, task.id)
     task.linked_project_id = project_id
     await db.flush()
+    # The flush holds the write lock: a project deleted since it was read would
+    # leave a dangling link (no FK), so refuse it; the caller rolls back.
+    if project_id is not None and (
+        (await db.execute(select(Project.id).where(Project.id == project_id))).first() is None
+    ):
+        raise LinkError(404, "Project not found")
 
     if project is not None:
         kind, detail = "task.project_linked", _project_detail(project.id, project)
@@ -233,6 +239,12 @@ async def set_deliveries(
         )
     db.add_all(AitoTaskDelivery(task_id=task.id, revision_id=rid, created_by_id=user_id) for rid in added)
     await db.flush()
+    # a revision may have been deleted since the validation above; the write lock is held now
+    if added:
+        still_there = set((await db.execute(select(ProjectRevision.id).where(ProjectRevision.id.in_(added)))).scalars())
+        gone = [rid for rid in added if rid not in still_there]
+        if gone:
+            raise LinkError(409, "Revisions deleted meanwhile: " + ", ".join(str(rid) for rid in gone))
 
     removed_bundles = await _revision_bundles(db, removed)
 
@@ -462,6 +474,60 @@ async def broadcast_orders_changed(order_ids: Iterable[int], actor: str | None) 
             logger.warning("aito_changed broadcast failed for order %s", order_id, exc_info=True)
 
 
+async def record_and_broadcast(
+    db: AsyncSession,
+    project_id: int,
+    kind: str,
+    *,
+    subject_label: str | None = None,
+    detail: dict | None = None,
+    describe: Callable[[], tuple[str | None, dict | None]] | None = None,
+    actor: str | None = None,
+    actor_user_id: int | None = None,
+    exclude_order_ids: Collection[int] = (),
+    broadcast: bool = True,
+    log: logging.Logger = logger,
+    failure_label: str = "event",
+) -> list[int] | None:
+    """Best-effort ``kind`` event on the project's linked orders (minus
+    ``exclude_order_ids``) inside a savepoint, then a commit, then (with
+    ``broadcast``) an ``aito_changed`` broadcast to the orders written to.
+
+    ``actor_user_id``, when given, replaces ``actor`` with that user's username,
+    looked up inside the guarded block; ``describe``, when given, builds
+    ``(subject_label, detail)`` inside the savepoint, so a failure building them
+    is handled like any other. On any failure up to the commit, logs a
+    warning on ``log`` ("<kind> <failure_label> failed for project <id>"), rolls
+    back (a failing rollback propagates) and returns ``None`` without
+    broadcasting; otherwise returns the order ids written to."""
+    try:
+        if actor_user_id is not None:
+            from backend.app.models.user import User
+
+            user = await db.get(User, actor_user_id)
+            actor = user.username if user is not None else None
+        async with db.begin_nested():
+            if describe is not None:
+                subject_label, detail = describe()
+            order_ids = await record_on_linked_orders(
+                db,
+                project_id,
+                kind,
+                actor=actor,
+                subject_label=subject_label,
+                detail=detail,
+                exclude_order_ids=exclude_order_ids,
+            )
+        await db.commit()
+    except Exception:
+        log.warning("%s %s failed for project %s", kind, failure_label, project_id, exc_info=True)
+        await db.rollback()
+        return None
+    if broadcast:
+        await broadcast_orders_changed(order_ids, actor)
+    return order_ids
+
+
 # --- file drops (spec §4.3) -------------------------------------------------
 
 
@@ -507,23 +573,18 @@ async def _fan_out_revision(
     dropping order gets ``project.files_dropped``). Best effort, like the
     project-page upload hook: the revision is already committed, so a failure
     only costs the events."""
-    try:
-        async with db.begin_nested():
-            order_ids = await record_on_linked_orders(
-                db,
-                project_id,
-                "project.revision_added",
-                actor=actor,
-                subject_label=subject_label,
-                detail=revision_detail,
-                exclude_order_ids={dropping_order_id},
-            )
-        await db.commit()
-        return order_ids
-    except Exception:
-        logger.warning("project.revision_added fan-out failed for project %s", project_id, exc_info=True)
-        await db.rollback()
-        return []
+    order_ids = await record_and_broadcast(
+        db,
+        project_id,
+        "project.revision_added",
+        actor=actor,
+        subject_label=subject_label,
+        detail=revision_detail,
+        exclude_order_ids={dropping_order_id},
+        broadcast=False,
+        failure_label="fan-out",
+    )
+    return order_ids if order_ids is not None else []
 
 
 async def drop_files_on_task(

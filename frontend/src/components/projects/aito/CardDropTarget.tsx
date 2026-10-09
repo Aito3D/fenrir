@@ -1,14 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import type { DragEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Loader2 } from 'lucide-react';
 import { api } from '../../../api/client';
 import type { LinkedProjectRef } from '../../../api/client';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useToast } from '../../../contexts/ToastContext';
-import { filesFromDataTransfer } from '../files/fileDrop';
+import { useFileDropZone } from '../files/useFileDropZone';
 import { ProjectCodeChip } from '../ProjectCodeChip';
-import { inZone, isFileDrag, useAcceptsPrintable, useUploadToTask } from './dropFiles';
+import { useAcceptsPrintable, useUploadToTask } from './dropFiles';
 
 interface Choice {
   taskId: number;
@@ -36,7 +35,6 @@ export function useCardDrop({
   const { showToast } = useToast();
   const upload = useUploadToTask();
   const acceptsPrintable = useAcceptsPrintable();
-  const [dragOver, setDragOver] = useState(false);
   const [busy, setBusy] = useState(false);
   const [choices, setChoices] = useState<Choice[] | null>(null);
   const chooserRef = useRef<HTMLDivElement>(null);
@@ -94,24 +92,13 @@ export function useCardDrop({
     );
   };
 
-  const onDragOver = (e: DragEvent) => {
-    if (!isFileDrag(e.dataTransfer)) return;
-    // Claim every file drag over the card, or the browser opens the file.
-    e.preventDefault();
-    if (canDrop && inZone(e)) setDragOver(true);
-  };
-  const onDragLeave = (e: DragEvent) => {
-    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragOver(false);
-  };
-  const onDrop = (e: DragEvent) => {
-    if (!isFileDrag(e.dataTransfer)) return;
-    e.preventDefault();
-    e.stopPropagation();
-    setDragOver(false);
-    if (!canDrop || !inZone(e)) return;
-    const files = filesFromDataTransfer(e.dataTransfer);
-    if (files.length) void handleDrop(files);
-  };
+  // Claims every file drag over the card, or the browser opens the file.
+  const { dragOver, onDragOver, onDragLeave, onDrop } = useFileDropZone({
+    canDrop,
+    fileDragsOnly: true,
+    stopPropagation: 'drop',
+    onFiles: handleDrop,
+  });
 
   const overlay = (
     <>

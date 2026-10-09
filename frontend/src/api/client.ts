@@ -293,6 +293,29 @@ async function uploadSpoolsCsv<T>(file: File, dryRun: boolean): Promise<T> {
   return response.json();
 }
 
+/** `Authorization: Bearer …` when a token is set, otherwise no headers. For the
+ *  raw fetches that bypass `request()` (and so must not force a Content-Type). */
+function bearerAuthHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {};
+  if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+  return headers;
+}
+
+/** Throw `detail || HTTP <status>` for a non-OK response (a non-JSON body
+ *  falls back to the status). */
+async function throwDetailOrStatus(response: Response): Promise<never> {
+  const error = await response.json().catch(() => ({}));
+  throw new Error(error.detail || `HTTP ${response.status}`);
+}
+
+/** POST a multipart body (the project upload methods). No Content-Type is set
+ *  so the browser adds the form-data boundary. */
+async function postFormData<T>(path: string, formData: FormData): Promise<T> {
+  const response = await fetch(`${API_BASE}${path}`, { method: 'POST', headers: bearerAuthHeaders(), body: formData });
+  if (!response.ok) await throwDetailOrStatus(response);
+  return response.json();
+}
+
 // Camera diagnostic result (#1395 follow-up). Returned by
 // POST /printers/{id}/camera/diagnose; the frontend modal renders one
 // row per stage and looks up the summary code in i18n for the user-
@@ -9140,14 +9163,7 @@ export const api = {
   dropFilesOnTask: async (taskId: number, files: File[]): Promise<DropFilesResponse> => {
     const formData = new FormData();
     files.forEach((file) => formData.append('files', file));
-    const headers: Record<string, string> = {};
-    if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
-    const response = await fetch(`${API_BASE}/aito/tasks/${taskId}/files`, { method: 'POST', headers, body: formData });
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      throw new Error(error.detail || `HTTP ${response.status}`);
-    }
-    return response.json();
+    return postFormData<DropFilesResponse>(`/aito/tasks/${taskId}/files`, formData);
   },
   getProjectOrders: (projectId: number) => request<ProjectOrdersResponse>(`/projects/${projectId}/orders`),
   getAitoTasks: (projectId: number) => request<AitoTask[]>(`/aito/${projectId}/tasks`),
@@ -9549,30 +9565,15 @@ export const api = {
     files.forEach((file) => formData.append('files', file));
     if (opts.note) formData.append('note', opts.note);
     if (opts.derivedFromId !== undefined) formData.append('derived_from_id', String(opts.derivedFromId));
-    const headers: Record<string, string> = {};
-    if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
-    const response = await fetch(`${API_BASE}/projects/items/${itemId}/revisions`, { method: 'POST', headers, body: formData });
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      throw new Error(error.detail || `HTTP ${response.status}`);
-    }
-    return response.json();
+    return postFormData(`/projects/items/${itemId}/revisions`, formData);
   },
   addProjectRevisionFiles: async (
     revisionId: number,
     files: File[],
-
   ): Promise<{ warnings: DuplicateWarning[] }> => {
     const formData = new FormData();
     files.forEach((file) => formData.append('files', file));
-    const headers: Record<string, string> = {};
-    if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
-    const response = await fetch(`${API_BASE}/projects/revisions/${revisionId}/files`, { method: 'POST', headers, body: formData });
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      throw new Error(error.detail || `HTTP ${response.status}`);
-    }
-    return response.json();
+    return postFormData(`/projects/revisions/${revisionId}/files`, formData);
   },
   removeProjectRevisionFile: (revisionId: number, fileId: number) =>
     request<void>(`/projects/revisions/${revisionId}/files/${fileId}`, { method: 'DELETE' }),
@@ -9583,14 +9584,10 @@ export const api = {
     request<ProjectRevisionOut>(`/projects/revisions/${revisionId}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteProjectRevision: (revisionId: number) => request<void>(`/projects/revisions/${revisionId}`, { method: 'DELETE' }),
   downloadProjectRevision: async (revisionId: number, fileId?: number, filename?: string): Promise<void> => {
-    const headers: Record<string, string> = {};
-    if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+    const headers = bearerAuthHeaders();
     const query = fileId !== undefined ? `?file_id=${fileId}` : '';
     const response = await fetch(`${API_BASE}/projects/revisions/${revisionId}/download${query}`, { headers });
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      throw new Error(error.detail || `HTTP ${response.status}`);
-    }
+    if (!response.ok) await throwDetailOrStatus(response);
     const disposition = response.headers.get('Content-Disposition');
     const downloadFilename = parseContentDispositionFilename(disposition) || filename || `revision_${revisionId}`;
     const blob = await response.blob();

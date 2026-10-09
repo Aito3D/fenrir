@@ -61,6 +61,11 @@ beforeEach(() => {
       return HttpResponse.json({ id: 99, section: 'impression', name: body.name, name_key: body.name.toLowerCase(), forked_from: null, revisions: [] }, { status: 201 });
     }),
     http.get('/api/v1/projects/7/tree', () => HttpResponse.json(treeBody)),
+    http.patch('/api/v1/projects/items/:id', async ({ request, params }) => {
+      const body = (await request.json()) as { name: string };
+      calls.push(`rename:${params.id}`);
+      return HttpResponse.json({ id: Number(params.id), section: 'impression', name: body.name, name_key: body.name.toLowerCase(), forked_from: null, revisions: [] });
+    }),
     http.patch('/api/v1/projects/revisions/:id', async ({ request, params }) => {
       patched = { url: String(params.id), body: await request.json() };
       return HttpResponse.json(rev({ id: Number(params.id) }));
@@ -317,6 +322,25 @@ describe('ProjectFilesPanel', () => {
     expect(within(row).getByRole('button', { name: 'New revision' })).toBeEnabled();
   });
 
+  it('a busy item still highlights under a drag, but takes no drop until the upload ends', async () => {
+    let release!: () => void;
+    holdUpload = new Promise<void>((r) => { release = r; });
+    render(<ProjectFilesPanel projectId={7} />);
+    await screen.findByText('Support');
+    await userEvent.upload(screen.getByTestId('new-revision-input-20'), new File(['x'], 'b.3mf'));
+    const row = screen.getByRole('button', { name: /Support$/ }).closest('li')!;
+    expect(await within(row).findByText('Uploading…')).toBeInTheDocument();
+    fireEvent.dragOver(row);
+    expect(row.className).toContain('border-bambu-green');
+    drop(row, 'again.3mf');
+    expect(row.className).not.toContain('border-bambu-green');
+    expect(calls).toEqual(['upload:20']);
+    release();
+    await waitFor(() => expect(within(row).queryByText('Uploading…')).not.toBeInTheDocument());
+    drop(row, 'again.3mf');
+    await waitFor(() => expect(calls).toEqual(['upload:20', 'upload:20']));
+  });
+
   it('shows the upload failure toast', async () => {
     failUpload = true;
     render(<ProjectFilesPanel projectId={7} />);
@@ -418,6 +442,167 @@ describe('ProjectFilesPanel', () => {
       render(<ProjectFilesPanel projectId={7} />);
       await userEvent.click(await screen.findByRole('button', { name: /Support X1C$/ }));
       expect(within(screen.getByTestId('revision-3')).getByText('via H2D PETG')).toBeInTheDocument();
+    });
+  });
+  describe('server refusals', () => {
+    const fail = (method: 'post' | 'patch' | 'delete' | 'get', path: string, status: number, detail: string) =>
+      server.use(http[method](path, () => HttpResponse.json({ detail }, { status })));
+    const rowOf = (name: RegExp) => screen.getByRole('button', { name }).closest('li')!;
+
+    it('toasts a 413 upload refusal with the server detail and frees the item again', async () => {
+      fail('post', '/api/v1/projects/items/:id/revisions', 413, 'Upload exceeds the maximum size of 1024 bytes');
+      render(<ProjectFilesPanel projectId={7} />);
+      await screen.findByText('Support');
+      await userEvent.upload(screen.getByTestId('new-revision-input-20'), new File(['x'], 'big.3mf'));
+      expect(await screen.findByText('Upload failed: Upload exceeds the maximum size of 1024 bytes')).toBeInTheDocument();
+      const row = rowOf(/Support$/);
+      await waitFor(() => expect(within(row).queryByText('Uploading…')).not.toBeInTheDocument());
+      expect(within(row).getByRole('button', { name: 'New revision' })).toBeEnabled();
+      expect(within(row).getByText(/R2 · Approved/)).toBeInTheDocument();
+    });
+
+    it('toasts a 4xx upload refusal, and falls back to the status code without a detail', async () => {
+      fail('post', '/api/v1/projects/items/:id/revisions', 400, 'Unsupported file');
+      render(<ProjectFilesPanel projectId={7} />);
+      await screen.findByText('Support');
+      await userEvent.upload(screen.getByTestId('new-revision-input-20'), new File(['x'], 'a.3mf'));
+      expect(await screen.findByText('Upload failed: Unsupported file')).toBeInTheDocument();
+
+      server.use(http.post('/api/v1/projects/items/:id/revisions', () => new HttpResponse(null, { status: 422 })));
+      await userEvent.upload(screen.getByTestId('new-revision-input-20'), new File(['x'], 'b.3mf'));
+      expect(await screen.findByText('Upload failed: HTTP 422')).toBeInTheDocument();
+    });
+
+    it('toasts a failed add-files and keeps the revision as it was', async () => {
+      fail('post', '/api/v1/projects/revisions/:id/files', 409, 'Revision is frozen');
+      render(<ProjectFilesPanel projectId={7} />);
+      await userEvent.click(await screen.findByRole('button', { name: /Gabarit$/ }));
+      await userEvent.upload(screen.getByTestId('add-files-input-4'), new File(['x'], 'extra.3mf'));
+      expect(await screen.findByText('Upload failed: Revision is frozen')).toBeInTheDocument();
+      expect(within(screen.getByTestId('revision-4')).getAllByRole('listitem')).toHaveLength(2);
+    });
+
+    it('keeps the old name when a rename hits a 409 name conflict', async () => {
+      fail('patch', '/api/v1/projects/items/:id', 409, 'An item with this name already exists');
+      render(<ProjectFilesPanel projectId={7} />);
+      await screen.findByText('Support');
+      await userEvent.click(within(rowOf(/Support$/)).getByRole('button', { name: 'Rename' }));
+      const input = screen.getByRole('textbox', { name: 'Rename' });
+      await userEvent.clear(input);
+      await userEvent.type(input, 'Gabarit{Enter}');
+      expect(await screen.findByText('Could not save: An item with this name already exists')).toBeInTheDocument();
+      expect(screen.queryByRole('textbox', { name: 'Rename' })).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Support$/ })).toBeInTheDocument();
+      expect(screen.getAllByRole('button', { name: /Gabarit$/ })).toHaveLength(1);
+    });
+
+    it('keeps the item when deleting it is refused, after the confirmation', async () => {
+      fail('delete', '/api/v1/projects/items/:id', 409, 'Item has used revisions');
+      render(<ProjectFilesPanel projectId={7} />);
+      await screen.findByText('Support');
+      await userEvent.click(within(rowOf(/Support$/)).getByRole('button', { name: 'Delete item' }));
+      expect(screen.getByText('Delete Support and all its revisions? Files move to the project trash.')).toBeInTheDocument();
+      await userEvent.click(screen.getByText('Delete item', { selector: 'button.bg-red-500, button.bg-red-500 *' }));
+      expect(await screen.findByText('Could not save: Item has used revisions')).toBeInTheDocument();
+      expect(screen.queryByText(/and all its revisions/)).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Support$/ })).toBeInTheDocument();
+    });
+
+    it('keeps the revision when deleting it is refused', async () => {
+      fail('delete', '/api/v1/projects/revisions/:id', 409, 'Revision is in use');
+      render(<ProjectFilesPanel projectId={7} />);
+      await userEvent.click(await screen.findByRole('button', { name: /Gabarit$/ }));
+      const block = screen.getByTestId('revision-4');
+      await userEvent.click(within(block).getByRole('button', { name: 'Delete revision' }));
+      expect(screen.getByText('Delete Gabarit R1? Its files move to the project trash.')).toBeInTheDocument();
+      await userEvent.click(screen.getAllByRole('button', { name: 'Delete revision' }).find((b) => b.className.includes('bg-red-500'))!);
+      expect(await screen.findByText('Could not save: Revision is in use')).toBeInTheDocument();
+      expect(screen.getByTestId('revision-4')).toBeInTheDocument();
+    });
+
+    it('keeps the file when removing it is refused', async () => {
+      fail('delete', '/api/v1/projects/revisions/:rid/files/:fid', 409, 'Revision is frozen');
+      render(<ProjectFilesPanel projectId={7} />);
+      await userEvent.click(await screen.findByRole('button', { name: /Gabarit$/ }));
+      await userEvent.click(within(screen.getByTestId('revision-4')).getByRole('button', { name: 'Remove gabarit.gcode' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Remove' }));
+      expect(await screen.findByText('Could not save: Revision is frozen')).toBeInTheDocument();
+      expect(within(screen.getByTestId('revision-4')).getByText('gabarit.gcode')).toBeInTheDocument();
+    });
+
+    it('toasts a refused fork and creates no new item', async () => {
+      fail('post', '/api/v1/projects/items/:id/fork', 409, 'An item with this name already exists');
+      render(<ProjectFilesPanel projectId={7} />);
+      await userEvent.click(await screen.findByRole('button', { name: /Gabarit$/ }));
+      await userEvent.click(within(screen.getByTestId('revision-4')).getByRole('button', { name: 'Fork as new item' }));
+      const name = screen.getByRole('textbox', { name: 'New item name' });
+      expect(name).toHaveValue('Gabarit (R1)');
+      await userEvent.click(screen.getAllByRole('button', { name: 'Fork as new item' }).find((b) => b.getAttribute('type') === 'submit')!);
+      expect(await screen.findByText('Could not save: An item with this name already exists')).toBeInTheDocument();
+      expect(screen.queryByRole('textbox', { name: 'New item name' })).not.toBeInTheDocument();
+      expect(screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent)).toEqual(['Printing 3', 'Older files 1']);
+    });
+
+    it('does not fork with a blank name', async () => {
+      let forked = false;
+      server.use(http.post('/api/v1/projects/items/:id/fork', () => { forked = true; return HttpResponse.json({}, { status: 201 }); }));
+      render(<ProjectFilesPanel projectId={7} />);
+      await userEvent.click(await screen.findByRole('button', { name: /Gabarit$/ }));
+      await userEvent.click(within(screen.getByTestId('revision-4')).getByRole('button', { name: 'Fork as new item' }));
+      await userEvent.clear(screen.getByRole('textbox', { name: 'New item name' }));
+      await userEvent.keyboard('{Enter}');
+      expect(screen.getByRole('textbox', { name: 'New item name' })).toBeInTheDocument();
+      expect(forked).toBe(false);
+      await userEvent.keyboard('{Escape}');
+      expect(screen.queryByRole('textbox', { name: 'New item name' })).not.toBeInTheDocument();
+    });
+
+    it('snaps the status select back to the server value when the change is refused', async () => {
+      fail('patch', '/api/v1/projects/revisions/:id', 409, 'Cannot approve an outdated revision');
+      render(<ProjectFilesPanel projectId={7} />);
+      await userEvent.click(await screen.findByRole('button', { name: /Gabarit$/ }));
+      const select = within(screen.getByTestId('revision-4')).getByLabelText('Status');
+      expect(select).toHaveValue('wip');
+      await userEvent.selectOptions(select, 'valide');
+      expect(await screen.findByText('Could not save: Cannot approve an outdated revision')).toBeInTheDocument();
+      expect(select).toHaveValue('wip');
+    });
+
+    it('toasts a failed download', async () => {
+      fail('get', '/api/v1/projects/revisions/:id/download', 404, 'No file available on disk');
+      render(<ProjectFilesPanel projectId={7} />);
+      await userEvent.click(await screen.findByRole('button', { name: /Gabarit$/ }));
+      await userEvent.click(within(screen.getByTestId('revision-4')).getByRole('button', { name: 'Download all (zip)' }));
+      expect(await screen.findByText('Could not save: No file available on disk')).toBeInTheDocument();
+    });
+
+    it('does not rename to an unchanged or blank name, and Escape cancels', async () => {
+      render(<ProjectFilesPanel projectId={7} />);
+      await screen.findByText('Support');
+      const row = () => rowOf(/Support$/);
+      await userEvent.click(within(row()).getByRole('button', { name: 'Rename' }));
+      await userEvent.keyboard('{Enter}');
+      expect(screen.queryByRole('textbox', { name: 'Rename' })).not.toBeInTheDocument();
+      await userEvent.click(within(row()).getByRole('button', { name: 'Rename' }));
+      await userEvent.clear(screen.getByRole('textbox', { name: 'Rename' }));
+      await userEvent.type(screen.getByRole('textbox', { name: 'Rename' }), '   {Enter}');
+      expect(screen.queryByRole('textbox', { name: 'Rename' })).not.toBeInTheDocument();
+      await userEvent.click(within(row()).getByRole('button', { name: 'Rename' }));
+      await userEvent.clear(screen.getByRole('textbox', { name: 'Rename' }));
+      await userEvent.type(screen.getByRole('textbox', { name: 'Rename' }), 'Other{Escape}');
+      expect(screen.queryByRole('textbox', { name: 'Rename' })).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Support$/ })).toBeInTheDocument();
+      expect(calls).toEqual([]);
+    });
+
+    it('sends exactly one rename request for a real rename', async () => {
+      render(<ProjectFilesPanel projectId={7} />);
+      await screen.findByText('Support');
+      await userEvent.click(within(rowOf(/Support$/)).getByRole('button', { name: 'Rename' }));
+      await userEvent.clear(screen.getByRole('textbox', { name: 'Rename' }));
+      await userEvent.type(screen.getByRole('textbox', { name: 'Rename' }), 'Nouveau{Enter}');
+      await waitFor(() => expect(calls).toEqual(['rename:20']));
+      expect(screen.queryByRole('textbox', { name: 'Rename' })).not.toBeInTheDocument();
     });
   });
 });
