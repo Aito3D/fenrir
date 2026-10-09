@@ -642,3 +642,27 @@ async def test_revision_added_helper_raising_does_not_fail_the_job(
     assert job["status"] == "completed", job
     assert job["result"]["revision_number"] == 2
     assert await _sliced_rows(db_session) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_reslice_refuses_a_source_swapped_for_a_symlink(
+    async_client: AsyncClient, db_session, fake_slicer, roots
+):
+    """T-207: a source 3MF replaced by a symlink to a data-dir file (``.jwt_secret``, the
+    database) reads as missing; its bytes never reach the slicer."""
+    _project, _item, rev = await _source_revision(async_client)
+    pipeline_id = await _pipeline(db_session)
+    fid = rev["files"][0]["id"]
+    secret = roots / ".jwt_secret"  # under the data dir, outside the projects root
+    secret.write_bytes(_3mf("secret"))
+    source = (await db_session.execute(select(LibraryFile).where(LibraryFile.id == fid))).scalar_one()
+    path = to_absolute_path(source.file_path)
+    path.unlink()
+    path.symlink_to(secret)
+    response = await async_client.post(
+        f"/api/v1/projects/revisions/{rev['id']}/reslice", json={"file_id": fid, "pipeline_id": pipeline_id}
+    )
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Source file missing on disk"
+    assert fake_slicer["calls"] == []

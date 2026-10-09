@@ -80,8 +80,6 @@ async def prepare_reslice(db: AsyncSession, revision_id: int, body: ResliceBody,
     Raises ``ProjectFilesError``, first failing check wins: revision 404, section 400,
     file not in the revision 404, not a 3MF 400, pipeline 404, unusable preset 400,
     source missing on disk 404."""
-    from backend.app.api.routes.library import to_absolute_path
-
     revision, item, _project = await project_files.get_revision_bundle(db, revision_id)
     project_files.require_enabled_section(item.section)
     source = (
@@ -99,7 +97,7 @@ async def prepare_reslice(db: AsyncSession, revision_id: int, body: ResliceBody,
         slice_request = slice_request_from_pipeline(pipeline)
     except ValidationError as exc:
         raise ProjectFilesError(400, "Pipeline has no usable filament preset") from exc
-    path = to_absolute_path(source.file_path)
+    path = project_files._revision_file_path(source.file_path)
     if path is None or not path.exists():
         raise ProjectFilesError(404, "Source file missing on disk")
     return ResliceRequest(

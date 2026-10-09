@@ -21,7 +21,7 @@ from backend.app.models.library import FileVariantGroup, LibraryFile, LibraryFol
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.project import Project
 from backend.app.models.project_item import ProjectItem, ProjectRevision
-from backend.app.services import project_files, project_storage
+from backend.app.services import project_files, project_filing, project_storage
 from backend.app.services.project_files import RevisionSource, add_revision_from_sources, create_item
 from backend.app.services.project_filing import MoveToProjectResult, move_library_files_to_project
 
@@ -866,3 +866,123 @@ async def test_old_bytes_that_cannot_be_removed_only_log(db_session, root, monke
     assert [m["file_id"] for m in result.moved] == [row_id]
     assert old.exists()
     assert "couldn't remove the old file" in caplog.text
+
+
+# --- T-010: find_or_create_item race recovery --------------------------------------------------
+
+
+async def _items(db, project_id: int) -> list[tuple[int, str]]:
+    rows = await db.execute(
+        select(ProjectItem.id, ProjectItem.name)
+        .where(ProjectItem.project_id == project_id)
+        .order_by(ProjectItem.id)
+        .execution_options(populate_existing=True)
+    )
+    return [tuple(r) for r in rows]
+
+
+def _first_lookup_misses(monkeypatch):
+    """``find_item`` misses once, as when a concurrent drop creates the item right after the lookup."""
+    real = project_filing.find_item
+    calls = {"n": 0}
+
+    async def racing(*args, **kwargs):
+        calls["n"] += 1
+        return None if calls["n"] == 1 else await real(*args, **kwargs)
+
+    monkeypatch.setattr(project_filing, "find_item", racing)
+    return calls
+
+
+@pytest.mark.asyncio
+async def test_a_drop_that_loses_the_create_race_files_into_the_winners_item(db_session, root, monkeypatch):
+    project = await _project(db_session)
+    winner = await create_item(db_session, project, section="impression", name="Support", user_id=None)
+    row = await _managed(db_session, "Support.gcode", b"G1")
+    await db_session.commit()
+    project_id, winner_id, row_id, old = project.id, winner.id, row.id, to_absolute_path(row.file_path)
+    calls = _first_lookup_misses(monkeypatch)
+
+    result = await _move(db_session, project, [row])
+
+    assert calls["n"] == 2  # missed, then re-read after the 409 and the rollback
+    assert await _items(db_session, project_id) == [(winner_id, "Support")]
+    assert [(m["file_id"], m["item_id"], m["revision_number"]) for m in result.moved] == [(row_id, winner_id, 1)]
+    assert result.skipped == []
+    moved = (await db_session.execute(select(LibraryFile).where(LibraryFile.id == row_id))).scalar_one()
+    assert to_absolute_path(moved.file_path).read_bytes() == b"G1"
+    assert not old.exists()
+
+
+@pytest.mark.asyncio
+async def test_a_lost_create_race_whose_winner_is_gone_is_a_conflict_skip(db_session, root, monkeypatch):
+    """The create hits the unique constraint, and the re-read finds no item either: the
+    group is skipped as ``conflict`` and the file stays where it was, untouched."""
+    from sqlalchemy.exc import IntegrityError
+
+    project = await _project(db_session)
+    row = await _managed(db_session, "Support.gcode", b"G1")
+    await db_session.commit()
+    project_id, row_id, path_before = project.id, row.id, row.file_path
+    old = to_absolute_path(path_before)
+
+    async def lost_race(*_args, **_kwargs):
+        raise IntegrityError("INSERT INTO project_items", {}, Exception("UNIQUE constraint failed"))
+
+    async def never_found(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(project_files, "create_item", lost_race)
+    monkeypatch.setattr(project_filing, "find_item", never_found)
+
+    result = await _move(db_session, project, [row])
+
+    assert result.moved == [] and result.copied == []
+    assert result.skipped == [
+        {"file_id": row_id, "code": "conflict", "reason": "This item was changed meanwhile; drop the files again"}
+    ]
+    assert await _items(db_session, project_id) == []
+    fresh = (
+        await db_session.execute(
+            select(LibraryFile).where(LibraryFile.id == row_id).execution_options(populate_existing=True)
+        )
+    ).scalar_one()
+    assert (fresh.file_path, fresh.revision_id) == (path_before, None)
+    assert old.read_bytes() == b"G1"
+
+
+@pytest.mark.asyncio
+async def test_find_or_create_item_raises_a_conflict_when_the_winner_is_gone(db_session, root, monkeypatch):
+    from sqlalchemy.exc import IntegrityError
+
+    project = await _project(db_session)
+    await db_session.commit()
+
+    async def lost_race(*_args, **_kwargs):
+        raise IntegrityError("INSERT INTO project_items", {}, Exception("UNIQUE constraint failed"))
+
+    monkeypatch.setattr(project_files, "create_item", lost_race)
+    _first_lookup_misses(monkeypatch)
+    with pytest.raises(project_files.ProjectFilesError) as exc:
+        await project_filing.find_or_create_item(db_session, project, "impression", "support", "Support", None)
+    assert (exc.value.status_code, exc.value.detail) == (409, "This item was changed meanwhile; drop the files again")
+    assert isinstance(exc.value.__cause__, IntegrityError)
+
+
+@pytest.mark.asyncio
+async def test_find_or_create_item_lets_a_non_409_error_through_without_rolling_back(db_session, root, monkeypatch):
+    project = await _project(db_session)
+    await db_session.commit()
+    error = project_files.ProjectFilesError(400, "Section 'scan' does not accept files for now")
+
+    async def refused(*_args, **_kwargs):
+        raise error
+
+    async def no_rollback():
+        raise AssertionError("a non-409 error must not roll back")
+
+    monkeypatch.setattr(project_files, "create_item", refused)
+    monkeypatch.setattr(db_session, "rollback", no_rollback)
+    with pytest.raises(project_files.ProjectFilesError) as exc:
+        await project_filing.find_or_create_item(db_session, project, "impression", "support", "Support", None)
+    assert exc.value is error

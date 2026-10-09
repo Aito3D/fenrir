@@ -1917,3 +1917,84 @@ async def test_fork_integrity_error_removes_copied_thumbnail_and_keeps_the_sourc
     assert (await db_session.execute(select(ProjectItem).where(ProjectItem.name == "Support B"))).first() is None
     assert (await db_session.execute(select(ProjectItem.id).where(ProjectItem.id == item_id))).scalar_one() == item_id
     assert (await _revision_rows(db_session, item_id))[1] == 1  # the source revision keeps its one file row
+
+
+# --- T-207: fork never copies through a symlink ------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_fork_skips_a_revision_file_swapped_for_a_symlink(db_session, root, tmp_path_factory):
+    secret = tmp_path_factory.mktemp("data_dir") / ".jwt_secret"
+    secret.write_bytes(b"top-secret")
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project, files=[upload("a.step", b"geo-a"), upload("b.step", b"geo-b")])
+    base = root / project.storage_dir / "Modélisation"
+    swapped = base / "Support" / "R1" / "a.step"
+    swapped.unlink()
+    swapped.symlink_to(secret)
+    forked = await fork_revision(db_session, project, item, rev, "Copie", user_id=None)
+    r1 = (await db_session.execute(select(ProjectRevision).where(ProjectRevision.item_id == forked.id))).scalar_one()
+    names = (await db_session.execute(select(LibraryFile.filename).where(LibraryFile.revision_id == r1.id))).scalars()
+    assert list(names) == ["b.step"]
+    assert sorted(p.name for p in (base / "Copie" / "R1").iterdir()) == ["b.step"]
+    assert (base / "Copie" / "R1" / "b.step").read_bytes() == b"geo-b"
+
+
+@pytest.mark.asyncio
+async def test_fork_refuses_when_the_only_file_is_a_symlink(db_session, root, tmp_path_factory):
+    secret = tmp_path_factory.mktemp("data_dir") / ".jwt_secret"
+    secret.write_bytes(b"top-secret")
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project)
+    base = root / project.storage_dir / "Modélisation"
+    swapped = base / "Support" / "R1" / "a.step"
+    swapped.unlink()
+    swapped.symlink_to(secret)
+    with pytest.raises(ProjectFilesError) as err:
+        await fork_revision(db_session, project, item, rev, "Copie", user_id=None)
+    assert (err.value.status_code, err.value.detail) == (409, "No file of this revision could be copied")
+    assert not (base / "Copie").exists()
+
+
+@pytest.mark.asyncio
+async def test_fork_does_not_copy_a_thumbnail_swapped_for_a_symlink(db_session, root, monkeypatch, tmp_path):
+    project, item, rev, thumbs, section_dir = await _fork_source_with_thumbnail(db_session, monkeypatch, tmp_path)
+    [thumb] = list(thumbs.iterdir())
+    secret = tmp_path / ".jwt_secret"
+    secret.write_bytes(b"top-secret")
+    thumb.unlink()
+    thumb.symlink_to(secret)
+    forked = await fork_revision(db_session, project, item, rev, "Support B", user_id=None)
+    r1 = (await db_session.execute(select(ProjectRevision).where(ProjectRevision.item_id == forked.id))).scalar_one()
+    [copy] = (await db_session.execute(select(LibraryFile).where(LibraryFile.revision_id == r1.id))).scalars().all()
+    assert copy.filename == "plate.3mf" and copy.thumbnail_path is None
+    assert list(thumbs.iterdir()) == [thumb]  # no copy of the secret landed among the thumbnails
+    assert (section_dir / "Support B" / "R1" / "plate.3mf").is_file()
+
+
+def test_revision_file_path_refuses_a_path_that_reaches_the_tree_through_an_outside_symlink(root, tmp_path_factory):
+    real = root / "P-0001_x" / "Modélisation" / "Support" / "R1"
+    real.mkdir(parents=True)
+    (real / "a.step").write_bytes(b"geo")
+    detour = tmp_path_factory.mktemp("outside") / "detour"
+    detour.symlink_to(real, target_is_directory=True)
+    assert project_files._revision_file_path(str(real / "a.step")) == (real / "a.step").resolve()
+    assert project_files._revision_file_path(str(detour / "a.step")) is None
+    assert project_files._revision_file_path(None) is None
+    assert project_files._revision_file_path("") is None
+
+
+def test_revision_file_path_walks_past_a_prefix_that_escapes_the_data_dir(monkeypatch, tmp_path):
+    """A stored relative path that climbs out of the data dir and back in still resolves:
+    the prefix ``..`` alone escapes (``to_absolute_path`` raises), so the walk moves on."""
+    from backend.app.core.config import settings as app_settings
+
+    base = tmp_path / "data"
+    projects = base / "projects"
+    folder = projects / "P-0001_x" / "R1"
+    folder.mkdir(parents=True)
+    (folder / "a.step").write_bytes(b"geo")
+    monkeypatch.setattr(app_settings, "base_dir", base)
+    monkeypatch.setattr(project_storage, "projects_root", lambda: projects)
+    stored = "../data/projects/P-0001_x/R1/a.step"
+    assert project_files._revision_file_path(stored) == (folder / "a.step").resolve()

@@ -502,3 +502,181 @@ async def test_permissions(async_client: AsyncClient, users):
     assert (await async_client.get(STATUS, headers=users["admin"])).status_code == 200
     assert (await async_client.post(START, headers=users["admin"])).status_code == 202
     await _wait_idle(async_client, users["admin"])
+
+
+# --- T-010: legacy migration failure branches ------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_an_external_file_gone_from_disk_is_left_and_logged(db_session, tmp_path, caplog):
+    """The project already holds a copy (so hashes are compared); a second external file whose
+    bytes vanished is not hashed, the move leaves it as ``source_missing``, and that skip is
+    not retryable: the marker is set."""
+    project = await _project(db_session)
+    project_id = project.id
+    arm = await _external(db_session, tmp_path, "Arm.gcode", b"G1 X0", project_id=project_id)
+    arm_id = arm.id
+    await project_filing.migrate_project_legacy(db_session, await _fresh(db_session, Project, project_id))
+    fresh = await _fresh(db_session, Project, project_id)
+    fresh.legacy_migrated_at = None  # a later run, e.g. after a new file got linked
+    await db_session.commit()
+    leg = await _external(db_session, tmp_path, "Leg.gcode", b"G1 Y0", project_id=project_id)
+    leg_id, leg_path = leg.id, leg.file_path
+    Path(leg_path).unlink()
+
+    with caplog.at_level("INFO", logger="backend.app.services.project_filing"):
+        outcome = await project_filing.migrate_project_legacy(db_session, await _fresh(db_session, Project, project_id))
+
+    assert (outcome.revisions_created, outcome.files_moved, outcome.files_copied) == (0, 0, 0)
+    assert await _revisions(db_session, project_id) == [("impression", "Arm", 1, ["Arm.gcode"])]
+    messages = [r.getMessage() for r in caplog.records]
+    assert (
+        f"Legacy migration of project {project_id}: external file {arm_id} ('Arm.gcode') already copied, skipping"
+        in messages
+    )
+    assert f"Legacy migration of project {project_id} left file {leg_id}: source_missing" in messages
+    leg_row = await _fresh(db_session, LibraryFile, leg_id)
+    assert (leg_row.revision_id, leg_row.file_path) == (None, leg_path)
+    assert (await _fresh(db_session, Project, project_id)).legacy_migrated_at is not None
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_a_read_error_while_hashing_defers_to_the_move(db_session, tmp_path, monkeypatch):
+    """Hashing an external file fails with an OSError: no dedupe, the move tries it and
+    reports the same read error as ``copy_failed``, so the project stays a candidate."""
+    project = await _project(db_session)
+    project_id = project.id
+    arm = await _external(db_session, tmp_path, "Arm.gcode", b"G1 X0", project_id=project_id)
+    await project_filing.migrate_project_legacy(db_session, await _fresh(db_session, Project, project_id))
+    fresh = await _fresh(db_session, Project, project_id)
+    fresh.legacy_migrated_at = None
+    await db_session.commit()
+    arm_id, arm_path = arm.id, arm.file_path
+
+    def unreadable(*_args, **_kwargs):
+        raise OSError("I/O error")
+
+    monkeypatch.setattr(project_filing, "_sha256_file", unreadable)
+    monkeypatch.setattr(project_files, "_copy_hashing", unreadable)
+    with pytest.raises(project_filing.LegacyMigrationError) as exc:
+        await project_filing.migrate_project_legacy(db_session, await _fresh(db_session, Project, project_id))
+
+    assert str(exc.value) == "1 file(s) could not be moved (copy_failed: I/O error); run it again"
+    assert await _revisions(db_session, project_id) == [("impression", "Arm", 1, ["Arm.gcode"])]
+    arm_row = await _fresh(db_session, LibraryFile, arm_id)
+    assert (arm_row.revision_id, arm_row.file_path) == (None, arm_path)
+    assert Path(arm_path).read_bytes() == b"G1 X0"
+    assert (await _fresh(db_session, Project, project_id)).legacy_migrated_at is None
+    assert project_id in await project_filing.legacy_candidates(db_session)
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_a_project_deleted_during_its_migration_is_an_error(db_session, monkeypatch):
+    from sqlalchemy import delete
+
+    project = await _project(db_session)
+    project_id = project.id
+
+    async def deleted_meanwhile(db, pid):
+        await db.execute(delete(Project).where(Project.id == pid))
+        await db.commit()
+        return []
+
+    monkeypatch.setattr(project_filing, "_legacy_files", deleted_meanwhile)
+    with pytest.raises(project_filing.LegacyMigrationError) as exc:
+        await project_filing.migrate_project_legacy(db_session, project)
+    assert str(exc.value) == "project deleted meanwhile"
+    assert (await db_session.execute(select(Project.id).where(Project.id == project_id))).first() is None
+
+
+# The runner, driven directly (async_client patches database.async_session to the test engine).
+
+
+def _runner_totals(state: dict) -> dict:
+    return {k: state["last_run"][k] for k in ("projects", "files_moved", "files_copied")}
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_runner_passes_over_a_project_migrated_or_deleted_meanwhile(
+    async_client: AsyncClient, db_session, monkeypatch
+):
+    done = await _project(db_session, "Done", legacy_migrated_at=datetime(2026, 1, 1))
+    lid = await _managed(db_session, "Lid.3mf", b"lid", project_id=done.id)
+    done_id, lid_id, lid_path = done.id, lid.id, lid.file_path
+
+    async def stale(_db):
+        return [done_id, 987654]  # listed, then migrated / deleted before the runner got there
+
+    async def must_not_run(*_args, **_kwargs):
+        raise AssertionError("a project migrated or gone meanwhile must not be migrated")
+
+    monkeypatch.setattr(project_filing, "legacy_candidates", stale)
+    monkeypatch.setattr(project_filing, "migrate_project_legacy", must_not_run)
+    project_filing._legacy_state["running"] = True
+    await project_filing._run_legacy_migration()
+
+    state = project_filing._legacy_state
+    assert (state["running"], state["total"], state["done"], state["current"]) == (False, 2, 2, None)
+    assert state["failures"] == []
+    assert _runner_totals(state) == {"projects": 0, "files_moved": 0, "files_copied": 0}
+    lid_row = await _fresh(db_session, LibraryFile, lid_id)
+    assert (lid_row.revision_id, lid_row.file_path) == (None, lid_path)
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_runner_records_the_failure_when_its_rollback_fails_too(
+    async_client: AsyncClient, db_session, monkeypatch, caplog
+):
+    project = await _project(db_session)
+    project_id, code = project.id, project.code
+
+    async def candidates(_db):
+        return [project_id]
+
+    async def boom(db, _project):
+        async def broken_rollback():
+            raise RuntimeError("connection lost")
+
+        db.rollback = broken_rollback
+        raise project_files.ProjectFilesError(409, "This item was changed meanwhile; drop the files again")
+
+    monkeypatch.setattr(project_filing, "legacy_candidates", candidates)
+    monkeypatch.setattr(project_filing, "migrate_project_legacy", boom)
+    project_filing._legacy_state["running"] = True
+    with caplog.at_level("DEBUG", logger="backend.app.services.project_filing"):
+        await project_filing._run_legacy_migration()
+
+    state = project_filing._legacy_state
+    assert state["failures"] == [
+        {"project_id": project_id, "code": code, "error": "This item was changed meanwhile; drop the files again"}
+    ]
+    assert (state["running"], state["done"], state["current"]) == (False, 1, None)
+    messages = [(r.levelname, r.getMessage()) for r in caplog.records]
+    assert ("WARNING", f"Legacy migration of project {project_id} failed") in messages
+    assert ("DEBUG", "Rollback after a failed legacy migration failed too") in messages
+    assert (await _fresh(db_session, Project, project_id)).legacy_migrated_at is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_runner_stops_cleanly_when_listing_candidates_fails(async_client: AsyncClient, monkeypatch, caplog):
+    async def broken(_db):
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr(project_filing, "legacy_candidates", broken)
+    project_filing._legacy_state["running"] = True
+    with caplog.at_level("ERROR", logger="backend.app.services.project_filing"):
+        await project_filing._run_legacy_migration()
+
+    state = project_filing._legacy_state
+    assert (state["running"], state["total"], state["done"], state["current"]) == (False, 0, 0, None)
+    assert state["failures"] == []
+    assert _runner_totals(state) == {"projects": 0, "files_moved": 0, "files_copied": 0}
+    assert state["last_run"]["finished_at"] is not None
+    filing = [(r.levelname, r.getMessage()) for r in caplog.records if r.name == project_filing.logger.name]
+    assert filing == [("ERROR", "Legacy project migration stopped")]

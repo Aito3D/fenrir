@@ -268,3 +268,124 @@ async def test_route_answers_an_api_key_per_its_scopes(
     assert response.status_code == expected, response.text
     if expected == 403:
         assert "API key" in response.json()["detail"]
+
+
+# Route completeness (T-209): every route under the swept prefixes is either driven by _ROUTES above
+# or listed here with the reason it is not. A new PDM route, or a moved one, fails the sweep until
+# it is classified, so it cannot ship without its permission, API-key and anonymous cases.
+_SWEPT_PREFIXES = (
+    "/api/v1/projects",
+    "/api/v1/aito/tasks",
+    "/api/v1/aito/project-codes",
+    "/api/v1/library/files/{file_id}/project-suggestions",
+)
+_SWEPT_SUFFIXES = ("/project-links",)
+_UPSTREAM_PROJECTS = "upstream routes/projects.py (Bambuddy projects), outside the PDM matrix"
+_NOT_IN_MATRIX = {
+    "PATCH /api/v1/aito/tasks/{task_id}": "Aito board task route (aito.py), covered by test_aito_permissions.py",
+    "DELETE /api/v1/aito/tasks/{task_id}": "Aito board task route (aito.py), covered by test_aito_permissions.py",
+    **dict.fromkeys(
+        (
+            "GET /api/v1/projects",
+            "GET /api/v1/projects/",
+            "POST /api/v1/projects/",
+            "GET /api/v1/projects/templates",
+            "POST /api/v1/projects/from-template/{template_id}",
+            "GET /api/v1/projects/{project_id}",
+            "PATCH /api/v1/projects/{project_id}",
+            "DELETE /api/v1/projects/{project_id}",
+            "GET /api/v1/projects/{project_id}/archives",
+            "GET /api/v1/projects/{project_id}/queue",
+            "GET /api/v1/projects/{project_id}/file-progress",
+            "POST /api/v1/projects/{project_id}/add-archives",
+            "POST /api/v1/projects/{project_id}/add-queue",
+            "POST /api/v1/projects/{project_id}/remove-archives",
+            "POST /api/v1/projects/{project_id}/attachments",
+            "GET /api/v1/projects/{project_id}/attachments/{filename}",
+            "DELETE /api/v1/projects/{project_id}/attachments/{filename}",
+            "POST /api/v1/projects/{project_id}/cover-image",
+            "GET /api/v1/projects/{project_id}/cover-image",
+            "DELETE /api/v1/projects/{project_id}/cover-image",
+            "GET /api/v1/projects/{project_id}/bom",
+            "POST /api/v1/projects/{project_id}/bom",
+            "PATCH /api/v1/projects/{project_id}/bom/{item_id}",
+            "DELETE /api/v1/projects/{project_id}/bom/{item_id}",
+            "POST /api/v1/projects/{project_id}/create-template",
+            "GET /api/v1/projects/{project_id}/timeline",
+            "GET /api/v1/projects/{project_id}/export",
+            "POST /api/v1/projects/import",
+            "POST /api/v1/projects/import/file",
+        ),
+        _UPSTREAM_PROJECTS,
+    ),
+}
+
+
+def _api_routes():
+    from fastapi.routing import APIRoute
+
+    from backend.app.main import app
+
+    return [route for route in app.routes if isinstance(route, APIRoute)]
+
+
+def _swept_routes() -> set[str]:
+    return {
+        f"{method} {route.path}"
+        for route in _api_routes()
+        if route.path.startswith(_SWEPT_PREFIXES) or route.path.endswith(_SWEPT_SUFFIXES)
+        for method in route.methods
+    }
+
+
+def _dispatched_route(method: str, path: str) -> str:
+    """``METHOD template`` of the route Starlette serves ``method path`` from (first match wins)."""
+    for route in _api_routes():
+        if method in route.methods and route.path_regex.match(f"/api/v1{path}"):
+            return f"{method} {route.path}"
+    raise AssertionError(f"no route serves {method} {path}")
+
+
+def test_permission_matrix_covers_every_swept_route():
+    driven = {_dispatched_route(m, p) for m, p, _k, _g in _ROUTES}
+    assert len(driven) == len(_ROUTES), "two _ROUTES entries hit the same route"
+    assert not driven & set(_NOT_IN_MATRIX), "a route is both driven and allow-listed"
+    swept = _swept_routes()
+    assert swept - driven - set(_NOT_IN_MATRIX) == set(), "unclassified route: add it to _ROUTES or _NOT_IN_MATRIX"
+    assert set(_NOT_IN_MATRIX) - swept == set(), "stale _NOT_IN_MATRIX entry: the route is gone"
+    assert driven <= swept
+
+
+def test_matrix_drives_every_route_of_the_pdm_routers():
+    """Whatever their path, the routes of the PDM modules are all driven (none allow-listed)."""
+    pdm_modules = {
+        "backend.app.api.routes.project_files",
+        "backend.app.api.routes.projects_pdm",
+        "backend.app.api.routes.aito_project_links",
+    }
+    pdm = {
+        f"{method} {route.path}"
+        for route in _api_routes()
+        if route.endpoint.__module__ in pdm_modules
+        for method in route.methods
+    }
+    assert pdm == {_dispatched_route(m, p) for m, p, _k, _g in _ROUTES}
+
+
+@pytest.fixture
+async def auth_on(db_session):
+    db_session.add(Settings(key="auth_enabled", value="true"))
+    await db_session.commit()
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("method", "path", "kwargs"),
+    [pytest.param(m, p, k, id=f"{m} {p}") for m, p, k, _g in _ROUTES],
+)
+async def test_route_refuses_an_anonymous_caller(async_client: AsyncClient, auth_on, method, path, kwargs):
+    """No Authorization and no X-API-Key header, auth on: 401 on every route (pinned)."""
+    response = await _send(async_client, method, path, kwargs, {})
+    assert response.status_code == 401, response.text
+    assert response.json()["detail"] == "Authentication required"

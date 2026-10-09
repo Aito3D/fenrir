@@ -58,6 +58,7 @@ from backend.app.schemas.project_files import (
     ProjectTreeResponse,
     RevisionRef,
 )
+from backend.app.services import project_storage
 from backend.app.services.pdf_thumbnail import generate_pdf_thumbnail
 from backend.app.services.project_print_trace import revision_print_counts
 from backend.app.services.project_snapshot import PrintSnapshot, is_3mf, read_print_snapshot
@@ -1118,12 +1119,54 @@ async def _delete_item_locked(db: AsyncSession, project: Project, item: ProjectI
         await guard.commit()
 
 
+def _revision_file_path(file_path: str | None) -> Path | None:
+    """Absolute path of a revision file, or ``None`` when it must not be read.
+
+    The projects tree is browsed from the share, so a file there may have been
+    swapped for a symlink to ``.jwt_secret`` or the database. ``None`` (read it
+    as "missing") unless the resolved path sits under the projects root and no
+    component below that root is a symlink. The root itself may be one."""
+    from backend.app.api.routes.library import to_absolute_path
+
+    path = to_absolute_path(file_path)
+    if path is None:
+        return None
+    root = project_storage.projects_root().resolve()
+    if not path.is_relative_to(root):
+        return None
+    parts = Path(os.path.normpath(file_path)).parts
+    for depth in range(1, len(parts) + 1):
+        try:
+            reached = to_absolute_path(str(Path(*parts[:depth])))
+        except ValueError:
+            continue
+        if reached == root:
+            below = parts[depth:]
+            break
+    else:
+        return None  # reached the root only through a symlink outside it
+    current = root
+    for part in below:
+        current = current / part
+        if current.is_symlink():
+            return None
+    return path
+
+
+def _is_symlink(file_path: str) -> bool:
+    """Whether the stored file itself (its folders resolved, the leaf not followed) is a symlink."""
+    from backend.app.api.routes.library import to_absolute_path
+
+    stored = Path(os.path.normpath(file_path))
+    return (to_absolute_path(str(stored.parent)) / stored.name).is_symlink()
+
+
 def _copy_thumbnail(source_thumbnail: str | None) -> tuple[str | None, Path | None]:
     """Own copy of a thumbnail (relative path, absolute path), so deleting one file never blanks the other."""
     from backend.app.api.routes.library import to_absolute_path
 
     src = to_absolute_path(source_thumbnail)
-    if src is None or not src.is_file():
+    if src is None or _is_symlink(source_thumbnail) or not src.is_file():
         return None, None
     dest = safe_join_under(get_library_thumbnails_dir(), f"{uuid.uuid4().hex}{src.suffix}", http=False)
     shutil.copy2(src, dest)
@@ -1155,8 +1198,6 @@ async def fork_revision(
 async def _fork_revision_locked(
     db: AsyncSession, project: Project, item: ProjectItem, revision: ProjectRevision, new_name: str, user_id: int | None
 ) -> ProjectItem:
-    from backend.app.api.routes.library import to_absolute_path
-
     section = item.section
     clean, key = _clean_item_name(new_name)
     await _require_item_name_free(db, project, section, key)
@@ -1166,7 +1207,7 @@ async def _fork_revision_locked(
     sources = [
         {
             "filename": f.filename,
-            "path": to_absolute_path(f.file_path),
+            "path": _revision_file_path(f.file_path),
             "file_type": f.file_type,
             "file_size": f.file_size,
             "file_hash": f.file_hash,

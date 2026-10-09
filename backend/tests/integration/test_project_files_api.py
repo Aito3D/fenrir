@@ -334,3 +334,107 @@ async def test_reslice_source_missing_on_disk_is_404(async_client: AsyncClient, 
     )
     assert response.status_code == 404
     assert response.json()["detail"] == "Source file missing on disk"
+
+
+# --- T-207: a revision file swapped for a symlink reads as missing ---------------------------
+
+
+@pytest.fixture
+def outside_secret(tmp_path_factory):
+    """A file outside the projects tree, standing in for ``.jwt_secret`` or the database."""
+    secret = tmp_path_factory.mktemp("data_dir") / ".jwt_secret"
+    secret.write_bytes(b"top-secret")
+    return secret
+
+
+def _swap_for_symlink(root, filename, target):
+    [path] = list(root.rglob(filename))
+    path.unlink()
+    path.symlink_to(target)
+    return path
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_download_refuses_a_file_swapped_for_a_symlink_outside_the_tree(
+    async_client: AsyncClient, root, outside_secret
+):
+    rev = await _revision_with_files(async_client, ("a.gcode", b"geo-a"), ("b.gcode", b"geo-b"))
+    ids = {f["filename"]: f["id"] for f in rev["files"]}
+    _swap_for_symlink(root, "a.gcode", outside_secret)
+    url = f"/api/v1/projects/revisions/{rev['id']}/download"
+
+    one = await async_client.get(url, params={"file_id": ids["a.gcode"]})
+    assert one.status_code == 404
+    assert one.json()["detail"] == "File not found"
+    other = await async_client.get(url, params={"file_id": ids["b.gcode"]})
+    assert other.status_code == 200 and other.content == b"geo-b"
+
+    zipped = await async_client.get(url)
+    assert zipped.status_code == 200
+    archive = zipfile.ZipFile(io.BytesIO(zipped.content))
+    assert archive.namelist() == ["b.gcode"]
+    assert archive.read("b.gcode") == b"geo-b"
+    assert b"top-secret" not in zipped.content
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_zip_download_404_when_the_only_file_is_a_symlink(async_client: AsyncClient, root, outside_secret):
+    rev = await _revision_with_files(async_client, ("a.gcode", b"geo"))
+    _swap_for_symlink(root, "a.gcode", outside_secret)
+    response = await async_client.get(f"/api/v1/projects/revisions/{rev['id']}/download")
+    assert response.status_code == 404
+    assert response.json()["detail"] == "No file available on disk"
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_download_refuses_a_symlink_that_stays_inside_the_tree(async_client: AsyncClient, root):
+    rev = await _revision_with_files(async_client, ("a.gcode", b"geo-a"), ("b.gcode", b"geo-b"))
+    ids = {f["filename"]: f["id"] for f in rev["files"]}
+    [sibling] = list(root.rglob("b.gcode"))
+    _swap_for_symlink(root, "a.gcode", sibling)
+    response = await async_client.get(
+        f"/api/v1/projects/revisions/{rev['id']}/download", params={"file_id": ids["a.gcode"]}
+    )
+    assert response.status_code == 404
+    assert response.json()["detail"] == "File not found"
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_download_refuses_a_revision_folder_swapped_for_a_symlink(
+    async_client: AsyncClient, root, tmp_path_factory
+):
+    rev = await _revision_with_files(async_client, ("a.gcode", b"geo"))
+    [path] = list(root.rglob("a.gcode"))
+    elsewhere = tmp_path_factory.mktemp("elsewhere")
+    (elsewhere / "a.gcode").write_bytes(b"not-the-project-file")
+    folder = path.parent
+    path.unlink()
+    folder.rmdir()
+    folder.symlink_to(elsewhere, target_is_directory=True)
+    url = f"/api/v1/projects/revisions/{rev['id']}/download"
+    one = await async_client.get(url, params={"file_id": rev["files"][0]["id"]})
+    assert one.status_code == 404 and one.json()["detail"] == "File not found"
+    zipped = await async_client.get(url)
+    assert zipped.status_code == 404 and zipped.json()["detail"] == "No file available on disk"
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_download_works_when_the_projects_root_itself_is_a_symlink(
+    async_client: AsyncClient, monkeypatch, tmp_path_factory
+):
+    real = tmp_path_factory.mktemp("nas_share")
+    link = tmp_path_factory.mktemp("data") / "projects"
+    link.symlink_to(real, target_is_directory=True)
+    monkeypatch.setattr(project_storage, "projects_root", lambda: link)
+    rev = await _revision_with_files(async_client, ("a.gcode", b"geo"))
+    assert list(real.rglob("a.gcode"))
+    url = f"/api/v1/projects/revisions/{rev['id']}/download"
+    one = await async_client.get(url, params={"file_id": rev["files"][0]["id"]})
+    assert one.status_code == 200 and one.content == b"geo"
+    zipped = await async_client.get(url)
+    assert zipfile.ZipFile(io.BytesIO(zipped.content)).namelist() == ["a.gcode"]
