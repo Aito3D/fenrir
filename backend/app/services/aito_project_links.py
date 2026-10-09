@@ -95,6 +95,12 @@ async def link_task(db: AsyncSession, task: AitoTask, project_id: int | None, *,
         await _clear_deliveries(db, task.id)
     task.linked_project_id = project_id
     await db.flush()
+    # The flush holds the write lock: a project deleted since it was read would
+    # leave a dangling link (no FK), so refuse it; the caller rolls back.
+    if project_id is not None and (
+        (await db.execute(select(Project.id).where(Project.id == project_id))).first() is None
+    ):
+        raise LinkError(404, "Project not found")
 
     if project is not None:
         kind, detail = "task.project_linked", _project_detail(project.id, project)

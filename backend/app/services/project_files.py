@@ -663,8 +663,8 @@ async def _commit_through_cancel(db: AsyncSession, outcome: _CommitOutcome) -> N
     When the commit task itself was cancelled from outside (``asyncio.run``
     cancels every remaining task on shutdown), the worker thread may still
     have run the COMMIT, so the outcome is unknown and ``may_have_landed`` is
-    set too: leaving the files in place is the safe side. The caller's
-    ``except`` must skip its rollback and filesystem undo when
+    set too: leaving the files in place is the safe side. ``_committing``
+    skips its rollback and filesystem undo when
     ``outcome.may_have_landed`` is set, so disk never loses what the database
     may hold. A commit that fails on its own raises its own exception,
     unchanged.
@@ -681,6 +681,53 @@ async def _commit_through_cancel(db: AsyncSession, outcome: _CommitOutcome) -> N
         else:
             outcome.may_have_landed = task.exception() is None
         raise
+
+
+class _CommitGuard:
+    """See ``_committing``."""
+
+    def __init__(
+        self,
+        db: AsyncSession,
+        undo: Callable[[], Awaitable[None]],
+        translate: Callable[[BaseException], Exception | None] | None,
+    ) -> None:
+        self._db = db
+        self._undo = undo
+        self._translate = translate
+        self._outcome = _CommitOutcome()
+
+    async def _commit(self) -> None:
+        await _commit_through_cancel(self._db, self._outcome)
+
+    async def __aenter__(self) -> Callable[[], Awaitable[None]]:
+        return self._commit
+
+    async def __aexit__(self, exc_type, exc, tb) -> bool:
+        if exc is None or self._outcome.may_have_landed:
+            return False
+        await self._undo()
+        if self._translate is not None:
+            replacement = self._translate(exc)
+            if replacement is not None:
+                raise replacement from exc
+        return False
+
+
+def _committing(
+    db: AsyncSession,
+    undo: Callable[[], Awaitable[None]],
+    *,
+    translate: Callable[[BaseException], Exception | None] | None = None,
+) -> _CommitGuard:
+    """``async with _committing(db, undo) as commit:`` whose body ends with ``await commit()``.
+
+    ``commit`` is ``_commit_through_cancel``. When the body raises anything
+    (cancellation included), ``undo`` runs unless the commit may have landed,
+    then the same exception propagates; ``translate`` may swap it, after the
+    undo, for an exception raised ``from`` it.
+    """
+    return _CommitGuard(db, undo, translate)
 
 
 async def _add_revision_locked(
@@ -702,8 +749,24 @@ async def _add_revision_locked(
     folder = revision_dir(project, section, name, number)
     created_folder = not any(folder.iterdir())
     written: list[_WrittenFile] = []
-    commit = _CommitOutcome()
-    try:
+
+    async def undo() -> None:
+        await db.rollback()
+        _cleanup_written(written)
+        if created_folder:
+            try:
+                folder.rmdir()
+            except OSError:
+                pass
+
+    def translate(exc: BaseException) -> Exception | None:
+        if isinstance(exc, IntegrityError) and (
+            "uq_project_revisions_item_number" in str(exc) or "project_revisions.number" in str(exc)
+        ):
+            return ProjectFilesError(409, "Another upload just created this revision number; try again")
+        return None
+
+    async with _committing(db, undo, translate=translate) as commit:
         written = await write(folder)
         await _require_item_unchanged(db, item_id, section, name)
         revision = ProjectRevision(
@@ -721,22 +784,7 @@ async def _add_revision_locked(
         await db.flush()
         rows = await _add_file_rows(db, project, revision, written, user_id)
         warnings = await _duplicate_warnings(db, item, revision, rows)
-        await _commit_through_cancel(db, commit)
-    except BaseException as exc:
-        if commit.may_have_landed:
-            raise
-        await db.rollback()
-        _cleanup_written(written)
-        if created_folder:
-            try:
-                folder.rmdir()
-            except OSError:
-                pass
-        if isinstance(exc, IntegrityError) and (
-            "uq_project_revisions_item_number" in str(exc) or "project_revisions.number" in str(exc)
-        ):
-            raise ProjectFilesError(409, "Another upload just created this revision number; try again") from exc
-        raise
+        await commit()
     return revision, warnings
 
 
@@ -841,21 +889,19 @@ async def add_files_to_revision(
         item_id, section, name = item.id, item.section, item.name
         folder = revision_dir(project, section, name, revision.number)
         written: list[_WrittenFile] = []
-        commit = _CommitOutcome()
-        try:
+
+        async def undo() -> None:
+            await db.rollback()
+            _cleanup_written(written)
+
+        async with _committing(db, undo) as commit:
             written = await _stream_files(folder, uploads)
             await _require_item_unchanged(db, item_id, section, name)
             # the revision may have been validated or used while streaming
             await _require_editable_files(db, await _fresh_revision(db, revision.id, item_id))
             rows = await _add_file_rows(db, project, revision, written, user_id)
             warnings = await _duplicate_warnings(db, item, revision, rows)
-            await _commit_through_cancel(db, commit)
-        except BaseException:
-            if commit.may_have_landed:
-                raise
-            await db.rollback()
-            _cleanup_written(written)
-            raise
+            await commit()
         return warnings
 
 
@@ -904,17 +950,15 @@ async def _remove_file_locked(
 
     path = to_absolute_path(target.file_path)
     moved: Path | None = None
-    commit = _CommitOutcome()
-    try:
+
+    async def undo() -> None:
+        await _restore_and_rollback(db, moved, path)
+
+    async with _committing(db, undo) as commit:
         await _delete_file_rows(db, file_ids=[target.id])
         await db.flush()
         moved = move_to_trash(project, path) if path is not None else None
-        await _commit_through_cancel(db, commit)
-    except BaseException:
-        if commit.may_have_landed:
-            raise
-        await _restore_and_rollback(db, moved, path)
-        raise
+        await commit()
 
 
 async def _clear_links_to(db: AsyncSession, revision_ids: list[int]) -> None:
@@ -943,8 +987,11 @@ async def _delete_revision_locked(
         f"R{revision.number}"
     )  # SEC-PATH-OK: fixed "R{int}" under a resolved item dir
     moved: Path | None = None
-    commit = _CommitOutcome()
-    try:
+
+    async def undo() -> None:
+        await _restore_and_rollback(db, moved, folder)
+
+    async with _committing(db, undo) as commit:
         file_ids = await _delete_file_rows(db, revision_ids=[revision.id])
         await _clear_links_to(db, [revision.id])
         await db.delete(revision)
@@ -953,12 +1000,7 @@ async def _delete_revision_locked(
         if await _deleted_revision_is_used(db, revision.id, file_ids):
             raise ProjectFilesError(409, "This revision was printed or delivered and cannot be deleted")
         moved = move_to_trash(project, folder)
-        await _commit_through_cancel(db, commit)
-    except BaseException:
-        if commit.may_have_landed:
-            raise
-        await _restore_and_rollback(db, moved, folder)
-        raise
+        await commit()
 
 
 async def _item_revision_ids(db: AsyncSession, item_id: int) -> list[int]:
@@ -992,8 +1034,13 @@ async def _rename_item_locked(db: AsyncSession, project: Project, item: ProjectI
         else:
             old_dir.rename(new_dir)
         moved = True
-    commit = _CommitOutcome()
-    try:
+
+    async def undo() -> None:
+        if moved:
+            new_dir.rename(old_dir)
+        await db.rollback()
+
+    async with _committing(db, undo) as commit:
         if moved:
             files = (
                 (
@@ -1012,14 +1059,7 @@ async def _rename_item_locked(db: AsyncSession, project: Project, item: ProjectI
                     )  # SEC-PATH-OK: relative part of a path already under old_dir
         item.name = clean
         item.name_key = key
-        await _commit_through_cancel(db, commit)
-    except BaseException:
-        if commit.may_have_landed:
-            raise
-        if moved:
-            new_dir.rename(old_dir)
-        await db.rollback()
-        raise
+        await commit()
     return item
 
 
@@ -1028,28 +1068,35 @@ async def delete_item(db: AsyncSession, project: Project, item: ProjectItem) -> 
         await _delete_item_locked(db, project, await _fresh_item(db, item.id))
 
 
+_ITEM_USED = "A revision of this item was printed or delivered; the item cannot be deleted"
+
+
 async def _delete_item_locked(db: AsyncSession, project: Project, item: ProjectItem) -> None:
     revision_ids = await _item_revision_ids(db, item.id)
     for revision_id in revision_ids:
         if await revision_is_used(db, revision_id):
-            raise ProjectFilesError(409, "A revision of this item was printed or delivered; the item cannot be deleted")
+            raise ProjectFilesError(409, _ITEM_USED)
     folder = item_dir(project, item.section, item.name)
     moved: Path | None = None
-    commit = _CommitOutcome()
-    try:
+
+    async def undo() -> None:
+        await _restore_and_rollback(db, moved, folder)
+
+    async with _committing(db, undo) as commit:
+        deleted_file_ids: dict[int, list[int]] = {}
         if revision_ids:
-            await _delete_file_rows(db, revision_ids=revision_ids)
+            for revision_id in revision_ids:
+                deleted_file_ids[revision_id] = await _delete_file_rows(db, revision_ids=[revision_id])
             await _clear_links_to(db, revision_ids)
             await db.execute(delete(ProjectRevision).where(ProjectRevision.id.in_(revision_ids)))
         await db.delete(item)
         await db.flush()
+        # a print or delivery may have landed since the pre-check; the write lock is held now
+        for revision_id, file_ids in deleted_file_ids.items():
+            if await _deleted_revision_is_used(db, revision_id, file_ids):
+                raise ProjectFilesError(409, _ITEM_USED)
         moved = move_to_trash(project, folder)
-        await _commit_through_cancel(db, commit)
-    except BaseException:
-        if commit.may_have_landed:
-            raise
-        await _restore_and_rollback(db, moved, folder)
-        raise
+        await commit()
 
 
 def _copy_thumbnail(source_thumbnail: str | None) -> tuple[str | None, Path | None]:
@@ -1127,8 +1174,16 @@ async def _fork_revision_locked(
                 entry["thumb_abs"].unlink(missing_ok=True)
         _remove_empty(folder, new_item_dir)
 
-    commit = _CommitOutcome()
-    try:
+    async def undo() -> None:
+        await db.rollback()
+        cleanup()
+
+    def translate(exc: BaseException) -> Exception | None:
+        if isinstance(exc, IntegrityError):
+            return ProjectFilesError(409, "An item with this name already exists in this section")
+        return None
+
+    async with _committing(db, undo, translate=translate) as commit:
         for source in sources:
             src = source["path"]
             if src is None or not src.exists():
@@ -1172,15 +1227,7 @@ async def _fork_revision_locked(
                     created_by_id=user_id,
                 )
             )
-        await _commit_through_cancel(db, commit)
-    except BaseException as exc:
-        if commit.may_have_landed:
-            raise
-        await db.rollback()
-        cleanup()
-        if isinstance(exc, IntegrityError):
-            raise ProjectFilesError(409, "An item with this name already exists in this section") from exc
-        raise
+        await commit()
     return forked
 
 

@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from fastapi import UploadFile
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.aito_task_delivery import AitoTaskDelivery
@@ -1642,3 +1643,158 @@ async def test_thumbnail_failure_never_fails_the_upload(tmp_path, monkeypatch):
     gcode = tmp_path / "part.gcode"
     gcode.write_bytes(b"G1 X1")
     assert await project_files._make_thumbnail(gcode) == (None, None)
+
+
+# --- _committing, the commit-through-cancel guard shared by every commit site (T-070) ---
+
+
+class _GuardSession:
+    def __init__(self, commit=None):
+        self.commits = 0
+        self._commit = commit
+
+    async def commit(self):
+        self.commits += 1
+        if self._commit is not None:
+            await self._commit()
+
+
+def _recording_undo(calls: list[str], fail: BaseException | None = None):
+    async def undo():
+        calls.append("undo")
+        if fail is not None:
+            raise fail
+
+    return undo
+
+
+@pytest.mark.asyncio
+async def test_committing_commits_without_undo_on_success():
+    db, calls = _GuardSession(), []
+    async with project_files._committing(db, _recording_undo(calls)) as commit:
+        await commit()
+    assert (db.commits, calls) == (1, [])
+
+
+@pytest.mark.asyncio
+async def test_committing_undoes_a_failure_before_the_commit_and_reraises_it():
+    db, calls = _GuardSession(), []
+    boom = ValueError("before the commit")
+    with pytest.raises(ValueError) as caught:
+        async with project_files._committing(db, _recording_undo(calls)):
+            raise boom
+    assert caught.value is boom
+    assert (db.commits, calls) == (0, ["undo"])
+
+
+@pytest.mark.asyncio
+async def test_committing_skips_the_undo_when_a_cancelled_commit_landed(monkeypatch):
+    calls: list[str] = []
+
+    async def landed(db, outcome):
+        outcome.may_have_landed = True
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(project_files, "_commit_through_cancel", landed)
+    with pytest.raises(asyncio.CancelledError):
+        async with project_files._committing(_GuardSession(), _recording_undo(calls)) as commit:
+            await commit()
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_committing_translates_after_the_undo_only_when_asked():
+    calls: list[str] = []
+    boom = RuntimeError("unique")
+
+    def translate(exc):
+        calls.append("translate")
+        return ProjectFilesError(409, "taken") if exc is boom else None
+
+    with pytest.raises(ProjectFilesError) as caught:
+        async with project_files._committing(_GuardSession(), _recording_undo(calls), translate=translate):
+            raise boom
+    assert (caught.value.status_code, caught.value.__cause__) == (409, boom)
+    assert calls == ["undo", "translate"]
+
+    other = RuntimeError("other")
+    with pytest.raises(RuntimeError) as kept:
+        async with project_files._committing(_GuardSession(), _recording_undo(calls), translate=translate):
+            raise other
+    assert kept.value is other
+
+
+@pytest.mark.asyncio
+async def test_committing_lets_a_failing_undo_win_untranslated():
+    calls: list[str] = []
+    boom, undo_failed = RuntimeError("body"), OSError("undo")
+
+    def translate(_exc):
+        calls.append("translate")
+        return ProjectFilesError(409, "never")
+
+    with pytest.raises(OSError) as caught:
+        async with project_files._committing(_GuardSession(), _recording_undo(calls, undo_failed), translate=translate):
+            raise boom
+    assert caught.value is undo_failed
+    assert caught.value.__context__ is boom
+    assert calls == ["undo"]
+
+
+def _commit_raises_integrity(db_session, monkeypatch, message: str) -> IntegrityError:
+    error = IntegrityError("INSERT", {}, Exception(message))
+
+    async def boom():
+        raise error
+
+    monkeypatch.setattr(db_session, "commit", boom)
+    return error
+
+
+@pytest.mark.asyncio
+async def test_add_revision_maps_a_revision_number_clash_to_409_after_cleaning_up(db_session, root, monkeypatch):
+    project = await _project(db_session)
+    item = await create_item(db_session, project, section="scan", name="Mesh", user_id=None)
+    await db_session.commit()
+    folder = root / project.storage_dir / "Scan" / "Mesh" / "R1"
+    error = _commit_raises_integrity(
+        db_session, monkeypatch, "UNIQUE constraint failed: project_revisions.item_id, project_revisions.number"
+    )
+    with pytest.raises(ProjectFilesError) as caught:
+        await add_revision(db_session, project, item, [upload("a.ply")], note=None, derived_from_id=None, user_id=None)
+    assert (caught.value.status_code, caught.value.detail) == (
+        409,
+        "Another upload just created this revision number; try again",
+    )
+    assert caught.value.__cause__ is error
+    assert folder.parent.is_dir() and not folder.exists()  # R1 was created, then removed by the undo
+
+
+@pytest.mark.asyncio
+async def test_add_revision_keeps_any_other_integrity_error(db_session, root, monkeypatch):
+    project = await _project(db_session)
+    item = await create_item(db_session, project, section="scan", name="Mesh", user_id=None)
+    await db_session.commit()
+    folder = root / project.storage_dir / "Scan" / "Mesh" / "R1"
+    error = _commit_raises_integrity(db_session, monkeypatch, "NOT NULL constraint failed: library_files.filename")
+    with pytest.raises(IntegrityError) as caught:
+        await add_revision(db_session, project, item, [upload("a.ply")], note=None, derived_from_id=None, user_id=None)
+    assert caught.value is error
+    assert folder.parent.is_dir() and not folder.exists()  # R1 was created, then removed by the undo
+
+
+@pytest.mark.asyncio
+async def test_fork_maps_an_integrity_error_to_409_after_cleaning_up(db_session, root, monkeypatch):
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project)
+    await db_session.commit()
+    base = root / project.storage_dir / "Modélisation"
+    error = _commit_raises_integrity(db_session, monkeypatch, "UNIQUE constraint failed: project_items.name_key")
+    with pytest.raises(ProjectFilesError) as caught:
+        await fork_revision(db_session, project, item, rev, "Copie", user_id=None)
+    assert (caught.value.status_code, caught.value.detail) == (
+        409,
+        "An item with this name already exists in this section",
+    )
+    assert caught.value.__cause__ is error
+    assert not (base / "Copie").exists()
