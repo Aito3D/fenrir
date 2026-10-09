@@ -11,6 +11,7 @@ import { ProjectCodeChip } from '../components/projects/ProjectCodeChip';
 import { ProjectTagChips } from '../components/projects/ProjectTagChips';
 import { NewProjectModal } from '../components/projects/NewProjectModal';
 import { formatDateOnly } from '../utils/date';
+import { useDebouncedValue } from '../hooks/useDebouncedValue';
 
 const PAGE_SIZE = 50;
 const STATUSES = ['active', 'completed', 'archived', 'all'] as const;
@@ -30,7 +31,7 @@ export function ProjectListPage() {
   const navigate = useNavigate();
   const { hasPermission } = useAuth();
   const [term, setTerm] = useState('');
-  const [debounced, setDebounced] = useState('');
+  const debounced = useDebouncedValue(term, 250);
   const [status, setStatus] = useState<(typeof STATUSES)[number]>('active');
   const [tagIds, setTagIds] = useState<number[]>([]);
   const [tagMode, setTagMode] = useState<'any' | 'all'>('any');
@@ -38,10 +39,6 @@ export function ProjectListPage() {
   const [view, setView] = useState<View>(readView);
   const [creating, setCreating] = useState(false);
 
-  useEffect(() => {
-    const timer = setTimeout(() => setDebounced(term), 250);
-    return () => clearTimeout(timer);
-  }, [term]);
   useEffect(() => setPage(0), [debounced, status, tagIds, tagMode]);
 
   const changeView = (next: View) => {

@@ -71,6 +71,25 @@ describe('ProjectHeader', () => {
     );
   });
 
+  it('stays in edit mode with an error toast when saving fails', async () => {
+    server.use(http.patch('/api/v1/projects/5', () => HttpResponse.json({ detail: 'boom' }, { status: 500 })));
+    render(<ProjectHeader project={project} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Edit title, description and tags' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(await screen.findByText('Could not save the project')).toBeInTheDocument();
+    expect(screen.queryByText('Project saved')).not.toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Title' })).toBeInTheDocument();
+  });
+
+  it('cancel leaves edit mode without saving', async () => {
+    render(<ProjectHeader project={project} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Edit title, description and tags' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('textbox', { name: 'Title' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Support caméra' })).toBeInTheDocument();
+    expect(patched).toBeNull();
+  });
+
   it('does not send untouched stored text for rewording, but does send an edit', async () => {
     render(<ProjectHeader project={project} />);
     await userEvent.click(screen.getByRole('button', { name: 'Edit title, description and tags' }));

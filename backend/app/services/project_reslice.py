@@ -20,6 +20,7 @@ from backend.app.schemas.project_files import ResliceBody
 from backend.app.schemas.slicer import SliceRequest
 from backend.app.services import project_files
 from backend.app.services.project_files import ProjectFilesError
+from backend.app.services.project_snapshot import is_3mf
 from backend.app.services.slicer_pipeline_request import slice_request_from_pipeline
 
 logger = logging.getLogger(__name__)
@@ -27,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 def is_resliceable(filename: str) -> bool:
     """3MF sources only (``.gcode.3mf`` included); G-code cannot be re-sliced."""
-    return filename.lower().endswith(".3mf")
+    return is_3mf(filename)
 
 
 def output_filename(source_filename: str) -> str:

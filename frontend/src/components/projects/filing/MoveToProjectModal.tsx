@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -10,6 +10,7 @@ import { ProjectCodeChip } from '../ProjectCodeChip';
 import { focusRingCls } from '../../formStyles';
 import { useToast } from '../../../contexts/ToastContext';
 import { useIsolatedEscape } from '../../../hooks/useIsolatedEscape';
+import { useDebouncedValue } from '../../../hooks/useDebouncedValue';
 
 interface PickedProject {
   id: number;
@@ -90,11 +91,7 @@ export function MoveToProjectModal({ fileIds, fileName, onClose, onMoved }: Prop
   const [itemChoice, setItemChoice] = useState<ItemChoice>('auto');
   const [newItemName, setNewItemName] = useState('');
   const [q, setQ] = useState('');
-  const [debounced, setDebounced] = useState('');
-  useEffect(() => {
-    const id = window.setTimeout(() => setDebounced(q.trim()), 250);
-    return () => window.clearTimeout(id);
-  }, [q]);
+  const debounced = useDebouncedValue(q, 250).trim();
 
   const firstFileId = fileIds[0];
   const { data: suggestions = [] } = useQuery({

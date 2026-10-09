@@ -7,6 +7,7 @@ import zipfile
 
 import pytest
 
+from backend.app.services.project_reslice import is_resliceable
 from backend.app.services.project_snapshot import is_3mf, read_print_snapshot
 
 CONFIG = {
@@ -90,6 +91,24 @@ def test_corrupt_config_and_not_a_zip(tmp_path):
 def test_is_3mf():
     assert is_3mf("A.GCODE.3MF") and is_3mf("b.3mf")
     assert not is_3mf("c.stl")
+
+
+@pytest.mark.parametrize(
+    ("filename", "expected"),
+    [
+        ("part.3MF", True),
+        ("part.3mf", True),
+        ("part.gcode.3mf", True),
+        (".3mf", True),
+        ("part.3mf.bak", False),
+        ("", False),
+        ("x.stl", False),
+        ("part.gcode", False),
+    ],
+)
+def test_is_3mf_and_is_resliceable_agree(filename, expected):
+    assert is_3mf(filename) is expected
+    assert is_resliceable(filename) is expected
 
 
 def test_surrogate_in_config_no_exception(tmp_path):

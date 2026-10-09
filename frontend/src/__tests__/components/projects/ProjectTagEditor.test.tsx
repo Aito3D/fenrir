@@ -45,6 +45,50 @@ describe('ProjectTagEditor', () => {
     expect(onChange).toHaveBeenCalledWith([{ id: null, name: 'fixation' }]);
   });
 
+  it('sends trimmed text and existing tag ids, and hides suggestions already applied', async () => {
+    let body: Record<string, unknown> | null = null;
+    server.use(
+      http.post('/api/v1/projects/ai/suggest-tags', async ({ request }) => {
+        body = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({ suggestions: [{ name: 'drone', tag_id: 1 }, { name: 'fixation', tag_id: null }], model: 'm' });
+      }),
+    );
+    render(
+      <ProjectTagEditor
+        value={[{ id: 1, name: 'drone' }, { id: null, name: 'brouillon' }]}
+        onChange={vi.fn()}
+        title="  Support drone  "
+        description="  Pour FPV  "
+      />,
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Suggest tags' }));
+    expect(await screen.findByRole('button', { name: 'Add fixation' })).toBeInTheDocument();
+    expect(body).toEqual({ title: 'Support drone', description: 'Pour FPV', exclude_tag_ids: [1] });
+    expect(screen.queryByRole('button', { name: 'Add drone' })).not.toBeInTheDocument();
+  });
+
+  it('removes a tag through its chip', async () => {
+    const onChange = vi.fn();
+    render(
+      <ProjectTagEditor value={[{ id: 1, name: 'drone' }, { id: null, name: 'fixation' }]} onChange={onChange} title="t" description="" />,
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Remove drone' }));
+    expect(onChange).toHaveBeenCalledWith([{ id: null, name: 'fixation' }]);
+  });
+
+  it('ignores Enter on blank or comma-only text and never adds a tag twice', async () => {
+    const onChange = vi.fn();
+    render(<ProjectTagEditor value={[{ id: null, name: 'Fixation' }]} onChange={onChange} title="t" description="" />);
+    const box = screen.getByRole('combobox');
+    await userEvent.type(box, '   {Enter}');
+    await userEvent.clear(box);
+    await userEvent.type(box, ', ,{Enter}');
+    await userEvent.clear(box);
+    await userEvent.type(box, 'FIXATION{Enter}');
+    expect(onChange).not.toHaveBeenCalled();
+    expect(box).toHaveValue('');
+  });
+
   it('says AI is unavailable when OpenRouter is not configured', async () => {
     server.use(http.post('/api/v1/projects/ai/suggest-tags', () => HttpResponse.json({ detail: 'x' }, { status: 409 })));
     render(<ProjectTagEditor value={[]} onChange={vi.fn()} title="Support" description="" />);

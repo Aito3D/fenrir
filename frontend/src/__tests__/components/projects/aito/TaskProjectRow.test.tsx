@@ -252,6 +252,29 @@ describe('TaskProjectRow', () => {
     await waitFor(() => expect(puts).toEqual([{ url: 'project', body: { project_id: null } }]));
   });
 
+  it('a failed link toasts, keeps the picker open and leaves the task unlinked', async () => {
+    const user = userEvent.setup();
+    server.use(http.put(`/api/v1/aito/tasks/${TASK}/project`, () => HttpResponse.json({ detail: 'nope' }, { status: 500 })));
+    renderRow();
+    await user.click(await screen.findByRole('button', { name: 'Link an existing project' }));
+    await user.click(await screen.findByRole('button', { name: /Drone bracket/ }));
+    expect(await screen.findByText('Could not update the link')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Drone bracket/ })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Drone bracket' })).not.toBeInTheDocument();
+  });
+
+  it('cancelling the unlink confirmation keeps the link and sends nothing', async () => {
+    const user = userEvent.setup();
+    links = linked();
+    renderRow();
+    await user.click(await screen.findByRole('button', { name: 'Unlink' }));
+    await screen.findByText(/Its delivered files list is cleared/);
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByText(/Its delivered files list is cleared/)).not.toBeInTheDocument());
+    expect(puts).toEqual([]);
+    expect(screen.getByRole('link', { name: 'Drone bracket' })).toBeInTheDocument();
+  });
+
   it('"suggest latest approved" checks the newest approved Printing revision per item, then saves them', async () => {
     const user = userEvent.setup();
     links = linked([]);

@@ -68,6 +68,27 @@ describe('ProjectsSettingsCard', () => {
     await waitFor(() => expect(putBody).toEqual({ projects_auto_file_by_code: false }));
   });
 
+  it('toasts the server error when saving the auto-filing toggle fails', async () => {
+    serve(true);
+    server.use(http.put('/api/v1/settings/', () => HttpResponse.json({ detail: 'settings locked' }, { status: 500 })));
+    render(<ProjectsSettingsCard />);
+    const toggle = await screen.findByRole('switch', { name: 'File uploads named after a project code' });
+    await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'true'));
+    await userEvent.click(toggle);
+    expect(await screen.findByText('settings locked')).toBeInTheDocument();
+    await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'true'));
+  });
+
+  it('toasts the server error when starting the migration fails, then refreshes the status', async () => {
+    statuses = [idle(2)];
+    serve();
+    server.use(http.post('/api/v1/projects/legacy-migration/start', () => HttpResponse.json({ detail: 'already running' }, { status: 409 })));
+    render(<ProjectsSettingsCard />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Move them now' }));
+    expect(await screen.findByText('already running')).toBeInTheDocument();
+    await waitFor(() => expect(statusCalls).toBeGreaterThanOrEqual(2));
+  });
+
   it('shows the pending count and starts the migration', async () => {
     statuses = [idle(4), { running: true, total: 4, done: 1, current: { project_id: 9, code: 'P-0009' }, failures: [], pending: 3 }];
     serve();

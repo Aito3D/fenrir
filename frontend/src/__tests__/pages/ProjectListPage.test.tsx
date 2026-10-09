@@ -240,6 +240,25 @@ describe('ProjectListPage', () => {
     expect(localStorage.getItem('projects-view')).toBe('table');
   });
 
+  it('falls back to the table view when the stored view cannot be read', async () => {
+    localStorage.setItem('projects-view', 'grid');
+    const getItem = vi.mocked(localStorage.getItem);
+    const original = getItem.getMockImplementation();
+    getItem.mockImplementation((key: string) => {
+      if (key === 'projects-view') throw new Error('SecurityError: access denied');
+      return original ? original(key) : null;
+    });
+    try {
+      render(<ProjectListPage />);
+      const table = await screen.findByRole('table');
+      expect(within(table).getByText('P-0001')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Table view' })).toHaveAttribute('aria-pressed', 'true');
+      expect(getItem).toHaveBeenCalledWith('projects-view');
+    } finally {
+      if (original) getItem.mockImplementation(original);
+    }
+  });
+
   it('opens the new-project modal and closes it with Escape without creating anything', async () => {
     const posts: string[] = [];
     server.use(

@@ -58,6 +58,28 @@ describe('ResliceDialog', () => {
     await waitFor(() => expect(onStart).toHaveBeenCalledWith(50, 1, null));
   });
 
+  it('Escape on the pipeline step closes the dialog', async () => {
+    const onClose = vi.fn();
+    render(<ResliceDialog projectId={7} files={[file(50, 'support.3mf')]} initialFileId={50} onStart={() => {}} onClose={onClose} />);
+    await screen.findByRole('radio', { name: /H2D PETG/ });
+    await userEvent.keyboard('{Escape}');
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('lets the operator pick another source file when there are several', async () => {
+    const onStart = vi.fn();
+    render(
+      <ResliceDialog projectId={7} files={[file(50, 'support.3mf'), file(51, 'capot.gcode.3mf')]} initialFileId={50} onStart={onStart} onClose={() => {}} />,
+    );
+    const source = screen.getByRole('combobox', { name: 'Source file' });
+    expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual(['support.3mf', 'capot.gcode.3mf']);
+    await userEvent.selectOptions(source, '51');
+    expect(screen.getByRole('dialog')).toHaveAccessibleName(expect.stringContaining('capot.gcode.3mf'));
+    await userEvent.click(await screen.findByRole('radio', { name: /H2D PETG/ }));
+    await userEvent.click(screen.getByRole('button', { name: 'Slice' }));
+    expect(onStart).toHaveBeenCalledWith(51, 1, undefined);
+  });
+
   it('says so when there is no pipeline', async () => {
     server.use(http.get('/api/v1/slicer-pipelines/', () => HttpResponse.json({ pipelines: [] })));
     render(<ResliceDialog projectId={7} files={[file(50, 'support.3mf')]} initialFileId={50} onStart={() => {}} onClose={() => {}} />);
