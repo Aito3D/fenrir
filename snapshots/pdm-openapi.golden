@@ -9202,18 +9202,6 @@
      ],
      "title": "Client Email"
     },
-    "client_id": {
-     "anyOf": [
-      {
-       "maxLength": 50,
-       "type": "string"
-      },
-      {
-       "type": "null"
-      }
-     ],
-     "title": "Client Id"
-    },
     "client_is_company": {
      "anyOf": [
       {
@@ -9224,18 +9212,6 @@
       }
      ],
      "title": "Client Is Company"
-    },
-    "client_name": {
-     "anyOf": [
-      {
-       "maxLength": 200,
-       "type": "string"
-      },
-      {
-       "type": "null"
-      }
-     ],
-     "title": "Client Name"
     },
     "client_phone": {
      "anyOf": [
