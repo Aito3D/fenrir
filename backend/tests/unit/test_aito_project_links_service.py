@@ -1,10 +1,11 @@
 """Aito task ↔ project link service (spec §1.6, §4)."""
 
 import io
+import logging
 
 import pytest
 from fastapi import UploadFile
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
@@ -12,6 +13,7 @@ from backend.app.models.aito_task import AitoTask
 from backend.app.models.aito_task_delivery import AitoTaskDelivery
 from backend.app.models.library import LibraryTag
 from backend.app.models.project import Project
+from backend.app.models.project_item import ProjectRevision
 from backend.app.services import aito_project_links as links, project_storage
 from backend.app.services.aito_events import KINDS
 from backend.app.services.project_files import add_revision, create_item
@@ -639,3 +641,143 @@ async def test_drop_files_requires_a_linked_task(db_session):
         await links.drop_files_on_task(db_session, task, [_upload("a.stl")], user_id=None, actor=None)
     assert err.value.status_code == 409
     assert await _events(db_session, "project.files_dropped") == []
+
+
+# --- error and cleanup branches ----------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_removing_a_delivery_whose_revision_vanished_labels_it_by_id(db_session):
+    project = await _project(db_session)
+    _item, r1 = await _revision(db_session, project)
+    order = await _order(db_session)
+    task = await _task(db_session, order, linked=project.id)
+    await links.set_deliveries(db_session, task, [r1.id], actor="Paul")
+    rid = r1.id
+    await db_session.execute(delete(ProjectRevision).where(ProjectRevision.id == rid))
+    await db_session.flush()
+
+    assert await links.set_deliveries(db_session, task, [], actor="Paul") == []
+
+    assert (await db_session.execute(select(AitoTaskDelivery))).first() is None
+    last = (await _events(db_session, "task.deliveries_changed"))[-1]
+    assert last.detail == {"added": [], "removed": [f"#{rid}"]}
+
+
+@pytest.mark.asyncio
+async def test_broadcast_failure_is_logged_and_the_rest_still_sent(monkeypatch, caplog):
+    sent = []
+
+    async def flaky(payload):
+        sent.append(payload["project_id"])
+        if payload["project_id"] == 1:
+            raise RuntimeError("socket gone")
+
+    monkeypatch.setattr(links.ws_manager, "broadcast_aito", flaky)
+    with caplog.at_level(logging.WARNING, logger=links.__name__):
+        await links.broadcast_orders_changed([1, 2, 1], "Paul")
+    assert sent == [1, 2]  # each order once, the failure does not stop the next
+    assert "aito_changed broadcast failed for order 1" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_drop_without_files_is_400(db_session):
+    project = await _project(db_session)
+    order = await _order(db_session)
+    task = await _task(db_session, order, linked=project.id)
+    with pytest.raises(links.LinkError) as err:
+        await links.drop_files_on_task(db_session, task, [], user_id=None, actor=None)
+    assert (err.value.status_code, err.value.detail) == (400, "No files to drop")
+    assert await _events(db_session, "project.files_dropped") == []
+
+
+@pytest.mark.asyncio
+async def test_drop_on_a_link_to_a_deleted_project_is_409(db_session):
+    order = await _order(db_session)
+    task = await _task(db_session, order, linked=987654)
+    with pytest.raises(links.LinkError) as err:
+        await links.drop_files_on_task(db_session, task, [_upload("a.3mf")], user_id=None, actor=None)
+    assert (err.value.status_code, err.value.detail) == (409, "Task is not linked to a project")
+    assert await _events(db_session, "project.files_dropped") == []
+
+
+@pytest.mark.asyncio
+async def test_drop_survives_a_failed_revision_fan_out(db_session, monkeypatch, caplog):
+    project = await _project(db_session)
+    order = await _order(db_session)
+    other = await _order(db_session, description="Autre")
+    task = await _task(db_session, order, linked=project.id)
+    await _task(db_session, other, linked=project.id)
+    await db_session.commit()
+    project_id, order_id = project.id, order.id
+    broadcasts = []
+
+    async def failing_record(*_args, **_kwargs):
+        raise RuntimeError("events table locked")
+
+    async def record_broadcast(order_ids, _actor):
+        broadcasts.append(list(order_ids))
+
+    monkeypatch.setattr(links, "record_on_linked_orders", failing_record)
+    monkeypatch.setattr(links, "broadcast_orders_changed", record_broadcast)
+    with caplog.at_level(logging.WARNING, logger=links.__name__):
+        response = await links.drop_files_on_task(
+            db_session, task, [_upload("a.3mf"), _upload("b.3mf")], user_id=None, actor="Paul"
+        )
+
+    assert [(r.filename, r.revision_number) for r in response.results] == [("a.3mf", 1), ("b.3mf", 1)]
+    assert f"project.revision_added fan-out failed for project {project_id}" in caplog.text
+    assert await _events(db_session, "project.revision_added") == []
+    [dropped] = await _events(db_session, "project.files_dropped")
+    assert dropped.project_id == order_id and len(dropped.detail["results"]) == 2
+    assert broadcasts == [[]]  # the failed fan-outs notified no other order
+    revisions = (await db_session.execute(select(ProjectRevision.number))).scalars().all()
+    assert sorted(revisions) == [1, 1]  # both groups stored despite the failed fan-outs
+
+
+@pytest.mark.asyncio
+async def test_drop_stops_when_the_project_vanishes_mid_drop(db_session, monkeypatch):
+    project = await _project(db_session)
+    order = await _order(db_session)
+    task = await _task(db_session, order, linked=project.id)
+    await db_session.commit()
+    project_id, code, order_id = project.id, project.code, order.id
+
+    async def delete_project(db, *_args, **_kwargs):
+        await db.delete(await db.get(Project, project_id))  # deleted by someone else after the first group
+        await db.commit()
+        return []
+
+    monkeypatch.setattr(links, "_fan_out_revision", delete_project)
+    with pytest.raises(links.LinkError) as err:
+        await links.drop_files_on_task(
+            db_session, task, [_upload("a.3mf"), _upload("b.3mf")], user_id=None, actor="Paul"
+        )
+
+    assert (err.value.status_code, err.value.detail) == (409, "Task is not linked to a project")
+    assert err.value.stored_count == 1  # the route still broadcasts the stored group
+    [dropped] = await _events(db_session, "project.files_dropped")
+    assert dropped.project_id == order_id
+    assert (dropped.detail["project_id"], dropped.detail["code"]) == (project_id, code)
+    assert [r["filename"] for r in dropped.detail["results"]] == ["a.3mf"]
+
+
+@pytest.mark.asyncio
+async def test_drop_still_returns_when_its_own_event_fails(db_session, monkeypatch, caplog):
+    project = await _project(db_session)
+    order = await _order(db_session)
+    task = await _task(db_session, order, linked=project.id)
+    await db_session.commit()
+    order_id = order.id
+
+    async def failing_record_drop(*_args, **_kwargs):
+        raise RuntimeError("events table locked")
+
+    monkeypatch.setattr(links, "_record_drop", failing_record_drop)
+    with caplog.at_level(logging.WARNING, logger=links.__name__):
+        response = await links.drop_files_on_task(db_session, task, [_upload("a.3mf")], user_id=None, actor="Paul")
+
+    assert [(r.filename, r.revision_number) for r in response.results] == [("a.3mf", 1)]
+    assert f"project.files_dropped event failed for order {order_id}" in caplog.text
+    assert await _events(db_session, "project.files_dropped") == []
+    assert (await db_session.execute(select(ProjectRevision.number))).scalars().all() == [1]

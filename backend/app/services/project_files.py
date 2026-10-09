@@ -10,6 +10,7 @@ and undoes the disk change when the commit fails.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 import logging
 import os
@@ -588,6 +589,41 @@ async def add_revision_from_sources(
         return revision
 
 
+class _CommitOutcome:
+    """Whether ``_commit_through_cancel`` saw its commit reach the database."""
+
+    __slots__ = ("landed",)
+
+    def __init__(self) -> None:
+        self.landed = False
+
+
+async def _commit_through_cancel(db: AsyncSession, outcome: _CommitOutcome) -> None:
+    """``await db.commit()``, but a cancellation cannot hide a commit that lands.
+
+    aiosqlite runs COMMIT in its worker thread, so cancelling the awaiting
+    coroutine (BaseHTTPMiddleware does on client disconnect) does not stop the
+    COMMIT. The commit runs as its own shielded task; when a CancelledError
+    arrives first, this waits for that task to finish (further cancellations
+    included, so the caller never touches the session while the commit is in
+    flight), sets ``outcome.landed`` if it committed, and re-raises the
+    original CancelledError either way: a cancellation is never swallowed, and
+    a commit that failed after it is undone exactly as a cancelled one was.
+    The caller's ``except`` must skip its rollback and filesystem undo when
+    ``outcome.landed`` is set, so disk and database agree. A commit that fails
+    on its own raises its own exception, unchanged.
+    """
+    task = asyncio.ensure_future(db.commit())
+    try:
+        await asyncio.shield(task)
+    except asyncio.CancelledError:
+        while not task.done():
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await asyncio.shield(task)
+        outcome.landed = not task.cancelled() and task.exception() is None
+        raise
+
+
 async def _add_revision_locked(
     db: AsyncSession,
     project: Project,
@@ -607,6 +643,7 @@ async def _add_revision_locked(
     folder = revision_dir(project, section, name, number)
     created_folder = not any(folder.iterdir())
     written: list[_WrittenFile] = []
+    commit = _CommitOutcome()
     try:
         written = await write(folder)
         await _require_item_unchanged(db, item_id, section, name)
@@ -625,8 +662,10 @@ async def _add_revision_locked(
         await db.flush()
         rows = await _add_file_rows(db, project, revision, written, user_id)
         warnings = await _duplicate_warnings(db, item, revision, rows)
-        await db.commit()
+        await _commit_through_cancel(db, commit)
     except BaseException as exc:
+        if commit.landed:
+            raise
         await db.rollback()
         _cleanup_written(written)
         if created_folder:
@@ -783,12 +822,15 @@ async def _remove_file_locked(
 
     path = to_absolute_path(target.file_path)
     moved: Path | None = None
+    commit = _CommitOutcome()
     try:
         await _delete_file_rows(db, file_ids=[target.id])
         await db.flush()
         moved = move_to_trash(project, path) if path is not None else None
-        await db.commit()
+        await _commit_through_cancel(db, commit)
     except BaseException:
+        if commit.landed:
+            raise
         await _restore_and_rollback(db, moved, path)
         raise
 
@@ -819,14 +861,17 @@ async def _delete_revision_locked(
         f"R{revision.number}"
     )  # SEC-PATH-OK: fixed "R{int}" under a resolved item dir
     moved: Path | None = None
+    commit = _CommitOutcome()
     try:
         await _delete_file_rows(db, revision_ids=[revision.id])
         await _clear_links_to(db, [revision.id])
         await db.delete(revision)
         await db.flush()
         moved = move_to_trash(project, folder)
-        await db.commit()
+        await _commit_through_cancel(db, commit)
     except BaseException:
+        if commit.landed:
+            raise
         await _restore_and_rollback(db, moved, folder)
         raise
 
@@ -902,6 +947,7 @@ async def _delete_item_locked(db: AsyncSession, project: Project, item: ProjectI
             raise ProjectFilesError(409, "A revision of this item was printed or delivered; the item cannot be deleted")
     folder = item_dir(project, item.section, item.name)
     moved: Path | None = None
+    commit = _CommitOutcome()
     try:
         if revision_ids:
             await _delete_file_rows(db, revision_ids=revision_ids)
@@ -910,8 +956,10 @@ async def _delete_item_locked(db: AsyncSession, project: Project, item: ProjectI
         await db.delete(item)
         await db.flush()
         moved = move_to_trash(project, folder)
-        await db.commit()
+        await _commit_through_cancel(db, commit)
     except BaseException:
+        if commit.landed:
+            raise
         await _restore_and_rollback(db, moved, folder)
         raise
 

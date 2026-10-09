@@ -1,5 +1,6 @@
 """Project files service: items, revisions, uploads (spec §1.3–§1.5, §2.3)."""
 
+import asyncio
 import io
 import zipfile
 from pathlib import Path
@@ -7,6 +8,7 @@ from pathlib import Path
 import pytest
 from fastapi import UploadFile
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile
@@ -676,3 +678,215 @@ async def test_revision_from_sources_records_derivation_and_pipeline(db_session,
     assert rev.pipeline_name == "H2D"
     assert rev.status == "wip"
     assert src.exists()  # sources are never touched
+
+
+# A cancellation (BaseHTTPMiddleware on client disconnect) that lands while the
+# commit is in flight: aiosqlite runs COMMIT in its worker thread, so the
+# cancellation cannot stop it. The patched commit models that thread with a
+# shielded inner task, gated so the cancellation is delivered first.
+
+
+def _commit_outlives_cancel(db_session, monkeypatch, *, fails=False):
+    real_commit = db_session.commit
+    in_flight, release = asyncio.Event(), asyncio.Event()
+
+    async def worker_thread():
+        await release.wait()
+        if fails:
+            raise RuntimeError("db down")
+        await real_commit()
+
+    async def commit():
+        inner = asyncio.ensure_future(worker_thread())
+        in_flight.set()
+        await asyncio.shield(inner)
+
+    monkeypatch.setattr(db_session, "commit", commit)
+    return in_flight, release
+
+
+async def _cancel_mid_commit(operation, in_flight, release):
+    task = asyncio.ensure_future(operation)
+    await in_flight.wait()
+    task.cancel()
+    await asyncio.sleep(0)  # the cancellation reaches the awaiting coroutine first
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+
+async def _cancelled_before_commit(db_session, monkeypatch):
+    async def cancelled():
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(db_session, "commit", cancelled)
+
+
+async def _fresh_scalars(test_engine, statement):
+    async with AsyncSession(test_engine) as fresh:
+        return list((await fresh.execute(statement)).scalars().all())
+
+
+@pytest.mark.asyncio
+async def test_add_revision_keeps_files_when_a_cancelled_commit_lands(db_session, root, monkeypatch, test_engine):
+    project = await _project(db_session)
+    item = await create_item(db_session, project, section="scan", name="Mesh", user_id=None)
+    storage_dir, item_id = project.storage_dir, item.id
+    await db_session.commit()
+    in_flight, release = _commit_outlives_cancel(db_session, monkeypatch)
+    await _cancel_mid_commit(
+        add_revision(db_session, project, item, [upload("a.ply")], note=None, derived_from_id=None, user_id=None),
+        in_flight,
+        release,
+    )
+    rev_ids = await _fresh_scalars(test_engine, select(ProjectRevision.id).where(ProjectRevision.item_id == item_id))
+    assert len(rev_ids) == 1
+    paths = await _fresh_scalars(
+        test_engine, select(LibraryFile.file_path).where(LibraryFile.revision_id == rev_ids[0])
+    )
+    assert len(paths) == 1
+    folder = root / storage_dir / "Scan" / "Mesh" / "R1"
+    assert (folder / "a.ply").read_bytes() == b"data"
+
+
+@pytest.mark.asyncio
+async def test_add_revision_cleans_up_when_a_cancelled_commit_fails(db_session, root, monkeypatch, test_engine):
+    project = await _project(db_session)
+    item = await create_item(db_session, project, section="scan", name="Mesh", user_id=None)
+    storage_dir, item_id = project.storage_dir, item.id
+    await db_session.commit()
+    in_flight, release = _commit_outlives_cancel(db_session, monkeypatch, fails=True)
+    await _cancel_mid_commit(
+        add_revision(db_session, project, item, [upload("a.ply")], note=None, derived_from_id=None, user_id=None),
+        in_flight,
+        release,
+    )
+    assert await _fresh_scalars(test_engine, select(ProjectRevision.id).where(ProjectRevision.item_id == item_id)) == []
+    folder = root / storage_dir / "Scan" / "Mesh" / "R1"
+    assert not folder.exists() or list(folder.iterdir()) == []
+
+
+@pytest.mark.asyncio
+async def test_add_revision_cleans_up_when_cancelled_before_the_commit(db_session, root, monkeypatch, test_engine):
+    project = await _project(db_session)
+    item = await create_item(db_session, project, section="scan", name="Mesh", user_id=None)
+    storage_dir, item_id = project.storage_dir, item.id
+    await db_session.commit()
+    await _cancelled_before_commit(db_session, monkeypatch)
+    with pytest.raises(asyncio.CancelledError):
+        await add_revision(db_session, project, item, [upload("a.ply")], note=None, derived_from_id=None, user_id=None)
+    assert await _fresh_scalars(test_engine, select(ProjectRevision.id).where(ProjectRevision.item_id == item_id)) == []
+    folder = root / storage_dir / "Scan" / "Mesh" / "R1"
+    assert not folder.exists() or list(folder.iterdir()) == []
+
+
+async def _two_file_revision(db_session):
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project, files=[upload("a.step"), upload("b.step", b"other")])
+    rows = (await db_session.execute(select(LibraryFile).where(LibraryFile.revision_id == rev.id))).scalars().all()
+    target_id = next(f.id for f in rows if f.filename == "a.step")
+    await db_session.commit()
+    return project, item, rev, target_id
+
+
+@pytest.mark.asyncio
+async def test_remove_file_stays_trashed_when_a_cancelled_commit_lands(db_session, root, monkeypatch, test_engine):
+    project, item, rev, target_id = await _two_file_revision(db_session)
+    base, rev_id = root / project.storage_dir, rev.id
+    in_flight, release = _commit_outlives_cancel(db_session, monkeypatch)
+    await _cancel_mid_commit(remove_file_from_revision(db_session, project, item, rev, target_id), in_flight, release)
+    kept = await _fresh_scalars(test_engine, select(LibraryFile.filename).where(LibraryFile.revision_id == rev_id))
+    assert kept == ["b.step"]
+    folder = base / "Modélisation" / "Support" / "R1"
+    assert not (folder / "a.step").exists() and (folder / "b.step").exists()
+    assert [p.name.startswith("a") for p in _trash_entries(base)] == [True]
+
+
+@pytest.mark.asyncio
+async def test_remove_file_restored_when_cancelled_before_the_commit(db_session, root, monkeypatch, test_engine):
+    project, item, rev, target_id = await _two_file_revision(db_session)
+    base, rev_id = root / project.storage_dir, rev.id
+    await _cancelled_before_commit(db_session, monkeypatch)
+    with pytest.raises(asyncio.CancelledError):
+        await remove_file_from_revision(db_session, project, item, rev, target_id)
+    kept = await _fresh_scalars(test_engine, select(LibraryFile.filename).where(LibraryFile.revision_id == rev_id))
+    assert sorted(kept) == ["a.step", "b.step"]
+    assert (base / "Modélisation" / "Support" / "R1" / "a.step").read_bytes() == b"data"
+    assert _trash_entries(base) == []
+
+
+@pytest.mark.asyncio
+async def test_delete_revision_stays_trashed_when_a_cancelled_commit_lands(db_session, root, monkeypatch, test_engine):
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project)
+    await db_session.commit()
+    base, rev_id = root / project.storage_dir, rev.id
+    in_flight, release = _commit_outlives_cancel(db_session, monkeypatch)
+    await _cancel_mid_commit(delete_revision(db_session, project, item, rev), in_flight, release)
+    assert await _fresh_scalars(test_engine, select(ProjectRevision.id).where(ProjectRevision.id == rev_id)) == []
+    assert await _fresh_scalars(test_engine, select(LibraryFile.id).where(LibraryFile.revision_id == rev_id)) == []
+    assert not (base / "Modélisation" / "Support" / "R1").exists()
+    assert [p.name for p in _trash_entries(base)] == ["a.step"]
+
+
+@pytest.mark.asyncio
+async def test_delete_revision_restored_when_cancelled_before_the_commit(db_session, root, monkeypatch, test_engine):
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project)
+    await db_session.commit()
+    base, rev_id = root / project.storage_dir, rev.id
+    await _cancelled_before_commit(db_session, monkeypatch)
+    with pytest.raises(asyncio.CancelledError):
+        await delete_revision(db_session, project, item, rev)
+    assert await _fresh_scalars(test_engine, select(ProjectRevision.id).where(ProjectRevision.id == rev_id)) == [rev_id]
+    assert (base / "Modélisation" / "Support" / "R1" / "a.step").read_bytes() == b"data"
+    assert _trash_entries(base) == []
+
+
+@pytest.mark.asyncio
+async def test_delete_item_stays_trashed_when_a_cancelled_commit_lands(db_session, root, monkeypatch, test_engine):
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project)
+    await db_session.commit()
+    base, item_id, rev_id = root / project.storage_dir, item.id, rev.id
+    in_flight, release = _commit_outlives_cancel(db_session, monkeypatch)
+    await _cancel_mid_commit(delete_item(db_session, project, item), in_flight, release)
+    assert await _fresh_scalars(test_engine, select(ProjectItem.id).where(ProjectItem.id == item_id)) == []
+    assert await _fresh_scalars(test_engine, select(LibraryFile.id).where(LibraryFile.revision_id == rev_id)) == []
+    assert not (base / "Modélisation" / "Support").exists()
+    assert [p.name for p in _trash_entries(base)] == ["a.step"]
+
+
+@pytest.mark.asyncio
+async def test_delete_item_restored_when_cancelled_before_the_commit(db_session, root, monkeypatch, test_engine):
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project)
+    await db_session.commit()
+    base, item_id = root / project.storage_dir, item.id
+    await _cancelled_before_commit(db_session, monkeypatch)
+    with pytest.raises(asyncio.CancelledError):
+        await delete_item(db_session, project, item)
+    assert await _fresh_scalars(test_engine, select(ProjectItem.id).where(ProjectItem.id == item_id)) == [item_id]
+    assert (base / "Modélisation" / "Support" / "R1" / "a.step").read_bytes() == b"data"
+    assert _trash_entries(base) == []
+
+
+@pytest.mark.asyncio
+async def test_repeated_cancellation_still_waits_for_the_commit(db_session, root, monkeypatch, test_engine):
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project)
+    await db_session.commit()
+    base, rev_id = root / project.storage_dir, rev.id
+    in_flight, release = _commit_outlives_cancel(db_session, monkeypatch)
+    task = asyncio.ensure_future(delete_revision(db_session, project, item, rev))
+    await in_flight.wait()
+    task.cancel()
+    await asyncio.sleep(0)
+    task.cancel()  # a second cancellation while the helper waits for the commit
+    await asyncio.sleep(0)
+    assert not task.done(), "the helper must not hand the session back while the commit is in flight"
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert await _fresh_scalars(test_engine, select(ProjectRevision.id).where(ProjectRevision.id == rev_id)) == []
+    assert [p.name for p in _trash_entries(base)] == ["a.step"]

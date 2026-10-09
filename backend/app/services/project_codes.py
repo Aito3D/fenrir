@@ -43,11 +43,20 @@ def allocate_code_number(connection: Connection) -> int:
     """Next code number; persists the counter in the same transaction.
 
     On PostgreSQL the counter row is locked (``FOR UPDATE``) so two concurrent
-    creates serialise; SQLite already serialises writers. The startup
-    migration always writes the counter row, so the unlocked first-insert
-    path only runs on a database that has never started this build.
+    creates serialise. On SQLite the reads below would otherwise run outside
+    any transaction (pysqlite only issues its implicit ``BEGIN`` before DML),
+    so two creates could read the same counter; a no-op ``UPDATE`` of the
+    counter row goes first to open the transaction and take the database
+    write lock, which SQLite holds even when the row is missing (0 rows), so
+    the counter read and the ``projects.code`` scan are serialised too. The
+    startup migration always writes the counter row, so the first-insert path
+    only runs on a database that has never started this build.
     """
-    lock = " FOR UPDATE" if connection.dialect.name == "postgresql" else ""
+    if connection.dialect.name == "postgresql":
+        lock = " FOR UPDATE"
+    else:
+        lock = ""
+        connection.execute(text("UPDATE settings SET value = value WHERE key = :key"), {"key": CODE_COUNTER_KEY})
     row = connection.execute(
         text(f"SELECT value FROM settings WHERE key = :key{lock}"), {"key": CODE_COUNTER_KEY}
     ).first()
