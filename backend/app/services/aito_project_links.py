@@ -521,10 +521,6 @@ async def record_and_broadcast(
 # --- file drops (spec §4.3) -------------------------------------------------
 
 
-def _base_name(upload: UploadFile) -> str:
-    return (upload.filename or "").replace("\\", "/").rsplit("/", 1)[-1]
-
-
 async def _record_drop(
     db: AsyncSession,
     order_id: int,
@@ -608,8 +604,8 @@ async def drop_files_on_task(
 
     groups: dict[tuple[str, str], tuple[str, list[UploadFile]]] = {}
     for upload in uploads:
-        name = item_name_for_filename(_base_name(upload))
-        key = (DROP_SECTION, project_files._name_key(name))
+        name = item_name_for_filename(project_files.upload_basename(upload))
+        key = (DROP_SECTION, project_files.name_key(name))
         groups.setdefault(key, (name, []))[1].append(upload)
 
     results: list[DroppedFileResult] = []
@@ -624,7 +620,7 @@ async def drop_files_on_task(
             revision_id, number = revision.id, revision.number
             results.extend(
                 DroppedFileResult(
-                    filename=_base_name(upload),
+                    filename=project_files.upload_basename(upload),
                     section=section,
                     item_id=item_id,
                     item_name=item_name,

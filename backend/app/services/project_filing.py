@@ -201,7 +201,7 @@ async def move_library_files_to_project(
     target_item_id = target.id if target is not None else None
     if new_item_name is not None:
         try:
-            new_item_name, _key = project_files._clean_item_name(new_item_name)
+            new_item_name, _key = project_files.clean_item_name(new_item_name)
         except project_files.ProjectFilesError as exc:
             raise ValueError(exc.detail) from exc
 
@@ -258,7 +258,7 @@ def _classify_files(
             name, section = target.name, target.section
         else:
             name = new_item_name if new_item_name is not None else item_name_for_filename(filename)
-        key = (section, target.name_key if target is not None else project_files._name_key(name))
+        key = (section, target.name_key if target is not None else project_files.name_key(name))
         groups.setdefault(key, (name, []))[1].append(candidate)
     return groups
 
@@ -318,7 +318,7 @@ async def _store_group(
     pending = candidates  # what a failure below reports as skipped
     try:
         if target_item_id is not None:
-            item = await project_files._fresh_item(db, target_item_id)
+            item = await project_files.fresh_item(db, target_item_id)
         else:
             item, project = await find_or_create_item(db, project, section, key, name, user_id)
         item_id_now, item_name = item.id, item.name
@@ -446,7 +446,7 @@ async def _code_suggestions(db: AsyncSession, filename: str) -> list[ProjectSugg
 
 async def _item_name_suggestions(db: AsyncSession, name: str) -> list[ProjectSuggestionForFile]:
     """Non-template projects with an item (in an enabled section) named like ``name``."""
-    key = project_files._name_key(name)
+    key = project_files.name_key(name)
     if not key:
         return []
     rows = await db.execute(
@@ -593,7 +593,7 @@ async def _auto_file_by_code(
         section = entry["section"]
     else:
         section = section_for_filename(filename)  # "impression" for every printable file
-        clean, key = project_files._clean_item_name(name)
+        clean, key = project_files.clean_item_name(name)
         item, project = await find_or_create_item(db, project, section, key, clean, user_id)
         item_id, item_name = item.id, item.name
         source = RevisionSource(path=path, filename=filename)
@@ -801,7 +801,7 @@ async def migrate_project_legacy(db: AsyncSession, project: Project) -> LegacyMi
     fresh = await db.get(Project, project_id, populate_existing=True)
     if fresh is None:
         raise LegacyMigrationError("project deleted meanwhile")
-    fresh.legacy_migrated_at = project_files._now()
+    fresh.legacy_migrated_at = project_files.utcnow()
     await db.commit()
     return LegacyMigrationOutcome(
         revisions_created=len(revisions), files_moved=len(result.moved), files_copied=len(result.copied)
@@ -890,6 +890,6 @@ async def _run_legacy_migration() -> None:
     except Exception:
         logger.exception("Legacy project migration stopped")
     finally:
-        state["last_run"] = {**totals, "finished_at": project_files._now()}
+        state["last_run"] = {**totals, "finished_at": project_files.utcnow()}
         state["running"] = False
         state["current"] = None

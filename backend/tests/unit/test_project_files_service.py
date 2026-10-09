@@ -6,6 +6,7 @@ import zipfile
 from pathlib import Path
 
 import pytest
+from fastapi import UploadFile
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -2058,3 +2059,121 @@ def test_revision_file_path_walks_past_a_prefix_that_escapes_the_data_dir(monkey
     monkeypatch.setattr(project_storage, "projects_root", lambda: projects)
     stored = "../data/projects/P-0001_x/R1/a.step"
     assert project_files._revision_file_path(stored) == (folder / "a.step").resolve()
+
+
+@pytest.mark.parametrize(
+    ("filename", "expected"),
+    [
+        (None, ""),
+        ("", ""),
+        ("C:\\Users\\shop\\Support.3mf", "Support.3mf"),
+        ("plates/v2/Support.gcode", "Support.gcode"),
+        ("mixed\\dir/Support.bgcode", "Support.bgcode"),
+        ("Support.3mf", "Support.3mf"),
+    ],
+)
+def test_upload_basename_strips_client_folders(filename, expected):
+    assert project_files.upload_basename(UploadFile(file=io.BytesIO(b""), filename=filename)) == expected
+
+
+# --- refusals before any write, and per-type thumbnails (coverage follow-up, loop-6) ---
+
+
+@pytest.mark.asyncio
+async def test_revision_writes_refuse_an_empty_file_list(db_session, root):
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project)
+    folder = project_storage.item_dir(project, item.section, item.name)
+    before = sorted(p.relative_to(folder).as_posix() for p in folder.rglob("*"))
+    assert before == ["R1", "R1/a.step"]
+
+    with pytest.raises(ProjectFilesError) as no_upload:
+        await add_revision(db_session, project, item, [], note=None, derived_from_id=None, user_id=None)
+    assert (no_upload.value.status_code, no_upload.value.detail) == (400, "A revision needs at least one file")
+    with pytest.raises(ProjectFilesError) as no_source:
+        await project_files.add_revision_from_sources(db_session, project, item, [], note=None, user_id=None)
+    assert (no_source.value.status_code, no_source.value.detail) == (400, "A revision needs at least one file")
+    with pytest.raises(ProjectFilesError) as no_file:
+        await add_files_to_revision(db_session, project, item, rev, [], user_id=None)
+    assert (no_file.value.status_code, no_file.value.detail) == (400, "No file")
+
+    numbers = (await db_session.execute(select(ProjectRevision.number))).scalars().all()
+    assert numbers == [1]  # no R2 was created
+    assert len((await db_session.execute(select(LibraryFile))).scalars().all()) == 1
+    assert sorted(p.relative_to(folder).as_posix() for p in folder.rglob("*")) == before
+
+
+@pytest.mark.asyncio
+async def test_adding_files_to_a_used_wip_revision_is_refused(db_session, root):
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project)
+    await _mark_used(db_session, rev)
+    folder = project_storage.item_dir(project, item.section, item.name) / "R1"
+
+    with pytest.raises(ProjectFilesError) as used:
+        await add_files_to_revision(db_session, project, item, rev, [upload("b.step", b"b")], user_id=None)
+    assert (used.value.status_code, used.value.detail) == (
+        409,
+        "This revision was printed or delivered; make a new revision instead",
+    )
+    assert sorted(p.name for p in folder.iterdir()) == ["a.step"]
+    files = (await db_session.execute(select(LibraryFile.filename).where(LibraryFile.revision_id == rev.id))).all()
+    assert [f.filename for f in files] == ["a.step"]
+
+
+@pytest.mark.asyncio
+async def test_gcode_embedded_thumbnail_is_written(tmp_path, monkeypatch):
+    import base64
+
+    monkeypatch.setattr(project_files, "get_library_thumbnails_dir", lambda: tmp_path)
+    picture = b"\x89PNG\r\n\x1a\nfake-thumbnail"
+    gcode = tmp_path / "part.gcode"
+    encoded = base64.b64encode(picture).decode()
+    gcode.write_text(f"; thumbnail begin 300x300 {len(encoded)}\n; {encoded}\n; thumbnail end\nG1 X1\n")
+
+    thumb, metadata = await project_files._make_thumbnail(gcode)
+    assert metadata is None
+    assert thumb is not None and thumb.parent == tmp_path and thumb.suffix == ".png"
+    assert thumb.read_bytes() == picture
+
+
+@pytest.mark.asyncio
+async def test_image_upload_gets_a_png_thumbnail(tmp_path, monkeypatch):
+    from PIL import Image
+
+    thumbs = tmp_path / "thumbs"
+    thumbs.mkdir()
+    monkeypatch.setattr(project_files, "get_library_thumbnails_dir", lambda: thumbs)
+    photo = tmp_path / "photo.JPG"
+    Image.new("RGB", (512, 128), (200, 10, 10)).save(photo, "JPEG")
+
+    thumb, metadata = await project_files._make_thumbnail(photo)
+    assert metadata is None
+    assert thumb is not None and thumb.parent == thumbs
+    with Image.open(thumb) as made:
+        assert (made.format, made.size) == ("PNG", (256, 64))
+
+
+@pytest.mark.asyncio
+async def test_stl_thumbnail_only_renders_a_usable_mesh(tmp_path, monkeypatch):
+    thumbs = tmp_path / "thumbs"
+    thumbs.mkdir()
+    monkeypatch.setattr(project_files, "get_library_thumbnails_dir", lambda: thumbs)
+    rendered: list[tuple[Path, Path]] = []
+
+    def fake_render(stl_path, thumbnails_dir):
+        rendered.append((stl_path, thumbnails_dir))
+        out = thumbnails_dir / "mesh.png"
+        out.write_bytes(b"png")
+        return str(out)
+
+    monkeypatch.setattr(project_files, "generate_stl_thumbnail", fake_render)
+    tiny = tmp_path / "tiny.stl"
+    tiny.write_bytes(b"x" * (project_files.MIN_USABLE_STL_BYTES - 1))
+    assert await project_files._make_thumbnail(tiny) == (None, None)
+    assert rendered == []
+
+    mesh = tmp_path / "mesh.STL"
+    mesh.write_bytes(b"x" * project_files.MIN_USABLE_STL_BYTES)
+    assert await project_files._make_thumbnail(mesh) == (thumbs / "mesh.png", None)
+    assert rendered == [(mesh, thumbs)]

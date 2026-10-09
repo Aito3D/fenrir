@@ -221,6 +221,7 @@ async def find_item(db: AsyncSession, project_id: int, section: str, key: str)
 async def find_or_create_item(
 async def fork_item(
 async def fork_revision(
+async def fresh_item(db: AsyncSession, item_id: int)
 async def get_item_for_project(db: AsyncSession, item_id: int)
 async def get_legacy_migration_status(
 async def get_or_create_tags(db: AsyncSession, names: list[str])
@@ -308,6 +309,7 @@ class RevisionSource
 class UnknownTagError(ValueError)
 def allocate_code_number(connection: Connection)
 def claim_unique_file_path(directory: Path, filename: str)
+def clean_item_name(name: str)
 def clean_tag_name(name: str)
 def content_length_capped_route(*permissions: Permission)
 def ensure_project_dir(project)
@@ -320,6 +322,7 @@ def item_dir(project, section: str, item_name: str)
 def item_name_for_filename(name: str)
 def legacy_migration_status_running()
 def move_to_trash(project, path: Path)
+def name_key(name: str)
 def output_filename(source_filename: str)
 def parse_project_code(code: str | None)
 def project_code_from_filename(name: str)
@@ -341,6 +344,8 @@ def storage_dir_name(code: str, title: str)
 def tag_mirror(names: list[str])
 def tag_name_key(name: str)
 def unique_file_path(directory: Path, filename: str)
+def upload_basename(upload: UploadFile)
+def utcnow()
 ```
 
 ## Pydantic schema + ORM model class names

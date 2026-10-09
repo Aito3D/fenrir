@@ -424,7 +424,7 @@ async def test_target_item_deleted_meanwhile_propagates(db_session, root, monkey
     async def deleted(db, item_id):
         raise project_files.ProjectFilesError(404, "Item not found")
 
-    monkeypatch.setattr(project_files, "_fresh_item", deleted)
+    monkeypatch.setattr(project_files, "fresh_item", deleted)
     with pytest.raises(project_files.ProjectFilesError) as exc:
         await _move(db_session, project, [row], item_id=item.id)
     assert exc.value.status_code == 404

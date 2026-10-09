@@ -37,6 +37,7 @@ from backend.app.api.routes.library import (
     create_image_thumbnail,
     extract_gcode_thumbnail,
     get_library_thumbnails_dir,
+    to_absolute_path,
     to_relative_path,
 )
 from backend.app.core.config import settings
@@ -87,7 +88,7 @@ class ProjectFilesError(Exception):
         self.detail = detail
 
 
-def _now() -> datetime:
+def utcnow() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
@@ -106,7 +107,7 @@ def _item_lock(item_id: int) -> asyncio.Lock:
     return lock
 
 
-async def _fresh_item(db: AsyncSession, item_id: int) -> ProjectItem:
+async def fresh_item(db: AsyncSession, item_id: int) -> ProjectItem:
     """The item as committed now (the caller's copy may predate a rename made while it waited for the lock)."""
     item = (
         await db.execute(select(ProjectItem).where(ProjectItem.id == item_id).execution_options(populate_existing=True))
@@ -136,14 +137,14 @@ async def _require_item_unchanged(db: AsyncSession, item_id: int, section: str, 
         raise ProjectFilesError(409, "This item was renamed or deleted during the upload; try again")
 
 
-def _name_key(name: str) -> str:
+def name_key(name: str) -> str:
     """Uniqueness key = what the folder name will be (NFC, forbidden chars and dots stripped), case-folded."""
     return sanitize_component(name.strip(), fallback="").casefold()
 
 
-def _clean_item_name(name: str) -> tuple[str, str]:
+def clean_item_name(name: str) -> tuple[str, str]:
     clean = name.strip()[:255]
-    key = _name_key(clean)
+    key = name_key(clean)
     if not key:
         raise ProjectFilesError(400, "Item name must not be blank")
     return clean, key
@@ -168,13 +169,14 @@ def require_enabled_section(section: str) -> None:
         raise ProjectFilesError(400, f"Section {section!r} does not accept files for now")
 
 
-def _upload_name(upload: UploadFile) -> str:
+def upload_basename(upload: UploadFile) -> str:
+    """The upload's file name without any client-side folder (``/`` or ``\\`` separated); ``""`` when unnamed."""
     return (upload.filename or "").replace("\\", "/").rsplit("/", 1)[-1]
 
 
 def require_printable_uploads(uploads: list[UploadFile]) -> None:
     """400 naming every non-printable upload (the whole request is refused, nothing written)."""
-    rejected = [_upload_name(upload) for upload in uploads if not is_printable_filename(_upload_name(upload))]
+    rejected = [upload_basename(upload) for upload in uploads if not is_printable_filename(upload_basename(upload))]
     if rejected:
         raise ProjectFilesError(
             400, "Projects only accept printing files (.3mf, .gcode, .bgcode); refused: " + ", ".join(rejected)
@@ -213,7 +215,7 @@ async def create_item(
 ) -> ProjectItem:
     if section not in SECTIONS:
         raise ProjectFilesError(400, f"Unknown section: {section}")
-    clean, key = _clean_item_name(name)
+    clean, key = clean_item_name(name)
     await _require_item_name_free(db, project, section, key)
     item = ProjectItem(project_id=project.id, section=section, name=clean, name_key=key, created_by_id=user_id)
     db.add(item)
@@ -583,7 +585,7 @@ async def add_revision(
         return await _add_revision_locked(
             db,
             project,
-            await _fresh_item(db, item.id),
+            await fresh_item(db, item.id),
             lambda folder: _stream_files(folder, uploads),
             note,
             derived_from_id,
@@ -620,7 +622,7 @@ async def add_revision_from_sources(
         revision, _warnings = await _add_revision_locked(
             db,
             project,
-            await _fresh_item(db, item.id),
+            await fresh_item(db, item.id),
             lambda folder: _copy_sources(folder, sources),
             note,
             derived_from_id,
@@ -848,7 +850,7 @@ async def update_revision(
         if status != revision.status:
             revision.status = status
             revision.status_changed_by_id = user_id
-            revision.status_changed_at = _now()
+            revision.status_changed_at = utcnow()
     if "note" in fields:
         revision.note = (fields["note"] or "").strip() or None
     if "derived_from_id" in fields:
@@ -886,7 +888,7 @@ async def add_files_to_revision(
     if not uploads:
         raise ProjectFilesError(400, "No file")
     async with _item_lock(item.id):
-        item = await _fresh_item(db, item.id)
+        item = await fresh_item(db, item.id)
         revision = await _fresh_revision(db, revision.id, item.id)
         await _require_editable_files(db, revision)
         item_id, section, name = item.id, item.section, item.name
@@ -974,7 +976,7 @@ async def remove_file_from_revision(
     db: AsyncSession, project: Project, item: ProjectItem, revision: ProjectRevision, file_id: int
 ) -> None:
     async with _item_lock(item.id):
-        item = await _fresh_item(db, item.id)
+        item = await fresh_item(db, item.id)
         await _remove_file_locked(db, project, item, await _fresh_revision(db, revision.id, item.id), file_id)
 
 
@@ -988,7 +990,6 @@ async def _remove_file_locked(
         raise ProjectFilesError(404, "File not found in this revision")
     if len(files) == 1:
         raise ProjectFilesError(409, "A revision keeps at least one file; delete the revision instead")
-    from backend.app.api.routes.library import to_absolute_path
 
     path = to_absolute_path(target.file_path)
     async with _committing_trash(db, project, path) as guard:
@@ -1011,7 +1012,7 @@ async def _clear_links_to(db: AsyncSession, revision_ids: list[int]) -> None:
 
 async def delete_revision(db: AsyncSession, project: Project, item: ProjectItem, revision: ProjectRevision) -> None:
     async with _item_lock(item.id):
-        item = await _fresh_item(db, item.id)
+        item = await fresh_item(db, item.id)
         await _delete_revision_locked(db, project, item, await _fresh_revision(db, revision.id, item.id))
 
 
@@ -1043,13 +1044,11 @@ async def _item_revision_ids(db: AsyncSession, item_id: int) -> list[int]:
 
 async def rename_item(db: AsyncSession, project: Project, item: ProjectItem, new_name: str) -> ProjectItem:
     async with _item_lock(item.id):
-        return await _rename_item_locked(db, project, await _fresh_item(db, item.id), new_name)
+        return await _rename_item_locked(db, project, await fresh_item(db, item.id), new_name)
 
 
 async def _rename_item_locked(db: AsyncSession, project: Project, item: ProjectItem, new_name: str) -> ProjectItem:
-    from backend.app.api.routes.library import to_absolute_path
-
-    clean, key = _clean_item_name(new_name)
+    clean, key = clean_item_name(new_name)
     if key != item.name_key:
         await _require_item_name_free(db, project, item.section, key, exclude_id=item.id)
     old_dir = item_dir(project, item.section, item.name)
@@ -1104,7 +1103,7 @@ async def _rename_item_locked(db: AsyncSession, project: Project, item: ProjectI
 
 async def delete_item(db: AsyncSession, project: Project, item: ProjectItem) -> None:
     async with _item_lock(item.id):
-        await _delete_item_locked(db, project, await _fresh_item(db, item.id))
+        await _delete_item_locked(db, project, await fresh_item(db, item.id))
 
 
 _ITEM_USED = "A revision of this item was printed or delivered; the item cannot be deleted"
@@ -1140,8 +1139,6 @@ def _revision_file_path(file_path: str | None) -> Path | None:
     swapped for a symlink to ``.jwt_secret`` or the database. ``None`` (read it
     as "missing") unless the resolved path sits under the projects root and no
     component below that root is a symlink. The root itself may be one."""
-    from backend.app.api.routes.library import to_absolute_path
-
     path = to_absolute_path(file_path)
     if path is None:
         return None
@@ -1169,16 +1166,12 @@ def _revision_file_path(file_path: str | None) -> Path | None:
 
 def _is_symlink(file_path: str) -> bool:
     """Whether the stored file itself (its folders resolved, the leaf not followed) is a symlink."""
-    from backend.app.api.routes.library import to_absolute_path
-
     stored = Path(os.path.normpath(file_path))
     return (to_absolute_path(str(stored.parent)) / stored.name).is_symlink()
 
 
 def _copy_thumbnail(source_thumbnail: str | None) -> tuple[str | None, Path | None]:
     """Own copy of a thumbnail (relative path, absolute path), so deleting one file never blanks the other."""
-    from backend.app.api.routes.library import to_absolute_path
-
     src = to_absolute_path(source_thumbnail)
     if src is None or _is_symlink(source_thumbnail) or not src.is_file():
         return None, None
@@ -1204,7 +1197,7 @@ async def fork_revision(
     held only for the final flush and commit. The source item stays locked
     while its files are read."""
     async with _item_lock(item.id):
-        item = await _fresh_item(db, item.id)
+        item = await fresh_item(db, item.id)
         revision = await _fresh_revision(db, revision.id, item.id)
         return await _fork_revision_locked(db, project, item, revision, new_name, user_id)
 
@@ -1213,7 +1206,7 @@ async def _fork_revision_locked(
     db: AsyncSession, project: Project, item: ProjectItem, revision: ProjectRevision, new_name: str, user_id: int | None
 ) -> ProjectItem:
     section = item.section
-    clean, key = _clean_item_name(new_name)
+    clean, key = clean_item_name(new_name)
     await _require_item_name_free(db, project, section, key)
     new_item_dir = item_dir(project, section, clean)
     if new_item_dir.exists():

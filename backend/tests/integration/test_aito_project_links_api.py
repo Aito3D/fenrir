@@ -562,7 +562,7 @@ async def test_concurrent_drop_creating_the_same_item_joins_it(
 
     async def racing_create(db, project_row, *, section, name, user_id):
         db_session.add(
-            ProjectItem(project_id=project_row.id, section=section, name=name, name_key=files_service._name_key(name))
+            ProjectItem(project_id=project_row.id, section=section, name=name, name_key=files_service.name_key(name))
         )
         await db_session.commit()
         return await real_create(db, project_row, section=section, name=name, user_id=user_id)
