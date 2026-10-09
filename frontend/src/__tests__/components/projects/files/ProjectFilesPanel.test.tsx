@@ -61,6 +61,11 @@ beforeEach(() => {
       return HttpResponse.json({ id: 99, section: 'impression', name: body.name, name_key: body.name.toLowerCase(), forked_from: null, revisions: [] }, { status: 201 });
     }),
     http.get('/api/v1/projects/7/tree', () => HttpResponse.json(treeBody)),
+    http.patch('/api/v1/projects/items/:id', async ({ request, params }) => {
+      const body = (await request.json()) as { name: string };
+      calls.push(`rename:${params.id}`);
+      return HttpResponse.json({ id: Number(params.id), section: 'impression', name: body.name, name_key: body.name.toLowerCase(), forked_from: null, revisions: [] });
+    }),
     http.patch('/api/v1/projects/revisions/:id', async ({ request, params }) => {
       patched = { url: String(params.id), body: await request.json() };
       return HttpResponse.json(rev({ id: Number(params.id) }));
@@ -580,10 +585,24 @@ describe('ProjectFilesPanel', () => {
       expect(screen.queryByRole('textbox', { name: 'Rename' })).not.toBeInTheDocument();
       await userEvent.click(within(row()).getByRole('button', { name: 'Rename' }));
       await userEvent.clear(screen.getByRole('textbox', { name: 'Rename' }));
+      await userEvent.type(screen.getByRole('textbox', { name: 'Rename' }), '   {Enter}');
+      expect(screen.queryByRole('textbox', { name: 'Rename' })).not.toBeInTheDocument();
+      await userEvent.click(within(row()).getByRole('button', { name: 'Rename' }));
+      await userEvent.clear(screen.getByRole('textbox', { name: 'Rename' }));
       await userEvent.type(screen.getByRole('textbox', { name: 'Rename' }), 'Other{Escape}');
       expect(screen.queryByRole('textbox', { name: 'Rename' })).not.toBeInTheDocument();
       expect(screen.getByRole('button', { name: /Support$/ })).toBeInTheDocument();
       expect(calls).toEqual([]);
+    });
+
+    it('sends exactly one rename request for a real rename', async () => {
+      render(<ProjectFilesPanel projectId={7} />);
+      await screen.findByText('Support');
+      await userEvent.click(within(rowOf(/Support$/)).getByRole('button', { name: 'Rename' }));
+      await userEvent.clear(screen.getByRole('textbox', { name: 'Rename' }));
+      await userEvent.type(screen.getByRole('textbox', { name: 'Rename' }), 'Nouveau{Enter}');
+      await waitFor(() => expect(calls).toEqual(['rename:20']));
+      expect(screen.queryByRole('textbox', { name: 'Rename' })).not.toBeInTheDocument();
     });
   });
 });

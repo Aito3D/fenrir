@@ -1079,6 +1079,7 @@ async def _fork_revision_locked(
                 entry["thumb_abs"].unlink(missing_ok=True)
         _remove_empty(folder, new_item_dir)
 
+    commit = _CommitOutcome()
     try:
         for source in sources:
             src = source["path"]
@@ -1123,8 +1124,10 @@ async def _fork_revision_locked(
                     created_by_id=user_id,
                 )
             )
-        await db.commit()
+        await _commit_through_cancel(db, commit)
     except BaseException as exc:
+        if commit.landed:
+            raise
         await db.rollback()
         cleanup()
         if isinstance(exc, IntegrityError):
