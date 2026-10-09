@@ -1,13 +1,18 @@
 """Project files API (spec §8)."""
 
 import io
+import json
 import zipfile
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 
 from backend.app.api.routes import project_files as project_files_routes
+from backend.app.api.routes.library import to_absolute_path
 from backend.app.core.config import settings
+from backend.app.models.library import LibraryFile
+from backend.app.models.slicer_pipeline import SlicerPipeline
 from backend.app.services import project_storage
 
 
@@ -278,3 +283,54 @@ async def test_zip_temp_archive_removed_on_rejected_range(async_client: AsyncCli
     )
     assert response.status_code == status
     assert list(zip_scratch.iterdir()) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_fork_with_revision_of_another_item_is_400(async_client: AsyncClient):
+    project = await _project(async_client)
+    item_a = await _item(async_client, project["id"], name="Support")
+    item_b = await _item(async_client, project["id"], name="Autre")
+    rev_b = (await _upload(async_client, item_b["id"], ("a.gcode", b"x"))).json()["revision"]
+    response = await async_client.post(
+        f"/api/v1/projects/items/{item_a['id']}/fork", json={"revision_id": rev_b["id"], "name": "Variante"}
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Revision does not belong to this item"
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_revision_status_cannot_be_null(async_client: AsyncClient):
+    rev = await _revision_with_files(async_client, ("a.gcode", b"x"))
+    response = await async_client.patch(f"/api/v1/projects/revisions/{rev['id']}", json={"status": None})
+    assert response.status_code == 400
+    assert response.json()["detail"] == "status cannot be null"
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_reslice_source_missing_on_disk_is_404(async_client: AsyncClient, db_session, root):
+    project = await _project(async_client)
+    item = await _item(async_client, project["id"])
+    rev = (await _upload(async_client, item["id"], ("support.3mf", b"not-a-real-3mf"))).json()["revision"]
+    pipeline = SlicerPipeline(
+        name="H2D PETG",
+        printer_preset_source="local",
+        printer_preset_id="1",
+        process_preset_source="local",
+        process_preset_id="2",
+        filament_presets_json=json.dumps([{"source": "local", "id": "3"}]),
+    )
+    db_session.add(pipeline)
+    await db_session.commit()
+    source = (await db_session.execute(select(LibraryFile).where(LibraryFile.revision_id == rev["id"]))).scalar_one()
+    path = to_absolute_path(source.file_path)
+    assert path is not None and path.exists()
+    path.unlink()
+    response = await async_client.post(
+        f"/api/v1/projects/revisions/{rev['id']}/reslice",
+        json={"file_id": source.id, "pipeline_id": pipeline.id},
+    )
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Source file missing on disk"
