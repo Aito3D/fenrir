@@ -380,6 +380,88 @@ async def test_rename_item_rolls_folder_back_on_db_failure(db_session, root, mon
     assert not (base / "Modélisation" / "Nouveau").exists()
 
 
+def _trash_entries(base: Path) -> list[Path]:
+    """Files left in the project's _trash (the empty parent folders move_to_trash created do not count)."""
+    return [p for p in (base / "_trash").rglob("*") if not p.is_dir()] if (base / "_trash").exists() else []
+
+
+async def _commit_fails(db_session, monkeypatch):
+    async def boom():
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(db_session, "commit", boom)
+
+
+@pytest.mark.asyncio
+async def test_remove_file_restores_it_from_trash_on_commit_failure(db_session, root, monkeypatch):
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project, files=[upload("a.step"), upload("b.step", b"other")])
+    base = root / project.storage_dir  # the failed commit rolls back and expires ``project``
+    item_id, rev_id = item.id, rev.id
+    rows = (await db_session.execute(select(LibraryFile).where(LibraryFile.revision_id == rev_id))).scalars().all()
+    target_id = next(f.id for f in rows if f.filename == "a.step")
+    row_ids = {f.id for f in rows}
+    await _commit_fails(db_session, monkeypatch)
+    with pytest.raises(RuntimeError, match="db down"):
+        await remove_file_from_revision(db_session, project, item, rev, target_id)
+    folder = base / "Modélisation" / "Support" / "R1"
+    assert (folder / "a.step").read_bytes() == b"data" and (folder / "b.step").read_bytes() == b"other"
+    assert _trash_entries(base) == []
+    kept = (await db_session.execute(select(LibraryFile.id).where(LibraryFile.revision_id == rev_id))).scalars().all()
+    assert set(kept) == row_ids
+    assert (await db_session.execute(select(ProjectItem.id).where(ProjectItem.id == item_id))).scalar_one() == item_id
+
+
+@pytest.mark.asyncio
+async def test_delete_revision_restores_its_folder_from_trash_on_commit_failure(db_session, root, monkeypatch):
+    project = await _project(db_session)
+    item, r1 = await _rev(db_session, project)
+    r2, _ = await add_revision(
+        db_session, project, item, [upload("b.step")], note=None, derived_from_id=r1.id, user_id=None
+    )
+    base = root / project.storage_dir
+    r1_id, r2_id = r1.id, r2.id
+    file_ids = (
+        (await db_session.execute(select(LibraryFile.id).where(LibraryFile.revision_id == r1_id))).scalars().all()
+    )
+    await _commit_fails(db_session, monkeypatch)
+    with pytest.raises(RuntimeError, match="db down"):
+        await delete_revision(db_session, project, item, r1)
+    assert (base / "Modélisation" / "Support" / "R1" / "a.step").read_bytes() == b"data"
+    assert _trash_entries(base) == []
+    revisions = (await db_session.execute(select(ProjectRevision.id, ProjectRevision.derived_from_id))).all()
+    assert {(r.id, r.derived_from_id) for r in revisions} == {(r1_id, None), (r2_id, r1_id)}  # link not cleared
+    kept = (await db_session.execute(select(LibraryFile.id).where(LibraryFile.revision_id == r1_id))).scalars().all()
+    assert set(kept) == set(file_ids) and file_ids
+
+
+@pytest.mark.asyncio
+async def test_delete_item_restores_its_folder_from_trash_on_commit_failure(db_session, root, monkeypatch):
+    project = await _project(db_session)
+    item, r1 = await _rev(db_session, project)
+    r2, _ = await add_revision(
+        db_session, project, item, [upload("b.step")], note=None, derived_from_id=None, user_id=None
+    )
+    base = root / project.storage_dir
+    item_id, rev_ids = item.id, {r1.id, r2.id}
+    file_count = len(
+        (await db_session.execute(select(LibraryFile.id).where(LibraryFile.revision_id.in_(rev_ids)))).all()
+    )
+    await _commit_fails(db_session, monkeypatch)
+    with pytest.raises(RuntimeError, match="db down"):
+        await delete_item(db_session, project, item)
+    folder = base / "Modélisation" / "Support"
+    assert (folder / "R1" / "a.step").exists() and (folder / "R2" / "b.step").exists()
+    assert _trash_entries(base) == []
+    assert (await db_session.execute(select(ProjectItem.id).where(ProjectItem.id == item_id))).scalar_one() == item_id
+    kept = (
+        (await db_session.execute(select(ProjectRevision.id).where(ProjectRevision.item_id == item_id))).scalars().all()
+    )
+    assert set(kept) == rev_ids
+    files = (await db_session.execute(select(LibraryFile.id).where(LibraryFile.revision_id.in_(rev_ids)))).all()
+    assert len(files) == file_count == 2
+
+
 @pytest.mark.asyncio
 async def test_rename_item_conflicts(db_session, root):
     project = await _project(db_session)
