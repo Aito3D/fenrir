@@ -2,6 +2,7 @@
 
 import io
 import logging
+from functools import partial
 
 import pytest
 from fastapi import UploadFile
@@ -14,23 +15,15 @@ from backend.app.models.aito_task_delivery import AitoTaskDelivery
 from backend.app.models.library import LibraryTag
 from backend.app.models.project import Project
 from backend.app.models.project_item import ProjectRevision
-from backend.app.services import aito_project_links as links, project_storage
+from backend.app.services import aito_project_links as links
 from backend.app.services.aito_events import KINDS
 from backend.app.services.project_files import add_revision, create_item
 from backend.app.services.project_filing import section_for_filename
 from backend.app.services.project_tags import project_tag_refs
+from backend.tests.project_fixtures import make_project, projects_root_fixture, upload
 
-
-@pytest.fixture(autouse=True)
-def root(tmp_path, monkeypatch):
-    monkeypatch.setattr(project_storage, "projects_root", lambda: tmp_path)
-
-
-async def _project(db, name="Support", **kwargs):
-    project = Project(name=name, **kwargs)
-    db.add(project)
-    await db.flush()
-    return project
+root = projects_root_fixture(autouse=True)
+_project = partial(make_project, name="Support")
 
 
 async def _order(db, *, client_id="C1", status="active", description="Commande"):
@@ -593,8 +586,7 @@ async def test_record_on_linked_orders_skips_excluded_orders(db_session):
 # --- file drops ------------------------------------------------------------
 
 
-def _upload(name, data=b"x"):
-    return UploadFile(filename=name, file=io.BytesIO(data))
+_upload = partial(upload, data=b"x")
 
 
 @pytest.mark.parametrize(

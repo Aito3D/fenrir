@@ -12,30 +12,38 @@ import json
 import time
 import uuid
 from datetime import datetime, timezone
+from functools import partial
 from pathlib import Path
 
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import func, select
 
-from backend.app.api.routes.library import get_library_files_dir, to_absolute_path, to_relative_path
+from backend.app.api.routes.library import to_absolute_path
 from backend.app.core.auth import create_access_token, get_password_hash
 from backend.app.core.config import settings
 from backend.app.core.permissions import Permission
 from backend.app.models.group import Group
 from backend.app.models.library import LibraryFile, LibraryFolder
 from backend.app.models.project import Project
-from backend.app.models.project_item import ProjectItem, ProjectRevision
 from backend.app.models.settings import Settings
 from backend.app.models.user import User
-from backend.app.services import project_files, project_filing, project_storage
+from backend.app.services import project_files, project_filing
+from backend.tests.project_fixtures import (
+    make_external_file as _external,
+    make_managed_library_file as _managed,
+    make_project,
+    projects_root_fixture,
+    revisions_of as _revisions,
+    wal_engine_fixture,  # noqa: F401  # the ``wal_engine`` fixture
+)
 
 START = "/api/v1/projects/legacy-migration/start"
 STATUS = "/api/v1/projects/legacy-migration/status"
 
 
 @pytest.fixture
-async def test_engine(test_engine, tmp_path):
+async def test_engine(test_engine, wal_engine):
     """A WAL file database instead of the shared ``:memory:`` engine.
 
     The endpoint tests run the migration in a background task while the test
@@ -47,34 +55,10 @@ async def test_engine(test_engine, tmp_path):
     ("Bracket.3mf" inside "Lid" R1). Production gives each session its own
     connection to a WAL file, as this does. The parent fixture is requested only
     for its model registration."""
-    from sqlalchemy import event
-    from sqlalchemy.ext.asyncio import create_async_engine
-
-    from backend.app.core.database import Base
-
-    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'legacy.db'}")
-
-    @event.listens_for(engine.sync_engine, "connect")
-    def _pragmas(dbapi_conn, _record):
-        cursor = dbapi_conn.cursor()
-        cursor.execute("PRAGMA journal_mode = WAL")
-        cursor.execute("PRAGMA busy_timeout = 15000")
-        cursor.close()
-
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    yield engine
-    await engine.dispose()
+    yield wal_engine
 
 
-@pytest.fixture(autouse=True)
-def root(tmp_path, monkeypatch):
-    monkeypatch.setattr(settings, "base_dir", tmp_path)
-    monkeypatch.setattr(settings, "archive_dir", tmp_path / "archive")
-    projects = tmp_path / "projects"
-    projects.mkdir()
-    monkeypatch.setattr(project_storage, "projects_root", lambda: projects)
-    return projects
+root = projects_root_fixture(autouse=True, subdir="projects", library=True)
 
 
 @pytest.fixture(autouse=True)
@@ -84,11 +68,7 @@ def idle_runner():
     project_filing.reset_legacy_migration_state()
 
 
-async def _project(db, name="Support caméra", **fields) -> Project:
-    project = Project(name=name, **fields)
-    db.add(project)
-    await db.commit()
-    return project
+_project = partial(make_project, commit=True)
 
 
 async def _folder(db, project_id: int | None, **fields) -> LibraryFolder:
@@ -98,73 +78,10 @@ async def _folder(db, project_id: int | None, **fields) -> LibraryFolder:
     return folder
 
 
-async def _managed(db, filename: str, data: bytes = b"bytes", **fields) -> LibraryFile:
-    path = get_library_files_dir() / f"{uuid.uuid4().hex}{Path(filename).suffix}"
-    path.write_bytes(data)
-    row = LibraryFile(
-        filename=filename,
-        file_path=to_relative_path(path),
-        file_type=Path(filename).suffix.lstrip(".") or "unknown",
-        file_size=len(data),
-        is_external=False,
-        **fields,
-    )
-    db.add(row)
-    await db.commit()
-    return row
-
-
-async def _external(db, tmp_path: Path, filename: str, data: bytes, **fields) -> LibraryFile:
-    mount = tmp_path / f"mount-{uuid.uuid4().hex[:6]}"
-    mount.mkdir()
-    (mount / filename).write_bytes(data)
-    folder = LibraryFolder(name="NAS", is_external=True, external_readonly=True, external_path=str(mount))
-    db.add(folder)
-    await db.flush()
-    row = LibraryFile(
-        folder_id=folder.id,
-        filename=filename,
-        file_path=str(mount / filename),
-        file_type=Path(filename).suffix.lstrip("."),
-        file_size=len(data),
-        is_external=True,
-        **fields,
-    )
-    db.add(row)
-    await db.commit()
-    return row
-
-
 async def _fresh(db, model, row_id):
     return (
         await db.execute(select(model).where(model.id == row_id).execution_options(populate_existing=True))
     ).scalar_one()
-
-
-async def _revisions(db, project_id: int) -> list[tuple[str, str, int, list[str]]]:
-    rows = (
-        await db.execute(
-            select(ProjectItem.section, ProjectItem.name, ProjectRevision.number, ProjectRevision.id)
-            .join(ProjectRevision, ProjectRevision.item_id == ProjectItem.id)
-            .where(ProjectItem.project_id == project_id)
-            .order_by(ProjectItem.name, ProjectRevision.number)
-        )
-    ).all()
-    out = []
-    for section, name, number, revision_id in rows:
-        names = (
-            (
-                await db.execute(
-                    select(LibraryFile.filename)
-                    .where(LibraryFile.revision_id == revision_id)
-                    .order_by(LibraryFile.filename)
-                )
-            )
-            .scalars()
-            .all()
-        )
-        out.append((section, name, number, list(names)))
-    return out
 
 
 async def _legacy_setup(db, tmp_path):

@@ -3,6 +3,7 @@
 import io
 import json
 import zipfile
+from functools import partial
 
 import pytest
 from httpx import AsyncClient
@@ -14,16 +15,10 @@ from backend.app.core.config import settings
 from backend.app.models.library import LibraryFile
 from backend.app.models.slicer_pipeline import SlicerPipeline
 from backend.app.services import project_storage
+from backend.tests.project_fixtures import api_project, projects_root_fixture
 
-
-@pytest.fixture(autouse=True)
-def root(tmp_path, monkeypatch):
-    monkeypatch.setattr(project_storage, "projects_root", lambda: tmp_path)
-    return tmp_path
-
-
-async def _project(client):
-    return (await client.post("/api/v1/projects/", json={"name": "Support caméra"})).json()
+root = projects_root_fixture(autouse=True)
+_project = partial(api_project, check=False)
 
 
 async def _item(client, project_id, section="impression", name="Support"):

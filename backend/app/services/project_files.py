@@ -924,9 +924,14 @@ async def _delete_file_rows(
 
 
 async def _restore_and_rollback(db: AsyncSession, moved: Path | None, original: Path | None) -> None:
-    if moved is not None and original is not None:
-        shutil.move(str(moved), str(original))
-    await db.rollback()
+    try:
+        if moved is not None and original is not None:
+            shutil.move(str(moved), str(original))
+    except Exception:
+        # keep the guarded (commit) error as the one that propagates; the rollback still runs below
+        logger.warning("Could not restore %s from the trash (%s)", original, moved, exc_info=True)
+    finally:
+        await db.rollback()
 
 
 class _TrashGuard(_CommitGuard):
@@ -1055,7 +1060,14 @@ async def _rename_item_locked(db: AsyncSession, project: Project, item: ProjectI
             # case-only rename on a case-insensitive filesystem: go through a temporary name
             temp = old_dir.with_name(f".rename-{uuid.uuid4().hex}")
             old_dir.rename(temp)
-            temp.rename(new_dir)
+            try:
+                temp.rename(new_dir)
+            except BaseException:
+                try:
+                    temp.rename(old_dir)
+                except Exception:
+                    logger.warning("Could not move %s back to %s after a failed rename", temp, old_dir, exc_info=True)
+                raise
         else:
             old_dir.rename(new_dir)
         moved = True

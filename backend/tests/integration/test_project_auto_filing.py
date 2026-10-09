@@ -12,7 +12,6 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from backend.app.api.routes.library import get_library_files_dir, to_relative_path
 from backend.app.core.config import settings
 from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile
@@ -20,17 +19,13 @@ from backend.app.models.pending_upload import PendingUpload
 from backend.app.models.project_item import ProjectItem, ProjectRevision
 from backend.app.services import project_files, project_filing, project_storage
 from backend.app.services.project_filing import auto_file_by_code, project_code_from_filename
+from backend.tests.project_fixtures import (
+    api_project as _project,
+    make_managed_library_file as _managed,
+    projects_root_fixture,
+)
 
-
-@pytest.fixture(autouse=True)
-def root(tmp_path, monkeypatch):
-    monkeypatch.setattr(settings, "base_dir", tmp_path)
-    (tmp_path / "archive").mkdir()
-    monkeypatch.setattr(settings, "archive_dir", tmp_path / "archive")
-    projects = tmp_path / "projects"
-    projects.mkdir()
-    monkeypatch.setattr(project_storage, "projects_root", lambda: projects)
-    return projects
+root = projects_root_fixture(autouse=True, subdir="projects", library=True, make_archive=True)
 
 
 def _3mf(marker: str = "x") -> bytes:
@@ -39,27 +34,6 @@ def _3mf(marker: str = "x") -> bytes:
         zf.writestr("[Content_Types].xml", "<types/>")
         zf.writestr("marker.txt", marker)
     return buf.getvalue()
-
-
-async def _project(client, name="Support caméra") -> dict:
-    response = await client.post("/api/v1/projects/", json={"name": name})
-    assert response.status_code in (200, 201), response.text
-    return response.json()
-
-
-async def _managed(db, filename: str, data: bytes) -> LibraryFile:
-    path = get_library_files_dir() / f"{uuid.uuid4().hex}{Path(filename).suffix}"
-    path.write_bytes(data)
-    row = LibraryFile(
-        filename=filename,
-        file_path=to_relative_path(path),
-        file_type="3mf",
-        file_size=len(data),
-        is_external=False,
-    )
-    db.add(row)
-    await db.commit()
-    return row
 
 
 async def _project_with_support_item(client, db) -> tuple[dict, int]:

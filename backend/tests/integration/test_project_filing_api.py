@@ -1,17 +1,14 @@
 """Importing File Manager files into a project and project suggestions (phase 5, task 2)."""
 
-import uuid
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
-from pathlib import Path
 
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
 
-from backend.app.api.routes.library import get_library_files_dir, to_absolute_path, to_relative_path
+from backend.app.api.routes.library import to_absolute_path
 from backend.app.core.auth import create_access_token, get_password_hash
-from backend.app.core.config import settings
 from backend.app.core.permissions import Permission
 from backend.app.models.group import Group
 from backend.app.models.library import LibraryFile
@@ -19,40 +16,14 @@ from backend.app.models.project import Project
 from backend.app.models.project_item import ProjectItem
 from backend.app.models.settings import Settings
 from backend.app.models.user import User
-from backend.app.services import project_storage
 from backend.app.services.project_filing import project_code_from_filename
+from backend.tests.project_fixtures import (
+    api_project as _project,
+    make_managed_library_file as _managed,
+    projects_root_fixture,
+)
 
-
-@pytest.fixture(autouse=True)
-def root(tmp_path, monkeypatch):
-    monkeypatch.setattr(settings, "base_dir", tmp_path)
-    monkeypatch.setattr(settings, "archive_dir", tmp_path / "archive")
-    projects = tmp_path / "projects"
-    projects.mkdir()
-    monkeypatch.setattr(project_storage, "projects_root", lambda: projects)
-    return projects
-
-
-async def _managed(db, filename: str, data: bytes = b"bytes", **fields) -> LibraryFile:
-    path = get_library_files_dir() / f"{uuid.uuid4().hex}{Path(filename).suffix}"
-    path.write_bytes(data)
-    row = LibraryFile(
-        filename=filename,
-        file_path=to_relative_path(path),
-        file_type=Path(filename).suffix.lstrip(".") or "unknown",
-        file_size=len(data),
-        is_external=False,
-        **fields,
-    )
-    db.add(row)
-    await db.commit()
-    return row
-
-
-async def _project(client, name="Support caméra") -> dict:
-    response = await client.post("/api/v1/projects/", json={"name": name})
-    assert response.status_code in (200, 201), response.text
-    return response.json()
+root = projects_root_fixture(autouse=True, subdir="projects", library=True)
 
 
 def _import_url(project_id: int) -> str:

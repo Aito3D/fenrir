@@ -22,34 +22,18 @@ from backend.app.models.user import User
 from backend.app.schemas.slicer import SliceResponse
 from backend.app.services import project_reslice, project_storage
 from backend.app.services.slice_dispatch import slice_dispatch
+from backend.tests.project_fixtures import wal_engine_fixture  # noqa: F401  # the ``wal_engine`` fixture
 
 _ONE_FILAMENT = json.dumps([{"source": "local", "id": "3"}])
 
 
 @pytest.fixture
-async def test_engine(test_engine, tmp_path):
+async def test_engine(test_engine, wal_engine):
     """WAL file database: the job runs in a background task with its own session
     while the request session closes; behind the shared ``:memory:`` StaticPool
     that close would roll back the job's work (see test_project_legacy_migration).
     The parent fixture is requested only for its model registration."""
-    from sqlalchemy import event
-    from sqlalchemy.ext.asyncio import create_async_engine
-
-    from backend.app.core.database import Base
-
-    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'reslice.db'}")
-
-    @event.listens_for(engine.sync_engine, "connect")
-    def _pragmas(dbapi_conn, _record):
-        cursor = dbapi_conn.cursor()
-        cursor.execute("PRAGMA journal_mode = WAL")
-        cursor.execute("PRAGMA busy_timeout = 15000")
-        cursor.close()
-
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    yield engine
-    await engine.dispose()
+    yield wal_engine
 
 
 @pytest.fixture(autouse=True)

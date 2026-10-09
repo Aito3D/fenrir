@@ -6,7 +6,6 @@ import zipfile
 from pathlib import Path
 
 import pytest
-from fastapi import UploadFile
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -32,33 +31,9 @@ from backend.app.services.project_files import (
     revision_is_used,
     update_revision,
 )
+from backend.tests.project_fixtures import make_project as _project, projects_root_fixture, threemf_bytes, upload
 
-
-@pytest.fixture
-def root(tmp_path, monkeypatch):
-    monkeypatch.setattr(project_storage, "projects_root", lambda: tmp_path)
-    return tmp_path
-
-
-def upload(name: str, data: bytes = b"data") -> UploadFile:
-    return UploadFile(filename=name, file=io.BytesIO(data))
-
-
-def threemf_bytes() -> bytes:
-    buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w") as zf:
-        zf.writestr("Metadata/project_settings.config", '{"printer_model": "Bambu Lab X1C", "layer_height": "0.2"}')
-        zf.writestr(
-            "3D/3dmodel.model", '<model><metadata name="Application">BambuStudio-02.08.00.50</metadata></model>'
-        )
-    return buffer.getvalue()
-
-
-async def _project(db, name="Support caméra"):
-    project = Project(name=name)
-    db.add(project)
-    await db.flush()
-    return project
+root = projects_root_fixture()
 
 
 @pytest.mark.asyncio
@@ -515,6 +490,41 @@ async def test_delete_revision_restores_its_folder_from_trash_on_commit_failure(
 
 
 @pytest.mark.asyncio
+async def test_a_failed_restore_from_trash_still_rolls_back_and_keeps_the_commit_error(
+    db_session, root, monkeypatch, caplog
+):
+    project = await _project(db_session)
+    item, r1 = await _rev(db_session, project)
+    base = root / project.storage_dir
+    commit_error, rollbacks = RuntimeError("db down"), []
+    real_rollback = db_session.rollback
+
+    async def boom():
+        # the folder is in the trash by now; make moving it back fail too
+        monkeypatch.setattr(project_files.shutil, "move", _raise_os_error)
+        raise commit_error
+
+    async def rollback():
+        rollbacks.append("rollback")
+        await real_rollback()
+
+    monkeypatch.setattr(db_session, "commit", boom)
+    monkeypatch.setattr(db_session, "rollback", rollback)
+    caplog.set_level("WARNING", logger=project_files.logger.name)
+    with pytest.raises(RuntimeError) as caught:
+        await delete_revision(db_session, project, item, r1)
+    assert caught.value is commit_error
+    assert rollbacks == ["rollback"]
+    original = str(base / "Modélisation" / "Support" / "R1")
+    assert any(original in r.getMessage() and r.exc_info for r in caplog.records)
+    assert len([p for p in (base / "_trash" / "Modélisation" / "Support").iterdir() if p.name.startswith("R1-")]) == 1
+
+
+def _raise_os_error(*_args, **_kwargs):
+    raise OSError("move back failed")
+
+
+@pytest.mark.asyncio
 async def test_delete_item_restores_its_folder_from_trash_on_commit_failure(db_session, root, monkeypatch):
     project = await _project(db_session)
     item, r1 = await _rev(db_session, project)
@@ -633,6 +643,56 @@ async def test_case_only_rename(db_session, root):
     await rename_item(db_session, project, item, "SUPPORT")
     assert item.name == "SUPPORT"
     assert (root / project.storage_dir / "Modélisation" / "SUPPORT" / "R1" / "a.step").exists()
+
+
+def _case_only_rename_fails(monkeypatch, base: Path, fail_on: set[int]) -> list[tuple[str, str]]:
+    """Force the case-only branch on any filesystem and make the listed ``Path.rename`` calls raise."""
+    (base / "Modélisation" / "SUPPORT").mkdir(exist_ok=True)  # already "there" on a case-insensitive filesystem
+    monkeypatch.setattr(project_files.os.path, "samefile", lambda _a, _b: True)
+    real_rename, calls = Path.rename, []
+
+    def rename(self, target):
+        calls.append((Path(self).name, Path(target).name))
+        if len(calls) in fail_on:
+            raise OSError(f"rename {len(calls)} failed")
+        return real_rename(self, target)
+
+    monkeypatch.setattr(Path, "rename", rename)
+    return calls
+
+
+@pytest.mark.asyncio
+async def test_case_only_rename_puts_the_folder_back_when_the_second_rename_fails(db_session, root, monkeypatch):
+    project = await _project(db_session)
+    item, _rev1 = await _rev(db_session, project)
+    item_id = item.id
+    base = root / project.storage_dir
+    calls = _case_only_rename_fails(monkeypatch, base, fail_on={2})
+    with pytest.raises(OSError, match="rename 2 failed"):
+        await rename_item(db_session, project, item, "SUPPORT")
+    assert (base / "Modélisation" / "Support" / "R1" / "a.step").read_bytes() == b"data"
+    assert not list((base / "Modélisation").glob(".rename-*"))
+    assert [target for _source, target in calls] == [calls[0][1], "SUPPORT", "Support"]  # temp, new, back
+    await db_session.rollback()
+    assert (
+        await db_session.execute(select(ProjectItem.name).where(ProjectItem.id == item_id))
+    ).scalar_one() == "Support"
+
+
+@pytest.mark.asyncio
+async def test_case_only_rename_logs_and_keeps_the_original_error_when_the_put_back_fails(
+    db_session, root, monkeypatch, caplog
+):
+    project = await _project(db_session)
+    item, _rev1 = await _rev(db_session, project)
+    base = root / project.storage_dir
+    _case_only_rename_fails(monkeypatch, base, fail_on={2, 3})
+    caplog.set_level("WARNING", logger=project_files.logger.name)
+    with pytest.raises(OSError, match="rename 2 failed"):
+        await rename_item(db_session, project, item, "SUPPORT")
+    stranded = list((base / "Modélisation").glob(".rename-*"))
+    assert len(stranded) == 1
+    assert any(str(stranded[0]) in r.getMessage() and r.exc_info for r in caplog.records)
 
 
 @pytest.mark.asyncio

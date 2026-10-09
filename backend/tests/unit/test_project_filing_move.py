@@ -5,113 +5,41 @@ external files are copied into a new row and the mount is never touched.
 """
 
 import hashlib
-import io
 import uuid
-import zipfile
 from datetime import datetime
+from functools import partial
 from pathlib import Path
 
 import pytest
 from sqlalchemy import delete, select, update
 
-from backend.app.api.routes.library import get_library_files_dir, to_absolute_path, to_relative_path
-from backend.app.core.config import settings
+from backend.app.api.routes.library import to_absolute_path
 from backend.app.models.archive import PrintArchive
-from backend.app.models.library import FileVariantGroup, LibraryFile, LibraryFolder
+from backend.app.models.library import FileVariantGroup, LibraryFile
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.project import Project
 from backend.app.models.project_item import ProjectItem, ProjectRevision
 from backend.app.services import project_files, project_filing, project_storage
 from backend.app.services.project_files import RevisionSource, add_revision_from_sources, create_item
 from backend.app.services.project_filing import MoveToProjectResult, move_library_files_to_project
+from backend.tests.project_fixtures import (
+    make_external_file,
+    make_managed_library_file,
+    make_project as _project,
+    projects_root_fixture,
+    revisions_of as _revisions,
+    threemf_bytes,
+)
 
-
-@pytest.fixture
-def root(tmp_path, monkeypatch):
-    monkeypatch.setattr(settings, "base_dir", tmp_path)
-    monkeypatch.setattr(settings, "archive_dir", tmp_path / "archive")
-    projects = tmp_path / "projects"
-    projects.mkdir()
-    monkeypatch.setattr(project_storage, "projects_root", lambda: projects)
-    return projects
-
-
-def threemf_bytes() -> bytes:
-    buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w") as zf:
-        zf.writestr("Metadata/project_settings.config", '{"printer_model": "Bambu Lab X1C", "layer_height": "0.2"}')
-        zf.writestr(
-            "3D/3dmodel.model", '<model><metadata name="Application">BambuStudio-02.08.00.50</metadata></model>'
-        )
-    return buffer.getvalue()
-
-
-async def _project(db, name="Support caméra") -> Project:
-    project = Project(name=name)
-    db.add(project)
-    await db.flush()
-    return project
-
-
-async def _managed(db, filename: str, data: bytes = b"bytes", **fields) -> LibraryFile:
-    path = get_library_files_dir() / f"{uuid.uuid4().hex}{Path(filename).suffix}"
-    path.write_bytes(data)
-    row = LibraryFile(
-        filename=filename,
-        file_path=to_relative_path(path),
-        file_type=Path(filename).suffix.lstrip(".") or "unknown",
-        file_size=len(data),
-        file_hash=None,
-        is_external=False,
-        **fields,
-    )
-    db.add(row)
-    await db.flush()
-    return row
-
-
-async def _external(db, tmp_path: Path, filename: str, *, readonly: bool, data: bytes = b"nas") -> LibraryFile:
-    mount = tmp_path / f"mount-{uuid.uuid4().hex[:6]}"
-    mount.mkdir()
-    (mount / filename).write_bytes(data)
-    folder = LibraryFolder(name="NAS", is_external=True, external_readonly=readonly, external_path=str(mount))
-    db.add(folder)
-    await db.flush()
-    row = LibraryFile(
-        folder_id=folder.id,
-        filename=filename,
-        file_path=str(mount / filename),
-        file_type=Path(filename).suffix.lstrip("."),
-        file_size=len(data),
-        is_external=True,
-    )
-    db.add(row)
-    await db.flush()
-    return row
+root = projects_root_fixture(subdir="projects", library=True)
+_managed = partial(make_managed_library_file, commit=False)
+_external = partial(make_external_file, commit=False)
 
 
 async def _move(db, project, files, *, item_id=None, new_item_name=None) -> MoveToProjectResult:
     return await move_library_files_to_project(
         db, project, files, item_id=item_id, new_item_name=new_item_name, user_id=None
     )
-
-
-async def _revisions(db, project) -> list[tuple[str, str, int, list[str]]]:
-    rows = (
-        await db.execute(
-            select(ProjectItem.section, ProjectItem.name, ProjectRevision.number, ProjectRevision.id)
-            .join(ProjectRevision, ProjectRevision.item_id == ProjectItem.id)
-            .where(ProjectItem.project_id == project.id)
-            .order_by(ProjectItem.name, ProjectRevision.number)
-        )
-    ).all()
-    out = []
-    for section, name, number, rev_id in rows:
-        names = (
-            (await db.execute(select(LibraryFile.filename).where(LibraryFile.revision_id == rev_id))).scalars().all()
-        )
-        out.append((section, name, number, sorted(names)))
-    return out
 
 
 @pytest.mark.asyncio
@@ -194,7 +122,7 @@ async def test_bulk_groups_by_item_name(db_session, root):
     result = await _move(db_session, project, files)
 
     assert len(result.moved) == 3 and result.skipped == []
-    assert await _revisions(db_session, project) == [
+    assert await _revisions(db_session, project.id) == [
         ("impression", "bracket", 1, ["bracket.3mf", "bracket.gcode"]),
         ("impression", "lid", 1, ["lid.gcode.3mf"]),
     ]
@@ -219,7 +147,7 @@ async def test_explicit_item_takes_all_files_as_next_revision(db_session, root):
     result = await _move(db_session, project, files, item_id=item.id)
 
     assert {m["revision_number"] for m in result.moved} == {2}
-    assert await _revisions(db_session, project) == [
+    assert await _revisions(db_session, project.id) == [
         ("impression", "Support", 1, ["first.gcode"]),
         ("impression", "Support", 2, ["a.3mf", "b.gcode"]),
     ]
@@ -239,7 +167,7 @@ async def test_new_item_name_creates_one_item_for_all(db_session, root):
 
     await _move(db_session, project, files, new_item_name="Kit complet")
 
-    assert await _revisions(db_session, project) == [("impression", "Kit complet", 1, ["a.gcode", "b.gcode"])]
+    assert await _revisions(db_session, project.id) == [("impression", "Kit complet", 1, ["a.gcode", "b.gcode"])]
 
 
 @pytest.mark.asyncio
@@ -427,7 +355,7 @@ async def test_atomicity_is_per_item_group(db_session, root, monkeypatch):
         ).scalar_one()
         assert (fresh.file_path, fresh.revision_id) == (path, None)
         assert to_absolute_path(path).exists()
-    assert await _revisions(db_session, project) == [("impression", "alpha", 1, ["alpha.gcode"])]
+    assert await _revisions(db_session, project.id) == [("impression", "alpha", 1, ["alpha.gcode"])]
     stored = sorted(p.name for p in root.rglob("*") if p.is_file())
     assert stored == ["alpha.gcode"]  # no stray copies from the failed group
 
@@ -448,7 +376,7 @@ async def test_mixed_managed_and_external_in_one_group(db_session, root, tmp_pat
     assert to_absolute_path(copy.file_path).read_bytes() == b"G1 ext"
     assert Path(external_path).read_bytes() == b"G1 ext"
     assert result.moved[0]["revision_id"] == result.copied[0]["revision_id"]
-    assert await _revisions(db_session, project) == [("impression", "part", 1, ["part.3mf", "part.gcode"])]
+    assert await _revisions(db_session, project.id) == [("impression", "part", 1, ["part.3mf", "part.gcode"])]
 
 
 @pytest.mark.asyncio
@@ -631,7 +559,7 @@ async def test_new_item_name_is_trimmed_and_finds_the_existing_item(db_session, 
     result = await _move(db_session, project, files, new_item_name="  kit complet  ")
 
     assert {(m["item_id"], m["item_name"], m["revision_number"]) for m in result.moved} == {(item_id, "Kit Complet", 2)}
-    assert await _revisions(db_session, project) == [
+    assert await _revisions(db_session, project.id) == [
         ("impression", "Kit Complet", 1, ["r1.gcode"]),
         ("impression", "Kit Complet", 2, ["a.gcode", "b.3mf"]),
     ]
@@ -768,7 +696,7 @@ async def test_a_409_while_storing_skips_the_rest_of_the_group_as_conflict_and_g
     ]
     fresh = await _fresh(db_session, ids[1])
     assert (fresh.file_path, fresh.revision_id) == (raced_path, None)
-    assert [(r[1], r[2]) for r in await _revisions(db_session, project)] == [("alpha", 1), ("gamma", 1)]
+    assert [(r[1], r[2]) for r in await _revisions(db_session, project.id)] == [("alpha", 1), ("gamma", 1)]
 
 
 @pytest.mark.asyncio
