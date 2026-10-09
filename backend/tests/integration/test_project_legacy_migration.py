@@ -9,6 +9,7 @@ image included, stays where it is.
 import asyncio
 import hashlib
 import json
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -364,13 +365,27 @@ def test_external_marker_is_content_hash(tmp_path):
 # --- endpoints -------------------------------------------------------------------
 
 
+RUNNER_TASK_NAME = "projects-legacy-migration"  # the name start_legacy_migration spawns it under
+IDLE_TIMEOUT = 30.0
+
+
 async def _wait_idle(client: AsyncClient, headers=None) -> dict:
-    for _ in range(200):
+    """Await the background runner task itself (not a wall-clock poll, which races
+    the runner's file work under xdist load), then confirm idleness over HTTP."""
+    runners = [t for t in asyncio.all_tasks() if t.get_name() == RUNNER_TASK_NAME and not t.done()]
+    if runners:
+        try:
+            await asyncio.wait_for(asyncio.shield(asyncio.gather(*runners, return_exceptions=True)), IDLE_TIMEOUT)
+        except asyncio.TimeoutError:
+            raise AssertionError("migration never finished") from None
+    deadline = time.monotonic() + IDLE_TIMEOUT
+    while True:
         body = (await client.get(STATUS, headers=headers)).json()
         if not body["running"]:
             return body
+        if time.monotonic() >= deadline:
+            raise AssertionError("migration never finished")
         await asyncio.sleep(0.02)
-    raise AssertionError("migration never finished")
 
 
 @pytest.mark.asyncio

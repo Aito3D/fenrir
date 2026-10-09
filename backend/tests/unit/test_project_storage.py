@@ -82,3 +82,14 @@ def test_ensure_project_dir_assigns_and_creates(root):
 def test_ensure_project_dir_keeps_existing_name_after_rename(root):
     project = _FakeProject("P-0007", "Nouveau titre", storage_dir="P-0007_ancien-titre")
     assert ensure_project_dir(project).name == "P-0007_ancien-titre"
+
+
+def test_projects_root_is_created_under_the_data_dir(tmp_path, monkeypatch):
+    from backend.app.core.config import settings
+
+    monkeypatch.setattr(settings, "base_dir", tmp_path)
+    expected = tmp_path / project_storage.PROJECTS_DIRNAME
+    assert not expected.exists()
+    assert project_storage.projects_root() == expected
+    assert expected.is_dir()
+    assert project_storage.projects_root() == expected  # idempotent once it exists

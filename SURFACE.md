@@ -257,6 +257,7 @@ async def project_ids_with_tag(db: AsyncSession, tag_id: int)
 async def project_tag_refs(db: AsyncSession, project_ids: list[int])
 async def put_task_deliveries(
 async def put_task_project(
+async def record_and_broadcast(
 async def record_on_linked_orders(
 async def record_queued(db: AsyncSession, context: PrintContext, *, copies: int, actor: str | None)
 async def record_revision_added(db: AsyncSession, project_id: int, entry: dict, user_id: int | None)

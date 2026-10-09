@@ -233,3 +233,20 @@ def test_big_config_part_is_still_skipped(tmp_path):
         zf.writestr("Metadata/project_settings.config", big)
     snap = read_print_snapshot(path)
     assert snap.config is None
+
+
+def test_unexpected_failure_logs_and_returns_an_empty_snapshot(tmp_path, monkeypatch, caplog):
+    import logging
+
+    from backend.app.services import project_snapshot
+
+    path = _zip(tmp_path / "a.3mf", {"Metadata/project_settings.config": json.dumps(CONFIG)})
+
+    def broken_profile(*_args):
+        raise ValueError("unexpected")
+
+    monkeypatch.setattr(project_snapshot, "_profile", broken_profile)
+    with caplog.at_level(logging.WARNING, logger=project_snapshot.__name__):
+        snapshot = read_print_snapshot(path)
+    assert snapshot == project_snapshot.PrintSnapshot(None, None, None, None, {"sliced": False})
+    assert f"Failed to read snapshot from {path}" in caplog.text

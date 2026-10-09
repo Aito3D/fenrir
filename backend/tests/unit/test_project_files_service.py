@@ -890,3 +890,61 @@ async def test_repeated_cancellation_still_waits_for_the_commit(db_session, root
         await task
     assert await _fresh_scalars(test_engine, select(ProjectRevision.id).where(ProjectRevision.id == rev_id)) == []
     assert [p.name for p in _trash_entries(base)] == ["a.step"]
+
+
+@pytest.mark.asyncio
+async def test_add_files_commit_failure_rolls_back_and_removes_the_written_files(db_session, root, monkeypatch):
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project)
+    base, item_id, rev_id = root / project.storage_dir, item.id, rev.id
+    before = (await db_session.execute(select(LibraryFile.id).where(LibraryFile.revision_id == rev_id))).scalars().all()
+    folder = base / "Modélisation" / "Support" / "R1"
+    seen_on_disk = []
+    real_rollback = db_session.rollback
+    rolled_back = []
+
+    async def boom():
+        seen_on_disk.append(sorted(p.name for p in folder.iterdir()))
+        raise RuntimeError("db down")
+
+    async def rollback():
+        rolled_back.append(True)
+        await real_rollback()
+
+    monkeypatch.setattr(db_session, "commit", boom)
+    monkeypatch.setattr(db_session, "rollback", rollback)
+    with pytest.raises(RuntimeError, match="db down"):
+        await add_files_to_revision(db_session, project, item, rev, [upload("b.step", b"b")], user_id=None)
+
+    assert seen_on_disk == [["a.step", "b.step"]]  # the file was written before the commit failed
+    assert rolled_back == [True]
+    assert sorted(p.name for p in folder.iterdir()) == ["a.step"]  # and removed again
+    after = (await db_session.execute(select(LibraryFile.id).where(LibraryFile.revision_id == rev_id))).scalars().all()
+    assert after == before
+    assert (await db_session.execute(select(ProjectItem.id).where(ProjectItem.id == item_id))).scalar_one() == item_id
+
+
+@pytest.mark.asyncio
+async def test_fork_gives_the_copy_its_own_thumbnail(db_session, root, monkeypatch, tmp_path):
+    thumbs = tmp_path / "thumbs"
+    thumbs.mkdir()
+    monkeypatch.setattr(project_files, "get_library_thumbnails_dir", lambda: thumbs)
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as zf:
+        zf.writestr("Metadata/project_settings.config", '{"printer_model": "X"}')
+        zf.writestr("3D/3dmodel.model", "<model></model>")
+        zf.writestr("Metadata/plate_1.png", b"\x89PNG fake")
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project, section="impression", files=[upload("plate.3mf", buffer.getvalue())])
+    [source] = (await db_session.execute(select(LibraryFile).where(LibraryFile.revision_id == rev.id))).scalars().all()
+    source_thumb = source.thumbnail_path
+    assert source_thumb, "the 3MF upload should have produced a thumbnail"
+
+    forked = await fork_revision(db_session, project, item, rev, "Support B", user_id=None)
+
+    r1 = (await db_session.execute(select(ProjectRevision).where(ProjectRevision.item_id == forked.id))).scalar_one()
+    [copy] = (await db_session.execute(select(LibraryFile).where(LibraryFile.revision_id == r1.id))).scalars().all()
+    assert copy.thumbnail_path and copy.thumbnail_path != source_thumb
+    thumb_files = sorted(thumbs.iterdir())
+    assert len(thumb_files) == 2  # the source keeps its own; the copy has a separate file
+    assert all(p.read_bytes() == thumb_files[0].read_bytes() for p in thumb_files)

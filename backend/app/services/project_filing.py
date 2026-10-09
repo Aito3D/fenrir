@@ -536,27 +536,19 @@ async def record_revision_added(db: AsyncSession, project_id: int, entry: dict, 
     ``revision_number`` (a ``MoveToProjectResult`` entry has them). Commits; a failure is
     logged and rolled back (expiring the session's instances) and only costs the event.
     Shared by auto-filing, the legacy migration and Re-trancher."""
-    from backend.app.models.user import User
     from backend.app.services import aito_project_links as aito_links
 
-    try:
-        user = await db.get(User, user_id) if user_id is not None else None
-        actor = user.username if user is not None else None
-        async with db.begin_nested():
-            order_ids = await aito_links.record_on_linked_orders(
-                db,
-                project_id,
-                "project.revision_added",
-                actor=actor,
-                subject_label=f"{entry['item_name']} R{entry['revision_number']}",
-                detail={"section": entry["section"], "item_id": entry["item_id"], "revision_id": entry["revision_id"]},
-            )
-        await db.commit()
-    except Exception:
-        logger.warning("project.revision_added event failed for project %s", project_id, exc_info=True)
-        await db.rollback()
-        return
-    await aito_links.broadcast_orders_changed(order_ids, actor)
+    await aito_links.record_and_broadcast(
+        db,
+        project_id,
+        "project.revision_added",
+        actor_user_id=user_id,
+        describe=lambda: (
+            f"{entry['item_name']} R{entry['revision_number']}",
+            {"section": entry["section"], "item_id": entry["item_id"], "revision_id": entry["revision_id"]},
+        ),
+        log=logger,
+    )
 
 
 # --- legacy migration: linked File Manager files into project trees ----------
