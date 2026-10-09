@@ -948,3 +948,272 @@ async def test_fork_gives_the_copy_its_own_thumbnail(db_session, root, monkeypat
     thumb_files = sorted(thumbs.iterdir())
     assert len(thumb_files) == 2  # the source keeps its own; the copy has a separate file
     assert all(p.read_bytes() == thumb_files[0].read_bytes() for p in thumb_files)
+
+
+# T-031 pins: the exact column values each LibraryFile write path sets today
+# (new upload row, re-pointed reuse row, fork copy row).
+
+_ROW_COLUMNS = (
+    "project_id",
+    "revision_id",
+    "folder_id",
+    "is_external",
+    "variant_group_id",
+    "variant_position",
+    "filename",
+    "file_path",
+    "file_type",
+    "file_size",
+    "file_hash",
+    "thumbnail_path",
+    "file_metadata",
+    "created_by_id",
+    "notes",
+)
+
+
+def _columns(row: LibraryFile) -> dict:
+    return {name: getattr(row, name) for name in _ROW_COLUMNS}
+
+
+async def _user(db, username: str):
+    from backend.app.models.user import User
+
+    user = User(username=username, password_hash="x", is_active=True)
+    db.add(user)
+    await db.flush()
+    return user
+
+
+@pytest.mark.asyncio
+async def test_upload_row_columns_are_pinned(db_session, root):
+    import hashlib
+
+    from backend.app.api.routes.library import to_relative_path
+
+    user = await _user(db_session, "t031-uploader")
+    project = await _project(db_session)
+    item = await create_item(db_session, project, section="modelisation", name="Support", user_id=user.id)
+    rev, _ = await add_revision(
+        db_session, project, item, [upload("a.step", b"geo")], note=None, derived_from_id=None, user_id=user.id
+    )
+    [row] = (await db_session.execute(select(LibraryFile).where(LibraryFile.revision_id == rev.id))).scalars().all()
+    await db_session.refresh(row)
+    folder = root / project.storage_dir / "Modélisation" / "Support" / "R1"
+    assert _columns(row) == {
+        "project_id": project.id,
+        "revision_id": rev.id,
+        "folder_id": None,
+        "is_external": False,
+        "variant_group_id": None,
+        "variant_position": 0,
+        "filename": "a.step",
+        "file_path": to_relative_path(folder / "a.step"),
+        "file_type": "step",
+        "file_size": 3,
+        "file_hash": hashlib.sha256(b"geo").hexdigest(),
+        "thumbnail_path": None,
+        "file_metadata": None,
+        "created_by_id": user.id,
+        "notes": None,
+    }
+
+
+@pytest.mark.asyncio
+async def test_reused_row_columns_are_pinned(db_session, root, monkeypatch, tmp_path):
+    import hashlib
+
+    from backend.app.api.routes.library import to_relative_path
+    from backend.app.models.library import FileVariantGroup, LibraryFolder
+
+    thumbs = tmp_path / "thumbs"
+    thumbs.mkdir()
+    monkeypatch.setattr(project_files, "get_library_thumbnails_dir", lambda: thumbs)
+    owner = await _user(db_session, "t031-owner")
+    mover = await _user(db_session, "t031-mover")
+    folder_row = LibraryFolder(name="Inbox")
+    group = FileVariantGroup(name="Group")
+    db_session.add_all([folder_row, group])
+    await db_session.flush()
+    src_dir = tmp_path / "manager"
+    src_dir.mkdir()
+    kept_src = src_dir / "kept.gcode"
+    kept_src.write_bytes(b"G1 X1")
+    plate_src = src_dir / "plate.3mf"
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as zf:
+        zf.writestr("Metadata/project_settings.config", '{"printer_model": "X"}')
+        zf.writestr("3D/3dmodel.model", "<model></model>")
+        zf.writestr("Metadata/plate_1.png", b"\x89PNG fake")
+    plate_src.write_bytes(buffer.getvalue())
+
+    def managed(path: Path, **extra) -> LibraryFile:
+        return LibraryFile(
+            folder_id=folder_row.id,
+            filename=path.name,
+            file_path=to_relative_path(path),
+            file_type="old",
+            file_size=1,
+            file_hash="0" * 64,
+            created_by_id=owner.id,
+            variant_group_id=group.id,
+            variant_position=3,
+            notes="keep me",
+            **extra,
+        )
+
+    kept = managed(kept_src, thumbnail_path="old/thumb.png", file_metadata={"old": "meta"})
+    plate = managed(plate_src)
+    db_session.add_all([kept, plate])
+    await db_session.flush()
+    kept_id, plate_id = kept.id, plate.id
+
+    project = await _project(db_session)
+    item = await create_item(db_session, project, section="impression", name="Plateau", user_id=None)
+    rev = await project_files.add_revision_from_sources(
+        db_session,
+        project,
+        item,
+        [
+            project_files.RevisionSource(path=kept_src, filename="kept.gcode", reuse_row=kept),
+            project_files.RevisionSource(path=plate_src, filename="plate.3mf", reuse_row=plate),
+        ],
+        note=None,
+        user_id=mover.id,
+    )
+    rows = {
+        r.id: r
+        for r in (await db_session.execute(select(LibraryFile).where(LibraryFile.revision_id == rev.id)))
+        .scalars()
+        .all()
+    }
+    assert sorted(rows) == sorted([kept_id, plate_id])  # same ids, no new rows
+    folder = root / project.storage_dir / "Impression" / "Plateau" / "R1"
+    common = {
+        "project_id": project.id,
+        "revision_id": rev.id,
+        "folder_id": None,
+        "is_external": False,
+        "variant_group_id": None,
+        "variant_position": 0,
+        "created_by_id": owner.id,  # the reuse branch never touches the creator
+        "notes": "keep me",
+    }
+    assert _columns(rows[kept_id]) == {
+        **common,
+        "filename": "kept.gcode",
+        "file_path": to_relative_path(folder / "kept.gcode"),
+        "file_type": "gcode",
+        "file_size": 5,
+        "file_hash": hashlib.sha256(b"G1 X1").hexdigest(),
+        "thumbnail_path": "old/thumb.png",  # a reused row with a thumbnail keeps it and its metadata
+        "file_metadata": {"old": "meta"},
+    }
+    plate_cols = _columns(rows[plate_id])
+    new_thumb = plate_cols.pop("thumbnail_path")
+    new_meta = plate_cols.pop("file_metadata")
+    assert plate_cols == {
+        **common,
+        "filename": "plate.3mf",
+        "file_path": to_relative_path(folder / "plate.3mf"),
+        "file_type": "3mf",
+        "file_size": len(buffer.getvalue()),
+        "file_hash": hashlib.sha256(buffer.getvalue()).hexdigest(),
+    }
+    [thumb_file] = list(thumbs.iterdir())
+    assert new_thumb == to_relative_path(thumb_file)  # no thumbnail before: the copy's new one is stored
+    assert isinstance(new_meta, dict)
+
+
+@pytest.mark.asyncio
+async def test_fork_row_columns_are_pinned(db_session, root):
+    from backend.app.api.routes.library import to_relative_path
+
+    forker = await _user(db_session, "t031-forker")
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project, files=[upload("a.step", b"geo")])
+    [source] = (await db_session.execute(select(LibraryFile).where(LibraryFile.revision_id == rev.id))).scalars().all()
+    # The fork copies these from the source row rather than recomputing them.
+    source.file_type = "custom"
+    source.file_size = 999
+    source.file_hash = "f" * 64
+    source.file_metadata = {"pinned": True}
+    source.notes = "source only"
+    await db_session.flush()
+
+    forked = await fork_revision(db_session, project, item, rev, "Support B", user_id=forker.id)
+
+    r1 = (await db_session.execute(select(ProjectRevision).where(ProjectRevision.item_id == forked.id))).scalar_one()
+    [copy] = (await db_session.execute(select(LibraryFile).where(LibraryFile.revision_id == r1.id))).scalars().all()
+    await db_session.refresh(copy)
+    folder = root / project.storage_dir / "Modélisation" / "Support B" / "R1"
+    assert _columns(copy) == {
+        "project_id": project.id,
+        "revision_id": r1.id,
+        "folder_id": None,
+        "is_external": False,
+        "variant_group_id": None,
+        "variant_position": 0,
+        "filename": "a.step",
+        "file_path": to_relative_path(folder / "a.step"),
+        "file_type": "custom",
+        "file_size": 999,
+        "file_hash": "f" * 64,
+        "thumbnail_path": None,
+        "file_metadata": {"pinned": True},
+        "created_by_id": forker.id,
+        "notes": None,
+    }
+
+
+def test_remove_empty_keeps_non_empty_folders(tmp_path):
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    full = tmp_path / "full"
+    full.mkdir()
+    (full / "keep.txt").write_bytes(b"x")
+    project_files._remove_empty(full, empty, tmp_path / "missing")
+    assert not empty.exists()
+    assert (full / "keep.txt").read_bytes() == b"x"
+
+
+def test_copy_hashing_survives_a_copystat_failure(tmp_path, monkeypatch):
+    import hashlib
+
+    src = tmp_path / "src.bin"
+    src.write_bytes(b"payload")
+    dest = tmp_path / "dest.bin"
+
+    def refuse(*_args, **_kwargs):
+        raise OSError("no timestamps here")
+
+    monkeypatch.setattr(project_files.shutil, "copystat", refuse)
+    assert project_files._copy_hashing(src, dest) == (7, hashlib.sha256(b"payload").hexdigest())
+    assert dest.read_bytes() == b"payload"
+
+
+@pytest.mark.asyncio
+async def test_stream_files_removes_the_claimed_name_when_the_rename_fails(tmp_path, monkeypatch):
+    folder = tmp_path / "R1"
+    folder.mkdir()
+
+    def refuse(*_args, **_kwargs):
+        raise OSError("rename refused")
+
+    monkeypatch.setattr(project_files.os, "replace", refuse)
+    with pytest.raises(OSError, match="rename refused"):
+        await project_files._stream_files(folder, [upload("a.step", b"geo")])
+    assert list(folder.iterdir()) == []  # neither the claimed placeholder nor the .part survives
+
+
+@pytest.mark.asyncio
+async def test_thumbnail_failure_never_fails_the_upload(tmp_path, monkeypatch):
+    monkeypatch.setattr(project_files, "get_library_thumbnails_dir", lambda: tmp_path)
+
+    def explode(_path):
+        raise RuntimeError("bad gcode")
+
+    monkeypatch.setattr(project_files, "extract_gcode_thumbnail", explode)
+    gcode = tmp_path / "part.gcode"
+    gcode.write_bytes(b"G1 X1")
+    assert await project_files._make_thumbnail(gcode) == (None, None)

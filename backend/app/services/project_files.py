@@ -407,6 +407,57 @@ async def _require_reuse_rows_unchanged(db: AsyncSession, written: list[_Written
             raise ProjectFilesError(409, "A file changed while it was being moved; try again")
 
 
+def _new_library_row(
+    project_id: int,
+    revision_id: int,
+    path: Path,
+    *,
+    file_type: str,
+    file_size: int,
+    file_hash: str | None,
+    thumbnail_path: str | None,
+    file_metadata: dict | None,
+    created_by_id: int | None,
+) -> LibraryFile:
+    """A new (unadded) project-revision library row for the file stored at ``path``."""
+    return LibraryFile(
+        project_id=project_id,
+        revision_id=revision_id,
+        folder_id=None,
+        is_external=False,
+        filename=path.name,
+        file_path=to_relative_path(path),
+        file_type=file_type,
+        file_size=file_size,
+        file_hash=file_hash,
+        thumbnail_path=thumbnail_path,
+        file_metadata=file_metadata,
+        created_by_id=created_by_id,
+    )
+
+
+def _point_row_at(row: LibraryFile, project_id: int, revision_id: int, entry: _WrittenFile, file_type: str) -> None:
+    """Re-point a reused library row at ``entry``'s copy: out of its folder and variant group.
+
+    Its creator is left alone, and its thumbnail and metadata are only replaced
+    when the copy produced new ones."""
+    row.project_id = project_id
+    row.revision_id = revision_id
+    row.folder_id = None
+    row.is_external = False
+    row.variant_group_id = None
+    row.variant_position = 0
+    row.filename = entry.path.name
+    row.file_path = to_relative_path(entry.path)
+    row.file_type = file_type
+    row.file_size = entry.size
+    row.file_hash = entry.digest
+    if entry.thumbnail_rel is not None:
+        row.thumbnail_path = entry.thumbnail_rel
+    if entry.metadata is not None:
+        row.file_metadata = entry.metadata
+
+
 async def _add_file_rows(
     db: AsyncSession, project: Project, revision: ProjectRevision, written: list[_WrittenFile], user_id: int | None
 ) -> list[LibraryFile]:
@@ -421,13 +472,10 @@ async def _add_file_rows(
         file_type = (await asyncio.to_thread(classify_file_type, entry.path.name, entry.path))[:10]
         reuse = entry.source.reuse_row if entry.source is not None else None
         if reuse is None:
-            row = LibraryFile(
-                project_id=project.id,
-                revision_id=revision.id,
-                folder_id=None,
-                is_external=False,
-                filename=entry.path.name,
-                file_path=to_relative_path(entry.path),
+            row = _new_library_row(
+                project.id,
+                revision.id,
+                entry.path,
                 file_type=file_type,
                 file_size=entry.size,
                 file_hash=entry.digest,
@@ -438,21 +486,7 @@ async def _add_file_rows(
             db.add(row)
         else:
             row = reuse
-            row.project_id = project.id
-            row.revision_id = revision.id
-            row.folder_id = None
-            row.is_external = False
-            row.variant_group_id = None
-            row.variant_position = 0
-            row.filename = entry.path.name
-            row.file_path = to_relative_path(entry.path)
-            row.file_type = file_type
-            row.file_size = entry.size
-            row.file_hash = entry.digest
-            if entry.thumbnail_rel is not None:
-                row.thumbnail_path = entry.thumbnail_rel
-            if entry.metadata is not None:
-                row.file_metadata = entry.metadata
+            _point_row_at(row, project.id, revision.id, entry, file_type)
         if entry.source is not None:
             entry.source.row = row
         rows.append(row)
@@ -1071,13 +1105,10 @@ async def _fork_revision_locked(
         for entry in copies:
             source = entry["source"]
             db.add(
-                LibraryFile(
-                    project_id=project.id,
-                    revision_id=r1.id,
-                    folder_id=None,
-                    is_external=False,
-                    filename=entry["dest"].name,
-                    file_path=to_relative_path(entry["dest"]),
+                _new_library_row(
+                    project.id,
+                    r1.id,
+                    entry["dest"],
                     file_type=source["file_type"],
                     file_size=source["file_size"],
                     file_hash=source["file_hash"],
