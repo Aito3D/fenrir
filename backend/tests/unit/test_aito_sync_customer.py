@@ -457,3 +457,73 @@ async def test_a_flagged_card_is_not_moved_by_the_sweep(db_session):
     assert project.client_id == "C2"
     kinds = [e.kind for e in await _events(db_session, project.id)]
     assert "project.client.changed" not in kinds
+
+
+def _sweep_c2():
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {"estimate": _ESTIMATE_C2},
+                ("GET", "/contacts/C2"): _CONTACT_C2,
+                ("GET", "/estimates/E1/comments"): {"comments": []},
+            }
+        )
+    )
+    zoho_service.invalidate_token()
+
+
+@pytest.mark.asyncio
+async def test_a_books_reassignment_rotates_the_public_tracking_token(db_session):
+    """The old customer holds the /t/ link: once Books moves the quote to
+    another customer, that link stops serving the job (user-approved
+    2026-10-03, T-096)."""
+    project = await _idle_quoted_project(db_session)
+    project.tracking_token = "OLDTOK"
+    await db_session.commit()
+    _sweep_c2()
+    try:
+        await sync_project(db_session, project)
+        await db_session.commit()
+    finally:
+        zoho_service.transport = None
+
+    assert project.client_id == "C2"
+    assert project.tracking_token and project.tracking_token != "OLDTOK"
+
+
+@pytest.mark.asyncio
+async def test_a_books_reassignment_mints_no_token_for_a_card_without_one(db_session):
+    project = await _idle_quoted_project(db_session)
+    assert project.tracking_token is None
+    _sweep_c2()
+    try:
+        await sync_project(db_session, project)
+        await db_session.commit()
+    finally:
+        zoho_service.transport = None
+
+    assert project.client_id == "C2"
+    assert project.tracking_token is None
+
+
+@pytest.mark.asyncio
+async def test_the_same_customer_keeps_the_tracking_token(db_session):
+    project = await _idle_quoted_project(db_session)
+    project.tracking_token = "OLDTOK"
+    await db_session.commit()
+    zoho_service.transport = httpx.MockTransport(
+        zoho_handler(
+            {
+                ("GET", "/estimates/E1"): {"estimate": {**_ESTIMATE_C2, "customer_id": "C1"}},
+                ("GET", "/estimates/E1/comments"): {"comments": []},
+            }
+        )
+    )
+    zoho_service.invalidate_token()
+    try:
+        await sync_project(db_session, project)
+        await db_session.commit()
+    finally:
+        zoho_service.transport = None
+
+    assert project.tracking_token == "OLDTOK"

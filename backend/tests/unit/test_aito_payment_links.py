@@ -914,6 +914,49 @@ async def test_cancel_conflict_with_a_paid_link_credits_instead_of_cancelling(db
 
 
 @pytest.mark.asyncio
+async def test_cancel_conflict_on_a_row_already_paid_returns_true_commits_and_records_no_cancel(db_session, fake):
+    """The `was == "paid"` half of the money-wins branch. Unreachable through
+    the pass today, so it is driven directly: the row is paid in the ledger,
+    Heimdall refuses the cancel, and the cancel must still report money."""
+    p = await _project(db_session)
+    pid = p.id
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    fake.set_status("L1", "paid")
+    (row,) = await _rows(db_session, pid)
+    row_id = row.id
+    row.status = "paid"
+    await db_session.commit()
+
+    assert await svc._cancel(db_session, p, row, now=NOW, reason="operator") is True
+
+    assert fake.calls[-2:] == [("cancel", "L1"), ("get", "L1")]
+    db_session.expire_all()
+    stored = await db_session.get(AitoPaymentLink, row_id)
+    assert stored.status == "paid"
+    # Already paid, so the credit was not (re)run and no cancellation was told.
+    kinds = await _kinds(db_session, pid)
+    assert "payment_link.cancelled" not in kinds
+    assert "payment_link.paid" not in kinds
+
+
+@pytest.mark.asyncio
+async def test_a_quote_with_nothing_left_to_pay_cancels_its_link_as_nothing_to_pay(db_session, fake):
+    p = await _project(db_session)
+    pid = p.id
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    p.quote_total = 0.0
+    await db_session.commit()
+
+    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+
+    (r,) = await _rows(db_session, pid)
+    assert r.status == "cancelled" and fake.calls[-1] == ("cancel", "L1")
+    assert await _details(db_session, pid, "payment_link.cancelled") == [
+        {"reference": r.reference, "reason": "nothing_to_pay", "heimdall_id": "L1"}
+    ]
+
+
+@pytest.mark.asyncio
 async def test_a_retried_reservation_replays_the_same_expiry(db_session, fake):
     """A retry days later must send the SAME body under the same
     idempotency key, or Heimdall answers 409 idempotency_conflict forever
@@ -2731,4 +2774,279 @@ async def test_a_rate_limited_poll_still_arms_the_throttle_past_the_new_catch(db
     _get_failing_for(fake, monkeypatch, "L1", HeimdallRateLimited("slow down", 120.0))
     await reconcile_payment_links(db_session, now=NOW + timedelta(minutes=1), today=TODAY)
     assert [c[1] for c in fake.calls if c[0] == "get"] == ["L1"]
+    assert svc._throttled_until is not None
+
+
+def _abandoned_invoice_reservation(project_id: int, key: str, created_at: datetime) -> AitoPaymentLink:
+    return AitoPaymentLink(
+        project_id=project_id,
+        idempotency_key=key,
+        reference="FA-26-0006",
+        amount=1000,
+        expires_on="2026-12-31",
+        status="pending",
+        document_kind="invoice",
+        document_number="FA-26-0006",
+        created_at=created_at,
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_db_error_ageing_out_one_reservation_does_not_stop_the_sweep(db_session, monkeypatch):
+    p = await _project(db_session, quote_sync_state="unmanaged")
+    first = _abandoned_invoice_reservation(p.id, "aito:abandoned:1", NOW)
+    second = _abandoned_invoice_reservation(p.id, "aito:abandoned:2", NOW)
+    db_session.add_all([first, second])
+    await db_session.commit()
+    first_id, second_id = first.id, second.id
+
+    real_commit = db_session.commit
+    commits = 0
+
+    async def commit_failing_once():
+        nonlocal commits
+        commits += 1
+        if commits == 1:
+            raise SQLAlchemyError("disk I/O error")
+        await real_commit()
+
+    monkeypatch.setattr(db_session, "commit", commit_failing_once)
+    aged = await svc._age_out_abandoned_invoice_reservations(db_session, now=NOW + timedelta(minutes=11))
+    monkeypatch.undo()
+
+    assert aged == 1
+    # Re-read by id: the rollback expired every tracked ORM object.
+    by_id = {r.id: r for r in (await db_session.execute(select(AitoPaymentLink))).scalars()}
+    assert by_id[first_id].status == "pending" and by_id[first_id].sync_error is None
+    assert by_id[second_id].status == "failed" and by_id[second_id].sync_error == "reservation abandoned"
+
+
+@pytest.mark.asyncio
+async def test_a_db_error_reconciling_one_project_does_not_stop_the_pass(db_session, fake, monkeypatch):
+    a = await _project(db_session, quote_number="DEV-A")
+    b = await _project(db_session, quote_number="DEV-B")
+    aid, bid = a.id, b.id
+    real = svc.reconcile_project
+    seen: list[int] = []
+
+    async def flaky(db, project, **kw):
+        seen.append(project.id)
+        if project.id == aid:
+            raise SQLAlchemyError("database is locked")
+        return await real(db, project, **kw)
+
+    monkeypatch.setattr(svc, "reconcile_project", flaky)
+    n = await reconcile_payment_links(db_session, now=NOW, today=TODAY)
+
+    assert n == 2 and seen == [aid, bid]
+    assert await current_link(db_session, aid) is None
+    assert (await current_link(db_session, bid)).heimdall_id == "L1"
+
+
+@pytest.mark.asyncio
+async def test_a_lost_invoice_link_whose_row_vanished_before_the_reread_does_not_end_the_pass(
+    db_session, fake, monkeypatch
+):
+    p = await _project(db_session, quote_status="declined")
+    project_id = p.id
+    invoice_row = AitoPaymentLink(
+        project_id=project_id,
+        idempotency_key=f"aito:{project_id}:1",
+        reference="FA-1",
+        amount=50,
+        expires_on="2026-12-31",
+        heimdall_id="ghost-1",  # never registered with `fake` — a bare 404
+        status="pending",
+        document_kind="invoice",
+        document_number="FA-1",
+    )
+    db_session.add(invoice_row)
+    await db_session.commit()
+    row_id = invoice_row.id
+
+    real_get = db_session.get
+    link_gets = 0
+
+    async def get_none_on_the_reread(entity, ident, *a, **kw):
+        nonlocal link_gets
+        if entity is AitoPaymentLink:
+            link_gets += 1
+            if link_gets == 2:  # the re-read after the 404's rollback
+                return None
+        return await real_get(entity, ident, *a, **kw)
+
+    monkeypatch.setattr(db_session, "get", get_none_on_the_reread)
+    visited = await reconcile_payment_links(db_session, now=NOW, today=TODAY, only_project_id=project_id, force=True)
+    monkeypatch.undo()
+
+    assert visited == 1 and link_gets == 2
+    (row,) = [r for r in await _rows(db_session, project_id) if r.id == row_id]
+    assert row.status == "pending"  # nothing was marked failed: the re-read found no row
+
+
+# --- T-157: due pushes served between the pass's rows -------------------------
+
+
+async def _two_linked_projects(db):
+    """Two quoted projects whose links exist and are due a poll."""
+    a = await _project(db, quote_number="DEV-A")
+    b = await _project(db, quote_number="DEV-B")
+    await reconcile_payment_links(db, now=NOW, today=TODAY)
+    return a, b
+
+
+async def test_the_pass_serves_due_pushes_before_every_project_and_every_poll(db_session, fake):
+    """A route waiting on its card's push waits for one Heimdall round trip,
+    not the whole pass: the loop's serve runs before each project of the
+    reconcile half and before each link of the poll half."""
+    a = await _project(db_session, quote_number="DEV-A")
+    b = await _project(db_session, quote_number="DEV-B")
+
+    async def serve(db):
+        assert db is db_session
+        fake.calls.append(("serve",))
+        return 0
+
+    await reconcile_payment_links(db_session, now=NOW, today=TODAY, serve_due_pushes=serve)
+    await reconcile_payment_links(db_session, now=NOW + timedelta(minutes=5), today=TODAY, serve_due_pushes=serve)
+
+    kinds = [c[0] for c in fake.calls]
+    assert kinds.count("create") == 2 and kinds.count("get") >= 2
+    for i, kind in enumerate(kinds):
+        if kind != "serve":
+            assert kinds[i - 1] == "serve", kinds  # every Heimdall call follows a serve
+    assert (await current_link(db_session, a.id)).heimdall_id is not None
+    assert (await current_link(db_session, b.id)).heimdall_id is not None
+
+
+async def test_a_push_served_mid_pass_reconciles_its_link_nested_instead_of_deadlocking(db_session, fake):
+    """The served push ends in `reconcile_payment_links(changes_only=True)`,
+    on the task that already holds `_pass_lock` (what `_drain_pending` does
+    after every drain). It must run there and then — the new total reaching
+    Heimdall at once — rather than wait forever on its own task's lock."""
+    import asyncio
+
+    a, _b = await _two_linked_projects(db_session)
+    fake.calls.clear()
+    served = 0
+
+    async def serve_a_push_of_a(db):
+        nonlocal served
+        served += 1
+        if served == 1:
+            a.quote_total = 9000.0  # what the push just wrote back from Books
+            await db.commit()
+            await reconcile_payment_links(db, changes_only=True, now=NOW, today=TODAY)
+        return 1 if served == 1 else 0
+
+    await asyncio.wait_for(
+        reconcile_payment_links(
+            db_session, now=NOW + timedelta(minutes=5), today=TODAY, serve_due_pushes=serve_a_push_of_a
+        ),
+        timeout=5,
+    )
+
+    assert [c[0] for c in fake.calls][:1] == ["patch"]  # the nested pass, before the outer one's polls
+    assert [c[0] for c in fake.calls].count("get") == 2
+    assert (await current_link(db_session, a.id)).amount == 9000
+    assert svc._pass_owner is None
+    assert not svc._pass_lock.locked()
+
+
+async def test_a_failing_served_push_leaves_the_pass_on_a_sound_session(db_session, fake, monkeypatch):
+    """The loop's real `_serve_due_pushes`, its drain dying half-way with an
+    uncommitted write on the shared session: it logs and rolls back, and the
+    pass carries on polling every link, each re-fetched by id."""
+    import time
+
+    from sqlalchemy import update
+
+    from backend.app.services import aito_push_schedule, aito_quote_sync
+
+    a, b = await _two_linked_projects(db_session)
+    # Plain ids: the rollback below expires every ORM object in the session.
+    ids = (a.id, b.id)
+    links = sorted([(await current_link(db_session, pid)).heimdall_id for pid in ids])
+    fake.calls.clear()
+    drains = 0
+
+    async def dying_drain(db, **_kwargs):
+        nonlocal drains
+        drains += 1
+        await db.execute(update(AitoProject).where(AitoProject.id == ids[0]).values(description="half-written"))
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr(aito_quote_sync, "_drain_pending", dying_drain)
+    aito_push_schedule.note_immediate(ids[0], time.monotonic())
+
+    await reconcile_payment_links(
+        db_session,
+        now=NOW + timedelta(minutes=5),
+        today=TODAY,
+        serve_due_pushes=aito_quote_sync._serve_due_pushes,
+    )
+
+    assert drains >= 1
+    assert sorted(c[1] for c in fake.calls if c[0] == "get") == links
+    for pid in ids:
+        assert (await current_link(db_session, pid)).checked_at == NOW + timedelta(minutes=5)
+    project = await db_session.get(AitoProject, ids[0])
+    await db_session.refresh(project)
+    assert project.description == "x"  # the drain's half-write was rolled back, not committed by the pass
+
+
+async def test_a_429_hit_by_a_served_push_stops_the_outer_pass(db_session, fake):
+    """The served push's nested pass met Heimdall's 429 and armed the
+    throttle: the outer pass makes no further Heimdall call either."""
+    a, _b = await _two_linked_projects(db_session)
+    fake.calls.clear()
+
+    async def serve_into_a_429(db):
+        a.quote_total = 9000.0
+        await db.commit()
+        fake.fail_with = HeimdallRateLimited("slow down", 120.0)
+        try:
+            await reconcile_payment_links(db, changes_only=True, now=NOW, today=TODAY)
+        finally:
+            fake.fail_with = None
+        return 1
+
+    visited = await reconcile_payment_links(
+        db_session, now=NOW + timedelta(minutes=5), today=TODAY, serve_due_pushes=serve_into_a_429
+    )
+
+    assert visited == 0
+    assert [c[0] for c in fake.calls] == ["patch"]  # the nested attempt only
+    assert svc._throttled_until is not None
+
+
+async def test_a_429_hit_by_a_push_served_during_the_polls_stops_the_remaining_polls(db_session, fake):
+    """Same, in the poll half: the reconcile half's two serves found nothing
+    due; the push served before the first poll meets the 429, and no link is
+    polled after it."""
+    a, _b = await _two_linked_projects(db_session)
+    fake.calls.clear()
+    served = 0
+
+    async def serve(db):
+        nonlocal served
+        served += 1
+        if served != 3:  # 1 and 2 precede the two projects of the reconcile half
+            return 0
+        a.quote_total = 9000.0
+        await db.commit()
+        fake.fail_with = HeimdallRateLimited("slow down", 120.0)
+        try:
+            await reconcile_payment_links(db, changes_only=True, now=NOW, today=TODAY)
+        finally:
+            fake.fail_with = None
+        return 1
+
+    visited = await reconcile_payment_links(
+        db_session, now=NOW + timedelta(minutes=5), today=TODAY, serve_due_pushes=serve
+    )
+
+    assert visited == 2
+    assert served == 3
+    assert [c[0] for c in fake.calls] == ["patch"]  # the nested attempt; no GET after it
     assert svc._throttled_until is not None

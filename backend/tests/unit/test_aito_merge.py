@@ -222,3 +222,76 @@ async def test_merge_keeps_the_project_link_and_deliveries_with_the_work(async_c
         await db_session.execute(select(AitoTaskDelivery.revision_id).where(AitoTaskDelivery.task_id == source_task.id))
     ).scalars()
     assert list(kept) == [4242]
+
+
+async def _race(async_client, monkeypatch, first, second):
+    """Run merge ``first`` up to the point where it has read both cards as
+    active, then run merge ``second`` to completion, then let ``first``
+    finish. Returns both responses. Before T-126 the paused merge carried
+    on from its stale reads and succeeded too."""
+    import asyncio
+
+    from backend.app.api.routes import aito as aito_routes
+
+    original = aito_routes._get_active_project_or_404
+    paused = asyncio.Event()
+    release = asyncio.Event()
+    calls = {"n": 0}
+
+    async def pausing(db, project_id):
+        project = await original(db, project_id)
+        calls["n"] += 1
+        # The first request's second read is its source: pause right after it.
+        if calls["n"] == 2:
+            paused.set()
+            await release.wait()
+        return project
+
+    monkeypatch.setattr(aito_routes, "_get_active_project_or_404", pausing)
+    first_task = asyncio.create_task(_merge(async_client, *first))
+    await asyncio.wait_for(paused.wait(), timeout=5)
+    second_resp = await _merge(async_client, *second)
+    release.set()
+    first_resp = await asyncio.wait_for(first_task, timeout=5)
+    return first_resp, second_resp
+
+
+async def _event_kinds(async_client, project_id):
+    events = (await async_client.get(f"/api/v1/aito/{project_id}/events")).json()["events"]
+    return [e["kind"] for e in events]
+
+
+@pytest.mark.asyncio
+async def test_a_duplicated_merge_request_gets_a_409_and_copies_nothing(async_client, monkeypatch):
+    """A<-B sent twice (two operators, a client retry): one merge wins, the
+    other is refused before it copies a task or records an event, so the
+    target does not end up with every source line twice."""
+    target = await _create_with_tasks(async_client, [])
+    source = await _create_with_tasks(async_client, SOURCE_TASKS)
+
+    first, second = await _race(async_client, monkeypatch, (target["id"], source["id"]), (target["id"], source["id"]))
+
+    assert second.status_code == 200, second.text
+    assert first.status_code == 409, first.text
+    assert [t["title"] for t in await _tasks(async_client, target["id"])] == ["Scan the part", "Print it"]
+    assert (await _event_kinds(async_client, target["id"])).count("project.merged") == 1
+    assert (await _event_kinds(async_client, source["id"])).count("project.trashed") == 1
+
+
+@pytest.mark.asyncio
+async def test_crossed_merges_cannot_trash_both_cards(async_client, monkeypatch):
+    """A<-B racing B<-A: before T-126 each copied the other's tasks and
+    trashed the other, and both cards left the board. Now the second to
+    write gets a 409 and the winner's target stays on the board."""
+    a = await _create_with_tasks(async_client, [{"title": "A task", "scan_cost": 100}])
+    b = await _create_with_tasks(async_client, [{"title": "B task", "scan_cost": 200}])
+
+    first, second = await _race(async_client, monkeypatch, (a["id"], b["id"]), (b["id"], a["id"]))
+
+    assert second.status_code == 200, second.text
+    assert first.status_code == 409, first.text
+    board_ids = {p["id"] for p in (await async_client.get("/api/v1/aito/")).json()}
+    assert a["id"] not in board_ids
+    assert b["id"] in board_ids
+    assert [t["title"] for t in await _tasks(async_client, b["id"])] == ["B task", "A task"]
+    assert "project.merged" not in await _event_kinds(async_client, a["id"])

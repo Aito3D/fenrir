@@ -671,3 +671,82 @@ async def test_retainer_creation_books_400_json_is_still_a_clean_failure(db_sess
         await svc.record_manual_payment(db_session, p, **kw)
     assert calls.count(("POST", "/retainerinvoices")) == 2
     assert ("POST", "/customerpayments") not in calls
+
+
+@pytest.mark.asyncio
+async def test_a_dead_rollback_after_the_books_write_still_names_the_payment(db_session, books, monkeypatch):
+    """The payment is in Books and the local record fails; the session is
+    poisoned and the recovery rollback ALSO raises. The operator must still
+    get ManualPaymentUnrecorded carrying the Books payment id (not the
+    rollback's error), and the duplicate guard must survive."""
+
+    async def no_refresh(db, project_id, kind):
+        return None
+
+    async def bad_record(db, project_id, kind, **kw):
+        db.add(AitoEvent(project_id=project_id, kind=None, actor_class="user"))  # kind is NOT NULL
+        await db.flush()
+
+    async def dead_rollback():
+        raise RuntimeError("connection already closed")
+
+    monkeypatch.setattr(svc, "refresh_after_payment", no_refresh)
+    monkeypatch.setattr(svc, "record", bad_record)
+    p = await _project(db_session)
+    project_id = p.id
+    real_rollback = db_session.rollback
+    monkeypatch.setattr(db_session, "rollback", dead_rollback)
+
+    with pytest.raises(svc.ManualPaymentUnrecorded) as exc:
+        await svc.record_manual_payment(
+            db_session, p, document=INVOICE, mode="cash", amount=23000, reference=None, actor_name=None, today=TODAY
+        )
+
+    assert exc.value.zoho_payment_id == "pay-1"
+    assert not isinstance(exc.value.__cause__, RuntimeError)
+    assert svc._guard_key(project_id, INVOICE, 23000, None) in svc._recent
+    posts = [c for c in books["calls"] if c[0] == "POST" and c[1] == "/customerpayments"]
+    assert len(posts) == 1
+    # Leave the shared session clean for fixture teardown.
+    monkeypatch.undo()
+    await real_rollback()
+
+
+@pytest.mark.asyncio
+async def test_refresh_for_a_deleted_project_returns_without_calling_books(db_session, books):
+    p = await _project(db_session)
+    gone_id = p.id
+    await db_session.delete(p)
+    await db_session.commit()
+
+    await svc.refresh_after_payment(db_session, gone_id, "invoice")
+    await svc.refresh_after_payment(db_session, gone_id, "quote")
+
+    assert books["calls"] == []
+    assert db_session.is_active is True
+
+
+@pytest.mark.asyncio
+async def test_refresh_survives_a_poisoned_session_whose_rollback_also_fails(db_session, books, monkeypatch):
+    """The refresh's commit fails, leaving the session inactive, and the
+    recovery rollback raises too: nothing may reach the caller."""
+    p = await _project(db_session, invoice_status="sent", invoice_balance=23000.0)
+    db_session.add(AitoEvent(project_id=p.id, kind=None, actor_class="user"))  # kind is NOT NULL -> flush fails
+    real_rollback = db_session.rollback
+    attempts: list[int] = []
+
+    async def dead_rollback():
+        attempts.append(1)
+        raise RuntimeError("connection already closed")
+
+    monkeypatch.setattr(db_session, "rollback", dead_rollback)
+
+    await svc.refresh_after_payment(db_session, p.id, "invoice")  # must not raise
+
+    assert attempts == [1]
+    assert db_session.is_active is False
+    monkeypatch.undo()
+    await real_rollback()
+    # The session is usable again afterwards.
+    assert db_session.is_active is True
+    assert (await db_session.execute(select(AitoProject))).scalars().all()

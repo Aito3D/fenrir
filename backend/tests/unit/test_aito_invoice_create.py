@@ -381,6 +381,49 @@ async def test_two_concurrent_creates_raise_exactly_one_invoice(async_client, db
 
 
 @pytest.mark.asyncio
+async def test_an_edit_landing_while_the_create_waits_for_the_lock_is_refused(
+    async_client, db_session, books, monkeypatch
+):
+    """T-100 (user-approved 2026-10-03): the push guard runs BEFORE the lock,
+    and the lock waits out any other invoice in progress (10s+ of Books
+    calls). An edit committed in that wait puts the card back to 'pending'
+    with Books still holding the old lines; the create re-reads the card
+    under the lock and now answers the sync-pending 503 instead of billing
+    the pre-edit lines. Nothing reaches Books."""
+    from sqlalchemy import update
+
+    from backend.app.api.routes import aito as aito_routes
+
+    project_id = await _project(db_session)
+    # A fresh lock, bound to this test's event loop: the module's own one may
+    # already be bound to an earlier test's loop by a contended acquire.
+    lock = asyncio.Lock()
+    monkeypatch.setattr(aito_routes, "_invoice_lock", lock)
+    await lock.acquire()
+    try:
+        request = asyncio.ensure_future(async_client.post(f"/api/v1/aito/{project_id}/invoice"))
+        for _ in range(500):
+            if getattr(lock, "_waiters", None):
+                break
+            await asyncio.sleep(0.01)
+        assert getattr(lock, "_waiters", None), "the create never reached the lock"
+        await db_session.execute(
+            update(AitoProject).where(AitoProject.id == project_id).values(quote_sync_state="pending")
+        )
+        await db_session.commit()
+    finally:
+        lock.release()
+    response = await request
+
+    assert response.status_code == 503, response.text
+    assert response.json()["detail"]["code"] == "sync_pending"
+    assert books["calls"] == []
+    db_session.expire_all()
+    project = await db_session.get(AitoProject, project_id)
+    assert project.quote_invoiced is False
+
+
+@pytest.mark.asyncio
 async def test_a_deleted_project_is_a_404(async_client, db_session, books):
     project_id = await _project(db_session, status="deleted")
 
@@ -890,6 +933,82 @@ async def test_a_failed_rollback_after_a_db_failure_still_returns_the_real_invoi
 
     project_id = await _project(db_session)
     monkeypatch.setattr("backend.app.api.routes.aito.record", bad_record)
+    monkeypatch.setattr(db_session, "rollback", broken_rollback)
+
+    body = await aito_routes.create_invoice(project_id=project_id, db=db_session, current_user=None)
+
+    assert body.number == "FA-26-4100"
+    assert body.id == "inv-1"
+
+
+@pytest.mark.asyncio
+async def test_a_failed_invoice_count_after_the_create_still_returns_the_created_invoice(
+    async_client, db_session, books, monkeypatch, caplog
+):
+    """The count-only `list_project_invoices` read rides its own try: when it
+    fails after the create, the card keeps Books' figures for the invoice
+    itself, the count degrades to 1, and the "not listed under estimate"
+    warning is logged (an empty list cannot contain the new invoice)."""
+    real = zoho_service.list_project_invoices
+    seen = {"n": 0}
+
+    async def flaky(db, estimate_id, customer_id):
+        seen["n"] += 1
+        if seen["n"] > 1:  # the first call is the duplicate-invoice guard
+            raise ZohoUpstreamError("Zoho is down")
+        return await real(db, estimate_id, customer_id)
+
+    monkeypatch.setattr(zoho_service, "list_project_invoices", flaky)
+    project_id = await _project(db_session)
+
+    with caplog.at_level("WARNING"):
+        response = await async_client.post(f"/api/v1/aito/{project_id}/invoice")
+
+    assert seen["n"] > 1
+    assert response.status_code == 200
+    body = response.json()
+    assert body["id"] == "inv-1"
+    assert body["number"] == "FA-26-4100"
+    assert body["invoice_count"] == 1
+    assert "is not listed under estimate" in caplog.text
+    assert "FA-26-4100" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_a_failed_re_read_after_the_create_falls_back_to_the_create_response(
+    async_client, db_session, books, monkeypatch, caplog
+):
+    async def down(db, invoice_id):
+        raise ZohoUpstreamError("Zoho is down")
+
+    monkeypatch.setattr(zoho_service, "get_invoice", down)
+    project_id = await _project(db_session)
+
+    with caplog.at_level("WARNING"):
+        response = await async_client.post(f"/api/v1/aito/{project_id}/invoice")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["id"] == "inv-1"
+    assert body["number"] == "FA-26-4100"
+    assert body["total"] == 2500.0
+    assert "invoice re-read failed" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_a_failed_rollback_after_a_failed_re_read_still_returns_the_created_invoice(
+    db_session, books, monkeypatch
+):
+    from backend.app.api.routes import aito as aito_routes
+
+    async def broken_get_invoice(db, invoice_id):
+        raise ZohoUpstreamError("Zoho is down")
+
+    async def broken_rollback():
+        raise RuntimeError("connection already closed")
+
+    project_id = await _project(db_session)
+    monkeypatch.setattr(zoho_service, "get_invoice", broken_get_invoice)
     monkeypatch.setattr(db_session, "rollback", broken_rollback)
 
     body = await aito_routes.create_invoice(project_id=project_id, db=db_session, current_user=None)

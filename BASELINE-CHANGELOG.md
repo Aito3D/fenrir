@@ -456,3 +456,575 @@ healthy.
 - SURFACE.md sections regenerated: none (`bash tools/gen_surface_c22.sh | diff - SURFACE.md` is empty; no new export).
 - 2026-10-09 T-024: re-baseline — additive internal export aito_project_links.record_and_broadcast (helper shared by routes/project_files._record_linked, project_filing.record_revision_added, aito_project_links._fan_out_revision); no behavior change.
 - 2026-10-09 T-026: re-baseline — additive internal export components/projects/files/useFileDropZone (drag/drop handlers shared by CardDropTarget, useTaskFileDrop, SectionBlock, ItemRow); no behavior change.
+
+## 2026-10-01 — campaign 23, T-104: additive internal export AitoDialogShell (sanctioned re-baseline, not a behavior change)
+
+Sanctions commit <this commit> "refactor(loop-3): T-104 extract AitoDialogShell
+from the five copy-pasted Aito dialogs". The frame the panel's stacked dialogs
+copied line for line — the z-[110] backdrop with its overlay in/out animation
+and click-to-close, the Escape trap (stopPropagation, then close unless already
+closing or a mutation is in flight), the role=dialog Card with its modal in/out
+animation, max width and optional 88vh cap, and the 36px icon tile + h2 +
+subtitle + close-X header — now lives in the new
+`frontend/src/components/aito/AitoDialogShell.tsx`. MergeProjectModal,
+TransferClientModal, TaskTransferModal and WatchModal use the standard header;
+ClientHistoryModal keeps its own h3 masthead (different inset, glyph size and
+close button) and passes it to the shell as a custom header. Bodies, footers,
+the `useDismissableDialog` call and MODAL_OUT_MS (170) stay in each dialog,
+since the footers differ. The rendered DOM of all five dialogs is unchanged:
+old and new versions were rendered side by side (open, settled, and after
+Escape) and their HTML compared byte for byte; every class string, role, aria
+attribute, data-testid and i18n key is the same. No locale changes.
+
+- SURFACE.md sections regenerated: "Frontend exported symbols" (+1 line, additions only).
+- Golden probes re-recorded: none (35/35 match).
+
+## 2026-10-01 — campaign 23, T-112: additive internal exports PanelMenuModals, useDescriptionEditor (sanctioned re-baseline, not a behavior change)
+
+Sanctions commit <this commit> "refactor(loop-5): T-112 move the detail panel's
+menu-modal state, description editor and watch query into hooks". The
+description card's editor state (draft, edit session and its captured version,
+clamp measurement, save indicator, regenerate mutation, and their layout
+effect and two effects) moved verbatim into the new hook
+`frontend/src/components/aito/useDescriptionEditor.ts`, called at the exact
+position the block occupied, so hook and effect order are unchanged. The four
+⋯-menu dialogs (merge, client transfer, watch, split/move) now render through
+the new pure component `frontend/src/components/aito/PanelMenuModals.tsx`; the
+five open flags stay in ProjectDetailPanel through a file-local
+`usePanelMenuModals` hook, and the watch query through a file-local
+`useProjectWatch`, both at their original positions — so every piece of state
+still lives and resets exactly as long as the panel does. The client edit /
+close animation state and the tabs were not touched. The panel's rendered DOM
+is unchanged: old and new versions were rendered side by side (settled, menu
+open, each dialog opened from the menu, trash confirm, watch with auth on and
+the "." shortcut, description edit start / Escape / blur-save) and their HTML
+compared byte for byte after normalising the global useId / dnd-kit id
+counters. No query keys, i18n keys or locale changes.
+
+- SURFACE.md sections regenerated: "Frontend exported symbols" (+2 lines, additions only).
+- Golden probes re-recorded: none (35/35 match).
+
+## 2026-10-02 — campaign 23, T-128: additive internal export CandidatePicker (sanctioned re-baseline, not a behavior change)
+
+Sanctions commit <this commit> "refactor(loop-8): T-128 share the candidate
+search picker between the merge and transfer dialogs". The search box and the
+radiogroup scroll wrapper around CandidateList, copied verbatim in
+MergeProjectModal and TaskTransferModal's pick-target step, moved into the new
+component `frontend/src/components/aito/CandidatePicker.tsx` (a fragment of the
+same two divs). It is controlled: `query` and the selection stay in each
+dialog, so the transfer dialog still keeps the typed query and the picked card
+across Back / Next exactly as before (the step unmounts the picker). The
+radiogroup's aria-label is passed in (the merge title / the transfer title).
+Old and new versions of both dialogs were rendered side by side (merge: open,
+loaded, type, pick, no-match; transfer split; transfer move: tick, Next, type,
+pick, Back, Next again, type) and their HTML plus the focused element compared
+equal after normalising useId counters; every class string, role, aria
+attribute, placeholder, autoFocus, data-testid and i18n key is the same. No
+locale changes.
+
+- SURFACE.md sections regenerated: "Frontend exported symbols" (+1 line, additions only).
+- Golden probes re-recorded: none (35/35 match).
+
+## 2026-10-02 — campaign 23, T-138: additive internal class _OptionalClientContactChecks (sanctioned re-baseline, not a behavior change)
+
+Sanctions commit <this commit> "refactor(loop-10): T-138 share the optional
+client email/phone validators across the client-bearing schemas". The
+`client_email` / `client_phone` field validators (None passes, otherwise
+`_check_email` / `_check_phone`), pasted verbatim into AitoProjectCreate,
+AitoClientTransfer and AitoProjectUpdate, moved into the new validators-only
+mixin `_OptionalClientContactChecks` in `backend/app/schemas/aito.py`, which
+the three models now inherit. The mixin is a plain class, not a BaseModel, and
+declares no fields: every model keeps its own client field declarations, so
+field names, caps, defaults, model_fields order and JSON-schema order are
+unchanged (pinned per model by the new
+`backend/tests/unit/test_aito_schema_client_contact.py`: accept/reject
+outcomes, exact error type/loc/msg, field order and a sha256 of each ordered
+JSON schema, all captured from the unchanged code). AitoClientEdit's
+non-optional email/phone validators were left as they are. Being a plain
+class, it does not appear in the "Pydantic schema fields" section.
+
+- SURFACE.md sections regenerated: "Pydantic schemas + ORM model class names" (+1 line, additions only).
+- Golden probes re-recorded: none (35/35 match).
+
+## T-096 — transferring a card to another client rotates its public tracking token (user-approved 2026-10-03)
+
+Sanctions commit <this commit> "refactor(loop-11): T-096 rotate the tracking
+token when a card changes client (user-approved behavior change)". A card's
+public `/t/` link was handed to its client (sent to them, printed in the Zoho
+estimate's notes), and it survived a change of client: after a card was
+transferred to another contact the previous client's link kept serving the new
+client's job (tasks, due date, island, air waybill number and, while unpaid,
+the payment link). Now `transfer_client` in `backend/app/api/routes/aito.py`
+(PUT `/aito/{id}/transfer-client`, when the contact id actually changes) and
+`_follow_customer` in `backend/app/services/aito_quote_sync.py` (the sweep
+adopting a customer reassigned in Books) replace an existing
+`tracking_token` with a fresh one from `mint_unique_token`. User-visible: the
+link sent earlier now answers "Lien introuvable" (404) and the operator sends
+the new client the new link. Unchanged: a card that never had a token still
+has none (one is minted lazily as before), the same-contact no-op keeps the
+token, no event is added, and the transfer's queued push rewrites the
+estimate's notes through `notes_with_tracking` as it already did. Pinned by
+three new tests each in `backend/tests/unit/test_aito_transfer_client.py` and
+`backend/tests/unit/test_aito_sync_customer.py`.
+
+- Golden probes re-recorded: none (35/35 match).
+- SURFACE.md sections regenerated: none (`bash tools/gen_surface_aito23.sh` output identical to SURFACE.md).
+
+## T-100 — create_invoice refuses a card that went back to pending while it waited for the invoice lock (user-approved 2026-10-03)
+
+Sanctions commit <this commit> "refactor(loop-11): T-100 re-check the sync
+state under the invoice lock (user-approved behavior change)". `create_invoice`
+in `backend/app/api/routes/aito.py` runs its push guard (`ensure_pushed(strict=True)`
+in `_project_ready_to_invoice`) before taking `_invoice_lock`, and that lock is
+held across 10 s+ of Books calls by any other invoice in progress. A task edit
+committed during that wait put the card back to `quote_sync_state = 'pending'`
+with Books still holding the old lines, and the re-read under the lock only
+re-checked `quote_invoiced`, so the invoice billed the pre-edit lines. Now,
+right after that re-read, a pending card is refused with 503 and
+`SYNC_PENDING_DETAIL` (`code: sync_pending`, the "Zoho has not confirmed the
+latest changes yet" message the frontend already maps to
+`aito.syncNotConfirmed`), before the duplicate read and the create; no Books
+call is made. It does not push or wait for the push under the lock, so the lock
+is never held across a flush wait. User-visible: an invoice click that races a
+concurrent edit of the same card gets that 503 instead of producing an invoice
+from the pre-edit lines. Unchanged: every guard before the lock, the 409 for an
+already-invoiced card (still checked first), and everything after the check.
+An edit committed after the re-read (during the plan reads) is not covered by
+this change. Pinned by
+`test_an_edit_landing_while_the_create_waits_for_the_lock_is_refused` in
+`backend/tests/unit/test_aito_invoice_create.py`.
+
+- Golden probes re-recorded: none (35/35 match).
+- SURFACE.md sections regenerated: none (`bash tools/gen_surface_aito23.sh | diff - SURFACE.md` is empty).
+
+## T-101 — inbox read-all is bounded by the newest row shown, and both mark-read writes refetch when they settle (user-approved 2026-10-03)
+
+Sanctions commit <this commit> "refactor(loop-11): T-101 bound inbox read-all
+and refetch after mark-read (user-approved behavior change)". Two halves:
+
+- Backend: `POST /api/v1/inbox/read-all` (`read_all` in
+  `backend/app/api/routes/inbox.py`) gains an OPTIONAL query parameter
+  `up_to: int | None = Query(None, ge=1)`. When given, the UPDATE is bounded
+  with `Notification.id <= up_to`, so a row that arrived after the panel was
+  drawn stays unread. Without it the route marks every unread row read,
+  exactly as before, so an older client behaves as it always did. `up_to=0`
+  or a negative value is a 422.
+- Frontend: `api.markInboxAllRead(upTo?: number)` in `frontend/src/api/client.ts`
+  appends `?up_to=` only when given (additive, optional). In
+  `frontend/src/components/NotificationBell.tsx`, `markAllRead` sends the
+  newest id of the cached page (`items[0].id`), and both `markRead` and
+  `markAllRead` refetch the inbox (`invalidateQueries(INBOX_KEY)`) once the
+  write settles. The optimistic `cancelQueries` before each write could throw
+  away an arrival's in-flight refetch, and nothing refetched after it.
+  `writeFailed` now only shows the toast, because the refetch on settle
+  replaces the one it used to start.
+
+User-visible: a notification that arrives while the user clicks "Mark all
+read" (or marks one row read) stays unread, shows up and rings the bell (and
+chimes per sound_kinds) right after the write, instead of being marked read
+silently or staying hidden until the next focus or event. Unchanged: the
+optimistic patches, the failure toast, the arrival/ring logic, and the read-all
+behavior without `up_to`.
+
+Tests: `test_read_all_up_to_leaves_newer_rows_unread` and
+`test_read_all_rejects_a_non_positive_up_to` in
+`backend/tests/unit/test_inbox_routes.py`. Three new cases in
+`frontend/src/__tests__/components/NotificationBell.test.tsx` (up_to sent, an
+arrival during a held read-all stays unread and rings, mark-one refetches and
+shows an arrival). The default MSW read handlers there now update the mocked
+server inbox the way the real server does, because every write now ends in a
+refetch. The existing "Mark all read clears every unread row" assertions are
+unchanged.
+
+- Golden probes re-recorded: app-openapi-index (read_all's params gain `query:up_to`; the other 34 match unchanged).
+- SURFACE.md sections regenerated: none (`bash tools/gen_surface_aito23.sh` output identical to SURFACE.md; the client.ts method signature is not captured).
+
+## T-102 — the hourly invoice sweep serves due pushes between projects and stops at the Books call ceiling (user-approved 2026-10-03)
+
+Sanctions commit <this commit> "refactor(loop-12): T-102 serve pushes and
+respect the call ceiling in the invoice sweep (user-approved behavior change)".
+`sweep_invoices` in `backend/app/services/aito_invoice_sweep.py` gains two
+OPTIONAL keyword arguments, `serve_due_pushes` and `call_ceiling` (both default
+`None`, which keeps the old pass). `run_sync_loop` in
+`backend/app/services/aito_quote_sync.py` passes its own `_serve_due_pushes`
+(handed in, not imported, to avoid the import cycle) and
+`BACKGROUND_CALL_CEILING`. Before each project the sweep serves due pushes
+(the served drain contains its own failures, as in `_drain_reconcile_queue`),
+then, once `zoho_service.calls_in_last_minute()` has reached the ceiling, the
+pass stops without stamping `_last_run`. The existing least-recently-checked
+ordering makes the next tick resume with the unreached tail. User-visible: on
+large boards the hourly invoice refresh may finish over several ticks instead
+of one, and the document/invoice buttons (Print quote/invoice PDF, Send quote,
+Create invoice) no longer return the 503 "Zoho has not confirmed" while it
+runs. Unchanged: the 429 path, the per-project commit and skip rules, the
+hourly gate after a pass that reaches the end. Pinned by five new tests at the
+end of `backend/tests/unit/test_aito_invoice_sweep.py`. The six loop-level
+`sweep_invoices` fakes in the test suite now accept the new keyword arguments.
+
+- Golden probes re-recorded: none (35/35 match).
+- SURFACE.md sections regenerated: the `sweep_invoices` line now reads `async def sweep_invoices(` (the signature is wrapped over several lines and the generator keeps only the first one).
+
+## T-123 — the abandoned-reservation sweep no longer writes off a reservation that is being replayed (user-approved 2026-10-03)
+
+Sanctions commit <this commit> "refactor(loop-12): T-123 the age-out sweep
+leaves a replayed reservation alone (user-approved behavior change)".
+`_age_out_abandoned_reservations` in
+`backend/app/services/aito_terminal_payments.py` used to set
+`status='failed'` and `settled_at` with an unconditional ORM write and never
+checked `_in_flight`. A replay of an old unminted reservation keeps the row's
+original `created_at`, so a tick landing during the replay's POST
+(`confirm: true`) wrote the row off and recorded a false `abandoned` event.
+The replay's `_adopt` then set `status`/`heimdall_id` but not `settled_at`, so
+Heimdall's later `paid` never produced the paid event, the quote acceptance or
+the notification for a real card charge. Now the sweep skips ids in
+`_in_flight`, and the write-off is a conditional
+`UPDATE ... WHERE id = :id AND status = 'pending' AND heimdall_id IS NULL AND settled_at IS NULL`.
+When it matches no row, nothing is written, no event is recorded and the row
+is not counted. The write-off and its `payment.terminal.failed` event still
+share one commit (T-122). User-visible: a reservation being replayed (its
+`start_terminal_payment` POST in flight) is no longer marked abandoned/failed
+by the sweep mid-request, and a row the replay already adopted is left alone.
+Unchanged: the cutoff, the selection, the per-row isolation, and the other
+branches. Pinned by three new tests in
+`backend/tests/unit/test_aito_terminal_payments.py` (in-flight skip, a claim
+that loses to an adoption between listing and write, and a sweep running
+during a replay POST end to end).
+
+- Golden probes re-recorded: none (35/35 match).
+- SURFACE.md sections regenerated: none (`bash tools/gen_surface_aito23.sh` output identical to SURFACE.md).
+
+## T-121 — only Books' own status history (comment_type "system") becomes a quote viewed/accepted/declined/expired/sent event (user-approved 2026-10-03)
+
+Sanctions commit <this commit> "refactor(loop-12): T-121 classify only Books'
+system history comments (user-approved behavior change)". `map_comment` in
+`backend/app/services/aito_zoho_comments.py` matched its keyword table against
+every Books comment, so a note typed by a person (a staff note such as "Devis
+non accepté", or a customer-portal comment) that merely contained "accepté",
+"refusé", "consulté" and so on was recorded as a client `quote.accepted` /
+`quote.declined` / `quote.viewed` event. That event rang every watcher's inbox
+bell and counted in the acceptance stats. Now the table is tried only when
+`comment.get("comment_type") == "system"`. Every other comment (other type,
+or none) falls through to the existing `zoho.comment` fallback with
+`actor_class` "system" and the text verbatim. User-visible: human-written Books
+comments that mention 'accepted', 'refusé', 'consulté' and so on appear on the
+timeline as plain Zoho comments instead of quote accepted/declined/viewed
+events, and no longer ring the inbox bell or count in the acceptance stats.
+Evidence the gate keeps real history: a user-authorised READ-ONLY probe of
+three real estimates (GET /estimates/{id}/comments, 2026-10-03, 37 comments)
+found every history comment carrying `comment_type == "system"`. That includes
+"Devis accepté à l’aide du lien public", "Le client a consulté le devis dans
+l’e-mail." and "Devis marqué comme accepté/refusé/envoyé". Unchanged: the
+pattern table, the echo suppression, the timestamps and the fallback. Pinned
+by new tests in `backend/tests/unit/test_aito_zoho_comments.py`: a system
+public-link acceptance still maps to `quote.accepted`; system viewed/declined
+history is still classified; the same texts with comment_type absent,
+"internal", "customer", "SYSTEM" or "" map to `zoho.comment`; an internal
+note mentioning acceptance is mirrored as a plain comment. The existing
+fixtures already carried `comment_type: "system"` and were not changed.
+
+- Golden probes re-recorded: aito-status-comments. Its `map_comment` samples
+  in the frozen `tools/probe_aito_status.py` carry no `comment_type`, so the
+  four that were classified (viewed, accepted, declined, expired) now read
+  `zoho.comment` / `system`. Real Books status history always carries
+  "system" (probe above), so on real data only non-system comments change.
+  The other 34 probes match unchanged.
+- SURFACE.md sections regenerated: none (`bash tools/gen_surface_aito23.sh` output identical to SURFACE.md).
+
+## T-125 — a DB error on one card no longer strands the rest of its drain (user-approved 2026-10-03)
+
+Sanctions commit <this commit> "refactor(loop-13): T-125 one card's error no
+longer strands the rest of the drain (user-approved behavior change)".
+`run_sync_once` in `backend/app/services/aito_quote_sync.py` spends every due
+push window up front, and the per-card `_reconcile_one` call had no guard. An
+exception there (a `db.get` that raised, a `record()` failing inside
+sync_project's catch-all) left the loop. The cards it had not reached stayed
+pending with no window, so `any_due()` was false and nothing woke the loop
+before the next full tick. Their `flush_and_wait` waiters were never
+resolved either, so a Print or Send-quote route waiting in `ensure_pushed`
+answered 503 after the flush timeout. Now each `_reconcile_one` call is
+wrapped: on an `Exception` it logs "Aito quote sync failed for project %s",
+rolls the session back, resolves that card's waiter and moves on to the next
+card. If the loop is still left by an exception the guard does not catch
+(a cancellation), a `finally` calls `note_immediate()` for every due id the
+loop never reached, so the next lap takes them. User-visible: after a DB
+error on one card, the remaining cards of that drain are pushed in the same
+drain instead of at the next full tick, and a waiting route gets its answer
+instead of a 503. Unchanged: the success path, push order, the 429 break
+(the cards after it still get no window, so the loop is not re-woken into
+the limit), `attempted` counting (a card that raised is not counted), and
+the existing error logging. Pinned by three new tests in
+`backend/tests/unit/test_aito_quote_sync_wake_latency.py`: a failing first
+card does not stop the second, and both waiters resolve; a cancellation
+re-arms the unreached due card; a 429 break leaves no window behind.
+
+- Golden probes re-recorded: none (35/35 match).
+- SURFACE.md sections regenerated: none (`bash tools/gen_surface_aito23.sh` output identical to SURFACE.md).
+
+## T-126 — the second of two concurrent or duplicated merges of the same cards gets a 409 (user-approved 2026-10-03)
+
+Sanctions commit <this commit> "refactor(loop-13): T-126 merge claims both
+cards before writing (user-approved behavior change)". `merge_project` in
+`backend/app/api/routes/aito.py` checked that both cards were active with a
+SELECT, then trashed the source with an unconditional ORM write many awaits
+later. Two merges interleaving on the event loop both passed the check. A<-B
+sent twice copied B's tasks onto A twice, so A's quote was pushed with every
+line doubled. A<-B racing B<-A trashed both cards. Now, after the existing
+refusals and before the first write, the new `_claim_active_projects` runs a
+no-op `UPDATE aito_projects SET version = version, updated_at = updated_at
+WHERE id = :id AND status = 'active'` on both cards, in id order (so crossed
+merges cannot deadlock). If either matches no row, the request answers 409
+"One of these cards was just merged or deleted — refresh". No task is copied
+and no event is recorded. User-visible: the second of two concurrent or
+duplicated merge requests gets a 409 instead of succeeding. Unchanged: the
+single-request success path (copies, the ORM trash write, events, sync
+wake, broadcasts, response), and the earlier 404/409 refusals, which keep
+their order. The claim sets `version` and `updated_at` to their own values
+(like `_claim_expected_version`), so it changes nothing on the row. Pinned
+by two new tests in `backend/tests/unit/test_aito_merge.py`: a duplicated
+A<-B (one 200, one 409, tasks copied once, one merged/trashed event each),
+and crossed A<-B / B<-A (one 409, the winner's target stays on the board).
+
+- Golden probes re-recorded: none (35/35 match).
+- SURFACE.md sections regenerated: none (`bash tools/gen_surface_aito23.sh` output identical to SURFACE.md).
+
+## T-124 — an error escaping the tick's attention pass no longer skips the tick's later passes (user-approved 2026-10-03)
+
+Sanctions commit <this commit> "refactor(loop-14): T-124 attention pass gets
+its own guard (user-approved behavior change)". `run_sync_loop` in
+`backend/app/services/aito_quote_sync.py` called
+`run_sync_once(db, attention_only=True)` outside any try of its own, while
+every pass after it has one. An exception escaping it (its selection query
+hitting a locked database, a `record()` failing inside sync_project's
+catch-all) fell through to the outer "Aito quote sync tick failed" handler,
+so the tick skipped the change pass, invoice sweep/poll, contact poll,
+tracking purge, inbox sweep, payment-link reconcile and terminal poll for
+the whole poll interval. Now that one call is wrapped like the change pass
+below it: on an `Exception` it logs "Aito attention pass failed" and rolls
+the session back (rollback errors suppressed), and the tick goes on to
+`_serve_due_pushes` and the later passes. Cancellation is not an
+`Exception` and still propagates. Unchanged: every other pass's guard, the
+outer tick handler, the between-tick laps. Pinned by
+`test_a_failing_attention_pass_does_not_cost_the_tick_its_other_passes` in
+`backend/tests/unit/test_aito_push_windows.py` (fails on the old code: the
+terminal poll is never reached). `test_run_sync_loop_survives_a_failing_periodic_tick`
+in `backend/tests/unit/test_aito_quote_sync.py` pinned the old routing of an
+attention-pass error to the outer handler; it now raises from the tick's
+`sync_enabled` read instead, so it still drives the outer handler and the
+cancellation check.
+
+- Golden probes re-recorded: none (35/35 match).
+- SURFACE.md sections regenerated: none (`bash tools/gen_surface_aito23.sh` output identical to SURFACE.md).
+
+## T-155 — the quote email refuses a card whose edits have not reached Books (user-approved 2026-10-03)
+
+Sanctions commit <this commit> "refactor(loop-15): T-155 quote email refuses
+unpushed edits (user-approved behavior change)". `get_quote_email` and
+`send_quote_email` in `backend/app/api/routes/aito.py` called
+`ensure_pushed(db, project, strict=True)`, which returns at once when no sync
+worker is serving (quote sync disabled while Books stays configured, or the
+tick's settings read failing). The card stayed `quote_sync_state="pending"`
+and the routes went on to preview, or have Books email, the estimate as it
+was BEFORE the edit. Both now re-check after `ensure_pushed`, mirroring
+`_project_ready_to_invoice`: a card with a quote that is still pending gets
+409 "This quote has changes still syncing to Zoho", and nothing is read from
+or sent through Books, the card does not move and no `quote.emailed` event
+is recorded. Unchanged: a card with no quote yet still gets the 404 "This
+project has no Zoho quote" (the re-check is gated on `quote_id`, matching
+the invoice path, where the no-quote answer comes first); the 503 when a
+serving worker's push does not land; every other check. Pinned by
+`test_the_quote_email_refuses_a_card_still_pending_when_no_worker_pushes_it`
+(GET and POST; fails on the old code) and
+`test_a_pending_card_with_no_quote_yet_still_gets_the_no_quote_404` in
+`backend/tests/unit/test_aito_flush_routes.py`.
+
+- Golden probes re-recorded: none (35/35 match).
+- SURFACE.md sections regenerated: none (`bash tools/gen_surface_aito23.sh` output identical to SURFACE.md).
+
+## T-156 — a failed change pass in the wake lap no longer drops the push windows that fell due during it (user-approved 2026-10-03)
+
+Sanctions commit <this commit> "refactor(loop-15): T-156 wake-lap change pass
+gets its own guard (user-approved behavior change)". In `run_sync_loop`
+(`backend/app/services/aito_quote_sync.py`) the between-tick wake lap called
+`run_change_pass(db)` inside the lap's single try, whose handler logs "Aito
+quote sync wake drain failed" and calls
+`aito_push_schedule.drop_due_except(time.monotonic(), set())`. A change-pass
+failure (a locked database while a watermark commits, a `db.get` raising in
+the reconcile-queue drain) therefore deleted every window that closed while
+the pass was reading Books: those cards stayed pending with no window, so
+nothing woke the loop for them before the next full tick (300 s), and a
+route waiting in `flush_and_wait` answered 503 after its timeout. Now the
+lap's `run_change_pass` has its own try, the same shape as the tick's: on an
+`Exception` it logs "Aito change pass failed" and rolls the session back
+(rollback errors suppressed), leaving the windows standing for the next lap.
+Cancellation still propagates. Unchanged: the outer handler and its
+`drop_due_except`, which now catches only a failure of the serving check or
+of `_drain_pending`; the tick body; every other pass. Pinned by
+`test_a_failing_wake_lap_change_pass_keeps_the_windows_that_fell_due_during_it`
+in `backend/tests/unit/test_aito_push_windows.py` (fails on the old code:
+the window is dropped and no drain follows).
+
+- Golden probes re-recorded: none (35/35 match).
+- SURFACE.md sections regenerated: none (`bash tools/gen_surface_aito23.sh` output identical to SURFACE.md).
+
+## T-157 — pushes are served between the rows of the payment-link and terminal passes (user-approved 2026-10-03)
+
+Sanctions commit <this commit> "refactor(loop-15): T-157 serve due pushes
+inside the Heimdall passes (user-approved behavior change)". `run_sync_loop`
+served due pushes only before and after `reconcile_payment_links`, and not at
+all around `poll_open_terminal_payments`. Each runs up to MAX_POLLS_PER_TICK
+(40) sequential Heimdall calls, so a slow Heimdall held a route waiting in
+`flush_and_wait` past FLUSH_TIMEOUT_SECONDS and Print / Create invoice / Send
+quote answered 503. Both passes now take an optional `serve_due_pushes`
+callback (default `None`: nothing served, as before), the T-102 pattern of
+`sweep_invoices`. `run_sync_loop` hands them `_serve_due_pushes` while
+serving and `None` otherwise. `_run_pass` calls it before each project of
+the reconcile half and each link of the poll half, and the terminal poll
+before each row. A served push ends in `reconcile_payment_links(changes_only=True)`
+on the task already holding `_pass_lock` (not re-entrant), so the module
+records the pass's owning task (`_pass_owner`), and a call from that task
+runs its pass nested between two rows instead of deadlocking. If that nested
+pass hits a 429 and arms the throttle, the outer pass stops (the reconcile
+half returns, the poll half breaks) rather than calling Heimdall again inside
+the window. `_serve_due_pushes` logs and rolls back its own failures, and
+both passes re-fetch every row by id after it, so a failed served push costs
+nothing more. Books calls now interleave with Heimdall calls in a different
+order. Unchanged: every caller that passes no callback (the routes, the
+drain's own changes-only pass, the tests' direct calls), the per-row failure
+handling, the stand-down on `HeimdallUnreachable`. Loop-level test fakes of
+the two passes were widened to accept the new keyword. Pinned by
+`test_the_pass_serves_due_pushes_before_every_project_and_every_poll`,
+`test_a_push_served_mid_pass_reconciles_its_link_nested_instead_of_deadlocking`,
+`test_a_failing_served_push_leaves_the_pass_on_a_sound_session` and the two
+`test_a_429_hit_by_a_*` tests in `backend/tests/unit/test_aito_payment_links.py`,
+plus `test_poll_open_serves_due_pushes_before_every_row` and
+`test_poll_open_serves_nothing_by_default` in
+`backend/tests/unit/test_aito_terminal_payments.py`, and
+`test_the_tick_hands_its_serve_to_the_heimdall_passes_only_while_serving` in
+`backend/tests/unit/test_aito_push_windows.py`. All fail on the old code. The
+nested test times out with the re-entry branch disabled.
+
+- Golden probes re-recorded: none (35/35 match).
+- SURFACE.md sections regenerated: `backend/app/services/aito_terminal_payments.py` signatures. The `poll_open_terminal_payments` line now reads `async def poll_open_terminal_payments(`: the signature gained `serve_due_pushes` and wraps, and the generator keeps the first line only. `reconcile_payment_links` was already wrapped, so its line is unchanged.
+
+## 2026-10-04 — campaign 23, T-173: additive internal export AitoDialogFooter (sanctioned re-baseline, not a behavior change)
+
+Sanctions commit <this commit> "refactor(loop-17): T-173 share the stacked
+Aito dialogs' footer". The error line plus secondary/confirm-with-spinner
+footer copied into MergeProjectModal, TransferClientModal, TaskTransferModal
+and WatchModal moved into the new component
+`frontend/src/components/aito/AitoDialogFooter.tsx`. Per-dialog differences are
+explicit props: the confirm's label, disabled rule and handler; `onCancel` for
+the Cancel button; `secondary` for the slot's replacement (TaskTransfer's Back
+step, Watch's Stop watching, which has no Cancel); `errorTitle` for Watch's
+`title` on the error line; `status` for TaskTransfer's own left side (the error
+plus the saving hint); `confirmSpinner={false}` for the move dialog's Next.
+Back and Cancel still share one slot, so the step change keeps the same
+<button> and its focus. Pinned before the extraction by
+`frontend/src/__tests__/components/AitoDialogFooterPin.test.tsx` (footer
+outerHTML in disabled, idle, pending and error states for all four dialogs,
+both transfer modes and both steps, saves in flight, watched/unwatched, and the
+Back-to-Cancel focus hand-off), byte-identical after. No locale changes.
+
+- SURFACE.md sections regenerated: "Frontend exported symbols" (+1 line, additions only).
+- Golden probes re-recorded: none (35/35 match).
+
+## T-098 — a Heimdall answer with a null, oversized or oddly-formed payment id is unreadable (user-approved 2026-10-03)
+
+Sanctions commit <this commit> "refactor(loop-17): T-098 refuse a malformed
+Heimdall payment id (user-approved behavior change)". `_to_view` stored
+`str(data["id"])` from the unauthenticated response body: a JSON null became
+the id "None", an id over 36 characters overflowed the String(36)
+`heimdall_id` columns (a commit failure on PostgreSQL after Heimdall had
+already acted), and ids with `/`, `..`, spaces or `?#` were stored and reused
+in later PATCH/cancel/GET paths. The id must now match `[A-Za-z0-9_-]{1,36}`
+(Heimdall's UUIDs and every id the test doubles use). A JSON integer is still
+read as its decimal string, which keeps the `heimdall-wire` golden's
+`200-id-numeric` case unchanged. Anything else (null, empty, oversized, a
+character outside the class, a bool/float/list/object) raises a ValueError
+inside `_to_view`'s existing parse guard. That guard already turns a body
+missing its `id` into `HeimdallAmbiguous("Heimdall returned an unexpected
+payment shape: ...")`, so callers take the path they already take for an
+unreadable 2xx answer. A terminal charge or invoice link stays a pending,
+unminted reservation with a `sync_error` and is replayed under the same
+idempotency key. The link route answers 502 `upstream`. Pinned by
+`test_to_view_treats_a_malformed_payment_id_as_an_unreadable_answer` and
+`test_create_link_raises_heimdall_ambiguous_on_a_malformed_payment_id`
+(`backend/tests/unit/test_heimdall_client.py`), three new
+`test_start_leaves_the_reservation_pending_on_an_ambiguous_answer` params
+(`202-null-id`, `202-oversized-id`, `202-path-id`,
+`backend/tests/unit/test_aito_terminal_payments.py`) and
+`test_a_malformed_heimdall_id_leaves_the_link_a_pending_reservation_with_a_sync_error`
+(`backend/tests/unit/test_aito_invoice_link_api.py`). All fail on the old
+code. Well-formed ids are pinned to flow through verbatim by
+`test_to_view_keeps_a_well_formed_payment_id_verbatim` and
+`test_to_view_still_reads_an_integer_payment_id_as_its_decimal_string`.
+
+- Golden probes re-recorded: none (35/35 match).
+- SURFACE.md lines: none (`_PAYMENT_ID_RE` and `_validate_payment_id` are private).
+
+## T-154 — a PATCH /aito/{id} carrying client_id/client_name is refused with 422 (user-approved 2026-10-03)
+
+Sanctions commit <this commit> "refactor(loop-17): T-154 PATCH no longer
+re-points a card at another contact (user-approved behavior change)".
+`update_project` wrote `client_id`/`client_name` from the body. That skipped
+transfer-client's invoiced-card 409, its client push flag and its
+social/contact clearing, so a direct API caller could re-point any card,
+invoiced or not. The current UI never sends either key on the PATCH: only
+description, shipping, the LTA and the sync retry use it. Ownership travels
+through PUT /{id}/transfer-client, and creates through POST /aito/. Both
+fields are removed from `AitoProjectUpdate`. The schema inherits
+`extra="ignore"`, so a removed field would have been dropped silently and
+answered 200. A `mode="before"` model validator therefore refuses a body that
+carries either key, null included, with FastAPI's standard 422 ("... cannot
+be changed here; use PUT /aito/{id}/transfer-client"). This happens before
+the handler runs, so nothing is written and an `expected_version` claim is
+not spent. Any other unknown key is still ignored. The route stops writing
+the two keys. Its client_id-needs-a-name check now reads the stored row,
+which is all it could ever see once the body lost those keys, so a legacy
+card stored with an id and no name still refuses every PATCH, as before.
+Pinned by `backend/tests/unit/test_aito_update_client_fields.py`: 9 of its
+12 tests fail on the old code, and the other 3 pin the unchanged parts
+(other client fields still written, other unknown keys still ignored, the
+stored-row check). Tests that pinned the old acceptance were changed to
+expect the 422, in `test_aito_routes.py`:
+`test_update_refuses_to_replace_the_whole_client_snapshot`,
+`test_update_refuses_clearing_the_whole_client_snapshot`,
+`test_update_refuses_renaming_the_client_without_resending_the_id`,
+`test_update_project_refuses_a_client_id_at_the_column_cap` and
+`test_project_update_refuses_even_a_client_id_at_the_column_cap`.
+`test_update_with_description_omitted_still_writes_the_other_fields` now
+writes `client_email` instead of `client_name`. The `AitoProjectUpdate` field
+order and schema hash pins in `test_aito_schema_client_contact.py` drop the
+two fields, and the new schema equals the old one minus exactly those two
+properties.
+
+- Golden probes re-recorded: `aito-pydantic-schemas` (the `client_id` and `client_name` properties of AitoProjectUpdate removed, 26 lines) and `app-openapi-index` (the same two properties of the PATCH body, 2 lines). The other 33 match unchanged.
+- SURFACE.md lines: the `AitoProjectUpdate` field list loses `"client_id": "str | None"` and `"client_name": "str | None"` (2 deletions).
+
+## T-158 — a reconcile card edited mid-tick is pushed when its quiet window closes, not at once (user-approved 2026-10-03)
+
+Sanctions commit <this commit> "refactor(loop-18): T-158 mid-tick edit keeps
+its quiet window (user-approved behavior change)". In `run_sync_once`
+(`backend/app/services/aito_quote_sync.py`) a card selected as a reconcile
+(an attention row: 'error', or an unconfirmed status) got neither
+`must_be_pending` nor `skip_if_pending` from `_reconcile_one`. An operator
+editing it while the tick walked earlier cards (the usual way to fix an
+'error' card) made it pending and opened its 10-second window through
+`note_edit`, but the tick re-read it as pending and pushed it at once,
+ignoring the window and leaving it unspent; every further edit in that
+session cost another Books PUT. Now ids not selected as pending get
+`skip_if_pending=True`, as `_drain_reconcile_queue` already passes: such a
+card is skipped (not counted in `attempted`), stays pending, and its window
+wakes the drain that pushes it once the quiet period ends. Unchanged: cards
+selected as pending (`must_be_pending`), the T-125 per-card guard and
+`finally` re-arm, the T-124 attention-pass guard, and the skip path's waiter
+release. Pinned by
+`test_a_reconcile_card_edited_mid_tick_is_left_to_its_quiet_window` and
+`test_a_reconcile_card_left_to_its_window_is_pushed_once_the_window_closes`
+in `backend/tests/unit/test_aito_quote_sync_wake_latency.py` (both fail on
+the old code: the edited card is pushed mid-tick). The first also pins that
+the skipped card keeps an open window that closes within the quiet period,
+so it is not stranded.
+
+- Golden probes re-recorded: none (35/35 match).
+- SURFACE.md sections regenerated: none (`bash tools/gen_surface_aito23.sh` output identical to SURFACE.md).

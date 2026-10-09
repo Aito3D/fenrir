@@ -665,22 +665,25 @@ async def test_update_description_leaves_client_untouched(async_client):
 
 
 @pytest.mark.asyncio
-async def test_update_replaces_the_whole_client_snapshot(async_client):
+async def test_update_refuses_to_replace_the_whole_client_snapshot(async_client):
+    """T-154 (user-approved 2026-10-03): this used to re-point the card at
+    z9/Globex. Ownership now changes only through PUT /{id}/transfer-client,
+    so the body is refused whole, client_phone included."""
     a = (await _create(async_client)).json()
     r = await async_client.patch(
         f"/api/v1/aito/{a['id']}",
         json={"client_id": "z9", "client_name": "Globex", "client_phone": None},
     )
-    assert r.status_code == 200
-    body = r.json()
-    assert (body["client_id"], body["client_name"], body["client_phone"]) == ("z9", "Globex", None)
+    assert r.status_code == 422
+    body = (await async_client.get("/api/v1/aito/")).json()[0]
+    assert (body["client_id"], body["client_name"], body["client_phone"]) == ("z1", "ACME", "+33 6 12 34 56 78")
     assert body["description"] == "Support GoPro"
 
 
 @pytest.mark.asyncio
 async def test_update_rejects_client_id_without_a_name(async_client):
-    """A client_id whose merged client_name would be absent is rejected, even
-    though client_id alone is fine when the stored name already satisfies it."""
+    """A client_id whose merged client_name would be absent is rejected (since
+    T-154 by the schema, which refuses any client_id in a PATCH)."""
     a = (await _create(async_client)).json()
     r = await async_client.patch(f"/api/v1/aito/{a['id']}", json={"client_id": "z9", "client_name": None})
     assert r.status_code == 422
@@ -697,24 +700,27 @@ async def test_update_rejects_nulling_the_client_name_alone(async_client):
 
 
 @pytest.mark.asyncio
-async def test_update_allows_clearing_the_whole_client_snapshot(async_client):
-    """Clearing id and name together is consistent, so it is allowed."""
+async def test_update_refuses_clearing_the_whole_client_snapshot(async_client):
+    """T-154 (user-approved 2026-10-03): clearing id and name together used to
+    be allowed; detaching the client is an ownership change too."""
     a = (await _create(async_client)).json()
     r = await async_client.patch(
         f"/api/v1/aito/{a['id']}", json={"client_id": None, "client_name": None, "client_phone": None}
     )
-    assert r.status_code == 200
-    body = r.json()
-    assert (body["client_id"], body["client_name"], body["client_phone"]) == (None, None, None)
+    assert r.status_code == 422
+    body = (await async_client.get("/api/v1/aito/")).json()[0]
+    assert (body["client_id"], body["client_name"], body["client_phone"]) == ("z1", "ACME", "+33 6 12 34 56 78")
 
 
 @pytest.mark.asyncio
-async def test_update_allows_renaming_the_client_without_resending_the_id(async_client):
-    """The stored client_id satisfies the invariant, so a name-only edit is fine."""
+async def test_update_refuses_renaming_the_client_without_resending_the_id(async_client):
+    """T-154 (user-approved 2026-10-03): a name-only edit used to be written;
+    the contact's name changes through PUT /{id}/client now."""
     a = (await _create(async_client)).json()
     r = await async_client.patch(f"/api/v1/aito/{a['id']}", json={"client_name": "ACME SARL"})
-    assert r.status_code == 200
-    assert r.json()["client_name"] == "ACME SARL" and r.json()["client_id"] == "z1"
+    assert r.status_code == 422
+    body = (await async_client.get("/api/v1/aito/")).json()[0]
+    assert body["client_name"] == "ACME" and body["client_id"] == "z1"
 
 
 @pytest.mark.asyncio
@@ -761,9 +767,10 @@ async def test_update_with_description_omitted_still_writes_the_other_fields(asy
     """The null reject must not catch the field's own default: an omitted
     description is left alone, exactly as before."""
     a = (await _create(async_client)).json()
-    r = await async_client.patch(f"/api/v1/aito/{a['id']}", json={"client_name": "Globex"})
+    # client_email, not client_name: since T-154 a PATCH cannot carry the name.
+    r = await async_client.patch(f"/api/v1/aito/{a['id']}", json={"client_email": "ops@globex.pf"})
     assert r.status_code == 200
-    assert r.json()["client_name"] == "Globex"
+    assert r.json()["client_email"] == "ops@globex.pf"
     assert r.json()["description"] == "Support GoPro"
 
 
@@ -1080,16 +1087,17 @@ def test_project_create_accepts_a_client_id_at_the_column_cap():
 
 
 def test_project_update_rejects_a_client_id_over_the_column_cap():
-    """Same bound as AitoProjectCreate, on the other write path. No
-    character-class pattern (unlike quote_id) — see the field comment for why
-    an opaque Zoho contact id gets a length bound only."""
+    """T-154: the update schema refuses any client_id now; an over-cap one
+    stays refused."""
     with pytest.raises(pydantic.ValidationError):
         AitoProjectUpdate(client_id="x" * 51)
 
 
-def test_project_update_accepts_a_client_id_at_the_column_cap():
-    payload = AitoProjectUpdate(client_id="x" * 50)
-    assert payload.client_id == "x" * 50
+def test_project_update_refuses_even_a_client_id_at_the_column_cap():
+    """T-154 (user-approved 2026-10-03): it used to be accepted; card
+    ownership now changes only through PUT /{id}/transfer-client."""
+    with pytest.raises(pydantic.ValidationError, match="transfer-client"):
+        AitoProjectUpdate(client_id="x" * 50)
 
 
 def _minimal_project_response(**overrides) -> AitoProjectResponse:
@@ -1206,11 +1214,12 @@ async def test_update_project_rejects_a_client_id_over_the_column_cap(async_clie
 
 
 @pytest.mark.asyncio
-async def test_update_project_accepts_a_client_id_at_the_column_cap(async_client):
+async def test_update_project_refuses_a_client_id_at_the_column_cap(async_client):
+    """T-154 (user-approved 2026-10-03): it used to be written."""
     a = (await _create(async_client)).json()
     r = await async_client.patch(f"/api/v1/aito/{a['id']}", json={"client_id": "x" * 50})
-    assert r.status_code == 200
-    assert r.json()["client_id"] == "x" * 50
+    assert r.status_code == 422
+    assert (await async_client.get("/api/v1/aito/")).json()[0]["client_id"] == "z1"
 
 
 @pytest.mark.asyncio

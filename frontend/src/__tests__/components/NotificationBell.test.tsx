@@ -10,6 +10,7 @@ import { render } from '../utils';
 import { server } from '../mocks/server';
 import { setAuthToken, type InboxItem, type InboxPreferences } from '../../api/client';
 import { NotificationBell } from '../../components/NotificationBell';
+import { useAuth } from '../../contexts/AuthContext';
 import { chime, unlockChime } from '../../utils/chime';
 
 vi.mock('../../utils/chime', () => ({ chime: vi.fn(), unlockChime: vi.fn(() => () => {}) }));
@@ -44,6 +45,13 @@ let preferences: InboxPreferences;
 const calls: string[] = [];
 let putBody: unknown = null;
 let prefsServed = false;
+const readAllUpTo: (string | null)[] = [];
+
+function markServerRead(match: (i: InboxItem) => boolean) {
+  const now = new Date().toISOString();
+  const items = inbox.items.map((i) => (i.read_at === null && match(i) ? { ...i, read_at: now } : i));
+  inbox = { items, unread: items.filter((i) => i.read_at === null).length };
+}
 
 function signIn() {
   server.use(
@@ -64,6 +72,30 @@ function signIn() {
   setAuthToken('test-token');
 }
 
+/**
+ * A sibling that reads the same auth context as the bell and appears only once
+ * the auth answer has been consumed (`loading` false), carrying what it said.
+ * Waiting on it is the positive signal the hidden-state tests need: without it
+ * an absent bell could just mean the auth query had not answered yet.
+ */
+function AuthSettled() {
+  const { loading, authEnabled, user } = useAuth();
+  if (loading) return null;
+  return <div data-testid="auth-settled" data-auth-enabled={String(authEnabled)} data-signed-in={String(!!user)} />;
+}
+
+async function renderAndWaitForAuth(expected: { authEnabled: boolean; signedIn: boolean }) {
+  render(
+    <>
+      <NotificationBell />
+      <AuthSettled />
+    </>,
+  );
+  const settled = await screen.findByTestId('auth-settled');
+  expect(settled).toHaveAttribute('data-auth-enabled', String(expected.authEnabled));
+  expect(settled).toHaveAttribute('data-signed-in', String(expected.signedIn));
+}
+
 async function openPanel() {
   fireEvent.click(await screen.findByTestId('notification-bell'));
   return screen.findByRole('dialog');
@@ -73,6 +105,7 @@ describe('NotificationBell', () => {
   beforeEach(() => {
     window.history.replaceState({}, '', '/');
     calls.length = 0;
+    readAllUpTo.length = 0;
     putBody = null;
     prefsServed = false;
     inbox = {
@@ -95,12 +128,18 @@ describe('NotificationBell', () => {
         preferences = { ...preferences, ...(putBody as object) };
         return HttpResponse.json(preferences);
       }),
-      http.post('/api/v1/inbox/read-all', () => {
+      // Stateful like the server: every write now ends with a refetch, which
+      // must see the write.
+      http.post('/api/v1/inbox/read-all', ({ request }) => {
         calls.push('read-all');
+        const upTo = new URL(request.url).searchParams.get('up_to');
+        readAllUpTo.push(upTo);
+        markServerRead((i) => upTo === null || i.id <= Number(upTo));
         return new HttpResponse(null, { status: 204 });
       }),
       http.post('/api/v1/inbox/:id/read', ({ params }) => {
         calls.push(`read:${params.id}`);
+        markServerRead((i) => i.id === Number(params.id));
         return new HttpResponse(null, { status: 204 });
       }),
     );
@@ -114,19 +153,19 @@ describe('NotificationBell', () => {
     server.use(
       http.get('/api/v1/auth/status', () => HttpResponse.json({ auth_enabled: true, requires_setup: false })),
     );
-    render(<NotificationBell />);
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 50));
-    });
+    await renderAndWaitForAuth({ authEnabled: true, signedIn: false });
     expect(screen.queryByTestId('notification-bell')).toBeNull();
   });
 
   it('is hidden when auth is disabled', async () => {
-    render(<NotificationBell />);
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 50));
-    });
+    await renderAndWaitForAuth({ authEnabled: false, signedIn: false });
     expect(screen.queryByTestId('notification-bell')).toBeNull();
+  });
+
+  it('is shown once a signed-in user with auth enabled is known (control for the hidden cases)', async () => {
+    signIn();
+    await renderAndWaitForAuth({ authEnabled: true, signedIn: true });
+    expect(screen.getByTestId('notification-bell')).toBeInTheDocument();
   });
 
   it('shows the unread count from the response, capped at 9+', async () => {
@@ -303,6 +342,70 @@ describe('NotificationBell', () => {
     await waitFor(() => expect(calls).toEqual(['read-all']));
     expect(screen.queryByTestId('notification-badge')).toBeNull();
     expect(within(dialog).queryByTestId(/^notification-dot-/)).toBeNull();
+  });
+
+  it('Mark all read sends the newest row shown as up_to', async () => {
+    signIn();
+    render(<NotificationBell />);
+    const dialog = await openPanel();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Mark all read' }));
+    await waitFor(() => expect(readAllUpTo).toEqual(['12']));
+  });
+
+  it('a row arriving while Mark all read is in flight stays unread and rings', async () => {
+    signIn();
+    let answer: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      answer = resolve;
+    });
+    server.use(
+      http.post('/api/v1/inbox/read-all', async ({ request }) => {
+        await held;
+        const upTo = Number(new URL(request.url).searchParams.get('up_to'));
+        markServerRead((i) => i.id <= upTo);
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    render(<NotificationBell />);
+    const bell = await screen.findByTestId('notification-bell');
+    await waitFor(() => expect(prefsServed).toBe(true));
+    const dialog = await openPanel();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Mark all read' }));
+    await waitFor(() => expect(screen.queryByTestId('notification-badge')).toBeNull());
+    // Lands on the server after the panel was drawn, before the write settles.
+    inbox = { items: [row({ id: 20, kind: 'aito.paid' }), ...inbox.items], unread: inbox.unread + 1 };
+    answer();
+    // The write's own refetch shows it: unread, badge 1, the bell rings.
+    await waitFor(() => expect(screen.getByTestId('notification-badge')).toHaveTextContent('1'));
+    expect(within(dialog).getByTestId('notification-dot-20')).toBeInTheDocument();
+    expect(within(dialog).queryByTestId('notification-dot-12')).toBeNull();
+    expect(bell.querySelector('.bell-ring')).not.toBeNull();
+    expect(chime).toHaveBeenCalledTimes(1);
+  });
+
+  it('marking one row read refetches once it settles, showing an arrival', async () => {
+    signIn();
+    let served = 0;
+    server.use(
+      http.get('/api/v1/inbox', () => {
+        served += 1;
+        return HttpResponse.json(inbox);
+      }),
+      http.post('/api/v1/inbox/:id/read', ({ params }) => {
+        inbox = { items: [row({ id: 20, kind: 'aito.paid' }), ...inbox.items], unread: inbox.unread + 1 };
+        markServerRead((i) => i.id === Number(params.id));
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    render(<NotificationBell />);
+    const dialog = await openPanel();
+    await within(dialog).findByTestId('notification-dot-12');
+    const before = served;
+    fireEvent.click(within(dialog).getByTestId('notification-dot-12'));
+    await waitFor(() => expect(served).toBeGreaterThan(before));
+    expect(await within(dialog).findByTestId('notification-dot-20')).toBeInTheDocument();
+    expect(within(dialog).queryByTestId('notification-dot-12')).toBeNull();
+    expect(screen.getByTestId('notification-badge')).toHaveTextContent('2');
   });
 
   it('Escape closes the panel', async () => {

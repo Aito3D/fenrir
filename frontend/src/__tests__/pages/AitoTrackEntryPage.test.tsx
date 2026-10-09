@@ -9,7 +9,7 @@ import { MemoryRouter, Route, Routes, useParams } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AitoTrackEntryPage } from '../../pages/AitoTrackEntryPage';
 import { normalizeCode } from '../../utils/trackingCode';
-import type { AitoTracking } from '../../api/client';
+import { api, type AitoTracking } from '../../api/client';
 
 // `ready` (react-i18next's bundle-loaded flag) is only ever false for a real
 // instant — the fr chunk this file already forces via `beforeAll` below is
@@ -128,6 +128,37 @@ function mockTrackHeld() {
   };
 }
 
+/** Wraps the page's own tracking call so a test can wait for a given
+ *  token's answer to have actually reached `check()`, success or failure,
+ *  instead of sleeping and hoping. `settled(token)` resolves only after the
+ *  promise `check()` awaits has settled; since this wrapper's reaction is
+ *  registered before `check()`'s own await, the page's continuation runs
+ *  first, and a following `await act(async () => {})` flushes whatever
+ *  state it set. */
+function trackSettlements() {
+  const real = api.getAitoTracking;
+  const settled = new Map<string, Promise<void>>();
+  vi.spyOn(api, 'getAitoTracking').mockImplementation((token: string, signal?: AbortSignal) => {
+    const answer = real(token, signal);
+    settled.set(
+      token,
+      answer.then(
+        () => undefined,
+        () => undefined,
+      ),
+    );
+    return answer;
+  });
+  return {
+    async settled(token: string) {
+      const done = settled.get(token);
+      if (!done) throw new Error(`no tracking call made for ${token}`);
+      await done;
+      await act(async () => {});
+    },
+  };
+}
+
 const input = () => screen.getByLabelText('Code de suivi');
 const row = () => screen.getByTestId('track-code');
 const status = () => screen.getByTestId('track-code-status');
@@ -135,6 +166,7 @@ const status = () => screen.getByTestId('track-code-status');
 beforeAll(() => i18n.changeLanguage('fr'));
 afterAll(() => i18n.changeLanguage('en'));
 afterEach(async () => {
+  vi.restoreAllMocks();
   setReadyOverride(null);
   await i18n.changeLanguage('fr');
 });
@@ -236,6 +268,7 @@ describe('AitoTrackEntryPage', () => {
   // see only the newer check's verdict, never the older one arriving after.
   it('drops a stale success answer that lands after a newer check has already failed', async () => {
     const held = mockTrackHeld();
+    const calls = trackSettlements();
     const { queryClient } = renderEntry();
     await screen.findByRole('heading', { name: 'Suivre ma commande' });
     await userEvent.type(input(), 'k7f3xq');
@@ -256,7 +289,9 @@ describe('AitoTrackEntryPage', () => {
     // overwrite the newer, current verdict, seed its own cache entry or
     // navigate anywhere.
     held.release('K7F3XQ', 200);
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    // Positive signal, not a sleep: the stale success has reached check()
+    // and been handled before anything below is asserted.
+    await calls.settled('K7F3XQ');
     expect(row()).toHaveAttribute('data-state', 'error');
     expect(status()).toHaveTextContent('Code introuvable');
     expect(input()).toHaveValue('K7F3XZ');
@@ -267,6 +302,7 @@ describe('AitoTrackEntryPage', () => {
 
   it('drops a stale failure answer that lands after a newer check has already succeeded', async () => {
     const held = mockTrackHeld();
+    const calls = trackSettlements();
     renderEntry();
     await screen.findByRole('heading', { name: 'Suivre ma commande' });
     await userEvent.type(input(), 'k7f3xq');
@@ -285,7 +321,9 @@ describe('AitoTrackEntryPage', () => {
     // The older check's answer — a failure — lands after. It must not
     // knock the row back into the error state or clear the found verdict.
     held.release('K7F3XQ', 500);
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    // Positive signal, not a sleep: the stale failure has reached check()
+    // and been handled before anything below is asserted.
+    await calls.settled('K7F3XQ');
     expect(row()).toHaveAttribute('data-state', 'found');
     expect(status()).toHaveTextContent('Code reconnu');
     expect(await screen.findByText('landed on K7F3XZ', {}, { timeout: 2500 })).toBeInTheDocument();

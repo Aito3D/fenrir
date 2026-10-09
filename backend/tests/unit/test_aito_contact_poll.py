@@ -551,3 +551,72 @@ async def test_a_counted_contact_that_leaves_the_window_is_forgotten(db_session,
     _fake_books(monkeypatch, [_row(id="z1", name="Dam DH")])
     await poll_contacts(db_session)
     assert aito_contact_poll._rename_failures == {}
+
+
+@pytest.mark.asyncio
+async def test_a_failing_board_broadcast_does_not_lose_the_rename_or_the_watermark(db_session, monkeypatch, caplog):
+    """The broadcast runs after the commit: its failure is logged and
+    swallowed, so the rename stays written and the watermark still moves."""
+    first = await _project(db_session)
+    sibling = await _project(db_session, description="y", position=1)
+    _fake_books(monkeypatch, [_row()])
+    first_id, sibling_id = first.id, sibling.id
+    attempts: list[int] = []
+
+    async def broken_broadcast(message):
+        attempts.append(message["project_id"])
+        raise RuntimeError("websocket gone")
+
+    monkeypatch.setattr(aito_contact_poll.ws_manager, "broadcast_aito", broken_broadcast)
+
+    with caplog.at_level("WARNING", logger="backend.app.services.aito_contact_poll"):
+        assert await poll_contacts(db_session) == 2
+
+    # One failure per card did not stop the loop over the rest.
+    assert sorted(attempts) == sorted([first_id, sibling_id])
+    assert sum("aito_changed broadcast failed" in r.getMessage() for r in caplog.records) == 2
+    db_session.expire_all()
+    assert (await db_session.get(AitoProject, first_id)).client_name == "Damien Ritter"
+    assert (await db_session.get(AitoProject, sibling_id)).client_name == "Damien Ritter"
+    stored = await get_setting(db_session, POLL_SINCE_SETTING)
+    newest = datetime.strptime("2026-09-23T08:34:29-1000", "%Y-%m-%dT%H:%M:%S%z")
+    assert datetime.strptime(stored, "%Y-%m-%dT%H:%M:%S%z") == newest - timedelta(
+        seconds=aito_contact_poll.OVERLAP_SECONDS
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_failing_rollback_inside_the_failure_path_still_moves_on_to_the_next_contact(db_session, monkeypatch):
+    good = await _project(db_session, client_id="zgood", client_name="Old Name")
+    await _project(db_session, client_id="zbad", client_name="Bad Old")
+    real_rename = aito_contact_poll._rename_cards
+
+    async def flaky_rename(db, contact_id, name):
+        if contact_id == "zbad":
+            raise SQLAlchemyError("cannot rename")
+        return await real_rename(db, contact_id, name)
+
+    async def broken_rollback():
+        raise SQLAlchemyError("connection already closed")
+
+    monkeypatch.setattr(aito_contact_poll, "_rename_cards", flaky_rename)
+    monkeypatch.setattr(db_session, "rollback", broken_rollback)
+    _fake_books(
+        monkeypatch,
+        [
+            _row(id="zbad", name="Bad New", last_modified_time="2026-09-23T08:00:00-1000"),
+            _row(id="zgood", name="New Name", last_modified_time="2026-09-23T10:00:00-1000"),
+        ],
+    )
+
+    assert await poll_contacts(db_session) == 1
+
+    assert aito_contact_poll._rename_failures == {"zbad": 1}
+    await db_session.refresh(good)
+    assert good.client_name == "New Name"
+    # The failed contact still holds the watermark despite the dead rollback.
+    stored = await get_setting(db_session, POLL_SINCE_SETTING)
+    held = datetime.strptime("2026-09-23T08:00:00-1000", "%Y-%m-%dT%H:%M:%S%z")
+    assert datetime.strptime(stored, "%Y-%m-%dT%H:%M:%S%z") == held - timedelta(
+        seconds=aito_contact_poll.OVERLAP_SECONDS
+    )

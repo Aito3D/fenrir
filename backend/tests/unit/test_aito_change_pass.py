@@ -364,3 +364,43 @@ async def test_a_queued_card_another_session_has_since_made_pending_is_left_to_t
     assert await aito_quote_sync._drain_reconcile_queue(db_session) == 0
 
     assert _single_reads(seen) == []
+
+
+@pytest.mark.asyncio
+async def test_the_drain_stops_inside_a_hold_and_keeps_the_whole_queue(db_session, monkeypatch):
+    first = await _quoted(db_session, "E1", client_id="C1")
+    second = await _quoted(db_session, "E2", client_id="C2")
+    calls: list[int] = []
+
+    async def fake_sync_project(_db, project, *_caches):
+        calls.append(project.id)
+        return False
+
+    monkeypatch.setattr(aito_quote_sync, "sync_project", fake_sync_project)
+    monkeypatch.setattr(aito_quote_sync, "_throttled_until", time.monotonic() + 60)
+    monkeypatch.setattr(aito_quote_sync, "_reconcile_queue", [first.id, second.id])
+
+    assert await aito_quote_sync._drain_reconcile_queue(db_session) == 0
+
+    assert calls == []
+    assert aito_quote_sync._reconcile_queue == [first.id, second.id]
+
+
+@pytest.mark.asyncio
+async def test_a_card_rate_limited_mid_drain_goes_back_to_the_front_of_the_queue(db_session, monkeypatch):
+    first = await _quoted(db_session, "E1", client_id="C1")
+    second = await _quoted(db_session, "E2", client_id="C2")
+    calls: list[int] = []
+
+    async def fake_sync_project(_db, project, *_caches):
+        calls.append(project.id)
+        return True  # Books answered 429
+
+    monkeypatch.setattr(aito_quote_sync, "sync_project", fake_sync_project)
+    monkeypatch.setattr(aito_quote_sync, "_throttled_until", None)
+    monkeypatch.setattr(aito_quote_sync, "_reconcile_queue", [first.id, second.id])
+
+    assert await aito_quote_sync._drain_reconcile_queue(db_session) == 0
+
+    assert calls == [first.id]  # the drain stopped at the 429
+    assert aito_quote_sync._reconcile_queue == [first.id, second.id]

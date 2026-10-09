@@ -19,6 +19,7 @@ import hashlib
 import hmac
 import json
 import logging
+import re
 import secrets
 import time
 from dataclasses import dataclass
@@ -199,9 +200,29 @@ def _validate_link_url(url: object) -> str | None:
     return url
 
 
+# Heimdall's payment ids are UUIDs (heimdall/docs/API.md) and the ledgers'
+# heimdall_id columns are String(36). Like the link url, the id comes from an
+# unauthenticated response body and is reused in later PATCH/cancel/GET paths,
+# so anything that is not a short plain token is refused at this boundary.
+_PAYMENT_ID_RE = re.compile(r"[A-Za-z0-9_-]{1,36}")
+
+
+def _validate_payment_id(value: object) -> str:
+    """Return a Heimdall-supplied payment id as a string, or raise ValueError
+    (which `_to_view` turns into `HeimdallAmbiguous`, like any other payment
+    body it cannot read) for a null, empty, oversized or oddly-formed one.
+    A JSON integer is still read as its decimal string, as it always was;
+    any other non-string (a bool, a list, an object) is refused."""
+    if isinstance(value, int) and not isinstance(value, bool):
+        value = str(value)
+    if isinstance(value, str) and _PAYMENT_ID_RE.fullmatch(value):
+        return value
+    raise ValueError("payment id is not a Heimdall id string")
+
+
 def _to_view(data: dict) -> LinkView:
     try:
-        link_id = str(data["id"])
+        link_id = _validate_payment_id(data["id"])
         status = str(data["status"])
         amount = int(data["amount"])
         currency = str(data.get("currency") or "XPF")

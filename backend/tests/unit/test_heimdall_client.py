@@ -404,6 +404,76 @@ def test_an_unsafe_link_url_is_a_plain_upstream_error_not_ambiguous():
     assert not isinstance(info.value, HeimdallAmbiguous)
 
 
+# T-098: the payment id comes from the same unauthenticated body as the url,
+# is stored in a String(36) column, and is reused in later PATCH/cancel/GET
+# paths. Heimdall's ids are UUIDs (heimdall/docs/API.md); the ledgers' test
+# doubles use short dash-separated ids ("h-1", "L1", "pay-9"). Anything else
+# is an answer that cannot be read as a payment.
+_MALFORMED_IDS = [
+    pytest.param(None, id="null"),
+    pytest.param("", id="empty"),
+    pytest.param("x" * 37, id="over-36-chars"),
+    pytest.param("6f1e2c3a-0000-4000-8000-0000000000012", id="uuid-plus-one-char"),
+    pytest.param("hd-1/../ping", id="slash-and-dot-segments"),
+    pytest.param("..", id="bare-dot-dot"),
+    pytest.param("hd 1", id="space"),
+    pytest.param("hd?x=1#frag", id="query-and-fragment"),
+    pytest.param("h-1\n", id="trailing-newline"),
+    pytest.param("hé-1", id="non-ascii"),
+    pytest.param(10**36, id="number-over-36-digits"),
+    pytest.param(1.5, id="float"),
+    pytest.param(True, id="boolean"),
+    pytest.param(["h-1"], id="list"),
+    pytest.param({"id": "h-1"}, id="object"),
+]
+
+_WELL_FORMED_IDS = [
+    pytest.param("6f1e2c3a-0000-4000-8000-000000000001", id="uuid"),
+    pytest.param("6F1E2C3A-0000-4000-8000-000000000001", id="uppercase-uuid"),
+    pytest.param("6f1e", id="short-hex"),
+    pytest.param("h-1", id="dashed"),
+    pytest.param("L1", id="letter-digit"),
+    pytest.param("pay_9", id="underscore"),
+    pytest.param("x" * 36, id="exactly-36-chars"),
+]
+
+
+@pytest.mark.parametrize("bad_id", _MALFORMED_IDS)
+def test_to_view_treats_a_malformed_payment_id_as_an_unreadable_answer(bad_id):
+    """Same class as a body missing its `id`: Heimdall accepted the call, so a
+    reserving caller keeps the row replayable rather than storing the id."""
+    with pytest.raises(HeimdallAmbiguous, match="unexpected payment shape"):
+        _to_view(_link_json(id=bad_id))
+
+
+def test_to_view_still_treats_a_missing_payment_id_as_an_unreadable_answer():
+    body = _link_json()
+    del body["id"]
+    with pytest.raises(HeimdallAmbiguous, match="unexpected payment shape"):
+        _to_view(body)
+
+
+@pytest.mark.parametrize("good_id", _WELL_FORMED_IDS)
+def test_to_view_keeps_a_well_formed_payment_id_verbatim(good_id):
+    assert _to_view(_link_json(id=good_id)).id == good_id
+
+
+def test_to_view_still_reads_an_integer_payment_id_as_its_decimal_string():
+    # Pinned by the heimdall-wire golden's `200-id-numeric` case, unchanged by T-098.
+    assert _to_view(_link_json(id=42)).id == "42"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("bad_id", _MALFORMED_IDS)
+async def test_create_link_raises_heimdall_ambiguous_on_a_malformed_payment_id(db_session, bad_id):
+    await _configure(db_session)
+    heimdall_service._transport = httpx.MockTransport(lambda r: httpx.Response(201, json=_link_json(id=bad_id)))
+    with pytest.raises(HeimdallAmbiguous):
+        await heimdall_service.create_link(
+            db_session, idempotency_key="aito:1:1", reference="DEV-2026-1234", amount=12500, expires_in_days=7
+        )
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("status", "code", "exc"),

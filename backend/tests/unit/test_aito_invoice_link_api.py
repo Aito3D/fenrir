@@ -236,6 +236,38 @@ async def test_a_heimdall_422_on_the_link_route_reads_invalid_not_amount_above_b
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("bad_id", [None, "h" * 37, "h-1/../ping"], ids=["null", "oversized", "path"])
+async def test_a_malformed_heimdall_id_leaves_the_link_a_pending_reservation_with_a_sync_error(
+    async_client, db_session, bad_id
+):
+    """T-098: the id is never stored. The row stays an unminted reservation
+    (replayable under its own key) carrying the error, and the route answers
+    the generic upstream 502 an unreadable Heimdall answer already gets."""
+    p = await _create(async_client)
+    heimdall_service._transport = httpx.MockTransport(lambda r: httpx.Response(201, json=_link(id=bad_id)))
+    r = await async_client.post(f"/api/v1/aito/{p['id']}/payment-link", json={"document_id": "inv-1", "amount": 23000})
+    assert r.status_code == 502, r.text
+    assert r.json()["detail"]["code"] == "upstream"
+    row = (await db_session.execute(AitoPaymentLink.__table__.select())).one()
+    assert row.status == "pending" and row.heimdall_id is None
+    assert "unexpected payment shape" in row.sync_error
+
+    # A readable answer on the retry adopts the SAME reservation.
+    keys = []
+
+    def handler(request):
+        keys.append(request.headers["idempotency-key"])
+        return httpx.Response(201, json=_link())
+
+    heimdall_service._transport = httpx.MockTransport(handler)
+    r = await async_client.post(f"/api/v1/aito/{p['id']}/payment-link", json={"document_id": "inv-1", "amount": 23000})
+    assert r.status_code == 200, r.text
+    assert keys == [row.idempotency_key]
+    again = (await db_session.execute(AitoPaymentLink.__table__.select())).one()
+    assert again.id == row.id and again.heimdall_id == "h-inv" and again.sync_error is None
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "over",
     [

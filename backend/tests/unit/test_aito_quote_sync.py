@@ -3053,9 +3053,10 @@ async def test_run_sync_loop_survives_a_failing_periodic_tick(monkeypatch, caplo
     """T-021: run_sync_loop's own docstring promises that one bad tick must
     not kill the loop, or a single transient failure would silently end
     syncing until the next restart. Drive the periodic-tick ``except`` block
-    directly -- the first ``run_sync_once(pending_only=False)`` call raises,
-    and the loop must log it, then keep calling ``run_sync_once`` on the
-    following tick rather than dying.
+    directly -- the first tick's sync-enabled read raises (T-124 gave the
+    attention pass its own guard, so a ``run_sync_once`` error no longer
+    reaches this block), and the loop must log it, then keep calling
+    ``run_sync_once`` on the following tick rather than dying.
 
     Driven against the loop's own collaborators (as
     ``test_an_edit_drains_on_the_debounce_not_the_interval`` below does),
@@ -3077,25 +3078,33 @@ async def test_run_sync_loop_survives_a_failing_periodic_tick(monkeypatch, caplo
     third_tick_started = asyncio.Event()
     hang = asyncio.Event()
 
+    enabled_reads = 0
+
+    async def flaky_sync_enabled(db):
+        nonlocal enabled_reads
+        enabled_reads += 1
+        if enabled_reads == 1:
+            raise RuntimeError("boom")
+        return True
+
     async def flaky_run_sync_once(db, pending_only=False, fast_retry=False, attention_only=False):
         tick_calls.append(None)
         n = len(tick_calls)
         if n == 1:
-            raise RuntimeError("boom")
-        if n == 2:
             second_tick_done.set()
             return 0
-        # A third tick that hangs: lets the test cancel the loop while it is
+        # A later tick that hangs: lets the test cancel the loop while it is
         # genuinely in flight inside this same try block, proving real
         # cancellation still propagates through the guard that just
-        # swallowed the RuntimeError above rather than being swallowed too.
+        # swallowed the RuntimeError above (and through the attention
+        # pass's own guard) rather than being swallowed too.
         third_tick_started.set()
         await hang.wait()
         return 0
 
     monkeypatch.setattr(aito_quote_sync, "async_session", fake_session)
     monkeypatch.setattr(aito_quote_sync, "run_sync_once", flaky_run_sync_once)
-    monkeypatch.setattr(aito_quote_sync, "sync_enabled", _always(True))
+    monkeypatch.setattr(aito_quote_sync, "sync_enabled", flaky_sync_enabled)
     monkeypatch.setattr(aito_quote_sync.zoho_service, "is_configured", _always(True))
     # Tiny interval: only the loop's own retry cadence, never the mechanism
     # the test blocks on -- the assertion below waits on an Event, not a
@@ -3108,7 +3117,8 @@ async def test_run_sync_loop_survives_a_failing_periodic_tick(monkeypatch, caplo
         with caplog.at_level("ERROR"):
             await asyncio.wait_for(second_tick_done.wait(), timeout=10)
         assert "Aito quote sync tick failed" in caplog.text
-        assert len(tick_calls) >= 2
+        assert enabled_reads >= 2  # the failed tick, then the one that drained
+        assert len(tick_calls) >= 1
         assert not loop_task.done()
 
         await asyncio.wait_for(third_tick_started.wait(), timeout=10)
@@ -3241,7 +3251,7 @@ async def test_periodic_tick_rolls_back_a_failed_purge_before_reconciling_paymen
     async def fake_purge_tracking_views(db):
         raise RuntimeError("database is locked")
 
-    async def fake_reconcile_payment_links(db):
+    async def fake_reconcile_payment_links(db, **_kwargs):
         reconcile_called_with.append(db)
         reconcile_done.set()
 
@@ -3303,7 +3313,7 @@ async def test_a_failing_inbox_sweep_rolls_back_before_reconciling_payment_links
     async def failing_sweep_inbox(db, *, force=False):
         raise RuntimeError("inbox step blew up")
 
-    async def fake_reconcile_payment_links(db):
+    async def fake_reconcile_payment_links(db, **_kwargs):
         reconcile_called_with.append(db)
         reconcile_done.set()
 
@@ -3365,7 +3375,7 @@ async def test_a_periodic_tick_polls_contacts_and_survives_that_poll_failing(mon
         polled_with.append(db)
         raise RuntimeError("Books hiccup")
 
-    async def fake_reconcile_payment_links(db):
+    async def fake_reconcile_payment_links(db, **_kwargs):
         reconcile_done.set()
 
     monkeypatch.setattr(aito_quote_sync, "async_session", fake_session)
@@ -3440,7 +3450,7 @@ async def test_a_books_failure_in_the_invoice_passes_still_runs_the_heimdall_pas
     calls: list[tuple[str, object]] = []
     terminal_done = asyncio.Event()
 
-    async def boom(db):
+    async def boom(db, **_kwargs):
         calls.append((failing, db))
         raise error
 

@@ -88,3 +88,59 @@ async def test_a_missing_card_is_a_404_not_a_wait(async_client, monkeypatch):
 
     assert response.status_code == 404
     assert seen == []
+
+
+async def _no_worker(db, project, strict=False):
+    """`ensure_pushed` with no sync worker serving: it returns at once and the
+    card is left pending."""
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("method", "path", "body"),
+    [
+        ("GET", "/api/v1/aito/{id}/quote-email", None),
+        ("POST", "/api/v1/aito/{id}/quote-email", {"to": "client@example.com"}),
+    ],
+)
+async def test_the_quote_email_refuses_a_card_still_pending_when_no_worker_pushes_it(
+    async_client, db_session, monkeypatch, method, path, body
+):
+    """Same 409 as `_project_ready_to_invoice`: neither the preview nor the
+    send may read the quote from Books while the card's latest edit has not
+    reached it, or the client is emailed the old prices."""
+    project = await _pending_card(db_session, quote_id="E1", quote_number="DEV26-1")
+    loaded: list[int] = []
+
+    async def load(db, project, project_id, **_kwargs):
+        loaded.append(project_id)
+        raise AssertionError("Books must not be read for a pending card")
+
+    monkeypatch.setattr(aito_routes, "ensure_pushed", _no_worker)
+    monkeypatch.setattr(aito_routes, "_load_quote_email_content", load)
+
+    response = await async_client.request(method, path.format(id=project.id), json=body)
+
+    assert response.status_code == 409, response.text
+    assert response.json()["detail"] == "This quote has changes still syncing to Zoho"
+    assert loaded == []
+    await db_session.refresh(project)
+    assert project.board_column == "finish"
+    assert project.quote_sync_state == "pending"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("method", "body"),
+    [("GET", None), ("POST", {"to": "client@example.com"})],
+)
+async def test_a_pending_card_with_no_quote_yet_still_gets_the_no_quote_404(
+    async_client, db_session, monkeypatch, method, body
+):
+    project = await _pending_card(db_session)
+    monkeypatch.setattr(aito_routes, "ensure_pushed", _no_worker)
+
+    response = await async_client.request(method, f"/api/v1/aito/{project.id}/quote-email", json=body)
+
+    assert response.status_code == 404, response.text
+    assert response.json()["detail"] == "This project has no Zoho quote"

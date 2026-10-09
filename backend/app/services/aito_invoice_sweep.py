@@ -50,6 +50,7 @@ cut off rather than the ones already refreshed."""
 
 import logging
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import date, datetime, time as dtime, timezone
 
@@ -273,7 +274,13 @@ async def sweep_inbox(db: AsyncSession, *, force: bool = False) -> None:
         logger.info("Inbox sweep: %d overdue card(s) recorded, %d inbox row(s) purged", overdue, purged)
 
 
-async def sweep_invoices(db: AsyncSession, *, force: bool = False) -> int:
+async def sweep_invoices(
+    db: AsyncSession,
+    *,
+    force: bool = False,
+    serve_due_pushes: Callable[[AsyncSession], Awaitable[int]] | None = None,
+    call_ceiling: int | None = None,
+) -> int:
     """Refresh the cached invoice fields on every project still owing money.
 
     Returns the number of projects updated. ``force`` bypasses the hourly
@@ -306,7 +313,18 @@ async def sweep_invoices(db: AsyncSession, *, force: bool = False) -> int:
     deliberately NOT paired with a "stamp ``_last_run`` on partial progress"
     rule — the T-031 rule above already decides when the hourly gate is
     spent, and this ordering fix is what makes the resumed pass useful on
-    its own."""
+    its own.
+
+    T-102 (loop-12): the loop passes ``serve_due_pushes`` (its own
+    ``_serve_due_pushes``, handed in rather than imported to avoid the
+    import cycle) and ``call_ceiling`` (``BACKGROUND_CALL_CEILING``). Before
+    each project the due pushes are served, so a route waiting in
+    ``flush_and_wait`` waits for at most one project's Books round trip,
+    not the whole pass; then, once ``calls_in_last_minute()`` has reached
+    the ceiling, the pass stops WITHOUT stamping ``_last_run``, leaving the
+    rest of Books' per-minute budget to pushes. The least-recently-checked
+    ordering above makes the next tick resume with the unreached tail.
+    Either left ``None`` (the default), its step is skipped."""
     global _last_run
     if not force and _last_run and time.monotonic() - _last_run < _SWEEP_INTERVAL_SECONDS:
         return 0
@@ -343,7 +361,17 @@ async def sweep_invoices(db: AsyncSession, *, force: bool = False) -> int:
             (project, project.id, project.quote_id or "", project.client_id or "", project.quote_number)
             for project in projects
         ]
+        cut_short = False
         for project, project_id, quote_id, client_id, quote_number in targets:
+            if serve_due_pushes is not None:
+                # Contains its own failures (logged, rolled back), like every
+                # other caller's mid-pass serve. Runs between projects, after
+                # the previous one's commit, so it never flushes a
+                # half-written sweep row.
+                await serve_due_pushes(db)
+            if call_ceiling is not None and zoho_service.calls_in_last_minute() >= call_ceiling:
+                cut_short = True
+                break
             try:
                 # `remember_document_numbers` below READS the stored list.
                 # Reload just that column first: a rollback for an earlier
@@ -445,5 +473,8 @@ async def sweep_invoices(db: AsyncSession, *, force: bool = False) -> int:
         _last_run = time.monotonic()
         raise
     else:
-        _last_run = time.monotonic()
+        if not cut_short:
+            _last_run = time.monotonic()
+        else:
+            logger.info("Invoice sweep paused at the Books call ceiling after %d project(s)", updated)
     return updated

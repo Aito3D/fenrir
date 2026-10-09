@@ -277,7 +277,28 @@ class AitoTaskResponse(AitoTaskBase):
     updated_at: datetime
 
 
-class AitoProjectCreate(AitoShippingInput, AitoClientSocialInput):
+class _OptionalClientContactChecks:
+    # The optional client_email/client_phone checks shared by every schema that
+    # carries a card's client (AitoProjectCreate, AitoClientTransfer,
+    # AitoProjectUpdate). A validators-only mixin, deliberately NOT a
+    # BaseModel and holding no fields: each schema keeps declaring its own
+    # client fields, so their caps and JSON-schema order stay exactly where
+    # they are. Pydantic collects these validators from the subclass's MRO.
+    # None skips the check; AitoClientEdit's non-optional email/phone keep
+    # their own validators.
+
+    @field_validator("client_email")
+    @classmethod
+    def _validate_client_email(cls, value: str | None) -> str | None:
+        return value if value is None else _check_email(value)
+
+    @field_validator("client_phone")
+    @classmethod
+    def _validate_client_phone(cls, value: str | None) -> str | None:
+        return value if value is None else _check_phone(value)
+
+
+class AitoProjectCreate(AitoShippingInput, AitoClientSocialInput, _OptionalClientContactChecks):
     # 10_000 is generous headroom over anything a human types — it exists to keep a
     # pathological payload from ballooning the row or the AI summarizer's prompt.
     description: str = Field(min_length=1, max_length=10_000)
@@ -361,16 +382,6 @@ class AitoProjectCreate(AitoShippingInput, AitoClientSocialInput):
     # impression service, so a large batch of IDENTICAL prints is one task,
     # not many. Chosen inside the user-approved 200-500 range.
     tasks: list[AitoTaskCreate] = Field(default_factory=list, max_length=300)
-
-    @field_validator("client_email")
-    @classmethod
-    def _validate_client_email(cls, value: str | None) -> str | None:
-        return value if value is None else _check_email(value)
-
-    @field_validator("client_phone")
-    @classmethod
-    def _validate_client_phone(cls, value: str | None) -> str | None:
-        return value if value is None else _check_phone(value)
 
     @field_validator("quote_status", mode="before")
     @classmethod
@@ -493,7 +504,7 @@ class AitoTaskTransfer(BaseModel):
         return value
 
 
-class AitoClientTransfer(BaseModel):
+class AitoClientTransfer(BaseModel, _OptionalClientContactChecks):
     """PUT /aito/{id}/transfer-client — the card changes hands. Same caps and
     phone/email checks as AitoProjectCreate's client fields; the social pair
     is NOT accepted (it belonged to the old client and is cleared)."""
@@ -505,33 +516,17 @@ class AitoClientTransfer(BaseModel):
     client_is_company: bool | None = None
     client_contact_person_id: str | None = Field(default=None, max_length=50)
 
-    @field_validator("client_email")
-    @classmethod
-    def _validate_client_email(cls, value: str | None) -> str | None:
-        return value if value is None else _check_email(value)
 
-    @field_validator("client_phone")
-    @classmethod
-    def _validate_client_phone(cls, value: str | None) -> str | None:
-        return value if value is None else _check_phone(value)
-
-
-class AitoProjectUpdate(AitoShippingInput, AitoClientSocialInput):
+class AitoProjectUpdate(AitoShippingInput, AitoClientSocialInput, _OptionalClientContactChecks):
     """Content edits from the card detail panel. Ordering (column/position) is
     owned by the /move endpoint and deliberately not accepted here."""
 
     description: str | None = Field(default=None, min_length=1, max_length=10_000)
-    # 50, matching the AitoProject.client_id column (String(50)) and
-    # AitoProjectCreate.client_id above — bounded here (the WRITE path) and
-    # not on a response model, for the same reason AitoTaskCreate/Update's
-    # description/cost caps sit off of AitoTaskBase (see that class's
-    # comment): AitoProjectResponse.client_id is its own independent field,
-    # not inherited from either create/update schema, so it keeps reading
-    # back an already-stored over-length value unchanged rather than 500ing.
-    # No character-class pattern — see AitoProjectCreate.client_id's comment
-    # for why quote_id's `^[A-Za-z0-9_-]+$` does not apply to this field.
-    client_id: str | None = Field(default=None, max_length=50)
-    client_name: str | None = Field(default=None, max_length=200)
+    # No client_id / client_name (T-154): which contact a card belongs to
+    # changes only through PUT /{id}/transfer-client (invoiced-card guard,
+    # client push flag, social/contact clearing) or PUT /{id}/client (the
+    # Books-first edit). `_refuse_ownership_keys` below turns either key into
+    # a 422 rather than letting `extra="ignore"` drop it silently.
     client_phone: str | None = Field(default=None, max_length=50)
     client_email: str | None = Field(default=None, max_length=200)
     client_is_company: bool | None = None
@@ -546,6 +541,18 @@ class AitoProjectUpdate(AitoShippingInput, AitoClientSocialInput):
     # API-key callers that never fetched a version keep working; the frontend
     # always sends it.
     expected_version: int | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _refuse_ownership_keys(cls, data: object) -> object:
+        # Refused, not ignored: a caller still sending them would otherwise
+        # get a 200 for a re-point that never happened. Only these two keys:
+        # any other unknown key is still dropped by `extra="ignore"`.
+        if isinstance(data, dict):
+            sent = [key for key in ("client_id", "client_name") if key in data]
+            if sent:
+                raise ValueError(f"{' and '.join(sent)} cannot be changed here; use PUT /aito/{{id}}/transfer-client")
+        return data
 
     @field_validator("description")
     @classmethod
@@ -564,16 +571,6 @@ class AitoProjectUpdate(AitoShippingInput, AitoClientSocialInput):
         if not value.strip():
             raise ValueError("description must not be blank")
         return value
-
-    @field_validator("client_email")
-    @classmethod
-    def _validate_client_email(cls, value: str | None) -> str | None:
-        return value if value is None else _check_email(value)
-
-    @field_validator("client_phone")
-    @classmethod
-    def _validate_client_phone(cls, value: str | None) -> str | None:
-        return value if value is None else _check_phone(value)
 
 
 AitoFlag = Literal["urgent", "sav", "pause", "fiverr"]

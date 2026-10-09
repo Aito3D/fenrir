@@ -1091,3 +1091,45 @@ def test_both_routes_are_gated_on_permission_to_edit_the_card():
     assert _declared_permissions("generate_pickup_message") == ["aito:update"]
     assert _declared_permissions("send_pickup_sms") == ["aito:update"]
     assert _declared_permissions("send_pickup_sms") == _declared_permissions("set_project_contacted")
+
+
+@pytest.mark.asyncio
+async def test_a_failed_rollback_after_a_record_failure_still_returns_200(async_client, monkeypatch):
+    """T-160 pin: the guarded rollback after the record()+commit() failure
+    swallows an exception from the rollback itself — the SMS already went."""
+    project = await _create_finished(async_client)
+    sent = []
+
+    async def fake(db, *, phone, text, title):
+        sent.append(phone)
+
+    _patch_send_sms(monkeypatch, fake)
+
+    real_commit = AsyncSession.commit
+    real_rollback = AsyncSession.rollback
+    calls = {"commit": 0, "rollback": 0}
+
+    async def flaky_commit(self):
+        calls["commit"] += 1
+        if calls["commit"] == 1:
+            raise SQLAlchemyError("database is locked")
+        return await real_commit(self)
+
+    async def broken_once_rollback(self):
+        calls["rollback"] += 1
+        if calls["rollback"] == 1:
+            raise RuntimeError("connection already closed")
+        return await real_rollback(self)
+
+    monkeypatch.setattr(AsyncSession, "commit", flaky_commit)
+    monkeypatch.setattr(AsyncSession, "rollback", broken_once_rollback)
+
+    r = await async_client.post(
+        f"/api/v1/aito/{project['id']}/pickup-sms",
+        json={"message": "Ia Ora na, c'est prêt. Aito3D"},
+    )
+
+    assert r.status_code == 200
+    assert r.json() == {"sent": True}
+    assert sent == ["87 12 34 56"]
+    assert calls["rollback"] == 1

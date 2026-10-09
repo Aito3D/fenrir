@@ -515,6 +515,19 @@
    },
    "security": true
   },
+  "DELETE /api/v1/inventory/suppliers/{supplier_id}": {
+   "operationId": "delete_supplier_api_v1_inventory_suppliers__supplier_id__delete",
+   "params": [
+    "header:X-API-Key",
+    "path:supplier_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "DELETE /api/v1/library/files/{file_id}": {
    "operationId": "delete_file_api_v1_library_files__file_id__delete",
    "params": [
@@ -1392,6 +1405,19 @@
    },
    "security": true
   },
+  "GET /api/v1/aito/{project_id}/watch": {
+   "operationId": "get_watch_api_v1_aito__project_id__watch_get",
+   "params": [
+    "header:X-API-Key",
+    "path:project_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "AitoWatchResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "GET /api/v1/ams-history/{printer_id}/{ams_id}": {
    "operationId": "get_ams_history_api_v1_ams_history__printer_id___ams_id__get",
    "params": [
@@ -2129,7 +2155,7 @@
    "params": [],
    "requestBody": {},
    "responses": {
-    "200": "[OIDCPublicProviderResponse]"
+    "200": "[OIDCProviderPublicResponse]"
    },
    "security": false
   },
@@ -2938,6 +2964,32 @@
    },
    "security": true
   },
+  "GET /api/v1/inbox": {
+   "operationId": "list_inbox_api_v1_inbox_get",
+   "params": [
+    "header:X-API-Key",
+    "query:before",
+    "query:limit"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "InboxPage",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/inbox/preferences": {
+   "operationId": "get_preferences_api_v1_inbox_preferences_get",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "InboxPreferences",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "GET /api/v1/inventory/assignments": {
    "operationId": "list_assignments_api_v1_inventory_assignments_get",
    "params": [
@@ -3155,6 +3207,46 @@
    "requestBody": {},
    "responses": {
     "200": "[SpoolUsageHistoryResponse]",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/inventory/stats/material-numbers": {
+   "operationId": "get_material_number_stats_api_v1_inventory_stats_material_numbers_get",
+   "params": [
+    "header:X-API-Key",
+    "query:date_from",
+    "query:date_to"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "[MaterialNumberStats]",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/inventory/stats/suppliers": {
+   "operationId": "get_supplier_stats_api_v1_inventory_stats_suppliers_get",
+   "params": [
+    "header:X-API-Key",
+    "query:date_from",
+    "query:date_to"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "[SupplierStats]",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/inventory/suppliers": {
+   "operationId": "list_suppliers_api_v1_inventory_suppliers_get",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "[SupplierResponse]",
     "422": "HTTPValidationError"
    },
    "security": true
@@ -5444,6 +5536,19 @@
    },
    "security": true
   },
+  "GET /api/v1/spoolman/inventory/spools/{spool_id}/suppliers": {
+   "operationId": "get_spoolman_spool_suppliers_api_v1_spoolman_inventory_spools__spool_id__suppliers_get",
+   "params": [
+    "header:X-API-Key",
+    "path:spool_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "[object]",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "GET /api/v1/spoolman/spools": {
    "operationId": "get_spools_api_v1_spoolman_spools_get",
    "params": [
@@ -6343,6 +6448,21 @@
    },
    "security": true
   },
+  "PATCH /api/v1/inventory/suppliers/{supplier_id}": {
+   "operationId": "update_supplier_api_v1_inventory_suppliers__supplier_id__patch",
+   "params": [
+    "header:X-API-Key",
+    "path:supplier_id!"
+   ],
+   "requestBody": {
+    "application/json": "SupplierUpdate"
+   },
+   "responses": {
+    "200": "SupplierResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "PATCH /api/v1/library/tags/{tag_id}": {
    "operationId": "update_tag_api_v1_library_tags__tag_id__patch",
    "params": [
@@ -6799,6 +6919,21 @@
    },
    "security": true
   },
+  "POST /api/v1/aito/{project_id}/merge": {
+   "operationId": "merge_project_api_v1_aito__project_id__merge_post",
+   "params": [
+    "header:X-API-Key",
+    "path:project_id!"
+   ],
+   "requestBody": {
+    "application/json": "AitoMergeRequest"
+   },
+   "responses": {
+    "200": "AitoProjectResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "POST /api/v1/aito/{project_id}/payment-link": {
    "operationId": "create_invoice_payment_link_api_v1_aito__project_id__payment_link_post",
    "params": [
@@ -6951,6 +7086,21 @@
    },
    "responses": {
     "201": "AitoTaskResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/aito/{project_id}/tasks/transfer": {
+   "operationId": "transfer_tasks_api_v1_aito__project_id__tasks_transfer_post",
+   "params": [
+    "header:X-API-Key",
+    "path:project_id!"
+   ],
+   "requestBody": {
+    "application/json": "AitoTaskTransfer"
+   },
+   "responses": {
+    "200": "AitoTaskTransferResponse",
     "422": "HTTPValidationError"
    },
    "security": true
@@ -8296,6 +8446,32 @@
    },
    "security": true
   },
+  "POST /api/v1/inbox/read-all": {
+   "operationId": "read_all_api_v1_inbox_read_all_post",
+   "params": [
+    "header:X-API-Key",
+    "query:up_to"
+   ],
+   "requestBody": {},
+   "responses": {
+    "204": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/inbox/{notification_id}/read": {
+   "operationId": "mark_read_api_v1_inbox__notification_id__read_post",
+   "params": [
+    "header:X-API-Key",
+    "path:notification_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "204": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "POST /api/v1/inventory/assignments": {
    "operationId": "assign_spool_api_v1_inventory_assignments_post",
    "params": [
@@ -8409,6 +8585,20 @@
    ],
    "requestBody": {
     "application/json": "LabelRequest"
+   },
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/inventory/labels/preview": {
+   "operationId": "preview_local_inventory_label_api_v1_inventory_labels_preview_post",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {
+    "application/json": "LabelPreviewRequest"
    },
    "responses": {
     "200": null,
@@ -8620,6 +8810,20 @@
    "requestBody": {},
    "responses": {
     "200": "SpoolResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/inventory/suppliers": {
+   "operationId": "create_supplier_api_v1_inventory_suppliers_post",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {
+    "application/json": "SupplierCreate"
+   },
+   "responses": {
+    "201": "SupplierResponse",
     "422": "HTTPValidationError"
    },
    "security": true
@@ -11040,6 +11244,20 @@
    },
    "security": true
   },
+  "POST /api/v1/spoolman/labels/preview": {
+   "operationId": "preview_spoolman_label_api_v1_spoolman_labels_preview_post",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {
+    "application/json": "LabelPreviewRequest"
+   },
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "POST /api/v1/spoolman/spools/from-slot": {
    "operationId": "create_spool_from_slot_api_v1_spoolman_spools_from_slot_post",
    "params": [
@@ -11288,6 +11506,36 @@
    },
    "security": true
   },
+  "PUT /api/v1/aito/{project_id}/transfer-client": {
+   "operationId": "transfer_client_api_v1_aito__project_id__transfer_client_put",
+   "params": [
+    "header:X-API-Key",
+    "path:project_id!"
+   ],
+   "requestBody": {
+    "application/json": "AitoClientTransfer"
+   },
+   "responses": {
+    "200": "AitoProjectResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "PUT /api/v1/aito/{project_id}/watch": {
+   "operationId": "set_watch_api_v1_aito__project_id__watch_put",
+   "params": [
+    "header:X-API-Key",
+    "path:project_id!"
+   ],
+   "requestBody": {
+    "application/json": "AitoWatchUpdate"
+   },
+   "responses": {
+    "200": "AitoWatchResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "PUT /api/v1/archives/purge/settings": {
    "operationId": "update_archive_purge_settings_api_v1_archives_purge_settings_put",
    "params": [
@@ -11359,6 +11607,20 @@
    },
    "security": true
   },
+  "PUT /api/v1/inbox/preferences": {
+   "operationId": "put_preferences_api_v1_inbox_preferences_put",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {
+    "application/json": "InboxPreferencesUpdate"
+   },
+   "responses": {
+    "200": "InboxPreferences",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "PUT /api/v1/inventory/catalog/{entry_id}": {
    "operationId": "update_catalog_entry_api_v1_inventory_catalog__entry_id__put",
    "params": [
@@ -11415,6 +11677,21 @@
    },
    "responses": {
     "200": "[SpoolKProfileResponse]",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "PUT /api/v1/inventory/spools/{spool_id}/suppliers": {
+   "operationId": "replace_spool_suppliers_api_v1_inventory_spools__spool_id__suppliers_put",
+   "params": [
+    "header:X-API-Key",
+    "path:spool_id!"
+   ],
+   "requestBody": {
+    "application/json": "[SpoolSupplierLinkInput]"
+   },
+   "responses": {
+    "200": "[SpoolSupplierResponse]",
     "422": "HTTPValidationError"
    },
    "security": true
@@ -11659,6 +11936,21 @@
    ],
    "requestBody": {
     "application/json": "[SpoolKProfileBase]"
+   },
+   "responses": {
+    "200": "[object]",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "PUT /api/v1/spoolman/inventory/spools/{spool_id}/suppliers": {
+   "operationId": "save_spoolman_spool_suppliers_api_v1_spoolman_inventory_spools__spool_id__suppliers_put",
+   "params": [
+    "header:X-API-Key",
+    "path:spool_id!"
+   ],
+   "requestBody": {
+    "application/json": "[SpoolSupplierLinkInput]"
    },
    "responses": {
     "200": "[object]",
@@ -12047,6 +12339,20 @@
     "tier"
    ]
   },
+  "AitoClientTransfer": {
+   "properties": {
+    "client_contact_person_id": "anyOf(string,null)",
+    "client_email": "anyOf(string,null)",
+    "client_id": "string",
+    "client_is_company": "anyOf(boolean,null)",
+    "client_name": "string",
+    "client_phone": "anyOf(string,null)"
+   },
+   "required": [
+    "client_id",
+    "client_name"
+   ]
+  },
   "AitoContactedUpdate": {
    "properties": {
     "contacted": "boolean"
@@ -12233,6 +12539,14 @@
     "document_id",
     "document_kind",
     "mode"
+   ]
+  },
+  "AitoMergeRequest": {
+   "properties": {
+    "source_project_id": "integer"
+   },
+   "required": [
+    "source_project_id"
    ]
   },
   "AitoNoteCreate": {
@@ -12493,9 +12807,7 @@
     "client_contact_name": "anyOf(string,null)",
     "client_contact_person_id": "anyOf(string,null)",
     "client_email": "anyOf(string,null)",
-    "client_id": "anyOf(string,null)",
     "client_is_company": "anyOf(boolean,null)",
-    "client_name": "anyOf(string,null)",
     "client_phone": "anyOf(string,null)",
     "client_social_handle": "anyOf(string,null)",
     "client_social_network": "anyOf(string,null)",
@@ -13107,6 +13419,25 @@
     "services"
    ]
   },
+  "AitoTaskTransfer": {
+   "properties": {
+    "target_project_id": "anyOf(integer,null)",
+    "task_ids": "[integer]"
+   },
+   "required": [
+    "task_ids"
+   ]
+  },
+  "AitoTaskTransferResponse": {
+   "properties": {
+    "source": "AitoProjectResponse",
+    "target": "AitoProjectResponse"
+   },
+   "required": [
+    "source",
+    "target"
+   ]
+  },
   "AitoTaskUpdate": {
    "properties": {
     "impression_color": "anyOf(string,null)",
@@ -13248,6 +13579,25 @@
    "required": [
     "quantity",
     "title"
+   ]
+  },
+  "AitoWatchResponse": {
+   "properties": {
+    "follows_settings": "boolean",
+    "kinds": "[string]",
+    "watching": "boolean"
+   },
+   "required": [
+    "kinds",
+    "watching"
+   ]
+  },
+  "AitoWatchUpdate": {
+   "properties": {
+    "kinds": "[string]"
+   },
+   "required": [
+    "kinds"
    ]
   },
   "AmsLabelBody": {
@@ -16637,16 +16987,92 @@
     "cross_material_color": "boolean",
     "duplicate_of_existing": "boolean",
     "material": "anyOf(string,null)",
+    "purchase_supplier_id": "anyOf(integer,null)",
     "reason": "anyOf(string,null)",
     "resolved_color": "boolean",
     "rgba": "anyOf(string,null)",
     "row_number": "integer",
     "spool": "anyOf(object,null)",
-    "status": "string"
+    "status": "string",
+    "supplier_ids": "[integer]"
    },
    "required": [
     "row_number",
     "status"
+   ]
+  },
+  "InboxItem": {
+   "properties": {
+    "body": "string",
+    "created_at": "string",
+    "family": "string",
+    "id": "integer",
+    "kind": "string",
+    "read_at": "anyOf(string,null)",
+    "target_id": "anyOf(integer,null)",
+    "target_type": "anyOf(string,null)",
+    "title": "string"
+   },
+   "required": [
+    "body",
+    "created_at",
+    "family",
+    "id",
+    "kind",
+    "read_at",
+    "target_id",
+    "target_type",
+    "title"
+   ]
+  },
+  "InboxKindInfo": {
+   "properties": {
+    "available": "boolean",
+    "default_on": "boolean",
+    "family": "string",
+    "kind": "string"
+   },
+   "required": [
+    "available",
+    "default_on",
+    "family",
+    "kind"
+   ]
+  },
+  "InboxPage": {
+   "properties": {
+    "items": "[InboxItem]",
+    "unread": "integer"
+   },
+   "required": [
+    "items",
+    "unread"
+   ]
+  },
+  "InboxPreferences": {
+   "properties": {
+    "auto_watch": "boolean",
+    "available": "[InboxKindInfo]",
+    "kinds": "[string]",
+    "sound_kinds": "[string]"
+   },
+   "required": [
+    "auto_watch",
+    "available",
+    "kinds",
+    "sound_kinds"
+   ]
+  },
+  "InboxPreferencesUpdate": {
+   "properties": {
+    "auto_watch": "boolean",
+    "kinds": "[string]",
+    "sound_kinds": "[string]"
+   },
+   "required": [
+    "auto_watch",
+    "kinds",
+    "sound_kinds"
    ]
   },
   "InsightsWindowDays": {
@@ -16763,8 +17189,23 @@
     "username"
    ]
   },
+  "LabelPreviewRequest": {
+   "properties": {
+    "fields": "anyOf([string],null)",
+    "monochrome": "boolean",
+    "spool_id": "integer",
+    "template": "string"
+   },
+   "required": [
+    "spool_id",
+    "template"
+   ]
+  },
   "LabelRequest": {
    "properties": {
+    "dpi": "integer",
+    "fields": "anyOf([string],null)",
+    "format": "string",
     "monochrome": "boolean",
     "spool_ids": "[integer]",
     "starting_position": "integer",
@@ -17287,6 +17728,22 @@
     "user_id"
    ]
   },
+  "MaterialNumberStats": {
+   "properties": {
+    "consumed_g": "number",
+    "cost": "number",
+    "material_number": "string",
+    "remaining_g": "number",
+    "spool_count": "integer"
+   },
+   "required": [
+    "consumed_g",
+    "cost",
+    "material_number",
+    "remaining_g",
+    "spool_count"
+   ]
+  },
   "NormalizedFilament": {
    "properties": {
     "color_hex": "anyOf(string,null)",
@@ -17406,7 +17863,8 @@
     "provider_type": "backend__app__schemas__notification__ProviderType",
     "quiet_hours_enabled": "boolean",
     "quiet_hours_end": "anyOf(string,null)",
-    "quiet_hours_start": "anyOf(string,null)"
+    "quiet_hours_start": "anyOf(string,null)",
+    "telegram_verdict_mode": "string"
    },
    "required": [
     "config",
@@ -17466,6 +17924,7 @@
     "quiet_hours_enabled": "boolean",
     "quiet_hours_end": "anyOf(string,null)",
     "quiet_hours_start": "anyOf(string,null)",
+    "telegram_verdict_mode": "string",
     "updated_at": "string"
    },
    "required": [
@@ -17523,7 +17982,8 @@
     "provider_type": "anyOf(backend__app__schemas__notification__ProviderType,null)",
     "quiet_hours_enabled": "anyOf(boolean,null)",
     "quiet_hours_end": "anyOf(string,null)",
-    "quiet_hours_start": "anyOf(string,null)"
+    "quiet_hours_start": "anyOf(string,null)",
+    "telegram_verdict_mode": "anyOf(string,null)"
    },
    "required": []
   },
@@ -17637,6 +18097,8 @@
     "client_secret": "string",
     "default_group_id": "anyOf(integer,null)",
     "email_claim": "string",
+    "group_claim": "string",
+    "group_mapping": "object",
     "icon_url": "anyOf(string,null)",
     "is_autologin": "boolean",
     "is_enabled": "boolean",
@@ -17652,6 +18114,19 @@
     "name"
    ]
   },
+  "OIDCProviderPublicResponse": {
+   "properties": {
+    "has_icon": "boolean",
+    "id": "integer",
+    "is_autologin": "boolean",
+    "name": "string"
+   },
+   "required": [
+    "has_icon",
+    "id",
+    "name"
+   ]
+  },
   "OIDCProviderResponse": {
    "properties": {
     "auto_create_users": "boolean",
@@ -17659,6 +18134,8 @@
     "client_id": "string",
     "default_group_id": "anyOf(integer,null)",
     "email_claim": "string",
+    "group_claim": "string",
+    "group_mapping": "object",
     "has_icon": "boolean",
     "icon_url": "anyOf(string,null)",
     "id": "integer",
@@ -17689,6 +18166,8 @@
     "client_secret": "anyOf(string,null)",
     "default_group_id": "anyOf(integer,null)",
     "email_claim": "anyOf(string,null)",
+    "group_claim": "anyOf(string,null)",
+    "group_mapping": "anyOf(object,null)",
     "icon_url": "anyOf(string,null)",
     "is_autologin": "anyOf(boolean,null)",
     "is_enabled": "anyOf(boolean,null)",
@@ -17698,18 +18177,6 @@
     "scopes": "anyOf(string,null)"
    },
    "required": []
-  },
-  "OIDCPublicProviderResponse": {
-   "properties": {
-    "has_icon": "boolean",
-    "id": "integer",
-    "name": "string"
-   },
-   "required": [
-    "has_icon",
-    "id",
-    "name"
-   ]
   },
   "OrcaAuthStatusResponse": {
    "properties": {
@@ -18696,11 +19163,17 @@
    "properties": {
     "connected": "boolean",
     "current_print": "anyOf(string,null)",
+    "hms_errors": "[HMSErrorResponse]",
     "id": "integer",
+    "layer_num": "anyOf(integer,null)",
     "name": "string",
     "progress": "anyOf(number,null)",
+    "remaining_seconds": "anyOf(integer,null)",
     "remaining_time": "anyOf(integer,null)",
-    "state": "anyOf(string,null)"
+    "serial_number": "string",
+    "state": "anyOf(string,null)",
+    "subtask_id": "anyOf(string,null)",
+    "total_layers": "anyOf(integer,null)"
    },
    "required": [
     "connected",
@@ -18709,6 +19182,7 @@
     "name",
     "progress",
     "remaining_time",
+    "serial_number",
     "state"
    ]
   },
@@ -19761,6 +20235,7 @@
     "location_id": "anyOf(integer,null)",
     "low_stock_threshold_pct": "anyOf(integer,null)",
     "material": "string",
+    "material_number": "anyOf(string,null)",
     "note": "anyOf(string,null)",
     "nozzle_temp_max": "anyOf(integer,null)",
     "nozzle_temp_min": "anyOf(integer,null)",
@@ -19870,6 +20345,7 @@
     "location_id": "anyOf(integer,null)",
     "low_stock_threshold_pct": "anyOf(integer,null)",
     "material": "string",
+    "material_number": "anyOf(string,null)",
     "note": "anyOf(string,null)",
     "nozzle_temp_max": "anyOf(integer,null)",
     "nozzle_temp_min": "anyOf(integer,null)",
@@ -19878,6 +20354,7 @@
     "slicer_filament_name": "anyOf(string,null)",
     "storage_location": "anyOf(string,null)",
     "subtype": "anyOf(string,null)",
+    "suppliers": "[SpoolSupplierResponse]",
     "tag_type": "anyOf(string,null)",
     "tag_uid": "anyOf(string,null)",
     "tray_uuid": "anyOf(string,null)",
@@ -19907,6 +20384,32 @@
     "tray_id"
    ]
   },
+  "SpoolSupplierLinkInput": {
+   "properties": {
+    "is_purchase_source": "boolean",
+    "quoted_price_per_kg": "anyOf(number,null)",
+    "supplier_article_number": "anyOf(string,null)",
+    "supplier_id": "integer"
+   },
+   "required": [
+    "supplier_id"
+   ]
+  },
+  "SpoolSupplierResponse": {
+   "properties": {
+    "id": "integer",
+    "is_purchase_source": "boolean",
+    "quoted_price_per_kg": "anyOf(number,null)",
+    "supplier_article_number": "anyOf(string,null)",
+    "supplier_id": "integer",
+    "supplier_name": "string"
+   },
+   "required": [
+    "id",
+    "supplier_id",
+    "supplier_name"
+   ]
+  },
   "SpoolTagLinkRequest": {
    "properties": {
     "tag_uid": "anyOf(string,null)",
@@ -19929,6 +20432,7 @@
     "location_id": "anyOf(integer,null)",
     "low_stock_threshold_pct": "anyOf(integer,null)",
     "material": "anyOf(string,null)",
+    "material_number": "anyOf(string,null)",
     "note": "anyOf(string,null)",
     "nozzle_temp_max": "anyOf(integer,null)",
     "nozzle_temp_min": "anyOf(integer,null)",
@@ -20118,6 +20622,62 @@
     "scanned",
     "total"
    ]
+  },
+  "SupplierCreate": {
+   "properties": {
+    "customer_number": "anyOf(string,null)",
+    "name": "string",
+    "note": "anyOf(string,null)",
+    "website": "anyOf(string,null)"
+   },
+   "required": [
+    "name"
+   ]
+  },
+  "SupplierResponse": {
+   "properties": {
+    "created_at": "string",
+    "customer_number": "anyOf(string,null)",
+    "id": "integer",
+    "name": "string",
+    "note": "anyOf(string,null)",
+    "spool_count": "integer",
+    "updated_at": "string",
+    "website": "anyOf(string,null)"
+   },
+   "required": [
+    "created_at",
+    "id",
+    "name",
+    "updated_at"
+   ]
+  },
+  "SupplierStats": {
+   "properties": {
+    "consumed_g": "number",
+    "cost": "number",
+    "remaining_g": "number",
+    "spool_count": "integer",
+    "supplier_id": "integer",
+    "supplier_name": "string"
+   },
+   "required": [
+    "consumed_g",
+    "cost",
+    "remaining_g",
+    "spool_count",
+    "supplier_id",
+    "supplier_name"
+   ]
+  },
+  "SupplierUpdate": {
+   "properties": {
+    "customer_number": "anyOf(string,null)",
+    "name": "anyOf(string,null)",
+    "note": "anyOf(string,null)",
+    "website": "anyOf(string,null)"
+   },
+   "required": []
   },
   "SyncResult": {
    "properties": {

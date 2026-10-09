@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
 
 from sqlalchemy import select, update
@@ -584,10 +585,12 @@ async def _refresh_terminal_payment(db: AsyncSession, row: AitoTerminalPayment, 
         # so the operator can charge again. Unlike every other close this one
         # is decided here rather than in `apply_terminal_state` (which never
         # runs — there is no view), so the timeline event is recorded by hand,
-        # in the same shape `_age_out_abandoned_reservations` uses.
+        # in the same shape `_age_out_abandoned_reservations` uses. The status
+        # flip and its event share ONE commit: if the event write fails, the
+        # row stays open (the caller rolls back) and the next poll retries it,
+        # instead of a failed row with no timeline entry nothing re-selects.
         row.status = "failed"
         row.settled_at = now
-        await db.commit()
         await record(
             db,
             row.project_id,
@@ -627,7 +630,11 @@ async def _age_out_abandoned_reservations(db: AsyncSession, *, now: datetime, li
     operator present. The sweep ages the row out and stops there; if Heimdall
     did charge the card before the handler died, the operator's paper roll
     and Heimdall's own ledger are the record, and the abandoned event says
-    where to look."""
+    where to look.
+
+    T-123: a reservation being replayed right now (in `_in_flight`) is
+    skipped, and the write-off is a conditional claim, so a row the replay
+    adopted after the listing keeps its adoption and gets no event."""
     cutoff = now - timedelta(seconds=ABANDONED_RESERVATION_SECONDS)
     stmt = (
         select(AitoTerminalPayment.id)
@@ -645,11 +652,38 @@ async def _age_out_abandoned_reservations(db: AsyncSession, *, now: datetime, li
             row = await db.get(AitoTerminalPayment, rid)
             if row is None:
                 continue
-            row.status = "failed"
-            row.sync_error = "reservation abandoned"
-            row.checked_at = now
-            row.settled_at = now
-            await db.commit()
+            # T-123: a reservation an operator is replaying right now (its
+            # `start_terminal_payment` POST in flight, in this process) is
+            # not abandoned. Checked after the fetch's await, right before
+            # the claim.
+            if rid in _in_flight:
+                continue
+            # A conditional claim, not an ORM set: a row the replay already
+            # adopted (minted, re-opened or settled) since the listing above
+            # matches nothing and is left alone, with no event.
+            claimed = await db.execute(
+                update(AitoTerminalPayment)
+                .where(
+                    AitoTerminalPayment.id == rid,
+                    AitoTerminalPayment.status == "pending",
+                    AitoTerminalPayment.heimdall_id.is_(None),
+                    AitoTerminalPayment.settled_at.is_(None),
+                )
+                .values(status="failed", sync_error="reservation abandoned", checked_at=now, settled_at=now)
+                .execution_options(synchronize_session=False)
+            )
+            if claimed.rowcount != 1:
+                await db.rollback()
+                continue
+            # The loaded row mirrors the claim (same idiom as the settle claim
+            # in `apply_terminal_state`); a rollback below expires it again.
+            set_committed_value(row, "status", "failed")
+            set_committed_value(row, "sync_error", "reservation abandoned")
+            set_committed_value(row, "checked_at", now)
+            set_committed_value(row, "settled_at", now)
+            # The write-off and its event share ONE commit: a failed event
+            # write rolls the row back to `pending`, so the next pass ages it
+            # out again rather than leaving a failed row with no event.
             await record(
                 db,
                 row.project_id,
@@ -673,7 +707,13 @@ async def _age_out_abandoned_reservations(db: AsyncSession, *, now: datetime, li
     return aged
 
 
-async def poll_open_terminal_payments(db: AsyncSession, *, now: datetime | None = None, limit: int = 40) -> int:
+async def poll_open_terminal_payments(
+    db: AsyncSession,
+    *,
+    now: datetime | None = None,
+    limit: int = 40,
+    serve_due_pushes: Callable[[AsyncSession], Awaitable[int]] | None = None,
+) -> int:
     """The tick's sweep: abandoned reservations are aged out (never re-sent —
     see `_age_out_abandoned_reservations`), then every open row, plus paid
     rows whose Zoho booking is still pending or whose settle never committed
@@ -682,7 +722,14 @@ async def poll_open_terminal_payments(db: AsyncSession, *, now: datetime | None 
     Heimdall call). Returns
     the number of rows acted on. A 429 stops the polling half (the
     reconciler's own throttle covers the next tick); so does a
-    `HeimdallUnreachable` (stored on the row it hit), for this pass only."""
+    `HeimdallUnreachable` (stored on the row it hit), for this pass only.
+
+    T-157: the loop passes ``serve_due_pushes`` (its own
+    ``_serve_due_pushes``, handed in to avoid the import cycle), served before
+    each polled row, so a route waiting in ``flush_and_wait`` waits for one
+    Heimdall round trip, not the whole pass. It contains its own failures
+    (logged, rolled back); every row is re-fetched by id after it. Left
+    ``None`` (the default), nothing is served."""
     if not await heimdall_service.is_configured(db):
         return 0
     now = now or _now()
@@ -703,6 +750,8 @@ async def poll_open_terminal_payments(db: AsyncSession, *, now: datetime | None 
     )
     ids = list((await db.execute(stmt)).scalars().all())
     for rid in ids:
+        if serve_due_pushes is not None:
+            await serve_due_pushes(db)
         try:
             row = await db.get(AitoTerminalPayment, rid)
             if row is None:

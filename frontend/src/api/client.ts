@@ -9064,7 +9064,9 @@ export const api = {
   // Notification inbox
   getInbox: (before?: number) => request<InboxPage>(before ? `/inbox?before=${before}` : '/inbox'),
   markInboxRead: (id: number) => request<void>(`/inbox/${id}/read`, { method: 'POST' }),
-  markInboxAllRead: () => request<void>('/inbox/read-all', { method: 'POST' }),
+  /** `upTo`: the newest id the user was shown; rows newer than it stay unread. */
+  markInboxAllRead: (upTo?: number) =>
+    request<void>(upTo === undefined ? '/inbox/read-all' : `/inbox/read-all?up_to=${upTo}`, { method: 'POST' }),
   getInboxPreferences: () => request<InboxPreferences>('/inbox/preferences'),
   putInboxPreferences: (body: InboxPreferencesUpdate) =>
     request<InboxPreferences>('/inbox/preferences', { method: 'PUT', body: JSON.stringify(body) }),

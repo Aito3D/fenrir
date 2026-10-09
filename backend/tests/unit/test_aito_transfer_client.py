@@ -125,3 +125,47 @@ async def test_a_quoted_card_owes_books_the_customer_push(async_client, db_sessi
     split = (await db_session.execute(select(AitoProject).where(AitoProject.id == split_id))).scalar_one()
     assert split.client_id == "z9"
     assert split.client_push_pending is False
+
+
+async def _row(db_session, project_id):
+    db_session.expire_all()
+    return (await db_session.execute(select(AitoProject).where(AitoProject.id == project_id))).scalar_one()
+
+
+@pytest.mark.asyncio
+async def test_a_transfer_rotates_the_public_tracking_token(async_client, db_session):
+    """The old client holds the card's /t/ link (sent to them, printed on the
+    quote): after a transfer it answers 404 and only the new token serves
+    the job (user-approved 2026-10-03, T-096)."""
+    from backend.app.services.aito_tracking import ensure_tracking_token
+
+    p = await _create_with_tasks(async_client, [])
+    old = await ensure_tracking_token(db_session, await _row(db_session, p["id"]))
+    await db_session.commit()
+    assert (await async_client.get(f"/api/v1/aito/track/{old}")).status_code == 200
+
+    assert (await async_client.put(f"/api/v1/aito/{p['id']}/transfer-client", json=NEW)).status_code == 200
+    new = (await _row(db_session, p["id"])).tracking_token
+    assert new and new != old
+    assert (await async_client.get(f"/api/v1/aito/track/{old}")).status_code == 404
+    assert (await async_client.get(f"/api/v1/aito/track/{new}")).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_a_transfer_mints_no_token_for_a_card_without_one(async_client, db_session):
+    p = await _create_with_tasks(async_client, [])
+    assert (await _row(db_session, p["id"])).tracking_token is None
+    assert (await async_client.put(f"/api/v1/aito/{p['id']}/transfer-client", json=NEW)).status_code == 200
+    assert (await _row(db_session, p["id"])).tracking_token is None
+
+
+@pytest.mark.asyncio
+async def test_the_same_client_keeps_the_tracking_token(async_client, db_session):
+    from backend.app.services.aito_tracking import ensure_tracking_token
+
+    p = await _create_with_tasks(async_client, [])
+    old = await ensure_tracking_token(db_session, await _row(db_session, p["id"]))
+    await db_session.commit()
+    resp = await async_client.put(f"/api/v1/aito/{p['id']}/transfer-client", json={**NEW, "client_id": "z1"})
+    assert resp.status_code == 200
+    assert (await _row(db_session, p["id"])).tracking_token == old

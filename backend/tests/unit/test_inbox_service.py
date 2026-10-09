@@ -237,6 +237,60 @@ async def test_the_hourly_inbox_sweep_purges_old_rows(db_session):
 
 
 @pytest.mark.asyncio
+async def test_a_failing_inbox_sweep_rolls_back_and_skips_the_broadcast(db_session, monkeypatch):
+    """A database error in the overdue/purge step is logged and rolled back so
+    the session stays usable for the next sync step; nothing is broadcast."""
+    from sqlalchemy.exc import SQLAlchemyError
+
+    from backend.app.services import aito_invoice_sweep
+
+    async def boom(*_a, **_k):
+        raise SQLAlchemyError("overdue failed")
+
+    broadcast = []
+
+    async def fake_broadcast(*_a, **_k):
+        broadcast.append(1)
+
+    monkeypatch.setattr(aito_invoice_sweep, "_record_overdue", boom)
+    monkeypatch.setattr(aito_invoice_sweep, "broadcast_pending", fake_broadcast)
+    await db_session.execute(select(Notification))  # open a transaction
+    assert db_session.in_transaction()
+
+    await aito_invoice_sweep.sweep_inbox(db_session, force=True)
+
+    assert not db_session.in_transaction()
+    assert broadcast == []
+    assert (await db_session.execute(select(Notification))).scalars().first() is None
+
+
+@pytest.mark.asyncio
+async def test_a_failing_rollback_in_the_inbox_sweep_is_swallowed(db_session, monkeypatch):
+    from sqlalchemy.exc import SQLAlchemyError
+
+    from backend.app.services import aito_invoice_sweep
+
+    async def boom(*_a, **_k):
+        raise SQLAlchemyError("overdue failed")
+
+    async def bad_rollback():
+        raise SQLAlchemyError("rollback failed")
+
+    broadcast = []
+
+    async def fake_broadcast(*_a, **_k):
+        broadcast.append(1)
+
+    monkeypatch.setattr(aito_invoice_sweep, "_record_overdue", boom)
+    monkeypatch.setattr(aito_invoice_sweep, "broadcast_pending", fake_broadcast)
+    monkeypatch.setattr(db_session, "rollback", bad_rollback)
+
+    await aito_invoice_sweep.sweep_inbox(db_session, force=True)
+
+    assert broadcast == []
+
+
+@pytest.mark.asyncio
 async def test_a_failing_books_pass_still_purges_the_inbox(db_session, test_engine, monkeypatch):
     """The purge is its own step of the sync tick: a Books outage that makes
     the invoice sweep raise does not keep 30-day-old rows around."""
@@ -271,12 +325,12 @@ async def test_a_failing_books_pass_still_purges_the_inbox(db_session, test_engi
     async def ok(*_args, **_kwargs):
         return 0
 
-    async def books_down(db):
+    async def books_down(db, **_kwargs):
         raise ZohoUpstreamError("HTTP 503")
 
     tick_done = asyncio.Event()
 
-    async def last_pass(db):
+    async def last_pass(db, **_kwargs):
         tick_done.set()
 
     monkeypatch.setattr(aito_quote_sync, "_wake", asyncio.Event())
@@ -509,3 +563,49 @@ async def test_an_explicit_watch_keeps_its_own_list_within_settings(async_client
     await record(db_session, p["id"], "quote.declined", actor_class="client")  # enabled, but not on this watch
     await db_session.commit()
     assert (await db_session.execute(select(Notification))).scalars().first() is None
+
+
+@pytest.mark.asyncio
+async def test_a_failing_push_is_logged_and_the_other_recipients_are_still_nudged(db_session, monkeypatch, caplog):
+    sent: list[int] = []
+
+    async def flaky_broadcast_to_user(user_id, message):
+        if user_id == 1:
+            raise RuntimeError("socket gone")
+        sent.append(user_id)
+
+    monkeypatch.setattr(inbox.ws_manager, "broadcast_to_user", flaky_broadcast_to_user)
+    db_session.info["inbox_users"] = {1, 2}
+
+    with caplog.at_level("WARNING"):
+        await inbox.broadcast_pending(db_session)
+
+    assert sent == [2]
+    assert "inbox_changed push failed for user 1" in caplog.text
+    assert not db_session.info.get("inbox_users")
+
+
+def test_retention_is_thirty_days():
+    assert inbox.RETENTION_DAYS == 30
+
+
+@pytest.mark.asyncio
+async def test_purge_old_deletes_only_rows_strictly_older_than_the_retention_window(async_client, db_session):
+    alice = await _user(db_session, "alice")
+    now = datetime(2026, 6, 15, 12, 0, 0)
+    window = timedelta(days=inbox.RETENTION_DAYS)
+    for title, age in (
+        ("exactly", window),
+        ("just-inside", window - timedelta(seconds=1)),
+        ("just-outside", window + timedelta(seconds=1)),
+    ):
+        db_session.add(
+            Notification(user_id=alice.id, kind="aito.paid", family="aito", title=title, body="y", created_at=now - age)
+        )
+    await db_session.commit()
+
+    assert await inbox.purge_old(db_session, now=now) == 1
+    await db_session.commit()
+
+    titles = {r.title for r in (await db_session.execute(select(Notification))).scalars()}
+    assert titles == {"exactly", "just-inside"}

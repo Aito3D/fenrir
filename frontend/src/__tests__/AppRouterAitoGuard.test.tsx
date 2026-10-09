@@ -95,6 +95,11 @@ afterEach(() => {
   window.history.replaceState(null, '', '/');
 });
 
+// App.tsx and its routes are dynamically imported and lazy, so the first
+// paint of a page can take well over findBy's default 1 s on a loaded
+// machine. Every wait below for a page's own content uses this instead.
+const PAGE_TIMEOUT = { timeout: 5000 };
+
 describe('App router — /aito route guard (T-035)', () => {
   it('without aito:read: redirects to / and never mounts the Aito board', async () => {
     mockUseAuth.hasPermission.mockImplementation((permission: string) => permission !== 'aito:read');
@@ -104,6 +109,9 @@ describe('App router — /aito route guard (T-035)', () => {
     rtlRender(<App />);
 
     await waitFor(() => expect(window.location.pathname).toBe('/'));
+    // The redirect target has actually rendered (PrintersPage's empty
+    // state), so the board's absence below is not just "not loaded yet".
+    expect(await screen.findByText('No printers configured yet', {}, PAGE_TIMEOUT)).toBeInTheDocument();
     expect(screen.queryByText('No projects yet')).not.toBeInTheDocument();
     expect(screen.queryByText(/UI Crash/i)).not.toBeInTheDocument();
   });
@@ -115,7 +123,7 @@ describe('App router — /aito route guard (T-035)', () => {
     const { default: App } = await import('../App');
     rtlRender(<App />);
 
-    expect(await screen.findByText('No projects yet')).toBeInTheDocument();
+    expect(await screen.findByText('No projects yet', {}, PAGE_TIMEOUT)).toBeInTheDocument();
     expect(window.location.pathname).toBe('/aito');
     expect(screen.queryByText(/UI Crash/i)).not.toBeInTheDocument();
   });
@@ -142,7 +150,7 @@ describe('App router — /aito route guard (T-035)', () => {
     const { default: App } = await import('../App');
     rtlRender(<App />);
 
-    expect(await screen.findByText('No projects yet')).toBeInTheDocument();
+    expect(await screen.findByText('No projects yet', {}, PAGE_TIMEOUT)).toBeInTheDocument();
     expect(window.location.pathname).toBe('/aito');
     expect(screen.queryByText(/UI Crash/i)).not.toBeInTheDocument();
   });
@@ -156,6 +164,9 @@ describe('App router — /aito route guard (T-035)', () => {
     rtlRender(<App />);
 
     await waitFor(() => expect(window.location.pathname).toBe('/login'));
+    // The login form has actually rendered, so the board's absence below is
+    // not just "not loaded yet".
+    expect(await screen.findByLabelText('Username', {}, PAGE_TIMEOUT)).toBeInTheDocument();
     expect(screen.queryByText('No projects yet')).not.toBeInTheDocument();
     expect(screen.queryByText(/UI Crash/i)).not.toBeInTheDocument();
   });
