@@ -757,10 +757,7 @@ async def _add_revision_locked(
         await db.rollback()
         _cleanup_written(written)
         if created_folder:
-            try:
-                folder.rmdir()
-            except OSError:
-                pass
+            _remove_empty(folder)
 
     def translate(exc: BaseException) -> Exception | None:
         if isinstance(exc, IntegrityError) and (

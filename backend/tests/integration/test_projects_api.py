@@ -2136,3 +2136,189 @@ class TestSubProjectRollup:
 
         assert "Wing" not in rows
         assert rows["Airframe"]["child_count"] == 1
+
+
+class TestProjectBatchAddAndAttachments:
+    """Batch add-archives / add-queue and the attachment upload/download/delete routes."""
+
+    @pytest.fixture
+    async def project(self, db_session):
+        from backend.app.models.project import Project
+
+        project = Project(name="Batch Attach Project", color="#123456")
+        db_session.add(project)
+        await db_session.commit()
+        await db_session.refresh(project)
+        return project
+
+    @pytest.fixture
+    async def archives(self, db_session):
+        from backend.app.models.archive import PrintArchive
+
+        rows = [
+            PrintArchive(
+                filename=f"batch{i}.3mf",
+                file_path=f"x/batch{i}.3mf",
+                file_size=1024,
+                print_name=f"Batch {i}",
+                status="completed",
+                quantity=1,
+            )
+            for i in range(2)
+        ]
+        db_session.add_all(rows)
+        await db_session.commit()
+        for row in rows:
+            await db_session.refresh(row)
+        return rows
+
+    @pytest.fixture
+    def archive_dir(self, monkeypatch, tmp_path):
+        from backend.tests.project_fixtures import point_projects_root
+
+        point_projects_root(monkeypatch, tmp_path, library=True, make_archive=True)
+        return tmp_path / "archive"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_add_archives_links_existing_and_skips_unknown(
+        self, async_client: AsyncClient, project, archives, db_session
+    ):
+        from sqlalchemy import select
+
+        from backend.app.models.archive import PrintArchive
+
+        ids = [a.id for a in archives]
+        project_id = project.id
+        response = await async_client.post(
+            f"/api/v1/projects/{project.id}/add-archives", json={"archive_ids": [*ids, 999999]}
+        )
+        assert response.status_code == 200
+        assert response.json() == {"message": "Added 2 archives to project"}
+
+        db_session.expire_all()
+        rows = (await db_session.execute(select(PrintArchive).where(PrintArchive.id.in_(ids)))).scalars().all()
+        assert {r.project_id for r in rows} == {project_id}
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_add_archives_unknown_project_404(self, async_client: AsyncClient, archives):
+        response = await async_client.post(
+            "/api/v1/projects/999999/add-archives", json={"archive_ids": [archives[0].id]}
+        )
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Project not found"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_add_queue_links_existing_and_skips_unknown(
+        self, async_client: AsyncClient, project, archives, db_session
+    ):
+        from sqlalchemy import select
+
+        from backend.app.models.print_queue import PrintQueueItem
+
+        item = PrintQueueItem(archive_id=archives[0].id, status="pending")
+        db_session.add(item)
+        await db_session.commit()
+        await db_session.refresh(item)
+        item_id, project_id = item.id, project.id
+
+        response = await async_client.post(
+            f"/api/v1/projects/{project.id}/add-queue", json={"queue_item_ids": [item_id, 999999]}
+        )
+        assert response.status_code == 200
+        assert response.json() == {"message": "Added 1 queue items to project"}
+
+        db_session.expire_all()
+        row = (await db_session.execute(select(PrintQueueItem).where(PrintQueueItem.id == item_id))).scalar_one()
+        assert row.project_id == project_id
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_add_queue_unknown_project_404(self, async_client: AsyncClient):
+        response = await async_client.post("/api/v1/projects/999999/add-queue", json={"queue_item_ids": [1]})
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Project not found"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_attachment_upload_download_delete_roundtrip(self, async_client: AsyncClient, project, archive_dir):
+        payload = b"%PDF-1.4 attachment body"
+        upload = await async_client.post(
+            f"/api/v1/projects/{project.id}/attachments",
+            files={"file": ("Spec Sheet.PDF", payload, "application/pdf")},
+        )
+        assert upload.status_code == 200, upload.text
+        body = upload.json()
+        assert body["status"] == "success"
+        assert body["original_name"] == "Spec Sheet.PDF"
+        stored = body["filename"]
+        assert stored.endswith(".pdf")
+        assert len(body["attachments"]) == 1
+        assert body["attachments"][0]["filename"] == stored
+        assert body["attachments"][0]["size"] == len(payload)
+
+        on_disk = archive_dir / "projects" / str(project.id) / "attachments" / stored
+        assert on_disk.read_bytes() == payload
+
+        served = await async_client.get(f"/api/v1/projects/{project.id}/attachments/{stored}")
+        assert served.status_code == 200
+        assert served.content == payload
+        assert served.headers["content-disposition"] == "attachment; filename*=utf-8''Spec%20Sheet.PDF"
+
+        deleted = await async_client.delete(f"/api/v1/projects/{project.id}/attachments/{stored}")
+        assert deleted.status_code == 200
+        assert deleted.json() == {"status": "success", "message": "Attachment deleted", "attachments": None}
+        assert not on_disk.exists()
+
+        gone = await async_client.get(f"/api/v1/projects/{project.id}/attachments/{stored}")
+        assert gone.status_code == 404
+        assert gone.json()["detail"] == "Attachment not found"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_attachment_upload_rejects_unknown_project_and_extension(
+        self, async_client: AsyncClient, project, archive_dir
+    ):
+        missing = await async_client.post(
+            "/api/v1/projects/999999/attachments", files={"file": ("a.pdf", b"x", "application/pdf")}
+        )
+        assert missing.status_code == 404
+        assert missing.json()["detail"] == "Project not found"
+
+        bad = await async_client.post(
+            f"/api/v1/projects/{project.id}/attachments",
+            files={"file": ("tool.exe", b"MZ", "application/octet-stream")},
+        )
+        assert bad.status_code == 400
+        assert bad.json()["detail"].startswith("File type '.exe' not supported.")
+        assert not (archive_dir / "projects" / str(project.id) / "attachments").exists()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_attachment_download_and_delete_guards(
+        self, async_client: AsyncClient, project, archive_dir, db_session
+    ):
+        project.attachments = [{"filename": "ghost.pdf", "original_name": "Ghost.pdf", "size": 1}]
+        db_session.add(project)
+        await db_session.commit()
+
+        for method in ("get", "delete"):
+            call = getattr(async_client, method)
+            traversal = await call(f"/api/v1/projects/{project.id}/attachments/..ghost.pdf")
+            assert traversal.status_code == 400
+            assert traversal.json()["detail"] == "Invalid filename"
+
+            no_project = await call("/api/v1/projects/999999/attachments/ghost.pdf")
+            assert no_project.status_code == 404
+            assert no_project.json()["detail"] == "Project not found"
+
+            unknown = await call(f"/api/v1/projects/{project.id}/attachments/other.pdf")
+            assert unknown.status_code == 404
+            assert unknown.json()["detail"] == "Attachment not found"
+
+        # Listed in the project but never written to disk.
+        missing_file = await async_client.get(f"/api/v1/projects/{project.id}/attachments/ghost.pdf")
+        assert missing_file.status_code == 404
+        assert missing_file.json()["detail"] == "Attachment file not found"

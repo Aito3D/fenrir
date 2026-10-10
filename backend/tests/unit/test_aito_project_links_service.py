@@ -15,6 +15,7 @@ from backend.app.models.aito_task_delivery import AitoTaskDelivery
 from backend.app.models.library import LibraryTag
 from backend.app.models.project import Project
 from backend.app.models.project_item import ProjectRevision
+from backend.app.models.user import User
 from backend.app.services import aito_project_links as links
 from backend.app.services.aito_events import KINDS
 from backend.app.services.project_files import add_revision, create_item
@@ -581,6 +582,53 @@ async def test_record_on_linked_orders_skips_excluded_orders(db_session):
 
     assert order_ids == [second.id]
     assert [e.project_id for e in await _events(db_session, "project.revision_added")] == [second.id]
+
+
+async def _fan_out_as(db_session, monkeypatch, actor_user_id):
+    """record_and_broadcast on a project linked to one order, as ``actor_user_id``
+    (the passed ``actor`` is a decoy the lookup must replace); returns
+    (order ids written to, the order's events, the broadcast actors)."""
+    project = await _project(db_session)
+    order = await _order(db_session)
+    await _task(db_session, order, linked=project.id)
+    await db_session.commit()
+    order_id = order.id
+    broadcast_actors = []
+
+    async def capture(payload):
+        broadcast_actors.append(payload["actor"])
+
+    monkeypatch.setattr(links.ws_manager, "broadcast_aito", capture)
+    order_ids = await links.record_and_broadcast(
+        db_session,
+        project.id,
+        "project.revision_added",
+        subject_label="Support R1",
+        actor="decoy",
+        actor_user_id=actor_user_id,
+    )
+    assert order_ids == [order_id]
+    return await _events(db_session, "project.revision_added"), broadcast_actors
+
+
+@pytest.mark.asyncio
+async def test_record_and_broadcast_names_the_actor_user(db_session, monkeypatch):
+    user = User(username="paul")
+    db_session.add(user)
+    await db_session.commit()
+
+    events, broadcast_actors = await _fan_out_as(db_session, monkeypatch, user.id)
+
+    assert [(e.actor_class, e.actor_name) for e in events] == [("user", "paul")]
+    assert broadcast_actors == ["paul"]
+
+
+@pytest.mark.asyncio
+async def test_record_and_broadcast_with_an_unknown_actor_user_still_records_as_system(db_session, monkeypatch):
+    events, broadcast_actors = await _fan_out_as(db_session, monkeypatch, 987654)
+
+    assert [(e.actor_class, e.actor_name, e.subject_label) for e in events] == [("system", None, "Support R1")]
+    assert broadcast_actors == [None]
 
 
 # --- file drops ------------------------------------------------------------
