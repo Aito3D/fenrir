@@ -42,6 +42,7 @@ from backend.app.services.openrouter import (
     suggest_project_tag_names,
 )
 from backend.app.services.project_tags import project_tag_refs, rank_tag_suggestions, tag_name_key
+from backend.app.utils.sql_like import escape_like
 
 logger = logging.getLogger(__name__)
 
@@ -49,8 +50,7 @@ router = APIRouter(prefix="/projects", tags=["projects"])
 
 
 def _like(value: str) -> str:
-    escaped = value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-    return f"%{escaped}%"
+    return f"%{escape_like(value)}%"
 
 
 def _text_match(column, raw: str):

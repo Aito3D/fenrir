@@ -25,8 +25,7 @@ from backend.app.models.library import LibraryFile
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.project import Project
 from backend.app.models.project_item import ProjectItem, ProjectRevision
-from backend.app.services import aito_events
-from backend.app.services.actor import actor_class
+from backend.app.services.actor import record_as
 from backend.app.services.db_quiet import rollback_quietly
 from backend.app.services.http_status_error import HttpStatusError
 
@@ -159,12 +158,11 @@ async def record_queued(db: AsyncSession, context: PrintContext, *, copies: int,
         return
     try:
         async with db.begin_nested():
-            await aito_events.record(
+            await record_as(
                 db,
                 context.order_id,
                 QUEUED_KIND,
-                actor_class=actor_class(actor),
-                actor_name=actor,
+                actor,
                 subject_type="task",
                 subject_id=context.aito_task_id,
                 subject_label=context.task_title,

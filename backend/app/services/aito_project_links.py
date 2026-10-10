@@ -36,8 +36,8 @@ from backend.app.schemas.aito_project_links import (
     TaskProjectLink,
 )
 from backend.app.schemas.project_files import RevisionRef
-from backend.app.services import aito_events, project_files, project_print_trace
-from backend.app.services.actor import actor_class, actor_name
+from backend.app.services import project_files, project_print_trace
+from backend.app.services.actor import actor_name, record_as
 from backend.app.services.http_status_error import HttpStatusError
 from backend.app.services.project_filing import find_or_create_item, item_name_for_filename
 from backend.app.services.project_suggestions import SIMILAR_NAME_THRESHOLD, similar_projects
@@ -105,12 +105,11 @@ async def link_task(db: AsyncSession, task: AitoTask, project_id: int | None, *,
     else:
         kind = "task.project_unlinked"
         detail = _project_detail(previous_id, previous)
-    await aito_events.record(
+    await record_as(
         db,
         task.project_id,
         kind,
-        actor_class=actor_class(actor),
-        actor_name=actor,
+        actor,
         subject_type="task",
         subject_id=task.id,
         subject_label=task.title,
@@ -237,12 +236,11 @@ async def set_deliveries(
         revision, item = source.get(rid, (None, None))
         return _revision_label(item, revision, rid)
 
-    await aito_events.record(
+    await record_as(
         db,
         task.project_id,
         "task.deliveries_changed",
-        actor_class=actor_class(actor),
-        actor_name=actor,
+        actor,
         subject_type="task",
         subject_id=task.id,
         subject_label=task.title,
@@ -424,12 +422,11 @@ async def record_on_linked_orders(
     payload = {"project_id": project_id, "code": code, **(detail or {})}
     recorded: list[int] = []
     for order_id in order_ids:
-        event = await aito_events.record(
+        event = await record_as(
             db,
             order_id,
             kind,
-            actor_class=actor_class(actor),
-            actor_name=actor,
+            actor,
             subject_label=subject_label,
             detail=dict(payload),
         )
@@ -528,12 +525,11 @@ async def _record_drop(
     actor: str | None,
 ) -> None:
     sections = sorted({r.section for r in results})
-    await aito_events.record(
+    await record_as(
         db,
         order_id,
         "project.files_dropped",
-        actor_class=actor_class(actor),
-        actor_name=actor,
+        actor,
         subject_label=f"{len(results)} file(s)",
         detail={
             "project_id": project_id,

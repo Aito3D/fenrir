@@ -2505,3 +2505,23 @@ class TestProjectBatchAddAndAttachments:
         missing_file = await async_client.get(f"/api/v1/projects/{project.id}/attachments/ghost.pdf")
         assert missing_file.status_code == 404
         assert missing_file.json()["detail"] == "Attachment file not found"
+
+
+class TestMissingProject404:
+    """Routes that look the project up first answer 404 "Project not found" for an unknown id."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize(
+        ("method", "suffix"),
+        [
+            ("GET", "cover-image"),
+            ("DELETE", "cover-image"),
+            ("GET", "timeline"),
+            ("GET", "export"),
+        ],
+    )
+    async def test_unknown_project_is_404(self, async_client: AsyncClient, method: str, suffix: str):
+        response = await async_client.request(method, f"/api/v1/projects/9999/{suffix}")
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Project not found"
