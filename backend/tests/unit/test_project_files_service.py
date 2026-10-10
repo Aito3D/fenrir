@@ -2440,3 +2440,102 @@ def test_project_files_error_declares_stored_count_without_a_default():
     err.stored_count = 2
     assert err.stored_count == 2
     assert not hasattr(ProjectFilesError(409, "y"), "stored_count")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("change", ["deleted", "trashed", "filed", "moved"])
+async def test_reuse_row_changed_during_copy_is_refused(test_engine, tmp_path, monkeypatch, change):
+    """T-248: the DB step re-reads each reused row after its bytes were copied; a row that was
+    deleted, trashed, filed into a revision or moved meanwhile refuses the revision with a 409."""
+    from datetime import datetime, timezone
+
+    from sqlalchemy import delete, update
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    from backend.app.api.routes.library import to_relative_path
+    from backend.tests.project_fixtures import create_wal_engine, point_projects_root
+
+    root = point_projects_root(monkeypatch, tmp_path, subdir="projects")
+    engine = await create_wal_engine(tmp_path / "wal.db")  # two real connections; test_engine only registers models
+    maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    try:
+        async with maker() as db, maker() as other:
+            src_dir = tmp_path / "manager"
+            src_dir.mkdir()
+            src = src_dir / "plate.gcode"
+            src.write_bytes(b"G1 X1")
+            reused = LibraryFile(
+                filename="plate.gcode",
+                file_path=to_relative_path(src),
+                file_type="gcode",
+                file_size=5,
+                is_external=False,
+            )
+            db.add(reused)
+            project = await _project(db)
+            item = await create_item(db, project, section="impression", name="Plateau", user_id=None)
+            elsewhere = await create_item(db, project, section="impression", name="Ailleurs", user_id=None)
+            other_rev, _ = await add_revision(
+                db, project, elsewhere, [upload("a.gcode", b"a")], note=None, derived_from_id=None, user_id=None
+            )
+            await db.commit()
+            reused_id, item_id, other_rev_id = reused.id, item.id, other_rev.id
+            r1 = root / project.storage_dir / "Impression" / "Plateau" / "R1"
+
+            mutations = {
+                "deleted": delete(LibraryFile).where(LibraryFile.id == reused_id),
+                "trashed": update(LibraryFile)
+                .where(LibraryFile.id == reused_id)
+                .values(deleted_at=datetime.now(timezone.utc)),
+                "filed": update(LibraryFile).where(LibraryFile.id == reused_id).values(revision_id=other_rev_id),
+                "moved": update(LibraryFile)
+                .where(LibraryFile.id == reused_id)
+                .values(file_path="elsewhere/plate.gcode"),
+            }
+            real_copy = project_files._copy_sources
+            copied: list[Path] = []
+
+            async def copy_then_change(folder, sources):
+                written = await real_copy(folder, sources)
+                copied.extend(entry.path for entry in written)
+                assert all(path.exists() for path in copied)
+                await other.execute(mutations[change])
+                await other.commit()
+                return written
+
+            monkeypatch.setattr(project_files, "_copy_sources", copy_then_change)
+            with pytest.raises(ProjectFilesError) as err:
+                await project_files.add_revision_from_sources(
+                    db,
+                    project,
+                    item,
+                    [project_files.RevisionSource(path=src, filename="plate.gcode", reuse_row=reused)],
+                    note=None,
+                    user_id=None,
+                )
+            assert (err.value.status_code, err.value.detail) == (
+                409,
+                "A file changed while it was being moved; try again",
+            )
+
+        async with maker() as check:
+            revisions = (
+                (await check.execute(select(ProjectRevision).where(ProjectRevision.item_id == item_id))).scalars().all()
+            )
+            assert revisions == []
+            assert (await check.get(ProjectItem, item_id)).last_revision_number == 0
+            row = await check.get(LibraryFile, reused_id)
+            if change == "deleted":
+                assert row is None
+            else:  # left exactly as the other session made it, never re-pointed at the copy
+                assert row.project_id is None
+                assert (row.file_path, row.revision_id, row.deleted_at is not None) == {
+                    "trashed": (to_relative_path(src), None, True),
+                    "filed": (to_relative_path(src), other_rev_id, False),
+                    "moved": ("elsewhere/plate.gcode", None, False),
+                }[change]
+        assert len(copied) == 1 and not copied[0].exists()  # the copy is removed
+        assert not r1.exists()  # the folder this attempt created is removed too
+        assert src.read_bytes() == b"G1 X1"  # the source is never touched
+    finally:
+        await engine.dispose()

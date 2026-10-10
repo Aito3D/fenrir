@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { api, ApiError, bumpArchiveThumbnail } from '../api/client';
 import { inventoryLocationsQueryKey, inventorySuppliersQueryKey } from '../utils/inventoryQueries';
 import { useBoardSync } from './useBoardSync';
+import { projectKeys } from '../components/projects/projectQueries';
 import { registerPresenceSender, setAitoPresenceState } from './useAitoPresence';
 
 // The only auth-failure close code /api/v1/ws emits (websocket.py
@@ -629,7 +630,7 @@ export function useWebSocket() {
         ) {
           queryClient.invalidateQueries({ queryKey: ['aito-invoice', message.project_id] });
         }
-        queryClient.invalidateQueries({ queryKey: ['aito-project-codes'] });
+        queryClient.invalidateQueries({ queryKey: projectKeys.projectCodes() });
         if (aitoResyncTimeoutRef.current) clearTimeout(aitoResyncTimeoutRef.current);
         aitoResyncTimeoutRef.current = window.setTimeout(() => {
           aitoResyncTimeoutRef.current = null;
@@ -644,7 +645,7 @@ export function useWebSocket() {
           for (const id of aitoEventsDirtyRef.current) {
             queryClient.invalidateQueries({ queryKey: ['aito-events', id] });
             // Fenrir PDM: links, step summaries and deliveries of an open panel.
-            queryClient.invalidateQueries({ queryKey: ['aito-project-links', id] });
+            queryClient.invalidateQueries({ queryKey: projectKeys.projectLinks(id) });
           }
           aitoEventsDirtyRef.current.clear();
         }, 300);

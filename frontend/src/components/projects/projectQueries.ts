@@ -5,14 +5,20 @@ import type { ProjectOrdersResponse, ProjectTreeResponse } from '../../api/clien
 
 /** The project query keys shared by every read and invalidation of the files tree
  *  and the linked orders. `projectId` is undefined while a picker has no project yet
- *  (those reads are disabled). */
+ *  (those reads are disabled). `projectsSearch(...params)` appends each search's own
+ *  parameters; with none it is the prefix every search shares. */
 export const projectKeys = {
   tree: (projectId: number | undefined) => ['project-tree', projectId] as const,
   orders: (projectId: number | undefined) => ['project-orders', projectId] as const,
   project: (projectId: number) => ['project', projectId] as const,
   projects: () => ['projects'] as const,
-  projectsSearch: () => ['projects-search'] as const,
+  projectsSearch: <P extends readonly unknown[]>(...params: P) => ['projects-search', ...params] as const,
   projectTags: () => ['project-tags'] as const,
+  /** One Aito order's task links (useOrderProjectLinks); `allProjectLinks` is every order's. */
+  projectLinks: (orderId: number | undefined) => ['aito-project-links', orderId] as const,
+  allProjectLinks: () => ['aito-project-links'] as const,
+  /** The project codes of every Aito order (the board's code chips). */
+  projectCodes: () => ['aito-project-codes'] as const,
 };
 
 type ExtraOptions<T> = Omit<UseQueryOptions<T>, 'queryKey' | 'queryFn'>;

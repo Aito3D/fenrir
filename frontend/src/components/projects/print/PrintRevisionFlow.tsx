@@ -50,7 +50,7 @@ export function PrintRevisionFlow({ projectId, file, revisionWarning, initialTas
           onSuccess={() => {
             queryClient.invalidateQueries({ queryKey: projectKeys.tree(projectId) });
             queryClient.invalidateQueries({ queryKey: projectKeys.orders(projectId) });
-            queryClient.invalidateQueries({ queryKey: ['aito-project-links'] });
+            queryClient.invalidateQueries({ queryKey: projectKeys.allProjectLinks() });
           }}
         />
       )}

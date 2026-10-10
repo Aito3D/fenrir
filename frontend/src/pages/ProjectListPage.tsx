@@ -4,6 +4,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { ChevronLeft, ChevronRight, LayoutGrid, List, Plus, Search } from 'lucide-react';
 import { api, type ProjectSearchItem } from '../api/client';
+import { projectKeys } from '../components/projects/projectQueries';
 import { Button } from '../components/Button';
 import { useAuth } from '../contexts/AuthContext';
 import { focusRingCls, inputCls } from '../components/formStyles';
@@ -50,11 +51,11 @@ export function ProjectListPage() {
     }
   };
 
-  const { data: tags = [] } = useQuery({ queryKey: ['project-tags'], queryFn: api.getProjectTags });
+  const { data: tags = [] } = useQuery({ queryKey: projectKeys.projectTags(), queryFn: api.getProjectTags });
   const usedTags = tags.filter((tag) => tag.project_count > 0);
 
   const { data, isLoading } = useQuery({
-    queryKey: ['projects-search', debounced, status, tagIds, tagMode, page],
+    queryKey: projectKeys.projectsSearch(debounced, status, tagIds, tagMode, page),
     queryFn: () =>
       api.searchProjects({
         q: debounced,

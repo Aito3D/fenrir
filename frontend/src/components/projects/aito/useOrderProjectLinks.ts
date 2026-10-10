@@ -9,7 +9,7 @@ import { projectKeys } from '../projectQueries';
  *  `orderId` undefined (the create drawer, or no `projects:read`) = no request. */
 export function useOrderProjectLinks(orderId: number | undefined) {
   return useQuery({
-    queryKey: ['aito-project-links', orderId],
+    queryKey: projectKeys.projectLinks(orderId),
     queryFn: () => api.getOrderProjectLinks(orderId as number),
     enabled: orderId !== undefined,
     retry: false,
@@ -32,8 +32,8 @@ export function useInvalidateProjectLinks() {
   const queryClient = useQueryClient();
   return useCallback(
     (orderId: number, projectIds: (number | null | undefined)[] = []) => {
-      void queryClient.invalidateQueries({ queryKey: ['aito-project-links', orderId] });
-      void queryClient.invalidateQueries({ queryKey: ['aito-project-codes'] });
+      void queryClient.invalidateQueries({ queryKey: projectKeys.projectLinks(orderId) });
+      void queryClient.invalidateQueries({ queryKey: projectKeys.projectCodes() });
       void queryClient.invalidateQueries({ queryKey: ['aito-events', orderId] });
       for (const id of new Set(projectIds)) {
         if (id == null) continue;

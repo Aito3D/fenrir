@@ -7,6 +7,8 @@ import logging
 import os
 import tempfile
 import zipfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile
@@ -125,8 +127,13 @@ upload_router = APIRouter(prefix="/projects", tags=["projects"], route_class=_Pr
 library_router = APIRouter(prefix="/library", tags=["projects"])
 
 
-def _raise(exc: svc.ProjectFilesError):
-    raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+@contextmanager
+def _file_errors() -> Iterator[None]:
+    """A ``ProjectFilesError`` becomes its HTTP error, chained ``from`` it."""
+    try:
+        yield
+    except svc.ProjectFilesError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
 async def _project(db: AsyncSession, project_id: int) -> Project:
@@ -227,11 +234,9 @@ async def create_item(
     user: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
 ):
     project = await _project(db, project_id)
-    try:
+    with _file_errors():
         svc.require_enabled_section(body.section)  # projects hold printing files only for now
         item = await svc.create_item(db, project, section=body.section, name=body.name, user_id=actor_user_id(user))
-    except svc.ProjectFilesError as exc:
-        _raise(exc)
     await db.commit()
     return await _item_out(db, project, item.id)
 
@@ -243,11 +248,9 @@ async def rename_item(
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
 ):
-    try:
+    with _file_errors():
         item, project = await svc.get_item_for_project(db, item_id)
         await svc.rename_item(db, project, item, body.name)
-    except svc.ProjectFilesError as exc:
-        _raise(exc)
     return await _item_out(db, project, item_id)
 
 
@@ -257,11 +260,9 @@ async def delete_item(
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_DELETE),
 ) -> None:
-    try:
+    with _file_errors():
         item, project = await svc.get_item_for_project(db, item_id)
         await svc.delete_item(db, project, item)
-    except svc.ProjectFilesError as exc:
-        _raise(exc)
 
 
 @upload_router.post("/items/{item_id}/revisions", response_model=RevisionUploadResponse, status_code=201)
@@ -273,15 +274,13 @@ async def upload_revision(
     db: AsyncSession = Depends(get_db),
     user: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
 ):
-    try:
+    with _file_errors():
         svc.require_printable_uploads(files)
         item, project = await svc.get_item_for_project(db, item_id)
         svc.require_enabled_section(item.section)
         revision, warnings = await svc.add_revision(
             db, project, item, files, note=note, derived_from_id=derived_from_id, user_id=actor_user_id(user)
         )
-    except svc.ProjectFilesError as exc:
-        _raise(exc)
     project_id, revision_id = project.id, revision.id
     label, detail = aito_links.revision_added_payload(
         item_name=item.name,
@@ -302,14 +301,12 @@ async def fork_item(
     db: AsyncSession = Depends(get_db),
     user: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
 ):
-    try:
+    with _file_errors():
         item, project = await svc.get_item_for_project(db, item_id)
         revision, rev_item, _p = await svc.get_revision_bundle(db, body.revision_id)
         if rev_item.id != item.id:
             raise svc.ProjectFilesError(400, "Revision does not belong to this item")
         forked = await svc.fork_revision(db, project, item, revision, body.name, actor_user_id(user))
-    except svc.ProjectFilesError as exc:
-        _raise(exc)
     return await _item_out(db, project, forked.id)
 
 
@@ -320,13 +317,11 @@ async def add_files(
     db: AsyncSession = Depends(get_db),
     user: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
 ):
-    try:
+    with _file_errors():
         svc.require_printable_uploads(files)
         revision, item, project = await svc.get_revision_bundle(db, revision_id)
         svc.require_enabled_section(item.section)
         warnings = await svc.add_files_to_revision(db, project, item, revision, files, actor_user_id(user))
-    except svc.ProjectFilesError as exc:
-        _raise(exc)
     return {"warnings": [w.model_dump() for w in warnings]}
 
 
@@ -337,11 +332,9 @@ async def remove_file(
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
 ) -> None:
-    try:
+    with _file_errors():
         revision, item, project = await svc.get_revision_bundle(db, revision_id)
         await svc.remove_file_from_revision(db, project, item, revision, file_id)
-    except svc.ProjectFilesError as exc:
-        _raise(exc)
 
 
 @router.post("/revisions/{revision_id}/reslice", response_model=ResliceStarted, status_code=202)
@@ -355,10 +348,8 @@ async def reslice_revision(
 ):
     """Re-trancher (spec §12.1): slice one 3MF of this revision with a saved pipeline in the
     background; the result becomes the next revision of the same item. Poll ``status_url``."""
-    try:
+    with _file_errors():
         req = await project_reslice.prepare_reslice(db, revision_id, body, actor_user_id(user))
-    except svc.ProjectFilesError as exc:
-        _raise(exc)
 
     async def _run(job_id: int) -> dict:
         async with database.async_session() as task_db:
@@ -386,15 +377,13 @@ async def update_revision(
     db: AsyncSession = Depends(get_db),
     user: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
 ):
-    try:
+    with _file_errors():
         revision, item, project = await svc.get_revision_bundle(db, revision_id)
         fields = {key: getattr(body, key) for key in body.model_fields_set}
         if "status" in fields and fields["status"] is None:
             raise svc.ProjectFilesError(400, "status cannot be null")
         previous_status = revision.status
         await svc.update_revision(db, project, revision, fields=fields, user_id=actor_user_id(user))
-    except svc.ProjectFilesError as exc:
-        _raise(exc)
     # Save the change first and OUTSIDE the best-effort event hook: a failed commit must surface.
     await db.commit()
     project_id, new_status, item_label = project.id, revision.status, f"{item.name} R{revision.number}"
@@ -423,11 +412,9 @@ async def delete_revision(
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_DELETE),
 ) -> None:
-    try:
+    with _file_errors():
         revision, item, project = await svc.get_revision_bundle(db, revision_id)
         await svc.delete_revision(db, project, item, revision)
-    except svc.ProjectFilesError as exc:
-        _raise(exc)
 
 
 @router.get("/revisions/{revision_id}/download")
@@ -438,10 +425,8 @@ async def download_revision(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_READ),
 ):
     """One file (``?file_id=``) or every file of the revision as a zip."""
-    try:
+    with _file_errors():
         revision, item, project = await svc.get_revision_bundle(db, revision_id)
-    except svc.ProjectFilesError as exc:
-        _raise(exc)
     rows = (await db.execute(select(LibraryFile).where(LibraryFile.revision_id == revision.id))).scalars().all()
     if file_id is not None:
         row = next((r for r in rows if r.id == file_id), None)
@@ -502,14 +487,13 @@ async def import_library_files(
             pre_skipped.append({"file_id": file_id, "code": "not_owner", "reason": "not the file owner"})
         else:
             files.append(row)
-    try:
-        result = await project_filing.move_library_files_to_project(
-            db, project, files, item_id=body.item_id, new_item_name=body.new_item_name, user_id=actor_user_id(user)
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except svc.ProjectFilesError as exc:
-        _raise(exc)
+    with _file_errors():
+        try:
+            result = await project_filing.move_library_files_to_project(
+                db, project, files, item_id=body.item_id, new_item_name=body.new_item_name, user_id=actor_user_id(user)
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     for revision_id, entry in result.revisions().items():
         label, detail = aito_links.revision_added_payload(

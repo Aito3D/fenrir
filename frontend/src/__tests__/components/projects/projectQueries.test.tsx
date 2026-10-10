@@ -37,6 +37,31 @@ describe('projectKeys', () => {
     expect(projectKeys.projectsSearch()).toEqual(['projects-search']);
     expect(projectKeys.projectTags()).toEqual(['project-tags']);
   });
+
+  it('appends each search\'s own parameters to the projects-search prefix, in order', () => {
+    expect(projectKeys.projectsSearch()).toHaveLength(1);
+    expect(projectKeys.projectsSearch('aito-link', 'sup')).toEqual(['projects-search', 'aito-link', 'sup']);
+    expect(projectKeys.projectsSearch('move-to-project', '')).toEqual(['projects-search', 'move-to-project', '']);
+    expect(projectKeys.projectsSearch('q', undefined, [1, 2], 'all', 3)).toEqual([
+      'projects-search',
+      'q',
+      undefined,
+      [1, 2],
+      'all',
+      3,
+    ]);
+    expect(projectKeys.projectsSearch('q', undefined, [], 'any', 1)).toHaveLength(6);
+  });
+
+  it('builds the exact Aito link and code keys', () => {
+    expect(projectKeys.projectLinks(12)).toEqual(['aito-project-links', 12]);
+    expect(projectKeys.projectLinks(undefined)).toEqual(['aito-project-links', undefined]);
+    expect(projectKeys.projectLinks(undefined)).toHaveLength(2);
+    expect(projectKeys.allProjectLinks()).toEqual(['aito-project-links']);
+    expect(projectKeys.allProjectLinks()).toHaveLength(1);
+    expect(projectKeys.projectCodes()).toEqual(['aito-project-codes']);
+    expect(projectKeys.projectCodes()).toHaveLength(1);
+  });
 });
 
 describe('useInvalidateProjects', () => {

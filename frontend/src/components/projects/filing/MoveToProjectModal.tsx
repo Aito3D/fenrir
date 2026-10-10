@@ -103,7 +103,7 @@ export function MoveToProjectModal({ fileIds, fileName, onClose, onMoved }: Prop
     retry: false,
   });
   const { data: search, isFetching: searching } = useQuery({
-    queryKey: ['projects-search', 'move-to-project', debounced],
+    queryKey: projectKeys.projectsSearch('move-to-project', debounced),
     queryFn: () => api.searchProjects({ q: debounced, limit: 10 }),
     enabled: debounced !== '',
     retry: false,

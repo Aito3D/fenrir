@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { Search } from 'lucide-react';
 import { api } from '../../../api/client';
+import { projectKeys } from '../projectQueries';
 import { ProjectCodeChip } from '../ProjectCodeChip';
 import { focusRingCls } from '../../formStyles';
 import { useDebouncedValue } from '../../../hooks/useDebouncedValue';
@@ -43,7 +44,7 @@ export function ProjectLinkPicker({
     retry: false,
   });
   const { data: search, isFetching } = useQuery({
-    queryKey: ['projects-search', 'aito-link', debounced],
+    queryKey: projectKeys.projectsSearch('aito-link', debounced),
     queryFn: () => api.searchProjects({ q: debounced, limit: 10 }),
     enabled: debounced !== '',
     retry: false,

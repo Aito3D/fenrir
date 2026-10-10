@@ -433,3 +433,51 @@ async def test_download_works_when_the_projects_root_itself_is_a_symlink(
     assert one.status_code == 200 and one.content == b"geo"
     zipped = await async_client.get(url)
     assert zipfile.ZipFile(io.BytesIO(zipped.content)).namelist() == ["a.gcode"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("method", "path", "body"),
+    [
+        ("patch", "/api/v1/projects/items/1", {"name": "x"}),
+        ("delete", "/api/v1/projects/items/1", None),
+        ("post", "/api/v1/projects/items/1/fork", {"revision_id": 1, "name": "x"}),
+        ("delete", "/api/v1/projects/revisions/1/files/2", None),
+        ("patch", "/api/v1/projects/revisions/1", {"note": "x"}),
+        ("delete", "/api/v1/projects/revisions/1", None),
+        ("get", "/api/v1/projects/revisions/1/download", None),
+    ],
+)
+async def test_project_files_error_becomes_its_http_error(async_client: AsyncClient, monkeypatch, method, path, body):
+    """T-230: a ProjectFilesError raised by the service surfaces with its own status and detail."""
+
+    async def teapot(*_args, **_kwargs):
+        raise project_files_routes.svc.ProjectFilesError(418, "teapot")
+
+    monkeypatch.setattr(project_files_routes.svc, "get_item_for_project", teapot)
+    monkeypatch.setattr(project_files_routes.svc, "get_revision_bundle", teapot)
+    kwargs = {} if body is None else {"json": body}
+    response = await async_client.request(method.upper(), path, **kwargs)
+    assert (response.status_code, response.json()) == (418, {"detail": "teapot"})
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_project_files_error_is_the_http_error_cause(db_session, monkeypatch):
+    """T-230: the HTTPException is raised ``from`` the service error (``__cause__``, context suppressed)."""
+    from fastapi import HTTPException
+
+    from backend.app.schemas.project_files import ProjectItemRename
+
+    error = project_files_routes.svc.ProjectFilesError(418, "teapot")
+
+    async def teapot(*_args, **_kwargs):
+        raise error
+
+    monkeypatch.setattr(project_files_routes.svc, "get_item_for_project", teapot)
+    with pytest.raises(HTTPException) as raised:
+        await project_files_routes.rename_item(item_id=1, body=ProjectItemRename(name="x"), db=db_session, _=None)
+    assert (raised.value.status_code, raised.value.detail) == (418, "teapot")
+    assert raised.value.__cause__ is error
+    assert raised.value.__suppress_context__ is True
