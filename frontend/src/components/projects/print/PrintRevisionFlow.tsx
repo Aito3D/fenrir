@@ -1,12 +1,11 @@
 import { useState } from 'react';
-import { createPortal } from 'react-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import type { ProjectFileOut } from '../../../api/client';
 import { PrintModal } from '../../PrintModal';
 import { OrderPickerDialog } from './OrderPickerDialog';
 import { useOpenOrders } from './useOpenOrders';
 import { projectKeys } from '../projectQueries';
-import { stopDrag } from '../dialogStyles';
+import { DropShield } from '../DropShield';
 
 interface Props {
   projectId: number;
@@ -28,8 +27,8 @@ export function PrintRevisionFlow({ projectId, file, revisionWarning, initialTas
   const { openOrders, loading: ordersLoading, failed: ordersFailed, noOrderNeeded } = useOpenOrders(projectId);
   const chosen = taskId !== undefined ? taskId : noOrderNeeded ? null : undefined;
 
-  return createPortal(
-    <div onDragOver={stopDrag} onDrop={stopDrag}>
+  return (
+    <DropShield>
       {chosen === undefined ? (
         <OrderPickerDialog
           orders={openOrders}
@@ -55,7 +54,6 @@ export function PrintRevisionFlow({ projectId, file, revisionWarning, initialTas
           }}
         />
       )}
-    </div>,
-    document.body,
+    </DropShield>
   );
 }

@@ -1,5 +1,4 @@
 import { useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { Download, Eye, GitFork, Plus, Printer, Scissors, Trash2, X } from 'lucide-react';
 import { api } from '../../../api/client';
@@ -22,7 +21,7 @@ import {
 import { PrintRevisionFlow } from '../print/PrintRevisionFlow';
 import { ResliceDialog } from '../reslice/ResliceDialog';
 import { outdatedParams, revisionLabel } from './revisionLabel';
-import { stopDrag } from '../dialogStyles';
+import { DropShield } from '../DropShield';
 
 export interface DerivedOption { id: number; label: string }
 
@@ -264,8 +263,8 @@ export function RevisionBlock({ item, revision, derivedOptions, actions }: Props
           onClose={() => setPrinting(null)}
         />
       )}
-      {reslicing !== null && createPortal(
-        <div onDragOver={stopDrag} onDrop={stopDrag}>
+      {reslicing !== null && (
+        <DropShield>
           <ResliceDialog
             projectId={actions.projectId}
             files={resliceable}
@@ -276,8 +275,7 @@ export function RevisionBlock({ item, revision, derivedOptions, actions }: Props
               void actions.reslice.start(item.id, revision.id, fileId, pipelineId, queueTaskId);
             }}
           />
-        </div>,
-        document.body,
+        </DropShield>
       )}
       {confirmRemove && (
         <ConfirmModal

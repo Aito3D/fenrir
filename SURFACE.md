@@ -346,6 +346,7 @@ def start_legacy_migration()
 def storage_dir_name(code: str, title: str)
 def tag_mirror(names: list[str])
 def tag_name_key(name: str)
+def unique_clean_names(raw_names: Iterable[str], seen: set[str] | None = None)
 def unique_file_path(directory: Path, filename: str)
 def upload_basename(upload: UploadFile)
 def utcnow()
@@ -1255,6 +1256,7 @@ CREATE TABLE projects (
 1 export function CardProjectChips
 1 export function DeliveriesPicker
 1 export function DialogShell
+1 export function DropShield
 1 export function filesFromDataTransfer
 1 export function inZone
 1 export function isFileDrag

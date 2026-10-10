@@ -23,7 +23,7 @@ import { useTaskFileDrop } from './dropFiles';
 import { useInvalidateProjectLinks } from './useOrderProjectLinks';
 import { revisionLabel } from '../files/revisionLabel';
 import { useProjectTree } from '../projectQueries';
-import { stopDrag } from '../dialogStyles';
+import { DropShield } from '../DropShield';
 
 const DESCRIPTION_FIELD = {
   scan: 'scanDescription',
@@ -210,9 +210,8 @@ export function TaskProjectRow({
           document.body,
         )}
       {printing &&
-        project &&
-        createPortal(
-          <div onDragOver={stopDrag} onDrop={stopDrag}>
+        project && (
+          <DropShield>
             {printing === 'pick' ? (
               <PrintRevisionPicker
                 projectId={project.id}
@@ -233,8 +232,7 @@ export function TaskProjectRow({
                 onSuccess={() => invalidate(orderId, [project.id])}
               />
             )}
-          </div>,
-          document.body,
+          </DropShield>
         )}
       {editingDeliveries && project && (
         <DeliveriesPicker
