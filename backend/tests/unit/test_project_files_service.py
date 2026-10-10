@@ -2177,3 +2177,73 @@ async def test_stl_thumbnail_only_renders_a_usable_mesh(tmp_path, monkeypatch):
     mesh.write_bytes(b"x" * project_files.MIN_USABLE_STL_BYTES)
     assert await project_files._make_thumbnail(mesh) == (thumbs / "mesh.png", None)
     assert rendered == [(mesh, thumbs)]
+
+
+class _CapturingSession:
+    """Records executed statements; every result is empty."""
+
+    def __init__(self):
+        self.statements = []
+
+    async def execute(self, statement):
+        self.statements.append(statement)
+        return self
+
+    def first(self):
+        return None
+
+    def scalars(self):
+        return self
+
+    def all(self):
+        return []
+
+
+def _sqlite_sql(statement) -> str:
+    from sqlalchemy.dialects import sqlite
+
+    return str(statement.compile(dialect=sqlite.dialect(), compile_kwargs={"literal_binds": True}))
+
+
+# The usage columns, in _USAGE_COLUMNS order, as (table, column).
+_USAGE_SQL_COLUMNS = (
+    ("print_queue", "library_file_id"),
+    ("print_archives", "library_file_id"),
+    ("print_batches", "library_file_id"),
+    ("print_queue_variants", "library_file_id"),
+    ("pipeline_runs", "source_library_file_id"),
+    ("pipeline_runs", "sliced_library_file_id"),
+)
+
+
+def _usage_branches(in_clause: str) -> list[str]:
+    return [
+        f"SELECT {table}.{column} AS file_id \nFROM {table} \nWHERE {table}.{column} IN {in_clause}"
+        for table, column in _USAGE_SQL_COLUMNS
+    ]
+
+
+@pytest.mark.asyncio
+async def test_used_file_ids_query_is_one_flat_union_with_the_delivered_branch():
+    session = _CapturingSession()
+    file_ids = select(LibraryFile.id).where(LibraryFile.revision_id == 7)
+    assert await project_files.used_file_ids(session, file_ids) == set()
+    (statement,) = session.statements
+    sub = "(SELECT library_files.id \nFROM library_files \nWHERE library_files.revision_id = 7)"
+    delivered = (
+        f"SELECT library_files.id AS file_id \nFROM library_files \nWHERE library_files.id IN {sub} "
+        "AND library_files.revision_id IN (SELECT aito_task_deliveries.revision_id \nFROM aito_task_deliveries)"
+    )
+    assert _sqlite_sql(statement) == " UNION ".join([*_usage_branches(sub), delivered])
+
+
+@pytest.mark.asyncio
+async def test_deleted_revision_is_used_query_is_the_usage_union_without_delivered_branch():
+    session = _CapturingSession()
+    assert await project_files._deleted_revision_is_used(session, 7, [3, 4]) is False
+    delivery_check, usage = session.statements
+    assert _sqlite_sql(delivery_check) == (
+        "SELECT aito_task_deliveries.revision_id \nFROM aito_task_deliveries \n"
+        "WHERE aito_task_deliveries.revision_id = 7\n LIMIT 1 OFFSET 0"
+    )
+    assert _sqlite_sql(usage) == " UNION ".join(_usage_branches("(3, 4)"))

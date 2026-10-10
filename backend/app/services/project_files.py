@@ -803,14 +803,17 @@ _USAGE_COLUMNS = (
 )
 
 
+def _usage_selects(file_ids: Select | list[int]) -> list[Select]:
+    """One ``file_id`` select per ``_USAGE_COLUMNS`` column, restricted to ``file_ids``."""
+    return [select(column.label("file_id")).where(column.in_(file_ids)) for column in _USAGE_COLUMNS]
+
+
 async def used_file_ids(db: AsyncSession, file_ids: Select) -> set[int]:
     """Which of ``file_ids`` (a select of library file ids) are used, in one query."""
     delivered = select(LibraryFile.id.label("file_id")).where(
         LibraryFile.id.in_(file_ids), LibraryFile.revision_id.in_(select(AitoTaskDelivery.revision_id))
     )
-    query = union(
-        *(select(column.label("file_id")).where(column.in_(file_ids)) for column in _USAGE_COLUMNS), delivered
-    )
+    query = union(*_usage_selects(file_ids), delivered)
     return set((await db.execute(query)).scalars().all())
 
 
@@ -834,7 +837,7 @@ async def _deleted_revision_is_used(db: AsyncSession, revision_id: int, file_ids
         )
     ).first() is not None:
         return True
-    query = union(*(select(column.label("file_id")).where(column.in_(file_ids)) for column in _USAGE_COLUMNS))
+    query = union(*_usage_selects(file_ids))
     return (await db.execute(query)).first() is not None
 
 

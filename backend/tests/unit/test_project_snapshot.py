@@ -269,3 +269,53 @@ def test_unexpected_failure_logs_and_returns_an_empty_snapshot(tmp_path, monkeyp
         snapshot = read_print_snapshot(path)
     assert snapshot == project_snapshot.PrintSnapshot(None, None, None, None, {"sliced": False})
     assert f"Failed to read snapshot from {path}" in caplog.text
+
+
+def _lying_settings_zip(claimed_size: int, *, crc_of_claimed_prefix: bool) -> zipfile.ZipFile:
+    """A zip whose settings part inflates to more than ``_MAX_PART_BYTES`` while
+    both headers claim ``claimed_size`` bytes (CRC of the real payload, or of
+    the claimed prefix so the CRC check passes)."""
+    import io
+    import zlib
+
+    from backend.app.services.project_snapshot import _MAX_PART_BYTES
+
+    real = b"{" + b"a" * (_MAX_PART_BYTES + 1000) + b"}"
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("Metadata/project_settings.config", real)
+    data = bytearray(buffer.getvalue())
+    crc = zlib.crc32(real[:claimed_size] if crc_of_claimed_prefix else real)
+    local = data.find(b"PK\x03\x04")
+    central = data.find(b"PK\x01\x02")
+    assert struct.unpack_from("<I", data, local + 22)[0] == len(real)
+    assert struct.unpack_from("<I", data, central + 24)[0] == len(real)
+    struct.pack_into("<I", data, local + 14, crc)
+    struct.pack_into("<I", data, local + 22, claimed_size)
+    struct.pack_into("<I", data, central + 16, crc)
+    struct.pack_into("<I", data, central + 24, claimed_size)
+    return zipfile.ZipFile(io.BytesIO(bytes(data)))
+
+
+@pytest.mark.parametrize("claimed", [100, 8 * 1024 * 1024])
+def test_read_never_returns_more_than_a_lying_header_claims(claimed):
+    """A header understating the part size cannot smuggle more than
+    ``_MAX_PART_BYTES`` through ``_read``: zipfile stops at the claimed size
+    (and fails the CRC unless it matches that prefix)."""
+    from backend.app.services.project_snapshot import _MAX_PART_BYTES, _read
+
+    assert claimed <= _MAX_PART_BYTES
+    with _lying_settings_zip(claimed, crc_of_claimed_prefix=False) as zf:
+        assert _read(zf, "Metadata/project_settings.config") is None
+    with _lying_settings_zip(claimed, crc_of_claimed_prefix=True) as zf:
+        text = _read(zf, "Metadata/project_settings.config")
+    assert text == "{" + "a" * (claimed - 1)
+
+
+def test_lying_header_settings_part_leaves_config_empty(tmp_path):
+    """End to end: the truncated part is not JSON, so the snapshot has no config."""
+    with _lying_settings_zip(100, crc_of_claimed_prefix=True) as zf:
+        path = tmp_path / "lying.3mf"
+        path.write_bytes(zf.fp.getvalue())
+    snap = read_print_snapshot(path)
+    assert snap is not None and snap.config is None and snap.config_hash is None
