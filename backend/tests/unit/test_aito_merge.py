@@ -405,3 +405,20 @@ async def test_crossed_merges_cannot_trash_both_cards(async_client, monkeypatch)
     assert b["id"] in board_ids
     assert [t["title"] for t in await _tasks(async_client, b["id"])] == ["B task", "A task"]
     assert "project.merged" not in await _event_kinds(async_client, a["id"])
+
+
+@pytest.mark.asyncio
+async def test_merge_with_linked_delivering_task_queues_the_target_quote_push(async_client, db_session):
+    """T-249: unlike the link routes (which never touch quote_sync_state), a merge
+    copies billable tasks onto the target, so it DOES mark the target quote pending."""
+    target = await _create_with_tasks(async_client, [{"title": "Existing"}])
+    source, _, _, _ = await _delivering_source(async_client, db_session)
+    target_row = (await db_session.execute(select(AitoProject).where(AitoProject.id == target["id"]))).scalar_one()
+    target_row.quote_sync_state = "idle"
+    await db_session.commit()
+
+    resp = await _merge(async_client, target["id"], source["id"])
+    assert resp.status_code == 200, resp.text
+
+    await db_session.refresh(target_row)
+    assert target_row.quote_sync_state == "pending"

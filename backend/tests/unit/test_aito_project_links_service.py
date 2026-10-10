@@ -6,17 +6,17 @@ from functools import partial
 
 import pytest
 from fastapi import UploadFile
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 
 from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
 from backend.app.models.aito_task_delivery import AitoTaskDelivery
-from backend.app.models.library import LibraryTag
+from backend.app.models.library import LibraryFile, LibraryTag
 from backend.app.models.project import Project
 from backend.app.models.project_item import ProjectItem, ProjectRevision
 from backend.app.models.user import User
-from backend.app.services import aito_project_links as links
+from backend.app.services import aito_project_links as links, project_files
 from backend.app.services.aito_events import KINDS
 from backend.app.services.project_files import add_revision, create_item
 from backend.app.services.project_filing import section_for_filename
@@ -933,3 +933,30 @@ async def test_drop_fans_out_the_revision_added_payload(db_session, monkeypatch)
             "Paul",
         )
     ]
+
+
+@pytest.mark.asyncio
+async def test_drop_creates_the_item_first_then_streams_with_no_pending_writes(db_session, monkeypatch):
+    """The drop path commits the new item BEFORE streaming (``add_revision`` rolls the whole
+    session back on failure); at stream time the item row exists, no revision or file row
+    does, and nothing is pending in the session."""
+    project = await _project(db_session)
+    order = await _order(db_session)
+    task = await _task(db_session, order, linked=project.id)
+    await db_session.commit()
+    real = project_files._stream_files
+    seen = {}
+
+    async def spy(folder, uploads):
+        seen["new"] = list(db_session.new)
+        seen["dirty"] = list(db_session.dirty)
+        seen["deleted"] = list(db_session.deleted)
+        seen["items"] = (await db_session.execute(select(func.count(ProjectItem.id)))).scalar_one()
+        seen["revisions"] = (await db_session.execute(select(func.count(ProjectRevision.id)))).scalar_one()
+        seen["files"] = (await db_session.execute(select(func.count(LibraryFile.id)))).scalar_one()
+        return await real(folder, uploads)
+
+    monkeypatch.setattr(project_files, "_stream_files", spy)
+    response = await links.drop_files_on_task(db_session, task, [_upload("bracket.3mf")], user_id=None, actor="Paul")
+    assert seen == {"new": [], "dirty": [], "deleted": [], "items": 1, "revisions": 0, "files": 0}
+    assert [r.revision_number for r in response.results] == [1]

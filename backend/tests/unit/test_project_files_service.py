@@ -2539,3 +2539,55 @@ async def test_reuse_row_changed_during_copy_is_refused(test_engine, tmp_path, m
         assert src.read_bytes() == b"G1 X1"  # the source is never touched
     finally:
         await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_add_files_to_revision_writes_nothing_to_the_db_before_streaming_finishes(db_session, root, monkeypatch):
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project)
+    await db_session.commit()
+    real = project_files._stream_files
+    seen = {}
+
+    async def spy(folder, uploads):
+        seen["new"] = list(db_session.new)
+        seen["dirty"] = list(db_session.dirty)
+        seen["deleted"] = list(db_session.deleted)
+        return await real(folder, uploads)
+
+    monkeypatch.setattr(project_files, "_stream_files", spy)
+    await add_files_to_revision(db_session, project, item, rev, [upload("b.step", b"b")], user_id=None)
+    assert seen == {"new": [], "dirty": [], "deleted": []}
+    files = (await db_session.execute(select(LibraryFile).where(LibraryFile.revision_id == rev.id))).scalars().all()
+    assert len(files) == 2
+
+
+@pytest.mark.asyncio
+async def test_add_revision_from_sources_writes_nothing_to_the_db_while_copying(
+    db_session, root, tmp_path, monkeypatch
+):
+    project = await _project(db_session)
+    item, _r1 = await _rev(db_session, project)
+    await db_session.commit()
+    src = tmp_path / "out.gcode.3mf"
+    src.write_bytes(b"not really a zip")
+    real = project_files._copy_sources
+    seen = {}
+
+    async def spy(folder, sources):
+        seen["new"] = list(db_session.new)
+        seen["dirty"] = list(db_session.dirty)
+        seen["deleted"] = list(db_session.deleted)
+        return await real(folder, sources)
+
+    monkeypatch.setattr(project_files, "_copy_sources", spy)
+    rev = await project_files.add_revision_from_sources(
+        db_session,
+        project,
+        item,
+        [project_files.RevisionSource(path=src, filename="Support.gcode.3mf")],
+        note=None,
+        user_id=None,
+    )
+    assert seen == {"new": [], "dirty": [], "deleted": []}
+    assert rev.number == 2

@@ -98,6 +98,43 @@ async def test_link_does_not_mark_quote_pending(async_client: AsyncClient, db_se
 
 @pytest.mark.asyncio
 @pytest.mark.integration
+@pytest.mark.parametrize("action", ["unlink", "create_from_task", "set_deliveries", "drop_files"])
+async def test_no_link_mutating_path_marks_quote_pending(async_client: AsyncClient, db_session, action):
+    order = await _order(db_session)
+    task = await _task(db_session, order)
+    project = await _project(async_client)
+    revision = await _revision(async_client, project["id"])
+    base = f"/api/v1/aito/tasks/{task.id}"
+    if action != "create_from_task":
+        linked = await async_client.put(f"{base}/project", json={"project_id": project["id"]})
+        assert linked.status_code == 200, linked.text
+    order.quote_sync_state = "idle"
+    await db_session.commit()
+    version = order.version
+
+    if action == "unlink":
+        response = await async_client.put(f"{base}/project", json={"project_id": None})
+        expected = 200
+    elif action == "create_from_task":
+        response = await async_client.post(f"{base}/project", json={"name": "Nouveau"})
+        expected = 201
+    elif action == "set_deliveries":
+        response = await async_client.put(f"{base}/deliveries", json={"revision_ids": [revision]})
+        expected = 200
+    else:
+        response = await async_client.post(
+            f"{base}/files", files=[("files", ("a.3mf", b"x", "application/octet-stream"))]
+        )
+        expected = 201
+    assert response.status_code == expected, response.text
+
+    await db_session.refresh(order)
+    assert order.quote_sync_state == "idle"
+    assert order.version == version
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
 async def test_link_errors(async_client: AsyncClient, db_session):
     order = await _order(db_session)
     task = await _task(db_session, order)
