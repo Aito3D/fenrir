@@ -527,6 +527,29 @@ async def test_orders_for_project(db_session):
     assert ref.number == 1
 
 
+@pytest.mark.asyncio
+async def test_orders_for_project_delivery_ref_is_project_files_revision_ref(db_session):
+    project = await _project(db_session)
+    item, rev = await _revision(db_session, project)
+    order = await _order(db_session)
+    task = await _task(db_session, order, linked=project.id)
+    db_session.add(AitoTaskDelivery(task_id=task.id, revision_id=rev.id))
+    await db_session.flush()
+
+    response = await links.orders_for_project(db_session, project.id)
+
+    [ref] = response.orders[0].deliveries
+    assert ref == project_files.revision_ref(rev, item)
+    assert (ref.id, ref.item_id, ref.item_name, ref.section, ref.number, ref.status) == (
+        rev.id,
+        item.id,
+        item.name,
+        item.section,
+        rev.number,
+        rev.status,
+    )
+
+
 # --- record_on_linked_orders -----------------------------------------------
 
 

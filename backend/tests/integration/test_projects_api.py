@@ -86,6 +86,28 @@ class TestProjectsAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_project_archives_of_a_missing_project_is_404(self, async_client: AsyncClient):
+        response = await async_client.get("/api/v1/projects/999999/archives")
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Project not found"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_from_template_rejects_a_missing_template(self, async_client: AsyncClient):
+        response = await async_client.post("/api/v1/projects/from-template/999999")
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Template not found"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_from_template_rejects_a_non_template_project(self, async_client: AsyncClient, project_factory):
+        project = await project_factory(name="Plain")
+        response = await async_client.post(f"/api/v1/projects/from-template/{project.id}")
+        assert response.status_code == 400
+        assert response.json()["detail"] == "Project is not a template"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_get_project(self, async_client: AsyncClient, project_factory, db_session):
         """Verify single project can be retrieved."""
         project = await project_factory(name="Get Test Project")
@@ -969,6 +991,61 @@ class TestProjectExportImport:
             return item
 
         return _create_bom_item
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_and_list_bom_items(self, async_client: AsyncClient, project_factory):
+        project = await project_factory(name="With BOM")
+        first = await async_client.post(
+            f"/api/v1/projects/{project.id}/bom", json={"name": "Screw", "quantity_needed": 4}
+        )
+        second = await async_client.post(
+            f"/api/v1/projects/{project.id}/bom", json={"name": "Nut", "quantity_needed": 2}
+        )
+        assert first.status_code == second.status_code == 200, first.text + second.text
+        assert (first.json()["sort_order"], second.json()["sort_order"]) == (1, 2)
+        assert first.json()["is_complete"] is False
+        assert first.json()["archive_name"] is None
+
+        listed = await async_client.get(f"/api/v1/projects/{project.id}/bom")
+        assert listed.status_code == 200
+        assert [(i["name"], i["quantity_needed"]) for i in listed.json()] == [("Screw", 4), ("Nut", 2)]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_bom_of_a_missing_project_is_404(self, async_client: AsyncClient):
+        listed = await async_client.get("/api/v1/projects/999999/bom")
+        created = await async_client.post("/api/v1/projects/999999/bom", json={"name": "Screw", "quantity_needed": 1})
+        assert (listed.status_code, created.status_code) == (404, 404)
+        assert listed.json()["detail"] == created.json()["detail"] == "Project not found"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_from_template_copies_bom_items_unacquired(
+        self, async_client: AsyncClient, project_factory, bom_item_factory
+    ):
+        template = await project_factory(name="Kit (Template)", is_template=True)
+        await bom_item_factory(template.id, name="Bolt", quantity_needed=3, quantity_acquired=3, sort_order=7)
+
+        response = await async_client.post(f"/api/v1/projects/from-template/{template.id}")
+        assert response.status_code == 200, response.text
+        assert response.json()["name"] == "Kit"
+
+        listed = await async_client.get(f"/api/v1/projects/{response.json()['id']}/bom")
+        [bolt] = listed.json()
+        assert (bolt["name"], bolt["quantity_needed"], bolt["quantity_acquired"], bolt["sort_order"]) == (
+            "Bolt",
+            3,
+            0,
+            7,
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_template_from_a_missing_project_is_404(self, async_client: AsyncClient):
+        response = await async_client.post("/api/v1/projects/999999/create-template")
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Project not found"
 
     @pytest.mark.asyncio
     @pytest.mark.integration

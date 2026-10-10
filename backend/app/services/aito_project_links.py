@@ -374,16 +374,7 @@ async def orders_for_project(db: AsyncSession, project_id: int) -> ProjectOrders
             .order_by(ProjectItem.section, ProjectItem.name, ProjectRevision.number)
         )
         for task_id, revision, item in refs:
-            delivered[task_id].append(
-                RevisionRef(
-                    id=revision.id,
-                    item_id=item.id,
-                    item_name=item.name,
-                    section=item.section,
-                    number=revision.number,
-                    status=revision.status,
-                )
-            )
+            delivered[task_id].append(project_files.revision_ref(revision, item))
     return ProjectOrdersResponse(
         orders=[
             ProjectOrderTask(

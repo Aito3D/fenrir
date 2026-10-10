@@ -276,7 +276,7 @@ async def test_incomplete_group_leaves_no_marker(db_session, monkeypatch):
 def test_external_marker_is_content_hash(tmp_path):
     path = tmp_path / "x.gcode"
     path.write_bytes(b"abc")
-    assert project_filing._sha256_file(path) == hashlib.sha256(b"abc").hexdigest()
+    assert project_filing.calculate_file_hash(path) == hashlib.sha256(b"abc").hexdigest()
 
 
 def _sql(statement) -> str:
@@ -499,7 +499,7 @@ async def test_a_read_error_while_hashing_defers_to_the_move(db_session, tmp_pat
     def unreadable(*_args, **_kwargs):
         raise OSError("I/O error")
 
-    monkeypatch.setattr(project_filing, "_sha256_file", unreadable)
+    monkeypatch.setattr(project_filing, "calculate_file_hash", unreadable)
     monkeypatch.setattr(project_files, "_copy_hashing", unreadable)
     with pytest.raises(project_filing.LegacyMigrationError) as exc:
         await project_filing.migrate_project_legacy(db_session, await _fresh(db_session, Project, project_id))

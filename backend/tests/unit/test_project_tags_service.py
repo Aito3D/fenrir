@@ -11,6 +11,7 @@ from backend.app.services.project_tags import (
     get_or_create_tags,
     project_tag_refs,
     rank_tag_suggestions,
+    refresh_tag_mirrors,
     set_project_tags,
     sync_project_tags_from_string,
 )
@@ -138,3 +139,10 @@ def test_rank_dedupes_by_key_skips_empty_and_keeps_order():
         ["  ", "Neuf", "neuf ", "DRONE", "drone", "", "owned", "Autre", "Troisième"], catalogue, {9}
     )
     assert [(s.name, s.tag_id) for s in out] == [("Drone", 7), ("Neuf", None), ("Autre", None)]
+
+
+@pytest.mark.asyncio
+async def test_refresh_tag_mirrors_with_no_projects_is_a_noop(db_session):
+    project = await _project(db_session, tags="kept")
+    await refresh_tag_mirrors(db_session, [])
+    assert project.tags == "kept"

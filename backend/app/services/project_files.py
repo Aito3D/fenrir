@@ -975,7 +975,7 @@ async def _restore_and_rollback(db: AsyncSession, moved: Path | None, original: 
 class _TrashGuard(_CommitGuard):
     """``_committing`` whose undo puts back what ``trash()`` moved, then rolls back.
 
-    ``async with _committing_trash(db, project, path) as guard:`` whose body
+    ``async with _TrashGuard(db, project, path) as guard:`` whose body
     calls ``guard.trash()`` (moves ``path`` to the project trash; a no-op when
     ``path`` is None) and ends with ``await guard.commit()``. The undo is
     ``_restore_and_rollback(db, moved, path)``, ``moved`` being None until
@@ -1001,11 +1001,6 @@ class _TrashGuard(_CommitGuard):
         return self
 
 
-def _committing_trash(db: AsyncSession, project: Project, path: Path | None) -> _TrashGuard:
-    """See ``_TrashGuard``."""
-    return _TrashGuard(db, project, path)
-
-
 async def remove_file_from_revision(
     db: AsyncSession, project: Project, item: ProjectItem, revision: ProjectRevision, file_id: int
 ) -> None:
@@ -1024,7 +1019,7 @@ async def _remove_file_locked(db: AsyncSession, project: Project, revision: Proj
         raise ProjectFilesError(409, "A revision keeps at least one file; delete the revision instead")
 
     path = to_absolute_path(target.file_path)
-    async with _committing_trash(db, project, path) as guard:
+    async with _TrashGuard(db, project, path) as guard:
         await _delete_file_rows(db, file_ids=[target.id])
         await db.flush()
         guard.trash()
@@ -1056,7 +1051,7 @@ async def _delete_revision_locked(
     folder = item_dir(project, item.section, item.name).joinpath(
         f"R{revision.number}"
     )  # SEC-PATH-OK: fixed "R{int}" under a resolved item dir
-    async with _committing_trash(db, project, folder) as guard:
+    async with _TrashGuard(db, project, folder) as guard:
         file_ids = await _delete_file_rows(db, revision_ids=[revision.id])
         await _clear_links_to(db, [revision.id])
         await db.delete(revision)
@@ -1147,7 +1142,7 @@ async def _delete_item_locked(db: AsyncSession, project: Project, item: ProjectI
         if await revision_is_used(db, revision_id):
             raise ProjectFilesError(409, _ITEM_USED)
     folder = item_dir(project, item.section, item.name)
-    async with _committing_trash(db, project, folder) as guard:
+    async with _TrashGuard(db, project, folder) as guard:
         deleted_file_ids: dict[int, list[int]] = {}
         if revision_ids:
             for revision_id in revision_ids:
@@ -1327,7 +1322,7 @@ def _add_fork_rows(
         )
 
 
-def _ref(revision: ProjectRevision, item: ProjectItem) -> RevisionRef:
+def revision_ref(revision: ProjectRevision, item: ProjectItem) -> RevisionRef:
     return RevisionRef(
         id=revision.id,
         item_id=item.id,
@@ -1446,7 +1441,7 @@ def _outdated_by(
     ):
         newer = newest_valide.get(source.item_id)
         if newer is not None and newer.number > source.number:
-            return _ref(newer, source_item)
+            return revision_ref(newer, source_item)
     return None
 
 
@@ -1461,7 +1456,7 @@ def _revision_out(
         number=rev.number,
         status=rev.status,
         note=rev.note,
-        derived_from=_ref(source, source_item) if source and source_item else None,
+        derived_from=revision_ref(source, source_item) if source and source_item else None,
         outdated_by=_outdated_by(item, source, source_item, newest_valide),
         pipeline_name=rev.pipeline_name,
         print_profile=rev.print_profile,
@@ -1502,7 +1497,7 @@ def _sections(rows: _TreeRows) -> list[ProjectSectionOut]:
                 section=item.section,
                 name=item.name,
                 name_key=item.name_key,
-                forked_from=_ref(fork_source, fork_item) if fork_source and fork_item else None,
+                forked_from=revision_ref(fork_source, fork_item) if fork_source and fork_item else None,
                 revisions=[_revision_out(rev, item, rows, newest_valide) for rev in item_revisions],
             )
         )

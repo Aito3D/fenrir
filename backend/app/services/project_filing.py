@@ -12,7 +12,6 @@ the original row and the file on the mount are never touched.
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import logging
 import re
 from dataclasses import dataclass, field
@@ -24,7 +23,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.api.routes.library import to_absolute_path
+from backend.app.api.routes.library import calculate_file_hash, to_absolute_path
 from backend.app.models.library import LibraryFile, LibraryFolder
 from backend.app.models.project import Project
 from backend.app.models.project_item import ProjectItem, ProjectRevision
@@ -731,14 +730,6 @@ async def _legacy_files(db: AsyncSession, project_id: int) -> list[LibraryFile]:
     return [row for row in rows if is_printable_filename(row.filename)]
 
 
-def _sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
 async def _already_copied(db: AsyncSession, project_id: int, files: list[LibraryFile]) -> set[int]:
     """External files the project already holds a copy of (an earlier run): same
     SHA-256 and same filename as one of its revision files."""
@@ -766,7 +757,7 @@ async def _already_copied(db: AsyncSession, project_id: int, files: list[Library
         if path is None or not path.is_file():
             continue
         try:
-            digest = await asyncio.to_thread(_sha256_file, path)
+            digest = await asyncio.to_thread(calculate_file_hash, path)
         except OSError:
             continue  # the move reports it (source_missing / copy_failed)
         if (digest, filename) in held:
