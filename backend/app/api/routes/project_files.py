@@ -53,6 +53,7 @@ from backend.app.services import (
     project_filing,
     project_reslice,
 )
+from backend.app.services.actor import actor_name, actor_user_id
 from backend.app.services.slice_dispatch import http_exception_to_job_error, slice_dispatch
 
 logger = logging.getLogger(__name__)
@@ -151,15 +152,11 @@ async def _record_linked(
         db,
         project_id,
         kind,
-        actor=user.username if user is not None else None,
+        actor=actor_name(user),
         subject_label=subject_label,
         detail=detail,
         log=logger,
     )
-
-
-def _uid(user: User | None) -> int | None:
-    return user.id if user else None
 
 
 async def _item_out(db: AsyncSession, project: Project, item_id: int) -> ProjectItemOut:
@@ -232,7 +229,7 @@ async def create_item(
     project = await _project(db, project_id)
     try:
         svc.require_enabled_section(body.section)  # projects hold printing files only for now
-        item = await svc.create_item(db, project, section=body.section, name=body.name, user_id=_uid(user))
+        item = await svc.create_item(db, project, section=body.section, name=body.name, user_id=actor_user_id(user))
     except svc.ProjectFilesError as exc:
         _raise(exc)
     await db.commit()
@@ -281,7 +278,7 @@ async def upload_revision(
         item, project = await svc.get_item_for_project(db, item_id)
         svc.require_enabled_section(item.section)
         revision, warnings = await svc.add_revision(
-            db, project, item, files, note=note, derived_from_id=derived_from_id, user_id=_uid(user)
+            db, project, item, files, note=note, derived_from_id=derived_from_id, user_id=actor_user_id(user)
         )
     except svc.ProjectFilesError as exc:
         _raise(exc)
@@ -310,7 +307,7 @@ async def fork_item(
         revision, rev_item, _p = await svc.get_revision_bundle(db, body.revision_id)
         if rev_item.id != item.id:
             raise svc.ProjectFilesError(400, "Revision does not belong to this item")
-        forked = await svc.fork_revision(db, project, item, revision, body.name, _uid(user))
+        forked = await svc.fork_revision(db, project, item, revision, body.name, actor_user_id(user))
     except svc.ProjectFilesError as exc:
         _raise(exc)
     return await _item_out(db, project, forked.id)
@@ -327,7 +324,7 @@ async def add_files(
         svc.require_printable_uploads(files)
         revision, item, project = await svc.get_revision_bundle(db, revision_id)
         svc.require_enabled_section(item.section)
-        warnings = await svc.add_files_to_revision(db, project, item, revision, files, _uid(user))
+        warnings = await svc.add_files_to_revision(db, project, item, revision, files, actor_user_id(user))
     except svc.ProjectFilesError as exc:
         _raise(exc)
     return {"warnings": [w.model_dump() for w in warnings]}
@@ -359,7 +356,7 @@ async def reslice_revision(
     """Re-trancher (spec §12.1): slice one 3MF of this revision with a saved pipeline in the
     background; the result becomes the next revision of the same item. Poll ``status_url``."""
     try:
-        req = await project_reslice.prepare_reslice(db, revision_id, body, _uid(user))
+        req = await project_reslice.prepare_reslice(db, revision_id, body, actor_user_id(user))
     except svc.ProjectFilesError as exc:
         _raise(exc)
 
@@ -376,7 +373,7 @@ async def reslice_revision(
         kind="project_revision",
         source_id=req.revision_id,
         source_name=req.source_filename,
-        owner_id=_uid(user),
+        owner_id=actor_user_id(user),
         run=_run,
     )
     return ResliceStarted(job_id=job.id, status=job.status, status_url=f"/api/v1/slice-jobs/{job.id}")
@@ -395,7 +392,7 @@ async def update_revision(
         if "status" in fields and fields["status"] is None:
             raise svc.ProjectFilesError(400, "status cannot be null")
         previous_status = revision.status
-        await svc.update_revision(db, project, revision, fields=fields, user_id=_uid(user))
+        await svc.update_revision(db, project, revision, fields=fields, user_id=actor_user_id(user))
     except svc.ProjectFilesError as exc:
         _raise(exc)
     # Save the change first and OUTSIDE the best-effort event hook: a failed commit must surface.
@@ -507,7 +504,7 @@ async def import_library_files(
             files.append(row)
     try:
         result = await project_filing.move_library_files_to_project(
-            db, project, files, item_id=body.item_id, new_item_name=body.new_item_name, user_id=_uid(user)
+            db, project, files, item_id=body.item_id, new_item_name=body.new_item_name, user_id=actor_user_id(user)
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

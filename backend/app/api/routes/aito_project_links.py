@@ -5,6 +5,9 @@ never captured by a ``/aito/{project_id}`` route. Links are production
 metadata: nothing here touches the order's quote state or versioned fields.
 """
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,6 +29,7 @@ from backend.app.schemas.aito_project_links import (
     TaskProjectLink,
 )
 from backend.app.services import aito_project_links as svc, project_files
+from backend.app.services.actor import actor_name, actor_user_id
 
 router = APIRouter(prefix="/aito", tags=["aito"])
 
@@ -44,13 +48,19 @@ _projects_update = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE)
 _projects_create = RequirePermissionIfAuthEnabled(Permission.PROJECTS_CREATE)
 
 
-def _actor(user: User | None) -> str | None:
-    return user.username if user is not None else None
-
-
 async def _broadcast_changed(order_id: int, actor: str | None) -> None:
     """Best-effort board refresh signal after commit (same payload as aito.py)."""
     await svc.broadcast_orders_changed([order_id], actor)
+
+
+@asynccontextmanager
+async def _link_errors(db: AsyncSession) -> AsyncIterator[None]:
+    """A ``LinkError`` rolls the session back, then becomes its HTTP error."""
+    try:
+        yield
+    except svc.LinkError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
 async def _task(db: AsyncSession, task_id: int) -> AitoTask:
@@ -110,12 +120,9 @@ async def put_task_project(
     __: User | None = _projects_read,
 ) -> TaskProjectLink:
     task = await _task(db, task_id)
-    try:
-        await svc.link_task(db, task, body.project_id, actor=_actor(user))
-    except svc.LinkError as exc:
-        await db.rollback()
-        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
-    return await _commit_link(db, task, _actor(user))
+    async with _link_errors(db):
+        await svc.link_task(db, task, body.project_id, actor=actor_name(user))
+    return await _commit_link(db, task, actor_name(user))
 
 
 @router.post("/tasks/{task_id}/project", status_code=201)
@@ -127,7 +134,7 @@ async def post_task_project(
     __: User | None = _projects_create,
 ) -> TaskProjectLink:
     task = await _task(db, task_id)
-    try:
+    async with _link_errors(db):
         await svc.create_project_for_task(
             db,
             task,
@@ -135,12 +142,9 @@ async def post_task_project(
             description=body.description,
             tag_ids=body.tag_ids,
             new_tag_names=body.new_tag_names,
-            actor=_actor(user),
+            actor=actor_name(user),
         )
-    except svc.LinkError as exc:
-        await db.rollback()
-        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
-    return await _commit_link(db, task, _actor(user))
+    return await _commit_link(db, task, actor_name(user))
 
 
 @router.put("/tasks/{task_id}/deliveries")
@@ -152,12 +156,9 @@ async def put_task_deliveries(
     __: User | None = _projects_read,
 ) -> TaskProjectLink:
     task = await _task(db, task_id)
-    try:
-        await svc.set_deliveries(db, task, body.revision_ids, actor=_actor(user), user_id=user.id if user else None)
-    except svc.LinkError as exc:
-        await db.rollback()
-        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
-    return await _commit_link(db, task, _actor(user))
+    async with _link_errors(db):
+        await svc.set_deliveries(db, task, body.revision_ids, actor=actor_name(user), user_id=actor_user_id(user))
+    return await _commit_link(db, task, actor_name(user))
 
 
 @drop_router.post("/tasks/{task_id}/files", status_code=201)
@@ -172,15 +173,15 @@ async def drop_task_files(
     task = await _task(db, task_id)
     order_id = task.project_id
     try:
-        response = await svc.drop_files_on_task(db, task, files, user_id=user.id if user else None, actor=_actor(user))
-    except svc.LinkError as exc:
-        await db.rollback()
-        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+        async with _link_errors(db):
+            response = await svc.drop_files_on_task(
+                db, task, files, user_id=actor_user_id(user), actor=actor_name(user)
+            )
     except project_files.ProjectFilesError as exc:
         if getattr(exc, "stored_count", 0):
-            await _broadcast_changed(order_id, _actor(user))
+            await _broadcast_changed(order_id, actor_name(user))
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
-    await _broadcast_changed(order_id, _actor(user))
+    await _broadcast_changed(order_id, actor_name(user))
     return response
 
 

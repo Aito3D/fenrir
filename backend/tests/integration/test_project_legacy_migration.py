@@ -600,6 +600,9 @@ async def test_runner_records_the_failure_when_its_rollback_fails_too(
     messages = [(r.levelname, r.getMessage()) for r in caplog.records]
     assert ("WARNING", f"Legacy migration of project {project_id} failed") in messages
     assert ("DEBUG", "Rollback after a failed legacy migration failed too") in messages
+    [quiet] = [r for r in caplog.records if r.getMessage() == "Rollback after a failed legacy migration failed too"]
+    assert (quiet.name, quiet.funcName) == ("backend.app.services.project_filing", "_run_legacy_migration")
+    assert str(quiet.exc_info[1]) == "connection lost"
     assert (await _fresh(db_session, Project, project_id)).legacy_migrated_at is None
 
 

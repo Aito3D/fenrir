@@ -37,6 +37,7 @@ from backend.app.schemas.aito_project_links import (
 )
 from backend.app.schemas.project_files import RevisionRef
 from backend.app.services import aito_events, project_files, project_print_trace
+from backend.app.services.actor import actor_class, actor_name
 from backend.app.services.http_status_error import HttpStatusError
 from backend.app.services.project_filing import find_or_create_item, item_name_for_filename
 from backend.app.services.project_suggestions import SIMILAR_NAME_THRESHOLD, similar_projects
@@ -51,10 +52,6 @@ DROP_SECTION = "impression"  # drops land in Impression (projects hold printing 
 
 class LinkError(HttpStatusError):
     pass
-
-
-def _actor_class(actor: str | None) -> str:
-    return "user" if actor else "system"
 
 
 def _project_detail(project_id: int, project: Project | None) -> dict:
@@ -112,7 +109,7 @@ async def link_task(db: AsyncSession, task: AitoTask, project_id: int | None, *,
         db,
         task.project_id,
         kind,
-        actor_class=_actor_class(actor),
+        actor_class=actor_class(actor),
         actor_name=actor,
         subject_type="task",
         subject_id=task.id,
@@ -244,7 +241,7 @@ async def set_deliveries(
         db,
         task.project_id,
         "task.deliveries_changed",
-        actor_class=_actor_class(actor),
+        actor_class=actor_class(actor),
         actor_name=actor,
         subject_type="task",
         subject_id=task.id,
@@ -440,7 +437,7 @@ async def record_on_linked_orders(
             db,
             order_id,
             kind,
-            actor_class=_actor_class(actor),
+            actor_class=actor_class(actor),
             actor_name=actor,
             subject_label=subject_label,
             detail=dict(payload),
@@ -493,7 +490,7 @@ async def record_and_broadcast(
             from backend.app.models.user import User
 
             user = await db.get(User, actor_user_id)
-            actor = user.username if user is not None else None
+            actor = actor_name(user)
         async with db.begin_nested():
             if describe is not None:
                 subject_label, detail = describe()
@@ -532,7 +529,7 @@ async def _record_drop(
         db,
         order_id,
         "project.files_dropped",
-        actor_class=_actor_class(actor),
+        actor_class=actor_class(actor),
         actor_name=actor,
         subject_label=f"{len(results)} file(s)",
         detail={

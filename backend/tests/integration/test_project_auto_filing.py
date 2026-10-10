@@ -576,3 +576,13 @@ async def test_auto_file_survives_a_failing_rollback_after_an_error(monkeypatch,
     messages = [(r.levelname, r.getMessage()) for r in caplog.records]
     assert ("WARNING", "Auto-filing 'P-0042_support.3mf' by project code failed") in messages
     assert ("DEBUG", "Rollback after a failed auto-filing failed too") in messages
+    [quiet] = [r for r in caplog.records if r.getMessage() == "Rollback after a failed auto-filing failed too"]
+    assert (quiet.name, quiet.funcName) == ("backend.app.services.project_filing", "auto_file_by_code")
+    assert str(quiet.exc_info[1]) == "connection lost"
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_blank_name_has_no_project_name_suggestions():
+    """A whitespace-only name never queries the projects (the session is not touched)."""
+    assert await project_filing._project_name_suggestions(object(), "   ") == []

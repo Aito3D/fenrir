@@ -43,6 +43,24 @@ class TestProjectsAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_create_project_under_a_parent_names_it(self, async_client: AsyncClient, project_factory):
+        master = await project_factory(name="Master")
+        response = await async_client.post("/api/v1/projects/", json={"name": "Wing", "parent_id": master.id})
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert (body["parent_id"], body["parent_name"]) == (master.id, "Master")
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_project_under_a_missing_parent_is_400(self, async_client: AsyncClient):
+        response = await async_client.post("/api/v1/projects/", json={"name": "Wing", "parent_id": 999999})
+        assert response.status_code == 400
+        assert response.json()["detail"] == "Parent project not found"
+        listed = await async_client.get("/api/v1/projects/")
+        assert [p["name"] for p in listed.json()] == []
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_list_projects_with_data(self, async_client: AsyncClient, project_factory, db_session):
         """Verify list returns existing projects."""
         await project_factory(name="My Project")
@@ -2294,6 +2312,53 @@ class TestProjectBatchAddAndAttachments:
         assert bad.status_code == 400
         assert bad.json()["detail"].startswith("File type '.exe' not supported.")
         assert not (archive_dir / "projects" / str(project.id) / "attachments").exists()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_attachment_save_failure_is_500_and_records_nothing(
+        self, async_client: AsyncClient, project, archive_dir, db_session, monkeypatch
+    ):
+        from backend.app.api.routes import projects as projects_routes
+
+        def failing_open(*_a, **_k):
+            raise OSError("disk full")
+
+        monkeypatch.setattr(projects_routes, "open", failing_open, raising=False)
+        response = await async_client.post(
+            f"/api/v1/projects/{project.id}/attachments",
+            files={"file": ("spec.pdf", b"%PDF", "application/pdf")},
+        )
+        monkeypatch.undo()
+        assert response.status_code == 500
+        assert response.json()["detail"] == "Failed to save attachment"
+        await db_session.refresh(project)
+        assert project.attachments is None
+        assert list((archive_dir / "projects" / str(project.id) / "attachments").iterdir()) == []
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_attachment_delete_survives_a_failing_file_removal(
+        self, async_client: AsyncClient, project, archive_dir, monkeypatch, caplog
+    ):
+        from backend.app.api.routes import projects as projects_routes
+
+        upload = await async_client.post(
+            f"/api/v1/projects/{project.id}/attachments",
+            files={"file": ("spec.pdf", b"%PDF", "application/pdf")},
+        )
+        stored = upload.json()["filename"]
+
+        def failing_remove(_path):
+            raise PermissionError("locked")
+
+        monkeypatch.setattr(projects_routes.os, "remove", failing_remove)
+        with caplog.at_level("WARNING", logger=projects_routes.logger.name):
+            deleted = await async_client.delete(f"/api/v1/projects/{project.id}/attachments/{stored}")
+        monkeypatch.undo()
+        assert deleted.status_code == 200
+        assert deleted.json() == {"status": "success", "message": "Attachment deleted", "attachments": None}
+        assert (archive_dir / "projects" / str(project.id) / "attachments" / stored).exists()
+        assert "Failed to delete attachment file: locked" in caplog.text
 
     @pytest.mark.asyncio
     @pytest.mark.integration

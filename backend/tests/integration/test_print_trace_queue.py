@@ -719,3 +719,69 @@ async def test_timeline_names_queued_and_printing_items(async_client: AsyncClien
         ("print_started", "Support reprint"),
         ("queued", f"Print #{items[2].id}"),
     ]
+
+
+class _FailingSavepointDb:
+    """A session whose savepoint body fails and whose rollback fails too."""
+
+    def __init__(self):
+        self.rollbacks = 0
+        self.commits = 0
+
+    def begin_nested(self):
+        db = self
+
+        class _Savepoint:
+            async def __aenter__(self):
+                return db
+
+            async def __aexit__(self, *_exc):
+                return False
+
+        return _Savepoint()
+
+    async def commit(self):
+        self.commits += 1
+
+    async def rollback(self):
+        self.rollbacks += 1
+        raise RuntimeError("connection lost")
+
+
+@pytest.mark.asyncio
+async def test_record_queued_survives_a_failing_rollback(monkeypatch, caplog):
+    """T-194 pin: the event failure and the failed rollback are both logged as
+    warnings with their tracebacks, nothing is broadcast and nothing raises."""
+    from backend.app.services import aito_events, aito_project_links, project_print_trace
+
+    async def record_fails(*_a, **_k):
+        raise ValueError("event store down")
+
+    broadcasts: list = []
+
+    async def fake_broadcast(order_ids, actor):
+        broadcasts.append((order_ids, actor))
+
+    monkeypatch.setattr(aito_events, "record", record_fails)
+    monkeypatch.setattr(aito_project_links, "broadcast_orders_changed", fake_broadcast)
+    db = _FailingSavepointDb()
+    context = project_print_trace.PrintContext(revision_id=1, aito_task_id=5, project_id=2, order_id=9)
+    with caplog.at_level("DEBUG", logger=project_print_trace.logger.name):
+        assert await project_print_trace.record_queued(db, context, copies=2, actor="ana") is None
+
+    assert (db.rollbacks, db.commits, broadcasts) == (1, 0, [])
+    records = [r for r in caplog.records if r.name == project_print_trace.logger.name]
+    assert [(r.levelname, r.getMessage()) for r in records] == [
+        ("WARNING", "print.queued_from_revision event failed for order 9"),
+        ("WARNING", "rollback after print.queued_from_revision failure failed"),
+    ]
+    assert str(records[0].exc_info[1]) == "event store down"
+    assert str(records[1].exc_info[1]) == "connection lost"
+    assert records[1].funcName == "record_queued"
+
+
+@pytest.mark.asyncio
+async def test_source_trace_without_a_source_is_empty():
+    from backend.app.services.project_print_trace import _source_trace
+
+    assert await _source_trace(object(), None, None) == (None, None)

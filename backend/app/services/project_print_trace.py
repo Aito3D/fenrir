@@ -26,6 +26,8 @@ from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.project import Project
 from backend.app.models.project_item import ProjectItem, ProjectRevision
 from backend.app.services import aito_events
+from backend.app.services.actor import actor_class
+from backend.app.services.db_quiet import rollback_quietly
 from backend.app.services.http_status_error import HttpStatusError
 
 logger = logging.getLogger(__name__)
@@ -158,7 +160,7 @@ async def record_queued(db: AsyncSession, context: PrintContext, *, copies: int,
                 db,
                 context.order_id,
                 QUEUED_KIND,
-                actor_class="user" if actor else "system",
+                actor_class=actor_class(actor),
                 actor_name=actor,
                 subject_type="task",
                 subject_id=context.aito_task_id,
@@ -173,10 +175,7 @@ async def record_queued(db: AsyncSession, context: PrintContext, *, copies: int,
         await db.commit()
     except Exception:
         logger.warning("%s event failed for order %s", QUEUED_KIND, context.order_id, exc_info=True)
-        try:
-            await db.rollback()
-        except Exception:
-            logger.warning("rollback after %s failure failed", QUEUED_KIND, exc_info=True)
+        await rollback_quietly(db, logger, logging.WARNING, "rollback after %s failure failed", QUEUED_KIND)
         return
     # Lazy: aito_project_links -> project_files -> routes.library -> routes.print_queue
     # -> this module would be an import cycle at startup.

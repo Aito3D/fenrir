@@ -30,6 +30,7 @@ from backend.app.models.project import Project
 from backend.app.models.project_item import ProjectItem, ProjectRevision
 from backend.app.schemas.project_files import ProjectSuggestionForFile
 from backend.app.services import project_files
+from backend.app.services.db_quiet import rollback_quietly
 from backend.app.services.project_codes import format_project_code
 from backend.app.services.project_files import RevisionSource
 from backend.app.services.project_storage import ENABLED_SECTIONS, PRINTABLE_EXTENSIONS, is_printable_filename
@@ -552,10 +553,7 @@ async def auto_file_by_code(
         return await _auto_file_by_code(db, filename=filename, path=path, library_file=library_file, user_id=user_id)
     except Exception:
         logger.warning("Auto-filing %r by project code failed", filename, exc_info=True)
-        try:
-            await db.rollback()
-        except Exception:
-            logger.debug("Rollback after a failed auto-filing failed too", exc_info=True)
+        await rollback_quietly(db, logger, logging.DEBUG, "Rollback after a failed auto-filing failed too")
         return None
 
 
@@ -886,10 +884,9 @@ async def _run_legacy_migration() -> None:
                     logger.warning("Legacy migration of project %s failed", project_id, exc_info=True)
                     detail = exc.detail if isinstance(exc, project_files.ProjectFilesError) else str(exc)
                     state["failures"].append({"project_id": project_id, "code": code, "error": str(detail)[:500]})
-                    try:
-                        await db.rollback()
-                    except Exception:
-                        logger.debug("Rollback after a failed legacy migration failed too", exc_info=True)
+                    await rollback_quietly(
+                        db, logger, logging.DEBUG, "Rollback after a failed legacy migration failed too"
+                    )
             state["done"] += 1
             state["current"] = None
     except Exception:

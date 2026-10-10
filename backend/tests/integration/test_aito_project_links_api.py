@@ -584,3 +584,85 @@ async def test_concurrent_drop_creating_the_same_item_joins_it(
         (await db_session.execute(select(ProjectItem).where(ProjectItem.project_id == project["id"]))).scalars().all()
     )
     assert [(i.name, i.id) for i in items] == [("a", result["item_id"])]
+
+
+_LINK_ERROR_SITES = [
+    ("link_task", "put", "project", {"json": {"project_id": 1}}),
+    ("create_project_for_task", "post", "project", {"json": {"name": "Nouveau"}}),
+    ("set_deliveries", "put", "deliveries", {"json": {"revision_ids": [1]}}),
+    ("drop_files_on_task", "post", "files", {"files": [("files", ("a.3mf", b"x", "application/octet-stream"))]}),
+]
+
+
+@pytest.mark.parametrize(("op", "method", "path", "kwargs"), _LINK_ERROR_SITES, ids=[s[0] for s in _LINK_ERROR_SITES])
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_link_error_rolls_back_then_maps_to_its_status(
+    async_client: AsyncClient, db_session, monkeypatch, op, method, path, kwargs
+):
+    """T-195 pin: a LinkError from the service op rolls the session back, then
+    becomes an HTTP error with the LinkError's own status and detail."""
+    order = await _order(db_session)
+    task = await _task(db_session, order)
+    calls: list[str] = []
+
+    async def teapot(*_a, **_k):
+        calls.append("op")
+        raise links_service.LinkError(418, "teapot")
+
+    real_rollback = AsyncSession.rollback
+
+    async def spy_rollback(self):
+        calls.append("rollback")
+        return await real_rollback(self)
+
+    monkeypatch.setattr(links_routes.svc, op, teapot)
+    monkeypatch.setattr(AsyncSession, "rollback", spy_rollback)
+    response = await getattr(async_client, method)(f"/api/v1/aito/tasks/{task.id}/{path}", **kwargs)
+    monkeypatch.undo()
+    assert response.status_code == 418
+    assert response.json()["detail"] == "teapot"
+    # The route's own rollback, then get_db's teardown rollback on the propagating HTTPException.
+    assert calls == ["op", "rollback", "rollback"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_link_error_chains_and_other_errors_pass_through(db_session, monkeypatch):
+    """T-195 pin, called directly: the HTTPException is raised after the rollback
+    and chains the LinkError; any other exception propagates untouched, no rollback."""
+    order = await _order(db_session)
+    task_id = (await _task(db_session, order)).id
+    rolled_back: list[bool] = []
+    real_rollback = AsyncSession.rollback
+
+    async def spy_rollback(self):
+        rolled_back.append(True)
+        return await real_rollback(self)
+
+    link_error = links_service.LinkError(418, "teapot")
+
+    async def teapot(*_a, **_k):
+        raise link_error
+
+    monkeypatch.setattr(AsyncSession, "rollback", spy_rollback)
+    monkeypatch.setattr(links_routes.svc, "link_task", teapot)
+    body = links_routes.TaskLinkRequest(project_id=1)
+    with pytest.raises(HTTPException) as err:
+        await links_routes.put_task_project(task_id, body, db=db_session, user=None, __=None)
+    assert rolled_back == [True]
+    assert (err.value.status_code, err.value.detail) == (418, "teapot")
+    assert err.value.__cause__ is link_error
+
+    rolled_back.clear()
+    boom = RuntimeError("boom")
+
+    async def other(*_a, **_k):
+        raise boom
+
+    monkeypatch.setattr(links_routes.svc, "link_task", other)
+    with pytest.raises(RuntimeError) as err2:
+        await links_routes.put_task_project(task_id, body, db=db_session, user=None, __=None)
+    assert err2.value is boom
+    assert rolled_back == []
+    monkeypatch.undo()
