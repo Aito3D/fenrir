@@ -283,14 +283,14 @@ async def upload_revision(
     except svc.ProjectFilesError as exc:
         _raise(exc)
     project_id, revision_id = project.id, revision.id
-    await _record_linked(
-        db,
-        project_id,
-        "project.revision_added",
-        user,
-        f"{item.name} R{revision.number}",
-        {"section": item.section, "item_id": item.id, "revision_id": revision_id},
+    label, detail = aito_links.revision_added_payload(
+        item_name=item.name,
+        revision_number=revision.number,
+        section=item.section,
+        item_id=item.id,
+        revision_id=revision_id,
     )
+    await _record_linked(db, project_id, "project.revision_added", user, label, detail)
     project = await _project(db, project_id)  # a failed event commit rolls back and expires the instances
     return RevisionUploadResponse(revision=await _revision_out(db, project, revision_id), warnings=warnings)
 
@@ -512,14 +512,14 @@ async def import_library_files(
         _raise(exc)
 
     for revision_id, entry in result.revisions().items():
-        await _record_linked(
-            db,
-            project_id,
-            "project.revision_added",
-            user,
-            f"{entry['item_name']} R{entry['revision_number']}",
-            {"section": entry["section"], "item_id": entry["item_id"], "revision_id": revision_id},
+        label, detail = aito_links.revision_added_payload(
+            item_name=entry["item_name"],
+            revision_number=entry["revision_number"],
+            section=entry["section"],
+            item_id=entry["item_id"],
+            revision_id=revision_id,
         )
+        await _record_linked(db, project_id, "project.revision_added", user, label, detail)
     return ImportLibraryFilesResponse(moved=result.moved, copied=result.copied, skipped=pre_skipped + result.skipped)
 
 

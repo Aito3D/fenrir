@@ -336,6 +336,7 @@ def require_printable_uploads(uploads: list[UploadFile])
 def reset_legacy_migration_state()
 def reslice_note(source_number: int, pipeline_name: str)
 def resolve_in_projects(*parts: str)
+def revision_added_payload(
 def revision_dir(project, section: str, item_name: str, number: int)
 def sanitize_component(name: str, fallback: str = "sans-nom")
 def section_for_filename(name: str)

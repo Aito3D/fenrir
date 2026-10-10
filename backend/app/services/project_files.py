@@ -83,7 +83,10 @@ STL_THUMBNAIL_MAX_BYTES = 200 * 1024 * 1024
 
 
 class ProjectFilesError(HttpStatusError):
-    pass
+    # Declared, not defaulted: only drop_files_on_task sets it (the groups it had already
+    # stored when this was raised); the drop route reads it with getattr and still
+    # broadcasts when it is non-zero.
+    stored_count: int
 
 
 def utcnow() -> datetime:

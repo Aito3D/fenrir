@@ -14,6 +14,7 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.api.routes.library import slice_and_persist, to_absolute_path
 from backend.app.models.library import LibraryFile
 from backend.app.models.slicer_pipeline import SlicerPipeline
 from backend.app.schemas.project_files import ResliceBody
@@ -114,16 +115,16 @@ async def prepare_reslice(db: AsyncSession, revision_id: int, body: ResliceBody,
 
 
 async def _slice(db: AsyncSession, **kwargs):
-    """Test seam around the library slicer (imported lazily: it lives in a route module)."""
-    from backend.app.api.routes.library import slice_and_persist
-
+    """Test seam around the library slicer."""
     return await slice_and_persist(db, **kwargs)
 
 
 async def _record_revision_added(db: AsyncSession, project_id: int, entry: dict, user_id: int | None) -> None:
     """``project.revision_added`` on the linked Aito orders, through the helper shared with
-    auto-filing (imported lazily: project_filing pulls in the library route module).
-    Never raises: an event is not worth failing a revision that is already committed."""
+    auto-filing (looked up at call time, so a patched ``project_filing.record_revision_added``
+    is the one called). Never raises: the helper swallows the event's own failures, but a
+    failing rollback inside it propagates, and an event is not worth failing a revision
+    that is already committed."""
     from backend.app.services.project_filing import record_revision_added
 
     try:
@@ -150,8 +151,6 @@ async def run_reslice(db: AsyncSession, req: ResliceRequest, *, job_id: int | No
 
     Raises ``ProjectFilesError`` (pipeline gone, source revision or item deleted or
     renamed into a conflict meanwhile) or the slicer's ``HTTPException``."""
-    from backend.app.api.routes.library import to_absolute_path
-
     pipeline = await load_pipeline(db, req.pipeline_id)
     pipeline_id, pipeline_name = pipeline.id, pipeline.name
     sliced = await _slice(

@@ -10,6 +10,9 @@ from sqlalchemy import select
 from backend.app.api.routes.library import to_absolute_path
 from backend.app.core.auth import create_access_token, get_password_hash
 from backend.app.core.permissions import Permission
+from backend.app.models.aito_event import AitoEvent
+from backend.app.models.aito_project import AitoProject
+from backend.app.models.aito_task import AitoTask
 from backend.app.models.group import Group
 from backend.app.models.library import LibraryFile
 from backend.app.models.project import Project
@@ -57,6 +60,41 @@ async def test_import_moves_and_reports(async_client: AsyncClient, db_session):
     ).scalar_one()
     assert row.project_id == project["id"] and row.revision_id == moved["revision_id"]
     assert to_absolute_path(row.file_path).is_file()
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_import_records_the_revision_added_label_and_detail(async_client: AsyncClient, db_session):
+    """Each imported revision is a ``project.revision_added`` on the linked orders:
+    ``"<item> R<n>"`` and section/item_id/revision_id, in that order after project_id/code."""
+    project = await _project(async_client)
+    order = AitoProject(description="Commande", board_column="devis", status="active", client_id="C1")
+    db_session.add(order)
+    await db_session.commit()
+    db_session.add(AitoTask(project_id=order.id, title="Support", linked_project_id=project["id"]))
+    await db_session.commit()
+    printable = await _managed(db_session, "Bracket.3mf")
+
+    response = await async_client.post(_import_url(project["id"]), json={"file_ids": [printable.id]})
+    assert response.status_code == 200, response.text
+    moved = response.json()["moved"][0]
+    [event] = (
+        (
+            await db_session.execute(
+                select(AitoEvent).where(AitoEvent.project_id == order.id, AitoEvent.kind == "project.revision_added")
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert event.subject_label == "Bracket R1"
+    assert list(event.detail.items()) == [
+        ("project_id", project["id"]),
+        ("code", project["code"]),
+        ("section", "impression"),
+        ("item_id", moved["item_id"]),
+        ("revision_id", moved["revision_id"]),
+    ]
 
 
 @pytest.mark.asyncio

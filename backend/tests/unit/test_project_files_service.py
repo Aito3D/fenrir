@@ -2415,3 +2415,28 @@ async def test_rename_refuses_a_name_whose_folder_already_exists(db_session, roo
     assert (base / "Support" / "R1" / "a.step").exists()
     name = (await db_session.execute(select(ProjectItem.name).where(ProjectItem.id == item.id))).scalar_one()
     assert name == "Support"
+
+
+@pytest.mark.asyncio
+async def test_duplicate_warnings_are_empty_when_no_row_has_a_hash(db_session: AsyncSession):
+    """Rows without a ``file_hash`` cannot match anything: no warning, no lookup."""
+    rows = [LibraryFile(filename="a.3mf", file_hash=None), LibraryFile(filename="b.3mf", file_hash="")]
+    assert await project_files._duplicate_warnings(db_session, None, None, rows) == []
+
+
+@pytest.mark.asyncio
+async def test_delete_file_rows_with_nothing_to_delete_returns_empty(db_session: AsyncSession):
+    """A revision without library rows deletes nothing and reports no ids."""
+    assert await project_files._delete_file_rows(db_session, revision_ids=[987654]) == []
+    assert await project_files._delete_file_rows(db_session, revision_ids=None) == []
+    assert await project_files._delete_file_rows(db_session, file_ids=[]) == []
+
+
+def test_project_files_error_declares_stored_count_without_a_default():
+    """``stored_count`` is annotated on the class but absent until a task drop sets it on the instance."""
+    assert "stored_count" in ProjectFilesError.__annotations__
+    err = ProjectFilesError(409, "x")
+    assert not hasattr(err, "stored_count")
+    err.stored_count = 2
+    assert err.stored_count == 2
+    assert not hasattr(ProjectFilesError(409, "y"), "stored_count")

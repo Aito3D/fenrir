@@ -14,7 +14,7 @@ from backend.app.models.aito_task import AitoTask
 from backend.app.models.aito_task_delivery import AitoTaskDelivery
 from backend.app.models.library import LibraryTag
 from backend.app.models.project import Project
-from backend.app.models.project_item import ProjectRevision
+from backend.app.models.project_item import ProjectItem, ProjectRevision
 from backend.app.models.user import User
 from backend.app.services import aito_project_links as links
 from backend.app.services.aito_events import KINDS
@@ -864,3 +864,72 @@ async def test_drop_still_returns_when_its_own_event_fails(db_session, monkeypat
     assert f"project.files_dropped event failed for order {order_id}" in caplog.text
     assert await _events(db_session, "project.files_dropped") == []
     assert (await db_session.execute(select(ProjectRevision.number))).scalars().all() == [1]
+
+
+@pytest.mark.asyncio
+async def test_drop_failing_on_a_later_group_reports_the_stored_count(db_session, monkeypatch):
+    """A ``ProjectFilesError`` on the second group carries ``stored_count`` 1 (the route reads it to broadcast)."""
+    project = await _project(db_session)
+    order = await _order(db_session)
+    task = await _task(db_session, order, linked=project.id)
+    await db_session.commit()
+
+    real = links.project_files.add_revision
+    calls = {"n": 0}
+
+    async def second_fails(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise links.project_files.ProjectFilesError(409, "boom")
+        return await real(*args, **kwargs)
+
+    monkeypatch.setattr(links.project_files, "add_revision", second_fails)
+    with pytest.raises(links.project_files.ProjectFilesError) as err:
+        await links.drop_files_on_task(
+            db_session, task, [_upload("a.3mf"), _upload("b.3mf")], user_id=None, actor="Paul"
+        )
+
+    assert (err.value.status_code, err.value.detail) == (409, "boom")
+    assert err.value.stored_count == 1
+    assert not hasattr(links.project_files.ProjectFilesError, "stored_count")  # set on the instance only
+
+
+def test_revision_added_payload_label_and_detail_key_order():
+    label, detail = links.revision_added_payload(
+        item_name="Support", revision_number=3, section="impression", item_id=4, revision_id=11
+    )
+    assert label == "Support R3"
+    assert list(detail.items()) == [("section", "impression"), ("item_id", 4), ("revision_id", 11)]
+
+
+@pytest.mark.asyncio
+async def test_drop_fans_out_the_revision_added_payload(db_session, monkeypatch):
+    """A dropped group's fan-out gets section/item_id/revision_id (in order) and ``"<item> R<n>"``."""
+    project = await _project(db_session)
+    order = await _order(db_session)
+    task = await _task(db_session, order, linked=project.id)
+    await db_session.commit()
+    project_id, order_id = project.id, order.id
+    calls = []
+
+    async def capture(_db, pid, detail, label, *, dropping_order_id, actor):
+        calls.append((pid, list(detail.items()), label, dropping_order_id, actor))
+        return []
+
+    monkeypatch.setattr(links, "_fan_out_revision", capture)
+    await links.drop_files_on_task(db_session, task, [_upload("a.3mf")], user_id=None, actor="Paul")
+
+    item_id, revision_id = (
+        await db_session.execute(
+            select(ProjectItem.id, ProjectRevision.id).join(ProjectRevision, ProjectRevision.item_id == ProjectItem.id)
+        )
+    ).one()
+    assert calls == [
+        (
+            project_id,
+            [("section", "impression"), ("item_id", item_id), ("revision_id", revision_id)],
+            "a R1",
+            order_id,
+            "Paul",
+        )
+    ]

@@ -459,6 +459,14 @@ async def broadcast_orders_changed(order_ids: Iterable[int], actor: str | None) 
             logger.warning("aito_changed broadcast failed for order %s", order_id, exc_info=True)
 
 
+def revision_added_payload(
+    *, item_name: str, revision_number: int, section: str, item_id: int, revision_id: int
+) -> tuple[str, dict]:
+    """``(subject_label, detail)`` of a ``project.revision_added`` event: ``"<item> R<n>"``
+    and ``{"section", "item_id", "revision_id"}``, in that key order."""
+    return f"{item_name} R{revision_number}", {"section": section, "item_id": item_id, "revision_id": revision_id}
+
+
 async def record_and_broadcast(
     db: AsyncSession,
     project_id: int,
@@ -623,11 +631,14 @@ async def drop_files_on_task(
                 )
                 for upload in group
             )
+            label, detail = revision_added_payload(
+                item_name=item_name, revision_number=number, section=section, item_id=item_id, revision_id=revision_id
+            )
             notified += await _fan_out_revision(
                 db,
                 project_id,
-                {"section": section, "item_id": item_id, "revision_id": revision_id},
-                f"{item_name} R{number}",
+                detail,
+                label,
                 dropping_order_id=order_id,
                 actor=actor,
             )
@@ -635,7 +646,8 @@ async def drop_files_on_task(
             if project is None:
                 raise LinkError(409, "Task is not linked to a project")
     except Exception as exc:
-        exc.stored_count = len(results)  # type: ignore[attr-defined]  # lets the route still broadcast
+        # Set on any exception; ProjectFilesError declares it, and the route reads it there to still broadcast.
+        exc.stored_count = len(results)  # type: ignore[attr-defined]
         raise
     finally:
         if results:

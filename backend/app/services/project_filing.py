@@ -649,9 +649,12 @@ async def record_revision_added(db: AsyncSession, project_id: int, entry: dict, 
         project_id,
         "project.revision_added",
         actor_user_id=user_id,
-        describe=lambda: (
-            f"{entry['item_name']} R{entry['revision_number']}",
-            {"section": entry["section"], "item_id": entry["item_id"], "revision_id": entry["revision_id"]},
+        describe=lambda: aito_links.revision_added_payload(
+            item_name=entry["item_name"],
+            revision_number=entry["revision_number"],
+            section=entry["section"],
+            item_id=entry["item_id"],
+            revision_id=entry["revision_id"],
         ),
         log=logger,
     )

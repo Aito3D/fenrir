@@ -655,8 +655,6 @@ async def test_reslice_refuses_a_source_swapped_for_a_symlink(
 @pytest.mark.asyncio
 async def test_slice_seam_delegates_to_the_library_slicer(monkeypatch):
     """``_slice`` forwards the session and every keyword to ``slice_and_persist`` and returns its result."""
-    from backend.app.api.routes import library
-
     calls = []
     sentinel_db, sentinel_result = object(), object()
 
@@ -664,7 +662,7 @@ async def test_slice_seam_delegates_to_the_library_slicer(monkeypatch):
         calls.append((db, kwargs))
         return sentinel_result
 
-    monkeypatch.setattr(library, "slice_and_persist", fake_slice_and_persist)
+    monkeypatch.setattr(project_reslice, "slice_and_persist", fake_slice_and_persist)
     result = await project_reslice._slice(sentinel_db, model_bytes=b"3mf", model_filename="a.3mf", job_id=7)
     assert result is sentinel_result
     assert calls == [(sentinel_db, {"model_bytes": b"3mf", "model_filename": "a.3mf", "job_id": 7})]

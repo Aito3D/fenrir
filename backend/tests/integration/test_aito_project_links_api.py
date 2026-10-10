@@ -256,6 +256,36 @@ async def test_revision_events_on_every_linked_order(async_client: AsyncClient, 
         assert changed[0]["detail"]["to"] == "valide"
 
 
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_upload_revision_records_the_revision_added_label_and_detail(async_client: AsyncClient, db_session):
+    """The upload route's ``project.revision_added``: ``"<item> R<n>"`` and section/item_id/revision_id, in order."""
+    project = await _project(async_client)
+    order = await _order(db_session)
+    task = await _task(db_session, order)
+    await async_client.put(f"/api/v1/aito/tasks/{task.id}/project", json={"project_id": project["id"]})
+
+    revision_id = await _revision(async_client, project["id"])
+    item_id = (await db_session.execute(select(ProjectItem.id).where(ProjectItem.name == "Pièce"))).scalar_one()
+    [event] = (
+        (
+            await db_session.execute(
+                select(AitoEvent).where(AitoEvent.project_id == order.id, AitoEvent.kind == "project.revision_added")
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert event.subject_label == "Pièce R1"
+    assert list(event.detail.items()) == [
+        ("project_id", project["id"]),
+        ("code", project["code"]),
+        ("section", "impression"),
+        ("item_id", item_id),
+        ("revision_id", revision_id),
+    ]
+
+
 async def _linked_revision(async_client, db_session):
     project = await _project(async_client)
     order = await _order(db_session)
@@ -358,6 +388,33 @@ async def test_drop_partial_failure_keeps_stored_group_and_records_once(
     )
     assert len(events) == 1
     assert [r["filename"] for r in events[0].detail["results"]] == ["a.3mf"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_drop_failing_on_the_first_group_does_not_broadcast(async_client: AsyncClient, db_session, monkeypatch):
+    """Nothing stored (``stored_count`` 0): the 409 goes out without an aito_changed broadcast."""
+    order = await _order(db_session)
+    task = await _task(db_session, order)
+    project = await _project(async_client)
+    await async_client.put(f"/api/v1/aito/tasks/{task.id}/project", json={"project_id": project["id"]})
+
+    async def always_fails(*_args, **_kwargs):
+        raise files_service.ProjectFilesError(409, "boom")
+
+    broadcasts = []
+
+    async def fake_broadcast(order_id, actor):
+        broadcasts.append(order_id)
+
+    monkeypatch.setattr(links_service.project_files, "add_revision", always_fails)
+    monkeypatch.setattr(links_routes, "_broadcast_changed", fake_broadcast)
+
+    response = await async_client.post(
+        f"/api/v1/aito/tasks/{task.id}/files", files=[("files", ("a.3mf", b"x", "application/octet-stream"))]
+    )
+    assert (response.status_code, response.json()["detail"]) == (409, "boom")
+    assert broadcasts == []
 
 
 @pytest.mark.asyncio
