@@ -220,11 +220,9 @@ async function throwApiError(response: Response): Promise<never> {
 
 /** POST JSON and return the response body as a Blob (label PDFs and images). */
 async function postForBlob(endpoint: string, data: unknown, signal?: AbortSignal): Promise<Blob> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
   const response = await fetch(`${API_BASE}${endpoint}`, {
     method: 'POST',
-    headers,
+    headers: { 'Content-Type': 'application/json', ...bearerAuthHeaders() },
     body: JSON.stringify(data),
     signal,
   });
@@ -275,11 +273,9 @@ async function request<T>(
 async function uploadSpoolsCsv<T>(file: File, dryRun: boolean): Promise<T> {
   const form = new FormData();
   form.append('file', file);
-  const headers: Record<string, string> = {};
-  if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
   const response = await fetch(`${API_BASE}/inventory/spools/import${dryRun ? '?dry_run=true' : ''}`, {
     method: 'POST',
-    headers,
+    headers: bearerAuthHeaders(),
     body: form,
   });
   if (!response.ok) {

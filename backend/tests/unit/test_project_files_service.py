@@ -1187,6 +1187,82 @@ async def test_delete_item_stays_trashed_when_the_commit_task_is_cancelled_at_sh
 
 
 @pytest.mark.asyncio
+async def test_add_files_keeps_files_when_the_commit_task_is_cancelled_at_shutdown(
+    db_session, root, monkeypatch, test_engine
+):
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project)
+    await db_session.commit()
+    base, rev_id = root / project.storage_dir, rev.id
+    in_flight, release, started = _commit_task_cancelled_at_shutdown(db_session, monkeypatch)
+    await _shutdown_mid_commit(
+        add_files_to_revision(db_session, project, item, rev, [upload("b.step", b"b")], user_id=None),
+        in_flight,
+        release,
+        started,
+    )
+    names = await _fresh_scalars(test_engine, select(LibraryFile.filename).where(LibraryFile.revision_id == rev_id))
+    assert sorted(names) == ["a.step", "b.step"]
+    folder = base / "Modélisation" / "Support" / "R1"
+    assert sorted(p.name for p in folder.iterdir()) == ["a.step", "b.step"]
+    assert (folder / "a.step").read_bytes() == b"data"
+    assert (folder / "b.step").read_bytes() == b"b"  # no cleanup: the committed row still points at its bytes
+
+
+@pytest.mark.asyncio
+async def test_rename_item_keeps_the_new_folder_when_the_commit_task_is_cancelled_at_shutdown(
+    db_session, root, monkeypatch, test_engine
+):
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project)
+    await db_session.commit()
+    base, item_id, rev_id = root / project.storage_dir, item.id, rev.id
+    in_flight, release, started = _commit_task_cancelled_at_shutdown(db_session, monkeypatch)
+    await _shutdown_mid_commit(rename_item(db_session, project, item, "Nouveau"), in_flight, release, started)
+    assert await _fresh_scalars(test_engine, select(ProjectItem.name).where(ProjectItem.id == item_id)) == ["Nouveau"]
+    paths = await _fresh_scalars(test_engine, select(LibraryFile.file_path).where(LibraryFile.revision_id == rev_id))
+    assert len(paths) == 1 and paths[0].endswith("Nouveau/R1/a.step")
+    assert (base / "Modélisation" / "Nouveau" / "R1" / "a.step").read_bytes() == b"data"
+    assert not (base / "Modélisation" / "Support").exists()  # no rename-back: the folder matches the committed paths
+
+
+@pytest.mark.asyncio
+async def test_fork_keeps_the_copied_files_when_the_commit_task_is_cancelled_at_shutdown(
+    db_session, root, monkeypatch, tmp_path, test_engine
+):
+    from backend.app.api.routes.library import to_absolute_path
+
+    project, item, rev, thumbs, section_dir = await _fork_source_with_thumbnail(db_session, monkeypatch, tmp_path)
+    project_id, rev_id = project.id, rev.id
+    in_flight, release, started = _commit_task_cancelled_at_shutdown(db_session, monkeypatch)
+    await _shutdown_mid_commit(
+        fork_revision(db_session, project, item, rev, "Support B", user_id=None), in_flight, release, started
+    )
+    forked_ids = await _fresh_scalars(
+        test_engine,
+        select(ProjectItem.id).where(
+            ProjectItem.project_id == project_id,
+            ProjectItem.name == "Support B",
+            ProjectItem.forked_from_revision_id == rev_id,
+        ),
+    )
+    assert len(forked_ids) == 1
+    r1_ids = await _fresh_scalars(
+        test_engine,
+        select(ProjectRevision.id).where(ProjectRevision.item_id == forked_ids[0], ProjectRevision.number == 1),
+    )
+    assert len(r1_ids) == 1
+    rows = await _fresh_scalars(test_engine, select(LibraryFile).where(LibraryFile.revision_id == r1_ids[0]))
+    assert [r.filename for r in rows] == ["plate.3mf"]
+    copied = section_dir / "Support B" / "R1" / "plate.3mf"
+    assert to_absolute_path(rows[0].file_path) == copied
+    assert copied.read_bytes() == (section_dir / "Support" / "R1" / "plate.3mf").read_bytes()
+    copied_thumb = to_absolute_path(rows[0].thumbnail_path)
+    assert copied_thumb is not None and copied_thumb.parent == thumbs and copied_thumb.is_file()
+    assert len(list(thumbs.iterdir())) == 2  # no cleanup: the source's thumbnail and the copy's own
+
+
+@pytest.mark.asyncio
 async def test_add_files_commit_failure_rolls_back_and_removes_the_written_files(db_session, root, monkeypatch):
     project = await _project(db_session)
     item, rev = await _rev(db_session, project)
