@@ -1254,6 +1254,7 @@ CREATE TABLE projects (
 1 export const stopDrag
 1 export function canManageProjectsSettings
 1 export function CardProjectChips
+1 export function CollapsibleHeader
 1 export function DeliveriesPicker
 1 export function DialogShell
 1 export function DropShield

@@ -13,6 +13,9 @@ import { render } from '../../../utils';
 import { server } from '../../../mocks/server';
 import { MoveToProjectModal } from '../../../../components/projects/filing/MoveToProjectModal';
 import type { MoveToProjectResult } from '../../../../api/client';
+import i18n from '../../../../i18n';
+import en from '../../../../i18n/locales/en';
+import fr from '../../../../i18n/locales/fr';
 
 beforeAll(() => configure({ asyncUtilTimeout: 5000 }));
 afterAll(() => configure({ asyncUtilTimeout: 1000 }));
@@ -366,5 +369,25 @@ describe('MoveToProjectModal', () => {
     await screen.findByRole('dialog');
     await user.keyboard('{Escape}');
     expect(onClose).toHaveBeenCalled();
+  });
+});
+
+describe('MoveToProjectModal in French', () => {
+  beforeEach(() => serve());
+  afterEach(async () => {
+    await i18n.changeLanguage('en');
+  });
+
+  it('renders the fr title and the fr plural file count', async () => {
+    await i18n.changeLanguage('fr');
+    // Meaningful only while the two locales differ.
+    expect(fr.projectsPdm.filing.moveTitle).not.toBe(en.projectsPdm.filing.moveTitle);
+    expect(fr.projectsPdm.filing.fileCount_other).not.toBe(en.projectsPdm.filing.fileCount_other);
+    renderModal([1, 2]);
+    expect(await screen.findByRole('dialog', { name: fr.projectsPdm.filing.moveTitle })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: fr.projectsPdm.filing.moveTitle })).toBeInTheDocument();
+    expect(screen.getByTestId('move-to-project-subject')).toHaveTextContent(
+      fr.projectsPdm.filing.fileCount_other.replace('{{count}}', '2'),
+    );
   });
 });

@@ -1,8 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { ProjectItemOut, ProjectSection } from '../../../api/client';
-import { focusRingCls } from '../../formStyles';
+import { CollapsibleHeader } from './CollapsibleHeader';
 import { ItemRow } from './ItemRow';
 import { SectionBlock } from './SectionBlock';
 import type { DerivedOption } from './RevisionBlock';
@@ -71,12 +70,7 @@ function OlderFiles({
     <section data-testid="older-files" className="rounded-xl border border-bambu-dark-tertiary bg-bambu-dark-secondary">
       <div className="p-2">
         <h3 className="text-sm font-semibold text-white">
-          <button type="button" aria-expanded={open} onClick={() => setOpen((o) => !o)}
-            className={`flex min-h-[44px] w-full items-center gap-1.5 rounded-lg text-left md:min-h-0 ${focusRingCls}`}>
-            {open ? <ChevronDown className="h-4 w-4 shrink-0 text-bambu-gray" /> : <ChevronRight className="h-4 w-4 shrink-0 text-bambu-gray" />}
-            <span>{t('projectsPdm.files.otherSections')}</span>{' '}
-            <span className="text-xs font-normal text-bambu-gray">{count}</span>
-          </button>
+          <CollapsibleHeader open={open} onToggle={() => setOpen((o) => !o)} label={t('projectsPdm.files.otherSections')} count={count} />
         </h3>
       </div>
       {open && (

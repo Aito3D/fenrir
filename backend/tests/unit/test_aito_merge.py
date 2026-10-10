@@ -2,12 +2,14 @@
 one and that card goes to the trash — one request, one timeline story."""
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
 from backend.app.models.aito_task_delivery import AitoTaskDelivery
 from backend.app.models.project import Project
+from backend.app.models.project_item import ProjectItem, ProjectRevision
+from backend.tests.project_fixtures import make_project
 
 
 async def _create_with_tasks(client, tasks, **overrides):
@@ -222,6 +224,114 @@ async def test_merge_keeps_the_project_link_and_deliveries_with_the_work(async_c
         await db_session.execute(select(AitoTaskDelivery.revision_id).where(AitoTaskDelivery.task_id == source_task.id))
     ).scalars()
     assert list(kept) == [4242]
+
+
+async def _delivering_source(client, db_session, *, number=2):
+    """A source card whose one task is linked to a real project and delivers a
+    real revision ``Pièce R<number>``; returns (source, task, project, revision)."""
+    source = await _create_with_tasks(client, [{"title": "Linked part"}], description="Source card")
+    project = await make_project(db_session, "Support")
+    item = ProjectItem(
+        project_id=project.id, section="impression", name="Pièce", name_key="pièce", last_revision_number=number
+    )
+    db_session.add(item)
+    await db_session.flush()
+    revision = ProjectRevision(item_id=item.id, number=number, status="valide")
+    db_session.add(revision)
+    await db_session.flush()
+    source_task = (await db_session.execute(select(AitoTask).where(AitoTask.project_id == source["id"]))).scalar_one()
+    source_task.linked_project_id = project.id
+    db_session.add(AitoTaskDelivery(task_id=source_task.id, revision_id=revision.id))
+    await db_session.commit()
+    return source, source_task, project, revision
+
+
+async def _link_of(client, order_id, title):
+    resp = await client.get(f"/api/v1/aito/{order_id}/project-links")
+    assert resp.status_code == 200, resp.text
+    return next(t for t in resp.json()["tasks"] if t["task_title"] == title)
+
+
+def _delivered_labels(link):
+    """``"<item> R<n>"`` for each delivered revision visible in the task's section summary."""
+    by_number = {(s["item_name"], s["number"]) for section in link["sections"].values() for s in section}
+    return sorted(f"{name} R{number}" for name, number in by_number)
+
+
+@pytest.mark.asyncio
+async def test_merge_copies_a_real_delivered_revision_onto_the_target_links(async_client, db_session):
+    """T-211: the copy delivers the same real revision, and the target's
+    project-links page shows it on the copied task as ``Pièce R2``."""
+    target = await _create_with_tasks(async_client, [{"title": "Existing"}])
+    source, source_task, project, revision = await _delivering_source(async_client, db_session)
+
+    resp = await _merge(async_client, target["id"], source["id"])
+    assert resp.status_code == 200, resp.text
+
+    link = await _link_of(async_client, target["id"], "Linked part")
+    assert link["task_id"] != source_task.id
+    assert link["project"]["id"] == project.id
+    assert link["project"]["name"] == "Support"
+    assert link["deliveries"] == [revision.id]
+    assert link["sections"]["impression"][0]["item_name"] == "Pièce"
+    assert link["sections"]["impression"][0]["number"] == 2
+    assert _delivered_labels(link) == ["Pièce R2"]
+    # The untouched target task has no link and no deliveries.
+    existing = await _link_of(async_client, target["id"], "Existing")
+    assert existing["project"] is None
+    assert existing["deliveries"] == []
+    # The trashed source's links page is gone (404), its delivery row kept (copy, not move).
+    assert (await async_client.get(f"/api/v1/aito/{source['id']}/project-links")).status_code == 404
+    kept = (
+        await db_session.execute(select(AitoTaskDelivery.revision_id).where(AitoTaskDelivery.task_id == source_task.id))
+    ).scalars()
+    assert list(kept) == [revision.id]
+
+
+@pytest.mark.asyncio
+async def test_merge_copies_a_delivery_whose_revision_was_deleted(async_client, db_session):
+    """T-211 pin: AitoTaskDelivery.revision_id has no FK and the merge copies
+    every delivery row as is — a delivery of a deleted revision is copied too
+    (the dangling id travels), and the links page reports it without a section entry."""
+    target = await _create_with_tasks(async_client, [{"title": "Existing"}])
+    source, _, project, revision = await _delivering_source(async_client, db_session)
+    dangling = revision.id
+    await db_session.execute(delete(ProjectRevision).where(ProjectRevision.id == dangling))
+    await db_session.commit()
+
+    resp = await _merge(async_client, target["id"], source["id"])
+    assert resp.status_code == 200, resp.text
+
+    link = await _link_of(async_client, target["id"], "Linked part")
+    assert link["project"]["id"] == project.id
+    assert link["deliveries"] == [dangling]
+    assert link["sections"] == {}
+
+
+@pytest.mark.asyncio
+async def test_merge_keeps_the_link_to_a_deleted_project(async_client, db_session):
+    """T-211 pin: AitoTask.linked_project_id has no FK; with the linked project
+    deleted before the merge the copy still carries its id and its delivery
+    rows, and the links page shows the copied task with no project."""
+    target = await _create_with_tasks(async_client, [{"title": "Existing"}])
+    source, _, project, revision = await _delivering_source(async_client, db_session)
+    project_id, revision_id = project.id, revision.id
+    await db_session.execute(delete(Project).where(Project.id == project_id))
+    await db_session.commit()
+
+    resp = await _merge(async_client, target["id"], source["id"])
+    assert resp.status_code == 200, resp.text
+
+    copied = (
+        await db_session.execute(
+            select(AitoTask).where(AitoTask.project_id == target["id"], AitoTask.title == "Linked part")
+        )
+    ).scalar_one()
+    assert copied.linked_project_id == project_id
+    link = await _link_of(async_client, target["id"], "Linked part")
+    assert link["project"] is None
+    assert link["sections"] == {}
+    assert link["deliveries"] == [revision_id]
 
 
 async def _race(async_client, monkeypatch, first, second):

@@ -1,9 +1,10 @@
 import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ChevronDown, ChevronRight, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import type { ProjectItemOut, ProjectSection } from '../../../api/client';
 import { useAuth } from '../../../contexts/AuthContext';
 import { inputCls, focusRingCls } from '../../formStyles';
+import { CollapsibleHeader } from './CollapsibleHeader';
 import { ItemRow } from './ItemRow';
 import type { DerivedOption } from './RevisionBlock';
 import type { FileActions } from './useFileActions';
@@ -77,12 +78,7 @@ export function SectionBlock({ section, items, derivedOptions, actions }: Props)
     >
       <div className="flex flex-wrap items-center gap-2 p-2">
         <h3 className="min-w-0 flex-1 basis-32 text-sm font-semibold text-white">
-          <button type="button" aria-expanded={open} onClick={() => setOpen((o) => !o)}
-            className={`flex min-h-[44px] w-full items-center gap-1.5 rounded-lg text-left md:min-h-0 ${focusRingCls}`}>
-            {open ? <ChevronDown className="h-4 w-4 shrink-0 text-bambu-gray" /> : <ChevronRight className="h-4 w-4 shrink-0 text-bambu-gray" />}
-            <span>{t(SECTION_LABEL_KEYS[section])}</span>{' '}
-            <span className="text-xs font-normal text-bambu-gray">{items.length}</span>
-          </button>
+          <CollapsibleHeader open={open} onToggle={() => setOpen((o) => !o)} label={t(SECTION_LABEL_KEYS[section])} count={items.length} />
         </h3>
         {canUpdate && (
           <button type="button" onClick={() => { setOpen(true); if (creating) closeForm(); else setCreating(true); }}
