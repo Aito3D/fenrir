@@ -386,7 +386,7 @@ async def update_revision(
         await svc.update_revision(db, project, revision, fields=fields, user_id=actor_user_id(user))
     # Save the change first and OUTSIDE the best-effort event hook: a failed commit must surface.
     await db.commit()
-    project_id, new_status, item_label = project.id, revision.status, f"{item.name} R{revision.number}"
+    project_id, new_status, item_label = project.id, revision.status, svc.revision_label(item.name, revision.number)
     if new_status != previous_status:
         await _record_linked(
             db,

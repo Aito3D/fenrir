@@ -745,14 +745,14 @@ async def test_fork_writes_nothing_to_the_db_while_copying(db_session, root, mon
     item, rev = await _rev(db_session, project)
     await db_session.commit()
     seen = {}
-    real = project_files.shutil.copy2
+    real = project_files._copy_claimed
 
     def spy(src, dst, *args, **kwargs):
         seen["new"] = list(db_session.new)
         seen["dirty"] = list(db_session.dirty)
         return real(src, dst, *args, **kwargs)
 
-    monkeypatch.setattr(project_files.shutil, "copy2", spy)
+    monkeypatch.setattr(project_files, "_copy_claimed", spy)
     await fork_revision(db_session, project, item, rev, "Copie", user_id=None)
     assert seen == {"new": [], "dirty": []}
 
@@ -1788,7 +1788,7 @@ def test_copy_hashing_survives_a_copystat_failure(tmp_path, monkeypatch):
 
     src = tmp_path / "src.bin"
     src.write_bytes(b"payload")
-    dest = tmp_path / "dest.bin"
+    dest = project_storage.claim_unique_file_path(tmp_path, "dest.bin")
 
     def refuse(*_args, **_kwargs):
         raise OSError("no timestamps here")
@@ -2591,3 +2591,117 @@ async def test_add_revision_from_sources_writes_nothing_to_the_db_while_copying(
     )
     assert seen == {"new": [], "dirty": [], "deleted": []}
     assert rev.number == 2
+
+
+def test_revision_label_format_is_pinned():
+    assert project_files.revision_label("Bracket", 3) == "Bracket R3"
+    assert project_files.revision_label("Pièce 2 / b", 12) == "Pièce 2 / b R12"
+
+
+def test_revision_label_callers_share_the_helper():
+    from types import SimpleNamespace
+
+    from backend.app.services import aito_project_links as links
+
+    label, _ = links.revision_added_payload(
+        item_name="Bracket", revision_number=3, section="wip", item_id=1, revision_id=2
+    )
+    assert label == project_files.revision_label("Bracket", 3)
+    item, revision = SimpleNamespace(name="Bracket"), SimpleNamespace(number=3)
+    assert links._revision_label(item, revision, 9) == project_files.revision_label("Bracket", 3)
+    assert links._revision_label(None, revision, 9) == "#9"
+
+
+@pytest.mark.asyncio
+async def test_status_change_stamps_naive_utc_now(db_session, root):
+    from datetime import datetime, timedelta, timezone
+
+    project = await _project(db_session)
+    item = await create_item(db_session, project, section="scan", name="Mesh", user_id=None)
+    rev, _ = await add_revision(
+        db_session, project, item, [upload("s.ply")], note=None, derived_from_id=None, user_id=None
+    )
+    before = datetime.now(timezone.utc).replace(tzinfo=None)
+    await update_revision(db_session, project, rev, fields={"status": "valide"}, user_id=None)
+    stamp = rev.status_changed_at
+    assert stamp.tzinfo is None
+    assert (
+        before - timedelta(seconds=1) <= stamp <= datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(seconds=1)
+    )
+
+
+def _planted_src(tmp_path):
+    import os
+
+    src = tmp_path / "src.bin"
+    src.write_bytes(b"x" * 3_000_000 + b"tail")
+    os.chmod(src, 0o640)
+    os.utime(src, (1_600_000_000, 1_600_000_123))
+    return src
+
+
+def test_copy_claimed_matches_shutil_copy2(tmp_path):
+    import shutil
+
+    src = _planted_src(tmp_path)
+    reference = tmp_path / "ref.bin"
+    shutil.copy2(src, reference)
+    dest = project_storage.claim_unique_file_path(tmp_path, "dest.bin")
+    project_files._copy_claimed(src, dest)
+    assert dest.read_bytes() == reference.read_bytes()
+    assert dest.stat().st_mtime == reference.stat().st_mtime == 1_600_000_123
+    assert dest.stat().st_mode == reference.stat().st_mode
+
+
+def test_copy_hashing_matches_shutil_copy2_and_digest(tmp_path):
+    import hashlib
+    import shutil
+
+    src = _planted_src(tmp_path)
+    reference = tmp_path / "ref.bin"
+    shutil.copy2(src, reference)
+    dest = project_storage.claim_unique_file_path(tmp_path, "dest.bin")
+    size, digest = project_files._copy_hashing(src, dest)
+    assert (size, digest) == (src.stat().st_size, hashlib.sha256(src.read_bytes()).hexdigest())
+    assert dest.read_bytes() == reference.read_bytes()
+    assert dest.stat().st_mtime == reference.stat().st_mtime
+    assert dest.stat().st_mode == reference.stat().st_mode
+
+
+@pytest.mark.parametrize("copier", ["_copy_claimed", "_copy_hashing"])
+def test_copy_into_a_symlink_planted_after_the_claim_is_refused(tmp_path, copier):
+    src = _planted_src(tmp_path)
+    victim = tmp_path / "victim.txt"
+    victim.write_bytes(b"untouched")
+    dest = project_storage.claim_unique_file_path(tmp_path, "dest.bin")
+    dest.unlink()
+    dest.symlink_to(victim)  # swapped in between the claim and the reopen
+    with pytest.raises(OSError):
+        getattr(project_files, copier)(src, dest)
+    assert victim.read_bytes() == b"untouched"
+
+
+def test_open_claimed_closes_the_descriptor_when_fdopen_fails(tmp_path, monkeypatch):
+    import errno
+    import os
+
+    dest = project_storage.claim_unique_file_path(tmp_path, "dest.bin")
+    opened: list[int] = []
+    real_open = os.open
+
+    def recording_open(*args, **kwargs):
+        fd = real_open(*args, **kwargs)
+        opened.append(fd)
+        return fd
+
+    def boom(_fd, *_args, **_kwargs):
+        raise RuntimeError("fdopen failed")
+
+    monkeypatch.setattr(project_files.os, "open", recording_open)
+    monkeypatch.setattr(project_files.os, "fdopen", boom)
+    with pytest.raises(RuntimeError, match="fdopen failed"):
+        project_files._open_claimed(dest)
+    assert len(opened) == 1
+    with pytest.raises(OSError) as closed:
+        os.fstat(opened[0])
+    assert closed.value.errno == errno.EBADF

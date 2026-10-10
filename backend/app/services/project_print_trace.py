@@ -110,11 +110,14 @@ async def resolve_print_context(
         return PrintContext(revision_id=None, aito_task_id=None, project_id=project_id)
 
     revision, item, project = bundle
+    # Lazy: project_files imports this module (revision_print_counts).
+    from backend.app.services.project_files import revision_label
+
     context = PrintContext(
         revision_id=revision.id,
         aito_task_id=None,
         project_id=project_id if project_id is not None else project.id,
-        revision_label=f"{item.name} R{revision.number}",
+        revision_label=revision_label(item.name, revision.number),
         code=project.code,
         revision_project_id=project.id,
     )

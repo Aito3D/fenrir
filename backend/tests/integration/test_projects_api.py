@@ -229,6 +229,47 @@ class TestProjectUrlAndCoverImage:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_cover_image_vanished_from_disk_404s_and_clears_the_reference(
+        self, async_client: AsyncClient, project_factory
+    ):
+        from backend.app.api.routes.projects import get_project_attachments_dir
+
+        project = await project_factory()
+        png_bytes = bytes.fromhex(
+            "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4"
+            "890000000d49444154789c63f80f00000100010000000000000049454e44ae42"
+            "6082"
+        )
+        upload = await async_client.post(
+            f"/api/v1/projects/{project.id}/cover-image",
+            files={"file": ("cover.png", png_bytes, "image/png")},
+        )
+        assert upload.status_code == 200, upload.text
+        (get_project_attachments_dir(project.id) / upload.json()["filename"]).unlink()
+
+        served = await async_client.get(f"/api/v1/projects/{project.id}/cover-image")
+        assert served.status_code == 404
+        assert served.json()["detail"] == "Cover image file not found"
+        view = await async_client.get(f"/api/v1/projects/{project.id}")
+        assert view.json()["cover_image_filename"] is None
+        again = await async_client.get(f"/api/v1/projects/{project.id}/cover-image")
+        assert again.json()["detail"] == "No cover image set"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_project_queue_listing_404s_for_unknown_and_is_empty_for_new(
+        self, async_client: AsyncClient, project_factory
+    ):
+        missing = await async_client.get("/api/v1/projects/9999/queue")
+        assert missing.status_code == 404
+        assert missing.json()["detail"] == "Project not found"
+        project = await project_factory()
+        listed = await async_client.get(f"/api/v1/projects/{project.id}/queue")
+        assert listed.status_code == 200
+        assert listed.json() == []
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_upload_cover_image_rejects_non_image(self, async_client: AsyncClient, project_factory):
         project = await project_factory()
         response = await async_client.post(

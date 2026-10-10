@@ -65,7 +65,7 @@ def _project_detail(project_id: int, project: Project | None) -> dict:
 def _revision_label(item: ProjectItem | None, revision: ProjectRevision | None, revision_id: int) -> str:
     if item is None or revision is None:
         return f"#{revision_id}"
-    return f"{item.name} R{revision.number}"
+    return project_files.revision_label(item.name, revision.number)
 
 
 async def _clear_deliveries(db: AsyncSession, task_id: int) -> None:
@@ -464,7 +464,11 @@ def revision_added_payload(
 ) -> tuple[str, dict]:
     """``(subject_label, detail)`` of a ``project.revision_added`` event: ``"<item> R<n>"``
     and ``{"section", "item_id", "revision_id"}``, in that key order."""
-    return f"{item_name} R{revision_number}", {"section": section, "item_id": item_id, "revision_id": revision_id}
+    return project_files.revision_label(item_name, revision_number), {
+        "section": section,
+        "item_id": item_id,
+        "revision_id": revision_id,
+    }
 
 
 async def record_and_broadcast(

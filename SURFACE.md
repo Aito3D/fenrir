@@ -338,6 +338,7 @@ def reslice_note(source_number: int, pipeline_name: str)
 def resolve_in_projects(*parts: str)
 def revision_added_payload(
 def revision_dir(project, section: str, item_name: str, number: int)
+def revision_label(item_name: str, number: int)
 def sanitize_component(name: str, fallback: str = "sans-nom")
 def section_for_filename(name: str)
 def slugify(title: str, max_chars: int = 40)
@@ -349,7 +350,6 @@ def tag_name_key(name: str)
 def unique_clean_names(raw_names: Iterable[str], seen: set[str] | None = None)
 def unique_file_path(directory: Path, filename: str)
 def upload_basename(upload: UploadFile)
-def utcnow()
 ```
 
 ## Pydantic schema + ORM model class names

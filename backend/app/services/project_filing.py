@@ -35,6 +35,7 @@ from backend.app.services.project_codes import format_project_code
 from backend.app.services.project_files import RevisionSource
 from backend.app.services.project_storage import ENABLED_SECTIONS, PRINTABLE_EXTENSIONS, is_printable_filename
 from backend.app.services.project_suggestions import SIMILAR_NAME_THRESHOLD, similar_projects
+from backend.app.utils.local_time import utcnow_naive
 
 logger = logging.getLogger(__name__)
 
@@ -807,7 +808,7 @@ async def migrate_project_legacy(db: AsyncSession, project: Project) -> LegacyMi
     fresh = await db.get(Project, project_id, populate_existing=True)
     if fresh is None:
         raise LegacyMigrationError("project deleted meanwhile")
-    fresh.legacy_migrated_at = project_files.utcnow()
+    fresh.legacy_migrated_at = utcnow_naive()
     await db.commit()
     return LegacyMigrationOutcome(
         revisions_created=len(revisions), files_moved=len(result.moved), files_copied=len(result.copied)
@@ -895,6 +896,6 @@ async def _run_legacy_migration() -> None:
     except Exception:
         logger.exception("Legacy project migration stopped")
     finally:
-        state["last_run"] = {**totals, "finished_at": project_files.utcnow()}
+        state["last_run"] = {**totals, "finished_at": utcnow_naive()}
         state["running"] = False
         state["current"] = None

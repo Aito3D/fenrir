@@ -19,7 +19,6 @@ import uuid
 import weakref
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import UploadFile
@@ -74,6 +73,7 @@ from backend.app.services.project_storage import (
     sanitize_component,
 )
 from backend.app.services.stl_thumbnail import MIN_USABLE_STL_BYTES, generate_stl_thumbnail
+from backend.app.utils.local_time import utcnow_naive
 from backend.app.utils.safe_path import safe_join_under
 
 logger = logging.getLogger(__name__)
@@ -89,8 +89,9 @@ class ProjectFilesError(HttpStatusError):
     stored_count: int
 
 
-def utcnow() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+def revision_label(item_name: str, number: int) -> str:
+    """``"<item> R<n>"``: how a revision is named in events, archives and status messages."""
+    return f"{item_name} R{number}"
 
 
 # One lock per item, held across every operation that writes into or moves the
@@ -350,11 +351,29 @@ async def _post_process(entry: _WrittenFile, *, thumbnail: bool = True) -> None:
         entry.snapshot = await asyncio.to_thread(read_print_snapshot, entry.path)
 
 
+def _open_claimed(dest: Path):
+    """Reopen a placeholder made by ``claim_unique_file_path`` for writing, refusing to follow a
+    symlink swapped in at ``dest`` since the claim (``OSError``/ELOOP instead)."""
+    fd = os.open(dest, os.O_WRONLY | os.O_TRUNC | os.O_NOFOLLOW | os.O_CLOEXEC)
+    try:
+        return os.fdopen(fd, "wb")
+    except BaseException:
+        os.close(fd)
+        raise
+
+
+def _copy_claimed(src: Path, dest: Path) -> None:
+    """``shutil.copy2(src, dest)`` for a claimed placeholder, written through an O_NOFOLLOW descriptor."""
+    with open(src, "rb") as reader, _open_claimed(dest) as writer:
+        shutil.copyfileobj(reader, writer)
+    shutil.copystat(src, dest, follow_symlinks=False)
+
+
 def _copy_hashing(src: Path, dest: Path) -> tuple[int, str]:
     """Copy ``src`` over ``dest`` in bounded chunks; returns (size, SHA-256 hex) of what was written."""
     digest = hashlib.sha256()
     size = 0
-    with open(src, "rb") as reader, open(dest, "wb") as writer:
+    with open(src, "rb") as reader, _open_claimed(dest) as writer:
         while chunk := reader.read(1 << 20):
             writer.write(chunk)
             digest.update(chunk)
@@ -865,7 +884,7 @@ async def update_revision(
         if status != revision.status:
             revision.status = status
             revision.status_changed_by_id = user_id
-            revision.status_changed_at = utcnow()
+            revision.status_changed_at = utcnow_naive()
     if "note" in fields:
         revision.note = (fields["note"] or "").strip() or None
     if "derived_from_id" in fields:
@@ -1283,7 +1302,7 @@ async def _copy_fork_files(
         dest = claim_unique_file_path(folder, source.filename)
         entry = _WrittenFile(path=dest, size=0, digest="", copied_from=source)
         copies.append(entry)  # before the copy, so cleanup also removes the claimed placeholder
-        await asyncio.to_thread(shutil.copy2, src, dest)
+        await asyncio.to_thread(_copy_claimed, src, dest)
         entry.thumbnail_rel, entry.thumbnail_abs = await asyncio.to_thread(_copy_thumbnail, source.thumbnail_path)
 
 

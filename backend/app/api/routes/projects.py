@@ -52,6 +52,7 @@ from backend.app.schemas.project import (
     ProjectUpdate,
     TimelineEvent,
 )
+from backend.app.services.project_files import revision_label
 from backend.app.services.project_tags import (
     UnknownTagError,
     apply_project_tag_input,
@@ -1014,7 +1015,7 @@ async def _archive_trace_labels(db: AsyncSession, archives: Sequence[PrintArchiv
             .join(ProjectItem, ProjectItem.id == ProjectRevision.item_id)
             .where(ProjectRevision.id.in_(revision_ids))
         )
-        labels = {rid: f"{name} R{number}" for rid, number, name in rows}
+        labels = {rid: revision_label(name, number) for rid, number, name in rows}
     orders: dict[int, int] = {}
     if task_ids:
         orders = dict(
