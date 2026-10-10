@@ -975,12 +975,10 @@ async def remove_file_from_revision(
 ) -> None:
     async with _item_lock(item.id):
         item = await fresh_item(db, item.id)
-        await _remove_file_locked(db, project, item, await _fresh_revision(db, revision.id, item.id), file_id)
+        await _remove_file_locked(db, project, await _fresh_revision(db, revision.id, item.id), file_id)
 
 
-async def _remove_file_locked(
-    db: AsyncSession, project: Project, item: ProjectItem, revision: ProjectRevision, file_id: int
-) -> None:
+async def _remove_file_locked(db: AsyncSession, project: Project, revision: ProjectRevision, file_id: int) -> None:
     await _require_editable_files(db, revision)
     files = await _revision_files(db, revision.id)
     target = next((f for f in files if f.id == file_id), None)

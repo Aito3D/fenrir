@@ -16,6 +16,19 @@ import { server } from '../mocks/server';
 
 const navigateMock = vi.fn();
 
+// The export test stubs these with defineProperty, which vi.restoreAllMocks() does not undo.
+const originalUrlDescriptors = {
+  createObjectURL: Object.getOwnPropertyDescriptor(URL, 'createObjectURL'),
+  revokeObjectURL: Object.getOwnPropertyDescriptor(URL, 'revokeObjectURL'),
+};
+
+function restoreUrlDescriptors() {
+  for (const [key, descriptor] of Object.entries(originalUrlDescriptors)) {
+    if (descriptor) Object.defineProperty(URL, key, descriptor);
+    else delete (URL as unknown as Record<string, unknown>)[key];
+  }
+}
+
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
   return {
@@ -102,6 +115,8 @@ describe('ProjectDetailPage actions and states', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    expect(Object.getOwnPropertyDescriptor(URL, 'createObjectURL')).toEqual(originalUrlDescriptors.createObjectURL);
+    expect(Object.getOwnPropertyDescriptor(URL, 'revokeObjectURL')).toEqual(originalUrlDescriptors.revokeObjectURL);
   });
 
   describe('load states', () => {
@@ -555,16 +570,20 @@ describe('ProjectDetailPage actions and states', () => {
       const revokeUrl = vi.fn();
       Object.defineProperty(URL, 'createObjectURL', { value: createUrl, configurable: true, writable: true });
       Object.defineProperty(URL, 'revokeObjectURL', { value: revokeUrl, configurable: true, writable: true });
-      const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
-      const user = userEvent.setup();
-      render(<ProjectDetailPage />);
+      try {
+        const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+        const user = userEvent.setup();
+        render(<ProjectDetailPage />);
 
-      await user.click(await screen.findByRole('button', { name: /Export/ }));
+        await user.click(await screen.findByRole('button', { name: /Export/ }));
 
-      expect(await screen.findByText('Project exported')).toBeInTheDocument();
-      expect(createUrl).toHaveBeenCalledTimes(1);
-      expect(click).toHaveBeenCalledTimes(1);
-      expect(revokeUrl).toHaveBeenCalledWith('blob:fake');
+        expect(await screen.findByText('Project exported')).toBeInTheDocument();
+        expect(createUrl).toHaveBeenCalledTimes(1);
+        expect(click).toHaveBeenCalledTimes(1);
+        expect(revokeUrl).toHaveBeenCalledWith('blob:fake');
+      } finally {
+        restoreUrlDescriptors();
+      }
     });
 
     it('toasts the error when the export fails', async () => {

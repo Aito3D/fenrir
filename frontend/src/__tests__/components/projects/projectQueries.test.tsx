@@ -7,7 +7,12 @@ import type { ReactNode } from 'react';
 import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { api } from '../../../api/client';
-import { projectKeys, useProjectOrders, useProjectTree } from '../../../components/projects/projectQueries';
+import {
+  projectKeys,
+  useInvalidateProjects,
+  useProjectOrders,
+  useProjectTree,
+} from '../../../components/projects/projectQueries';
 
 const tree = { project_id: 7, code: 'P-0007', sections: [] };
 const orders = { orders: [] };
@@ -27,6 +32,52 @@ describe('projectKeys', () => {
     expect(projectKeys.tree(undefined)).toEqual(['project-tree', undefined]);
     expect(projectKeys.orders(undefined)).toEqual(['project-orders', undefined]);
     expect(projectKeys.tree(7)).toHaveLength(2);
+    expect(projectKeys.project(7)).toEqual(['project', 7]);
+    expect(projectKeys.projects()).toEqual(['projects']);
+    expect(projectKeys.projectsSearch()).toEqual(['projects-search']);
+    expect(projectKeys.projectTags()).toEqual(['project-tags']);
+  });
+});
+
+describe('useInvalidateProjects', () => {
+  it('invalidates the list, search and tag catalogue, in that order, without a project id', () => {
+    const { client, wrapper } = setup();
+    const spy = vi.spyOn(client, 'invalidateQueries');
+    const { result } = renderHook(() => useInvalidateProjects(), { wrapper });
+    expect(result.current()).toBeUndefined();
+    expect(spy.mock.calls).toEqual([
+      [{ queryKey: ['projects'] }],
+      [{ queryKey: ['projects-search'] }],
+      [{ queryKey: ['project-tags'] }],
+    ]);
+  });
+
+  it('invalidates the project itself first when given its id', () => {
+    const { client, wrapper } = setup();
+    const spy = vi.spyOn(client, 'invalidateQueries');
+    const { result } = renderHook(() => useInvalidateProjects(), { wrapper });
+    result.current(7);
+    expect(spy.mock.calls).toEqual([
+      [{ queryKey: ['project', 7] }],
+      [{ queryKey: ['projects'] }],
+      [{ queryKey: ['projects-search'] }],
+      [{ queryKey: ['project-tags'] }],
+    ]);
+  });
+
+  it('marks cached project queries stale under exactly those keys', () => {
+    const { client, wrapper } = setup();
+    for (const key of [['project', 7], ['project', 8], ['projects'], ['projects-search', 'x'], ['project-tags'], ['project-tree', 7]]) {
+      client.setQueryData(key, 'cached');
+    }
+    const { result } = renderHook(() => useInvalidateProjects(), { wrapper });
+    result.current(7);
+    const stale = client
+      .getQueryCache()
+      .findAll()
+      .filter((q) => q.state.isInvalidated)
+      .map((q) => q.queryKey);
+    expect(stale).toEqual([['project', 7], ['projects'], ['projects-search', 'x'], ['project-tags']]);
   });
 });
 
