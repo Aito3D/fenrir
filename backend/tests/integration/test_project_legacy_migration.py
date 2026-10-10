@@ -279,6 +279,30 @@ def test_external_marker_is_content_hash(tmp_path):
     assert project_filing._sha256_file(path) == hashlib.sha256(b"abc").hexdigest()
 
 
+def _sql(statement) -> str:
+    from sqlalchemy.dialects import sqlite
+
+    return str(statement.compile(dialect=sqlite.dialect(), compile_kwargs={"literal_binds": True}))
+
+
+_LEGACY_FROM = "FROM library_files LEFT OUTER JOIN library_folders ON library_files.folder_id = library_folders.id"
+_LEGACY_WHERE = "WHERE library_files.revision_id IS NULL AND library_files.deleted_at IS NULL"
+_LEGACY_OWNER = "coalesce(library_files.project_id, library_folders.project_id)"
+
+
+def test_legacy_files_query_sql_is_pinned():
+    columns = ", ".join(f"library_files.{c.name}" for c in LibraryFile.__table__.columns)
+    assert _sql(project_filing._legacy_files_query()) == f"SELECT {columns} \n{_LEGACY_FROM} \n{_LEGACY_WHERE}"
+
+
+def test_legacy_candidates_query_sql_is_pinned():
+    assert _sql(project_filing._legacy_candidates_query()) == (
+        f"SELECT {_LEGACY_OWNER} AS coalesce_1, library_files.filename \n"
+        f"{_LEGACY_FROM} JOIN projects ON projects.id = {_LEGACY_OWNER} \n"
+        f"{_LEGACY_WHERE} AND projects.legacy_migrated_at IS NULL"
+    )
+
+
 # --- endpoints -------------------------------------------------------------------
 
 

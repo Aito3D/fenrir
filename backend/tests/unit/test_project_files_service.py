@@ -147,6 +147,28 @@ async def test_3mf_snapshot_written_once(db_session, root):
 
 
 @pytest.mark.asyncio
+async def test_3mf_snapshot_fills_all_five_revision_columns(db_session, root, tmp_path):
+    from backend.app.services.project_snapshot import read_print_snapshot
+
+    source = tmp_path / "plate.3mf"
+    source.write_bytes(threemf_bytes())
+    snap = read_print_snapshot(source)
+    assert snap is not None and None not in (snap.config, snap.config_hash, snap.slicer_version, snap.print_profile)
+    project = await _project(db_session)
+    item = await create_item(db_session, project, section="impression", name="Support X1C", user_id=None)
+    rev, _ = await add_revision(
+        db_session, project, item, [upload("plate.3mf", threemf_bytes())], note=None, derived_from_id=None, user_id=None
+    )
+    assert (rev.config_snapshot, rev.config_hash, rev.slicer_name, rev.slicer_version, rev.print_profile) == (
+        snap.config,
+        snap.config_hash,
+        snap.slicer_name,
+        snap.slicer_version,
+        snap.print_profile,
+    )
+
+
+@pytest.mark.asyncio
 async def test_update_revision_status_note_and_derived_from(db_session, root):
     project = await _project(db_session)
     scan = await create_item(db_session, project, section="scan", name="Mesh", user_id=None)
@@ -584,6 +606,27 @@ async def test_fork_copies_files_into_new_item(db_session, root):
     assert (r1.number, r1.derived_from_id) == (1, rev.id)
     assert (root / project.storage_dir / "Modélisation" / "Support client B" / "R1" / "a.step").read_bytes() == b"geo"
     assert (root / project.storage_dir / "Modélisation" / "Support" / "R1" / "a.step").exists()
+
+
+@pytest.mark.asyncio
+async def test_fork_copies_all_five_snapshot_columns_onto_r1(db_session, root):
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project, files=[upload("a.step", b"geo")])
+    rev.config_snapshot = {"layer_height": "0.2"}
+    rev.config_hash = "h" * 64
+    rev.slicer_name = "OrcaSlicer"
+    rev.slicer_version = "2.3.2"
+    rev.print_profile = {"printer_model": "Bambu Lab P1S"}
+    await db_session.commit()
+    forked = await fork_revision(db_session, project, item, rev, "Support client C", user_id=None)
+    r1 = (await db_session.execute(select(ProjectRevision).where(ProjectRevision.item_id == forked.id))).scalar_one()
+    assert (r1.config_snapshot, r1.config_hash, r1.slicer_name, r1.slicer_version, r1.print_profile) == (
+        {"layer_height": "0.2"},
+        "h" * 64,
+        "OrcaSlicer",
+        "2.3.2",
+        {"printer_model": "Bambu Lab P1S"},
+    )
 
 
 @pytest.mark.asyncio
@@ -2323,3 +2366,52 @@ async def test_deleted_revision_is_used_query_is_the_usage_union_without_deliver
         "WHERE aito_task_deliveries.revision_id = 7\n LIMIT 1 OFFSET 0"
     )
     assert _sqlite_sql(usage) == " UNION ".join(_usage_branches("(3, 4)"))
+
+
+@pytest.mark.asyncio
+async def test_remove_file_rejects_a_revision_of_another_item(db_session, root):
+    project = await _project(db_session)
+    item, _ = await _rev(db_session, project, name="Support")
+    _, other_rev = await _rev(db_session, project, name="Autre")
+    await db_session.commit()
+    other_file = (
+        await db_session.execute(select(LibraryFile.id).where(LibraryFile.revision_id == other_rev.id))
+    ).scalar_one()
+    with pytest.raises(ProjectFilesError) as caught:
+        await remove_file_from_revision(db_session, project, item, other_rev, other_file)
+    assert (caught.value.status_code, caught.value.detail) == (404, "Revision not found")
+    assert (
+        await db_session.execute(select(LibraryFile).where(LibraryFile.id == other_file))
+    ).scalar_one().deleted_at is None
+
+
+@pytest.mark.asyncio
+async def test_remove_file_rejects_a_file_outside_the_revision(db_session, root):
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project, files=[upload("a.step"), upload("b.step")])
+    _, other_rev = await _rev(db_session, project, name="Autre")
+    await db_session.commit()
+    stranger = (
+        await db_session.execute(select(LibraryFile.id).where(LibraryFile.revision_id == other_rev.id))
+    ).scalar_one()
+    with pytest.raises(ProjectFilesError) as caught:
+        await remove_file_from_revision(db_session, project, item, rev, stranger)
+    assert (caught.value.status_code, caught.value.detail) == (404, "File not found in this revision")
+    folder = root / project.storage_dir / "Modélisation" / "Support" / "R1"
+    assert sorted(p.name for p in folder.iterdir()) == ["a.step", "b.step"]
+
+
+@pytest.mark.asyncio
+async def test_rename_refuses_a_name_whose_folder_already_exists(db_session, root):
+    project = await _project(db_session)
+    item, _ = await _rev(db_session, project)
+    await db_session.commit()
+    base = root / project.storage_dir / "Modélisation"
+    (base / "Copie").mkdir()
+    with pytest.raises(ProjectFilesError) as caught:
+        await rename_item(db_session, project, item, "Copie")
+    assert (caught.value.status_code, caught.value.detail) == (409, "A folder with this name already exists")
+    assert list((base / "Copie").iterdir()) == []
+    assert (base / "Support" / "R1" / "a.step").exists()
+    name = (await db_session.execute(select(ProjectItem.name).where(ProjectItem.id == item.id))).scalar_one()
+    assert name == "Support"

@@ -704,20 +704,19 @@ def _legacy_files_query():
     )
 
 
+def _legacy_candidates_query():
+    owner = _legacy_owner()
+    return (
+        _legacy_files_query()
+        .with_only_columns(owner, LibraryFile.filename)
+        .join(Project, Project.id == owner)
+        .where(Project.legacy_migrated_at.is_(None))
+    )
+
+
 async def legacy_candidates(db: AsyncSession) -> list[int]:
     """Projects not migrated yet that own at least one legacy printable file, by id."""
-    owner = _legacy_owner()
-    rows = await db.execute(
-        select(owner, LibraryFile.filename)
-        .select_from(LibraryFile)
-        .outerjoin(LibraryFolder, LibraryFile.folder_id == LibraryFolder.id)
-        .join(Project, Project.id == owner)
-        .where(
-            LibraryFile.revision_id.is_(None),
-            LibraryFile.deleted_at.is_(None),
-            Project.legacy_migrated_at.is_(None),
-        )
-    )
+    rows = await db.execute(_legacy_candidates_query())
     return sorted({project_id for project_id, filename in rows if is_printable_filename(filename)})
 
 

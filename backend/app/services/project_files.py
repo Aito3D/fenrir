@@ -466,6 +466,23 @@ def _point_row_at(row: LibraryFile, project_id: int, revision_id: int, entry: _W
         row.file_metadata = entry.metadata
 
 
+def _apply_snapshot(
+    revision: ProjectRevision,
+    *,
+    config: dict | None,
+    config_hash: str | None,
+    slicer_name: str | None,
+    slicer_version: str | None,
+    print_profile: dict | None,
+) -> None:
+    """Write the five slicer-snapshot columns of ``revision``."""
+    revision.config_snapshot = config
+    revision.config_hash = config_hash
+    revision.slicer_name = slicer_name
+    revision.slicer_version = slicer_version
+    revision.print_profile = print_profile
+
+
 async def _add_file_rows(
     db: AsyncSession, project: Project, revision: ProjectRevision, written: list[_WrittenFile], user_id: int | None
 ) -> list[LibraryFile]:
@@ -500,11 +517,14 @@ async def _add_file_rows(
         rows.append(row)
         snap = entry.snapshot
         if snap is not None and revision.config_snapshot is None and revision.print_profile is None:
-            revision.config_snapshot = snap.config
-            revision.config_hash = snap.config_hash
-            revision.slicer_name = snap.slicer_name
-            revision.slicer_version = snap.slicer_version
-            revision.print_profile = snap.print_profile
+            _apply_snapshot(
+                revision,
+                config=snap.config,
+                config_hash=snap.config_hash,
+                slicer_name=snap.slicer_name,
+                slicer_version=snap.slicer_version,
+                print_profile=snap.print_profile,
+            )
     await db.flush()
     return rows
 
@@ -687,13 +707,20 @@ async def _commit_through_cancel(db: AsyncSession, outcome: _CommitOutcome) -> N
 
 
 class _CommitGuard:
-    """See ``_committing``."""
+    """``async with _committing(db, undo) as commit:`` whose body ends with ``await commit()``.
+
+    ``commit`` is ``_commit_through_cancel``. When the body raises anything
+    (cancellation included), ``undo`` runs unless the commit may have landed,
+    then the same exception propagates; ``translate`` may swap it, after the
+    undo, for an exception raised ``from`` it.
+    """
 
     def __init__(
         self,
         db: AsyncSession,
         undo: Callable[[], Awaitable[None]],
-        translate: Callable[[BaseException], Exception | None] | None,
+        *,
+        translate: Callable[[BaseException], Exception | None] | None = None,
     ) -> None:
         self._db = db
         self._undo = undo
@@ -717,20 +744,7 @@ class _CommitGuard:
         return False
 
 
-def _committing(
-    db: AsyncSession,
-    undo: Callable[[], Awaitable[None]],
-    *,
-    translate: Callable[[BaseException], Exception | None] | None = None,
-) -> _CommitGuard:
-    """``async with _committing(db, undo) as commit:`` whose body ends with ``await commit()``.
-
-    ``commit`` is ``_commit_through_cancel``. When the body raises anything
-    (cancellation included), ``undo`` runs unless the commit may have landed,
-    then the same exception propagates; ``translate`` may swap it, after the
-    undo, for an exception raised ``from`` it.
-    """
-    return _CommitGuard(db, undo, translate)
+_committing = _CommitGuard
 
 
 async def _add_revision_locked(
@@ -947,7 +961,7 @@ class _TrashGuard(_CommitGuard):
     """
 
     def __init__(self, db: AsyncSession, project: Project, path: Path | None) -> None:
-        super().__init__(db, self._restore, None)
+        super().__init__(db, self._restore)
         self._project = project
         self._path = path
         self._moved: Path | None = None
@@ -1208,13 +1222,13 @@ async def _fork_revision_locked(
     if new_item_dir.exists():
         raise ProjectFilesError(409, "A folder with this name already exists")
     sources = [(f, _revision_file_path(f.file_path)) for f in await _revision_files(db, revision.id)]
-    snapshot = (
-        revision.config_snapshot,
-        revision.config_hash,
-        revision.slicer_name,
-        revision.slicer_version,
-        revision.print_profile,
-    )
+    snapshot = {
+        "config": revision.config_snapshot,
+        "config_hash": revision.config_hash,
+        "slicer_name": revision.slicer_name,
+        "slicer_version": revision.slicer_version,
+        "print_profile": revision.print_profile,
+    }
     revision_id = revision.id
     folder = revision_dir(project, section, clean, 1)
     copies: list[_WrittenFile] = []
@@ -1247,7 +1261,7 @@ async def _fork_revision_locked(
         r1 = ProjectRevision(
             item_id=forked.id, number=1, status="wip", derived_from_id=revision_id, created_by_id=user_id
         )
-        r1.config_snapshot, r1.config_hash, r1.slicer_name, r1.slicer_version, r1.print_profile = snapshot
+        _apply_snapshot(r1, **snapshot)
         db.add(r1)
         await db.flush()
         _add_fork_rows(db, project.id, r1.id, copies, user_id)
