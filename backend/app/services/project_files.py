@@ -1071,31 +1071,55 @@ async def rename_item(db: AsyncSession, project: Project, item: ProjectItem, new
         return await _rename_item_locked(db, project, await fresh_item(db, item.id), new_name)
 
 
+def _move_item_folder(old_dir: Path, new_dir: Path) -> bool:
+    """Rename an item's folder on disk; ``True`` when it moved, ``False`` when there was nothing to move."""
+    if old_dir == new_dir or not old_dir.exists():
+        return False
+    if new_dir.exists():
+        if not os.path.samefile(old_dir, new_dir):
+            raise ProjectFilesError(409, "A folder with this name already exists")
+        # case-only rename on a case-insensitive filesystem: go through a temporary name
+        temp = old_dir.with_name(f".rename-{uuid.uuid4().hex}")
+        old_dir.rename(temp)
+        try:
+            temp.rename(new_dir)
+        except BaseException:
+            try:
+                temp.rename(old_dir)
+            except Exception:
+                logger.warning("Could not move %s back to %s after a failed rename", temp, old_dir, exc_info=True)
+            raise
+    else:
+        old_dir.rename(new_dir)
+    return True
+
+
+async def _repoint_file_paths(db: AsyncSession, item_id: int, old_dir: Path, new_dir: Path) -> None:
+    """Rewrite the stored path of every file under the item's revisions from ``old_dir`` to ``new_dir``."""
+    files = (
+        (
+            await db.execute(
+                select(LibraryFile).where(LibraryFile.revision_id.in_(await _item_revision_ids(db, item_id)))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for row in files:
+        current = to_absolute_path(row.file_path)
+        if current is not None and old_dir in current.parents:
+            row.file_path = to_relative_path(
+                new_dir.joinpath(current.relative_to(old_dir))
+            )  # SEC-PATH-OK: relative part of a path already under old_dir
+
+
 async def _rename_item_locked(db: AsyncSession, project: Project, item: ProjectItem, new_name: str) -> ProjectItem:
     clean, key = clean_item_name(new_name)
     if key != item.name_key:
         await _require_item_name_free(db, project, item.section, key, exclude_id=item.id)
     old_dir = item_dir(project, item.section, item.name)
     new_dir = item_dir(project, item.section, clean)
-    moved = False
-    if old_dir != new_dir and old_dir.exists():
-        if new_dir.exists():
-            if not os.path.samefile(old_dir, new_dir):
-                raise ProjectFilesError(409, "A folder with this name already exists")
-            # case-only rename on a case-insensitive filesystem: go through a temporary name
-            temp = old_dir.with_name(f".rename-{uuid.uuid4().hex}")
-            old_dir.rename(temp)
-            try:
-                temp.rename(new_dir)
-            except BaseException:
-                try:
-                    temp.rename(old_dir)
-                except Exception:
-                    logger.warning("Could not move %s back to %s after a failed rename", temp, old_dir, exc_info=True)
-                raise
-        else:
-            old_dir.rename(new_dir)
-        moved = True
+    moved = _move_item_folder(old_dir, new_dir)
 
     async def undo() -> None:
         if moved:
@@ -1104,21 +1128,7 @@ async def _rename_item_locked(db: AsyncSession, project: Project, item: ProjectI
 
     async with _CommitGuard(db, undo) as commit:
         if moved:
-            files = (
-                (
-                    await db.execute(
-                        select(LibraryFile).where(LibraryFile.revision_id.in_(await _item_revision_ids(db, item.id)))
-                    )
-                )
-                .scalars()
-                .all()
-            )
-            for row in files:
-                current = to_absolute_path(row.file_path)
-                if current is not None and old_dir in current.parents:
-                    row.file_path = to_relative_path(
-                        new_dir.joinpath(current.relative_to(old_dir))
-                    )  # SEC-PATH-OK: relative part of a path already under old_dir
+            await _repoint_file_paths(db, item.id, old_dir, new_dir)
         item.name = clean
         item.name_key = key
         await commit()

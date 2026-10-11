@@ -2525,3 +2525,62 @@ class TestMissingProject404:
         response = await async_client.request(method, f"/api/v1/projects/9999/{suffix}")
         assert response.status_code == 404
         assert response.json()["detail"] == "Project not found"
+
+
+class TestUpdateProjectScalarFields:
+    """PATCH /projects/{id}: each plain field lands on the row; each bad value is a 400."""
+
+    async def _create(self, async_client: AsyncClient, name: str = "Scalars") -> int:
+        response = await async_client.post("/api/v1/projects/", json={"name": name})
+        assert response.status_code == 200, response.text
+        return response.json()["id"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_patch_a_missing_project_is_404(self, async_client: AsyncClient):
+        response = await async_client.patch("/api/v1/projects/999999", json={"name": "Nope"})
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Project not found"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_patch_writes_color_counts_notes_priority_and_budget(self, async_client: AsyncClient):
+        project_id = await self._create(async_client)
+        response = await async_client.patch(
+            f"/api/v1/projects/{project_id}",
+            json={"color": "#00FF00", "target_count": 7, "notes": "n", "priority": "urgent", "budget": 12.5},
+        )
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert (body["color"], body["target_count"], body["notes"]) == ("#00FF00", 7, "n")
+        assert (body["priority"], body["budget"]) == ("urgent", 12.5)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_patch_rejects_an_unknown_priority_and_leaves_the_project_alone(self, async_client: AsyncClient):
+        project_id = await self._create(async_client)
+        response = await async_client.patch(f"/api/v1/projects/{project_id}", json={"priority": "whenever"})
+        assert response.status_code == 400
+        assert response.json()["detail"] == "Invalid priority"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_patch_rejects_an_unknown_status(self, async_client: AsyncClient):
+        project_id = await self._create(async_client)
+        response = await async_client.patch(f"/api/v1/projects/{project_id}", json={"status": "paused"})
+        assert response.status_code == 400
+        assert response.json()["detail"] == "Invalid status"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_patch_parent_rules_self_missing_and_detach(self, async_client: AsyncClient):
+        project_id = await self._create(async_client)
+        own = await async_client.patch(f"/api/v1/projects/{project_id}", json={"parent_id": project_id})
+        assert (own.status_code, own.json()["detail"]) == (400, "Project cannot be its own parent")
+        missing = await async_client.patch(f"/api/v1/projects/{project_id}", json={"parent_id": 999999})
+        assert (missing.status_code, missing.json()["detail"]) == (400, "Parent project not found")
+        child = await async_client.post("/api/v1/projects/", json={"name": "Child", "parent_id": project_id})
+        child_id = child.json()["id"]
+        detached = await async_client.patch(f"/api/v1/projects/{child_id}", json={"parent_id": 0})
+        assert detached.status_code == 200
+        assert detached.json()["parent_id"] is None

@@ -810,15 +810,15 @@ async def _items(db, project_id: int) -> list[tuple[int, str]]:
 
 
 def _first_lookup_misses(monkeypatch):
-    """``find_item`` misses once, as when a concurrent drop creates the item right after the lookup."""
-    real = project_filing.find_item
+    """``find_item_by_key`` misses once, as when a concurrent drop creates the item right after the lookup."""
+    real = project_filing.find_item_by_key
     calls = {"n": 0}
 
     async def racing(*args, **kwargs):
         calls["n"] += 1
         return None if calls["n"] == 1 else await real(*args, **kwargs)
 
-    monkeypatch.setattr(project_filing, "find_item", racing)
+    monkeypatch.setattr(project_filing, "find_item_by_key", racing)
     return calls
 
 
@@ -861,7 +861,7 @@ async def test_a_lost_create_race_whose_winner_is_gone_is_a_conflict_skip(db_ses
         return None
 
     monkeypatch.setattr(project_files, "create_item", lost_race)
-    monkeypatch.setattr(project_filing, "find_item", never_found)
+    monkeypatch.setattr(project_filing, "find_item_by_key", never_found)
 
     result = await _move(db_session, project, [row])
 

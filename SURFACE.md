@@ -217,7 +217,7 @@ async def download_revision(
 async def drop_files_on_task(
 async def drop_task_files(
 async def export_project(
-async def find_item(db: AsyncSession, project_id: int, section: str, key: str)
+async def find_item_by_key(db: AsyncSession, project_id: int, section: str, key: str)
 async def find_or_create_item(
 async def fork_item(
 async def fork_revision(

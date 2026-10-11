@@ -64,7 +64,7 @@ def item_name_for_filename(name: str) -> str:
     return stem if stem.strip() else stripped
 
 
-async def find_item(db: AsyncSession, project_id: int, section: str, key: str) -> ProjectItem | None:
+async def find_item_by_key(db: AsyncSession, project_id: int, section: str, key: str) -> ProjectItem | None:
     return (
         await db.execute(
             select(ProjectItem).where(
@@ -86,7 +86,7 @@ async def find_or_create_item(
     it re-reads the winner's item and adds its revision there instead of
     failing. Returns the project too, re-read if the rollback expired it."""
     project_id = project.id
-    item = await find_item(db, project_id, section, key)
+    item = await find_item_by_key(db, project_id, section, key)
     if item is not None:
         return item, project
     try:
@@ -98,7 +98,7 @@ async def find_or_create_item(
             raise
         await db.rollback()
         project = await db.get(Project, project_id)
-        item = await find_item(db, project_id, section, key)
+        item = await find_item_by_key(db, project_id, section, key)
         if item is None or project is None:
             raise project_files.ProjectFilesError(409, "This item was changed meanwhile; drop the files again") from exc
         return item, project

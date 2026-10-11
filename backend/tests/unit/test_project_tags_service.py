@@ -14,6 +14,7 @@ from backend.app.services.project_tags import (
     refresh_tag_mirrors,
     set_project_tags,
     sync_project_tags_from_string,
+    tag_name_key,
 )
 
 
@@ -146,3 +147,11 @@ async def test_refresh_tag_mirrors_with_no_projects_is_a_noop(db_session):
     project = await _project(db_session, tags="kept")
     await refresh_tag_mirrors(db_session, [])
     assert project.tags == "kept"
+
+
+def test_library_tags_name_key_delegates_to_tag_name_key():
+    from backend.app.api.routes.library_tags import _name_key
+
+    for raw in ("  Toys  ", "TOYS", "toys", "\tMiXeD Case\n"):
+        assert _name_key(raw) == tag_name_key(raw)
+    assert tag_name_key("  MiXeD Case ") == "mixed case"
