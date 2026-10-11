@@ -358,6 +358,32 @@ async def test_deliveries_replace_rows_and_record_labels(db_session):
 
 
 @pytest.mark.asyncio
+async def test_deliveries_share_lock_the_added_revisions_after_the_flush(db_session, monkeypatch):
+    """T-291: on PostgreSQL the added revisions are locked FOR SHARE before the re-check."""
+    project = await _project(db_session)
+    _item, r1 = await _revision(db_session, project, name="Support")
+    _mesh, m1 = await _revision(db_session, project, section="scan", name="Mesh brut")
+    order = await _order(db_session)
+    task = await _task(db_session, order, linked=project.id)
+    calls = []
+
+    async def lock(db, revision_ids, *, share=False):
+        pending = await db.execute(select(AitoTaskDelivery.revision_id).where(AitoTaskDelivery.task_id == task.id))
+        calls.append((sorted(revision_ids), share, sorted(pending.scalars())))
+        return None
+
+    monkeypatch.setattr(links, "lock_revision_rows", lock)
+    await links.set_deliveries(db_session, task, [r1.id], actor="Paul")
+    # the delivery row is already flushed when the lock is taken
+    assert calls == [([r1.id], True, [r1.id])]
+    await links.set_deliveries(db_session, task, [m1.id], actor="Paul")  # one added, one removed
+    assert calls[1] == ([m1.id], True, [m1.id])
+    await links.set_deliveries(db_session, task, [], actor="Paul")  # nothing added: no lock
+    await links.set_deliveries(db_session, task, [], actor="Paul")  # unchanged: no lock
+    assert len(calls) == 2
+
+
+@pytest.mark.asyncio
 async def test_deliveries_refuse_a_revision_deleted_after_validation(db_session, monkeypatch):
     project = await _project(db_session)
     _item, r1 = await _revision(db_session, project, name="Support")

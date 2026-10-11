@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse
 from fastapi.routing import APIRoute
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from starlette.types import Receive, Scope, Send
+from starlette.types import Message, Receive, Scope, Send
 
 from backend.app.api.routes.library import _ensure_library_file_visible, may_modify_library_file
 from backend.app.core import database
@@ -63,11 +63,37 @@ logger = logging.getLogger(__name__)
 _UPLOAD_OVERHEAD_BYTES = 8 * 1024
 
 
+def _upload_too_large(cap: int) -> HTTPException:
+    return HTTPException(status_code=413, detail=f"Upload exceeds the maximum size of {cap} bytes")
+
+
+def _receive_capped(request: Request, cap: int) -> Request:
+    """``request`` with a receive that counts body bytes and raises the 413 once they pass
+    ``cap`` plus the multipart overhead — the multipart parser never gets the excess."""
+    limit = cap + _UPLOAD_OVERHEAD_BYTES
+    upstream = request.receive
+    received = 0
+
+    async def receive() -> Message:
+        nonlocal received
+        message = await upstream()
+        if message["type"] == "http.request":
+            received += len(message.get("body", b""))
+            if received > limit:
+                raise _upload_too_large(cap)
+        return message
+
+    return Request(request.scope, receive)
+
+
 def content_length_capped_route(*permissions: Permission) -> type[APIRoute]:
     """A route class that authorises with every one of ``permissions`` and rejects an
     over-cap multipart body from its Content-Length before Starlette spools it — same
     gate as the library upload routes (``_ContentLengthCappedRoute`` in library.py),
-    authorised with project permissions instead of ``library:upload``."""
+    authorised with project permissions instead of ``library:upload``.
+
+    A body with no usable Content-Length (chunked transfer encoding) is counted as it
+    arrives instead, and refused past the same limit before the parser spools the rest."""
     checkers = [require_permission_if_auth_enabled(permission) for permission in permissions]
 
     class _CappedRoute(APIRoute):
@@ -78,11 +104,13 @@ def content_length_capped_route(*permissions: Permission) -> type[APIRoute]:
                 credentials = await security(request)
                 for checker in checkers:
                     await checker(credentials, request.headers.get("x-api-key"))
+                cap = settings.library_max_upload_bytes
                 declared = request.headers.get("content-length")
                 if declared and declared.isdigit():
-                    cap = settings.library_max_upload_bytes
                     if int(declared) > cap + _UPLOAD_OVERHEAD_BYTES:
-                        raise HTTPException(status_code=413, detail=f"Upload exceeds the maximum size of {cap} bytes")
+                        raise _upload_too_large(cap)
+                else:
+                    request = _receive_capped(request, cap)
                 return await original(request)
 
             return handler

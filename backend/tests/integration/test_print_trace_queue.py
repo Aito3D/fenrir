@@ -22,7 +22,7 @@ from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.project import Project
-from backend.app.services import project_storage
+from backend.app.services import project_print_trace, project_storage
 from backend.app.services.aito_project_links import order_links
 from backend.app.services.print_batch import _clone_queue_item
 from backend.app.services.project_files import load_tree
@@ -784,3 +784,55 @@ async def test_source_trace_without_a_source_is_empty():
     from backend.app.services.project_print_trace import _source_trace
 
     assert await _source_trace(object(), None, None) == (None, None)
+
+
+# T-291: queueing a revision file share-locks its revision (PostgreSQL only; the
+# helper runs nothing on SQLite and is pinned in test_project_revisions). The spy
+# stands in for it: None is SQLite, a set is what PostgreSQL found still there.
+
+
+def _spy_revision_lock(monkeypatch, found=None):
+    calls: list[tuple[list[int], bool]] = []
+
+    async def lock(db, revision_ids, *, share=False):
+        calls.append((sorted(revision_ids), share))
+        return found(revision_ids) if callable(found) else found
+
+    monkeypatch.setattr(project_print_trace, "lock_revision_rows", lock)
+    return calls
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_queueing_a_revision_file_share_locks_its_revision(
+    async_client: AsyncClient, db_session, monkeypatch, tmp_path
+):
+    project = await _project(async_client)
+    revision_id, file_id = await _revision_file(async_client, db_session, project["id"])
+    archive_id = await _archive(db_session, revision_id=revision_id)
+    plain_id = await _plain_file(db_session, tmp_path)
+    calls = _spy_revision_lock(monkeypatch, found=set)  # PostgreSQL: every id still there
+
+    response = await async_client.post("/api/v1/queue/", json={"library_file_id": file_id})
+    assert response.status_code == 200, response.text
+    assert response.json()["revision_id"] == revision_id
+    assert calls == [([revision_id], True)]
+    # a plain file and a reprint (the archive, not a revision file, is queued) take no lock
+    assert (await async_client.post("/api/v1/queue/", json={"library_file_id": plain_id})).status_code == 200
+    assert (await async_client.post("/api/v1/queue/", json={"archive_id": archive_id})).status_code == 200
+    assert calls == [([revision_id], True)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_queueing_a_revision_file_whose_revision_was_just_deleted_is_409(
+    async_client: AsyncClient, db_session, monkeypatch
+):
+    project = await _project(async_client)
+    _revision_id, file_id = await _revision_file(async_client, db_session, project["id"])
+    _spy_revision_lock(monkeypatch, found=set())  # PostgreSQL: the delete committed while we waited
+
+    response = await async_client.post("/api/v1/queue/", json={"library_file_id": file_id})
+    assert response.status_code == 409, response.text
+    assert response.json()["detail"] == "This file's project revision was deleted meanwhile"
+    assert await _items(db_session, library_file_id=file_id) == []

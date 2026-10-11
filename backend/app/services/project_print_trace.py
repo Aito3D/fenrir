@@ -26,12 +26,13 @@ from backend.app.models.print_queue import PrintQueueItem
 from backend.app.services.actor import record_as
 from backend.app.services.db_quiet import rollback_quietly
 from backend.app.services.http_status_error import HttpStatusError
-from backend.app.services.project_revisions import find_revision_bundle, revision_label
+from backend.app.services.project_revisions import find_revision_bundle, lock_revision_rows, revision_label
 
 logger = logging.getLogger(__name__)
 
 QUEUED_KIND = "print.queued_from_revision"
 TASK_UNUSABLE = "This Aito task can't be used for this file"
+REVISION_DELETED = "This file's project revision was deleted meanwhile"
 
 
 class PrintTraceError(HttpStatusError, ValueError):
@@ -94,6 +95,12 @@ async def resolve_print_context(
     revision_id, source_task_id = await _source_trace(db, library_file_id, archive_id)
     bundle = None
     if revision_id is not None:
+        if library_file_id is not None:
+            # PostgreSQL: a concurrent delete of the revision commits first (this then
+            # refuses) or waits for the queue item and refuses itself.
+            locked = await lock_revision_rows(db, [revision_id], share=True)
+            if locked is not None and revision_id not in locked:
+                raise PrintTraceError(409, REVISION_DELETED)
         bundle = await find_revision_bundle(db, revision_id)
     if bundle is None:
         if aito_task_id is not None:

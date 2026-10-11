@@ -1121,6 +1121,93 @@ async def test_repeated_cancellation_still_waits_for_the_commit(db_session, root
     assert [p.name for p in _trash_entries(base)] == ["a.step"]
 
 
+# T-290: a COMMIT that never resolves (stalled PostgreSQL connection, dead
+# aiosqlite thread). The cancelled request waits only _COMMIT_CANCEL_WAIT_S for
+# it, then counts it as may-have-landed and re-raises, freeing the item lock.
+
+
+def _commit_stalls(db_session, monkeypatch):
+    stalled = asyncio.Event()
+    started: dict[str, asyncio.Task] = {}
+
+    async def commit():
+        started["commit_task"] = asyncio.current_task()
+        await stalled.wait()
+
+    monkeypatch.setattr(db_session, "commit", commit)
+    monkeypatch.setattr(project_files, "_COMMIT_CANCEL_WAIT_S", 0.05)
+    return stalled, started
+
+
+async def _cancel_stalled_commit(operation, item_id, stalled, started, caplog, label):
+    task = asyncio.ensure_future(operation)
+    while "commit_task" not in started:
+        await asyncio.sleep(0)
+    task.cancel()
+    with caplog.at_level("ERROR", logger=project_files.logger.name), pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(task, timeout=5)
+    assert not started["commit_task"].done(), "the stalled commit is given up on, not awaited"
+    [record] = [r for r in caplog.records if r.name == project_files.logger.name and r.levelname == "ERROR"]
+    assert record.getMessage().startswith(f"Commit of {label} still pending 0.1 s after its request was cancelled")
+    # the item lock is free again: a second operation on the item proceeds
+    lock = project_files._item_lock(item_id)
+    await asyncio.wait_for(lock.acquire(), timeout=1)
+    lock.release()
+    stalled.set()  # let the stalled commit task finish, so the loop closes without a pending task
+    await started["commit_task"]
+
+
+@pytest.mark.asyncio
+async def test_add_revision_keeps_files_when_a_cancelled_commit_stalls(db_session, root, monkeypatch, caplog):
+    project = await _project(db_session)
+    item = await create_item(db_session, project, section="scan", name="Mesh", user_id=None)
+    storage_dir, item_id = project.storage_dir, item.id
+    await db_session.commit()
+    stalled, started = _commit_stalls(db_session, monkeypatch)
+    await _cancel_stalled_commit(
+        add_revision(db_session, project, item, [upload("a.ply")], note=None, derived_from_id=None, user_id=None),
+        item_id,
+        stalled,
+        started,
+        caplog,
+        f"new revision of item {item_id}",
+    )
+    # may have landed: the files stay where the database may point
+    assert (root / storage_dir / "Scan" / "Mesh" / "R1" / "a.ply").read_bytes() == b"data"
+
+
+@pytest.mark.asyncio
+async def test_delete_item_stays_trashed_when_a_cancelled_commit_stalls(db_session, root, monkeypatch, caplog):
+    project = await _project(db_session)
+    item, _rev_row = await _rev(db_session, project)
+    await db_session.commit()
+    base, item_id = root / project.storage_dir, item.id
+    stalled, started = _commit_stalls(db_session, monkeypatch)
+    await _cancel_stalled_commit(
+        delete_item(db_session, project, item), item_id, stalled, started, caplog, f"deletion of item {item_id}"
+    )
+    assert not (base / "Modélisation" / "Support").exists()
+    assert [p.name for p in _trash_entries(base)] == ["a.step"]
+
+
+@pytest.mark.asyncio
+async def test_commit_finishing_within_the_bound_after_cancel_still_counts(monkeypatch):
+    """A commit that lands after the cancellation, inside the bound, is waited for as before."""
+    monkeypatch.setattr(project_files, "_COMMIT_CANCEL_WAIT_S", 5.0)
+    release = asyncio.Event()
+    db = _GuardSession(commit=release.wait)
+    outcome = project_files._CommitOutcome("test op")
+    task = asyncio.ensure_future(project_files._commit_through_cancel(db, outcome))
+    await asyncio.sleep(0)
+    task.cancel()
+    await asyncio.sleep(0.01)
+    assert not task.done()
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert outcome.may_have_landed is True
+
+
 # Event-loop shutdown (`docker stop`): asyncio.run cancels every remaining task,
 # the commit's own task included, while the worker thread still runs the
 # COMMIT. The patched commit records its task and hands the COMMIT to a gated
@@ -2750,3 +2837,50 @@ def test_find_item_and_find_revision_return_none_when_the_tree_lacks_them():
     assert project_files.find_revision(tree, 7) is rev
     assert project_files.find_item(tree, 4) is None
     assert project_files.find_revision(tree, 8) is None
+
+
+# T-291: on PostgreSQL the delete paths lock their revision rows FOR UPDATE before
+# the usage pre-check (lock_revision_rows itself is pinned in test_project_revisions).
+
+
+def _spy_lock_and_usage(monkeypatch, module):
+    calls: list[tuple] = []
+    real_used = project_files.revision_is_used
+
+    async def lock(db, revision_ids, *, share=False):
+        calls.append(("lock", sorted(revision_ids), share))
+        return None
+
+    async def used(db, revision_id):
+        calls.append(("used", revision_id))
+        return await real_used(db, revision_id)
+
+    monkeypatch.setattr(module, "lock_revision_rows", lock)
+    monkeypatch.setattr(project_files, "revision_is_used", used)
+    return calls
+
+
+@pytest.mark.asyncio
+async def test_delete_revision_locks_the_revision_before_the_usage_check(db_session, root, monkeypatch):
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project)
+    await db_session.commit()
+    rev_id = rev.id
+    calls = _spy_lock_and_usage(monkeypatch, project_files)
+    await delete_revision(db_session, project, item, rev)
+    assert calls[:2] == [("lock", [rev_id], False), ("used", rev_id)]
+    assert [c for c in calls if c[0] == "lock"] == [("lock", [rev_id], False)]
+
+
+@pytest.mark.asyncio
+async def test_delete_item_locks_every_revision_before_the_usage_checks(db_session, root, monkeypatch):
+    project = await _project(db_session)
+    item, r1 = await _rev(db_session, project)
+    r2, _ = await add_revision(
+        db_session, project, item, [upload("b.step")], note=None, derived_from_id=None, user_id=None
+    )
+    await db_session.commit()
+    ids = sorted([r1.id, r2.id])
+    calls = _spy_lock_and_usage(monkeypatch, project_files)
+    await delete_item(db_session, project, item)
+    assert calls == [("lock", ids, False), ("used", ids[0]), ("used", ids[1])]

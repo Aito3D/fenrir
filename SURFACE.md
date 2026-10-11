@@ -251,6 +251,7 @@ async def list_projects(
 async def list_templates(
 async def load_pipeline(db: AsyncSession, pipeline_id: int)
 async def load_tree(db: AsyncSession, project: Project)
+async def lock_revision_rows(
 async def migrate_project_legacy(db: AsyncSession, project: Project)
 async def move_library_files_to_project(
 async def order_links(db: AsyncSession, order_id: int)
@@ -342,6 +343,7 @@ def revision_added_payload(
 def revision_dir(project, section: str, item_name: str, number: int)
 def revision_file_path(file_path: str | None)
 def revision_label(item_name: str, number: int)
+def revision_lock_statement(revision_ids: Collection[int], *, share: bool = False)
 def revision_ref(revision: ProjectRevision, item: ProjectItem)
 def sanitize_component(name: str, fallback: str = "sans-nom")
 def section_for_filename(name: str)

@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.routes import aito_project_links as links_routes, project_files as files_routes
 from backend.app.core.auth import create_access_token, get_password_hash
+from backend.app.core.config import settings
 from backend.app.core.permissions import Permission
 from backend.app.core.websocket import ws_manager
 from backend.app.models.aito_event import AitoEvent
@@ -22,7 +23,7 @@ from backend.app.models.project_item import ProjectItem
 from backend.app.models.settings import Settings
 from backend.app.models.user import User
 from backend.app.services import aito_project_links as links_service, project_files as files_service, project_storage
-from backend.tests.project_fixtures import projects_root_fixture
+from backend.tests.project_fixtures import ChunkedMultipart, projects_root_fixture
 
 root = projects_root_fixture(autouse=True)
 
@@ -266,6 +267,25 @@ async def test_drop_files_endpoint(async_client: AsyncClient, db_session):
 
     events = (await async_client.get(f"/api/v1/aito/{order.id}/events", params={"depth": "story"})).json()
     assert [e["kind"] for e in events["events"]].count("project.files_dropped") == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_drop_chunked_upload_over_cap_refused(async_client: AsyncClient, db_session, monkeypatch):
+    """T-289: a chunked drop (no Content-Length) is capped like the project upload routes."""
+    task = await _task(db_session, await _order(db_session))
+    project = await _project(async_client)
+    await async_client.put(f"/api/v1/aito/tasks/{task.id}/project", json={"project_id": project["id"]})
+    monkeypatch.setattr(settings, "library_max_upload_bytes", 1024)
+    url = f"/api/v1/aito/tasks/{task.id}/files"
+    body = ChunkedMultipart([(f"part{i}.3mf", b"x" * 1000) for i in range(40)])
+    refused = await body.post(async_client, url)
+    assert refused.status_code == 413
+    assert refused.json()["detail"] == "Upload exceeds the maximum size of 1024 bytes"
+    assert body.sent < len(body.body)
+    accepted = await ChunkedMultipart([("a.3mf", b"x" * 1000)]).post(async_client, url)
+    assert accepted.status_code == 201, accepted.text
+    assert accepted.json()["results"][0]["section"] == "impression"
 
 
 @pytest.mark.asyncio

@@ -43,6 +43,7 @@ from backend.app.services import project_files, project_print_trace
 from backend.app.services.actor import actor_name, record_as
 from backend.app.services.http_status_error import HttpStatusError
 from backend.app.services.project_filing import find_or_create_item, item_name_for_filename
+from backend.app.services.project_revisions import lock_revision_rows
 from backend.app.services.project_suggestions import SIMILAR_NAME_THRESHOLD, similar_projects
 from backend.app.services.project_tags import UnknownTagError, apply_project_tag_input
 
@@ -227,7 +228,9 @@ async def set_deliveries(
     db.add_all(AitoTaskDelivery(task_id=task.id, revision_id=rid, created_by_id=user_id) for rid in added)
     await db.flush()
     # a revision may have been deleted since the validation above; the write lock is held now
+    # (on PostgreSQL the share lock waits for a concurrent delete to commit)
     if added:
+        await lock_revision_rows(db, added, share=True)
         still_there = set((await db.execute(select(ProjectRevision.id).where(ProjectRevision.id.in_(added)))).scalars())
         gone = [rid for rid in added if rid not in still_there]
         if gone:

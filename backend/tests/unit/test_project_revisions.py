@@ -47,3 +47,79 @@ async def test_get_revision_bundle_unknown_revision_is_404(db_session):
         await project_files.get_revision_bundle(db_session, 987654)
     assert exc.value.status_code == 404
     assert exc.value.detail == "Revision not found"
+
+
+# --- T-291: revision row locks (PostgreSQL only) ------------------------------
+# There is no PostgreSQL in the test environment: the lock semantics are pinned by
+# the compiled SQL, and the call sites by spies (test_project_files_service,
+# test_aito_project_links_service, test_print_trace_queue).
+
+
+def _compiled(statement, dialect) -> str:
+    return " ".join(str(statement.compile(dialect=dialect)).split())
+
+
+def test_revision_lock_statement_renders_for_update_and_for_share_on_postgresql_only():
+    from sqlalchemy.dialects import postgresql, sqlite
+
+    update_lock = project_revisions.revision_lock_statement([3, 1])
+    share_lock = project_revisions.revision_lock_statement([3, 1], share=True)
+    pg_update = _compiled(update_lock, postgresql.dialect())
+    pg_share = _compiled(share_lock, postgresql.dialect())
+    assert pg_update.startswith("SELECT project_revisions.id FROM project_revisions WHERE project_revisions.id IN")
+    assert pg_update.endswith("ORDER BY project_revisions.id FOR UPDATE")
+    assert pg_share.endswith("ORDER BY project_revisions.id FOR SHARE")
+    for statement in (update_lock, share_lock):
+        lite = _compiled(statement, sqlite.dialect())
+        assert "FOR " not in lite and lite.endswith("ORDER BY project_revisions.id")
+
+
+@pytest.mark.asyncio
+async def test_lock_revision_rows_runs_nothing_on_sqlite(db_session, test_engine):
+    from sqlalchemy import event
+
+    statements: list[str] = []
+
+    def record(_conn, _cursor, statement, *_args):
+        statements.append(statement)
+
+    event.listen(test_engine.sync_engine, "before_cursor_execute", record)
+    try:
+        assert await project_revisions.lock_revision_rows(db_session, [1, 2]) is None
+        assert await project_revisions.lock_revision_rows(db_session, [1], share=True) is None
+    finally:
+        event.remove(test_engine.sync_engine, "before_cursor_execute", record)
+    assert statements == []
+
+
+class _PostgresSession:
+    """Just enough AsyncSession for lock_revision_rows: a PostgreSQL bind and a recording execute."""
+
+    def __init__(self, present: list[int]):
+        from sqlalchemy.dialects import postgresql
+
+        self.dialect = postgresql.dialect()
+        self.present = present
+        self.executed = []
+
+    def get_bind(self):
+        return self
+
+    async def execute(self, statement):
+        self.executed.append(statement)
+        present = self.present
+
+        class _Result:
+            def scalars(self):
+                return iter(present)
+
+        return _Result()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("share", "clause"), [(False, "FOR UPDATE"), (True, "FOR SHARE")])
+async def test_lock_revision_rows_on_postgresql_locks_and_returns_the_ids_still_there(share, clause):
+    db = _PostgresSession(present=[1])
+    assert await project_revisions.lock_revision_rows(db, [1, 2], share=share) == {1}
+    [statement] = db.executed
+    assert _compiled(statement, db.dialect).endswith(clause)
