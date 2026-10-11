@@ -1,0 +1,1 @@
+import{i as e}from"./chunk-aKtaBQYM.js";import{p as t}from"./jsx-runtime-HgmLiLbg.js";var n=e(t(),1);function r(e,t){let[r,i]=(0,n.useState)(e);return(0,n.useEffect)(()=>{let n=setTimeout(()=>i(e),t);return()=>clearTimeout(n)},[e,t]),r}export{r as t};
