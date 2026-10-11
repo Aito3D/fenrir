@@ -6,7 +6,9 @@ import { render } from '../../../utils';
 import { server } from '../../../mocks/server';
 import { api, setAuthToken } from '../../../../api/client';
 import { CardView } from '../../../../components/aito/CardView';
+import { useAuth } from '../../../../contexts/AuthContext';
 import type { AitoProject } from '../../../../api/client';
+import { reachesDocument } from '../../../dragHelpers';
 
 const project: AitoProject = {
   id: 12,
@@ -184,8 +186,8 @@ describe('card file drop', () => {
     fireEvent.drop(zone(), {
       dataTransfer: { files: [new File(['x'], 'part.3mf'), new File(['x'], 'part.stl')], types: ['Files'] },
     });
+    // The toast comes from the same synchronous step that would otherwise go on to read the links.
     expect(await screen.findByText('Only 3MF and G-code files can go into a project')).toBeInTheDocument();
-    await new Promise((r) => setTimeout(r, 50));
     expect(linksSpy).not.toHaveBeenCalled();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(posted).toEqual([]);
@@ -211,31 +213,21 @@ describe('card file drop', () => {
     expect(posted).toEqual([]);
   });
 
-  it('a non-file drag does nothing', async () => {
+  it('a non-file drag does nothing', () => {
     links = [link(11, 7, 'P-0007')];
+    // Every upload starts by reading the order's links, synchronously inside the drop handler:
+    // a spy that stays silent right after the event proves the drop was ignored.
+    const linksSpy = vi.spyOn(api, 'getOrderProjectLinks');
     render(<CardView project={project} onExpand={() => {}} />);
     const over = fireEvent.dragOver(zone(), { dataTransfer: { types: ['text/plain'] } });
     expect(over).toBe(true);
     fireEvent.drop(zone(), { dataTransfer: { files: [], types: ['text/plain'] } });
-    await new Promise((r) => setTimeout(r, 50));
+    expect(linksSpy).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('card-drop-busy')).not.toBeInTheDocument();
     expect(posted).toEqual([]);
+    linksSpy.mockRestore();
   });
 });
-
-/** True when a native `type` event fired by `fire` bubbles up to the document. */
-const reachesDocument = (type: 'dragover' | 'drop', fire: () => void) => {
-  let reached = false;
-  const listener = () => {
-    reached = true;
-  };
-  document.addEventListener(type, listener);
-  try {
-    fire();
-  } finally {
-    document.removeEventListener(type, listener);
-  }
-  return reached;
-};
 
 describe('card file drop zone handlers', () => {
   const zone = () => screen.getByTestId('aito-card-shell');
@@ -280,13 +272,16 @@ describe('card file drop zone handlers', () => {
     await waitFor(() => expect(posted).toEqual(['11']));
   });
 
-  it('an empty file drop is claimed but asks nothing', async () => {
+  it('an empty file drop is claimed but asks nothing', () => {
     const onExpand = vi.fn();
+    // The toast and onExpand both come after reading the order's links, which an empty drop never does.
+    const linksSpy = vi.spyOn(api, 'getOrderProjectLinks');
     render(<CardView project={project} onExpand={onExpand} />);
     expect(fireEvent.drop(zone(), { dataTransfer: { files: [], types: ['Files'] } })).toBe(false);
-    await new Promise((r) => setTimeout(r, 50));
+    expect(linksSpy).not.toHaveBeenCalled();
     expect(onExpand).not.toHaveBeenCalled();
     expect(screen.queryByText('Link a project to this task first')).not.toBeInTheDocument();
+    linksSpy.mockRestore();
   });
 
   it('an overlay card has no drop handlers at all', () => {
@@ -301,6 +296,20 @@ describe('card file drop zone handlers', () => {
 describe('card file drop permissions', () => {
   const zone = () => screen.getByTestId('aito-card-shell');
   let meServed: boolean;
+
+  // Renders only once /auth/me has been applied: before that AuthContext is permissive
+  // (auth disabled), so a denied permission set could not be told from "not loaded yet".
+  const AuthLoaded = () => {
+    const { user } = useAuth();
+    return user ? <span data-testid="auth-loaded">{user.username}</span> : null;
+  };
+  const renderSignedIn = () =>
+    render(
+      <>
+        <AuthLoaded />
+        <CardView project={project} onExpand={() => {}} />
+      </>,
+    );
 
   const signInWith = (permissions: string[]) => {
     meServed = false;
@@ -321,9 +330,9 @@ describe('card file drop permissions', () => {
   it('drops with aito:update + projects:update + projects:read', async () => {
     signInWith(['aito:read', 'aito:update', 'projects:read', 'projects:update']);
     links = [link(11, 7, 'P-0007')];
-    render(<CardView project={project} onExpand={() => {}} />);
-    await waitFor(() => expect(meServed).toBe(true));
-    await new Promise((r) => setTimeout(r, 50));
+    renderSignedIn();
+    await screen.findByTestId('auth-loaded');
+    expect(meServed).toBe(true);
     fireEvent.drop(zone(), fileDrop());
     await waitFor(() => expect(posted).toEqual(['11']));
   });
@@ -331,12 +340,17 @@ describe('card file drop permissions', () => {
   it('ignores the drop without projects:read (the links it needs are unreadable)', async () => {
     signInWith(['aito:read', 'aito:update', 'projects:update']);
     links = [link(11, 7, 'P-0007')];
-    render(<CardView project={project} onExpand={() => {}} />);
-    await waitFor(() => expect(meServed).toBe(true));
-    await new Promise((r) => setTimeout(r, 50));
+    const linksSpy = vi.spyOn(api, 'getOrderProjectLinks');
+    renderSignedIn();
+    await screen.findByTestId('auth-loaded');
+    expect(meServed).toBe(true);
+    // The handler reads the order's links synchronously for an allowed drop, so a silent spy
+    // right after the event proves the drop was refused (no timer needed).
     fireEvent.drop(zone(), fileDrop());
-    await new Promise((r) => setTimeout(r, 100));
+    expect(linksSpy).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('card-drop-busy')).not.toBeInTheDocument();
     expect(posted).toEqual([]);
     expect(screen.queryByText('Link a project to this task first')).not.toBeInTheDocument();
+    linksSpy.mockRestore();
   });
 });

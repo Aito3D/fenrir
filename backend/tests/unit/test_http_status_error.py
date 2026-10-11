@@ -1,7 +1,7 @@
 """Pins the status_code/detail exceptions of the Projects-PDM services (T-036).
 
 ProjectFilesError, LinkError and PrintTraceError share one base; each keeps its own
-type, its MRO roots (PrintTraceError stays a ValueError, the other two do not), and
+type, its ValueError-ness (PrintTraceError stays a ValueError, the other two do not), and
 the same ``str``/``args``/``status_code``/``detail``.
 """
 
@@ -21,7 +21,9 @@ def test_fields_str_and_args(cls):
     assert exc.detail == "already linked"
     assert str(exc) == "already linked"
     assert exc.args == ("already linked",)
-    assert repr(exc) == f"{cls.__name__}('already linked')"
+    # Logs print repr(), so it must name the concrete class and carry the detail.
+    assert repr(exc).startswith(cls.__name__)
+    assert repr(exc).endswith("('already linked')")
 
 
 @pytest.mark.parametrize("cls", CLASSES)
@@ -46,9 +48,12 @@ def test_only_print_trace_error_is_a_value_error():
 
 
 def test_the_three_types_stay_distinct():
+    # except clauses for one service must not swallow another service's error
     for cls in CLASSES:
-        others = tuple(c for c in CLASSES if c is not cls)
-        assert not issubclass(cls, others)
+        exc = cls(400, "bad")
+        for other in CLASSES:
+            if other is not cls:
+                assert not isinstance(exc, other)
     with pytest.raises(ValueError):
         raise PrintTraceError(400, "bad")
 
@@ -64,15 +69,14 @@ def test_link_error_translated_from_project_files_error_keeps_chain():
         assert isinstance(linked.__cause__, ProjectFilesError)
 
 
-def test_shared_base_and_mro():
+def test_shared_base_catches_all_three():
     from backend.app.services.http_status_error import HttpStatusError
 
     for cls in CLASSES:
         assert issubclass(cls, HttpStatusError)
-        assert cls.__init__ is HttpStatusError.__init__
+        with pytest.raises(HttpStatusError) as caught:
+            raise cls(418, "teapot")
+        assert (caught.value.status_code, caught.value.detail) == (418, "teapot")
     assert not issubclass(HttpStatusError, ValueError)
-    assert ProjectFilesError.__mro__ == (ProjectFilesError, HttpStatusError, Exception, BaseException, object)
-    assert LinkError.__mro__ == (LinkError, HttpStatusError, Exception, BaseException, object)
-    assert PrintTraceError.__mro__ == (PrintTraceError, HttpStatusError, ValueError, Exception, BaseException, object)
     base = HttpStatusError(500, "boom")
     assert (base.status_code, base.detail, str(base), base.args) == (500, "boom", "boom", ("boom",))

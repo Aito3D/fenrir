@@ -11,6 +11,7 @@ import { server } from '../../../mocks/server';
 import { ProjectFilesPanel } from '../../../../components/projects/files/ProjectFilesPanel';
 import { useFileActions } from '../../../../components/projects/files/useFileActions';
 import { api, setAuthToken } from '../../../../api/client';
+import { reachesDocument } from '../../../dragHelpers';
 
 vi.mock('../../../../components/ModelViewerModal', () => ({
   ModelViewerModal: ({ title, libraryFileId, onClose }: { title: string; libraryFileId: number; onClose: () => void }) => (
@@ -451,20 +452,6 @@ describe('ProjectFilesPanel actions', () => {
   });
 });
 
-/** True when a native `type` event fired by `fire` bubbles up to the document. */
-const reachesDocument = (type: 'dragover' | 'drop', fire: () => void) => {
-  let reached = false;
-  const listener = () => {
-    reached = true;
-  };
-  document.addEventListener(type, listener);
-  try {
-    fire();
-  } finally {
-    document.removeEventListener(type, listener);
-  }
-  return reached;
-};
 /** A dragleave whose `relatedTarget` is `to` (jsdom has no DragEvent to carry it). */
 const leaveTo = (el: Element, to: Element | null) => {
   const ev = createEvent.dragLeave(el);

@@ -10,6 +10,7 @@ import { TaskRow } from '../../../../components/aito/TaskRow';
 import { TaskStepList } from '../../../../components/aito/TaskStepList';
 import { emptyTaskDraft } from '../../../../utils/taskDraft';
 import type { TaskDraft } from '../../../../utils/taskDraft';
+import { reachesDocument } from '../../../dragHelpers';
 
 const ORDER = 42;
 const TASK = 11;
@@ -383,22 +384,6 @@ describe('TaskStepList section summaries', () => {
     expect(within(line).getByTitle('Support R3 · Approved · Clip R1 · In progress')).toBeInTheDocument();
   });
 });
-
-/** True when a native `type` event fired by `fire` bubbles up to the document
- *  (i.e. no handler on the way stopped its propagation). */
-const reachesDocument = (type: 'dragover' | 'drop', fire: () => void) => {
-  let reached = false;
-  const listener = () => {
-    reached = true;
-  };
-  document.addEventListener(type, listener);
-  try {
-    fire();
-  } finally {
-    document.removeEventListener(type, listener);
-  }
-  return reached;
-};
 
 describe('task file drop zone', () => {
   const files = (...names: string[]) => ({ dataTransfer: { files: names.map((n) => new File(['x'], n)), types: ['Files'] } });
