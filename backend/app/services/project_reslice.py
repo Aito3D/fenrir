@@ -99,7 +99,7 @@ async def prepare_reslice(db: AsyncSession, revision_id: int, body: ResliceBody,
         slice_request = slice_request_from_pipeline(pipeline)
     except ValidationError as exc:
         raise ProjectFilesError(400, "Pipeline has no usable filament preset") from exc
-    path = project_files._revision_file_path(source.file_path)
+    path = project_files.revision_file_path(source.file_path)
     if path is None or not path.exists():
         raise ProjectFilesError(404, "Source file missing on disk")
     return ResliceRequest(

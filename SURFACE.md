@@ -338,6 +338,7 @@ def reslice_note(source_number: int, pipeline_name: str)
 def resolve_in_projects(*parts: str)
 def revision_added_payload(
 def revision_dir(project, section: str, item_name: str, number: int)
+def revision_file_path(file_path: str | None)
 def revision_label(item_name: str, number: int)
 def revision_ref(revision: ProjectRevision, item: ProjectItem)
 def sanitize_component(name: str, fallback: str = "sans-nom")

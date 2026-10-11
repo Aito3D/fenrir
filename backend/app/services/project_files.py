@@ -708,7 +708,7 @@ async def _commit_through_cancel(db: AsyncSession, outcome: _CommitOutcome) -> N
     When the commit task itself was cancelled from outside (``asyncio.run``
     cancels every remaining task on shutdown), the worker thread may still
     have run the COMMIT, so the outcome is unknown and ``may_have_landed`` is
-    set too: leaving the files in place is the safe side. ``_committing``
+    set too: leaving the files in place is the safe side. ``_CommitGuard``
     skips its rollback and filesystem undo when
     ``outcome.may_have_landed`` is set, so disk never loses what the database
     may hold. A commit that fails on its own raises its own exception,
@@ -729,7 +729,7 @@ async def _commit_through_cancel(db: AsyncSession, outcome: _CommitOutcome) -> N
 
 
 class _CommitGuard:
-    """``async with _committing(db, undo) as commit:`` whose body ends with ``await commit()``.
+    """``async with _CommitGuard(db, undo) as commit:`` whose body ends with ``await commit()``.
 
     ``commit`` is ``_commit_through_cancel``. When the body raises anything
     (cancellation included), ``undo`` runs unless the commit may have landed,
@@ -766,9 +766,6 @@ class _CommitGuard:
         return False
 
 
-_committing = _CommitGuard
-
-
 async def _add_revision_locked(
     db: AsyncSession,
     project: Project,
@@ -802,7 +799,7 @@ async def _add_revision_locked(
             return ProjectFilesError(409, "Another upload just created this revision number; try again")
         return None
 
-    async with _committing(db, undo, translate=translate) as commit:
+    async with _CommitGuard(db, undo, translate=translate) as commit:
         written = await write(folder)
         await _require_item_unchanged(db, item_id, section, name)
         revision = ProjectRevision(
@@ -933,7 +930,7 @@ async def add_files_to_revision(
             await db.rollback()
             _cleanup_written(written)
 
-        async with _committing(db, undo) as commit:
+        async with _CommitGuard(db, undo) as commit:
             written = await _stream_files(folder, uploads)
             await _require_item_unchanged(db, item_id, section, name)
             # the revision may have been validated or used while streaming
@@ -973,7 +970,7 @@ async def _restore_and_rollback(db: AsyncSession, moved: Path | None, original: 
 
 
 class _TrashGuard(_CommitGuard):
-    """``_committing`` whose undo puts back what ``trash()`` moved, then rolls back.
+    """``_CommitGuard`` whose undo puts back what ``trash()`` moved, then rolls back.
 
     ``async with _TrashGuard(db, project, path) as guard:`` whose body
     calls ``guard.trash()`` (moves ``path`` to the project trash; a no-op when
@@ -1105,7 +1102,7 @@ async def _rename_item_locked(db: AsyncSession, project: Project, item: ProjectI
             new_dir.rename(old_dir)
         await db.rollback()
 
-    async with _committing(db, undo) as commit:
+    async with _CommitGuard(db, undo) as commit:
         if moved:
             files = (
                 (
@@ -1159,7 +1156,7 @@ async def _delete_item_locked(db: AsyncSession, project: Project, item: ProjectI
         await guard.commit()
 
 
-def _revision_file_path(file_path: str | None) -> Path | None:
+def revision_file_path(file_path: str | None) -> Path | None:
     """Absolute path of a revision file, or ``None`` when it must not be read.
 
     The projects tree is browsed from the share, so a file there may have been
@@ -1238,7 +1235,7 @@ async def _fork_revision_locked(
     new_item_dir = item_dir(project, section, clean)
     if new_item_dir.exists():
         raise ProjectFilesError(409, "A folder with this name already exists")
-    sources = [(f, _revision_file_path(f.file_path)) for f in await _revision_files(db, revision.id)]
+    sources = [(f, revision_file_path(f.file_path)) for f in await _revision_files(db, revision.id)]
     snapshot = {
         "config": revision.config_snapshot,
         "config_hash": revision.config_hash,
@@ -1260,7 +1257,7 @@ async def _fork_revision_locked(
             return ProjectFilesError(409, "An item with this name already exists in this section")
         return None
 
-    async with _committing(db, undo, translate=translate) as commit:
+    async with _CommitGuard(db, undo, translate=translate) as commit:
         await _copy_fork_files(folder, sources, copies)
         if not copies:
             raise ProjectFilesError(409, "No file of this revision could be copied")

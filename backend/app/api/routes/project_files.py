@@ -430,13 +430,13 @@ async def download_revision(
     rows = (await db.execute(select(LibraryFile).where(LibraryFile.revision_id == revision.id))).scalars().all()
     if file_id is not None:
         row = next((r for r in rows if r.id == file_id), None)
-        path = svc._revision_file_path(row.file_path) if row else None
+        path = svc.revision_file_path(row.file_path) if row else None
         if row is None or path is None or not path.exists():
             raise HTTPException(status_code=404, detail="File not found")
         return FileResponse(str(path), filename=row.filename, media_type="application/octet-stream")
     entries = []
     for row in rows:
-        path = svc._revision_file_path(row.file_path)
+        path = svc.revision_file_path(row.file_path)
         if path is not None and path.exists():
             entries.append((path, row.filename))
     fd, archive_name = tempfile.mkstemp(suffix=".zip")

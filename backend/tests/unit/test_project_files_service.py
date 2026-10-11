@@ -1825,7 +1825,7 @@ async def test_thumbnail_failure_never_fails_the_upload(tmp_path, monkeypatch):
     assert await project_files._make_thumbnail(gcode) == (None, None)
 
 
-# --- _committing, the commit-through-cancel guard shared by every commit site (T-070) ---
+# --- _CommitGuard, the commit-through-cancel guard shared by every commit site (T-070) ---
 
 
 class _GuardSession:
@@ -1851,7 +1851,7 @@ def _recording_undo(calls: list[str], fail: BaseException | None = None):
 @pytest.mark.asyncio
 async def test_committing_commits_without_undo_on_success():
     db, calls = _GuardSession(), []
-    async with project_files._committing(db, _recording_undo(calls)) as commit:
+    async with project_files._CommitGuard(db, _recording_undo(calls)) as commit:
         await commit()
     assert (db.commits, calls) == (1, [])
 
@@ -1861,7 +1861,7 @@ async def test_committing_undoes_a_failure_before_the_commit_and_reraises_it():
     db, calls = _GuardSession(), []
     boom = ValueError("before the commit")
     with pytest.raises(ValueError) as caught:
-        async with project_files._committing(db, _recording_undo(calls)):
+        async with project_files._CommitGuard(db, _recording_undo(calls)):
             raise boom
     assert caught.value is boom
     assert (db.commits, calls) == (0, ["undo"])
@@ -1877,7 +1877,7 @@ async def test_committing_skips_the_undo_when_a_cancelled_commit_landed(monkeypa
 
     monkeypatch.setattr(project_files, "_commit_through_cancel", landed)
     with pytest.raises(asyncio.CancelledError):
-        async with project_files._committing(_GuardSession(), _recording_undo(calls)) as commit:
+        async with project_files._CommitGuard(_GuardSession(), _recording_undo(calls)) as commit:
             await commit()
     assert calls == []
 
@@ -1892,14 +1892,14 @@ async def test_committing_translates_after_the_undo_only_when_asked():
         return ProjectFilesError(409, "taken") if exc is boom else None
 
     with pytest.raises(ProjectFilesError) as caught:
-        async with project_files._committing(_GuardSession(), _recording_undo(calls), translate=translate):
+        async with project_files._CommitGuard(_GuardSession(), _recording_undo(calls), translate=translate):
             raise boom
     assert (caught.value.status_code, caught.value.__cause__) == (409, boom)
     assert calls == ["undo", "translate"]
 
     other = RuntimeError("other")
     with pytest.raises(RuntimeError) as kept:
-        async with project_files._committing(_GuardSession(), _recording_undo(calls), translate=translate):
+        async with project_files._CommitGuard(_GuardSession(), _recording_undo(calls), translate=translate):
             raise other
     assert kept.value is other
 
@@ -1914,7 +1914,9 @@ async def test_committing_lets_a_failing_undo_win_untranslated():
         return ProjectFilesError(409, "never")
 
     with pytest.raises(OSError) as caught:
-        async with project_files._committing(_GuardSession(), _recording_undo(calls, undo_failed), translate=translate):
+        async with project_files._CommitGuard(
+            _GuardSession(), _recording_undo(calls, undo_failed), translate=translate
+        ):
             raise boom
     assert caught.value is undo_failed
     assert caught.value.__context__ is boom
@@ -2158,10 +2160,10 @@ def test_revision_file_path_refuses_a_path_that_reaches_the_tree_through_an_outs
     (real / "a.step").write_bytes(b"geo")
     detour = tmp_path_factory.mktemp("outside") / "detour"
     detour.symlink_to(real, target_is_directory=True)
-    assert project_files._revision_file_path(str(real / "a.step")) == (real / "a.step").resolve()
-    assert project_files._revision_file_path(str(detour / "a.step")) is None
-    assert project_files._revision_file_path(None) is None
-    assert project_files._revision_file_path("") is None
+    assert project_files.revision_file_path(str(real / "a.step")) == (real / "a.step").resolve()
+    assert project_files.revision_file_path(str(detour / "a.step")) is None
+    assert project_files.revision_file_path(None) is None
+    assert project_files.revision_file_path("") is None
 
 
 def test_revision_file_path_walks_past_a_prefix_that_escapes_the_data_dir(monkeypatch, tmp_path):
@@ -2177,7 +2179,7 @@ def test_revision_file_path_walks_past_a_prefix_that_escapes_the_data_dir(monkey
     monkeypatch.setattr(app_settings, "base_dir", base)
     monkeypatch.setattr(project_storage, "projects_root", lambda: projects)
     stored = "../data/projects/P-0001_x/R1/a.step"
-    assert project_files._revision_file_path(stored) == (folder / "a.step").resolve()
+    assert project_files.revision_file_path(stored) == (folder / "a.step").resolve()
 
 
 @pytest.mark.parametrize(
@@ -2705,3 +2707,31 @@ def test_open_claimed_closes_the_descriptor_when_fdopen_fails(tmp_path, monkeypa
     with pytest.raises(OSError) as closed:
         os.fstat(opened[0])
     assert closed.value.errno == errno.EBADF
+
+
+# --- small lookups: missing item, disabled section, tree finders ---
+
+
+@pytest.mark.asyncio
+async def test_fresh_item_refuses_an_unknown_item_with_a_404(db_session):
+    with pytest.raises(ProjectFilesError) as missing:
+        await project_files.fresh_item(db_session, 987654)
+    assert (missing.value.status_code, missing.value.detail) == (404, "Item not found")
+
+
+def test_require_enabled_section_names_the_refused_section():
+    with pytest.raises(ProjectFilesError) as refused:
+        project_files.require_enabled_section("no-such-section")
+    assert refused.value.status_code == 400
+    assert "'no-such-section'" in refused.value.detail
+
+
+def test_find_item_and_find_revision_return_none_when_the_tree_lacks_them():
+    from types import SimpleNamespace as NS
+
+    rev = NS(id=7)
+    tree = NS(sections=[NS(items=[NS(id=3, revisions=[rev])])])
+    assert project_files.find_item(tree, 3).id == 3
+    assert project_files.find_revision(tree, 7) is rev
+    assert project_files.find_item(tree, 4) is None
+    assert project_files.find_revision(tree, 8) is None
