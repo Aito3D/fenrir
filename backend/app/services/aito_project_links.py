@@ -24,6 +24,7 @@ from backend.app.models.aito_task import AitoTask
 from backend.app.models.aito_task_delivery import AitoTaskDelivery
 from backend.app.models.project import Project
 from backend.app.models.project_item import ProjectItem, ProjectRevision
+from backend.app.models.user import User
 from backend.app.schemas.aito_project_links import (
     DropFilesResponse,
     DroppedFileResult,
@@ -487,8 +488,6 @@ async def record_and_broadcast(
     broadcasting; otherwise returns the order ids written to."""
     try:
         if actor_user_id is not None:
-            from backend.app.models.user import User
-
             user = await db.get(User, actor_user_id)
             actor = actor_name(user)
         async with db.begin_nested():
