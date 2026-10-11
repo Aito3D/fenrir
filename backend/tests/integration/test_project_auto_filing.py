@@ -118,6 +118,35 @@ async def test_upload_with_code_files_next_revision(async_client: AsyncClient, d
 
 @pytest.mark.asyncio
 @pytest.mark.integration
+async def test_printer_card_upload_and_print_of_a_code_file_queues(
+    async_client: AsyncClient, db_session, printer_factory
+):
+    """T-283: the printer card uploads, then queues with the cleanup flag set.
+    Auto-filing moves the upload into the project; the queue request is still
+    accepted and the flag dropped, so the revision file is never consumed."""
+    project, item_id = await _project_with_support_item(async_client, db_session)
+    printer = await printer_factory()
+    upload = await _upload(async_client, f"{project['code']}_support.3mf", _3mf("r2"))
+    assert upload.status_code == 200, upload.text
+    assert upload.json()["filed_to_project"]["revision_number"] == 2
+
+    response = await async_client.post(
+        "/api/v1/queue/",
+        json={
+            "printer_id": printer.id,
+            "library_file_id": upload.json()["id"],
+            "cleanup_library_after_dispatch": True,
+        },
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["cleanup_library_after_dispatch"] is False
+    revisions = await _revisions(db_session, item_id)
+    assert body["revision_id"] == revisions[1].id
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
 async def test_upload_non_printable_with_code_stays_in_file_manager(async_client: AsyncClient, db_session):
     project = await _project(async_client)
     filename = f"{project['code']}_notes.pdf"

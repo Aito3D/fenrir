@@ -189,7 +189,12 @@ export function TaskProjectRow({
             initialTitle={task.title.trim()}
             initialDescription={taskDescription(task)}
             onClose={() => setCreating(false)}
-            onCreated={(created) => linkMutation.mutate(created.id)}
+            // One request: created and linked together, so a failed link leaves no project behind.
+            create={(data) => api.createTaskProject(taskId, data)}
+            onCreated={(result) => {
+              invalidate(orderId, [result.project?.id]);
+              setPicking(false);
+            }}
           />,
           document.body,
         )}

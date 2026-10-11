@@ -930,8 +930,11 @@ async def add_to_queue(
             raise HTTPException(400, "Library file not found")
         _assert_can_queue_library_file(library_file, actor)
         # Fenrir: project revision files are permanent (projects as a PDM, phase 4).
-        if data.cleanup_library_after_dispatch and library_file.revision_id is not None:
-            raise HTTPException(400, "Project files are never deleted after printing")
+        # A project-filed file still queues (the printer card's upload-and-print
+        # flow always asks for cleanup, and auto-filing may just have moved its
+        # upload into a project); it is simply never deleted after printing.
+        if library_file.revision_id is not None:
+            data.cleanup_library_after_dispatch = False
         # Bambu SD card is FAT32/exFAT — illegal filename chars would 553 at
         # FTP upload time (#1540). Reject at queue time so the user gets the
         # actionable error before waiting in queue.

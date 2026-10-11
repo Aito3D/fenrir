@@ -111,7 +111,12 @@ async def test_migration_adds_columns_and_indexes_and_is_idempotent(legacy_engin
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-async def test_cleanup_flag_on_revision_file_is_rejected(async_client: AsyncClient, db_session, printer_factory):
+async def test_cleanup_flag_on_revision_file_is_accepted_and_dropped(
+    async_client: AsyncClient, db_session, printer_factory
+):
+    """T-283: a project-filed file queues with the cleanup flag (the printer
+    card's upload-and-print flow always sends it); the flag is just dropped, so
+    the file is never deleted after printing."""
     printer = await printer_factory()
     library_file = LibraryFile(
         filename="support.3mf",
@@ -127,14 +132,44 @@ async def test_cleanup_flag_on_revision_file_is_rejected(async_client: AsyncClie
         "/api/v1/queue/",
         json={"printer_id": printer.id, "library_file_id": library_file.id, "cleanup_library_after_dispatch": True},
     )
-    assert response.status_code == 400
-    assert response.json()["detail"] == "Project files are never deleted after printing"
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["library_file_id"] == library_file.id
+    assert body["cleanup_library_after_dispatch"] is False
+    item = (
+        await db_session.execute(
+            select(PrintQueueItem).where(PrintQueueItem.id == body["id"]).execution_options(populate_existing=True)
+        )
+    ).scalar_one()
+    assert item.cleanup_library_after_dispatch is False
 
-    # Without the flag the same file queues fine.
+    # Without the flag the same file queues the same way.
     response = await async_client.post(
         "/api/v1/queue/", json={"printer_id": printer.id, "library_file_id": library_file.id}
     )
     assert response.status_code == 200
+    assert response.json()["cleanup_library_after_dispatch"] is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_cleanup_flag_on_normal_library_file_is_kept(async_client: AsyncClient, db_session, printer_factory):
+    printer = await printer_factory()
+    library_file = LibraryFile(
+        filename="plain.3mf",
+        file_path="/tmp/plain.3mf",  # nosec B108 - never read
+        file_type="3mf",
+        file_size=1,
+    )
+    db_session.add(library_file)
+    await db_session.commit()
+
+    response = await async_client.post(
+        "/api/v1/queue/",
+        json={"printer_id": printer.id, "library_file_id": library_file.id, "cleanup_library_after_dispatch": True},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["cleanup_library_after_dispatch"] is True
 
 
 # ---------------------------------------------------------------------------
@@ -267,6 +302,21 @@ async def test_forced_cleanup_flag_never_deletes_a_revision_file(session_maker, 
         assert item.library_file_id == file_id
         assert await db.get(LibraryFile, file_id) is not None
     assert source_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_cleanup_flag_still_consumes_a_normal_library_file(session_maker, tmp_path):
+    item_id, file_id, source_path = await _make_library_case(
+        session_maker, tmp_path, revision_id=None, aito_task_id=None, cleanup=True
+    )
+    await _dispatch(session_maker, tmp_path, item_id)
+
+    async with session_maker() as db:
+        item = await db.get(PrintQueueItem, item_id)
+        assert item.archive_id is not None
+        assert item.library_file_id is None
+        assert await db.get(LibraryFile, file_id) is None
+    assert not source_path.exists()
 
 
 async def _make_archive_case(session_maker, *, archive_revision, archive_task, item_revision, item_task):

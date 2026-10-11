@@ -136,13 +136,45 @@ class _Candidate:
     file_path: str
 
 
-def _source_path(file: LibraryFile) -> Path | None:
+def _source_path(file: LibraryFile, external: dict[int, Path]) -> Path | None:
+    """Where to copy ``file`` from; an external file only if ``_vetted_external_paths`` kept it."""
     if file.is_external:
-        return Path(file.file_path) if file.file_path else None
+        return external.get(file.id)
     try:
         return to_absolute_path(file.file_path)
     except ValueError:  # a stored path escaping the data dir is treated as missing
         return None
+
+
+def _resolved_or_none(path: Path) -> Path | None:
+    try:
+        return path.resolve()
+    except (OSError, RuntimeError):  # a symlink loop, an unreachable mount
+        return None
+
+
+async def _vetted_external_paths(db: AsyncSession, files: list[LibraryFile]) -> dict[int, Path]:
+    """The resolved source path of each external file that still lies under an external
+    folder's ``external_path`` (the containment the external scan checks), keyed by file id.
+    A file whose path, or a symlink on it, now leads outside every mount is left out, so
+    the move reports it ``source_missing`` instead of copying an arbitrary server file."""
+    externals = [(f.id, f.file_path) for f in files if f.is_external and f.file_path]
+    if not externals:
+        return {}
+    mount_paths = (
+        await db.execute(
+            select(LibraryFolder.external_path)
+            .where(LibraryFolder.is_external.is_(True), LibraryFolder.external_path.is_not(None))
+            .distinct()
+        )
+    ).scalars()
+    mounts = [m for m in (_resolved_or_none(Path(p)) for p in mount_paths if p) if m is not None]
+    out: dict[int, Path] = {}
+    for file_id, file_path in externals:
+        real = _resolved_or_none(Path(file_path))
+        if real is not None and any(real.is_relative_to(mount) for mount in mounts):
+            out[file_id] = real
+    return out
 
 
 def _skip(result: MoveToProjectResult, file_id: int, code: str, reason: str) -> None:
@@ -215,7 +247,8 @@ async def move_library_files_to_project(
             raise ValueError(exc.detail) from exc
 
     # Classify while the caller's instances are loaded: commits and rollbacks below expire them.
-    groups = _classify_files(result, files, target, new_item_name)
+    external = await _vetted_external_paths(db, files)
+    groups = _classify_files(result, files, target, new_item_name, external)
 
     for (section, key), (name, candidates) in groups.items():
         project, stored = await _store_group(
@@ -242,7 +275,11 @@ _Groups = dict[tuple[str, str], tuple[str, list[_Candidate]]]
 
 
 def _classify_files(
-    result: MoveToProjectResult, files: list[LibraryFile], target: ProjectItem | None, new_item_name: str | None
+    result: MoveToProjectResult,
+    files: list[LibraryFile],
+    target: ProjectItem | None,
+    new_item_name: str | None,
+    external: dict[int, Path],
 ) -> _Groups:
     """Skip what cannot go (into ``result``); group the rest by ``(section, name_key)`` -> ``(item name, files)``."""
     groups: _Groups = {}
@@ -258,7 +295,7 @@ def _classify_files(
         if not is_printable_filename(filename):
             _skip(result, file_id, "not_printable", "projects only accept printing files (.3mf, .gcode, .bgcode)")
             continue
-        src = _source_path(file)
+        src = _source_path(file, external)
         if src is None or not src.is_file():
             _skip(result, file_id, "source_missing", "source file missing on disk")
             continue
@@ -302,6 +339,7 @@ def _group_sources(
                 path=candidate.src,
                 filename=candidate.filename,
                 reuse_row=None if candidate.is_external else row,
+                nofollow=candidate.is_external,
             )
         )
         stored.append(candidate)
@@ -733,7 +771,8 @@ async def _legacy_files(db: AsyncSession, project_id: int) -> list[LibraryFile]:
 async def _already_copied(db: AsyncSession, project_id: int, files: list[LibraryFile]) -> set[int]:
     """External files the project already holds a copy of (an earlier run): same
     SHA-256 and same filename as one of its revision files."""
-    externals = [(f.id, f.filename, _source_path(f)) for f in files if f.is_external]
+    vetted = await _vetted_external_paths(db, files)
+    externals = [(f.id, f.filename, _source_path(f, vetted)) for f in files if f.is_external]
     if not externals:
         return set()
     held = set(

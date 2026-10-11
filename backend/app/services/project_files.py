@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import functools
 import hashlib
 import logging
 import os
@@ -236,11 +237,15 @@ class RevisionSource:
 
     ``reuse_row`` is a managed library row to re-point at the copy (it keeps its
     id, so queue items, archives and photos follow); ``None`` makes a new row.
-    ``row`` is filled in with the stored row once the revision is committed."""
+    ``row`` is filled in with the stored row once the revision is committed.
+    ``nofollow`` opens ``path`` refusing a symlink leaf (``OSError``/ELOOP): set
+    for an external mount file, vetted just before, so a leaf swapped since
+    cannot redirect the copy."""
 
     path: Path
     filename: str
     reuse_row: LibraryFile | None = None
+    nofollow: bool = False
     row: LibraryFile | None = field(default=None, init=False, compare=False, repr=False)
 
 
@@ -369,11 +374,18 @@ def _copy_claimed(src: Path, dest: Path) -> None:
     shutil.copystat(src, dest, follow_symlinks=False)
 
 
-def _copy_hashing(src: Path, dest: Path) -> tuple[int, str]:
-    """Copy ``src`` over ``dest`` in bounded chunks; returns (size, SHA-256 hex) of what was written."""
+def _open_nofollow(path: str, flags: int) -> int:
+    """``open()`` opener refusing a symlink at the leaf of ``path``."""
+    return os.open(path, flags | os.O_NOFOLLOW)
+
+
+def _copy_hashing(src: Path, dest: Path, *, nofollow: bool = False) -> tuple[int, str]:
+    """Copy ``src`` over ``dest`` in bounded chunks; returns (size, SHA-256 hex) of what was written.
+
+    ``nofollow`` refuses a ``src`` whose leaf is a symlink."""
     digest = hashlib.sha256()
     size = 0
-    with open(src, "rb") as reader, _open_claimed(dest) as writer:
+    with open(src, "rb", opener=_open_nofollow if nofollow else None) as reader, _open_claimed(dest) as writer:
         while chunk := reader.read(1 << 20):
             writer.write(chunk)
             digest.update(chunk)
@@ -404,7 +416,8 @@ async def _copy_sources(folder: Path, sources: list[RevisionSource]) -> list[_Wr
                 reuse_file_path=reuse.file_path if reuse is not None else None,
             )
             written.append(entry)  # before the copy, so cleanup also removes the claimed placeholder
-            entry.size, entry.digest = await asyncio.to_thread(_copy_hashing, source.path, dest)
+            copy = functools.partial(_copy_hashing, nofollow=True) if source.nofollow else _copy_hashing
+            entry.size, entry.digest = await asyncio.to_thread(copy, source.path, dest)
             await _post_process(entry, thumbnail=reuse is None or not reuse.thumbnail_path)
     except BaseException:
         _cleanup_written(written)

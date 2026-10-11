@@ -2670,6 +2670,21 @@ def test_copy_hashing_matches_shutil_copy2_and_digest(tmp_path):
     assert dest.stat().st_mode == reference.stat().st_mode
 
 
+def test_copy_hashing_nofollow_refuses_a_symlinked_source_but_follows_by_default(tmp_path):
+    """T-255: an external source is opened without following a symlink leaf."""
+    real = tmp_path / "real.bin"
+    real.write_bytes(b"payload")
+    link = tmp_path / "link.bin"
+    link.symlink_to(real)
+    dest = project_storage.claim_unique_file_path(tmp_path, "dest.bin")
+    with pytest.raises(OSError):
+        project_files._copy_hashing(link, dest, nofollow=True)
+    assert project_files._copy_hashing(link, dest)[0] == len(b"payload")  # default: follows, as before
+    assert dest.read_bytes() == b"payload"
+    other = project_storage.claim_unique_file_path(tmp_path, "other.bin")
+    assert project_files._copy_hashing(real, other, nofollow=True)[0] == len(b"payload")
+
+
 @pytest.mark.parametrize("copier", ["_copy_claimed", "_copy_hashing"])
 def test_copy_into_a_symlink_planted_after_the_claim_is_refused(tmp_path, copier):
     src = _planted_src(tmp_path)

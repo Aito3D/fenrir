@@ -13,18 +13,36 @@ import { useIsolatedEscape } from '../../hooks/useIsolatedEscape';
 import { DIALOG_CARD_CLS, OVERLAY_CLS } from './dialogStyles';
 import { useInvalidateProjects } from './projectQueries';
 
-interface NewProjectModalProps {
+/** What the modal sends to create a project. */
+interface NewProjectPayload {
+  name: string;
+  description?: string;
+  tag_ids: number[];
+  new_tag_names: string[];
+}
+
+interface NewProjectModalProps<T> {
   onClose: () => void;
   initialTitle?: string;
   initialDescription?: string;
-  /** Given: called with the new project instead of navigating to it (an Aito
-   *  task links it and stays where it is). */
-  onCreated?: (project: Project) => void;
+  /** Given: creates through this instead of `api.createProject` (an Aito task
+   *  creates and links in one request, so a failed link leaves no project). */
+  create?: (data: NewProjectPayload) => Promise<T>;
+  /** Given: called with the result (the new project, or what `create`
+   *  resolved to) instead of navigating to it (an Aito task links it and stays
+   *  where it is). */
+  onCreated?: (result: T) => void;
 }
 
 /** Create a project: title, description (both reworded in French on blur, with
  *  undo) and tags. No parent picker — sub-projects are not used (spec §0). */
-export function NewProjectModal({ onClose, initialTitle = '', initialDescription = '', onCreated }: NewProjectModalProps) {
+export function NewProjectModal<T = Project>({
+  onClose,
+  initialTitle = '',
+  initialDescription = '',
+  create: createOverride,
+  onCreated,
+}: NewProjectModalProps<T>) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const invalidateProjects = useInvalidateProjects();
@@ -37,13 +55,15 @@ export function NewProjectModal({ onClose, initialTitle = '', initialDescription
   useIsolatedEscape(onClose, dialogRef);
 
   const create = useMutation({
-    mutationFn: () =>
-      api.createProject({ name: title.trim(), description: description.trim() || undefined, ...splitTagDrafts(tags) }),
-    onSuccess: (project) => {
+    mutationFn: (): Promise<T> => {
+      const data = { name: title.trim(), description: description.trim() || undefined, ...splitTagDrafts(tags) };
+      return createOverride ? createOverride(data) : (api.createProject(data) as Promise<unknown> as Promise<T>);
+    },
+    onSuccess: (result) => {
       invalidateProjects();
       onClose();
-      if (onCreated) onCreated(project);
-      else navigate(`/projects/${project.id}`);
+      if (onCreated) onCreated(result);
+      else navigate(`/projects/${(result as Project).id}`);
     },
     onError: () => showToast(t('projectsPdm.saveFailed'), 'error'),
   });
