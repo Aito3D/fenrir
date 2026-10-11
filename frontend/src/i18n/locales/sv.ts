@@ -10274,6 +10274,8 @@ errors: {
       dropChooseTask: 'Vilken uppgift gäller filerna?',
       dropped_one: '{{count}} fil tillagd i {{code}}',
       dropped_other: '{{count}} filer tillagda i {{code}}',
+      droppedPartial_one: '{{count}} fil tillagd i {{code}}; inte tillagda: {{files}} ({{reason}})',
+      droppedPartial_other: '{{count}} filer tillagda i {{code}}; inte tillagda: {{files}} ({{reason}})',
       ordersTitle: 'Ordrar',
       ordersEmpty: 'Ingen order använder det här projektet än',
       newOrder: 'Ny order',

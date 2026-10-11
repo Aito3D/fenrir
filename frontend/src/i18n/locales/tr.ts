@@ -10175,6 +10175,8 @@ export default {
       dropChooseTask: 'Bu dosyalar hangi görev için?',
       dropped_one: '{{count}} dosya {{code}} projesine eklendi',
       dropped_other: '{{count}} dosya {{code}} projesine eklendi',
+      droppedPartial_one: '{{count}} dosya {{code}} projesine eklendi; eklenmeyenler: {{files}} ({{reason}})',
+      droppedPartial_other: '{{count}} dosya {{code}} projesine eklendi; eklenmeyenler: {{files}} ({{reason}})',
       ordersTitle: 'Siparişler',
       ordersEmpty: 'Bu projeyi kullanan sipariş henüz yok',
       newOrder: 'Yeni sipariş',

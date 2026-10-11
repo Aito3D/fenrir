@@ -9851,6 +9851,8 @@ export default {
       dropChooseTask: 'Для какой задачи эти файлы?',
       dropped_one: 'Файлов добавлено в {{code}}: {{count}}',
       dropped_other: 'Файлов добавлено в {{code}}: {{count}}',
+      droppedPartial_one: 'Файлов добавлено в {{code}}: {{count}}; не добавлены: {{files}} ({{reason}})',
+      droppedPartial_other: 'Файлов добавлено в {{code}}: {{count}}; не добавлены: {{files}} ({{reason}})',
       ordersTitle: 'Заказы',
       ordersEmpty: 'Этот проект пока не используется ни в одном заказе',
       newOrder: 'Новый заказ',

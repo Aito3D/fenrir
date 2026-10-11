@@ -39,7 +39,21 @@ export function useUploadToTask() {
       const code =
         result.code ??
         (result.project_id === project.id ? (project.code ?? project.name) : `#${result.project_id}`);
-      showToast(t('projectsPdm.aito.dropped', { count: result.results.length, code }), 'success');
+      const failed = result.errors ?? [];
+      const notStored = failed.flatMap((e) => e.filenames);
+      if (notStored.length > 0) {
+        showToast(
+          t('projectsPdm.aito.droppedPartial', {
+            count: result.results.length,
+            code,
+            files: notStored.join(', '),
+            reason: failed.map((e) => e.detail).join('; '),
+          }),
+          'warning',
+        );
+      } else {
+        showToast(t('projectsPdm.aito.dropped', { count: result.results.length, code }), 'success');
+      }
     } catch (err) {
       showToast(err instanceof Error && err.message ? err.message : t('projectsPdm.files.uploadFailed'), 'error');
     } finally {

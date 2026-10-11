@@ -285,6 +285,7 @@ async def start_legacy_migration(
 async def suggest_projects_for_filename(
 async def suggest_projects(db: AsyncSession, task: AitoTask, limit: int = 8)
 async def suggest_tags(
+async def sweep_orphan_intermediates(db: AsyncSession)
 async def sync_project_tags_from_string(db: AsyncSession, project: Project)
 async def task_print_counts(db: AsyncSession, task_ids: Collection[int])
 async def update_bom_item(
@@ -366,6 +367,7 @@ class BOMItemCreate
 class BOMItemExport
 class BOMItemResponse
 class BOMItemUpdate
+class DropFilesError
 class DropFilesResponse
 class DroppedFileResult
 class DuplicateWarning
@@ -499,8 +501,14 @@ print(json.dumps(out, indent=1, sort_keys=True))" 2>/dev/null```
  "BatchAddQueueItems": {
   "queue_item_ids": "list[int]"
  },
+ "DropFilesError": {
+  "detail": "<class 'str'>",
+  "filenames": "list[str]",
+  "status_code": "<class 'int'>"
+ },
  "DropFilesResponse": {
   "code": "str | None",
+  "errors": "list[backend.app.schemas.aito_project_links.DropFilesError]",
   "project_id": "<class 'int'>",
   "results": "list[backend.app.schemas.aito_project_links.DroppedFileResult]"
  },
@@ -1546,6 +1554,7 @@ projectsPdm.aito.dropChooseTask
 projectsPdm.aito.dropHere
 projectsPdm.aito.dropNeedsProject
 projectsPdm.aito.dropped
+projectsPdm.aito.droppedPartial
 projectsPdm.aito.editDeliveries
 projectsPdm.aito.linkExisting
 projectsPdm.aito.linkFailed

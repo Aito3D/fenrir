@@ -10233,6 +10233,8 @@ export default {
       dropChooseTask: '这些文件属于哪个任务？',
       dropped_one: '已向 {{code}} 添加 {{count}} 个文件',
       dropped_other: '已向 {{code}} 添加 {{count}} 个文件',
+      droppedPartial_one: '已向 {{code}} 添加 {{count}} 个文件；未添加：{{files}}（{{reason}}）',
+      droppedPartial_other: '已向 {{code}} 添加 {{count}} 个文件；未添加：{{files}}（{{reason}}）',
       ordersTitle: '订单',
       ordersEmpty: '尚无订单使用此项目',
       newOrder: '新建订单',

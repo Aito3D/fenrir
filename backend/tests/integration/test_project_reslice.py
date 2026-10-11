@@ -573,11 +573,14 @@ async def test_intermediate_drop_failure_keeps_the_job_and_session_alive(
 
     project, item, rev = await _source_revision(async_client)
     pipeline_id = await _pipeline(db_session)
+    attempts: list[int] = []
 
     async def boom(*_args, **_kwargs):
+        attempts.append(1)
         raise OSError("disk gone")
 
     monkeypatch.setattr(library_trash_service, "hard_delete_many", boom)
+    monkeypatch.setattr(project_reslice, "_DROP_RETRY_DELAYS", (0, 0))
     real_run = project_reslice.run_reslice
     follow_up: dict = {}
 
@@ -600,7 +603,9 @@ async def test_intermediate_drop_failure_keeps_the_job_and_session_alive(
     assert follow_up == {"number": 2}
     tree = (await async_client.get(f"/api/v1/projects/{project['id']}/tree")).json()
     assert _revision_numbers(tree) == [2, 1]
-    # The delete failed, so the intermediate row is left behind (logged, not raised).
+    # T-288: tried three times; every attempt failed, so the intermediate row is left
+    # behind (logged, not raised) for the startup sweep.
+    assert len(attempts) == 3
     assert [r.filename for r in await _sliced_rows(db_session)] == ["sliced-1.gcode.3mf"]
 
 
@@ -666,3 +671,121 @@ async def test_slice_seam_delegates_to_the_library_slicer(monkeypatch):
     result = await project_reslice._slice(sentinel_db, model_bytes=b"3mf", model_filename="a.3mf", job_id=7)
     assert result is sentinel_result
     assert calls == [(sentinel_db, {"model_bytes": b"3mf", "model_filename": "a.3mf", "job_id": 7})]
+
+
+# --- T-288: _drop_intermediate retries, and the startup sweep of leftovers ---
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_intermediate_drop_retries_and_succeeds_on_the_second_attempt(
+    async_client: AsyncClient, db_session, fake_slicer, roots, monkeypatch, caplog
+):
+    import logging
+
+    from backend.app.services.library_trash import library_trash_service
+
+    project, _item, rev = await _source_revision(async_client)
+    pipeline_id = await _pipeline(db_session)
+    real = library_trash_service.hard_delete_many
+    attempts: list[int] = []
+    pauses: list[float] = []
+
+    async def locked_once(db, rows):
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise OSError("database is locked")
+        return await real(db, rows)
+
+    real_sleep = asyncio.sleep
+
+    async def no_pause(seconds):
+        pauses.append(seconds)
+        await real_sleep(0)
+
+    monkeypatch.setattr(library_trash_service, "hard_delete_many", locked_once)
+    monkeypatch.setattr(project_reslice.asyncio, "sleep", no_pause)
+    with caplog.at_level(logging.WARNING, logger=project_reslice.__name__):
+        started = await async_client.post(
+            f"/api/v1/projects/revisions/{rev['id']}/reslice",
+            json={"file_id": rev["files"][0]["id"], "pipeline_id": pipeline_id},
+        )
+        job = await _wait(async_client, started.json()["job_id"])
+    assert job["status"] == "completed", job
+    assert len(attempts) == 2
+    assert 0.2 in pauses  # the first pause of _DROP_RETRY_DELAYS
+    assert "failed (attempt 1 of 3), retrying" in caplog.text
+    assert "could not delete intermediate" not in caplog.text
+    assert await _sliced_rows(db_session) == []
+    assert not (roots / "library" / "sliced-1.gcode.3mf").exists()
+
+
+def _loose(roots, name: str, *, sliced_from: int | None = None, **fields) -> LibraryFile:
+    path = roots / "library" / name
+    path.write_bytes(b"gcode")
+    return LibraryFile(
+        filename=name,
+        file_path=str(path.relative_to(roots)),
+        file_type="gcode.3mf",
+        file_size=5,
+        source_type="sliced",
+        file_metadata={"sliced_from_library_file_id": sliced_from} if sliced_from is not None else None,
+        **fields,
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_startup_sweep_deletes_only_unused_loose_slices_of_project_revision_files(
+    async_client: AsyncClient, db_session, roots, caplog
+):
+    import logging
+    from datetime import datetime
+
+    from backend.app.models.pipeline_run import PipelineRun
+
+    _project, _item, rev = await _source_revision(async_client)
+    revision_file_id = rev["files"][0]["id"]
+    plain = _loose(roots, "plain.3mf")
+    db_session.add(plain)
+    await db_session.flush()
+    orphan = _loose(roots, "support.gcode.3mf", sliced_from=revision_file_id)
+    filed = _loose(roots, "filed.gcode.3mf", sliced_from=revision_file_id, revision_id=rev["id"])
+    from_plain = _loose(roots, "plain.gcode.3mf", sliced_from=plain.id)
+    used = _loose(roots, "pipeline.gcode.3mf", sliced_from=revision_file_id)
+    trashed = _loose(roots, "trashed.gcode.3mf", sliced_from=revision_file_id, deleted_at=datetime(2026, 10, 1))
+    db_session.add_all([orphan, filed, from_plain, used, trashed])
+    await db_session.flush()
+    db_session.add(PipelineRun(source_library_file_id=revision_file_id, sliced_library_file_id=used.id))
+    await db_session.commit()
+    orphan_id = orphan.id
+    kept = {plain.id, filed.id, from_plain.id, used.id, trashed.id, revision_file_id}
+
+    with caplog.at_level(logging.WARNING, logger=project_reslice.__name__):
+        deleted = await project_reslice.sweep_orphan_intermediates(db_session)
+
+    assert deleted == 1
+    ids = set((await db_session.execute(select(LibraryFile.id))).scalars().all())
+    assert orphan_id not in ids
+    assert kept <= ids
+    assert not (roots / "library" / "support.gcode.3mf").exists()
+    for name in ("plain.3mf", "filed.gcode.3mf", "plain.gcode.3mf", "pipeline.gcode.3mf", "trashed.gcode.3mf"):
+        assert (roots / "library" / name).exists(), name
+    assert f"deleting leftover intermediate library file {orphan_id} (support.gcode.3mf)" in caplog.text
+    # A second startup finds nothing more to do.
+    assert await project_reslice.sweep_orphan_intermediates(db_session) == 0
+
+
+def test_lifespan_runs_the_intermediate_sweep_after_the_migrations_and_never_blocks_startup():
+    """Wiring check, read from the source like test_oidc_env_startup.py: the lifespan is too
+    large to run here. The sweep's behaviour is pinned by the test above."""
+    import inspect
+
+    from backend.app.main import lifespan
+
+    source = inspect.getsource(lifespan)
+    call = source.index("await sweep_orphan_intermediates(")
+    assert source.index("await init_db()") < call
+    guard = source.rindex("try:", 0, call)
+    assert "except Exception" in source[call : source.index("\n\n", call)]
+    assert source.index("from backend.app.services.project_reslice import sweep_orphan_intermediates") > guard

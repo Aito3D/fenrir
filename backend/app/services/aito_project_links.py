@@ -17,6 +17,7 @@ from collections.abc import Callable, Collection, Iterable
 from fastapi import UploadFile
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.exceptions import HTTPException
 
 from backend.app.core.websocket import ws_manager
 from backend.app.models.aito_project import AitoProject
@@ -26,6 +27,7 @@ from backend.app.models.project import Project
 from backend.app.models.project_item import ProjectItem, ProjectRevision
 from backend.app.models.user import User
 from backend.app.schemas.aito_project_links import (
+    DropFilesError,
     DropFilesResponse,
     DroppedFileResult,
     LinkedProjectRef,
@@ -566,6 +568,17 @@ async def _fan_out_revision(
     return order_ids if order_ids is not None else []
 
 
+_DROP_UNEXPECTED = "unexpected error while storing the files"
+
+
+def _drop_error(exc: Exception, filenames: list[str], order_id: int) -> DropFilesError:
+    """The ``errors`` entry of a partly failed drop; call it from the ``except`` block (it logs the traceback)."""
+    if isinstance(exc, HttpStatusError | HTTPException):
+        return DropFilesError(filenames=filenames, status_code=exc.status_code, detail=str(exc.detail))
+    logger.exception("File drop on order %s failed after storing some files", order_id)
+    return DropFilesError(filenames=filenames, status_code=500, detail=_DROP_UNEXPECTED)
+
+
 async def drop_files_on_task(
     db: AsyncSession, task: AitoTask, uploads: list[UploadFile], *, user_id: int | None, actor: str | None
 ) -> DropFilesResponse:
@@ -576,10 +589,14 @@ async def drop_files_on_task(
     Goes through the phase-2 service so streaming-before-DB, per-item locks and
     cleanup apply. ``add_revision`` rolls the whole session back on failure, so
     each created item is committed first. Each stored group is announced on the
-    project's other linked orders (``project.revision_added``, broadcast); if a
-    later group fails, the groups already stored are still recorded on the
-    dropping order before the error propagates. Broadcasting to the dropping
-    order itself is the route's job."""
+    project's other linked orders (``project.revision_added``, broadcast). The
+    first failing group stops the drop: when nothing was stored yet its error
+    propagates; otherwise the drop returns the stored results plus one
+    ``errors`` entry naming the files not stored (that group and the ones after
+    it) with the failure's status and detail (a fixed detail and 500 for an
+    unexpected exception, which is logged). The stored groups are recorded on
+    the dropping order either way. Broadcasting to the dropping order itself is
+    the route's job."""
     if task.linked_project_id is None:
         raise LinkError(409, "Task is not linked to a project")
     if not uploads:
@@ -602,7 +619,9 @@ async def drop_files_on_task(
         groups.setdefault(key, (name, []))[1].append(upload)
 
     results: list[DroppedFileResult] = []
+    errors: list[DropFilesError] = []
     notified: list[int] = []
+    stored_groups = 0
     try:
         for (section, key), (name, group) in groups.items():
             item, project = await find_or_create_item(db, project, section, key, name, user_id)
@@ -621,6 +640,7 @@ async def drop_files_on_task(
                 )
                 for upload in group
             )
+            stored_groups += 1
             label, detail = revision_added_payload(
                 item_name=item_name, revision_number=number, section=section, item_id=item_id, revision_id=revision_id
             )
@@ -635,10 +655,15 @@ async def drop_files_on_task(
             project = await db.get(Project, project_id)  # a failed fan-out rolls back and expires it
             if project is None:
                 raise LinkError(409, "Task is not linked to a project")
-    except Exception as exc:
-        # Set on any exception; ProjectFilesError declares it, and the route reads it there to still broadcast.
+    except BaseException as exc:
+        # Set on any exception; ProjectFilesError declares it, and the route reads it to still broadcast.
         exc.stored_count = len(results)  # type: ignore[attr-defined]
-        raise
+        if not results or not isinstance(exc, Exception):
+            raise
+        unstored = [
+            project_files.upload_basename(u) for _name, group in list(groups.values())[stored_groups:] for u in group
+        ]
+        errors.append(_drop_error(exc, unstored, order_id))
     finally:
         if results:
             try:
@@ -648,4 +673,4 @@ async def drop_files_on_task(
                 logger.warning("project.files_dropped event failed for order %s", order_id, exc_info=True)
                 await db.rollback()
         await broadcast_orders_changed(notified, actor)
-    return DropFilesResponse(project_id=project_id, code=code, results=results)
+    return DropFilesResponse(project_id=project_id, code=code, results=results, errors=errors)

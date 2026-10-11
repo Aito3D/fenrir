@@ -353,6 +353,58 @@ describe('TaskProjectRow', () => {
     spy.mockRestore();
   });
 
+  it('a partly failed drop toasts what was added and names the files that were not (T-286)', async () => {
+    links = linked();
+    server.use(
+      http.post('/api/v1/aito/tasks/:id/files', ({ params }) => {
+        dropped = [String(params.id)];
+        return HttpResponse.json(
+          {
+            project_id: 7,
+            code: 'P-0007',
+            results: [{ filename: 'a.3mf', section: 'impression', item_id: 20, item_name: 'a', revision_number: 1 }],
+            errors: [{ filenames: ['b.3mf', 'c.3mf'], status_code: 409, detail: 'Another upload just created this revision number; try again' }],
+          },
+          { status: 201 },
+        );
+      }),
+    );
+    renderRow();
+    await screen.findByRole('link', { name: 'Drone bracket' });
+    fireEvent.drop(screen.getByTestId(`task-drop-${TASK}`), {
+      dataTransfer: {
+        files: [new File(['x'], 'a.3mf'), new File(['x'], 'b.3mf'), new File(['x'], 'c.3mf')],
+        types: ['Files'],
+      },
+    });
+    expect(
+      await screen.findByText(
+        '1 file added to P-0007; not added: b.3mf, c.3mf (Another upload just created this revision number; try again)',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('1 file added to P-0007')).not.toBeInTheDocument();
+    expect(screen.queryByText('Upload failed')).not.toBeInTheDocument();
+  });
+
+  it('an errors entry with no file left unstored keeps the plain success toast (T-286)', async () => {
+    links = linked();
+    server.use(
+      http.post('/api/v1/aito/tasks/:id/files', () =>
+        HttpResponse.json({
+          project_id: 7,
+          results: [{ filename: 'a.3mf', section: 'impression', item_id: 20, item_name: 'a', revision_number: 1 }],
+          errors: [{ filenames: [], status_code: 409, detail: 'Task is not linked to a project' }],
+        }),
+      ),
+    );
+    renderRow();
+    await screen.findByRole('link', { name: 'Drone bracket' });
+    fireEvent.drop(screen.getByTestId(`task-drop-${TASK}`), {
+      dataTransfer: { files: [new File(['x'], 'a.3mf')], types: ['Files'] },
+    });
+    expect(await screen.findByText('1 file added to P-0007')).toBeInTheDocument();
+  });
+
   it('dropping a non-printing file on a linked task toasts and sends nothing', async () => {
     links = linked();
     const spy = vi.spyOn(api, 'dropFilesOnTask');

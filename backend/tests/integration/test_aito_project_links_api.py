@@ -1,5 +1,6 @@
 """Aito task ↔ project link routes (spec §1.6, §4)."""
 
+import asyncio
 from datetime import datetime, timedelta
 
 import pytest
@@ -256,6 +257,7 @@ async def test_drop_files_endpoint(async_client: AsyncClient, db_session):
     body = response.json()
     assert body["project_id"] == project["id"]
     assert body["results"][0]["section"] == "impression"
+    assert "errors" not in body  # T-286: a full drop's answer keeps its old shape
 
     missing = await async_client.post(
         "/api/v1/aito/tasks/999999/files", files=[("files", ("a.3mf", b"x", "application/octet-stream"))]
@@ -411,7 +413,11 @@ async def test_drop_partial_failure_keeps_stored_group_and_records_once(
             ("files", ("b.3mf", b"x", "application/octet-stream")),
         ],
     )
-    assert response.status_code == 409
+    # T-286: the stored group plus the failed group's error, instead of a bare 409
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert [r["filename"] for r in body["results"]] == ["a.3mf"]
+    assert body["errors"] == [{"filenames": ["b.3mf"], "status_code": 409, "detail": "boom"}]
     assert broadcasts == [order.id]
 
     monkeypatch.undo()
@@ -427,8 +433,75 @@ async def test_drop_partial_failure_keeps_stored_group_and_records_once(
 
 @pytest.mark.asyncio
 @pytest.mark.integration
+async def test_drop_with_an_os_error_on_a_later_group_returns_the_stored_part_and_broadcasts(
+    async_client: AsyncClient, db_session, monkeypatch
+):
+    """T-286: a non-``ProjectFilesError`` (disk full) after a stored group is a partial answer, broadcast too."""
+    order = await _order(db_session)
+    task = await _task(db_session, order)
+    project = await _project(async_client)
+    await async_client.put(f"/api/v1/aito/tasks/{task.id}/project", json={"project_id": project["id"]})
+
+    real = files_service.add_revision
+    calls = {"n": 0}
+
+    async def second_fails(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise OSError(28, "No space left on device")
+        return await real(*args, **kwargs)
+
+    broadcasts = []
+
+    async def fake_broadcast(order_id, actor):
+        broadcasts.append(order_id)
+
+    monkeypatch.setattr(links_service.project_files, "add_revision", second_fails)
+    monkeypatch.setattr(links_routes, "_broadcast_changed", fake_broadcast)
+
+    response = await async_client.post(
+        f"/api/v1/aito/tasks/{task.id}/files",
+        files=[
+            ("files", ("a.3mf", b"x", "application/octet-stream")),
+            ("files", ("b.3mf", b"x", "application/octet-stream")),
+        ],
+    )
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert [r["filename"] for r in body["results"]] == ["a.3mf"]
+    assert body["errors"] == [
+        {"filenames": ["b.3mf"], "status_code": 500, "detail": "unexpected error while storing the files"}
+    ]
+    assert broadcasts == [order.id]
+
+
+@pytest.mark.asyncio
+async def test_drop_route_broadcasts_a_stored_group_when_cancelled(db_session, monkeypatch):
+    """T-286: the broadcast runs in a ``finally``, so a cancellation past a stored group still refreshes the order."""
+    order = await _order(db_session)
+    task = await _task(db_session, order)
+
+    async def cancelled_after_one(*_args, **_kwargs):
+        exc = asyncio.CancelledError()
+        exc.stored_count = 1
+        raise exc
+
+    broadcasts = []
+
+    async def fake_broadcast(order_id, actor):
+        broadcasts.append(order_id)
+
+    monkeypatch.setattr(links_service, "drop_files_on_task", cancelled_after_one)
+    monkeypatch.setattr(links_routes, "_broadcast_changed", fake_broadcast)
+    with pytest.raises(asyncio.CancelledError):
+        await links_routes.drop_task_files(task.id, files=[], db=db_session, user=None, __=None)
+    assert broadcasts == [order.id]
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
 async def test_drop_failing_on_the_first_group_does_not_broadcast(async_client: AsyncClient, db_session, monkeypatch):
-    """Nothing stored (``stored_count`` 0): the 409 goes out without an aito_changed broadcast."""
+    """Nothing stored (``stored_count`` 0): the 409 goes out without an aito_changed broadcast (T-286: unchanged)."""
     order = await _order(db_session)
     task = await _task(db_session, order)
     project = await _project(async_client)

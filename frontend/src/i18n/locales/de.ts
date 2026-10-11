@@ -10250,6 +10250,8 @@ export default {
       dropChooseTask: 'Für welche Aufgabe sind diese Dateien?',
       dropped_one: '{{count}} Datei zu {{code}} hinzugefügt',
       dropped_other: '{{count}} Dateien zu {{code}} hinzugefügt',
+      droppedPartial_one: '{{count}} Datei zu {{code}} hinzugefügt; nicht hinzugefügt: {{files}} ({{reason}})',
+      droppedPartial_other: '{{count}} Dateien zu {{code}} hinzugefügt; nicht hinzugefügt: {{files}} ({{reason}})',
       ordersTitle: 'Aufträge',
       ordersEmpty: 'Noch kein Auftrag nutzt dieses Projekt',
       newOrder: 'Neuer Auftrag',

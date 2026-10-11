@@ -88,7 +88,17 @@ class DroppedFileResult(BaseModel):
     revision_number: int
 
 
+class DropFilesError(BaseModel):
+    """Files a partly failed drop did not store: the group that failed and the groups after it (never tried)."""
+
+    filenames: list[str]
+    status_code: int
+    detail: str
+
+
 class DropFilesResponse(BaseModel):
     project_id: int
     code: str | None = None  # the project the files actually went to (the client's cached link may be stale)
     results: list[DroppedFileResult]
+    # Only a partly failed drop has one; left out of the JSON otherwise, so a full drop's answer is unchanged.
+    errors: list[DropFilesError] = Field(default_factory=list, exclude_if=lambda errors: not errors)

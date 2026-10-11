@@ -10274,6 +10274,8 @@ export default {
       dropChooseTask: 'Voor welke taak zijn deze bestanden?',
       dropped_one: '{{count}} bestand toegevoegd aan {{code}}',
       dropped_other: '{{count}} bestanden toegevoegd aan {{code}}',
+      droppedPartial_one: '{{count}} bestand toegevoegd aan {{code}}; niet toegevoegd: {{files}} ({{reason}})',
+      droppedPartial_other: '{{count}} bestanden toegevoegd aan {{code}}; niet toegevoegd: {{files}} ({{reason}})',
       ordersTitle: 'Bestellingen',
       ordersEmpty: 'Nog geen bestelling gebruikt dit project',
       newOrder: 'Nieuwe bestelling',
