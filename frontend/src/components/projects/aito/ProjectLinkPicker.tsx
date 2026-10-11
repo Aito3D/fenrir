@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { Search } from 'lucide-react';
 import { api } from '../../../api/client';
+import { projectKeys } from '../projectQueries';
 import { ProjectCodeChip } from '../ProjectCodeChip';
 import { focusRingCls } from '../../formStyles';
+import { useDebouncedValue } from '../../../hooks/useDebouncedValue';
 
 const REASON_KEYS = {
   same_client: 'projectsPdm.aito.suggestionSameClient',
@@ -34,11 +36,7 @@ export function ProjectLinkPicker({
 }) {
   const { t } = useTranslation();
   const [q, setQ] = useState('');
-  const [debounced, setDebounced] = useState('');
-  useEffect(() => {
-    const id = window.setTimeout(() => setDebounced(q.trim()), 250);
-    return () => window.clearTimeout(id);
-  }, [q]);
+  const debounced = useDebouncedValue(q, 250).trim();
 
   const { data: suggestions = [] } = useQuery({
     queryKey: ['aito-project-suggestions', taskId],
@@ -46,7 +44,7 @@ export function ProjectLinkPicker({
     retry: false,
   });
   const { data: search, isFetching } = useQuery({
-    queryKey: ['projects-search', 'aito-link', debounced],
+    queryKey: projectKeys.projectsSearch('aito-link', debounced),
     queryFn: () => api.searchProjects({ q: debounced, limit: 10 }),
     enabled: debounced !== '',
     retry: false,

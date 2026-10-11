@@ -18,6 +18,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Literal
 
+from backend.app.services.http_status_error import HttpStatusError
+
 logger = logging.getLogger(__name__)
 
 
@@ -153,16 +155,11 @@ class SliceDispatchService:
             self._jobs.pop(jid, None)
 
 
-class _SliceJobError(Exception):
+class _SliceJobError(HttpStatusError):
     """Raised inside a slice job's `run` callable to surface a specific
     HTTP status + detail. The dispatcher catches these and stores them on
     the job. Callers convert ``HTTPException`` to this on the boundary.
     """
-
-    def __init__(self, status_code: int, detail: str) -> None:
-        super().__init__(detail)
-        self.status_code = status_code
-        self.detail = detail
 
 
 def http_exception_to_job_error(exc) -> _SliceJobError:

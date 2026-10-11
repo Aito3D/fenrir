@@ -3,6 +3,8 @@
 Scan / Modélisation / Usinage / Docs are disabled, not deleted: items already in
 them keep working (rename, delete), but nothing new goes in."""
 
+from functools import partial
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
@@ -11,17 +13,10 @@ from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
 from backend.app.models.library import LibraryFile
 from backend.app.models.project_item import ProjectItem
-from backend.app.services import project_storage
+from backend.tests.project_fixtures import api_project, projects_root_fixture
 
-
-@pytest.fixture(autouse=True)
-def root(tmp_path, monkeypatch):
-    monkeypatch.setattr(project_storage, "projects_root", lambda: tmp_path)
-    return tmp_path
-
-
-async def _project(client):
-    return (await client.post("/api/v1/projects/", json={"name": "Support caméra"})).json()
+root = projects_root_fixture(autouse=True)
+_project = partial(api_project, check=False)
 
 
 async def _upload(client, item_id, *names):

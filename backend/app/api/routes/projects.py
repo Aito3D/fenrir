@@ -52,6 +52,7 @@ from backend.app.schemas.project import (
     ProjectUpdate,
     TimelineEvent,
 )
+from backend.app.services.project_files import revision_label
 from backend.app.services.project_tags import (
     UnknownTagError,
     apply_project_tag_input,
@@ -944,6 +945,14 @@ async def update_project(
     )
 
 
+async def _refuse_if_in_use(db: AsyncSession, project_id: int, live_link) -> None:
+    """409 when the project still owns PDM items, then when a live Aito task links it."""
+    if (await db.execute(select(ProjectItem.id).where(ProjectItem.project_id == project_id).limit(1))).first():
+        raise HTTPException(status_code=409, detail="This project has files; delete or move its items first")
+    if (await db.execute(live_link.limit(1))).first():
+        raise HTTPException(status_code=409, detail="This project is linked to Aito tasks; unlink them first")
+
+
 @router.delete("/{project_id}")
 async def delete_project(
     project_id: int,
@@ -959,18 +968,14 @@ async def delete_project(
 
     # Fenrir: a project that owns PDM items keeps them (and their files) until
     # they are deleted or moved — nothing would clean their rows or folders up.
-    if (await db.execute(select(ProjectItem.id).where(ProjectItem.project_id == project_id).limit(1))).first():
-        raise HTTPException(status_code=409, detail="This project has files; delete or move its items first")
-
-    # Fenrir: a project linked from Aito tasks of a live order is still in use
+    # And a project linked from Aito tasks of a live order is still in use
     # (PDM §8). A trashed order's tasks cannot be unlinked (their routes 404),
     # so they don't block; their links are cleared so the id is never reused.
     live_orders = select(AitoProject.id).where(AitoProject.status != "deleted")
     live_link = select(AitoTask.id).where(
         AitoTask.linked_project_id == project_id, AitoTask.project_id.in_(live_orders)
     )
-    if (await db.execute(live_link.limit(1))).first():
-        raise HTTPException(status_code=409, detail="This project is linked to Aito tasks; unlink them first")
+    await _refuse_if_in_use(db, project_id, live_link)
     # Only links the check above let through are cleared: tasks outside a live
     # order. With no concurrent writer that is every link left (the check just
     # found no live one), so this clears the same rows an unrestricted UPDATE
@@ -994,11 +999,8 @@ async def delete_project(
     # drop or auto-filing could have committed an item since. The writes above
     # hold it now: re-check, and the 409 rolls the whole delete back (get_db).
     await db.flush()
-    if (await db.execute(select(ProjectItem.id).where(ProjectItem.project_id == project_id).limit(1))).first():
-        raise HTTPException(status_code=409, detail="This project has files; delete or move its items first")
     # Same for a task link made on a live order since the link check.
-    if (await db.execute(live_link.limit(1))).first():
-        raise HTTPException(status_code=409, detail="This project is linked to Aito tasks; unlink them first")
+    await _refuse_if_in_use(db, project_id, live_link)
 
     return {"message": "Project deleted"}
 
@@ -1014,7 +1016,7 @@ async def _archive_trace_labels(db: AsyncSession, archives: Sequence[PrintArchiv
             .join(ProjectItem, ProjectItem.id == ProjectRevision.item_id)
             .where(ProjectRevision.id.in_(revision_ids))
         )
-        labels = {rid: f"{name} R{number}" for rid, number, name in rows}
+        labels = {rid: revision_label(name, number) for rid, number, name in rows}
     orders: dict[int, int] = {}
     if task_ids:
         orders = dict(

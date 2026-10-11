@@ -10196,7 +10196,6 @@ errors: {
     create: 'Skapa',
     tagsLabel: 'Taggar',
     tagSearchPlaceholder: 'Sök eller skapa en tagg…',
-    createTag: 'Skapa ”{{name}}”',
     removeTag: 'Ta bort {{name}}',
     suggestTags: 'Föreslå taggar',
     suggestionsLabel: 'Förslag',
@@ -10210,7 +10209,6 @@ errors: {
     saveFailed: 'Det gick inte att spara projektet',
     codeChipLabel: 'Projektkod {{code}}',
     files: {
-      title: 'Filer',
       sectionScan: 'Skanning',
       sectionModelisation: 'Modellering',
       sectionImpression: 'Utskrift',
@@ -10219,7 +10217,6 @@ errors: {
       emptySection: 'Inga objekt ännu',
       newItem: 'Nytt objekt',
       itemNameLabel: 'Objektnamn',
-      dropHint: 'Släpp filer här eller klicka för att välja',
       chooseFiles: 'Välj filer',
       uploading: 'Laddar upp…',
       uploadFailed: 'Uppladdningen misslyckades',

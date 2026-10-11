@@ -10157,7 +10157,6 @@ export default {
     create: 'Criar',
     tagsLabel: 'Tags',
     tagSearchPlaceholder: 'Buscar ou criar uma tag…',
-    createTag: 'Criar “{{name}}”',
     removeTag: 'Remover {{name}}',
     suggestTags: 'Sugerir tags',
     suggestionsLabel: 'Sugestões',
@@ -10171,7 +10170,6 @@ export default {
     saveFailed: 'Não foi possível salvar o projeto',
     codeChipLabel: 'Código do projeto {{code}}',
     files: {
-      title: 'Arquivos',
       sectionScan: 'Escaneamento',
       sectionModelisation: 'Modelagem',
       sectionImpression: 'Impressão',
@@ -10180,7 +10178,6 @@ export default {
       emptySection: 'Nenhum item ainda',
       newItem: 'Novo item',
       itemNameLabel: 'Nome do item',
-      dropHint: 'Solte arquivos aqui ou clique para escolher',
       chooseFiles: 'Escolher arquivos',
       uploading: 'Enviando…',
       uploadFailed: 'Falha no envio',

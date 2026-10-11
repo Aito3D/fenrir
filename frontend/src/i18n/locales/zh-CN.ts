@@ -10155,7 +10155,6 @@ export default {
     create: '创建',
     tagsLabel: '标签',
     tagSearchPlaceholder: '搜索或创建标签…',
-    createTag: '创建“{{name}}”',
     removeTag: '移除 {{name}}',
     suggestTags: '建议标签',
     suggestionsLabel: '建议',
@@ -10169,7 +10168,6 @@ export default {
     saveFailed: '无法保存项目',
     codeChipLabel: '项目编号 {{code}}',
     files: {
-      title: '文件',
       sectionScan: '扫描',
       sectionModelisation: '建模',
       sectionImpression: '打印',
@@ -10178,7 +10176,6 @@ export default {
       emptySection: '暂无项目',
       newItem: '新建条目',
       itemNameLabel: '条目名称',
-      dropHint: '将文件拖放到此处，或点击选择',
       chooseFiles: '选择文件',
       uploading: '上传中…',
       uploadFailed: '上传失败',

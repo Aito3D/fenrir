@@ -32,33 +32,9 @@ from backend.app.services.project_files import (
     revision_is_used,
     update_revision,
 )
+from backend.tests.project_fixtures import make_project as _project, projects_root_fixture, threemf_bytes, upload
 
-
-@pytest.fixture
-def root(tmp_path, monkeypatch):
-    monkeypatch.setattr(project_storage, "projects_root", lambda: tmp_path)
-    return tmp_path
-
-
-def upload(name: str, data: bytes = b"data") -> UploadFile:
-    return UploadFile(filename=name, file=io.BytesIO(data))
-
-
-def threemf_bytes() -> bytes:
-    buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w") as zf:
-        zf.writestr("Metadata/project_settings.config", '{"printer_model": "Bambu Lab X1C", "layer_height": "0.2"}')
-        zf.writestr(
-            "3D/3dmodel.model", '<model><metadata name="Application">BambuStudio-02.08.00.50</metadata></model>'
-        )
-    return buffer.getvalue()
-
-
-async def _project(db, name="Support caméra"):
-    project = Project(name=name)
-    db.add(project)
-    await db.flush()
-    return project
+root = projects_root_fixture()
 
 
 @pytest.mark.asyncio
@@ -168,6 +144,28 @@ async def test_3mf_snapshot_written_once(db_session, root):
     assert rev.slicer_name == "BambuStudio"
     assert rev.print_profile["printer_model"] == "Bambu Lab X1C"
     assert rev.config_hash
+
+
+@pytest.mark.asyncio
+async def test_3mf_snapshot_fills_all_five_revision_columns(db_session, root, tmp_path):
+    from backend.app.services.project_snapshot import read_print_snapshot
+
+    source = tmp_path / "plate.3mf"
+    source.write_bytes(threemf_bytes())
+    snap = read_print_snapshot(source)
+    assert snap is not None and None not in (snap.config, snap.config_hash, snap.slicer_version, snap.print_profile)
+    project = await _project(db_session)
+    item = await create_item(db_session, project, section="impression", name="Support X1C", user_id=None)
+    rev, _ = await add_revision(
+        db_session, project, item, [upload("plate.3mf", threemf_bytes())], note=None, derived_from_id=None, user_id=None
+    )
+    assert (rev.config_snapshot, rev.config_hash, rev.slicer_name, rev.slicer_version, rev.print_profile) == (
+        snap.config,
+        snap.config_hash,
+        snap.slicer_name,
+        snap.slicer_version,
+        snap.print_profile,
+    )
 
 
 @pytest.mark.asyncio
@@ -515,6 +513,41 @@ async def test_delete_revision_restores_its_folder_from_trash_on_commit_failure(
 
 
 @pytest.mark.asyncio
+async def test_a_failed_restore_from_trash_still_rolls_back_and_keeps_the_commit_error(
+    db_session, root, monkeypatch, caplog
+):
+    project = await _project(db_session)
+    item, r1 = await _rev(db_session, project)
+    base = root / project.storage_dir
+    commit_error, rollbacks = RuntimeError("db down"), []
+    real_rollback = db_session.rollback
+
+    async def boom():
+        # the folder is in the trash by now; make moving it back fail too
+        monkeypatch.setattr(project_files.shutil, "move", _raise_os_error)
+        raise commit_error
+
+    async def rollback():
+        rollbacks.append("rollback")
+        await real_rollback()
+
+    monkeypatch.setattr(db_session, "commit", boom)
+    monkeypatch.setattr(db_session, "rollback", rollback)
+    caplog.set_level("WARNING", logger=project_files.logger.name)
+    with pytest.raises(RuntimeError) as caught:
+        await delete_revision(db_session, project, item, r1)
+    assert caught.value is commit_error
+    assert rollbacks == ["rollback"]
+    original = str(base / "Modélisation" / "Support" / "R1")
+    assert any(original in r.getMessage() and r.exc_info for r in caplog.records)
+    assert len([p for p in (base / "_trash" / "Modélisation" / "Support").iterdir() if p.name.startswith("R1-")]) == 1
+
+
+def _raise_os_error(*_args, **_kwargs):
+    raise OSError("move back failed")
+
+
+@pytest.mark.asyncio
 async def test_delete_item_restores_its_folder_from_trash_on_commit_failure(db_session, root, monkeypatch):
     project = await _project(db_session)
     item, r1 = await _rev(db_session, project)
@@ -573,6 +606,27 @@ async def test_fork_copies_files_into_new_item(db_session, root):
     assert (r1.number, r1.derived_from_id) == (1, rev.id)
     assert (root / project.storage_dir / "Modélisation" / "Support client B" / "R1" / "a.step").read_bytes() == b"geo"
     assert (root / project.storage_dir / "Modélisation" / "Support" / "R1" / "a.step").exists()
+
+
+@pytest.mark.asyncio
+async def test_fork_copies_all_five_snapshot_columns_onto_r1(db_session, root):
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project, files=[upload("a.step", b"geo")])
+    rev.config_snapshot = {"layer_height": "0.2"}
+    rev.config_hash = "h" * 64
+    rev.slicer_name = "OrcaSlicer"
+    rev.slicer_version = "2.3.2"
+    rev.print_profile = {"printer_model": "Bambu Lab P1S"}
+    await db_session.commit()
+    forked = await fork_revision(db_session, project, item, rev, "Support client C", user_id=None)
+    r1 = (await db_session.execute(select(ProjectRevision).where(ProjectRevision.item_id == forked.id))).scalar_one()
+    assert (r1.config_snapshot, r1.config_hash, r1.slicer_name, r1.slicer_version, r1.print_profile) == (
+        {"layer_height": "0.2"},
+        "h" * 64,
+        "OrcaSlicer",
+        "2.3.2",
+        {"printer_model": "Bambu Lab P1S"},
+    )
 
 
 @pytest.mark.asyncio
@@ -635,20 +689,70 @@ async def test_case_only_rename(db_session, root):
     assert (root / project.storage_dir / "Modélisation" / "SUPPORT" / "R1" / "a.step").exists()
 
 
+def _case_only_rename_fails(monkeypatch, base: Path, fail_on: set[int]) -> list[tuple[str, str]]:
+    """Force the case-only branch on any filesystem and make the listed ``Path.rename`` calls raise."""
+    (base / "Modélisation" / "SUPPORT").mkdir(exist_ok=True)  # already "there" on a case-insensitive filesystem
+    monkeypatch.setattr(project_files.os.path, "samefile", lambda _a, _b: True)
+    real_rename, calls = Path.rename, []
+
+    def rename(self, target):
+        calls.append((Path(self).name, Path(target).name))
+        if len(calls) in fail_on:
+            raise OSError(f"rename {len(calls)} failed")
+        return real_rename(self, target)
+
+    monkeypatch.setattr(Path, "rename", rename)
+    return calls
+
+
+@pytest.mark.asyncio
+async def test_case_only_rename_puts_the_folder_back_when_the_second_rename_fails(db_session, root, monkeypatch):
+    project = await _project(db_session)
+    item, _rev1 = await _rev(db_session, project)
+    item_id = item.id
+    base = root / project.storage_dir
+    calls = _case_only_rename_fails(monkeypatch, base, fail_on={2})
+    with pytest.raises(OSError, match="rename 2 failed"):
+        await rename_item(db_session, project, item, "SUPPORT")
+    assert (base / "Modélisation" / "Support" / "R1" / "a.step").read_bytes() == b"data"
+    assert not list((base / "Modélisation").glob(".rename-*"))
+    assert [target for _source, target in calls] == [calls[0][1], "SUPPORT", "Support"]  # temp, new, back
+    await db_session.rollback()
+    assert (
+        await db_session.execute(select(ProjectItem.name).where(ProjectItem.id == item_id))
+    ).scalar_one() == "Support"
+
+
+@pytest.mark.asyncio
+async def test_case_only_rename_logs_and_keeps_the_original_error_when_the_put_back_fails(
+    db_session, root, monkeypatch, caplog
+):
+    project = await _project(db_session)
+    item, _rev1 = await _rev(db_session, project)
+    base = root / project.storage_dir
+    _case_only_rename_fails(monkeypatch, base, fail_on={2, 3})
+    caplog.set_level("WARNING", logger=project_files.logger.name)
+    with pytest.raises(OSError, match="rename 2 failed"):
+        await rename_item(db_session, project, item, "SUPPORT")
+    stranded = list((base / "Modélisation").glob(".rename-*"))
+    assert len(stranded) == 1
+    assert any(str(stranded[0]) in r.getMessage() and r.exc_info for r in caplog.records)
+
+
 @pytest.mark.asyncio
 async def test_fork_writes_nothing_to_the_db_while_copying(db_session, root, monkeypatch):
     project = await _project(db_session)
     item, rev = await _rev(db_session, project)
     await db_session.commit()
     seen = {}
-    real = project_files.shutil.copy2
+    real = project_files._copy_claimed
 
     def spy(src, dst, *args, **kwargs):
         seen["new"] = list(db_session.new)
         seen["dirty"] = list(db_session.dirty)
         return real(src, dst, *args, **kwargs)
 
-    monkeypatch.setattr(project_files.shutil, "copy2", spy)
+    monkeypatch.setattr(project_files, "_copy_claimed", spy)
     await fork_revision(db_session, project, item, rev, "Copie", user_id=None)
     assert seen == {"new": [], "dirty": []}
 
@@ -1123,6 +1227,82 @@ async def test_delete_item_stays_trashed_when_the_commit_task_is_cancelled_at_sh
     assert await _fresh_scalars(test_engine, select(ProjectItem.id).where(ProjectItem.id == item_id)) == []
     assert not (base / "Modélisation" / "Support").exists()
     assert [p.name for p in _trash_entries(base)] == ["a.step"]
+
+
+@pytest.mark.asyncio
+async def test_add_files_keeps_files_when_the_commit_task_is_cancelled_at_shutdown(
+    db_session, root, monkeypatch, test_engine
+):
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project)
+    await db_session.commit()
+    base, rev_id = root / project.storage_dir, rev.id
+    in_flight, release, started = _commit_task_cancelled_at_shutdown(db_session, monkeypatch)
+    await _shutdown_mid_commit(
+        add_files_to_revision(db_session, project, item, rev, [upload("b.step", b"b")], user_id=None),
+        in_flight,
+        release,
+        started,
+    )
+    names = await _fresh_scalars(test_engine, select(LibraryFile.filename).where(LibraryFile.revision_id == rev_id))
+    assert sorted(names) == ["a.step", "b.step"]
+    folder = base / "Modélisation" / "Support" / "R1"
+    assert sorted(p.name for p in folder.iterdir()) == ["a.step", "b.step"]
+    assert (folder / "a.step").read_bytes() == b"data"
+    assert (folder / "b.step").read_bytes() == b"b"  # no cleanup: the committed row still points at its bytes
+
+
+@pytest.mark.asyncio
+async def test_rename_item_keeps_the_new_folder_when_the_commit_task_is_cancelled_at_shutdown(
+    db_session, root, monkeypatch, test_engine
+):
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project)
+    await db_session.commit()
+    base, item_id, rev_id = root / project.storage_dir, item.id, rev.id
+    in_flight, release, started = _commit_task_cancelled_at_shutdown(db_session, monkeypatch)
+    await _shutdown_mid_commit(rename_item(db_session, project, item, "Nouveau"), in_flight, release, started)
+    assert await _fresh_scalars(test_engine, select(ProjectItem.name).where(ProjectItem.id == item_id)) == ["Nouveau"]
+    paths = await _fresh_scalars(test_engine, select(LibraryFile.file_path).where(LibraryFile.revision_id == rev_id))
+    assert len(paths) == 1 and paths[0].endswith("Nouveau/R1/a.step")
+    assert (base / "Modélisation" / "Nouveau" / "R1" / "a.step").read_bytes() == b"data"
+    assert not (base / "Modélisation" / "Support").exists()  # no rename-back: the folder matches the committed paths
+
+
+@pytest.mark.asyncio
+async def test_fork_keeps_the_copied_files_when_the_commit_task_is_cancelled_at_shutdown(
+    db_session, root, monkeypatch, tmp_path, test_engine
+):
+    from backend.app.api.routes.library import to_absolute_path
+
+    project, item, rev, thumbs, section_dir = await _fork_source_with_thumbnail(db_session, monkeypatch, tmp_path)
+    project_id, rev_id = project.id, rev.id
+    in_flight, release, started = _commit_task_cancelled_at_shutdown(db_session, monkeypatch)
+    await _shutdown_mid_commit(
+        fork_revision(db_session, project, item, rev, "Support B", user_id=None), in_flight, release, started
+    )
+    forked_ids = await _fresh_scalars(
+        test_engine,
+        select(ProjectItem.id).where(
+            ProjectItem.project_id == project_id,
+            ProjectItem.name == "Support B",
+            ProjectItem.forked_from_revision_id == rev_id,
+        ),
+    )
+    assert len(forked_ids) == 1
+    r1_ids = await _fresh_scalars(
+        test_engine,
+        select(ProjectRevision.id).where(ProjectRevision.item_id == forked_ids[0], ProjectRevision.number == 1),
+    )
+    assert len(r1_ids) == 1
+    rows = await _fresh_scalars(test_engine, select(LibraryFile).where(LibraryFile.revision_id == r1_ids[0]))
+    assert [r.filename for r in rows] == ["plate.3mf"]
+    copied = section_dir / "Support B" / "R1" / "plate.3mf"
+    assert to_absolute_path(rows[0].file_path) == copied
+    assert copied.read_bytes() == (section_dir / "Support" / "R1" / "plate.3mf").read_bytes()
+    copied_thumb = to_absolute_path(rows[0].thumbnail_path)
+    assert copied_thumb is not None and copied_thumb.parent == thumbs and copied_thumb.is_file()
+    assert len(list(thumbs.iterdir())) == 2  # no cleanup: the source's thumbnail and the copy's own
 
 
 @pytest.mark.asyncio
@@ -1608,7 +1788,7 @@ def test_copy_hashing_survives_a_copystat_failure(tmp_path, monkeypatch):
 
     src = tmp_path / "src.bin"
     src.write_bytes(b"payload")
-    dest = tmp_path / "dest.bin"
+    dest = project_storage.claim_unique_file_path(tmp_path, "dest.bin")
 
     def refuse(*_args, **_kwargs):
         raise OSError("no timestamps here")
@@ -1645,7 +1825,7 @@ async def test_thumbnail_failure_never_fails_the_upload(tmp_path, monkeypatch):
     assert await project_files._make_thumbnail(gcode) == (None, None)
 
 
-# --- _committing, the commit-through-cancel guard shared by every commit site (T-070) ---
+# --- _CommitGuard, the commit-through-cancel guard shared by every commit site (T-070) ---
 
 
 class _GuardSession:
@@ -1671,7 +1851,7 @@ def _recording_undo(calls: list[str], fail: BaseException | None = None):
 @pytest.mark.asyncio
 async def test_committing_commits_without_undo_on_success():
     db, calls = _GuardSession(), []
-    async with project_files._committing(db, _recording_undo(calls)) as commit:
+    async with project_files._CommitGuard(db, _recording_undo(calls)) as commit:
         await commit()
     assert (db.commits, calls) == (1, [])
 
@@ -1681,7 +1861,7 @@ async def test_committing_undoes_a_failure_before_the_commit_and_reraises_it():
     db, calls = _GuardSession(), []
     boom = ValueError("before the commit")
     with pytest.raises(ValueError) as caught:
-        async with project_files._committing(db, _recording_undo(calls)):
+        async with project_files._CommitGuard(db, _recording_undo(calls)):
             raise boom
     assert caught.value is boom
     assert (db.commits, calls) == (0, ["undo"])
@@ -1697,7 +1877,7 @@ async def test_committing_skips_the_undo_when_a_cancelled_commit_landed(monkeypa
 
     monkeypatch.setattr(project_files, "_commit_through_cancel", landed)
     with pytest.raises(asyncio.CancelledError):
-        async with project_files._committing(_GuardSession(), _recording_undo(calls)) as commit:
+        async with project_files._CommitGuard(_GuardSession(), _recording_undo(calls)) as commit:
             await commit()
     assert calls == []
 
@@ -1712,14 +1892,14 @@ async def test_committing_translates_after_the_undo_only_when_asked():
         return ProjectFilesError(409, "taken") if exc is boom else None
 
     with pytest.raises(ProjectFilesError) as caught:
-        async with project_files._committing(_GuardSession(), _recording_undo(calls), translate=translate):
+        async with project_files._CommitGuard(_GuardSession(), _recording_undo(calls), translate=translate):
             raise boom
     assert (caught.value.status_code, caught.value.__cause__) == (409, boom)
     assert calls == ["undo", "translate"]
 
     other = RuntimeError("other")
     with pytest.raises(RuntimeError) as kept:
-        async with project_files._committing(_GuardSession(), _recording_undo(calls), translate=translate):
+        async with project_files._CommitGuard(_GuardSession(), _recording_undo(calls), translate=translate):
             raise other
     assert kept.value is other
 
@@ -1734,7 +1914,9 @@ async def test_committing_lets_a_failing_undo_win_untranslated():
         return ProjectFilesError(409, "never")
 
     with pytest.raises(OSError) as caught:
-        async with project_files._committing(_GuardSession(), _recording_undo(calls, undo_failed), translate=translate):
+        async with project_files._CommitGuard(
+            _GuardSession(), _recording_undo(calls, undo_failed), translate=translate
+        ):
             raise boom
     assert caught.value is undo_failed
     assert caught.value.__context__ is boom
@@ -1917,3 +2099,639 @@ async def test_fork_integrity_error_removes_copied_thumbnail_and_keeps_the_sourc
     assert (await db_session.execute(select(ProjectItem).where(ProjectItem.name == "Support B"))).first() is None
     assert (await db_session.execute(select(ProjectItem.id).where(ProjectItem.id == item_id))).scalar_one() == item_id
     assert (await _revision_rows(db_session, item_id))[1] == 1  # the source revision keeps its one file row
+
+
+# --- T-207: fork never copies through a symlink ------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_fork_skips_a_revision_file_swapped_for_a_symlink(db_session, root, tmp_path_factory):
+    secret = tmp_path_factory.mktemp("data_dir") / ".jwt_secret"
+    secret.write_bytes(b"top-secret")
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project, files=[upload("a.step", b"geo-a"), upload("b.step", b"geo-b")])
+    base = root / project.storage_dir / "Modélisation"
+    swapped = base / "Support" / "R1" / "a.step"
+    swapped.unlink()
+    swapped.symlink_to(secret)
+    forked = await fork_revision(db_session, project, item, rev, "Copie", user_id=None)
+    r1 = (await db_session.execute(select(ProjectRevision).where(ProjectRevision.item_id == forked.id))).scalar_one()
+    names = (await db_session.execute(select(LibraryFile.filename).where(LibraryFile.revision_id == r1.id))).scalars()
+    assert list(names) == ["b.step"]
+    assert sorted(p.name for p in (base / "Copie" / "R1").iterdir()) == ["b.step"]
+    assert (base / "Copie" / "R1" / "b.step").read_bytes() == b"geo-b"
+
+
+@pytest.mark.asyncio
+async def test_fork_refuses_when_the_only_file_is_a_symlink(db_session, root, tmp_path_factory):
+    secret = tmp_path_factory.mktemp("data_dir") / ".jwt_secret"
+    secret.write_bytes(b"top-secret")
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project)
+    base = root / project.storage_dir / "Modélisation"
+    swapped = base / "Support" / "R1" / "a.step"
+    swapped.unlink()
+    swapped.symlink_to(secret)
+    with pytest.raises(ProjectFilesError) as err:
+        await fork_revision(db_session, project, item, rev, "Copie", user_id=None)
+    assert (err.value.status_code, err.value.detail) == (409, "No file of this revision could be copied")
+    assert not (base / "Copie").exists()
+
+
+@pytest.mark.asyncio
+async def test_fork_does_not_copy_a_thumbnail_swapped_for_a_symlink(db_session, root, monkeypatch, tmp_path):
+    project, item, rev, thumbs, section_dir = await _fork_source_with_thumbnail(db_session, monkeypatch, tmp_path)
+    [thumb] = list(thumbs.iterdir())
+    secret = tmp_path / ".jwt_secret"
+    secret.write_bytes(b"top-secret")
+    thumb.unlink()
+    thumb.symlink_to(secret)
+    forked = await fork_revision(db_session, project, item, rev, "Support B", user_id=None)
+    r1 = (await db_session.execute(select(ProjectRevision).where(ProjectRevision.item_id == forked.id))).scalar_one()
+    [copy] = (await db_session.execute(select(LibraryFile).where(LibraryFile.revision_id == r1.id))).scalars().all()
+    assert copy.filename == "plate.3mf" and copy.thumbnail_path is None
+    assert list(thumbs.iterdir()) == [thumb]  # no copy of the secret landed among the thumbnails
+    assert (section_dir / "Support B" / "R1" / "plate.3mf").is_file()
+
+
+def test_revision_file_path_refuses_a_path_that_reaches_the_tree_through_an_outside_symlink(root, tmp_path_factory):
+    real = root / "P-0001_x" / "Modélisation" / "Support" / "R1"
+    real.mkdir(parents=True)
+    (real / "a.step").write_bytes(b"geo")
+    detour = tmp_path_factory.mktemp("outside") / "detour"
+    detour.symlink_to(real, target_is_directory=True)
+    assert project_files.revision_file_path(str(real / "a.step")) == (real / "a.step").resolve()
+    assert project_files.revision_file_path(str(detour / "a.step")) is None
+    assert project_files.revision_file_path(None) is None
+    assert project_files.revision_file_path("") is None
+
+
+def test_revision_file_path_walks_past_a_prefix_that_escapes_the_data_dir(monkeypatch, tmp_path):
+    """A stored relative path that climbs out of the data dir and back in still resolves:
+    the prefix ``..`` alone escapes (``to_absolute_path`` raises), so the walk moves on."""
+    from backend.app.core.config import settings as app_settings
+
+    base = tmp_path / "data"
+    projects = base / "projects"
+    folder = projects / "P-0001_x" / "R1"
+    folder.mkdir(parents=True)
+    (folder / "a.step").write_bytes(b"geo")
+    monkeypatch.setattr(app_settings, "base_dir", base)
+    monkeypatch.setattr(project_storage, "projects_root", lambda: projects)
+    stored = "../data/projects/P-0001_x/R1/a.step"
+    assert project_files.revision_file_path(stored) == (folder / "a.step").resolve()
+
+
+@pytest.mark.parametrize(
+    ("filename", "expected"),
+    [
+        (None, ""),
+        ("", ""),
+        ("C:\\Users\\shop\\Support.3mf", "Support.3mf"),
+        ("plates/v2/Support.gcode", "Support.gcode"),
+        ("mixed\\dir/Support.bgcode", "Support.bgcode"),
+        ("Support.3mf", "Support.3mf"),
+    ],
+)
+def test_upload_basename_strips_client_folders(filename, expected):
+    assert project_files.upload_basename(UploadFile(file=io.BytesIO(b""), filename=filename)) == expected
+
+
+# --- refusals before any write, and per-type thumbnails (coverage follow-up, loop-6) ---
+
+
+@pytest.mark.asyncio
+async def test_revision_writes_refuse_an_empty_file_list(db_session, root):
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project)
+    folder = project_storage.item_dir(project, item.section, item.name)
+    before = sorted(p.relative_to(folder).as_posix() for p in folder.rglob("*"))
+    assert before == ["R1", "R1/a.step"]
+
+    with pytest.raises(ProjectFilesError) as no_upload:
+        await add_revision(db_session, project, item, [], note=None, derived_from_id=None, user_id=None)
+    assert (no_upload.value.status_code, no_upload.value.detail) == (400, "A revision needs at least one file")
+    with pytest.raises(ProjectFilesError) as no_source:
+        await project_files.add_revision_from_sources(db_session, project, item, [], note=None, user_id=None)
+    assert (no_source.value.status_code, no_source.value.detail) == (400, "A revision needs at least one file")
+    with pytest.raises(ProjectFilesError) as no_file:
+        await add_files_to_revision(db_session, project, item, rev, [], user_id=None)
+    assert (no_file.value.status_code, no_file.value.detail) == (400, "No file")
+
+    numbers = (await db_session.execute(select(ProjectRevision.number))).scalars().all()
+    assert numbers == [1]  # no R2 was created
+    assert len((await db_session.execute(select(LibraryFile))).scalars().all()) == 1
+    assert sorted(p.relative_to(folder).as_posix() for p in folder.rglob("*")) == before
+
+
+@pytest.mark.asyncio
+async def test_adding_files_to_a_used_wip_revision_is_refused(db_session, root):
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project)
+    await _mark_used(db_session, rev)
+    folder = project_storage.item_dir(project, item.section, item.name) / "R1"
+
+    with pytest.raises(ProjectFilesError) as used:
+        await add_files_to_revision(db_session, project, item, rev, [upload("b.step", b"b")], user_id=None)
+    assert (used.value.status_code, used.value.detail) == (
+        409,
+        "This revision was printed or delivered; make a new revision instead",
+    )
+    assert sorted(p.name for p in folder.iterdir()) == ["a.step"]
+    files = (await db_session.execute(select(LibraryFile.filename).where(LibraryFile.revision_id == rev.id))).all()
+    assert [f.filename for f in files] == ["a.step"]
+
+
+@pytest.mark.asyncio
+async def test_gcode_embedded_thumbnail_is_written(tmp_path, monkeypatch):
+    import base64
+
+    monkeypatch.setattr(project_files, "get_library_thumbnails_dir", lambda: tmp_path)
+    picture = b"\x89PNG\r\n\x1a\nfake-thumbnail"
+    gcode = tmp_path / "part.gcode"
+    encoded = base64.b64encode(picture).decode()
+    gcode.write_text(f"; thumbnail begin 300x300 {len(encoded)}\n; {encoded}\n; thumbnail end\nG1 X1\n")
+
+    thumb, metadata = await project_files._make_thumbnail(gcode)
+    assert metadata is None
+    assert thumb is not None and thumb.parent == tmp_path and thumb.suffix == ".png"
+    assert thumb.read_bytes() == picture
+
+
+@pytest.mark.asyncio
+async def test_image_upload_gets_a_png_thumbnail(tmp_path, monkeypatch):
+    from PIL import Image
+
+    thumbs = tmp_path / "thumbs"
+    thumbs.mkdir()
+    monkeypatch.setattr(project_files, "get_library_thumbnails_dir", lambda: thumbs)
+    photo = tmp_path / "photo.JPG"
+    Image.new("RGB", (512, 128), (200, 10, 10)).save(photo, "JPEG")
+
+    thumb, metadata = await project_files._make_thumbnail(photo)
+    assert metadata is None
+    assert thumb is not None and thumb.parent == thumbs
+    with Image.open(thumb) as made:
+        assert (made.format, made.size) == ("PNG", (256, 64))
+
+
+@pytest.mark.asyncio
+async def test_stl_thumbnail_only_renders_a_usable_mesh(tmp_path, monkeypatch):
+    thumbs = tmp_path / "thumbs"
+    thumbs.mkdir()
+    monkeypatch.setattr(project_files, "get_library_thumbnails_dir", lambda: thumbs)
+    rendered: list[tuple[Path, Path]] = []
+
+    def fake_render(stl_path, thumbnails_dir):
+        rendered.append((stl_path, thumbnails_dir))
+        out = thumbnails_dir / "mesh.png"
+        out.write_bytes(b"png")
+        return str(out)
+
+    monkeypatch.setattr(project_files, "generate_stl_thumbnail", fake_render)
+    tiny = tmp_path / "tiny.stl"
+    tiny.write_bytes(b"x" * (project_files.MIN_USABLE_STL_BYTES - 1))
+    assert await project_files._make_thumbnail(tiny) == (None, None)
+    assert rendered == []
+
+    mesh = tmp_path / "mesh.STL"
+    mesh.write_bytes(b"x" * project_files.MIN_USABLE_STL_BYTES)
+    assert await project_files._make_thumbnail(mesh) == (thumbs / "mesh.png", None)
+    assert rendered == [(mesh, thumbs)]
+
+
+class _CapturingSession:
+    """Records executed statements; every result is empty."""
+
+    def __init__(self):
+        self.statements = []
+
+    async def execute(self, statement):
+        self.statements.append(statement)
+        return self
+
+    def first(self):
+        return None
+
+    def scalars(self):
+        return self
+
+    def all(self):
+        return []
+
+
+def _sqlite_sql(statement) -> str:
+    from sqlalchemy.dialects import sqlite
+
+    return str(statement.compile(dialect=sqlite.dialect(), compile_kwargs={"literal_binds": True}))
+
+
+# The usage columns, in _USAGE_COLUMNS order, as (table, column).
+_USAGE_SQL_COLUMNS = (
+    ("print_queue", "library_file_id"),
+    ("print_archives", "library_file_id"),
+    ("print_batches", "library_file_id"),
+    ("print_queue_variants", "library_file_id"),
+    ("pipeline_runs", "source_library_file_id"),
+    ("pipeline_runs", "sliced_library_file_id"),
+)
+
+
+def _usage_branches(in_clause: str) -> list[str]:
+    return [
+        f"SELECT {table}.{column} AS file_id \nFROM {table} \nWHERE {table}.{column} IN {in_clause}"
+        for table, column in _USAGE_SQL_COLUMNS
+    ]
+
+
+@pytest.mark.asyncio
+async def test_used_file_ids_query_is_one_flat_union_with_the_delivered_branch():
+    session = _CapturingSession()
+    file_ids = select(LibraryFile.id).where(LibraryFile.revision_id == 7)
+    assert await project_files.used_file_ids(session, file_ids) == set()
+    (statement,) = session.statements
+    sub = "(SELECT library_files.id \nFROM library_files \nWHERE library_files.revision_id = 7)"
+    delivered = (
+        f"SELECT library_files.id AS file_id \nFROM library_files \nWHERE library_files.id IN {sub} "
+        "AND library_files.revision_id IN (SELECT aito_task_deliveries.revision_id \nFROM aito_task_deliveries)"
+    )
+    assert _sqlite_sql(statement) == " UNION ".join([*_usage_branches(sub), delivered])
+
+
+@pytest.mark.asyncio
+async def test_deleted_revision_is_used_query_is_the_usage_union_without_delivered_branch():
+    session = _CapturingSession()
+    assert await project_files._deleted_revision_is_used(session, 7, [3, 4]) is False
+    delivery_check, usage = session.statements
+    assert _sqlite_sql(delivery_check) == (
+        "SELECT aito_task_deliveries.revision_id \nFROM aito_task_deliveries \n"
+        "WHERE aito_task_deliveries.revision_id = 7\n LIMIT 1 OFFSET 0"
+    )
+    assert _sqlite_sql(usage) == " UNION ".join(_usage_branches("(3, 4)"))
+
+
+@pytest.mark.asyncio
+async def test_remove_file_rejects_a_revision_of_another_item(db_session, root):
+    project = await _project(db_session)
+    item, _ = await _rev(db_session, project, name="Support")
+    _, other_rev = await _rev(db_session, project, name="Autre")
+    await db_session.commit()
+    other_file = (
+        await db_session.execute(select(LibraryFile.id).where(LibraryFile.revision_id == other_rev.id))
+    ).scalar_one()
+    with pytest.raises(ProjectFilesError) as caught:
+        await remove_file_from_revision(db_session, project, item, other_rev, other_file)
+    assert (caught.value.status_code, caught.value.detail) == (404, "Revision not found")
+    assert (
+        await db_session.execute(select(LibraryFile).where(LibraryFile.id == other_file))
+    ).scalar_one().deleted_at is None
+
+
+@pytest.mark.asyncio
+async def test_remove_file_rejects_a_file_outside_the_revision(db_session, root):
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project, files=[upload("a.step"), upload("b.step")])
+    _, other_rev = await _rev(db_session, project, name="Autre")
+    await db_session.commit()
+    stranger = (
+        await db_session.execute(select(LibraryFile.id).where(LibraryFile.revision_id == other_rev.id))
+    ).scalar_one()
+    with pytest.raises(ProjectFilesError) as caught:
+        await remove_file_from_revision(db_session, project, item, rev, stranger)
+    assert (caught.value.status_code, caught.value.detail) == (404, "File not found in this revision")
+    folder = root / project.storage_dir / "Modélisation" / "Support" / "R1"
+    assert sorted(p.name for p in folder.iterdir()) == ["a.step", "b.step"]
+
+
+@pytest.mark.asyncio
+async def test_rename_refuses_a_name_whose_folder_already_exists(db_session, root):
+    project = await _project(db_session)
+    item, _ = await _rev(db_session, project)
+    await db_session.commit()
+    base = root / project.storage_dir / "Modélisation"
+    (base / "Copie").mkdir()
+    with pytest.raises(ProjectFilesError) as caught:
+        await rename_item(db_session, project, item, "Copie")
+    assert (caught.value.status_code, caught.value.detail) == (409, "A folder with this name already exists")
+    assert list((base / "Copie").iterdir()) == []
+    assert (base / "Support" / "R1" / "a.step").exists()
+    name = (await db_session.execute(select(ProjectItem.name).where(ProjectItem.id == item.id))).scalar_one()
+    assert name == "Support"
+
+
+@pytest.mark.asyncio
+async def test_duplicate_warnings_are_empty_when_no_row_has_a_hash(db_session: AsyncSession):
+    """Rows without a ``file_hash`` cannot match anything: no warning, no lookup."""
+    rows = [LibraryFile(filename="a.3mf", file_hash=None), LibraryFile(filename="b.3mf", file_hash="")]
+    assert await project_files._duplicate_warnings(db_session, None, None, rows) == []
+
+
+@pytest.mark.asyncio
+async def test_delete_file_rows_with_nothing_to_delete_returns_empty(db_session: AsyncSession):
+    """A revision without library rows deletes nothing and reports no ids."""
+    assert await project_files._delete_file_rows(db_session, revision_ids=[987654]) == []
+    assert await project_files._delete_file_rows(db_session, revision_ids=None) == []
+    assert await project_files._delete_file_rows(db_session, file_ids=[]) == []
+
+
+def test_project_files_error_declares_stored_count_without_a_default():
+    """``stored_count`` is annotated on the class but absent until a task drop sets it on the instance."""
+    assert "stored_count" in ProjectFilesError.__annotations__
+    err = ProjectFilesError(409, "x")
+    assert not hasattr(err, "stored_count")
+    err.stored_count = 2
+    assert err.stored_count == 2
+    assert not hasattr(ProjectFilesError(409, "y"), "stored_count")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("change", ["deleted", "trashed", "filed", "moved"])
+async def test_reuse_row_changed_during_copy_is_refused(test_engine, tmp_path, monkeypatch, change):
+    """T-248: the DB step re-reads each reused row after its bytes were copied; a row that was
+    deleted, trashed, filed into a revision or moved meanwhile refuses the revision with a 409."""
+    from datetime import datetime, timezone
+
+    from sqlalchemy import delete, update
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    from backend.app.api.routes.library import to_relative_path
+    from backend.tests.project_fixtures import create_wal_engine, point_projects_root
+
+    root = point_projects_root(monkeypatch, tmp_path, subdir="projects")
+    engine = await create_wal_engine(tmp_path / "wal.db")  # two real connections; test_engine only registers models
+    maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    try:
+        async with maker() as db, maker() as other:
+            src_dir = tmp_path / "manager"
+            src_dir.mkdir()
+            src = src_dir / "plate.gcode"
+            src.write_bytes(b"G1 X1")
+            reused = LibraryFile(
+                filename="plate.gcode",
+                file_path=to_relative_path(src),
+                file_type="gcode",
+                file_size=5,
+                is_external=False,
+            )
+            db.add(reused)
+            project = await _project(db)
+            item = await create_item(db, project, section="impression", name="Plateau", user_id=None)
+            elsewhere = await create_item(db, project, section="impression", name="Ailleurs", user_id=None)
+            other_rev, _ = await add_revision(
+                db, project, elsewhere, [upload("a.gcode", b"a")], note=None, derived_from_id=None, user_id=None
+            )
+            await db.commit()
+            reused_id, item_id, other_rev_id = reused.id, item.id, other_rev.id
+            r1 = root / project.storage_dir / "Impression" / "Plateau" / "R1"
+
+            mutations = {
+                "deleted": delete(LibraryFile).where(LibraryFile.id == reused_id),
+                "trashed": update(LibraryFile)
+                .where(LibraryFile.id == reused_id)
+                .values(deleted_at=datetime.now(timezone.utc)),
+                "filed": update(LibraryFile).where(LibraryFile.id == reused_id).values(revision_id=other_rev_id),
+                "moved": update(LibraryFile)
+                .where(LibraryFile.id == reused_id)
+                .values(file_path="elsewhere/plate.gcode"),
+            }
+            real_copy = project_files._copy_sources
+            copied: list[Path] = []
+
+            async def copy_then_change(folder, sources):
+                written = await real_copy(folder, sources)
+                copied.extend(entry.path for entry in written)
+                assert all(path.exists() for path in copied)
+                await other.execute(mutations[change])
+                await other.commit()
+                return written
+
+            monkeypatch.setattr(project_files, "_copy_sources", copy_then_change)
+            with pytest.raises(ProjectFilesError) as err:
+                await project_files.add_revision_from_sources(
+                    db,
+                    project,
+                    item,
+                    [project_files.RevisionSource(path=src, filename="plate.gcode", reuse_row=reused)],
+                    note=None,
+                    user_id=None,
+                )
+            assert (err.value.status_code, err.value.detail) == (
+                409,
+                "A file changed while it was being moved; try again",
+            )
+
+        async with maker() as check:
+            revisions = (
+                (await check.execute(select(ProjectRevision).where(ProjectRevision.item_id == item_id))).scalars().all()
+            )
+            assert revisions == []
+            assert (await check.get(ProjectItem, item_id)).last_revision_number == 0
+            row = await check.get(LibraryFile, reused_id)
+            if change == "deleted":
+                assert row is None
+            else:  # left exactly as the other session made it, never re-pointed at the copy
+                assert row.project_id is None
+                assert (row.file_path, row.revision_id, row.deleted_at is not None) == {
+                    "trashed": (to_relative_path(src), None, True),
+                    "filed": (to_relative_path(src), other_rev_id, False),
+                    "moved": ("elsewhere/plate.gcode", None, False),
+                }[change]
+        assert len(copied) == 1 and not copied[0].exists()  # the copy is removed
+        assert not r1.exists()  # the folder this attempt created is removed too
+        assert src.read_bytes() == b"G1 X1"  # the source is never touched
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_add_files_to_revision_writes_nothing_to_the_db_before_streaming_finishes(db_session, root, monkeypatch):
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project)
+    await db_session.commit()
+    real = project_files._stream_files
+    seen = {}
+
+    async def spy(folder, uploads):
+        seen["new"] = list(db_session.new)
+        seen["dirty"] = list(db_session.dirty)
+        seen["deleted"] = list(db_session.deleted)
+        return await real(folder, uploads)
+
+    monkeypatch.setattr(project_files, "_stream_files", spy)
+    await add_files_to_revision(db_session, project, item, rev, [upload("b.step", b"b")], user_id=None)
+    assert seen == {"new": [], "dirty": [], "deleted": []}
+    files = (await db_session.execute(select(LibraryFile).where(LibraryFile.revision_id == rev.id))).scalars().all()
+    assert len(files) == 2
+
+
+@pytest.mark.asyncio
+async def test_add_revision_from_sources_writes_nothing_to_the_db_while_copying(
+    db_session, root, tmp_path, monkeypatch
+):
+    project = await _project(db_session)
+    item, _r1 = await _rev(db_session, project)
+    await db_session.commit()
+    src = tmp_path / "out.gcode.3mf"
+    src.write_bytes(b"not really a zip")
+    real = project_files._copy_sources
+    seen = {}
+
+    async def spy(folder, sources):
+        seen["new"] = list(db_session.new)
+        seen["dirty"] = list(db_session.dirty)
+        seen["deleted"] = list(db_session.deleted)
+        return await real(folder, sources)
+
+    monkeypatch.setattr(project_files, "_copy_sources", spy)
+    rev = await project_files.add_revision_from_sources(
+        db_session,
+        project,
+        item,
+        [project_files.RevisionSource(path=src, filename="Support.gcode.3mf")],
+        note=None,
+        user_id=None,
+    )
+    assert seen == {"new": [], "dirty": [], "deleted": []}
+    assert rev.number == 2
+
+
+def test_revision_label_format_is_pinned():
+    assert project_files.revision_label("Bracket", 3) == "Bracket R3"
+    assert project_files.revision_label("Pièce 2 / b", 12) == "Pièce 2 / b R12"
+
+
+def test_revision_label_callers_share_the_helper():
+    from types import SimpleNamespace
+
+    from backend.app.services import aito_project_links as links
+
+    label, _ = links.revision_added_payload(
+        item_name="Bracket", revision_number=3, section="wip", item_id=1, revision_id=2
+    )
+    assert label == project_files.revision_label("Bracket", 3)
+    item, revision = SimpleNamespace(name="Bracket"), SimpleNamespace(number=3)
+    assert links._revision_label(item, revision, 9) == project_files.revision_label("Bracket", 3)
+    assert links._revision_label(None, revision, 9) == "#9"
+
+
+@pytest.mark.asyncio
+async def test_status_change_stamps_naive_utc_now(db_session, root):
+    from datetime import datetime, timedelta, timezone
+
+    project = await _project(db_session)
+    item = await create_item(db_session, project, section="scan", name="Mesh", user_id=None)
+    rev, _ = await add_revision(
+        db_session, project, item, [upload("s.ply")], note=None, derived_from_id=None, user_id=None
+    )
+    before = datetime.now(timezone.utc).replace(tzinfo=None)
+    await update_revision(db_session, project, rev, fields={"status": "valide"}, user_id=None)
+    stamp = rev.status_changed_at
+    assert stamp.tzinfo is None
+    assert (
+        before - timedelta(seconds=1) <= stamp <= datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(seconds=1)
+    )
+
+
+def _planted_src(tmp_path):
+    import os
+
+    src = tmp_path / "src.bin"
+    src.write_bytes(b"x" * 3_000_000 + b"tail")
+    os.chmod(src, 0o640)
+    os.utime(src, (1_600_000_000, 1_600_000_123))
+    return src
+
+
+def test_copy_claimed_matches_shutil_copy2(tmp_path):
+    import shutil
+
+    src = _planted_src(tmp_path)
+    reference = tmp_path / "ref.bin"
+    shutil.copy2(src, reference)
+    dest = project_storage.claim_unique_file_path(tmp_path, "dest.bin")
+    project_files._copy_claimed(src, dest)
+    assert dest.read_bytes() == reference.read_bytes()
+    assert dest.stat().st_mtime == reference.stat().st_mtime == 1_600_000_123
+    assert dest.stat().st_mode == reference.stat().st_mode
+
+
+def test_copy_hashing_matches_shutil_copy2_and_digest(tmp_path):
+    import hashlib
+    import shutil
+
+    src = _planted_src(tmp_path)
+    reference = tmp_path / "ref.bin"
+    shutil.copy2(src, reference)
+    dest = project_storage.claim_unique_file_path(tmp_path, "dest.bin")
+    size, digest = project_files._copy_hashing(src, dest)
+    assert (size, digest) == (src.stat().st_size, hashlib.sha256(src.read_bytes()).hexdigest())
+    assert dest.read_bytes() == reference.read_bytes()
+    assert dest.stat().st_mtime == reference.stat().st_mtime
+    assert dest.stat().st_mode == reference.stat().st_mode
+
+
+@pytest.mark.parametrize("copier", ["_copy_claimed", "_copy_hashing"])
+def test_copy_into_a_symlink_planted_after_the_claim_is_refused(tmp_path, copier):
+    src = _planted_src(tmp_path)
+    victim = tmp_path / "victim.txt"
+    victim.write_bytes(b"untouched")
+    dest = project_storage.claim_unique_file_path(tmp_path, "dest.bin")
+    dest.unlink()
+    dest.symlink_to(victim)  # swapped in between the claim and the reopen
+    with pytest.raises(OSError):
+        getattr(project_files, copier)(src, dest)
+    assert victim.read_bytes() == b"untouched"
+
+
+def test_open_claimed_closes_the_descriptor_when_fdopen_fails(tmp_path, monkeypatch):
+    import errno
+    import os
+
+    dest = project_storage.claim_unique_file_path(tmp_path, "dest.bin")
+    opened: list[int] = []
+    real_open = os.open
+
+    def recording_open(*args, **kwargs):
+        fd = real_open(*args, **kwargs)
+        opened.append(fd)
+        return fd
+
+    def boom(_fd, *_args, **_kwargs):
+        raise RuntimeError("fdopen failed")
+
+    monkeypatch.setattr(project_files.os, "open", recording_open)
+    monkeypatch.setattr(project_files.os, "fdopen", boom)
+    with pytest.raises(RuntimeError, match="fdopen failed"):
+        project_files._open_claimed(dest)
+    assert len(opened) == 1
+    with pytest.raises(OSError) as closed:
+        os.fstat(opened[0])
+    assert closed.value.errno == errno.EBADF
+
+
+# --- small lookups: missing item, disabled section, tree finders ---
+
+
+@pytest.mark.asyncio
+async def test_fresh_item_refuses_an_unknown_item_with_a_404(db_session):
+    with pytest.raises(ProjectFilesError) as missing:
+        await project_files.fresh_item(db_session, 987654)
+    assert (missing.value.status_code, missing.value.detail) == (404, "Item not found")
+
+
+def test_require_enabled_section_names_the_refused_section():
+    with pytest.raises(ProjectFilesError) as refused:
+        project_files.require_enabled_section("no-such-section")
+    assert refused.value.status_code == 400
+    assert "'no-such-section'" in refused.value.detail
+
+
+def test_find_item_and_find_revision_return_none_when_the_tree_lacks_them():
+    from types import SimpleNamespace as NS
+
+    rev = NS(id=7)
+    tree = NS(sections=[NS(items=[NS(id=3, revisions=[rev])])])
+    assert project_files.find_item(tree, 3).id == 3
+    assert project_files.find_revision(tree, 7) is rev
+    assert project_files.find_item(tree, 4) is None
+    assert project_files.find_revision(tree, 8) is None

@@ -1,13 +1,15 @@
 import { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import { api } from '../../../api/client';
 import type { ProjectTreeResponse } from '../../../api/client';
 import { Button } from '../../Button';
 import { useToast } from '../../../contexts/ToastContext';
 import { ENABLED_SECTIONS, SECTION_LABEL_KEYS, STATUS_LABEL_KEYS } from '../files/filesUi';
+import { revisionLabel } from '../files/revisionLabel';
 import { useInvalidateProjectLinks } from './useOrderProjectLinks';
+import { useProjectOrders, useProjectTree } from '../projectQueries';
 import { useIsolatedEscape } from '../../../hooks/useIsolatedEscape';
 
 /** Newest `valide` revision of every item in the enabled sections (Impression:
@@ -52,12 +54,8 @@ export function DeliveriesPicker({
   const dialogRef = useRef<HTMLDivElement>(null);
   useIsolatedEscape(onClose, dialogRef);
 
-  const { data: tree } = useQuery({ queryKey: ['project-tree', projectId], queryFn: () => api.getProjectTree(projectId) });
-  const { data: orders } = useQuery({
-    queryKey: ['project-orders', projectId],
-    queryFn: () => api.getProjectOrders(projectId),
-    retry: false,
-  });
+  const { data: tree } = useProjectTree(projectId);
+  const { data: orders } = useProjectOrders(projectId, { retry: false });
   const reusable = (orders?.orders ?? []).filter((o) => o.task_id !== taskId && o.deliveries.length > 0);
 
   const save = useMutation({
@@ -165,7 +163,7 @@ export function DeliveriesPicker({
                           type="checkbox"
                           checked={checked.has(r.id)}
                           onChange={() => toggle(r.id)}
-                          aria-label={`${item.name} R${r.number} · ${t(STATUS_LABEL_KEYS[r.status])}`}
+                          aria-label={`${revisionLabel(item.name, r.number)} · ${t(STATUS_LABEL_KEYS[r.status])}`}
                           className="accent-bambu-green"
                         />
                         <span aria-hidden="true" className="tabular-nums">{`R${r.number}`}</span>

@@ -12,26 +12,29 @@ the original row and the file on the mount are never touched.
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import logging
 import re
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from pathlib import Path
+from typing import NamedTuple
 
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.api.routes.library import to_absolute_path
+from backend.app.api.routes.library import calculate_file_hash, to_absolute_path
 from backend.app.models.library import LibraryFile, LibraryFolder
 from backend.app.models.project import Project
 from backend.app.models.project_item import ProjectItem, ProjectRevision
 from backend.app.schemas.project_files import ProjectSuggestionForFile
 from backend.app.services import project_files
+from backend.app.services.db_quiet import rollback_quietly
 from backend.app.services.project_codes import format_project_code
 from backend.app.services.project_files import RevisionSource
 from backend.app.services.project_storage import ENABLED_SECTIONS, PRINTABLE_EXTENSIONS, is_printable_filename
+from backend.app.services.project_suggestions import SIMILAR_NAME_THRESHOLD, similar_projects
+from backend.app.utils.local_time import utcnow_naive
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +64,7 @@ def item_name_for_filename(name: str) -> str:
     return stem if stem.strip() else stripped
 
 
-async def find_item(db: AsyncSession, project_id: int, section: str, key: str) -> ProjectItem | None:
+async def find_item_by_key(db: AsyncSession, project_id: int, section: str, key: str) -> ProjectItem | None:
     return (
         await db.execute(
             select(ProjectItem).where(
@@ -83,7 +86,7 @@ async def find_or_create_item(
     it re-reads the winner's item and adds its revision there instead of
     failing. Returns the project too, re-read if the rollback expired it."""
     project_id = project.id
-    item = await find_item(db, project_id, section, key)
+    item = await find_item_by_key(db, project_id, section, key)
     if item is not None:
         return item, project
     try:
@@ -95,7 +98,7 @@ async def find_or_create_item(
             raise
         await db.rollback()
         project = await db.get(Project, project_id)
-        item = await find_item(db, project_id, section, key)
+        item = await find_item_by_key(db, project_id, section, key)
         if item is None or project is None:
             raise project_files.ProjectFilesError(409, "This item was changed meanwhile; drop the files again") from exc
         return item, project
@@ -114,6 +117,14 @@ class MoveToProjectResult:
     moved: list[dict] = field(default_factory=list)
     copied: list[dict] = field(default_factory=list)
     skipped: list[dict] = field(default_factory=list)
+
+    def revisions(self) -> dict[int, dict]:
+        """The first ``moved`` then ``copied`` entry of each ``revision_id``, keyed
+        by it, in first-seen order."""
+        out: dict[int, dict] = {}
+        for entry in [*self.moved, *self.copied]:
+            out.setdefault(entry["revision_id"], entry)
+        return out
 
 
 @dataclass
@@ -199,7 +210,7 @@ async def move_library_files_to_project(
     target_item_id = target.id if target is not None else None
     if new_item_name is not None:
         try:
-            new_item_name, _key = project_files._clean_item_name(new_item_name)
+            new_item_name, _key = project_files.clean_item_name(new_item_name)
         except project_files.ProjectFilesError as exc:
             raise ValueError(exc.detail) from exc
 
@@ -256,7 +267,7 @@ def _classify_files(
             name, section = target.name, target.section
         else:
             name = new_item_name if new_item_name is not None else item_name_for_filename(filename)
-        key = (section, target.name_key if target is not None else project_files._name_key(name))
+        key = (section, target.name_key if target is not None else project_files.name_key(name))
         groups.setdefault(key, (name, []))[1].append(candidate)
     return groups
 
@@ -316,7 +327,7 @@ async def _store_group(
     pending = candidates  # what a failure below reports as skipped
     try:
         if target_item_id is not None:
-            item = await project_files._fresh_item(db, target_item_id)
+            item = await project_files.fresh_item(db, target_item_id)
         else:
             item, project = await find_or_create_item(db, project, section, key, name, user_id)
         item_id_now, item_name = item.id, item.name
@@ -378,7 +389,7 @@ def _add_result_entry(
 
 _FILENAME_CODE_RE = re.compile(r"^P-(\d{4,})[ _-]", re.IGNORECASE)
 SIMILAR_ITEM_THRESHOLD = 0.6
-SIMILAR_PROJECT_THRESHOLD = 0.45
+SIMILAR_PROJECT_THRESHOLD = SIMILAR_NAME_THRESHOLD
 
 
 def project_code_from_filename(name: str) -> str | None:
@@ -396,6 +407,79 @@ def _name_without_code(name: str) -> str:
     return rest if rest.strip() else item_name
 
 
+class _Scored(NamedTuple):
+    """One project a suggestion pass matched, with the item that matched (item pass only)."""
+
+    ratio: float
+    project_id: int
+    code: str | None
+    name: str
+    item_id: int | None = None
+    item_name: str | None = None
+
+
+def _rank(scored: list[_Scored], reason: str) -> list[ProjectSuggestionForFile]:
+    """``scored`` as suggestions: best ratio first, ties by project id then item id,
+    the score rounded to 4 decimals."""
+    ranked = sorted(scored, key=lambda r: (-r.ratio, r.project_id, r.item_id or 0))
+    out = []
+    for row in ranked:
+        item = {} if row.item_id is None else {"item_id": row.item_id, "item_name": row.item_name}
+        out.append(
+            ProjectSuggestionForFile(
+                project_id=row.project_id,
+                code=row.code,
+                name=row.name,
+                **item,
+                score=round(row.ratio, 4),
+                reason=reason,
+            )
+        )
+    return out
+
+
+async def _code_suggestions(db: AsyncSession, filename: str) -> list[ProjectSuggestionForFile]:
+    """The non-template project whose code prefixes ``filename`` (score 1.0), if any."""
+    code = project_code_from_filename(filename)
+    if code is None:
+        return []
+    row = (
+        await db.execute(
+            select(Project.id, Project.code, Project.name).where(Project.code == code, Project.is_template.is_not(True))
+        )
+    ).first()
+    if row is None:
+        return []
+    return [ProjectSuggestionForFile(project_id=row[0], code=row[1], name=row[2], score=1.0, reason="code")]
+
+
+async def _item_name_suggestions(db: AsyncSession, name: str) -> list[ProjectSuggestionForFile]:
+    """Non-template projects with an item (in an enabled section) named like ``name``."""
+    key = project_files.name_key(name)
+    if not key:
+        return []
+    rows = await db.execute(
+        select(ProjectItem.id, ProjectItem.name, ProjectItem.name_key, Project.id, Project.code, Project.name)
+        .join(Project, Project.id == ProjectItem.project_id)
+        .where(ProjectItem.section.in_(ENABLED_SECTIONS), Project.is_template.is_not(True))
+    )
+    scored = []
+    for item_id, item_name, item_key, project_id, project_code, project_name in rows:
+        ratio = SequenceMatcher(None, key, item_key or "").ratio()
+        if ratio >= SIMILAR_ITEM_THRESHOLD:
+            scored.append(_Scored(ratio, project_id, project_code, project_name, item_id, item_name))
+    return _rank(scored, "item_name")
+
+
+async def _project_name_suggestions(db: AsyncSession, name: str) -> list[ProjectSuggestionForFile]:
+    """Non-template projects named like ``name``."""
+    folded = name.strip().casefold()
+    if not folded:
+        return []
+    scored = await similar_projects(db, folded, SIMILAR_PROJECT_THRESHOLD)
+    return _rank([_Scored(*row) for row in scored], "project_name")
+
+
 async def suggest_projects_for_filename(
     db: AsyncSession, filename: str, limit: int = 5
 ) -> list[ProjectSuggestionForFile]:
@@ -406,72 +490,18 @@ async def suggest_projects_for_filename(
     reason. Non-printable files get no suggestion."""
     if not is_printable_filename(filename) or limit <= 0:
         return []
+    name = _name_without_code(filename)
     out: list[ProjectSuggestionForFile] = []
     seen: set[int] = set()
-
-    def add(suggestion: ProjectSuggestionForFile) -> None:
-        if suggestion.project_id not in seen:
-            seen.add(suggestion.project_id)
-            out.append(suggestion)
-
-    code = project_code_from_filename(filename)
-    if code is not None:
-        row = (
-            await db.execute(
-                select(Project.id, Project.code, Project.name).where(
-                    Project.code == code, Project.is_template.is_not(True)
-                )
-            )
-        ).first()
-        if row is not None:
-            add(ProjectSuggestionForFile(project_id=row[0], code=row[1], name=row[2], score=1.0, reason="code"))
-
-    name = _name_without_code(filename)
-    key = project_files._name_key(name)
-    if key:
-        rows = await db.execute(
-            select(ProjectItem.id, ProjectItem.name, ProjectItem.name_key, Project.id, Project.code, Project.name)
-            .join(Project, Project.id == ProjectItem.project_id)
-            .where(ProjectItem.section.in_(ENABLED_SECTIONS), Project.is_template.is_not(True))
-        )
-        scored = []
-        for item_id, item_name, item_key, project_id, project_code, project_name in rows:
-            ratio = SequenceMatcher(None, key, item_key or "").ratio()
-            if ratio >= SIMILAR_ITEM_THRESHOLD:
-                scored.append((ratio, project_id, item_id, item_name, project_code, project_name))
-        scored.sort(key=lambda r: (-r[0], r[1], r[2]))
-        for ratio, project_id, item_id, item_name, project_code, project_name in scored:
-            add(
-                ProjectSuggestionForFile(
-                    project_id=project_id,
-                    code=project_code,
-                    name=project_name,
-                    item_id=item_id,
-                    item_name=item_name,
-                    score=round(ratio, 4),
-                    reason="item_name",
-                )
-            )
-
-    folded = name.strip().casefold()
-    if folded:
-        rows = await db.execute(select(Project.id, Project.code, Project.name).where(Project.is_template.is_not(True)))
-        scored_projects = []
-        for project_id, project_code, project_name in rows:
-            ratio = SequenceMatcher(None, folded, (project_name or "").casefold()).ratio()
-            if ratio >= SIMILAR_PROJECT_THRESHOLD:
-                scored_projects.append((ratio, project_id, project_code, project_name))
-        scored_projects.sort(key=lambda r: (-r[0], r[1]))
-        for ratio, project_id, project_code, project_name in scored_projects:
-            add(
-                ProjectSuggestionForFile(
-                    project_id=project_id,
-                    code=project_code,
-                    name=project_name,
-                    score=round(ratio, 4),
-                    reason="project_name",
-                )
-            )
+    for suggestions in (
+        await _code_suggestions(db, filename),
+        await _item_name_suggestions(db, name),
+        await _project_name_suggestions(db, name),
+    ):
+        for suggestion in suggestions:
+            if suggestion.project_id not in seen:
+                seen.add(suggestion.project_id)
+                out.append(suggestion)
     return out[:limit]
 
 
@@ -523,10 +553,7 @@ async def auto_file_by_code(
         return await _auto_file_by_code(db, filename=filename, path=path, library_file=library_file, user_id=user_id)
     except Exception:
         logger.warning("Auto-filing %r by project code failed", filename, exc_info=True)
-        try:
-            await db.rollback()
-        except Exception:
-            logger.debug("Rollback after a failed auto-filing failed too", exc_info=True)
+        await rollback_quietly(db, logger, logging.DEBUG, "Rollback after a failed auto-filing failed too")
         return None
 
 
@@ -572,7 +599,7 @@ async def _auto_file_by_code(
         section = entry["section"]
     else:
         section = section_for_filename(filename)  # "impression" for every printable file
-        clean, key = project_files._clean_item_name(name)
+        clean, key = project_files.clean_item_name(name)
         item, project = await find_or_create_item(db, project, section, key, clean, user_id)
         item_id, item_name = item.id, item.name
         source = RevisionSource(path=path, filename=filename)
@@ -622,9 +649,12 @@ async def record_revision_added(db: AsyncSession, project_id: int, entry: dict, 
         project_id,
         "project.revision_added",
         actor_user_id=user_id,
-        describe=lambda: (
-            f"{entry['item_name']} R{entry['revision_number']}",
-            {"section": entry["section"], "item_id": entry["item_id"], "revision_id": entry["revision_id"]},
+        describe=lambda: aito_links.revision_added_payload(
+            item_name=entry["item_name"],
+            revision_number=entry["revision_number"],
+            section=entry["section"],
+            item_id=entry["item_id"],
+            revision_id=entry["revision_id"],
         ),
         log=logger,
     )
@@ -675,20 +705,19 @@ def _legacy_files_query():
     )
 
 
+def _legacy_candidates_query():
+    owner = _legacy_owner()
+    return (
+        _legacy_files_query()
+        .with_only_columns(owner, LibraryFile.filename)
+        .join(Project, Project.id == owner)
+        .where(Project.legacy_migrated_at.is_(None))
+    )
+
+
 async def legacy_candidates(db: AsyncSession) -> list[int]:
     """Projects not migrated yet that own at least one legacy printable file, by id."""
-    owner = _legacy_owner()
-    rows = await db.execute(
-        select(owner, LibraryFile.filename)
-        .select_from(LibraryFile)
-        .outerjoin(LibraryFolder, LibraryFile.folder_id == LibraryFolder.id)
-        .join(Project, Project.id == owner)
-        .where(
-            LibraryFile.revision_id.is_(None),
-            LibraryFile.deleted_at.is_(None),
-            Project.legacy_migrated_at.is_(None),
-        )
-    )
+    rows = await db.execute(_legacy_candidates_query())
     return sorted({project_id for project_id, filename in rows if is_printable_filename(filename)})
 
 
@@ -699,14 +728,6 @@ async def _legacy_files(db: AsyncSession, project_id: int) -> list[LibraryFile]:
         .all()
     )
     return [row for row in rows if is_printable_filename(row.filename)]
-
-
-def _sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 async def _already_copied(db: AsyncSession, project_id: int, files: list[LibraryFile]) -> set[int]:
@@ -736,7 +757,7 @@ async def _already_copied(db: AsyncSession, project_id: int, files: list[Library
         if path is None or not path.is_file():
             continue
         try:
-            digest = await asyncio.to_thread(_sha256_file, path)
+            digest = await asyncio.to_thread(calculate_file_hash, path)
         except OSError:
             continue  # the move reports it (source_missing / copy_failed)
         if (digest, filename) in held:
@@ -762,9 +783,7 @@ async def migrate_project_legacy(db: AsyncSession, project: Project) -> LegacyMi
     to_move = [f for f in files if f.id not in done]
     result = await move_library_files_to_project(db, project, to_move, item_id=None, new_item_name=None, user_id=None)
 
-    revisions: dict[int, dict] = {}
-    for entry in [*result.moved, *result.copied]:
-        revisions.setdefault(entry["revision_id"], entry)
+    revisions = result.revisions()
     for entry in revisions.values():
         await record_revision_added(db, project_id, entry, None)
 
@@ -780,7 +799,7 @@ async def migrate_project_legacy(db: AsyncSession, project: Project) -> LegacyMi
     fresh = await db.get(Project, project_id, populate_existing=True)
     if fresh is None:
         raise LegacyMigrationError("project deleted meanwhile")
-    fresh.legacy_migrated_at = project_files._now()
+    fresh.legacy_migrated_at = utcnow_naive()
     await db.commit()
     return LegacyMigrationOutcome(
         revisions_created=len(revisions), files_moved=len(result.moved), files_copied=len(result.copied)
@@ -860,15 +879,14 @@ async def _run_legacy_migration() -> None:
                     logger.warning("Legacy migration of project %s failed", project_id, exc_info=True)
                     detail = exc.detail if isinstance(exc, project_files.ProjectFilesError) else str(exc)
                     state["failures"].append({"project_id": project_id, "code": code, "error": str(detail)[:500]})
-                    try:
-                        await db.rollback()
-                    except Exception:
-                        logger.debug("Rollback after a failed legacy migration failed too", exc_info=True)
+                    await rollback_quietly(
+                        db, logger, logging.DEBUG, "Rollback after a failed legacy migration failed too"
+                    )
             state["done"] += 1
             state["current"] = None
     except Exception:
         logger.exception("Legacy project migration stopped")
     finally:
-        state["last_run"] = {**totals, "finished_at": project_files._now()}
+        state["last_run"] = {**totals, "finished_at": utcnow_naive()}
         state["running"] = False
         state["current"] = None

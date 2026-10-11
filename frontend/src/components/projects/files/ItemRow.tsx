@@ -10,6 +10,7 @@ import type { DerivedOption } from './RevisionBlock';
 import type { FileActions } from './useFileActions';
 import { useFileDropZone } from './useFileDropZone';
 import { PRINTABLE_ACCEPT, SECTION_LABEL_KEYS, STATUS_CHIP_CLS, STATUS_LABEL_KEYS, chipBase, isSectionEnabled } from './filesUi';
+import { outdatedParams, revisionLabel } from './revisionLabel';
 
 interface Props {
   item: ProjectItemOut;
@@ -142,12 +143,12 @@ export function ItemRow({ item, derivedOptions, actions }: Props) {
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-2 pb-2 pl-8 text-xs text-bambu-gray">
           {src && (
             <span className="break-words">
-              {t('projectsPdm.files.derivedFrom', { label: `${t(SECTION_LABEL_KEYS[src.section])} › ${src.item_name} R${src.number}` })}
+              {t('projectsPdm.files.derivedFrom', { label: `${t(SECTION_LABEL_KEYS[src.section])} › ${revisionLabel(src.item_name, src.number)}` })}
             </span>
           )}
           {rowOutdated && src && newest.outdated_by && (
             <span className={`${chipBase} whitespace-normal border-amber-500/40 bg-amber-500/10 text-amber-400`}>
-              {t('projectsPdm.files.outdated', { source: `${src.item_name} R${src.number}`, newer: `R${newest.outdated_by.number}` })}
+              {t('projectsPdm.files.outdated', outdatedParams(src, newest.outdated_by))}
             </span>
           )}
         </div>

@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
-import type { DragEvent, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import { FolderPlus, Link2, Pencil, Printer, Unlink } from 'lucide-react';
 import { api } from '../../../api/client';
 import type { ProjectFileOut, TaskProjectLink } from '../../../api/client';
@@ -21,6 +21,9 @@ import { DeliveriesPicker } from './DeliveriesPicker';
 import { ProjectLinkPicker } from './ProjectLinkPicker';
 import { useTaskFileDrop } from './dropFiles';
 import { useInvalidateProjectLinks } from './useOrderProjectLinks';
+import { revisionLabel } from '../files/revisionLabel';
+import { useProjectTree } from '../projectQueries';
+import { DropShield } from '../DropShield';
 
 const DESCRIPTION_FIELD = {
   scan: 'scanDescription',
@@ -83,12 +86,7 @@ export function TaskProjectRow({
 
   // Names for the delivered revision ids — the tree is cached per project and
   // shared with the picker and the project page.
-  const { data: tree } = useQuery({
-    queryKey: ['project-tree', project?.id],
-    queryFn: () => api.getProjectTree(project!.id),
-    enabled: !!project && deliveries.length > 0,
-    retry: false,
-  });
+  const { data: tree } = useProjectTree(project?.id, { enabled: !!project && deliveries.length > 0, retry: false });
   const deliveredText =
     deliveries.length === 0
       ? t('projectsPdm.aito.deliveredNone')
@@ -96,17 +94,13 @@ export function TaskProjectRow({
         ? tree.sections
             .flatMap((s) =>
               s.items.flatMap((i) =>
-                i.revisions.filter((r) => deliveries.includes(r.id)).map((r) => `${i.name} R${r.number}`),
+                i.revisions.filter((r) => deliveries.includes(r.id)).map((r) => revisionLabel(i.name, r.number)),
               ),
             )
             .join(', ')
         : '…';
 
   if (!link) return null;
-
-  // Portalled dialogs still bubble React events to the task's drop zone: keep a
-  // stray drag over them from uploading files into the project.
-  const stopDrag = (e: DragEvent) => e.stopPropagation();
 
   return (
     <div className="space-y-1 text-xs">
@@ -216,9 +210,8 @@ export function TaskProjectRow({
           document.body,
         )}
       {printing &&
-        project &&
-        createPortal(
-          <div onDragOver={stopDrag} onDrop={stopDrag}>
+        project && (
+          <DropShield>
             {printing === 'pick' ? (
               <PrintRevisionPicker
                 projectId={project.id}
@@ -239,8 +232,7 @@ export function TaskProjectRow({
                 onSuccess={() => invalidate(orderId, [project.id])}
               />
             )}
-          </div>,
-          document.body,
+          </DropShield>
         )}
       {editingDeliveries && project && (
         <DeliveriesPicker

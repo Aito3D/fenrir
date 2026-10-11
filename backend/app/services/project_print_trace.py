@@ -25,7 +25,9 @@ from backend.app.models.library import LibraryFile
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.project import Project
 from backend.app.models.project_item import ProjectItem, ProjectRevision
-from backend.app.services import aito_events
+from backend.app.services.actor import record_as
+from backend.app.services.db_quiet import rollback_quietly
+from backend.app.services.http_status_error import HttpStatusError
 
 logger = logging.getLogger(__name__)
 
@@ -33,11 +35,8 @@ QUEUED_KIND = "print.queued_from_revision"
 TASK_UNUSABLE = "This Aito task can't be used for this file"
 
 
-class PrintTraceError(ValueError):
-    def __init__(self, status_code: int, detail: str):
-        super().__init__(detail)
-        self.status_code = status_code
-        self.detail = detail
+class PrintTraceError(HttpStatusError, ValueError):
+    pass
 
 
 @dataclass(frozen=True)
@@ -110,11 +109,14 @@ async def resolve_print_context(
         return PrintContext(revision_id=None, aito_task_id=None, project_id=project_id)
 
     revision, item, project = bundle
+    # Lazy: project_files imports this module (revision_print_counts).
+    from backend.app.services.project_files import revision_label
+
     context = PrintContext(
         revision_id=revision.id,
         aito_task_id=None,
         project_id=project_id if project_id is not None else project.id,
-        revision_label=f"{item.name} R{revision.number}",
+        revision_label=revision_label(item.name, revision.number),
         code=project.code,
         revision_project_id=project.id,
     )
@@ -156,12 +158,11 @@ async def record_queued(db: AsyncSession, context: PrintContext, *, copies: int,
         return
     try:
         async with db.begin_nested():
-            await aito_events.record(
+            await record_as(
                 db,
                 context.order_id,
                 QUEUED_KIND,
-                actor_class="user" if actor else "system",
-                actor_name=actor,
+                actor,
                 subject_type="task",
                 subject_id=context.aito_task_id,
                 subject_label=context.task_title,
@@ -175,10 +176,7 @@ async def record_queued(db: AsyncSession, context: PrintContext, *, copies: int,
         await db.commit()
     except Exception:
         logger.warning("%s event failed for order %s", QUEUED_KIND, context.order_id, exc_info=True)
-        try:
-            await db.rollback()
-        except Exception:
-            logger.warning("rollback after %s failure failed", QUEUED_KIND, exc_info=True)
+        await rollback_quietly(db, logger, logging.WARNING, "rollback after %s failure failed", QUEUED_KIND)
         return
     # Lazy: aito_project_links -> project_files -> routes.library -> routes.print_queue
     # -> this module would be an import cycle at startup.

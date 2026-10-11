@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Plus, Sparkles } from 'lucide-react';
 import { api, type ProjectTagSuggestion } from '../../api/client';
+import { projectKeys } from './projectQueries';
 import { focusRingCls, inputCls } from '../formStyles';
 import { ProjectTagChips, type TagDraft } from './ProjectTagChips';
 
@@ -33,7 +34,7 @@ export function ProjectTagEditor({
   const { t } = useTranslation();
   const listId = useId();
   const [draft, setDraft] = useState('');
-  const { data: catalogue = [] } = useQuery({ queryKey: ['project-tags'], queryFn: api.getProjectTags });
+  const { data: catalogue = [] } = useQuery({ queryKey: projectKeys.projectTags(), queryFn: api.getProjectTags });
   const suggest = useMutation({
     mutationFn: () =>
       api.suggestProjectTags(

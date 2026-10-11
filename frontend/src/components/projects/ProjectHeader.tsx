@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import { Pencil } from 'lucide-react';
 import { api, type Project } from '../../api/client';
 import { Button } from '../Button';
@@ -11,6 +11,7 @@ import { AiTextField } from '../aito/AiTextField';
 import { ProjectCodeChip } from './ProjectCodeChip';
 import { ProjectTagChips, type TagDraft } from './ProjectTagChips';
 import { ProjectTagEditor, splitTagDrafts } from './ProjectTagEditor';
+import { useInvalidateProjects } from './projectQueries';
 
 /** Code chip, title, description and tags, edited in place (spec §3.2).
  *  The title and description are reworded in French when the field is left,
@@ -26,7 +27,7 @@ export function ProjectHeader({
   const { t } = useTranslation();
   const { hasPermission } = useAuth();
   const { showToast } = useToast();
-  const queryClient = useQueryClient();
+  const invalidateProjects = useInvalidateProjects();
   const [editing, setEditingState] = useState(false);
   const setEditing = (next: boolean) => {
     setEditingState(next);
@@ -51,10 +52,7 @@ export function ProjectHeader({
         ...splitTagDrafts(tags),
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['project', project.id] });
-      queryClient.invalidateQueries({ queryKey: ['projects'] });
-      queryClient.invalidateQueries({ queryKey: ['projects-search'] });
-      queryClient.invalidateQueries({ queryKey: ['project-tags'] });
+      invalidateProjects(project.id);
       showToast(t('projectsPdm.saved'), 'success');
       setEditing(false);
     },

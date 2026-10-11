@@ -9790,7 +9790,6 @@ export default {
     create: '만들기',
     tagsLabel: '태그',
     tagSearchPlaceholder: '태그 검색 또는 만들기…',
-    createTag: '“{{name}}” 만들기',
     removeTag: '{{name}} 제거',
     suggestTags: '태그 제안',
     suggestionsLabel: '제안',
@@ -9804,7 +9803,6 @@ export default {
     saveFailed: '프로젝트를 저장할 수 없습니다',
     codeChipLabel: '프로젝트 코드 {{code}}',
     files: {
-      title: '파일',
       sectionScan: '스캔',
       sectionModelisation: '모델링',
       sectionImpression: '출력',
@@ -9813,7 +9811,6 @@ export default {
       emptySection: '아직 항목이 없습니다',
       newItem: '새 항목',
       itemNameLabel: '항목 이름',
-      dropHint: '여기에 파일을 놓거나 클릭하여 선택',
       chooseFiles: '파일 선택',
       uploading: '업로드 중…',
       uploadFailed: '업로드 실패',

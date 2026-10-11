@@ -12,7 +12,6 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from backend.app.api.routes.library import get_library_files_dir, to_relative_path
 from backend.app.core.config import settings
 from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile
@@ -20,17 +19,13 @@ from backend.app.models.pending_upload import PendingUpload
 from backend.app.models.project_item import ProjectItem, ProjectRevision
 from backend.app.services import project_files, project_filing, project_storage
 from backend.app.services.project_filing import auto_file_by_code, project_code_from_filename
+from backend.tests.project_fixtures import (
+    api_project as _project,
+    make_managed_library_file as _managed,
+    projects_root_fixture,
+)
 
-
-@pytest.fixture(autouse=True)
-def root(tmp_path, monkeypatch):
-    monkeypatch.setattr(settings, "base_dir", tmp_path)
-    (tmp_path / "archive").mkdir()
-    monkeypatch.setattr(settings, "archive_dir", tmp_path / "archive")
-    projects = tmp_path / "projects"
-    projects.mkdir()
-    monkeypatch.setattr(project_storage, "projects_root", lambda: projects)
-    return projects
+root = projects_root_fixture(autouse=True, subdir="projects", library=True, make_archive=True)
 
 
 def _3mf(marker: str = "x") -> bytes:
@@ -39,27 +34,6 @@ def _3mf(marker: str = "x") -> bytes:
         zf.writestr("[Content_Types].xml", "<types/>")
         zf.writestr("marker.txt", marker)
     return buf.getvalue()
-
-
-async def _project(client, name="Support caméra") -> dict:
-    response = await client.post("/api/v1/projects/", json={"name": name})
-    assert response.status_code in (200, 201), response.text
-    return response.json()
-
-
-async def _managed(db, filename: str, data: bytes) -> LibraryFile:
-    path = get_library_files_dir() / f"{uuid.uuid4().hex}{Path(filename).suffix}"
-    path.write_bytes(data)
-    row = LibraryFile(
-        filename=filename,
-        file_path=to_relative_path(path),
-        file_type="3mf",
-        file_size=len(data),
-        is_external=False,
-    )
-    db.add(row)
-    await db.commit()
-    return row
 
 
 async def _project_with_support_item(client, db) -> tuple[dict, int]:
@@ -491,3 +465,124 @@ async def test_pending_archive_with_projects_update_files_a_copy(async_client: A
         async_client, db_session, [Permission.QUEUE_CREATE.value, Permission.PROJECTS_UPDATE.value], tmp_path
     )
     await _assert_pending_archive_filed_a_copy(db_session, run)
+
+
+# --- T-010: failure branches of auto_file_by_code --------------------------------------------
+
+
+async def _project_tree(db, project_id: int) -> tuple[list[str], int]:
+    """(item names, revision count) of a project, read fresh."""
+    names = (
+        (
+            await db.execute(
+                select(ProjectItem.name)
+                .where(ProjectItem.project_id == project_id)
+                .execution_options(populate_existing=True)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    revisions = (
+        (
+            await db.execute(
+                select(ProjectRevision.id)
+                .join(ProjectItem, ProjectItem.id == ProjectRevision.item_id)
+                .where(ProjectItem.project_id == project_id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return sorted(names), len(revisions)
+
+
+async def _fresh_row(db, row_id: int) -> LibraryFile:
+    return (
+        await db.execute(select(LibraryFile).where(LibraryFile.id == row_id).execution_options(populate_existing=True))
+    ).scalar_one()
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_auto_file_of_a_library_file_missing_on_disk_is_skipped_and_logged(
+    async_client: AsyncClient, db_session, caplog
+):
+    project = await _project(async_client)
+    filename = f"{project['code']}_support.3mf"
+    row = await _managed(db_session, filename, _3mf())
+    row_id, path_before = row.id, row.file_path
+    (settings.base_dir / path_before).unlink()
+
+    with caplog.at_level("INFO", logger="backend.app.services.project_filing"):
+        result = await auto_file_by_code(
+            db_session, filename=filename, path=Path("unused"), library_file=row, user_id=None
+        )
+
+    assert result is None
+    assert f"Auto-filing {filename!r} into {project['code']} skipped" in caplog.text
+    assert "source_missing" in caplog.text
+    fresh = await _fresh_row(db_session, row_id)
+    assert (fresh.file_path, fresh.revision_id, fresh.project_id) == (path_before, None, None)
+    assert await _project_tree(db_session, project["id"]) == ([], 0)
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_auto_file_copy_failure_leaves_the_library_file_where_it_was(
+    async_client: AsyncClient, db_session, monkeypatch, caplog
+):
+    """A copy error while storing the revision: None, the file keeps its row, path and bytes,
+    and the project gets no revision. Pinned: the item created for the group (committed
+    before the copy) stays behind, empty."""
+    project = await _project(async_client)
+    filename = f"{project['code']}_support.3mf"
+    data = _3mf("keep")
+    row = await _managed(db_session, filename, data)
+    row_id, path_before = row.id, row.file_path
+
+    def broken(_src, _dest):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(project_files, "_copy_hashing", broken)
+    with caplog.at_level("INFO", logger="backend.app.services.project_filing"):
+        result = await auto_file_by_code(
+            db_session, filename=filename, path=Path("unused"), library_file=row, user_id=None
+        )
+
+    assert result is None
+    assert "copy_failed" in caplog.text
+    fresh = await _fresh_row(db_session, row_id)
+    assert (fresh.file_path, fresh.revision_id, fresh.project_id) == (path_before, None, None)
+    assert (settings.base_dir / path_before).read_bytes() == data
+    assert await _project_tree(db_session, project["id"]) == (["support"], 0)
+    assert list(project_storage.projects_root().rglob("*.3mf")) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_auto_file_survives_a_failing_rollback_after_an_error(monkeypatch, caplog):
+    db = AsyncMock()
+    db.rollback.side_effect = RuntimeError("connection lost")
+    monkeypatch.setattr(project_filing, "_auto_file_by_code", AsyncMock(side_effect=RuntimeError("disk on fire")))
+
+    with caplog.at_level("DEBUG", logger="backend.app.services.project_filing"):
+        result = await auto_file_by_code(
+            db, filename="P-0042_support.3mf", path=Path("unused"), library_file=None, user_id=None
+        )
+
+    assert result is None
+    db.rollback.assert_awaited_once()
+    messages = [(r.levelname, r.getMessage()) for r in caplog.records]
+    assert ("WARNING", "Auto-filing 'P-0042_support.3mf' by project code failed") in messages
+    assert ("DEBUG", "Rollback after a failed auto-filing failed too") in messages
+    [quiet] = [r for r in caplog.records if r.getMessage() == "Rollback after a failed auto-filing failed too"]
+    assert (quiet.name, quiet.funcName) == ("backend.app.services.project_filing", "auto_file_by_code")
+    assert str(quiet.exc_info[1]) == "connection lost"
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_blank_name_has_no_project_name_suggestions():
+    """A whitespace-only name never queries the projects (the session is not touched)."""
+    assert await project_filing._project_name_suggestions(object(), "   ") == []

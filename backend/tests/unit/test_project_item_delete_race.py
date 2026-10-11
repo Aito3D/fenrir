@@ -21,12 +21,11 @@ import io
 
 import pytest
 from fastapi import HTTPException, UploadFile
-from sqlalchemy import event, func, select
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 import backend.app.models  # noqa: F401  # registers every table on Base.metadata
 from backend.app.api.routes import aito_project_links as links_routes, projects as projects_routes
-from backend.app.core.database import Base, _set_sqlite_pragmas
 from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
@@ -37,19 +36,18 @@ from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.project import Project
 from backend.app.models.project_item import ProjectItem, ProjectRevision
 from backend.app.schemas.aito_project_links import TaskLinkRequest
-from backend.app.services import aito_events, aito_project_links, project_files, project_filing, project_storage
+from backend.app.services import aito_events, aito_project_links, project_files, project_filing
+from backend.tests.project_fixtures import (
+    projects_root_fixture,
+    wal_engine_fixture,  # noqa: F401  # the ``wal_engine`` fixture
+)
 
 ITEMS_DETAIL = "This project has files; delete or move its items first"
 
 
 @pytest.fixture
-async def sessions(tmp_path):
-    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'race.db'}", echo=False)
-    event.listen(engine.sync_engine, "connect", _set_sqlite_pragmas)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    yield async_sessionmaker(engine, expire_on_commit=False)
-    await engine.dispose()
+async def sessions(wal_engine):
+    yield async_sessionmaker(wal_engine, expire_on_commit=False)
 
 
 async def _new_project(maker, name="Support caméra") -> int:
@@ -162,12 +160,7 @@ async def test_find_or_create_item_in_a_project_deleted_meanwhile_is_refused(ses
 ITEM_USED_DETAIL = "A revision of this item was printed or delivered; the item cannot be deleted"
 
 
-@pytest.fixture
-def root(tmp_path, monkeypatch):
-    projects = tmp_path / "projects"
-    projects.mkdir()
-    monkeypatch.setattr(project_storage, "projects_root", lambda: projects)
-    return projects
+root = projects_root_fixture(subdir="projects")
 
 
 async def _item_with_a_revision(maker) -> tuple[int, int, int, int, str]:

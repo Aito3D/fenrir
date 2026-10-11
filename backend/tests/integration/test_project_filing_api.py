@@ -1,57 +1,32 @@
 """Importing File Manager files into a project and project suggestions (phase 5, task 2)."""
 
-import uuid
 from datetime import datetime, timezone
-from pathlib import Path
+from difflib import SequenceMatcher
 
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
 
-from backend.app.api.routes.library import get_library_files_dir, to_absolute_path, to_relative_path
+from backend.app.api.routes.library import to_absolute_path
 from backend.app.core.auth import create_access_token, get_password_hash
-from backend.app.core.config import settings
 from backend.app.core.permissions import Permission
+from backend.app.models.aito_event import AitoEvent
+from backend.app.models.aito_project import AitoProject
+from backend.app.models.aito_task import AitoTask
 from backend.app.models.group import Group
 from backend.app.models.library import LibraryFile
 from backend.app.models.project import Project
 from backend.app.models.project_item import ProjectItem
 from backend.app.models.settings import Settings
 from backend.app.models.user import User
-from backend.app.services import project_storage
-from backend.app.services.project_filing import project_code_from_filename
+from backend.app.services.project_filing import project_code_from_filename, suggest_projects_for_filename
+from backend.tests.project_fixtures import (
+    api_project as _project,
+    make_managed_library_file as _managed,
+    projects_root_fixture,
+)
 
-
-@pytest.fixture(autouse=True)
-def root(tmp_path, monkeypatch):
-    monkeypatch.setattr(settings, "base_dir", tmp_path)
-    monkeypatch.setattr(settings, "archive_dir", tmp_path / "archive")
-    projects = tmp_path / "projects"
-    projects.mkdir()
-    monkeypatch.setattr(project_storage, "projects_root", lambda: projects)
-    return projects
-
-
-async def _managed(db, filename: str, data: bytes = b"bytes", **fields) -> LibraryFile:
-    path = get_library_files_dir() / f"{uuid.uuid4().hex}{Path(filename).suffix}"
-    path.write_bytes(data)
-    row = LibraryFile(
-        filename=filename,
-        file_path=to_relative_path(path),
-        file_type=Path(filename).suffix.lstrip(".") or "unknown",
-        file_size=len(data),
-        is_external=False,
-        **fields,
-    )
-    db.add(row)
-    await db.commit()
-    return row
-
-
-async def _project(client, name="Support caméra") -> dict:
-    response = await client.post("/api/v1/projects/", json={"name": name})
-    assert response.status_code in (200, 201), response.text
-    return response.json()
+root = projects_root_fixture(autouse=True, subdir="projects", library=True)
 
 
 def _import_url(project_id: int) -> str:
@@ -85,6 +60,41 @@ async def test_import_moves_and_reports(async_client: AsyncClient, db_session):
     ).scalar_one()
     assert row.project_id == project["id"] and row.revision_id == moved["revision_id"]
     assert to_absolute_path(row.file_path).is_file()
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_import_records_the_revision_added_label_and_detail(async_client: AsyncClient, db_session):
+    """Each imported revision is a ``project.revision_added`` on the linked orders:
+    ``"<item> R<n>"`` and section/item_id/revision_id, in that order after project_id/code."""
+    project = await _project(async_client)
+    order = AitoProject(description="Commande", board_column="devis", status="active", client_id="C1")
+    db_session.add(order)
+    await db_session.commit()
+    db_session.add(AitoTask(project_id=order.id, title="Support", linked_project_id=project["id"]))
+    await db_session.commit()
+    printable = await _managed(db_session, "Bracket.3mf")
+
+    response = await async_client.post(_import_url(project["id"]), json={"file_ids": [printable.id]})
+    assert response.status_code == 200, response.text
+    moved = response.json()["moved"][0]
+    [event] = (
+        (
+            await db_session.execute(
+                select(AitoEvent).where(AitoEvent.project_id == order.id, AitoEvent.kind == "project.revision_added")
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert event.subject_label == "Bracket R1"
+    assert list(event.detail.items()) == [
+        ("project_id", project["id"]),
+        ("code", project["code"]),
+        ("section", "impression"),
+        ("item_id", moved["item_id"]),
+        ("revision_id", moved["revision_id"]),
+    ]
 
 
 @pytest.mark.asyncio
@@ -278,6 +288,79 @@ async def test_suggestions_order_code_item_project(async_client: AsyncClient, db
 
     limited = (await async_client.get(_suggest_url(file.id), params={"limit": 2})).json()
     assert [s["project_id"] for s in limited] == [by_code["id"], by_item["id"]]
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_suggestions_project_name_ties_sort_by_id_and_round_the_score(async_client: AsyncClient, db_session):
+    # Pin: equal project-name ratios keep ascending project id, the compare is
+    # case-folded and the score is rounded to 4 decimals.
+    first = await _project(async_client, "BRACKET ARM STAND")
+    second = await _project(async_client, "bracket arm stand")
+    file = await _managed(db_session, "Bracket arm.3mf")
+    body = (await async_client.get(_suggest_url(file.id))).json()
+    assert [(s["project_id"], s["reason"]) for s in body] == [
+        (first["id"], "project_name"),
+        (second["id"], "project_name"),
+    ]
+    expected = round(SequenceMatcher(None, "bracket arm", "bracket arm stand").ratio(), 4)
+    assert [s["score"] for s in body] == [expected, expected]
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_suggestions_item_name_pass_ranks_dedups_and_cuts(async_client: AsyncClient, db_session):
+    # Pin: the item-name pass sorts by ratio desc, then project id, then item id;
+    # a project appears once (its best item, lowest item id on a tie), never again
+    # under project_name; the threshold is 0.6; scores round to 4 decimals; the
+    # limit cuts the merged list.
+    async def item(project_id: int, name: str) -> int:
+        response = await async_client.post(
+            f"/api/v1/projects/{project_id}/items", json={"section": "impression", "name": name}
+        )
+        assert response.status_code == 201, response.text
+        return response.json()["id"]
+
+    tied = await _project(async_client, "Qx1")
+    tied_first_item = await item(tied["id"], "Bracket armz")
+    await item(tied["id"], "Bracket arms")
+    exact = await _project(async_client, "Qx2")
+    exact_item = await item(exact["id"], "Bracket arm")
+    later = await _project(async_client, "Bracket arm")
+    later_item = await item(later["id"], "Bracket armx")
+    weak = await _project(async_client, "Qx4")
+    await item(weak["id"], "Brk")
+    by_name = await _project(async_client, "Bracket arm stand")
+
+    file = await _managed(db_session, "Bracket arm.3mf")
+    body = (await async_client.get(_suggest_url(file.id))).json()
+    assert [(s["project_id"], s["reason"], s["item_id"]) for s in body] == [
+        (exact["id"], "item_name", exact_item),
+        (tied["id"], "item_name", tied_first_item),
+        (later["id"], "item_name", later_item),
+        (by_name["id"], "project_name", None),
+    ]
+    near = round(SequenceMatcher(None, "bracket arm", "bracket arms").ratio(), 4)
+    assert [s["score"] for s in body[:3]] == [1.0, near, near]
+    assert body[1]["item_name"] == "Bracket armz"
+    assert body[3]["score"] == round(SequenceMatcher(None, "bracket arm", "bracket arm stand").ratio(), 4)
+
+    limited = (await async_client.get(_suggest_url(file.id), params={"limit": 3})).json()
+    assert [s["project_id"] for s in limited] == [exact["id"], tied["id"], later["id"]]
+    assert await suggest_projects_for_filename(db_session, "Bracket arm.3mf", limit=0) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_suggestions_unknown_code_and_keyless_name(async_client: AsyncClient, db_session):
+    # Pin: a code prefix no project carries falls through to the name passes;
+    # a name with no item key ("." strips to nothing) skips the item pass only.
+    zeta = await _project(async_client, "Zeta")
+    dot = await _project(async_client, ".")
+    body = await suggest_projects_for_filename(db_session, "P-9999_Zeta.3mf")
+    assert [(s.project_id, s.reason, s.score, s.item_id) for s in body] == [(zeta["id"], "project_name", 1.0, None)]
+    body = await suggest_projects_for_filename(db_session, "..3mf")
+    assert [(s.project_id, s.reason, s.score) for s in body] == [(dot["id"], "project_name", 1.0)]
 
 
 @pytest.mark.asyncio

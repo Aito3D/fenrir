@@ -10,6 +10,7 @@ import {
   type AitoTaskUpdate,
 } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
+import { projectKeys } from '../components/projects/projectQueries';
 import { useBoardSync } from './useBoardSync';
 import { summariseTasks } from '../utils/aitoBoardRules';
 import { applyTaskSummary } from '../utils/aitoOptimistic';
@@ -418,7 +419,7 @@ export function useProjectTasks(
       tasksDirtyRef.current = true;
       invalidateTasksAndBoard();
       // The new task's PDM link row (phase 3) is not in the cached links yet.
-      void queryClient.invalidateQueries({ queryKey: ['aito-project-links', projectId] });
+      void queryClient.invalidateQueries({ queryKey: projectKeys.projectLinks(projectId) });
     },
     onError: (_error, { draft }) => {
       // The placeholder never became a row. Remove it rather than leaving an

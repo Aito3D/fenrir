@@ -125,6 +125,7 @@ from backend.app.utils.filename import (
 from backend.app.utils.library_paths import library_photos_dir, remove_library_photos_dir
 from backend.app.utils.printer_models import is_gcode_compatible
 from backend.app.utils.safe_path import PathTraversalError, assert_under, safe_join_under
+from backend.app.utils.sql_like import escape_like
 from backend.app.utils.threemf_tools import (
     carries_gcode,
     default_plate_gcode_name,
@@ -2311,7 +2312,7 @@ def _file_sort_clauses(sort: str | None, direction: str) -> list:
 
 def _escape_like(value: str) -> str:
     """Escape LIKE wildcards so user input matches literally (escape char is ``\\``)."""
-    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return escape_like(value)
 
 
 def _apply_file_filters(query, search: str | None, file_type: str | None, created_by: str | None):

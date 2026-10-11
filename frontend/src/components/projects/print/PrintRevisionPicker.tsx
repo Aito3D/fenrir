@@ -1,14 +1,15 @@
 import { useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
-import { useQuery } from '@tanstack/react-query';
 import { Printer } from 'lucide-react';
-import { api } from '../../../api/client';
 import type { ProjectFileOut, ProjectItemOut, ProjectRevisionOut } from '../../../api/client';
 import { Button } from '../../Button';
 import { focusRingCls } from '../../formStyles';
 import { useIsolatedEscape } from '../../../hooks/useIsolatedEscape';
 import { STATUS_CHIP_CLS, STATUS_LABEL_KEYS, chipBase, isPrintableFile, printProfileLine } from '../files/filesUi';
+import { outdatedParams, revisionLabel } from '../files/revisionLabel';
+import { useProjectTree } from '../projectQueries';
+import { DIALOG_CARD_CLS, OVERLAY_CLS } from '../dialogStyles';
 
 interface Props {
   projectId: number;
@@ -28,11 +29,7 @@ export function PrintRevisionPicker({ projectId, onPick, onClose }: Props) {
   useIsolatedEscape(onClose, dialogRef);
   const title = t('projectsPdm.print.pickPrintFile');
 
-  const { data: tree, isPending, isError } = useQuery({
-    queryKey: ['project-tree', projectId],
-    queryFn: () => api.getProjectTree(projectId),
-    retry: false,
-  });
+  const { data: tree, isPending, isError } = useProjectTree(projectId, { retry: false });
 
   const entries: { item: ProjectItemOut; revision: ProjectRevisionOut; files: ProjectFileOut[] }[] = (tree?.sections ?? [])
     .filter((s) => s.section === 'impression')
@@ -44,7 +41,7 @@ export function PrintRevisionPicker({ projectId, onPick, onClose }: Props) {
     .sort((a, b) => b.revision.created_at.localeCompare(a.revision.created_at) || b.revision.number - a.revision.number);
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 animate-overlay-in" onClick={onClose}>
+    <div className={OVERLAY_CLS} onClick={onClose}>
       <div
         ref={dialogRef}
         role="dialog"
@@ -52,7 +49,7 @@ export function PrintRevisionPicker({ projectId, onPick, onClose }: Props) {
         tabIndex={-1}
         aria-label={title}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-lg space-y-4 rounded-xl border border-bambu-dark-tertiary bg-bambu-dark-secondary p-5 focus:outline-none"
+        className={DIALOG_CARD_CLS}
       >
         <h2 className="text-lg font-semibold text-white">{title}</h2>
         <div className="max-h-[60vh] space-y-2 overflow-y-auto">
@@ -66,7 +63,7 @@ export function PrintRevisionPicker({ projectId, onPick, onClose }: Props) {
             entries.map(({ item, revision, files }) => {
               const newer = revision.outdated_by;
               const src = revision.derived_from;
-              const stale = newer && src ? { source: `${src.item_name} R${src.number}`, newer: `R${newer.number}` } : null;
+              const stale = newer && src ? outdatedParams(src, newer) : null;
               const profile = printProfileLine(revision.print_profile);
               return (
                 <div
@@ -75,7 +72,7 @@ export function PrintRevisionPicker({ projectId, onPick, onClose }: Props) {
                   className="space-y-1.5 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark p-3"
                 >
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-medium text-white">{`${item.name} R${revision.number}`}</span>
+                    <span className="text-sm font-medium text-white">{revisionLabel(item.name, revision.number)}</span>
                     <span className={`${chipBase} ${STATUS_CHIP_CLS[revision.status]}`}>{t(STATUS_LABEL_KEYS[revision.status])}</span>
                     {profile && <span className="text-xs text-bambu-gray">{profile}</span>}
                   </div>

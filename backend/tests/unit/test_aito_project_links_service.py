@@ -2,35 +2,29 @@
 
 import io
 import logging
+from functools import partial
 
 import pytest
 from fastapi import UploadFile
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 
 from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
 from backend.app.models.aito_task_delivery import AitoTaskDelivery
-from backend.app.models.library import LibraryTag
+from backend.app.models.library import LibraryFile, LibraryTag
 from backend.app.models.project import Project
-from backend.app.models.project_item import ProjectRevision
-from backend.app.services import aito_project_links as links, project_storage
+from backend.app.models.project_item import ProjectItem, ProjectRevision
+from backend.app.models.user import User
+from backend.app.services import aito_project_links as links, project_files
 from backend.app.services.aito_events import KINDS
 from backend.app.services.project_files import add_revision, create_item
 from backend.app.services.project_filing import section_for_filename
 from backend.app.services.project_tags import project_tag_refs
+from backend.tests.project_fixtures import make_project, projects_root_fixture, upload
 
-
-@pytest.fixture(autouse=True)
-def root(tmp_path, monkeypatch):
-    monkeypatch.setattr(project_storage, "projects_root", lambda: tmp_path)
-
-
-async def _project(db, name="Support", **kwargs):
-    project = Project(name=name, **kwargs)
-    db.add(project)
-    await db.flush()
-    return project
+root = projects_root_fixture(autouse=True)
+_project = partial(make_project, name="Support")
 
 
 async def _order(db, *, client_id="C1", status="active", description="Commande"):
@@ -293,6 +287,19 @@ async def test_suggestions_deduplicate_same_client_and_title(db_session):
     assert [(s.id, s.reason) for s in suggestions] == [(project.id, "same_client")]
 
 
+@pytest.mark.asyncio
+async def test_similar_title_ties_sort_by_project_id_and_ignore_case(db_session):
+    # Pin: equal ratios keep ascending project id; the compare is case-folded.
+    first = await _project(db_session, name="SUPPORT GUIDON")
+    second = await _project(db_session, name="support guidon")
+    order = await _order(db_session, client_id="C9")
+    task = await _task(db_session, order, title="  Support Guidon ")
+
+    suggestions = await links.suggest_projects(db_session, task)
+
+    assert [(s.id, s.reason) for s in suggestions] == [(first.id, "similar_title"), (second.id, "similar_title")]
+
+
 # --- set_deliveries ---------------------------------------------------------
 
 
@@ -520,6 +527,29 @@ async def test_orders_for_project(db_session):
     assert ref.number == 1
 
 
+@pytest.mark.asyncio
+async def test_orders_for_project_delivery_ref_is_project_files_revision_ref(db_session):
+    project = await _project(db_session)
+    item, rev = await _revision(db_session, project)
+    order = await _order(db_session)
+    task = await _task(db_session, order, linked=project.id)
+    db_session.add(AitoTaskDelivery(task_id=task.id, revision_id=rev.id))
+    await db_session.flush()
+
+    response = await links.orders_for_project(db_session, project.id)
+
+    [ref] = response.orders[0].deliveries
+    assert ref == project_files.revision_ref(rev, item)
+    assert (ref.id, ref.item_id, ref.item_name, ref.section, ref.number, ref.status) == (
+        rev.id,
+        item.id,
+        item.name,
+        item.section,
+        rev.number,
+        rev.status,
+    )
+
+
 # --- record_on_linked_orders -----------------------------------------------
 
 
@@ -577,11 +607,57 @@ async def test_record_on_linked_orders_skips_excluded_orders(db_session):
     assert [e.project_id for e in await _events(db_session, "project.revision_added")] == [second.id]
 
 
+async def _fan_out_as(db_session, monkeypatch, actor_user_id):
+    """record_and_broadcast on a project linked to one order, as ``actor_user_id``
+    (the passed ``actor`` is a decoy the lookup must replace); returns
+    (order ids written to, the order's events, the broadcast actors)."""
+    project = await _project(db_session)
+    order = await _order(db_session)
+    await _task(db_session, order, linked=project.id)
+    await db_session.commit()
+    order_id = order.id
+    broadcast_actors = []
+
+    async def capture(payload):
+        broadcast_actors.append(payload["actor"])
+
+    monkeypatch.setattr(links.ws_manager, "broadcast_aito", capture)
+    order_ids = await links.record_and_broadcast(
+        db_session,
+        project.id,
+        "project.revision_added",
+        subject_label="Support R1",
+        actor="decoy",
+        actor_user_id=actor_user_id,
+    )
+    assert order_ids == [order_id]
+    return await _events(db_session, "project.revision_added"), broadcast_actors
+
+
+@pytest.mark.asyncio
+async def test_record_and_broadcast_names_the_actor_user(db_session, monkeypatch):
+    user = User(username="paul")
+    db_session.add(user)
+    await db_session.commit()
+
+    events, broadcast_actors = await _fan_out_as(db_session, monkeypatch, user.id)
+
+    assert [(e.actor_class, e.actor_name) for e in events] == [("user", "paul")]
+    assert broadcast_actors == ["paul"]
+
+
+@pytest.mark.asyncio
+async def test_record_and_broadcast_with_an_unknown_actor_user_still_records_as_system(db_session, monkeypatch):
+    events, broadcast_actors = await _fan_out_as(db_session, monkeypatch, 987654)
+
+    assert [(e.actor_class, e.actor_name, e.subject_label) for e in events] == [("system", None, "Support R1")]
+    assert broadcast_actors == [None]
+
+
 # --- file drops ------------------------------------------------------------
 
 
-def _upload(name, data=b"x"):
-    return UploadFile(filename=name, file=io.BytesIO(data))
+_upload = partial(upload, data=b"x")
 
 
 @pytest.mark.parametrize(
@@ -811,3 +887,99 @@ async def test_drop_still_returns_when_its_own_event_fails(db_session, monkeypat
     assert f"project.files_dropped event failed for order {order_id}" in caplog.text
     assert await _events(db_session, "project.files_dropped") == []
     assert (await db_session.execute(select(ProjectRevision.number))).scalars().all() == [1]
+
+
+@pytest.mark.asyncio
+async def test_drop_failing_on_a_later_group_reports_the_stored_count(db_session, monkeypatch):
+    """A ``ProjectFilesError`` on the second group carries ``stored_count`` 1 (the route reads it to broadcast)."""
+    project = await _project(db_session)
+    order = await _order(db_session)
+    task = await _task(db_session, order, linked=project.id)
+    await db_session.commit()
+
+    real = links.project_files.add_revision
+    calls = {"n": 0}
+
+    async def second_fails(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise links.project_files.ProjectFilesError(409, "boom")
+        return await real(*args, **kwargs)
+
+    monkeypatch.setattr(links.project_files, "add_revision", second_fails)
+    with pytest.raises(links.project_files.ProjectFilesError) as err:
+        await links.drop_files_on_task(
+            db_session, task, [_upload("a.3mf"), _upload("b.3mf")], user_id=None, actor="Paul"
+        )
+
+    assert (err.value.status_code, err.value.detail) == (409, "boom")
+    assert err.value.stored_count == 1
+    assert not hasattr(links.project_files.ProjectFilesError, "stored_count")  # set on the instance only
+
+
+def test_revision_added_payload_label_and_detail_key_order():
+    label, detail = links.revision_added_payload(
+        item_name="Support", revision_number=3, section="impression", item_id=4, revision_id=11
+    )
+    assert label == "Support R3"
+    assert list(detail.items()) == [("section", "impression"), ("item_id", 4), ("revision_id", 11)]
+
+
+@pytest.mark.asyncio
+async def test_drop_fans_out_the_revision_added_payload(db_session, monkeypatch):
+    """A dropped group's fan-out gets section/item_id/revision_id (in order) and ``"<item> R<n>"``."""
+    project = await _project(db_session)
+    order = await _order(db_session)
+    task = await _task(db_session, order, linked=project.id)
+    await db_session.commit()
+    project_id, order_id = project.id, order.id
+    calls = []
+
+    async def capture(_db, pid, detail, label, *, dropping_order_id, actor):
+        calls.append((pid, list(detail.items()), label, dropping_order_id, actor))
+        return []
+
+    monkeypatch.setattr(links, "_fan_out_revision", capture)
+    await links.drop_files_on_task(db_session, task, [_upload("a.3mf")], user_id=None, actor="Paul")
+
+    item_id, revision_id = (
+        await db_session.execute(
+            select(ProjectItem.id, ProjectRevision.id).join(ProjectRevision, ProjectRevision.item_id == ProjectItem.id)
+        )
+    ).one()
+    assert calls == [
+        (
+            project_id,
+            [("section", "impression"), ("item_id", item_id), ("revision_id", revision_id)],
+            "a R1",
+            order_id,
+            "Paul",
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_drop_creates_the_item_first_then_streams_with_no_pending_writes(db_session, monkeypatch):
+    """The drop path commits the new item BEFORE streaming (``add_revision`` rolls the whole
+    session back on failure); at stream time the item row exists, no revision or file row
+    does, and nothing is pending in the session."""
+    project = await _project(db_session)
+    order = await _order(db_session)
+    task = await _task(db_session, order, linked=project.id)
+    await db_session.commit()
+    real = project_files._stream_files
+    seen = {}
+
+    async def spy(folder, uploads):
+        seen["new"] = list(db_session.new)
+        seen["dirty"] = list(db_session.dirty)
+        seen["deleted"] = list(db_session.deleted)
+        seen["items"] = (await db_session.execute(select(func.count(ProjectItem.id)))).scalar_one()
+        seen["revisions"] = (await db_session.execute(select(func.count(ProjectRevision.id)))).scalar_one()
+        seen["files"] = (await db_session.execute(select(func.count(LibraryFile.id)))).scalar_one()
+        return await real(folder, uploads)
+
+    monkeypatch.setattr(project_files, "_stream_files", spy)
+    response = await links.drop_files_on_task(db_session, task, [_upload("bracket.3mf")], user_id=None, actor="Paul")
+    assert seen == {"new": [], "dirty": [], "deleted": [], "items": 1, "revisions": 0, "files": 0}
+    assert [r.revision_number for r in response.results] == [1]

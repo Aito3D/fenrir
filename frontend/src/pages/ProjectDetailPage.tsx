@@ -35,6 +35,7 @@ import {
   FileBox,
 } from 'lucide-react';
 import { api } from '../api/client';
+import { projectKeys } from '../components/projects/projectQueries';
 import { parseUTCDate, formatDateOnly, formatDateTime, formatDurationFromHours, type TimeFormat } from '../utils/date';
 import type { Archive, ProjectUpdate, BOMItem, BOMItemCreate, BOMItemUpdate, LibraryFileListItem } from '../api/client';
 import { Card, CardContent } from '../components/Card';
@@ -226,7 +227,7 @@ export function ProjectDetailPage() {
   const projectId = parseInt(id || '0', 10);
 
   const { data: project, isLoading: projectLoading, error: projectError } = useQuery({
-    queryKey: ['project', projectId],
+    queryKey: projectKeys.project(projectId),
     queryFn: () => api.getProject(projectId),
     enabled: projectId > 0,
   });
@@ -309,8 +310,8 @@ export function ProjectDetailPage() {
   const updateMutation = useMutation({
     mutationFn: (data: ProjectUpdate) => api.updateProject(projectId, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['project', projectId] });
-      queryClient.invalidateQueries({ queryKey: ['projects'] });
+      queryClient.invalidateQueries({ queryKey: projectKeys.project(projectId) });
+      queryClient.invalidateQueries({ queryKey: projectKeys.projects() });
       setShowEditModal(false);
       setEditingNotes(false);
       showToast(t('projectDetail.toast.projectUpdated'), 'success');
@@ -361,7 +362,7 @@ export function ProjectDetailPage() {
     mutationFn: (data: BOMItemCreate) => api.createBOMItem(projectId, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['project-bom', projectId] });
-      queryClient.invalidateQueries({ queryKey: ['project', projectId] });
+      queryClient.invalidateQueries({ queryKey: projectKeys.project(projectId) });
       setNewBomName('');
       setNewBomQty(1);
       setNewBomPrice('');
@@ -378,7 +379,7 @@ export function ProjectDetailPage() {
       api.updateBOMItem(projectId, itemId, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['project-bom', projectId] });
-      queryClient.invalidateQueries({ queryKey: ['project', projectId] });
+      queryClient.invalidateQueries({ queryKey: projectKeys.project(projectId) });
       setEditingBomItem(null);
     },
     onError: (error: Error) => showToast(error.message, 'error'),
@@ -388,7 +389,7 @@ export function ProjectDetailPage() {
     mutationFn: (itemId: number) => api.deleteBOMItem(projectId, itemId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['project-bom', projectId] });
-      queryClient.invalidateQueries({ queryKey: ['project', projectId] });
+      queryClient.invalidateQueries({ queryKey: projectKeys.project(projectId) });
       showToast(t('projectDetail.toast.partRemoved'), 'success');
     },
     onError: (error: Error) => showToast(error.message, 'error'),
@@ -473,7 +474,7 @@ export function ProjectDetailPage() {
   const createTemplateMutation = useMutation({
     mutationFn: () => api.createTemplateFromProject(projectId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['projects'] });
+      queryClient.invalidateQueries({ queryKey: projectKeys.projects() });
       showToast(t('projectDetail.toast.templateCreated'), 'success');
     },
     onError: (error: Error) => showToast(error.message, 'error'),

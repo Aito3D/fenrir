@@ -1,10 +1,7 @@
 import { useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { ChevronDown, ChevronRight } from 'lucide-react';
-import { api } from '../../../api/client';
 import type { ProjectItemOut, ProjectSection } from '../../../api/client';
-import { focusRingCls } from '../../formStyles';
+import { CollapsibleHeader } from './CollapsibleHeader';
 import { ItemRow } from './ItemRow';
 import { SectionBlock } from './SectionBlock';
 import type { DerivedOption } from './RevisionBlock';
@@ -12,17 +9,19 @@ import { useFileActions } from './useFileActions';
 import { PrintRevisionFlow } from '../print/PrintRevisionFlow';
 import type { FileActions } from './useFileActions';
 import { ENABLED_SECTIONS, SECTION_LABEL_KEYS, SECTION_ORDER, isSectionEnabled } from './filesUi';
+import { revisionLabel } from './revisionLabel';
+import { useProjectTree } from '../projectQueries';
 
 export function ProjectFilesPanel({ projectId }: { projectId: number }) {
   const { t } = useTranslation();
   const actions = useFileActions(projectId);
-  const { data: tree } = useQuery({ queryKey: ['project-tree', projectId], queryFn: () => api.getProjectTree(projectId) });
+  const { data: tree } = useProjectTree(projectId);
 
   const derivedOptions = useMemo<DerivedOption[]>(
     () =>
       (tree?.sections ?? []).flatMap((s) =>
         s.items.flatMap((item) =>
-          item.revisions.map((r) => ({ id: r.id, label: `${t(SECTION_LABEL_KEYS[s.section])} › ${item.name} R${r.number}` })),
+          item.revisions.map((r) => ({ id: r.id, label: `${t(SECTION_LABEL_KEYS[s.section])} › ${revisionLabel(item.name, r.number)}` })),
         ),
       ),
     [tree, t],
@@ -71,12 +70,7 @@ function OlderFiles({
     <section data-testid="older-files" className="rounded-xl border border-bambu-dark-tertiary bg-bambu-dark-secondary">
       <div className="p-2">
         <h3 className="text-sm font-semibold text-white">
-          <button type="button" aria-expanded={open} onClick={() => setOpen((o) => !o)}
-            className={`flex min-h-[44px] w-full items-center gap-1.5 rounded-lg text-left md:min-h-0 ${focusRingCls}`}>
-            {open ? <ChevronDown className="h-4 w-4 shrink-0 text-bambu-gray" /> : <ChevronRight className="h-4 w-4 shrink-0 text-bambu-gray" />}
-            <span>{t('projectsPdm.files.otherSections')}</span>{' '}
-            <span className="text-xs font-normal text-bambu-gray">{count}</span>
-          </button>
+          <CollapsibleHeader open={open} onToggle={() => setOpen((o) => !o)} label={t('projectsPdm.files.otherSections')} count={count} />
         </h3>
       </div>
       {open && (

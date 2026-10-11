@@ -11,8 +11,10 @@ from backend.app.services.project_tags import (
     get_or_create_tags,
     project_tag_refs,
     rank_tag_suggestions,
+    refresh_tag_mirrors,
     set_project_tags,
     sync_project_tags_from_string,
+    tag_name_key,
 )
 
 
@@ -101,3 +103,55 @@ def test_rank_skips_tags_the_project_already_has():
 
 def test_parse_tag_lines_keeps_leading_digits_of_real_tags():
     assert parse_tag_lines("3D\n- 3MF\n1) impression 3D") == ["3D", "3MF", "impression 3D"]
+
+
+def test_split_tag_string_dedupes_by_key_first_spelling_wins_in_order():
+    from backend.app.services.project_tags import split_tag_string
+
+    assert split_tag_string(" Drone ,,drone, DRONE ,  , pièce auto,Pièce Auto, zèbre,") == [
+        "Drone",
+        "pièce auto",
+        "zèbre",
+    ]
+    assert split_tag_string(None) == []
+    assert split_tag_string(" , ,") == []
+
+
+@pytest.mark.asyncio
+async def test_get_or_create_dedupes_case_whitespace_and_skips_empty(db_session):
+    db_session.add(LibraryTag(name="Existing", name_key="existing"))
+    await db_session.flush()
+    tags = await get_or_create_tags(
+        db_session, ["  ", "Nouveau", "existing ", " NOUVEAU", "", ",", "Autre", "EXISTING"]
+    )
+    assert [t.name for t in tags] == ["Nouveau", "Existing", "Autre"]
+    assert len({id(t) for t in tags}) == 3
+    assert sorted(t.name_key for t in (await db_session.execute(select(LibraryTag))).scalars().all()) == [
+        "autre",
+        "existing",
+        "nouveau",
+    ]
+    assert await get_or_create_tags(db_session, ["", " , "]) == []
+
+
+def test_rank_dedupes_by_key_skips_empty_and_keeps_order():
+    catalogue = {"drone": ProjectTagRef(id=7, name="Drone"), "owned": ProjectTagRef(id=9, name="Owned")}
+    out = rank_tag_suggestions(
+        ["  ", "Neuf", "neuf ", "DRONE", "drone", "", "owned", "Autre", "Troisième"], catalogue, {9}
+    )
+    assert [(s.name, s.tag_id) for s in out] == [("Drone", 7), ("Neuf", None), ("Autre", None)]
+
+
+@pytest.mark.asyncio
+async def test_refresh_tag_mirrors_with_no_projects_is_a_noop(db_session):
+    project = await _project(db_session, tags="kept")
+    await refresh_tag_mirrors(db_session, [])
+    assert project.tags == "kept"
+
+
+def test_library_tags_name_key_delegates_to_tag_name_key():
+    from backend.app.api.routes.library_tags import _name_key
+
+    for raw in ("  Toys  ", "TOYS", "toys", "\tMiXeD Case\n"):
+        assert _name_key(raw) == tag_name_key(raw)
+    assert tag_name_key("  MiXeD Case ") == "mixed case"

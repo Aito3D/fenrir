@@ -56,8 +56,6 @@ def _read(zf: zipfile.ZipFile, name: str) -> str | None:
             data = part.read(_MAX_PART_BYTES + 1)
     except _READ_ERRORS:
         return None
-    if len(data) > _MAX_PART_BYTES:
-        return None
     return data.decode("utf-8", errors="replace")
 
 

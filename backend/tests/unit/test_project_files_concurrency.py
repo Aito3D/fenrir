@@ -2,20 +2,17 @@
 
 import asyncio
 import hashlib
-import io
 import weakref
 
 import pytest
-from fastapi import UploadFile
-from sqlalchemy import event, select, update
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from backend.app.api.routes.library import to_absolute_path
-from backend.app.core.database import Base
 from backend.app.models.library import LibraryFile
 from backend.app.models.project import Project
 from backend.app.models.project_item import ProjectItem, ProjectRevision
-from backend.app.services import project_files, project_storage
+from backend.app.services import project_files
 from backend.app.services.project_files import (
     ProjectFilesError,
     add_files_to_revision,
@@ -25,14 +22,13 @@ from backend.app.services.project_files import (
     get_revision_bundle,
     rename_item,
 )
+from backend.tests.project_fixtures import (
+    projects_root_fixture,
+    upload,
+    wal_engine_fixture,  # noqa: F401  # the ``wal_engine`` fixture
+)
 
-
-@pytest.fixture
-def root(tmp_path, monkeypatch):
-    projects = tmp_path / "projects"
-    projects.mkdir()
-    monkeypatch.setattr(project_storage, "projects_root", lambda: projects)
-    return projects
+root = projects_root_fixture(subdir="projects")
 
 
 @pytest.fixture(autouse=True)
@@ -42,29 +38,13 @@ def own_item_locks(monkeypatch):
 
 
 @pytest.fixture
-async def sessions(test_engine, tmp_path):
+async def sessions(test_engine, wal_engine):
     """Two sessions on a WAL file database: `test_engine` is `:memory:` behind a StaticPool, so concurrent
     sessions there share one sqlite3 connection (fails on CI's SQLite 3.46). Uses `test_engine` only for
     its model registration."""
-    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'race.db'}")
-
-    @event.listens_for(engine.sync_engine, "connect")
-    def _pragmas(dbapi_conn, _record):
-        cursor = dbapi_conn.cursor()
-        cursor.execute("PRAGMA journal_mode = WAL")
-        cursor.execute("PRAGMA busy_timeout = 15000")
-        cursor.close()
-
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    maker = async_sessionmaker(wal_engine, class_=AsyncSession, expire_on_commit=False)
     async with maker() as a, maker() as b:
         yield a, b
-    await engine.dispose()
-
-
-def upload(name: str, data: bytes) -> UploadFile:
-    return UploadFile(filename=name, file=io.BytesIO(data))
 
 
 async def _seed(db) -> tuple[int, int]:

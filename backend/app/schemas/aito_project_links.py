@@ -5,7 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-from backend.app.schemas.project_files import RevisionRef, _required_name
+from backend.app.schemas.project_files import RevisionRef, required_name
 
 
 class LinkedProjectRef(BaseModel):
@@ -57,7 +57,7 @@ class TaskCreateProjectRequest(BaseModel):
     tag_ids: list[int] | None = Field(default=None, max_length=200)
     new_tag_names: list[str] | None = Field(default=None, max_length=20)
 
-    _name = field_validator("name")(_required_name)
+    _name = field_validator("name")(required_name)
 
 
 class TaskDeliveriesRequest(BaseModel):

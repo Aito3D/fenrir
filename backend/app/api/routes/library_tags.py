@@ -48,7 +48,7 @@ from backend.app.schemas.library import (
     TagResponse,
     TagUpdate,
 )
-from backend.app.services.project_tags import project_ids_with_tag, refresh_tag_mirrors
+from backend.app.services.project_tags import project_ids_with_tag, refresh_tag_mirrors, tag_name_key
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +63,7 @@ def _name_key(name: str) -> str:
     already stripped and non-empty — TagCreate/TagUpdate validate that
     (schemas/library.py:_validate_tag_name), so this helper trusts it.
     """
-    return name.strip().lower()
+    return tag_name_key(name)
 
 
 async def _commit_or_409(db: AsyncSession) -> None:

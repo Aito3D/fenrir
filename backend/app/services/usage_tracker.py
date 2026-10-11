@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.models.spool import Spool
 from backend.app.models.spool_assignment import SpoolAssignment
 from backend.app.models.spool_usage_history import SpoolUsageHistory
+from backend.app.utils.sql_like import escape_like
 
 logger = logging.getLogger(__name__)
 
@@ -1029,7 +1030,7 @@ def _like_escape(value: str) -> str:
 
     ``_`` is a single-character wildcard, and model names are full of them.
     """
-    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return escape_like(value)
 
 
 def _threemf_search_stem(*candidates: str | None) -> str | None:

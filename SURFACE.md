@@ -217,10 +217,11 @@ async def download_revision(
 async def drop_files_on_task(
 async def drop_task_files(
 async def export_project(
-async def find_item(db: AsyncSession, project_id: int, section: str, key: str)
+async def find_item_by_key(db: AsyncSession, project_id: int, section: str, key: str)
 async def find_or_create_item(
 async def fork_item(
 async def fork_revision(
+async def fresh_item(db: AsyncSession, item_id: int)
 async def get_item_for_project(db: AsyncSession, item_id: int)
 async def get_legacy_migration_status(
 async def get_or_create_tags(db: AsyncSession, names: list[str])
@@ -247,12 +248,14 @@ async def list_project_queue(
 async def list_project_tags(
 async def list_projects(
 async def list_templates(
+async def load_pipeline(db: AsyncSession, pipeline_id: int)
 async def load_tree(db: AsyncSession, project: Project)
 async def migrate_project_legacy(db: AsyncSession, project: Project)
 async def move_library_files_to_project(
 async def order_links(db: AsyncSession, order_id: int)
 async def orders_for_project(db: AsyncSession, project_id: int)
 async def post_task_project(
+async def prepare_reslice(db: AsyncSession, revision_id: int, body: ResliceBody, user_id: int | None)
 async def project_ids_with_tag(db: AsyncSession, tag_id: int)
 async def project_tag_refs(db: AsyncSession, project_ids: list[int])
 async def put_task_deliveries(
@@ -276,6 +279,7 @@ async def run_reslice(db: AsyncSession, req: ResliceRequest, *, job_id: int | No
 async def search_projects(
 async def set_deliveries(
 async def set_project_tags(db: AsyncSession, project: Project, tag_ids: list[int])
+async def similar_projects(
 async def start_legacy_migration(
 async def suggest_projects_for_filename(
 async def suggest_projects(db: AsyncSession, task: AitoTask, limit: int = 8)
@@ -293,21 +297,24 @@ async def used_file_ids(db: AsyncSession, file_ids: Select)
 class AutoFileResult
 class LegacyMigrationError(Exception)
 class LegacyMigrationOutcome
-class LinkError(Exception)
+class LinkError(HttpStatusError)
 class MoveToProjectResult
 class PrintContext
 class PrintCounts
 class PrintSnapshot
-class PrintTraceError(ValueError)
-class ProjectFilesError(Exception)
+class PrintTraceError(HttpStatusError, ValueError)
+class ProjectFilesError(HttpStatusError)
 class ResliceRequest
 class RevisionSource
 class UnknownTagError(ValueError)
 def allocate_code_number(connection: Connection)
 def claim_unique_file_path(directory: Path, filename: str)
+def clean_item_name(name: str)
 def clean_tag_name(name: str)
 def content_length_capped_route(*permissions: Permission)
 def ensure_project_dir(project)
+def find_item(tree: ProjectTreeResponse, item_id: int)
+def find_revision(tree: ProjectTreeResponse, revision_id: int)
 def format_project_code(number: int)
 def get_project_attachments_dir(project_id: int)
 def is_3mf(filename: str)
@@ -317,6 +324,7 @@ def item_dir(project, section: str, item_name: str)
 def item_name_for_filename(name: str)
 def legacy_migration_status_running()
 def move_to_trash(project, path: Path)
+def name_key(name: str)
 def output_filename(source_filename: str)
 def parse_project_code(code: str | None)
 def project_code_from_filename(name: str)
@@ -328,7 +336,11 @@ def require_printable_uploads(uploads: list[UploadFile])
 def reset_legacy_migration_state()
 def reslice_note(source_number: int, pipeline_name: str)
 def resolve_in_projects(*parts: str)
+def revision_added_payload(
 def revision_dir(project, section: str, item_name: str, number: int)
+def revision_file_path(file_path: str | None)
+def revision_label(item_name: str, number: int)
+def revision_ref(revision: ProjectRevision, item: ProjectItem)
 def sanitize_component(name: str, fallback: str = "sans-nom")
 def section_for_filename(name: str)
 def slugify(title: str, max_chars: int = 40)
@@ -337,7 +349,9 @@ def start_legacy_migration()
 def storage_dir_name(code: str, title: str)
 def tag_mirror(names: list[str])
 def tag_name_key(name: str)
+def unique_clean_names(raw_names: Iterable[str], seen: set[str] | None = None)
 def unique_file_path(directory: Path, filename: str)
+def upload_basename(upload: UploadFile)
 ```
 
 ## Pydantic schema + ORM model class names
@@ -1227,17 +1241,25 @@ CREATE TABLE projects (
 ```regen: grep -rhoE --include='*.ts' --include='*.tsx' '^export (default function|default async function|async function|function|const|type|interface|class|enum) [A-Za-z0-9_]+' frontend/src/pages/ProjectDetailPage.tsx frontend/src/pages/ProjectListPage.tsx frontend/src/pages/ProjectsPage.tsx frontend/src/components/projects | sort | uniq -c | sed 's/^ *//'```
 ```
 1 export const chipBase
+1 export const DIALOG_CARD_CLS
 1 export const ENABLED_SECTIONS
+1 export const OVERLAY_CLS
 1 export const PREVIEWABLE_TYPES
 1 export const PRINTABLE_ACCEPT
 1 export const PRINTABLE_EXTENSIONS
+1 export const projectKeys
+1 export const RADIO_ROW_CLS
 1 export const SECTION_LABEL_KEYS
 1 export const SECTION_ORDER
 1 export const STATUS_CHIP_CLS
 1 export const STATUS_LABEL_KEYS
+1 export const stopDrag
 1 export function canManageProjectsSettings
 1 export function CardProjectChips
+1 export function CollapsibleHeader
 1 export function DeliveriesPicker
+1 export function DialogShell
+1 export function DropShield
 1 export function filesFromDataTransfer
 1 export function inZone
 1 export function isFileDrag
@@ -1251,6 +1273,7 @@ CREATE TABLE projects (
 1 export function NewProjectModal
 1 export function nonPrintableFiles
 1 export function OrderPickerDialog
+1 export function outdatedParams
 1 export function PrintedCount
 1 export function printProfileLine
 1 export function PrintRevisionFlow
@@ -1269,6 +1292,7 @@ CREATE TABLE projects (
 1 export function ProjectTagEditor
 1 export function ResliceDialog
 1 export function RevisionBlock
+1 export function revisionLabel
 1 export function SectionBlock
 1 export function splitTagDrafts
 1 export function TaskDropZone
@@ -1278,9 +1302,12 @@ CREATE TABLE projects (
 1 export function useFileActions
 1 export function useFileDropZone
 1 export function useInvalidateProjectLinks
+1 export function useInvalidateProjects
 1 export function useOpenOrders
 1 export function useOrderProjectLinks
 1 export function useProjectCodes
+1 export function useProjectOrders
+1 export function useProjectTree
 1 export function useResliceJobs
 1 export function useTaskFileDrop
 1 export function useTaskProjectLink

@@ -10172,7 +10172,6 @@ export default {
     create: 'Erstellen',
     tagsLabel: 'Tags',
     tagSearchPlaceholder: 'Tag suchen oder erstellen…',
-    createTag: '„{{name}}“ erstellen',
     removeTag: '{{name}} entfernen',
     suggestTags: 'Tags vorschlagen',
     suggestionsLabel: 'Vorschläge',
@@ -10186,7 +10185,6 @@ export default {
     saveFailed: 'Projekt konnte nicht gespeichert werden',
     codeChipLabel: 'Projektcode {{code}}',
     files: {
-      title: 'Dateien',
       sectionScan: '3D-Scan',
       sectionModelisation: 'Konstruktion',
       sectionImpression: 'Druck',
@@ -10195,7 +10193,6 @@ export default {
       emptySection: 'Noch keine Elemente',
       newItem: 'Neues Element',
       itemNameLabel: 'Elementname',
-      dropHint: 'Dateien hierher ziehen oder klicken zum Auswählen',
       chooseFiles: 'Dateien auswählen',
       uploading: 'Wird hochgeladen…',
       uploadFailed: 'Upload fehlgeschlagen',

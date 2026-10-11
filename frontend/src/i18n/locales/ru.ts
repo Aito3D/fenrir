@@ -9773,7 +9773,6 @@ export default {
     create: "Создать",
     tagsLabel: "Метки",
     tagSearchPlaceholder: "Найти или создать метку…",
-    createTag: "Создать «{{name}}»",
     removeTag: "Удалить {{name}}",
     suggestTags: "Предложить метки",
     suggestionsLabel: "Предложения",
@@ -9787,7 +9786,6 @@ export default {
     saveFailed: "Не удалось сохранить проект",
     codeChipLabel: "Код проекта {{code}}",
     files: {
-      title: 'Файлы',
       sectionScan: 'Скан',
       sectionModelisation: 'Моделирование',
       sectionImpression: 'Печать',
@@ -9796,7 +9794,6 @@ export default {
       emptySection: 'Элементов пока нет',
       newItem: 'Новый элемент',
       itemNameLabel: 'Название элемента',
-      dropHint: 'Перетащите файлы сюда или нажмите для выбора',
       chooseFiles: 'Выбрать файлы',
       uploading: 'Загрузка…',
       uploadFailed: 'Не удалось загрузить',

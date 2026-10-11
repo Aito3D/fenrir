@@ -98,6 +98,43 @@ async def test_link_does_not_mark_quote_pending(async_client: AsyncClient, db_se
 
 @pytest.mark.asyncio
 @pytest.mark.integration
+@pytest.mark.parametrize("action", ["unlink", "create_from_task", "set_deliveries", "drop_files"])
+async def test_no_link_mutating_path_marks_quote_pending(async_client: AsyncClient, db_session, action):
+    order = await _order(db_session)
+    task = await _task(db_session, order)
+    project = await _project(async_client)
+    revision = await _revision(async_client, project["id"])
+    base = f"/api/v1/aito/tasks/{task.id}"
+    if action != "create_from_task":
+        linked = await async_client.put(f"{base}/project", json={"project_id": project["id"]})
+        assert linked.status_code == 200, linked.text
+    order.quote_sync_state = "idle"
+    await db_session.commit()
+    version = order.version
+
+    if action == "unlink":
+        response = await async_client.put(f"{base}/project", json={"project_id": None})
+        expected = 200
+    elif action == "create_from_task":
+        response = await async_client.post(f"{base}/project", json={"name": "Nouveau"})
+        expected = 201
+    elif action == "set_deliveries":
+        response = await async_client.put(f"{base}/deliveries", json={"revision_ids": [revision]})
+        expected = 200
+    else:
+        response = await async_client.post(
+            f"{base}/files", files=[("files", ("a.3mf", b"x", "application/octet-stream"))]
+        )
+        expected = 201
+    assert response.status_code == expected, response.text
+
+    await db_session.refresh(order)
+    assert order.quote_sync_state == "idle"
+    assert order.version == version
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
 async def test_link_errors(async_client: AsyncClient, db_session):
     order = await _order(db_session)
     task = await _task(db_session, order)
@@ -256,6 +293,36 @@ async def test_revision_events_on_every_linked_order(async_client: AsyncClient, 
         assert changed[0]["detail"]["to"] == "valide"
 
 
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_upload_revision_records_the_revision_added_label_and_detail(async_client: AsyncClient, db_session):
+    """The upload route's ``project.revision_added``: ``"<item> R<n>"`` and section/item_id/revision_id, in order."""
+    project = await _project(async_client)
+    order = await _order(db_session)
+    task = await _task(db_session, order)
+    await async_client.put(f"/api/v1/aito/tasks/{task.id}/project", json={"project_id": project["id"]})
+
+    revision_id = await _revision(async_client, project["id"])
+    item_id = (await db_session.execute(select(ProjectItem.id).where(ProjectItem.name == "Pièce"))).scalar_one()
+    [event] = (
+        (
+            await db_session.execute(
+                select(AitoEvent).where(AitoEvent.project_id == order.id, AitoEvent.kind == "project.revision_added")
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert event.subject_label == "Pièce R1"
+    assert list(event.detail.items()) == [
+        ("project_id", project["id"]),
+        ("code", project["code"]),
+        ("section", "impression"),
+        ("item_id", item_id),
+        ("revision_id", revision_id),
+    ]
+
+
 async def _linked_revision(async_client, db_session):
     project = await _project(async_client)
     order = await _order(db_session)
@@ -358,6 +425,33 @@ async def test_drop_partial_failure_keeps_stored_group_and_records_once(
     )
     assert len(events) == 1
     assert [r["filename"] for r in events[0].detail["results"]] == ["a.3mf"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_drop_failing_on_the_first_group_does_not_broadcast(async_client: AsyncClient, db_session, monkeypatch):
+    """Nothing stored (``stored_count`` 0): the 409 goes out without an aito_changed broadcast."""
+    order = await _order(db_session)
+    task = await _task(db_session, order)
+    project = await _project(async_client)
+    await async_client.put(f"/api/v1/aito/tasks/{task.id}/project", json={"project_id": project["id"]})
+
+    async def always_fails(*_args, **_kwargs):
+        raise files_service.ProjectFilesError(409, "boom")
+
+    broadcasts = []
+
+    async def fake_broadcast(order_id, actor):
+        broadcasts.append(order_id)
+
+    monkeypatch.setattr(links_service.project_files, "add_revision", always_fails)
+    monkeypatch.setattr(links_routes, "_broadcast_changed", fake_broadcast)
+
+    response = await async_client.post(
+        f"/api/v1/aito/tasks/{task.id}/files", files=[("files", ("a.3mf", b"x", "application/octet-stream"))]
+    )
+    assert (response.status_code, response.json()["detail"]) == (409, "boom")
+    assert broadcasts == []
 
 
 @pytest.mark.asyncio
@@ -562,7 +656,7 @@ async def test_concurrent_drop_creating_the_same_item_joins_it(
 
     async def racing_create(db, project_row, *, section, name, user_id):
         db_session.add(
-            ProjectItem(project_id=project_row.id, section=section, name=name, name_key=files_service._name_key(name))
+            ProjectItem(project_id=project_row.id, section=section, name=name, name_key=files_service.name_key(name))
         )
         await db_session.commit()
         return await real_create(db, project_row, section=section, name=name, user_id=user_id)
@@ -584,3 +678,85 @@ async def test_concurrent_drop_creating_the_same_item_joins_it(
         (await db_session.execute(select(ProjectItem).where(ProjectItem.project_id == project["id"]))).scalars().all()
     )
     assert [(i.name, i.id) for i in items] == [("a", result["item_id"])]
+
+
+_LINK_ERROR_SITES = [
+    ("link_task", "put", "project", {"json": {"project_id": 1}}),
+    ("create_project_for_task", "post", "project", {"json": {"name": "Nouveau"}}),
+    ("set_deliveries", "put", "deliveries", {"json": {"revision_ids": [1]}}),
+    ("drop_files_on_task", "post", "files", {"files": [("files", ("a.3mf", b"x", "application/octet-stream"))]}),
+]
+
+
+@pytest.mark.parametrize(("op", "method", "path", "kwargs"), _LINK_ERROR_SITES, ids=[s[0] for s in _LINK_ERROR_SITES])
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_link_error_rolls_back_then_maps_to_its_status(
+    async_client: AsyncClient, db_session, monkeypatch, op, method, path, kwargs
+):
+    """T-195 pin: a LinkError from the service op rolls the session back, then
+    becomes an HTTP error with the LinkError's own status and detail."""
+    order = await _order(db_session)
+    task = await _task(db_session, order)
+    calls: list[str] = []
+
+    async def teapot(*_a, **_k):
+        calls.append("op")
+        raise links_service.LinkError(418, "teapot")
+
+    real_rollback = AsyncSession.rollback
+
+    async def spy_rollback(self):
+        calls.append("rollback")
+        return await real_rollback(self)
+
+    monkeypatch.setattr(links_routes.svc, op, teapot)
+    monkeypatch.setattr(AsyncSession, "rollback", spy_rollback)
+    response = await getattr(async_client, method)(f"/api/v1/aito/tasks/{task.id}/{path}", **kwargs)
+    monkeypatch.undo()
+    assert response.status_code == 418
+    assert response.json()["detail"] == "teapot"
+    # The route's own rollback, then get_db's teardown rollback on the propagating HTTPException.
+    assert calls == ["op", "rollback", "rollback"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_link_error_chains_and_other_errors_pass_through(db_session, monkeypatch):
+    """T-195 pin, called directly: the HTTPException is raised after the rollback
+    and chains the LinkError; any other exception propagates untouched, no rollback."""
+    order = await _order(db_session)
+    task_id = (await _task(db_session, order)).id
+    rolled_back: list[bool] = []
+    real_rollback = AsyncSession.rollback
+
+    async def spy_rollback(self):
+        rolled_back.append(True)
+        return await real_rollback(self)
+
+    link_error = links_service.LinkError(418, "teapot")
+
+    async def teapot(*_a, **_k):
+        raise link_error
+
+    monkeypatch.setattr(AsyncSession, "rollback", spy_rollback)
+    monkeypatch.setattr(links_routes.svc, "link_task", teapot)
+    body = links_routes.TaskLinkRequest(project_id=1)
+    with pytest.raises(HTTPException) as err:
+        await links_routes.put_task_project(task_id, body, db=db_session, user=None, __=None)
+    assert rolled_back == [True]
+    assert (err.value.status_code, err.value.detail) == (418, "teapot")
+    assert err.value.__cause__ is link_error
+
+    rolled_back.clear()
+    boom = RuntimeError("boom")
+
+    async def other(*_a, **_k):
+        raise boom
+
+    monkeypatch.setattr(links_routes.svc, "link_task", other)
+    with pytest.raises(RuntimeError) as err2:
+        await links_routes.put_task_project(task_id, body, db=db_session, user=None, __=None)
+    assert err2.value is boom
+    assert rolled_back == []
+    monkeypatch.undo()

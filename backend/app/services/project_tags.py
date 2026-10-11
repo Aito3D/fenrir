@@ -9,6 +9,8 @@ through ``set_project_tags``, which rewrites rows and mirror together.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,18 +32,25 @@ def clean_tag_name(name: str) -> str:
     return name.replace(",", " ").strip()[:MAX_TAG_CHARS].strip()
 
 
-def split_tag_string(value: str | None) -> list[str]:
-    """``"drone,, Drone , pièce auto,"`` → ``["drone", "pièce auto"]`` (first spelling wins)."""
-    seen: set[str] = set()
-    names: list[str] = []
-    for part in (value or "").split(","):
-        name = clean_tag_name(part)
+def unique_clean_names(raw_names: Iterable[str], seen: set[str] | None = None) -> list[tuple[str, str]]:
+    """``(name, key)`` for each non-empty cleaned name, in order, first spelling per key wins.
+
+    ``seen`` (when given) is mutated with every key kept."""
+    seen = set() if seen is None else seen
+    pairs: list[tuple[str, str]] = []
+    for raw in raw_names:
+        name = clean_tag_name(raw)
         key = tag_name_key(name)
         if not name or key in seen:
             continue
         seen.add(key)
-        names.append(name)
-    return names
+        pairs.append((name, key))
+    return pairs
+
+
+def split_tag_string(value: str | None) -> list[str]:
+    """``"drone,, Drone , pièce auto,"`` → ``["drone", "pièce auto"]`` (first spelling wins)."""
+    return [name for name, _key in unique_clean_names((value or "").split(","))]
 
 
 def tag_mirror(names: list[str]) -> str | None:
@@ -56,14 +65,8 @@ class UnknownTagError(ValueError):
 
 async def get_or_create_tags(db: AsyncSession, names: list[str]) -> list[LibraryTag]:
     """Catalogue rows for ``names``, created when missing; order kept, duplicates dropped."""
-    cleaned: list[str] = []
     seen: set[str] = set()
-    for raw in names:
-        name = clean_tag_name(raw)
-        key = tag_name_key(name)
-        if name and key not in seen:
-            seen.add(key)
-            cleaned.append(name)
+    cleaned = [name for name, _key in unique_clean_names(names, seen)]
     if not cleaned:
         return []
     existing = {
@@ -155,13 +158,7 @@ def rank_tag_suggestions(
     names, five in total; tags the project already has are dropped (spec §3.5)."""
     existing: list[ProjectTagSuggestion] = []
     new: list[ProjectTagSuggestion] = []
-    seen: set[str] = set()
-    for raw in raw_names:
-        name = clean_tag_name(raw)
-        key = tag_name_key(name)
-        if not name or key in seen:
-            continue
-        seen.add(key)
+    for name, key in unique_clean_names(raw_names):
         hit = catalogue.get(key)
         if hit is not None:
             if hit.id not in exclude_ids:

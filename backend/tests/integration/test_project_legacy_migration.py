@@ -12,30 +12,38 @@ import json
 import time
 import uuid
 from datetime import datetime, timezone
+from functools import partial
 from pathlib import Path
 
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import func, select
 
-from backend.app.api.routes.library import get_library_files_dir, to_absolute_path, to_relative_path
+from backend.app.api.routes.library import to_absolute_path
 from backend.app.core.auth import create_access_token, get_password_hash
 from backend.app.core.config import settings
 from backend.app.core.permissions import Permission
 from backend.app.models.group import Group
 from backend.app.models.library import LibraryFile, LibraryFolder
 from backend.app.models.project import Project
-from backend.app.models.project_item import ProjectItem, ProjectRevision
 from backend.app.models.settings import Settings
 from backend.app.models.user import User
-from backend.app.services import project_files, project_filing, project_storage
+from backend.app.services import project_files, project_filing
+from backend.tests.project_fixtures import (
+    make_external_file as _external,
+    make_managed_library_file as _managed,
+    make_project,
+    projects_root_fixture,
+    revisions_of as _revisions,
+    wal_engine_fixture,  # noqa: F401  # the ``wal_engine`` fixture
+)
 
 START = "/api/v1/projects/legacy-migration/start"
 STATUS = "/api/v1/projects/legacy-migration/status"
 
 
 @pytest.fixture
-async def test_engine(test_engine, tmp_path):
+async def test_engine(test_engine, wal_engine):
     """A WAL file database instead of the shared ``:memory:`` engine.
 
     The endpoint tests run the migration in a background task while the test
@@ -47,34 +55,10 @@ async def test_engine(test_engine, tmp_path):
     ("Bracket.3mf" inside "Lid" R1). Production gives each session its own
     connection to a WAL file, as this does. The parent fixture is requested only
     for its model registration."""
-    from sqlalchemy import event
-    from sqlalchemy.ext.asyncio import create_async_engine
-
-    from backend.app.core.database import Base
-
-    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'legacy.db'}")
-
-    @event.listens_for(engine.sync_engine, "connect")
-    def _pragmas(dbapi_conn, _record):
-        cursor = dbapi_conn.cursor()
-        cursor.execute("PRAGMA journal_mode = WAL")
-        cursor.execute("PRAGMA busy_timeout = 15000")
-        cursor.close()
-
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    yield engine
-    await engine.dispose()
+    yield wal_engine
 
 
-@pytest.fixture(autouse=True)
-def root(tmp_path, monkeypatch):
-    monkeypatch.setattr(settings, "base_dir", tmp_path)
-    monkeypatch.setattr(settings, "archive_dir", tmp_path / "archive")
-    projects = tmp_path / "projects"
-    projects.mkdir()
-    monkeypatch.setattr(project_storage, "projects_root", lambda: projects)
-    return projects
+root = projects_root_fixture(autouse=True, subdir="projects", library=True)
 
 
 @pytest.fixture(autouse=True)
@@ -84,11 +68,7 @@ def idle_runner():
     project_filing.reset_legacy_migration_state()
 
 
-async def _project(db, name="Support caméra", **fields) -> Project:
-    project = Project(name=name, **fields)
-    db.add(project)
-    await db.commit()
-    return project
+_project = partial(make_project, commit=True)
 
 
 async def _folder(db, project_id: int | None, **fields) -> LibraryFolder:
@@ -98,73 +78,10 @@ async def _folder(db, project_id: int | None, **fields) -> LibraryFolder:
     return folder
 
 
-async def _managed(db, filename: str, data: bytes = b"bytes", **fields) -> LibraryFile:
-    path = get_library_files_dir() / f"{uuid.uuid4().hex}{Path(filename).suffix}"
-    path.write_bytes(data)
-    row = LibraryFile(
-        filename=filename,
-        file_path=to_relative_path(path),
-        file_type=Path(filename).suffix.lstrip(".") or "unknown",
-        file_size=len(data),
-        is_external=False,
-        **fields,
-    )
-    db.add(row)
-    await db.commit()
-    return row
-
-
-async def _external(db, tmp_path: Path, filename: str, data: bytes, **fields) -> LibraryFile:
-    mount = tmp_path / f"mount-{uuid.uuid4().hex[:6]}"
-    mount.mkdir()
-    (mount / filename).write_bytes(data)
-    folder = LibraryFolder(name="NAS", is_external=True, external_readonly=True, external_path=str(mount))
-    db.add(folder)
-    await db.flush()
-    row = LibraryFile(
-        folder_id=folder.id,
-        filename=filename,
-        file_path=str(mount / filename),
-        file_type=Path(filename).suffix.lstrip("."),
-        file_size=len(data),
-        is_external=True,
-        **fields,
-    )
-    db.add(row)
-    await db.commit()
-    return row
-
-
 async def _fresh(db, model, row_id):
     return (
         await db.execute(select(model).where(model.id == row_id).execution_options(populate_existing=True))
     ).scalar_one()
-
-
-async def _revisions(db, project_id: int) -> list[tuple[str, str, int, list[str]]]:
-    rows = (
-        await db.execute(
-            select(ProjectItem.section, ProjectItem.name, ProjectRevision.number, ProjectRevision.id)
-            .join(ProjectRevision, ProjectRevision.item_id == ProjectItem.id)
-            .where(ProjectItem.project_id == project_id)
-            .order_by(ProjectItem.name, ProjectRevision.number)
-        )
-    ).all()
-    out = []
-    for section, name, number, revision_id in rows:
-        names = (
-            (
-                await db.execute(
-                    select(LibraryFile.filename)
-                    .where(LibraryFile.revision_id == revision_id)
-                    .order_by(LibraryFile.filename)
-                )
-            )
-            .scalars()
-            .all()
-        )
-        out.append((section, name, number, list(names)))
-    return out
 
 
 async def _legacy_setup(db, tmp_path):
@@ -359,7 +276,31 @@ async def test_incomplete_group_leaves_no_marker(db_session, monkeypatch):
 def test_external_marker_is_content_hash(tmp_path):
     path = tmp_path / "x.gcode"
     path.write_bytes(b"abc")
-    assert project_filing._sha256_file(path) == hashlib.sha256(b"abc").hexdigest()
+    assert project_filing.calculate_file_hash(path) == hashlib.sha256(b"abc").hexdigest()
+
+
+def _sql(statement) -> str:
+    from sqlalchemy.dialects import sqlite
+
+    return str(statement.compile(dialect=sqlite.dialect(), compile_kwargs={"literal_binds": True}))
+
+
+_LEGACY_FROM = "FROM library_files LEFT OUTER JOIN library_folders ON library_files.folder_id = library_folders.id"
+_LEGACY_WHERE = "WHERE library_files.revision_id IS NULL AND library_files.deleted_at IS NULL"
+_LEGACY_OWNER = "coalesce(library_files.project_id, library_folders.project_id)"
+
+
+def test_legacy_files_query_sql_is_pinned():
+    columns = ", ".join(f"library_files.{c.name}" for c in LibraryFile.__table__.columns)
+    assert _sql(project_filing._legacy_files_query()) == f"SELECT {columns} \n{_LEGACY_FROM} \n{_LEGACY_WHERE}"
+
+
+def test_legacy_candidates_query_sql_is_pinned():
+    assert _sql(project_filing._legacy_candidates_query()) == (
+        f"SELECT {_LEGACY_OWNER} AS coalesce_1, library_files.filename \n"
+        f"{_LEGACY_FROM} JOIN projects ON projects.id = {_LEGACY_OWNER} \n"
+        f"{_LEGACY_WHERE} AND projects.legacy_migrated_at IS NULL"
+    )
 
 
 # --- endpoints -------------------------------------------------------------------
@@ -502,3 +443,184 @@ async def test_permissions(async_client: AsyncClient, users):
     assert (await async_client.get(STATUS, headers=users["admin"])).status_code == 200
     assert (await async_client.post(START, headers=users["admin"])).status_code == 202
     await _wait_idle(async_client, users["admin"])
+
+
+# --- T-010: legacy migration failure branches ------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_an_external_file_gone_from_disk_is_left_and_logged(db_session, tmp_path, caplog):
+    """The project already holds a copy (so hashes are compared); a second external file whose
+    bytes vanished is not hashed, the move leaves it as ``source_missing``, and that skip is
+    not retryable: the marker is set."""
+    project = await _project(db_session)
+    project_id = project.id
+    arm = await _external(db_session, tmp_path, "Arm.gcode", b"G1 X0", project_id=project_id)
+    arm_id = arm.id
+    await project_filing.migrate_project_legacy(db_session, await _fresh(db_session, Project, project_id))
+    fresh = await _fresh(db_session, Project, project_id)
+    fresh.legacy_migrated_at = None  # a later run, e.g. after a new file got linked
+    await db_session.commit()
+    leg = await _external(db_session, tmp_path, "Leg.gcode", b"G1 Y0", project_id=project_id)
+    leg_id, leg_path = leg.id, leg.file_path
+    Path(leg_path).unlink()
+
+    with caplog.at_level("INFO", logger="backend.app.services.project_filing"):
+        outcome = await project_filing.migrate_project_legacy(db_session, await _fresh(db_session, Project, project_id))
+
+    assert (outcome.revisions_created, outcome.files_moved, outcome.files_copied) == (0, 0, 0)
+    assert await _revisions(db_session, project_id) == [("impression", "Arm", 1, ["Arm.gcode"])]
+    messages = [r.getMessage() for r in caplog.records]
+    assert (
+        f"Legacy migration of project {project_id}: external file {arm_id} ('Arm.gcode') already copied, skipping"
+        in messages
+    )
+    assert f"Legacy migration of project {project_id} left file {leg_id}: source_missing" in messages
+    leg_row = await _fresh(db_session, LibraryFile, leg_id)
+    assert (leg_row.revision_id, leg_row.file_path) == (None, leg_path)
+    assert (await _fresh(db_session, Project, project_id)).legacy_migrated_at is not None
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_a_read_error_while_hashing_defers_to_the_move(db_session, tmp_path, monkeypatch):
+    """Hashing an external file fails with an OSError: no dedupe, the move tries it and
+    reports the same read error as ``copy_failed``, so the project stays a candidate."""
+    project = await _project(db_session)
+    project_id = project.id
+    arm = await _external(db_session, tmp_path, "Arm.gcode", b"G1 X0", project_id=project_id)
+    await project_filing.migrate_project_legacy(db_session, await _fresh(db_session, Project, project_id))
+    fresh = await _fresh(db_session, Project, project_id)
+    fresh.legacy_migrated_at = None
+    await db_session.commit()
+    arm_id, arm_path = arm.id, arm.file_path
+
+    def unreadable(*_args, **_kwargs):
+        raise OSError("I/O error")
+
+    monkeypatch.setattr(project_filing, "calculate_file_hash", unreadable)
+    monkeypatch.setattr(project_files, "_copy_hashing", unreadable)
+    with pytest.raises(project_filing.LegacyMigrationError) as exc:
+        await project_filing.migrate_project_legacy(db_session, await _fresh(db_session, Project, project_id))
+
+    assert str(exc.value) == "1 file(s) could not be moved (copy_failed: I/O error); run it again"
+    assert await _revisions(db_session, project_id) == [("impression", "Arm", 1, ["Arm.gcode"])]
+    arm_row = await _fresh(db_session, LibraryFile, arm_id)
+    assert (arm_row.revision_id, arm_row.file_path) == (None, arm_path)
+    assert Path(arm_path).read_bytes() == b"G1 X0"
+    assert (await _fresh(db_session, Project, project_id)).legacy_migrated_at is None
+    assert project_id in await project_filing.legacy_candidates(db_session)
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_a_project_deleted_during_its_migration_is_an_error(db_session, monkeypatch):
+    from sqlalchemy import delete
+
+    project = await _project(db_session)
+    project_id = project.id
+
+    async def deleted_meanwhile(db, pid):
+        await db.execute(delete(Project).where(Project.id == pid))
+        await db.commit()
+        return []
+
+    monkeypatch.setattr(project_filing, "_legacy_files", deleted_meanwhile)
+    with pytest.raises(project_filing.LegacyMigrationError) as exc:
+        await project_filing.migrate_project_legacy(db_session, project)
+    assert str(exc.value) == "project deleted meanwhile"
+    assert (await db_session.execute(select(Project.id).where(Project.id == project_id))).first() is None
+
+
+# The runner, driven directly (async_client patches database.async_session to the test engine).
+
+
+def _runner_totals(state: dict) -> dict:
+    return {k: state["last_run"][k] for k in ("projects", "files_moved", "files_copied")}
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_runner_passes_over_a_project_migrated_or_deleted_meanwhile(
+    async_client: AsyncClient, db_session, monkeypatch
+):
+    done = await _project(db_session, "Done", legacy_migrated_at=datetime(2026, 1, 1))
+    lid = await _managed(db_session, "Lid.3mf", b"lid", project_id=done.id)
+    done_id, lid_id, lid_path = done.id, lid.id, lid.file_path
+
+    async def stale(_db):
+        return [done_id, 987654]  # listed, then migrated / deleted before the runner got there
+
+    async def must_not_run(*_args, **_kwargs):
+        raise AssertionError("a project migrated or gone meanwhile must not be migrated")
+
+    monkeypatch.setattr(project_filing, "legacy_candidates", stale)
+    monkeypatch.setattr(project_filing, "migrate_project_legacy", must_not_run)
+    project_filing._legacy_state["running"] = True
+    await project_filing._run_legacy_migration()
+
+    state = project_filing._legacy_state
+    assert (state["running"], state["total"], state["done"], state["current"]) == (False, 2, 2, None)
+    assert state["failures"] == []
+    assert _runner_totals(state) == {"projects": 0, "files_moved": 0, "files_copied": 0}
+    lid_row = await _fresh(db_session, LibraryFile, lid_id)
+    assert (lid_row.revision_id, lid_row.file_path) == (None, lid_path)
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_runner_records_the_failure_when_its_rollback_fails_too(
+    async_client: AsyncClient, db_session, monkeypatch, caplog
+):
+    project = await _project(db_session)
+    project_id, code = project.id, project.code
+
+    async def candidates(_db):
+        return [project_id]
+
+    async def boom(db, _project):
+        async def broken_rollback():
+            raise RuntimeError("connection lost")
+
+        db.rollback = broken_rollback
+        raise project_files.ProjectFilesError(409, "This item was changed meanwhile; drop the files again")
+
+    monkeypatch.setattr(project_filing, "legacy_candidates", candidates)
+    monkeypatch.setattr(project_filing, "migrate_project_legacy", boom)
+    project_filing._legacy_state["running"] = True
+    with caplog.at_level("DEBUG", logger="backend.app.services.project_filing"):
+        await project_filing._run_legacy_migration()
+
+    state = project_filing._legacy_state
+    assert state["failures"] == [
+        {"project_id": project_id, "code": code, "error": "This item was changed meanwhile; drop the files again"}
+    ]
+    assert (state["running"], state["done"], state["current"]) == (False, 1, None)
+    messages = [(r.levelname, r.getMessage()) for r in caplog.records]
+    assert ("WARNING", f"Legacy migration of project {project_id} failed") in messages
+    assert ("DEBUG", "Rollback after a failed legacy migration failed too") in messages
+    [quiet] = [r for r in caplog.records if r.getMessage() == "Rollback after a failed legacy migration failed too"]
+    assert (quiet.name, quiet.funcName) == ("backend.app.services.project_filing", "_run_legacy_migration")
+    assert str(quiet.exc_info[1]) == "connection lost"
+    assert (await _fresh(db_session, Project, project_id)).legacy_migrated_at is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_runner_stops_cleanly_when_listing_candidates_fails(async_client: AsyncClient, monkeypatch, caplog):
+    async def broken(_db):
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr(project_filing, "legacy_candidates", broken)
+    project_filing._legacy_state["running"] = True
+    with caplog.at_level("ERROR", logger="backend.app.services.project_filing"):
+        await project_filing._run_legacy_migration()
+
+    state = project_filing._legacy_state
+    assert (state["running"], state["total"], state["done"], state["current"]) == (False, 0, 0, None)
+    assert state["failures"] == []
+    assert _runner_totals(state) == {"projects": 0, "files_moved": 0, "files_copied": 0}
+    assert state["last_run"]["finished_at"] is not None
+    filing = [(r.levelname, r.getMessage()) for r in caplog.records if r.name == project_filing.logger.name]
+    assert filing == [("ERROR", "Legacy project migration stopped")]

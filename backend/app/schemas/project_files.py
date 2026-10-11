@@ -7,7 +7,7 @@ Section = Literal["scan", "modelisation", "impression", "usinage", "docs"]
 RevisionStatus = Literal["wip", "valide", "obsolete"]
 
 
-def _required_name(value: str) -> str:
+def required_name(value: str) -> str:
     value = value.strip()
     if not value:
         raise ValueError("name must not be blank")
@@ -83,20 +83,20 @@ class ProjectItemCreate(BaseModel):
     section: Section
     name: str = Field(..., max_length=255)
 
-    _name = field_validator("name")(_required_name)
+    _name = field_validator("name")(required_name)
 
 
 class ProjectItemRename(BaseModel):
     name: str = Field(..., max_length=255)
 
-    _name = field_validator("name")(_required_name)
+    _name = field_validator("name")(required_name)
 
 
 class ProjectItemFork(BaseModel):
     revision_id: int
     name: str = Field(..., max_length=255)
 
-    _name = field_validator("name")(_required_name)
+    _name = field_validator("name")(required_name)
 
 
 class ProjectRevisionUpdate(BaseModel):

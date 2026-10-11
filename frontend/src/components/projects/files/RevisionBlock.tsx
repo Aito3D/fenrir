@@ -1,6 +1,4 @@
 import { useRef, useState } from 'react';
-import type { DragEvent } from 'react';
-import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { Download, Eye, GitFork, Plus, Printer, Scissors, Trash2, X } from 'lucide-react';
 import { api } from '../../../api/client';
@@ -22,6 +20,8 @@ import {
 } from './filesUi';
 import { PrintRevisionFlow } from '../print/PrintRevisionFlow';
 import { ResliceDialog } from '../reslice/ResliceDialog';
+import { outdatedParams, revisionLabel } from './revisionLabel';
+import { DropShield } from '../DropShield';
 
 export interface DerivedOption { id: number; label: string }
 
@@ -41,9 +41,6 @@ function formatSize(bytes: number): string {
 }
 
 const isResliceable = (f: ProjectFileOut) => f.filename.toLowerCase().endsWith('.3mf'); // incl. .gcode.3mf, as the backend
-// The dialogs are portalled out of the files tree: keep a stray drag over them from
-// reaching the section/item drop zones (which would upload a revision).
-const stopDrag = (e: DragEvent) => e.stopPropagation();
 
 export function RevisionBlock({ item, revision, derivedOptions, actions }: Props) {
   const { t, i18n } = useTranslation();
@@ -108,7 +105,7 @@ export function RevisionBlock({ item, revision, derivedOptions, actions }: Props
 
       {newer && src && (
         <span className={`${chipBase} border-amber-500/40 bg-amber-500/10 text-amber-400 whitespace-normal`}>
-          {t('projectsPdm.files.outdated', { source: `${src.item_name} R${src.number}`, newer: `R${newer.number}` })}
+          {t('projectsPdm.files.outdated', outdatedParams(src, newer))}
         </span>
       )}
 
@@ -261,13 +258,13 @@ export function RevisionBlock({ item, revision, derivedOptions, actions }: Props
           projectId={actions.projectId}
           file={printing}
           revisionWarning={newer && src
-            ? t('projectsPdm.print.outdatedWarning', { source: `${src.item_name} R${src.number}`, newer: `R${newer.number}` })
+            ? t('projectsPdm.print.outdatedWarning', outdatedParams(src, newer))
             : undefined}
           onClose={() => setPrinting(null)}
         />
       )}
-      {reslicing !== null && createPortal(
-        <div onDragOver={stopDrag} onDrop={stopDrag}>
+      {reslicing !== null && (
+        <DropShield>
           <ResliceDialog
             projectId={actions.projectId}
             files={resliceable}
@@ -278,13 +275,12 @@ export function RevisionBlock({ item, revision, derivedOptions, actions }: Props
               void actions.reslice.start(item.id, revision.id, fileId, pipelineId, queueTaskId);
             }}
           />
-        </div>,
-        document.body,
+        </DropShield>
       )}
       {confirmRemove && (
         <ConfirmModal
           title={t('projectsPdm.files.removeFile', { name: confirmRemove.filename })}
-          message={t('projectsPdm.files.confirmRemoveFile', { name: confirmRemove.filename, label: `${item.name} ${label}` })}
+          message={t('projectsPdm.files.confirmRemoveFile', { name: confirmRemove.filename, label: revisionLabel(item.name, revision.number) })}
           confirmText={t('projectsPdm.files.remove')}
           variant="danger"
           onConfirm={() => { const fileId = confirmRemove.id; setConfirmRemove(null); void actions.removeFile(revision.id, fileId); }}
@@ -294,7 +290,7 @@ export function RevisionBlock({ item, revision, derivedOptions, actions }: Props
       {confirmDelete && (
         <ConfirmModal
           title={t('projectsPdm.files.deleteRevision')}
-          message={t('projectsPdm.files.confirmDeleteRevision', { label: `${item.name} ${label}` })}
+          message={t('projectsPdm.files.confirmDeleteRevision', { label: revisionLabel(item.name, revision.number) })}
           confirmText={t('projectsPdm.files.deleteRevision')}
           variant="danger"
           onConfirm={() => { setConfirmDelete(false); void actions.deleteRevision(revision.id); }}

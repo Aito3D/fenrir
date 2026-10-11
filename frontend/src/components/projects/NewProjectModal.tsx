@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import { api } from '../../api/client';
 import { Button } from '../Button';
 import { useToast } from '../../contexts/ToastContext';
@@ -10,6 +10,8 @@ import { ProjectTagEditor, splitTagDrafts } from './ProjectTagEditor';
 import type { TagDraft } from './ProjectTagChips';
 import type { Project } from '../../api/client';
 import { useIsolatedEscape } from '../../hooks/useIsolatedEscape';
+import { DIALOG_CARD_CLS, OVERLAY_CLS } from './dialogStyles';
+import { useInvalidateProjects } from './projectQueries';
 
 interface NewProjectModalProps {
   onClose: () => void;
@@ -25,7 +27,7 @@ interface NewProjectModalProps {
 export function NewProjectModal({ onClose, initialTitle = '', initialDescription = '', onCreated }: NewProjectModalProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
+  const invalidateProjects = useInvalidateProjects();
   const { showToast } = useToast();
   const [title, setTitle] = useState(initialTitle);
   const [description, setDescription] = useState(initialDescription);
@@ -38,9 +40,7 @@ export function NewProjectModal({ onClose, initialTitle = '', initialDescription
     mutationFn: () =>
       api.createProject({ name: title.trim(), description: description.trim() || undefined, ...splitTagDrafts(tags) }),
     onSuccess: (project) => {
-      queryClient.invalidateQueries({ queryKey: ['projects'] });
-      queryClient.invalidateQueries({ queryKey: ['projects-search'] });
-      queryClient.invalidateQueries({ queryKey: ['project-tags'] });
+      invalidateProjects();
       onClose();
       if (onCreated) onCreated(project);
       else navigate(`/projects/${project.id}`);
@@ -49,7 +49,7 @@ export function NewProjectModal({ onClose, initialTitle = '', initialDescription
   });
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 animate-overlay-in">
+    <div className={OVERLAY_CLS}>
       <form
         ref={dialogRef}
         role="dialog"
@@ -60,7 +60,7 @@ export function NewProjectModal({ onClose, initialTitle = '', initialDescription
           e.preventDefault();
           if (title.trim()) create.mutate();
         }}
-        className="w-full max-w-lg space-y-4 rounded-xl border border-bambu-dark-tertiary bg-bambu-dark-secondary p-5 focus:outline-none"
+        className={DIALOG_CARD_CLS}
       >
         <h2 className="text-lg font-semibold text-white">{t('projectsPdm.createTitle')}</h2>
         <AiTextField

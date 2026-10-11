@@ -9,45 +9,31 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
 
+from backend.app.api.routes.library import to_absolute_path
 from backend.app.core.auth import create_access_token, get_password_hash
 from backend.app.core.config import settings as app_settings
 from backend.app.core.permissions import Permission
 from backend.app.models.group import Group
 from backend.app.models.library import LibraryFile
+from backend.app.models.project_item import ProjectItem
 from backend.app.models.settings import Settings
 from backend.app.models.slicer_pipeline import SlicerPipeline
 from backend.app.models.user import User
 from backend.app.schemas.slicer import SliceResponse
 from backend.app.services import project_reslice, project_storage
 from backend.app.services.slice_dispatch import slice_dispatch
+from backend.tests.project_fixtures import wal_engine_fixture  # noqa: F401  # the ``wal_engine`` fixture
 
 _ONE_FILAMENT = json.dumps([{"source": "local", "id": "3"}])
 
 
 @pytest.fixture
-async def test_engine(test_engine, tmp_path):
+async def test_engine(test_engine, wal_engine):
     """WAL file database: the job runs in a background task with its own session
     while the request session closes; behind the shared ``:memory:`` StaticPool
     that close would roll back the job's work (see test_project_legacy_migration).
     The parent fixture is requested only for its model registration."""
-    from sqlalchemy import event
-    from sqlalchemy.ext.asyncio import create_async_engine
-
-    from backend.app.core.database import Base
-
-    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'reslice.db'}")
-
-    @event.listens_for(engine.sync_engine, "connect")
-    def _pragmas(dbapi_conn, _record):
-        cursor = dbapi_conn.cursor()
-        cursor.execute("PRAGMA journal_mode = WAL")
-        cursor.execute("PRAGMA busy_timeout = 15000")
-        cursor.close()
-
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    yield engine
-    await engine.dispose()
+    yield wal_engine
 
 
 @pytest.fixture(autouse=True)
@@ -225,6 +211,44 @@ async def test_validation_errors(async_client: AsyncClient, db_session, fake_sli
     assert gcode_source.status_code == 400  # .gcode cannot be re-sliced
     assert (await async_client.post(url, json={"file_id": fid, "pipeline_id": 999999})).status_code == 404
     assert (await async_client.post(url, json={"file_id": fid, "pipeline_id": deleted_id})).status_code == 404
+    assert fake_slicer["calls"] == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_validation_check_order_and_messages(async_client: AsyncClient, db_session, fake_slicer):
+    """Pin: each check's status + detail, and that an earlier check wins over every later one
+    (revision, section, file in revision, 3MF only, pipeline, usable preset, bytes on disk)."""
+    _project, item, rev = await _source_revision(async_client)
+    gcode = await async_client.post(
+        f"/api/v1/projects/items/{item['id']}/revisions",
+        files=[("files", ("support.gcode", b"G1", "application/octet-stream"))],
+    )
+    gcode_rev = gcode.json()["revision"]
+    no_preset_id = await _pipeline(db_session, name="No filament", filament_presets_json="[]")
+    pipeline_id = await _pipeline(db_session)
+    url = f"/api/v1/projects/revisions/{rev['id']}/reslice"
+    fid = rev["files"][0]["id"]
+
+    async def post(target_url: str, file_id: int, pid: int) -> tuple[int, str]:
+        r = await async_client.post(target_url, json={"file_id": file_id, "pipeline_id": pid})
+        return r.status_code, r.json()["detail"]
+
+    assert await post("/api/v1/projects/revisions/999999/reslice", 999999, 999999) == (404, "Revision not found")
+    assert await post(url, gcode_rev["files"][0]["id"], 999999) == (404, "File not found in this revision")
+    gcode_url = f"/api/v1/projects/revisions/{gcode_rev['id']}/reslice"
+    assert await post(gcode_url, gcode_rev["files"][0]["id"], 999999) == (400, "Only 3MF files can be re-sliced")
+    assert await post(url, fid, 999999) == (404, "Pipeline not found")
+
+    source = (await db_session.execute(select(LibraryFile).where(LibraryFile.id == fid))).scalar_one()
+    to_absolute_path(source.file_path).unlink()
+    assert await post(url, fid, no_preset_id) == (400, "Pipeline has no usable filament preset")
+    assert await post(url, fid, pipeline_id) == (404, "Source file missing on disk")
+
+    db_item = (await db_session.execute(select(ProjectItem).where(ProjectItem.id == item["id"]))).scalar_one()
+    db_item.section = "scan"
+    await db_session.commit()
+    assert await post(url, 999999, 999999) == (400, "Section 'scan' does not accept files for now")
     assert fake_slicer["calls"] == []
 
 
@@ -602,3 +626,43 @@ async def test_revision_added_helper_raising_does_not_fail_the_job(
     assert job["status"] == "completed", job
     assert job["result"]["revision_number"] == 2
     assert await _sliced_rows(db_session) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_reslice_refuses_a_source_swapped_for_a_symlink(
+    async_client: AsyncClient, db_session, fake_slicer, roots
+):
+    """T-207: a source 3MF replaced by a symlink to a data-dir file (``.jwt_secret``, the
+    database) reads as missing; its bytes never reach the slicer."""
+    _project, _item, rev = await _source_revision(async_client)
+    pipeline_id = await _pipeline(db_session)
+    fid = rev["files"][0]["id"]
+    secret = roots / ".jwt_secret"  # under the data dir, outside the projects root
+    secret.write_bytes(_3mf("secret"))
+    source = (await db_session.execute(select(LibraryFile).where(LibraryFile.id == fid))).scalar_one()
+    path = to_absolute_path(source.file_path)
+    path.unlink()
+    path.symlink_to(secret)
+    response = await async_client.post(
+        f"/api/v1/projects/revisions/{rev['id']}/reslice", json={"file_id": fid, "pipeline_id": pipeline_id}
+    )
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Source file missing on disk"
+    assert fake_slicer["calls"] == []
+
+
+@pytest.mark.asyncio
+async def test_slice_seam_delegates_to_the_library_slicer(monkeypatch):
+    """``_slice`` forwards the session and every keyword to ``slice_and_persist`` and returns its result."""
+    calls = []
+    sentinel_db, sentinel_result = object(), object()
+
+    async def fake_slice_and_persist(db, **kwargs):
+        calls.append((db, kwargs))
+        return sentinel_result
+
+    monkeypatch.setattr(project_reslice, "slice_and_persist", fake_slice_and_persist)
+    result = await project_reslice._slice(sentinel_db, model_bytes=b"3mf", model_filename="a.3mf", job_id=7)
+    assert result is sentinel_result
+    assert calls == [(sentinel_db, {"model_bytes": b"3mf", "model_filename": "a.3mf", "job_id": 7})]

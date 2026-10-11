@@ -13,7 +13,6 @@ Functions flush, never commit — the route owns the transaction.
 import logging
 from collections import defaultdict
 from collections.abc import Callable, Collection, Iterable
-from difflib import SequenceMatcher
 
 from fastapi import UploadFile
 from sqlalchemy import delete, func, select
@@ -25,6 +24,7 @@ from backend.app.models.aito_task import AitoTask
 from backend.app.models.aito_task_delivery import AitoTaskDelivery
 from backend.app.models.project import Project
 from backend.app.models.project_item import ProjectItem, ProjectRevision
+from backend.app.models.user import User
 from backend.app.schemas.aito_project_links import (
     DropFilesResponse,
     DroppedFileResult,
@@ -37,26 +37,22 @@ from backend.app.schemas.aito_project_links import (
     TaskProjectLink,
 )
 from backend.app.schemas.project_files import RevisionRef
-from backend.app.services import aito_events, project_files, project_print_trace
+from backend.app.services import project_files, project_print_trace
+from backend.app.services.actor import actor_name, record_as
+from backend.app.services.http_status_error import HttpStatusError
 from backend.app.services.project_filing import find_or_create_item, item_name_for_filename
+from backend.app.services.project_suggestions import SIMILAR_NAME_THRESHOLD, similar_projects
 from backend.app.services.project_tags import UnknownTagError, apply_project_tag_input
 
 logger = logging.getLogger(__name__)
 
-SIMILAR_TITLE_THRESHOLD = 0.45
+SIMILAR_TITLE_THRESHOLD = SIMILAR_NAME_THRESHOLD
 SECTION_SUMMARY_LIMIT = 3
 DROP_SECTION = "impression"  # drops land in Impression (projects hold printing files only for now)
 
 
-class LinkError(Exception):
-    def __init__(self, status_code: int, detail: str):
-        super().__init__(detail)
-        self.status_code = status_code
-        self.detail = detail
-
-
-def _actor_class(actor: str | None) -> str:
-    return "user" if actor else "system"
+class LinkError(HttpStatusError):
+    pass
 
 
 def _project_detail(project_id: int, project: Project | None) -> dict:
@@ -70,7 +66,7 @@ def _project_detail(project_id: int, project: Project | None) -> dict:
 def _revision_label(item: ProjectItem | None, revision: ProjectRevision | None, revision_id: int) -> str:
     if item is None or revision is None:
         return f"#{revision_id}"
-    return f"{item.name} R{revision.number}"
+    return project_files.revision_label(item.name, revision.number)
 
 
 async def _clear_deliveries(db: AsyncSession, task_id: int) -> None:
@@ -110,12 +106,11 @@ async def link_task(db: AsyncSession, task: AitoTask, project_id: int | None, *,
     else:
         kind = "task.project_unlinked"
         detail = _project_detail(previous_id, previous)
-    await aito_events.record(
+    await record_as(
         db,
         task.project_id,
         kind,
-        actor_class=_actor_class(actor),
-        actor_name=actor,
+        actor,
         subject_type="task",
         subject_id=task.id,
         subject_label=task.title,
@@ -181,17 +176,7 @@ async def suggest_projects(db: AsyncSession, task: AitoTask, limit: int = 8) -> 
 
     title = (task.title or "").strip().casefold()
     if title and len(suggestions) < limit:
-        candidates = await db.execute(
-            select(Project.id, Project.code, Project.name).where(Project.is_template.is_not(True))
-        )
-        scored = []
-        for project_id, code, name in candidates:
-            if project_id in excluded:
-                continue
-            ratio = SequenceMatcher(None, title, (name or "").casefold()).ratio()
-            if ratio >= SIMILAR_TITLE_THRESHOLD:
-                scored.append((ratio, project_id, code, name))
-        scored.sort(key=lambda row: (-row[0], row[1]))
+        scored = await similar_projects(db, title, SIMILAR_TITLE_THRESHOLD, exclude=excluded)
         for _ratio, project_id, code, name in scored:
             add(project_id, code, name, "similar_title")
     return suggestions
@@ -252,12 +237,11 @@ async def set_deliveries(
         revision, item = source.get(rid, (None, None))
         return _revision_label(item, revision, rid)
 
-    await aito_events.record(
+    await record_as(
         db,
         task.project_id,
         "task.deliveries_changed",
-        actor_class=_actor_class(actor),
-        actor_name=actor,
+        actor,
         subject_type="task",
         subject_id=task.id,
         subject_label=task.title,
@@ -389,16 +373,7 @@ async def orders_for_project(db: AsyncSession, project_id: int) -> ProjectOrders
             .order_by(ProjectItem.section, ProjectItem.name, ProjectRevision.number)
         )
         for task_id, revision, item in refs:
-            delivered[task_id].append(
-                RevisionRef(
-                    id=revision.id,
-                    item_id=item.id,
-                    item_name=item.name,
-                    section=item.section,
-                    number=revision.number,
-                    status=revision.status,
-                )
-            )
+            delivered[task_id].append(project_files.revision_ref(revision, item))
     return ProjectOrdersResponse(
         orders=[
             ProjectOrderTask(
@@ -448,12 +423,11 @@ async def record_on_linked_orders(
     payload = {"project_id": project_id, "code": code, **(detail or {})}
     recorded: list[int] = []
     for order_id in order_ids:
-        event = await aito_events.record(
+        event = await record_as(
             db,
             order_id,
             kind,
-            actor_class=_actor_class(actor),
-            actor_name=actor,
+            actor,
             subject_label=subject_label,
             detail=dict(payload),
         )
@@ -472,6 +446,18 @@ async def broadcast_orders_changed(order_ids: Iterable[int], actor: str | None) 
             )
         except Exception:
             logger.warning("aito_changed broadcast failed for order %s", order_id, exc_info=True)
+
+
+def revision_added_payload(
+    *, item_name: str, revision_number: int, section: str, item_id: int, revision_id: int
+) -> tuple[str, dict]:
+    """``(subject_label, detail)`` of a ``project.revision_added`` event: ``"<item> R<n>"``
+    and ``{"section", "item_id", "revision_id"}``, in that key order."""
+    return project_files.revision_label(item_name, revision_number), {
+        "section": section,
+        "item_id": item_id,
+        "revision_id": revision_id,
+    }
 
 
 async def record_and_broadcast(
@@ -502,10 +488,8 @@ async def record_and_broadcast(
     broadcasting; otherwise returns the order ids written to."""
     try:
         if actor_user_id is not None:
-            from backend.app.models.user import User
-
             user = await db.get(User, actor_user_id)
-            actor = user.username if user is not None else None
+            actor = actor_name(user)
         async with db.begin_nested():
             if describe is not None:
                 subject_label, detail = describe()
@@ -531,10 +515,6 @@ async def record_and_broadcast(
 # --- file drops (spec §4.3) -------------------------------------------------
 
 
-def _base_name(upload: UploadFile) -> str:
-    return (upload.filename or "").replace("\\", "/").rsplit("/", 1)[-1]
-
-
 async def _record_drop(
     db: AsyncSession,
     order_id: int,
@@ -544,12 +524,11 @@ async def _record_drop(
     actor: str | None,
 ) -> None:
     sections = sorted({r.section for r in results})
-    await aito_events.record(
+    await record_as(
         db,
         order_id,
         "project.files_dropped",
-        actor_class=_actor_class(actor),
-        actor_name=actor,
+        actor,
         subject_label=f"{len(results)} file(s)",
         detail={
             "project_id": project_id,
@@ -618,8 +597,8 @@ async def drop_files_on_task(
 
     groups: dict[tuple[str, str], tuple[str, list[UploadFile]]] = {}
     for upload in uploads:
-        name = item_name_for_filename(_base_name(upload))
-        key = (DROP_SECTION, project_files._name_key(name))
+        name = item_name_for_filename(project_files.upload_basename(upload))
+        key = (DROP_SECTION, project_files.name_key(name))
         groups.setdefault(key, (name, []))[1].append(upload)
 
     results: list[DroppedFileResult] = []
@@ -634,7 +613,7 @@ async def drop_files_on_task(
             revision_id, number = revision.id, revision.number
             results.extend(
                 DroppedFileResult(
-                    filename=_base_name(upload),
+                    filename=project_files.upload_basename(upload),
                     section=section,
                     item_id=item_id,
                     item_name=item_name,
@@ -642,11 +621,14 @@ async def drop_files_on_task(
                 )
                 for upload in group
             )
+            label, detail = revision_added_payload(
+                item_name=item_name, revision_number=number, section=section, item_id=item_id, revision_id=revision_id
+            )
             notified += await _fan_out_revision(
                 db,
                 project_id,
-                {"section": section, "item_id": item_id, "revision_id": revision_id},
-                f"{item_name} R{number}",
+                detail,
+                label,
                 dropping_order_id=order_id,
                 actor=actor,
             )
@@ -654,7 +636,8 @@ async def drop_files_on_task(
             if project is None:
                 raise LinkError(409, "Task is not linked to a project")
     except Exception as exc:
-        exc.stored_count = len(results)  # type: ignore[attr-defined]  # lets the route still broadcast
+        # Set on any exception; ProjectFilesError declares it, and the route reads it there to still broadcast.
+        exc.stored_count = len(results)  # type: ignore[attr-defined]
         raise
     finally:
         if results:

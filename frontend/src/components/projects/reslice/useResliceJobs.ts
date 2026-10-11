@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { api, ApiError } from '../../../api/client';
 import type { ProjectFileOut, ProjectTreeResponse, ResliceResult } from '../../../api/client';
 import { useToast } from '../../../contexts/ToastContext';
+import { projectKeys } from '../projectQueries';
 
 export interface ResliceRun {
   itemId: number;
@@ -77,7 +78,7 @@ export function useResliceJobs(projectId: number): ResliceJobs {
       let tree: ProjectTreeResponse | undefined;
       try {
         tree = await queryClient.fetchQuery<ProjectTreeResponse>({
-          queryKey: ['project-tree', projectId],
+          queryKey: projectKeys.tree(projectId),
           queryFn: () => api.getProjectTree(projectId),
           staleTime: 0,
         });

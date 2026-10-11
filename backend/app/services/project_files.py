@@ -19,7 +19,6 @@ import uuid
 import weakref
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import UploadFile
@@ -37,6 +36,7 @@ from backend.app.api.routes.library import (
     create_image_thumbnail,
     extract_gcode_thumbnail,
     get_library_thumbnails_dir,
+    to_absolute_path,
     to_relative_path,
 )
 from backend.app.core.config import settings
@@ -58,6 +58,8 @@ from backend.app.schemas.project_files import (
     ProjectTreeResponse,
     RevisionRef,
 )
+from backend.app.services import project_storage
+from backend.app.services.http_status_error import HttpStatusError
 from backend.app.services.pdf_thumbnail import generate_pdf_thumbnail
 from backend.app.services.project_print_trace import revision_print_counts
 from backend.app.services.project_snapshot import PrintSnapshot, is_3mf, read_print_snapshot
@@ -71,6 +73,7 @@ from backend.app.services.project_storage import (
     sanitize_component,
 )
 from backend.app.services.stl_thumbnail import MIN_USABLE_STL_BYTES, generate_stl_thumbnail
+from backend.app.utils.local_time import utcnow_naive
 from backend.app.utils.safe_path import safe_join_under
 
 logger = logging.getLogger(__name__)
@@ -79,15 +82,16 @@ logger = logging.getLogger(__name__)
 STL_THUMBNAIL_MAX_BYTES = 200 * 1024 * 1024
 
 
-class ProjectFilesError(Exception):
-    def __init__(self, status_code: int, detail: str):
-        super().__init__(detail)
-        self.status_code = status_code
-        self.detail = detail
+class ProjectFilesError(HttpStatusError):
+    # Declared, not defaulted: only drop_files_on_task sets it (the groups it had already
+    # stored when this was raised); the drop route reads it with getattr and still
+    # broadcasts when it is non-zero.
+    stored_count: int
 
 
-def _now() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+def revision_label(item_name: str, number: int) -> str:
+    """``"<item> R<n>"``: how a revision is named in events, archives and status messages."""
+    return f"{item_name} R{number}"
 
 
 # One lock per item, held across every operation that writes into or moves the
@@ -105,7 +109,7 @@ def _item_lock(item_id: int) -> asyncio.Lock:
     return lock
 
 
-async def _fresh_item(db: AsyncSession, item_id: int) -> ProjectItem:
+async def fresh_item(db: AsyncSession, item_id: int) -> ProjectItem:
     """The item as committed now (the caller's copy may predate a rename made while it waited for the lock)."""
     item = (
         await db.execute(select(ProjectItem).where(ProjectItem.id == item_id).execution_options(populate_existing=True))
@@ -135,14 +139,14 @@ async def _require_item_unchanged(db: AsyncSession, item_id: int, section: str, 
         raise ProjectFilesError(409, "This item was renamed or deleted during the upload; try again")
 
 
-def _name_key(name: str) -> str:
+def name_key(name: str) -> str:
     """Uniqueness key = what the folder name will be (NFC, forbidden chars and dots stripped), case-folded."""
     return sanitize_component(name.strip(), fallback="").casefold()
 
 
-def _clean_item_name(name: str) -> tuple[str, str]:
+def clean_item_name(name: str) -> tuple[str, str]:
     clean = name.strip()[:255]
-    key = _name_key(clean)
+    key = name_key(clean)
     if not key:
         raise ProjectFilesError(400, "Item name must not be blank")
     return clean, key
@@ -167,13 +171,14 @@ def require_enabled_section(section: str) -> None:
         raise ProjectFilesError(400, f"Section {section!r} does not accept files for now")
 
 
-def _upload_name(upload: UploadFile) -> str:
+def upload_basename(upload: UploadFile) -> str:
+    """The upload's file name without any client-side folder (``/`` or ``\\`` separated); ``""`` when unnamed."""
     return (upload.filename or "").replace("\\", "/").rsplit("/", 1)[-1]
 
 
 def require_printable_uploads(uploads: list[UploadFile]) -> None:
     """400 naming every non-printable upload (the whole request is refused, nothing written)."""
-    rejected = [_upload_name(upload) for upload in uploads if not is_printable_filename(_upload_name(upload))]
+    rejected = [upload_basename(upload) for upload in uploads if not is_printable_filename(upload_basename(upload))]
     if rejected:
         raise ProjectFilesError(
             400, "Projects only accept printing files (.3mf, .gcode, .bgcode); refused: " + ", ".join(rejected)
@@ -212,7 +217,7 @@ async def create_item(
 ) -> ProjectItem:
     if section not in SECTIONS:
         raise ProjectFilesError(400, f"Unknown section: {section}")
-    clean, key = _clean_item_name(name)
+    clean, key = clean_item_name(name)
     await _require_item_name_free(db, project, section, key)
     item = ProjectItem(project_id=project.id, section=section, name=clean, name_key=key, created_by_id=user_id)
     db.add(item)
@@ -251,6 +256,8 @@ class _WrittenFile:
     source: RevisionSource | None = None
     # file_path the reused row had when its copy started; the DB step refuses a row that moved meanwhile
     reuse_file_path: str | None = None
+    # fork copies: the source revision's row, whose type, size, hash and metadata the new row repeats
+    copied_from: LibraryFile | None = None
 
 
 def _write_thumbnail(thumbnails_dir: Path, name: str, data: bytes) -> Path:
@@ -344,11 +351,29 @@ async def _post_process(entry: _WrittenFile, *, thumbnail: bool = True) -> None:
         entry.snapshot = await asyncio.to_thread(read_print_snapshot, entry.path)
 
 
+def _open_claimed(dest: Path):
+    """Reopen a placeholder made by ``claim_unique_file_path`` for writing, refusing to follow a
+    symlink swapped in at ``dest`` since the claim (``OSError``/ELOOP instead)."""
+    fd = os.open(dest, os.O_WRONLY | os.O_TRUNC | os.O_NOFOLLOW | os.O_CLOEXEC)
+    try:
+        return os.fdopen(fd, "wb")
+    except BaseException:
+        os.close(fd)
+        raise
+
+
+def _copy_claimed(src: Path, dest: Path) -> None:
+    """``shutil.copy2(src, dest)`` for a claimed placeholder, written through an O_NOFOLLOW descriptor."""
+    with open(src, "rb") as reader, _open_claimed(dest) as writer:
+        shutil.copyfileobj(reader, writer)
+    shutil.copystat(src, dest, follow_symlinks=False)
+
+
 def _copy_hashing(src: Path, dest: Path) -> tuple[int, str]:
     """Copy ``src`` over ``dest`` in bounded chunks; returns (size, SHA-256 hex) of what was written."""
     digest = hashlib.sha256()
     size = 0
-    with open(src, "rb") as reader, open(dest, "wb") as writer:
+    with open(src, "rb") as reader, _open_claimed(dest) as writer:
         while chunk := reader.read(1 << 20):
             writer.write(chunk)
             digest.update(chunk)
@@ -463,6 +488,23 @@ def _point_row_at(row: LibraryFile, project_id: int, revision_id: int, entry: _W
         row.file_metadata = entry.metadata
 
 
+def _apply_snapshot(
+    revision: ProjectRevision,
+    *,
+    config: dict | None,
+    config_hash: str | None,
+    slicer_name: str | None,
+    slicer_version: str | None,
+    print_profile: dict | None,
+) -> None:
+    """Write the five slicer-snapshot columns of ``revision``."""
+    revision.config_snapshot = config
+    revision.config_hash = config_hash
+    revision.slicer_name = slicer_name
+    revision.slicer_version = slicer_version
+    revision.print_profile = print_profile
+
+
 async def _add_file_rows(
     db: AsyncSession, project: Project, revision: ProjectRevision, written: list[_WrittenFile], user_id: int | None
 ) -> list[LibraryFile]:
@@ -497,11 +539,14 @@ async def _add_file_rows(
         rows.append(row)
         snap = entry.snapshot
         if snap is not None and revision.config_snapshot is None and revision.print_profile is None:
-            revision.config_snapshot = snap.config
-            revision.config_hash = snap.config_hash
-            revision.slicer_name = snap.slicer_name
-            revision.slicer_version = snap.slicer_version
-            revision.print_profile = snap.print_profile
+            _apply_snapshot(
+                revision,
+                config=snap.config,
+                config_hash=snap.config_hash,
+                slicer_name=snap.slicer_name,
+                slicer_version=snap.slicer_version,
+                print_profile=snap.print_profile,
+            )
     await db.flush()
     return rows
 
@@ -580,7 +625,7 @@ async def add_revision(
         return await _add_revision_locked(
             db,
             project,
-            await _fresh_item(db, item.id),
+            await fresh_item(db, item.id),
             lambda folder: _stream_files(folder, uploads),
             note,
             derived_from_id,
@@ -617,7 +662,7 @@ async def add_revision_from_sources(
         revision, _warnings = await _add_revision_locked(
             db,
             project,
-            await _fresh_item(db, item.id),
+            await fresh_item(db, item.id),
             lambda folder: _copy_sources(folder, sources),
             note,
             derived_from_id,
@@ -663,7 +708,7 @@ async def _commit_through_cancel(db: AsyncSession, outcome: _CommitOutcome) -> N
     When the commit task itself was cancelled from outside (``asyncio.run``
     cancels every remaining task on shutdown), the worker thread may still
     have run the COMMIT, so the outcome is unknown and ``may_have_landed`` is
-    set too: leaving the files in place is the safe side. ``_committing``
+    set too: leaving the files in place is the safe side. ``_CommitGuard``
     skips its rollback and filesystem undo when
     ``outcome.may_have_landed`` is set, so disk never loses what the database
     may hold. A commit that fails on its own raises its own exception,
@@ -684,13 +729,20 @@ async def _commit_through_cancel(db: AsyncSession, outcome: _CommitOutcome) -> N
 
 
 class _CommitGuard:
-    """See ``_committing``."""
+    """``async with _CommitGuard(db, undo) as commit:`` whose body ends with ``await commit()``.
+
+    ``commit`` is ``_commit_through_cancel``. When the body raises anything
+    (cancellation included), ``undo`` runs unless the commit may have landed,
+    then the same exception propagates; ``translate`` may swap it, after the
+    undo, for an exception raised ``from`` it.
+    """
 
     def __init__(
         self,
         db: AsyncSession,
         undo: Callable[[], Awaitable[None]],
-        translate: Callable[[BaseException], Exception | None] | None,
+        *,
+        translate: Callable[[BaseException], Exception | None] | None = None,
     ) -> None:
         self._db = db
         self._undo = undo
@@ -712,22 +764,6 @@ class _CommitGuard:
             if replacement is not None:
                 raise replacement from exc
         return False
-
-
-def _committing(
-    db: AsyncSession,
-    undo: Callable[[], Awaitable[None]],
-    *,
-    translate: Callable[[BaseException], Exception | None] | None = None,
-) -> _CommitGuard:
-    """``async with _committing(db, undo) as commit:`` whose body ends with ``await commit()``.
-
-    ``commit`` is ``_commit_through_cancel``. When the body raises anything
-    (cancellation included), ``undo`` runs unless the commit may have landed,
-    then the same exception propagates; ``translate`` may swap it, after the
-    undo, for an exception raised ``from`` it.
-    """
-    return _CommitGuard(db, undo, translate)
 
 
 async def _add_revision_locked(
@@ -754,10 +790,7 @@ async def _add_revision_locked(
         await db.rollback()
         _cleanup_written(written)
         if created_folder:
-            try:
-                folder.rmdir()
-            except OSError:
-                pass
+            _remove_empty(folder)
 
     def translate(exc: BaseException) -> Exception | None:
         if isinstance(exc, IntegrityError) and (
@@ -766,7 +799,7 @@ async def _add_revision_locked(
             return ProjectFilesError(409, "Another upload just created this revision number; try again")
         return None
 
-    async with _committing(db, undo, translate=translate) as commit:
+    async with _CommitGuard(db, undo, translate=translate) as commit:
         written = await write(folder)
         await _require_item_unchanged(db, item_id, section, name)
         revision = ProjectRevision(
@@ -800,14 +833,17 @@ _USAGE_COLUMNS = (
 )
 
 
+def _usage_selects(file_ids: Select | list[int]) -> list[Select]:
+    """One ``file_id`` select per ``_USAGE_COLUMNS`` column, restricted to ``file_ids``."""
+    return [select(column.label("file_id")).where(column.in_(file_ids)) for column in _USAGE_COLUMNS]
+
+
 async def used_file_ids(db: AsyncSession, file_ids: Select) -> set[int]:
     """Which of ``file_ids`` (a select of library file ids) are used, in one query."""
     delivered = select(LibraryFile.id.label("file_id")).where(
         LibraryFile.id.in_(file_ids), LibraryFile.revision_id.in_(select(AitoTaskDelivery.revision_id))
     )
-    query = union(
-        *(select(column.label("file_id")).where(column.in_(file_ids)) for column in _USAGE_COLUMNS), delivered
-    )
+    query = union(*_usage_selects(file_ids), delivered)
     return set((await db.execute(query)).scalars().all())
 
 
@@ -831,7 +867,7 @@ async def _deleted_revision_is_used(db: AsyncSession, revision_id: int, file_ids
         )
     ).first() is not None:
         return True
-    query = union(*(select(column.label("file_id")).where(column.in_(file_ids)) for column in _USAGE_COLUMNS))
+    query = union(*_usage_selects(file_ids))
     return (await db.execute(query)).first() is not None
 
 
@@ -845,7 +881,7 @@ async def update_revision(
         if status != revision.status:
             revision.status = status
             revision.status_changed_by_id = user_id
-            revision.status_changed_at = _now()
+            revision.status_changed_at = utcnow_naive()
     if "note" in fields:
         revision.note = (fields["note"] or "").strip() or None
     if "derived_from_id" in fields:
@@ -883,7 +919,7 @@ async def add_files_to_revision(
     if not uploads:
         raise ProjectFilesError(400, "No file")
     async with _item_lock(item.id):
-        item = await _fresh_item(db, item.id)
+        item = await fresh_item(db, item.id)
         revision = await _fresh_revision(db, revision.id, item.id)
         await _require_editable_files(db, revision)
         item_id, section, name = item.id, item.section, item.name
@@ -894,7 +930,7 @@ async def add_files_to_revision(
             await db.rollback()
             _cleanup_written(written)
 
-        async with _committing(db, undo) as commit:
+        async with _CommitGuard(db, undo) as commit:
             written = await _stream_files(folder, uploads)
             await _require_item_unchanged(db, item_id, section, name)
             # the revision may have been validated or used while streaming
@@ -923,22 +959,54 @@ async def _delete_file_rows(
 
 
 async def _restore_and_rollback(db: AsyncSession, moved: Path | None, original: Path | None) -> None:
-    if moved is not None and original is not None:
-        shutil.move(str(moved), str(original))
-    await db.rollback()
+    try:
+        if moved is not None and original is not None:
+            shutil.move(str(moved), str(original))
+    except Exception:
+        # keep the guarded (commit) error as the one that propagates; the rollback still runs below
+        logger.warning("Could not restore %s from the trash (%s)", original, moved, exc_info=True)
+    finally:
+        await db.rollback()
+
+
+class _TrashGuard(_CommitGuard):
+    """``_CommitGuard`` whose undo puts back what ``trash()`` moved, then rolls back.
+
+    ``async with _TrashGuard(db, project, path) as guard:`` whose body
+    calls ``guard.trash()`` (moves ``path`` to the project trash; a no-op when
+    ``path`` is None) and ends with ``await guard.commit()``. The undo is
+    ``_restore_and_rollback(db, moved, path)``, ``moved`` being None until
+    ``trash()`` ran.
+    """
+
+    def __init__(self, db: AsyncSession, project: Project, path: Path | None) -> None:
+        super().__init__(db, self._restore)
+        self._project = project
+        self._path = path
+        self._moved: Path | None = None
+
+    async def _restore(self) -> None:
+        await _restore_and_rollback(self._db, self._moved, self._path)
+
+    def trash(self) -> None:
+        self._moved = move_to_trash(self._project, self._path) if self._path is not None else None
+
+    async def commit(self) -> None:
+        await self._commit()
+
+    async def __aenter__(self) -> _TrashGuard:
+        return self
 
 
 async def remove_file_from_revision(
     db: AsyncSession, project: Project, item: ProjectItem, revision: ProjectRevision, file_id: int
 ) -> None:
     async with _item_lock(item.id):
-        item = await _fresh_item(db, item.id)
-        await _remove_file_locked(db, project, item, await _fresh_revision(db, revision.id, item.id), file_id)
+        item = await fresh_item(db, item.id)
+        await _remove_file_locked(db, project, await _fresh_revision(db, revision.id, item.id), file_id)
 
 
-async def _remove_file_locked(
-    db: AsyncSession, project: Project, item: ProjectItem, revision: ProjectRevision, file_id: int
-) -> None:
+async def _remove_file_locked(db: AsyncSession, project: Project, revision: ProjectRevision, file_id: int) -> None:
     await _require_editable_files(db, revision)
     files = await _revision_files(db, revision.id)
     target = next((f for f in files if f.id == file_id), None)
@@ -946,19 +1014,13 @@ async def _remove_file_locked(
         raise ProjectFilesError(404, "File not found in this revision")
     if len(files) == 1:
         raise ProjectFilesError(409, "A revision keeps at least one file; delete the revision instead")
-    from backend.app.api.routes.library import to_absolute_path
 
     path = to_absolute_path(target.file_path)
-    moved: Path | None = None
-
-    async def undo() -> None:
-        await _restore_and_rollback(db, moved, path)
-
-    async with _committing(db, undo) as commit:
+    async with _TrashGuard(db, project, path) as guard:
         await _delete_file_rows(db, file_ids=[target.id])
         await db.flush()
-        moved = move_to_trash(project, path) if path is not None else None
-        await commit()
+        guard.trash()
+        await guard.commit()
 
 
 async def _clear_links_to(db: AsyncSession, revision_ids: list[int]) -> None:
@@ -974,7 +1036,7 @@ async def _clear_links_to(db: AsyncSession, revision_ids: list[int]) -> None:
 
 async def delete_revision(db: AsyncSession, project: Project, item: ProjectItem, revision: ProjectRevision) -> None:
     async with _item_lock(item.id):
-        item = await _fresh_item(db, item.id)
+        item = await fresh_item(db, item.id)
         await _delete_revision_locked(db, project, item, await _fresh_revision(db, revision.id, item.id))
 
 
@@ -986,12 +1048,7 @@ async def _delete_revision_locked(
     folder = item_dir(project, item.section, item.name).joinpath(
         f"R{revision.number}"
     )  # SEC-PATH-OK: fixed "R{int}" under a resolved item dir
-    moved: Path | None = None
-
-    async def undo() -> None:
-        await _restore_and_rollback(db, moved, folder)
-
-    async with _committing(db, undo) as commit:
+    async with _TrashGuard(db, project, folder) as guard:
         file_ids = await _delete_file_rows(db, revision_ids=[revision.id])
         await _clear_links_to(db, [revision.id])
         await db.delete(revision)
@@ -999,8 +1056,8 @@ async def _delete_revision_locked(
         # a print or delivery may have landed since the pre-check; the write lock is held now
         if await _deleted_revision_is_used(db, revision.id, file_ids):
             raise ProjectFilesError(409, "This revision was printed or delivered and cannot be deleted")
-        moved = move_to_trash(project, folder)
-        await commit()
+        guard.trash()
+        await guard.commit()
 
 
 async def _item_revision_ids(db: AsyncSession, item_id: int) -> list[int]:
@@ -1011,52 +1068,67 @@ async def _item_revision_ids(db: AsyncSession, item_id: int) -> list[int]:
 
 async def rename_item(db: AsyncSession, project: Project, item: ProjectItem, new_name: str) -> ProjectItem:
     async with _item_lock(item.id):
-        return await _rename_item_locked(db, project, await _fresh_item(db, item.id), new_name)
+        return await _rename_item_locked(db, project, await fresh_item(db, item.id), new_name)
+
+
+def _move_item_folder(old_dir: Path, new_dir: Path) -> bool:
+    """Rename an item's folder on disk; ``True`` when it moved, ``False`` when there was nothing to move."""
+    if old_dir == new_dir or not old_dir.exists():
+        return False
+    if new_dir.exists():
+        if not os.path.samefile(old_dir, new_dir):
+            raise ProjectFilesError(409, "A folder with this name already exists")
+        # case-only rename on a case-insensitive filesystem: go through a temporary name
+        temp = old_dir.with_name(f".rename-{uuid.uuid4().hex}")
+        old_dir.rename(temp)
+        try:
+            temp.rename(new_dir)
+        except BaseException:
+            try:
+                temp.rename(old_dir)
+            except Exception:
+                logger.warning("Could not move %s back to %s after a failed rename", temp, old_dir, exc_info=True)
+            raise
+    else:
+        old_dir.rename(new_dir)
+    return True
+
+
+async def _repoint_file_paths(db: AsyncSession, item_id: int, old_dir: Path, new_dir: Path) -> None:
+    """Rewrite the stored path of every file under the item's revisions from ``old_dir`` to ``new_dir``."""
+    files = (
+        (
+            await db.execute(
+                select(LibraryFile).where(LibraryFile.revision_id.in_(await _item_revision_ids(db, item_id)))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for row in files:
+        current = to_absolute_path(row.file_path)
+        if current is not None and old_dir in current.parents:
+            row.file_path = to_relative_path(
+                new_dir.joinpath(current.relative_to(old_dir))
+            )  # SEC-PATH-OK: relative part of a path already under old_dir
 
 
 async def _rename_item_locked(db: AsyncSession, project: Project, item: ProjectItem, new_name: str) -> ProjectItem:
-    from backend.app.api.routes.library import to_absolute_path
-
-    clean, key = _clean_item_name(new_name)
+    clean, key = clean_item_name(new_name)
     if key != item.name_key:
         await _require_item_name_free(db, project, item.section, key, exclude_id=item.id)
     old_dir = item_dir(project, item.section, item.name)
     new_dir = item_dir(project, item.section, clean)
-    moved = False
-    if old_dir != new_dir and old_dir.exists():
-        if new_dir.exists():
-            if not os.path.samefile(old_dir, new_dir):
-                raise ProjectFilesError(409, "A folder with this name already exists")
-            # case-only rename on a case-insensitive filesystem: go through a temporary name
-            temp = old_dir.with_name(f".rename-{uuid.uuid4().hex}")
-            old_dir.rename(temp)
-            temp.rename(new_dir)
-        else:
-            old_dir.rename(new_dir)
-        moved = True
+    moved = _move_item_folder(old_dir, new_dir)
 
     async def undo() -> None:
         if moved:
             new_dir.rename(old_dir)
         await db.rollback()
 
-    async with _committing(db, undo) as commit:
+    async with _CommitGuard(db, undo) as commit:
         if moved:
-            files = (
-                (
-                    await db.execute(
-                        select(LibraryFile).where(LibraryFile.revision_id.in_(await _item_revision_ids(db, item.id)))
-                    )
-                )
-                .scalars()
-                .all()
-            )
-            for row in files:
-                current = to_absolute_path(row.file_path)
-                if current is not None and old_dir in current.parents:
-                    row.file_path = to_relative_path(
-                        new_dir.joinpath(current.relative_to(old_dir))
-                    )  # SEC-PATH-OK: relative part of a path already under old_dir
+            await _repoint_file_paths(db, item.id, old_dir, new_dir)
         item.name = clean
         item.name_key = key
         await commit()
@@ -1065,7 +1137,7 @@ async def _rename_item_locked(db: AsyncSession, project: Project, item: ProjectI
 
 async def delete_item(db: AsyncSession, project: Project, item: ProjectItem) -> None:
     async with _item_lock(item.id):
-        await _delete_item_locked(db, project, await _fresh_item(db, item.id))
+        await _delete_item_locked(db, project, await fresh_item(db, item.id))
 
 
 _ITEM_USED = "A revision of this item was printed or delivered; the item cannot be deleted"
@@ -1077,12 +1149,7 @@ async def _delete_item_locked(db: AsyncSession, project: Project, item: ProjectI
         if await revision_is_used(db, revision_id):
             raise ProjectFilesError(409, _ITEM_USED)
     folder = item_dir(project, item.section, item.name)
-    moved: Path | None = None
-
-    async def undo() -> None:
-        await _restore_and_rollback(db, moved, folder)
-
-    async with _committing(db, undo) as commit:
+    async with _TrashGuard(db, project, folder) as guard:
         deleted_file_ids: dict[int, list[int]] = {}
         if revision_ids:
             for revision_id in revision_ids:
@@ -1095,16 +1162,52 @@ async def _delete_item_locked(db: AsyncSession, project: Project, item: ProjectI
         for revision_id, file_ids in deleted_file_ids.items():
             if await _deleted_revision_is_used(db, revision_id, file_ids):
                 raise ProjectFilesError(409, _ITEM_USED)
-        moved = move_to_trash(project, folder)
-        await commit()
+        guard.trash()
+        await guard.commit()
+
+
+def revision_file_path(file_path: str | None) -> Path | None:
+    """Absolute path of a revision file, or ``None`` when it must not be read.
+
+    The projects tree is browsed from the share, so a file there may have been
+    swapped for a symlink to ``.jwt_secret`` or the database. ``None`` (read it
+    as "missing") unless the resolved path sits under the projects root and no
+    component below that root is a symlink. The root itself may be one."""
+    path = to_absolute_path(file_path)
+    if path is None:
+        return None
+    root = project_storage.projects_root().resolve()
+    if not path.is_relative_to(root):
+        return None
+    parts = Path(os.path.normpath(file_path)).parts
+    for depth in range(1, len(parts) + 1):
+        try:
+            reached = to_absolute_path(str(Path(*parts[:depth])))
+        except ValueError:
+            continue
+        if reached == root:
+            below = parts[depth:]
+            break
+    else:
+        return None  # reached the root only through a symlink outside it
+    current = root
+    for part in below:
+        current = current / part
+        if current.is_symlink():
+            return None
+    return path
+
+
+def _is_symlink(file_path: str) -> bool:
+    """Whether the stored file itself (its folders resolved, the leaf not followed) is a symlink."""
+    stored = Path(os.path.normpath(file_path))
+    return (to_absolute_path(str(stored.parent)) / stored.name).is_symlink()
 
 
 def _copy_thumbnail(source_thumbnail: str | None) -> tuple[str | None, Path | None]:
     """Own copy of a thumbnail (relative path, absolute path), so deleting one file never blanks the other."""
-    from backend.app.api.routes.library import to_absolute_path
-
     src = to_absolute_path(source_thumbnail)
-    if src is None or not src.is_file():
+    if src is None or _is_symlink(source_thumbnail) or not src.is_file():
         return None, None
     dest = safe_join_under(get_library_thumbnails_dir(), f"{uuid.uuid4().hex}{src.suffix}", http=False)
     shutil.copy2(src, dest)
@@ -1128,7 +1231,7 @@ async def fork_revision(
     held only for the final flush and commit. The source item stays locked
     while its files are read."""
     async with _item_lock(item.id):
-        item = await _fresh_item(db, item.id)
+        item = await fresh_item(db, item.id)
         revision = await _fresh_revision(db, revision.id, item.id)
         return await _fork_revision_locked(db, project, item, revision, new_name, user_id)
 
@@ -1136,63 +1239,36 @@ async def fork_revision(
 async def _fork_revision_locked(
     db: AsyncSession, project: Project, item: ProjectItem, revision: ProjectRevision, new_name: str, user_id: int | None
 ) -> ProjectItem:
-    from backend.app.api.routes.library import to_absolute_path
-
     section = item.section
-    clean, key = _clean_item_name(new_name)
+    clean, key = clean_item_name(new_name)
     await _require_item_name_free(db, project, section, key)
     new_item_dir = item_dir(project, section, clean)
     if new_item_dir.exists():
         raise ProjectFilesError(409, "A folder with this name already exists")
-    sources = [
-        {
-            "filename": f.filename,
-            "path": to_absolute_path(f.file_path),
-            "file_type": f.file_type,
-            "file_size": f.file_size,
-            "file_hash": f.file_hash,
-            "thumbnail_path": f.thumbnail_path,
-            "file_metadata": f.file_metadata,
-        }
-        for f in await _revision_files(db, revision.id)
-    ]
-    snapshot = (
-        revision.config_snapshot,
-        revision.config_hash,
-        revision.slicer_name,
-        revision.slicer_version,
-        revision.print_profile,
-    )
+    sources = [(f, revision_file_path(f.file_path)) for f in await _revision_files(db, revision.id)]
+    snapshot = {
+        "config": revision.config_snapshot,
+        "config_hash": revision.config_hash,
+        "slicer_name": revision.slicer_name,
+        "slicer_version": revision.slicer_version,
+        "print_profile": revision.print_profile,
+    }
     revision_id = revision.id
     folder = revision_dir(project, section, clean, 1)
-    copies: list[dict] = []
-
-    def cleanup() -> None:
-        for entry in copies:
-            entry["dest"].unlink(missing_ok=True)
-            if entry["thumb_abs"] is not None:
-                entry["thumb_abs"].unlink(missing_ok=True)
-        _remove_empty(folder, new_item_dir)
+    copies: list[_WrittenFile] = []
 
     async def undo() -> None:
         await db.rollback()
-        cleanup()
+        _cleanup_written(copies)
+        _remove_empty(folder, new_item_dir)
 
     def translate(exc: BaseException) -> Exception | None:
         if isinstance(exc, IntegrityError):
             return ProjectFilesError(409, "An item with this name already exists in this section")
         return None
 
-    async with _committing(db, undo, translate=translate) as commit:
-        for source in sources:
-            src = source["path"]
-            if src is None or not src.exists():
-                continue
-            dest = claim_unique_file_path(folder, source["filename"])
-            entry = {"source": source, "dest": dest, "thumb_rel": None, "thumb_abs": None}
-            copies.append(entry)  # before the copy, so cleanup also removes the claimed placeholder
-            await asyncio.to_thread(shutil.copy2, src, dest)
-            entry["thumb_rel"], entry["thumb_abs"] = await asyncio.to_thread(_copy_thumbnail, source["thumbnail_path"])
+    async with _CommitGuard(db, undo, translate=translate) as commit:
+        await _copy_fork_files(folder, sources, copies)
         if not copies:
             raise ProjectFilesError(409, "No file of this revision could be copied")
         forked = ProjectItem(
@@ -1209,29 +1285,51 @@ async def _fork_revision_locked(
         r1 = ProjectRevision(
             item_id=forked.id, number=1, status="wip", derived_from_id=revision_id, created_by_id=user_id
         )
-        r1.config_snapshot, r1.config_hash, r1.slicer_name, r1.slicer_version, r1.print_profile = snapshot
+        _apply_snapshot(r1, **snapshot)
         db.add(r1)
         await db.flush()
-        for entry in copies:
-            source = entry["source"]
-            db.add(
-                _new_library_row(
-                    project.id,
-                    r1.id,
-                    entry["dest"],
-                    file_type=source["file_type"],
-                    file_size=source["file_size"],
-                    file_hash=source["file_hash"],
-                    thumbnail_path=entry["thumb_rel"],
-                    file_metadata=source["file_metadata"],
-                    created_by_id=user_id,
-                )
-            )
+        _add_fork_rows(db, project.id, r1.id, copies, user_id)
         await commit()
     return forked
 
 
-def _ref(revision: ProjectRevision, item: ProjectItem) -> RevisionRef:
+async def _copy_fork_files(
+    folder: Path, sources: list[tuple[LibraryFile, Path | None]], copies: list[_WrittenFile]
+) -> None:
+    """Copy each readable source file and its thumbnail into ``folder``, appending to ``copies``
+    as it goes (so the caller's cleanup also removes a copy cut short). Touches no database."""
+    for source, src in sources:
+        if src is None or not src.exists():
+            continue
+        dest = claim_unique_file_path(folder, source.filename)
+        entry = _WrittenFile(path=dest, size=0, digest="", copied_from=source)
+        copies.append(entry)  # before the copy, so cleanup also removes the claimed placeholder
+        await asyncio.to_thread(_copy_claimed, src, dest)
+        entry.thumbnail_rel, entry.thumbnail_abs = await asyncio.to_thread(_copy_thumbnail, source.thumbnail_path)
+
+
+def _add_fork_rows(
+    db: AsyncSession, project_id: int, revision_id: int, copies: list[_WrittenFile], user_id: int | None
+) -> None:
+    """A new library row per fork copy, repeating its source row's type, size, hash and metadata."""
+    for entry in copies:
+        source = entry.copied_from  # always set on a fork copy
+        db.add(
+            _new_library_row(
+                project_id,
+                revision_id,
+                entry.path,
+                file_type=source.file_type,
+                file_size=source.file_size,
+                file_hash=source.file_hash,
+                thumbnail_path=entry.thumbnail_rel,
+                file_metadata=source.file_metadata,
+                created_by_id=user_id,
+            )
+        )
+
+
+def revision_ref(revision: ProjectRevision, item: ProjectItem) -> RevisionRef:
     return RevisionRef(
         id=revision.id,
         item_id=item.id,
@@ -1242,8 +1340,23 @@ def _ref(revision: ProjectRevision, item: ProjectItem) -> RevisionRef:
     )
 
 
-async def load_tree(db: AsyncSession, project: Project) -> ProjectTreeResponse:
-    """The whole Fichiers view in one payload: one query per table + grouped usage checks."""
+@dataclass
+class _TreeRows:
+    """Everything ``load_tree`` reads, keyed for the pure assembly helpers below."""
+
+    items: list[ProjectItem]
+    items_by_id: dict[int, ProjectItem]
+    revisions: list[ProjectRevision]
+    revisions_by_id: dict[int, ProjectRevision]
+    revisions_by_item: dict[int, list[ProjectRevision]]
+    files_by_revision: dict[int, list[LibraryFile]]
+    used: set[int]
+    users: dict[int, str]
+    print_counts: dict[int, int]
+
+
+async def _load_tree_rows(db: AsyncSession, project: Project) -> _TreeRows:
+    """One query per table + grouped usage checks."""
     items = list(
         (
             await db.execute(
@@ -1264,6 +1377,9 @@ async def load_tree(db: AsyncSession, project: Project) -> ProjectTreeResponse:
         else []
     )
     revisions_by_id = {rev.id: rev for rev in revisions}
+    revisions_by_item: dict[int, list[ProjectRevision]] = {}
+    for rev in revisions:
+        revisions_by_item.setdefault(rev.item_id, []).append(rev)
     files = (
         list(
             (
@@ -1292,75 +1408,133 @@ async def load_tree(db: AsyncSession, project: Project) -> ProjectTreeResponse:
         dict((await db.execute(select(User.id, User.username).where(User.id.in_(user_ids)))).all()) if user_ids else {}
     )
     print_counts = await revision_print_counts(db, list(revisions_by_id))
+    return _TreeRows(
+        items=items,
+        items_by_id=items_by_id,
+        revisions=revisions,
+        revisions_by_id=revisions_by_id,
+        revisions_by_item=revisions_by_item,
+        files_by_revision=files_by_revision,
+        used=used,
+        users=users,
+        print_counts=print_counts,
+    )
+
+
+def _newest_valide(revisions: list[ProjectRevision]) -> dict[int, ProjectRevision]:
+    """item id -> its highest-numbered ``valide`` revision."""
     newest_valide: dict[int, ProjectRevision] = {}
     for rev in revisions:
         if rev.status == "valide" and (
             rev.item_id not in newest_valide or rev.number > newest_valide[rev.item_id].number
         ):
             newest_valide[rev.item_id] = rev
+    return newest_valide
 
-    def revision_out(rev: ProjectRevision, item: ProjectItem) -> ProjectRevisionOut:
-        source = revisions_by_id.get(rev.derived_from_id) if rev.derived_from_id else None
-        source_item = items_by_id.get(source.item_id) if source else None
-        outdated_by = None
-        if (
-            item.section == "impression"
-            and source is not None
-            and source_item is not None
-            and source.item_id != item.id  # a re-slice of its own item is never outdated (§12.1)
-        ):
-            newer = newest_valide.get(source.item_id)
-            if newer is not None and newer.number > source.number:
-                outdated_by = _ref(newer, source_item)
-        rev_files = files_by_revision.get(rev.id, [])
-        return ProjectRevisionOut(
-            id=rev.id,
-            number=rev.number,
-            status=rev.status,
-            note=rev.note,
-            derived_from=_ref(source, source_item) if source and source_item else None,
-            outdated_by=outdated_by,
-            pipeline_name=rev.pipeline_name,
-            print_profile=rev.print_profile,
-            slicer_name=rev.slicer_name,
-            slicer_version=rev.slicer_version,
-            has_snapshot=rev.config_snapshot is not None,
-            used=any(f.id in used for f in rev_files),
-            files=[
-                ProjectFileOut(
-                    id=f.id,
-                    filename=f.filename,
-                    file_type=f.file_type,
-                    file_size=f.file_size,
-                    file_hash=f.file_hash,
-                    has_thumbnail=bool(f.thumbnail_path),
-                    created_at=f.created_at,
-                )
-                for f in rev_files
-            ],
-            created_by=users.get(rev.created_by_id),
-            created_at=rev.created_at,
-            status_changed_at=rev.status_changed_at,
-            print_count=print_counts.get(rev.id, 0),
-        )
 
+def _outdated_by(
+    item: ProjectItem,
+    source: ProjectRevision | None,
+    source_item: ProjectItem | None,
+    newest_valide: dict[int, ProjectRevision],
+) -> RevisionRef | None:
+    """§12.1: an Impression revision derived from another item's revision is outdated once that item
+    has a ``valide`` revision numbered above the source."""
+    if (
+        item.section == "impression"
+        and source is not None
+        and source_item is not None
+        and source.item_id != item.id  # a re-slice of its own item is never outdated (§12.1)
+    ):
+        newer = newest_valide.get(source.item_id)
+        if newer is not None and newer.number > source.number:
+            return revision_ref(newer, source_item)
+    return None
+
+
+def _revision_out(
+    rev: ProjectRevision, item: ProjectItem, rows: _TreeRows, newest_valide: dict[int, ProjectRevision]
+) -> ProjectRevisionOut:
+    source = rows.revisions_by_id.get(rev.derived_from_id) if rev.derived_from_id else None
+    source_item = rows.items_by_id.get(source.item_id) if source else None
+    rev_files = rows.files_by_revision.get(rev.id, [])
+    return ProjectRevisionOut(
+        id=rev.id,
+        number=rev.number,
+        status=rev.status,
+        note=rev.note,
+        derived_from=revision_ref(source, source_item) if source and source_item else None,
+        outdated_by=_outdated_by(item, source, source_item, newest_valide),
+        pipeline_name=rev.pipeline_name,
+        print_profile=rev.print_profile,
+        slicer_name=rev.slicer_name,
+        slicer_version=rev.slicer_version,
+        has_snapshot=rev.config_snapshot is not None,
+        used=any(f.id in rows.used for f in rev_files),
+        files=[
+            ProjectFileOut(
+                id=f.id,
+                filename=f.filename,
+                file_type=f.file_type,
+                file_size=f.file_size,
+                file_hash=f.file_hash,
+                has_thumbnail=bool(f.thumbnail_path),
+                created_at=f.created_at,
+            )
+            for f in rev_files
+        ],
+        created_by=rows.users.get(rev.created_by_id),
+        created_at=rev.created_at,
+        status_changed_at=rev.status_changed_at,
+        print_count=rows.print_counts.get(rev.id, 0),
+    )
+
+
+def _sections(rows: _TreeRows) -> list[ProjectSectionOut]:
+    """Every section in ``SECTIONS`` order; items as loaded, revisions newest first."""
+    newest_valide = _newest_valide(rows.revisions)
     by_section: dict[str, list[ProjectItemOut]] = {section: [] for section in SECTIONS}
-    for item in items:
-        item_revisions = sorted((r for r in revisions if r.item_id == item.id), key=lambda r: r.number, reverse=True)
-        fork_source = revisions_by_id.get(item.forked_from_revision_id) if item.forked_from_revision_id else None
-        fork_item = items_by_id.get(fork_source.item_id) if fork_source else None
+    for item in rows.items:
+        item_revisions = sorted(rows.revisions_by_item.get(item.id, []), key=lambda r: r.number, reverse=True)
+        fork_source = rows.revisions_by_id.get(item.forked_from_revision_id) if item.forked_from_revision_id else None
+        fork_item = rows.items_by_id.get(fork_source.item_id) if fork_source else None
         by_section.setdefault(item.section, []).append(
             ProjectItemOut(
                 id=item.id,
                 section=item.section,
                 name=item.name,
                 name_key=item.name_key,
-                forked_from=_ref(fork_source, fork_item) if fork_source and fork_item else None,
-                revisions=[revision_out(rev, item) for rev in item_revisions],
+                forked_from=revision_ref(fork_source, fork_item) if fork_source and fork_item else None,
+                revisions=[_revision_out(rev, item, rows, newest_valide) for rev in item_revisions],
             )
         )
+    return [ProjectSectionOut(section=section, items=by_section[section]) for section in SECTIONS]
+
+
+async def load_tree(db: AsyncSession, project: Project) -> ProjectTreeResponse:
+    """The whole Fichiers view in one payload: one query per table + grouped usage checks."""
+    rows = await _load_tree_rows(db, project)
     return ProjectTreeResponse(
         project_id=project.id,
         code=project.code,
-        sections=[ProjectSectionOut(section=section, items=by_section[section]) for section in SECTIONS],
+        sections=_sections(rows),
     )
+
+
+def find_item(tree: ProjectTreeResponse, item_id: int) -> ProjectItemOut | None:
+    """The first item of ``tree`` with id ``item_id`` (sections in order), else None."""
+    for section in tree.sections:
+        for item in section.items:
+            if item.id == item_id:
+                return item
+    return None
+
+
+def find_revision(tree: ProjectTreeResponse, revision_id: int) -> ProjectRevisionOut | None:
+    """The first revision of ``tree`` with id ``revision_id`` (sections, items in order), else None."""
+    for section in tree.sections:
+        for item in section.items:
+            for rev in item.revisions:
+                if rev.id == revision_id:
+                    return rev
+    return None

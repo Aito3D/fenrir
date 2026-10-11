@@ -10097,7 +10097,6 @@ export default {
     create: 'Oluştur',
     tagsLabel: 'Etiketler',
     tagSearchPlaceholder: 'Etiket ara veya oluştur…',
-    createTag: '“{{name}}” oluştur',
     removeTag: '{{name}} etiketini kaldır',
     suggestTags: 'Etiket öner',
     suggestionsLabel: 'Öneriler',
@@ -10111,7 +10110,6 @@ export default {
     saveFailed: 'Proje kaydedilemedi',
     codeChipLabel: 'Proje kodu {{code}}',
     files: {
-      title: 'Dosyalar',
       sectionScan: 'Tarama',
       sectionModelisation: 'Modelleme',
       sectionImpression: 'Baskı',
@@ -10120,7 +10118,6 @@ export default {
       emptySection: 'Henüz öğe yok',
       newItem: 'Yeni öğe',
       itemNameLabel: 'Öğe adı',
-      dropHint: 'Dosyaları buraya bırakın veya seçmek için tıklayın',
       chooseFiles: 'Dosya seç',
       uploading: 'Yükleniyor…',
       uploadFailed: 'Yükleme başarısız',

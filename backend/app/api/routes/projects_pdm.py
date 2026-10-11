@@ -8,6 +8,8 @@ Registered BEFORE ``projects.router`` in main.py: ``/projects/search`` and
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -40,6 +42,7 @@ from backend.app.services.openrouter import (
     suggest_project_tag_names,
 )
 from backend.app.services.project_tags import project_tag_refs, rank_tag_suggestions, tag_name_key
+from backend.app.utils.sql_like import escape_like
 
 logger = logging.getLogger(__name__)
 
@@ -47,8 +50,7 @@ router = APIRouter(prefix="/projects", tags=["projects"])
 
 
 def _like(value: str) -> str:
-    escaped = value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-    return f"%{escaped}%"
+    return f"%{escape_like(value)}%"
 
 
 def _text_match(column, raw: str):
@@ -169,6 +171,19 @@ async def list_project_tags(
 _AI_WRITERS = require_any_permission_if_auth_enabled(Permission.PROJECTS_CREATE, Permission.PROJECTS_UPDATE)
 
 
+@contextmanager
+def _openrouter_errors(upstream_log: str) -> Iterator[None]:
+    """Map OpenRouter failures to HTTP: not configured -> 409 (no cause),
+    upstream failure -> 502 with the error text, logged with ``upstream_log``."""
+    try:
+        yield
+    except OpenRouterNotConfiguredError:
+        raise HTTPException(status_code=409, detail="OpenRouter is not configured") from None
+    except OpenRouterUpstreamError as e:
+        logger.warning(upstream_log, e)
+        raise HTTPException(status_code=502, detail=str(e)) from e
+
+
 @router.post("/ai/reformulate", response_model=ProjectReformulateResponse)
 async def reformulate_text(
     payload: ProjectReformulateRequest,
@@ -179,13 +194,8 @@ async def reformulate_text(
     """French rewording of a project title or description (spec §3.5). Shares
     the Aito OpenRouter budget: same bill, same bucket."""
     _check_ai_rate_limit(request, current_user)
-    try:
+    with _openrouter_errors("Project reformulate failed upstream: %s"):
         text, model = await reformulate_project_text(db, payload.text, payload.field)
-    except OpenRouterNotConfiguredError:
-        raise HTTPException(status_code=409, detail="OpenRouter is not configured") from None
-    except OpenRouterUpstreamError as e:
-        logger.warning("Project reformulate failed upstream: %s", e)
-        raise HTTPException(status_code=502, detail=str(e)) from e
     return ProjectReformulateResponse(text=text, model=model)
 
 
@@ -201,15 +211,10 @@ async def suggest_tags(
     _check_ai_rate_limit(request, current_user)
     catalogue_rows = (await db.execute(select(LibraryTag.id, LibraryTag.name).order_by(LibraryTag.name_key))).all()
     catalogue = {tag_name_key(name): ProjectTagRef(id=tag_id, name=name) for tag_id, name in catalogue_rows}
-    try:
+    with _openrouter_errors("Project tag suggestion failed upstream: %s"):
         raw, model = await suggest_project_tag_names(
             db, payload.title, payload.description, [name for _id, name in catalogue_rows]
         )
-    except OpenRouterNotConfiguredError:
-        raise HTTPException(status_code=409, detail="OpenRouter is not configured") from None
-    except OpenRouterUpstreamError as e:
-        logger.warning("Project tag suggestion failed upstream: %s", e)
-        raise HTTPException(status_code=502, detail=str(e)) from e
     return ProjectSuggestTagsResponse(
         suggestions=rank_tag_suggestions(raw, catalogue, set(payload.exclude_tag_ids)), model=model
     )

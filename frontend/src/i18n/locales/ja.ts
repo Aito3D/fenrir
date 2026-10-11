@@ -10171,7 +10171,6 @@ export default {
     create: '作成',
     tagsLabel: 'タグ',
     tagSearchPlaceholder: 'タグを検索または作成…',
-    createTag: '「{{name}}」を作成',
     removeTag: '{{name}}を削除',
     suggestTags: 'タグを提案',
     suggestionsLabel: '提案',
@@ -10185,7 +10184,6 @@ export default {
     saveFailed: 'プロジェクトを保存できませんでした',
     codeChipLabel: 'プロジェクトコード {{code}}',
     files: {
-      title: 'ファイル',
       sectionScan: 'スキャン',
       sectionModelisation: 'モデリング',
       sectionImpression: '印刷',
@@ -10194,7 +10192,6 @@ export default {
       emptySection: 'アイテムはまだありません',
       newItem: '新規アイテム',
       itemNameLabel: 'アイテム名',
-      dropHint: 'ここにファイルをドロップ、またはクリックして選択',
       chooseFiles: 'ファイルを選択',
       uploading: 'アップロード中…',
       uploadFailed: 'アップロードに失敗しました',
