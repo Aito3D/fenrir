@@ -219,6 +219,7 @@ async def drop_task_files(
 async def export_project(
 async def find_item_by_key(db: AsyncSession, project_id: int, section: str, key: str)
 async def find_or_create_item(
+async def find_revision_bundle(
 async def fork_item(
 async def fork_revision(
 async def fresh_item(db: AsyncSession, item_id: int)
@@ -1285,6 +1286,7 @@ CREATE TABLE projects (
 1 export function ProjectLinkPicker
 1 export function ProjectListPage
 1 export function ProjectModal
+1 export function ProjectOptionLabel
 1 export function ProjectOrdersCard
 1 export function ProjectsPage
 1 export function ProjectsSettingsCard
@@ -1307,6 +1309,7 @@ CREATE TABLE projects (
 1 export function useOrderProjectLinks
 1 export function useProjectCodes
 1 export function useProjectOrders
+1 export function useProjectSearch
 1 export function useProjectTree
 1 export function useResliceJobs
 1 export function useTaskFileDrop

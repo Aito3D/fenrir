@@ -21,11 +21,9 @@ from backend.app.models.project_item import ProjectItem
 from backend.app.models.settings import Settings
 from backend.app.models.user import User
 from backend.app.services import aito_project_links as links_service, project_files as files_service, project_storage
+from backend.tests.project_fixtures import projects_root_fixture
 
-
-@pytest.fixture(autouse=True)
-def root(tmp_path, monkeypatch):
-    monkeypatch.setattr(project_storage, "projects_root", lambda: tmp_path)
+root = projects_root_fixture(autouse=True)
 
 
 async def _order(db, *, status="active", client_id="C1", description="Commande"):

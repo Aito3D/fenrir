@@ -6,13 +6,12 @@ import { Loader2, Search } from 'lucide-react';
 import { api } from '../../../api/client';
 import type { MoveToProjectResult } from '../../../api/client';
 import { Button } from '../../Button';
-import { ProjectCodeChip } from '../ProjectCodeChip';
-import { projectKeys, useProjectTree } from '../projectQueries';
+import { ProjectOptionLabel } from '../ProjectCodeChip';
+import { projectKeys, useProjectSearch, useProjectTree } from '../projectQueries';
 import { OVERLAY_CLS } from '../dialogStyles';
 import { focusRingCls } from '../../formStyles';
 import { useToast } from '../../../contexts/ToastContext';
 import { useIsolatedEscape } from '../../../hooks/useIsolatedEscape';
-import { useDebouncedValue } from '../../../hooks/useDebouncedValue';
 
 interface PickedProject {
   id: number;
@@ -92,8 +91,6 @@ export function MoveToProjectModal({ fileIds, fileName, onClose, onMoved }: Prop
   const [project, setProject] = useState<PickedProject | null>(null);
   const [itemChoice, setItemChoice] = useState<ItemChoice>('auto');
   const [newItemName, setNewItemName] = useState('');
-  const [q, setQ] = useState('');
-  const debounced = useDebouncedValue(q, 250).trim();
 
   const firstFileId = fileIds[0];
   const { data: suggestions = [] } = useQuery({
@@ -102,12 +99,7 @@ export function MoveToProjectModal({ fileIds, fileName, onClose, onMoved }: Prop
     enabled: firstFileId !== undefined,
     retry: false,
   });
-  const { data: search, isFetching: searching } = useQuery({
-    queryKey: projectKeys.projectsSearch('move-to-project', debounced),
-    queryFn: () => api.searchProjects({ q: debounced, limit: 10 }),
-    enabled: debounced !== '',
-    retry: false,
-  });
+  const { q, setQ, results, isFetching: searching } = useProjectSearch('move-to-project', suggestions.map((s) => s.project_id));
   const { data: tree, isLoading: treeLoading } = useProjectTree(project?.id, { enabled: project !== null, retry: false });
   const items = tree?.sections.find((s) => s.section === 'impression')?.items ?? [];
 
@@ -150,8 +142,6 @@ export function MoveToProjectModal({ fileIds, fileName, onClose, onMoved }: Prop
   const title = t('projectsPdm.filing.moveTitle');
   const subject =
     fileIds.length === 1 && fileName ? fileName : t('projectsPdm.filing.fileCount', { count: fileIds.length });
-  const suggestedIds = new Set(suggestions.map((s) => s.project_id));
-  const results = debounced ? (search?.items ?? []).filter((p) => !suggestedIds.has(p.id)) : [];
 
   const optionCls = (selected: boolean) =>
     `flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-white transition-colors ${
@@ -192,8 +182,7 @@ export function MoveToProjectModal({ fileIds, fileName, onClose, onMoved }: Prop
                       onClick={() => pick({ id: s.project_id, code: s.code, name: s.name }, s.item_id)}
                       className={optionCls(selected)}
                     >
-                      <ProjectCodeChip code={s.code} />
-                      <span className="min-w-0 flex-1 truncate">{s.name}</span>
+                      <ProjectOptionLabel code={s.code} name={s.name} />
                       {s.item_name && <span className="flex-shrink-0 truncate text-xs text-bambu-gray">{s.item_name}</span>}
                     </button>
                   </li>
@@ -228,8 +217,7 @@ export function MoveToProjectModal({ fileIds, fileName, onClose, onMoved }: Prop
                       onClick={() => pick({ id: p.id, code: p.code, name: p.name })}
                       className={optionCls(selected)}
                     >
-                      <ProjectCodeChip code={p.code} />
-                      <span className="min-w-0 flex-1 truncate">{p.name}</span>
+                      <ProjectOptionLabel code={p.code} name={p.name} />
                     </button>
                   </li>
                 );

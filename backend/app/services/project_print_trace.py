@@ -23,11 +23,10 @@ from backend.app.models.aito_task import AitoTask
 from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile
 from backend.app.models.print_queue import PrintQueueItem
-from backend.app.models.project import Project
-from backend.app.models.project_item import ProjectItem, ProjectRevision
 from backend.app.services.actor import record_as
 from backend.app.services.db_quiet import rollback_quietly
 from backend.app.services.http_status_error import HttpStatusError
+from backend.app.services.project_revisions import find_revision_bundle, revision_label
 
 logger = logging.getLogger(__name__)
 
@@ -95,23 +94,13 @@ async def resolve_print_context(
     revision_id, source_task_id = await _source_trace(db, library_file_id, archive_id)
     bundle = None
     if revision_id is not None:
-        bundle = (
-            await db.execute(
-                select(ProjectRevision, ProjectItem, Project)
-                .join(ProjectItem, ProjectItem.id == ProjectRevision.item_id)
-                .join(Project, Project.id == ProjectItem.project_id)
-                .where(ProjectRevision.id == revision_id)
-            )
-        ).first()
+        bundle = await find_revision_bundle(db, revision_id)
     if bundle is None:
         if aito_task_id is not None:
             raise PrintTraceError(400, "An Aito task can only be attached to a project revision file")
         return PrintContext(revision_id=None, aito_task_id=None, project_id=project_id)
 
     revision, item, project = bundle
-    # Lazy: project_files imports this module (revision_print_counts).
-    from backend.app.services.project_files import revision_label
-
     context = PrintContext(
         revision_id=revision.id,
         aito_task_id=None,

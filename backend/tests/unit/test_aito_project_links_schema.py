@@ -13,11 +13,9 @@ from backend.app.models.aito_task_delivery import AitoTaskDelivery
 from backend.app.models.project import Project
 from backend.app.services import project_storage
 from backend.app.services.project_files import add_revision, create_item, load_tree, revision_is_used
+from backend.tests.project_fixtures import projects_root_fixture
 
-
-@pytest.fixture(autouse=True)
-def root(tmp_path, monkeypatch):
-    monkeypatch.setattr(project_storage, "projects_root", lambda: tmp_path)
+root = projects_root_fixture(autouse=True)
 
 
 async def _order_task(db, project_id=None):

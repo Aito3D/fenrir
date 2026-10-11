@@ -63,6 +63,10 @@ from backend.app.services import project_storage
 from backend.app.services.http_status_error import HttpStatusError
 from backend.app.services.pdf_thumbnail import generate_pdf_thumbnail
 from backend.app.services.project_print_trace import revision_print_counts
+from backend.app.services.project_revisions import (
+    find_revision_bundle,
+    revision_label as revision_label,  # re-exported
+)
 from backend.app.services.project_snapshot import PrintSnapshot, is_3mf, read_print_snapshot
 from backend.app.services.project_storage import (
     ENABLED_SECTIONS,
@@ -88,11 +92,6 @@ class ProjectFilesError(HttpStatusError):
     # stored when this was raised); the drop route reads it with getattr and still
     # broadcasts when it is non-zero.
     stored_count: int
-
-
-def revision_label(item_name: str, number: int) -> str:
-    """``"<item> R<n>"``: how a revision is named in events, archives and status messages."""
-    return f"{item_name} R{number}"
 
 
 # One lock per item, held across every operation that writes into or moves the
@@ -200,17 +199,10 @@ async def get_item_for_project(db: AsyncSession, item_id: int) -> tuple[ProjectI
 
 
 async def get_revision_bundle(db: AsyncSession, revision_id: int) -> tuple[ProjectRevision, ProjectItem, Project]:
-    row = (
-        await db.execute(
-            select(ProjectRevision, ProjectItem, Project)
-            .join(ProjectItem, ProjectItem.id == ProjectRevision.item_id)
-            .join(Project, Project.id == ProjectItem.project_id)
-            .where(ProjectRevision.id == revision_id)
-        )
-    ).first()
-    if row is None:
+    bundle = await find_revision_bundle(db, revision_id)
+    if bundle is None:
         raise ProjectFilesError(404, "Revision not found")
-    return row[0], row[1], row[2]
+    return bundle
 
 
 async def create_item(

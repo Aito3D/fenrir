@@ -27,13 +27,12 @@ from backend.app.services.aito_project_links import order_links
 from backend.app.services.print_batch import _clone_queue_item
 from backend.app.services.project_files import load_tree
 from backend.app.services.project_print_trace import PrintCounts, revision_print_counts, task_print_counts
+from backend.tests.project_fixtures import projects_root_fixture
 
 KIND = "print.queued_from_revision"
 
 
-@pytest.fixture(autouse=True)
-def root(tmp_path, monkeypatch):
-    monkeypatch.setattr(project_storage, "projects_root", lambda: tmp_path)
+root = projects_root_fixture(autouse=True)
 
 
 @pytest.fixture

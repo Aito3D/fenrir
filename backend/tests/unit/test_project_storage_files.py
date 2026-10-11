@@ -11,6 +11,7 @@ from backend.app.services.project_storage import (
     unique_file_path,
 )
 from backend.app.utils.safe_path import PathTraversalError
+from backend.tests.project_fixtures import projects_root_fixture
 
 
 class _P:
@@ -18,10 +19,7 @@ class _P:
         self.id, self.code, self.name, self.storage_dir = 1, "P-0001", "Support", "P-0001_support"
 
 
-@pytest.fixture
-def root(tmp_path, monkeypatch):
-    monkeypatch.setattr(project_storage, "projects_root", lambda: tmp_path)
-    return tmp_path
+root = projects_root_fixture()
 
 
 def test_section_dirs_are_french_labels():
