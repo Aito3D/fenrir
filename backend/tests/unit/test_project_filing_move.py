@@ -732,6 +732,71 @@ async def test_a_non_409_error_while_storing_propagates(db_session, root, monkey
 
 
 @pytest.mark.asyncio
+async def test_an_unexpected_error_while_storing_skips_the_group_as_error_and_goes_on(
+    db_session, root, monkeypatch, caplog
+):
+    """T-285 (user-approved): any other exception (here "database is locked" from the revision
+    commit) is a per-group skip with code ``error`` and a generic reason, logged with its
+    traceback; the group's rows and bytes stay as they were and later groups still move."""
+    from sqlalchemy.exc import OperationalError
+
+    project = await _project(db_session)
+    first = await _managed(db_session, "alpha.gcode", b"A")
+    locked = await _managed(db_session, "beta.gcode", b"B")
+    last = await _managed(db_session, "gamma.gcode", b"G")
+    ids = [f.id for f in (first, locked, last)]
+    locked_path = locked.file_path
+    await db_session.commit()
+    real_add = project_files.add_revision_from_sources
+
+    async def locked_add(db, project, item, sources, **kwargs):
+        if item.name == "beta":
+            raise OperationalError("COMMIT", {}, Exception("database is locked"))
+        return await real_add(db, project, item, sources, **kwargs)
+
+    monkeypatch.setattr(project_files, "add_revision_from_sources", locked_add)
+    with caplog.at_level("ERROR", logger="backend.app.services.project_filing"):
+        result = await _move(db_session, project, [first, locked, last])
+
+    assert [m["file_id"] for m in result.moved] == [ids[0], ids[2]]
+    assert result.skipped == [{"file_id": ids[1], "code": "error", "reason": "unexpected error while moving the file"}]
+    [record] = [r for r in caplog.records if r.levelname == "ERROR"]
+    assert record.getMessage() == f"Moving files into project {project.id} failed unexpectedly for item 'beta'"
+    assert isinstance(record.exc_info[1], OperationalError)
+    fresh = await _fresh(db_session, ids[1])
+    assert (fresh.file_path, fresh.revision_id) == (locked_path, None)
+    assert to_absolute_path(locked_path).read_bytes() == b"B"
+    revisions = [(r[1], r[2]) for r in await _revisions(db_session, project.id)]
+    assert revisions == [("alpha", 1), ("gamma", 1)]
+
+
+@pytest.mark.asyncio
+async def test_an_unexpected_error_before_the_revision_rolls_the_session_back(db_session, root, monkeypatch):
+    """An exception outside add_revision_from_sources (no undo of its own ran) still leaves a
+    usable session: the pending item is rolled back and the next group moves."""
+    project = await _project(db_session)
+    first = await _managed(db_session, "alpha.gcode", b"A")
+    last = await _managed(db_session, "gamma.gcode", b"G")
+    ids = [first.id, last.id]
+    await db_session.commit()
+    real_find = project_filing.find_or_create_item
+
+    async def broken_find(db, project, section, key, name, user_id):
+        if name == "alpha":
+            db.add(ProjectItem(project_id=project.id, section=section, name="ghost", name_key="ghost"))
+            raise RuntimeError("boom")
+        return await real_find(db, project, section, key, name, user_id)
+
+    monkeypatch.setattr(project_filing, "find_or_create_item", broken_find)
+    result = await _move(db_session, project, [first, last])
+
+    assert result.skipped == [{"file_id": ids[0], "code": "error", "reason": "unexpected error while moving the file"}]
+    assert [m["file_id"] for m in result.moved] == [ids[1]]
+    names = [i.name for i in (await db_session.execute(select(ProjectItem))).scalars()]
+    assert names == ["gamma"]
+
+
+@pytest.mark.asyncio
 async def test_a_project_gone_after_a_failed_group_is_a_404(db_session, root, monkeypatch):
     project = await _project(db_session)
     row = await _managed(db_session, "a.gcode", b"A")

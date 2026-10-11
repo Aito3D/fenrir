@@ -5,35 +5,21 @@ import { http, HttpResponse } from 'msw';
 import { render } from '../../../utils';
 import { server } from '../../../mocks/server';
 import { DeliveriesPicker } from '../../../../components/projects/aito/DeliveriesPicker';
+import type { RevisionStatus } from '../../../../api/client';
+import { item, projectTree, rev as baseRev } from '../../../fixtures/projectTree';
 
 const ORDER = 42;
 const TASK = 11;
 
-const rev = (id: number, number: number, status: string) => ({
-  id, number, status, note: null, derived_from: null, outdated_by: null, print_profile: null,
-  slicer_name: null, slicer_version: null, has_snapshot: false, used: false, created_by: 'paul',
-  created_at: '2026-10-04T10:00:00Z', status_changed_at: null, files: [],
-});
-const item = (id: number, section: string, name: string, revisions: ReturnType<typeof rev>[]) => ({
-  id, section, name, name_key: name.toLowerCase(), forked_from: null, revisions,
-});
-const fullTree = {
-  project_id: 7,
-  code: 'P-0007',
-  sections: [
-    { section: 'scan', items: [] },
-    { section: 'modelisation', items: [] },
-    {
-      section: 'impression',
-      items: [
-        item(30, 'impression', 'Plate', [rev(6, 2, 'valide'), rev(5, 1, 'valide')]),
-        item(31, 'impression', 'Lid', [rev(9, 1, 'wip')]),
-      ],
-    },
-    { section: 'usinage', items: [] },
-    { section: 'docs', items: [] },
+// This suite's revisions carry no print_count / pipeline_name (left out of the JSON).
+const rev = (id: number, number: number, status: RevisionStatus) =>
+  baseRev({ id, number, status, print_count: undefined, pipeline_name: undefined });
+const fullTree = projectTree({
+  impression: [
+    item(30, 'impression', 'Plate', [rev(6, 2, 'valide'), rev(5, 1, 'valide')]),
+    item(31, 'impression', 'Lid', [rev(9, 1, 'wip')]),
   ],
-};
+});
 const emptyTree = { ...fullTree, sections: fullTree.sections.map((s) => ({ ...s, items: [] })) };
 
 let puts: unknown[];

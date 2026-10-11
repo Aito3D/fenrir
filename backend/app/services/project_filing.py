@@ -230,8 +230,9 @@ async def move_library_files_to_project(
     takes every file as one revision; otherwise files are grouped per item name
     from their filenames, each group becoming the next revision of the matching
     item (or R1 of a new one). A group that cannot be stored (copy error,
-    concurrent change) is skipped whole (``copy_failed`` / ``conflict``) and
-    leaves its rows and files as they were; earlier groups stay committed.
+    concurrent change, any unexpected error) is skipped whole (``copy_failed`` /
+    ``conflict`` / ``error``) and leaves its rows and files as they were; earlier
+    groups stay committed.
 
     Ownership and permission checks are the caller's."""
     if item_id is not None and new_item_name is not None:
@@ -360,8 +361,8 @@ async def _store_group(
     user_id: int | None,
 ) -> tuple[Project, _StoredGroup | None]:
     """Store one group as a revision (committed). None when nothing was stored: every file
-    skipped, or the group failed (``copy_failed`` / ``conflict``, rolled back). Returns the
-    project too, re-read if a commit or rollback replaced it."""
+    skipped, or the group failed (``copy_failed`` / ``conflict`` / ``error``, rolled back).
+    Returns the project too, re-read if a commit or rollback replaced it."""
     pending = candidates  # what a failure below reports as skipped
     try:
         if target_item_id is not None:
@@ -375,9 +376,11 @@ async def _store_group(
         if not sources:
             return project, None
         revision = await project_files.add_revision_from_sources(db, project, item, sources, note=None, user_id=user_id)
-    except (OSError, project_files.ProjectFilesError) as exc:
-        # Only a copy error or a genuine 409 race is a per-group skip; anything else
-        # (e.g. the target item deleted meanwhile, 404) is the whole call's error.
+    except Exception as exc:
+        # A non-409 ProjectFilesError (e.g. the target item deleted meanwhile, 404) is the
+        # whole call's error. A copy error, a genuine 409 race or anything unexpected (e.g.
+        # "database is locked") is a per-group skip: earlier groups are already committed,
+        # so the caller must still see them in the result.
         if isinstance(exc, project_files.ProjectFilesError) and exc.status_code != 409:
             raise
         return await _skip_failed_group(db, result, project_id, name, pending, exc), None
@@ -390,12 +393,20 @@ async def _skip_failed_group(
     project_id: int,
     name: str,
     pending: list[_Candidate],
-    exc: OSError | project_files.ProjectFilesError,
+    exc: Exception,
 ) -> Project:
-    """Report a failed group's pending files as skipped; returns the project re-read after the rollback."""
-    code = "copy_failed" if isinstance(exc, OSError) else "conflict"
-    reason = str(exc.detail if isinstance(exc, project_files.ProjectFilesError) else exc)
-    logger.warning("Moving files into project %s failed for item %r: %s", project_id, name, reason)
+    """Report a failed group's pending files as skipped; returns the project re-read after the rollback.
+
+    ``copy_failed`` for an OSError, ``conflict`` for a 409, ``error`` for anything else
+    (logged with its traceback, the session rolled back, a generic reason reported)."""
+    if isinstance(exc, (OSError, project_files.ProjectFilesError)):
+        code = "copy_failed" if isinstance(exc, OSError) else "conflict"
+        reason = str(exc.detail if isinstance(exc, project_files.ProjectFilesError) else exc)
+        logger.warning("Moving files into project %s failed for item %r: %s", project_id, name, reason)
+    else:
+        code, reason = "error", "unexpected error while moving the file"
+        logger.exception("Moving files into project %s failed unexpectedly for item %r", project_id, name)
+        await db.rollback()
     for candidate in pending:
         _skip(result, candidate.file_id, code, reason)
     refreshed = await db.get(Project, project_id)  # the rollback expired it
@@ -716,7 +727,7 @@ async def record_revision_added(db: AsyncSession, project_id: int, entry: dict, 
 # part of the key so two distinct external files that happen to share their
 # bytes both get migrated. No extra column, no reliance on an editable note.
 
-_RETRYABLE_SKIPS = ("copy_failed", "conflict")
+_RETRYABLE_SKIPS = ("copy_failed", "conflict", "error")
 
 
 class LegacyMigrationError(Exception):
@@ -814,8 +825,8 @@ async def migrate_project_legacy(db: AsyncSession, project: Project) -> LegacyMi
     """Move ``project``'s legacy printing files into its tree, then set
     ``legacy_migrated_at``. Each revision commits on its own; on any error the
     marker is not set (already-committed revisions stay; a re-run continues).
-    A group skipped for a transient reason (copy error, concurrent change)
-    raises ``LegacyMigrationError`` so the project stays a candidate."""
+    A group skipped for a transient reason (copy error, concurrent change,
+    unexpected error) raises ``LegacyMigrationError`` so the project stays a candidate."""
     project_id = project.id
     files = await _legacy_files(db, project_id)
     done = await _already_copied(db, project_id, files)

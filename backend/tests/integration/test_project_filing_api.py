@@ -99,6 +99,82 @@ async def test_import_records_the_revision_added_label_and_detail(async_client: 
 
 @pytest.mark.asyncio
 @pytest.mark.integration
+async def test_import_with_an_unexpected_group_failure_reports_it_and_records_the_rest(
+    async_client: AsyncClient, db_session, monkeypatch
+):
+    """T-285 (user-approved): a group failing with an unexpected error (here "database is
+    locked") is listed under ``skipped`` with code ``error``; the response is a 200 and the
+    groups that went through are moved and recorded as ``project.revision_added``."""
+    from sqlalchemy.exc import OperationalError
+
+    from backend.app.services import project_files
+
+    project = await _project(async_client)
+    order = AitoProject(description="Commande", board_column="devis", status="active", client_id="C1")
+    db_session.add(order)
+    await db_session.commit()
+    order_id = order.id
+    db_session.add(AitoTask(project_id=order_id, title="Support", linked_project_id=project["id"]))
+    await db_session.commit()
+    files = [await _managed(db_session, name) for name in ("Arm.3mf", "Bracket.3mf", "Lid.3mf")]
+    ids = [f.id for f in files]
+    bracket_path = files[1].file_path
+    real = project_files.add_revision_from_sources
+
+    async def locked(db, project, item, sources, **kwargs):
+        if item.name == "Bracket":
+            raise OperationalError("COMMIT", {}, Exception("database is locked"))
+        return await real(db, project, item, sources, **kwargs)
+
+    monkeypatch.setattr(project_files, "add_revision_from_sources", locked)
+    response = await async_client.post(_import_url(project["id"]), json={"file_ids": ids})
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert [(m["file_id"], m["item_name"]) for m in body["moved"]] == [(ids[0], "Arm"), (ids[2], "Lid")]
+    assert body["copied"] == []
+    assert body["skipped"] == [{"file_id": ids[1], "code": "error", "reason": "unexpected error while moving the file"}]
+    events = (
+        (
+            await db_session.execute(
+                select(AitoEvent).where(AitoEvent.project_id == order_id, AitoEvent.kind == "project.revision_added")
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert sorted(e.subject_label for e in events) == ["Arm R1", "Lid R1"]
+    row = (
+        await db_session.execute(
+            select(LibraryFile).where(LibraryFile.id == ids[1]).execution_options(populate_existing=True)
+        )
+    ).scalar_one()
+    assert (row.file_path, row.revision_id, row.project_id) == (bracket_path, None, None)
+    assert to_absolute_path(bracket_path).is_file()
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_import_with_a_non_409_group_error_is_still_the_whole_calls_error(
+    async_client: AsyncClient, db_session, monkeypatch
+):
+    """Unchanged by T-285: a non-409 ProjectFilesError while storing stops the import with its status."""
+    from backend.app.services import project_files
+
+    project = await _project(async_client)
+    printable = await _managed(db_session, "Bracket.3mf")
+
+    async def refused(*_args, **_kwargs):
+        raise project_files.ProjectFilesError(413, "Too big")
+
+    monkeypatch.setattr(project_files, "add_revision_from_sources", refused)
+    response = await async_client.post(_import_url(project["id"]), json={"file_ids": [printable.id]})
+    assert response.status_code == 413, response.text
+    assert response.json()["detail"] == "Too big"
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
 async def test_project_trashed_and_unknown_files_are_not_found(async_client: AsyncClient, db_session):
     project = await _project(async_client)
     first = await _managed(db_session, "Arm.3mf")

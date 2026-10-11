@@ -188,16 +188,21 @@ async def test_failure_mid_project_then_rerun_completes_without_duplicates(db_se
         return await real(*args, **kwargs)
 
     monkeypatch.setattr(project_files, "add_revision_from_sources", flaky)
-    with pytest.raises(RuntimeError):
+    # T-285 (user-approved): the failing group (Bracket) is skipped as ``error`` and the
+    # run goes on (Lid moves), then fails as retryable so the marker is not set.
+    with pytest.raises(project_filing.LegacyMigrationError) as exc:
         await project_filing.migrate_project_legacy(db_session, await _fresh(db_session, Project, project_id))
+    assert str(exc.value) == (
+        "1 file(s) could not be moved (error: unexpected error while moving the file); run it again"
+    )
     fresh = await _fresh(db_session, Project, project_id)
     assert fresh.legacy_migrated_at is None
-    assert [r[1] for r in await _revisions(db_session, project_id)] == ["Clip"]
+    assert [r[1] for r in await _revisions(db_session, project_id)] == ["Clip", "Lid"]
     assert project_id in await project_filing.legacy_candidates(db_session)
 
     monkeypatch.setattr(project_files, "add_revision_from_sources", real)
     outcome = await project_filing.migrate_project_legacy(db_session, fresh)
-    assert (outcome.revisions_created, outcome.files_moved, outcome.files_copied) == (2, 2, 0)
+    assert (outcome.revisions_created, outcome.files_moved, outcome.files_copied) == (1, 1, 0)
     assert await _revisions(db_session, project_id) == [
         ("impression", "Bracket", 1, ["Bracket.3mf"]),
         ("impression", "Clip", 1, ["Clip.gcode"]),
@@ -213,6 +218,52 @@ async def test_failure_mid_project_then_rerun_completes_without_duplicates(db_se
     assert copies == 3
     assert (await _fresh(db_session, Project, project_id)).legacy_migrated_at is not None
     assert (await _fresh(db_session, LibraryFile, clip_id)).revision_id is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_unexpected_group_failure_still_records_the_other_groups_events(db_session, monkeypatch):
+    """T-285 (user-approved): a group failing with an unexpected error no longer aborts the
+    run, so the linked order gets ``project.revision_added`` for the groups that went through."""
+    from sqlalchemy.exc import OperationalError
+
+    from backend.app.models.aito_event import AitoEvent
+    from backend.app.models.aito_project import AitoProject
+    from backend.app.models.aito_task import AitoTask
+
+    project = await _project(db_session)
+    project_id = project.id
+    order = AitoProject(description="Commande", board_column="devis", status="active", client_id="C1")
+    db_session.add(order)
+    await db_session.commit()
+    order_id = order.id
+    db_session.add(AitoTask(project_id=order_id, title="Support", linked_project_id=project_id))
+    await db_session.commit()
+    await _managed(db_session, "Bracket.3mf", b"bracket", project_id=project_id)
+    await _managed(db_session, "Lid.3mf", b"lid", project_id=project_id)
+    real = project_files.add_revision_from_sources
+
+    async def locked(db, project, item, sources, **kwargs):
+        if item.name == "Bracket":
+            raise OperationalError("COMMIT", {}, Exception("database is locked"))
+        return await real(db, project, item, sources, **kwargs)
+
+    monkeypatch.setattr(project_files, "add_revision_from_sources", locked)
+    with pytest.raises(project_filing.LegacyMigrationError):
+        await project_filing.migrate_project_legacy(db_session, await _fresh(db_session, Project, project_id))
+
+    assert [r[1] for r in await _revisions(db_session, project_id)] == ["Lid"]
+    events = (
+        (
+            await db_session.execute(
+                select(AitoEvent).where(AitoEvent.project_id == order_id, AitoEvent.kind == "project.revision_added")
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert [e.subject_label for e in events] == ["Lid R1"]
+    assert (await _fresh(db_session, Project, project_id)).legacy_migrated_at is None
 
 
 @pytest.mark.asyncio
@@ -237,7 +288,7 @@ async def test_rerun_dedupes_external_copies_on_hash_and_name(db_session, tmp_pa
         return await real(*args, **kwargs)
 
     monkeypatch.setattr(project_files, "add_revision_from_sources", flaky)
-    with pytest.raises(RuntimeError):
+    with pytest.raises(project_filing.LegacyMigrationError):  # T-285: Leg skipped as ``error``
         await project_filing.migrate_project_legacy(db_session, await _fresh(db_session, Project, project_id))
     assert [r[1] for r in await _revisions(db_session, project_id)] == ["Arm"]
 
@@ -382,7 +433,14 @@ async def test_start_records_failures(async_client: AsyncClient, db_session, mon
     assert (await async_client.post(START)).status_code == 202
     body = await _wait_idle(async_client)
     assert body["done"] == 1 and body["pending"] == 1
-    assert body["failures"] == [{"project_id": project_id, "code": code, "error": "disk on fire"}]
+    # T-285 (user-approved): the group is skipped as ``error`` and the project fails as retryable.
+    assert body["failures"] == [
+        {
+            "project_id": project_id,
+            "code": code,
+            "error": "1 file(s) could not be moved (error: unexpected error while moving the file); run it again",
+        }
+    ]
     assert {k: body["last_run"][k] for k in ("projects", "files_moved", "files_copied")} == {
         "projects": 0,
         "files_moved": 0,

@@ -11,6 +11,14 @@ import { server } from '../../../mocks/server';
 import { ProjectFilesPanel } from '../../../../components/projects/files/ProjectFilesPanel';
 import { useFileActions } from '../../../../components/projects/files/useFileActions';
 import { api, setAuthToken } from '../../../../api/client';
+import type { ProjectItemOut, ProjectRevisionOut, ProjectSection, RevisionStatus } from '../../../../api/client';
+import {
+  file as baseFile,
+  item as baseItem,
+  projectTree,
+  ref as baseRef,
+  rev as baseRev,
+} from '../../../fixtures/projectTree';
 import { reachesDocument } from '../../../dragHelpers';
 
 vi.mock('../../../../components/ModelViewerModal', () => ({
@@ -32,22 +40,14 @@ vi.mock('../../../../components/projects/print/PrintRevisionFlow', () => ({
 }));
 
 type Json = Record<string, unknown>;
-const file = (id: number, filename: string, file_type: string, file_size = 10) => ({
-  id, filename, file_type, file_size, file_hash: `h${id}`, has_thumbnail: false, created_at: '2026-10-04T10:00:00Z',
-});
-const rev = (over: Json) => ({
-  id: 1, number: 1, status: 'wip', note: null, derived_from: null, outdated_by: null, print_profile: null,
-  slicer_name: null, slicer_version: null, pipeline_name: null, has_snapshot: false, used: false, created_by: 'paul',
-  created_at: '2026-10-04T10:00:00Z', status_changed_at: null, print_count: 0,
-  files: [file(50, 'support.3mf', '3mf', 2048)],
-  ...over,
-});
-const item = (id: number, name: string, revisions: Json[], section = 'impression') => ({
-  id, section, name, name_key: name.toLowerCase(), forked_from: null, revisions,
-});
-const ref = (id: number, name: string, number: number, status = 'valide') => ({
-  id, item_id: id * 10, item_name: name, section: 'impression', number, status,
-});
+// This suite's files default to 10 bytes, its revisions to one 2 KiB 3MF, its items and refs to Impression.
+const file = (id: number, filename: string, file_type: string, file_size = 10) =>
+  baseFile(id, filename, { file_type, file_size });
+const rev = (over: Partial<ProjectRevisionOut>) => baseRev({ files: [file(50, 'support.3mf', '3mf', 2048)], ...over });
+const item = (id: number, name: string, revisions: ProjectRevisionOut[], section: ProjectSection = 'impression') =>
+  baseItem(id, section, name, revisions);
+const ref = (id: number, name: string, number: number, status: RevisionStatus = 'valide') =>
+  baseRef(id, name, 'impression', number, status);
 const support = () => item(20, 'Support', [rev({ id: 2, number: 2, status: 'valide' }), rev({ id: 1, number: 1, status: 'obsolete', used: true })]);
 const gabarit = () =>
   item(40, 'Gabarit', [rev({ id: 4, number: 1, files: [file(70, 'gabarit.3mf', '3mf', 3 * 1024 * 1024), file(71, 'gabarit.gcode', 'gcode')] })]);
@@ -55,17 +55,7 @@ const outdatedSlice = () =>
   item(30, 'Support X1C', [rev({ id: 3, number: 1, derived_from: ref(1, 'Support', 1, 'obsolete'), outdated_by: ref(2, 'Support', 2), files: [file(60, 'support.gcode.3mf', 'gcode.3mf')] })]);
 const plan = () => item(50, 'Plan', [rev({ id: 5, number: 1, files: [file(80, 'plan.pdf', 'pdf')] })], 'docs');
 
-const makeTree = (impression: Json[], docs: Json[] = []) => ({
-  project_id: 7,
-  code: 'P-0007',
-  sections: [
-    { section: 'scan', items: [] },
-    { section: 'modelisation', items: [] },
-    { section: 'impression', items: impression },
-    { section: 'usinage', items: [] },
-    { section: 'docs', items: docs },
-  ],
-});
+const makeTree = (impression: ProjectItemOut[], docs: ProjectItemOut[] = []) => projectTree({ impression, docs });
 
 let treeBody: Json;
 let requests: { method: string; path: string; body: unknown }[];

@@ -329,7 +329,8 @@
   "AUTO_FILE_SETTING_KEY": "projects_auto_file_by_code",
   "RETRYABLE_SKIPS": [
    "copy_failed",
-   "conflict"
+   "conflict",
+   "error"
   ],
   "section_for_filename": {
    "support.3mf": "impression",

@@ -2814,15 +2814,21 @@ class _ContentLengthCappedRoute(APIRoute):
 
 
 async def _auto_file_upload(
-    db: AsyncSession, library_file: LibraryFile, file_path: Path, current_user: User | None
+    db: AsyncSession,
+    library_file: LibraryFile,
+    file_path: Path,
+    current_user: User | None,
+    actor: User | ApiKeyActor | None,
 ) -> FiledToProject | None:
     """Fenrir: auto-file a fresh upload by its project code; never fails the upload.
 
-    An uploader without ``projects:update`` (auth on) never files into a project."""
+    An uploader without ``projects:update`` (auth on) never files into a project.
+    For an API key that is the key's effective scope (``can_manage_projects``);
+    ``actor`` is None only when auth is off."""
     try:
         from backend.app.services import project_filing
 
-        if current_user is not None and not current_user.has_permission(Permission.PROJECTS_UPDATE.value):
+        if actor is not None and not actor.has_permission(Permission.PROJECTS_UPDATE.value):
             return None
         filed = await project_filing.auto_file_by_code(
             db,
@@ -3014,7 +3020,7 @@ async def upload_file(
         )
         # Fenrir: a printing file named "P-0042_…" goes into that project (projects PDM
         # phase 5). Best-effort: the upload itself has already succeeded.
-        response.filed_to_project = await _auto_file_upload(db, library_file, file_path, current_user)
+        response.filed_to_project = await _auto_file_upload(db, library_file, file_path, current_user, actor)
         return response
     except HTTPException:
         raise

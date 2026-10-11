@@ -6,6 +6,8 @@ import { useQuery } from '@tanstack/react-query';
 import { render } from '../../../utils';
 import { server } from '../../../mocks/server';
 import { api } from '../../../../api/client';
+import type { RevisionStatus } from '../../../../api/client';
+import { item, projectTree, ref, rev as baseRev } from '../../../fixtures/projectTree';
 import { TaskRow } from '../../../../components/aito/TaskRow';
 import { TaskStepList } from '../../../../components/aito/TaskStepList';
 import { emptyTaskDraft } from '../../../../utils/taskDraft';
@@ -41,33 +43,16 @@ const linked = (deliveries: number[] = [3, 5]) => ({
   ],
 });
 
-const rev = (id: number, number: number, status: string) => ({
-  id, number, status, note: null, derived_from: null, outdated_by: null, print_profile: null,
-  slicer_name: null, slicer_version: null, has_snapshot: false, used: false, created_by: 'paul',
-  created_at: '2026-10-04T10:00:00Z', status_changed_at: null, files: [],
-});
-const item = (id: number, section: string, name: string, revisions: ReturnType<typeof rev>[]) => ({
-  id, section, name, name_key: name.toLowerCase(), forked_from: null, revisions,
-});
-const tree = {
-  project_id: 7,
-  code: 'P-0007',
-  sections: [
-    { section: 'scan', items: [] },
-    {
-      section: 'modelisation',
-      items: [
-        item(20, 'modelisation', 'Support', [rev(3, 3, 'valide'), rev(2, 2, 'valide'), rev(1, 1, 'wip')]),
-        item(21, 'modelisation', 'Clip', [rev(8, 2, 'wip'), rev(7, 1, 'valide')]),
-      ],
-    },
-    { section: 'impression', items: [item(30, 'impression', 'Plate', [rev(6, 1, 'valide')])] },
-    { section: 'usinage', items: [] },
-    { section: 'docs', items: [item(40, 'docs', 'Plan', [rev(5, 1, 'wip')])] },
+// This suite's revisions carry no print_count / pipeline_name (left out of the JSON).
+const rev = (id: number, number: number, status: RevisionStatus) =>
+  baseRev({ id, number, status, print_count: undefined, pipeline_name: undefined });
+const tree = projectTree({
+  modelisation: [
+    item(20, 'modelisation', 'Support', [rev(3, 3, 'valide'), rev(2, 2, 'valide'), rev(1, 1, 'wip')]),
+    item(21, 'modelisation', 'Clip', [rev(8, 2, 'wip'), rev(7, 1, 'valide')]),
   ],
-};
-const ref = (id: number, name: string, section: string, number: number) => ({
-  id, item_id: id * 10, item_name: name, section, number, status: 'valide',
+  impression: [item(30, 'impression', 'Plate', [rev(6, 1, 'valide')])],
+  docs: [item(40, 'docs', 'Plan', [rev(5, 1, 'wip')])],
 });
 const orderRow = (taskId: number, orderId: number, deliveries: ReturnType<typeof ref>[]) => ({
   task_id: taskId, task_title: 'T', order_id: orderId, order_description: 'D', client_name: 'Acme',
