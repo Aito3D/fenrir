@@ -19,7 +19,7 @@ import { NewProjectModal } from '../NewProjectModal';
 import { PrintRevisionPicker } from '../print/PrintRevisionPicker';
 import { DeliveriesPicker } from './DeliveriesPicker';
 import { ProjectLinkPicker } from './ProjectLinkPicker';
-import { useTaskFileDrop } from './dropFiles';
+import { canDropFiles, DROP_HIGHLIGHT_CLS, useTaskFileDrop } from './dropFiles';
 import { useInvalidateProjectLinks } from './useOrderProjectLinks';
 import { revisionLabel } from '../files/revisionLabel';
 import { useProjectTree } from '../projectQueries';
@@ -268,13 +268,13 @@ export function TaskDropZone({
   const { t } = useTranslation();
   const { hasPermission } = useAuth();
   // projects:read too: the task's link comes from the projects:read-gated links route.
-  const canDrop = hasPermission('aito:update') && hasPermission('projects:update') && hasPermission('projects:read');
+  const canDrop = canDropFiles(hasPermission);
   const { dragOver, ...handlers } = useTaskFileDrop({ orderId, taskId, link, canDrop });
   return (
     <div
       data-testid={taskId !== null ? `task-drop-${taskId}` : undefined}
       title={dragOver ? t('projectsPdm.aito.dropHere') : undefined}
-      className={`rounded-[.6rem] ${dragOver ? 'outline-dashed outline-2 outline-offset-2 outline-bambu-green' : ''}`}
+      className={`rounded-[.6rem] ${dragOver ? DROP_HIGHLIGHT_CLS : ''}`}
       {...handlers}
     >
       {children}

@@ -25,12 +25,19 @@ export const projectKeys = {
 
 type ExtraOptions<T> = Omit<UseQueryOptions<T>, 'queryKey' | 'queryFn'>;
 
+/** The project tree's key and fetcher, for useProjectTree and a one-off `fetchQuery`. */
+export function projectTreeQuery(projectId: number) {
+  return {
+    queryKey: projectKeys.tree(projectId),
+    queryFn: () => api.getProjectTree(projectId),
+  };
+}
+
 /** The project's files tree. Callers pass their own `enabled` / `retry` / …;
  *  disable the read while `projectId` is undefined. */
 export function useProjectTree(projectId: number | undefined, opts?: ExtraOptions<ProjectTreeResponse>) {
   return useQuery({
-    queryKey: projectKeys.tree(projectId),
-    queryFn: () => api.getProjectTree(projectId as number),
+    ...projectTreeQuery(projectId as number),
     ...opts,
   });
 }

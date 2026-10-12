@@ -1256,6 +1256,7 @@ CREATE TABLE projects (
 ```
 1 export const chipBase
 1 export const DIALOG_CARD_CLS
+1 export const DROP_HIGHLIGHT_CLS
 1 export const ENABLED_SECTIONS
 1 export const OVERLAY_CLS
 1 export const PREVIEWABLE_TYPES
@@ -1268,6 +1269,7 @@ CREATE TABLE projects (
 1 export const STATUS_CHIP_CLS
 1 export const STATUS_LABEL_KEYS
 1 export const stopDrag
+1 export function canDropFiles
 1 export function canManageProjectsSettings
 1 export function CardProjectChips
 1 export function Chevron
@@ -1275,6 +1277,7 @@ CREATE TABLE projects (
 1 export function DeliveriesPicker
 1 export function DialogShell
 1 export function DropShield
+1 export function failureMessage
 1 export function filesFromDataTransfer
 1 export function inZone
 1 export function isFileDrag
@@ -1307,6 +1310,7 @@ CREATE TABLE projects (
 1 export function ProjectsSettingsCard
 1 export function ProjectTagChips
 1 export function ProjectTagEditor
+1 export function projectTreeQuery
 1 export function ResliceDialog
 1 export function RevisionBlock
 1 export function revisionLabel
