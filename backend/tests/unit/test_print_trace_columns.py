@@ -21,6 +21,7 @@ from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.printer import Printer
+from backend.app.services import project_storage
 from backend.app.services.print_scheduler import PrintScheduler
 from backend.tests._fixtures.background_tasks import discarding_spawn_patch
 
@@ -249,6 +250,9 @@ async def _dispatch(session_maker, base_dir: Path, queue_item_id: int):
     patches = [
         patch.object(scheduler_module.settings, "base_dir", base_dir),
         patch.object(scheduler_module.settings, "archive_dir", base_dir / "archive"),
+        # The library folder stands in for the projects tree: a revision file is read
+        # through the projects-tree symlink guard (T-303), which refuses one outside it.
+        patch.object(project_storage, "projects_root", lambda: base_dir / "library"),
         patch("backend.app.services.archive.ArchiveService.archive_print", new=archive_print),
         patch("backend.app.services.print_scheduler.printer_manager.is_connected", MagicMock(return_value=True)),
         patch("backend.app.services.print_scheduler.printer_manager.get_status", MagicMock(return_value=None)),

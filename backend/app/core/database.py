@@ -6290,6 +6290,7 @@ async def run_migrations(conn):
     await _safe_execute(conn, "ALTER TABLE projects ADD COLUMN storage_dir VARCHAR(255)")
     await _safe_execute(conn, "CREATE UNIQUE INDEX IF NOT EXISTS ix_projects_code ON projects (code)")
     await _migrate_project_codes(conn)
+    await _migrate_project_storage_dirs(conn)
     await _migrate_project_tags(conn)
 
     # Projects as a PDM, phase 2 (spec §1.5): project revision files are
@@ -6849,6 +6850,31 @@ async def _migrate_project_codes(conn) -> None:
             await conn.execute(text("INSERT INTO settings (key, value) VALUES (:key, :value)"), params)
         elif str(counter_row[0]) != str(number):
             await conn.execute(text("UPDATE settings SET value = :value WHERE key = :key"), params)
+
+
+async def _migrate_project_storage_dirs(conn) -> None:
+    """Fix the folder name of every project created before phase 1 (NULL ``storage_dir``).
+
+    Runs after ``_migrate_project_codes``, so the name is ``storage_dir_name(code,
+    name)`` from the title the project has at startup, never from whichever
+    title a later upload happens to see. Rows that have a folder name keep it,
+    so a rerun changes nothing.
+    """
+    from sqlalchemy import text
+
+    from backend.app.services.project_storage import storage_dir_name
+
+    async with conn.begin_nested():
+        rows = (
+            await conn.execute(
+                text("SELECT id, code, name FROM projects WHERE storage_dir IS NULL OR storage_dir = ''")
+            )
+        ).fetchall()
+        for row in rows:
+            await conn.execute(
+                text("UPDATE projects SET storage_dir = :dir WHERE id = :id"),
+                {"dir": storage_dir_name(row.code or f"P-{row.id}", row.name), "id": row.id},
+            )
 
 
 async def _migrate_project_tags(conn) -> None:

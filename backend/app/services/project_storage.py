@@ -76,8 +76,10 @@ def ensure_project_dir(project) -> Path:
     """The project's folder, created if missing.
 
     Projects created before phase 1 have no ``storage_dir`` (spec §7 step 1
-    leaves it NULL); the name is fixed here, on first use, from the title the
-    project has at that moment.
+    leaves it NULL). The startup migration fixes their name and the file
+    service claims it in the database before building a path
+    (``project_files._claim_storage_dir``); the fallback here, from the title
+    the project has at that moment, only serves a caller that skipped both.
     """
     if not project.storage_dir:
         project.storage_dir = storage_dir_name(project.code or f"P-{project.id}", project.name)

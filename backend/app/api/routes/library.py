@@ -6279,6 +6279,25 @@ async def delete_file(
 # ============ File Content Endpoints ============
 
 
+def _guarded_read_path(file: LibraryFile) -> Path | None:
+    """Where to read ``file``'s bytes from.
+
+    A project revision file (``revision_id`` set; ``LibraryFile.active()``
+    keeps them reachable here) goes through the projects-tree symlink guard
+    (``project_files.revision_file_path``), and one it refuses answers 404
+    "File not found" as ``download_revision`` does. Any other file resolves
+    with ``to_absolute_path`` as before.
+    """
+    if file.revision_id is None:
+        return to_absolute_path(file.file_path)
+    from backend.app.services.project_files import revision_file_path
+
+    path = revision_file_path(file.file_path)
+    if path is None:
+        raise HTTPException(status_code=404, detail="File not found")
+    return path
+
+
 @router.get("/files/{file_id}/download")
 async def download_file(
     file_id: int,
@@ -6295,7 +6314,7 @@ async def download_file(
     result = await db.execute(LibraryFile.active().where(LibraryFile.id == file_id))
     file = _ensure_library_file_visible(result.scalar_one_or_none(), user, can_read_all)
 
-    abs_path = to_absolute_path(file.file_path)
+    abs_path = _guarded_read_path(file)
     if not abs_path or not abs_path.exists():
         raise HTTPException(status_code=404, detail="File not found on disk")
 
@@ -6357,7 +6376,7 @@ async def download_library_file_for_slicer(
     if not file:
         raise HTTPException(status_code=404, detail="File not found")
 
-    abs_path = to_absolute_path(file.file_path)
+    abs_path = _guarded_read_path(file)
     if not abs_path or not abs_path.exists():
         raise HTTPException(status_code=404, detail="File not found on disk")
 
@@ -6669,7 +6688,7 @@ async def get_gcode(
     result = await db.execute(LibraryFile.active().where(LibraryFile.id == file_id))
     file = _ensure_library_file_visible(result.scalar_one_or_none(), user, can_read_all)
 
-    abs_path = to_absolute_path(file.file_path)
+    abs_path = _guarded_read_path(file)
     if not abs_path or not abs_path.exists():
         raise HTTPException(status_code=404, detail="File not found on disk")
 

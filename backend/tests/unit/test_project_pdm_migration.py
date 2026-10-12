@@ -128,3 +128,27 @@ async def test_revision_pipeline_columns_are_added(tmp_path):
         cols = {row[1] for row in (await conn.execute(text("PRAGMA table_info(project_revisions)"))).all()}
     assert {"pipeline_id", "pipeline_name"} <= cols
     await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_storage_dirs_are_backfilled_once_and_kept(tmp_path):
+    engine = await _engine(tmp_path)
+    async with engine.begin() as conn:
+        await _legacy_project(conn, "Support caméra", "2024-01-01 10:00:00")
+        await _legacy_project(conn, "Déjà rangé", "2024-02-01 10:00:00")
+        await conn.execute(text("UPDATE projects SET storage_dir = 'P-0099_garde' WHERE name = 'Déjà rangé'"))
+        await _legacy_project(conn, "Vide", "2024-03-01 10:00:00")
+        await conn.execute(text("UPDATE projects SET storage_dir = '' WHERE name = 'Vide'"))
+        await run_migrations(conn)
+        first = dict((await conn.execute(text("SELECT name, storage_dir FROM projects"))).all())
+        # a title changed after startup does not move the folder on the next start
+        await conn.execute(text("UPDATE projects SET name = 'Nouveau titre' WHERE name = 'Support caméra'"))
+        await run_migrations(conn)
+        second = dict((await conn.execute(text("SELECT code, storage_dir FROM projects"))).all())
+    assert first == {
+        "Support caméra": "P-0001_support-camera",
+        "Déjà rangé": "P-0099_garde",
+        "Vide": "P-0003_vide",
+    }
+    assert second == {"P-0001": "P-0001_support-camera", "P-0002": "P-0099_garde", "P-0003": "P-0003_vide"}
+    await engine.dispose()

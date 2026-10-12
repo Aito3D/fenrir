@@ -26,6 +26,7 @@ from fastapi import UploadFile
 from sqlalchemy import Select, delete, select, union, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import set_committed_value
 
 from backend.app.api.routes.library import (
     IMAGE_EXTENSIONS,
@@ -108,6 +109,32 @@ def _item_lock(item_id: int) -> asyncio.Lock:
         lock = asyncio.Lock()
         _item_locks[item_id] = lock
     return lock
+
+
+async def _claim_storage_dir(db: AsyncSession, project: Project) -> None:
+    """Fix the folder name of a project that has none, once, and adopt the stored one.
+
+    A project created before phase 1 may still reach here with no
+    ``storage_dir`` (the startup migration fills them, a restored database may
+    not have run it yet). The name is claimed with a conditional UPDATE, so
+    two uploads that saw different titles cannot each write their own: the
+    loser's UPDATE matches no row and the name read back is the winner's. A
+    project with a folder name runs no statement.
+    """
+    if project.storage_dir:
+        return
+    name = project_storage.storage_dir_name(project.code or f"P-{project.id}", project.name)
+    await db.execute(
+        update(Project)
+        .where(Project.id == project.id, (Project.storage_dir.is_(None)) | (Project.storage_dir == ""))
+        .values(storage_dir=name)
+        .execution_options(synchronize_session=False, autoflush=False)
+    )
+    stored = (
+        await db.execute(select(Project.storage_dir).where(Project.id == project.id).execution_options(autoflush=False))
+    ).scalar_one_or_none()
+    if stored:  # a project deleted meanwhile falls through to ensure_project_dir, as before
+        set_committed_value(project, "storage_dir", stored)
 
 
 async def fresh_item(db: AsyncSession, item_id: int) -> ProjectItem:
@@ -812,6 +839,7 @@ async def _add_revision_locked(
         await _check_derived_from(db, project, None, derived_from_id)
     item_id, section, name = item.id, item.section, item.name
     number = item.last_revision_number + 1
+    await _claim_storage_dir(db, project)
     folder = revision_dir(project, section, name, number)
     created_folder = not any(folder.iterdir())
     written: list[_WrittenFile] = []
@@ -974,6 +1002,7 @@ async def add_files_to_revision(
         revision = await _fresh_revision(db, revision.id, item.id)
         await _require_editable_files(db, revision)
         item_id, section, name = item.id, item.section, item.name
+        await _claim_storage_dir(db, project)
         folder = revision_dir(project, section, name, revision.number)
         written: list[_WrittenFile] = []
 
@@ -1069,6 +1098,7 @@ async def _remove_file_locked(db: AsyncSession, project: Project, revision: Proj
 
     revision_id, file_ids = revision.id, [f.id for f in files]
     path = to_absolute_path(target.file_path)
+    await _claim_storage_dir(db, project)
     async with _TrashGuard(db, project, path, label=f"removal of file {target.id}") as guard:
         await _delete_file_rows(db, file_ids=[target.id])
         await db.flush()
@@ -1101,6 +1131,7 @@ async def _delete_revision_locked(
     await lock_revision_rows(db, [revision.id])  # PostgreSQL: a concurrent queue/delivery waits, or is waited for
     if await revision_is_used(db, revision.id):
         raise ProjectFilesError(409, "This revision was printed or delivered and cannot be deleted")
+    await _claim_storage_dir(db, project)
     folder = item_dir(project, item.section, item.name).joinpath(
         f"R{revision.number}"
     )  # SEC-PATH-OK: fixed "R{int}" under a resolved item dir
@@ -1173,6 +1204,7 @@ async def _rename_item_locked(db: AsyncSession, project: Project, item: ProjectI
     clean, key = clean_item_name(new_name)
     if key != item.name_key:
         await _require_item_name_free(db, project, item.section, key, exclude_id=item.id)
+    await _claim_storage_dir(db, project)
     old_dir = item_dir(project, item.section, item.name)
     new_dir = item_dir(project, item.section, clean)
     moved = _move_item_folder(old_dir, new_dir)
@@ -1205,6 +1237,7 @@ async def _delete_item_locked(db: AsyncSession, project: Project, item: ProjectI
     for revision_id in revision_ids:
         if await revision_is_used(db, revision_id):
             raise ProjectFilesError(409, _ITEM_USED)
+    await _claim_storage_dir(db, project)
     folder = item_dir(project, item.section, item.name)
     async with _TrashGuard(db, project, folder, label=f"deletion of item {item.id}") as guard:
         deleted_file_ids: dict[int, list[int]] = {}
@@ -1299,6 +1332,7 @@ async def _fork_revision_locked(
     section = item.section
     clean, key = clean_item_name(new_name)
     await _require_item_name_free(db, project, section, key)
+    await _claim_storage_dir(db, project)
     new_item_dir = item_dir(project, section, clean)
     if new_item_dir.exists():
         raise ProjectFilesError(409, "A folder with this name already exists")
