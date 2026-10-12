@@ -1270,6 +1270,7 @@ CREATE TABLE projects (
 1 export const stopDrag
 1 export function canManageProjectsSettings
 1 export function CardProjectChips
+1 export function Chevron
 1 export function CollapsibleHeader
 1 export function DeliveriesPicker
 1 export function DialogShell
@@ -1287,6 +1288,7 @@ CREATE TABLE projects (
 1 export function NewProjectModal
 1 export function nonPrintableFiles
 1 export function OrderPickerDialog
+1 export function OutdatedChip
 1 export function outdatedParams
 1 export function PrintedCount
 1 export function printProfileLine

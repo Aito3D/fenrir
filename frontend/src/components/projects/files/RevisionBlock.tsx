@@ -13,7 +13,6 @@ import {
   PRINTABLE_ACCEPT,
   STATUS_CHIP_CLS,
   STATUS_LABEL_KEYS,
-  chipBase,
   isPrintableFile,
   isSectionEnabled,
   printProfileLine,
@@ -22,6 +21,7 @@ import { PrintRevisionFlow } from '../print/PrintRevisionFlow';
 import { ResliceDialog } from '../reslice/ResliceDialog';
 import { outdatedParams, revisionLabel, revisionNumberLabel } from './revisionLabel';
 import { DropShield } from '../DropShield';
+import { OutdatedChip } from './OutdatedChip';
 
 export interface DerivedOption { id: number; label: string }
 
@@ -104,9 +104,7 @@ export function RevisionBlock({ item, revision, derivedOptions, actions }: Props
       </div>
 
       {newer && src && (
-        <span className={`${chipBase} border-amber-500/40 bg-amber-500/10 text-amber-400 whitespace-normal`}>
-          {t('projectsPdm.files.outdated', outdatedParams(src, newer))}
-        </span>
+        <OutdatedChip params={outdatedParams(src, newer)} wrapClassLast />
       )}
 
       {editingNote ? (

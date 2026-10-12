@@ -1,10 +1,12 @@
 import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ChevronDown, ChevronRight, Pencil, Trash2, Upload } from 'lucide-react';
+import { Pencil, Trash2, Upload } from 'lucide-react';
 import type { ProjectItemOut } from '../../../api/client';
 import { useAuth } from '../../../contexts/AuthContext';
 import { ConfirmModal } from '../../ConfirmModal';
 import { inputCls, focusRingCls } from '../../formStyles';
+import { Chevron } from './CollapsibleHeader';
+import { OutdatedChip } from './OutdatedChip';
 import { RevisionBlock } from './RevisionBlock';
 import type { DerivedOption } from './RevisionBlock';
 import type { FileActions } from './useFileActions';
@@ -81,7 +83,7 @@ export function ItemRow({ item, derivedOptions, actions }: Props) {
         ) : (
           <button type="button" aria-expanded={open} onClick={() => setOpen((o) => !o)}
             className={`flex min-h-[44px] min-w-0 flex-1 basis-40 items-center gap-1.5 rounded-lg text-left md:min-h-0 ${focusRingCls}`}>
-            {open ? <ChevronDown className="h-4 w-4 shrink-0 text-bambu-gray" /> : <ChevronRight className="h-4 w-4 shrink-0 text-bambu-gray" />}
+            <Chevron open={open} />
             <span className="min-w-0 break-all text-sm font-medium text-white">{item.name}</span>
           </button>
         )}
@@ -147,9 +149,7 @@ export function ItemRow({ item, derivedOptions, actions }: Props) {
             </span>
           )}
           {rowOutdated && src && newest.outdated_by && (
-            <span className={`${chipBase} whitespace-normal border-amber-500/40 bg-amber-500/10 text-amber-400`}>
-              {t('projectsPdm.files.outdated', outdatedParams(src, newest.outdated_by))}
-            </span>
+            <OutdatedChip params={outdatedParams(src, newest.outdated_by)} />
           )}
         </div>
       )}

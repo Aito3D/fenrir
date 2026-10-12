@@ -6,7 +6,7 @@ import { api } from '../../../api/client';
 import type { ProjectTreeResponse } from '../../../api/client';
 import { Button } from '../../Button';
 import { useToast } from '../../../contexts/ToastContext';
-import { ENABLED_SECTIONS, SECTION_LABEL_KEYS, STATUS_LABEL_KEYS } from '../files/filesUi';
+import { SECTION_LABEL_KEYS, STATUS_LABEL_KEYS, isSectionEnabled } from '../files/filesUi';
 import { revisionLabel, revisionNumberLabel } from '../files/revisionLabel';
 import { useInvalidateProjectLinks } from './useOrderProjectLinks';
 import { useProjectOrders, useProjectTree } from '../projectQueries';
@@ -20,7 +20,7 @@ import { useIsolatedEscape } from '../../../hooks/useIsolatedEscape';
 function suggestLatestApproved(tree: ProjectTreeResponse): Map<number, number> {
   const picks = new Map<number, number>();
   for (const section of tree.sections) {
-    if (!ENABLED_SECTIONS.includes(section.section)) continue;
+    if (!isSectionEnabled(section.section)) continue;
     for (const item of section.items) {
       const best = item.revisions
         .filter((r) => r.status === 'valide')
