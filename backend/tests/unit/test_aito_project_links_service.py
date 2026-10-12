@@ -1128,3 +1128,65 @@ async def test_drop_creates_the_item_first_then_streams_with_no_pending_writes(d
     response = await links.drop_files_on_task(db_session, task, [_upload("bracket.3mf")], user_id=None, actor="Paul")
     assert seen == {"new": [], "dirty": [], "deleted": [], "items": 1, "revisions": 0, "files": 0}
     assert [r.revision_number for r in response.results] == [1]
+
+
+@pytest.mark.asyncio
+async def test_drop_cancelled_while_recording_still_carries_the_stored_count(db_session, monkeypatch):
+    """T-258: a cancellation inside the ``finally`` (recording the drop) also carries ``stored_count`` for the route."""
+    project = await _project(db_session)
+    order = await _order(db_session)
+    task = await _task(db_session, order, linked=project.id)
+    await db_session.commit()
+
+    async def cancelled_record_drop(*_args, **_kwargs):
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(links, "_record_drop", cancelled_record_drop)
+    with pytest.raises(asyncio.CancelledError) as err:
+        await links.drop_files_on_task(db_session, task, [_upload("a.3mf")], user_id=None, actor="Paul")
+
+    assert err.value.stored_count == 1
+    assert (await db_session.execute(select(ProjectRevision.number))).scalars().all() == [1]
+
+
+@pytest.mark.asyncio
+async def test_drop_cancelled_while_recording_nothing_stored_carries_zero(db_session, monkeypatch):
+    """T-258: an exception leaving the ``finally`` before any group was stored carries ``stored_count`` 0."""
+    project = await _project(db_session)
+    order = await _order(db_session)
+    task = await _task(db_session, order, linked=project.id)
+    await db_session.commit()
+
+    async def fails(*_args, **_kwargs):
+        raise links.project_files.ProjectFilesError(409, "boom")
+
+    async def cancelled_broadcast(*_args, **_kwargs):
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(links.project_files, "add_revision", fails)
+    monkeypatch.setattr(links, "broadcast_orders_changed", cancelled_broadcast)
+    with pytest.raises(asyncio.CancelledError) as err:
+        await links.drop_files_on_task(db_session, task, [_upload("a.3mf")], user_id=None, actor="Paul")
+
+    assert err.value.stored_count == 0
+
+
+@pytest.mark.asyncio
+async def test_drop_with_a_blank_sanitised_name_raises_before_storing(db_session, monkeypatch):
+    """T-259: the blank-name check runs before the store loop, so the valid group ahead of it is never stored."""
+    project = await _project(db_session)
+    order = await _order(db_session)
+    task = await _task(db_session, order, linked=project.id)
+    await db_session.commit()
+
+    async def never(*_args, **_kwargs):
+        raise AssertionError("nothing may be stored")
+
+    monkeypatch.setattr(links, "find_or_create_item", never)
+    with pytest.raises(links.LinkError) as err:
+        await links.drop_files_on_task(
+            db_session, task, [_upload("a.3mf"), _upload("dir/???.3mf")], user_id=None, actor="Paul"
+        )
+
+    assert (err.value.status_code, err.value.detail) == (400, "Item name must not be blank; refused: ???.3mf")
+    assert await _events(db_session, "project.files_dropped") == []

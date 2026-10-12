@@ -6,6 +6,9 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 Section = Literal["scan", "modelisation", "impression", "usinage", "docs"]
 RevisionStatus = Literal["wip", "valide", "obsolete"]
 
+# One limit for a revision note, whether set on upload or by PATCH.
+REVISION_NOTE_MAX_LENGTH = 5000
+
 
 def required_name(value: str) -> str:
     value = value.strip()
@@ -101,7 +104,7 @@ class ProjectItemFork(BaseModel):
 
 class ProjectRevisionUpdate(BaseModel):
     status: RevisionStatus | None = None
-    note: str | None = Field(default=None, max_length=5000)
+    note: str | None = Field(default=None, max_length=REVISION_NOTE_MAX_LENGTH)
     derived_from_id: int | None = None
 
 

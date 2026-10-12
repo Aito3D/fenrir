@@ -15,6 +15,7 @@ from backend.app.api.routes.library import to_absolute_path
 from backend.app.core.config import settings
 from backend.app.models.library import LibraryFile
 from backend.app.models.slicer_pipeline import SlicerPipeline
+from backend.app.schemas.project_files import REVISION_NOTE_MAX_LENGTH
 from backend.app.services import project_storage
 from backend.tests.project_fixtures import ChunkedMultipart, api_project, projects_root_fixture
 
@@ -553,3 +554,25 @@ async def test_receive_capped_passes_non_body_messages_and_counts_across_chunks(
         await capped.receive()
     assert refused.value.status_code == 413
     assert refused.value.detail == "Upload exceeds the maximum size of 1024 bytes"
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_upload_note_capped_at_the_patch_limit(async_client: AsyncClient, root):
+    """T-256: the upload note shares the PATCH limit (5000); one character over is a 422 that stores nothing."""
+    assert REVISION_NOTE_MAX_LENGTH == 5000
+    project = await _project(async_client)
+    kept = await _item(async_client, project["id"], name="Kept")
+    stored = await _upload(async_client, kept["id"], ("a.gcode", b"geo"), note="n" * 5000)
+    assert stored.status_code == 201, stored.text
+    assert stored.json()["revision"]["note"] == "n" * 5000
+
+    refused_item = await _item(async_client, project["id"], name="Refused")
+    on_disk = sorted(p for p in root.rglob("*") if p.is_file())
+    refused = await _upload(async_client, refused_item["id"], ("b.gcode", b"other"), note="n" * 5001)
+    assert refused.status_code == 422, refused.text
+    assert refused.json()["detail"][0]["loc"] == ["body", "note"]
+    assert sorted(p for p in root.rglob("*") if p.is_file()) == on_disk
+    tree = (await async_client.get(f"/api/v1/projects/{project['id']}/tree")).json()
+    revisions = {i["name"]: i["revisions"] for i in tree["sections"][2]["items"]}
+    assert revisions["Refused"] == [] and len(revisions["Kept"]) == 1

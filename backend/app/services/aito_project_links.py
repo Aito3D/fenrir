@@ -610,6 +610,9 @@ async def drop_files_on_task(
     Impression revision of the existing item, or R1 of a new one; any
     non-printable file refuses the whole drop (400). Commits.
 
+    A file whose name leaves no item name (``???.3mf``) refuses the whole
+    drop (400 naming it) the same way, before anything is written.
+
     Goes through the phase-2 service so streaming-before-DB, per-item locks and
     cleanup apply. ``add_revision`` rolls the whole session back on failure, so
     each created item is committed first. Each stored group is announced on the
@@ -641,6 +644,14 @@ async def drop_files_on_task(
         name = item_name_for_filename(project_files.upload_basename(upload))
         key = (DROP_SECTION, project_files.name_key(name))
         groups.setdefault(key, (name, []))[1].append(upload)
+    # A file whose name sanitises to nothing can never become an item: refuse
+    # the whole drop (400 naming them) before anything is written, too.
+    blank = groups.get((DROP_SECTION, ""))
+    if blank is not None:
+        raise LinkError(
+            400,
+            "Item name must not be blank; refused: " + ", ".join(project_files.upload_basename(u) for u in blank[1]),
+        )
 
     results: list[DroppedFileResult] = []
     errors: list[DropFilesError] = []
@@ -689,12 +700,17 @@ async def drop_files_on_task(
         ]
         errors.append(_drop_error(exc, unstored, order_id))
     finally:
-        if results:
-            try:
-                await _record_drop(db, order_id, project_id, code, results, actor)
-                await db.commit()
-            except Exception:
-                logger.warning("project.files_dropped event failed for order %s", order_id, exc_info=True)
-                await db.rollback()
-        await broadcast_orders_changed(notified, actor)
+        try:
+            if results:
+                try:
+                    await _record_drop(db, order_id, project_id, code, results, actor)
+                    await db.commit()
+                except Exception:
+                    logger.warning("project.files_dropped event failed for order %s", order_id, exc_info=True)
+                    await db.rollback()
+            await broadcast_orders_changed(notified, actor)
+        except BaseException as exc:
+            # A cancellation (or a failed rollback) while recording still tells the route what was stored.
+            exc.stored_count = len(results)  # type: ignore[attr-defined]
+            raise
     return DropFilesResponse(project_id=project_id, code=code, results=results, errors=errors)

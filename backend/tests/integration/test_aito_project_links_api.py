@@ -23,7 +23,7 @@ from backend.app.models.project_item import ProjectItem
 from backend.app.models.settings import Settings
 from backend.app.models.user import User
 from backend.app.services import aito_project_links as links_service, project_files as files_service, project_storage
-from backend.tests.project_fixtures import ChunkedMultipart, projects_root_fixture
+from backend.tests.project_fixtures import ChunkedMultipart, projects_root_fixture, upload
 
 root = projects_root_fixture(autouse=True)
 
@@ -520,6 +520,33 @@ async def test_drop_route_broadcasts_a_stored_group_when_cancelled(db_session, m
 
 @pytest.mark.asyncio
 @pytest.mark.integration
+async def test_drop_route_broadcasts_when_cancelled_while_recording_a_stored_group(
+    async_client: AsyncClient, db_session, monkeypatch
+):
+    """T-258: the real service, cancelled inside its ``finally`` after a stored group, still lets the route broadcast."""
+    order = await _order(db_session)
+    task = await _task(db_session, order)
+    project = await _project(async_client)
+    await async_client.put(f"/api/v1/aito/tasks/{task.id}/project", json={"project_id": project["id"]})
+    await db_session.refresh(task)
+
+    async def cancelled_record_drop(*_args, **_kwargs):
+        raise asyncio.CancelledError
+
+    broadcasts = []
+
+    async def fake_broadcast(order_id, actor):
+        broadcasts.append(order_id)
+
+    monkeypatch.setattr(links_service, "_record_drop", cancelled_record_drop)
+    monkeypatch.setattr(links_routes, "_broadcast_changed", fake_broadcast)
+    with pytest.raises(asyncio.CancelledError):
+        await links_routes.drop_task_files(task.id, files=[upload("a.3mf", b"x")], db=db_session, user=None, __=None)
+    assert broadcasts == [order.id]
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
 async def test_drop_failing_on_the_first_group_does_not_broadcast(async_client: AsyncClient, db_session, monkeypatch):
     """Nothing stored (``stored_count`` 0): the 409 goes out without an aito_changed broadcast (T-286: unchanged)."""
     order = await _order(db_session)
@@ -851,3 +878,61 @@ async def test_link_error_chains_and_other_errors_pass_through(db_session, monke
     assert err2.value is boom
     assert rolled_back == []
     monkeypatch.undo()
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_drop_with_a_blank_sanitised_name_is_refused_whole(
+    async_client: AsyncClient, db_session, root, monkeypatch
+):
+    """T-259: a file whose name sanitises to nothing refuses the whole drop up front (400 naming it), even
+    after a valid group: no item, no revision, no file, no event, no broadcast."""
+    order = await _order(db_session)
+    task = await _task(db_session, order)
+    project = await _project(async_client)
+    await async_client.put(f"/api/v1/aito/tasks/{task.id}/project", json={"project_id": project["id"]})
+    order_id = order.id
+
+    broadcasts = []
+
+    async def fake_broadcast(order_id, actor):
+        broadcasts.append(order_id)
+
+    monkeypatch.setattr(links_routes, "_broadcast_changed", fake_broadcast)
+
+    async def fake_fan_out(order_ids, actor):
+        broadcasts.extend(order_ids)
+
+    monkeypatch.setattr(links_service, "broadcast_orders_changed", fake_fan_out)
+    on_disk = sorted(p for p in root.rglob("*") if p.is_file())
+
+    async def drop(*names):
+        return await async_client.post(
+            f"/api/v1/aito/tasks/{task.id}/files",
+            files=[("files", (name, b"x", "application/octet-stream")) for name in names],
+        )
+
+    mixed = await drop("a.3mf", "???.3mf", "b.gcode", "...3mf")
+    assert (mixed.status_code, mixed.json()["detail"]) == (400, "Item name must not be blank; refused: ???.3mf, ...3mf")
+    blank_only = await drop("???.3mf")
+    assert (blank_only.status_code, blank_only.json()["detail"]) == (
+        400,
+        "Item name must not be blank; refused: ???.3mf",
+    )
+    # a non-printable file is still the first refusal, as before
+    other = await drop("???.3mf", "notes.txt")
+    assert other.status_code == 400 and other.json()["detail"].startswith("Projects only accept printing files")
+
+    tree = (await async_client.get(f"/api/v1/projects/{project['id']}/tree")).json()
+    assert [it for sec in tree["sections"] for it in sec["items"]] == []
+    assert sorted(p for p in root.rglob("*") if p.is_file()) == on_disk
+    events = (
+        (await db_session.execute(select(AitoEvent).where(AitoEvent.kind == "project.files_dropped"))).scalars().all()
+    )
+    assert events == []
+    assert broadcasts == []
+
+    valid = await drop("a.3mf", "b.gcode")
+    assert valid.status_code == 201, valid.text
+    assert [r["filename"] for r in valid.json()["results"]] == ["a.3mf", "b.gcode"]
+    assert broadcasts == [order_id]

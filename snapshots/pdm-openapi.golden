@@ -11226,6 +11226,7 @@
     "note": {
      "anyOf": [
       {
+       "maxLength": 5000,
        "type": "string"
       },
       {

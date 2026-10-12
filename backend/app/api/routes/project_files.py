@@ -34,6 +34,7 @@ from backend.app.models.project import Project
 from backend.app.models.user import User
 from backend.app.schemas.aito_project_links import ProjectOrdersResponse
 from backend.app.schemas.project_files import (
+    REVISION_NOTE_MAX_LENGTH,
     ImportLibraryFilesRequest,
     ImportLibraryFilesResponse,
     LegacyMigrationStatus,
@@ -297,7 +298,7 @@ async def delete_item(
 async def upload_revision(
     item_id: int,
     files: list[UploadFile] = File(...),
-    note: str | None = Form(default=None),
+    note: str | None = Form(default=None, max_length=REVISION_NOTE_MAX_LENGTH),
     derived_from_id: int | None = Form(default=None),
     db: AsyncSession = Depends(get_db),
     user: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
