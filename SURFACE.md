@@ -254,6 +254,7 @@ async def load_tree(db: AsyncSession, project: Project)
 async def lock_revision_rows(
 async def migrate_project_legacy(db: AsyncSession, project: Project)
 async def move_library_files_to_project(
+async def move_task_print_trace(db: AsyncSession, copy_by_source: Mapping[int, int])
 async def order_links(db: AsyncSession, order_id: int)
 async def orders_for_project(db: AsyncSession, project_id: int)
 async def post_task_project(

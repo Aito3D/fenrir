@@ -17,6 +17,7 @@ from collections.abc import Callable, Collection, Iterable
 from fastapi import UploadFile
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.exc import StaleDataError
 from starlette.exceptions import HTTPException
 
 from backend.app.core.websocket import ws_manager
@@ -72,6 +73,21 @@ def _revision_label(item: ProjectItem | None, revision: ProjectRevision | None, 
     return project_files.revision_label(item.name, revision.number)
 
 
+async def _require_live_task(db: AsyncSession, task_id: int) -> None:
+    """Run after a flush (the write lock is held then): a task deleted since the
+    route read it, or whose order was trashed or merged away, would keep an
+    orphaned or lost row, so refuse it with the route's 404; the caller rolls back."""
+    live = (
+        await db.execute(
+            select(AitoTask.id)
+            .join(AitoProject, AitoProject.id == AitoTask.project_id)
+            .where(AitoTask.id == task_id, AitoProject.status != "deleted")
+        )
+    ).first()
+    if live is None:
+        raise LinkError(404, "Task not found")
+
+
 async def _clear_deliveries(db: AsyncSession, task_id: int) -> None:
     await db.execute(delete(AitoTaskDelivery).where(AitoTaskDelivery.task_id == task_id))
 
@@ -93,13 +109,17 @@ async def link_task(db: AsyncSession, task: AitoTask, project_id: int | None, *,
     if previous_id is not None:
         await _clear_deliveries(db, task.id)
     task.linked_project_id = project_id
-    await db.flush()
+    try:
+        await db.flush()
+    except StaleDataError as exc:  # the task row was deleted since the route read it
+        raise LinkError(404, "Task not found") from exc
     # The flush holds the write lock: a project deleted since it was read would
     # leave a dangling link (no FK), so refuse it; the caller rolls back.
     if project_id is not None and (
         (await db.execute(select(Project.id).where(Project.id == project_id))).first() is None
     ):
         raise LinkError(404, "Project not found")
+    await _require_live_task(db, task.id)
 
     if project is not None:
         kind, detail = "task.project_linked", _project_detail(project.id, project)
@@ -227,6 +247,7 @@ async def set_deliveries(
         )
     db.add_all(AitoTaskDelivery(task_id=task.id, revision_id=rid, created_by_id=user_id) for rid in added)
     await db.flush()
+    await _require_live_task(db, task.id)
     # a revision may have been deleted since the validation above; the write lock is held now
     # (on PostgreSQL the share lock waits for a concurrent delete to commit)
     if added:

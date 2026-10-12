@@ -2884,3 +2884,121 @@ async def test_delete_item_locks_every_revision_before_the_usage_checks(db_sessi
     calls = _spy_lock_and_usage(monkeypatch, project_files)
     await delete_item(db_session, project, item)
     assert calls == [("lock", ids, False), ("used", ids[0]), ("used", ids[1])]
+
+
+@pytest.mark.asyncio
+async def test_remove_file_locks_the_revision_before_the_usage_check(db_session, root, monkeypatch):
+    """T-292: removing a file locks its revision FOR UPDATE (PostgreSQL) before the pre-check, as the deletes do."""
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project, files=[upload("a.step"), upload("b.step", b"b")])
+    await db_session.commit()
+    rev_id = rev.id
+    target_id = (
+        (
+            await db_session.execute(
+                select(LibraryFile.id).where(LibraryFile.revision_id == rev_id).order_by(LibraryFile.id)
+            )
+        )
+        .scalars()
+        .first()
+    )
+    calls = _spy_lock_and_usage(monkeypatch, project_files)
+    await remove_file_from_revision(db_session, project, item, rev, target_id)
+    assert calls == [("lock", [rev_id], False), ("used", rev_id)]
+
+
+# T-292: the removal re-checks the revision after its delete is flushed (the write lock is
+# held then), so a validation, print or delivery committed since the pre-check refuses it.
+
+
+async def _two_files_by_name(db_session, project):
+    item, rev = await _rev(db_session, project, files=[upload("a.step"), upload("b.step", b"other")])
+    await db_session.commit()
+    rows = (await db_session.execute(select(LibraryFile).where(LibraryFile.revision_id == rev.id))).scalars().all()
+    return item, rev, {f.filename: f.id for f in rows}
+
+
+async def _queue_it(db, revision_id, file_id):
+    db.add(PrintQueueItem(library_file_id=file_id))
+
+
+async def _deliver_it(db, revision_id, file_id):
+    db.add(AitoTaskDelivery(task_id=4242, revision_id=revision_id))
+
+
+async def _validate_it(db, revision_id, file_id):
+    (await db.get(ProjectRevision, revision_id)).status = "valide"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("make_used", "detail"),
+    [
+        (_queue_it, "This revision was printed or delivered; make a new revision instead"),
+        (_deliver_it, "This revision was printed or delivered; make a new revision instead"),
+        (_validate_it, "Only an in-progress revision can change its files"),
+    ],
+)
+async def test_remove_file_refuses_a_use_that_landed_after_the_pre_check(
+    db_session, root, monkeypatch, test_engine, make_used, detail
+):
+    project = await _project(db_session)
+    item, rev, ids = await _two_files_by_name(db_session, project)
+    base, rev_id, target_id = root / project.storage_dir, rev.id, ids["a.step"]
+
+    async def use_it(db, revision_id):
+        await make_used(db, revision_id, target_id)
+
+    calls = await _used_after_the_pre_check(db_session, monkeypatch, use_it)
+    with pytest.raises(ProjectFilesError) as exc:
+        await remove_file_from_revision(db_session, project, item, rev, target_id)
+    assert calls == [rev_id]
+    assert (exc.value.status_code, exc.value.detail) == (409, detail)
+    kept = await _fresh_scalars(test_engine, select(LibraryFile.id).where(LibraryFile.revision_id == rev_id))
+    assert sorted(kept) == sorted(ids.values())
+    folder = base / "Modélisation" / "Support" / "R1"
+    assert (folder / "a.step").read_bytes() == b"data" and (folder / "b.step").read_bytes() == b"other"
+    assert _trash_entries(base) == []
+
+
+@pytest.mark.asyncio
+async def test_remove_file_refuses_a_print_of_another_file_that_landed_after_the_pre_check(
+    db_session, root, monkeypatch, test_engine
+):
+    """The re-check covers the revision's other files too, like the pre-check."""
+    project = await _project(db_session)
+    item, rev, ids = await _two_files_by_name(db_session, project)
+    base, rev_id, target_id = root / project.storage_dir, rev.id, ids["a.step"]
+
+    async def print_other(db, revision_id):
+        db.add(PrintArchive(filename="x", file_path="x", file_size=1, library_file_id=ids["b.step"]))
+
+    await _used_after_the_pre_check(db_session, monkeypatch, print_other)
+    with pytest.raises(ProjectFilesError) as exc:
+        await remove_file_from_revision(db_session, project, item, rev, target_id)
+    assert (exc.value.status_code, exc.value.detail) == (
+        409,
+        "This revision was printed or delivered; make a new revision instead",
+    )
+    assert target_id in await _fresh_scalars(
+        test_engine, select(LibraryFile.id).where(LibraryFile.revision_id == rev_id)
+    )
+    assert _trash_entries(base) == []
+
+
+@pytest.mark.asyncio
+async def test_remove_file_with_nothing_landing_meanwhile_still_trashes_it(db_session, root, monkeypatch, test_engine):
+    project = await _project(db_session)
+    item, rev, ids = await _two_files_by_name(db_session, project)
+    base, rev_id, target_id = root / project.storage_dir, rev.id, ids["a.step"]
+
+    async def nothing(db, revision_id):
+        return None
+
+    await _used_after_the_pre_check(db_session, monkeypatch, nothing)
+    await remove_file_from_revision(db_session, project, item, rev, target_id)
+    assert await _fresh_scalars(test_engine, select(LibraryFile.id).where(LibraryFile.revision_id == rev_id)) == [
+        ids["b.step"]
+    ]
+    assert not (base / "Modélisation" / "Support" / "R1" / "a.step").exists()
+    assert [p.name.split("-")[0] for p in _trash_entries(base)] == ["a"]

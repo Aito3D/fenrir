@@ -12,10 +12,10 @@ error because the timeline could not be written.
 """
 
 import logging
-from collections.abc import Collection
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 
-from sqlalchemy import case, func, or_, select
+from sqlalchemy import case, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.aito_project import AitoProject
@@ -229,6 +229,23 @@ async def task_print_counts(db: AsyncSession, task_ids: Collection[int]) -> dict
     for tid, printable_objects, archive_quantity in queue_rows:
         counts.setdefault(tid, [0, 0, 0])[2] += _queued_parts(printable_objects, archive_quantity)
     return {tid: PrintCounts(*values) for tid, values in counts.items()}
+
+
+async def move_task_print_trace(db: AsyncSession, copy_by_source: Mapping[int, int]) -> None:
+    """Re-point every queue item and archive of each source task to its copy
+    (an Aito card merge), so the copy counts the prints and a pending item
+    finishes against it. All of them, finished queue rows and trashed archives
+    included, so a task's queue history and its archives stay together. One
+    UPDATE per table."""
+    if not copy_by_source:
+        return
+    for model in (PrintQueueItem, PrintArchive):
+        await db.execute(
+            update(model)
+            .where(model.aito_task_id.in_(list(copy_by_source)))
+            .values(aito_task_id=case(dict(copy_by_source), value=model.aito_task_id))
+            .execution_options(synchronize_session=False)
+        )
 
 
 def _queued_parts(printable_objects, archive_quantity: int | None) -> int:

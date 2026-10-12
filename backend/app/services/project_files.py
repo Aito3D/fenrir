@@ -931,11 +931,32 @@ async def _revision_files(db: AsyncSession, revision_id: int) -> list[LibraryFil
     )
 
 
+_NOT_EDITABLE = "Only an in-progress revision can change its files"
+_USED_NOT_EDITABLE = "This revision was printed or delivered; make a new revision instead"
+
+
 async def _require_editable_files(db: AsyncSession, revision: ProjectRevision) -> None:
     if revision.status != "wip":
-        raise ProjectFilesError(409, "Only an in-progress revision can change its files")
+        raise ProjectFilesError(409, _NOT_EDITABLE)
     if await revision_is_used(db, revision.id):
-        raise ProjectFilesError(409, "This revision was printed or delivered; make a new revision instead")
+        raise ProjectFilesError(409, _USED_NOT_EDITABLE)
+
+
+async def _require_files_still_editable(db: AsyncSession, revision_id: int, file_ids: list[int]) -> None:
+    """``_require_editable_files`` re-run after this transaction deleted some of ``file_ids``' rows.
+
+    The status is re-read from the database and uses are matched by the
+    remembered ids (``_deleted_revision_is_used``). Run after the delete is
+    flushed (the SQLite write lock is held then), it sees a validation, print
+    or delivery committed since the pre-check.
+    """
+    status = (
+        await db.execute(select(ProjectRevision.status).where(ProjectRevision.id == revision_id))
+    ).scalar_one_or_none()
+    if status != "wip":
+        raise ProjectFilesError(409, _NOT_EDITABLE)
+    if await _deleted_revision_is_used(db, revision_id, file_ids):
+        raise ProjectFilesError(409, _USED_NOT_EDITABLE)
 
 
 async def add_files_to_revision(
@@ -1037,6 +1058,7 @@ async def remove_file_from_revision(
 
 
 async def _remove_file_locked(db: AsyncSession, project: Project, revision: ProjectRevision, file_id: int) -> None:
+    await lock_revision_rows(db, [revision.id])  # as in _delete_revision_locked
     await _require_editable_files(db, revision)
     files = await _revision_files(db, revision.id)
     target = next((f for f in files if f.id == file_id), None)
@@ -1045,10 +1067,13 @@ async def _remove_file_locked(db: AsyncSession, project: Project, revision: Proj
     if len(files) == 1:
         raise ProjectFilesError(409, "A revision keeps at least one file; delete the revision instead")
 
+    revision_id, file_ids = revision.id, [f.id for f in files]
     path = to_absolute_path(target.file_path)
     async with _TrashGuard(db, project, path, label=f"removal of file {target.id}") as guard:
         await _delete_file_rows(db, file_ids=[target.id])
         await db.flush()
+        # the revision may have been validated, printed or delivered since the pre-check
+        await _require_files_still_editable(db, revision_id, file_ids)
         guard.trash()
         await guard.commit()
 
