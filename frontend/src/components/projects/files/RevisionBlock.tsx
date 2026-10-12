@@ -20,7 +20,7 @@ import {
 } from './filesUi';
 import { PrintRevisionFlow } from '../print/PrintRevisionFlow';
 import { ResliceDialog } from '../reslice/ResliceDialog';
-import { outdatedParams, revisionLabel } from './revisionLabel';
+import { outdatedParams, revisionLabel, revisionNumberLabel } from './revisionLabel';
 import { DropShield } from '../DropShield';
 
 export interface DerivedOption { id: number; label: string }
@@ -64,7 +64,7 @@ export function RevisionBlock({ item, revision, derivedOptions, actions }: Props
   const resliceRunning = running !== undefined && running.error === null;
   const resliceable = revision.files.filter(isResliceable);
   const busy = actions.isBusy(item.id);
-  const label = `R${revision.number}`;
+  const label = revisionNumberLabel(revision.number);
   const editable = revision.status === 'wip' && !revision.used;
   const pp = revision.print_profile as Record<string, unknown> | null;
   const profileLine = printProfileLine(pp);

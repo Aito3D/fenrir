@@ -23,6 +23,7 @@ from backend.app.schemas.slicer import SliceRequest
 from backend.app.services import project_files
 from backend.app.services.project_files import ProjectFilesError
 from backend.app.services.project_snapshot import is_3mf
+from backend.app.services.project_storage import split_gcode_3mf
 from backend.app.services.slicer_pipeline_request import slice_request_from_pipeline
 
 logger = logging.getLogger(__name__)
@@ -35,12 +36,9 @@ def is_resliceable(filename: str) -> bool:
 
 def output_filename(source_filename: str) -> str:
     """``support.3mf`` / ``support.gcode.3mf`` → ``support.gcode.3mf``."""
-    name = source_filename
-    lower = name.lower()
-    for suffix in (".gcode.3mf", ".3mf"):
-        if lower.endswith(suffix):
-            name = name[: -len(suffix)]
-            break
+    name, gcode_ext = split_gcode_3mf(source_filename)
+    if not gcode_ext and name.lower().endswith(".3mf"):
+        name = name[: -len(".3mf")]
     return f"{name or 'tranche'}.gcode.3mf"
 
 

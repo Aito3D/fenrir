@@ -32,7 +32,12 @@ from backend.app.services import project_files
 from backend.app.services.db_quiet import rollback_quietly
 from backend.app.services.project_codes import format_project_code
 from backend.app.services.project_files import RevisionSource
-from backend.app.services.project_storage import ENABLED_SECTIONS, PRINTABLE_EXTENSIONS, is_printable_filename
+from backend.app.services.project_storage import (
+    ENABLED_SECTIONS,
+    PRINTABLE_EXTENSIONS,
+    is_printable_filename,
+    split_gcode_3mf,
+)
 from backend.app.services.project_suggestions import SIMILAR_NAME_THRESHOLD, similar_projects
 from backend.app.utils.local_time import utcnow_naive
 
@@ -57,9 +62,8 @@ def section_for_filename(name: str) -> str:
 def item_name_for_filename(name: str) -> str:
     """File name without its extension (``.gcode.3mf`` counted whole); the full name if nothing is left."""
     stripped = name.strip()
-    if stripped.lower().endswith(".gcode.3mf"):
-        stem = stripped[: -len(".gcode.3mf")]
-    else:
+    stem, gcode_ext = split_gcode_3mf(stripped)
+    if not gcode_ext:
         stem = stripped.rsplit(".", 1)[0] if "." in stripped else stripped
     return stem if stem.strip() else stripped
 

@@ -9,8 +9,8 @@ import { RevisionBlock } from './RevisionBlock';
 import type { DerivedOption } from './RevisionBlock';
 import type { FileActions } from './useFileActions';
 import { useFileDropZone } from './useFileDropZone';
-import { PRINTABLE_ACCEPT, SECTION_LABEL_KEYS, STATUS_CHIP_CLS, STATUS_LABEL_KEYS, chipBase, isSectionEnabled } from './filesUi';
-import { outdatedParams, revisionLabel } from './revisionLabel';
+import { PRINTABLE_ACCEPT, STATUS_CHIP_CLS, STATUS_LABEL_KEYS, chipBase, isSectionEnabled } from './filesUi';
+import { outdatedParams, revisionNumberLabel, sectionRevisionLabel } from './revisionLabel';
 
 interface Props {
   item: ProjectItemOut;
@@ -87,7 +87,7 @@ export function ItemRow({ item, derivedOptions, actions }: Props) {
         )}
         {newest && (
           <span className={`${chipBase} ${STATUS_CHIP_CLS[newest.status]}`}>
-            {`R${newest.number} · ${t(STATUS_LABEL_KEYS[newest.status])}`}
+            {`${revisionNumberLabel(newest.number)} · ${t(STATUS_LABEL_KEYS[newest.status])}`}
           </span>
         )}
         <span className="text-xs text-bambu-gray">{t('projectsPdm.files.fileCount', { count: fileCount })}</span>
@@ -143,7 +143,7 @@ export function ItemRow({ item, derivedOptions, actions }: Props) {
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-2 pb-2 pl-8 text-xs text-bambu-gray">
           {src && (
             <span className="break-words">
-              {t('projectsPdm.files.derivedFrom', { label: `${t(SECTION_LABEL_KEYS[src.section])} › ${revisionLabel(src.item_name, src.number)}` })}
+              {t('projectsPdm.files.derivedFrom', { label: sectionRevisionLabel(t, src.section, src.item_name, src.number) })}
             </span>
           )}
           {rowOutdated && src && newest.outdated_by && (

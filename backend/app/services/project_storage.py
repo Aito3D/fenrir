@@ -135,10 +135,20 @@ def revision_dir(project, section: str, item_name: str, number: int) -> Path:
 _EXTENSION = re.compile(r"\.[\w+-]{1,20}")
 
 
+def split_gcode_3mf(name: str) -> tuple[str, str]:
+    """``(stem, suffix)`` when ``name`` ends in ``.gcode.3mf`` (any case, suffix as written), else ``(name, "")``.
+
+    The stem may be empty (``name`` is exactly the suffix); callers decide what that means."""
+    if name.lower().endswith(_GCODE_3MF):
+        return name[: -len(_GCODE_3MF)], name[-len(_GCODE_3MF) :]
+    return name, ""
+
+
 def _split_extension(name: str) -> tuple[str, str]:
     """``(stem, extension)``; ``.gcode.3mf`` is one extension. Odd suffixes count as no extension."""
-    if name.lower().endswith(_GCODE_3MF) and len(name) > len(_GCODE_3MF):
-        return name[: -len(_GCODE_3MF)], name[-len(_GCODE_3MF) :]
+    gcode_stem, gcode_ext = split_gcode_3mf(name)
+    if gcode_ext and gcode_stem:
+        return gcode_stem, gcode_ext
     stem, dot, ext = name.rpartition(".")
     if dot and stem and _EXTENSION.fullmatch(f".{ext}"):
         return stem, f".{ext}"

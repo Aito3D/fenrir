@@ -7,7 +7,7 @@ import type { ProjectTreeResponse } from '../../../api/client';
 import { Button } from '../../Button';
 import { useToast } from '../../../contexts/ToastContext';
 import { ENABLED_SECTIONS, SECTION_LABEL_KEYS, STATUS_LABEL_KEYS } from '../files/filesUi';
-import { revisionLabel } from '../files/revisionLabel';
+import { revisionLabel, revisionNumberLabel } from '../files/revisionLabel';
 import { useInvalidateProjectLinks } from './useOrderProjectLinks';
 import { useProjectOrders, useProjectTree } from '../projectQueries';
 import { useIsolatedEscape } from '../../../hooks/useIsolatedEscape';
@@ -166,7 +166,7 @@ export function DeliveriesPicker({
                           aria-label={`${revisionLabel(item.name, r.number)} · ${t(STATUS_LABEL_KEYS[r.status])}`}
                           className="accent-bambu-green"
                         />
-                        <span aria-hidden="true" className="tabular-nums">{`R${r.number}`}</span>
+                        <span aria-hidden="true" className="tabular-nums">{revisionNumberLabel(r.number)}</span>
                         <span aria-hidden="true" className="text-xs text-bambu-gray">
                           {t(STATUS_LABEL_KEYS[r.status])}
                         </span>

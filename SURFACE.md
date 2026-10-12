@@ -350,6 +350,7 @@ def revision_ref(revision: ProjectRevision, item: ProjectItem)
 def sanitize_component(name: str, fallback: str = "sans-nom")
 def section_for_filename(name: str)
 def slugify(title: str, max_chars: int = 40)
+def split_gcode_3mf(name: str)
 def split_tag_string(value: str | None)
 def start_legacy_migration()
 def storage_dir_name(code: str, title: str)
@@ -1307,7 +1308,9 @@ CREATE TABLE projects (
 1 export function ResliceDialog
 1 export function RevisionBlock
 1 export function revisionLabel
+1 export function revisionNumberLabel
 1 export function SectionBlock
+1 export function sectionRevisionLabel
 1 export function splitTagDrafts
 1 export function TaskDropZone
 1 export function TaskProjectRow
