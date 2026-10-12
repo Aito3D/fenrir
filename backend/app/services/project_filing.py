@@ -401,7 +401,7 @@ async def _skip_failed_group(
     (logged with its traceback, the session rolled back, a generic reason reported)."""
     if isinstance(exc, (OSError, project_files.ProjectFilesError)):
         code = "copy_failed" if isinstance(exc, OSError) else "conflict"
-        reason = str(exc.detail if isinstance(exc, project_files.ProjectFilesError) else exc)
+        reason = str(exc)  # a ProjectFilesError's str() is its detail
         logger.warning("Moving files into project %s failed for item %r: %s", project_id, name, reason)
     else:
         code, reason = "error", "unexpected error while moving the file"
@@ -927,8 +927,7 @@ async def _run_legacy_migration() -> None:
                         totals["files_copied"] += outcome.files_copied
                 except Exception as exc:
                     logger.warning("Legacy migration of project %s failed", project_id, exc_info=True)
-                    detail = exc.detail if isinstance(exc, project_files.ProjectFilesError) else str(exc)
-                    state["failures"].append({"project_id": project_id, "code": code, "error": str(detail)[:500]})
+                    state["failures"].append({"project_id": project_id, "code": code, "error": str(exc)[:500]})
                     await rollback_quietly(
                         db, logger, logging.DEBUG, "Rollback after a failed legacy migration failed too"
                     )

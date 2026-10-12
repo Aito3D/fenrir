@@ -2682,6 +2682,95 @@ async def test_add_revision_from_sources_writes_nothing_to_the_db_while_copying(
     assert rev.number == 2
 
 
+def _sliced_3mf_bytes() -> bytes:
+    """A 3MF whose name says source but whose zip carries plate G-code (classified ``gcode.3mf``)."""
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as zf:
+        zf.writestr(zipfile.ZipInfo("Metadata/plate_1.gcode", date_time=(1980, 1, 1, 0, 0, 0)), "G28")
+    return buffer.getvalue()
+
+
+def _classify_during_write_spy(monkeypatch, producer: str):
+    """Record, per ``classify_file_type`` call, whether the producer ``producer`` had already returned
+    (i.e. whether the file was classified in the DB step, under the write lock)."""
+    real_classify = project_files.classify_file_type
+    real_producer = getattr(project_files, producer)
+    state = {"written": False}
+    calls: list[tuple[str, bool]] = []
+
+    def classify(filename, file_path=None):
+        calls.append((filename, state["written"]))
+        return real_classify(filename, file_path)
+
+    async def produce(*args):
+        written = await real_producer(*args)
+        state["written"] = True
+        return written
+
+    monkeypatch.setattr(project_files, "classify_file_type", classify)
+    monkeypatch.setattr(project_files, producer, produce)
+    return calls
+
+
+@pytest.mark.asyncio
+async def test_add_revision_classifies_files_before_the_db_step(db_session, root, monkeypatch):
+    project = await _project(db_session)
+    item = await create_item(db_session, project, section="modelisation", name="Support", user_id=None)
+    await db_session.commit()
+    calls = _classify_during_write_spy(monkeypatch, "_stream_files")
+    rev, _ = await add_revision(
+        db_session,
+        project,
+        item,
+        [upload("plate.3mf", _sliced_3mf_bytes()), upload("a.step", b"geo")],
+        note=None,
+        derived_from_id=None,
+        user_id=None,
+    )
+    assert calls == [("plate.3mf", False), ("a.step", False)]
+    files = (await db_session.execute(select(LibraryFile).where(LibraryFile.revision_id == rev.id))).scalars().all()
+    assert sorted((f.filename, f.file_type) for f in files) == [("a.step", "step"), ("plate.3mf", "gcode.3mf")]
+
+
+@pytest.mark.asyncio
+async def test_add_files_to_revision_classifies_files_before_the_db_step(db_session, root, monkeypatch):
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project)
+    await db_session.commit()
+    calls = _classify_during_write_spy(monkeypatch, "_stream_files")
+    await add_files_to_revision(
+        db_session, project, item, rev, [upload("b.3mf", _sliced_3mf_bytes()), upload("c.stl", b"x")], user_id=None
+    )
+    assert calls == [("b.3mf", False), ("c.stl", False)]
+    files = (await db_session.execute(select(LibraryFile).where(LibraryFile.revision_id == rev.id))).scalars().all()
+    assert sorted((f.filename, f.file_type) for f in files) == [
+        ("a.step", "step"),
+        ("b.3mf", "gcode.3mf"),
+        ("c.stl", "stl"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_add_revision_from_sources_classifies_files_before_the_db_step(db_session, root, tmp_path, monkeypatch):
+    project = await _project(db_session)
+    item, _r1 = await _rev(db_session, project)
+    await db_session.commit()
+    src = tmp_path / "out.3mf"
+    src.write_bytes(_sliced_3mf_bytes())
+    calls = _classify_during_write_spy(monkeypatch, "_copy_sources")
+    rev = await project_files.add_revision_from_sources(
+        db_session,
+        project,
+        item,
+        [project_files.RevisionSource(path=src, filename="Support.3mf")],
+        note=None,
+        user_id=None,
+    )
+    assert calls == [("Support.3mf", False)]
+    files = (await db_session.execute(select(LibraryFile).where(LibraryFile.revision_id == rev.id))).scalars().all()
+    assert [(f.filename, f.file_type) for f in files] == [("Support.3mf", "gcode.3mf")]
+
+
 def test_revision_label_format_is_pinned():
     assert project_files.revision_label("Bracket", 3) == "Bracket R3"
     assert project_files.revision_label("Pièce 2 / b", 12) == "Pièce 2 / b R12"

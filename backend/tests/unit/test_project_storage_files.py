@@ -8,6 +8,7 @@ from backend.app.services.project_storage import (
     item_dir,
     move_to_trash,
     revision_dir,
+    revision_folder_name,
     unique_file_path,
 )
 from backend.app.utils.safe_path import PathTraversalError
@@ -36,6 +37,12 @@ def test_revision_dir_layout_and_creation(root):
     path = revision_dir(_P(), "scan", "Mesh brut", 2)
     assert path == (root / "P-0001_support" / "Scan" / "Mesh brut" / "R2").resolve()
     assert path.is_dir()
+
+
+def test_revision_folder_name_is_the_revision_dir_leaf_and_creates_nothing(root):
+    assert revision_folder_name(12) == "R12"
+    assert not list(root.iterdir())
+    assert revision_dir(_P(), "impression", "Plaque", 12) == item_dir(_P(), "impression", "Plaque") / "R12"
 
 
 def test_revision_dir_rejects_traversal_item_names(root):

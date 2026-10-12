@@ -77,6 +77,7 @@ from backend.app.services.project_storage import (
     item_dir,
     move_to_trash,
     revision_dir,
+    revision_folder_name,
     sanitize_component,
 )
 from backend.app.services.stl_thumbnail import MIN_USABLE_STL_BYTES, generate_stl_thumbnail
@@ -283,6 +284,8 @@ class _WrittenFile:
     reuse_file_path: str | None = None
     # fork copies: the source revision's row, whose type, size, hash and metadata the new row repeats
     copied_from: LibraryFile | None = None
+    # LibraryFile.file_type, classified by _post_process so the DB step never opens the file
+    file_type: str = ""
 
 
 def _write_thumbnail(thumbnails_dir: Path, name: str, data: bytes) -> Path:
@@ -366,7 +369,8 @@ async def _stream_files(folder: Path, uploads: list[UploadFile]) -> list[_Writte
 
 
 async def _post_process(entry: _WrittenFile, *, thumbnail: bool = True) -> None:
-    """Thumbnail + 3MF metadata (unless ``thumbnail`` is False) and the 3MF print snapshot of a stored file."""
+    """Thumbnail + 3MF metadata (unless ``thumbnail`` is False), the 3MF print snapshot and the file type of a
+    stored file."""
     if thumbnail:
         thumb, entry.metadata = await _make_thumbnail(entry.path)
         if thumb is not None:
@@ -374,6 +378,7 @@ async def _post_process(entry: _WrittenFile, *, thumbnail: bool = True) -> None:
             entry.thumbnail_rel = to_relative_path(thumb)
     if is_3mf(entry.path.name):
         entry.snapshot = await asyncio.to_thread(read_print_snapshot, entry.path)
+    entry.file_type = (await asyncio.to_thread(classify_file_type, entry.path.name, entry.path))[:10]
 
 
 def _open_claimed(dest: Path):
@@ -549,7 +554,7 @@ async def _add_file_rows(
     await _require_reuse_rows_unchanged(db, written)
     rows: list[LibraryFile] = []
     for entry in written:
-        file_type = (await asyncio.to_thread(classify_file_type, entry.path.name, entry.path))[:10]
+        file_type = entry.file_type
         reuse = entry.source.reuse_row if entry.source is not None else None
         if reuse is None:
             row = _new_library_row(
@@ -1133,7 +1138,7 @@ async def _delete_revision_locked(
         raise ProjectFilesError(409, "This revision was printed or delivered and cannot be deleted")
     await _claim_storage_dir(db, project)
     folder = item_dir(project, item.section, item.name).joinpath(
-        f"R{revision.number}"
+        revision_folder_name(revision.number)
     )  # SEC-PATH-OK: fixed "R{int}" under a resolved item dir
     async with _TrashGuard(db, project, folder, label=f"deletion of revision {revision.id}") as guard:
         file_ids = await _delete_file_rows(db, revision_ids=[revision.id])

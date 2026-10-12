@@ -628,6 +628,41 @@ async def test_runner_passes_over_a_project_migrated_or_deleted_meanwhile(
 
 @pytest.mark.asyncio
 @pytest.mark.integration
+@pytest.mark.parametrize(
+    "make_error",
+    [
+        lambda text: project_files.ProjectFilesError(409, text),
+        lambda text: RuntimeError(text),
+        lambda text: OSError(text),
+    ],
+    ids=["project-files-error", "runtime-error", "os-error"],
+)
+async def test_runner_records_the_error_text_capped_at_500(
+    async_client: AsyncClient, db_session, monkeypatch, make_error
+):
+    """The recorded ``error`` is the exception's text (a ProjectFilesError's detail), cut at 500 characters."""
+    project = await _project(db_session)
+    project_id, code = project.id, project.code
+    text = "é" * 499 + "xyz"
+
+    async def candidates(_db):
+        return [project_id]
+
+    async def boom(_db, _project):
+        raise make_error(text)
+
+    monkeypatch.setattr(project_filing, "legacy_candidates", candidates)
+    monkeypatch.setattr(project_filing, "migrate_project_legacy", boom)
+    project_filing._legacy_state["running"] = True
+    await project_filing._run_legacy_migration()
+
+    assert project_filing._legacy_state["failures"] == [
+        {"project_id": project_id, "code": code, "error": "é" * 499 + "x"}
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
 async def test_runner_records_the_failure_when_its_rollback_fails_too(
     async_client: AsyncClient, db_session, monkeypatch, caplog
 ):

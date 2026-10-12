@@ -115,10 +115,18 @@ def item_dir(project, section: str, item_name: str) -> Path:
     return resolve_in_projects(ensure_project_dir(project).name, SECTION_DIRS[section], sanitize_component(item_name))
 
 
+def revision_folder_name(number: int) -> str:
+    """The folder name of revision ``number`` under its item dir: ``R{number}``. Creates nothing."""
+    return f"R{number}"
+
+
 def revision_dir(project, section: str, item_name: str, number: int) -> Path:
     """``…/{Item}/R{number}``, created on the way."""
     path = resolve_in_projects(
-        ensure_project_dir(project).name, SECTION_DIRS[section], sanitize_component(item_name), f"R{number}"
+        ensure_project_dir(project).name,
+        SECTION_DIRS[section],
+        sanitize_component(item_name),
+        revision_folder_name(number),
     )
     path.mkdir(parents=True, exist_ok=True)
     return path

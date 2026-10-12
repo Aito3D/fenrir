@@ -343,6 +343,7 @@ def resolve_in_projects(*parts: str)
 def revision_added_payload(
 def revision_dir(project, section: str, item_name: str, number: int)
 def revision_file_path(file_path: str | None)
+def revision_folder_name(number: int)
 def revision_label(item_name: str, number: int)
 def revision_lock_statement(revision_ids: Collection[int], *, share: bool = False)
 def revision_ref(revision: ProjectRevision, item: ProjectItem)
