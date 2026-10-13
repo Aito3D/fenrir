@@ -1121,6 +1121,93 @@ async def test_repeated_cancellation_still_waits_for_the_commit(db_session, root
     assert [p.name for p in _trash_entries(base)] == ["a.step"]
 
 
+# T-290: a COMMIT that never resolves (stalled PostgreSQL connection, dead
+# aiosqlite thread). The cancelled request waits only _COMMIT_CANCEL_WAIT_S for
+# it, then counts it as may-have-landed and re-raises, freeing the item lock.
+
+
+def _commit_stalls(db_session, monkeypatch):
+    stalled = asyncio.Event()
+    started: dict[str, asyncio.Task] = {}
+
+    async def commit():
+        started["commit_task"] = asyncio.current_task()
+        await stalled.wait()
+
+    monkeypatch.setattr(db_session, "commit", commit)
+    monkeypatch.setattr(project_files, "_COMMIT_CANCEL_WAIT_S", 0.05)
+    return stalled, started
+
+
+async def _cancel_stalled_commit(operation, item_id, stalled, started, caplog, label):
+    task = asyncio.ensure_future(operation)
+    while "commit_task" not in started:
+        await asyncio.sleep(0)
+    task.cancel()
+    with caplog.at_level("ERROR", logger=project_files.logger.name), pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(task, timeout=5)
+    assert not started["commit_task"].done(), "the stalled commit is given up on, not awaited"
+    [record] = [r for r in caplog.records if r.name == project_files.logger.name and r.levelname == "ERROR"]
+    assert record.getMessage().startswith(f"Commit of {label} still pending 0.1 s after its request was cancelled")
+    # the item lock is free again: a second operation on the item proceeds
+    lock = project_files._item_lock(item_id)
+    await asyncio.wait_for(lock.acquire(), timeout=1)
+    lock.release()
+    stalled.set()  # let the stalled commit task finish, so the loop closes without a pending task
+    await started["commit_task"]
+
+
+@pytest.mark.asyncio
+async def test_add_revision_keeps_files_when_a_cancelled_commit_stalls(db_session, root, monkeypatch, caplog):
+    project = await _project(db_session)
+    item = await create_item(db_session, project, section="scan", name="Mesh", user_id=None)
+    storage_dir, item_id = project.storage_dir, item.id
+    await db_session.commit()
+    stalled, started = _commit_stalls(db_session, monkeypatch)
+    await _cancel_stalled_commit(
+        add_revision(db_session, project, item, [upload("a.ply")], note=None, derived_from_id=None, user_id=None),
+        item_id,
+        stalled,
+        started,
+        caplog,
+        f"new revision of item {item_id}",
+    )
+    # may have landed: the files stay where the database may point
+    assert (root / storage_dir / "Scan" / "Mesh" / "R1" / "a.ply").read_bytes() == b"data"
+
+
+@pytest.mark.asyncio
+async def test_delete_item_stays_trashed_when_a_cancelled_commit_stalls(db_session, root, monkeypatch, caplog):
+    project = await _project(db_session)
+    item, _rev_row = await _rev(db_session, project)
+    await db_session.commit()
+    base, item_id = root / project.storage_dir, item.id
+    stalled, started = _commit_stalls(db_session, monkeypatch)
+    await _cancel_stalled_commit(
+        delete_item(db_session, project, item), item_id, stalled, started, caplog, f"deletion of item {item_id}"
+    )
+    assert not (base / "Modélisation" / "Support").exists()
+    assert [p.name for p in _trash_entries(base)] == ["a.step"]
+
+
+@pytest.mark.asyncio
+async def test_commit_finishing_within_the_bound_after_cancel_still_counts(monkeypatch):
+    """A commit that lands after the cancellation, inside the bound, is waited for as before."""
+    monkeypatch.setattr(project_files, "_COMMIT_CANCEL_WAIT_S", 5.0)
+    release = asyncio.Event()
+    db = _GuardSession(commit=release.wait)
+    outcome = project_files._CommitOutcome("test op")
+    task = asyncio.ensure_future(project_files._commit_through_cancel(db, outcome))
+    await asyncio.sleep(0)
+    task.cancel()
+    await asyncio.sleep(0.01)
+    assert not task.done()
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert outcome.may_have_landed is True
+
+
 # Event-loop shutdown (`docker stop`): asyncio.run cancels every remaining task,
 # the commit's own task included, while the worker thread still runs the
 # COMMIT. The patched commit records its task and hands the COMMIT to a gated
@@ -2595,6 +2682,95 @@ async def test_add_revision_from_sources_writes_nothing_to_the_db_while_copying(
     assert rev.number == 2
 
 
+def _sliced_3mf_bytes() -> bytes:
+    """A 3MF whose name says source but whose zip carries plate G-code (classified ``gcode.3mf``)."""
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as zf:
+        zf.writestr(zipfile.ZipInfo("Metadata/plate_1.gcode", date_time=(1980, 1, 1, 0, 0, 0)), "G28")
+    return buffer.getvalue()
+
+
+def _classify_during_write_spy(monkeypatch, producer: str):
+    """Record, per ``classify_file_type`` call, whether the producer ``producer`` had already returned
+    (i.e. whether the file was classified in the DB step, under the write lock)."""
+    real_classify = project_files.classify_file_type
+    real_producer = getattr(project_files, producer)
+    state = {"written": False}
+    calls: list[tuple[str, bool]] = []
+
+    def classify(filename, file_path=None):
+        calls.append((filename, state["written"]))
+        return real_classify(filename, file_path)
+
+    async def produce(*args):
+        written = await real_producer(*args)
+        state["written"] = True
+        return written
+
+    monkeypatch.setattr(project_files, "classify_file_type", classify)
+    monkeypatch.setattr(project_files, producer, produce)
+    return calls
+
+
+@pytest.mark.asyncio
+async def test_add_revision_classifies_files_before_the_db_step(db_session, root, monkeypatch):
+    project = await _project(db_session)
+    item = await create_item(db_session, project, section="modelisation", name="Support", user_id=None)
+    await db_session.commit()
+    calls = _classify_during_write_spy(monkeypatch, "_stream_files")
+    rev, _ = await add_revision(
+        db_session,
+        project,
+        item,
+        [upload("plate.3mf", _sliced_3mf_bytes()), upload("a.step", b"geo")],
+        note=None,
+        derived_from_id=None,
+        user_id=None,
+    )
+    assert calls == [("plate.3mf", False), ("a.step", False)]
+    files = (await db_session.execute(select(LibraryFile).where(LibraryFile.revision_id == rev.id))).scalars().all()
+    assert sorted((f.filename, f.file_type) for f in files) == [("a.step", "step"), ("plate.3mf", "gcode.3mf")]
+
+
+@pytest.mark.asyncio
+async def test_add_files_to_revision_classifies_files_before_the_db_step(db_session, root, monkeypatch):
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project)
+    await db_session.commit()
+    calls = _classify_during_write_spy(monkeypatch, "_stream_files")
+    await add_files_to_revision(
+        db_session, project, item, rev, [upload("b.3mf", _sliced_3mf_bytes()), upload("c.stl", b"x")], user_id=None
+    )
+    assert calls == [("b.3mf", False), ("c.stl", False)]
+    files = (await db_session.execute(select(LibraryFile).where(LibraryFile.revision_id == rev.id))).scalars().all()
+    assert sorted((f.filename, f.file_type) for f in files) == [
+        ("a.step", "step"),
+        ("b.3mf", "gcode.3mf"),
+        ("c.stl", "stl"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_add_revision_from_sources_classifies_files_before_the_db_step(db_session, root, tmp_path, monkeypatch):
+    project = await _project(db_session)
+    item, _r1 = await _rev(db_session, project)
+    await db_session.commit()
+    src = tmp_path / "out.3mf"
+    src.write_bytes(_sliced_3mf_bytes())
+    calls = _classify_during_write_spy(monkeypatch, "_copy_sources")
+    rev = await project_files.add_revision_from_sources(
+        db_session,
+        project,
+        item,
+        [project_files.RevisionSource(path=src, filename="Support.3mf")],
+        note=None,
+        user_id=None,
+    )
+    assert calls == [("Support.3mf", False)]
+    files = (await db_session.execute(select(LibraryFile).where(LibraryFile.revision_id == rev.id))).scalars().all()
+    assert [(f.filename, f.file_type) for f in files] == [("Support.3mf", "gcode.3mf")]
+
+
 def test_revision_label_format_is_pinned():
     assert project_files.revision_label("Bracket", 3) == "Bracket R3"
     assert project_files.revision_label("Pièce 2 / b", 12) == "Pièce 2 / b R12"
@@ -2670,6 +2846,21 @@ def test_copy_hashing_matches_shutil_copy2_and_digest(tmp_path):
     assert dest.stat().st_mode == reference.stat().st_mode
 
 
+def test_copy_hashing_nofollow_refuses_a_symlinked_source_but_follows_by_default(tmp_path):
+    """T-255: an external source is opened without following a symlink leaf."""
+    real = tmp_path / "real.bin"
+    real.write_bytes(b"payload")
+    link = tmp_path / "link.bin"
+    link.symlink_to(real)
+    dest = project_storage.claim_unique_file_path(tmp_path, "dest.bin")
+    with pytest.raises(OSError):
+        project_files._copy_hashing(link, dest, nofollow=True)
+    assert project_files._copy_hashing(link, dest)[0] == len(b"payload")  # default: follows, as before
+    assert dest.read_bytes() == b"payload"
+    other = project_storage.claim_unique_file_path(tmp_path, "other.bin")
+    assert project_files._copy_hashing(real, other, nofollow=True)[0] == len(b"payload")
+
+
 @pytest.mark.parametrize("copier", ["_copy_claimed", "_copy_hashing"])
 def test_copy_into_a_symlink_planted_after_the_claim_is_refused(tmp_path, copier):
     src = _planted_src(tmp_path)
@@ -2735,3 +2926,168 @@ def test_find_item_and_find_revision_return_none_when_the_tree_lacks_them():
     assert project_files.find_revision(tree, 7) is rev
     assert project_files.find_item(tree, 4) is None
     assert project_files.find_revision(tree, 8) is None
+
+
+# T-291: on PostgreSQL the delete paths lock their revision rows FOR UPDATE before
+# the usage pre-check (lock_revision_rows itself is pinned in test_project_revisions).
+
+
+def _spy_lock_and_usage(monkeypatch, module):
+    calls: list[tuple] = []
+    real_used = project_files.revision_is_used
+
+    async def lock(db, revision_ids, *, share=False):
+        calls.append(("lock", sorted(revision_ids), share))
+        return None
+
+    async def used(db, revision_id):
+        calls.append(("used", revision_id))
+        return await real_used(db, revision_id)
+
+    monkeypatch.setattr(module, "lock_revision_rows", lock)
+    monkeypatch.setattr(project_files, "revision_is_used", used)
+    return calls
+
+
+@pytest.mark.asyncio
+async def test_delete_revision_locks_the_revision_before_the_usage_check(db_session, root, monkeypatch):
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project)
+    await db_session.commit()
+    rev_id = rev.id
+    calls = _spy_lock_and_usage(monkeypatch, project_files)
+    await delete_revision(db_session, project, item, rev)
+    assert calls[:2] == [("lock", [rev_id], False), ("used", rev_id)]
+    assert [c for c in calls if c[0] == "lock"] == [("lock", [rev_id], False)]
+
+
+@pytest.mark.asyncio
+async def test_delete_item_locks_every_revision_before_the_usage_checks(db_session, root, monkeypatch):
+    project = await _project(db_session)
+    item, r1 = await _rev(db_session, project)
+    r2, _ = await add_revision(
+        db_session, project, item, [upload("b.step")], note=None, derived_from_id=None, user_id=None
+    )
+    await db_session.commit()
+    ids = sorted([r1.id, r2.id])
+    calls = _spy_lock_and_usage(monkeypatch, project_files)
+    await delete_item(db_session, project, item)
+    assert calls == [("lock", ids, False), ("used", ids[0]), ("used", ids[1])]
+
+
+@pytest.mark.asyncio
+async def test_remove_file_locks_the_revision_before_the_usage_check(db_session, root, monkeypatch):
+    """T-292: removing a file locks its revision FOR UPDATE (PostgreSQL) before the pre-check, as the deletes do."""
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project, files=[upload("a.step"), upload("b.step", b"b")])
+    await db_session.commit()
+    rev_id = rev.id
+    target_id = (
+        (
+            await db_session.execute(
+                select(LibraryFile.id).where(LibraryFile.revision_id == rev_id).order_by(LibraryFile.id)
+            )
+        )
+        .scalars()
+        .first()
+    )
+    calls = _spy_lock_and_usage(monkeypatch, project_files)
+    await remove_file_from_revision(db_session, project, item, rev, target_id)
+    assert calls == [("lock", [rev_id], False), ("used", rev_id)]
+
+
+# T-292: the removal re-checks the revision after its delete is flushed (the write lock is
+# held then), so a validation, print or delivery committed since the pre-check refuses it.
+
+
+async def _two_files_by_name(db_session, project):
+    item, rev = await _rev(db_session, project, files=[upload("a.step"), upload("b.step", b"other")])
+    await db_session.commit()
+    rows = (await db_session.execute(select(LibraryFile).where(LibraryFile.revision_id == rev.id))).scalars().all()
+    return item, rev, {f.filename: f.id for f in rows}
+
+
+async def _queue_it(db, revision_id, file_id):
+    db.add(PrintQueueItem(library_file_id=file_id))
+
+
+async def _deliver_it(db, revision_id, file_id):
+    db.add(AitoTaskDelivery(task_id=4242, revision_id=revision_id))
+
+
+async def _validate_it(db, revision_id, file_id):
+    (await db.get(ProjectRevision, revision_id)).status = "valide"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("make_used", "detail"),
+    [
+        (_queue_it, "This revision was printed or delivered; make a new revision instead"),
+        (_deliver_it, "This revision was printed or delivered; make a new revision instead"),
+        (_validate_it, "Only an in-progress revision can change its files"),
+    ],
+)
+async def test_remove_file_refuses_a_use_that_landed_after_the_pre_check(
+    db_session, root, monkeypatch, test_engine, make_used, detail
+):
+    project = await _project(db_session)
+    item, rev, ids = await _two_files_by_name(db_session, project)
+    base, rev_id, target_id = root / project.storage_dir, rev.id, ids["a.step"]
+
+    async def use_it(db, revision_id):
+        await make_used(db, revision_id, target_id)
+
+    calls = await _used_after_the_pre_check(db_session, monkeypatch, use_it)
+    with pytest.raises(ProjectFilesError) as exc:
+        await remove_file_from_revision(db_session, project, item, rev, target_id)
+    assert calls == [rev_id]
+    assert (exc.value.status_code, exc.value.detail) == (409, detail)
+    kept = await _fresh_scalars(test_engine, select(LibraryFile.id).where(LibraryFile.revision_id == rev_id))
+    assert sorted(kept) == sorted(ids.values())
+    folder = base / "Modélisation" / "Support" / "R1"
+    assert (folder / "a.step").read_bytes() == b"data" and (folder / "b.step").read_bytes() == b"other"
+    assert _trash_entries(base) == []
+
+
+@pytest.mark.asyncio
+async def test_remove_file_refuses_a_print_of_another_file_that_landed_after_the_pre_check(
+    db_session, root, monkeypatch, test_engine
+):
+    """The re-check covers the revision's other files too, like the pre-check."""
+    project = await _project(db_session)
+    item, rev, ids = await _two_files_by_name(db_session, project)
+    base, rev_id, target_id = root / project.storage_dir, rev.id, ids["a.step"]
+
+    async def print_other(db, revision_id):
+        db.add(PrintArchive(filename="x", file_path="x", file_size=1, library_file_id=ids["b.step"]))
+
+    await _used_after_the_pre_check(db_session, monkeypatch, print_other)
+    with pytest.raises(ProjectFilesError) as exc:
+        await remove_file_from_revision(db_session, project, item, rev, target_id)
+    assert (exc.value.status_code, exc.value.detail) == (
+        409,
+        "This revision was printed or delivered; make a new revision instead",
+    )
+    assert target_id in await _fresh_scalars(
+        test_engine, select(LibraryFile.id).where(LibraryFile.revision_id == rev_id)
+    )
+    assert _trash_entries(base) == []
+
+
+@pytest.mark.asyncio
+async def test_remove_file_with_nothing_landing_meanwhile_still_trashes_it(db_session, root, monkeypatch, test_engine):
+    project = await _project(db_session)
+    item, rev, ids = await _two_files_by_name(db_session, project)
+    base, rev_id, target_id = root / project.storage_dir, rev.id, ids["a.step"]
+
+    async def nothing(db, revision_id):
+        return None
+
+    await _used_after_the_pre_check(db_session, monkeypatch, nothing)
+    await remove_file_from_revision(db_session, project, item, rev, target_id)
+    assert await _fresh_scalars(test_engine, select(LibraryFile.id).where(LibraryFile.revision_id == rev_id)) == [
+        ids["b.step"]
+    ]
+    assert not (base / "Modélisation" / "Support" / "R1" / "a.step").exists()
+    assert [p.name.split("-")[0] for p in _trash_entries(base)] == ["a"]

@@ -1,14 +1,19 @@
 """POST /aito/{project_id}/merge: another card's tasks are copied onto this
 one and that card goes to the trash — one request, one timeline story."""
 
+from datetime import datetime
+
 import pytest
 from sqlalchemy import delete, select
 
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
 from backend.app.models.aito_task_delivery import AitoTaskDelivery
+from backend.app.models.archive import PrintArchive
+from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.project import Project
 from backend.app.models.project_item import ProjectItem, ProjectRevision
+from backend.app.services.project_print_trace import PrintCounts, move_task_print_trace, task_print_counts
 from backend.tests.project_fixtures import make_project
 
 
@@ -422,3 +427,105 @@ async def test_merge_with_linked_delivering_task_queues_the_target_quote_push(as
 
     await db_session.refresh(target_row)
     assert target_row.quote_sync_state == "pending"
+
+
+# --- T-294: the source tasks' prints move to their copies -------------------
+
+
+def _queue_row(task_id, status):
+    return PrintQueueItem(aito_task_id=task_id, status=status)
+
+
+def _archive_row(task_id, *, status="completed", deleted=False):
+    return PrintArchive(
+        filename="part.3mf",
+        file_path="archives/part.3mf",
+        file_size=1,
+        status=status,
+        aito_task_id=task_id,
+        deleted_at=datetime(2026, 1, 1) if deleted else None,
+    )
+
+
+async def _task_ids(db_session, model, ids):
+    rows = await db_session.execute(select(model.id, model.aito_task_id).where(model.id.in_(ids)))
+    return dict(rows.all())
+
+
+@pytest.mark.asyncio
+async def test_merge_moves_the_source_tasks_prints_to_their_copies(async_client, db_session):
+    """Every queue item (pending to finished) and archive (trashed ones too) of a
+    source task now names its copy; the target's own task, a task-less row and
+    the other source task's rows are left alone."""
+    target = await _create_with_tasks(async_client, [{"title": "Existing"}])
+    source = await _create_with_tasks(
+        async_client, [{"title": "Printed part"}, {"title": "Other part"}], description="Source card"
+    )
+    by_title = {
+        t.title: t.id
+        for t in (
+            await db_session.execute(select(AitoTask).where(AitoTask.project_id.in_([target["id"], source["id"]])))
+        )
+        .scalars()
+        .all()
+    }
+    printed, other, existing = by_title["Printed part"], by_title["Other part"], by_title["Existing"]
+    queue = [_queue_row(printed, s) for s in ("pending", "printing", "completed", "failed", "cancelled")]
+    queue += [_queue_row(other, "pending"), _queue_row(existing, "pending"), _queue_row(None, "pending")]
+    archives = [_archive_row(printed), _archive_row(printed, status="failed"), _archive_row(printed, deleted=True)]
+    archives += [_archive_row(other), _archive_row(existing), _archive_row(None)]
+    db_session.add_all(queue + archives)
+    await db_session.commit()
+    queue_ids, archive_ids = [q.id for q in queue], [a.id for a in archives]
+
+    resp = await _merge(async_client, target["id"], source["id"])
+    assert resp.status_code == 200, resp.text
+
+    copies = {
+        t.title: t.id
+        for t in (await db_session.execute(select(AitoTask).where(AitoTask.project_id == target["id"]))).scalars()
+    }
+    printed_copy, other_copy = copies["Printed part"], copies["Other part"]
+    db_session.expire_all()
+    assert list((await _task_ids(db_session, PrintQueueItem, queue_ids)).values()) == [printed_copy] * 5 + [
+        other_copy,
+        existing,
+        None,
+    ]
+    assert [(await _task_ids(db_session, PrintArchive, archive_ids))[i] for i in archive_ids] == [printed_copy] * 3 + [
+        other_copy,
+        existing,
+        None,
+    ]
+
+    counts = await task_print_counts(db_session, [printed_copy, other_copy, printed, other, existing])
+    assert counts[printed_copy] == PrintCounts(printed=1, rejected=0, queued=2)  # pending + printing
+    assert counts[other_copy] == PrintCounts(printed=1, rejected=0, queued=1)
+    assert counts[existing] == PrintCounts(printed=1, rejected=0, queued=1)
+    assert printed not in counts and other not in counts  # the trashed card's tasks show nothing now
+    link = await _link_of(async_client, target["id"], "Printed part")
+    assert (link["printed"], link["queued"]) == (1, 2)
+
+
+@pytest.mark.asyncio
+async def test_merge_without_prints_moves_nothing(async_client, db_session):
+    target = await _create_with_tasks(async_client, [{"title": "Existing"}])
+    source = await _create_with_tasks(async_client, [{"title": "Unprinted"}], description="Source card")
+    bystander = _queue_row(None, "pending")
+    db_session.add(bystander)
+    await db_session.commit()
+    bystander_id = bystander.id
+
+    resp = await _merge(async_client, target["id"], source["id"])
+    assert resp.status_code == 200, resp.text
+    db_session.expire_all()
+    assert (await _task_ids(db_session, PrintQueueItem, [bystander_id])) == {bystander_id: None}
+
+
+@pytest.mark.asyncio
+async def test_move_task_print_trace_with_no_tasks_runs_nothing():
+    class _NoQueries:
+        async def execute(self, statement):  # pragma: no cover - must not run
+            raise AssertionError("no statement expected")
+
+    assert await move_task_print_trace(_NoQueries(), {}) is None

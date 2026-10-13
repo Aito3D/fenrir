@@ -10460,6 +10460,16 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logging.warning("[BATCH] Startup status backfill failed: %s", exc)
 
+    # Fenrir PDM: Re-trancher intermediates a failed cleanup left loose in the
+    # File Manager (spec §12.1: they are always deleted). Never blocks startup.
+    try:
+        from backend.app.services.project_reslice import sweep_orphan_intermediates
+
+        async with async_session() as reslice_db:
+            await sweep_orphan_intermediates(reslice_db)
+    except Exception as exc:
+        logging.warning("[RESLICE] Startup intermediate sweep failed: %s", exc)
+
     # Register an app-scoped httpx client for Bambu Cloud services so
     # per-request BambuCloudService instances reuse the same connection pool
     # (important for routes like /cloud/filament-info that chain many

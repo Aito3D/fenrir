@@ -11226,6 +11226,7 @@
     "note": {
      "anyOf": [
       {
+       "maxLength": 5000,
        "type": "string"
       },
       {
@@ -11241,6 +11242,33 @@
    "title": "Body_upload_revision_api_v1_projects_items__item_id__revisions_post",
    "type": "object"
   },
+  "DropFilesError": {
+   "description": "Files a partly failed drop did not store: the group that failed and the groups after it (never tried).",
+   "properties": {
+    "detail": {
+     "title": "Detail",
+     "type": "string"
+    },
+    "filenames": {
+     "items": {
+      "type": "string"
+     },
+     "title": "Filenames",
+     "type": "array"
+    },
+    "status_code": {
+     "title": "Status Code",
+     "type": "integer"
+    }
+   },
+   "required": [
+    "filenames",
+    "status_code",
+    "detail"
+   ],
+   "title": "DropFilesError",
+   "type": "object"
+  },
   "DropFilesResponse": {
    "properties": {
     "code": {
@@ -11253,6 +11281,13 @@
       }
      ],
      "title": "Code"
+    },
+    "errors": {
+     "items": {
+      "$ref": "#/components/schemas/DropFilesError"
+     },
+     "title": "Errors",
+     "type": "array"
     },
     "project_id": {
      "title": "Project Id",

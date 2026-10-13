@@ -12,10 +12,10 @@ error because the timeline could not be written.
 """
 
 import logging
-from collections.abc import Collection
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 
-from sqlalchemy import case, func, or_, select
+from sqlalchemy import case, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.aito_project import AitoProject
@@ -23,16 +23,16 @@ from backend.app.models.aito_task import AitoTask
 from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile
 from backend.app.models.print_queue import PrintQueueItem
-from backend.app.models.project import Project
-from backend.app.models.project_item import ProjectItem, ProjectRevision
 from backend.app.services.actor import record_as
 from backend.app.services.db_quiet import rollback_quietly
 from backend.app.services.http_status_error import HttpStatusError
+from backend.app.services.project_revisions import find_revision_bundle, lock_revision_rows, revision_label
 
 logger = logging.getLogger(__name__)
 
 QUEUED_KIND = "print.queued_from_revision"
 TASK_UNUSABLE = "This Aito task can't be used for this file"
+REVISION_DELETED = "This file's project revision was deleted meanwhile"
 
 
 class PrintTraceError(HttpStatusError, ValueError):
@@ -95,23 +95,19 @@ async def resolve_print_context(
     revision_id, source_task_id = await _source_trace(db, library_file_id, archive_id)
     bundle = None
     if revision_id is not None:
-        bundle = (
-            await db.execute(
-                select(ProjectRevision, ProjectItem, Project)
-                .join(ProjectItem, ProjectItem.id == ProjectRevision.item_id)
-                .join(Project, Project.id == ProjectItem.project_id)
-                .where(ProjectRevision.id == revision_id)
-            )
-        ).first()
+        if library_file_id is not None:
+            # PostgreSQL: a concurrent delete of the revision commits first (this then
+            # refuses) or waits for the queue item and refuses itself.
+            locked = await lock_revision_rows(db, [revision_id], share=True)
+            if locked is not None and revision_id not in locked:
+                raise PrintTraceError(409, REVISION_DELETED)
+        bundle = await find_revision_bundle(db, revision_id)
     if bundle is None:
         if aito_task_id is not None:
             raise PrintTraceError(400, "An Aito task can only be attached to a project revision file")
         return PrintContext(revision_id=None, aito_task_id=None, project_id=project_id)
 
     revision, item, project = bundle
-    # Lazy: project_files imports this module (revision_print_counts).
-    from backend.app.services.project_files import revision_label
-
     context = PrintContext(
         revision_id=revision.id,
         aito_task_id=None,
@@ -233,6 +229,23 @@ async def task_print_counts(db: AsyncSession, task_ids: Collection[int]) -> dict
     for tid, printable_objects, archive_quantity in queue_rows:
         counts.setdefault(tid, [0, 0, 0])[2] += _queued_parts(printable_objects, archive_quantity)
     return {tid: PrintCounts(*values) for tid, values in counts.items()}
+
+
+async def move_task_print_trace(db: AsyncSession, copy_by_source: Mapping[int, int]) -> None:
+    """Re-point every queue item and archive of each source task to its copy
+    (an Aito card merge), so the copy counts the prints and a pending item
+    finishes against it. All of them, finished queue rows and trashed archives
+    included, so a task's queue history and its archives stay together. One
+    UPDATE per table."""
+    if not copy_by_source:
+        return
+    for model in (PrintQueueItem, PrintArchive):
+        await db.execute(
+            update(model)
+            .where(model.aito_task_id.in_(list(copy_by_source)))
+            .values(aito_task_id=case(dict(copy_by_source), value=model.aito_task_id))
+            .execution_options(synchronize_session=False)
+        )
 
 
 def _queued_parts(printable_objects, archive_quantity: int | None) -> int:

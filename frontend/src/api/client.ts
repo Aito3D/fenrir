@@ -1328,8 +1328,11 @@ export interface TaskCreateProjectRequest { name: string; description?: string |
 export interface ProjectOrderTask { task_id: number; task_title: string | null; order_id: number; order_description: string; client_name: string | null; board_column: string; created_at: string | null; deliveries: RevisionRef[] }
 export interface ProjectOrdersResponse { orders: ProjectOrderTask[] }
 export interface DroppedFileResult { filename: string; section: string; item_id: number; item_name: string; revision_number: number }
-/** `project_id`/`code`: where the files actually went (a cached link may be stale). */
-export interface DropFilesResponse { project_id: number; code?: string | null; results: DroppedFileResult[] }
+/** Files a partly failed drop did not store (the failed group and the ones after it), with the failure. */
+export interface DropFilesError { filenames: string[]; status_code: number; detail: string }
+/** `project_id`/`code`: where the files actually went (a cached link may be stale).
+ *  `errors`: only on a partly failed drop (some files stored, the rest listed there). */
+export interface DropFilesResponse { project_id: number; code?: string | null; results: DroppedFileResult[]; errors?: DropFilesError[] }
 
 export interface ProjectCreate {
   name: string;

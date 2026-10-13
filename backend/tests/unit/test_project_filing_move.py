@@ -732,6 +732,71 @@ async def test_a_non_409_error_while_storing_propagates(db_session, root, monkey
 
 
 @pytest.mark.asyncio
+async def test_an_unexpected_error_while_storing_skips_the_group_as_error_and_goes_on(
+    db_session, root, monkeypatch, caplog
+):
+    """T-285 (user-approved): any other exception (here "database is locked" from the revision
+    commit) is a per-group skip with code ``error`` and a generic reason, logged with its
+    traceback; the group's rows and bytes stay as they were and later groups still move."""
+    from sqlalchemy.exc import OperationalError
+
+    project = await _project(db_session)
+    first = await _managed(db_session, "alpha.gcode", b"A")
+    locked = await _managed(db_session, "beta.gcode", b"B")
+    last = await _managed(db_session, "gamma.gcode", b"G")
+    ids = [f.id for f in (first, locked, last)]
+    locked_path = locked.file_path
+    await db_session.commit()
+    real_add = project_files.add_revision_from_sources
+
+    async def locked_add(db, project, item, sources, **kwargs):
+        if item.name == "beta":
+            raise OperationalError("COMMIT", {}, Exception("database is locked"))
+        return await real_add(db, project, item, sources, **kwargs)
+
+    monkeypatch.setattr(project_files, "add_revision_from_sources", locked_add)
+    with caplog.at_level("ERROR", logger="backend.app.services.project_filing"):
+        result = await _move(db_session, project, [first, locked, last])
+
+    assert [m["file_id"] for m in result.moved] == [ids[0], ids[2]]
+    assert result.skipped == [{"file_id": ids[1], "code": "error", "reason": "unexpected error while moving the file"}]
+    [record] = [r for r in caplog.records if r.levelname == "ERROR"]
+    assert record.getMessage() == f"Moving files into project {project.id} failed unexpectedly for item 'beta'"
+    assert isinstance(record.exc_info[1], OperationalError)
+    fresh = await _fresh(db_session, ids[1])
+    assert (fresh.file_path, fresh.revision_id) == (locked_path, None)
+    assert to_absolute_path(locked_path).read_bytes() == b"B"
+    revisions = [(r[1], r[2]) for r in await _revisions(db_session, project.id)]
+    assert revisions == [("alpha", 1), ("gamma", 1)]
+
+
+@pytest.mark.asyncio
+async def test_an_unexpected_error_before_the_revision_rolls_the_session_back(db_session, root, monkeypatch):
+    """An exception outside add_revision_from_sources (no undo of its own ran) still leaves a
+    usable session: the pending item is rolled back and the next group moves."""
+    project = await _project(db_session)
+    first = await _managed(db_session, "alpha.gcode", b"A")
+    last = await _managed(db_session, "gamma.gcode", b"G")
+    ids = [first.id, last.id]
+    await db_session.commit()
+    real_find = project_filing.find_or_create_item
+
+    async def broken_find(db, project, section, key, name, user_id):
+        if name == "alpha":
+            db.add(ProjectItem(project_id=project.id, section=section, name="ghost", name_key="ghost"))
+            raise RuntimeError("boom")
+        return await real_find(db, project, section, key, name, user_id)
+
+    monkeypatch.setattr(project_filing, "find_or_create_item", broken_find)
+    result = await _move(db_session, project, [first, last])
+
+    assert result.skipped == [{"file_id": ids[0], "code": "error", "reason": "unexpected error while moving the file"}]
+    assert [m["file_id"] for m in result.moved] == [ids[1]]
+    names = [i.name for i in (await db_session.execute(select(ProjectItem))).scalars()]
+    assert names == ["gamma"]
+
+
+@pytest.mark.asyncio
 async def test_a_project_gone_after_a_failed_group_is_a_404(db_session, root, monkeypatch):
     project = await _project(db_session)
     row = await _managed(db_session, "a.gcode", b"A")
@@ -945,3 +1010,139 @@ def test_revisions_copied_only_and_does_not_mutate_lists():
     result = MoveToProjectResult(copied=copied)
     assert result.revisions() == {5: copied[0]}
     assert result.moved == [] and len(result.copied) == 2
+
+
+# --- T-255: external sources are re-checked against their mount at copy time -------------------
+
+
+async def _external_symlink(db_session, tmp_path, filename, target: Path) -> LibraryFile:
+    """An external row whose file on the mount is (now) a symlink to ``target``."""
+    row = await _external(db_session, tmp_path, filename, readonly=True)
+    link = Path(row.file_path)
+    link.unlink()
+    link.symlink_to(target)
+    return row
+
+
+@pytest.mark.asyncio
+async def test_an_external_symlink_escaping_its_mount_is_source_missing(db_session, root, tmp_path_factory):
+    project = await _project(db_session)
+    secret = tmp_path_factory.mktemp("outside") / "secret.gcode"
+    secret.write_bytes(b"server secret")
+    row = await _external_symlink(db_session, tmp_path_factory.mktemp("nas"), "evil.gcode", secret)
+    row_id = row.id
+    await db_session.commit()
+
+    result = await _move(db_session, project, [row])
+
+    assert result.moved == [] and result.copied == []
+    assert result.skipped == [{"file_id": row_id, "code": "source_missing", "reason": "source file missing on disk"}]
+    assert await _revisions(db_session, project.id) == []
+    assert not any(b"server secret" in p.read_bytes() for p in root.rglob("*") if p.is_file())
+
+
+@pytest.mark.asyncio
+async def test_an_external_symlink_staying_in_its_mount_is_copied(db_session, root, tmp_path):
+    project = await _project(db_session)
+    row = await _external(db_session, tmp_path, "real.gcode", readonly=True, data=b"G1 real")
+    alias = await _external_symlink(db_session, tmp_path, "alias.gcode", Path(row.file_path))
+    alias_id = alias.id
+    await db_session.commit()
+
+    result = await _move(db_session, project, [alias], new_item_name="alias")
+
+    assert result.skipped == [] and [c["source_file_id"] for c in result.copied] == [alias_id]
+    copy = await db_session.get(LibraryFile, result.copied[0]["file_id"])
+    assert copy.filename == "alias.gcode"
+    assert to_absolute_path(copy.file_path).read_bytes() == b"G1 real"
+
+
+@pytest.mark.asyncio
+async def test_an_external_file_whose_folder_was_reassigned_is_still_copied(db_session, root, tmp_path):
+    """The mount check is against every registered external folder, so a row moved
+    (by PATCH) out of its folder but still on the mount copies as before."""
+    project = await _project(db_session)
+    row = await _external(db_session, tmp_path, "moved.gcode", readonly=True, data=b"G1 moved")
+    row.folder_id = None
+    row_id = row.id
+    await db_session.commit()
+
+    result = await _move(db_session, project, [row])
+
+    assert [c["source_file_id"] for c in result.copied] == [row_id]
+
+
+@pytest.mark.asyncio
+async def test_an_external_file_without_any_mount_is_source_missing(db_session, root, tmp_path):
+    project = await _project(db_session)
+    stray = tmp_path / "stray.gcode"
+    stray.write_bytes(b"G1")
+    row = LibraryFile(filename="stray.gcode", file_path=str(stray), file_type="gcode", file_size=2, is_external=True)
+    db_session.add(row)
+    await db_session.commit()
+
+    result = await _move(db_session, project, [row])
+
+    assert [s["code"] for s in result.skipped] == ["source_missing"]
+
+
+@pytest.mark.asyncio
+async def test_an_unresolvable_external_path_or_mount_is_source_missing(db_session, root, tmp_path, monkeypatch):
+    from backend.app.models.library import LibraryFolder
+
+    project = await _project(db_session)
+    row = await _external(db_session, tmp_path, "loop.gcode", readonly=True)
+    db_session.add(LibraryFolder(name="Gone", is_external=True, external_path=str(tmp_path / "gone")))
+    db_session.add(LibraryFolder(name="Blank", is_external=True, external_path=""))
+    row_id, bad = row.id, Path(row.file_path)
+    await db_session.commit()
+    real_resolve = Path.resolve
+
+    def failing_resolve(self, strict=False):
+        if self in (bad, tmp_path / "gone"):
+            raise OSError("Too many levels of symbolic links")
+        return real_resolve(self, strict=strict)
+
+    monkeypatch.setattr(Path, "resolve", failing_resolve)
+
+    result = await _move(db_session, project, [row])
+
+    assert result.skipped == [{"file_id": row_id, "code": "source_missing", "reason": "source file missing on disk"}]
+
+
+@pytest.mark.asyncio
+async def test_legacy_marker_check_skips_an_escaping_external_file(db_session, root, tmp_path_factory):
+    project = await _project(db_session)
+    secret = tmp_path_factory.mktemp("outside") / "secret.gcode"
+    secret.write_bytes(b"server secret")
+    row = await _external_symlink(db_session, tmp_path_factory.mktemp("nas"), "evil.gcode", secret)
+    await db_session.commit()
+
+    assert await project_filing._already_copied(db_session, project.id, [row]) == set()
+
+
+@pytest.mark.asyncio
+async def test_an_external_leaf_swapped_for_a_symlink_after_the_check_is_refused(
+    db_session, root, tmp_path_factory, monkeypatch
+):
+    project = await _project(db_session)
+    secret = tmp_path_factory.mktemp("outside") / "secret.gcode"
+    secret.write_bytes(b"server secret")
+    row = await _external(db_session, tmp_path_factory.mktemp("nas"), "swap.gcode", readonly=True)
+    row_id, leaf = row.id, Path(row.file_path)
+    await db_session.commit()
+    real_vet = project_filing._vetted_external_paths
+
+    async def vet_then_swap(db, files):
+        vetted = await real_vet(db, files)
+        leaf.unlink()
+        leaf.symlink_to(secret)  # swapped between the containment check and the open
+        return vetted
+
+    monkeypatch.setattr(project_filing, "_vetted_external_paths", vet_then_swap)
+
+    result = await _move(db_session, project, [row])
+
+    assert result.copied == []
+    assert [(s["file_id"], s["code"]) for s in result.skipped] == [(row_id, "copy_failed")]
+    assert await _revisions(db_session, project.id) == []

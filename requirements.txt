@@ -29,7 +29,9 @@ asyncpg>=0.29.0
 greenlet>=3.0.0
 
 # Pydantic
-pydantic>=2.0.0
+# 2.12.0 added Field(exclude_if=...) (pydantic #12141, in the 2.12.0b1 changelog),
+# used by schemas/aito_project_links.py DropFilesResponse.errors.
+pydantic>=2.12.0
 # 2.14.2 patches GHSA-4xgf-cpjx-pc3j (NestedSecretsSettingsSource follows
 # symlinks out of secrets_dir). Fenrir does not use that source — pin
 # is precautionary so the audit stays clean.

@@ -6,6 +6,7 @@ import zipfile
 from functools import partial
 
 import pytest
+from fastapi import HTTPException
 from httpx import AsyncClient
 from sqlalchemy import select
 
@@ -14,8 +15,9 @@ from backend.app.api.routes.library import to_absolute_path
 from backend.app.core.config import settings
 from backend.app.models.library import LibraryFile
 from backend.app.models.slicer_pipeline import SlicerPipeline
+from backend.app.schemas.project_files import REVISION_NOTE_MAX_LENGTH
 from backend.app.services import project_storage
-from backend.tests.project_fixtures import api_project, projects_root_fixture
+from backend.tests.project_fixtures import ChunkedMultipart, api_project, projects_root_fixture
 
 root = projects_root_fixture(autouse=True)
 _project = partial(api_project, check=False)
@@ -481,3 +483,96 @@ async def test_project_files_error_is_the_http_error_cause(db_session, monkeypat
     assert (raised.value.status_code, raised.value.detail) == (418, "teapot")
     assert raised.value.__cause__ is error
     assert raised.value.__suppress_context__ is True
+
+
+async def _upload_urls(client) -> list[str]:
+    """Both project upload routes guarded by the capped route class."""
+    project = await _project(client)
+    item = await _item(client, project["id"])
+    response = await _upload(client, item["id"], ("seed.gcode", b"x"))
+    assert response.status_code == 201, response.text
+    rev = response.json()["revision"]
+    return [f"/api/v1/projects/items/{item['id']}/revisions", f"/api/v1/projects/revisions/{rev['id']}/files"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_chunked_upload_over_cap_refused_before_spooling(async_client: AsyncClient, monkeypatch):
+    """T-289: no Content-Length — the body is counted as it arrives and refused past the cap."""
+    monkeypatch.setattr(settings, "library_max_upload_bytes", 1024)
+    limit = 1024 + project_files_routes._UPLOAD_OVERHEAD_BYTES
+    for url in await _upload_urls(async_client):
+        # several files, each under the cap, over it in total
+        body = ChunkedMultipart([(f"part{i}.gcode", b"x" * 1000) for i in range(40)])
+        response = await body.post(async_client, url)
+        assert response.status_code == 413, url
+        assert response.json()["detail"] == "Upload exceeds the maximum size of 1024 bytes"
+        assert body.sent <= limit + body.chunk_size < len(body.body)
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_chunked_upload_at_limit_passes_one_byte_over_refused(async_client: AsyncClient, monkeypatch):
+    monkeypatch.setattr(settings, "library_max_upload_bytes", 1024)
+    limit = 1024 + project_files_routes._UPLOAD_OVERHEAD_BYTES
+    item_url, files_url = await _upload_urls(async_client)
+    # files each under the per-file cap, the whole body at / one past cap + overhead
+    under_cap = [(f"part{i}.gcode", bytes([65 + i]) * 900) for i in range(8)]
+    over = await ChunkedMultipart.of_size(limit + 1, under_cap).post(async_client, files_url)
+    assert over.status_code == 413
+    assert over.json()["detail"] == "Upload exceeds the maximum size of 1024 bytes"
+    at_limit = await ChunkedMultipart.of_size(limit, under_cap).post(async_client, files_url)
+    assert at_limit.status_code == 200, at_limit.text
+    assert at_limit.json() == {"warnings": []}
+    small = await ChunkedMultipart([("b.gcode", b"x" * 1000)]).post(async_client, item_url)
+    assert small.status_code == 201, small.text
+    assert small.json()["revision"]["files"][0]["file_size"] == 1000
+
+
+@pytest.mark.asyncio
+async def test_receive_capped_passes_non_body_messages_and_counts_across_chunks():
+    from starlette.requests import Request
+
+    half = (1024 + project_files_routes._UPLOAD_OVERHEAD_BYTES) // 2
+    messages = iter(
+        [
+            {"type": "http.request", "body": b"x" * half, "more_body": True},
+            {"type": "http.disconnect"},
+            {"type": "http.request", "body": b"x" * half, "more_body": True},
+            {"type": "http.request", "body": b"x", "more_body": False},
+        ]
+    )
+
+    async def upstream():
+        return next(messages)
+
+    capped = project_files_routes._receive_capped(Request({"type": "http", "headers": []}, upstream), 1024)
+    assert (await capped.receive())["body"] == b"x" * half
+    assert await capped.receive() == {"type": "http.disconnect"}
+    assert (await capped.receive())["body"] == b"x" * half  # exactly cap + overhead: still allowed
+    with pytest.raises(HTTPException) as refused:
+        await capped.receive()
+    assert refused.value.status_code == 413
+    assert refused.value.detail == "Upload exceeds the maximum size of 1024 bytes"
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_upload_note_capped_at_the_patch_limit(async_client: AsyncClient, root):
+    """T-256: the upload note shares the PATCH limit (5000); one character over is a 422 that stores nothing."""
+    assert REVISION_NOTE_MAX_LENGTH == 5000
+    project = await _project(async_client)
+    kept = await _item(async_client, project["id"], name="Kept")
+    stored = await _upload(async_client, kept["id"], ("a.gcode", b"geo"), note="n" * 5000)
+    assert stored.status_code == 201, stored.text
+    assert stored.json()["revision"]["note"] == "n" * 5000
+
+    refused_item = await _item(async_client, project["id"], name="Refused")
+    on_disk = sorted(p for p in root.rglob("*") if p.is_file())
+    refused = await _upload(async_client, refused_item["id"], ("b.gcode", b"other"), note="n" * 5001)
+    assert refused.status_code == 422, refused.text
+    assert refused.json()["detail"][0]["loc"] == ["body", "note"]
+    assert sorted(p for p in root.rglob("*") if p.is_file()) == on_disk
+    tree = (await async_client.get(f"/api/v1/projects/{project['id']}/tree")).json()
+    revisions = {i["name"]: i["revisions"] for i in tree["sections"][2]["items"]}
+    assert revisions["Refused"] == [] and len(revisions["Kept"]) == 1

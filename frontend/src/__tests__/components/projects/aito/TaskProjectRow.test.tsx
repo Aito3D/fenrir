@@ -6,11 +6,14 @@ import { useQuery } from '@tanstack/react-query';
 import { render } from '../../../utils';
 import { server } from '../../../mocks/server';
 import { api } from '../../../../api/client';
+import type { RevisionStatus } from '../../../../api/client';
+import { item, projectTree, ref, rev as baseRev } from '../../../fixtures/projectTree';
 import { TaskRow } from '../../../../components/aito/TaskRow';
 import { TaskStepList } from '../../../../components/aito/TaskStepList';
 import { emptyTaskDraft } from '../../../../utils/taskDraft';
 import type { TaskDraft } from '../../../../utils/taskDraft';
 import { reachesDocument } from '../../../dragHelpers';
+import en from '../../../../i18n/locales/en';
 
 const ORDER = 42;
 const TASK = 11;
@@ -40,33 +43,16 @@ const linked = (deliveries: number[] = [3, 5]) => ({
   ],
 });
 
-const rev = (id: number, number: number, status: string) => ({
-  id, number, status, note: null, derived_from: null, outdated_by: null, print_profile: null,
-  slicer_name: null, slicer_version: null, has_snapshot: false, used: false, created_by: 'paul',
-  created_at: '2026-10-04T10:00:00Z', status_changed_at: null, files: [],
-});
-const item = (id: number, section: string, name: string, revisions: ReturnType<typeof rev>[]) => ({
-  id, section, name, name_key: name.toLowerCase(), forked_from: null, revisions,
-});
-const tree = {
-  project_id: 7,
-  code: 'P-0007',
-  sections: [
-    { section: 'scan', items: [] },
-    {
-      section: 'modelisation',
-      items: [
-        item(20, 'modelisation', 'Support', [rev(3, 3, 'valide'), rev(2, 2, 'valide'), rev(1, 1, 'wip')]),
-        item(21, 'modelisation', 'Clip', [rev(8, 2, 'wip'), rev(7, 1, 'valide')]),
-      ],
-    },
-    { section: 'impression', items: [item(30, 'impression', 'Plate', [rev(6, 1, 'valide')])] },
-    { section: 'usinage', items: [] },
-    { section: 'docs', items: [item(40, 'docs', 'Plan', [rev(5, 1, 'wip')])] },
+// This suite's revisions carry no print_count / pipeline_name (left out of the JSON).
+const rev = (id: number, number: number, status: RevisionStatus) =>
+  baseRev({ id, number, status, print_count: undefined, pipeline_name: undefined });
+const tree = projectTree({
+  modelisation: [
+    item(20, 'modelisation', 'Support', [rev(3, 3, 'valide'), rev(2, 2, 'valide'), rev(1, 1, 'wip')]),
+    item(21, 'modelisation', 'Clip', [rev(8, 2, 'wip'), rev(7, 1, 'valide')]),
   ],
-};
-const ref = (id: number, name: string, section: string, number: number) => ({
-  id, item_id: id * 10, item_name: name, section, number, status: 'valide',
+  impression: [item(30, 'impression', 'Plate', [rev(6, 1, 'valide')])],
+  docs: [item(40, 'docs', 'Plan', [rev(5, 1, 'wip')])],
 });
 const orderRow = (taskId: number, orderId: number, deliveries: ReturnType<typeof ref>[]) => ({
   task_id: taskId, task_title: 'T', order_id: orderId, order_description: 'D', client_name: 'Acme',
@@ -75,12 +61,16 @@ const orderRow = (taskId: number, orderId: number, deliveries: ReturnType<typeof
 
 let links: unknown;
 let puts: { url: string; body: unknown }[];
+let taskCreates: unknown[];
+let plainCreates: number;
 let codesGets: number;
 let dropped: string[] | null;
 
 beforeEach(() => {
   links = unlinked;
   puts = [];
+  taskCreates = [];
+  plainCreates = 0;
   codesGets = 0;
   dropped = null;
   server.use(
@@ -100,6 +90,20 @@ beforeEach(() => {
       puts.push({ url: 'project', body });
       links = body.project_id === null ? unlinked : linked([]);
       return HttpResponse.json({ task_id: TASK, project: body.project_id === null ? null : project, sections: {}, deliveries: [] });
+    }),
+    // T-257: "New project" creates and links in one request.
+    http.post(`/api/v1/aito/tasks/${TASK}/project`, async ({ request }) => {
+      taskCreates.push(await request.json());
+      links = { order_id: ORDER, tasks: [{ task_id: TASK, project: { ...project, id: 9 }, sections: {}, deliveries: [] }] };
+      return HttpResponse.json(
+        { task_id: TASK, project: { ...project, id: 9 }, sections: {}, deliveries: [] },
+        { status: 201 },
+      );
+    }),
+    // Never called from the row any more: a stray create would show up here.
+    http.post('/api/v1/projects/', () => {
+      plainCreates += 1;
+      return HttpResponse.json({ ...project, id: 99 }, { status: 201 });
     }),
     http.put(`/api/v1/aito/tasks/${TASK}/deliveries`, async ({ request }) => {
       const body = await request.json();
@@ -151,24 +155,47 @@ describe('TaskProjectRow', () => {
     expect(screen.getByRole('button', { name: 'Link an existing project' })).toBeInTheDocument();
   });
 
-  it('"New project" opens the create modal prefilled from the task, then links what it created', async () => {
+  it('"New project" opens the create modal prefilled from the task, then creates and links it in one request', async () => {
     const user = userEvent.setup();
-    let created: unknown = null;
-    server.use(
-      http.post('/api/v1/projects/', async ({ request }) => {
-        created = await request.json();
-        return HttpResponse.json({ ...project, id: 9 }, { status: 201 });
-      }),
-    );
     renderRow();
+    await waitFor(() => expect(codesGets).toBe(1));
     await user.click(await screen.findByRole('button', { name: 'New project' }));
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByDisplayValue('Bracket for drone')).toBeInTheDocument();
     expect(within(dialog).getByDisplayValue('Scan the part. Model the support')).toBeInTheDocument();
     await user.click(within(dialog).getByRole('button', { name: 'Create' }));
-    await waitFor(() => expect(puts).toEqual([{ url: 'project', body: { project_id: 9 } }]));
-    expect(created).toMatchObject({ name: 'Bracket for drone', description: 'Scan the part. Model the support' });
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(taskCreates).toEqual([
+        { name: 'Bracket for drone', description: 'Scan the part. Model the support', tag_ids: [], new_tag_names: [] },
+      ]),
+    );
+    expect(puts).toEqual([]);
+    expect(plainCreates).toBe(0);
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    // The links and the board codes refetch: the row now shows the new project.
+    await waitFor(() => expect(codesGets).toBe(2));
+    expect(await screen.findByRole('link', { name: 'Drone bracket' })).toHaveAttribute('href', '/projects/9');
+  });
+
+  it('a failed create-and-link leaves no project behind: one request, the modal stays open', async () => {
+    const user = userEvent.setup();
+    let attempts = 0;
+    server.use(
+      http.post(`/api/v1/aito/tasks/${TASK}/project`, () => {
+        attempts += 1;
+        return HttpResponse.json({ detail: 'Order not found' }, { status: 404 });
+      }),
+    );
+    renderRow();
+    await user.click(await screen.findByRole('button', { name: 'New project' }));
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Create' }));
+    expect(await screen.findByText(en.projectsPdm.saveFailed)).toBeInTheDocument();
+    expect(attempts).toBe(1);
+    expect(plainCreates).toBe(0);
+    expect(puts).toEqual([]);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'New project' })).toBeInTheDocument();
   });
 
   it('a saved task missing from the loaded links (created after the fetch) counts as unlinked', async () => {
@@ -324,6 +351,58 @@ describe('TaskProjectRow', () => {
     expect(spy).toHaveBeenCalledWith(TASK, [expect.objectContaining({ name: 'support.3mf' })]);
     expect(await screen.findByText('1 file added to P-0007')).toBeInTheDocument();
     spy.mockRestore();
+  });
+
+  it('a partly failed drop toasts what was added and names the files that were not (T-286)', async () => {
+    links = linked();
+    server.use(
+      http.post('/api/v1/aito/tasks/:id/files', ({ params }) => {
+        dropped = [String(params.id)];
+        return HttpResponse.json(
+          {
+            project_id: 7,
+            code: 'P-0007',
+            results: [{ filename: 'a.3mf', section: 'impression', item_id: 20, item_name: 'a', revision_number: 1 }],
+            errors: [{ filenames: ['b.3mf', 'c.3mf'], status_code: 409, detail: 'Another upload just created this revision number; try again' }],
+          },
+          { status: 201 },
+        );
+      }),
+    );
+    renderRow();
+    await screen.findByRole('link', { name: 'Drone bracket' });
+    fireEvent.drop(screen.getByTestId(`task-drop-${TASK}`), {
+      dataTransfer: {
+        files: [new File(['x'], 'a.3mf'), new File(['x'], 'b.3mf'), new File(['x'], 'c.3mf')],
+        types: ['Files'],
+      },
+    });
+    expect(
+      await screen.findByText(
+        '1 file added to P-0007; not added: b.3mf, c.3mf (Another upload just created this revision number; try again)',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('1 file added to P-0007')).not.toBeInTheDocument();
+    expect(screen.queryByText('Upload failed')).not.toBeInTheDocument();
+  });
+
+  it('an errors entry with no file left unstored keeps the plain success toast (T-286)', async () => {
+    links = linked();
+    server.use(
+      http.post('/api/v1/aito/tasks/:id/files', () =>
+        HttpResponse.json({
+          project_id: 7,
+          results: [{ filename: 'a.3mf', section: 'impression', item_id: 20, item_name: 'a', revision_number: 1 }],
+          errors: [{ filenames: [], status_code: 409, detail: 'Task is not linked to a project' }],
+        }),
+      ),
+    );
+    renderRow();
+    await screen.findByRole('link', { name: 'Drone bracket' });
+    fireEvent.drop(screen.getByTestId(`task-drop-${TASK}`), {
+      dataTransfer: { files: [new File(['x'], 'a.3mf')], types: ['Files'] },
+    });
+    expect(await screen.findByText('1 file added to P-0007')).toBeInTheDocument();
   });
 
   it('dropping a non-printing file on a linked task toasts and sends nothing', async () => {

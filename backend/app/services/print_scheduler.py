@@ -8339,6 +8339,15 @@ class PrintScheduler:
             # file None", which is the one case worth being able to trace.
             source_library_file_id = item.library_file_id
             try:
+                # Fenrir: a project revision file goes through the projects-tree
+                # symlink guard; one it refuses fails here exactly as a missing
+                # file fails in archive_print's copy below.
+                if library_file.revision_id is not None:
+                    from backend.app.services.project_files import revision_file_path
+
+                    if revision_file_path(library_file.file_path) is None:
+                        raise FileNotFoundError(f"Revision file refused by the symlink guard: {library_file.file_path}")
+
                 from backend.app.services.archive import ArchiveService
 
                 archive_service = ArchiveService(db)

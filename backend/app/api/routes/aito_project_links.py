@@ -172,16 +172,24 @@ async def drop_task_files(
     """Drop printing files on a linked task: Impression, one revision per item name; others refuse the drop."""
     task = await _task(db, task_id)
     order_id = task.project_id
+    # A partly failed drop comes back as a response (with ``errors``); an exception
+    # past a stored group (a cancellation) still carries ``stored_count``.
+    stored_count = 0
     try:
         async with _link_errors(db):
-            response = await svc.drop_files_on_task(
-                db, task, files, user_id=actor_user_id(user), actor=actor_name(user)
-            )
+            try:
+                response = await svc.drop_files_on_task(
+                    db, task, files, user_id=actor_user_id(user), actor=actor_name(user)
+                )
+            except BaseException as exc:
+                stored_count = getattr(exc, "stored_count", 0)
+                raise
+        stored_count = len(response.results)
     except project_files.ProjectFilesError as exc:
-        if getattr(exc, "stored_count", 0):
-            await _broadcast_changed(order_id, actor_name(user))
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
-    await _broadcast_changed(order_id, actor_name(user))
+    finally:
+        if stored_count:
+            await _broadcast_changed(order_id, actor_name(user))
     return response
 
 

@@ -17,6 +17,8 @@ from collections.abc import Callable, Collection, Iterable
 from fastapi import UploadFile
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.exc import StaleDataError
+from starlette.exceptions import HTTPException
 
 from backend.app.core.websocket import ws_manager
 from backend.app.models.aito_project import AitoProject
@@ -26,6 +28,7 @@ from backend.app.models.project import Project
 from backend.app.models.project_item import ProjectItem, ProjectRevision
 from backend.app.models.user import User
 from backend.app.schemas.aito_project_links import (
+    DropFilesError,
     DropFilesResponse,
     DroppedFileResult,
     LinkedProjectRef,
@@ -41,6 +44,7 @@ from backend.app.services import project_files, project_print_trace
 from backend.app.services.actor import actor_name, record_as
 from backend.app.services.http_status_error import HttpStatusError
 from backend.app.services.project_filing import find_or_create_item, item_name_for_filename
+from backend.app.services.project_revisions import lock_revision_rows
 from backend.app.services.project_suggestions import SIMILAR_NAME_THRESHOLD, similar_projects
 from backend.app.services.project_tags import UnknownTagError, apply_project_tag_input
 
@@ -69,6 +73,21 @@ def _revision_label(item: ProjectItem | None, revision: ProjectRevision | None, 
     return project_files.revision_label(item.name, revision.number)
 
 
+async def _require_live_task(db: AsyncSession, task_id: int) -> None:
+    """Run after a flush (the write lock is held then): a task deleted since the
+    route read it, or whose order was trashed or merged away, would keep an
+    orphaned or lost row, so refuse it with the route's 404; the caller rolls back."""
+    live = (
+        await db.execute(
+            select(AitoTask.id)
+            .join(AitoProject, AitoProject.id == AitoTask.project_id)
+            .where(AitoTask.id == task_id, AitoProject.status != "deleted")
+        )
+    ).first()
+    if live is None:
+        raise LinkError(404, "Task not found")
+
+
 async def _clear_deliveries(db: AsyncSession, task_id: int) -> None:
     await db.execute(delete(AitoTaskDelivery).where(AitoTaskDelivery.task_id == task_id))
 
@@ -90,13 +109,17 @@ async def link_task(db: AsyncSession, task: AitoTask, project_id: int | None, *,
     if previous_id is not None:
         await _clear_deliveries(db, task.id)
     task.linked_project_id = project_id
-    await db.flush()
+    try:
+        await db.flush()
+    except StaleDataError as exc:  # the task row was deleted since the route read it
+        raise LinkError(404, "Task not found") from exc
     # The flush holds the write lock: a project deleted since it was read would
     # leave a dangling link (no FK), so refuse it; the caller rolls back.
     if project_id is not None and (
         (await db.execute(select(Project.id).where(Project.id == project_id))).first() is None
     ):
         raise LinkError(404, "Project not found")
+    await _require_live_task(db, task.id)
 
     if project is not None:
         kind, detail = "task.project_linked", _project_detail(project.id, project)
@@ -224,8 +247,11 @@ async def set_deliveries(
         )
     db.add_all(AitoTaskDelivery(task_id=task.id, revision_id=rid, created_by_id=user_id) for rid in added)
     await db.flush()
+    await _require_live_task(db, task.id)
     # a revision may have been deleted since the validation above; the write lock is held now
+    # (on PostgreSQL the share lock waits for a concurrent delete to commit)
     if added:
+        await lock_revision_rows(db, added, share=True)
         still_there = set((await db.execute(select(ProjectRevision.id).where(ProjectRevision.id.in_(added)))).scalars())
         gone = [rid for rid in added if rid not in still_there]
         if gone:
@@ -566,6 +592,17 @@ async def _fan_out_revision(
     return order_ids if order_ids is not None else []
 
 
+_DROP_UNEXPECTED = "unexpected error while storing the files"
+
+
+def _drop_error(exc: Exception, filenames: list[str], order_id: int) -> DropFilesError:
+    """The ``errors`` entry of a partly failed drop; call it from the ``except`` block (it logs the traceback)."""
+    if isinstance(exc, HttpStatusError | HTTPException):
+        return DropFilesError(filenames=filenames, status_code=exc.status_code, detail=str(exc.detail))
+    logger.exception("File drop on order %s failed after storing some files", order_id)
+    return DropFilesError(filenames=filenames, status_code=500, detail=_DROP_UNEXPECTED)
+
+
 async def drop_files_on_task(
     db: AsyncSession, task: AitoTask, uploads: list[UploadFile], *, user_id: int | None, actor: str | None
 ) -> DropFilesResponse:
@@ -573,13 +610,20 @@ async def drop_files_on_task(
     Impression revision of the existing item, or R1 of a new one; any
     non-printable file refuses the whole drop (400). Commits.
 
+    A file whose name leaves no item name (``???.3mf``) refuses the whole
+    drop (400 naming it) the same way, before anything is written.
+
     Goes through the phase-2 service so streaming-before-DB, per-item locks and
     cleanup apply. ``add_revision`` rolls the whole session back on failure, so
     each created item is committed first. Each stored group is announced on the
-    project's other linked orders (``project.revision_added``, broadcast); if a
-    later group fails, the groups already stored are still recorded on the
-    dropping order before the error propagates. Broadcasting to the dropping
-    order itself is the route's job."""
+    project's other linked orders (``project.revision_added``, broadcast). The
+    first failing group stops the drop: when nothing was stored yet its error
+    propagates; otherwise the drop returns the stored results plus one
+    ``errors`` entry naming the files not stored (that group and the ones after
+    it) with the failure's status and detail (a fixed detail and 500 for an
+    unexpected exception, which is logged). The stored groups are recorded on
+    the dropping order either way. Broadcasting to the dropping order itself is
+    the route's job."""
     if task.linked_project_id is None:
         raise LinkError(409, "Task is not linked to a project")
     if not uploads:
@@ -600,9 +644,19 @@ async def drop_files_on_task(
         name = item_name_for_filename(project_files.upload_basename(upload))
         key = (DROP_SECTION, project_files.name_key(name))
         groups.setdefault(key, (name, []))[1].append(upload)
+    # A file whose name sanitises to nothing can never become an item: refuse
+    # the whole drop (400 naming them) before anything is written, too.
+    blank = groups.get((DROP_SECTION, ""))
+    if blank is not None:
+        raise LinkError(
+            400,
+            "Item name must not be blank; refused: " + ", ".join(project_files.upload_basename(u) for u in blank[1]),
+        )
 
     results: list[DroppedFileResult] = []
+    errors: list[DropFilesError] = []
     notified: list[int] = []
+    stored_groups = 0
     try:
         for (section, key), (name, group) in groups.items():
             item, project = await find_or_create_item(db, project, section, key, name, user_id)
@@ -621,6 +675,7 @@ async def drop_files_on_task(
                 )
                 for upload in group
             )
+            stored_groups += 1
             label, detail = revision_added_payload(
                 item_name=item_name, revision_number=number, section=section, item_id=item_id, revision_id=revision_id
             )
@@ -635,17 +690,27 @@ async def drop_files_on_task(
             project = await db.get(Project, project_id)  # a failed fan-out rolls back and expires it
             if project is None:
                 raise LinkError(409, "Task is not linked to a project")
-    except Exception as exc:
-        # Set on any exception; ProjectFilesError declares it, and the route reads it there to still broadcast.
+    except BaseException as exc:
+        # Set on any exception; ProjectFilesError declares it, and the route reads it to still broadcast.
         exc.stored_count = len(results)  # type: ignore[attr-defined]
-        raise
+        if not results or not isinstance(exc, Exception):
+            raise
+        unstored = [
+            project_files.upload_basename(u) for _name, group in list(groups.values())[stored_groups:] for u in group
+        ]
+        errors.append(_drop_error(exc, unstored, order_id))
     finally:
-        if results:
-            try:
-                await _record_drop(db, order_id, project_id, code, results, actor)
-                await db.commit()
-            except Exception:
-                logger.warning("project.files_dropped event failed for order %s", order_id, exc_info=True)
-                await db.rollback()
-        await broadcast_orders_changed(notified, actor)
-    return DropFilesResponse(project_id=project_id, code=code, results=results)
+        try:
+            if results:
+                try:
+                    await _record_drop(db, order_id, project_id, code, results, actor)
+                    await db.commit()
+                except Exception:
+                    logger.warning("project.files_dropped event failed for order %s", order_id, exc_info=True)
+                    await db.rollback()
+            await broadcast_orders_changed(notified, actor)
+        except BaseException as exc:
+            # A cancellation (or a failed rollback) while recording still tells the route what was stored.
+            exc.stored_count = len(results)  # type: ignore[attr-defined]
+            raise
+    return DropFilesResponse(project_id=project_id, code=code, results=results, errors=errors)

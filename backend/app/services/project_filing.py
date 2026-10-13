@@ -32,7 +32,12 @@ from backend.app.services import project_files
 from backend.app.services.db_quiet import rollback_quietly
 from backend.app.services.project_codes import format_project_code
 from backend.app.services.project_files import RevisionSource
-from backend.app.services.project_storage import ENABLED_SECTIONS, PRINTABLE_EXTENSIONS, is_printable_filename
+from backend.app.services.project_storage import (
+    ENABLED_SECTIONS,
+    PRINTABLE_EXTENSIONS,
+    is_printable_filename,
+    split_gcode_3mf,
+)
 from backend.app.services.project_suggestions import SIMILAR_NAME_THRESHOLD, similar_projects
 from backend.app.utils.local_time import utcnow_naive
 
@@ -57,9 +62,8 @@ def section_for_filename(name: str) -> str:
 def item_name_for_filename(name: str) -> str:
     """File name without its extension (``.gcode.3mf`` counted whole); the full name if nothing is left."""
     stripped = name.strip()
-    if stripped.lower().endswith(".gcode.3mf"):
-        stem = stripped[: -len(".gcode.3mf")]
-    else:
+    stem, gcode_ext = split_gcode_3mf(stripped)
+    if not gcode_ext:
         stem = stripped.rsplit(".", 1)[0] if "." in stripped else stripped
     return stem if stem.strip() else stripped
 
@@ -136,13 +140,45 @@ class _Candidate:
     file_path: str
 
 
-def _source_path(file: LibraryFile) -> Path | None:
+def _source_path(file: LibraryFile, external: dict[int, Path]) -> Path | None:
+    """Where to copy ``file`` from; an external file only if ``_vetted_external_paths`` kept it."""
     if file.is_external:
-        return Path(file.file_path) if file.file_path else None
+        return external.get(file.id)
     try:
         return to_absolute_path(file.file_path)
     except ValueError:  # a stored path escaping the data dir is treated as missing
         return None
+
+
+def _resolved_or_none(path: Path) -> Path | None:
+    try:
+        return path.resolve()
+    except (OSError, RuntimeError):  # a symlink loop, an unreachable mount
+        return None
+
+
+async def _vetted_external_paths(db: AsyncSession, files: list[LibraryFile]) -> dict[int, Path]:
+    """The resolved source path of each external file that still lies under an external
+    folder's ``external_path`` (the containment the external scan checks), keyed by file id.
+    A file whose path, or a symlink on it, now leads outside every mount is left out, so
+    the move reports it ``source_missing`` instead of copying an arbitrary server file."""
+    externals = [(f.id, f.file_path) for f in files if f.is_external and f.file_path]
+    if not externals:
+        return {}
+    mount_paths = (
+        await db.execute(
+            select(LibraryFolder.external_path)
+            .where(LibraryFolder.is_external.is_(True), LibraryFolder.external_path.is_not(None))
+            .distinct()
+        )
+    ).scalars()
+    mounts = [m for m in (_resolved_or_none(Path(p)) for p in mount_paths if p) if m is not None]
+    out: dict[int, Path] = {}
+    for file_id, file_path in externals:
+        real = _resolved_or_none(Path(file_path))
+        if real is not None and any(real.is_relative_to(mount) for mount in mounts):
+            out[file_id] = real
+    return out
 
 
 def _skip(result: MoveToProjectResult, file_id: int, code: str, reason: str) -> None:
@@ -198,8 +234,9 @@ async def move_library_files_to_project(
     takes every file as one revision; otherwise files are grouped per item name
     from their filenames, each group becoming the next revision of the matching
     item (or R1 of a new one). A group that cannot be stored (copy error,
-    concurrent change) is skipped whole (``copy_failed`` / ``conflict``) and
-    leaves its rows and files as they were; earlier groups stay committed.
+    concurrent change, any unexpected error) is skipped whole (``copy_failed`` /
+    ``conflict`` / ``error``) and leaves its rows and files as they were; earlier
+    groups stay committed.
 
     Ownership and permission checks are the caller's."""
     if item_id is not None and new_item_name is not None:
@@ -215,7 +252,8 @@ async def move_library_files_to_project(
             raise ValueError(exc.detail) from exc
 
     # Classify while the caller's instances are loaded: commits and rollbacks below expire them.
-    groups = _classify_files(result, files, target, new_item_name)
+    external = await _vetted_external_paths(db, files)
+    groups = _classify_files(result, files, target, new_item_name, external)
 
     for (section, key), (name, candidates) in groups.items():
         project, stored = await _store_group(
@@ -242,7 +280,11 @@ _Groups = dict[tuple[str, str], tuple[str, list[_Candidate]]]
 
 
 def _classify_files(
-    result: MoveToProjectResult, files: list[LibraryFile], target: ProjectItem | None, new_item_name: str | None
+    result: MoveToProjectResult,
+    files: list[LibraryFile],
+    target: ProjectItem | None,
+    new_item_name: str | None,
+    external: dict[int, Path],
 ) -> _Groups:
     """Skip what cannot go (into ``result``); group the rest by ``(section, name_key)`` -> ``(item name, files)``."""
     groups: _Groups = {}
@@ -258,7 +300,7 @@ def _classify_files(
         if not is_printable_filename(filename):
             _skip(result, file_id, "not_printable", "projects only accept printing files (.3mf, .gcode, .bgcode)")
             continue
-        src = _source_path(file)
+        src = _source_path(file, external)
         if src is None or not src.is_file():
             _skip(result, file_id, "source_missing", "source file missing on disk")
             continue
@@ -302,6 +344,7 @@ def _group_sources(
                 path=candidate.src,
                 filename=candidate.filename,
                 reuse_row=None if candidate.is_external else row,
+                nofollow=candidate.is_external,
             )
         )
         stored.append(candidate)
@@ -322,8 +365,8 @@ async def _store_group(
     user_id: int | None,
 ) -> tuple[Project, _StoredGroup | None]:
     """Store one group as a revision (committed). None when nothing was stored: every file
-    skipped, or the group failed (``copy_failed`` / ``conflict``, rolled back). Returns the
-    project too, re-read if a commit or rollback replaced it."""
+    skipped, or the group failed (``copy_failed`` / ``conflict`` / ``error``, rolled back).
+    Returns the project too, re-read if a commit or rollback replaced it."""
     pending = candidates  # what a failure below reports as skipped
     try:
         if target_item_id is not None:
@@ -337,9 +380,11 @@ async def _store_group(
         if not sources:
             return project, None
         revision = await project_files.add_revision_from_sources(db, project, item, sources, note=None, user_id=user_id)
-    except (OSError, project_files.ProjectFilesError) as exc:
-        # Only a copy error or a genuine 409 race is a per-group skip; anything else
-        # (e.g. the target item deleted meanwhile, 404) is the whole call's error.
+    except Exception as exc:
+        # A non-409 ProjectFilesError (e.g. the target item deleted meanwhile, 404) is the
+        # whole call's error. A copy error, a genuine 409 race or anything unexpected (e.g.
+        # "database is locked") is a per-group skip: earlier groups are already committed,
+        # so the caller must still see them in the result.
         if isinstance(exc, project_files.ProjectFilesError) and exc.status_code != 409:
             raise
         return await _skip_failed_group(db, result, project_id, name, pending, exc), None
@@ -352,12 +397,20 @@ async def _skip_failed_group(
     project_id: int,
     name: str,
     pending: list[_Candidate],
-    exc: OSError | project_files.ProjectFilesError,
+    exc: Exception,
 ) -> Project:
-    """Report a failed group's pending files as skipped; returns the project re-read after the rollback."""
-    code = "copy_failed" if isinstance(exc, OSError) else "conflict"
-    reason = str(exc.detail if isinstance(exc, project_files.ProjectFilesError) else exc)
-    logger.warning("Moving files into project %s failed for item %r: %s", project_id, name, reason)
+    """Report a failed group's pending files as skipped; returns the project re-read after the rollback.
+
+    ``copy_failed`` for an OSError, ``conflict`` for a 409, ``error`` for anything else
+    (logged with its traceback, the session rolled back, a generic reason reported)."""
+    if isinstance(exc, (OSError, project_files.ProjectFilesError)):
+        code = "copy_failed" if isinstance(exc, OSError) else "conflict"
+        reason = str(exc)  # a ProjectFilesError's str() is its detail
+        logger.warning("Moving files into project %s failed for item %r: %s", project_id, name, reason)
+    else:
+        code, reason = "error", "unexpected error while moving the file"
+        logger.exception("Moving files into project %s failed unexpectedly for item %r", project_id, name)
+        await db.rollback()
     for candidate in pending:
         _skip(result, candidate.file_id, code, reason)
     refreshed = await db.get(Project, project_id)  # the rollback expired it
@@ -678,7 +731,7 @@ async def record_revision_added(db: AsyncSession, project_id: int, entry: dict, 
 # part of the key so two distinct external files that happen to share their
 # bytes both get migrated. No extra column, no reliance on an editable note.
 
-_RETRYABLE_SKIPS = ("copy_failed", "conflict")
+_RETRYABLE_SKIPS = ("copy_failed", "conflict", "error")
 
 
 class LegacyMigrationError(Exception):
@@ -733,7 +786,8 @@ async def _legacy_files(db: AsyncSession, project_id: int) -> list[LibraryFile]:
 async def _already_copied(db: AsyncSession, project_id: int, files: list[LibraryFile]) -> set[int]:
     """External files the project already holds a copy of (an earlier run): same
     SHA-256 and same filename as one of its revision files."""
-    externals = [(f.id, f.filename, _source_path(f)) for f in files if f.is_external]
+    vetted = await _vetted_external_paths(db, files)
+    externals = [(f.id, f.filename, _source_path(f, vetted)) for f in files if f.is_external]
     if not externals:
         return set()
     held = set(
@@ -775,8 +829,8 @@ async def migrate_project_legacy(db: AsyncSession, project: Project) -> LegacyMi
     """Move ``project``'s legacy printing files into its tree, then set
     ``legacy_migrated_at``. Each revision commits on its own; on any error the
     marker is not set (already-committed revisions stay; a re-run continues).
-    A group skipped for a transient reason (copy error, concurrent change)
-    raises ``LegacyMigrationError`` so the project stays a candidate."""
+    A group skipped for a transient reason (copy error, concurrent change,
+    unexpected error) raises ``LegacyMigrationError`` so the project stays a candidate."""
     project_id = project.id
     files = await _legacy_files(db, project_id)
     done = await _already_copied(db, project_id, files)
@@ -877,8 +931,7 @@ async def _run_legacy_migration() -> None:
                         totals["files_copied"] += outcome.files_copied
                 except Exception as exc:
                     logger.warning("Legacy migration of project %s failed", project_id, exc_info=True)
-                    detail = exc.detail if isinstance(exc, project_files.ProjectFilesError) else str(exc)
-                    state["failures"].append({"project_id": project_id, "code": code, "error": str(detail)[:500]})
+                    state["failures"].append({"project_id": project_id, "code": code, "error": str(exc)[:500]})
                     await rollback_quietly(
                         db, logger, logging.DEBUG, "Rollback after a failed legacy migration failed too"
                     )

@@ -6,33 +6,28 @@ import { render } from '../../../utils';
 import { server } from '../../../mocks/server';
 import { ProjectFilesPanel } from '../../../../components/projects/files/ProjectFilesPanel';
 import { itemNameFromFile, itemNameKey } from '../../../../components/projects/files/fileDrop';
+import type { ProjectRevisionOut } from '../../../../api/client';
+import { file, item, projectTree, ref, rev as baseRev } from '../../../fixtures/projectTree';
 
-const ref = (id: number, item: string, section: string, number: number, status = 'valide') => ({
-  id, item_id: id * 10, item_name: item, section, number, status,
-});
-const rev = (over: Record<string, unknown>) => ({
-  id: 1, number: 1, status: 'wip', note: null, derived_from: null, outdated_by: null, print_profile: null,
-  slicer_name: null, slicer_version: null, pipeline_name: null, has_snapshot: false, used: false, created_by: 'paul',
-  created_at: '2026-10-04T10:00:00Z', status_changed_at: null,
-  files: [{ id: 50, filename: 'support.3mf', file_type: '3mf', file_size: 2048, file_hash: 'h', has_thumbnail: false, created_at: '2026-10-04T10:00:00Z' }],
-  ...over,
-});
-const tree = {
-  project_id: 7,
-  code: 'P-0007',
-  sections: [
-    { section: 'scan', items: [] },
-    { section: 'modelisation', items: [] },
-    { section: 'impression', items: [{ id: 20, section: 'impression', name: 'Support', name_key: 'support', forked_from: null, revisions: [rev({ id: 2, number: 2, status: 'valide' }), rev({ id: 1, number: 1, status: 'obsolete', used: true })] }, { id: 30, section: 'impression', name: 'Support X1C', name_key: 'support x1c', forked_from: null, revisions: [rev({ id: 3, number: 1, derived_from: ref(1, 'Support', 'modelisation', 1, 'obsolete'), outdated_by: ref(2, 'Support', 'modelisation', 2), print_profile: { printer_model: 'Bambu Lab X1C', nozzle_diameter: '0.4', layer_height: '0.2', filament_types: ['PETG'], sliced: true }, has_snapshot: true, files: [{ id: 60, filename: 'support.gcode.3mf', file_type: 'gcode.3mf', file_size: 4096, file_hash: 'p', has_thumbnail: true, created_at: '2026-10-04T10:00:00Z' }] })] }, { id: 40, section: 'impression', name: 'Gabarit', name_key: 'gabarit', forked_from: null, revisions: [rev({ id: 4, number: 1, files: [
-      { id: 70, filename: 'gabarit.3mf', file_type: '3mf', file_size: 10, file_hash: 'g1', has_thumbnail: false, created_at: '2026-10-04T10:00:00Z' },
-      { id: 71, filename: 'gabarit.gcode', file_type: 'gcode', file_size: 10, file_hash: 'g2', has_thumbnail: false, created_at: '2026-10-04T10:00:00Z' },
-    ] })] }] },
-    { section: 'usinage', items: [] },
-    { section: 'docs', items: [{ id: 50, section: 'docs', name: 'Plan', name_key: 'plan', forked_from: null, revisions: [rev({ id: 5, number: 1, files: [
-      { id: 80, filename: 'plan.pdf', file_type: 'pdf', file_size: 10, file_hash: 'd1', has_thumbnail: false, created_at: '2026-10-04T10:00:00Z' },
-    ] })] }] },
+// This suite's revisions carry no print_count (left out of the JSON) and default to one 3MF hashed 'h'.
+const rev = (over: Partial<ProjectRevisionOut>) =>
+  baseRev({ print_count: undefined, files: [file(50, 'support.3mf', { file_hash: 'h' })], ...over });
+const tree = projectTree({
+  impression: [
+    item(20, 'impression', 'Support', [rev({ id: 2, number: 2, status: 'valide' }), rev({ id: 1, number: 1, status: 'obsolete', used: true })]),
+    item(30, 'impression', 'Support X1C', [rev({
+      id: 3, number: 1, derived_from: ref(1, 'Support', 'modelisation', 1, 'obsolete'), outdated_by: ref(2, 'Support', 'modelisation', 2),
+      print_profile: { printer_model: 'Bambu Lab X1C', nozzle_diameter: '0.4', layer_height: '0.2', filament_types: ['PETG'], sliced: true },
+      has_snapshot: true,
+      files: [file(60, 'support.gcode.3mf', { file_type: 'gcode.3mf', file_size: 4096, file_hash: 'p', has_thumbnail: true })],
+    })]),
+    item(40, 'impression', 'Gabarit', [rev({ id: 4, number: 1, files: [
+      file(70, 'gabarit.3mf', { file_size: 10, file_hash: 'g1' }),
+      file(71, 'gabarit.gcode', { file_size: 10, file_hash: 'g2' }),
+    ] })]),
   ],
-};
+  docs: [item(50, 'docs', 'Plan', [rev({ id: 5, number: 1, files: [file(80, 'plan.pdf', { file_size: 10, file_hash: 'd1' })] })])],
+});
 /** The same project before anything was left in a disabled section. */
 const printingOnly = { ...tree, sections: tree.sections.map((s) => (s.section === 'docs' ? { ...s, items: [] } : s)) };
 let treeBody: unknown = tree;

@@ -7,6 +7,7 @@ import { Button } from '../../Button';
 import { focusRingCls } from '../../formStyles';
 import { useIsolatedEscape } from '../../../hooks/useIsolatedEscape';
 import { STATUS_CHIP_CLS, STATUS_LABEL_KEYS, chipBase, isPrintableFile, printProfileLine } from '../files/filesUi';
+import { OutdatedChip } from '../files/OutdatedChip';
 import { outdatedParams, revisionLabel } from '../files/revisionLabel';
 import { useProjectTree } from '../projectQueries';
 import { DIALOG_CARD_CLS, OVERLAY_CLS } from '../dialogStyles';
@@ -77,9 +78,7 @@ export function PrintRevisionPicker({ projectId, onPick, onClose }: Props) {
                     {profile && <span className="text-xs text-bambu-gray">{profile}</span>}
                   </div>
                   {stale && (
-                    <span className={`${chipBase} whitespace-normal border-amber-500/40 bg-amber-500/10 text-amber-400`}>
-                      {t('projectsPdm.files.outdated', stale)}
-                    </span>
+                    <OutdatedChip params={stale} />
                   )}
                   <ul className="space-y-1">
                     {files.map((f) => (

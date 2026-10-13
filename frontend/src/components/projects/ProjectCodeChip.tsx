@@ -14,3 +14,14 @@ export function ProjectCodeChip({ code, className = '' }: { code: string | null;
     </span>
   );
 }
+
+/** A project option's label inside a picker button: the code chip, then the
+ *  name, truncated to the space left. */
+export function ProjectOptionLabel({ code, name }: { code: string | null; name: string }) {
+  return (
+    <>
+      <ProjectCodeChip code={code} />
+      <span className="min-w-0 flex-1 truncate">{name}</span>
+    </>
+  );
+}

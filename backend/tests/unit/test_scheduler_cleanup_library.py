@@ -31,7 +31,9 @@ async def queue_factory(tmp_path):
     session_maker = async_sessionmaker(engine, expire_on_commit=False)
     case_counter = 0
 
-    async def make_case(*, cleanup=True, is_external=False, thumbnail_path=None, siblings=(), photos=()):
+    async def make_case(
+        *, cleanup=True, is_external=False, thumbnail_path=None, siblings=(), photos=(), revision_id=None
+    ):
         nonlocal case_counter
         case_counter += 1
 
@@ -76,6 +78,7 @@ async def queue_factory(tmp_path):
                 file_metadata=None,
                 is_external=is_external,
                 photos=list(photos) or None,
+                revision_id=revision_id,
             )
             db.add_all([printer, library_file])
             await db.flush()
@@ -745,3 +748,67 @@ async def test_a_failing_k_profile_check_does_not_stop_the_print(queue_factory):
         await _dispatch_library_item(ctx)
 
     ctx.start_print.assert_called_once()
+
+
+# --- T-303: a project revision file goes through the projects-tree symlink guard -------------
+
+
+def _revision_case_root(ctx, monkeypatch):
+    """The case's library folder stands in for the projects tree."""
+    from backend.app.services import project_storage
+
+    monkeypatch.setattr(project_storage, "projects_root", lambda: ctx.source_path.parent)
+
+
+@pytest.mark.asyncio
+async def test_a_revision_file_swapped_for_a_symlink_fails_like_a_missing_file(queue_factory, tmp_path, monkeypatch):
+    ctx = await queue_factory(cleanup=False, revision_id=1)
+    _revision_case_root(ctx, monkeypatch)
+    secret = tmp_path / "jwt_secret"
+    secret.write_bytes(b"top-secret")
+    ctx.source_path.unlink()
+    ctx.source_path.symlink_to(secret)
+
+    await _dispatch_library_item(ctx)
+
+    item, library_file, archive = await _queue_snapshot(ctx)
+    assert item.status == "failed"
+    assert item.error_message == "Failed to create archive from library file"
+    assert item.completed_at is not None
+    assert item.archive_id is None and archive is None
+    assert library_file is not None
+    assert ctx.archive_path is None  # archive_print never ran, so nothing was copied
+    ctx.upload.assert_not_awaited()
+    ctx.start_print.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_a_missing_revision_file_fails_the_same_way(queue_factory, monkeypatch):
+    ctx = await queue_factory(cleanup=False, revision_id=1)
+    _revision_case_root(ctx, monkeypatch)
+    ctx.source_path.unlink()
+
+    await _dispatch_library_item(ctx)
+
+    item, library_file, archive = await _queue_snapshot(ctx)
+    assert item.status == "failed"
+    assert item.error_message == "Failed to create archive from library file"
+    assert archive is None and library_file is not None
+    ctx.upload.assert_not_awaited()
+    ctx.start_print.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_a_normal_revision_file_is_dispatched_and_kept(queue_factory, monkeypatch):
+    ctx = await queue_factory(cleanup=True, revision_id=1)
+    _revision_case_root(ctx, monkeypatch)
+
+    await _dispatch_library_item(ctx)
+
+    item, library_file, archive = await _queue_snapshot(ctx)
+    assert item.status == "printing"
+    assert item.archive_id == archive.id
+    assert library_file is not None and ctx.source_path.exists()  # a revision file is never consumed
+    assert ctx.archive_path.read_bytes() == b"library source"
+    ctx.upload.assert_awaited()
+    ctx.start_print.assert_called()

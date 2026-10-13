@@ -10235,6 +10235,8 @@ export default {
       dropChooseTask: 'Pour quelle tâche sont ces fichiers ?',
       dropped_one: '{{count}} fichier ajouté à {{code}}',
       dropped_other: '{{count}} fichiers ajoutés à {{code}}',
+      droppedPartial_one: '{{count}} fichier ajouté à {{code}} ; non ajoutés : {{files}} ({{reason}})',
+      droppedPartial_other: '{{count}} fichiers ajoutés à {{code}} ; non ajoutés : {{files}} ({{reason}})',
       ordersTitle: 'Commandes',
       ordersEmpty: 'Aucune commande n\'utilise encore ce projet',
       newOrder: 'Nouvelle commande',

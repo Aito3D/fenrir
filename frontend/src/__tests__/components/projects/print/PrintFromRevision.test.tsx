@@ -12,6 +12,7 @@ import { server } from '../../../mocks/server';
 import { ProjectFilesPanel } from '../../../../components/projects/files/ProjectFilesPanel';
 import { PrintRevisionFlow } from '../../../../components/projects/print/PrintRevisionFlow';
 import type { ProjectOrderTask } from '../../../../api/client';
+import { file as baseFile, item, projectTree, ref, rev as baseRev } from '../../../fixtures/projectTree';
 
 // null = real AuthProvider (auth disabled: every permission granted).
 let granted: Set<string> | null = null;
@@ -29,36 +30,20 @@ vi.mock('../../../../contexts/AuthContext', async (importOriginal) => {
 beforeAll(() => configure({ asyncUtilTimeout: 8000 }));
 afterAll(() => configure({ asyncUtilTimeout: 1000 }));
 
-const ref = (id: number, item: string, section: string, number: number, status = 'valide') => ({
-  id, item_id: id * 10, item_name: item, section, number, status,
-});
-const file = (id: number, filename: string, file_type: string) => ({
-  id, filename, file_type, file_size: 2048, file_hash: `h${id}`, has_thumbnail: false, created_at: '2026-10-04T10:00:00Z',
-});
-const rev = (over: Record<string, unknown>) => ({
-  id: 1, number: 1, status: 'wip', note: null, derived_from: null, outdated_by: null, print_profile: null,
-  slicer_name: null, slicer_version: null, has_snapshot: false, used: false, print_count: 0, pipeline_name: null, created_by: 'paul',
-  created_at: '2026-10-04T10:00:00Z', status_changed_at: null, files: [file(50, 'support.step', 'step')],
-  ...over,
-});
+// This suite's files carry an explicit file_type; its revisions default to one STEP file.
+const file = (id: number, filename: string, file_type: string) => baseFile(id, filename, { file_type });
+const rev = (over: Record<string, unknown>) => baseRev({ files: [file(50, 'support.step', 'step')], ...over });
 
 function makeTree(outdated: boolean) {
-  return {
-    project_id: 7,
-    code: 'P-0007',
-    sections: [
-      { section: 'scan', items: [] },
-      { section: 'modelisation', items: [{ id: 20, section: 'modelisation', name: 'Support', name_key: 'support', forked_from: null, revisions: [rev({ id: 2, number: 2, status: 'valide' })] }] },
-      { section: 'impression', items: [{ id: 30, section: 'impression', name: 'Support X1C', name_key: 'support x1c', forked_from: null, revisions: [rev({
-        id: 3, number: 1, used: true, print_count: 2,
-        derived_from: ref(1, 'Support', 'modelisation', 1, 'obsolete'),
-        outdated_by: outdated ? ref(2, 'Support', 'modelisation', 2) : null,
-        files: [file(60, 'support.gcode.3mf', 'gcode.3mf'), file(61, 'support.gcode', 'gcode'), file(62, 'notes.pdf', 'pdf')],
-      })] }] },
-      { section: 'usinage', items: [] },
-      { section: 'docs', items: [] },
-    ],
-  };
+  return projectTree({
+    modelisation: [item(20, 'modelisation', 'Support', [rev({ id: 2, number: 2, status: 'valide' })])],
+    impression: [item(30, 'impression', 'Support X1C', [rev({
+      id: 3, number: 1, used: true, print_count: 2,
+      derived_from: ref(1, 'Support', 'modelisation', 1, 'obsolete'),
+      outdated_by: outdated ? ref(2, 'Support', 'modelisation', 2) : null,
+      files: [file(60, 'support.gcode.3mf', 'gcode.3mf'), file(61, 'support.gcode', 'gcode'), file(62, 'notes.pdf', 'pdf')],
+    })])],
+  });
 }
 
 function order(over: Partial<ProjectOrderTask>): ProjectOrderTask {

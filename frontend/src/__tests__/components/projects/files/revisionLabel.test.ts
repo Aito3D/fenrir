@@ -1,5 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { outdatedParams, revisionLabel } from '../../../../components/projects/files/revisionLabel';
+import type { TFunction } from 'i18next';
+import {
+  outdatedParams,
+  revisionLabel,
+  revisionNumberLabel,
+  sectionRevisionLabel,
+} from '../../../../components/projects/files/revisionLabel';
+
+describe('revisionNumberLabel', () => {
+  it('is the bare revision number with an R prefix', () => {
+    expect(revisionNumberLabel(3)).toBe('R3');
+    expect(revisionNumberLabel(0)).toBe('R0');
+    expect(revisionNumberLabel(12)).toBe('R12');
+  });
+});
 
 describe('revisionLabel', () => {
   it('joins the item name and the revision number', () => {
@@ -14,5 +28,15 @@ describe('outdatedParams', () => {
       source: 'Support R1',
       newer: 'R2',
     });
+  });
+});
+
+describe('sectionRevisionLabel', () => {
+  it('prefixes the translated section label and a single right angle quote to the revision label', () => {
+    const t = ((key: string) => `<${key}>`) as unknown as TFunction;
+    expect(sectionRevisionLabel(t, 'impression', 'Support', 3)).toBe(
+      '<projectsPdm.files.sectionImpression> \u203a Support R3',
+    );
+    expect(sectionRevisionLabel(t, 'docs', '', 1)).toBe('<projectsPdm.files.sectionDocs> \u203a  R1');
   });
 });

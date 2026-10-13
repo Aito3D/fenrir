@@ -1,11 +1,12 @@
 """Aito task ↔ project link service (spec §1.6, §4)."""
 
+import asyncio
 import io
 import logging
 from functools import partial
 
 import pytest
-from fastapi import UploadFile
+from fastapi import HTTPException, UploadFile
 from sqlalchemy import delete, func, select
 
 from backend.app.models.aito_event import AitoEvent
@@ -354,6 +355,32 @@ async def test_deliveries_replace_rows_and_record_labels(db_session):
     assert sorted(rows) == sorted([r2.id, m1.id])
     second = (await _events(db_session, "task.deliveries_changed"))[-1]
     assert second.detail == {"added": ["Support R2"], "removed": ["Support R1"]}
+
+
+@pytest.mark.asyncio
+async def test_deliveries_share_lock_the_added_revisions_after_the_flush(db_session, monkeypatch):
+    """T-291: on PostgreSQL the added revisions are locked FOR SHARE before the re-check."""
+    project = await _project(db_session)
+    _item, r1 = await _revision(db_session, project, name="Support")
+    _mesh, m1 = await _revision(db_session, project, section="scan", name="Mesh brut")
+    order = await _order(db_session)
+    task = await _task(db_session, order, linked=project.id)
+    calls = []
+
+    async def lock(db, revision_ids, *, share=False):
+        pending = await db.execute(select(AitoTaskDelivery.revision_id).where(AitoTaskDelivery.task_id == task.id))
+        calls.append((sorted(revision_ids), share, sorted(pending.scalars())))
+        return None
+
+    monkeypatch.setattr(links, "lock_revision_rows", lock)
+    await links.set_deliveries(db_session, task, [r1.id], actor="Paul")
+    # the delivery row is already flushed when the lock is taken
+    assert calls == [([r1.id], True, [r1.id])]
+    await links.set_deliveries(db_session, task, [m1.id], actor="Paul")  # one added, one removed
+    assert calls[1] == ([m1.id], True, [m1.id])
+    await links.set_deliveries(db_session, task, [], actor="Paul")  # nothing added: no lock
+    await links.set_deliveries(db_session, task, [], actor="Paul")  # unchanged: no lock
+    assert len(calls) == 2
 
 
 @pytest.mark.asyncio
@@ -855,13 +882,15 @@ async def test_drop_stops_when_the_project_vanishes_mid_drop(db_session, monkeyp
         return []
 
     monkeypatch.setattr(links, "_fan_out_revision", delete_project)
-    with pytest.raises(links.LinkError) as err:
-        await links.drop_files_on_task(
-            db_session, task, [_upload("a.3mf"), _upload("b.3mf")], user_id=None, actor="Paul"
-        )
+    response = await links.drop_files_on_task(
+        db_session, task, [_upload("a.3mf"), _upload("b.3mf")], user_id=None, actor="Paul"
+    )
 
-    assert (err.value.status_code, err.value.detail) == (409, "Task is not linked to a project")
-    assert err.value.stored_count == 1  # the route still broadcasts the stored group
+    # T-286: a partial result, the not-stored group named with the error that stopped the drop
+    assert [r.filename for r in response.results] == ["a.3mf"]
+    assert [e.model_dump() for e in response.errors] == [
+        {"filenames": ["b.3mf"], "status_code": 409, "detail": "Task is not linked to a project"}
+    ]
     [dropped] = await _events(db_session, "project.files_dropped")
     assert dropped.project_id == order_id
     assert (dropped.detail["project_id"], dropped.detail["code"]) == (project_id, code)
@@ -890,8 +919,8 @@ async def test_drop_still_returns_when_its_own_event_fails(db_session, monkeypat
 
 
 @pytest.mark.asyncio
-async def test_drop_failing_on_a_later_group_reports_the_stored_count(db_session, monkeypatch):
-    """A ``ProjectFilesError`` on the second group carries ``stored_count`` 1 (the route reads it to broadcast)."""
+async def test_drop_failing_on_a_later_group_returns_the_stored_part(db_session, monkeypatch):
+    """T-286: a ``ProjectFilesError`` on the second group no longer propagates once a group is stored."""
     project = await _project(db_session)
     order = await _order(db_session)
     task = await _task(db_session, order, linked=project.id)
@@ -907,14 +936,130 @@ async def test_drop_failing_on_a_later_group_reports_the_stored_count(db_session
         return await real(*args, **kwargs)
 
     monkeypatch.setattr(links.project_files, "add_revision", second_fails)
+    response = await links.drop_files_on_task(
+        db_session, task, [_upload("a.3mf"), _upload("b.3mf"), _upload("c.3mf")], user_id=None, actor="Paul"
+    )
+
+    # T-286: the stored group plus one error naming the failed group and the one after it (never tried)
+    assert [(r.filename, r.revision_number) for r in response.results] == [("a.3mf", 1)]
+    assert [e.model_dump() for e in response.errors] == [
+        {"filenames": ["b.3mf", "c.3mf"], "status_code": 409, "detail": "boom"}
+    ]
+    assert calls["n"] == 2  # the drop still stops at the failed group
+    [dropped] = await _events(db_session, "project.files_dropped")
+    assert [r["filename"] for r in dropped.detail["results"]] == ["a.3mf"]
+    assert not hasattr(links.project_files.ProjectFilesError, "stored_count")  # set on the instance only
+
+
+@pytest.mark.asyncio
+async def test_drop_failing_on_the_first_group_still_raises_with_nothing_stored(db_session, monkeypatch):
+    """T-286: no group stored → the error propagates exactly as before, ``stored_count`` 0, no event."""
+    project = await _project(db_session)
+    order = await _order(db_session)
+    task = await _task(db_session, order, linked=project.id)
+    await db_session.commit()
+
+    async def always_fails(*_args, **_kwargs):
+        raise links.project_files.ProjectFilesError(409, "boom")
+
+    monkeypatch.setattr(links.project_files, "add_revision", always_fails)
     with pytest.raises(links.project_files.ProjectFilesError) as err:
         await links.drop_files_on_task(
             db_session, task, [_upload("a.3mf"), _upload("b.3mf")], user_id=None, actor="Paul"
         )
 
     assert (err.value.status_code, err.value.detail) == (409, "boom")
+    assert err.value.stored_count == 0
+    assert await _events(db_session, "project.files_dropped") == []
+
+
+@pytest.mark.asyncio
+async def test_drop_with_an_unexpected_error_on_a_later_group_returns_a_fixed_500_entry(
+    db_session, monkeypatch, caplog
+):
+    """T-286: a non-HTTP exception after a stored group is logged and reported without its text."""
+    project = await _project(db_session)
+    order = await _order(db_session)
+    task = await _task(db_session, order, linked=project.id)
+    await db_session.commit()
+    order_id = order.id
+
+    real = links.project_files.add_revision
+    calls = {"n": 0}
+
+    async def second_fails(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise OSError(28, "No space left on device")
+        return await real(*args, **kwargs)
+
+    monkeypatch.setattr(links.project_files, "add_revision", second_fails)
+    with caplog.at_level(logging.ERROR, logger=links.__name__):
+        response = await links.drop_files_on_task(
+            db_session, task, [_upload("a.3mf"), _upload("b.3mf")], user_id=None, actor="Paul"
+        )
+
+    assert [r.filename for r in response.results] == ["a.3mf"]
+    assert [e.model_dump() for e in response.errors] == [
+        {"filenames": ["b.3mf"], "status_code": 500, "detail": "unexpected error while storing the files"}
+    ]
+    assert f"File drop on order {order_id} failed after storing some files" in caplog.text
+    assert "No space left on device" in caplog.text  # the traceback is logged, not returned
+
+
+@pytest.mark.asyncio
+async def test_drop_reports_an_http_exception_on_a_later_group_with_its_status(db_session, monkeypatch):
+    """T-286: the 413 an oversize upload raises (an HTTPException) keeps its status and detail."""
+    project = await _project(db_session)
+    order = await _order(db_session)
+    task = await _task(db_session, order, linked=project.id)
+    await db_session.commit()
+
+    real = links.project_files.add_revision
+    calls = {"n": 0}
+
+    async def second_too_large(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise HTTPException(status_code=413, detail="Upload exceeds the maximum size of 10 bytes")
+        return await real(*args, **kwargs)
+
+    monkeypatch.setattr(links.project_files, "add_revision", second_too_large)
+    response = await links.drop_files_on_task(
+        db_session, task, [_upload("a.3mf"), _upload("b.3mf")], user_id=None, actor="Paul"
+    )
+
+    assert [e.model_dump() for e in response.errors] == [
+        {"filenames": ["b.3mf"], "status_code": 413, "detail": "Upload exceeds the maximum size of 10 bytes"}
+    ]
+
+
+@pytest.mark.asyncio
+async def test_drop_cancelled_after_a_stored_group_still_raises_with_the_stored_count(db_session, monkeypatch):
+    """T-286: a cancellation is never turned into a response; it carries ``stored_count`` for the route."""
+    project = await _project(db_session)
+    order = await _order(db_session)
+    task = await _task(db_session, order, linked=project.id)
+    await db_session.commit()
+
+    real = links.project_files.add_revision
+    calls = {"n": 0}
+
+    async def second_cancelled(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise asyncio.CancelledError
+        return await real(*args, **kwargs)
+
+    monkeypatch.setattr(links.project_files, "add_revision", second_cancelled)
+    with pytest.raises(asyncio.CancelledError) as err:
+        await links.drop_files_on_task(
+            db_session, task, [_upload("a.3mf"), _upload("b.3mf")], user_id=None, actor="Paul"
+        )
+
     assert err.value.stored_count == 1
-    assert not hasattr(links.project_files.ProjectFilesError, "stored_count")  # set on the instance only
+    [dropped] = await _events(db_session, "project.files_dropped")
+    assert [r["filename"] for r in dropped.detail["results"]] == ["a.3mf"]
 
 
 def test_revision_added_payload_label_and_detail_key_order():
@@ -983,3 +1128,65 @@ async def test_drop_creates_the_item_first_then_streams_with_no_pending_writes(d
     response = await links.drop_files_on_task(db_session, task, [_upload("bracket.3mf")], user_id=None, actor="Paul")
     assert seen == {"new": [], "dirty": [], "deleted": [], "items": 1, "revisions": 0, "files": 0}
     assert [r.revision_number for r in response.results] == [1]
+
+
+@pytest.mark.asyncio
+async def test_drop_cancelled_while_recording_still_carries_the_stored_count(db_session, monkeypatch):
+    """T-258: a cancellation inside the ``finally`` (recording the drop) also carries ``stored_count`` for the route."""
+    project = await _project(db_session)
+    order = await _order(db_session)
+    task = await _task(db_session, order, linked=project.id)
+    await db_session.commit()
+
+    async def cancelled_record_drop(*_args, **_kwargs):
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(links, "_record_drop", cancelled_record_drop)
+    with pytest.raises(asyncio.CancelledError) as err:
+        await links.drop_files_on_task(db_session, task, [_upload("a.3mf")], user_id=None, actor="Paul")
+
+    assert err.value.stored_count == 1
+    assert (await db_session.execute(select(ProjectRevision.number))).scalars().all() == [1]
+
+
+@pytest.mark.asyncio
+async def test_drop_cancelled_while_recording_nothing_stored_carries_zero(db_session, monkeypatch):
+    """T-258: an exception leaving the ``finally`` before any group was stored carries ``stored_count`` 0."""
+    project = await _project(db_session)
+    order = await _order(db_session)
+    task = await _task(db_session, order, linked=project.id)
+    await db_session.commit()
+
+    async def fails(*_args, **_kwargs):
+        raise links.project_files.ProjectFilesError(409, "boom")
+
+    async def cancelled_broadcast(*_args, **_kwargs):
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(links.project_files, "add_revision", fails)
+    monkeypatch.setattr(links, "broadcast_orders_changed", cancelled_broadcast)
+    with pytest.raises(asyncio.CancelledError) as err:
+        await links.drop_files_on_task(db_session, task, [_upload("a.3mf")], user_id=None, actor="Paul")
+
+    assert err.value.stored_count == 0
+
+
+@pytest.mark.asyncio
+async def test_drop_with_a_blank_sanitised_name_raises_before_storing(db_session, monkeypatch):
+    """T-259: the blank-name check runs before the store loop, so the valid group ahead of it is never stored."""
+    project = await _project(db_session)
+    order = await _order(db_session)
+    task = await _task(db_session, order, linked=project.id)
+    await db_session.commit()
+
+    async def never(*_args, **_kwargs):
+        raise AssertionError("nothing may be stored")
+
+    monkeypatch.setattr(links, "find_or_create_item", never)
+    with pytest.raises(links.LinkError) as err:
+        await links.drop_files_on_task(
+            db_session, task, [_upload("a.3mf"), _upload("dir/???.3mf")], user_id=None, actor="Paul"
+        )
+
+    assert (err.value.status_code, err.value.detail) == (400, "Item name must not be blank; refused: ???.3mf")
+    assert await _events(db_session, "project.files_dropped") == []

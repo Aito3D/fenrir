@@ -4,7 +4,8 @@ import { useTranslation } from 'react-i18next';
 import { api, ApiError } from '../../../api/client';
 import type { ProjectFileOut, ProjectTreeResponse, ResliceResult } from '../../../api/client';
 import { useToast } from '../../../contexts/ToastContext';
-import { projectKeys } from '../projectQueries';
+import { failureMessage } from '../failureMessage';
+import { projectTreeQuery } from '../projectQueries';
 
 export interface ResliceRun {
   itemId: number;
@@ -66,7 +67,7 @@ export function useResliceJobs(projectId: number): ResliceJobs {
         const res = await api.resliceProjectRevision(revisionId, { file_id: fileId, pipeline_id: pipelineId });
         update(itemId, { itemId, jobId: res.job_id, percent: null, error: null, queueTaskId });
       } catch (e) {
-        showToast(`${t('projectsPdm.reslice.startFailed')}: ${e instanceof Error ? e.message : ''}`, 'error');
+        showToast(failureMessage(t, 'projectsPdm.reslice.startFailed', e), 'error');
       }
     },
     [showToast, t, update],
@@ -77,11 +78,7 @@ export function useResliceJobs(projectId: number): ResliceJobs {
       update(run.itemId, null);
       let tree: ProjectTreeResponse | undefined;
       try {
-        tree = await queryClient.fetchQuery<ProjectTreeResponse>({
-          queryKey: projectKeys.tree(projectId),
-          queryFn: () => api.getProjectTree(projectId),
-          staleTime: 0,
-        });
+        tree = await queryClient.fetchQuery<ProjectTreeResponse>({ ...projectTreeQuery(projectId), staleTime: 0 });
       } catch {
         // The revision exists anyway; the panel refetches on its own.
       }

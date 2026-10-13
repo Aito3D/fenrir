@@ -97,7 +97,7 @@ from backend.app.schemas.aito import (
     AitoWatchResponse,
     AitoWatchUpdate,
 )
-from backend.app.services import aito_quote_sync, aito_tracking as tracking_service
+from backend.app.services import aito_quote_sync, aito_tracking as tracking_service, project_print_trace
 from backend.app.services.aito_board_rules import AWAY_STATUSES, SERVICES, TaskSummary, evaluate, summarise
 from backend.app.services.aito_client_history import compute_client_history
 from backend.app.services.aito_client_rating import read_client_rating
@@ -5771,6 +5771,8 @@ async def merge_project(
             )
             for d in delivered.scalars()
         )
+        # Fenrir: and so do its prints — queue items and archives move to the copy.
+        await project_print_trace.move_task_print_trace(db, copy_by_source)
         await db.flush()
     actor = _actor(current_user)
     await record(

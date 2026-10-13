@@ -78,6 +78,49 @@ describe('NewProjectModal', () => {
     expect(screen.getByTestId('path')).toHaveTextContent('/');
   });
 
+  it('creates through the create override instead of POST /projects/ and hands its result to onCreated', async () => {
+    const result = { task_id: 11, project: { id: 9, code: 'P-0009', name: 'Pièce' } };
+    const create = vi.fn().mockResolvedValue(result);
+    const onCreated = vi.fn();
+    const onClose = vi.fn();
+    render(
+      <>
+        <NewProjectModal onClose={onClose} create={create} onCreated={onCreated} />
+        <LocationProbe />
+      </>,
+    );
+    await userEvent.type(screen.getByRole('textbox', { name: 'Title' }), ' Pièce ');
+    await userEvent.type(screen.getByRole('textbox', { name: 'Description' }), ' pour drone ');
+    await userEvent.type(screen.getByRole('combobox'), 'fixation{Enter}');
+    await userEvent.click(screen.getByRole('button', { name: 'Create' }));
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith(result));
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(create).toHaveBeenCalledWith({
+      name: 'Pièce',
+      description: 'pour drone',
+      tag_ids: [],
+      new_tag_names: ['fixation'],
+    });
+    expect(posted).toEqual([]);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('path')).toHaveTextContent('/');
+  });
+
+  it('a failing create override shows the save-failed toast and stays open', async () => {
+    const create = vi.fn().mockRejectedValue(new Error('link failed'));
+    const onCreated = vi.fn();
+    const onClose = vi.fn();
+    render(<NewProjectModal onClose={onClose} create={create} onCreated={onCreated} />);
+    await userEvent.type(screen.getByRole('textbox', { name: 'Title' }), 'Pièce');
+    await userEvent.click(screen.getByRole('button', { name: 'Create' }));
+    expect(await screen.findByText(en.projectsPdm.saveFailed)).toBeInTheDocument();
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(onCreated).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(posted).toEqual([]);
+  });
+
   it('shows the save-failed toast and stays open when the POST fails', async () => {
     server.use(http.post('/api/v1/projects/', () => HttpResponse.json({ detail: 'boom' }, { status: 500 })));
     const onClose = vi.fn();

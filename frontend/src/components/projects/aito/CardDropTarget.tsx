@@ -7,7 +7,7 @@ import { useAuth } from '../../../contexts/AuthContext';
 import { useToast } from '../../../contexts/ToastContext';
 import { useFileDropZone } from '../files/useFileDropZone';
 import { ProjectCodeChip } from '../ProjectCodeChip';
-import { useAcceptsPrintable, useUploadToTask } from './dropFiles';
+import { canDropFiles, DROP_HIGHLIGHT_CLS, useAcceptsPrintable, useUploadToTask } from './dropFiles';
 
 interface Choice {
   taskId: number;
@@ -49,8 +49,7 @@ export function useCardDrop({
     return () => document.removeEventListener('pointerdown', close);
   }, [chooserOpen]);
   // projects:read too: choosing a task needs the order's links (aito:read + projects:read).
-  const canDrop =
-    !disabled && hasPermission('aito:update') && hasPermission('projects:update') && hasPermission('projects:read');
+  const canDrop = !disabled && canDropFiles(hasPermission);
 
   const send = async (taskId: number, project: LinkedProjectRef, files: File[]) => {
     setBusy(true);
@@ -152,7 +151,7 @@ export function useCardDrop({
   if (disabled) return { handlers: {}, className: '', title: undefined, overlay: null };
   return {
     handlers: { onDragOver, onDragLeave, onDrop },
-    className: dragOver ? 'outline-dashed outline-2 outline-offset-2 outline-bambu-green' : '',
+    className: dragOver ? DROP_HIGHLIGHT_CLS : '',
     title: dragOver ? t('projectsPdm.aito.dropHere') : undefined,
     overlay,
   };

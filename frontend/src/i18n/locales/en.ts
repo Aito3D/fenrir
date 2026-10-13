@@ -10306,6 +10306,8 @@ export default {
       dropChooseTask: 'Which task are these files for?',
       dropped_one: '{{count}} file added to {{code}}',
       dropped_other: '{{count}} files added to {{code}}',
+      droppedPartial_one: '{{count}} file added to {{code}}; not added: {{files}} ({{reason}})',
+      droppedPartial_other: '{{count}} files added to {{code}}; not added: {{files}} ({{reason}})',
       ordersTitle: 'Orders',
       ordersEmpty: 'No order uses this project yet',
       newOrder: 'New order',

@@ -122,6 +122,51 @@ def threemf_bytes() -> bytes:
     return buffer.getvalue()
 
 
+class ChunkedMultipart:
+    """A multipart ``files`` body posted with chunked transfer encoding: httpx sends an
+    async-generator body without a Content-Length. ``sent`` counts the bytes the server
+    actually pulled, so a test can see a refused upload stopped reading early."""
+
+    BOUNDARY = "fenrir-chunked-boundary"
+
+    def __init__(self, files: list[tuple[str, bytes]], *, chunk_size: int = 1024) -> None:
+        self.body = self.encode(files)
+        self.chunk_size = chunk_size
+        self.sent = 0
+
+    @classmethod
+    def encode(cls, files: list[tuple[str, bytes]]) -> bytes:
+        parts = [
+            f'--{cls.BOUNDARY}\r\nContent-Disposition: form-data; name="files"; filename="{name}"\r\n'
+            f"Content-Type: application/octet-stream\r\n\r\n".encode()
+            + data
+            + b"\r\n"
+            for name, data in files
+        ]
+        return b"".join(parts) + f"--{cls.BOUNDARY}--\r\n".encode()
+
+    @classmethod
+    def of_size(cls, total: int, files: list[tuple[str, bytes]], name: str = "pad.gcode") -> ChunkedMultipart:
+        """``files`` plus one ``name`` file padded so the whole body is exactly ``total`` bytes."""
+        padding = total - len(cls.encode([*files, (name, b"")]))
+        body = cls([*files, (name, b"x" * padding)])
+        assert len(body.body) == total
+        return body
+
+    async def _stream(self) -> AsyncIterator[bytes]:
+        for start in range(0, len(self.body), self.chunk_size):
+            chunk = self.body[start : start + self.chunk_size]
+            self.sent += len(chunk)
+            yield chunk
+
+    async def post(self, client: AsyncClient, url: str):
+        return await client.post(
+            url,
+            content=self._stream(),
+            headers={"content-type": f"multipart/form-data; boundary={self.BOUNDARY}"},
+        )
+
+
 # --- rows ----------------------------------------------------------------------
 
 

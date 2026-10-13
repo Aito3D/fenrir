@@ -6,6 +6,7 @@ import type { DuplicateWarning, ProjectSection, RevisionStatus } from '../../../
 import { useToast } from '../../../contexts/ToastContext';
 import { useResliceJobs } from '../reslice/useResliceJobs';
 import { useAcceptsPrintable } from '../aito/dropFiles';
+import { failureMessage } from '../failureMessage';
 import { projectKeys } from '../projectQueries';
 
 /** Every file-panel mutation: run, invalidate the project tree, toast on failure. */
@@ -42,7 +43,7 @@ export function useFileActions(projectId: number) {
     try {
       return await fn();
     } catch (e) {
-      showToast(`${t(failKey)}: ${e instanceof Error ? e.message : ''}`, 'error');
+      showToast(failureMessage(t, failKey, e), 'error');
       return undefined;
     } finally {
       await queryClient.invalidateQueries({ queryKey: projectKeys.tree(projectId) });
@@ -93,7 +94,7 @@ export function useFileActions(projectId: number) {
       try {
         await api.downloadProjectRevision(revisionId, fileId, filename);
       } catch (e) {
-        showToast(`${t(save)}: ${e instanceof Error ? e.message : ''}`, 'error');
+        showToast(failureMessage(t, save, e), 'error');
       }
     },
   };

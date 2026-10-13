@@ -10233,6 +10233,8 @@ export default {
       dropChooseTask: '這些檔案屬於哪個任務？',
       dropped_one: '已將 {{count}} 個檔案加入 {{code}}',
       dropped_other: '已將 {{count}} 個檔案加入 {{code}}',
+      droppedPartial_one: '已將 {{count}} 個檔案加入 {{code}}；未加入：{{files}}（{{reason}}）',
+      droppedPartial_other: '已將 {{count}} 個檔案加入 {{code}}；未加入：{{files}}（{{reason}}）',
       ordersTitle: '訂單',
       ordersEmpty: '尚無訂單使用此專案',
       newOrder: '新增訂單',

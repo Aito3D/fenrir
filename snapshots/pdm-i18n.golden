@@ -1,6 +1,6 @@
 ### exit: 0
 ### stdout:
---- de projectsPdm (195 keys)
+--- de projectsPdm (197 keys)
 acceptSuggestion = "{{name}} hinzufügen"  placeholders={{name}}
 aiUnavailable = "KI nicht verfügbar"
 aito.confirmUnlink = "{{name}} von dieser Aufgabe lösen? Die Liste der gelieferten Dateien wird geleert."  placeholders={{name}}
@@ -10,6 +10,8 @@ aito.deliveriesSuggest = "Neueste freigegebene vorschlagen"
 aito.dropChooseTask = "Für welche Aufgabe sind diese Dateien?"
 aito.dropHere = "Dateien ablegen, um sie dem Projekt hinzuzufügen"
 aito.dropNeedsProject = "Verknüpfen Sie zuerst ein Projekt mit dieser Aufgabe"
+aito.droppedPartial_one = "{{count}} Datei zu {{code}} hinzugefügt; nicht hinzugefügt: {{files}} ({{reason}})"  placeholders={{code}},{{count}},{{files}},{{reason}}
+aito.droppedPartial_other = "{{count}} Dateien zu {{code}} hinzugefügt; nicht hinzugefügt: {{files}} ({{reason}})"  placeholders={{code}},{{count}},{{files}},{{reason}}
 aito.dropped_one = "{{count}} Datei zu {{code}} hinzugefügt"  placeholders={{code}},{{count}}
 aito.dropped_other = "{{count}} Dateien zu {{code}} hinzugefügt"  placeholders={{code}},{{count}}
 aito.editDeliveries = "Gelieferte Dateien bearbeiten"
@@ -196,7 +198,7 @@ title = "Projekte"
 titleLabel = "Titel"
 viewGrid = "Rasteransicht"
 viewTable = "Tabellenansicht"
---- en projectsPdm (195 keys)
+--- en projectsPdm (197 keys)
 acceptSuggestion = "Add {{name}}"  placeholders={{name}}
 aiUnavailable = "AI unavailable"
 aito.confirmUnlink = "Unlink {{name}} from this task? Its delivered files list is cleared."  placeholders={{name}}
@@ -206,6 +208,8 @@ aito.deliveriesSuggest = "Suggest latest approved"
 aito.dropChooseTask = "Which task are these files for?"
 aito.dropHere = "Drop files to add them to the project"
 aito.dropNeedsProject = "Link a project to this task first"
+aito.droppedPartial_one = "{{count}} file added to {{code}}; not added: {{files}} ({{reason}})"  placeholders={{code}},{{count}},{{files}},{{reason}}
+aito.droppedPartial_other = "{{count}} files added to {{code}}; not added: {{files}} ({{reason}})"  placeholders={{code}},{{count}},{{files}},{{reason}}
 aito.dropped_one = "{{count}} file added to {{code}}"  placeholders={{code}},{{count}}
 aito.dropped_other = "{{count}} files added to {{code}}"  placeholders={{code}},{{count}}
 aito.editDeliveries = "Edit delivered files"
@@ -392,7 +396,7 @@ title = "Projects"
 titleLabel = "Title"
 viewGrid = "Grid view"
 viewTable = "Table view"
---- es projectsPdm (195 keys)
+--- es projectsPdm (197 keys)
 acceptSuggestion = "Añadir {{name}}"  placeholders={{name}}
 aiUnavailable = "IA no disponible"
 aito.confirmUnlink = "¿Desvincular {{name}} de esta tarea? Se borrará la lista de archivos entregados."  placeholders={{name}}
@@ -402,6 +406,8 @@ aito.deliveriesSuggest = "Proponer las últimas aprobadas"
 aito.dropChooseTask = "¿Para qué tarea son estos archivos?"
 aito.dropHere = "Suelta archivos para añadirlos al proyecto"
 aito.dropNeedsProject = "Vincula primero un proyecto a esta tarea"
+aito.droppedPartial_one = "{{count}} archivo añadido a {{code}}; no añadidos: {{files}} ({{reason}})"  placeholders={{code}},{{count}},{{files}},{{reason}}
+aito.droppedPartial_other = "{{count}} archivos añadidos a {{code}}; no añadidos: {{files}} ({{reason}})"  placeholders={{code}},{{count}},{{files}},{{reason}}
 aito.dropped_one = "{{count}} archivo añadido a {{code}}"  placeholders={{code}},{{count}}
 aito.dropped_other = "{{count}} archivos añadidos a {{code}}"  placeholders={{code}},{{count}}
 aito.editDeliveries = "Editar archivos entregados"
@@ -588,7 +594,7 @@ title = "Proyectos"
 titleLabel = "Título"
 viewGrid = "Vista de cuadrícula"
 viewTable = "Vista de tabla"
---- fr projectsPdm (195 keys)
+--- fr projectsPdm (197 keys)
 acceptSuggestion = "Ajouter {{name}}"  placeholders={{name}}
 aiUnavailable = "IA indisponible"
 aito.confirmUnlink = "Délier {{name}} de cette tâche ? La liste des fichiers livrés sera effacée."  placeholders={{name}}
@@ -598,6 +604,8 @@ aito.deliveriesSuggest = "Proposer les dernières validées"
 aito.dropChooseTask = "Pour quelle tâche sont ces fichiers ?"
 aito.dropHere = "Déposez des fichiers pour les ajouter au projet"
 aito.dropNeedsProject = "Liez d'abord un projet à cette tâche"
+aito.droppedPartial_one = "{{count}} fichier ajouté à {{code}} ; non ajoutés : {{files}} ({{reason}})"  placeholders={{code}},{{count}},{{files}},{{reason}}
+aito.droppedPartial_other = "{{count}} fichiers ajoutés à {{code}} ; non ajoutés : {{files}} ({{reason}})"  placeholders={{code}},{{count}},{{files}},{{reason}}
 aito.dropped_one = "{{count}} fichier ajouté à {{code}}"  placeholders={{code}},{{count}}
 aito.dropped_other = "{{count}} fichiers ajoutés à {{code}}"  placeholders={{code}},{{count}}
 aito.editDeliveries = "Modifier les fichiers livrés"
@@ -784,7 +792,7 @@ title = "Projets"
 titleLabel = "Titre"
 viewGrid = "Vue grille"
 viewTable = "Vue tableau"
---- it projectsPdm (195 keys)
+--- it projectsPdm (197 keys)
 acceptSuggestion = "Aggiungi {{name}}"  placeholders={{name}}
 aiUnavailable = "IA non disponibile"
 aito.confirmUnlink = "Scollegare {{name}} da questa attività? L'elenco dei file consegnati verrà svuotato."  placeholders={{name}}
@@ -794,6 +802,8 @@ aito.deliveriesSuggest = "Proponi le ultime approvate"
 aito.dropChooseTask = "Per quale attività sono questi file?"
 aito.dropHere = "Trascina i file per aggiungerli al progetto"
 aito.dropNeedsProject = "Collega prima un progetto a questa attività"
+aito.droppedPartial_one = "{{count}} file aggiunto a {{code}}; non aggiunti: {{files}} ({{reason}})"  placeholders={{code}},{{count}},{{files}},{{reason}}
+aito.droppedPartial_other = "{{count}} file aggiunti a {{code}}; non aggiunti: {{files}} ({{reason}})"  placeholders={{code}},{{count}},{{files}},{{reason}}
 aito.dropped_one = "{{count}} file aggiunto a {{code}}"  placeholders={{code}},{{count}}
 aito.dropped_other = "{{count}} file aggiunti a {{code}}"  placeholders={{code}},{{count}}
 aito.editDeliveries = "Modifica i file consegnati"
@@ -980,7 +990,7 @@ title = "Progetti"
 titleLabel = "Titolo"
 viewGrid = "Vista griglia"
 viewTable = "Vista tabella"
---- ja projectsPdm (195 keys)
+--- ja projectsPdm (197 keys)
 acceptSuggestion = "{{name}}を追加"  placeholders={{name}}
 aiUnavailable = "AIは利用できません"
 aito.confirmUnlink = "このタスクから {{name}} のリンクを解除しますか？納品ファイルの一覧は消去されます。"  placeholders={{name}}
@@ -990,6 +1000,8 @@ aito.deliveriesSuggest = "最新の承認済みを提案"
 aito.dropChooseTask = "これらのファイルはどのタスク用ですか？"
 aito.dropHere = "ファイルをドロップしてプロジェクトに追加"
 aito.dropNeedsProject = "先にこのタスクへプロジェクトをリンクしてください"
+aito.droppedPartial_one = "{{count}}件のファイルを {{code}} に追加しました。追加されなかったファイル: {{files}}（{{reason}}）"  placeholders={{code}},{{count}},{{files}},{{reason}}
+aito.droppedPartial_other = "{{count}}件のファイルを {{code}} に追加しました。追加されなかったファイル: {{files}}（{{reason}}）"  placeholders={{code}},{{count}},{{files}},{{reason}}
 aito.dropped_one = "{{count}}件のファイルを {{code}} に追加しました"  placeholders={{code}},{{count}}
 aito.dropped_other = "{{count}}件のファイルを {{code}} に追加しました"  placeholders={{code}},{{count}}
 aito.editDeliveries = "納品ファイルを編集"
@@ -1176,7 +1188,7 @@ title = "プロジェクト"
 titleLabel = "タイトル"
 viewGrid = "グリッド表示"
 viewTable = "テーブル表示"
---- ko projectsPdm (195 keys)
+--- ko projectsPdm (197 keys)
 acceptSuggestion = "{{name}} 추가"  placeholders={{name}}
 aiUnavailable = "AI를 사용할 수 없음"
 aito.confirmUnlink = "이 작업에서 {{name}} 연결을 해제할까요? 납품 파일 목록이 지워집니다."  placeholders={{name}}
@@ -1186,6 +1198,8 @@ aito.deliveriesSuggest = "최신 승인본 제안"
 aito.dropChooseTask = "이 파일은 어떤 작업용인가요?"
 aito.dropHere = "파일을 놓아 프로젝트에 추가"
 aito.dropNeedsProject = "먼저 이 작업에 프로젝트를 연결하세요"
+aito.droppedPartial_one = "파일 {{count}}개를 {{code}}에 추가했습니다. 추가되지 않은 파일: {{files}} ({{reason}})"  placeholders={{code}},{{count}},{{files}},{{reason}}
+aito.droppedPartial_other = "파일 {{count}}개를 {{code}}에 추가했습니다. 추가되지 않은 파일: {{files}} ({{reason}})"  placeholders={{code}},{{count}},{{files}},{{reason}}
 aito.dropped_one = "파일 {{count}}개를 {{code}}에 추가했습니다"  placeholders={{code}},{{count}}
 aito.dropped_other = "파일 {{count}}개를 {{code}}에 추가했습니다"  placeholders={{code}},{{count}}
 aito.editDeliveries = "납품 파일 편집"
@@ -1372,7 +1386,7 @@ title = "프로젝트"
 titleLabel = "제목"
 viewGrid = "격자 보기"
 viewTable = "표 보기"
---- nl projectsPdm (195 keys)
+--- nl projectsPdm (197 keys)
 acceptSuggestion = "{{name}} toevoegen"  placeholders={{name}}
 aiUnavailable = "AI niet beschikbaar"
 aito.confirmUnlink = "{{name}} loskoppelen van deze taak? De lijst met geleverde bestanden wordt gewist."  placeholders={{name}}
@@ -1382,6 +1396,8 @@ aito.deliveriesSuggest = "Laatste goedgekeurde voorstellen"
 aito.dropChooseTask = "Voor welke taak zijn deze bestanden?"
 aito.dropHere = "Zet bestanden neer om ze aan het project toe te voegen"
 aito.dropNeedsProject = "Koppel eerst een project aan deze taak"
+aito.droppedPartial_one = "{{count}} bestand toegevoegd aan {{code}}; niet toegevoegd: {{files}} ({{reason}})"  placeholders={{code}},{{count}},{{files}},{{reason}}
+aito.droppedPartial_other = "{{count}} bestanden toegevoegd aan {{code}}; niet toegevoegd: {{files}} ({{reason}})"  placeholders={{code}},{{count}},{{files}},{{reason}}
 aito.dropped_one = "{{count}} bestand toegevoegd aan {{code}}"  placeholders={{code}},{{count}}
 aito.dropped_other = "{{count}} bestanden toegevoegd aan {{code}}"  placeholders={{code}},{{count}}
 aito.editDeliveries = "Geleverde bestanden bewerken"
@@ -1568,7 +1584,7 @@ title = "Projecten"
 titleLabel = "Titel"
 viewGrid = "Rasterweergave"
 viewTable = "Tabelweergave"
---- ptBR projectsPdm (195 keys)
+--- ptBR projectsPdm (197 keys)
 acceptSuggestion = "Adicionar {{name}}"  placeholders={{name}}
 aiUnavailable = "IA indisponível"
 aito.confirmUnlink = "Desvincular {{name}} desta tarefa? A lista de arquivos entregues será apagada."  placeholders={{name}}
@@ -1578,6 +1594,8 @@ aito.deliveriesSuggest = "Sugerir as últimas aprovadas"
 aito.dropChooseTask = "Para qual tarefa são estes arquivos?"
 aito.dropHere = "Solte arquivos para adicioná-los ao projeto"
 aito.dropNeedsProject = "Vincule primeiro um projeto a esta tarefa"
+aito.droppedPartial_one = "{{count}} arquivo adicionado a {{code}}; não adicionados: {{files}} ({{reason}})"  placeholders={{code}},{{count}},{{files}},{{reason}}
+aito.droppedPartial_other = "{{count}} arquivos adicionados a {{code}}; não adicionados: {{files}} ({{reason}})"  placeholders={{code}},{{count}},{{files}},{{reason}}
 aito.dropped_one = "{{count}} arquivo adicionado a {{code}}"  placeholders={{code}},{{count}}
 aito.dropped_other = "{{count}} arquivos adicionados a {{code}}"  placeholders={{code}},{{count}}
 aito.editDeliveries = "Editar arquivos entregues"
@@ -1764,7 +1782,7 @@ title = "Projetos"
 titleLabel = "Título"
 viewGrid = "Visualização em grade"
 viewTable = "Visualização em tabela"
---- ru projectsPdm (195 keys)
+--- ru projectsPdm (197 keys)
 acceptSuggestion = "Добавить {{name}}"  placeholders={{name}}
 aiUnavailable = "ИИ недоступен"
 aito.confirmUnlink = "Отвязать {{name}} от этой задачи? Список переданных файлов будет очищен."  placeholders={{name}}
@@ -1774,6 +1792,8 @@ aito.deliveriesSuggest = "Предложить последние утвержд
 aito.dropChooseTask = "Для какой задачи эти файлы?"
 aito.dropHere = "Перетащите файлы, чтобы добавить их в проект"
 aito.dropNeedsProject = "Сначала привяжите проект к этой задаче"
+aito.droppedPartial_one = "Файлов добавлено в {{code}}: {{count}}; не добавлены: {{files}} ({{reason}})"  placeholders={{code}},{{count}},{{files}},{{reason}}
+aito.droppedPartial_other = "Файлов добавлено в {{code}}: {{count}}; не добавлены: {{files}} ({{reason}})"  placeholders={{code}},{{count}},{{files}},{{reason}}
 aito.dropped_one = "Файлов добавлено в {{code}}: {{count}}"  placeholders={{code}},{{count}}
 aito.dropped_other = "Файлов добавлено в {{code}}: {{count}}"  placeholders={{code}},{{count}}
 aito.editDeliveries = "Изменить переданные файлы"
@@ -1960,7 +1980,7 @@ title = "Проекты"
 titleLabel = "Название"
 viewGrid = "Вид сеткой"
 viewTable = "Табличный вид"
---- sv projectsPdm (195 keys)
+--- sv projectsPdm (197 keys)
 acceptSuggestion = "Lägg till {{name}}"  placeholders={{name}}
 aiUnavailable = "AI är inte tillgänglig"
 aito.confirmUnlink = "Koppla bort {{name}} från den här uppgiften? Listan över levererade filer töms."  placeholders={{name}}
@@ -1970,6 +1990,8 @@ aito.deliveriesSuggest = "Föreslå senaste godkända"
 aito.dropChooseTask = "Vilken uppgift gäller filerna?"
 aito.dropHere = "Släpp filer för att lägga till dem i projektet"
 aito.dropNeedsProject = "Länka först ett projekt till den här uppgiften"
+aito.droppedPartial_one = "{{count}} fil tillagd i {{code}}; inte tillagda: {{files}} ({{reason}})"  placeholders={{code}},{{count}},{{files}},{{reason}}
+aito.droppedPartial_other = "{{count}} filer tillagda i {{code}}; inte tillagda: {{files}} ({{reason}})"  placeholders={{code}},{{count}},{{files}},{{reason}}
 aito.dropped_one = "{{count}} fil tillagd i {{code}}"  placeholders={{code}},{{count}}
 aito.dropped_other = "{{count}} filer tillagda i {{code}}"  placeholders={{code}},{{count}}
 aito.editDeliveries = "Redigera levererade filer"
@@ -2156,7 +2178,7 @@ title = "Projekt"
 titleLabel = "Titel"
 viewGrid = "Rutnätsvy"
 viewTable = "Tabellvy"
---- tr projectsPdm (195 keys)
+--- tr projectsPdm (197 keys)
 acceptSuggestion = "{{name}} ekle"  placeholders={{name}}
 aiUnavailable = "Yapay zekâ kullanılamıyor"
 aito.confirmUnlink = "{{name}} bu görevden ayrılsın mı? Teslim edilen dosyalar listesi temizlenir."  placeholders={{name}}
@@ -2166,6 +2188,8 @@ aito.deliveriesSuggest = "Son onaylananları öner"
 aito.dropChooseTask = "Bu dosyalar hangi görev için?"
 aito.dropHere = "Projeye eklemek için dosyaları bırakın"
 aito.dropNeedsProject = "Önce bu göreve bir proje bağlayın"
+aito.droppedPartial_one = "{{count}} dosya {{code}} projesine eklendi; eklenmeyenler: {{files}} ({{reason}})"  placeholders={{code}},{{count}},{{files}},{{reason}}
+aito.droppedPartial_other = "{{count}} dosya {{code}} projesine eklendi; eklenmeyenler: {{files}} ({{reason}})"  placeholders={{code}},{{count}},{{files}},{{reason}}
 aito.dropped_one = "{{count}} dosya {{code}} projesine eklendi"  placeholders={{code}},{{count}}
 aito.dropped_other = "{{count}} dosya {{code}} projesine eklendi"  placeholders={{code}},{{count}}
 aito.editDeliveries = "Teslim edilen dosyaları düzenle"
@@ -2352,7 +2376,7 @@ title = "Projeler"
 titleLabel = "Başlık"
 viewGrid = "Izgara görünümü"
 viewTable = "Tablo görünümü"
---- uk projectsPdm (195 keys)
+--- uk projectsPdm (197 keys)
 acceptSuggestion = "Додати {{name}}"  placeholders={{name}}
 aiUnavailable = "ШІ недоступний"
 aito.confirmUnlink = "Відв’язати {{name}} від цього завдання? Список переданих файлів буде очищено."  placeholders={{name}}
@@ -2362,6 +2386,8 @@ aito.deliveriesSuggest = "Запропонувати останні затвер
 aito.dropChooseTask = "Для якого завдання ці файли?"
 aito.dropHere = "Перетягніть файли, щоб додати їх до проєкту"
 aito.dropNeedsProject = "Спершу прив'яжіть проєкт до цього завдання"
+aito.droppedPartial_one = "Файлів додано до {{code}}: {{count}}; не додано: {{files}} ({{reason}})"  placeholders={{code}},{{count}},{{files}},{{reason}}
+aito.droppedPartial_other = "Файлів додано до {{code}}: {{count}}; не додано: {{files}} ({{reason}})"  placeholders={{code}},{{count}},{{files}},{{reason}}
 aito.dropped_one = "Файлів додано до {{code}}: {{count}}"  placeholders={{code}},{{count}}
 aito.dropped_other = "Файлів додано до {{code}}: {{count}}"  placeholders={{code}},{{count}}
 aito.editDeliveries = "Змінити передані файли"
@@ -2548,7 +2574,7 @@ title = "Проєкти"
 titleLabel = "Назва"
 viewGrid = "Вигляд сіткою"
 viewTable = "Табличний вигляд"
---- zhCN projectsPdm (195 keys)
+--- zhCN projectsPdm (197 keys)
 acceptSuggestion = "添加 {{name}}"  placeholders={{name}}
 aiUnavailable = "AI 不可用"
 aito.confirmUnlink = "要将 {{name}} 从此任务取消关联吗？已交付文件列表将被清空。"  placeholders={{name}}
@@ -2558,6 +2584,8 @@ aito.deliveriesSuggest = "推荐最新已批准版本"
 aito.dropChooseTask = "这些文件属于哪个任务？"
 aito.dropHere = "拖放文件以添加到项目"
 aito.dropNeedsProject = "请先将项目关联到此任务"
+aito.droppedPartial_one = "已向 {{code}} 添加 {{count}} 个文件；未添加：{{files}}（{{reason}}）"  placeholders={{code}},{{count}},{{files}},{{reason}}
+aito.droppedPartial_other = "已向 {{code}} 添加 {{count}} 个文件；未添加：{{files}}（{{reason}}）"  placeholders={{code}},{{count}},{{files}},{{reason}}
 aito.dropped_one = "已向 {{code}} 添加 {{count}} 个文件"  placeholders={{code}},{{count}}
 aito.dropped_other = "已向 {{code}} 添加 {{count}} 个文件"  placeholders={{code}},{{count}}
 aito.editDeliveries = "编辑已交付文件"
@@ -2744,7 +2772,7 @@ title = "项目"
 titleLabel = "标题"
 viewGrid = "网格视图"
 viewTable = "表格视图"
---- zhTW projectsPdm (195 keys)
+--- zhTW projectsPdm (197 keys)
 acceptSuggestion = "新增 {{name}}"  placeholders={{name}}
 aiUnavailable = "AI 無法使用"
 aito.confirmUnlink = "要將 {{name}} 從此任務取消連結嗎？已交付檔案清單將被清除。"  placeholders={{name}}
@@ -2754,6 +2782,8 @@ aito.deliveriesSuggest = "建議最新已核准版本"
 aito.dropChooseTask = "這些檔案屬於哪個任務？"
 aito.dropHere = "拖放檔案以加入專案"
 aito.dropNeedsProject = "請先將專案連結到此任務"
+aito.droppedPartial_one = "已將 {{count}} 個檔案加入 {{code}}；未加入：{{files}}（{{reason}}）"  placeholders={{code}},{{count}},{{files}},{{reason}}
+aito.droppedPartial_other = "已將 {{count}} 個檔案加入 {{code}}；未加入：{{files}}（{{reason}}）"  placeholders={{code}},{{count}},{{files}},{{reason}}
 aito.dropped_one = "已將 {{count}} 個檔案加入 {{code}}"  placeholders={{code}},{{count}}
 aito.dropped_other = "已將 {{count}} 個檔案加入 {{code}}"  placeholders={{code}},{{count}}
 aito.editDeliveries = "編輯已交付檔案"

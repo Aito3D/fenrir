@@ -9868,6 +9868,8 @@ export default {
       dropChooseTask: '이 파일은 어떤 작업용인가요?',
       dropped_one: '파일 {{count}}개를 {{code}}에 추가했습니다',
       dropped_other: '파일 {{count}}개를 {{code}}에 추가했습니다',
+      droppedPartial_one: '파일 {{count}}개를 {{code}}에 추가했습니다. 추가되지 않은 파일: {{files}} ({{reason}})',
+      droppedPartial_other: '파일 {{count}}개를 {{code}}에 추가했습니다. 추가되지 않은 파일: {{files}} ({{reason}})',
       ordersTitle: '주문',
       ordersEmpty: '이 프로젝트를 사용하는 주문이 아직 없습니다',
       newOrder: '새 주문',

@@ -118,6 +118,35 @@ async def test_upload_with_code_files_next_revision(async_client: AsyncClient, d
 
 @pytest.mark.asyncio
 @pytest.mark.integration
+async def test_printer_card_upload_and_print_of_a_code_file_queues(
+    async_client: AsyncClient, db_session, printer_factory
+):
+    """T-283: the printer card uploads, then queues with the cleanup flag set.
+    Auto-filing moves the upload into the project; the queue request is still
+    accepted and the flag dropped, so the revision file is never consumed."""
+    project, item_id = await _project_with_support_item(async_client, db_session)
+    printer = await printer_factory()
+    upload = await _upload(async_client, f"{project['code']}_support.3mf", _3mf("r2"))
+    assert upload.status_code == 200, upload.text
+    assert upload.json()["filed_to_project"]["revision_number"] == 2
+
+    response = await async_client.post(
+        "/api/v1/queue/",
+        json={
+            "printer_id": printer.id,
+            "library_file_id": upload.json()["id"],
+            "cleanup_library_after_dispatch": True,
+        },
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["cleanup_library_after_dispatch"] is False
+    revisions = await _revisions(db_session, item_id)
+    assert body["revision_id"] == revisions[1].id
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
 async def test_upload_non_printable_with_code_stays_in_file_manager(async_client: AsyncClient, db_session):
     project = await _project(async_client)
     filename = f"{project['code']}_notes.pdf"
@@ -327,6 +356,111 @@ async def test_uploader_without_projects_update_is_not_auto_filed(async_client: 
     assert response.json().get("filed_to_project") is None
     listed = await async_client.get("/api/v1/library/files", headers=headers)
     assert filename in [row["filename"] for row in listed.json()]
+
+
+# --- library upload under auth: the projects:update gate for JWT users and API keys (T-284) --
+
+
+async def _auth_on_with_project(db) -> str:
+    """Auth on and a fresh project (no items); returns its code."""
+    from backend.app.models.project import Project
+    from backend.app.models.settings import Settings
+
+    project = Project(name="Support")
+    db.add(project)
+    db.add(Settings(key="auth_enabled", value="true"))
+    await db.commit()
+    assert project.code and project.code.startswith("P-")
+    return project.code
+
+
+async def _api_key_headers(db, **flags: bool) -> dict[str, str]:
+    """X-API-Key header for an ownerless, enabled key with exactly ``flags`` set."""
+    from backend.app.core.auth import generate_api_key
+    from backend.app.models.api_key import APIKey
+
+    full_key, key_hash, key_prefix = generate_api_key()
+    db.add(APIKey(name=f"autofile-{uuid.uuid4().hex[:8]}", key_hash=key_hash, key_prefix=key_prefix, **flags))
+    await db.commit()
+    return {"X-API-Key": full_key}
+
+
+async def _jwt_headers(db, permissions: list[str]) -> dict[str, str]:
+    from backend.app.core.auth import create_access_token, get_password_hash
+    from backend.app.models.group import Group
+    from backend.app.models.user import User
+
+    group = Group(name=f"autofile-{uuid.uuid4().hex[:8]}", permissions=permissions, is_system=False)
+    db.add(group)
+    await db.flush()
+    user = User(username=f"autofile-{uuid.uuid4().hex[:8]}", password_hash=get_password_hash("pw"), is_active=True)
+    user.groups.append(group)
+    db.add(user)
+    await db.commit()
+    return {"Authorization": f"Bearer {create_access_token(data={'sub': user.username})}"}
+
+
+async def _upload_as(client, headers: dict[str, str], filename: str):
+    return await client.post(
+        "/api/v1/library/files",
+        files={"file": (filename, io.BytesIO(_3mf()), "application/octet-stream")},
+        headers=headers,
+    )
+
+
+async def _row_project_id(db, row_id: int) -> int | None:
+    return (await _fresh_row(db, row_id)).project_id
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_api_key_with_project_scope_upload_is_auto_filed(async_client: AsyncClient, db_session):
+    code = await _auth_on_with_project(db_session)
+    headers = await _api_key_headers(db_session, can_manage_library=True, can_manage_projects=True)
+
+    response = await _upload_as(async_client, headers, f"{code}_support.3mf")
+    assert response.status_code == 200, response.text
+    filed = response.json()["filed_to_project"]
+    assert filed is not None
+    assert (filed["code"], filed["item_name"], filed["revision_number"]) == (code, "support", 1)
+    assert await _row_project_id(db_session, response.json()["id"]) == filed["project_id"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_api_key_without_project_scope_upload_stays_in_file_manager(async_client: AsyncClient, db_session):
+    """T-284 (user-approved): the key's effective scopes gate auto-filing, as a JWT user's
+    permissions do. A key without can_manage_projects keeps the upload in the File Manager."""
+    from backend.app.models.project import Project
+
+    code = await _auth_on_with_project(db_session)
+    headers = await _api_key_headers(db_session, can_manage_library=True, can_manage_projects=False)
+
+    response = await _upload_as(async_client, headers, f"{code}_support.3mf")
+    assert response.status_code == 200, response.text
+    assert response.json()["filed_to_project"] is None
+    assert await _row_project_id(db_session, response.json()["id"]) is None
+    project = (await db_session.execute(select(Project).where(Project.code == code))).scalar_one()
+    assert await _project_tree(db_session, project.id) == ([], 0)
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_jwt_uploader_with_projects_update_is_auto_filed(async_client: AsyncClient, db_session):
+    from backend.app.core.permissions import Permission
+
+    code = await _auth_on_with_project(db_session)
+    headers = await _jwt_headers(
+        db_session,
+        [Permission.LIBRARY_UPLOAD.value, Permission.LIBRARY_READ_ALL.value, Permission.PROJECTS_UPDATE.value],
+    )
+
+    response = await _upload_as(async_client, headers, f"{code}_support.3mf")
+    assert response.status_code == 200, response.text
+    filed = response.json()["filed_to_project"]
+    assert filed is not None
+    assert (filed["code"], filed["item_name"], filed["revision_number"]) == (code, "support", 1)
+    assert await _row_project_id(db_session, response.json()["id"]) == filed["project_id"]
 
 
 # --- pending-upload archive under auth: the auto-filing permission gate (T-046) ----------

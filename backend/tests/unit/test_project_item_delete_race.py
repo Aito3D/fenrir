@@ -21,7 +21,7 @@ import io
 
 import pytest
 from fastapi import HTTPException, UploadFile
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 import backend.app.models  # noqa: F401  # registers every table on Base.metadata
@@ -512,3 +512,151 @@ async def test_delete_without_a_racing_link_clears_links_outside_live_orders(ses
         None,
         other_id,
     ]
+
+
+# --- link and delivery edits against a task deleted or trashed after the route read it (T-293) ---
+
+
+async def _delete_task(other, task_id: int) -> None:
+    """What DELETE /aito/tasks/{id} does to the rows: deliveries first, then the task."""
+    await other.execute(delete(AitoTaskDelivery).where(AitoTaskDelivery.task_id == task_id))
+    await other.delete(await other.get(AitoTask, task_id))
+
+
+async def _trash_its_card(other, task_id: int) -> None:
+    """What trashing (or merging away) the task's order does: the order's status becomes 'deleted'."""
+    task = await other.get(AitoTask, task_id)
+    (await other.get(AitoProject, task.project_id)).status = "deleted"
+
+
+GONE = [pytest.param(_delete_task, id="task-deleted"), pytest.param(_trash_its_card, id="card-trashed")]
+
+
+def _after_the_bundles(maker, monkeypatch, task_id: int, make_gone) -> list[int]:
+    """Once set_deliveries validated the revisions, a second session commits ``make_gone``."""
+    real = aito_project_links._revision_bundles
+    done: list[int] = []
+
+    async def racing(db, revision_ids):
+        bundles = await real(db, revision_ids)
+        if not done:
+            done.append(task_id)
+            async with maker() as other:
+                await make_gone(other, task_id)
+                await other.commit()
+        return bundles
+
+    monkeypatch.setattr(aito_project_links, "_revision_bundles", racing)
+    return done
+
+
+async def _deliveries(maker, task_id: int) -> int:
+    async with maker() as db:
+        return (
+            await db.execute(
+                select(func.count()).select_from(AitoTaskDelivery).where(AitoTaskDelivery.task_id == task_id)
+            )
+        ).scalar_one()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("make_gone", GONE)
+async def test_set_deliveries_on_a_task_gone_meanwhile_is_a_404_and_stores_nothing(
+    sessions, monkeypatch, root, make_gone
+):
+    project_id, _, revision_id, _, _ = await _item_with_a_revision(sessions)
+    task_id = await _task_linked_to(sessions, project_id)
+    kinds = _spy_events(monkeypatch)
+    done = _after_the_bundles(sessions, monkeypatch, task_id, make_gone)
+
+    async with sessions() as db:
+        task = await db.get(AitoTask, task_id)
+        with pytest.raises(aito_project_links.LinkError) as caught:
+            await aito_project_links.set_deliveries(db, task, [revision_id], actor="paul")
+        await db.rollback()  # what the deliveries route does with a LinkError
+
+    assert done == [task_id]
+    assert (caught.value.status_code, caught.value.detail) == (404, "Task not found")
+    assert kinds == []
+    assert await _deliveries(sessions, task_id) == 0
+    async with sessions() as db:
+        assert (await db.execute(select(func.count()).select_from(AitoEvent))).scalar_one() == 0
+
+
+@pytest.mark.asyncio
+async def test_put_task_deliveries_on_a_task_deleted_meanwhile_is_a_404(sessions, monkeypatch, root):
+    from backend.app.schemas.aito_project_links import TaskDeliveriesRequest
+
+    project_id, _, revision_id, _, _ = await _item_with_a_revision(sessions)
+    task_id = await _task_linked_to(sessions, project_id)
+    _after_the_bundles(sessions, monkeypatch, task_id, _delete_task)
+
+    async with sessions() as db:
+        with pytest.raises(HTTPException) as caught:
+            await links_routes.put_task_deliveries(
+                task_id, TaskDeliveriesRequest(revision_ids=[revision_id]), db=db, user=None, __=None
+            )
+
+    assert (caught.value.status_code, caught.value.detail) == (404, "Task not found")
+    async with sessions() as db:
+        assert (await db.execute(select(func.count()).select_from(AitoTaskDelivery))).scalar_one() == 0
+
+
+@pytest.mark.asyncio
+async def test_set_deliveries_without_a_race_still_records_them(sessions, monkeypatch, root):
+    project_id, _, revision_id, _, _ = await _item_with_a_revision(sessions)
+    task_id = await _task_linked_to(sessions, project_id)
+    kinds = _spy_events(monkeypatch)
+
+    async with sessions() as db:
+        task = await db.get(AitoTask, task_id)
+        assert await aito_project_links.set_deliveries(db, task, [revision_id], actor="paul") == [revision_id]
+        await db.commit()
+
+    assert kinds == ["task.deliveries_changed"]
+    assert await _deliveries(sessions, task_id) == 1
+
+
+def _gone_after_the_project_read(maker, db, monkeypatch, project_id: int, task_id: int, make_gone) -> list[int]:
+    """Once ``db`` has read project ``project_id``, a second session commits ``make_gone`` on the task."""
+    real_get = db.get
+    done: list[int] = []
+
+    async def get(entity, ident, *args, **kwargs):
+        found = await real_get(entity, ident, *args, **kwargs)
+        if entity is Project and ident == project_id and not done:
+            async with maker() as other:
+                await make_gone(other, task_id)
+                await other.commit()
+            done.append(task_id)
+        return found
+
+    monkeypatch.setattr(db, "get", get)
+    return done
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("starts_linked", [False, True])
+@pytest.mark.parametrize("make_gone", GONE)
+async def test_link_task_on_a_task_gone_meanwhile_is_a_404_and_stores_nothing(
+    sessions, monkeypatch, make_gone, starts_linked
+):
+    previous_id = await _new_project(sessions, name="Ancien") if starts_linked else None
+    project_id = await _new_project(sessions)
+    task_id = await _task_linked_to(sessions, previous_id)
+    kinds = _spy_events(monkeypatch)
+
+    async with sessions() as db:
+        done = _gone_after_the_project_read(sessions, db, monkeypatch, project_id, task_id, make_gone)
+        task = await db.get(AitoTask, task_id)
+        with pytest.raises(aito_project_links.LinkError) as caught:
+            await aito_project_links.link_task(db, task, project_id, actor="paul")
+        await db.rollback()  # what both link routes do with a LinkError
+
+    assert done == [task_id]
+    assert (caught.value.status_code, caught.value.detail) == (404, "Task not found")
+    assert kinds == []
+    async with sessions() as db:
+        assert (await db.execute(select(func.count()).select_from(AitoEvent))).scalar_one() == 0
+        linked = (await db.execute(select(AitoTask.linked_project_id).where(AitoTask.id == task_id))).all()
+    assert linked == ([] if make_gone is _delete_task else [(previous_id,)])

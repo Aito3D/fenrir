@@ -13,15 +13,15 @@ import {
   PRINTABLE_ACCEPT,
   STATUS_CHIP_CLS,
   STATUS_LABEL_KEYS,
-  chipBase,
   isPrintableFile,
   isSectionEnabled,
   printProfileLine,
 } from './filesUi';
 import { PrintRevisionFlow } from '../print/PrintRevisionFlow';
 import { ResliceDialog } from '../reslice/ResliceDialog';
-import { outdatedParams, revisionLabel } from './revisionLabel';
+import { outdatedParams, revisionLabel, revisionNumberLabel } from './revisionLabel';
 import { DropShield } from '../DropShield';
+import { OutdatedChip } from './OutdatedChip';
 
 export interface DerivedOption { id: number; label: string }
 
@@ -64,7 +64,7 @@ export function RevisionBlock({ item, revision, derivedOptions, actions }: Props
   const resliceRunning = running !== undefined && running.error === null;
   const resliceable = revision.files.filter(isResliceable);
   const busy = actions.isBusy(item.id);
-  const label = `R${revision.number}`;
+  const label = revisionNumberLabel(revision.number);
   const editable = revision.status === 'wip' && !revision.used;
   const pp = revision.print_profile as Record<string, unknown> | null;
   const profileLine = printProfileLine(pp);
@@ -104,9 +104,7 @@ export function RevisionBlock({ item, revision, derivedOptions, actions }: Props
       </div>
 
       {newer && src && (
-        <span className={`${chipBase} border-amber-500/40 bg-amber-500/10 text-amber-400 whitespace-normal`}>
-          {t('projectsPdm.files.outdated', outdatedParams(src, newer))}
-        </span>
+        <OutdatedChip params={outdatedParams(src, newer)} wrapClassLast />
       )}
 
       {editingNote ? (

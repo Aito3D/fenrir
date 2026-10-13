@@ -219,6 +219,7 @@ async def drop_task_files(
 async def export_project(
 async def find_item_by_key(db: AsyncSession, project_id: int, section: str, key: str)
 async def find_or_create_item(
+async def find_revision_bundle(
 async def fork_item(
 async def fork_revision(
 async def fresh_item(db: AsyncSession, item_id: int)
@@ -250,8 +251,10 @@ async def list_projects(
 async def list_templates(
 async def load_pipeline(db: AsyncSession, pipeline_id: int)
 async def load_tree(db: AsyncSession, project: Project)
+async def lock_revision_rows(
 async def migrate_project_legacy(db: AsyncSession, project: Project)
 async def move_library_files_to_project(
+async def move_task_print_trace(db: AsyncSession, copy_by_source: Mapping[int, int])
 async def order_links(db: AsyncSession, order_id: int)
 async def orders_for_project(db: AsyncSession, project_id: int)
 async def post_task_project(
@@ -284,6 +287,7 @@ async def start_legacy_migration(
 async def suggest_projects_for_filename(
 async def suggest_projects(db: AsyncSession, task: AitoTask, limit: int = 8)
 async def suggest_tags(
+async def sweep_orphan_intermediates(db: AsyncSession)
 async def sync_project_tags_from_string(db: AsyncSession, project: Project)
 async def task_print_counts(db: AsyncSession, task_ids: Collection[int])
 async def update_bom_item(
@@ -339,11 +343,14 @@ def resolve_in_projects(*parts: str)
 def revision_added_payload(
 def revision_dir(project, section: str, item_name: str, number: int)
 def revision_file_path(file_path: str | None)
+def revision_folder_name(number: int)
 def revision_label(item_name: str, number: int)
+def revision_lock_statement(revision_ids: Collection[int], *, share: bool = False)
 def revision_ref(revision: ProjectRevision, item: ProjectItem)
 def sanitize_component(name: str, fallback: str = "sans-nom")
 def section_for_filename(name: str)
 def slugify(title: str, max_chars: int = 40)
+def split_gcode_3mf(name: str)
 def split_tag_string(value: str | None)
 def start_legacy_migration()
 def storage_dir_name(code: str, title: str)
@@ -365,6 +372,7 @@ class BOMItemCreate
 class BOMItemExport
 class BOMItemResponse
 class BOMItemUpdate
+class DropFilesError
 class DropFilesResponse
 class DroppedFileResult
 class DuplicateWarning
@@ -498,8 +506,14 @@ print(json.dumps(out, indent=1, sort_keys=True))" 2>/dev/null```
  "BatchAddQueueItems": {
   "queue_item_ids": "list[int]"
  },
+ "DropFilesError": {
+  "detail": "<class 'str'>",
+  "filenames": "list[str]",
+  "status_code": "<class 'int'>"
+ },
  "DropFilesResponse": {
   "code": "str | None",
+  "errors": "list[backend.app.schemas.aito_project_links.DropFilesError]",
   "project_id": "<class 'int'>",
   "results": "list[backend.app.schemas.aito_project_links.DroppedFileResult]"
  },
@@ -1242,6 +1256,7 @@ CREATE TABLE projects (
 ```
 1 export const chipBase
 1 export const DIALOG_CARD_CLS
+1 export const DROP_HIGHLIGHT_CLS
 1 export const ENABLED_SECTIONS
 1 export const OVERLAY_CLS
 1 export const PREVIEWABLE_TYPES
@@ -1254,12 +1269,15 @@ CREATE TABLE projects (
 1 export const STATUS_CHIP_CLS
 1 export const STATUS_LABEL_KEYS
 1 export const stopDrag
+1 export function canDropFiles
 1 export function canManageProjectsSettings
 1 export function CardProjectChips
+1 export function Chevron
 1 export function CollapsibleHeader
 1 export function DeliveriesPicker
 1 export function DialogShell
 1 export function DropShield
+1 export function failureMessage
 1 export function filesFromDataTransfer
 1 export function inZone
 1 export function isFileDrag
@@ -1273,6 +1291,7 @@ CREATE TABLE projects (
 1 export function NewProjectModal
 1 export function nonPrintableFiles
 1 export function OrderPickerDialog
+1 export function OutdatedChip
 1 export function outdatedParams
 1 export function PrintedCount
 1 export function printProfileLine
@@ -1285,15 +1304,19 @@ CREATE TABLE projects (
 1 export function ProjectLinkPicker
 1 export function ProjectListPage
 1 export function ProjectModal
+1 export function ProjectOptionLabel
 1 export function ProjectOrdersCard
 1 export function ProjectsPage
 1 export function ProjectsSettingsCard
 1 export function ProjectTagChips
 1 export function ProjectTagEditor
+1 export function projectTreeQuery
 1 export function ResliceDialog
 1 export function RevisionBlock
 1 export function revisionLabel
+1 export function revisionNumberLabel
 1 export function SectionBlock
+1 export function sectionRevisionLabel
 1 export function splitTagDrafts
 1 export function TaskDropZone
 1 export function TaskProjectRow
@@ -1307,6 +1330,7 @@ CREATE TABLE projects (
 1 export function useOrderProjectLinks
 1 export function useProjectCodes
 1 export function useProjectOrders
+1 export function useProjectSearch
 1 export function useProjectTree
 1 export function useResliceJobs
 1 export function useTaskFileDrop
@@ -1543,6 +1567,7 @@ projectsPdm.aito.dropChooseTask
 projectsPdm.aito.dropHere
 projectsPdm.aito.dropNeedsProject
 projectsPdm.aito.dropped
+projectsPdm.aito.droppedPartial
 projectsPdm.aito.editDeliveries
 projectsPdm.aito.linkExisting
 projectsPdm.aito.linkFailed

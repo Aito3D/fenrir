@@ -17,6 +17,7 @@ import { TaskRow } from '../../../../components/aito/TaskRow';
 import { ProjectDetailPage } from '../../../../pages/ProjectDetailPage';
 import { emptyTaskDraft } from '../../../../utils/taskDraft';
 import type { TaskDraft } from '../../../../utils/taskDraft';
+import { file, item, projectTree, ref, rev } from '../../../fixtures/projectTree';
 
 // null = real AuthProvider (auth disabled: every permission granted).
 let granted: Set<string> | null = null;
@@ -81,51 +82,26 @@ const counts = (over: Partial<{ printed: number; rejected: number; queued: numbe
   printed: 12, rejected: 2, queued: 4, target: 20, ...over,
 });
 
-const ref = (id: number, item: string, section: string, number: number, status = 'valide') => ({
-  id, item_id: id * 10, item_name: item, section, number, status,
-});
-const file = (id: number, filename: string) => ({
-  id, filename, file_type: filename.split('.').pop(), file_size: 2048, file_hash: `h${id}`, has_thumbnail: false,
-  created_at: '2026-10-04T10:00:00Z',
-});
-const rev = (over: Record<string, unknown>) => ({
-  id: 1, number: 1, status: 'wip', note: null, derived_from: null, outdated_by: null, print_profile: null,
-  slicer_name: null, slicer_version: null, has_snapshot: false, used: false, print_count: 0, pipeline_name: null, created_by: 'paul',
-  created_at: '2026-10-04T10:00:00Z', status_changed_at: null, files: [],
-  ...over,
-});
-
 let outdated: boolean;
 let printFiles: boolean;
 function makeTree() {
-  return {
-    project_id: 7,
-    code: 'P-0007',
-    sections: [
-      { section: 'scan', items: [] },
-      { section: 'modelisation', items: [{ id: 20, section: 'modelisation', name: 'Support', name_key: 'support', forked_from: null, revisions: [rev({ id: 2, number: 2, status: 'valide', files: [file(50, 'support.step')] })] }] },
-      {
-        section: 'impression',
-        items: printFiles
-          ? [{
-              id: 30, section: 'impression', name: 'Support X1C', name_key: 'support x1c', forked_from: null,
-              revisions: [
-                rev({
-                  id: 4, number: 2, status: 'valide', created_at: '2026-10-04T12:00:00Z',
-                  print_profile: { printer_model: 'X1C', nozzle_diameter: 0.4, layer_height: 0.2, filament_types: ['PETG'] },
-                  derived_from: ref(1, 'Support', 'modelisation', 1, 'obsolete'),
-                  outdated_by: outdated ? ref(2, 'Support', 'modelisation', 2) : null,
-                  files: [file(61, 'support-r2.gcode.3mf'), file(62, 'notes.pdf')],
-                }),
-                rev({ id: 3, number: 1, status: 'obsolete', created_at: '2026-10-03T12:00:00Z', files: [file(60, 'support-r1.gcode.3mf')] }),
-              ],
-            }]
-          : [],
-      },
-      { section: 'usinage', items: [] },
-      { section: 'docs', items: [] },
-    ],
-  };
+  return projectTree({
+    modelisation: [item(20, 'modelisation', 'Support', [rev({ id: 2, number: 2, status: 'valide', files: [file(50, 'support.step')] })])],
+    impression: printFiles
+      ? [
+          item(30, 'impression', 'Support X1C', [
+            rev({
+              id: 4, number: 2, status: 'valide', created_at: '2026-10-04T12:00:00Z',
+              print_profile: { printer_model: 'X1C', nozzle_diameter: 0.4, layer_height: 0.2, filament_types: ['PETG'] },
+              derived_from: ref(1, 'Support', 'modelisation', 1, 'obsolete'),
+              outdated_by: outdated ? ref(2, 'Support', 'modelisation', 2) : null,
+              files: [file(61, 'support-r2.gcode.3mf'), file(62, 'notes.pdf')],
+            }),
+            rev({ id: 3, number: 1, status: 'obsolete', created_at: '2026-10-03T12:00:00Z', files: [file(60, 'support-r1.gcode.3mf')] }),
+          ]),
+        ]
+      : [],
+  });
 }
 
 let linkGets: number;

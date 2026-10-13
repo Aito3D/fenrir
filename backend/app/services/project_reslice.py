@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from backend.app.api.routes.library import slice_and_persist, to_absolute_path
 from backend.app.models.library import LibraryFile
@@ -22,6 +23,7 @@ from backend.app.schemas.slicer import SliceRequest
 from backend.app.services import project_files
 from backend.app.services.project_files import ProjectFilesError
 from backend.app.services.project_snapshot import is_3mf
+from backend.app.services.project_storage import split_gcode_3mf
 from backend.app.services.slicer_pipeline_request import slice_request_from_pipeline
 
 logger = logging.getLogger(__name__)
@@ -34,12 +36,9 @@ def is_resliceable(filename: str) -> bool:
 
 def output_filename(source_filename: str) -> str:
     """``support.3mf`` / ``support.gcode.3mf`` → ``support.gcode.3mf``."""
-    name = source_filename
-    lower = name.lower()
-    for suffix in (".gcode.3mf", ".3mf"):
-        if lower.endswith(suffix):
-            name = name[: -len(suffix)]
-            break
+    name, gcode_ext = split_gcode_3mf(source_filename)
+    if not gcode_ext and name.lower().endswith(".3mf"):
+        name = name[: -len(".3mf")]
     return f"{name or 'tranche'}.gcode.3mf"
 
 
@@ -133,17 +132,72 @@ async def _record_revision_added(db: AsyncSession, project_id: int, entry: dict,
         logger.warning("Re-trancher: project.revision_added failed for project %s", project_id, exc_info=True)
 
 
+# Pauses between the attempts of ``_drop_intermediate`` (one attempt more than pauses):
+# ``hard_delete_many`` commits, and SQLite's "database is locked" is usually gone a moment later.
+_DROP_RETRY_DELAYS: tuple[float, ...] = (0.2, 0.5)
+
+
 async def _drop_intermediate(db: AsyncSession, file_id: int) -> None:
-    """Hard-delete the slicer's loose library row and its bytes (row + file + thumbnail)."""
+    """Hard-delete the slicer's loose library row and its bytes (row + file + thumbnail).
+
+    Retried after each pause of ``_DROP_RETRY_DELAYS``; never raises (an exhausted retry
+    is logged, and ``sweep_orphan_intermediates`` deletes the row at the next startup)."""
     from backend.app.services.library_trash import library_trash_service
 
-    try:
-        row = (await db.execute(select(LibraryFile).where(LibraryFile.id == file_id))).scalar_one_or_none()
-        if row is not None:
-            await library_trash_service.hard_delete_many(db, [row])
-    except Exception:
-        await db.rollback()
-        logger.exception("Re-trancher: could not delete intermediate library file %s", file_id)
+    attempts = len(_DROP_RETRY_DELAYS) + 1
+    for attempt in range(1, attempts + 1):
+        try:
+            row = (await db.execute(select(LibraryFile).where(LibraryFile.id == file_id))).scalar_one_or_none()
+            if row is not None:
+                await library_trash_service.hard_delete_many(db, [row])
+            return
+        except Exception:
+            await db.rollback()
+            if attempt == attempts:
+                logger.exception("Re-trancher: could not delete intermediate library file %s", file_id)
+                return
+            logger.warning(
+                "Re-trancher: deleting intermediate library file %s failed (attempt %s of %s), retrying",
+                file_id,
+                attempt,
+                attempts,
+                exc_info=True,
+            )
+        await asyncio.sleep(_DROP_RETRY_DELAYS[attempt - 1])
+
+
+async def sweep_orphan_intermediates(db: AsyncSession) -> int:
+    """Startup: hard-delete the Re-trancher intermediates a failed cleanup left in the File Manager.
+
+    A leftover is a live loose library row (no ``revision_id``, not trashed) whose
+    ``file_metadata.sliced_from_library_file_id`` is a project revision file (a row
+    with a ``revision_id``), and that nothing uses (queue, archive, batch, pipeline
+    run: ``project_files.used_file_ids``). Logs each row it deletes; returns how many."""
+    from backend.app.services.library_trash import library_trash_service
+
+    source = aliased(LibraryFile)
+    candidates = (
+        select(LibraryFile.id)
+        .join(source, source.id == LibraryFile.file_metadata["sliced_from_library_file_id"].as_integer())
+        .where(LibraryFile.revision_id.is_(None), LibraryFile.deleted_at.is_(None), source.revision_id.is_not(None))
+    )
+    used = await project_files.used_file_ids(db, candidates)
+    rows = (
+        (
+            await db.execute(
+                select(LibraryFile)
+                .where(LibraryFile.id.in_(candidates), LibraryFile.id.not_in(used))
+                .order_by(LibraryFile.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not rows:
+        return 0
+    for row in rows:
+        logger.warning("Re-trancher: deleting leftover intermediate library file %s (%s)", row.id, row.filename)
+    return await library_trash_service.hard_delete_many(db, rows)
 
 
 async def run_reslice(db: AsyncSession, req: ResliceRequest, *, job_id: int | None = None) -> dict:

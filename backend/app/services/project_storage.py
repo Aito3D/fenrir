@@ -76,8 +76,10 @@ def ensure_project_dir(project) -> Path:
     """The project's folder, created if missing.
 
     Projects created before phase 1 have no ``storage_dir`` (spec §7 step 1
-    leaves it NULL); the name is fixed here, on first use, from the title the
-    project has at that moment.
+    leaves it NULL). The startup migration fixes their name and the file
+    service claims it in the database before building a path
+    (``project_files._claim_storage_dir``); the fallback here, from the title
+    the project has at that moment, only serves a caller that skipped both.
     """
     if not project.storage_dir:
         project.storage_dir = storage_dir_name(project.code or f"P-{project.id}", project.name)
@@ -113,10 +115,18 @@ def item_dir(project, section: str, item_name: str) -> Path:
     return resolve_in_projects(ensure_project_dir(project).name, SECTION_DIRS[section], sanitize_component(item_name))
 
 
+def revision_folder_name(number: int) -> str:
+    """The folder name of revision ``number`` under its item dir: ``R{number}``. Creates nothing."""
+    return f"R{number}"
+
+
 def revision_dir(project, section: str, item_name: str, number: int) -> Path:
     """``…/{Item}/R{number}``, created on the way."""
     path = resolve_in_projects(
-        ensure_project_dir(project).name, SECTION_DIRS[section], sanitize_component(item_name), f"R{number}"
+        ensure_project_dir(project).name,
+        SECTION_DIRS[section],
+        sanitize_component(item_name),
+        revision_folder_name(number),
     )
     path.mkdir(parents=True, exist_ok=True)
     return path
@@ -125,10 +135,20 @@ def revision_dir(project, section: str, item_name: str, number: int) -> Path:
 _EXTENSION = re.compile(r"\.[\w+-]{1,20}")
 
 
+def split_gcode_3mf(name: str) -> tuple[str, str]:
+    """``(stem, suffix)`` when ``name`` ends in ``.gcode.3mf`` (any case, suffix as written), else ``(name, "")``.
+
+    The stem may be empty (``name`` is exactly the suffix); callers decide what that means."""
+    if name.lower().endswith(_GCODE_3MF):
+        return name[: -len(_GCODE_3MF)], name[-len(_GCODE_3MF) :]
+    return name, ""
+
+
 def _split_extension(name: str) -> tuple[str, str]:
     """``(stem, extension)``; ``.gcode.3mf`` is one extension. Odd suffixes count as no extension."""
-    if name.lower().endswith(_GCODE_3MF) and len(name) > len(_GCODE_3MF):
-        return name[: -len(_GCODE_3MF)], name[-len(_GCODE_3MF) :]
+    gcode_stem, gcode_ext = split_gcode_3mf(name)
+    if gcode_ext and gcode_stem:
+        return gcode_stem, gcode_ext
     stem, dot, ext = name.rpartition(".")
     if dot and stem and _EXTENSION.fullmatch(f".{ext}"):
         return stem, f".{ext}"

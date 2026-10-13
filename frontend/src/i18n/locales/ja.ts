@@ -10249,6 +10249,8 @@ export default {
       dropChooseTask: 'これらのファイルはどのタスク用ですか？',
       dropped_one: '{{count}}件のファイルを {{code}} に追加しました',
       dropped_other: '{{count}}件のファイルを {{code}} に追加しました',
+      droppedPartial_one: '{{count}}件のファイルを {{code}} に追加しました。追加されなかったファイル: {{files}}（{{reason}}）',
+      droppedPartial_other: '{{count}}件のファイルを {{code}} に追加しました。追加されなかったファイル: {{files}}（{{reason}}）',
       ordersTitle: '注文',
       ordersEmpty: 'このプロジェクトを使う注文はまだありません',
       newOrder: '新規注文',

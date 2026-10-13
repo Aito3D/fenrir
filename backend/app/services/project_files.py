@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import functools
 import hashlib
 import logging
 import os
@@ -25,6 +26,7 @@ from fastapi import UploadFile
 from sqlalchemy import Select, delete, select, union, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import set_committed_value
 
 from backend.app.api.routes.library import (
     IMAGE_EXTENSIONS,
@@ -62,6 +64,11 @@ from backend.app.services import project_storage
 from backend.app.services.http_status_error import HttpStatusError
 from backend.app.services.pdf_thumbnail import generate_pdf_thumbnail
 from backend.app.services.project_print_trace import revision_print_counts
+from backend.app.services.project_revisions import (
+    find_revision_bundle,
+    lock_revision_rows,
+    revision_label as revision_label,  # re-exported
+)
 from backend.app.services.project_snapshot import PrintSnapshot, is_3mf, read_print_snapshot
 from backend.app.services.project_storage import (
     ENABLED_SECTIONS,
@@ -70,6 +77,7 @@ from backend.app.services.project_storage import (
     item_dir,
     move_to_trash,
     revision_dir,
+    revision_folder_name,
     sanitize_component,
 )
 from backend.app.services.stl_thumbnail import MIN_USABLE_STL_BYTES, generate_stl_thumbnail
@@ -89,11 +97,6 @@ class ProjectFilesError(HttpStatusError):
     stored_count: int
 
 
-def revision_label(item_name: str, number: int) -> str:
-    """``"<item> R<n>"``: how a revision is named in events, archives and status messages."""
-    return f"{item_name} R{number}"
-
-
 # One lock per item, held across every operation that writes into or moves the
 # item's folder (uploads hold it from the first streamed byte to the commit), so
 # a rename, delete or fork never runs under a half-written upload. The app runs
@@ -107,6 +110,32 @@ def _item_lock(item_id: int) -> asyncio.Lock:
         lock = asyncio.Lock()
         _item_locks[item_id] = lock
     return lock
+
+
+async def _claim_storage_dir(db: AsyncSession, project: Project) -> None:
+    """Fix the folder name of a project that has none, once, and adopt the stored one.
+
+    A project created before phase 1 may still reach here with no
+    ``storage_dir`` (the startup migration fills them, a restored database may
+    not have run it yet). The name is claimed with a conditional UPDATE, so
+    two uploads that saw different titles cannot each write their own: the
+    loser's UPDATE matches no row and the name read back is the winner's. A
+    project with a folder name runs no statement.
+    """
+    if project.storage_dir:
+        return
+    name = project_storage.storage_dir_name(project.code or f"P-{project.id}", project.name)
+    await db.execute(
+        update(Project)
+        .where(Project.id == project.id, (Project.storage_dir.is_(None)) | (Project.storage_dir == ""))
+        .values(storage_dir=name)
+        .execution_options(synchronize_session=False, autoflush=False)
+    )
+    stored = (
+        await db.execute(select(Project.storage_dir).where(Project.id == project.id).execution_options(autoflush=False))
+    ).scalar_one_or_none()
+    if stored:  # a project deleted meanwhile falls through to ensure_project_dir, as before
+        set_committed_value(project, "storage_dir", stored)
 
 
 async def fresh_item(db: AsyncSession, item_id: int) -> ProjectItem:
@@ -199,17 +228,10 @@ async def get_item_for_project(db: AsyncSession, item_id: int) -> tuple[ProjectI
 
 
 async def get_revision_bundle(db: AsyncSession, revision_id: int) -> tuple[ProjectRevision, ProjectItem, Project]:
-    row = (
-        await db.execute(
-            select(ProjectRevision, ProjectItem, Project)
-            .join(ProjectItem, ProjectItem.id == ProjectRevision.item_id)
-            .join(Project, Project.id == ProjectItem.project_id)
-            .where(ProjectRevision.id == revision_id)
-        )
-    ).first()
-    if row is None:
+    bundle = await find_revision_bundle(db, revision_id)
+    if bundle is None:
         raise ProjectFilesError(404, "Revision not found")
-    return row[0], row[1], row[2]
+    return bundle
 
 
 async def create_item(
@@ -236,11 +258,15 @@ class RevisionSource:
 
     ``reuse_row`` is a managed library row to re-point at the copy (it keeps its
     id, so queue items, archives and photos follow); ``None`` makes a new row.
-    ``row`` is filled in with the stored row once the revision is committed."""
+    ``row`` is filled in with the stored row once the revision is committed.
+    ``nofollow`` opens ``path`` refusing a symlink leaf (``OSError``/ELOOP): set
+    for an external mount file, vetted just before, so a leaf swapped since
+    cannot redirect the copy."""
 
     path: Path
     filename: str
     reuse_row: LibraryFile | None = None
+    nofollow: bool = False
     row: LibraryFile | None = field(default=None, init=False, compare=False, repr=False)
 
 
@@ -258,6 +284,8 @@ class _WrittenFile:
     reuse_file_path: str | None = None
     # fork copies: the source revision's row, whose type, size, hash and metadata the new row repeats
     copied_from: LibraryFile | None = None
+    # LibraryFile.file_type, classified by _post_process so the DB step never opens the file
+    file_type: str = ""
 
 
 def _write_thumbnail(thumbnails_dir: Path, name: str, data: bytes) -> Path:
@@ -341,7 +369,8 @@ async def _stream_files(folder: Path, uploads: list[UploadFile]) -> list[_Writte
 
 
 async def _post_process(entry: _WrittenFile, *, thumbnail: bool = True) -> None:
-    """Thumbnail + 3MF metadata (unless ``thumbnail`` is False) and the 3MF print snapshot of a stored file."""
+    """Thumbnail + 3MF metadata (unless ``thumbnail`` is False), the 3MF print snapshot and the file type of a
+    stored file."""
     if thumbnail:
         thumb, entry.metadata = await _make_thumbnail(entry.path)
         if thumb is not None:
@@ -349,6 +378,7 @@ async def _post_process(entry: _WrittenFile, *, thumbnail: bool = True) -> None:
             entry.thumbnail_rel = to_relative_path(thumb)
     if is_3mf(entry.path.name):
         entry.snapshot = await asyncio.to_thread(read_print_snapshot, entry.path)
+    entry.file_type = (await asyncio.to_thread(classify_file_type, entry.path.name, entry.path))[:10]
 
 
 def _open_claimed(dest: Path):
@@ -369,11 +399,18 @@ def _copy_claimed(src: Path, dest: Path) -> None:
     shutil.copystat(src, dest, follow_symlinks=False)
 
 
-def _copy_hashing(src: Path, dest: Path) -> tuple[int, str]:
-    """Copy ``src`` over ``dest`` in bounded chunks; returns (size, SHA-256 hex) of what was written."""
+def _open_nofollow(path: str, flags: int) -> int:
+    """``open()`` opener refusing a symlink at the leaf of ``path``."""
+    return os.open(path, flags | os.O_NOFOLLOW)
+
+
+def _copy_hashing(src: Path, dest: Path, *, nofollow: bool = False) -> tuple[int, str]:
+    """Copy ``src`` over ``dest`` in bounded chunks; returns (size, SHA-256 hex) of what was written.
+
+    ``nofollow`` refuses a ``src`` whose leaf is a symlink."""
     digest = hashlib.sha256()
     size = 0
-    with open(src, "rb") as reader, _open_claimed(dest) as writer:
+    with open(src, "rb", opener=_open_nofollow if nofollow else None) as reader, _open_claimed(dest) as writer:
         while chunk := reader.read(1 << 20):
             writer.write(chunk)
             digest.update(chunk)
@@ -404,7 +441,8 @@ async def _copy_sources(folder: Path, sources: list[RevisionSource]) -> list[_Wr
                 reuse_file_path=reuse.file_path if reuse is not None else None,
             )
             written.append(entry)  # before the copy, so cleanup also removes the claimed placeholder
-            entry.size, entry.digest = await asyncio.to_thread(_copy_hashing, source.path, dest)
+            copy = functools.partial(_copy_hashing, nofollow=True) if source.nofollow else _copy_hashing
+            entry.size, entry.digest = await asyncio.to_thread(copy, source.path, dest)
             await _post_process(entry, thumbnail=reuse is None or not reuse.thumbnail_path)
     except BaseException:
         _cleanup_written(written)
@@ -516,7 +554,7 @@ async def _add_file_rows(
     await _require_reuse_rows_unchanged(db, written)
     rows: list[LibraryFile] = []
     for entry in written:
-        file_type = (await asyncio.to_thread(classify_file_type, entry.path.name, entry.path))[:10]
+        file_type = entry.file_type
         reuse = entry.source.reuse_row if entry.source is not None else None
         if reuse is None:
             row = _new_library_row(
@@ -673,12 +711,20 @@ async def add_revision_from_sources(
         return revision
 
 
+# How long a cancelled request waits for its in-flight commit before giving up on it
+# (a COMMIT on a stalled connection never resolves, and the caller holds the item lock).
+_COMMIT_CANCEL_WAIT_S = 30.0
+
+
 class _CommitOutcome:
-    """Whether ``_commit_through_cancel`` saw its commit reach the database, or could not rule it out."""
+    """Whether ``_commit_through_cancel`` saw its commit reach the database, or could not rule it out.
 
-    __slots__ = ("may_have_landed",)
+    ``label`` names the operation in the log line of a commit given up on."""
 
-    def __init__(self) -> None:
+    __slots__ = ("label", "may_have_landed")
+
+    def __init__(self, label: str = "commit") -> None:
+        self.label = label
         self.may_have_landed = False
 
 
@@ -705,6 +751,10 @@ async def _commit_through_cancel(db: AsyncSession, outcome: _CommitOutcome) -> N
     flight), sets ``outcome.may_have_landed`` if it committed, and re-raises
     the original CancelledError either way: a cancellation is never swallowed,
     and a commit that failed after it is undone exactly as a cancelled one was.
+    The wait is bounded by ``_COMMIT_CANCEL_WAIT_S`` from the first
+    cancellation: a commit still pending then (a stalled connection) is left
+    running, logged as an error, counted as ``may_have_landed`` (files stay
+    in place) and the CancelledError re-raised, so the item lock is freed.
     When the commit task itself was cancelled from outside (``asyncio.run``
     cancels every remaining task on shutdown), the worker thread may still
     have run the COMMIT, so the outcome is unknown and ``may_have_landed`` is
@@ -718,9 +768,20 @@ async def _commit_through_cancel(db: AsyncSession, outcome: _CommitOutcome) -> N
     try:
         await asyncio.shield(task)
     except asyncio.CancelledError:
-        while not task.done():
-            with contextlib.suppress(asyncio.CancelledError, Exception):
-                await asyncio.shield(task)
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + _COMMIT_CANCEL_WAIT_S
+        while not task.done() and (remaining := deadline - loop.time()) > 0:
+            with contextlib.suppress(asyncio.CancelledError):
+                await asyncio.wait({task}, timeout=remaining)
+        if not task.done():
+            outcome.may_have_landed = True
+            logger.error(
+                "Commit of %s still pending %.1f s after its request was cancelled; "
+                "giving up on it and leaving its files in place",
+                outcome.label,
+                _COMMIT_CANCEL_WAIT_S,
+            )
+            raise
         if task.cancelled():
             outcome.may_have_landed = task.cancel_requested
         else:
@@ -743,11 +804,12 @@ class _CommitGuard:
         undo: Callable[[], Awaitable[None]],
         *,
         translate: Callable[[BaseException], Exception | None] | None = None,
+        label: str = "commit",
     ) -> None:
         self._db = db
         self._undo = undo
         self._translate = translate
-        self._outcome = _CommitOutcome()
+        self._outcome = _CommitOutcome(label)
 
     async def _commit(self) -> None:
         await _commit_through_cancel(self._db, self._outcome)
@@ -782,6 +844,7 @@ async def _add_revision_locked(
         await _check_derived_from(db, project, None, derived_from_id)
     item_id, section, name = item.id, item.section, item.name
     number = item.last_revision_number + 1
+    await _claim_storage_dir(db, project)
     folder = revision_dir(project, section, name, number)
     created_folder = not any(folder.iterdir())
     written: list[_WrittenFile] = []
@@ -799,7 +862,7 @@ async def _add_revision_locked(
             return ProjectFilesError(409, "Another upload just created this revision number; try again")
         return None
 
-    async with _CommitGuard(db, undo, translate=translate) as commit:
+    async with _CommitGuard(db, undo, translate=translate, label=f"new revision of item {item_id}") as commit:
         written = await write(folder)
         await _require_item_unchanged(db, item_id, section, name)
         revision = ProjectRevision(
@@ -901,11 +964,32 @@ async def _revision_files(db: AsyncSession, revision_id: int) -> list[LibraryFil
     )
 
 
+_NOT_EDITABLE = "Only an in-progress revision can change its files"
+_USED_NOT_EDITABLE = "This revision was printed or delivered; make a new revision instead"
+
+
 async def _require_editable_files(db: AsyncSession, revision: ProjectRevision) -> None:
     if revision.status != "wip":
-        raise ProjectFilesError(409, "Only an in-progress revision can change its files")
+        raise ProjectFilesError(409, _NOT_EDITABLE)
     if await revision_is_used(db, revision.id):
-        raise ProjectFilesError(409, "This revision was printed or delivered; make a new revision instead")
+        raise ProjectFilesError(409, _USED_NOT_EDITABLE)
+
+
+async def _require_files_still_editable(db: AsyncSession, revision_id: int, file_ids: list[int]) -> None:
+    """``_require_editable_files`` re-run after this transaction deleted some of ``file_ids``' rows.
+
+    The status is re-read from the database and uses are matched by the
+    remembered ids (``_deleted_revision_is_used``). Run after the delete is
+    flushed (the SQLite write lock is held then), it sees a validation, print
+    or delivery committed since the pre-check.
+    """
+    status = (
+        await db.execute(select(ProjectRevision.status).where(ProjectRevision.id == revision_id))
+    ).scalar_one_or_none()
+    if status != "wip":
+        raise ProjectFilesError(409, _NOT_EDITABLE)
+    if await _deleted_revision_is_used(db, revision_id, file_ids):
+        raise ProjectFilesError(409, _USED_NOT_EDITABLE)
 
 
 async def add_files_to_revision(
@@ -923,6 +1007,7 @@ async def add_files_to_revision(
         revision = await _fresh_revision(db, revision.id, item.id)
         await _require_editable_files(db, revision)
         item_id, section, name = item.id, item.section, item.name
+        await _claim_storage_dir(db, project)
         folder = revision_dir(project, section, name, revision.number)
         written: list[_WrittenFile] = []
 
@@ -930,7 +1015,7 @@ async def add_files_to_revision(
             await db.rollback()
             _cleanup_written(written)
 
-        async with _CommitGuard(db, undo) as commit:
+        async with _CommitGuard(db, undo, label=f"files added to revision {revision.id}") as commit:
             written = await _stream_files(folder, uploads)
             await _require_item_unchanged(db, item_id, section, name)
             # the revision may have been validated or used while streaming
@@ -979,8 +1064,8 @@ class _TrashGuard(_CommitGuard):
     ``trash()`` ran.
     """
 
-    def __init__(self, db: AsyncSession, project: Project, path: Path | None) -> None:
-        super().__init__(db, self._restore)
+    def __init__(self, db: AsyncSession, project: Project, path: Path | None, *, label: str = "commit") -> None:
+        super().__init__(db, self._restore, label=label)
         self._project = project
         self._path = path
         self._moved: Path | None = None
@@ -1007,6 +1092,7 @@ async def remove_file_from_revision(
 
 
 async def _remove_file_locked(db: AsyncSession, project: Project, revision: ProjectRevision, file_id: int) -> None:
+    await lock_revision_rows(db, [revision.id])  # as in _delete_revision_locked
     await _require_editable_files(db, revision)
     files = await _revision_files(db, revision.id)
     target = next((f for f in files if f.id == file_id), None)
@@ -1015,10 +1101,14 @@ async def _remove_file_locked(db: AsyncSession, project: Project, revision: Proj
     if len(files) == 1:
         raise ProjectFilesError(409, "A revision keeps at least one file; delete the revision instead")
 
+    revision_id, file_ids = revision.id, [f.id for f in files]
     path = to_absolute_path(target.file_path)
-    async with _TrashGuard(db, project, path) as guard:
+    await _claim_storage_dir(db, project)
+    async with _TrashGuard(db, project, path, label=f"removal of file {target.id}") as guard:
         await _delete_file_rows(db, file_ids=[target.id])
         await db.flush()
+        # the revision may have been validated, printed or delivered since the pre-check
+        await _require_files_still_editable(db, revision_id, file_ids)
         guard.trash()
         await guard.commit()
 
@@ -1043,12 +1133,14 @@ async def delete_revision(db: AsyncSession, project: Project, item: ProjectItem,
 async def _delete_revision_locked(
     db: AsyncSession, project: Project, item: ProjectItem, revision: ProjectRevision
 ) -> None:
+    await lock_revision_rows(db, [revision.id])  # PostgreSQL: a concurrent queue/delivery waits, or is waited for
     if await revision_is_used(db, revision.id):
         raise ProjectFilesError(409, "This revision was printed or delivered and cannot be deleted")
+    await _claim_storage_dir(db, project)
     folder = item_dir(project, item.section, item.name).joinpath(
-        f"R{revision.number}"
+        revision_folder_name(revision.number)
     )  # SEC-PATH-OK: fixed "R{int}" under a resolved item dir
-    async with _TrashGuard(db, project, folder) as guard:
+    async with _TrashGuard(db, project, folder, label=f"deletion of revision {revision.id}") as guard:
         file_ids = await _delete_file_rows(db, revision_ids=[revision.id])
         await _clear_links_to(db, [revision.id])
         await db.delete(revision)
@@ -1117,6 +1209,7 @@ async def _rename_item_locked(db: AsyncSession, project: Project, item: ProjectI
     clean, key = clean_item_name(new_name)
     if key != item.name_key:
         await _require_item_name_free(db, project, item.section, key, exclude_id=item.id)
+    await _claim_storage_dir(db, project)
     old_dir = item_dir(project, item.section, item.name)
     new_dir = item_dir(project, item.section, clean)
     moved = _move_item_folder(old_dir, new_dir)
@@ -1126,7 +1219,7 @@ async def _rename_item_locked(db: AsyncSession, project: Project, item: ProjectI
             new_dir.rename(old_dir)
         await db.rollback()
 
-    async with _CommitGuard(db, undo) as commit:
+    async with _CommitGuard(db, undo, label=f"rename of item {item.id}") as commit:
         if moved:
             await _repoint_file_paths(db, item.id, old_dir, new_dir)
         item.name = clean
@@ -1145,11 +1238,13 @@ _ITEM_USED = "A revision of this item was printed or delivered; the item cannot 
 
 async def _delete_item_locked(db: AsyncSession, project: Project, item: ProjectItem) -> None:
     revision_ids = await _item_revision_ids(db, item.id)
+    await lock_revision_rows(db, revision_ids)  # as in _delete_revision_locked
     for revision_id in revision_ids:
         if await revision_is_used(db, revision_id):
             raise ProjectFilesError(409, _ITEM_USED)
+    await _claim_storage_dir(db, project)
     folder = item_dir(project, item.section, item.name)
-    async with _TrashGuard(db, project, folder) as guard:
+    async with _TrashGuard(db, project, folder, label=f"deletion of item {item.id}") as guard:
         deleted_file_ids: dict[int, list[int]] = {}
         if revision_ids:
             for revision_id in revision_ids:
@@ -1242,6 +1337,7 @@ async def _fork_revision_locked(
     section = item.section
     clean, key = clean_item_name(new_name)
     await _require_item_name_free(db, project, section, key)
+    await _claim_storage_dir(db, project)
     new_item_dir = item_dir(project, section, clean)
     if new_item_dir.exists():
         raise ProjectFilesError(409, "A folder with this name already exists")
@@ -1267,7 +1363,7 @@ async def _fork_revision_locked(
             return ProjectFilesError(409, "An item with this name already exists in this section")
         return None
 
-    async with _CommitGuard(db, undo, translate=translate) as commit:
+    async with _CommitGuard(db, undo, translate=translate, label=f"fork of revision {revision_id}") as commit:
         await _copy_fork_files(folder, sources, copies)
         if not copies:
             raise ProjectFilesError(409, "No file of this revision could be copied")

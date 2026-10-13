@@ -204,6 +204,46 @@ describe('card file drop', () => {
     expect(posted).toEqual([]);
   });
 
+  it('Escape in the chooser closes it without uploading or reaching document listeners', async () => {
+    links = [link(11, 7, 'P-0007'), link(12, 8, 'P-0008')];
+    render(<CardView project={project} onExpand={() => {}} />);
+    fireEvent.drop(zone(), fileDrop());
+    const chooser = await screen.findByRole('dialog', { name: 'Which task are these files for?' });
+    const outer = vi.fn();
+    document.addEventListener('keydown', outer);
+    try {
+      fireEvent.keyDown(chooser, { key: 'Escape' });
+    } finally {
+      document.removeEventListener('keydown', outer);
+    }
+    expect(outer).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(posted).toEqual([]);
+  });
+
+  it('other keys in the chooser keep it open', async () => {
+    links = [link(11, 7, 'P-0007'), link(12, 8, 'P-0008')];
+    render(<CardView project={project} onExpand={() => {}} />);
+    fireEvent.drop(zone(), fileDrop());
+    const chooser = await screen.findByRole('dialog', { name: 'Which task are these files for?' });
+    fireEvent.keyDown(chooser, { key: 'ArrowDown' });
+    expect(screen.getByRole('dialog', { name: 'Which task are these files for?' })).toBeInTheDocument();
+  });
+
+  it('a failed links read toasts the upload failure, clears the spinner and uploads nothing', async () => {
+    server.use(
+      http.get(`/api/v1/aito/${ORDER}/project-links`, () => HttpResponse.json({ detail: 'boom' }, { status: 500 })),
+    );
+    const onExpand = vi.fn();
+    render(<CardView project={project} onExpand={onExpand} />);
+    fireEvent.drop(zone(), fileDrop());
+    expect(await screen.findByText('Upload failed')).toBeInTheDocument();
+    expect(screen.queryByTestId('card-drop-busy')).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(onExpand).not.toHaveBeenCalled();
+    expect(posted).toEqual([]);
+  });
+
   it('no linked task toasts and opens the card', async () => {
     const onExpand = vi.fn();
     render(<CardView project={project} onExpand={onExpand} />);

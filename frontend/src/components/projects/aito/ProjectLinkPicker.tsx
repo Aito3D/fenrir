@@ -1,12 +1,10 @@
-import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { Search } from 'lucide-react';
 import { api } from '../../../api/client';
-import { projectKeys } from '../projectQueries';
-import { ProjectCodeChip } from '../ProjectCodeChip';
+import { useProjectSearch } from '../projectQueries';
+import { ProjectOptionLabel } from '../ProjectCodeChip';
 import { focusRingCls } from '../../formStyles';
-import { useDebouncedValue } from '../../../hooks/useDebouncedValue';
 
 const REASON_KEYS = {
   same_client: 'projectsPdm.aito.suggestionSameClient',
@@ -35,26 +33,14 @@ export function ProjectLinkPicker({
   disabled?: boolean;
 }) {
   const { t } = useTranslation();
-  const [q, setQ] = useState('');
-  const debounced = useDebouncedValue(q, 250).trim();
-
   const { data: suggestions = [] } = useQuery({
     queryKey: ['aito-project-suggestions', taskId],
     queryFn: () => api.getTaskProjectSuggestions(taskId),
     retry: false,
   });
-  const { data: search, isFetching } = useQuery({
-    queryKey: projectKeys.projectsSearch('aito-link', debounced),
-    queryFn: () => api.searchProjects({ q: debounced, limit: 10 }),
-    enabled: debounced !== '',
-    retry: false,
-  });
+  const { q, setQ, debounced, results, isFetching } = useProjectSearch('aito-link', suggestions.map((s) => s.id));
 
-  const suggested = new Set(suggestions.map((s) => s.id));
-  const options: Option[] = [
-    ...suggestions,
-    ...(debounced ? (search?.items ?? []).filter((p) => !suggested.has(p.id)) : []),
-  ];
+  const options: Option[] = [...suggestions, ...results];
 
   return (
     <div
@@ -88,8 +74,7 @@ export function ProjectLinkPicker({
                 onClick={() => onPick(p.id)}
                 className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-white transition-colors hover:bg-bambu-dark-tertiary/40 disabled:opacity-50 ${focusRingCls}`}
               >
-                <ProjectCodeChip code={p.code} />
-                <span className="min-w-0 flex-1 truncate">{p.name}</span>
+                <ProjectOptionLabel code={p.code} name={p.name} />
                 {p.reason && (
                   <span className="flex-shrink-0 text-xs text-bambu-gray">{t(REASON_KEYS[p.reason])}</span>
                 )}

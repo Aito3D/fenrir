@@ -11,12 +11,9 @@ from backend.app.services.project_storage import (
     storage_dir_name,
 )
 from backend.app.utils.safe_path import PathTraversalError
+from backend.tests.project_fixtures import projects_root_fixture
 
-
-@pytest.fixture
-def root(tmp_path, monkeypatch):
-    monkeypatch.setattr(project_storage, "projects_root", lambda: tmp_path)
-    return tmp_path
+root = projects_root_fixture()
 
 
 def test_slugify_strips_accents_and_punctuation():
