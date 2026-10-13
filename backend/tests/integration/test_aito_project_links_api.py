@@ -2,6 +2,7 @@
 
 import asyncio
 from datetime import datetime, timedelta
+from functools import partial
 
 import pytest
 from fastapi import HTTPException
@@ -16,36 +17,26 @@ from backend.app.core.config import settings
 from backend.app.core.permissions import Permission
 from backend.app.core.websocket import ws_manager
 from backend.app.models.aito_event import AitoEvent
-from backend.app.models.aito_project import AitoProject
-from backend.app.models.aito_task import AitoTask
 from backend.app.models.group import Group
 from backend.app.models.project_item import ProjectItem
 from backend.app.models.settings import Settings
 from backend.app.models.user import User
 from backend.app.services import aito_project_links as links_service, project_files as files_service, project_storage
-from backend.tests.project_fixtures import ChunkedMultipart, projects_root_fixture, upload
+from backend.tests.project_fixtures import (
+    ChunkedMultipart,
+    api_project,
+    make_order,
+    make_task,
+    projects_root_fixture,
+    upload,
+)
 
 root = projects_root_fixture(autouse=True)
 
 
-async def _order(db, *, status="active", client_id="C1", description="Commande"):
-    order = AitoProject(
-        description=description, board_column="devis", status=status, client_id=client_id, client_name="ACME"
-    )
-    db.add(order)
-    await db.commit()
-    return order
-
-
-async def _task(db, order, title="Support"):
-    task = AitoTask(project_id=order.id, title=title)
-    db.add(task)
-    await db.commit()
-    return task
-
-
-async def _project(client, name="Support caméra"):
-    return (await client.post("/api/v1/projects/", json={"name": name})).json()
+_order = partial(make_order, commit=True)
+_task = partial(make_task, commit=True)
+_project = partial(api_project, check=False)
 
 
 async def _revision(client, project_id):

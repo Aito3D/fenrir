@@ -123,6 +123,28 @@ function revisionCaption(archive: Archive, t: TFunction): string {
     .join(' · ');
 }
 
+// Fenrir: a BOM part's price field (add and edit forms) — takes a calculation, never negative, two decimals.
+function BomPriceInput({
+  value,
+  onValueChange,
+  placeholder,
+}: {
+  value: string;
+  onValueChange: (raw: string) => void;
+  placeholder: string;
+}) {
+  return (
+    <CalcInput
+      value={value}
+      onValueChange={onValueChange}
+      normalize={(n) => Math.max(0, Math.round(n * 100) / 100)}
+      wrapperClassName="flex-1 min-w-0"
+      className="w-full bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded px-3 py-2 text-sm text-white placeholder-bambu-gray focus:outline-none focus:border-bambu-green"
+      placeholder={placeholder}
+    />
+  );
+}
+
 function ArchiveGrid({ archives, t }: { archives: Archive[]; t: TFunction }) {
   if (archives.length === 0) {
     return (
@@ -1207,12 +1229,9 @@ export function ProjectDetailPage() {
                     min={1}
                     placeholder={t('projectDetail.bom.qty')}
                   />
-                  <CalcInput
+                  <BomPriceInput
                     value={newBomPrice}
                     onValueChange={setNewBomPrice}
-                    normalize={(n) => Math.max(0, Math.round(n * 100) / 100)}
-                    wrapperClassName="flex-1 min-w-0"
-                    className="w-full bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded px-3 py-2 text-sm text-white placeholder-bambu-gray focus:outline-none focus:border-bambu-green"
                     placeholder={t('projectDetail.bom.price', { currency })}
                   />
                 </div>
@@ -1282,12 +1301,9 @@ export function ProjectDetailPage() {
                             min={1}
                             placeholder={t('projectDetail.bom.qty')}
                           />
-                          <CalcInput
+                          <BomPriceInput
                             value={editBomPrice}
                             onValueChange={setEditBomPrice}
-                            normalize={(n) => Math.max(0, Math.round(n * 100) / 100)}
-                            wrapperClassName="flex-1 min-w-0"
-                            className="w-full bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded px-3 py-2 text-sm text-white placeholder-bambu-gray focus:outline-none focus:border-bambu-green"
                             placeholder={t('projectDetail.bom.price', { currency })}
                           />
                         </div>

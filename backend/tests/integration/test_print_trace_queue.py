@@ -6,6 +6,7 @@ successful queue records ``print.queued_from_revision`` once on the task's order
 """
 
 from datetime import datetime, timezone
+from functools import partial
 
 import pytest
 from httpx import AsyncClient
@@ -15,7 +16,6 @@ from backend.app.api.routes.projects import _archive_trace_labels
 from backend.app.core.auth import generate_api_key
 from backend.app.core.websocket import ws_manager
 from backend.app.models.aito_event import AitoEvent
-from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
 from backend.app.models.api_key import APIKey
 from backend.app.models.archive import PrintArchive
@@ -27,7 +27,7 @@ from backend.app.services.aito_project_links import order_links
 from backend.app.services.print_batch import _clone_queue_item
 from backend.app.services.project_files import load_tree
 from backend.app.services.project_print_trace import PrintCounts, revision_print_counts, task_print_counts
-from backend.tests.project_fixtures import projects_root_fixture
+from backend.tests.project_fixtures import api_project, make_order, make_task, projects_root_fixture
 
 KIND = "print.queued_from_revision"
 
@@ -46,24 +46,9 @@ def broadcasts(monkeypatch):
     return sent
 
 
-async def _order(db, *, status="active"):
-    order = AitoProject(description="Commande", board_column="devis", status=status, client_id="C1", client_name="ACME")
-    db.add(order)
-    await db.commit()
-    return order
-
-
-async def _task(db, order, *, linked_project_id=None, title="Support"):
-    task = AitoTask(project_id=order.id, title=title, linked_project_id=linked_project_id)
-    db.add(task)
-    await db.commit()
-    return task
-
-
-async def _project(client, name="Support caméra"):
-    response = await client.post("/api/v1/projects/", json={"name": name})
-    assert response.status_code in (200, 201), response.text
-    return response.json()
+_order = partial(make_order, commit=True)
+_task = partial(make_task, commit=True)
+_project = api_project
 
 
 async def _revision_file(client, db, project_id, item_name="Support"):

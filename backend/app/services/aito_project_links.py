@@ -603,6 +603,100 @@ def _drop_error(exc: Exception, filenames: list[str], order_id: int) -> DropFile
     return DropFilesError(filenames=filenames, status_code=500, detail=_DROP_UNEXPECTED)
 
 
+async def _drop_target(db: AsyncSession, task: AitoTask, uploads: list[UploadFile]) -> Project:
+    """The project a drop lands in, after the checks that refuse the whole drop before anything is written."""
+    if task.linked_project_id is None:
+        raise LinkError(409, "Task is not linked to a project")
+    if not uploads:
+        raise LinkError(400, "No files to drop")
+    project = await db.get(Project, task.linked_project_id)
+    if project is None:
+        raise LinkError(409, "Task is not linked to a project")
+    # Printing files only for now, always in Impression: a drop with any other
+    # file is refused whole (400 naming them) before anything is written.
+    try:
+        project_files.require_printable_uploads(uploads)
+    except project_files.ProjectFilesError as exc:
+        raise LinkError(exc.status_code, exc.detail) from exc
+    return project
+
+
+def _group_drop_uploads(uploads: list[UploadFile]) -> dict[tuple[str, str], tuple[str, list[UploadFile]]]:
+    """Uploads grouped by target item: ``{(section, name key): (item name, uploads)}``, in first-seen order."""
+    groups: dict[tuple[str, str], tuple[str, list[UploadFile]]] = {}
+    for upload in uploads:
+        name = item_name_for_filename(project_files.upload_basename(upload))
+        key = (DROP_SECTION, project_files.name_key(name))
+        groups.setdefault(key, (name, []))[1].append(upload)
+    # A file whose name sanitises to nothing can never become an item: refuse
+    # the whole drop (400 naming them) before anything is written, too.
+    blank = groups.get((DROP_SECTION, ""))
+    if blank is not None:
+        raise LinkError(
+            400,
+            "Item name must not be blank; refused: " + ", ".join(project_files.upload_basename(u) for u in blank[1]),
+        )
+    return groups
+
+
+async def _store_drop_group(
+    db: AsyncSession,
+    project: Project,
+    section: str,
+    key: str,
+    name: str,
+    group: list[UploadFile],
+    results: list[DroppedFileResult],
+    user_id: int | None,
+) -> tuple[str, dict]:
+    """Store one group as the next revision of its item (created when missing), append one result per file to
+    ``results`` and return the ``project.revision_added`` label and detail for the fan-out."""
+    item, project = await find_or_create_item(db, project, section, key, name, user_id)
+    item_id, item_name = item.id, item.name
+    revision, _warnings = await project_files.add_revision(
+        db, project, item, group, note=None, derived_from_id=None, user_id=user_id
+    )
+    revision_id, number = revision.id, revision.number
+    results.extend(
+        DroppedFileResult(
+            filename=project_files.upload_basename(upload),
+            section=section,
+            item_id=item_id,
+            item_name=item_name,
+            revision_number=number,
+        )
+        for upload in group
+    )
+    return revision_added_payload(
+        item_name=item_name, revision_number=number, section=section, item_id=item_id, revision_id=revision_id
+    )
+
+
+async def _finish_drop(
+    db: AsyncSession,
+    order_id: int,
+    project_id: int,
+    code: str | None,
+    results: list[DroppedFileResult],
+    notified: list[int],
+    actor: str | None,
+) -> None:
+    """Record the stored results on the dropping order (best effort, committed) and broadcast the fanned-out orders."""
+    try:
+        if results:
+            try:
+                await _record_drop(db, order_id, project_id, code, results, actor)
+                await db.commit()
+            except Exception:
+                logger.warning("project.files_dropped event failed for order %s", order_id, exc_info=True)
+                await db.rollback()
+        await broadcast_orders_changed(notified, actor)
+    except BaseException as exc:
+        # A cancellation (or a failed rollback) while recording still tells the route what was stored.
+        exc.stored_count = len(results)  # type: ignore[attr-defined]
+        raise
+
+
 async def drop_files_on_task(
     db: AsyncSession, task: AitoTask, uploads: list[UploadFile], *, user_id: int | None, actor: str | None
 ) -> DropFilesResponse:
@@ -624,34 +718,9 @@ async def drop_files_on_task(
     unexpected exception, which is logged). The stored groups are recorded on
     the dropping order either way. Broadcasting to the dropping order itself is
     the route's job."""
-    if task.linked_project_id is None:
-        raise LinkError(409, "Task is not linked to a project")
-    if not uploads:
-        raise LinkError(400, "No files to drop")
-    project = await db.get(Project, task.linked_project_id)
-    if project is None:
-        raise LinkError(409, "Task is not linked to a project")
+    project = await _drop_target(db, task, uploads)
     project_id, code, order_id = project.id, project.code, task.project_id
-    # Printing files only for now, always in Impression: a drop with any other
-    # file is refused whole (400 naming them) before anything is written.
-    try:
-        project_files.require_printable_uploads(uploads)
-    except project_files.ProjectFilesError as exc:
-        raise LinkError(exc.status_code, exc.detail) from exc
-
-    groups: dict[tuple[str, str], tuple[str, list[UploadFile]]] = {}
-    for upload in uploads:
-        name = item_name_for_filename(project_files.upload_basename(upload))
-        key = (DROP_SECTION, project_files.name_key(name))
-        groups.setdefault(key, (name, []))[1].append(upload)
-    # A file whose name sanitises to nothing can never become an item: refuse
-    # the whole drop (400 naming them) before anything is written, too.
-    blank = groups.get((DROP_SECTION, ""))
-    if blank is not None:
-        raise LinkError(
-            400,
-            "Item name must not be blank; refused: " + ", ".join(project_files.upload_basename(u) for u in blank[1]),
-        )
+    groups = _group_drop_uploads(uploads)
 
     results: list[DroppedFileResult] = []
     errors: list[DropFilesError] = []
@@ -659,26 +728,8 @@ async def drop_files_on_task(
     stored_groups = 0
     try:
         for (section, key), (name, group) in groups.items():
-            item, project = await find_or_create_item(db, project, section, key, name, user_id)
-            item_id, item_name = item.id, item.name
-            revision, _warnings = await project_files.add_revision(
-                db, project, item, group, note=None, derived_from_id=None, user_id=user_id
-            )
-            revision_id, number = revision.id, revision.number
-            results.extend(
-                DroppedFileResult(
-                    filename=project_files.upload_basename(upload),
-                    section=section,
-                    item_id=item_id,
-                    item_name=item_name,
-                    revision_number=number,
-                )
-                for upload in group
-            )
+            label, detail = await _store_drop_group(db, project, section, key, name, group, results, user_id)
             stored_groups += 1
-            label, detail = revision_added_payload(
-                item_name=item_name, revision_number=number, section=section, item_id=item_id, revision_id=revision_id
-            )
             notified += await _fan_out_revision(
                 db,
                 project_id,
@@ -700,17 +751,5 @@ async def drop_files_on_task(
         ]
         errors.append(_drop_error(exc, unstored, order_id))
     finally:
-        try:
-            if results:
-                try:
-                    await _record_drop(db, order_id, project_id, code, results, actor)
-                    await db.commit()
-                except Exception:
-                    logger.warning("project.files_dropped event failed for order %s", order_id, exc_info=True)
-                    await db.rollback()
-            await broadcast_orders_changed(notified, actor)
-        except BaseException as exc:
-            # A cancellation (or a failed rollback) while recording still tells the route what was stored.
-            exc.stored_count = len(results)  # type: ignore[attr-defined]
-            raise
+        await _finish_drop(db, order_id, project_id, code, results, notified, actor)
     return DropFilesResponse(project_id=project_id, code=code, results=results, errors=errors)

@@ -11,6 +11,8 @@ keyword arguments, so each file picks its own behavior explicitly:
   session, as in production; the shared ``:memory:`` StaticPool engine hands every
   session one connection, which cannot show two writers or a background task's
   own session. Import it with ``# noqa: F401`` and request it as ``wal_engine``.
+- ``make_order`` / ``make_task`` add an Aito order and a (linked) task; files that commit
+  them bind ``commit=True`` with ``functools.partial``.
 - ``make_users(db, prefix, specs)`` turns auth on and creates one user per spec key
   in one group with exactly those permissions; ``add_user_with_group`` and
   ``bearer_headers`` are its building blocks for files with their own naming.
@@ -36,6 +38,8 @@ from backend.app.core.auth import create_access_token, get_password_hash
 from backend.app.core.config import settings
 from backend.app.core.database import Base, _set_sqlite_pragmas
 from backend.app.core.permissions import Permission
+from backend.app.models.aito_project import AitoProject
+from backend.app.models.aito_task import AitoTask
 from backend.app.models.group import Group
 from backend.app.models.library import LibraryFile, LibraryFolder
 from backend.app.models.project import Project
@@ -237,6 +241,38 @@ async def api_project(client: AsyncClient, name: str = "Support caméra", *, che
     if check:
         assert response.status_code in (200, 201), response.text
     return response.json()
+
+
+async def make_order(
+    db: AsyncSession,
+    *,
+    status: str = "active",
+    client_id: str = "C1",
+    description: str = "Commande",
+    commit: bool = False,
+) -> AitoProject:
+    """An Aito order (``AitoProject``) for client ``ACME`` in ``devis``, flushed (or committed)."""
+    order = AitoProject(
+        description=description, board_column="devis", status=status, client_id=client_id, client_name="ACME"
+    )
+    db.add(order)
+    await _save(db, commit)
+    return order
+
+
+async def make_task(
+    db: AsyncSession,
+    order: AitoProject,
+    title: str = "Support",
+    *,
+    linked_project_id: int | None = None,
+    commit: bool = False,
+) -> AitoTask:
+    """A task on ``order``, optionally linked to a project, flushed (or committed)."""
+    task = AitoTask(project_id=order.id, title=title, linked_project_id=linked_project_id)
+    db.add(task)
+    await _save(db, commit)
+    return task
 
 
 async def make_managed_library_file(

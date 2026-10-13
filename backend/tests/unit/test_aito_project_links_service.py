@@ -10,8 +10,6 @@ from fastapi import HTTPException, UploadFile
 from sqlalchemy import delete, func, select
 
 from backend.app.models.aito_event import AitoEvent
-from backend.app.models.aito_project import AitoProject
-from backend.app.models.aito_task import AitoTask
 from backend.app.models.aito_task_delivery import AitoTaskDelivery
 from backend.app.models.library import LibraryFile, LibraryTag
 from backend.app.models.project import Project
@@ -22,30 +20,12 @@ from backend.app.services.aito_events import KINDS
 from backend.app.services.project_files import add_revision, create_item
 from backend.app.services.project_filing import section_for_filename
 from backend.app.services.project_tags import project_tag_refs
-from backend.tests.project_fixtures import make_project, projects_root_fixture, upload
+from backend.tests.project_fixtures import make_order, make_project, make_task, projects_root_fixture, upload
 
 root = projects_root_fixture(autouse=True)
 _project = partial(make_project, name="Support")
-
-
-async def _order(db, *, client_id="C1", status="active", description="Commande"):
-    order = AitoProject(
-        description=description,
-        board_column="devis",
-        status=status,
-        client_id=client_id,
-        client_name="ACME",
-    )
-    db.add(order)
-    await db.flush()
-    return order
-
-
-async def _task(db, order, *, title="Support", linked=None):
-    task = AitoTask(project_id=order.id, title=title, linked_project_id=linked)
-    db.add(task)
-    await db.flush()
-    return task
+_order = make_order
+_task = make_task
 
 
 async def _revision(db, project, item=None, *, section="impression", name="Support"):
@@ -113,7 +93,7 @@ async def test_link_does_not_mark_quote_pending(db_session):
 async def test_unlink_records_event(db_session):
     project = await _project(db_session)
     order = await _order(db_session)
-    task = await _task(db_session, order, linked=project.id)
+    task = await _task(db_session, order, linked_project_id=project.id)
 
     await links.link_task(db_session, task, None, actor=None)
 
@@ -127,7 +107,7 @@ async def test_unlink_records_event(db_session):
 async def test_link_to_same_project_is_a_noop(db_session):
     project = await _project(db_session)
     order = await _order(db_session)
-    task = await _task(db_session, order, linked=project.id)
+    task = await _task(db_session, order, linked_project_id=project.id)
 
     await links.link_task(db_session, task, project.id, actor="Paul")
 
@@ -140,7 +120,7 @@ async def test_relink_clears_deliveries(db_session):
     other = await _project(db_session, name="Autre")
     _item, rev = await _revision(db_session, project)
     order = await _order(db_session)
-    task = await _task(db_session, order, linked=project.id)
+    task = await _task(db_session, order, linked_project_id=project.id)
     db_session.add(AitoTaskDelivery(task_id=task.id, revision_id=rev.id))
     await db_session.flush()
 
@@ -169,7 +149,7 @@ async def test_move_between_projects_records_previous(db_session):
     first = await _project(db_session)
     second = await _project(db_session, name="Autre")
     order = await _order(db_session)
-    task = await _task(db_session, order, linked=first.id)
+    task = await _task(db_session, order, linked_project_id=first.id)
 
     await links.link_task(db_session, task, second.id, actor="Paul")
 
@@ -249,16 +229,16 @@ async def test_suggestions_same_client_then_similar_title(db_session):
     other_client = await _project(db_session, name="Vase")
 
     order_a = await _order(db_session, client_id="C1")
-    await _task(db_session, order_a, title="a", linked=older_client.id)
+    await _task(db_session, order_a, title="a", linked_project_id=older_client.id)
     order_b = await _order(db_session, client_id="C1")
-    await _task(db_session, order_b, title="b", linked=newer_client.id)
+    await _task(db_session, order_b, title="b", linked_project_id=newer_client.id)
     order_c = await _order(db_session, client_id="C2")
-    await _task(db_session, order_c, title="c", linked=other_client.id)
+    await _task(db_session, order_c, title="c", linked_project_id=other_client.id)
     order_t = await _order(db_session, client_id="C1")
-    await _task(db_session, order_t, title="t", linked=template.id)
+    await _task(db_session, order_t, title="t", linked_project_id=template.id)
 
     order = await _order(db_session, client_id="C1")
-    task = await _task(db_session, order, title="Support guidon", linked=current.id)
+    task = await _task(db_session, order, title="Support guidon", linked_project_id=current.id)
 
     suggestions = await links.suggest_projects(db_session, task)
 
@@ -278,8 +258,8 @@ async def test_suggestions_same_client_then_similar_title(db_session):
 async def test_suggestions_deduplicate_same_client_and_title(db_session):
     project = await _project(db_session, name="Support guidon")
     order_a = await _order(db_session, client_id="C1")
-    await _task(db_session, order_a, title="x", linked=project.id)
-    await _task(db_session, order_a, title="y", linked=project.id)
+    await _task(db_session, order_a, title="x", linked_project_id=project.id)
+    await _task(db_session, order_a, title="y", linked_project_id=project.id)
     order = await _order(db_session, client_id="C1")
     task = await _task(db_session, order, title="Support guidon")
 
@@ -320,7 +300,7 @@ async def test_deliveries_must_belong_to_linked_project(db_session):
     _item, own = await _revision(db_session, project)
     _item2, foreign = await _revision(db_session, other)
     order = await _order(db_session)
-    task = await _task(db_session, order, linked=project.id)
+    task = await _task(db_session, order, linked_project_id=project.id)
 
     with pytest.raises(links.LinkError) as exc:
         await links.set_deliveries(db_session, task, [own.id, foreign.id, 987654], actor="Paul")
@@ -339,7 +319,7 @@ async def test_deliveries_replace_rows_and_record_labels(db_session):
     _item, r2 = await _revision(db_session, project, item)
     _mesh, m1 = await _revision(db_session, project, section="scan", name="Mesh brut")
     order = await _order(db_session)
-    task = await _task(db_session, order, linked=project.id)
+    task = await _task(db_session, order, linked_project_id=project.id)
 
     result = await links.set_deliveries(db_session, task, [r1.id, m1.id, r1.id], actor="Paul")
     assert sorted(result) == sorted([r1.id, m1.id])
@@ -364,7 +344,7 @@ async def test_deliveries_share_lock_the_added_revisions_after_the_flush(db_sess
     _item, r1 = await _revision(db_session, project, name="Support")
     _mesh, m1 = await _revision(db_session, project, section="scan", name="Mesh brut")
     order = await _order(db_session)
-    task = await _task(db_session, order, linked=project.id)
+    task = await _task(db_session, order, linked_project_id=project.id)
     calls = []
 
     async def lock(db, revision_ids, *, share=False):
@@ -389,7 +369,7 @@ async def test_deliveries_refuse_a_revision_deleted_after_validation(db_session,
     _item, r1 = await _revision(db_session, project, name="Support")
     _mesh, m1 = await _revision(db_session, project, section="scan", name="Mesh brut")
     order = await _order(db_session)
-    task = await _task(db_session, order, linked=project.id)
+    task = await _task(db_session, order, linked_project_id=project.id)
     await db_session.commit()
     gone_id = m1.id
     real = links._revision_bundles
@@ -418,7 +398,7 @@ async def test_deliveries_unchanged_records_nothing(db_session):
     project = await _project(db_session)
     _item, r1 = await _revision(db_session, project)
     order = await _order(db_session)
-    task = await _task(db_session, order, linked=project.id)
+    task = await _task(db_session, order, linked_project_id=project.id)
 
     await links.set_deliveries(db_session, task, [r1.id], actor="Paul")
     await links.set_deliveries(db_session, task, [r1.id], actor="Paul")
@@ -442,10 +422,10 @@ async def test_order_links_sections_and_deliveries(db_session):
     await db_session.commit()
 
     order = await _order(db_session)
-    linked = await _task(db_session, order, title="Lié", linked=project.id)
+    linked = await _task(db_session, order, title="Lié", linked_project_id=project.id)
     unlinked = await _task(db_session, order, title="Libre")
     other_order = await _order(db_session)
-    await _task(db_session, other_order, linked=project.id)
+    await _task(db_session, other_order, linked_project_id=project.id)
     db_session.add(AitoTaskDelivery(task_id=linked.id, revision_id=s1.id))
     await db_session.flush()
 
@@ -479,7 +459,7 @@ async def test_order_links_newest_revision_per_item(db_session):
     support, _s1 = await _revision(db_session, project, name="Support")
     _support, s2 = await _revision(db_session, project, support)
     order = await _order(db_session)
-    task = await _task(db_session, order, linked=project.id)
+    task = await _task(db_session, order, linked_project_id=project.id)
 
     result = await links.order_links(db_session, order.id)
 
@@ -499,14 +479,14 @@ async def test_codes_by_order(db_session):
     p1 = await _project(db_session, name="Un")
     p2 = await _project(db_session, name="Deux")
     order = await _order(db_session)
-    await _task(db_session, order, linked=p1.id)
-    await _task(db_session, order, linked=p1.id)
-    await _task(db_session, order, linked=p2.id)
+    await _task(db_session, order, linked_project_id=p1.id)
+    await _task(db_session, order, linked_project_id=p1.id)
+    await _task(db_session, order, linked_project_id=p2.id)
     await _task(db_session, order)
     lone = await _order(db_session)
-    await _task(db_session, lone, linked=p2.id)
+    await _task(db_session, lone, linked_project_id=p2.id)
     deleted = await _order(db_session, status="deleted")
-    await _task(db_session, deleted, linked=p1.id)
+    await _task(db_session, deleted, linked_project_id=p1.id)
     empty = await _order(db_session)
     await _task(db_session, empty)
 
@@ -526,14 +506,14 @@ async def test_orders_for_project(db_session):
     project = await _project(db_session)
     _item, rev = await _revision(db_session, project)
     first = await _order(db_session, description="Première")
-    t1 = await _task(db_session, first, title="T1", linked=project.id)
+    t1 = await _task(db_session, first, title="T1", linked_project_id=project.id)
     second = await _order(db_session, description="Seconde")
     second.board_column = "done"
-    t2 = await _task(db_session, second, title="T2", linked=project.id)
+    t2 = await _task(db_session, second, title="T2", linked_project_id=project.id)
     deleted = await _order(db_session, status="deleted")
-    await _task(db_session, deleted, linked=project.id)
+    await _task(db_session, deleted, linked_project_id=project.id)
     other = await _project(db_session, name="Autre")
-    await _task(db_session, first, title="ailleurs", linked=other.id)
+    await _task(db_session, first, title="ailleurs", linked_project_id=other.id)
     db_session.add(AitoTaskDelivery(task_id=t1.id, revision_id=rev.id))
     await db_session.flush()
 
@@ -559,7 +539,7 @@ async def test_orders_for_project_delivery_ref_is_project_files_revision_ref(db_
     project = await _project(db_session)
     item, rev = await _revision(db_session, project)
     order = await _order(db_session)
-    task = await _task(db_session, order, linked=project.id)
+    task = await _task(db_session, order, linked_project_id=project.id)
     db_session.add(AitoTaskDelivery(task_id=task.id, revision_id=rev.id))
     await db_session.flush()
 
@@ -584,12 +564,12 @@ async def test_orders_for_project_delivery_ref_is_project_files_revision_ref(db_
 async def test_record_on_linked_orders_one_event_per_order(db_session):
     project = await _project(db_session)
     order = await _order(db_session)
-    await _task(db_session, order, linked=project.id)
-    await _task(db_session, order, linked=project.id)
+    await _task(db_session, order, linked_project_id=project.id)
+    await _task(db_session, order, linked_project_id=project.id)
     second = await _order(db_session)
-    await _task(db_session, second, linked=project.id)
+    await _task(db_session, second, linked_project_id=project.id)
     deleted = await _order(db_session, status="deleted")
-    await _task(db_session, deleted, linked=project.id)
+    await _task(db_session, deleted, linked_project_id=project.id)
     unrelated = await _order(db_session)
     await _task(db_session, unrelated)
 
@@ -616,9 +596,9 @@ async def test_record_on_linked_orders_one_event_per_order(db_session):
 async def test_record_on_linked_orders_skips_excluded_orders(db_session):
     project = await _project(db_session)
     order = await _order(db_session)
-    await _task(db_session, order, linked=project.id)
+    await _task(db_session, order, linked_project_id=project.id)
     second = await _order(db_session)
-    await _task(db_session, second, linked=project.id)
+    await _task(db_session, second, linked_project_id=project.id)
 
     order_ids = await links.record_on_linked_orders(
         db_session,
@@ -640,7 +620,7 @@ async def _fan_out_as(db_session, monkeypatch, actor_user_id):
     (order ids written to, the order's events, the broadcast actors)."""
     project = await _project(db_session)
     order = await _order(db_session)
-    await _task(db_session, order, linked=project.id)
+    await _task(db_session, order, linked_project_id=project.id)
     await db_session.commit()
     order_id = order.id
     broadcast_actors = []
@@ -737,7 +717,7 @@ def test_item_name_for_filename(name, expected):
 async def test_drop_files_routes_by_extension_and_existing_name(db_session):
     project = await _project(db_session)
     order = await _order(db_session)
-    task = await _task(db_session, order, linked=project.id)
+    task = await _task(db_session, order, linked_project_id=project.id)
     item, _rev = await _revision(db_session, project, section="impression", name="Plate")
     await db_session.commit()
 
@@ -784,7 +764,7 @@ async def test_removing_a_delivery_whose_revision_vanished_labels_it_by_id(db_se
     project = await _project(db_session)
     _item, r1 = await _revision(db_session, project)
     order = await _order(db_session)
-    task = await _task(db_session, order, linked=project.id)
+    task = await _task(db_session, order, linked_project_id=project.id)
     await links.set_deliveries(db_session, task, [r1.id], actor="Paul")
     rid = r1.id
     await db_session.execute(delete(ProjectRevision).where(ProjectRevision.id == rid))
@@ -817,7 +797,7 @@ async def test_broadcast_failure_is_logged_and_the_rest_still_sent(monkeypatch, 
 async def test_drop_without_files_is_400(db_session):
     project = await _project(db_session)
     order = await _order(db_session)
-    task = await _task(db_session, order, linked=project.id)
+    task = await _task(db_session, order, linked_project_id=project.id)
     with pytest.raises(links.LinkError) as err:
         await links.drop_files_on_task(db_session, task, [], user_id=None, actor=None)
     assert (err.value.status_code, err.value.detail) == (400, "No files to drop")
@@ -827,7 +807,7 @@ async def test_drop_without_files_is_400(db_session):
 @pytest.mark.asyncio
 async def test_drop_on_a_link_to_a_deleted_project_is_409(db_session):
     order = await _order(db_session)
-    task = await _task(db_session, order, linked=987654)
+    task = await _task(db_session, order, linked_project_id=987654)
     with pytest.raises(links.LinkError) as err:
         await links.drop_files_on_task(db_session, task, [_upload("a.3mf")], user_id=None, actor=None)
     assert (err.value.status_code, err.value.detail) == (409, "Task is not linked to a project")
@@ -839,8 +819,8 @@ async def test_drop_survives_a_failed_revision_fan_out(db_session, monkeypatch, 
     project = await _project(db_session)
     order = await _order(db_session)
     other = await _order(db_session, description="Autre")
-    task = await _task(db_session, order, linked=project.id)
-    await _task(db_session, other, linked=project.id)
+    task = await _task(db_session, order, linked_project_id=project.id)
+    await _task(db_session, other, linked_project_id=project.id)
     await db_session.commit()
     project_id, order_id = project.id, order.id
     broadcasts = []
@@ -872,7 +852,7 @@ async def test_drop_survives_a_failed_revision_fan_out(db_session, monkeypatch, 
 async def test_drop_stops_when_the_project_vanishes_mid_drop(db_session, monkeypatch):
     project = await _project(db_session)
     order = await _order(db_session)
-    task = await _task(db_session, order, linked=project.id)
+    task = await _task(db_session, order, linked_project_id=project.id)
     await db_session.commit()
     project_id, code, order_id = project.id, project.code, order.id
 
@@ -901,7 +881,7 @@ async def test_drop_stops_when_the_project_vanishes_mid_drop(db_session, monkeyp
 async def test_drop_still_returns_when_its_own_event_fails(db_session, monkeypatch, caplog):
     project = await _project(db_session)
     order = await _order(db_session)
-    task = await _task(db_session, order, linked=project.id)
+    task = await _task(db_session, order, linked_project_id=project.id)
     await db_session.commit()
     order_id = order.id
 
@@ -923,7 +903,7 @@ async def test_drop_failing_on_a_later_group_returns_the_stored_part(db_session,
     """T-286: a ``ProjectFilesError`` on the second group no longer propagates once a group is stored."""
     project = await _project(db_session)
     order = await _order(db_session)
-    task = await _task(db_session, order, linked=project.id)
+    task = await _task(db_session, order, linked_project_id=project.id)
     await db_session.commit()
 
     real = links.project_files.add_revision
@@ -956,7 +936,7 @@ async def test_drop_failing_on_the_first_group_still_raises_with_nothing_stored(
     """T-286: no group stored → the error propagates exactly as before, ``stored_count`` 0, no event."""
     project = await _project(db_session)
     order = await _order(db_session)
-    task = await _task(db_session, order, linked=project.id)
+    task = await _task(db_session, order, linked_project_id=project.id)
     await db_session.commit()
 
     async def always_fails(*_args, **_kwargs):
@@ -980,7 +960,7 @@ async def test_drop_with_an_unexpected_error_on_a_later_group_returns_a_fixed_50
     """T-286: a non-HTTP exception after a stored group is logged and reported without its text."""
     project = await _project(db_session)
     order = await _order(db_session)
-    task = await _task(db_session, order, linked=project.id)
+    task = await _task(db_session, order, linked_project_id=project.id)
     await db_session.commit()
     order_id = order.id
 
@@ -1012,7 +992,7 @@ async def test_drop_reports_an_http_exception_on_a_later_group_with_its_status(d
     """T-286: the 413 an oversize upload raises (an HTTPException) keeps its status and detail."""
     project = await _project(db_session)
     order = await _order(db_session)
-    task = await _task(db_session, order, linked=project.id)
+    task = await _task(db_session, order, linked_project_id=project.id)
     await db_session.commit()
 
     real = links.project_files.add_revision
@@ -1039,7 +1019,7 @@ async def test_drop_cancelled_after_a_stored_group_still_raises_with_the_stored_
     """T-286: a cancellation is never turned into a response; it carries ``stored_count`` for the route."""
     project = await _project(db_session)
     order = await _order(db_session)
-    task = await _task(db_session, order, linked=project.id)
+    task = await _task(db_session, order, linked_project_id=project.id)
     await db_session.commit()
 
     real = links.project_files.add_revision
@@ -1075,7 +1055,7 @@ async def test_drop_fans_out_the_revision_added_payload(db_session, monkeypatch)
     """A dropped group's fan-out gets section/item_id/revision_id (in order) and ``"<item> R<n>"``."""
     project = await _project(db_session)
     order = await _order(db_session)
-    task = await _task(db_session, order, linked=project.id)
+    task = await _task(db_session, order, linked_project_id=project.id)
     await db_session.commit()
     project_id, order_id = project.id, order.id
     calls = []
@@ -1110,7 +1090,7 @@ async def test_drop_creates_the_item_first_then_streams_with_no_pending_writes(d
     does, and nothing is pending in the session."""
     project = await _project(db_session)
     order = await _order(db_session)
-    task = await _task(db_session, order, linked=project.id)
+    task = await _task(db_session, order, linked_project_id=project.id)
     await db_session.commit()
     real = project_files._stream_files
     seen = {}
@@ -1135,7 +1115,7 @@ async def test_drop_cancelled_while_recording_still_carries_the_stored_count(db_
     """T-258: a cancellation inside the ``finally`` (recording the drop) also carries ``stored_count`` for the route."""
     project = await _project(db_session)
     order = await _order(db_session)
-    task = await _task(db_session, order, linked=project.id)
+    task = await _task(db_session, order, linked_project_id=project.id)
     await db_session.commit()
 
     async def cancelled_record_drop(*_args, **_kwargs):
@@ -1154,7 +1134,7 @@ async def test_drop_cancelled_while_recording_nothing_stored_carries_zero(db_ses
     """T-258: an exception leaving the ``finally`` before any group was stored carries ``stored_count`` 0."""
     project = await _project(db_session)
     order = await _order(db_session)
-    task = await _task(db_session, order, linked=project.id)
+    task = await _task(db_session, order, linked_project_id=project.id)
     await db_session.commit()
 
     async def fails(*_args, **_kwargs):
@@ -1176,7 +1156,7 @@ async def test_drop_with_a_blank_sanitised_name_raises_before_storing(db_session
     """T-259: the blank-name check runs before the store loop, so the valid group ahead of it is never stored."""
     project = await _project(db_session)
     order = await _order(db_session)
-    task = await _task(db_session, order, linked=project.id)
+    task = await _task(db_session, order, linked_project_id=project.id)
     await db_session.commit()
 
     async def never(*_args, **_kwargs):
