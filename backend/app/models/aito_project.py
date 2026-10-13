@@ -115,6 +115,10 @@ class AitoProject(Base):
     # Background facts, never edited in the panel — not in VERSIONED_FIELDS.
     invoice_status: Mapped[str | None] = mapped_column(String(30), nullable=True)
     invoice_balance: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # The newest invoice's total, cached alongside its balance by the same
+    # writers (2026-10-13) so the public tracking page can show what was
+    # already paid on it. NULL for invoices cached before this column.
+    invoice_total: Mapped[float | None] = mapped_column(Float, nullable=True)
     invoice_due_date: Mapped[str | None] = mapped_column(String(10), nullable=True)
     invoice_checked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     # Zoho invoice / retainer numbers this card has been billed under, as a

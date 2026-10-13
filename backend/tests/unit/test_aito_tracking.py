@@ -266,8 +266,10 @@ async def test_public_shape_titles_fallback_due_date_and_shipping(async_client, 
         "updated_at",
         "payment",
         "accepted",
+        "balance",
     }
     assert body["accepted"] is False
+    assert body["balance"] is None  # no live link, no invoice: nothing owed to show
     assert body["updated_at"]  # project.updated_at, naive UTC ISO string
     assert body["column"] == "print"
     assert body["tasks"] == [{"title": "Support GoPro", "quantity": None}, {"title": "Pièce 2", "quantity": None}]
@@ -477,12 +479,15 @@ async def test_purge_tracking_views_drops_only_rows_past_retention(async_client,
     ],
 )
 async def test_public_invoice_state_is_mapped_without_amounts(async_client, db_session, status, expected):
+    # A cached balance alone never reaches the page: the amounts need the
+    # invoice's total too (test_aito_tracking_balance.py covers that case).
     pid = await _create(async_client)
     await _set(db_session, pid, invoice_status=status, invoice_balance=1234.5)
     body = await async_client.get(TRACK + await _token(async_client, db_session, pid))
     assert body.status_code == 200
     assert body.json()["invoice"] == expected
-    assert "1234" not in body.text and "balance" not in body.text
+    assert body.json()["balance"] is None
+    assert "1234" not in body.text
 
 
 @pytest.mark.asyncio
@@ -527,8 +532,12 @@ async def test_public_never_leaks_client_or_money(async_client, db_session):
     pid = await _create(async_client, client_name="Secret Person", client_email="s@example.pf")
     await _set(db_session, pid, quote_total=12345.0)
     body = (await async_client.get(TRACK + await _token(async_client, db_session, pid))).text
-    for needle in ("Secret", "example.pf", "12345", "client", "quote_", "balance", "total", '"id"'):
+    # Money reaches the page only inside `balance`, and only while an unpaid
+    # live link or open invoice is shown (test_aito_tracking_balance.py) —
+    # a bare quote total never does.
+    for needle in ("Secret", "example.pf", "12345", "client", "quote_", "total", '"id"'):
         assert needle not in body
+    assert '"balance":null' in body
 
 
 @pytest.mark.asyncio

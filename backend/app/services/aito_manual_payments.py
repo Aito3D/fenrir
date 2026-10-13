@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.aito_project import AitoProject
 from backend.app.services.aito_events import record
+from backend.app.services.aito_invoice_cache import invoice_total_of
 from backend.app.services.aito_payment_documents import PaymentDocument
 from backend.app.services.aito_search import remember_document_numbers
 from backend.app.services.aito_send_guard import DuplicateSendGuard
@@ -329,6 +330,7 @@ async def settle_invoiced_deposits(db: AsyncSession, project: AitoProject) -> No
     )
     project.invoice_status = fresh.get("status") or None
     project.invoice_balance = float(fresh.get("balance") or 0)
+    project.invoice_total = invoice_total_of(fresh)
     project.invoice_due_date = fresh.get("due_date") or None
     remember_document_numbers(project, fresh.get("number"))
     if remaining is not None:
@@ -354,6 +356,7 @@ async def refresh_after_payment(db: AsyncSession, project_id: int, kind: str) ->
                 newest = invoices[0]
                 project.invoice_status = newest.get("status") or None
                 project.invoice_balance = float(newest.get("balance") or 0)
+                project.invoice_total = invoice_total_of(newest)
                 project.invoice_due_date = newest.get("due_date") or None
                 remember_document_numbers(project, newest.get("number"))
             credit = await read_customer_credit(db, project.client_id)

@@ -5540,6 +5540,9 @@ async def run_migrations(conn):
     await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN invoice_balance FLOAT")
     await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN invoice_due_date VARCHAR(10)")
     await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN invoice_checked_at DATETIME")
+    # Migration: the cached invoice's total (2026-10-13 tracking-page amounts).
+    # Starts NULL and fills on the sweep's next pass.
+    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN invoice_total FLOAT")
 
     # Migration: backfill the explicit 'unmanaged' ownership marker (Critical
     # fix, 2026-07-29). Before this, `_mark_pending_if_ours` (routes/aito.py)

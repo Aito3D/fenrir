@@ -142,6 +142,7 @@ async def test_an_upstream_error_skips_one_project_only(db_session, monkeypatch)
     db_session.expire_all()
     assert (await db_session.get(AitoProject, bad_id)).invoice_checked_at is None
     assert (await db_session.get(AitoProject, good_id)).invoice_balance == 10.0
+    assert (await db_session.get(AitoProject, good_id)).invoice_total == 100.0
 
 
 @pytest.mark.asyncio
@@ -162,6 +163,33 @@ async def test_a_malformed_payload_skips_one_project_only(db_session, monkeypatc
     assert bad_row.invoice_checked_at is None
     assert bad_row.invoice_status is None
     assert (await db_session.get(AitoProject, good_id)).invoice_balance == 10.0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("total", "cached"), [(None, None), ("n/a", None), (True, None), ("32000", 32000.0)])
+async def test_the_invoice_total_is_cached_when_books_sends_a_number(db_session, monkeypatch, total, cached):
+    p = await _project(db_session, quote_id="EST1", invoice_total=999.0)
+    p_id = p.id  # captured before expire_all(); see note above
+    invoice = {**_invoice(10.0), "total": total}
+    if total is None:
+        del invoice["total"]
+    monkeypatch.setattr(zoho_service, "list_project_invoices", _fake({"EST1": [invoice]}, []))
+    await sweep_invoices(db_session, force=True)
+    db_session.expire_all()
+    row = await db_session.get(AitoProject, p_id)
+    assert row.invoice_balance == 10.0
+    assert row.invoice_total == cached
+
+
+@pytest.mark.asyncio
+async def test_an_invoice_books_no_longer_knows_clears_its_cached_total(db_session, monkeypatch):
+    p = await _project(db_session, quote_id="EST1", invoice_status="sent", invoice_balance=10.0, invoice_total=100.0)
+    p_id = p.id  # captured before expire_all(); see note above
+    monkeypatch.setattr(zoho_service, "list_project_invoices", _fake({}, []))
+    await sweep_invoices(db_session, force=True)
+    db_session.expire_all()
+    row = await db_session.get(AitoProject, p_id)
+    assert (row.invoice_status, row.invoice_balance, row.invoice_total) == (None, None, None)
 
 
 @pytest.mark.asyncio

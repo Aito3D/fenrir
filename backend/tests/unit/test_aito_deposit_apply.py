@@ -168,6 +168,7 @@ async def test_applies_the_chosen_amount_and_records_it(async_client, db_session
     }
     await db_session.refresh(p)
     assert p.invoice_balance == 7000.0
+    assert p.invoice_total == 14000.0  # cached with the balance for the tracking page
     assert document_numbers_of(p) == ["FA-1"]
 
 

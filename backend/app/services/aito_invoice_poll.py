@@ -57,6 +57,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.aito_project import AitoProject
 from backend.app.services.aito_events import record, utc_now_naive
+from backend.app.services.aito_invoice_cache import invoice_total_of
 from backend.app.services.aito_poll_watermark import (
     advance_watermark,
     format_books_time,
@@ -246,6 +247,7 @@ async def _adopt(db: AsyncSession, row: dict, project: AitoProject) -> bool:
 
     project.invoice_status = status
     project.invoice_balance = balance
+    project.invoice_total = invoice_total_of(row)
     project.invoice_due_date = due
     remember_document_numbers(project, row.get("number"))
     project.invoice_checked_at = utc_now_naive()

@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.models.aito_project import AitoProject
 from backend.app.services import aito_events
 from backend.app.services.aito_customer_credit import read_customer_credit
+from backend.app.services.aito_invoice_cache import invoice_total_of
 from backend.app.services.aito_invoice_create import RetainerCredit, customer_credits, share_out
 from backend.app.services.aito_invoice_sweep import linked_credits
 from backend.app.services.aito_search import remember_document_numbers
@@ -153,6 +154,7 @@ async def apply_deposit(
         fresh = {**invoice, "balance": round(balance, 2)}
     project.invoice_status = fresh.get("status") or None
     project.invoice_balance = float(fresh.get("balance") or 0)
+    project.invoice_total = invoice_total_of(fresh)
     project.invoice_due_date = fresh.get("due_date") or None
     remember_document_numbers(project, fresh.get("number"))
     try:

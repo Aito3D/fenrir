@@ -358,9 +358,9 @@ export function AitoTrackPage() {
                     {/* The invoice, when there is one, is the truer story; the
                         online payment link speaks only before it exists. */}
                     {data.invoice ? (
-                      <TrackingInvoice state={data.invoice} terms={payTrigger} flipped={flipped} />
+                      <TrackingInvoice state={data.invoice} terms={payTrigger} flipped={flipped} balance={data.balance ?? null} />
                     ) : (
-                      <TrackingPayment payment={data.payment!} accepted={data.accepted} terms={payTrigger} flipped={flipped} />
+                      <TrackingPayment payment={data.payment!} accepted={data.accepted} terms={payTrigger} flipped={flipped} balance={data.balance ?? null} />
                     )}
                   </div>
                 )}

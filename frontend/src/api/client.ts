@@ -4910,7 +4910,8 @@ export interface AitoTrackingTask {
 
 /** The public tracking page's payload — the server sends finished strings
  *  (untitled tasks already read "Pièce N") so the page carries no rule.
- *  `invoice` is a state, never an amount; `reference` is the quote number
+ *  `invoice` is a state; the amounts, when there are any, are in `balance`;
+ *  `reference` is the quote number
  *  the client already holds; `updated_at` is the card's last activity and
  *  feeds the "Mis à jour" line. */
 export interface AitoTracking {
@@ -4927,6 +4928,21 @@ export interface AitoTracking {
   /** True once the quote is accepted. Before that, a live payment link is how
    *  the client validates it, and the page words the payment card that way. */
   accepted: boolean;
+  /** What is owed on the card the page shows — the unpaid online link, or
+   *  the open invoice, which wins. Null when that card is settled or absent,
+   *  or a figure it needs is unknown. Optional only for older payloads. */
+  balance?: AitoTrackingBalance | null;
+}
+
+/** Whole currency units (the shop bills in XPF). `paid_pct` is rounded
+ *  down, at least 1 once anything is paid and at most 99 while anything is
+ *  owed — the server decides, the page only renders. */
+export interface AitoTrackingBalance {
+  currency: string;
+  total: number;
+  paid: number;
+  due: number;
+  paid_pct: number;
 }
 
 export interface AitoTrackingLink {

@@ -182,7 +182,7 @@ describe('AitoTrackPage', () => {
     expect(screen.getByTestId('track-stage-done')).toHaveAttribute('aria-current', 'step');
   });
 
-  it('shows the payment card without any amount, with terms behind its button', async () => {
+  it('shows the invoice card without any amount when the server sends none, with terms behind its button', async () => {
     for (const [invoice, text, hasTerms] of [
       ['paid', 'Facture réglée', false],
       ['unpaid', 'Facture à régler', true],
@@ -193,8 +193,8 @@ describe('AitoTrackPage', () => {
       const box = await screen.findByTestId('track-invoice');
       expect(box).toHaveAttribute('data-state', invoice);
       expect(box).toHaveTextContent(text);
-      // Never an amount: the card itself carries no digit (the payment
-      // panel with the IBAN and RIB lives outside the card).
+      // No `balance` in the payload, no amount: the card itself carries no
+      // digit (the payment panel with the IBAN and RIB lives outside it).
       expect(box.textContent).not.toMatch(/\d/);
       const toggle = within(box).queryByRole('button', { name: 'Voir les modalités' });
       expect(!!toggle).toBe(hasTerms);
@@ -977,5 +977,88 @@ describe('AitoTrackPage — side panels', () => {
     // Still there, under the tiles: the stylesheet fades it, React never
     // removes it.
     expect(within(map).getByText('Chargement du plan…')).toBe(placeholder);
+  });
+});
+
+
+describe('AitoTrackPage — amounts owed (2026-10-13)', () => {
+  beforeEach(() => i18n.changeLanguage('fr'));
+
+  const UNPAID = { state: 'unpaid', url: 'https://secure.osb.pf/pay/abc', deposit: false } as const;
+  const PARTLY = { currency: 'XPF', total: 30000, paid: 21000, due: 9000, paid_pct: 70 };
+  // formatMoney groups with a thin space and joins the unit with a no-break
+  // space — compare on plain spaces.
+  const plain = (el: HTMLElement) => (el.textContent ?? '').replace(/\s/g, ' ');
+  const row = (box: HTMLElement, label: string) => {
+    const dt = within(box).getByText(label);
+    return `${plain(dt)} = ${plain(dt.nextElementSibling as HTMLElement)}`;
+  };
+
+  it('a partly paid quote names the deposit share, shows what is left and the total, then the pay button', async () => {
+    mockTrack({ ...FIXTURE, accepted: true, payment: UNPAID, balance: PARTLY });
+    renderAt('tok');
+    const card = await screen.findByTestId('track-payment');
+    expect(within(card).getByText('Acompte de 70 % reçu')).toBeInTheDocument();
+    expect(within(card).getByText('Réglez le reste en ligne, par virement ou en boutique.')).toBeInTheDocument();
+    expect(within(card).queryByText('Projet non réglé')).not.toBeInTheDocument();
+    const bar = within(card).getByRole('progressbar', { name: '70 % déjà payé' });
+    expect(bar).toHaveAttribute('aria-valuenow', '70');
+    const amounts = within(card).getByTestId('track-balance');
+    expect(row(amounts, 'Acompte payé (70 %)')).toBe('Acompte payé (70 %) = 21 000 FCFP');
+    expect(row(amounts, 'Reste à payer')).toBe('Reste à payer = 9 000 FCFP');
+    expect(row(amounts, 'Montant total du projet')).toBe('Montant total du projet = 30 000 FCFP');
+    // The figures come before the action, in reading order.
+    const pay = within(card).getByRole('link', { name: 'Payer en ligne' });
+    expect(amounts.compareDocumentPosition(pay) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('nothing paid yet: today\'s wording plus the one amount to pay, no bar and no total line', async () => {
+    mockTrack({ ...FIXTURE, accepted: true, payment: UNPAID, balance: { ...PARTLY, paid: 0, due: 30000, paid_pct: 0 } });
+    renderAt('tok');
+    const card = await screen.findByTestId('track-payment');
+    expect(within(card).getByText('Projet non réglé')).toBeInTheDocument();
+    const amounts = within(card).getByTestId('track-balance');
+    expect(row(amounts, 'Montant à régler')).toBe('Montant à régler = 30 000 FCFP');
+    expect(within(card).queryByRole('progressbar')).not.toBeInTheDocument();
+    expect(within(amounts).queryByText('Montant total du projet')).not.toBeInTheDocument();
+  });
+
+  it('a deposit link with nothing paid yet: the deposit to pay against the project total', async () => {
+    mockTrack({ ...FIXTURE, accepted: true, payment: { ...UNPAID, deposit: true }, balance: { ...PARTLY, paid: 0, paid_pct: 0 } });
+    renderAt('tok');
+    const card = await screen.findByTestId('track-payment');
+    expect(within(card).getByText('Un acompte confirme votre commande — réglez en ligne, par virement ou en boutique.')).toBeInTheDocument();
+    const amounts = within(card).getByTestId('track-balance');
+    expect(row(amounts, 'Acompte à régler')).toBe('Acompte à régler = 9 000 FCFP');
+    expect(row(amounts, 'Montant total du projet')).toBe('Montant total du projet = 30 000 FCFP');
+    expect(within(card).queryByRole('progressbar')).not.toBeInTheDocument();
+  });
+
+  it('a partly paid invoice keeps its title, names the deposit already settled, and shows the amounts', async () => {
+    for (const [invoice, sub] of [
+      ['unpaid', "Acompte de 70 % déjà réglé — le solde est à régler avant le retrait ou l'expédition."],
+      ['overdue', 'Acompte de 70 % déjà réglé — le solde est en retard, contactez-nous si vous avez déjà payé.'],
+    ] as const) {
+      mockTrack({ ...FIXTURE, invoice, payment: UNPAID, balance: PARTLY });
+      const { unmount } = renderAt(`inv-${invoice}`);
+      const box = await screen.findByTestId('track-invoice');
+      expect(within(box).getByText(invoice === 'unpaid' ? 'Facture à régler' : 'Facture en retard')).toBeInTheDocument();
+      expect(within(box).getByText(sub)).toBeInTheDocument();
+      expect(row(within(box).getByTestId('track-balance'), 'Reste à payer')).toBe('Reste à payer = 9 000 FCFP');
+      expect(screen.queryByTestId('track-payment')).not.toBeInTheDocument();
+      unmount();
+    }
+  });
+
+  it('a settled card never shows amounts, even if a balance came along', async () => {
+    mockTrack({ ...FIXTURE, invoice: 'paid', balance: PARTLY });
+    const { unmount } = renderAt('inv-paid');
+    expect(await screen.findByTestId('track-invoice')).toHaveAttribute('data-state', 'paid');
+    expect(screen.queryByTestId('track-balance')).not.toBeInTheDocument();
+    unmount();
+    mockTrack({ ...FIXTURE, payment: { ...UNPAID, state: 'paid' }, balance: PARTLY });
+    renderAt('pay-paid');
+    expect(await screen.findByTestId('track-payment')).toHaveAttribute('data-state', 'paid');
+    expect(screen.queryByTestId('track-balance')).not.toBeInTheDocument();
   });
 });

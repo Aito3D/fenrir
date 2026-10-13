@@ -16,10 +16,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import set_committed_value
 
 from backend.app.models.aito_event import AitoEvent
+from backend.app.models.aito_payment_link import AitoPaymentLink
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
 from backend.app.models.aito_tracking_view import AitoTrackingView
-from backend.app.schemas.aito import AitoTrackingPayment, AitoTrackingResponse, AitoTrackingShipping, AitoTrackingTask
+from backend.app.schemas.aito import (
+    AitoTrackingBalance,
+    AitoTrackingPayment,
+    AitoTrackingResponse,
+    AitoTrackingShipping,
+    AitoTrackingTask,
+)
 from backend.app.services.aito_events import utc_now_naive
 from backend.app.services.aito_shipping import SERVICE_LABELS
 
@@ -263,16 +270,81 @@ async def payment_state(db: AsyncSession, project: AitoProject) -> AitoTrackingP
     the checkout URL is dropped once paid — the page never renders it for a
     settled order, so there is nothing to gain by shipping it; a dead or
     absent link -> None."""
-    from backend.app.services.aito_payment_links import current_link, deposit_pct
+    from backend.app.services.aito_payment_links import deposit_pct
+
+    row = await _shown_link(db, project)
+    if row is None:
+        return None
+    paid = row.status == "paid"
+    return AitoTrackingPayment(
+        state="paid" if paid else "unpaid", url=None if paid else row.url, deposit=(await deposit_pct(db)) > 0
+    )
+
+
+async def _shown_link(db: AsyncSession, project: AitoProject) -> AitoPaymentLink | None:
+    """The quote link the page shows, by the rules `payment_state` documents:
+    a minted pending or paid row, a pending one only once the quote has left
+    Devis. One function so the payment block and the amounts read the same row."""
+    from backend.app.services.aito_payment_links import current_link
 
     row = await current_link(db, project.id)
     if row is None or row.heimdall_id is None or row.status not in ("pending", "paid"):
         return None
     if row.status == "pending" and project.quote_status not in PAYABLE_QUOTE_STATUSES:
         return None
-    paid = row.status == "paid"
-    return AitoTrackingPayment(
-        state="paid" if paid else "unpaid", url=None if paid else row.url, deposit=(await deposit_pct(db)) > 0
+    return row
+
+
+def tracking_balance(
+    *, total: float | None, paid: float | None, due: float | None, currency: str
+) -> AitoTrackingBalance | None:
+    """Whole units, never negative, `paid` capped at the total. The share is
+    rounded down so the page never overstates what was paid, but reads at
+    least 1 % once anything is paid and at most 99 % while anything is owed —
+    "0 % reçu" or "100 %" with money still due would both be wrong. None
+    without a positive total: there is no share to show."""
+    if total is None or round(total) <= 0:
+        return None
+    whole_total = int(round(total))
+    whole_paid = min(max(int(round(paid or 0)), 0), whole_total)
+    whole_due = max(int(round(due or 0)), 0)
+    pct = whole_paid * 100 // whole_total
+    if whole_paid > 0:
+        pct = max(pct, 1)
+    if whole_due > 0:
+        pct = min(pct, 99)
+    return AitoTrackingBalance(currency=currency, total=whole_total, paid=whole_paid, due=whole_due, paid_pct=pct)
+
+
+# The shop bills in XPF; Books invoices carry no currency on the cached row.
+INVOICE_CURRENCY = "XPF"
+
+
+async def balance_state(db: AsyncSession, project: AitoProject) -> AitoTrackingBalance | None:
+    """The amounts under the card the page shows, with the page's precedence:
+    an invoice, when there is one, is the truer story and wins. An open
+    invoice reads its cached total and balance; any other invoice state
+    (paid, or none cached) shows nothing. Without an invoice, an unpaid
+    shown link reads the quote total, the paid deposits netted off it
+    (`retainer_paid_total`) and what the link asks for."""
+    state = invoice_state(project.invoice_status)
+    if state is not None:
+        if state == "paid" or project.invoice_total is None or project.invoice_balance is None:
+            return None
+        return tracking_balance(
+            total=project.invoice_total,
+            paid=project.invoice_total - project.invoice_balance,
+            due=project.invoice_balance,
+            currency=INVOICE_CURRENCY,
+        )
+    row = await _shown_link(db, project)
+    if row is None or row.status != "pending" or not row.url:
+        return None
+    return tracking_balance(
+        total=project.quote_total,
+        paid=project.retainer_paid_total,
+        due=row.amount,
+        currency=row.currency or INVOICE_CURRENCY,
     )
 
 
@@ -411,5 +483,6 @@ async def compute_tracking(
         updated_at=updated_at,
         payment=await payment_state(db, project),
         accepted=project.quote_status == "accepted",
+        balance=await balance_state(db, project),
     )
     return project.id, data

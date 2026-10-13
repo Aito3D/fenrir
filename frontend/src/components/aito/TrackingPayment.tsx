@@ -1,7 +1,8 @@
 import { useTranslation } from 'react-i18next';
-import type { AitoTrackingPayment } from '../../api/client';
+import type { AitoTrackingBalance, AitoTrackingPayment } from '../../api/client';
 import { FOCUS, TERMS_BUTTON } from '../../utils/trackingShell';
 import { TrackingPaidRow } from './trackingShell';
+import { TrackingBalance } from './TrackingBalance';
 
 /** What a card needs to drive one of the page's side panels: whether it is
  *  open, the panel's id for `aria-controls`, and a toggle that takes the
@@ -21,6 +22,9 @@ export interface PanelTrigger {
  *  new tab so the tracking page stays open behind OSB's checkout. Before the
  *  quote is accepted the card speaks in the validate voice — paying IS the
  *  client's acceptance (2026-09-22); after, the plain unpaid wording.
+ *  With a `balance`, the amounts sit under the title; once part of the
+ *  quote is paid (a deposit by transfer or at the counter, netted off the
+ *  link), the card names that share instead of "not paid" (2026-10-13).
  *  `flipped`: this state arrived by a refetch while the page was open (the
  *  page rises the card; the paid row also pops its dot). */
 export function TrackingPayment({
@@ -28,9 +32,11 @@ export function TrackingPayment({
   accepted,
   terms,
   flipped = false,
+  balance = null,
 }: {
   payment: AitoTrackingPayment;
   accepted: boolean;
+  balance?: AitoTrackingBalance | null;
   terms: PanelTrigger;
   flipped?: boolean;
 }) {
@@ -53,6 +59,7 @@ export function TrackingPayment({
   // this card is actionable without one (§7.3 branch 4: otherwise, nothing).
   if (!payment.url) return null;
 
+  const partly = !!balance && balance.paid > 0 && balance.due > 0;
   const button = `inline-flex min-h-[44px] w-full shrink-0 items-center justify-center whitespace-nowrap rounded-[8px] px-[16px] text-[13.5px] font-semibold transition-[color,background-color,border-color,transform,filter] duration-150 active:scale-[0.97] ${FOCUS} min-[400px]:w-auto`;
   return (
     <div data-testid="track-payment" data-state="unpaid">
@@ -60,16 +67,23 @@ export function TrackingPayment({
         <span className="flex min-w-0 flex-1 items-center gap-[8px]">
           <span className="h-[8px] w-[8px] shrink-0 rounded-full bg-amber-500" aria-hidden="true" />
           <span className="min-w-0 flex-1">
-            <span className="block font-semibold text-aito-ink">{t(accepted ? 'aito.track.payment.unpaidTitle' : 'aito.track.payment.validateTitle')}</span>
+            <span className="block font-semibold text-aito-ink">
+              {partly
+                ? t('aito.track.payment.partlyPaidTitle', { pct: balance!.paid_pct })
+                : t(accepted ? 'aito.track.payment.unpaidTitle' : 'aito.track.payment.validateTitle')}
+            </span>
             <span className="block text-[13px] text-aito-muted">
-              {t(
-                accepted
-                  ? payment.deposit ? 'aito.track.payment.unpaidDepositSub' : 'aito.track.payment.unpaidSub'
-                  : payment.deposit ? 'aito.track.payment.validateDepositSub' : 'aito.track.payment.validateSub',
-              )}
+              {partly
+                ? t('aito.track.payment.partlyPaidSub')
+                : t(
+                    accepted
+                      ? payment.deposit ? 'aito.track.payment.unpaidDepositSub' : 'aito.track.payment.unpaidSub'
+                      : payment.deposit ? 'aito.track.payment.validateDepositSub' : 'aito.track.payment.validateSub',
+                  )}
             </span>
           </span>
         </span>
+        {balance && <TrackingBalance balance={balance} depositDue={payment.deposit && !partly} />}
         <a href={payment.url} target="_blank" rel="noopener noreferrer" className={`${button} bg-aito-cyan text-aito-midnight hover:brightness-110`}>
           {t('aito.track.payment.pay')}
         </a>
