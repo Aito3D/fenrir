@@ -10,19 +10,18 @@ from httpx import AsyncClient
 from sqlalchemy import select
 
 from backend.app.api.routes.library import to_absolute_path
-from backend.app.core.auth import create_access_token, get_password_hash
 from backend.app.core.config import settings as app_settings
 from backend.app.core.permissions import Permission
-from backend.app.models.group import Group
 from backend.app.models.library import LibraryFile
 from backend.app.models.project_item import ProjectItem
-from backend.app.models.settings import Settings
 from backend.app.models.slicer_pipeline import SlicerPipeline
-from backend.app.models.user import User
 from backend.app.schemas.slicer import SliceResponse
-from backend.app.services import project_reslice, project_storage
+from backend.app.services import project_files, project_reslice, project_storage
 from backend.app.services.slice_dispatch import slice_dispatch
-from backend.tests.project_fixtures import wal_engine_fixture  # noqa: F401  # the ``wal_engine`` fixture
+from backend.tests.project_fixtures import (
+    make_users,
+    wal_engine_fixture,  # noqa: F401  # the ``wal_engine`` fixture
+)
 
 _ONE_FILAMENT = json.dumps([{"source": "local", "id": "3"}])
 
@@ -392,7 +391,6 @@ async def test_two_concurrent_reslices_get_consecutive_numbers(async_client: Asy
 @pytest.fixture
 async def users(db_session):
     """Auth on. Each user gets one group with exactly the listed permissions."""
-    db_session.add(Settings(key="auth_enabled", value="true"))
     specs = {
         "full": [
             Permission.PROJECTS_UPDATE,
@@ -403,18 +401,7 @@ async def users(db_session):
         "no_pipelines": [Permission.PROJECTS_UPDATE, Permission.LIBRARY_UPLOAD],
         "no_projects": [Permission.LIBRARY_UPLOAD, Permission.PIPELINES_READ],
     }
-    out = {}
-    for key, permissions in specs.items():
-        group = Group(name=f"reslice-{key}", permissions=[p.value for p in permissions], is_system=False)
-        db_session.add(group)
-        await db_session.flush()
-        user = User(username=f"reslice-{key}", password_hash=get_password_hash("password"), is_active=True)
-        user.groups.append(group)
-        db_session.add(user)
-        await db_session.flush()
-        out[key] = {"Authorization": f"Bearer {create_access_token(data={'sub': user.username})}"}
-    await db_session.commit()
-    return out
+    return {key: headers for key, (_, headers) in (await make_users(db_session, "reslice-", specs)).items()}
 
 
 @pytest.mark.asyncio
@@ -844,6 +831,88 @@ async def test_startup_sweep_keeps_a_file_manager_slice_whose_source_was_moved_i
     ).scalar_one()
     assert kept.deleted_at is None and kept.revision_id is None
     assert (roots / "library" / "model.gcode.3mf").exists()
+
+
+# --- T-352: every usage column keeps a marked intermediate out of the sweep ---
+
+
+def _usage_key(column) -> str:
+    """``"PrintQueueItem.library_file_id"`` for a ``project_files._USAGE_COLUMNS`` entry."""
+    return f"{column.class_.__name__}.{column.key}"
+
+
+async def _reference_from(db, key: str, file_id: int, *, finished: bool) -> None:
+    """Add a row whose ``key`` usage column points at ``file_id``. ``finished`` makes the
+    referencing row a finished one (completed status), and soft-deleted where the table has
+    ``deleted_at``: a use is a use whatever state the referencing row is in."""
+    from datetime import datetime
+
+    from backend.app.models.archive import PrintArchive
+    from backend.app.models.pipeline_run import PipelineRun
+    from backend.app.models.print_batch import PrintBatch
+    from backend.app.models.print_queue import PrintQueueItem, PrintQueueVariant
+
+    if key == "PrintQueueItem.library_file_id":
+        db.add(PrintQueueItem(library_file_id=file_id, status="completed" if finished else "pending"))
+    elif key == "PrintArchive.library_file_id":
+        db.add(
+            PrintArchive(
+                filename="archived.gcode.3mf",
+                file_path="archive/archived.gcode.3mf",
+                file_size=5,
+                library_file_id=file_id,
+                status="completed",
+                deleted_at=datetime(2026, 10, 1) if finished else None,
+            )
+        )
+    elif key == "PrintBatch.library_file_id":
+        db.add(PrintBatch(name="Lot", library_file_id=file_id, status="completed" if finished else "active"))
+    elif key == "PrintQueueVariant.library_file_id":
+        item = PrintQueueItem(library_file_id=None, status="completed" if finished else "pending")
+        db.add(item)
+        await db.flush()
+        db.add(PrintQueueVariant(queue_item_id=item.id, library_file_id=file_id, target_model="X1C"))
+    elif key == "PipelineRun.source_library_file_id":
+        db.add(PipelineRun(source_library_file_id=file_id, status="completed" if finished else "queued"))
+    elif key == "PipelineRun.sliced_library_file_id":
+        db.add(PipelineRun(sliced_library_file_id=file_id, status="completed" if finished else "queued"))
+    else:  # a new usage column: give it a referencing row above
+        raise AssertionError(f"no referencing row for usage column {key}")
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+@pytest.mark.parametrize("finished", [False, True], ids=["live", "finished"])
+@pytest.mark.parametrize("key", [_usage_key(column) for column in project_files._USAGE_COLUMNS])
+async def test_startup_sweep_keeps_a_marked_intermediate_any_usage_column_references(
+    async_client: AsyncClient, db_session, roots, key, finished
+):
+    """A marked Re-trancher leftover that a queue item, archive, batch, queue variant or
+    pipeline run still points at (live or finished/soft-deleted) survives the sweep, and the
+    returned count only covers the unreferenced orphan next to it."""
+    _project, _item, rev = await _source_revision(async_client)
+    revision_file_id = rev["files"][0]["id"]
+    referenced = _loose(roots, "referenced.gcode.3mf", sliced_from=revision_file_id, marker=True)
+    orphan = _loose(roots, "orphan.gcode.3mf", sliced_from=revision_file_id, marker=True)
+    db_session.add_all([referenced, orphan])
+    await db_session.flush()
+    referenced_id, orphan_id = referenced.id, orphan.id
+    await _reference_from(db_session, key, referenced_id, finished=finished)
+    await db_session.commit()
+
+    assert await project_reslice.sweep_orphan_intermediates(db_session) == 1
+
+    ids = set((await db_session.execute(select(LibraryFile.id))).scalars().all())
+    assert referenced_id in ids and orphan_id not in ids
+    kept = (
+        await db_session.execute(
+            select(LibraryFile).where(LibraryFile.id == referenced_id).execution_options(populate_existing=True)
+        )
+    ).scalar_one()
+    assert kept.deleted_at is None
+    assert (roots / "library" / "referenced.gcode.3mf").exists()
+    assert not (roots / "library" / "orphan.gcode.3mf").exists()
+    assert await project_reslice.sweep_orphan_intermediates(db_session) == 0
 
 
 def test_lifespan_runs_the_intermediate_sweep_after_the_migrations_and_never_blocks_startup():

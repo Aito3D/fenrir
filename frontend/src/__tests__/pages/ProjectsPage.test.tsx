@@ -895,4 +895,82 @@ describe('ProjectsPage', () => {
       });
     });
   });
+
+  describe('PDM header editor (pdm mode)', () => {
+    /**
+     * The project detail page opens ProjectModal with `pdm`: its header owns the
+     * tags and a PDM project has no parent, so the modal must neither show those
+     * fields nor send them, or saving would wipe the header's tag list.
+     */
+    const pdmProject = {
+      id: 12,
+      name: 'Support caméra',
+      description: null,
+      color: '#00ae42',
+      status: 'active',
+      target_count: null,
+      target_parts_count: null,
+      budget: null,
+      tags: 'support,camera',
+      due_date: null,
+      priority: 'normal',
+      parent_id: 9,
+      created_at: '2024-01-01T00:00:00Z',
+      archive_count: 0,
+      url: null,
+      cover_image_filename: null,
+    };
+
+    const renderModal = (onSave: (data: unknown) => void, pdm?: boolean) =>
+      render(
+        <ProjectModal
+          project={pdmProject as never}
+          onClose={() => {}}
+          onSave={onSave as never}
+          isLoading={false}
+          currencySymbol="€"
+          t={((k: string) => k) as never}
+          pdm={pdm}
+        />,
+      );
+
+    it('hides the parent picker and the tags field', () => {
+      renderModal(() => {}, true);
+
+      expect(screen.getByText('common.name')).toBeInTheDocument();
+      expect(screen.queryByText('projects.parentLabel')).not.toBeInTheDocument();
+      expect(screen.queryByText('projects.parentNone')).not.toBeInTheDocument();
+      expect(screen.queryByText('projects.tagsLabel')).not.toBeInTheDocument();
+      expect(screen.queryByPlaceholderText('projects.tagsPlaceholder')).not.toBeInTheDocument();
+    });
+
+    it('saves neither tags nor parent_id, even when the project has both', async () => {
+      const user = userEvent.setup();
+      const onSave = vi.fn();
+      renderModal(onSave, true);
+
+      await user.click(screen.getByRole('button', { name: 'common.save' }));
+
+      expect(onSave).toHaveBeenCalledTimes(1);
+      const payload = onSave.mock.calls[0][0];
+      expect(payload).toMatchObject({ name: 'Support caméra', status: 'active' });
+      expect(payload).not.toHaveProperty('tags');
+      expect(payload).not.toHaveProperty('parent_id');
+    });
+
+    it('still shows and sends tags and parent_id for the same project without pdm', async () => {
+      const user = userEvent.setup();
+      const onSave = vi.fn();
+      renderModal(onSave);
+
+      expect(screen.getByText('projects.parentLabel')).toBeInTheDocument();
+      expect(screen.getByText('projects.tagsLabel')).toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'common.save' }));
+
+      expect(onSave).toHaveBeenCalledTimes(1);
+      const payload = onSave.mock.calls[0][0];
+      expect(payload).toHaveProperty('tags', 'support,camera');
+      expect(payload).toHaveProperty('parent_id', 9);
+    });
+  });
 });

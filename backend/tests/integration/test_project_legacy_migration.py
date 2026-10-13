@@ -20,19 +20,16 @@ from httpx import AsyncClient
 from sqlalchemy import func, select
 
 from backend.app.api.routes.library import to_absolute_path
-from backend.app.core.auth import create_access_token, get_password_hash
 from backend.app.core.config import settings
 from backend.app.core.permissions import Permission
-from backend.app.models.group import Group
 from backend.app.models.library import LibraryFile, LibraryFolder
 from backend.app.models.project import Project
-from backend.app.models.settings import Settings
-from backend.app.models.user import User
 from backend.app.services import project_files, project_filing
 from backend.tests.project_fixtures import (
     make_external_file as _external,
     make_managed_library_file as _managed,
     make_project,
+    make_users,
     projects_root_fixture,
     revisions_of as _revisions,
     wal_engine_fixture,  # noqa: F401  # the ``wal_engine`` fixture
@@ -472,24 +469,12 @@ async def test_start_conflicts_while_running(async_client: AsyncClient, monkeypa
 
 @pytest.fixture
 async def users(db_session):
-    db_session.add(Settings(key="auth_enabled", value="true"))
     specs = {
         "admin": [Permission.SETTINGS_UPDATE, Permission.PROJECTS_UPDATE],
         "no_settings": [Permission.PROJECTS_UPDATE, Permission.SETTINGS_READ],
         "no_projects": [Permission.SETTINGS_UPDATE],
     }
-    out = {}
-    for key, permissions in specs.items():
-        group = Group(name=f"legacy-{key}", permissions=[p.value for p in permissions], is_system=False)
-        db_session.add(group)
-        await db_session.flush()
-        user = User(username=f"legacy-{key}", password_hash=get_password_hash("password"), is_active=True)
-        user.groups.append(group)
-        db_session.add(user)
-        await db_session.flush()
-        out[key] = {"Authorization": f"Bearer {create_access_token(data={'sub': user.username})}"}
-    await db_session.commit()
-    return out
+    return {key: headers for key, (_, headers) in (await make_users(db_session, "legacy-", specs)).items()}
 
 
 @pytest.mark.asyncio

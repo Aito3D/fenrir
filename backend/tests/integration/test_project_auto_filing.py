@@ -20,7 +20,9 @@ from backend.app.models.project_item import ProjectItem, ProjectRevision
 from backend.app.services import project_files, project_filing, project_storage
 from backend.app.services.project_filing import auto_file_by_code, project_code_from_filename
 from backend.tests.project_fixtures import (
+    add_user_with_group,
     api_project as _project,
+    bearer_headers,
     make_managed_library_file as _managed,
     projects_root_fixture,
 )
@@ -322,28 +324,21 @@ async def test_pending_upload_archive_also_files_a_copy(async_client: AsyncClien
 @pytest.mark.asyncio
 @pytest.mark.integration
 async def test_uploader_without_projects_update_is_not_auto_filed(async_client: AsyncClient, db_session):
-    from backend.app.core.auth import create_access_token, get_password_hash
     from backend.app.core.permissions import Permission
-    from backend.app.models.group import Group
     from backend.app.models.project import Project
     from backend.app.models.settings import Settings
-    from backend.app.models.user import User
 
     project = Project(name="Support")
     db_session.add(project)
     db_session.add(Settings(key="auth_enabled", value="true"))
-    group = Group(
-        name="autofile-uploader",
+    user = await add_user_with_group(
+        db_session,
+        username="autofile-uploader",
+        group_name="autofile-uploader",
         permissions=[Permission.LIBRARY_UPLOAD.value, Permission.LIBRARY_READ_ALL.value],
-        is_system=False,
     )
-    db_session.add(group)
-    await db_session.flush()
-    user = User(username="autofile-uploader", password_hash=get_password_hash("password"), is_active=True)
-    user.groups.append(group)
-    db_session.add(user)
     await db_session.commit()
-    headers = {"Authorization": f"Bearer {create_access_token(data={'sub': user.username})}"}
+    headers = bearer_headers(user)
     assert project.code and project.code.startswith("P-")
 
     filename = f"{project.code}_support.3mf"
@@ -386,18 +381,12 @@ async def _api_key_headers(db, **flags: bool) -> dict[str, str]:
 
 
 async def _jwt_headers(db, permissions: list[str]) -> dict[str, str]:
-    from backend.app.core.auth import create_access_token, get_password_hash
-    from backend.app.models.group import Group
-    from backend.app.models.user import User
-
-    group = Group(name=f"autofile-{uuid.uuid4().hex[:8]}", permissions=permissions, is_system=False)
-    db.add(group)
-    await db.flush()
-    user = User(username=f"autofile-{uuid.uuid4().hex[:8]}", password_hash=get_password_hash("pw"), is_active=True)
-    user.groups.append(group)
-    db.add(user)
+    group_name = f"autofile-{uuid.uuid4().hex[:8]}"
+    user = await add_user_with_group(
+        db, username=f"autofile-{uuid.uuid4().hex[:8]}", group_name=group_name, permissions=permissions, password="pw"
+    )
     await db.commit()
-    return {"Authorization": f"Bearer {create_access_token(data={'sub': user.username})}"}
+    return bearer_headers(user)
 
 
 async def _upload_as(client, headers: dict[str, str], filename: str):
@@ -470,12 +459,9 @@ async def _archive_pending_as(client: AsyncClient, db, permissions: list[str], t
     """Archive a ``P-xxxx_support.3mf`` pending upload as a user holding exactly
     ``permissions``, with auth on. The project (Impression > "support" at R1) and an
     active Aito order linked to it are set up with auth still off."""
-    from backend.app.core.auth import create_access_token, get_password_hash
     from backend.app.models.aito_project import AitoProject
     from backend.app.models.aito_task import AitoTask
-    from backend.app.models.group import Group
     from backend.app.models.settings import Settings
-    from backend.app.models.user import User
 
     project, item_id = await _project_with_support_item(client, db)
     order = AitoProject(
@@ -499,14 +485,12 @@ async def _archive_pending_as(client: AsyncClient, db, permissions: list[str], t
     )
     db.add(pending)
     db.add(Settings(key="auth_enabled", value="true"))
-    group = Group(name=f"pending-archiver-{uuid.uuid4().hex[:8]}", permissions=permissions, is_system=False)
-    db.add(group)
-    await db.flush()
-    user = User(username=f"archiver-{uuid.uuid4().hex[:8]}", password_hash=get_password_hash("pw"), is_active=True)
-    user.groups.append(group)
-    db.add(user)
+    group_name = f"pending-archiver-{uuid.uuid4().hex[:8]}"
+    user = await add_user_with_group(
+        db, username=f"archiver-{uuid.uuid4().hex[:8]}", group_name=group_name, permissions=permissions, password="pw"
+    )
     await db.commit()
-    headers = {"Authorization": f"Bearer {create_access_token(data={'sub': user.username})}"}
+    headers = bearer_headers(user)
 
     anonymous = await client.post(f"/api/v1/pending-uploads/{pending.id}/archive")
     assert anonymous.status_code == 401, anonymous.text  # auth really is on

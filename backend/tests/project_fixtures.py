@@ -11,6 +11,9 @@ keyword arguments, so each file picks its own behavior explicitly:
   session, as in production; the shared ``:memory:`` StaticPool engine hands every
   session one connection, which cannot show two writers or a background task's
   own session. Import it with ``# noqa: F401`` and request it as ``wal_engine``.
+- ``make_users(db, prefix, specs)`` turns auth on and creates one user per spec key
+  in one group with exactly those permissions; ``add_user_with_group`` and
+  ``bearer_headers`` are its building blocks for files with their own naming.
 """
 
 from __future__ import annotations
@@ -18,7 +21,7 @@ from __future__ import annotations
 import io
 import uuid
 import zipfile
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Iterable, Mapping
 from pathlib import Path
 
 import pytest
@@ -29,11 +32,16 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engin
 
 import backend.app.models  # noqa: F401  # registers every table on Base.metadata
 from backend.app.api.routes.library import get_library_files_dir, to_relative_path
+from backend.app.core.auth import create_access_token, get_password_hash
 from backend.app.core.config import settings
 from backend.app.core.database import Base, _set_sqlite_pragmas
+from backend.app.core.permissions import Permission
+from backend.app.models.group import Group
 from backend.app.models.library import LibraryFile, LibraryFolder
 from backend.app.models.project import Project
 from backend.app.models.project_item import ProjectItem, ProjectRevision
+from backend.app.models.settings import Settings
+from backend.app.models.user import User
 from backend.app.services import project_storage
 
 # --- storage roots -------------------------------------------------------------
@@ -94,6 +102,44 @@ async def wal_engine_fixture(tmp_path) -> AsyncIterator[AsyncEngine]:
     engine = await create_wal_engine(tmp_path / "wal.db")
     yield engine
     await engine.dispose()
+
+
+# --- auth ----------------------------------------------------------------------
+
+
+def bearer_headers(user: User) -> dict[str, str]:
+    """The ``Authorization`` header of a JWT issued to ``user``."""
+    return {"Authorization": f"Bearer {create_access_token(data={'sub': user.username})}"}
+
+
+async def add_user_with_group(
+    db: AsyncSession, *, username: str, group_name: str, permissions: Iterable[str], password: str = "password"
+) -> User:
+    """Add (and flush, not commit) a non-system group holding exactly ``permissions`` and an
+    active user in it."""
+    group = Group(name=group_name, permissions=list(permissions), is_system=False)
+    db.add(group)
+    await db.flush()
+    user = User(username=username, password_hash=get_password_hash(password), is_active=True)
+    user.groups.append(group)
+    db.add(user)
+    await db.flush()
+    return user
+
+
+async def make_users(
+    db: AsyncSession, prefix: str, specs: Mapping[str, Iterable[Permission]]
+) -> dict[str, tuple[int, dict[str, str]]]:
+    """Auth on. Each spec key gets one user (username and group name ``f"{prefix}{key}"``) in one
+    group with exactly the listed permissions; returns ``key -> (user id, bearer headers)``."""
+    db.add(Settings(key="auth_enabled", value="true"))
+    out = {}
+    for key, permissions in specs.items():
+        name = f"{prefix}{key}"
+        user = await add_user_with_group(db, username=name, group_name=name, permissions=[p.value for p in permissions])
+        out[key] = (user.id, bearer_headers(user))
+    await db.commit()
+    return out
 
 
 # --- files ---------------------------------------------------------------------

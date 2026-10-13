@@ -8,21 +8,18 @@ from httpx import AsyncClient
 from sqlalchemy import select
 
 from backend.app.api.routes.library import to_absolute_path
-from backend.app.core.auth import create_access_token, get_password_hash
 from backend.app.core.permissions import Permission
 from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
-from backend.app.models.group import Group
 from backend.app.models.library import LibraryFile
 from backend.app.models.project import Project
 from backend.app.models.project_item import ProjectItem
-from backend.app.models.settings import Settings
-from backend.app.models.user import User
 from backend.app.services.project_filing import project_code_from_filename, suggest_projects_for_filename
 from backend.tests.project_fixtures import (
     api_project as _project,
     make_managed_library_file as _managed,
+    make_users,
     projects_root_fixture,
 )
 
@@ -245,7 +242,6 @@ async def test_import_into_new_item_name(async_client: AsyncClient, db_session):
 @pytest.fixture
 async def users(db_session):
     """Auth on. Each user gets one group with exactly the listed permissions."""
-    db_session.add(Settings(key="auth_enabled", value="true"))
     specs = {
         "own": [Permission.LIBRARY_UPDATE_OWN, Permission.PROJECTS_UPDATE],
         "all": [Permission.LIBRARY_UPDATE_ALL, Permission.PROJECTS_UPDATE],
@@ -253,18 +249,7 @@ async def users(db_session):
         "reader": [Permission.LIBRARY_READ_OWN, Permission.PROJECTS_READ],
         "reader_no_projects": [Permission.LIBRARY_READ_ALL],
     }
-    out = {}
-    for key, permissions in specs.items():
-        group = Group(name=f"filing-{key}", permissions=[p.value for p in permissions], is_system=False)
-        db_session.add(group)
-        await db_session.flush()
-        user = User(username=f"filing-{key}", password_hash=get_password_hash("password"), is_active=True)
-        user.groups.append(group)
-        db_session.add(user)
-        await db_session.flush()
-        out[key] = (user.id, {"Authorization": f"Bearer {create_access_token(data={'sub': user.username})}"})
-    await db_session.commit()
-    return out
+    return await make_users(db_session, "filing-", specs)
 
 
 async def _project_row(db, name="Support") -> int:

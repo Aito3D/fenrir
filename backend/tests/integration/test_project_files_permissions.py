@@ -11,13 +11,11 @@ with no permission at all, and a control: a caller with every group satisfied ge
 import pytest
 from httpx import AsyncClient
 
-from backend.app.core.auth import create_access_token, get_password_hash
 from backend.app.core.config import settings as app_settings
 from backend.app.core.permissions import Permission as P
-from backend.app.models.group import Group
 from backend.app.models.settings import Settings
-from backend.app.models.user import User
 from backend.app.services import project_storage
+from backend.tests.project_fixtures import add_user_with_group, bearer_headers
 
 # Held by the "wrong" callers on top of the satisfied groups, minus the group under test, so a
 # route gated by the wrong one of these (DELETE vs UPDATE, READ vs UPDATE...) is caught.
@@ -119,14 +117,14 @@ async def headers_for(db_session):
     async def make(permissions) -> dict[str, str]:
         n = len(made)
         made.append(n)
-        group = Group(name=f"perm-matrix-{n}", permissions=sorted(p.value for p in permissions), is_system=False)
-        db_session.add(group)
-        await db_session.flush()
-        user = User(username=f"perm-matrix-{n}", password_hash=get_password_hash("password"), is_active=True)
-        user.groups.append(group)
-        db_session.add(user)
+        user = await add_user_with_group(
+            db_session,
+            username=f"perm-matrix-{n}",
+            group_name=f"perm-matrix-{n}",
+            permissions=sorted(p.value for p in permissions),
+        )
         await db_session.commit()
-        return {"Authorization": f"Bearer {create_access_token(data={'sub': user.username})}"}
+        return bearer_headers(user)
 
     return make
 
