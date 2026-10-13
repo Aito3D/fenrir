@@ -196,6 +196,7 @@ async def test_adopts_an_invoice_by_its_aito_reference(db_session, monkeypatch):
     db_session.expire_all()
     row = await db_session.get(AitoProject, pid)
     assert (row.invoice_status, row.invoice_balance, row.invoice_due_date) == ("paid", 0.0, "2026-09-21")
+    assert row.invoice_total == 7000.0  # cached with the balance for the tracking page
     assert document_numbers_of(row) == ["FA-26-4367"]
     assert row.quote_invoiced is True
     assert row.quote_sync_state == "locked"

@@ -1530,6 +1530,20 @@ class AitoTrackingPayment(BaseModel):
     deposit: bool
 
 
+class AitoTrackingBalance(BaseModel):
+    """What is owed on the document the page shows (2026-10-13): the quote's
+    online link while it is unpaid, or the open invoice. Whole currency
+    units — the shop bills in XPF, which has no minor unit. `paid_pct` is
+    rounded down (never overstates what was paid), at least 1 once anything
+    is paid and at most 99 while anything is owed."""
+
+    currency: str
+    total: int
+    paid: int
+    due: int
+    paid_pct: int
+
+
 class AitoTrackingResponse(BaseModel):
     """Everything the public tracking page draws — and nothing else. See
     docs/superpowers/specs/2026-09-06-aito-tracking-page-design.md."""
@@ -1539,7 +1553,8 @@ class AitoTrackingResponse(BaseModel):
     due_date: date | None
     shipping: AitoTrackingShipping | None
     done_at: datetime | None
-    # A state, never an amount: paid / unpaid / overdue, or None without an invoice.
+    # paid / unpaid / overdue, or None without an invoice. The amounts, when
+    # there are any to show, are in `balance`.
     invoice: Literal["paid", "unpaid", "overdue"] | None
     # The quote number the client already holds (EST-000142), for "Devis n° …".
     reference: str | None
@@ -1554,6 +1569,11 @@ class AitoTrackingResponse(BaseModel):
     # client validates it, and the page words the payment card accordingly;
     # after, an Accord-column card reads "Devis validé" rather than "waiting".
     accepted: bool
+    # The amounts under the unpaid payment or invoice card: total, already
+    # paid, still owed. None when that card is settled or absent, or when a
+    # figure it needs is unknown (no quote total; an invoice cached before
+    # its total was kept). Follows the page's precedence: an open invoice wins.
+    balance: AitoTrackingBalance | None = None
 
 
 class AitoTrackingLinkResponse(BaseModel):

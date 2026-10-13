@@ -62,6 +62,7 @@ from backend.app.models.aito_event import AitoEvent
 from backend.app.models.aito_project import AitoProject
 from backend.app.services import aito_events
 from backend.app.services.aito_events import utc_now_naive as _now
+from backend.app.services.aito_invoice_cache import invoice_total_of
 from backend.app.services.aito_invoice_create import RetainerCredit, apply_retainers, customer_credits, share_out
 from backend.app.services.aito_search import remember_document_numbers
 from backend.app.services.inbox import broadcast_pending, purge_old
@@ -395,9 +396,11 @@ async def sweep_invoices(
                     # the balance must leave the row untouched, not half-written.
                     status = newest.get("status") or None
                     balance = float(newest.get("balance") or 0)
+                    total = invoice_total_of(newest)
                     due = newest.get("due_date") or None
                     project.invoice_status = status
                     project.invoice_balance = balance
+                    project.invoice_total = total
                     project.invoice_due_date = due
                     remember_document_numbers(project, newest.get("number"))
                     if credit is not None:
@@ -416,6 +419,7 @@ async def sweep_invoices(
                     # stamped and counted below like any other pass.
                     project.invoice_status = None
                     project.invoice_balance = None
+                    project.invoice_total = None
                     project.invoice_due_date = None
             except ZohoRateLimited:
                 # T-006: stop here rather than spending one more request per

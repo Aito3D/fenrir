@@ -450,6 +450,7 @@ async def test_a_failed_commit_in_a_step_leaves_the_session_usable(async_client,
     db_session.expire_all()
     row = await db_session.get(AitoProject, pid)
     assert row.invoice_balance == 0.0
+    assert row.invoice_total is None  # the stub invoice carries no total
 
 
 @pytest.mark.asyncio
