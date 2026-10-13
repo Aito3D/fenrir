@@ -8375,6 +8375,19 @@ class PrintScheduler:
                         item.cleanup_library_after_dispatch
                         and not library_file.is_external
                         and library_file.revision_id is None
+                        # Re-checked in the database, not on the row loaded before
+                        # archive_print: a Move to project committed meanwhile made it
+                        # a revision file. This no-op UPDATE also takes the write lock
+                        # (a row lock on PostgreSQL), so no move lands before the delete.
+                        and (
+                            await db.execute(
+                                update(LibraryFile)
+                                .where(LibraryFile.id == library_file.id, LibraryFile.revision_id.is_(None))
+                                .values(revision_id=None)
+                                .execution_options(synchronize_session=False)
+                            )
+                        ).rowcount
+                        == 1
                     ):
                         consumed_library_file_id = library_file.id
                         item.library_file_id = None
@@ -8396,6 +8409,21 @@ class PrintScheduler:
                         # below, once the delete has actually committed.
                         consumed_photos = list(library_file.photos or [])
                         await db.delete(library_file)
+                        file_path = settings.base_dir / archive.file_path
+                        filename = archive.filename
+                    elif (
+                        item.cleanup_library_after_dispatch
+                        and not library_file.is_external
+                        and library_file.revision_id is None
+                    ):
+                        # Fenrir: only reached when the re-check above lost the race:
+                        # the row is a revision file now and stays. Its old bytes go
+                        # once the move commits, so print the archive copy as before.
+                        logger.info(
+                            "Queue item %s: library file %s was moved into a project during dispatch; not consumed",
+                            item.id,
+                            library_file.id,
+                        )
                         file_path = settings.base_dir / archive.file_path
                         filename = archive.filename
                     # Commit, not flush — flush opens the SQLite write

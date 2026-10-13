@@ -248,6 +248,20 @@ async def move_task_print_trace(db: AsyncSession, copy_by_source: Mapping[int, i
         )
 
 
+async def clear_task_print_trace(db: AsyncSession, task_id: int) -> None:
+    """Null ``aito_task_id`` on every queue item and archive of a deleted task
+    (finished queue rows and trashed archives included). SQLite reuses the id of
+    the newest deleted task, so a dangling id would hand its prints to the next
+    task created. One UPDATE per table; the caller commits."""
+    for model in (PrintQueueItem, PrintArchive):
+        await db.execute(
+            update(model)
+            .where(model.aito_task_id == task_id)
+            .values(aito_task_id=None)
+            .execution_options(synchronize_session=False)
+        )
+
+
 def _queued_parts(printable_objects, archive_quantity: int | None) -> int:
     """Parts one queue row will print: the file's printable objects, else the
     reprinted archive's quantity, else 1."""

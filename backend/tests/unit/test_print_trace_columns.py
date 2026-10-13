@@ -216,7 +216,8 @@ async def _make_library_case(session_maker, base_dir: Path, *, revision_id, aito
         return item.id, library_file.id, source_path
 
 
-async def _dispatch(session_maker, base_dir: Path, queue_item_id: int):
+async def _dispatch(session_maker, base_dir: Path, queue_item_id: int, during_archive=None):
+    """``during_archive(db, library_file_id)`` runs inside archive_print, on the dispatch session."""
     scheduler = PrintScheduler()
 
     async def archive_print(
@@ -231,6 +232,8 @@ async def _dispatch(session_maker, base_dir: Path, queue_item_id: int):
         plate_id=None,
         library_file_id=None,
     ):
+        if during_archive is not None:
+            await during_archive(self.db, library_file_id)
         rel = Path("archives") / f"archive-{queue_item_id}.3mf"
         (base_dir / rel).parent.mkdir(parents=True, exist_ok=True)
         (base_dir / rel).write_bytes(Path(source_file).read_bytes())
@@ -321,6 +324,44 @@ async def test_cleanup_flag_still_consumes_a_normal_library_file(session_maker, 
         assert item.library_file_id is None
         assert await db.get(LibraryFile, file_id) is None
     assert not source_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_cleanup_never_consumes_a_file_moved_into_a_project_during_dispatch(session_maker, tmp_path, caplog):
+    """T-337: the row was loaded loose, then a Move to project committed while
+    archive_print ran (same row, now with a revision_id). It is not consumed: the
+    row, its thumbnail and the queue item's link stay, and the print still goes
+    ahead from the archive copy."""
+    import logging
+
+    item_id, file_id, source_path = await _make_library_case(
+        session_maker, tmp_path, revision_id=None, aito_task_id=None, cleanup=True
+    )
+    thumb = tmp_path / "library" / "support.png"
+    thumb.write_bytes(b"png")
+    async with session_maker() as db:
+        row = await db.get(LibraryFile, file_id)
+        row.thumbnail_path = str(thumb)
+        await db.commit()
+
+    async def move_into_project(db, library_file_id):
+        # Behind the ORM's back: the dispatch's loaded row still reads revision_id None.
+        await db.execute(text("UPDATE library_files SET revision_id = 77 WHERE id = :id"), {"id": library_file_id})
+
+    with caplog.at_level(logging.INFO, logger=scheduler_module.__name__):
+        await _dispatch(session_maker, tmp_path, item_id, during_archive=move_into_project)
+
+    async with session_maker() as db:
+        item = await db.get(PrintQueueItem, item_id)
+        assert item.archive_id is not None
+        assert item.status == "printing"
+        assert item.library_file_id == file_id
+        row = await db.get(LibraryFile, file_id)
+        assert row is not None and row.revision_id == 77
+        assert row.thumbnail_path == str(thumb)
+    assert thumb.exists()
+    assert source_path.exists()
+    assert f"library file {file_id} was moved into a project during dispatch; not consumed" in caplog.text
 
 
 async def _make_archive_case(session_maker, *, archive_revision, archive_task, item_revision, item_task):

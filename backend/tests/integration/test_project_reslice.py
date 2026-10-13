@@ -82,6 +82,8 @@ def fake_slicer(monkeypatch, roots):
             file_type="gcode.3mf",
             file_size=out.stat().st_size,
             source_type="sliced",
+            # slice_and_persist merges extra_metadata into file_metadata.
+            file_metadata=dict(kwargs["extra_metadata"] or {}),
         )
         db.add(row)
         await db.commit()
@@ -183,6 +185,11 @@ async def test_happy_path_creates_next_revision(async_client: AsyncClient, db_se
     assert call["model_bytes"] == _3mf()
     assert call["request"].printer_preset.id == "1"
     assert [f.id for f in call["request"].filament_presets] == ["3"]
+    # T-335: the output is marked as a Re-trancher intermediate for the startup sweep.
+    assert call["extra_metadata"] == {
+        "sliced_from_library_file_id": rev["files"][0]["id"],
+        "reslice_intermediate": True,
+    }
 
 
 @pytest.mark.asyncio
@@ -579,6 +586,7 @@ async def test_intermediate_drop_failure_keeps_the_job_and_session_alive(
         attempts.append(1)
         raise OSError("disk gone")
 
+    real_hard_delete = library_trash_service.hard_delete_many
     monkeypatch.setattr(library_trash_service, "hard_delete_many", boom)
     monkeypatch.setattr(project_reslice, "_DROP_RETRY_DELAYS", (0, 0))
     real_run = project_reslice.run_reslice
@@ -607,6 +615,10 @@ async def test_intermediate_drop_failure_keeps_the_job_and_session_alive(
     # behind (logged, not raised) for the startup sweep.
     assert len(attempts) == 3
     assert [r.filename for r in await _sliced_rows(db_session)] == ["sliced-1.gcode.3mf"]
+    # T-335: the leftover carries the Re-trancher marker, so the next startup sweep deletes it.
+    monkeypatch.setattr(library_trash_service, "hard_delete_many", real_hard_delete)
+    assert await project_reslice.sweep_orphan_intermediates(db_session) == 1
+    assert await _sliced_rows(db_session) == []
 
 
 @pytest.mark.asyncio
@@ -720,23 +732,29 @@ async def test_intermediate_drop_retries_and_succeeds_on_the_second_attempt(
     assert not (roots / "library" / "sliced-1.gcode.3mf").exists()
 
 
-def _loose(roots, name: str, *, sliced_from: int | None = None, **fields) -> LibraryFile:
+def _loose(roots, name: str, *, sliced_from: int | None = None, marker: bool = False, **fields) -> LibraryFile:
+    """A loose sliced row; ``marker`` adds the Re-trancher intermediate marker (T-335)."""
     path = roots / "library" / name
     path.write_bytes(b"gcode")
+    metadata: dict = {}
+    if sliced_from is not None:
+        metadata["sliced_from_library_file_id"] = sliced_from
+    if marker:
+        metadata[project_reslice.INTERMEDIATE_MARKER] = True
     return LibraryFile(
         filename=name,
         file_path=str(path.relative_to(roots)),
         file_type="gcode.3mf",
         file_size=5,
         source_type="sliced",
-        file_metadata={"sliced_from_library_file_id": sliced_from} if sliced_from is not None else None,
+        file_metadata=metadata or None,
         **fields,
     )
 
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-async def test_startup_sweep_deletes_only_unused_loose_slices_of_project_revision_files(
+async def test_startup_sweep_deletes_only_unused_loose_marked_intermediates(
     async_client: AsyncClient, db_session, roots, caplog
 ):
     import logging
@@ -749,17 +767,22 @@ async def test_startup_sweep_deletes_only_unused_loose_slices_of_project_revisio
     plain = _loose(roots, "plain.3mf")
     db_session.add(plain)
     await db_session.flush()
-    orphan = _loose(roots, "support.gcode.3mf", sliced_from=revision_file_id)
-    filed = _loose(roots, "filed.gcode.3mf", sliced_from=revision_file_id, revision_id=rev["id"])
+    orphan = _loose(roots, "support.gcode.3mf", sliced_from=revision_file_id, marker=True)
+    filed = _loose(roots, "filed.gcode.3mf", sliced_from=revision_file_id, marker=True, revision_id=rev["id"])
     from_plain = _loose(roots, "plain.gcode.3mf", sliced_from=plain.id)
-    used = _loose(roots, "pipeline.gcode.3mf", sliced_from=revision_file_id)
-    trashed = _loose(roots, "trashed.gcode.3mf", sliced_from=revision_file_id, deleted_at=datetime(2026, 10, 1))
-    db_session.add_all([orphan, filed, from_plain, used, trashed])
+    used = _loose(roots, "pipeline.gcode.3mf", sliced_from=revision_file_id, marker=True)
+    trashed = _loose(
+        roots, "trashed.gcode.3mf", sliced_from=revision_file_id, marker=True, deleted_at=datetime(2026, 10, 1)
+    )
+    # T-335: an unmarked slice of a project revision file (a File Manager slice, or a
+    # Re-trancher leftover from before the marker existed) is never swept.
+    unmarked = _loose(roots, "unmarked.gcode.3mf", sliced_from=revision_file_id)
+    db_session.add_all([orphan, filed, from_plain, used, trashed, unmarked])
     await db_session.flush()
     db_session.add(PipelineRun(source_library_file_id=revision_file_id, sliced_library_file_id=used.id))
     await db_session.commit()
     orphan_id = orphan.id
-    kept = {plain.id, filed.id, from_plain.id, used.id, trashed.id, revision_file_id}
+    kept = {plain.id, filed.id, from_plain.id, used.id, trashed.id, unmarked.id, revision_file_id}
 
     with caplog.at_level(logging.WARNING, logger=project_reslice.__name__):
         deleted = await project_reslice.sweep_orphan_intermediates(db_session)
@@ -769,11 +792,58 @@ async def test_startup_sweep_deletes_only_unused_loose_slices_of_project_revisio
     assert orphan_id not in ids
     assert kept <= ids
     assert not (roots / "library" / "support.gcode.3mf").exists()
-    for name in ("plain.3mf", "filed.gcode.3mf", "plain.gcode.3mf", "pipeline.gcode.3mf", "trashed.gcode.3mf"):
+    for name in (
+        "plain.3mf",
+        "filed.gcode.3mf",
+        "plain.gcode.3mf",
+        "pipeline.gcode.3mf",
+        "trashed.gcode.3mf",
+        "unmarked.gcode.3mf",
+    ):
         assert (roots / "library" / name).exists(), name
     assert f"deleting leftover intermediate library file {orphan_id} (support.gcode.3mf)" in caplog.text
     # A second startup finds nothing more to do.
     assert await project_reslice.sweep_orphan_intermediates(db_session) == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_startup_sweep_keeps_a_file_manager_slice_whose_source_was_moved_into_a_project(
+    async_client: AsyncClient, db_session, roots, monkeypatch
+):
+    """T-335: slice model.3mf in the File Manager, keep the unqueued output, then move
+    model.3mf into a project (same row, now with a revision_id). The slice survives."""
+    from backend.tests.project_fixtures import make_managed_library_file
+
+    monkeypatch.setattr(app_settings, "archive_dir", roots / "archive")
+    project = (await async_client.post("/api/v1/projects/", json={"name": "Support caméra"})).json()
+    model = await make_managed_library_file(db_session, "model.3mf", _3mf())
+    model_id = model.id
+    fm_slice = _loose(roots, "model.gcode.3mf", sliced_from=model_id)
+    db_session.add(fm_slice)
+    await db_session.commit()
+    fm_slice_id = fm_slice.id
+
+    moved = await async_client.post(
+        f"/api/v1/projects/{project['id']}/import-library-files", json={"file_ids": [model_id]}
+    )
+    assert moved.status_code == 200, moved.text
+    assert [m["file_id"] for m in moved.json()["moved"]] == [model_id]
+    source_revision = (
+        await db_session.execute(
+            select(LibraryFile.revision_id).where(LibraryFile.id == model_id).execution_options(populate_existing=True)
+        )
+    ).scalar_one()
+    assert source_revision is not None
+
+    assert await project_reslice.sweep_orphan_intermediates(db_session) == 0
+    kept = (
+        await db_session.execute(
+            select(LibraryFile).where(LibraryFile.id == fm_slice_id).execution_options(populate_existing=True)
+        )
+    ).scalar_one()
+    assert kept.deleted_at is None and kept.revision_id is None
+    assert (roots / "library" / "model.gcode.3mf").exists()
 
 
 def test_lifespan_runs_the_intermediate_sweep_after_the_migrations_and_never_blocks_startup():

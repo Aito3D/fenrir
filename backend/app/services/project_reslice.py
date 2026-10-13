@@ -13,7 +13,6 @@ from dataclasses import dataclass
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import aliased
 
 from backend.app.api.routes.library import slice_and_persist, to_absolute_path
 from backend.app.models.library import LibraryFile
@@ -132,6 +131,10 @@ async def _record_revision_added(db: AsyncSession, project_id: int, entry: dict,
         logger.warning("Re-trancher: project.revision_added failed for project %s", project_id, exc_info=True)
 
 
+# ``file_metadata`` key ``run_reslice`` stamps on the slicer's loose output: the only rows
+# ``sweep_orphan_intermediates`` may delete (a File Manager slice never carries it).
+INTERMEDIATE_MARKER = "reslice_intermediate"
+
 # Pauses between the attempts of ``_drop_intermediate`` (one attempt more than pauses):
 # ``hard_delete_many`` commits, and SQLite's "database is locked" is usually gone a moment later.
 _DROP_RETRY_DELAYS: tuple[float, ...] = (0.2, 0.5)
@@ -169,17 +172,17 @@ async def _drop_intermediate(db: AsyncSession, file_id: int) -> None:
 async def sweep_orphan_intermediates(db: AsyncSession) -> int:
     """Startup: hard-delete the Re-trancher intermediates a failed cleanup left in the File Manager.
 
-    A leftover is a live loose library row (no ``revision_id``, not trashed) whose
-    ``file_metadata.sliced_from_library_file_id`` is a project revision file (a row
-    with a ``revision_id``), and that nothing uses (queue, archive, batch, pipeline
-    run: ``project_files.used_file_ids``). Logs each row it deletes; returns how many."""
+    A leftover is a live loose library row (no ``revision_id``, not trashed) that
+    ``run_reslice`` marked with ``file_metadata.reslice_intermediate`` (``INTERMEDIATE_MARKER``),
+    and that nothing uses (queue, archive, batch, pipeline run: ``project_files.used_file_ids``).
+    A File Manager slice carries no marker, so it is never swept, even once its source has
+    been moved into a project. Logs each row it deletes; returns how many."""
     from backend.app.services.library_trash import library_trash_service
 
-    source = aliased(LibraryFile)
-    candidates = (
-        select(LibraryFile.id)
-        .join(source, source.id == LibraryFile.file_metadata["sliced_from_library_file_id"].as_integer())
-        .where(LibraryFile.revision_id.is_(None), LibraryFile.deleted_at.is_(None), source.revision_id.is_not(None))
+    candidates = select(LibraryFile.id).where(
+        LibraryFile.revision_id.is_(None),
+        LibraryFile.deleted_at.is_(None),
+        LibraryFile.file_metadata[INTERMEDIATE_MARKER].as_boolean().is_(True),
     )
     used = await project_files.used_file_ids(db, candidates)
     rows = (
@@ -212,7 +215,7 @@ async def run_reslice(db: AsyncSession, req: ResliceRequest, *, job_id: int | No
         model_bytes=req.model_bytes,
         model_filename=req.source_filename,
         folder_id=None,
-        extra_metadata={"sliced_from_library_file_id": req.source_file_id},
+        extra_metadata={"sliced_from_library_file_id": req.source_file_id, INTERMEDIATE_MARKER: True},
         request=req.slice_request,
         current_user_id=req.user_id,
         job_id=job_id,

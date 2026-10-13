@@ -836,3 +836,45 @@ async def test_queueing_a_revision_file_whose_revision_was_just_deleted_is_409(
     assert response.status_code == 409, response.text
     assert response.json()["detail"] == "This file's project revision was deleted meanwhile"
     assert await _items(db_session, library_file_id=file_id) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_deleting_a_task_clears_its_print_trace_and_a_new_task_inherits_nothing(
+    async_client: AsyncClient, db_session
+):
+    """T-336: SQLite reuses the deleted task's id, so its queue items and archives
+    must not keep pointing at it."""
+    order = await _order(db_session)
+    order_id = order.id
+    other_id = (await _task(db_session, order, title="Other")).id
+    # the newest task: the one whose id SQLite hands to the next task created
+    task_id = (await _task(db_session, order, title="Doomed")).id
+    db_session.add_all(
+        [
+            _queue_item(task_id, "pending"),
+            _queue_item(task_id, "completed"),
+            _counted_archive(task_id=task_id),
+            _counted_archive(task_id=task_id, deleted_at=datetime.now(timezone.utc)),
+            _queue_item(other_id, "pending"),
+            _counted_archive(task_id=other_id),
+        ]
+    )
+    await db_session.commit()
+    assert (await task_print_counts(db_session, [task_id]))[task_id] == PrintCounts(printed=1, rejected=0, queued=1)
+
+    response = await async_client.delete(f"/api/v1/aito/tasks/{task_id}")
+    assert response.status_code == 204, response.text
+
+    db_session.expire_all()
+    queue_ids = (await db_session.execute(select(PrintQueueItem.aito_task_id).order_by(PrintQueueItem.id))).scalars()
+    assert list(queue_ids) == [None, None, other_id]
+    archive_ids = (await db_session.execute(select(PrintArchive.aito_task_id).order_by(PrintArchive.id))).scalars()
+    assert list(archive_ids) == [None, None, other_id]
+
+    reused = AitoTask(project_id=order_id, title="Next")
+    db_session.add(reused)
+    await db_session.commit()
+    assert reused.id == task_id  # SQLite handed the deleted id to the next task
+    assert reused.id not in await task_print_counts(db_session, [reused.id])
+    assert (await task_print_counts(db_session, [other_id]))[other_id] == PrintCounts(printed=1, rejected=0, queued=1)

@@ -3841,6 +3841,8 @@ async def delete_task(
     # Fenrir: delivery records have no FK, so they go with the task; otherwise a
     # revision it delivered would stay "used" (files frozen) forever.
     await db.execute(delete(AitoTaskDelivery).where(AitoTaskDelivery.task_id == task.id))
+    # Its prints neither: SQLite reuses the deleted id for the next task created.
+    await project_print_trace.clear_task_print_trace(db, task.id)
     await db.delete(task)
     await db.flush()  # so the deleted row is out of _summary_for's SELECT
     if project:

@@ -194,6 +194,7 @@ async def apply_project_tag_input(
 async def auto_file_by_code(
 async def auto_file_enabled(db: AsyncSession)
 async def broadcast_orders_changed(order_ids: Iterable[int], actor: str | None)
+async def clear_task_print_trace(db: AsyncSession, task_id: int)
 async def codes_by_order(db: AsyncSession)
 async def compute_project_stats(
 async def compute_subtree_stats(db: AsyncSession, root_id: int)
