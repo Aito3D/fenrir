@@ -357,6 +357,8 @@ async def test_engine():
         maintenance,
         notification,
         notification_inbox,
+        notification_live_activity,
+        notification_lock_screen_widget,
         notification_template,
         oidc_provider,
         print_log,

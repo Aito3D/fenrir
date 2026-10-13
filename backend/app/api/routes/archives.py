@@ -3011,6 +3011,7 @@ async def delete_timelapse(
 
     # Clear the path in database
     archive.timelapse_path = None
+    archive.timelapse_plate_id = None
     await db.commit()
 
     return {"status": "deleted"}

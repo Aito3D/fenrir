@@ -145,6 +145,8 @@ from backend.app.services.location_ha_sensor_manager import location_ha_sensor_m
 from backend.app.services.mqtt_relay import mqtt_relay
 from backend.app.services.mqtt_smart_plug import mqtt_smart_plug_service
 from backend.app.services.notification_service import notification_service
+from backend.app.services.notify_live_activities import notify_live_activities
+from backend.app.services.notify_widgets import notify_widgets
 from backend.app.services.obico_detection import obico_detection_service
 from backend.app.services.print_cost_estimate import plate_scoped_run_estimate as _plate_scoped_run_estimate
 from backend.app.services.print_scheduler import scheduler as print_scheduler
@@ -1651,6 +1653,10 @@ def _progress_milestone_to_notify(printer_id: int, state: PrinterState) -> int |
 
 async def on_printer_status_change(printer_id: int, state: PrinterState):
     """Handle printer status changes - broadcast via WebSocket."""
+    try:
+        notify_live_activities.observe(printer_id, state)
+    except Exception:
+        logging.getLogger(__name__).exception("Notify Live Activity status hook failed for printer %s", printer_id)
     # Connected-edge reconciliation (#1542 follow-up). When the printer
     # transitions disconnected → connected — which covers both Fenrir
     # startup (no prior connection) and a mid-session MQTT reconnect — fire
@@ -4386,10 +4392,32 @@ async def _promote_expected_archive(
             # it describes the printer before the previous run. The capture
             # below overwrites it, but clear it here too so an early failure
             # can't leave the scan diffing against the wrong snapshot.
+            #
+            # Unlinked only when it is the same plate printing again. Every
+            # plate of a Send All shares this archive, and the video on it
+            # can be the only copy of another plate's run -- the printer's
+            # was deleted once it attached (#3275). That one is left in the
+            # archive directory, which goes with the archive. A video whose
+            # plate is not on record (attached by hand, or before the
+            # column existed) is kept too: nothing tells it apart from
+            # another plate's, and keeping costs one file where deleting
+            # can cost the only copy.
             archive.timelapse_baseline = None
             stale_timelapse_relpath = archive.timelapse_path
+            stale_timelapse_plate_id = archive.timelapse_plate_id
+            starting_plate_id = _print_plate_ids.get(expected_archive_id)
             if stale_timelapse_relpath:
                 archive.timelapse_path = None
+                archive.timelapse_plate_id = None
+            if stale_timelapse_relpath and stale_timelapse_plate_id != starting_plate_id:
+                logger.info(
+                    "Kept timelapse %s of plate %s on archive %s: plate %s is starting",
+                    stale_timelapse_relpath,
+                    stale_timelapse_plate_id,
+                    expected_archive_id,
+                    starting_plate_id,
+                )
+            elif stale_timelapse_relpath:
                 try:
                     stale_path = app_settings.base_dir / stale_timelapse_relpath
                     if stale_path.is_file():
@@ -5805,6 +5833,11 @@ async def _print_start_housekeeping(printer_id: int, data: dict, logger) -> None
     resets, the print-start event, missing-spool notice, MQTT relay, usage
     tracker seeding and smart-plug power-on.
     """
+    try:
+        notify_live_activities.print_started(printer_id, printer_manager.get_status(printer_id), data)
+    except Exception:
+        logger.exception("Notify Live Activity start hook failed for printer %s", printer_id)
+
     # Clear any stale user-stopped flag from previous print cycles
     _user_stopped_printers.discard(printer_id)
     # A new print starts its milestones from zero (#3211). The status path only
@@ -6206,7 +6239,9 @@ async def _capture_timelapse_baseline_at_start(
         logger.warning("[TIMELAPSE] Failed to persist baseline for archive %s: %s", archive_id, e)
 
 
-async def _scan_for_timelapse_with_retries(archive_id: int, baseline_names: set[str] | None = None):
+async def _scan_for_timelapse_with_retries(
+    archive_id: int, baseline_names: set[str] | None = None, *, plate_id: int | None = None
+):
     """Poll the printer for this print's timelapse and attach it.
 
     Snapshot diff, not timestamp matching: a printer in LAN-only mode cannot
@@ -6369,6 +6404,7 @@ async def _scan_for_timelapse_with_retries(archive_id: int, baseline_names: set[
                     logger,
                     quiet=not changed,
                     require_unambiguous=not baseline_trusted,
+                    plate_id=plate_id,
                 )
                 if attached:
                     return
@@ -6403,6 +6439,7 @@ async def _attach_first_unclaimed_timelapse(
     *,
     quiet: bool = False,
     require_unambiguous: bool = False,
+    plate_id: int | None = None,
 ) -> bool:
     """Download and attach the one video that belongs to this print.
 
@@ -6507,7 +6544,7 @@ async def _attach_first_unclaimed_timelapse(
 
     # Write phase: attach in a fresh short-lived session.
     async with async_session() as db:
-        success = await ArchiveService(db).attach_timelapse(archive_id, timelapse_data, file_name)
+        success = await ArchiveService(db).attach_timelapse(archive_id, timelapse_data, file_name, plate_id=plate_id)
     if not success:
         logger.warning("[TIMELAPSE] Failed to attach timelapse to archive %s", archive_id)
         return False
@@ -7982,6 +8019,10 @@ async def on_print_complete(printer_id: int, data: dict):
     # which auto-dispatched the next queued print onto a fouled bed two seconds
     # after a touchscreen-abort (#1171). Persisted to DB so the gate survives
     # Auto Off power cycles and Fenrir restarts.
+    try:
+        notify_live_activities.print_finished(printer_id, data)
+    except Exception:
+        logger.exception("Notify Live Activity completion hook failed for printer %s", printer_id)
     _final_status = data.get("status", "completed")
     if _final_status in ("completed", "failed", "aborted", "cancelled"):
         printer_manager.set_awaiting_plate_clear(printer_id, True)
@@ -9302,7 +9343,9 @@ async def on_print_complete(printer_id: int, data: dict):
                     async with async_session() as db:
                         service = ArchiveService(db)
                         timelapse_data = await asyncio.to_thread(timelapse_path.read_bytes)
-                        await service.attach_timelapse(archive_id, timelapse_data, "layer_timelapse.mp4")
+                        await service.attach_timelapse(
+                            archive_id, timelapse_data, "layer_timelapse.mp4", plate_id=notify_plate_id
+                        )
                         # Clean up the temp file
                         await asyncio.to_thread(timelapse_path.unlink, missing_ok=True)
                         logger.info("[LAYER-TL] Layer timelapse attached successfully")
@@ -9334,7 +9377,7 @@ async def on_print_complete(printer_id: int, data: dict):
         # The printer needs time to encode the video after print completion
         baseline = _timelapse_baselines.pop(printer_id, None)
         spawn_background_task(
-            _scan_for_timelapse_with_retries(archive_id, baseline),
+            _scan_for_timelapse_with_retries(archive_id, baseline, plate_id=notify_plate_id),
             name=f"scan-timelapse-{archive_id}",
         )
         log_timing("Timelapse scan scheduled")
@@ -10275,8 +10318,12 @@ def _evict_stale_expected_prints() -> None:
 
     # Also clean up _print_ams_mappings and _print_plate_ids for archive_ids
     # that have no remaining live keys in _expected_prints (all variants
-    # were just evicted).
-    live_archive_ids = set(_expected_prints.values())
+    # were just evicted) and are not printing right now. Print start pops
+    # only the names the printer reported, so the "<base>.gcode" variant
+    # outlives it; without the printing check its eviction two hours after
+    # dispatch threw away a running print's plate, AMS mapping and cost
+    # centre, which completion still reads (#3275).
+    live_archive_ids = set(_expected_prints.values()) | set(_active_prints.values())
     for archive_id in evicted_archive_ids:
         if archive_id not in live_archive_ids:
             _print_ams_mappings.pop(archive_id, None)
@@ -10834,6 +10881,8 @@ async def lifespan(app: FastAPI):
 
     # Start the notification digest scheduler
     notification_service.start_digest_scheduler()
+    notify_live_activities.start()
+    notify_widgets.start()
 
     # Start the Telegram reaction pollers (#3046), one per bot token used by a
     # provider in reactions/both mode; the notification routes resync them.
@@ -10954,6 +11003,8 @@ async def lifespan(app: FastAPI):
     ha_sensor_manager.stop()
     location_ha_sensor_manager.stop()
     notification_service.stop_digest_scheduler()
+    await notify_live_activities.close()
+    await notify_widgets.close()
     await telegram_reaction_poller.aclose()
     github_backup_service.stop_scheduler()
     local_backup_service.stop_scheduler()

@@ -34,6 +34,8 @@ from backend.app.models.maintenance import (
 )
 from backend.app.models.notification import NotificationLog
 from backend.app.models.notification_inbox import AitoWatch, Notification, UserInboxPreference
+from backend.app.models.notification_live_activity import NotificationLiveActivity
+from backend.app.models.notification_lock_screen_widget import NotificationLockScreenWidget
 from backend.app.models.notification_template import NotificationTemplate
 from backend.app.models.oidc_provider import OIDCProvider, UserOIDCLink
 from backend.app.models.orca_base_cache import OrcaBaseProfile
@@ -95,6 +97,8 @@ __all__ = [
     "Notification",
     "AitoWatch",
     "UserInboxPreference",
+    "NotificationLiveActivity",
+    "NotificationLockScreenWidget",
     "Project",
     "ProjectTag",
     "ProjectItem",
