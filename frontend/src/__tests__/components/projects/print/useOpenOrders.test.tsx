@@ -2,12 +2,13 @@
  * useOpenOrders: the open-order list plus the derived `noOrderNeeded` flag that
  * lets PrintRevisionFlow and ResliceDialog skip the order picker.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderHook, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { delay, http, HttpResponse } from 'msw';
 import { server } from '../../../mocks/server';
 import { wrapper } from '../../../utils';
 import { useOpenOrders } from '../../../../components/projects/print/useOpenOrders';
+import { api } from '../../../../api/client';
 
 // null = real AuthProvider (auth disabled: every permission granted).
 let granted: Set<string> | null = null;
@@ -27,6 +28,8 @@ const order = (task_id: number, board_column: string) => ({ task_id, board_colum
 beforeEach(() => {
   granted = null;
 });
+
+afterEach(() => vi.restoreAllMocks());
 
 describe('useOpenOrders', () => {
   it('no open order (only done ones) and loaded fine: noOrderNeeded', async () => {
@@ -65,9 +68,17 @@ describe('useOpenOrders', () => {
     let gets = 0;
     server.use(http.get('/api/v1/projects/7/orders', () => { gets += 1; return HttpResponse.json({ orders: [order(1, 'print')] }); }));
     granted = new Set(['projects:read']);
-    const { result } = renderHook(() => useOpenOrders(7), { wrapper });
+    const fetchOrders = vi.spyOn(api, 'getProjectOrders');
+    const { result, rerender } = renderHook(() => useOpenOrders(7), { wrapper });
     expect(result.current).toMatchObject({ openOrders: [], loading: false, failed: false, noOrderNeeded: true });
-    await new Promise((r) => setTimeout(r, 50));
+    // An enabled query calls its fetcher on mount (inside renderHook's act): the spy is decisive.
+    await act(async () => {});
+    expect(fetchOrders).not.toHaveBeenCalled();
     expect(gets).toBe(0);
+    // Positive control: with aito:read the same hook fetches through the same spy.
+    granted = new Set(['projects:read', 'aito:read']);
+    rerender();
+    await waitFor(() => expect(gets).toBe(1));
+    expect(fetchOrders).toHaveBeenCalledTimes(1);
   });
 });

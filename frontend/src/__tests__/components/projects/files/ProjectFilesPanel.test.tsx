@@ -133,8 +133,11 @@ describe('ProjectFilesPanel', () => {
     expect(within(r5).queryByRole('button', { name: 'Add files' })).not.toBeInTheDocument();
     expect(within(r5).getByRole('button', { name: 'Delete revision' })).toBeInTheDocument();
     drop(row, 'plan.3mf');
-    await new Promise((r) => setTimeout(r, 50));
-    expect(calls).toEqual([]);
+    // Positive control through the same handler: a stray upload of Plan would have been sent
+    // first, so it is recorded by the time this one is.
+    drop(screen.getByRole('button', { name: /Support$/ }).closest('li')!, 'other.3mf');
+    await waitFor(() => expect(calls).toContain('upload:20'));
+    expect(calls).toEqual(['upload:20']);
   });
 
   it('upload inputs accept printing files only', async () => {
@@ -152,8 +155,11 @@ describe('ProjectFilesPanel', () => {
     // fireEvent: userEvent.upload would silently drop the file on the `accept` filter.
     fireEvent.change(screen.getByTestId('new-revision-input-20'), { target: { files: [new File(['x'], 'mesh.stl')] } });
     expect(await screen.findByText('Only 3MF and G-code files can go into a project')).toBeInTheDocument();
-    await new Promise((r) => setTimeout(r, 50));
-    expect(calls).toEqual([]);
+    // Positive control on another item (a stray upload would leave item 20 busy): any upload
+    // of the .stl was sent before it, so it is recorded by the time this one is.
+    fireEvent.change(screen.getByTestId('new-revision-input-30'), { target: { files: [new File(['x'], 'b.3mf')] } });
+    await waitFor(() => expect(calls).toContain('upload:30'));
+    expect(calls).toEqual(['upload:30']);
   });
 
   it('dropping a mixed set on the section toasts and neither creates nor uploads', async () => {
@@ -163,8 +169,11 @@ describe('ProjectFilesPanel', () => {
       dataTransfer: { files: [new File(['x'], 'bracket.3mf'), new File(['x'], 'bracket.step')], types: ['Files'] },
     });
     expect(await screen.findByText('Only 3MF and G-code files can go into a project')).toBeInTheDocument();
-    await new Promise((r) => setTimeout(r, 50));
-    expect(calls).toEqual([]);
+    // Positive control down the same create-then-upload path: a stray create of "bracket" was
+    // sent first, so it would be recorded ahead of this one.
+    drop(sectionOf('Printing'), 'clamp.3mf');
+    await waitFor(() => expect(calls).toContain('upload:99'));
+    expect(calls).toEqual(['create:clamp', 'upload:99']);
   });
 
   it('picking a non-printing file in the new-item form toasts and keeps the form empty', async () => {
@@ -243,8 +252,11 @@ describe('ProjectFilesPanel', () => {
     const row = (await screen.findByRole('button', { name: /Support$/ })).closest('li')!;
     drop(row, 'other.3mf');
     await waitFor(() => expect(calls).toEqual(['upload:20']));
-    await new Promise((r) => setTimeout(r, 50));
-    expect(calls).toEqual(['upload:20']);
+    // Positive control on another row: a second upload of the first drop (say, the section
+    // taking it too) was sent before this one, so it is recorded by the time this one is.
+    drop(screen.getByRole('button', { name: /Support X1C$/ }).closest('li')!, 'other.3mf');
+    await waitFor(() => expect(calls).toContain('upload:30'));
+    expect(calls).toEqual(['upload:20', 'upload:30']);
   });
 
   it('saves a note and a derived-from change with only that field', async () => {

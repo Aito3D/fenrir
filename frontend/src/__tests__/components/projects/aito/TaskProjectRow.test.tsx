@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { cleanup, createEvent, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { act, cleanup, createEvent, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { useQuery } from '@tanstack/react-query';
@@ -65,6 +65,8 @@ let taskCreates: unknown[];
 let plainCreates: number;
 let codesGets: number;
 let dropped: string[] | null;
+
+afterEach(() => vi.restoreAllMocks());
 
 beforeEach(() => {
   links = unlinked;
@@ -239,9 +241,17 @@ describe('TaskProjectRow', () => {
     renderRow();
     fireEvent.click(await screen.findByRole('button', { name: 'Edit delivered files' }));
     const dialog = await screen.findByRole('dialog');
-    fireEvent.drop(dialog, { dataTransfer: { files: [new File(['x'], 'support.step')], types: ['Files'] } });
-    await new Promise((r) => setTimeout(r, 50));
+    const send = vi.spyOn(api, 'dropFilesOnTask');
+    // A printing file: a .step would be refused by the type check even if the drop got through.
+    fireEvent.drop(dialog, { dataTransfer: { files: [new File(['x'], 'support.3mf')], types: ['Files'] } });
+    expect(send).not.toHaveBeenCalled();
     expect(dropped).toBeNull();
+    // Positive control: the same file dropped on the task itself is sent, once.
+    fireEvent.drop(screen.getByTestId(`task-drop-${TASK}`), {
+      dataTransfer: { files: [new File(['x'], 'support.3mf')], types: ['Files'] },
+    });
+    await waitFor(() => expect(dropped).toEqual([String(TASK)]));
+    expect(send).toHaveBeenCalledTimes(1);
   });
 
   it('linking from a suggestion PUTs the project id and refetches the board codes', async () => {
@@ -493,15 +503,20 @@ describe('task file drop zone', () => {
 
   it('ignores a non-file drag entirely: not claimed, no outline, nothing sent', async () => {
     const zone = await linkedZone();
+    const send = vi.spyOn(api, 'dropFilesOnTask');
     expect(fireEvent.dragOver(zone, { dataTransfer: { types: ['text/plain'] } })).toBe(true);
     expect(zone.className).not.toContain('outline-dashed');
     let notPrevented = false;
-    expect(
-      reachesDocument('drop', () => (notPrevented = fireEvent.drop(zone, { dataTransfer: { files: [], types: ['text/plain'] } }))),
-    ).toBe(true);
+    // It even carries a file: only the `Files` type makes a drag a file drop.
+    const textDrop = { dataTransfer: { files: [new File(['x'], 'support.3mf')], types: ['text/plain'] } };
+    expect(reachesDocument('drop', () => (notPrevented = fireEvent.drop(zone, textDrop)))).toBe(true);
     expect(notPrevented).toBe(true);
-    await new Promise((r) => setTimeout(r, 50));
+    expect(send).not.toHaveBeenCalled();
     expect(dropped).toBeNull();
+    // Positive control: the same file as a file drag is sent, once.
+    fireEvent.drop(zone, files('support.3mf'));
+    await waitFor(() => expect(dropped).toEqual([String(TASK)]));
+    expect(send).toHaveBeenCalledTimes(1);
   });
 
   it('a file drop is claimed, stops at the task, and clears the outline', async () => {
@@ -519,8 +534,13 @@ describe('task file drop zone', () => {
     await screen.findByRole('button', { name: 'New project' });
     const zone = screen.getByTestId(`task-drop-${TASK}`);
     expect(fireEvent.drop(zone, { dataTransfer: { files: [], types: ['Files'] } })).toBe(false);
-    await new Promise((r) => setTimeout(r, 50));
+    await act(async () => {});
     expect(screen.queryByText('Link a project to this task first')).not.toBeInTheDocument();
+    // Positive control: a drop with a file shows the hint, and only its own (toasts never merge,
+    // so a hint from the empty drop would show twice).
+    fireEvent.drop(zone, files('support.3mf'));
+    expect(await screen.findByText('Link a project to this task first')).toBeInTheDocument();
+    expect(screen.getAllByText('Link a project to this task first')).toHaveLength(1);
   });
 
   it('an unsaved task claims a file drag but neither outlines nor takes it', async () => {
@@ -529,9 +549,12 @@ describe('task file drop zone', () => {
     expect(zone).not.toBeNull();
     expect(fireEvent.dragOver(zone, files())).toBe(false);
     expect(zone.className).not.toContain('outline-dashed');
+    const send = vi.spyOn(api, 'dropFilesOnTask');
     expect(fireEvent.drop(zone, files('support.3mf'))).toBe(false);
-    await new Promise((r) => setTimeout(r, 50));
+    // A taken drop toasts or calls the client synchronously; flush React and microtasks anyway.
+    await act(async () => {});
     expect(screen.queryByText('Link a project to this task first')).not.toBeInTheDocument();
+    expect(send).not.toHaveBeenCalled();
     expect(dropped).toBeNull();
   });
 

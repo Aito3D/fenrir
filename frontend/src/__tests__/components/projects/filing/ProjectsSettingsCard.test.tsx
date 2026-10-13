@@ -5,15 +5,16 @@
  * says when nothing is left. Hidden from users without settings:update and
  * projects:update (the migration endpoints require both).
  */
-import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
-import { configure, screen, waitFor } from '@testing-library/react';
+import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll, vi } from 'vitest';
+import { act, configure, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { render } from '../../../utils';
 import { server } from '../../../mocks/server';
-import { setAuthToken } from '../../../../api/client';
+import { api, setAuthToken } from '../../../../api/client';
 import type { LegacyMigrationStatus } from '../../../../api/client';
 import { ProjectsSettingsCard } from '../../../../components/projects/filing/ProjectsSettingsCard';
+import { useAuth } from '../../../../contexts/AuthContext';
 
 beforeAll(() => configure({ asyncUtilTimeout: 5000 }));
 afterAll(() => configure({ asyncUtilTimeout: 1000 }));
@@ -55,7 +56,17 @@ beforeEach(() => {
   putBody = null;
 });
 
-afterEach(() => setAuthToken(null));
+afterEach(() => {
+  setAuthToken(null);
+  vi.restoreAllMocks();
+});
+
+/** Marks the moment the real AuthProvider has loaded the signed-in user, i.e. the
+ *  card's permission decision is final. */
+function AuthSettled() {
+  const { loading, user } = useAuth();
+  return !loading && user ? <span data-testid="auth-settled">{user.username}</span> : null;
+}
 
 describe('ProjectsSettingsCard', () => {
   it('turns auto-filing off', async () => {
@@ -182,10 +193,19 @@ describe('ProjectsSettingsCard', () => {
     );
     setAuthToken('test-token');
     serve();
-    const { container } = render(<ProjectsSettingsCard />);
-    // Give auth time to resolve, then the card must still be absent.
+    const status = vi.spyOn(api, 'getLegacyMigrationStatus');
+    const { container } = render(
+      <>
+        <AuthSettled />
+        <ProjectsSettingsCard />
+      </>,
+    );
+    // Wait until auth has resolved (the card renders in the same commit), then the card
+    // must still be absent and must never have mounted its status query.
     await waitFor(() => expect(statusCalls).toBe(0));
-    await new Promise((r) => setTimeout(r, 300));
+    expect(await screen.findByTestId('auth-settled')).toHaveTextContent('viewer');
+    await act(async () => {});
+    expect(status).not.toHaveBeenCalled();
     expect(container.querySelector('#card-projects-filing')).toBeNull();
     expect(screen.queryByText('Projects')).not.toBeInTheDocument();
     expect(statusCalls).toBe(0);

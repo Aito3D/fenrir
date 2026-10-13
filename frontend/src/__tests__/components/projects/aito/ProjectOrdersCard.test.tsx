@@ -3,12 +3,13 @@
  * project, grouped by order, each linking to its board card; and the
  * "New order" entry into the board's create drawer.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { screen, within } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { render } from '../../../utils';
 import { server } from '../../../mocks/server';
 import { ProjectOrdersCard } from '../../../../components/projects/aito/ProjectOrdersCard';
+import { api } from '../../../../api/client';
 import type { ProjectOrderTask } from '../../../../api/client';
 
 const granted = new Set<string>();
@@ -34,6 +35,8 @@ function order(overrides: Partial<ProjectOrderTask>): ProjectOrderTask {
 function serve(orders: ProjectOrderTask[]) {
   server.use(http.get('/api/v1/projects/7/orders', () => HttpResponse.json({ orders })));
 }
+
+afterEach(() => vi.restoreAllMocks());
 
 beforeEach(() => {
   granted.clear();
@@ -97,9 +100,18 @@ describe('ProjectOrdersCard', () => {
     granted.delete('aito:read');
     const hit = vi.fn();
     server.use(http.get('/api/v1/projects/7/orders', () => { hit(); return HttpResponse.json({ orders: [] }); }));
-    render(<ProjectOrdersCard projectId={7} />);
-    await new Promise((r) => setTimeout(r, 50));
+    const fetchOrders = vi.spyOn(api, 'getProjectOrders');
+    const { rerender } = render(<ProjectOrdersCard projectId={7} />);
+    // An enabled query calls its fetcher as the card mounts (inside render's act), so the
+    // spy is decisive here; flush once more anyway.
+    await act(async () => {});
+    expect(fetchOrders).not.toHaveBeenCalled();
     expect(hit).not.toHaveBeenCalled();
     expect(screen.queryByText('Orders')).not.toBeInTheDocument();
+    // Positive control: granted the permission, the same card fetches through the same spy.
+    granted.add('aito:read');
+    rerender(<ProjectOrdersCard projectId={7} />);
+    await waitFor(() => expect(hit).toHaveBeenCalledTimes(1));
+    expect(fetchOrders).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,19 +1,19 @@
 /**
  * DialogShell (portal + backdrop + form card) and the shared dialog styles:
- * the exact markup OrderPickerDialog and ResliceDialog rendered inline before,
- * backdrop-click close, card clicks contained, and stopDrag.
+ * the structure OrderPickerDialog and ResliceDialog rely on (a modal form
+ * dialog portalled to <body> over a full-screen backdrop), which element wears
+ * which shared style, backdrop-click close, card clicks contained, and stopDrag.
+ * Class strings are not re-stated: only the tokens that carry a behavior
+ * (covers the screen, stacks above the page, centres, touch-target height) are.
  */
 import { describe, it, expect, vi } from 'vitest';
 import { createRef } from 'react';
 import type { DragEvent } from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { DialogShell } from '../../../components/projects/DialogShell';
 import { DIALOG_CARD_CLS, OVERLAY_CLS, RADIO_ROW_CLS, stopDrag } from '../../../components/projects/dialogStyles';
 
-const OVERLAY = 'fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 animate-overlay-in';
-const CARD = 'w-full max-w-lg space-y-4 rounded-xl border border-bambu-dark-tertiary bg-bambu-dark-secondary p-5 focus:outline-none';
-const ROW =
-  'flex min-h-[44px] cursor-pointer items-center gap-3 rounded-lg border border-bambu-dark-tertiary px-3 py-2 text-sm text-white hover:bg-bambu-dark-tertiary has-[:checked]:border-bambu-green/60';
+const tokens = (cls: string) => cls.split(' ');
 
 function renderShell(over: Partial<{ onClose: () => void; onSubmit: () => void }> = {}) {
   const onClose = over.onClose ?? vi.fn();
@@ -30,10 +30,21 @@ function renderShell(over: Partial<{ onClose: () => void; onSubmit: () => void }
 }
 
 describe('dialog styles', () => {
-  it('keeps the exact class strings the dialogs used inline', () => {
-    expect(OVERLAY_CLS).toBe(OVERLAY);
-    expect(DIALOG_CARD_CLS).toBe(CARD);
-    expect(RADIO_ROW_CLS).toBe(ROW);
+  it('the backdrop covers the viewport above the page and centres its card', () => {
+    expect(tokens(OVERLAY_CLS)).toEqual(
+      expect.arrayContaining(['fixed', 'inset-0', 'z-50', 'flex', 'items-center', 'justify-center']),
+    );
+  });
+
+  it('the card is full-width up to a cap and drops the focus outline it takes programmatically', () => {
+    expect(tokens(DIALOG_CARD_CLS)).toEqual(expect.arrayContaining(['w-full', 'focus:outline-none']));
+    expect(tokens(DIALOG_CARD_CLS).some((t) => t.startsWith('max-w-'))).toBe(true);
+  });
+
+  it('a radio row is a 44px touch target, clickable as a whole, marked when its radio is checked', () => {
+    const row = tokens(RADIO_ROW_CLS);
+    expect(row).toEqual(expect.arrayContaining(['min-h-[44px]', 'cursor-pointer']));
+    expect(row.some((t) => t.startsWith('has-[:checked]:'))).toBe(true);
   });
 
   it('stopDrag stops propagation and nothing else', () => {
@@ -59,16 +70,33 @@ describe('dialog styles', () => {
 });
 
 describe('DialogShell', () => {
-  it('portals the exact backdrop + form markup to document.body', () => {
+  it('portals a modal form dialog, inside its backdrop, to document.body', () => {
     const { ref, getByTestId } = renderShell();
     const dialog = screen.getByRole('dialog', { name: 'Pick one' });
     expect(getByTestId('host')).toBeEmptyDOMElement();
     expect(dialog.parentElement!.parentElement).toBe(document.body);
     expect(ref.current).toBe(dialog);
-    expect(dialog.parentElement!.outerHTML).toBe(
-      `<div class="${OVERLAY}"><form role="dialog" aria-modal="true" tabindex="-1" aria-label="Pick one" class="${CARD}">` +
-        '<button type="submit">Go</button></form></div>',
-    );
+    // A <form>, so Enter in a field and the submit button go through onSubmit.
+    expect(dialog.tagName).toBe('FORM');
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    expect(dialog).toHaveAttribute('aria-label', 'Pick one');
+    // Programmatically focusable (the caller focuses it), but out of the tab order.
+    expect(dialog).toHaveAttribute('tabindex', '-1');
+    dialog.focus();
+    expect(dialog).toHaveFocus();
+    // The children render inside the card, and the card is the backdrop's only child.
+    expect(within(dialog).getByRole('button', { name: 'Go' })).toBeInTheDocument();
+    expect(dialog.parentElement!.children).toHaveLength(1);
+  });
+
+  it('the backdrop wears the overlay style and the form the card style', () => {
+    renderShell();
+    const dialog = screen.getByRole('dialog', { name: 'Pick one' });
+    const backdrop = dialog.parentElement!;
+    expect(backdrop).toHaveClass(...tokens(OVERLAY_CLS));
+    expect(dialog).toHaveClass(...tokens(DIALOG_CARD_CLS));
+    expect(backdrop).not.toHaveClass(...tokens(DIALOG_CARD_CLS));
+    expect(dialog).not.toHaveClass('fixed', 'inset-0');
   });
 
   it('closes on a backdrop click, not on a click inside the card', () => {

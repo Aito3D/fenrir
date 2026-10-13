@@ -452,6 +452,22 @@ const leaveTo = (el: Element, to: Element | null) => {
 describe('files panel drop zone handlers', () => {
   const sectionEl = () => screen.getByRole('heading', { level: 3, name: /^Printing/ }).closest('section')!;
   const textDrag = { dataTransfer: { types: ['text/plain'] } };
+  /** Records every revision upload (multipart, so the body is not parsed): a stray upload
+   *  shows up in `mutations()` instead of slipping past msw unseen. */
+  const recordUploads = () =>
+    server.use(
+      http.post('/api/v1/projects/items/:id/revisions', ({ request }) => {
+        requests.push({ method: 'POST', path: new URL(request.url).pathname, body: null });
+        return HttpResponse.json({ revision: rev({ id: 9, number: 2 }), warnings: [] }, { status: 201 });
+      }),
+    );
+  const uploadOf = (itemId: number) => ({ method: 'POST', path: `/api/v1/projects/items/${itemId}/revisions`, body: null });
+  /** Positive control: a printing file dropped on the Gabarit row is uploaded. A stray upload
+   *  from an earlier drop was sent before it, so it is recorded by the time this one is. */
+  const controlDrop = async () => {
+    fireEvent.drop(rowOf(/Gabarit$/), { dataTransfer: { files: [new File(['x'], 'part.3mf')], types: ['Files'] } });
+    await waitFor(() => expect(mutations()).toContainEqual(uploadOf(40)));
+  };
 
   it('a section claims and highlights any drag, lets it bubble, and keeps the highlight while it moves inside', async () => {
     render(<ProjectFilesPanel projectId={7} />);
@@ -482,6 +498,7 @@ describe('files panel drop zone handlers', () => {
   });
 
   it('a drop on a section is claimed and bubbles on; on an item row it is claimed and stopped', async () => {
+    recordUploads();
     render(<ProjectFilesPanel projectId={7} />);
     await screen.findByText('Support');
     const empty = { dataTransfer: { files: [], types: ['Files'] } };
@@ -497,11 +514,12 @@ describe('files panel drop zone handlers', () => {
     expect(reachesDocument('drop', () => (notPrevented = fireEvent.drop(row, empty)))).toBe(false);
     expect(notPrevented).toBe(false);
     expect(row.className).not.toContain('border-bambu-green');
-    await new Promise((r) => setTimeout(r, 50));
-    expect(mutations()).toEqual([]);
+    await controlDrop();
+    expect(mutations()).toEqual([uploadOf(40)]);
   });
 
   it('a legacy item claims and stops a drag but neither highlights nor takes the drop', async () => {
+    recordUploads();
     render(<ProjectFilesPanel projectId={7} />);
     await screen.findByText('Support');
     const older = screen.getByTestId('older-files');
@@ -511,15 +529,19 @@ describe('files panel drop zone handlers', () => {
     expect(row.className).not.toContain('border-bambu-green');
     const drop = { dataTransfer: { files: [new File(['x'], 'plan.3mf')], types: ['Files'] } };
     expect(reachesDocument('drop', () => expect(fireEvent.drop(row, drop)).toBe(false))).toBe(false);
-    await new Promise((r) => setTimeout(r, 50));
-    expect(mutations()).toEqual([]);
+    await controlDrop();
+    expect(mutations()).toEqual([uploadOf(40)]);
   });
 
   describe('without projects:update', () => {
-    afterEach(() => setAuthToken(null));
+    afterEach(() => {
+      setAuthToken(null);
+      vi.restoreAllMocks();
+    });
 
     it('a section still claims a drag but neither highlights nor takes the drop', async () => {
       let meServed = false;
+      recordUploads();
       setAuthToken('test-token', 'session');
       server.use(
         http.get('*/api/v1/auth/status', () => HttpResponse.json({ auth_enabled: true, requires_setup: false })),
@@ -538,10 +560,16 @@ describe('files panel drop zone handlers', () => {
       const row = rowOf(/Support$/);
       expect(reachesDocument('dragover', () => expect(fireEvent.dragOver(row)).toBe(false))).toBe(false);
       expect(row.className).not.toContain('border-bambu-green');
+      // No upload is possible here, so no positive control: spy on the client instead. A taken
+      // drop reaches it synchronously (the upload chain has no await before the request).
+      const create = vi.spyOn(api, 'createProjectItem');
+      const upload = vi.spyOn(api, 'uploadProjectRevision');
       const drop = { dataTransfer: { files: [new File(['x'], 'bracket.3mf')], types: ['Files'] } };
       expect(fireEvent.drop(section, drop)).toBe(false);
       expect(fireEvent.drop(row, drop)).toBe(false);
-      await new Promise((r) => setTimeout(r, 50));
+      await act(async () => {});
+      expect(create).not.toHaveBeenCalled();
+      expect(upload).not.toHaveBeenCalled();
       expect(mutations()).toEqual([]);
     });
   });

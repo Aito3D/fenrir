@@ -4,7 +4,7 @@
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { ReactNode } from 'react';
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { api } from '../../../api/client';
 import {
@@ -120,7 +120,11 @@ describe('useProjectTree', () => {
     const spy = vi.spyOn(api, 'getProjectTree').mockResolvedValue(tree as never);
     const { client, wrapper } = setup();
     const { result } = renderHook(() => useProjectTree(undefined, { enabled: false }), { wrapper });
-    await new Promise((r) => setTimeout(r, 20));
+    // Synchronous: an enabled query reports 'fetching' from its first render and calls the
+    // fetcher on mount, both inside renderHook's act.
+    expect(result.current.fetchStatus).toBe('idle');
+    expect(spy).not.toHaveBeenCalled();
+    await act(async () => {});
     expect(spy).not.toHaveBeenCalled();
     expect(result.current.fetchStatus).toBe('idle');
     expect(client.getQueryCache().findAll().map((q) => q.queryKey)).toEqual([['project-tree', undefined]]);
@@ -149,9 +153,20 @@ describe('useProjectOrders', () => {
   it('enabled:false from the caller suppresses the fetch', async () => {
     const spy = vi.spyOn(api, 'getProjectOrders').mockResolvedValue(orders as never);
     const { wrapper } = setup();
-    const { result } = renderHook(() => useProjectOrders(7, { enabled: false }), { wrapper });
-    await new Promise((r) => setTimeout(r, 20));
+    const { result, rerender } = renderHook(({ enabled }) => useProjectOrders(7, { enabled }), {
+      wrapper,
+      initialProps: { enabled: false },
+    });
+    // Synchronous: an enabled query reports 'fetching' from its first render and calls the
+    // fetcher on mount, both inside renderHook's act.
+    expect(result.current.fetchStatus).toBe('idle');
+    expect(spy).not.toHaveBeenCalled();
+    await act(async () => {});
     expect(spy).not.toHaveBeenCalled();
     expect(result.current.fetchStatus).toBe('idle');
+    // Positive control: the same hook enabled fetches through the same spy.
+    rerender({ enabled: true });
+    await waitFor(() => expect(result.current.data).toEqual(orders));
+    expect(spy).toHaveBeenCalledTimes(1);
   });
 });
