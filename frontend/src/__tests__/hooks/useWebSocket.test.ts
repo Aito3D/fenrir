@@ -949,6 +949,53 @@ describe('useWebSocket hook', () => {
       vi.useRealTimers();
     });
 
+    it('coalesces the card codes refresh of a burst of aito_changed into one per 300ms resync window', async () => {
+      // A legacy migration or a multi-group drop broadcasts once per order;
+      // every connected client must not refetch the codes once per message.
+      vi.useFakeTimers();
+      const { useWebSocket } = await import('../../hooks/useWebSocket');
+      const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+      const codesCalls = () =>
+        invalidateSpy.mock.calls.filter(
+          ([f]) => JSON.stringify((f as { queryKey: unknown }).queryKey) === JSON.stringify(['aito-project-codes']),
+        ).length;
+
+      renderHook(() => useWebSocket(), {
+        wrapper: createWrapper(queryClient),
+      });
+
+      await vi.advanceTimersByTimeAsync(0);
+      const ws = wsInstances[wsInstances.length - 1]!;
+      act(() => {
+        ws.open();
+      });
+
+      for (let i = 0; i < 5; i++) {
+        act(() => {
+          ws.simulateMessage({ type: 'aito_changed', action: 'task', project_id: 40 + i, actor: 'Marie' });
+        });
+        await act(async () => {
+          vi.advanceTimersByTime(50);
+        });
+      }
+      expect(codesCalls()).toBe(0);
+
+      await act(async () => {
+        vi.advanceTimersByTime(400);
+      });
+      expect(codesCalls()).toBe(1);
+
+      // A message after the window closed refreshes the codes again.
+      act(() => {
+        ws.simulateMessage({ type: 'aito_changed', action: 'update', project_id: 41, actor: null });
+      });
+      await act(async () => {
+        vi.advanceTimersByTime(400);
+      });
+      expect(codesCalls()).toBe(2);
+      vi.useRealTimers();
+    });
+
     it('invalidates the invoice card immediately on invoice-email, not just aito-events', async () => {
       // A second operator's open panel learns of a send through this alone:
       // the project row does not change (see test_send_never_moves_the_card),

@@ -873,10 +873,6 @@ def reset_legacy_migration_state() -> None:
 reset_legacy_migration_state()
 
 
-def legacy_migration_status_running() -> bool:
-    return bool(_legacy_state["running"])
-
-
 def start_legacy_migration() -> bool:
     """Spawn the runner; False when one is already running. Check-and-set has no
     await in between, so two concurrent starts can't both win."""

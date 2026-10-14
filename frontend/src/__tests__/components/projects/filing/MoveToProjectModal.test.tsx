@@ -17,6 +17,31 @@ import i18n from '../../../../i18n';
 import en from '../../../../i18n/locales/en';
 import fr from '../../../../i18n/locales/fr';
 
+// Records every showToast(message, type) call while still rendering the real toast, so the
+// tests assert the severity argument itself instead of the icon's colour classes.
+const toastCalls = vi.hoisted(() => [] as Array<[string, string | undefined]>);
+vi.mock('../../../../contexts/ToastContext', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../../contexts/ToastContext')>();
+  type ShowToast = ReturnType<typeof actual.useToast>['showToast'];
+  // One wrapper per real showToast so the function identity stays as stable as the original.
+  const wrapped = new WeakMap<ShowToast, ShowToast>();
+  return {
+    ...actual,
+    useToast: () => {
+      const ctx = actual.useToast();
+      let fn = wrapped.get(ctx.showToast);
+      if (!fn) {
+        fn = (message: string, type?: Parameters<ShowToast>[1]) => {
+          toastCalls.push([message, type]);
+          ctx.showToast(message, type);
+        };
+        wrapped.set(ctx.showToast, fn);
+      }
+      return { ...ctx, showToast: fn };
+    },
+  };
+});
+
 beforeAll(() => configure({ asyncUtilTimeout: 5000 }));
 afterAll(() => configure({ asyncUtilTimeout: 1000 }));
 
@@ -74,6 +99,7 @@ describe('MoveToProjectModal', () => {
     importBody = null;
     importUrl = '';
     importResult = { moved: [filed(1)], copied: [], skipped: [] };
+    toastCalls.length = 0;
     serve();
   });
   afterEach(() => vi.restoreAllMocks());
@@ -202,9 +228,13 @@ describe('MoveToProjectModal', () => {
           '4 files skipped: file missing on disk (2), in the trash (1), storage quota reached (1)',
       ),
     ).toBeInTheDocument();
-    const viewport = screen.getByTestId('toast-viewport');
-    expect(viewport.querySelector('svg.text-yellow-400')).not.toBeNull();
-    expect(viewport.querySelector('svg.text-green-400')).toBeNull();
+    expect(toastCalls).toEqual([
+      [
+        '3 files moved to P-0007 · External files are copied; the originals stay where they are · ' +
+          '4 files skipped: file missing on disk (2), in the trash (1), storage quota reached (1)',
+        'warning',
+      ],
+    ]);
   });
 
   it('an unknown code without a reason shows the code itself', async () => {
@@ -231,7 +261,7 @@ describe('MoveToProjectModal', () => {
     await user.click(await screen.findByRole('button', { name: /Bracket job/ }));
     await user.click(screen.getByRole('button', { name: 'Move' }));
     expect(await screen.findByText('3 files skipped: already in a project')).toBeInTheDocument();
-    expect(screen.getByTestId('toast-viewport').querySelector('svg.text-yellow-400')).not.toBeNull();
+    expect(toastCalls).toEqual([['3 files skipped: already in a project', 'warning']]);
     expect(onMoved).toHaveBeenCalledWith(importResult);
     expect(onClose).toHaveBeenCalled();
   });
@@ -242,7 +272,7 @@ describe('MoveToProjectModal', () => {
     await user.click(await screen.findByRole('button', { name: /Bracket job/ }));
     await user.click(screen.getByRole('button', { name: 'Move' }));
     expect(await screen.findByText('1 file moved to P-0007')).toBeInTheDocument();
-    expect(screen.getByTestId('toast-viewport').querySelector('svg.text-green-400')).not.toBeNull();
+    expect(toastCalls).toEqual([['1 file moved to P-0007', 'success']]);
   });
 
   it('names a project without a code by its name', async () => {
@@ -355,8 +385,7 @@ describe('MoveToProjectModal', () => {
     await user.click(await screen.findByRole('button', { name: /Bracket job/ }));
     await user.click(screen.getByRole('button', { name: 'Move' }));
     expect(await screen.findByText('HTTP 500')).toBeInTheDocument();
-    const viewport = screen.getByTestId('toast-viewport');
-    expect(viewport.querySelector('svg.text-red-400')).not.toBeNull();
+    expect(toastCalls).toEqual([['HTTP 500', 'error']]);
     expect(screen.queryByText(/moved to/)).not.toBeInTheDocument();
     expect(screen.getByRole('dialog', { name: 'Move to a project' })).toBeInTheDocument();
     expect(onClose).not.toHaveBeenCalled();

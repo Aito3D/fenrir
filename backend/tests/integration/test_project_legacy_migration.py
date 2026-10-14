@@ -460,11 +460,12 @@ async def test_start_conflicts_while_running(async_client: AsyncClient, monkeypa
     assert (await async_client.post(START)).status_code == 409
     assert (await async_client.get(STATUS)).json()["running"] is True
     gate.set()
+    # Poll the production status route until the runner reports it has finished.
     for _ in range(200):
-        if not project_filing.legacy_migration_status_running():
+        if (await async_client.get(STATUS)).json()["running"] is False:
             break
         await asyncio.sleep(0.01)
-    assert not project_filing.legacy_migration_status_running()
+    assert (await async_client.get(STATUS)).json()["running"] is False
 
 
 @pytest.fixture

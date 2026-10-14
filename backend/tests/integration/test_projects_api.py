@@ -1311,6 +1311,17 @@ class TestProjectExportImport:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_import_zip_not_a_zip(self, async_client: AsyncClient):
+        """Verify import rejects a .zip upload whose bytes are not a ZIP archive."""
+        import io
+
+        files = {"file": ("project.zip", io.BytesIO(b"definitely not a zip"), "application/zip")}
+        response = await async_client.post("/api/v1/projects/import/file", files=files)
+        assert response.status_code == 400
+        assert response.json()["detail"] == "Invalid ZIP file"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_import_invalid_json(self, async_client: AsyncClient):
         """Verify import rejects invalid JSON content."""
         import io

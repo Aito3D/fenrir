@@ -630,10 +630,12 @@ export function useWebSocket() {
         ) {
           queryClient.invalidateQueries({ queryKey: ['aito-invoice', message.project_id] });
         }
-        queryClient.invalidateQueries({ queryKey: projectKeys.projectCodes() });
         if (aitoResyncTimeoutRef.current) clearTimeout(aitoResyncTimeoutRef.current);
         aitoResyncTimeoutRef.current = window.setTimeout(() => {
           aitoResyncTimeoutRef.current = null;
+          // Fenrir PDM: the card project codes, once per burst (a legacy
+          // migration or a multi-group drop broadcasts once per order).
+          queryClient.invalidateQueries({ queryKey: projectKeys.projectCodes() });
           // Gated: while one of OUR writes is in flight, the arbitration's
           // last-settle invalidation already covers this event — refetching
           // now would race the optimistic cache. See useBoardSync.
