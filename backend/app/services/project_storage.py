@@ -22,6 +22,8 @@ from backend.app.utils.safe_path import PathTraversalError, safe_join_under
 
 PROJECTS_DIRNAME = "projects"
 MAX_COMPONENT_CHARS = 100
+# NAME_MAX of ext4 and the other Linux filesystems the Docker image runs on, in UTF-8 bytes.
+MAX_COMPONENT_BYTES = 255
 _FORBIDDEN_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 _WINDOWS_RESERVED = {
     "CON",
@@ -48,10 +50,23 @@ def slugify(title: str, max_chars: int = 40) -> str:
     return slug or "projet"
 
 
-def sanitize_component(name: str, fallback: str = "sans-nom") -> str:
-    """One safe path component: separators, control and Windows-reserved
-    characters removed, no leading/trailing dots or spaces, at most 100
-    characters, and never a bare Windows device name (spec §2.2)."""
+def _utf8_size(text: str) -> int:
+    """Bytes ``text`` takes on disk; never raises (a lone surrogate counts as its 3-byte form)."""
+    return len(text.encode("utf-8", "surrogatepass"))
+
+
+def _fit_bytes(text: str, max_bytes: int) -> str:
+    """The longest prefix of ``text`` within ``max_bytes`` UTF-8 bytes; never splits a code point."""
+    size = 0
+    for index, char in enumerate(text):
+        size += _utf8_size(char)
+        if size > max_bytes:
+            return text[:index]
+    return text
+
+
+def _sanitize_chars(name: str, fallback: str) -> str:
+    """``sanitize_component`` without the byte cap: the folder name before T-323."""
     cleaned = _FORBIDDEN_CHARS.sub("", unicodedata.normalize("NFC", name or ""))
     cleaned = cleaned.strip().strip(".").strip()
     cleaned = cleaned[:MAX_COMPONENT_CHARS].rstrip(" .")
@@ -60,6 +75,16 @@ def sanitize_component(name: str, fallback: str = "sans-nom") -> str:
     if cleaned.split(".")[0].upper() in _WINDOWS_RESERVED:
         cleaned = f"_{cleaned}"
     return cleaned
+
+
+def sanitize_component(name: str, fallback: str = "sans-nom") -> str:
+    """One safe path component: separators, control and Windows-reserved
+    characters removed, no leading/trailing dots or spaces, at most 100
+    characters and 255 UTF-8 bytes, and never a bare Windows device name (spec §2.2).
+
+    The byte cap only ever shortens a name that was over 255 bytes, so every
+    name that fit before keeps exactly the same component."""
+    return _fit_bytes(_sanitize_chars(name, fallback), MAX_COMPONENT_BYTES).rstrip(" .")
 
 
 def storage_dir_name(code: str, title: str) -> str:
@@ -110,9 +135,25 @@ def is_printable_filename(name: str) -> bool:
     return (name or "").strip().lower().endswith(PRINTABLE_EXTENSIONS)
 
 
+def _item_component(project_dirname: str, section_dirname: str, item_name: str) -> str:
+    """The item's folder name. A folder made before the 255-byte cap under the
+    longer, character-capped name (possible only on a filesystem that allows it,
+    such as APFS) keeps being used, so its files stay where they are."""
+    component = sanitize_component(item_name)
+    legacy = _sanitize_chars(item_name, "sans-nom")
+    if legacy != component:
+        section_path = resolve_in_projects(project_dirname, section_dirname)
+        if os.path.isdir(os.path.join(section_path, legacy)):
+            return legacy
+    return component
+
+
 def item_dir(project, section: str, item_name: str) -> Path:
     """``{storage_dir}/{Section}/{Item}`` — not created. KeyError on an unknown section."""
-    return resolve_in_projects(ensure_project_dir(project).name, SECTION_DIRS[section], sanitize_component(item_name))
+    project_dirname, section_dirname = ensure_project_dir(project).name, SECTION_DIRS[section]
+    return resolve_in_projects(
+        project_dirname, section_dirname, _item_component(project_dirname, section_dirname, item_name)
+    )
 
 
 def revision_folder_name(number: int) -> str:
@@ -122,10 +163,11 @@ def revision_folder_name(number: int) -> str:
 
 def revision_dir(project, section: str, item_name: str, number: int) -> Path:
     """``…/{Item}/R{number}``, created on the way."""
+    project_dirname, section_dirname = ensure_project_dir(project).name, SECTION_DIRS[section]
     path = resolve_in_projects(
-        ensure_project_dir(project).name,
-        SECTION_DIRS[section],
-        sanitize_component(item_name),
+        project_dirname,
+        section_dirname,
+        _item_component(project_dirname, section_dirname, item_name),
         revision_folder_name(number),
     )
     path.mkdir(parents=True, exist_ok=True)
@@ -156,9 +198,11 @@ def _split_extension(name: str) -> tuple[str, str]:
 
 
 def _fit_name(stem: str, suffix: str, ext: str) -> str:
-    """``stem + suffix + ext`` with the stem trimmed so the whole stays within the component limit."""
+    """``stem + suffix + ext`` with the stem trimmed so the whole stays within the component
+    limits (characters and UTF-8 bytes); a name that fit before keeps the same result."""
     room = max(MAX_COMPONENT_CHARS - len(suffix) - len(ext), 1)
-    return f"{stem[:room].rstrip(' .') or 'f'}{suffix}{ext}"
+    room_bytes = max(MAX_COMPONENT_BYTES - _utf8_size(suffix) - _utf8_size(ext), 1)
+    return f"{_fit_bytes(stem[:room], room_bytes).rstrip(' .') or 'f'}{suffix}{ext}"
 
 
 def _candidate_paths(directory: Path, filename: str) -> Iterator[Path]:

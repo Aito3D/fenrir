@@ -6,8 +6,6 @@ import { nonPrintableFiles } from '../files/filesUi';
 import { useFileDropZone } from '../files/useFileDropZone';
 import { useInvalidateProjectLinks } from './useOrderProjectLinks';
 
-export { inZone, isFileDrag } from '../files/useFileDropZone';
-
 /** The dashed accent outline an Aito drop zone shows while files hover it. */
 export const DROP_HIGHLIGHT_CLS = 'outline-dashed outline-2 outline-offset-2 outline-bambu-green';
 

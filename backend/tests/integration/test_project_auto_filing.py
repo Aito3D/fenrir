@@ -455,9 +455,12 @@ async def test_jwt_uploader_with_projects_update_is_auto_filed(async_client: Asy
 # --- pending-upload archive under auth: the auto-filing permission gate (T-046) ----------
 
 
-async def _archive_pending_as(client: AsyncClient, db, permissions: list[str], tmp_path) -> dict:
+async def _archive_pending_as(
+    client: AsyncClient, db, permissions: list[str] | None, tmp_path, api_key_flags: dict[str, bool] | None = None
+) -> dict:
     """Archive a ``P-xxxx_support.3mf`` pending upload as a user holding exactly
-    ``permissions``, with auth on. The project (Impression > "support" at R1) and an
+    ``permissions`` (or, when ``api_key_flags`` is given, as an ownerless API key with
+    exactly those flags), with auth on. The project (Impression > "support" at R1) and an
     active Aito order linked to it are set up with auth still off."""
     from backend.app.models.aito_project import AitoProject
     from backend.app.models.aito_task import AitoTask
@@ -485,12 +488,18 @@ async def _archive_pending_as(client: AsyncClient, db, permissions: list[str], t
     )
     db.add(pending)
     db.add(Settings(key="auth_enabled", value="true"))
-    group_name = f"pending-archiver-{uuid.uuid4().hex[:8]}"
-    user = await add_user_with_group(
-        db, username=f"archiver-{uuid.uuid4().hex[:8]}", group_name=group_name, permissions=permissions, password="pw"
-    )
-    await db.commit()
-    headers = bearer_headers(user)
+    username = None
+    if api_key_flags is not None:
+        await db.commit()
+        headers = await _api_key_headers(db, **api_key_flags)
+    else:
+        group_name = f"pending-archiver-{uuid.uuid4().hex[:8]}"
+        username = f"archiver-{uuid.uuid4().hex[:8]}"
+        user = await add_user_with_group(
+            db, username=username, group_name=group_name, permissions=permissions or [], password="pw"
+        )
+        await db.commit()
+        headers = bearer_headers(user)
 
     anonymous = await client.post(f"/api/v1/pending-uploads/{pending.id}/archive")
     assert anonymous.status_code == 401, anonymous.text  # auth really is on
@@ -503,14 +512,46 @@ async def _archive_pending_as(client: AsyncClient, db, permissions: list[str], t
         "filename": filename,
         "data": data,
         "temp": temp,
+        "username": username,
     }
+
+
+async def _revision_added_events(db, order_id: int) -> list:
+    from backend.app.models.aito_event import AitoEvent
+
+    return list(
+        (
+            await db.execute(
+                select(AitoEvent).where(AitoEvent.project_id == order_id, AitoEvent.kind == "project.revision_added")
+            )
+        ).scalars()
+    )
+
+
+async def _assert_pending_archive_not_filed(db, run: dict) -> None:
+    """The archive succeeded but nothing was filed: the "support" item stays at R1, no
+    library copy carries the project, and the linked order gets no revision event."""
+    response = run["response"]
+    assert response.status_code == 200, response.text
+    assert set(response.json()) == {"id", "print_name", "filename"}
+    assert response.json()["filename"] == run["filename"]
+    archives = list((await db.execute(select(PrintArchive))).scalars())
+    assert [a.filename for a in archives] == [run["filename"]]
+
+    revisions = await _revisions(db, run["item_id"])
+    assert [r.number for r in revisions] == [1]
+    items = list(
+        (await db.execute(select(ProjectItem).where(ProjectItem.project_id == run["project"]["id"]))).scalars()
+    )
+    assert [i.name for i in items] == ["support"]
+    assert await _revision_added_events(db, run["order_id"]) == []
+    assert not run["temp"].exists()  # the temp file is still cleaned up
 
 
 async def _assert_pending_archive_filed_a_copy(db, run: dict) -> None:
     """The archive succeeded AND a copy was filed as R2 of the "support" item, with
-    a ``project.revision_added`` event (no actor: the route passes user_id=None)."""
+    a ``project.revision_added`` event attributed to the archiving user (none for a key)."""
     from backend.app.api.routes.library import to_absolute_path
-    from backend.app.models.aito_event import AitoEvent
 
     response = run["response"]
     assert response.status_code == 200, response.text
@@ -539,18 +580,10 @@ async def _assert_pending_archive_filed_a_copy(db, run: dict) -> None:
     assert on_disk is not None and on_disk.read_bytes() == run["data"]
     assert not run["temp"].exists()  # the temp file is still cleaned up
 
-    events = list(
-        (
-            await db.execute(
-                select(AitoEvent).where(
-                    AitoEvent.project_id == run["order_id"], AitoEvent.kind == "project.revision_added"
-                )
-            )
-        ).scalars()
-    )
+    events = await _revision_added_events(db, run["order_id"])
     assert len(events) == 1  # R1 predates the link
     assert events[0].subject_label == "support R2"
-    assert events[0].actor_name is None
+    assert events[0].actor_name == run["username"]
     assert events[0].detail["revision_id"] == revisions[1].id
     assert events[0].detail["item_id"] == run["item_id"]
     assert events[0].detail["project_id"] == run["project"]["id"]
@@ -558,25 +591,45 @@ async def _assert_pending_archive_filed_a_copy(db, run: dict) -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-async def test_pending_archive_without_projects_update_still_files_a_copy(
-    async_client: AsyncClient, db_session, tmp_path
-):
-    """PINNED CURRENT BEHAVIOR, not a desired contract (T-046): the archive route is
-    gated by queue:create only and calls auto_file_by_code with no projects:update
-    check, so a caller WITHOUT projects:update still gets the file filed into the
-    project as a new revision. Unlike the library upload path
-    (test_uploader_without_projects_update_is_not_auto_filed). If that gap is
-    closed, this test must change deliberately."""
+async def test_pending_archive_without_projects_update_is_not_filed(async_client: AsyncClient, db_session, tmp_path):
+    """T-321 (user-approved, was T-046's pinned gap): a caller with queue:create but
+    WITHOUT projects:update archives the upload, but it is not filed into the project,
+    the same rule as the library upload path
+    (test_uploader_without_projects_update_is_not_auto_filed)."""
     from backend.app.core.permissions import Permission
 
     run = await _archive_pending_as(async_client, db_session, [Permission.QUEUE_CREATE.value], tmp_path)
+    await _assert_pending_archive_not_filed(db_session, run)
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_pending_archive_by_api_key_without_project_scope_is_not_filed(
+    async_client: AsyncClient, db_session, tmp_path
+):
+    """T-321: an API key's effective scopes gate auto-filing as a user's permissions do."""
+    run = await _archive_pending_as(
+        async_client, db_session, None, tmp_path, api_key_flags={"can_queue": True, "can_manage_projects": False}
+    )
+    await _assert_pending_archive_not_filed(db_session, run)
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_pending_archive_by_api_key_with_project_scope_files_a_copy(
+    async_client: AsyncClient, db_session, tmp_path
+):
+    """T-321: a key with can_manage_projects files the copy; no user, so no event actor."""
+    run = await _archive_pending_as(
+        async_client, db_session, None, tmp_path, api_key_flags={"can_queue": True, "can_manage_projects": True}
+    )
     await _assert_pending_archive_filed_a_copy(db_session, run)
 
 
 @pytest.mark.asyncio
 @pytest.mark.integration
 async def test_pending_archive_with_projects_update_files_a_copy(async_client: AsyncClient, db_session, tmp_path):
-    """The mirror case: a caller holding projects:update gets the same outcome."""
+    """The mirror case: a caller holding projects:update gets the copy filed, attributed to them."""
     from backend.app.core.permissions import Permission
 
     run = await _archive_pending_as(

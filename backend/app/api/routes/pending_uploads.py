@@ -9,7 +9,12 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.core.auth import RequirePermissionIfAuthEnabled, require_ownership_permission
+from backend.app.core.auth import (
+    ApiKeyActor,
+    RequestActor,
+    RequirePermissionIfAuthEnabled,
+    require_ownership_permission,
+)
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.models.pending_upload import PendingUpload
@@ -243,7 +248,8 @@ async def archive_pending_upload(
     upload_id: int,
     request: ArchiveRequest = None,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_CREATE),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_CREATE),
+    actor: User | ApiKeyActor | None = RequestActor,
 ):
     """Archive a pending upload."""
     result = await db.execute(select(PendingUpload).where(PendingUpload.id == upload_id))
@@ -304,11 +310,19 @@ async def archive_pending_upload(
         "filename": archive.filename,
     }
 
-    # Fenrir: a "P-0042_…" file also lands in that project as a copy (projects PDM phase 5).
+    # Fenrir: a "P-0042_…" file also lands in that project as a copy (projects PDM phase 5),
+    # unless auth is on and the caller lacks projects:update (as the library upload route).
     try:
         from backend.app.services.project_filing import auto_file_by_code
 
-        await auto_file_by_code(db, filename=pending.filename, path=file_path, library_file=None, user_id=None)
+        if actor is None or actor.has_permission(Permission.PROJECTS_UPDATE.value):
+            await auto_file_by_code(
+                db,
+                filename=pending.filename,
+                path=file_path,
+                library_file=None,
+                user_id=current_user.id if current_user else None,
+            )
     except Exception:
         logger.warning("Auto-filing pending upload %s failed", upload_id, exc_info=True)
 
