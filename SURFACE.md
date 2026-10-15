@@ -1339,8 +1339,6 @@ CREATE TABLE projects (
 1 export function useUploadToTask
 1 export interface DerivedOption
 1 export interface PrintCounts
-1 export interface ResliceJobs
-1 export interface ResliceRun
 1 export interface TagDraft
 1 export type FileActions
 ```

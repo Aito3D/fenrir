@@ -7,7 +7,7 @@ import { useToast } from '../../../contexts/ToastContext';
 import { failureMessage } from '../failureMessage';
 import { projectTreeQuery } from '../projectQueries';
 
-export interface ResliceRun {
+interface ResliceRun {
   itemId: number;
   jobId: number;
   percent: number | null;
@@ -16,7 +16,7 @@ export interface ResliceRun {
   queueTaskId: number | null | undefined;
 }
 
-export interface ResliceJobs {
+interface ResliceJobs {
   runFor: (itemId: number) => ResliceRun | undefined;
   start: (itemId: number, revisionId: number, fileId: number, pipelineId: number, queueTaskId: number | null | undefined) => Promise<void>;
   dismiss: (itemId: number) => void;

@@ -5714,7 +5714,8 @@ async def merge_project(
     trash brings back the card exactly as it was. The copies land after the
     target's last task, in the source's order, with every service column —
     costs, quantities, discounts, the per-service "subtask" descriptions and
-    the printing details — carried over.
+    the printing details — carried over. The copies also carry each task's
+    linked project and its delivery records, and the source keeps its own.
 
     Done ticks travel only when the TARGET is accepted. That is the rule
     every other task write follows (`_reject_ticks_without_acceptance`): a

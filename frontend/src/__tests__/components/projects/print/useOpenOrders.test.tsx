@@ -13,14 +13,8 @@ import { api } from '../../../../api/client';
 // null = real AuthProvider (auth disabled: every permission granted).
 let granted: Set<string> | null = null;
 vi.mock('../../../../contexts/AuthContext', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../../../contexts/AuthContext')>();
-  return {
-    ...actual,
-    useAuth: () => {
-      const real = actual.useAuth();
-      return granted ? { ...real, hasPermission: (p: string) => granted!.has(p) } : real;
-    },
-  };
+  const { withGrantedPermissions } = await import('../../../fixtures/authPermissions');
+  return withGrantedPermissions(await importOriginal<typeof import('../../../../contexts/AuthContext')>(), () => granted);
 });
 
 const order = (task_id: number, board_column: string) => ({ task_id, board_column });
