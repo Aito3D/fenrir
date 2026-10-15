@@ -311,6 +311,7 @@ class PrintTraceError(HttpStatusError, ValueError)
 class ProjectFilesError(HttpStatusError)
 class ResliceRequest
 class RevisionSource
+class TooManyNewTagsError(HTTPException)
 class UnknownTagError(ValueError)
 def allocate_code_number(connection: Connection)
 def claim_unique_file_path(directory: Path, filename: str)
@@ -1203,7 +1204,7 @@ CREATE TABLE projects (
 ## Permissions guarding the routes (count per permission)
 ```regen: grep -hoE 'Permission\.[A-Z_]+' backend/app/api/routes/projects_pdm.py backend/app/api/routes/project_files.py backend/app/api/routes/aito_project_links.py backend/app/api/routes/projects.py | sort | uniq -c | sed 's/^ *//'```
 ```
-2 Permission.AITO_READ
+3 Permission.AITO_READ
 2 Permission.AITO_UPDATE
 1 Permission.LIBRARY_READ_ALL
 1 Permission.LIBRARY_READ_OWN

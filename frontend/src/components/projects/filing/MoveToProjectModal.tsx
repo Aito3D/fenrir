@@ -45,6 +45,7 @@ const SKIP_REASON_KEYS: Record<string, string> = {
   not_owner: 'notOwner',
   copy_failed: 'retry',
   conflict: 'retry',
+  error: 'retry',
 };
 
 /** Why files were skipped: one reason as is, several each with their count

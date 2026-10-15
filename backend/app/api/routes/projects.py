@@ -16,7 +16,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from backend.app.api.routes.library import get_library_dir
-from backend.app.core.auth import RequestPrinterScope, RequirePermissionIfAuthEnabled, require_media_token_permission
+from backend.app.core.auth import (
+    RequestPrinterScope,
+    RequirePermissionIfAuthEnabled,
+    probe_permissions_if_auth_enabled,
+    require_media_token_permission,
+)
 from backend.app.core.config import settings
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
@@ -1039,6 +1044,7 @@ async def list_project_archives(
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_READ),
+    can_read_aito: bool = Depends(probe_permissions_if_auth_enabled(Permission.AITO_READ)),  # Fenrir
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """List archives in a project."""
@@ -1080,6 +1086,8 @@ async def list_project_archives(
     for a in archives:
         data = archive_to_response(a, run_aggregate=run_aggregates.get(a.id))
         data.update(labels.get(a.id, {"revision_label": None, "aito_task_id": None, "order_id": None}))
+        if not can_read_aito:  # Fenrir: the Aito order behind a print is aito:read data
+            data.update(aito_task_id=None, order_id=None)
         out.append(data)
     return out
 

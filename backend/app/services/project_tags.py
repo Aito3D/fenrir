@@ -14,11 +14,12 @@ from collections.abc import Iterable
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.exceptions import HTTPException
 
 from backend.app.models.library import LibraryTag
 from backend.app.models.project import Project
 from backend.app.models.project_tag import ProjectTag
-from backend.app.schemas.project import ProjectTagRef, ProjectTagSuggestion
+from backend.app.schemas.project import MAX_NEW_TAG_NAMES, ProjectTagRef, ProjectTagSuggestion
 
 MAX_TAG_CHARS = 64
 
@@ -62,6 +63,25 @@ class UnknownTagError(ValueError):
     def __init__(self, tag_ids: list[int]):
         super().__init__(f"Unknown tag ids: {tag_ids}")
         self.tag_ids = tag_ids
+
+
+class TooManyNewTagsError(HTTPException):
+    """422 with the body FastAPI gives ``new_tag_names`` past ``MAX_NEW_TAG_NAMES``, for a legacy ``tags``
+    string that would create more catalogue rows than that."""
+
+    def __init__(self, new_names: list[str]):
+        super().__init__(
+            status_code=422,
+            detail=[
+                {
+                    "type": "too_long",
+                    "loc": ["body", "tags"],
+                    "msg": f"List should have at most {MAX_NEW_TAG_NAMES} items after validation, not {len(new_names)}",
+                    "input": new_names,
+                    "ctx": {"field_type": "List", "max_length": MAX_NEW_TAG_NAMES, "actual_length": len(new_names)},
+                }
+            ],
+        )
 
 
 async def get_or_create_tags(db: AsyncSession, names: list[str]) -> list[LibraryTag]:
@@ -137,8 +157,16 @@ async def apply_project_tag_input(
 
 
 async def sync_project_tags_from_string(db: AsyncSession, project: Project) -> None:
-    """Rows from whatever a legacy path wrote into ``project.tags`` (create, import, template copy)."""
-    tags = await get_or_create_tags(db, split_tag_string(project.tags))
+    """Rows from whatever a legacy path wrote into ``project.tags`` (create, import, template copy).
+
+    More than ``MAX_NEW_TAG_NAMES`` names missing from the catalogue raise ``TooManyNewTagsError`` before any row is made."""
+    names = split_tag_string(project.tags)
+    keys = [tag_name_key(name) for name in names]
+    known = set((await db.execute(select(LibraryTag.name_key).where(LibraryTag.name_key.in_(keys)))).scalars().all())
+    new_names = [name for name, key in zip(names, keys, strict=True) if key not in known]
+    if len(new_names) > MAX_NEW_TAG_NAMES:
+        raise TooManyNewTagsError(new_names)
+    tags = await get_or_create_tags(db, names)
     await set_project_tags(db, project, [tag.id for tag in tags])
 
 

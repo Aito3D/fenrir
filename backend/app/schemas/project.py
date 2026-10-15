@@ -19,6 +19,10 @@ def _validate_project_url(value: str | None) -> str | None:
     return trimmed
 
 
+# How many names one request may ask the shared tag catalogue to create (``new_tag_names``, legacy ``tags``).
+MAX_NEW_TAG_NAMES = 20
+
+
 class ProjectTagRef(BaseModel):
     id: int
     name: str
@@ -38,7 +42,7 @@ class ProjectCreate(BaseModel):
     # Projects as a PDM (spec §1.2). When either is sent, it wins over the
     # legacy ``tags`` string; ``tag_ids`` replaces the whole set.
     tag_ids: list[int] | None = Field(default=None, max_length=200)
-    new_tag_names: list[str] | None = Field(default=None, max_length=20)
+    new_tag_names: list[str] | None = Field(default=None, max_length=MAX_NEW_TAG_NAMES)
     due_date: datetime | None = None
     priority: str = "normal"
     budget: float | None = None
@@ -66,7 +70,7 @@ class ProjectUpdate(BaseModel):
     # Projects as a PDM (spec §1.2). When either is sent, it wins over the
     # legacy ``tags`` string; ``tag_ids`` replaces the whole set.
     tag_ids: list[int] | None = Field(default=None, max_length=200)
-    new_tag_names: list[str] | None = Field(default=None, max_length=20)
+    new_tag_names: list[str] | None = Field(default=None, max_length=MAX_NEW_TAG_NAMES)
     due_date: datetime | None = None
     priority: str | None = None
     budget: float | None = None

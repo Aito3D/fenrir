@@ -302,6 +302,20 @@ describe('MoveToProjectModal', () => {
     await waitFor(() => expect(importBody).toEqual({ file_ids: [5] }));
   });
 
+  it('reads the backend "error" skip code as the translated retry reason, not its English text', async () => {
+    importResult = {
+      moved: [],
+      copied: [],
+      skipped: [{ file_id: 1, code: 'error', reason: 'unexpected error while moving the file' }],
+    };
+    const user = userEvent.setup();
+    renderModal([1]);
+    await user.click(await screen.findByRole('button', { name: /Bracket job/ }));
+    await user.click(screen.getByRole('button', { name: 'Move' }));
+    expect(await screen.findByText(/could not be copied, try again/)).toBeInTheDocument();
+    expect(screen.queryByText(/unexpected error while moving the file/)).not.toBeInTheDocument();
+  });
+
   it('says why files were skipped, one count per reason; copy errors and conflicts read as retry', async () => {
     importResult = {
       moved: [],
