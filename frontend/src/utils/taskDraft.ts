@@ -3,6 +3,11 @@ import { computePricing } from './pricing';
 import type { PricingDefaults, PricingFilament, PricingPrinter, PricingResult } from './pricing';
 import type { AitoTask, AitoTaskCreate } from '../api/client';
 
+/** The backend's cap on a task's printing colour (AitoTaskBase.impression_color,
+ *  String(100)): a longer value is refused with a 422 the drawer could not
+ *  explain, so the colour input stops at the same length. */
+export const IMPRESSION_COLOR_MAX = 100;
+
 export interface ImpressionDraft {
   printerId: number | null;
   filamentId: number | null;

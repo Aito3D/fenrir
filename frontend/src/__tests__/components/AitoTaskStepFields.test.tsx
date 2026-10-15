@@ -172,6 +172,38 @@ describe('TaskStepFields', () => {
     expect(onChange.mock.calls.at(-1)?.[0].impressionDiscountPct).toBe(10);
   });
 
+  it('printing: the colour input is capped at the backend\'s 100 characters and shows a counter near the limit', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    const short = 'blancs avec base noire';
+    const { rerender } = render(
+      <TaskStepFields
+        task={{ ...emptyTaskDraft(), impressionCost: 500, impression: { ...emptyTaskDraft().impression, color: short } }}
+        onChange={onChange}
+      />,
+    );
+    const color = screen.getByLabelText('Colour') as HTMLInputElement;
+    // The backend (AitoTaskBase.impression_color, String(100)) refuses longer
+    // values with a 422; the input stops the operator at the same limit.
+    expect(color.maxLength).toBe(100);
+    // Well under the limit: no counter clutters the row.
+    expect(screen.queryByText(/\/100$/)).not.toBeInTheDocument();
+
+    const long = 'x'.repeat(92);
+    rerender(
+      <TaskStepFields
+        task={{ ...emptyTaskDraft(), impressionCost: 500, impression: { ...emptyTaskDraft().impression, color: long } }}
+        onChange={onChange}
+      />,
+    );
+    expect(screen.getByText('92/100')).toBeInTheDocument();
+    // Typing past the cap is refused by the browser, so onChange never sees
+    // a 101-character colour.
+    await user.type(screen.getByLabelText('Colour'), 'y'.repeat(12));
+    const colours = onChange.mock.calls.map((c) => c[0].impression.color as string);
+    expect(colours.every((c) => c.length <= 100)).toBe(true);
+  });
+
   it('printing: clearing the discount emits null, not 0', async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();

@@ -18,7 +18,7 @@ import { SHIPPING_PHONE_RE, useAitoPageMutations } from '../../hooks/useAitoPage
 import { __resetBoardSync } from '../../hooks/useBoardSync';
 import { ToastProvider } from '../../contexts/ToastContext';
 import { placeholderProject } from '../../utils/aitoOptimistic';
-import { api } from '../../api/client';
+import { api, ApiError } from '../../api/client';
 import type { AitoProject, ZohoQuotePreview, ZohoQuoteShipping } from '../../api/client';
 import { flashRevert } from '../../hooks/useRevertFlash';
 import { defaultClientDraft } from '../../utils/clientDraft';
@@ -248,6 +248,53 @@ describe('createMutation — onError', () => {
       client.getQueryData<AitoProject[]>(['aito-projects'])?.some((p) => p.id === placeholder.id),
     ).toBe(false);
     expect(await screen.findByText('Could not create the project. Please try again.')).toBeInTheDocument();
+  });
+});
+
+describe('createMutation — 422 detail', () => {
+  beforeEach(() => __resetBoardSync());
+
+  it('appends the server\'s validation message to the create-failed toast', async () => {
+    // What `throwApiError` builds from a FastAPI 422 body: the entries' msg
+    // joined, with the field lost. The operator still needs to see the rule
+    // that was broken — a bare "try again" hid a 171-character colour.
+    vi.spyOn(api, 'createAitoProject').mockRejectedValue(
+      new ApiError('String should have at most 100 characters', 422),
+    );
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    client.setQueryData(['aito-projects'], []);
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>
+        <ToastProvider>{children}</ToastProvider>
+      </QueryClientProvider>
+    );
+    const { result } = renderHook(() => useAitoPageMutations(), { wrapper });
+    const placeholder = placeholderProject({
+      description: 'New card',
+      client_id: null,
+      client_name: 'Walk-in',
+      client_phone: null,
+      client_email: null,
+      client_is_company: false,
+    });
+    act(() => {
+      result.current.createMutation.mutate({
+        description: 'New card',
+        draft: defaultClientDraft('walkin', 'Walk-in'),
+        tasks: [],
+        shipping: null,
+        dueDate: null,
+        regenerateDescription: false,
+        placeholder,
+      });
+    });
+    expect(
+      await screen.findByText(
+        'Could not create the project. Please try again. String should have at most 100 characters',
+      ),
+    ).toBeInTheDocument();
   });
 });
 

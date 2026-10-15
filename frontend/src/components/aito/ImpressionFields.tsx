@@ -9,7 +9,7 @@ import { Money } from '../calculator/shared';
 import { inputCls, focusRingCls } from '../formStyles';
 import { CalcInput } from '../CalcInput';
 import { useCurrency } from '../../hooks/useCurrency';
-import { computeImpressionCost, roundUpTo50 } from '../../utils/taskDraft';
+import { IMPRESSION_COLOR_MAX, computeImpressionCost, roundUpTo50 } from '../../utils/taskDraft';
 import type { ImpressionDraft } from '../../utils/taskDraft';
 import { rowLabelCls, QuantityInput } from './servicePriceFields';
 
@@ -323,17 +323,29 @@ export function ImpressionFields({
         </GridRow>
 
         <GridRow side="part" htmlFor={`${reactId}-color`} label={t('aito.color')}>
-          <input
-            id={`${reactId}-color`}
-            type="text"
-            value={value.color}
-            onChange={(e) => handleChange({ ...value, color: e.target.value })}
-            // The browser's own suggestion list (every colour ever typed
-            // here) hid the field's content and the row below it; the
-            // material select is where the shop's palette lives.
-            autoComplete="off"
-            className={inputCls}
-          />
+          {/* One grid cell: the row is a two-column subgrid, so the counter
+              rides inside the control's cell rather than wrapping under
+              the label. */}
+          <div className="min-w-0">
+            <input
+              id={`${reactId}-color`}
+              type="text"
+              value={value.color}
+              onChange={(e) => handleChange({ ...value, color: e.target.value })}
+              // The browser's own suggestion list (every colour ever typed
+              // here) hid the field's content and the row below it; the
+              // material select is where the shop's palette lives.
+              autoComplete="off"
+              maxLength={IMPRESSION_COLOR_MAX}
+              className={inputCls}
+            />
+            {/* Only near the cap: a counter on every short colour is noise. */}
+            {value.color.length >= IMPRESSION_COLOR_MAX * 0.8 && (
+              <span className="mt-0.5 block text-right text-xs text-gray-500 dark:text-gray-400" aria-live="polite">
+                {value.color.length}/{IMPRESSION_COLOR_MAX}
+              </span>
+            )}
+          </div>
         </GridRow>
 
         <GridRow side="part" htmlFor={`${reactId}-printer`} label={t('aito.printer')}>
