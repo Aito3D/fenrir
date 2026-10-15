@@ -1900,6 +1900,101 @@ async def test_stream_files_removes_the_claimed_name_when_the_rename_fails(tmp_p
     assert list(folder.iterdir()) == []  # neither the claimed placeholder nor the .part survives
 
 
+_STALE_PART = ".0123456789abcdef0123456789abcdef.part"
+
+
+def _aged(path, seconds):
+    import os
+    import time
+
+    stamp = time.time() - seconds
+    os.utime(path, (stamp, stamp), follow_symlinks=False)
+
+
+def test_sweep_removes_a_stale_part_and_keeps_everything_else(tmp_path):
+    day = project_files.PART_GRACE_SECONDS
+    stale = tmp_path / _STALE_PART
+    stale.write_bytes(b"half")
+    _aged(stale, day + 60)
+    fresh = tmp_path / ".fedcba9876543210fedcba9876543210.part"
+    fresh.write_bytes(b"in flight")
+    _aged(fresh, day - 3600)
+    user_file = tmp_path / ".notes.part"  # not a uuid name: could be an upload's own filename
+    user_file.write_bytes(b"mine")
+    _aged(user_file, day * 5)
+    real = tmp_path / "plate.3mf"
+    real.write_bytes(b"3mf")
+    _aged(real, day * 5)
+    link = tmp_path / ".aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.part"
+    link.symlink_to(real)
+    _aged(link, day * 5)
+    folder_like = tmp_path / ".bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.part"
+    folder_like.mkdir()
+    _aged(folder_like, day * 5)
+
+    project_files._sweep_stale_parts(tmp_path)
+
+    assert not stale.exists()
+    assert sorted(p.name for p in tmp_path.iterdir()) == sorted(
+        [fresh.name, user_file.name, real.name, link.name, folder_like.name]
+    )
+    assert real.read_bytes() == b"3mf"
+
+
+def test_sweep_logs_and_ignores_an_unlink_failure(tmp_path, monkeypatch, caplog):
+    stale = tmp_path / _STALE_PART
+    stale.write_bytes(b"half")
+    _aged(stale, project_files.PART_GRACE_SECONDS + 60)
+
+    def refuse(self, *_args, **_kwargs):
+        raise PermissionError("read-only folder")
+
+    monkeypatch.setattr(project_files.Path, "unlink", refuse)
+    caplog.set_level("WARNING", logger=project_files.logger.name)
+    project_files._sweep_stale_parts(tmp_path)  # must not raise
+    assert stale.exists()
+    assert any("Could not remove" in r.getMessage() and r.exc_info for r in caplog.records)
+
+
+def test_sweep_logs_and_ignores_an_unreadable_folder(tmp_path, caplog):
+    caplog.set_level("WARNING", logger=project_files.logger.name)
+    project_files._sweep_stale_parts(tmp_path / "missing")
+    assert any("stale upload parts" in r.getMessage() and r.exc_info for r in caplog.records)
+
+
+def test_sweep_logs_and_skips_a_part_it_cannot_inspect(tmp_path, monkeypatch, caplog):
+    part = tmp_path / _STALE_PART
+    part.write_bytes(b"half")
+    _aged(part, project_files.PART_GRACE_SECONDS + 60)
+
+    def refuse(self):
+        raise OSError("stat refused")
+
+    monkeypatch.setattr(project_files.Path, "is_file", refuse)
+    caplog.set_level("WARNING", logger=project_files.logger.name)
+    project_files._sweep_stale_parts(tmp_path)
+    monkeypatch.undo()
+    assert part.exists()
+    assert any("Could not inspect" in r.getMessage() and r.exc_info for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_stream_files_sweeps_stale_parts_before_streaming(tmp_path):
+    folder = tmp_path / "R1"
+    folder.mkdir()
+    stale = folder / _STALE_PART
+    stale.write_bytes(b"left by a dead process")
+    _aged(stale, project_files.PART_GRACE_SECONDS + 60)
+    fresh = folder / ".fedcba9876543210fedcba9876543210.part"
+    fresh.write_bytes(b"another upload, still running")
+
+    written = await project_files._stream_files(folder, [upload("a.step", b"geo")])
+
+    assert [w.path.name for w in written] == ["a.step"]
+    assert not stale.exists()
+    assert fresh.read_bytes() == b"another upload, still running"
+
+
 @pytest.mark.asyncio
 async def test_thumbnail_failure_never_fails_the_upload(tmp_path, monkeypatch):
     monkeypatch.setattr(project_files, "get_library_thumbnails_dir", lambda: tmp_path)

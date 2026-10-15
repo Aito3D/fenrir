@@ -15,7 +15,9 @@ import functools
 import hashlib
 import logging
 import os
+import re
 import shutil
+import time
 import uuid
 import weakref
 from collections.abc import Awaitable, Callable
@@ -376,6 +378,34 @@ def _unlink_quietly(path: Path) -> None:
         logger.warning("Could not remove %s during cleanup", path, exc_info=True)
 
 
+# A ``.{uuid}.part`` older than this is the leftover of an upload whose process died; a younger one may belong
+# to an upload still streaming into the same folder and is never touched.
+PART_GRACE_SECONDS = 24 * 3600
+_PART_NAME = re.compile(r"\.[0-9a-f]{32}\.part")
+
+
+def _sweep_stale_parts(folder: Path) -> None:
+    """Remove ``.{uuid}.part`` files in ``folder`` last modified more than ``PART_GRACE_SECONDS`` ago.
+
+    Best effort: a folder that cannot be listed or a file that cannot be stat'ed or removed is logged and skipped."""
+    cutoff = time.time() - PART_GRACE_SECONDS
+    try:
+        names = [name for name in os.listdir(folder) if _PART_NAME.fullmatch(name)]
+    except OSError:
+        logger.warning("Could not list %s for stale upload parts", folder, exc_info=True)
+        return
+    for name in names:
+        path = folder / name
+        try:
+            if path.is_symlink() or not path.is_file() or path.stat().st_mtime >= cutoff:
+                continue
+        except OSError:
+            logger.warning("Could not inspect %s for staleness", path, exc_info=True)
+            continue
+        logger.info("Removing stale upload part %s", path)
+        _unlink_quietly(path)
+
+
 def _cleanup_written(written: list[_WrittenFile]) -> None:
     for item in written:
         _unlink_quietly(item.path)
@@ -389,7 +419,9 @@ async def _stream_files(folder: Path, uploads: list[UploadFile]) -> list[_Writte
     Touches no database. Each upload streams to its own ``.{uuid}.part`` and the
     final name is claimed atomically, so overlapping uploads of one filename
     never share a file. On any failure everything written by THIS call (files,
-    ``.part`` files, thumbnails) is removed before the exception propagates."""
+    ``.part`` files, thumbnails) is removed before the exception propagates. Before streaming, ``.part`` files
+    left in ``folder`` by a process that died mid-upload (older than ``PART_GRACE_SECONDS``) are swept."""
+    await asyncio.to_thread(_sweep_stale_parts, folder)
     written: list[_WrittenFile] = []
     part: Path | None = None
     try:

@@ -7,6 +7,7 @@ import { useAuth } from '../../../contexts/AuthContext';
 import { ConfirmModal } from '../../ConfirmModal';
 import { ModelViewerModal } from '../../ModelViewerModal';
 import { inputCls, focusRingCls } from '../../formStyles';
+import { formatFileSize } from '../../../utils/file';
 import type { FileActions } from './useFileActions';
 import {
   PREVIEWABLE_TYPES,
@@ -33,12 +34,6 @@ interface Props {
 }
 
 const btnCls = `inline-flex min-h-[44px] items-center gap-1 rounded-lg px-2 py-1 text-xs text-bambu-gray-light hover:bg-bambu-dark-tertiary hover:text-white md:min-h-0 ${focusRingCls}`;
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-}
 
 const isResliceable = (f: ProjectFileOut) => f.filename.toLowerCase().endsWith('.3mf'); // incl. .gcode.3mf, as the backend
 
@@ -175,7 +170,7 @@ export function RevisionBlock({ item, revision, derivedOptions, actions }: Props
                 </span>
               )}
               <span className="min-w-0 flex-1 basis-40 break-all text-sm text-white">{f.filename}</span>
-              <span className="text-xs text-bambu-gray">{formatSize(f.file_size)}</span>
+              <span className="text-xs text-bambu-gray">{formatFileSize(f.file_size)}</span>
               <span className="flex flex-wrap gap-1">
                 {canPrint && isPrintableFile(f.filename) && (
                   <button type="button" className={btnCls} aria-label={t('projectsPdm.print.printFile', { name: f.filename })}

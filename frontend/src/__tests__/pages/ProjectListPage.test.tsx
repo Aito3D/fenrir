@@ -85,6 +85,15 @@ describe('ProjectListPage', () => {
     await waitFor(() => expect(lastSearch.getAll('tag_ids')).toEqual(['9']));
   });
 
+  it('clears a tag filter when the selected tag is clicked again', async () => {
+    render(<ProjectListPage />);
+    await screen.findByText('P-0001');
+    await userEvent.click(screen.getByRole('button', { name: 'drone', pressed: false }));
+    await waitFor(() => expect(lastSearch.getAll('tag_ids')).toEqual(['9']));
+    await userEvent.click(screen.getByRole('button', { name: 'drone', pressed: true }));
+    await waitFor(() => expect(lastSearch.getAll('tag_ids')).toEqual([]));
+  });
+
   it('switches to grid view and remembers it', async () => {
     render(<ProjectListPage />);
     await screen.findByText('P-0001');
@@ -238,6 +247,15 @@ describe('ProjectListPage', () => {
     expect(within(table).getByText('P-0002')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Table view' })).toHaveAttribute('aria-pressed', 'true');
     expect(localStorage.getItem('projects-view')).toBe('table');
+  });
+
+  it('opens the project when its grid card is clicked', async () => {
+    localStorage.setItem('projects-view', 'grid');
+    const push = vi.spyOn(window.history, 'pushState');
+    render(<ProjectListPage />);
+    await userEvent.click(await screen.findByRole('button', { name: /P-0002/ }));
+    expect(push.mock.calls.filter((c) => c[2] === '/projects/2')).toHaveLength(1);
+    push.mockRestore();
   });
 
   it('falls back to the table view when the stored view cannot be read', async () => {

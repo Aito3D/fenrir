@@ -1,5 +1,6 @@
 import pytest
-from sqlalchemy import select
+from sqlalchemy import insert, select
+from sqlalchemy.exc import IntegrityError
 
 from backend.app.models.library import LibraryTag, prune_empty_library_tags
 from backend.app.models.project import Project
@@ -7,6 +8,7 @@ from backend.app.schemas.project import ProjectTagRef
 from backend.app.services.openrouter import parse_tag_lines
 from backend.app.services.project_tags import (
     UnknownTagError,
+    _is_tag_name_conflict,
     apply_project_tag_input,
     get_or_create_tags,
     project_tag_refs,
@@ -155,3 +157,59 @@ def test_library_tags_name_key_delegates_to_tag_name_key():
     for raw in ("  Toys  ", "TOYS", "toys", "\tMiXeD Case\n"):
         assert _name_key(raw) == tag_name_key(raw)
     assert tag_name_key("  MiXeD Case ") == "mixed case"
+
+
+@pytest.mark.asyncio
+async def test_get_or_create_reuses_the_tag_a_concurrent_request_created_first(db_session):
+    """Lost race: the row appears between the lookup and the insert; no IntegrityError, same row returned."""
+    real_execute = db_session.execute
+    calls = 0
+
+    async def racing_execute(statement, *args, **kwargs):
+        nonlocal calls
+        result = await real_execute(statement, *args, **kwargs)
+        calls += 1
+        if calls == 1:  # the competitor commits right after our lookup missed
+            await real_execute(insert(LibraryTag).values(name="Drone", name_key="drone"))
+        return result
+
+    db_session.execute = racing_execute
+    try:
+        tags = await get_or_create_tags(db_session, ["drone", "Autre"])
+    finally:
+        del db_session.execute
+    assert [t.name for t in tags] == ["Drone", "Autre"]
+    assert all(t.id is not None for t in tags)
+    rows = (await db_session.execute(select(LibraryTag.name_key))).scalars().all()
+    assert sorted(rows) == ["autre", "drone"]
+
+
+@pytest.mark.asyncio
+async def test_get_or_create_propagates_an_unrelated_integrity_error(db_session, monkeypatch):
+    async def boom():
+        raise IntegrityError("INSERT", {}, Exception("NOT NULL constraint failed: library_tags.name"))
+
+    monkeypatch.setattr(db_session, "flush", boom)
+    with pytest.raises(IntegrityError, match="NOT NULL"):
+        await get_or_create_tags(db_session, ["x"])
+
+
+@pytest.mark.asyncio
+async def test_get_or_create_reraises_a_name_conflict_with_no_winner_row(db_session, monkeypatch):
+    async def boom():
+        raise IntegrityError("INSERT", {}, Exception("UNIQUE constraint failed: library_tags.name_key"))
+
+    monkeypatch.setattr(db_session, "flush", boom)
+    with pytest.raises(IntegrityError, match="library_tags.name_key"):
+        await get_or_create_tags(db_session, ["x"])
+
+
+def test_tag_name_conflict_matches_sqlite_and_postgres_texts():
+    sqlite = IntegrityError("INSERT", {}, Exception("UNIQUE constraint failed: library_tags.name_key"))
+    pg_index = IntegrityError(
+        "INSERT", {}, Exception('duplicate key value violates unique constraint "ix_library_tags_name_key"')
+    )
+    other = IntegrityError("INSERT", {}, Exception("UNIQUE constraint failed: project_items.name_key"))
+    assert _is_tag_name_conflict(sqlite)
+    assert _is_tag_name_conflict(pg_index)
+    assert not _is_tag_name_conflict(other)

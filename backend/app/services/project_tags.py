@@ -12,6 +12,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.library import LibraryTag
@@ -78,12 +79,35 @@ async def get_or_create_tags(db: AsyncSession, names: list[str]) -> list[Library
         key = tag_name_key(name)
         tag = existing.get(key)
         if tag is None:
-            tag = LibraryTag(name=name, name_key=key)
-            db.add(tag)
+            tag = await _insert_tag_or_reuse(db, name, key)
             existing[key] = tag
         tags.append(tag)
     await db.flush()
     return tags
+
+
+def _is_tag_name_conflict(exc: IntegrityError) -> bool:
+    """``exc`` is the ``library_tags.name_key`` uniqueness violation (SQLite names the column, PostgreSQL the index)."""
+    text = str(exc)
+    return "library_tags.name_key" in text or "library_tags_name_key" in text
+
+
+async def _insert_tag_or_reuse(db: AsyncSession, name: str, key: str) -> LibraryTag:
+    """Insert the tag inside a savepoint; when a concurrent request created the same ``name_key``
+    first, roll back to the savepoint and return the row that won."""
+    tag = LibraryTag(name=name, name_key=key)
+    try:
+        async with db.begin_nested():
+            db.add(tag)
+            await db.flush()
+    except IntegrityError as exc:
+        if not _is_tag_name_conflict(exc):
+            raise
+        winner = (await db.execute(select(LibraryTag).where(LibraryTag.name_key == key))).scalar_one_or_none()
+        if winner is None:
+            raise
+        return winner
+    return tag
 
 
 async def set_project_tags(db: AsyncSession, project: Project, tag_ids: list[int]) -> list[LibraryTag]:

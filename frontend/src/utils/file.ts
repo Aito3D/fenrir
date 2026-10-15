@@ -9,7 +9,8 @@ export function formatFileSize(bytes: number): string {
 
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];
   const k = 1024;
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  // Clamp so fractional values below 1 B stay in the B unit instead of indexing units[-1].
+  const i = Math.min(Math.max(Math.floor(Math.log(bytes) / Math.log(k)), 0), units.length - 1);
 
   const size = bytes / Math.pow(k, i);
 

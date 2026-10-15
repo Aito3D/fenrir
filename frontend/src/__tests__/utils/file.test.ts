@@ -40,4 +40,13 @@ describe('formatFileSize', () => {
     expect(formatFileSize(1048575)).toBe('1024.0 KB');
     expect(formatFileSize(1048576)).toBe('1.0 MB');
   });
+
+  it('keeps fractional values below 1 B in the B unit', () => {
+    expect(formatFileSize(0.5)).toBe('0.5 B');
+    expect(formatFileSize(512 / 1024)).toBe('0.5 B');
+  });
+
+  it('caps at TB for values beyond 1024 TB', () => {
+    expect(formatFileSize(1099511627776 * 2048)).toBe('2048.0 TB');
+  });
 });
