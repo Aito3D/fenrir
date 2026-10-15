@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
+import { createTestQueryClient } from '../../../utils';
 
 // Pins the two Aito file drop zones (task row + board card): their DOM in idle
 // and drag-over states, and that each of the three permissions gates the drop.
@@ -17,7 +18,7 @@ import { useCardDrop } from '../../../../components/projects/aito/CardDropTarget
 const ALL = ['aito:update', 'projects:update', 'projects:read'];
 
 function wrap(ui: ReactNode) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+  const client = createTestQueryClient();
   return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
 }
 

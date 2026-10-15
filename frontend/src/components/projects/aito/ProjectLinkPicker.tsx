@@ -1,9 +1,8 @@
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
-import { Search } from 'lucide-react';
 import { api } from '../../../api/client';
 import { useProjectSearch } from '../projectQueries';
-import { ProjectOptionLabel } from '../ProjectCodeChip';
+import { ProjectOptionButton, ProjectSearchInput } from '../ProjectCodeChip';
 import { focusRingCls } from '../../formStyles';
 
 const REASON_KEYS = {
@@ -52,33 +51,28 @@ export function ProjectLinkPicker({
         }
       }}
     >
-      <label className="flex items-center gap-2 rounded-md border border-bambu-dark-tertiary bg-bambu-dark-secondary px-2 py-1">
-        <Search aria-hidden="true" className="h-3.5 w-3.5 flex-shrink-0 text-bambu-gray" />
-        <input
-          type="search"
-          autoFocus
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder={t('projectsPdm.aito.searchProjects')}
-          aria-label={t('projectsPdm.aito.searchProjects')}
-          className="min-w-0 flex-1 bg-transparent text-sm text-white placeholder:text-bambu-gray focus:outline-none"
-        />
-      </label>
+      <ProjectSearchInput
+        value={q}
+        onChange={setQ}
+        label={t('projectsPdm.aito.searchProjects')}
+        autoFocus
+        className="flex items-center gap-2 rounded-md border border-bambu-dark-tertiary bg-bambu-dark-secondary px-2 py-1"
+      />
       {options.length > 0 ? (
         <ul className="max-h-60 space-y-0.5 overflow-y-auto">
           {options.map((p) => (
             <li key={p.id}>
-              <button
-                type="button"
+              <ProjectOptionButton
+                code={p.code}
+                name={p.name}
                 disabled={disabled}
                 onClick={() => onPick(p.id)}
                 className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-white transition-colors hover:bg-bambu-dark-tertiary/40 disabled:opacity-50 ${focusRingCls}`}
               >
-                <ProjectOptionLabel code={p.code} name={p.name} />
                 {p.reason && (
                   <span className="flex-shrink-0 text-xs text-bambu-gray">{t(REASON_KEYS[p.reason])}</span>
                 )}
-              </button>
+              </ProjectOptionButton>
             </li>
           ))}
         </ul>

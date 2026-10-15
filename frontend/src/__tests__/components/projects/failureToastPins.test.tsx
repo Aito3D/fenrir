@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 
 // Pins the exact failure toasts of the files panel actions and the re-slice start:
@@ -9,11 +9,12 @@ const showToast = vi.fn();
 vi.mock('../../../contexts/ToastContext', () => ({ useToast: () => ({ showToast }) }));
 
 import { api } from '../../../api/client';
+import { createTestQueryClient } from '../../utils';
 import { useFileActions } from '../../../components/projects/files/useFileActions';
 import { useResliceJobs } from '../../../components/projects/reslice/useResliceJobs';
 
 function wrapper({ children }: { children: ReactNode }) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+  const client = createTestQueryClient();
   return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
 }
 

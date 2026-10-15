@@ -1305,8 +1305,10 @@ CREATE TABLE projects (
 1 export function ProjectLinkPicker
 1 export function ProjectListPage
 1 export function ProjectModal
+1 export function ProjectOptionButton
 1 export function ProjectOptionLabel
 1 export function ProjectOrdersCard
+1 export function ProjectSearchInput
 1 export function ProjectsPage
 1 export function ProjectsSettingsCard
 1 export function ProjectTagChips

@@ -22,7 +22,7 @@ from backend.app.schemas.slicer import SliceRequest
 from backend.app.services import project_files
 from backend.app.services.project_files import ProjectFilesError
 from backend.app.services.project_snapshot import is_3mf
-from backend.app.services.project_storage import split_gcode_3mf
+from backend.app.services.project_storage import revision_folder_name, split_gcode_3mf
 from backend.app.services.slicer_pipeline_request import slice_request_from_pipeline
 
 logger = logging.getLogger(__name__)
@@ -42,7 +42,7 @@ def output_filename(source_filename: str) -> str:
 
 
 def reslice_note(source_number: int, pipeline_name: str) -> str:
-    return f"Re-tranché depuis R{source_number} · pipeline {pipeline_name}"
+    return f"Re-tranché depuis {revision_folder_name(source_number)} · pipeline {pipeline_name}"
 
 
 @dataclass(frozen=True)

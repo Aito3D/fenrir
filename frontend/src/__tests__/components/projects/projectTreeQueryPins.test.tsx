@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 
 // Pins the project tree read both ways: the re-slice completion's fetchQuery
@@ -8,13 +8,14 @@ import type { ReactNode } from 'react';
 vi.mock('../../../contexts/ToastContext', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
 
 import { api } from '../../../api/client';
+import { createTestQueryClient } from '../../utils';
 import { useProjectTree } from '../../../components/projects/projectQueries';
 import { useResliceJobs } from '../../../components/projects/reslice/useResliceJobs';
 
 const tree = { project_id: 7, code: 'P-0007', sections: [] };
 
 function setup() {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+  const client = createTestQueryClient();
   const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
   return { client, wrapper };
 }

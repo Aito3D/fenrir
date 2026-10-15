@@ -57,6 +57,7 @@ from backend.app.services import (
     project_reslice,
 )
 from backend.app.services.actor import actor_name, actor_user_id
+from backend.app.services.project_storage import revision_folder_name
 from backend.app.services.slice_dispatch import http_exception_to_job_error, slice_dispatch
 
 logger = logging.getLogger(__name__)
@@ -481,7 +482,7 @@ async def download_revision(
     except BaseException:
         archive.unlink(missing_ok=True)
         raise
-    name = f"{project.code or project.id}_{item.name}_R{revision.number}.zip"
+    name = f"{project.code or project.id}_{item.name}_{revision_folder_name(revision.number)}.zip"
     return _TempFileResponse(str(archive), filename=name, media_type="application/zip")
 
 

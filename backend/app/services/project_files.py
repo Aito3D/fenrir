@@ -687,7 +687,7 @@ async def _duplicate_warnings(db: AsyncSession, item: ProjectItem, revision: Pro
     for digest, number in matches:
         first_seen.setdefault(digest, number)
     return [
-        DuplicateWarning(filename=row.filename, same_as=f"R{first_seen[row.file_hash]}")
+        DuplicateWarning(filename=row.filename, same_as=revision_folder_name(first_seen[row.file_hash]))
         for row in rows
         if row.file_hash in first_seen
     ]

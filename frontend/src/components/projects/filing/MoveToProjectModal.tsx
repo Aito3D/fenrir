@@ -2,11 +2,11 @@ import { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Search } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { api } from '../../../api/client';
 import type { MoveToProjectResult } from '../../../api/client';
 import { Button } from '../../Button';
-import { ProjectOptionLabel } from '../ProjectCodeChip';
+import { ProjectOptionButton, ProjectSearchInput } from '../ProjectCodeChip';
 import { projectKeys, useProjectSearch, useProjectTree } from '../projectQueries';
 import { OVERLAY_CLS } from '../dialogStyles';
 import { focusRingCls } from '../../formStyles';
@@ -177,15 +177,15 @@ export function MoveToProjectModal({ fileIds, fileName, onClose, onMoved }: Prop
                 const selected = project?.id === s.project_id;
                 return (
                   <li key={s.project_id}>
-                    <button
-                      type="button"
-                      aria-pressed={selected}
+                    <ProjectOptionButton
+                      code={s.code}
+                      name={s.name}
+                      pressed={selected}
                       onClick={() => pick({ id: s.project_id, code: s.code, name: s.name }, s.item_id)}
                       className={optionCls(selected)}
                     >
-                      <ProjectOptionLabel code={s.code} name={s.name} />
                       {s.item_name && <span className="flex-shrink-0 truncate text-xs text-bambu-gray">{s.item_name}</span>}
-                    </button>
+                    </ProjectOptionButton>
                   </li>
                 );
               })}
@@ -194,32 +194,27 @@ export function MoveToProjectModal({ fileIds, fileName, onClose, onMoved }: Prop
         )}
 
         <section className="space-y-1">
-          <label className="flex items-center gap-2 rounded-md border border-bambu-dark-tertiary bg-bambu-dark px-2 py-1.5">
-            <Search aria-hidden="true" className="h-3.5 w-3.5 flex-shrink-0 text-bambu-gray" />
-            <input
-              type="search"
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder={t('projectsPdm.filing.searchProject')}
-              aria-label={t('projectsPdm.filing.searchProject')}
-              className="min-w-0 flex-1 bg-transparent text-sm text-white placeholder:text-bambu-gray focus:outline-none"
-            />
+          <ProjectSearchInput
+            value={q}
+            onChange={setQ}
+            label={t('projectsPdm.filing.searchProject')}
+            className="flex items-center gap-2 rounded-md border border-bambu-dark-tertiary bg-bambu-dark px-2 py-1.5"
+          >
             {searching && <Loader2 aria-hidden="true" className="h-3.5 w-3.5 animate-spin text-bambu-gray" />}
-          </label>
+          </ProjectSearchInput>
           {results.length > 0 && (
             <ul className="max-h-48 space-y-0.5 overflow-y-auto">
               {results.map((p) => {
                 const selected = project?.id === p.id;
                 return (
                   <li key={p.id}>
-                    <button
-                      type="button"
-                      aria-pressed={selected}
+                    <ProjectOptionButton
+                      code={p.code}
+                      name={p.name}
+                      pressed={selected}
                       onClick={() => pick({ id: p.id, code: p.code, name: p.name })}
                       className={optionCls(selected)}
-                    >
-                      <ProjectOptionLabel code={p.code} name={p.name} />
-                    </button>
+                    />
                   </li>
                 );
               })}
