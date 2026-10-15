@@ -1170,3 +1170,122 @@ async def test_drop_with_a_blank_sanitised_name_raises_before_storing(db_session
 
     assert (err.value.status_code, err.value.detail) == (400, "Item name must not be blank; refused: ???.3mf")
     assert await _events(db_session, "project.files_dropped") == []
+
+
+# --- T-326: a failing rollback in the drop's finally ---------------------------
+
+
+async def _drop_with_two_other_orders(db):
+    """A task linked to a project that two other orders also link; returns (task, order id, other order ids)."""
+    project = await _project(db)
+    order = await _order(db)
+    others = [await _order(db, description="Autre A"), await _order(db, description="Autre B")]
+    task = await _task(db, order, linked_project_id=project.id)
+    for other in others:
+        await _task(db, other, linked_project_id=project.id)
+    await db.commit()
+    return task, order.id, [o.id for o in others]
+
+
+def _record_drop_and_its_rollback_fail(db, monkeypatch) -> None:
+    """``_record_drop`` raises, then the rollback after it raises once too (a broken connection)."""
+
+    async def failing_record_drop(*_args, **_kwargs):
+        raise RuntimeError("events table locked")
+
+    real_rollback = db.rollback
+    calls = {"n": 0}
+
+    async def rollback():
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("connection is closed")
+        await real_rollback()
+
+    monkeypatch.setattr(links, "_record_drop", failing_record_drop)
+    monkeypatch.setattr(db, "rollback", rollback)
+
+
+def _capture_broadcasts(monkeypatch, failing: set[int] = frozenset()) -> list[int]:
+    sent: list[int] = []
+
+    async def broadcast(payload):
+        sent.append(payload["project_id"])
+        if payload["project_id"] in failing:
+            raise RuntimeError("socket gone")
+
+    monkeypatch.setattr(links.ws_manager, "broadcast_aito", broadcast)
+    return sent
+
+
+@pytest.mark.asyncio
+async def test_drop_cancelled_with_a_failing_rollback_keeps_the_cancellation_and_still_broadcasts(
+    db_session, monkeypatch, caplog
+):
+    """T-326: the original in-flight error surfaces (with ``stored_count``), the rollback error is only
+    logged, and the other linked orders still get their broadcast."""
+    task, order_id, others = await _drop_with_two_other_orders(db_session)
+    real = links.project_files.add_revision
+    calls = {"n": 0}
+
+    async def second_cancelled(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise asyncio.CancelledError
+        return await real(*args, **kwargs)
+
+    monkeypatch.setattr(links.project_files, "add_revision", second_cancelled)
+    _record_drop_and_its_rollback_fail(db_session, monkeypatch)
+    sent = _capture_broadcasts(monkeypatch)
+    with caplog.at_level(logging.WARNING, logger=links.__name__), pytest.raises(asyncio.CancelledError) as err:
+        await links.drop_files_on_task(
+            db_session, task, [_upload("a.3mf"), _upload("b.3mf")], user_id=None, actor="Paul"
+        )
+
+    assert err.value.stored_count == 1
+    assert sent == others
+    assert f"Rollback after the failed files_dropped event failed for order {order_id}" in caplog.text
+    assert "connection is closed" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_drop_with_a_failing_rollback_after_a_later_group_fails_still_returns_the_stored_part(
+    db_session, monkeypatch, caplog
+):
+    """T-326: a later group's 409 is still reported in ``errors`` (no 500 from the rollback) and the
+    other linked orders still get their broadcast."""
+    task, order_id, others = await _drop_with_two_other_orders(db_session)
+    real = links.project_files.add_revision
+    calls = {"n": 0}
+
+    async def second_fails(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise links.project_files.ProjectFilesError(409, "boom")
+        return await real(*args, **kwargs)
+
+    monkeypatch.setattr(links.project_files, "add_revision", second_fails)
+    _record_drop_and_its_rollback_fail(db_session, monkeypatch)
+    sent = _capture_broadcasts(monkeypatch)
+    with caplog.at_level(logging.WARNING, logger=links.__name__):
+        response = await links.drop_files_on_task(
+            db_session, task, [_upload("a.3mf"), _upload("b.3mf")], user_id=None, actor="Paul"
+        )
+
+    assert [r.filename for r in response.results] == ["a.3mf"]
+    assert [e.model_dump() for e in response.errors] == [{"filenames": ["b.3mf"], "status_code": 409, "detail": "boom"}]
+    assert sent == others
+    assert f"Rollback after the failed files_dropped event failed for order {order_id}" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_drop_broadcast_failing_for_one_order_still_reaches_the_others(db_session, monkeypatch, caplog):
+    """T-326: one other order's broadcast failing is logged; the next one is still sent."""
+    task, _order_id, others = await _drop_with_two_other_orders(db_session)
+    sent = _capture_broadcasts(monkeypatch, failing={others[0]})
+    with caplog.at_level(logging.WARNING, logger=links.__name__):
+        response = await links.drop_files_on_task(db_session, task, [_upload("a.3mf")], user_id=None, actor="Paul")
+
+    assert [r.filename for r in response.results] == ["a.3mf"]
+    assert sent == others
+    assert f"aito_changed broadcast failed for order {others[0]}" in caplog.text

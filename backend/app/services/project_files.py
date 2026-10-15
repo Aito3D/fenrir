@@ -181,6 +181,14 @@ def clean_item_name(name: str) -> tuple[str, str]:
     return clean, key
 
 
+_ITEM_NAME_TAKEN = "An item with this name already exists in this section"
+
+
+def _is_item_name_conflict(exc: IntegrityError) -> bool:
+    """``exc`` is the ``uq_project_items_section_name`` violation (PostgreSQL names it, SQLite lists its columns)."""
+    return "uq_project_items_section_name" in str(exc) or "project_items.name_key" in str(exc)
+
+
 async def _require_item_name_free(
     db: AsyncSession, project: Project, section: str, key: str, exclude_id: int | None = None
 ) -> None:
@@ -190,7 +198,7 @@ async def _require_item_name_free(
     if exclude_id is not None:
         query = query.where(ProjectItem.id != exclude_id)
     if (await db.execute(query)).first():
-        raise ProjectFilesError(409, "An item with this name already exists in this section")
+        raise ProjectFilesError(409, _ITEM_NAME_TAKEN)
 
 
 def require_enabled_section(section: str) -> None:
@@ -243,7 +251,14 @@ async def create_item(
     await _require_item_name_free(db, project, section, key)
     item = ProjectItem(project_id=project.id, section=section, name=clean, name_key=key, created_by_id=user_id)
     db.add(item)
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError as exc:
+        # a concurrent create of the same name committed after the check above
+        if not _is_item_name_conflict(exc):
+            raise
+        await db.rollback()
+        raise ProjectFilesError(409, _ITEM_NAME_TAKEN) from exc
     # The flush holds the write lock: a project deleted since it was read would
     # strand this item (no FK enforcement), so refuse it and undo the insert.
     if (await db.execute(select(Project.id).where(Project.id == project.id))).first() is None:
@@ -1360,7 +1375,7 @@ async def _fork_revision_locked(
 
     def translate(exc: BaseException) -> Exception | None:
         if isinstance(exc, IntegrityError):
-            return ProjectFilesError(409, "An item with this name already exists in this section")
+            return ProjectFilesError(409, _ITEM_NAME_TAKEN)
         return None
 
     async with _CommitGuard(db, undo, translate=translate, label=f"fork of revision {revision_id}") as commit:

@@ -42,6 +42,7 @@ from backend.app.schemas.aito_project_links import (
 from backend.app.schemas.project_files import RevisionRef
 from backend.app.services import project_files, project_print_trace
 from backend.app.services.actor import actor_name, record_as
+from backend.app.services.db_quiet import rollback_quietly
 from backend.app.services.http_status_error import HttpStatusError
 from backend.app.services.project_filing import find_or_create_item, item_name_for_filename
 from backend.app.services.project_revisions import lock_revision_rows
@@ -689,7 +690,14 @@ async def _finish_drop(
                 await db.commit()
             except Exception:
                 logger.warning("project.files_dropped event failed for order %s", order_id, exc_info=True)
-                await db.rollback()
+                # a failing rollback must neither replace the error in flight nor skip the broadcast below
+                await rollback_quietly(
+                    db,
+                    logger,
+                    logging.WARNING,
+                    "Rollback after the failed files_dropped event failed for order %s",
+                    order_id,
+                )
         await broadcast_orders_changed(notified, actor)
     except BaseException as exc:
         # A cancellation (or a failed rollback) while recording still tells the route what was stored.

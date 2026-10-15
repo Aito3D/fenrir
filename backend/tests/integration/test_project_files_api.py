@@ -576,3 +576,26 @@ async def test_upload_note_capped_at_the_patch_limit(async_client: AsyncClient, 
     tree = (await async_client.get(f"/api/v1/projects/{project['id']}/tree")).json()
     revisions = {i["name"]: i["revisions"] for i in tree["sections"][2]["items"]}
     assert revisions["Refused"] == [] and len(revisions["Kept"]) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_create_item_racing_a_same_name_create_is_409_not_500(async_client: AsyncClient, monkeypatch):
+    """T-324: the second create passes the name check (the first committed right after it) and
+    hits the unique constraint at its flush: the same 409 as a pre-checked duplicate."""
+    project = await _project(async_client)
+    await _item(async_client, project["id"], name="Support")
+
+    async def free(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(project_files_routes.svc, "_require_item_name_free", free)
+    response = await async_client.post(
+        f"/api/v1/projects/{project['id']}/items", json={"section": "impression", "name": "support"}
+    )
+    assert (response.status_code, response.json()) == (
+        409,
+        {"detail": "An item with this name already exists in this section"},
+    )
+    tree = (await async_client.get(f"/api/v1/projects/{project['id']}/tree")).json()
+    assert [i["name"] for s in tree["sections"] for i in s["items"]] == ["Support"]

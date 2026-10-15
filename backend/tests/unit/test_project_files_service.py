@@ -3091,3 +3091,74 @@ async def test_remove_file_with_nothing_landing_meanwhile_still_trashes_it(db_se
     ]
     assert not (base / "Modélisation" / "Support" / "R1" / "a.step").exists()
     assert [p.name.split("-")[0] for p in _trash_entries(base)] == ["a"]
+
+
+# --- T-324: a same-name create racing past the name check -------------------
+
+
+def _name_check_passes(monkeypatch) -> None:
+    """``_require_item_name_free`` finds nothing, as when a concurrent create commits right after it."""
+
+    async def free(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(project_files, "_require_item_name_free", free)
+
+
+@pytest.mark.asyncio
+async def test_create_item_racing_a_same_name_create_is_the_name_409(db_session, root, monkeypatch):
+    project = await _project(db_session)
+    winner = await create_item(db_session, project, section="impression", name="Support", user_id=None)
+    await db_session.commit()
+    project_id, winner_id = project.id, winner.id
+    _name_check_passes(monkeypatch)
+    with pytest.raises(ProjectFilesError) as caught:
+        await create_item(db_session, project, section="impression", name="SUPPORT", user_id=None)
+    assert (caught.value.status_code, caught.value.detail) == (
+        409,
+        "An item with this name already exists in this section",
+    )
+    assert isinstance(caught.value.__cause__, IntegrityError)
+    # rolled back: the session is usable and only the winner exists
+    rows = (await db_session.execute(select(ProjectItem.id).where(ProjectItem.project_id == project_id))).all()
+    assert [r[0] for r in rows] == [winner_id]
+
+
+@pytest.mark.asyncio
+async def test_create_item_lets_another_integrity_error_through_unrolled(db_session, root, monkeypatch):
+    project = await _project(db_session)
+    await db_session.commit()
+    error = IntegrityError("INSERT", {}, Exception("NOT NULL constraint failed: project_items.created_at"))
+
+    async def boom(*_args, **_kwargs):
+        raise error
+
+    async def no_rollback():
+        raise AssertionError("an unrelated integrity error must not be rolled back here")
+
+    monkeypatch.setattr(db_session, "flush", boom)
+    monkeypatch.setattr(db_session, "rollback", no_rollback)
+    with pytest.raises(IntegrityError) as caught:
+        await create_item(db_session, project, section="impression", name="Support", user_id=None)
+    assert caught.value is error
+
+
+@pytest.mark.asyncio
+async def test_create_item_maps_the_postgresql_constraint_name_to_the_name_409(db_session, root, monkeypatch):
+    project = await _project(db_session)
+    await db_session.commit()
+    error = IntegrityError(
+        "INSERT", {}, Exception('duplicate key value violates unique constraint "uq_project_items_section_name"')
+    )
+
+    async def boom(*_args, **_kwargs):
+        raise error
+
+    monkeypatch.setattr(db_session, "flush", boom)
+    with pytest.raises(ProjectFilesError) as caught:
+        await create_item(db_session, project, section="impression", name="Support", user_id=None)
+    assert (caught.value.status_code, caught.value.detail) == (
+        409,
+        "An item with this name already exists in this section",
+    )
+    assert caught.value.__cause__ is error
