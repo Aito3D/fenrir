@@ -155,6 +155,48 @@ async def test_zip_temp_file_removed_when_build_fails(async_client: AsyncClient,
     assert list(scratch.iterdir()) == []
 
 
+def _vanish_before_zip(monkeypatch, vanish: set[str]) -> None:
+    """Delete the named files after the route's existence check and before the zip build (the race)."""
+    real = project_files_routes._build_zip
+
+    def build(paths_and_names, archive):
+        for path, name in paths_and_names:
+            if name in vanish:
+                path.unlink()
+        return real(paths_and_names, archive)
+
+    monkeypatch.setattr(project_files_routes, "_build_zip", build)
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_zip_download_skips_a_file_that_vanishes_during_the_build(async_client: AsyncClient, monkeypatch):
+    rev = await _revision_with_files(async_client, ("a.gcode", b"x"), ("b.gcode", b"y"))
+    _vanish_before_zip(monkeypatch, {"a.gcode"})
+    response = await async_client.get(f"/api/v1/projects/revisions/{rev['id']}/download")
+    assert response.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(response.content)) as zf:
+        assert zf.namelist() == ["b.gcode"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_zip_download_is_404_when_every_file_vanishes_during_the_build(
+    async_client: AsyncClient, tmp_path, monkeypatch
+):
+    rev = await _revision_with_files(async_client, ("a.gcode", b"x"))
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    real_mkstemp = project_files_routes.tempfile.mkstemp
+    monkeypatch.setattr(
+        project_files_routes.tempfile, "mkstemp", lambda suffix="": real_mkstemp(suffix=suffix, dir=scratch)
+    )
+    _vanish_before_zip(monkeypatch, {"a.gcode"})
+    response = await async_client.get(f"/api/v1/projects/revisions/{rev['id']}/download")
+    assert response.status_code == 404 and response.json()["detail"] == "No file available on disk"
+    assert list(scratch.iterdir()) == []
+
+
 @pytest.mark.asyncio
 @pytest.mark.integration
 async def test_download_wrong_file_id_404(async_client: AsyncClient):

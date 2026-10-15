@@ -86,6 +86,29 @@ from backend.app.utils.safe_path import safe_join_under
 
 logger = logging.getLogger(__name__)
 
+
+# Thin wrappers over the filesystem calls whose failure paths are tested: tests patch these module names
+# instead of the process-wide os / shutil / Path functions.
+def _replace(src: Path, dest: Path) -> None:
+    os.replace(src, dest)
+
+
+def _rename(src: Path, dest: Path) -> None:
+    src.rename(dest)
+
+
+def _samefile(a: Path, b: Path) -> bool:
+    return os.path.samefile(a, b)
+
+
+def _copystat(src: Path, dest: Path, **kwargs) -> None:
+    shutil.copystat(src, dest, **kwargs)
+
+
+def _move(src: str, dest: str) -> None:
+    shutil.move(src, dest)
+
+
 # Meshes above this get a type icon instead of a rendered thumbnail (spec §2.3).
 STL_THUMBNAIL_MAX_BYTES = 200 * 1024 * 1024
 
@@ -345,11 +368,19 @@ async def _make_thumbnail(path: Path) -> tuple[Path | None, dict | None]:
     return thumb, metadata
 
 
+def _unlink_quietly(path: Path) -> None:
+    """``path.unlink(missing_ok=True)``; an OSError is logged and swallowed so a cleanup carries on."""
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        logger.warning("Could not remove %s during cleanup", path, exc_info=True)
+
+
 def _cleanup_written(written: list[_WrittenFile]) -> None:
     for item in written:
-        item.path.unlink(missing_ok=True)
+        _unlink_quietly(item.path)
         if item.thumbnail_abs is not None:
-            item.thumbnail_abs.unlink(missing_ok=True)
+            _unlink_quietly(item.thumbnail_abs)
 
 
 async def _stream_files(folder: Path, uploads: list[UploadFile]) -> list[_WrittenFile]:
@@ -367,7 +398,7 @@ async def _stream_files(folder: Path, uploads: list[UploadFile]) -> list[_Writte
             size, digest = await _stream_upload_to_path(upload, part, settings.library_max_upload_bytes)
             dest = claim_unique_file_path(folder, upload.filename or "fichier")
             try:
-                os.replace(part, dest)
+                _replace(part, dest)
             except BaseException:
                 dest.unlink(missing_ok=True)
                 raise
@@ -411,7 +442,7 @@ def _copy_claimed(src: Path, dest: Path) -> None:
     """``shutil.copy2(src, dest)`` for a claimed placeholder, written through an O_NOFOLLOW descriptor."""
     with open(src, "rb") as reader, _open_claimed(dest) as writer:
         shutil.copyfileobj(reader, writer)
-    shutil.copystat(src, dest, follow_symlinks=False)
+    _copystat(src, dest, follow_symlinks=False)
 
 
 def _open_nofollow(path: str, flags: int) -> int:
@@ -431,7 +462,7 @@ def _copy_hashing(src: Path, dest: Path, *, nofollow: bool = False) -> tuple[int
             digest.update(chunk)
             size += len(chunk)
     try:
-        shutil.copystat(src, dest)
+        _copystat(src, dest)
     except OSError:
         pass  # timestamps are a nicety
     return size, digest.hexdigest()
@@ -810,7 +841,8 @@ class _CommitGuard:
     ``commit`` is ``_commit_through_cancel``. When the body raises anything
     (cancellation included), ``undo`` runs unless the commit may have landed,
     then the same exception propagates; ``translate`` may swap it, after the
-    undo, for an exception raised ``from`` it.
+    undo, for an exception raised ``from`` it. An ``Exception`` raised by
+    ``undo`` is logged and does not replace it.
     """
 
     def __init__(
@@ -824,6 +856,7 @@ class _CommitGuard:
         self._db = db
         self._undo = undo
         self._translate = translate
+        self._label = label
         self._outcome = _CommitOutcome(label)
 
     async def _commit(self) -> None:
@@ -835,7 +868,11 @@ class _CommitGuard:
     async def __aexit__(self, exc_type, exc, tb) -> bool:
         if exc is None or self._outcome.may_have_landed:
             return False
-        await self._undo()
+        try:
+            await self._undo()
+        except Exception:
+            # the original (or translated) error is the one the caller needs, not a failed cleanup step
+            logger.warning("Undo after the failed %s raised; keeping the original error", self._label, exc_info=True)
         if self._translate is not None:
             replacement = self._translate(exc)
             if replacement is not None:
@@ -1061,7 +1098,7 @@ async def _delete_file_rows(
 async def _restore_and_rollback(db: AsyncSession, moved: Path | None, original: Path | None) -> None:
     try:
         if moved is not None and original is not None:
-            shutil.move(str(moved), str(original))
+            _move(str(moved), str(original))
     except Exception:
         # keep the guarded (commit) error as the one that propagates; the rollback still runs below
         logger.warning("Could not restore %s from the trash (%s)", original, moved, exc_info=True)
@@ -1183,21 +1220,21 @@ def _move_item_folder(old_dir: Path, new_dir: Path) -> bool:
     if old_dir == new_dir or not old_dir.exists():
         return False
     if new_dir.exists():
-        if not os.path.samefile(old_dir, new_dir):
+        if not _samefile(old_dir, new_dir):
             raise ProjectFilesError(409, "A folder with this name already exists")
         # case-only rename on a case-insensitive filesystem: go through a temporary name
         temp = old_dir.with_name(f".rename-{uuid.uuid4().hex}")
-        old_dir.rename(temp)
+        _rename(old_dir, temp)
         try:
-            temp.rename(new_dir)
+            _rename(temp, new_dir)
         except BaseException:
             try:
-                temp.rename(old_dir)
+                _rename(temp, old_dir)
             except Exception:
                 logger.warning("Could not move %s back to %s after a failed rename", temp, old_dir, exc_info=True)
             raise
     else:
-        old_dir.rename(new_dir)
+        _rename(old_dir, new_dir)
     return True
 
 
@@ -1230,9 +1267,13 @@ async def _rename_item_locked(db: AsyncSession, project: Project, item: ProjectI
     moved = _move_item_folder(old_dir, new_dir)
 
     async def undo() -> None:
-        if moved:
-            new_dir.rename(old_dir)
-        await db.rollback()
+        try:
+            if moved:
+                _rename(new_dir, old_dir)
+        except OSError:
+            logger.warning("Could not move %s back to %s after a failed rename", new_dir, old_dir, exc_info=True)
+        finally:
+            await db.rollback()
 
     async with _CommitGuard(db, undo, label=f"rename of item {item.id}") as commit:
         if moved:

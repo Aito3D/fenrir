@@ -524,7 +524,7 @@ async def test_a_failed_restore_from_trash_still_rolls_back_and_keeps_the_commit
 
     async def boom():
         # the folder is in the trash by now; make moving it back fail too
-        monkeypatch.setattr(project_files.shutil, "move", _raise_os_error)
+        monkeypatch.setattr(project_files, "_move", _raise_os_error)
         raise commit_error
 
     async def rollback():
@@ -689,19 +689,20 @@ async def test_case_only_rename(db_session, root):
     assert (root / project.storage_dir / "Modélisation" / "SUPPORT" / "R1" / "a.step").exists()
 
 
-def _case_only_rename_fails(monkeypatch, base: Path, fail_on: set[int]) -> list[tuple[str, str]]:
-    """Force the case-only branch on any filesystem and make the listed ``Path.rename`` calls raise."""
+def _case_only_rename_fails(monkeypatch, base: Path, fail_targets: set[str]) -> list[tuple[str, str]]:
+    """Force the case-only branch on any filesystem and make the module's rename of the temporary folder to
+    any of the ``fail_targets`` folder names raise."""
     (base / "Modélisation" / "SUPPORT").mkdir(exist_ok=True)  # already "there" on a case-insensitive filesystem
-    monkeypatch.setattr(project_files.os.path, "samefile", lambda _a, _b: True)
-    real_rename, calls = Path.rename, []
+    monkeypatch.setattr(project_files, "_samefile", lambda _a, _b: True)
+    real_rename, calls = project_files._rename, []
 
-    def rename(self, target):
-        calls.append((Path(self).name, Path(target).name))
-        if len(calls) in fail_on:
-            raise OSError(f"rename {len(calls)} failed")
-        return real_rename(self, target)
+    def rename(source, target):
+        calls.append((Path(source).name, Path(target).name))
+        if Path(source).name.startswith(".rename-") and Path(target).name in fail_targets:
+            raise OSError(f"rename to {Path(target).name} failed")
+        return real_rename(source, target)
 
-    monkeypatch.setattr(Path, "rename", rename)
+    monkeypatch.setattr(project_files, "_rename", rename)
     return calls
 
 
@@ -711,8 +712,8 @@ async def test_case_only_rename_puts_the_folder_back_when_the_second_rename_fail
     item, _rev1 = await _rev(db_session, project)
     item_id = item.id
     base = root / project.storage_dir
-    calls = _case_only_rename_fails(monkeypatch, base, fail_on={2})
-    with pytest.raises(OSError, match="rename 2 failed"):
+    calls = _case_only_rename_fails(monkeypatch, base, fail_targets={"SUPPORT"})
+    with pytest.raises(OSError, match="rename to SUPPORT failed"):
         await rename_item(db_session, project, item, "SUPPORT")
     assert (base / "Modélisation" / "Support" / "R1" / "a.step").read_bytes() == b"data"
     assert not list((base / "Modélisation").glob(".rename-*"))
@@ -730,9 +731,9 @@ async def test_case_only_rename_logs_and_keeps_the_original_error_when_the_put_b
     project = await _project(db_session)
     item, _rev1 = await _rev(db_session, project)
     base = root / project.storage_dir
-    _case_only_rename_fails(monkeypatch, base, fail_on={2, 3})
+    _case_only_rename_fails(monkeypatch, base, fail_targets={"SUPPORT", "Support"})
     caplog.set_level("WARNING", logger=project_files.logger.name)
-    with pytest.raises(OSError, match="rename 2 failed"):
+    with pytest.raises(OSError, match="rename to SUPPORT failed"):
         await rename_item(db_session, project, item, "SUPPORT")
     stranded = list((base / "Modélisation").glob(".rename-*"))
     assert len(stranded) == 1
@@ -1880,7 +1881,7 @@ def test_copy_hashing_survives_a_copystat_failure(tmp_path, monkeypatch):
     def refuse(*_args, **_kwargs):
         raise OSError("no timestamps here")
 
-    monkeypatch.setattr(project_files.shutil, "copystat", refuse)
+    monkeypatch.setattr(project_files, "_copystat", refuse)
     assert project_files._copy_hashing(src, dest) == (7, hashlib.sha256(b"payload").hexdigest())
     assert dest.read_bytes() == b"payload"
 
@@ -1893,7 +1894,7 @@ async def test_stream_files_removes_the_claimed_name_when_the_rename_fails(tmp_p
     def refuse(*_args, **_kwargs):
         raise OSError("rename refused")
 
-    monkeypatch.setattr(project_files.os, "replace", refuse)
+    monkeypatch.setattr(project_files, "_replace", refuse)
     with pytest.raises(OSError, match="rename refused"):
         await project_files._stream_files(folder, [upload("a.step", b"geo")])
     assert list(folder.iterdir()) == []  # neither the claimed placeholder nor the .part survives
@@ -1992,22 +1993,88 @@ async def test_committing_translates_after_the_undo_only_when_asked():
 
 
 @pytest.mark.asyncio
-async def test_committing_lets_a_failing_undo_win_untranslated():
+async def test_committing_logs_a_failing_undo_and_still_translates_the_original(caplog):
     calls: list[str] = []
     boom, undo_failed = RuntimeError("body"), OSError("undo")
 
-    def translate(_exc):
+    def translate(exc):
         calls.append("translate")
-        return ProjectFilesError(409, "never")
+        return ProjectFilesError(409, "taken") if exc is boom else None
 
-    with pytest.raises(OSError) as caught:
+    caplog.set_level("WARNING", logger=project_files.logger.name)
+    with pytest.raises(ProjectFilesError) as caught:
         async with project_files._CommitGuard(
-            _GuardSession(), _recording_undo(calls, undo_failed), translate=translate
+            _GuardSession(), _recording_undo(calls, undo_failed), translate=translate, label="the test op"
         ):
             raise boom
-    assert caught.value is undo_failed
-    assert caught.value.__context__ is boom
+    assert (caught.value.status_code, caught.value.__cause__) == (409, boom)
+    assert calls == ["undo", "translate"]
+    assert any("the test op" in r.getMessage() and r.exc_info and r.exc_info[1] is undo_failed for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_committing_keeps_the_original_error_when_the_undo_fails_and_nothing_translates(caplog):
+    calls: list[str] = []
+    boom = RuntimeError("body")
+    caplog.set_level("WARNING", logger=project_files.logger.name)
+    with pytest.raises(RuntimeError) as caught:
+        async with project_files._CommitGuard(_GuardSession(), _recording_undo(calls, OSError("undo"))):
+            raise boom
+    assert caught.value is boom
     assert calls == ["undo"]
+
+
+def test_cleanup_written_carries_on_past_a_file_that_cannot_be_removed(tmp_path, monkeypatch, caplog):
+    first, second, thumb = tmp_path / "a.step", tmp_path / "b.step", tmp_path / "b.png"
+    for path in (first, second, thumb):
+        path.write_bytes(b"x")
+    real_unlink = Path.unlink
+
+    def unlink(self, *args, **kwargs):
+        if self == first:
+            raise OSError("busy")
+        return real_unlink(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", unlink)
+    caplog.set_level("WARNING", logger=project_files.logger.name)
+    project_files._cleanup_written(
+        [
+            project_files._WrittenFile(path=first, size=1, digest=""),
+            project_files._WrittenFile(path=second, size=1, digest="", thumbnail_abs=thumb),
+        ]
+    )
+    assert first.exists() and not second.exists() and not thumb.exists()
+    assert any(str(first) in r.getMessage() and r.exc_info for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_a_failed_rename_back_is_logged_and_the_rollback_still_runs(db_session, root, monkeypatch, caplog):
+    project = await _project(db_session)
+    item, _rev1 = await _rev(db_session, project)
+    real_rename, rollbacks, real_rollback = project_files._rename, [], db_session.rollback
+    commit_error = RuntimeError("db down")
+
+    def rename(source, target):
+        if Path(target).name == "Support":  # the rename back
+            raise OSError("busy")
+        return real_rename(source, target)
+
+    async def boom():
+        raise commit_error
+
+    async def rollback():
+        rollbacks.append("rollback")
+        await real_rollback()
+
+    monkeypatch.setattr(project_files, "_rename", rename)
+    monkeypatch.setattr(db_session, "commit", boom)
+    monkeypatch.setattr(db_session, "rollback", rollback)
+    caplog.set_level("WARNING", logger=project_files.logger.name)
+    with pytest.raises(RuntimeError) as caught:
+        await rename_item(db_session, project, item, "Renamed")
+    assert caught.value is commit_error
+    assert rollbacks == ["rollback"]
+    assert any("after a failed rename" in r.getMessage() and r.exc_info for r in caplog.records)
 
 
 def _commit_raises_integrity(db_session, monkeypatch, message: str) -> IntegrityError:

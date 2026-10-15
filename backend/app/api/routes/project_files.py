@@ -126,12 +126,15 @@ _STORED_SUFFIXES = (".3mf", ".zip", ".jpg", ".jpeg", ".png", ".step", ".stp")
 
 
 def _build_zip(paths_and_names: list[tuple[Path, str]], archive: Path) -> int:
-    """Blocking zip build (run in a thread). Returns the number of files written."""
+    """Blocking zip build (run in a thread). Returns the number of files written (a vanished file is skipped)."""
     written = 0
     with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED, allowZip64=True) as zf:
         for path, name in paths_and_names:
             method = zipfile.ZIP_STORED if name.lower().endswith(_STORED_SUFFIXES) else zipfile.ZIP_DEFLATED
-            zf.write(path, arcname=name, compress_type=method)
+            try:
+                zf.write(path, arcname=name, compress_type=method)
+            except FileNotFoundError:
+                continue  # deleted or trashed since the existence check; skip it
             written += 1
     return written
 
