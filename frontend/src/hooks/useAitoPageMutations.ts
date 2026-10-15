@@ -154,8 +154,11 @@ export function useAitoPageMutations() {
       // after Create must still get the link.
       if (linkProjectId !== undefined) void linkFirstTask(created.id, linkProjectId);
     },
-    onError: () => {
-      showToast(t('aito.createFailed'), 'error');
+    onError: (error) => {
+      // A 422 names the rule the drawer could not check itself (a field cap,
+      // a phone shape): show it, or the operator has nothing to correct.
+      const detail = error instanceof ApiError && error.status === 422 ? ` ${error.message}` : '';
+      showToast(`${t('aito.createFailed')}${detail}`, 'error');
     },
   });
 
