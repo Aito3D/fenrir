@@ -10,7 +10,7 @@ import { useContactedMutation } from '../../hooks/useContactedMutation';
 import { useQuoteStatusMutation } from '../../hooks/useQuoteStatusMutation';
 import { useHoldSettle } from '../../hooks/useHoldSettle';
 import { isPlaceholder } from '../../utils/aitoOptimistic';
-import { needsClientContact } from '../../utils/aitoBoard';
+import { needsClientContact, shipsToClient } from '../../utils/aitoBoard';
 
 /** The board card's footer controls — the column's one-tap transitions.
  *
@@ -51,6 +51,9 @@ export function BoardCardActions({
   // CardView paints from, so the button and the card's cyan alert can never
   // disagree about whether this client still needs telling.
   const awaitingContact = needsClientContact(project) && !placeholder;
+  // Which step that is: a phone call on a pickup job, the parcel leaving on
+  // a shipping one. Same stamp, same gate, different icon and words.
+  const ships = shipsToClient(project);
 
   // The slot advances Phone -> FileText -> Check on the optimistic contact
   // write, and unlike mark-sent on the Quote card nothing flies here — the
@@ -136,7 +139,7 @@ export function BoardCardActions({
           }}
           durationMs={500}
           disabled={markContacted.isPending || contactSettling}
-          label={t('aito.markContacted')}
+          label={t(ships ? 'aito.markShipped' : 'aito.markContacted')}
           hint={t('aito.holdToConfirm')}
           progress="perimeter"
           // Cyan, matching the card's own alert — the button and the
@@ -147,7 +150,15 @@ export function BoardCardActions({
             contactStage === 'leaving' ? ' animate-fade-out-sm' : ''
           }`}
         >
-          <Phone className="relative w-3.5 h-3.5" />
+          {/* A parcel waits for the freight counter, not a phone call: the
+              plane IS the step on a shipping card, held once the box has
+              left. Enlarged from the phone's w-3.5 — a plane at that size
+              reads as a smudge rather than an aircraft. */}
+          {ships ? (
+            <Plane className="relative w-[1.15rem] h-[1.15rem]" />
+          ) : (
+            <Phone className="relative w-3.5 h-3.5" />
+          )}
         </HoldButton>
       )}
       {project.column === 'finish' && !awaitingContact && !contactSettling && project.move_lock === null && (
@@ -184,15 +195,11 @@ export function BoardCardActions({
             project.quote_invoiced ? 'animate-invoiced-pulse text-bambu-green' : 'text-bambu-green/70'
           }`}
         >
-          {/* A shipped project ends at the airport, not at the counter,
-              and that is the one thing the person about to archive it
-              needs to know. Enlarged from the check's w-3.5: a plane at
-              check size reads as a smudge rather than an aircraft. */}
-          {project.shipping_island !== null ? (
-            <Plane className="relative w-[1.15rem] h-[1.15rem]" />
-          ) : (
-            <Check className="relative w-3.5 h-3.5" />
-          )}
+          {/* A check on every card, shipping or not: the plane now marks
+              the step BEFORE this one (the parcel leaving, above), and
+              two planes in a row would make "sent" and "archived" read
+              as the same act. */}
+          <Check className="relative w-3.5 h-3.5" />
         </HoldButton>
         </span>
       )}

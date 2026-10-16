@@ -52,7 +52,7 @@ from backend.app.models.calculator import CalculatorFilament
 from backend.app.services import aito_change_poll, aito_push_schedule
 from backend.app.services.aito_board_rules import AWAY_STATUSES
 from backend.app.services.aito_customer_credit import read_customer_credit
-from backend.app.services.aito_events import record, utc_now_naive
+from backend.app.services.aito_events import contact_mark_kind, record, utc_now_naive
 from backend.app.services.aito_invoice_sweep import _same_reference, sweep_inbox, sweep_invoices
 from backend.app.services.aito_payment_links import deposit_pct, required_amount
 from backend.app.services.aito_quote_export import (
@@ -1405,7 +1405,7 @@ async def _follow_customer(db: AsyncSession, project: AitoProject, estimate: dic
         await record(
             db,
             project.id,
-            "project.contacted.cleared",
+            contact_mark_kind(project.shipping_island is not None, cleared=True),
             actor_class="system",
             subject_type="project",
             subject_id=project.id,

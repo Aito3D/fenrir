@@ -125,6 +125,13 @@ KINDS: dict[str, str] = {
     "project.client.changed": "story",
     "project.contacted.set": "story",
     "project.contacted.cleared": "story",
+    # The same stamp (`client_contacted_at`) on a project that SHIPS: there
+    # the Finish step is not a phone call but the parcel leaving, so the
+    # timeline must not read "marked the client as contacted" about a box
+    # handed to the freight counter. Same cause conventions as the contacted
+    # pair — see `contact_mark_kind`.
+    "project.shipped.set": "story",
+    "project.shipped.cleared": "story",
     # The pickup SMS was handed to the user's phone (Pushcut accepted the
     # notification) — not proof the SMS left the phone, which is why sending
     # one does NOT set the contacted mark. Story depth for the same reason
@@ -215,6 +222,20 @@ def kinds_for_depth(depth: str) -> list[str]:
     limit = _DEPTH_ALIASES.get(depth, _DEPTH_ALIASES["detail"])
     allowed = set(_DEPTH_ORDER[:limit])
     return [kind for kind, level in KINDS.items() if level in allowed]
+
+
+def contact_mark_kind(shipping: bool, *, cleared: bool = False) -> str:
+    """The event kind for setting or clearing ``client_contacted_at``.
+
+    ONE stamp, two meanings: on a pickup job it records that the client was
+    told to come and collect; on a job that ships (``shipping_island`` set) it
+    records that the parcel was handed over. The Finish -> Done gate reads the
+    stamp the same way either side, but the timeline must name what actually
+    happened — so every site that writes the stamp asks here for its kind
+    rather than spelling ``project.contacted.*`` out and lying about parcels.
+    """
+    base = "project.shipped" if shipping else "project.contacted"
+    return f"{base}.{'cleared' if cleared else 'set'}"
 
 
 def diff_fields(obj: Any, patch: dict) -> list[dict]:

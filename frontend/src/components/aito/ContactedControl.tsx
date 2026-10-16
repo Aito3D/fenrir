@@ -1,9 +1,10 @@
 import { useTranslation } from 'react-i18next';
-import { Check, Phone } from 'lucide-react';
+import { Check, Phone, Plane } from 'lucide-react';
 import { HoldButton } from './HoldButton';
 import { headerPillRadiusCls } from './panelTypography';
 import { useContactedMutation } from '../../hooks/useContactedMutation';
 import { type AitoProject } from '../../api/client';
+import { shipsToClient } from '../../utils/aitoBoard';
 
 /** The panel's counterpart to the board card's contact button — and the only
  *  place a contact can be TAKEN BACK.
@@ -28,6 +29,25 @@ export function ContactedControl({ project }: { project: AitoProject }) {
   const { t } = useTranslation();
   const mutation = useContactedMutation(project);
   const contacted = project.client_contacted_at !== null;
+  // One stamp, two steps: the words and the glyph name the one this card
+  // owes — a parcel on a shipping job, a phone call otherwise — while the
+  // hold, the colours and the mutation stay exactly the same.
+  const ships = shipsToClient(project);
+  const labels = ships
+    ? {
+        mark: 'aito.markShipped',
+        clear: 'aito.clearShipped',
+        done: 'aito.shipped',
+        holdMark: 'aito.holdToMarkShipped',
+        holdClear: 'aito.holdToClearShipped',
+      }
+    : {
+        mark: 'aito.markContacted',
+        clear: 'aito.clearContacted',
+        done: 'aito.contacted',
+        holdMark: 'aito.holdToMarkContacted',
+        holdClear: 'aito.holdToClearContacted',
+      };
 
   return (
     <HoldButton
@@ -35,8 +55,8 @@ export function ContactedControl({ project }: { project: AitoProject }) {
       durationMs={500}
       disabled={mutation.isPending}
       ariaPressed={contacted}
-      label={t(contacted ? 'aito.clearContacted' : 'aito.markContacted')}
-      hint={t(contacted ? 'aito.holdToClearContacted' : 'aito.holdToMarkContacted')}
+      label={t(contacted ? labels.clear : labels.mark)}
+      hint={t(contacted ? labels.holdClear : labels.holdMark)}
       // `bar`, not `ring`: HoldButton's ring uses viewBox="0 0 24 24" and lands
       // as a small circle floating over the middle of a wide label rather than
       // as progress — the same reason FlagControl's segments pass `bar`.
@@ -63,10 +83,12 @@ export function ContactedControl({ project }: { project: AitoProject }) {
     >
       {contacted ? (
         <Check className="h-3.5 w-3.5" aria-hidden="true" />
+      ) : ships ? (
+        <Plane className="h-3.5 w-3.5" aria-hidden="true" />
       ) : (
         <Phone className="h-3.5 w-3.5" aria-hidden="true" />
       )}
-      {t(contacted ? 'aito.contacted' : 'aito.markContacted')}
+      {t(contacted ? labels.done : labels.mark)}
     </HoldButton>
   );
 }

@@ -395,13 +395,65 @@ describe('board card actions — mark as done', () => {
     expect(done.querySelector('.lucide-plane')).toBeFalsy();
   });
 
-  it('shows a plane on a Finish card that has shipping', () => {
+  it('shows a check on a Finish card that has shipping too: the plane is the step before Done', () => {
     renderColumn(
       card({ column: 'finish', move_lock: null, shipping_island: 'rangiroa', client_contacted_at: '2026-08-20T09:00:00Z' }),
     );
     const done = screen.getByRole('button', { name: /mark project as done/i });
-    expect(done.querySelector('.lucide-plane')).toBeTruthy();
-    expect(done.querySelector('.lucide-check')).toBeFalsy();
+    expect(done.querySelector('.lucide-check')).toBeTruthy();
+    expect(done.querySelector('.lucide-plane')).toBeFalsy();
+  });
+});
+
+describe('board card actions — a shipping job owes a parcel, not a phone call', () => {
+  // Same stamp, same gate, same slot: only the step's name and glyph change.
+  // The operator holds the plane once the box has left the freight counter.
+  const shipping = (over: Partial<AitoProject> = {}) =>
+    card({ column: 'finish', move_lock: null, client_contacted_at: null, shipping_island: 'rangiroa', ...over });
+
+  it('offers the parcel-sent button with a plane, not the phone, while the parcel has not left', () => {
+    renderColumn(shipping());
+    const sent = screen.getByRole('button', { name: /mark parcel as sent/i });
+    expect(sent).toBeEnabled();
+    expect(sent.querySelector('.lucide-plane')).toBeTruthy();
+    expect(sent.querySelector('.lucide-phone')).toBeFalsy();
+    expect(screen.queryByRole('button', { name: /mark client as contacted/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /mark project as done/i })).not.toBeInTheDocument();
+  });
+
+  it('keeps the phone on a pickup job', () => {
+    renderColumn(shipping({ shipping_island: null }));
+    const contact = screen.getByRole('button', { name: /mark client as contacted/i });
+    expect(contact.querySelector('.lucide-phone')).toBeTruthy();
+    expect(contact.querySelector('.lucide-plane')).toBeFalsy();
+  });
+
+  it('advances past the plane once the parcel is marked sent', () => {
+    renderColumn(shipping({ client_contacted_at: '2026-08-20T09:00:00Z' }));
+    expect(screen.queryByRole('button', { name: /mark parcel as sent/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /mark project as done/i })).toBeEnabled();
+  });
+
+  it('records the mark through the same contacted mutation once the hold completes', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const spy = vi.spyOn(api, 'setAitoProjectContacted').mockImplementation(() => new Promise(() => {}));
+    try {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      renderColumn(shipping());
+      const button = screen.getByRole('button', { name: /mark parcel as sent/i });
+
+      await user.pointer({ keys: '[MouseLeft>]', target: button });
+      act(() => {
+        vi.advanceTimersByTime(600);
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(spy).toHaveBeenCalledWith(12, true);
+    } finally {
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    }
   });
 });
 

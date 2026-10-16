@@ -4,6 +4,7 @@ import { useOptimisticBoardMutation } from './useOptimisticBoardMutation';
 import { api, type AitoProject } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 import { settleProject } from '../components/aito/settleProject';
+import { shipsToClient } from '../utils/aitoBoard';
 
 /** Record — or take back — the fact that the client has been told their job is
  *  ready to collect.
@@ -34,6 +35,6 @@ export function useContactedMutation(project: AitoProject) {
       ),
     flashId: () => project.id,
     onSuccess: (row) => settleProject(queryClient, project.id, row),
-    onError: () => showToast(t('aito.contactedFailed'), 'error'),
+    onError: () => showToast(t(shipsToClient(project) ? 'aito.shippedFailed' : 'aito.contactedFailed'), 'error'),
   });
 }

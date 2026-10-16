@@ -1281,6 +1281,19 @@ describe('CardView — the client still has to be told', () => {
     expect(screen.getByTestId('aito-card-client').className).not.toContain('text-cyan-400');
   });
 
+  it('names the step as a parcel, not a call, on a shipping card', () => {
+    render(
+      <CardView project={{ ...finished, client_contacted_at: null, shipping_island: 'rangiroa' }} onExpand={vi.fn()} />,
+    );
+    expect(screen.getByTestId('aito-card-contact')).toHaveTextContent('To ship');
+    expect(document.querySelector('[data-aito-card]')!.className).toContain('contact-pending');
+  });
+
+  it('names the step as a call on a pickup card', () => {
+    render(<CardView project={{ ...finished, client_contacted_at: null, shipping_island: null }} onExpand={vi.fn()} />);
+    expect(screen.getByTestId('aito-card-contact')).toHaveTextContent('To contact');
+  });
+
   it('says nothing about contacting on a card that is still being worked on', () => {
     render(<CardView project={{ ...project, column: 'print', client_contacted_at: null }} onExpand={vi.fn()} />);
     expect(screen.queryByTestId('aito-card-contact')).not.toBeInTheDocument();

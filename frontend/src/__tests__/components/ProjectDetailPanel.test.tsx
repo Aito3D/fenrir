@@ -3593,6 +3593,24 @@ describe('ProjectDetailPanel — the header pill follows the project', () => {
     expect(screen.queryByTestId('flag-control')).not.toBeInTheDocument();
   });
 
+  it('offers the parcel-sent pill with a plane on a shipping job', () => {
+    show({ column: 'finish', move_lock: null, client_contacted_at: null, shipping_island: 'rangiroa' });
+    const pill = screen.getByRole('button', { name: /mark parcel as sent/i });
+    expect(pill.querySelector('.lucide-plane')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /mark client as contacted/i })).not.toBeInTheDocument();
+  });
+
+  it('lets a sent mark be taken back in shipping words', () => {
+    show({ column: 'finish', move_lock: null, client_contacted_at: '2026-08-20T09:00:00Z', shipping_island: 'rangiroa' });
+    expect(screen.getByRole('button', { name: /undo sent/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /undo contacted/i })).not.toBeInTheDocument();
+  });
+
+  it('offers no pickup SMS on a shipping job: there is nothing to collect', () => {
+    show({ column: 'finish', move_lock: null, client_contacted_at: null, shipping_island: 'rangiroa' });
+    expect(screen.queryByRole('button', { name: /send a pickup sms/i })).not.toBeInTheDocument();
+  });
+
   it('lets a contact be taken back, which the card cannot', () => {
     // The card's one action slot belongs to Done once the client has been
     // told, so this panel control is the ONLY way to undo a mistaken mark.

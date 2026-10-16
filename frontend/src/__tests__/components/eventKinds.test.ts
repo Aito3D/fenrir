@@ -250,6 +250,11 @@ describe('project.contacted.set / project.contacted.cleared', () => {
     expect(EVENT_LABEL_KEY['project.contacted.set']).toBe('aito.history.projectContactedSet');
     expect(EVENT_LABEL_KEY['project.contacted.cleared']).toBe('aito.history.projectContactedCleared');
   });
+
+  it('labels the shipped pair, the same stamp on a job that ships', () => {
+    expect(EVENT_LABEL_KEY['project.shipped.set']).toBe('aito.history.projectShippedSet');
+    expect(EVENT_LABEL_KEY['project.shipped.cleared']).toBe('aito.history.projectShippedCleared');
+  });
 });
 
 describe('project.client.changed', () => {

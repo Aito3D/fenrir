@@ -10,7 +10,7 @@ import { useAitoViewers } from '../../hooks/useAitoPresence';
 import { formatElapsedTime, parseUTCDate } from '../../utils/date';
 import { prefersReducedMotion } from '../../utils/motion';
 import { ageAnchor, agingTextCls } from '../../utils/aitoAging';
-import { isFinished, needsClientContact } from '../../utils/aitoBoard';
+import { isFinished, needsClientContact, shipsToClient } from '../../utils/aitoBoard';
 import { useCardDrop } from '../projects/aito/CardDropTarget';
 import { CardProjectChips } from '../projects/aito/CardProjectChips';
 import { hoverRevealDelay, markHoverWarm } from './hoverWarmth';
@@ -576,7 +576,7 @@ export function CardView({
                         thing on this row, and "To contact · 3 days ago" beside
                         a second "3 days ago" was one number twice. The cyan
                         carries the urgency. */}
-                    {t('aito.awaitingContact')}
+                    {t(shipsToClient(project) ? 'aito.awaitingShipping' : 'aito.awaitingContact')}
                   </span>
                 )}
                 {!overlay && !placeholder && <CardProjectChips orderId={project.id} />}

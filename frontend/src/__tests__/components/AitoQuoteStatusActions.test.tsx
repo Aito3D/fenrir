@@ -434,11 +434,13 @@ describe('ProjectDoneAction — glyph swap in the panel footer', () => {
     expect(done.querySelector('.lucide-plane')).toBeFalsy();
   });
 
-  it('shows a plane on a Finish card that has shipping', () => {
+  it('shows a check on a Finish card that has shipping too: the plane is the step before Done', () => {
+    // The parcel-sent pill in the header (ContactedControl) carries the
+    // plane now; a second one on Done would make the two acts read as one.
     render(<ProjectDoneAction project={archivable({ shipping_island: 'rangiroa' })} />);
     const done = screen.getByRole('button', { name: /mark project as done/i });
-    expect(done.querySelector('.lucide-plane')).toBeTruthy();
-    expect(done.querySelector('.lucide-check')).toBeFalsy();
+    expect(done.querySelector('.lucide-check')).toBeTruthy();
+    expect(done.querySelector('.lucide-plane')).toBeFalsy();
   });
 });
 

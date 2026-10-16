@@ -47,6 +47,21 @@ export function needsClientContact(project: Pick<AitoProject, 'column' | 'client
   return project.column === 'finish' && project.client_contacted_at === null;
 }
 
+/** Whether the Finish step this project owes is a parcel rather than a phone
+ *  call.
+ *
+ *  `client_contacted_at` is ONE stamp with two meanings: on a pickup job it
+ *  records that the client was told to come and collect; on a job with a
+ *  shipment it records that the parcel was handed over at the freight
+ *  counter. The gate (`needsClientContact`, `canMarkDone`) reads the stamp
+ *  the same way either side — this is what every surface that NAMES the step
+ *  (card chip, footer button, panel pill, toast) asks, so a shipping card
+ *  never tells the operator to ring a client it is about to post a box to.
+ *  The server draws the same line with `contact_mark_kind`. */
+export function shipsToClient(project: Pick<AitoProject, 'shipping_island'>): boolean {
+  return project.shipping_island !== null;
+}
+
 /** Display rank for a column. Urgent and SAV mean "look at this" and rise;
  *  pause means the opposite and sinks; unflagged sits between them.
  *

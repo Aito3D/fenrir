@@ -29,7 +29,7 @@ function renderContactedHook(project: AitoProject) {
   return renderBoardMutationHook(() => useContactedMutation(project), project);
 }
 
-const project = { id: 12, client_contacted_at: null } as AitoProject;
+const project = { id: 12, client_contacted_at: null, shipping_island: null } as AitoProject;
 
 describe('useContactedMutation', () => {
   beforeEach(() => {
@@ -153,5 +153,20 @@ describe('useContactedMutation', () => {
     expect(client.getQueryData<AitoProject[]>(['aito-projects'])).toEqual([project]);
     expect(showToastMock).toHaveBeenCalledWith('aito.contactedFailed', 'error');
     expect(vi.mocked(flashRevert)).toHaveBeenCalledWith(project.id);
+  });
+
+  it('names the failure as a shipment on a job that ships', async () => {
+    // Same mutation, same rollback: only the toast's words follow the step
+    // the card owes (a parcel, not a call).
+    vi.spyOn(api, 'setAitoProjectContacted').mockRejectedValue(new Error('network down'));
+    const shipping = { ...project, shipping_island: 'rangiroa' } as AitoProject;
+    const { result } = renderContactedHook(shipping);
+
+    await act(async () => {
+      result.current.mutate(true);
+      await waitFor(() => expect(result.current.isError).toBe(true));
+    });
+
+    expect(showToastMock).toHaveBeenCalledWith('aito.shippedFailed', 'error');
   });
 });

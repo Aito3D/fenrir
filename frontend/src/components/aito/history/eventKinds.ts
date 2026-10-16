@@ -52,6 +52,8 @@ export const EVENT_LABEL_KEY: Record<string, string> = {
   'project.due.cleared': 'aito.history.projectDueCleared',
   'project.contacted.set': 'aito.history.projectContactedSet',
   'project.contacted.cleared': 'aito.history.projectContactedCleared',
+  'project.shipped.set': 'aito.history.projectShippedSet',
+  'project.shipped.cleared': 'aito.history.projectShippedCleared',
   'project.client.changed': 'aito.history.clientChanged',
   'project.sms.sent': 'aito.history.smsSent',
   'tracking.regenerated': 'aito.history.trackingRegenerated',

@@ -1,6 +1,6 @@
 import { useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Check, Plane } from 'lucide-react';
+import { Check } from 'lucide-react';
 import { HoldButton } from './HoldButton';
 import { canMarkDone } from './canMarkDone';
 import { useColumnMoveMutation } from '../../hooks/useColumnMoveMutation';
@@ -105,15 +105,10 @@ export function ProjectDoneAction({
         project.quote_invoiced ? 'animate-invoiced-pulse' : ''
       }`}
     >
-      {/* Both surfaces offer the one Finish -> Done transition and must never
-          disagree — see BoardColumn's SortableCard for the identical swap
-          and its reasoning (enlarged so a plane at check size doesn't read
-          as a smudge). */}
-      {project.shipping_island !== null ? (
-        <Plane className="w-[1.15rem] h-[1.15rem]" />
-      ) : (
-        <Check className="w-3.5 h-3.5" />
-      )}
+      {/* A check on every card, shipping or not, like the board card's Done
+          icon (BoardCardActions): the plane belongs to the step before this
+          one — the parcel leaving — and both surfaces must agree. */}
+      <Check className="w-3.5 h-3.5" />
       <span className="text-sm">{t('aito.markProjectDone')}</span>
     </HoldButton>
   );

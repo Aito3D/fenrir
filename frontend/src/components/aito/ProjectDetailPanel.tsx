@@ -57,7 +57,7 @@ import { useDuplicateProject } from '../../hooks/useDuplicateProject';
 import { api, type AitoEvent, type AitoProject, type AitoProjectUpdate } from '../../api/client';
 import { Money } from '../calculator/shared';
 import { ageAnchor, agingColorCls } from '../../utils/aitoAging';
-import { isFinished } from '../../utils/aitoBoard';
+import { isFinished, shipsToClient } from '../../utils/aitoBoard';
 import { copyTextToClipboard } from '../../utils/clipboard';
 import { elapsedDays, parseUTCDate } from '../../utils/date';
 import { formatMoney } from '../../utils/pricing';
@@ -527,10 +527,13 @@ function PanelHeader({
                   {/* Finish only, never Done, and only while the contact is
                       still owed: the SMS is how the debt ContactedControl
                       tracks gets paid, and once it is paid — or the card is
-                      archived — a "come and collect" message has no job. */}
-                  {project.column === 'finish' && project.client_contacted_at === null && (
-                    <SmsPickupButton project={project} />
-                  )}
+                      archived — a "come and collect" message has no job.
+                      Nor on a shipping job: the step it owes is the parcel
+                      leaving, and "come and collect" would send the client
+                      to the shop for a box on its way to them. */}
+                  {project.column === 'finish' &&
+                    project.client_contacted_at === null &&
+                    !shipsToClient(project) && <SmsPickupButton project={project} />}
                   <ContactedControl project={project} />
                 </>
               ) : (

@@ -7,6 +7,7 @@ import {
   findColumn,
   flagRank,
   overdueRank,
+  shipsToClient,
   toOptimisticProjects,
 } from '../../utils/aitoBoard';
 import type { AitoFlag, AitoProject } from '../../api/client';
@@ -278,5 +279,17 @@ describe('overdue ordering', () => {
       today,
     );
     expect(board.devis.map((p) => p.id)).toEqual([2, 3, 1, 4]);
+  });
+});
+
+describe('shipsToClient', () => {
+  // Which Finish step the card owes: a parcel when a shipment is attached,
+  // a phone call otherwise. The island is the shipment's presence flag.
+  it('is true with a shipment attached', () => {
+    expect(shipsToClient({ shipping_island: 'rangiroa' })).toBe(true);
+  });
+
+  it('is false on a pickup job', () => {
+    expect(shipsToClient({ shipping_island: null })).toBe(false);
   });
 });

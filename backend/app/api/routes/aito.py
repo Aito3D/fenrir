@@ -110,7 +110,7 @@ from backend.app.services.aito_deposit_apply import (
     apply_deposit,
     project_deposits,
 )
-from backend.app.services.aito_events import diff_fields, kinds_for_depth, record, utc_now_naive
+from backend.app.services.aito_events import contact_mark_kind, diff_fields, kinds_for_depth, record, utc_now_naive
 from backend.app.services.aito_force_sync import quote_snapshot, run_force_sync
 from backend.app.services.aito_invoice_create import (
     apply_retainers,
@@ -784,7 +784,7 @@ async def _apply_rules(db: AsyncSession, project: AitoProject, summary: TaskSumm
         await record(
             db,
             project.id,
-            "project.contacted.cleared",
+            contact_mark_kind(project.shipping_island is not None, cleared=True),
             actor_class="user" if actor else "system",
             actor_name=actor,
             subject_type="project",
@@ -3998,9 +3998,16 @@ async def move_project(
         # contact recorded and never will — gating the way out of the archive
         # too would strand all of them there.
         if payload.column == "done" and project.client_contacted_at is None:
+            # The same stamp means "parcel handed over" on a job that ships
+            # (see `set_project_contacted`), so the refusal names that step
+            # rather than a phone call nobody is expected to make.
             raise HTTPException(
                 status_code=409,
-                detail="Tell the client the project is ready before archiving it",
+                detail=(
+                    "Send the parcel before archiving the project"
+                    if project.shipping_island is not None
+                    else "Tell the client the project is ready before archiving it"
+                ),
             )
 
         # The second step of the same sequence: the job is billed when the
@@ -4248,6 +4255,7 @@ async def update_project(
     # consistent, not the payload.
     shipping = _validated_shipping(fields, rates, current=project)
     if shipping is not None:
+        was_shipping = project.shipping_island is not None
         for key, value in shipping.items():
             setattr(project, key, value)
         if shipping["shipping_island"] is None:
@@ -4255,6 +4263,25 @@ async def update_project(
             # meaningless without the parcel, and a later re-attach must not
             # inherit a stale one.
             project.shipping_lta = None
+        # The Finish-step stamp means "client told to collect" on a pickup
+        # job and "parcel handed over" on a shipping one (see
+        # `set_project_contacted`). Switching a finished card between the
+        # two leaves a stamp that records the WRONG step as done — a parcel
+        # nobody has sent, or a client nobody has rung — and would open the
+        # Done gate on it. Retract it, under the kind it was set as, so the
+        # card owes the step it now actually has.
+        if was_shipping != (project.shipping_island is not None) and project.client_contacted_at is not None:
+            project.client_contacted_at = None
+            await record(
+                db,
+                project.id,
+                contact_mark_kind(was_shipping, cleared=True),
+                actor_class="user",
+                actor_name=_actor(current_user),
+                subject_type="project",
+                subject_id=project.id,
+                detail={"cause": "shipping"},
+            )
 
     # Checked on the MERGED row, after the shipping columns above have been
     # applied: a PATCH that attaches a shipment and its LTA in one body is
@@ -4817,7 +4844,13 @@ async def set_project_contacted(
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_UPDATE),
 ):
     """Record — or take back — the fact that the client has been told the job
-    is ready to collect.
+    is ready to collect — or, on a job that ships, that the parcel has left.
+
+    One stamp for both: the Finish step a pickup job owes is a phone call and
+    the one a shipping job owes is the hand-over at the freight counter, and
+    either is what opens the Done gate. The column does not change meaning
+    per project; the event kind does (`contact_mark_kind`), so the timeline
+    says which of the two actually happened.
 
     Its own route rather than a field on `AitoProjectUpdate`, for the identical
     reason `set_project_flag` is: `update_project` ends with an unconditional
@@ -4865,7 +4898,7 @@ async def set_project_contacted(
         await record(
             db,
             project.id,
-            "project.contacted.set" if payload.contacted else "project.contacted.cleared",
+            contact_mark_kind(project.shipping_island is not None, cleared=not payload.contacted),
             actor_class="user",
             actor_name=_actor(current_user),
             subject_type="project",
