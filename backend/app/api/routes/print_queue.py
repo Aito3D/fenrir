@@ -69,6 +69,7 @@ from backend.app.services.print_cost_estimate import estimate_queue_source_cost
 # Fenrir: production traceability (projects as a PDM, phase 4).
 from backend.app.services.project_print_trace import PrintTraceError, record_queued, resolve_print_context
 from backend.app.services.queue_position import lock_queue_positions, max_queue_position
+from backend.app.services.queue_trace_summary import attach_trace_summaries
 from backend.app.utils.printer_models import (
     is_gcode_compatible,
 )
@@ -689,7 +690,9 @@ async def list_queue(
 
     result = await db.execute(query)
     items = result.scalars().all()
-    return [_enrich_response(item) for item in items]
+    responses = [_enrich_response(item) for item in items]
+    await attach_trace_summaries(db, responses)
+    return responses
 
 
 async def _resolve_queue_variants(
@@ -2018,7 +2021,9 @@ async def get_queue_item(
         and (item.created_by_id is None or item.created_by_id != current_user.id)
     ):
         raise HTTPException(404, "Queue item not found")
-    return _enrich_response(item)
+    response = _enrich_response(item)
+    await attach_trace_summaries(db, [response])
+    return response
 
 
 @router.patch("/{item_id}", response_model=PrintQueueItemResponse)

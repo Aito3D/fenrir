@@ -3021,6 +3021,22 @@ export interface PrintQueueItem {
   // Batch grouping
   batch_id?: number | null;
   batch_name?: string | null;
+  layer_height?: number | null;
+  nozzle_diameter?: number | null;
+  sliced_for_model?: string | null;
+  // Fenrir: what revision_id / aito_task_id point at, resolved by the queue
+  // read routes for the timeline hover card. All null when unlinked or the
+  // target was deleted.
+  project_code?: string | null;
+  project_name?: string | null;
+  revision_item_name?: string | null;
+  revision_number?: number | null;
+  revision_status?: 'wip' | 'valide' | 'obsolete' | null;
+  aito_task_title?: string | null;
+  aito_client_name?: string | null;
+  aito_due_date?: string | null;
+  aito_quantity?: number | null;
+  aito_board_column?: string | null;
   // Shortest-job-first scheduling
   been_jumped?: boolean;
   // Auto-print G-code injection

@@ -7,9 +7,9 @@
  * the timeline drawing the pre-SJF queue forever (#3043).
  */
 
-import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
-import { QueueTimelineView } from '../../components/QueueTimelineView';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, fireEvent, act } from '@testing-library/react';
+import { QueueTimelineView, HOVER_CARD_DWELL_MS } from '../../components/QueueTimelineView';
 import type { PrintQueueItem, Printer } from '../../api/client';
 
 const HOUR = 3600;
@@ -69,15 +69,15 @@ function renderTimeline(sjfEnabled: boolean) {
 }
 
 /** Bar names, left to right. Bars are absolutely positioned, so the rendered
- *  offset is what the user reads -- not DOM order. The tooltip leads with the
- *  display name, which is cleaner to match on than the bar's own text (name
- *  and duration sit in adjacent divs with no separator between them). */
+ *  offset is what the user reads -- not DOM order. The accessible name leads
+ *  with the display name, which is cleaner to match on than the bar's own
+ *  text (name and duration sit in adjacent divs with no separator). */
 function barsLeftToRight(): string[] {
   return screen
     .getAllByRole('button')
     .filter(el => el.style.left.endsWith('%'))
     .sort((a, b) => parseFloat(a.style.left) - parseFloat(b.style.left))
-    .map(el => (el.getAttribute('title') ?? '').split(' \u00b7 ')[0]);
+    .map(el => (el.getAttribute('aria-label') ?? '').split(' \u00b7 ')[0]);
 }
 
 describe('QueueTimelineView job ordering', () => {
@@ -169,5 +169,125 @@ describe('QueueTimelineView and the scheduler waiting reasons (#3074)', () => {
       expect(barsLeftToRight()).toEqual(['Running now']);
       unmount();
     }
+  });
+});
+
+/**
+ * Hovering a bar opens a card with what the bar truncates: the schedule, the
+ * print settings and the PDM project / Aito client behind the job. A sweep
+ * across lanes must not flash a card per bar, so it waits a short dwell.
+ */
+describe('QueueTimelineView hover card', () => {
+  const linked = pending(7, 'Guide sangle v2', 1, 4 * HOUR, {
+    filament_type: 'PA-CF',
+    filament_used_grams: 64,
+    bed_type: 'Engineering Plate',
+    nozzle_diameter: 0.4,
+    layer_height: 0.16,
+    project_code: 'PRJ-0151',
+    project_name: 'Sangles Hiva Oa',
+    revision_item_name: 'Guide sangle',
+    revision_number: 2,
+    revision_status: 'valide',
+    aito_task_id: 12,
+    aito_task_title: 'Guides sangle ×4',
+    aito_client_name: 'Hiva Oa Nautique',
+    aito_due_date: '2026-10-19',
+    aito_quantity: 4,
+    aito_board_column: 'print',
+  });
+
+  function renderWithLinked(items: PrintQueueItem[] = [running, linked]) {
+    render(
+      <QueueTimelineView
+        queueItems={items}
+        printers={printers}
+        printerStatuses={{ 1: { progress: 50, remaining_time: 30, state: 'RUNNING' } }}
+        sjfEnabled={false}
+        onItemClick={() => {}}
+        t={(key: string) => key}
+      />,
+    );
+  }
+
+  const bar = (name: string) =>
+    screen.getAllByRole('button').find(el => (el.getAttribute('aria-label') ?? '').startsWith(name))!;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('opens after the dwell, not on entry', () => {
+    renderWithLinked();
+    fireEvent.mouseEnter(bar('Guide sangle v2'));
+    expect(screen.queryByTestId('queue-job-hover-card')).toBeNull();
+    act(() => {
+      vi.advanceTimersByTime(HOVER_CARD_DWELL_MS);
+    });
+    const card = screen.getByTestId('queue-job-hover-card');
+    expect(card).toHaveTextContent('Guide sangle v2');
+    expect(card).toHaveTextContent('PRJ-0151');
+    expect(card).toHaveTextContent('Sangles Hiva Oa');
+    expect(card).toHaveTextContent('R2');
+    expect(card).toHaveTextContent('projectsPdm.files.statusValide');
+    expect(card).toHaveTextContent('Hiva Oa Nautique');
+    expect(card).toHaveTextContent('Guides sangle ×4');
+    expect(card).toHaveTextContent('aito.columns.print');
+    expect(card).toHaveTextContent('PA-CF');
+    expect(card).toHaveTextContent('64 g');
+    expect(card).toHaveTextContent('Engineering Plate');
+  });
+
+  it('never opens for a bar the pointer only crossed', () => {
+    renderWithLinked();
+    fireEvent.mouseEnter(bar('Guide sangle v2'));
+    act(() => {
+      vi.advanceTimersByTime(HOVER_CARD_DWELL_MS / 2);
+    });
+    fireEvent.mouseLeave(bar('Guide sangle v2'));
+    act(() => {
+      vi.advanceTimersByTime(HOVER_CARD_DWELL_MS * 2);
+    });
+    expect(screen.queryByTestId('queue-job-hover-card')).toBeNull();
+  });
+
+  it('stays open while the pointer is inside the card, closes on Escape', () => {
+    renderWithLinked();
+    fireEvent.mouseEnter(bar('Guide sangle v2'));
+    act(() => {
+      vi.advanceTimersByTime(HOVER_CARD_DWELL_MS);
+    });
+    const card = screen.getByTestId('queue-job-hover-card');
+    fireEvent.mouseLeave(bar('Guide sangle v2'));
+    fireEvent.mouseEnter(card);
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(screen.getByTestId('queue-job-hover-card')).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByTestId('queue-job-hover-card')).toBeNull();
+  });
+
+  it('says so when the job has no project and no client task', () => {
+    renderWithLinked([running, pending(8, 'Ball.gcode.3mf', 1, HOUR)]);
+    fireEvent.mouseEnter(bar('Ball.gcode.3mf'));
+    act(() => {
+      vi.advanceTimersByTime(HOVER_CARD_DWELL_MS);
+    });
+    const card = screen.getByTestId('queue-job-hover-card');
+    expect(card).toHaveTextContent('queue.timeline.card.noProject');
+    expect(card).toHaveTextContent('queue.timeline.card.noTask');
+  });
+
+  it('shows the running job as printing with its progress', () => {
+    renderWithLinked();
+    fireEvent.mouseEnter(bar('Running now'));
+    act(() => {
+      vi.advanceTimersByTime(HOVER_CARD_DWELL_MS);
+    });
+    expect(screen.getByTestId('queue-job-hover-card')).toHaveTextContent('queue.timeline.card.printing · 50%');
   });
 });

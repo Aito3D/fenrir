@@ -6,12 +6,15 @@ import { isBusyOnlyWaitingReason } from '../utils/waitingReason';
 import type { PrintQueueItem, Printer } from '../api/client';
 import { api } from '../api/client';
 import { Button } from './Button';
+import { QueueJobHoverCard } from './QueueJobHoverCard';
 
 /** Gantt-style 24h-rolling timeline. One horizontal swimlane per printer
  *  (plus one per active target_model and one for unassigned items). Each
  *  pending or printing job is rendered as a colored bar positioned by its
  *  predicted start time, width = predicted duration. A vertical NOW line
- *  marks current time. Hover a bar for details, click to edit/stop. */
+ *  marks current time. Hovering a bar (after a short dwell) opens a card
+ *  with the schedule, print settings, PDM project and Aito client behind
+ *  it; click to edit/stop. */
 
 const HOUR_MS = 60 * 60 * 1000;
 const RANGE_HOURS = 24;
@@ -21,6 +24,11 @@ const RANGE_MS = RANGE_HOURS * HOUR_MS;
 const MIN_BAR_PX = 32;
 // Lane height for the bar row + label.
 const LANE_BAR_HEIGHT_PX = 40;
+// Hover card timing. The dwell keeps a sweep across lanes from flashing a
+// card per bar; the grace lets the pointer cross the gap into the card.
+export const HOVER_CARD_DWELL_MS = 250;
+const HOVER_CARD_SWITCH_MS = 60;
+const HOVER_CARD_GRACE_MS = 120;
 
 interface ScheduleEvent {
   item: PrintQueueItem;
@@ -86,6 +94,43 @@ export function QueueTimelineView({
   }, [now, windowOffsetMs]);
   const rangeEndMs = rangeStartMs + RANGE_MS;
   const nowMs = now.getTime();
+
+  // Which bar's card is open. The anchor element is kept so the card can
+  // measure it; timers live in refs so re-renders never reset a dwell.
+  const [hovered, setHovered] = useState<{ id: number; anchor: HTMLElement } | null>(null);
+  const showTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearTimers = () => {
+    if (showTimer.current) clearTimeout(showTimer.current);
+    if (hideTimer.current) clearTimeout(hideTimer.current);
+    showTimer.current = null;
+    hideTimer.current = null;
+  };
+  const openCard = (id: number, anchor: HTMLElement) => {
+    clearTimers();
+    // Moving from one open card straight to a neighbouring bar switches
+    // almost immediately -- the user has already shown intent.
+    const delay = hovered ? HOVER_CARD_SWITCH_MS : HOVER_CARD_DWELL_MS;
+    showTimer.current = setTimeout(() => setHovered({ id, anchor }), delay);
+  };
+  const scheduleClose = () => {
+    clearTimers();
+    hideTimer.current = setTimeout(() => setHovered(null), HOVER_CARD_GRACE_MS);
+  };
+  const closeCard = () => {
+    clearTimers();
+    setHovered(null);
+  };
+  useEffect(() => clearTimers, []);
+  useEffect(() => {
+    if (!hovered) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeCard();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hovered]);
 
   // Build schedule events. Only committed schedules are rendered:
   //  • currently printing → always
@@ -174,6 +219,10 @@ export function QueueTimelineView({
     }
     return result;
   }, [queueItems, printerStatuses, nowMs, sjfEnabled]);
+
+  // The card reads the same forecast the bar was drawn from. A bar whose
+  // item left the queue while hovered simply has no event and no card.
+  const hoveredEvent = hovered ? events.find((ev) => ev.item.id === hovered.id) ?? null : null;
 
   // Lanes: every printer + every distinct target_model with queue activity
   // + an "unassigned" lane if needed. Printers that have NO events queued
@@ -408,18 +457,18 @@ export function QueueTimelineView({
                           : null;
                       const isPrinting = ev.type === 'printing';
                       const isBatched = ev.item.batch_id != null;
-                      const tooltipParts = [
-                        displayName,
-                        `${formatTooltipTime(ev.estimatedStart)} → ${formatTooltipTime(ev.estimatedEnd)}`,
-                        ev.item.print_time_seconds ? formatDuration(ev.item.print_time_seconds) : null,
-                        isPrinting && ev.progress != null ? `${Math.round(ev.progress)}%` : null,
-                        ev.item.batch_name ? `batch: ${ev.item.batch_name}` : null,
-                      ].filter(Boolean).join(' · ');
                       return (
                         <button
                           key={ev.item.id}
-                          onClick={() => onItemClick(ev.item)}
-                          title={tooltipParts}
+                          onClick={() => {
+                            closeCard();
+                            onItemClick(ev.item);
+                          }}
+                          aria-label={`${displayName} · ${formatTooltipTime(ev.estimatedStart)} → ${formatTooltipTime(ev.estimatedEnd)}`}
+                          onMouseEnter={(e) => openCard(ev.item.id, e.currentTarget)}
+                          onMouseLeave={scheduleClose}
+                          onFocus={(e) => openCard(ev.item.id, e.currentTarget)}
+                          onBlur={scheduleClose}
                           className={`absolute rounded-md transition-all hover:brightness-110 hover:z-10 overflow-hidden flex items-center gap-1.5 px-1.5 text-left ${
                             isPrinting
                               ? 'bg-blue-500/30 border border-blue-400/60'
@@ -483,6 +532,17 @@ export function QueueTimelineView({
             )}
           </div>
         </div>
+      )}
+
+      {hoveredEvent && hovered && (
+        <QueueJobHoverCard
+          event={hoveredEvent}
+          anchor={hovered.anchor}
+          nowMs={nowMs}
+          t={t}
+          onMouseEnter={clearTimers}
+          onMouseLeave={scheduleClose}
+        />
       )}
     </div>
   );

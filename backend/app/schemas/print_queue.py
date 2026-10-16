@@ -282,6 +282,20 @@ class PrintQueueItemResponse(BaseModel):
     # which library_file_id / target_model name the candidate that actually ran.
     variants: list[QueueVariantSummary] = []
 
+    # Fenrir: what the trace ids point at, resolved for the timeline hover
+    # card (see services/queue_trace_summary.py). All None when the id is
+    # unset or dangling.
+    project_code: str | None = None
+    project_name: str | None = None
+    revision_item_name: str | None = None
+    revision_number: int | None = None
+    revision_status: str | None = None
+    aito_task_title: str | None = None
+    aito_client_name: str | None = None
+    aito_due_date: str | None = None
+    aito_quantity: int | None = None
+    aito_board_column: str | None = None
+
     # Shortest-job-first scheduling
     been_jumped: bool = False
 

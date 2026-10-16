@@ -142,6 +142,7 @@ function isAlwaysAllowedIdentical(value) {
 // German loanwords / cognates from English are extensive. Most short technical
 // UI labels are identical in DE. List below curates the legitimate ones.
 const DE_COGNATES = [
+  'Revision',  // queue.timeline.card.revision — die Revision, same word in German
   'in {{folder}}',  // real words/terms in this locale
   'Scan',  // aito.serviceScan3D — "Scan" is the term in this locale too
   'Details',  // aito.panelTabDetails — "Details" is the German word too
@@ -509,6 +510,7 @@ const ES_COGNATES = [
 // Swedish cognates — technical UI labels that Swedish speakers use verbatim
 // from English (loanwords + acronyms + format strings). Curated, not a shortcut.
 const SV_COGNATES = [
+  'Revision',  // queue.timeline.card.revision — same word in Swedish (en revision)
   'via {{name}}',  // projectsPdm.reslice.viaPipeline
   '{{hours}} h ≈ {{days}} d',  // aito.backlogShort — hour/day unit abbreviations are the same in this locale
   'MakerWorld: {{designer}}',
