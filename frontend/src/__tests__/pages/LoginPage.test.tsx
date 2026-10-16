@@ -479,6 +479,73 @@ describe('LoginPage', () => {
       sessionStorage.clear();
     });
 
+    const reduceMotion = () => {
+      originalMatchMedia = window.matchMedia;
+      window.matchMedia = ((query: string) => ({
+        matches: true,
+        media: query,
+        onchange: null,
+        addListener: () => {},
+        removeListener: () => {},
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        dispatchEvent: () => true,
+      })) as typeof window.matchMedia;
+    };
+
+    const signIn = async () => {
+      const user = userEvent.setup();
+      render(<LoginPage />);
+      await waitFor(() => {
+        expect(screen.getByLabelText(/Username/i)).toBeInTheDocument();
+      });
+      await user.type(screen.getByLabelText(/Username/i), 'validuser');
+      await user.type(screen.getByLabelText(/Password/i), 'validpass');
+      await user.click(screen.getByRole('button', { name: /Sign in/i }));
+      await waitFor(() => {
+        expect(mockNavigate).toHaveBeenCalled();
+      });
+      await new Promise((r) => setTimeout(r, 50));
+    };
+
+    it('goes to the `?next=` target carried in the login URL, with no router state or stash', async () => {
+      // What ProtectedRoute leaves behind for `/aito?card=352`. The URL is the
+      // one carrier that survives a reload of the login page, an OIDC
+      // round-trip and a PWA relaunch — router state survives none of them.
+      reduceMotion();
+      window.history.pushState({}, '', '/login?next=%2Faito%3Fcard%3D352');
+      try {
+        await signIn();
+        expect(mockNavigate).toHaveBeenCalledTimes(1);
+        expect(mockNavigate).toHaveBeenCalledWith('/aito?card=352', { replace: true });
+      } finally {
+        window.history.replaceState({}, '', '/login');
+      }
+    });
+
+    it('prefers `?next=` over router state, which may be stale', async () => {
+      reduceMotion();
+      window.history.pushState({ usr: { from: { pathname: '/queue', search: '' } } }, '', '/login?next=%2Farchives');
+      try {
+        await signIn();
+        expect(mockNavigate).toHaveBeenCalledWith('/archives', { replace: true });
+      } finally {
+        window.history.replaceState({}, '', '/login');
+      }
+    });
+
+    it('ignores an unsafe `?next=` and lands on /', async () => {
+      reduceMotion();
+      window.history.pushState({}, '', '/login?next=%2F%2Fevil.com');
+      try {
+        await signIn();
+        expect(mockNavigate).toHaveBeenCalledTimes(1);
+        expect(mockNavigate).toHaveBeenCalledWith('/', { replace: true });
+      } finally {
+        window.history.replaceState({}, '', '/login');
+      }
+    });
+
     it('navigates exactly once, to the stashed target, under reduced motion', async () => {
       const user = userEvent.setup();
       // Force reduced motion so exitToDashboard() takes its synchronous
@@ -1912,8 +1979,8 @@ describe('LoginPage', () => {
 
     // BrowserRouter reads router state from history.state.usr, which is where
     // ProtectedRoute's navigate('/login', { state: { from } }) puts it.
-    function arriveAtLogin(from?: { pathname: string; search?: string }) {
-      window.history.replaceState(from ? { usr: { from }, key: 'test', idx: 0 } : null, '', '/login');
+    function arriveAtLogin(from?: { pathname: string; search?: string }, url = '/login') {
+      window.history.replaceState(from ? { usr: { from }, key: 'test', idx: 0 } : null, '', url);
       Object.defineProperty(window, 'location', {
         configurable: true,
         writable: true,
@@ -1929,6 +1996,16 @@ describe('LoginPage', () => {
         expect(window.location.href).toBe('https://auth.test/authorize?state=xyz');
       });
       expect(sessionStorage.getItem('auth_post_login_redirect')).toBe('/archives?id=5');
+    });
+
+    it('stashes the `?next=` target from the login URL when there is no router state', async () => {
+      arriveAtLogin(undefined, '/login?next=%2Faito%3Fcard%3D352');
+      render(<LoginPage />);
+
+      await waitFor(() => {
+        expect(window.location.href).toBe('https://auth.test/authorize?state=xyz');
+      });
+      expect(sessionStorage.getItem('auth_post_login_redirect')).toBe('/aito?card=352');
     });
 
     it('stashes nothing when the user opened /login directly', async () => {
@@ -2350,6 +2427,24 @@ describe('LoginPage', () => {
       await waitFor(() => {
         expect(mockNavigate).toHaveBeenCalledWith('/', { replace: true });
       });
+    });
+
+    it('sends an already-authenticated visitor on to the `?next=` target, not /', async () => {
+      // Opened a card link in a tab whose session is still live: the guard
+      // never bounced it, but the login page still has the target to honour.
+      setAuthToken('valid-token', 'session');
+      server.use(http.get('/api/v1/auth/me', () => HttpResponse.json(mockUser)));
+      mockNavigate.mockClear();
+      window.history.pushState({}, '', '/login?next=%2Faito%3Fcard%3D352');
+      try {
+        render(<LoginPage />);
+        await waitFor(() => {
+          expect(mockNavigate).toHaveBeenCalledWith('/aito?card=352', { replace: true });
+        });
+        expect(mockNavigate).not.toHaveBeenCalledWith('/', { replace: true });
+      } finally {
+        window.history.replaceState({}, '', '/login');
+      }
     });
 
     it('does not redirect an unauthenticated visitor', async () => {

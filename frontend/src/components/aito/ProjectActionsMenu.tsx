@@ -6,6 +6,7 @@ import {
   CopyPlus,
   Ellipsis,
   Eye,
+  Link,
   Merge,
   MoveRight,
   Printer,
@@ -31,6 +32,8 @@ interface ProjectActionsMenuProps {
   onSplit: () => void;
   onMoveTasks: () => void;
   onCopySummary: () => void;
+  /** Copies this card's `/aito?card=` link, so a teammate lands on the panel. */
+  onCopyLink: () => void;
   onPrintTicket: () => void;
   onTransferClient: () => void;
   /** Opens the watch dialog — to start watching, or to change or stop it. */
@@ -99,6 +102,7 @@ function rows(p: ProjectActionsMenuProps, t: TFunction): ActionMenuItem[] {
     ),
     // Read-only: they only render what the panel already shows.
     { key: 'copy', icon: ClipboardCopy, label: t('aito.copySummary'), onSelect: p.onCopySummary },
+    { key: 'link', icon: Link, label: t('aito.copyLink'), onSelect: p.onCopyLink },
     { key: 'print', icon: Printer, label: t('aito.printJobTicket'), onSelect: p.onPrintTicket },
     item(
       { key: 'transfer', icon: UserRoundPen, label: t('aito.transferClient'), onSelect: p.onTransferClient },

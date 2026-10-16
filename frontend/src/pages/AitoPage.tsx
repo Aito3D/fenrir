@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
+import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { DndContext, DragOverlay, MeasuringStrategy, closestCorners, type DropAnimation } from '@dnd-kit/core';
@@ -189,9 +190,41 @@ export function AitoPage() {
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const { open: openCard, close: closeCard } = useCardMorph(setExpandedId);
   const { showToast } = useToast();
-  // `?card=41` (an inbox row's link). Acted on once both lists can answer it,
-  // then dropped from the URL — see the effect below.
+  // `?card=41` (an inbox row's link, or the card menu's "Copy link"). Acted
+  // on once both lists can answer it — see the effect below. Unlike the other
+  // deep links the parameter STAYS while the panel is open: the URL mirrors
+  // `expandedId` both ways (next effect), so the address bar is always the
+  // card's own link and a reload lands on the same panel.
   const [cardParam, clearCardParam] = useDeepLinkParam('card');
+  const [searchParams, setSearchParams] = useSearchParams();
+  // The last `expandedId` the mirror saw, so a close (non-null → null) can be
+  // told from a link that is still being resolved (null all along).
+  const mirroredId = useRef<number | null>(null);
+  useEffect(() => {
+    const closed = expandedId === null && mirroredId.current !== null;
+    mirroredId.current = expandedId;
+    const wanted = expandedId === null ? null : String(expandedId);
+    if (searchParams.get('card') === wanted) return;
+    // Null with nothing closed: a pending link, whose parameter the resolver
+    // below still needs. Everything else is a mismatch the URL must follow.
+    if (wanted === null && !closed) return;
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (wanted === null) next.delete('card');
+        else next.set('card', wanted);
+        return next;
+      },
+      // Replace, not push: Back leaves the board, it does not step back
+      // through every card that was peeked at.
+      { replace: true },
+    );
+  }, [expandedId, searchParams, setSearchParams]);
+  // The parameter value the resolver has already acted on. The mirror writes
+  // the same parameter for a card opened from the board, and a board refetch
+  // re-runs the resolver with it still there; neither may reopen or
+  // re-scroll. Reset when the parameter leaves, so the same link works twice.
+  const cardResolved = useRef<string | null>(null);
   // `?newFromProject=7` (a PDM project page's "New order"): the create drawer
   // opens seeded from that project, and the order it creates gets its first
   // task linked to it (by the create mutation itself — see
@@ -211,8 +244,9 @@ export function AitoPage() {
     queryKey: ['aito-trash'],
     queryFn: api.getAitoTrash,
     // Also while a `?card=` link is pending: a card missing from the board may
-    // be in the trash, and the toast has to say which.
-    enabled: view === 'trash' || cardParam !== null,
+    // be in the trash, and the toast has to say which. Not for the parameter
+    // an open panel mirrors into the URL — that card is already found.
+    enabled: view === 'trash' || (cardParam !== null && expandedId === null),
   });
 
   // The link the board was refetched for. A miss is never decided from the
@@ -272,13 +306,31 @@ export function AitoPage() {
   // The plain `setExpandedId`, not `openCard`: the morph needs a source card
   // on screen, and a link arrives with nothing clicked.
   useEffect(() => {
-    if (cardParam === null || !aitoQuery.data) return;
+    if (cardParam === null) {
+      cardResolved.current = null;
+      return;
+    }
+    if (cardResolved.current === cardParam) return;
+    // A panel already up wrote this parameter itself (the mirror above): the
+    // link is not a request, it is a reflection.
+    if (expandedId !== null) {
+      cardResolved.current = cardParam;
+      return;
+    }
+    if (!aitoQuery.data) return;
     const id = Number(cardParam);
     const card = aitoQuery.data.find((p) => p.id === id);
     if (card) {
-      clearCardParam();
+      cardResolved.current = cardParam;
       setExpandedId(id);
-      document.querySelector(`[data-column-id="${card.column}"]`)?.scrollIntoView({ block: 'nearest', inline: 'center' });
+      // A done card has no column on the board: bring the archive up behind
+      // the panel instead, so the card is on screen when the panel closes.
+      // Plain, not `changeView`: nothing is on screen yet to transition
+      // from. The follow-up filter goes the way it does on any view change.
+      if (card.column === 'done') {
+        setFollowup(null);
+        setView('done');
+      } else document.querySelector(`[data-column-id="${card.column}"]`)?.scrollIntoView({ block: 'nearest', inline: 'center' });
       return;
     }
     if (aitoQuery.isFetching || trashQuery.isFetching || trashQuery.isPending) return;
@@ -298,6 +350,7 @@ export function AitoPage() {
     showToast(t(inTrash ? 'aito.cardInTrash' : 'aito.cardGone'), inTrash ? 'info' : 'error');
   }, [
     cardParam,
+    expandedId,
     aitoQuery.data,
     aitoQuery.isFetching,
     aitoQuery.isError,

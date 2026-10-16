@@ -140,6 +140,10 @@ const findDescriptionTextarea = (panel: HTMLElement) =>
     .find((el) => el.tagName === 'TEXTAREA') as HTMLTextAreaElement;
 
 beforeEach(() => {
+  // An open panel mirrors its card into the URL (`?card=`), and jsdom keeps
+  // the URL from one test to the next: without this, a test that opened a
+  // card hands the next one a board that reopens it on mount.
+  window.history.replaceState({}, '', '/aito');
   vi.mocked(localStorage.getItem).mockReset();
   vi.mocked(localStorage.setItem).mockReset();
   vi.mocked(localStorage.removeItem).mockReset();

@@ -135,18 +135,24 @@ export function LoginPage() {
     };
   }, []);
 
-  // Resolve the post-login destination, preferring router state (set by
-  // ProtectedRoute when it redirects an unauthed visit) over the sessionStorage
-  // stash (used to survive the OIDC provider round-trip, which kills React
-  // state). Falls back to `/` and rejects unsafe targets via sanitize.
-  function resolvePostLoginRedirect(): string {
+  // The destination ProtectedRoute sent the visitor here from. In the URL
+  // first (`?next=`, which outlives a reload of this page, the OIDC provider
+  // round-trip and a PWA relaunch), then router state, the older carrier that
+  // survives none of those. Null when the visitor opened /login directly or
+  // the target is unsafe; sanitized either way (T-037).
+  const requestedRedirect = ((): string | null => {
+    const fromQuery = sanitizeRedirectTarget(searchParams.get('next'));
+    if (fromQuery) return fromQuery;
     const fromState = (location.state as { from?: { pathname?: string; search?: string } } | null)?.from;
-    if (fromState?.pathname) {
-      const target = `${fromState.pathname}${fromState.search ?? ''}`;
-      const safe = sanitizeRedirectTarget(target);
-      if (safe) return safe;
-    }
-    return consumePostLoginRedirect() ?? '/';
+    if (fromState?.pathname) return sanitizeRedirectTarget(`${fromState.pathname}${fromState.search ?? ''}`);
+    return null;
+  })();
+
+  // Resolve the post-login destination: the requested one above, else the
+  // sessionStorage stash (written before an OIDC round-trip, which kills both
+  // the URL and React state), else `/`.
+  function resolvePostLoginRedirect(): string {
+    return requestedRedirect ?? consumePostLoginRedirect() ?? '/';
   }
 
   // Play the card exit animation, then navigate. Under reduced motion (CSS
@@ -229,16 +235,17 @@ export function LoginPage() {
   // credentials form even though the token is live and every request succeeds —
   // making Fenrir look like it "never stays logged in". Gate on the
   // credentials step so we don't interrupt the 2FA / OIDC-callback branches,
-  // which navigate themselves after loginWithToken. Send to '/' rather than
-  // resolvePostLoginRedirect() to avoid consuming the OIDC redirect stash: an
-  // already-authed direct visit has no pending redirect to honour. Also skip
-  // while a password login is in flight/just succeeded (see loginInFlightRef
-  // above) so exitToDashboard() owns that navigation instead.
+  // which navigate themselves after loginWithToken. Send to the requested
+  // target when the URL or state names one (a card link opened in a tab whose
+  // session is live), else '/' — never resolvePostLoginRedirect(), which would
+  // consume the OIDC redirect stash an already-authed direct visit has no
+  // claim on. Also skip while a password login is in flight/just succeeded
+  // (see loginInFlightRef above) so exitToDashboard() owns that navigation.
   useEffect(() => {
     if (!loading && user && step === 'credentials' && !loginInFlightRef.current) {
-      navigate('/', { replace: true });
+      navigate(requestedRedirect ?? '/', { replace: true });
     }
-  }, [loading, user, step, navigate]);
+  }, [loading, user, step, navigate, requestedRedirect]);
 
   const autologinAttemptedRef = useRef(false);
   useEffect(() => {
@@ -266,10 +273,7 @@ export function LoginPage() {
     Promise.race([api.getOIDCAuthorizeUrl(providerId), timeoutPromise])
       .then((result) => {
         if (cancelled) return;
-        const fromState = (location.state as { from?: { pathname?: string; search?: string } } | null)?.from;
-        if (fromState?.pathname) {
-          stashPostLoginRedirect(`${fromState.pathname}${fromState.search ?? ''}`);
-        }
+        if (requestedRedirect) stashPostLoginRedirect(requestedRedirect);
         window.location.href = (result as { auth_url: string }).auth_url;
       })
       .catch(() => {
@@ -281,7 +285,7 @@ export function LoginPage() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [advancedAuthStatus, searchParams, loading, user, location.state]);
+  }, [advancedAuthStatus, searchParams, loading, user, requestedRedirect]);
 
   const localLoginEnabled = advancedAuthStatus?.local_login_enabled !== false;
   const showAutologinBanner = autologinFailed && advancedAuthStatus?.autologin_provider_id != null;
@@ -478,13 +482,10 @@ export function LoginPage() {
       } catch (err) {
         console.warn('setItem/removeItem auth_remember_me failed, Remember Me will not carry through OIDC redirect', err);
       }
-      // Stash the post-login destination from router state so it survives the
-      // provider round-trip (window.location.href kills React state). If the
-      // user landed on /login directly, fromState is absent and we don't stash.
-      const fromState = (location.state as { from?: { pathname?: string; search?: string } } | null)?.from;
-      if (fromState?.pathname) {
-        stashPostLoginRedirect(`${fromState.pathname}${fromState.search ?? ''}`);
-      }
+      // Stash the post-login destination so it survives the provider
+      // round-trip (window.location.href kills both the URL and React state).
+      // A visitor who opened /login directly has none, and nothing is stashed.
+      if (requestedRedirect) stashPostLoginRedirect(requestedRedirect);
       window.location.href = data.auth_url;
     },
     onError: (error: Error) => {

@@ -7,13 +7,14 @@ import type { AitoProject } from '../../api/client';
 
 const activeProject = { id: 12, status: 'active', quote_invoiced: false } as unknown as AitoProject;
 
-type Row = 'merge' | 'split' | 'move' | 'copy' | 'print' | 'transfer' | 'watch' | 'forceSync' | 'duplicate' | 'trash';
+type Row = 'merge' | 'split' | 'move' | 'copy' | 'link' | 'print' | 'transfer' | 'watch' | 'forceSync' | 'duplicate' | 'trash';
 
 const LABELS: Record<Row, string> = {
   merge: 'Merge another card…',
   split: 'Split into a new card…',
   move: 'Move tasks to another card…',
   copy: 'Copy summary',
+  link: 'Copy link',
   print: 'Print job ticket',
   transfer: 'Transfer to another client…',
   watch: 'Watch this card…',
@@ -29,6 +30,7 @@ function callbacks() {
     onSplit: vi.fn(),
     onMoveTasks: vi.fn(),
     onCopySummary: vi.fn(),
+    onCopyLink: vi.fn(),
     onPrintTicket: vi.fn(),
     onTransferClient: vi.fn(),
     onWatch: vi.fn(),
@@ -149,6 +151,7 @@ describe('ProjectActionsMenu', () => {
     ['split', 'onSplit'],
     ['move', 'onMoveTasks'],
     ['copy', 'onCopySummary'],
+    ['link', 'onCopyLink'],
     ['print', 'onPrintTicket'],
     ['transfer', 'onTransferClient'],
     ['watch', 'onWatch'],
