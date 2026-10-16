@@ -901,6 +901,95 @@ async def test_revision_from_sources_records_derivation_and_pipeline(db_session,
     assert src.exists()  # sources are never touched
 
 
+# T-364: the derived-from target lives in another item, so the uploader's item
+# lock does not exclude its deletion while the files stream (or between a
+# PATCH's check and its flush). The link is checked again under the write lock.
+
+
+async def _delete_elsewhere(test_engine, revision_id: int) -> None:
+    """``delete_revision`` of ``revision_id`` through its own session, as a concurrent request would."""
+    async with AsyncSession(test_engine, expire_on_commit=False) as other:
+        revision, item, project = await project_files.get_revision_bundle(other, revision_id)
+        await delete_revision(other, project, item, revision)
+
+
+async def _upload_while_target_is_deleted(db_session, root, monkeypatch, test_engine, *, target_is_newest: bool):
+    project = await _project(db_session)
+    source_item, target = await _rev(db_session, project, section="scan", name="Mesh")
+    if not target_is_newest:
+        await add_revision(
+            db_session, project, source_item, [upload("b.ply")], note=None, derived_from_id=None, user_id=None
+        )
+    item = await create_item(db_session, project, section="modelisation", name="Support", user_id=None)
+    storage_dir, item_id, target_id = project.storage_dir, item.id, target.id
+    await db_session.commit()
+    real = project_files._stream_files
+
+    async def racing(folder, uploads):
+        await _delete_elsewhere(test_engine, target_id)
+        return await real(folder, uploads)
+
+    monkeypatch.setattr(project_files, "_stream_files", racing)
+    with pytest.raises(ProjectFilesError) as refused:
+        await add_revision(
+            db_session, project, item, [upload("c.step")], note=None, derived_from_id=target_id, user_id=None
+        )
+    assert (refused.value.status_code, refused.value.detail) == (
+        400,
+        "Derived-from revision must belong to the same project",
+    )
+    assert await _fresh_scalars(test_engine, select(ProjectRevision.id).where(ProjectRevision.item_id == item_id)) == []
+    assert await _fresh_scalars(test_engine, select(LibraryFile.id).where(LibraryFile.filename == "c.step")) == []
+    assert await _fresh_scalars(test_engine, select(ProjectRevision.id).where(ProjectRevision.id == target_id)) == []
+    assert list(root.rglob("c.step")) == []
+    assert all(list(folder.iterdir()) == [] for folder in (root / storage_dir).glob("*/Support/R1"))
+
+
+@pytest.mark.asyncio
+async def test_upload_refuses_a_derived_from_target_deleted_while_streaming(db_session, root, monkeypatch, test_engine):
+    await _upload_while_target_is_deleted(db_session, root, monkeypatch, test_engine, target_is_newest=False)
+
+
+@pytest.mark.asyncio
+async def test_upload_refuses_a_deleted_target_whose_id_the_new_revision_reused(
+    db_session, root, monkeypatch, test_engine
+):
+    # project_revisions.id has no AUTOINCREMENT: deleting the newest row hands its id to the next insert
+    await _upload_while_target_is_deleted(db_session, root, monkeypatch, test_engine, target_is_newest=True)
+
+
+@pytest.mark.asyncio
+async def test_update_revision_refuses_a_derived_from_target_deleted_after_the_check(
+    db_session, root, monkeypatch, test_engine
+):
+    project = await _project(db_session)
+    _scan, target = await _rev(db_session, project, section="scan", name="Mesh")
+    _cad, revision = await _rev(db_session, project)
+    target_id, revision_id = target.id, revision.id
+    await db_session.commit()
+    real = project_files._check_derived_from
+    calls = []
+
+    async def racing(db, project, revision_id, target_id):
+        await real(db, project, revision_id, target_id)
+        if not calls:
+            calls.append(target_id)
+            await _delete_elsewhere(test_engine, target_id)
+
+    monkeypatch.setattr(project_files, "_check_derived_from", racing)
+    with pytest.raises(ProjectFilesError) as refused:
+        await update_revision(db_session, project, revision, fields={"derived_from_id": target_id}, user_id=None)
+    assert (refused.value.status_code, refused.value.detail) == (
+        400,
+        "Derived-from revision must belong to the same project",
+    )
+    assert calls == [target_id]
+    await db_session.rollback()  # what get_db does with the route's error
+    assert await _fresh_scalars(
+        test_engine, select(ProjectRevision.derived_from_id).where(ProjectRevision.id == revision_id)
+    ) == [None]
+
+
 # A cancellation (BaseHTTPMiddleware on client disconnect) that lands while the
 # commit is in flight: aiosqlite runs COMMIT in its worker thread, so the
 # cancellation cannot stop it. The patched commit models that thread with a

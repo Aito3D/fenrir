@@ -4,6 +4,7 @@ Managed files keep their row (queue items, archives and photos follow the id);
 external files are copied into a new row and the mount is never touched.
 """
 
+import asyncio
 import hashlib
 import uuid
 from datetime import datetime
@@ -1146,3 +1147,109 @@ async def test_an_external_leaf_swapped_for_a_symlink_after_the_check_is_refused
     assert result.copied == []
     assert [(s["file_id"], s["code"]) for s in result.skipped] == [(row_id, "copy_failed")]
     assert await _revisions(db_session, project.id) == []
+
+
+# T-365: external folders are network mounts; a slow or hung one must not freeze the event loop.
+
+
+def _on_the_loop() -> bool:
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return False
+    return True
+
+
+def _record_stats(monkeypatch, watched: list[Path]) -> list[tuple[str, Path, bool]]:
+    """Every Path.resolve / Path.is_file on a path under ``watched``: (method, path, ran on the loop)."""
+    calls: list[tuple[str, Path, bool]] = []
+
+    def spy(method):
+        real = getattr(Path, method)
+
+        def wrapper(self, *args, **kwargs):
+            if any(self == top or top in self.parents for top in watched):
+                calls.append((method, self, _on_the_loop()))
+            return real(self, *args, **kwargs)
+
+        return wrapper
+
+    monkeypatch.setattr(Path, "resolve", spy("resolve"))
+    monkeypatch.setattr(Path, "is_file", spy("is_file"))
+    return calls
+
+
+@pytest.mark.asyncio
+async def test_move_resolves_and_stats_sources_off_the_event_loop(db_session, root, tmp_path_factory, monkeypatch):
+    project = await _project(db_session)
+    nas = tmp_path_factory.mktemp("nas")
+    external = await _external(db_session, nas, "Lid.gcode", data=b"G1 X0")
+    managed = await _managed(db_session, "Bracket.gcode", b"G1")
+    managed_src = to_absolute_path(managed.file_path)
+    await db_session.commit()
+    calls = _record_stats(monkeypatch, [nas, managed_src])
+
+    result = await _move(db_session, project, [external, managed])
+
+    assert len(result.copied) == 1 and len(result.moved) == 1 and result.skipped == []
+    checked = {(method, path) for method, path, _ in calls}
+    assert ("resolve", Path(external.file_path)) in checked  # _vetted_external_paths
+    assert ("is_file", Path(external.file_path)) in checked  # _classify_files, external source
+    assert ("is_file", managed_src) in checked  # _classify_files, managed source
+    assert [call for call in calls if call[2]] == []
+
+
+@pytest.mark.asyncio
+async def test_already_copied_stats_and_hashes_off_the_event_loop(db_session, root, tmp_path_factory, monkeypatch):
+    project = await _project(db_session)
+    nas = tmp_path_factory.mktemp("nas")
+    row = await _external(db_session, nas, "Lid.gcode", data=b"G1 X0")
+    row_id = row.id
+    await db_session.commit()
+    await _move(db_session, project, [row])  # the project now holds a copy (same hash, same name)
+    row = await _fresh(db_session, row_id)
+    hashed: list[bool] = []
+    real_hash = project_filing.calculate_file_hash
+
+    def hash_spy(path):
+        hashed.append(_on_the_loop())
+        return real_hash(path)
+
+    monkeypatch.setattr(project_filing, "calculate_file_hash", hash_spy)
+    calls = _record_stats(monkeypatch, [nas])
+
+    assert await project_filing._already_copied(db_session, project.id, [row]) == {row_id}
+    assert ("is_file", Path(row.file_path)) in {(method, path) for method, path, _ in calls}
+    assert hashed == [False]
+    assert [call for call in calls if call[2]] == []
+
+
+@pytest.mark.asyncio
+async def test_already_copied_skips_an_external_source_that_is_not_a_file(db_session, root, tmp_path_factory):
+    project = await _project(db_session)
+    nas = tmp_path_factory.mktemp("nas")
+    row = await _external(db_session, nas, "Lid.gcode", data=b"G1 X0")
+    row_id = row.id
+    await db_session.commit()
+    await _move(db_session, project, [row])
+    row = await _fresh(db_session, row_id)
+    Path(row.file_path).unlink()
+    Path(row.file_path).mkdir()  # still inside the mount, no longer a regular file
+
+    assert await project_filing._already_copied(db_session, project.id, [row]) == set()
+
+
+@pytest.mark.asyncio
+async def test_already_copied_ignores_an_escaping_external_file_matching_a_held_copy(
+    db_session, root, tmp_path_factory
+):
+    project = await _project(db_session)
+    held = await _external(db_session, tmp_path_factory.mktemp("nas"), "Lid.gcode", data=b"G1 X0")
+    await db_session.commit()
+    await _move(db_session, project, [held])  # the project holds Lid.gcode with these bytes
+    outside = tmp_path_factory.mktemp("outside") / "Lid.gcode"
+    outside.write_bytes(b"G1 X0")
+    row = await _external_symlink(db_session, tmp_path_factory.mktemp("nas"), "Lid.gcode", outside)
+    await db_session.commit()
+
+    assert await project_filing._already_copied(db_session, project.id, [row]) == set()

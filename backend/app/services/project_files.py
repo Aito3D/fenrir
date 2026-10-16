@@ -719,6 +719,17 @@ async def _check_derived_from(db: AsyncSession, project: Project, revision_id: i
         ).scalar_one_or_none()
 
 
+async def _recheck_derived_from(db: AsyncSession, project: Project, revision_id: int, target_id: int) -> None:
+    """Run after the flush (write lock held): the target may have been deleted since the first check.
+
+    SQLite may even have handed the deleted target's id to ``revision_id``
+    itself; that counts as a missing target too.
+    """
+    if target_id == revision_id:
+        raise ProjectFilesError(400, "Derived-from revision must belong to the same project")
+    await _check_derived_from(db, project, None, target_id)
+
+
 async def add_revision(
     db: AsyncSession,
     project: Project,
@@ -962,6 +973,8 @@ async def _add_revision_locked(
         db.add(revision)
         item.last_revision_number = number
         await db.flush()
+        if derived_from_id is not None:
+            await _recheck_derived_from(db, project, revision.id, derived_from_id)
         rows = await _add_file_rows(db, project, revision, written, user_id)
         warnings = await _duplicate_warnings(db, item, revision, rows)
         await commit()
@@ -1037,6 +1050,8 @@ async def update_revision(
             await _check_derived_from(db, project, revision.id, target)
         revision.derived_from_id = target
     await db.flush()
+    if fields.get("derived_from_id") is not None:
+        await _recheck_derived_from(db, project, revision.id, fields["derived_from_id"])
     return revision
 
 
