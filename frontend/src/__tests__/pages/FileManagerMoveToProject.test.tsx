@@ -1,8 +1,8 @@
 /**
  * File Manager entry points for "Move to project…" (projects PDM phase 5):
- * the visible card button (printable files only), the card menu entry, the
- * list-view action strip and the bulk toolbar — all gated on the File Manager
- * move permission plus projects:update. Also the toast after an upload the
+ * the card ⋯ menu entry (printable files only; the card has no standalone
+ * button), the list-view action strip and the bulk toolbar — all gated on the
+ * File Manager move permission plus projects:update. Also the toast after an upload the
  * backend filed into a project by its code.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -142,40 +142,7 @@ describe('FileManagerPage — Move to project', () => {
   });
 
   describe('grid card', () => {
-    it('shows the card button on a .3mf and a .gcode but not on a .stl', async () => {
-      render(<FileManagerPage />);
-      await waitFor(() => expect(screen.getByText('bracket.3mf')).toBeInTheDocument());
-      expect(within(card('bracket.3mf')).getByRole('button', { name: LABEL })).toHaveAttribute('title', LABEL);
-      expect(within(card('lid.gcode')).getByRole('button', { name: LABEL })).toBeInTheDocument();
-      expect(within(card('bracket.stl')).queryByRole('button', { name: LABEL })).not.toBeInTheDocument();
-    });
-
-    it('keeps the card button visible on mouse devices (outside the hover-faded ⋯ cluster)', async () => {
-      render(<FileManagerPage />);
-      await waitFor(() => expect(screen.getByText('bracket.3mf')).toBeInTheDocument());
-      const c = card('bracket.3mf');
-      const button = within(c).getByRole('button', { name: LABEL });
-      // Every ancestor up to the card: none fades on hover-capable devices.
-      for (let el: HTMLElement | null = button; el && el !== c; el = el.parentElement) {
-        expect(el.className).not.toMatch(/can-hover:opacity-0|(^|\s)opacity-0/);
-      }
-      // The ⋯ cluster still fades, and does not contain the Move button.
-      const kebab = c.querySelector('.lucide-ellipsis-vertical')!.closest('div') as HTMLElement;
-      expect(kebab.className).toContain('can-hover:opacity-0');
-      expect(kebab.contains(button)).toBe(false);
-    });
-
-    it('the card button opens the modal for that file only, without selecting the card', async () => {
-      const user = userEvent.setup();
-      render(<FileManagerPage />);
-      await waitFor(() => expect(screen.getByText('bracket.3mf')).toBeInTheDocument());
-      await user.click(within(card('bracket.3mf')).getByRole('button', { name: LABEL }));
-      expect(await screen.findByTestId('move-ids')).toHaveTextContent(/^1$/);
-      expect(screen.getByTestId('move-name')).toHaveTextContent(/^bracket\.3mf$/);
-      expect(screen.queryByText(/1 selected/i)).not.toBeInTheDocument();
-    });
-
-    it('reserves room for the card button in the tag row only when the button renders', async () => {
+    it('has no standalone card button: the ⋯ menu is the only per-card entry point', async () => {
       const tags = [
         { id: 1, name: 'prototype' },
         { id: 2, name: 'customer' },
@@ -186,21 +153,23 @@ describe('FileManagerPage — Move to project', () => {
       );
       render(<FileManagerPage />);
       await waitFor(() => expect(screen.getByText('bracket.3mf')).toBeInTheDocument());
-      const tagRow = (filename: string) =>
-        within(card(filename)).getAllByRole('button', { name: 'test' })[0].parentElement as HTMLElement;
-      expect(tagRow('bracket.3mf')).toHaveClass('pr-16');
-      expect(tagRow('lid.gcode')).toHaveClass('pr-16');
-      // No Move button on a .stl: the tags keep the full width.
-      expect(tagRow('bracket.stl')).not.toHaveClass('pr-16');
+      for (const name of ['bracket.3mf', 'lid.gcode', 'bracket.stl']) {
+        expect(within(card(name)).queryByRole('button', { name: LABEL })).not.toBeInTheDocument();
+        // No button to keep clear of: the tag row keeps the full card width.
+        const tagRow = within(card(name)).getAllByRole('button', { name: 'test' })[0].parentElement as HTMLElement;
+        expect(tagRow).not.toHaveClass('pr-16');
+      }
     });
 
-    it('the card menu offers the entry on a printable file and opens the modal', async () => {
+    it('the card menu offers the entry on a printable file and opens the modal for that file only', async () => {
       const user = userEvent.setup();
       render(<FileManagerPage />);
       await waitFor(() => expect(screen.getByText('bracket.3mf')).toBeInTheDocument());
       const c = await openMenu(user, 'bracket.3mf');
       await user.click(within(c).getByText(LABEL));
       expect(await screen.findByTestId('move-ids')).toHaveTextContent(/^1$/);
+      expect(screen.getByTestId('move-name')).toHaveTextContent(/^bracket\.3mf$/);
+      expect(screen.queryByText(/1 selected/i)).not.toBeInTheDocument();
     });
 
     it('the card menu has no entry on a .stl', async () => {
@@ -237,9 +206,11 @@ describe('FileManagerPage — Move to project', () => {
 
     it('shows them with library:update_all plus projects:update', async () => {
       granted = new Set(['library:read', 'library:update_all', 'projects:update']);
+      const user = userEvent.setup();
       render(<FileManagerPage />);
       await waitFor(() => expect(screen.getByText('bracket.3mf')).toBeInTheDocument());
-      expect(within(card('bracket.3mf')).getByRole('button', { name: LABEL })).toBeInTheDocument();
+      const c = await openMenu(user, 'bracket.3mf');
+      expect(within(c).getByText(LABEL)).toBeInTheDocument();
     });
   });
 

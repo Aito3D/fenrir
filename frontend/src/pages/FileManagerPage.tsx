@@ -1402,8 +1402,7 @@ function FileCard({ file, isSelected, onSelect, onDelete, onDownload, onPrint, o
           </div>
         )}
         {(file.tags?.length ?? 0) > 0 && (
-          // Fenrir: keep tags clear of the always-visible Move to project button (projects PDM phase 5).
-          <div className={`mt-2 flex flex-wrap gap-1${onMoveToProject && canMoveToProject ? ' pr-16' : ''}`} {...stopRowActivation}>
+          <div className="mt-2 flex flex-wrap gap-1" {...stopRowActivation}>
             {file.tags!.map((tg) => (
               <button
                 key={tg.id}
@@ -1423,20 +1422,7 @@ function FileCard({ file, isSelected, onSelect, onDelete, onDownload, onPrint, o
       </div>
 
       {/* Actions - hover-revealed with a mouse, always there without one (#2865) */}
-      {/* Fenrir: always-visible Move to project button, left of the hover-revealed ⋯ (projects PDM phase 5) */}
-      {onMoveToProject && canMoveToProject && (
-        <div className="absolute bottom-2 right-10" data-move-to-project {...stopRowActivation}>
-          <button
-            type="button"
-            onClick={() => onMoveToProject(file)}
-            className="p-1.5 rounded bg-bambu-dark-secondary/90 hover:bg-bambu-dark-tertiary text-bambu-gray hover:text-bambu-green"
-            title={t('projectsPdm.filing.moveToProject')}
-            aria-label={t('projectsPdm.filing.moveToProject')}
-          >
-            <FolderInput className="w-4 h-4" />
-          </button>
-        </div>
-      )}
+      {/* Fenrir: Move to project lives in the ⋯ menu only (projects PDM phase 5) */}
       <div className="absolute bottom-2 right-2 transition-opacity can-hover:opacity-0 group-hover:opacity-100 group-focus-within:opacity-100" {...stopRowActivation}>
         <button
           onClick={(e) => {
