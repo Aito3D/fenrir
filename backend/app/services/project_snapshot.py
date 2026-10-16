@@ -59,6 +59,9 @@ def _read(zf: zipfile.ZipFile, name: str) -> str | None:
     return data.decode("utf-8", errors="replace")
 
 
+_SLICER_FIELD_MAX = 64
+
+
 def _read_head(zf: zipfile.ZipFile, name: str, limit: int) -> str | None:
     """The first ``limit`` bytes of a part, whatever its size (bounded read)."""
     try:
@@ -141,7 +144,15 @@ def read_print_snapshot(path: Path) -> PrintSnapshot | None:
             if config
             else None
         )
-        return PrintSnapshot(config, config_hash, slicer_name, slicer_version, _profile(config, sliced))
+        # ProjectRevision.slicer_name / slicer_version are String(64): cap like file_type's [:10]
+        # so PostgreSQL never rejects the flush on an over-long 3MF string.
+        return PrintSnapshot(
+            config,
+            config_hash,
+            slicer_name[:_SLICER_FIELD_MAX] if slicer_name is not None else None,
+            slicer_version[:_SLICER_FIELD_MAX] if slicer_version is not None else None,
+            _profile(config, sliced),
+        )
     except Exception:
         logger.warning("Failed to read snapshot from %s", path, exc_info=True)
         return PrintSnapshot(None, None, None, None, {"sliced": False})

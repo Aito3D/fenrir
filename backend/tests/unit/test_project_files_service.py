@@ -147,6 +147,22 @@ async def test_3mf_snapshot_written_once(db_session, root):
 
 
 @pytest.mark.asyncio
+async def test_3mf_overlong_slicer_strings_are_stored_capped_at_64(db_session, root):
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr(
+            "3D/3dmodel.model",
+            f'<model><metadata name="Application">{"N" * 100}-{"9" * 100}</metadata></model>',
+        )
+    project = await _project(db_session)
+    item = await create_item(db_session, project, section="impression", name="Long slicer", user_id=None)
+    rev, _ = await add_revision(
+        db_session, project, item, [upload("plate.3mf", buf.getvalue())], note=None, derived_from_id=None, user_id=None
+    )
+    assert (rev.slicer_name, rev.slicer_version) == ("N" * 64, "9" * 64)
+
+
+@pytest.mark.asyncio
 async def test_3mf_snapshot_fills_all_five_revision_columns(db_session, root, tmp_path):
     from backend.app.services.project_snapshot import read_print_snapshot
 
