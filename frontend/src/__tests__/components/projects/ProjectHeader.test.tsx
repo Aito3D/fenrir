@@ -118,6 +118,33 @@ describe('ProjectHeader', () => {
     await waitFor(() => expect(reformulated).toEqual(['title:Support caméra 2']));
   });
 
+  it('edits the description with AI rewording and saves the reworded text', async () => {
+    server.use(
+      http.post('/api/v1/projects/ai/reformulate', async ({ request }) => {
+        const body = (await request.json()) as { text: string; field: string };
+        reformulated.push(`${body.field}:${body.text}`);
+        return HttpResponse.json({ text: `${body.text} (reformulé)`, model: 'm' });
+      }),
+    );
+    render(<ProjectHeader project={project} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Edit title, description and tags' }));
+    const descField = screen.getByRole('textbox', { name: 'Description' });
+    await userEvent.clear(descField);
+    await userEvent.type(descField, 'pour drone fpv');
+    await userEvent.tab();
+    await waitFor(() => expect(descField).toHaveValue('pour drone fpv (reformulé)'));
+    expect(reformulated).toEqual(['description:pour drone fpv']);
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() =>
+      expect(patched).toEqual({
+        name: 'Support caméra',
+        description: 'pour drone fpv (reformulé)',
+        tag_ids: [1],
+        new_tag_names: [],
+      }),
+    );
+  });
+
   it('hides the edit button without the projects:update permission', () => {
     granted = new Set(['projects:read']);
     render(<ProjectHeader project={project} />);
