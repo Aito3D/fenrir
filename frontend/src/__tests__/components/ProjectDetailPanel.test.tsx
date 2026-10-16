@@ -4220,6 +4220,40 @@ describe('ProjectDetailPanel copy summary and job ticket', () => {
     }
   });
 
+  it('copies the card\'s own link, built from this origin, and says so', async () => {
+    // No tracking request: the link is the board's `?card=` deep link, which
+    // needs nothing from the server.
+    const calls = { n: 0 };
+    server.use(http.get('/api/v1/aito/12/tasks', () => HttpResponse.json([mockTask, mockTask2])), trackingHandler(calls));
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    const restore = stubClipboard(writeText);
+    try {
+      show({ tracking_configured: true });
+      await chooseMenuRow('Copy link');
+      await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
+      expect(writeText.mock.calls[0][0]).toBe(`${window.location.origin}/aito?card=12`);
+      expect(await screen.findByText('Link copied')).toBeInTheDocument();
+      expect(calls.n).toBe(0);
+    } finally {
+      restore();
+    }
+  });
+
+  it('says the link could not be copied when the clipboard refuses', async () => {
+    server.use(http.get('/api/v1/aito/12/tasks', () => HttpResponse.json([mockTask, mockTask2])));
+    const writeText = vi.fn().mockRejectedValue(new Error('denied'));
+    const restore = stubClipboard(writeText);
+    const execCommand = vi.fn().mockReturnValue(false);
+    document.execCommand = execCommand;
+    try {
+      show({});
+      await chooseMenuRow('Copy link');
+      expect(await screen.findByText('Could not copy the link')).toBeInTheDocument();
+    } finally {
+      restore();
+    }
+  });
+
   it('copies the card as text, tracking link last, and says so', async () => {
     const calls = { n: 0 };
     server.use(http.get('/api/v1/aito/12/tasks', () => HttpResponse.json([mockTask, mockTask2])), trackingHandler(calls));

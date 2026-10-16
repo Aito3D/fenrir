@@ -1372,6 +1372,7 @@ export function ProjectDetailPanel({
                     onSplit={() => setTransferMode('split')}
                     onMoveTasks={() => setTransferMode('move')}
                     onCopySummary={() => void cardActions.copySummary()}
+                    onCopyLink={() => void cardActions.copyLink()}
                     onPrintTicket={() => void cardActions.printTicket()}
                     onTransferClient={() => setTransferringClient(true)}
                     onWatch={() => setWatchOpen(true)}

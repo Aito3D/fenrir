@@ -21,6 +21,12 @@ import { usePrintBlob } from './usePrintBlob';
  *  `external_url`, or a viewer who may not edit, goes without the link rather
  *  than asking for one the server would refuse; a failed fetch does too —
  *  the rest of the text is still worth having. */
+/** The absolute URL a card is reached by; the search parameter is the one
+ *  AitoPage's deep-link effect reads. */
+export function cardLink(id: number): string {
+  return `${window.location.origin}/aito?card=${id}`;
+}
+
 export function useCardActions(project: AitoProject, tasks: TaskDraft[], currency: string, canUpdate: boolean) {
   const { t } = useTranslation();
   const { showToast } = useToast();
@@ -70,6 +76,15 @@ export function useCardActions(project: AitoProject, tasks: TaskDraft[], currenc
     toast(await copyText(await textPromise));
   };
 
+  /** The board's own deep link (`?card=`, which AitoPage resolves): pasted
+   *  into a chat, it opens the panel for whoever follows it — after the
+   *  login page if need be, which carries the target through as `?next=`.
+   *  Built from the page's origin so it works wherever this build is served. */
+  const copyLink = async () => {
+    const ok = await copyText(cardLink(project.id));
+    showToast(t(ok ? 'aito.linkCopied' : 'aito.linkCopyFailed'), ok ? 'success' : 'error');
+  };
+
   const printTicket = () =>
     print(async () => {
       // Same keys as ImpressionFields, which every task row mounts — so
@@ -91,5 +106,5 @@ export function useCardActions(project: AitoProject, tasks: TaskDraft[], currenc
       return new Blob([html], { type: 'text/html' });
     });
 
-  return { copySummary, printTicket };
+  return { copySummary, copyLink, printTicket };
 }

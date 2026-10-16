@@ -1,5 +1,6 @@
 import { Component, Suspense, lazy, type ComponentType, type ReactNode, type ErrorInfo } from 'react';
 import { createBrowserRouter, createRoutesFromElements, RouterProvider, Route, Navigate, useLocation } from 'react-router-dom';
+import type { Location } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Layout } from './components/Layout';
@@ -148,6 +149,17 @@ function WebSocketProvider({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+/** Where the login page sends the user back to, carried in the URL itself
+ *  (`/login?next=…`) as well as in router state. The state is what the login
+ *  page used to rely on, and it is lost to a reload of the login page, the
+ *  OIDC provider round-trip and a PWA relaunch — a pasted `/aito?card=352`
+ *  then landed on the bare board. The URL survives all three. A bare `/`
+ *  stays `/login`, which is also the login page's own fallback. */
+function loginPath(location: Location): string {
+  const target = `${location.pathname}${location.search}${location.hash}`;
+  return target === '/' ? '/login' : `/login?next=${encodeURIComponent(target)}`;
+}
+
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { authEnabled, loading, user } = useAuth();
   const location = useLocation();
@@ -157,7 +169,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   }
 
   if (authEnabled && !user) {
-    return <Navigate to="/login" replace state={{ from: location }} />;
+    return <Navigate to={loginPath(location)} replace state={{ from: location }} />;
   }
 
   return <>{children}</>;
@@ -182,7 +194,7 @@ function PermissionRoute({ permission, children }: { permission: string | string
   }
 
   if (!user) {
-    return <Navigate to="/login" replace state={{ from: location }} />;
+    return <Navigate to={loginPath(location)} replace state={{ from: location }} />;
   }
 
   // A list lets in anyone holding at least one of the permissions.

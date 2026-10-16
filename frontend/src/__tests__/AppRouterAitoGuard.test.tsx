@@ -155,15 +155,18 @@ describe('App router — /aito route guard (T-035)', () => {
     expect(screen.queryByText(/UI Crash/i)).not.toBeInTheDocument();
   });
 
-  it('when logged out: redirects to /login and never mounts the Aito board', async () => {
+  it('when logged out: redirects to /login, carrying the full target as ?next=, and never mounts the Aito board', async () => {
     mockUseAuth.user = null;
     mockUseAuth.hasPermission.mockImplementation((permission: string) => permission === 'aito:read');
-    window.history.pushState({}, '', '/aito');
+    window.history.pushState({}, '', '/aito?card=352');
 
     const { default: App } = await import('../App');
     rtlRender(<App />);
 
     await waitFor(() => expect(window.location.pathname).toBe('/login'));
+    // In the URL, not only in router state: a reload of the login page, an
+    // OIDC round-trip or a PWA relaunch all drop the state and keep the URL.
+    expect(window.location.search).toBe('?next=%2Faito%3Fcard%3D352');
     // The login form has actually rendered, so the board's absence below is
     // not just "not loaded yet".
     expect(await screen.findByLabelText('Username', {}, PAGE_TIMEOUT)).toBeInTheDocument();
