@@ -511,7 +511,8 @@ async def record_and_broadcast(
     ``(subject_label, detail)`` inside the savepoint, so a failure building them
     is handled like any other. On any failure up to the commit, logs a
     warning on ``log`` ("<kind> <failure_label> failed for project <id>"), rolls
-    back (a failing rollback propagates) and returns ``None`` without
+    back (a failing rollback is logged as a second warning, not raised: every
+    caller has already committed its own change) and returns ``None`` without
     broadcasting; otherwise returns the order ids written to."""
     try:
         if actor_user_id is not None:
@@ -532,7 +533,15 @@ async def record_and_broadcast(
         await db.commit()
     except Exception:
         log.warning("%s %s failed for project %s", kind, failure_label, project_id, exc_info=True)
-        await db.rollback()
+        await rollback_quietly(
+            db,
+            log,
+            logging.WARNING,
+            "Rollback after the failed %s %s failed for project %s",
+            kind,
+            failure_label,
+            project_id,
+        )
         return None
     if broadcast:
         await broadcast_orders_changed(order_ids, actor)

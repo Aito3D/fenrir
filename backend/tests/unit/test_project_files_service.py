@@ -457,6 +457,45 @@ async def test_rename_item_rolls_folder_back_on_db_failure(db_session, root, mon
     assert not (base / "Modélisation" / "Nouveau").exists()
 
 
+@pytest.mark.asyncio
+async def test_rename_item_racing_a_same_name_item_is_the_name_409_and_moves_the_folder_back(
+    db_session, root, monkeypatch
+):
+    """T-363: the loser of a same-name race fails at commit on the unique constraint; that is the name 409."""
+    project = await _project(db_session)
+    item, _rev1 = await _rev(db_session, project)
+    base = root / project.storage_dir
+    await create_item(db_session, project, section="modelisation", name="Nouveau", user_id=None)
+    await db_session.commit()
+    _name_check_passes(monkeypatch)
+    with pytest.raises(ProjectFilesError) as caught:
+        await rename_item(db_session, project, item, "NOUVEAU")
+    assert (caught.value.status_code, caught.value.detail) == (
+        409,
+        "An item with this name already exists in this section",
+    )
+    assert isinstance(caught.value.__cause__, IntegrityError)
+    assert (base / "Modélisation" / "Support" / "R1" / "a.step").exists()
+
+
+@pytest.mark.asyncio
+async def test_rename_item_lets_another_integrity_error_through(db_session, root, monkeypatch):
+    project = await _project(db_session)
+    item, _rev1 = await _rev(db_session, project)
+    base = root / project.storage_dir
+    error = IntegrityError("UPDATE", {}, Exception("NOT NULL constraint failed: project_items.name"))
+
+    async def boom():
+        raise error
+
+    monkeypatch.setattr(db_session, "commit", boom)
+    with pytest.raises(IntegrityError) as caught:
+        await rename_item(db_session, project, item, "Nouveau")
+    assert caught.value is error
+    assert (base / "Modélisation" / "Support" / "R1" / "a.step").exists()
+    assert not (base / "Modélisation" / "Nouveau").exists()
+
+
 def _trash_entries(base: Path) -> list[Path]:
     """Files left in the project's _trash (the empty parent folders move_to_trash created do not count)."""
     return [p for p in (base / "_trash").rglob("*") if not p.is_dir()] if (base / "_trash").exists() else []

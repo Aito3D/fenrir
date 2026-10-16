@@ -120,9 +120,9 @@ async def _slice(db: AsyncSession, **kwargs):
 async def _record_revision_added(db: AsyncSession, project_id: int, entry: dict, user_id: int | None) -> None:
     """``project.revision_added`` on the linked Aito orders, through the helper shared with
     auto-filing (looked up at call time, so a patched ``project_filing.record_revision_added``
-    is the one called). Never raises: the helper swallows the event's own failures, but a
-    failing rollback inside it propagates, and an event is not worth failing a revision
-    that is already committed."""
+    is the one called). Never raises: the helper swallows the event's failures, a failing
+    rollback included, and anything else it raises is logged here, since an event is not
+    worth failing a revision that is already committed."""
     from backend.app.services.project_filing import record_revision_added
 
     try:

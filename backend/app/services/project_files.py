@@ -1307,7 +1307,12 @@ async def _rename_item_locked(db: AsyncSession, project: Project, item: ProjectI
         finally:
             await db.rollback()
 
-    async with _CommitGuard(db, undo, label=f"rename of item {item.id}") as commit:
+    def translate(exc: BaseException) -> Exception | None:
+        if isinstance(exc, IntegrityError) and _is_item_name_conflict(exc):
+            return ProjectFilesError(409, _ITEM_NAME_TAKEN)
+        return None
+
+    async with _CommitGuard(db, undo, translate=translate, label=f"rename of item {item.id}") as commit:
         if moved:
             await _repoint_file_paths(db, item.id, old_dir, new_dir)
         item.name = clean
