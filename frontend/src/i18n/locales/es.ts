@@ -2640,7 +2640,10 @@ export default {
       failed: 'Fallida',
       skipped: 'Omitida',
       cancelled: 'Cancelada',
+      slicing: 'Laminando',
+      slice_failed: 'Error de laminado',
     },
+    retrySlice: 'Reintentar laminado',
     // Summary cards
     summary: {
       printing: 'Imprimiendo',

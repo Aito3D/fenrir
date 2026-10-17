@@ -2640,7 +2640,10 @@ export default {
       failed: 'Échoué',
       skipped: 'Sauté',
       cancelled: 'Annulé',
+      slicing: 'Découpe en cours',
+      slice_failed: 'Échec du tranchage',
     },
+    retrySlice: 'Relancer le tranchage',
     // Summary cards
     summary: {
       printing: 'Impressions',

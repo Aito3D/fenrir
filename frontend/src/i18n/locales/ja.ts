@@ -2639,7 +2639,10 @@ export default {
       failed: '失敗',
       skipped: 'スキップ',
       cancelled: 'キャンセル済み',
+      slicing: 'スライス中',
+      slice_failed: 'スライス失敗',
     },
+    retrySlice: 'スライスを再試行',
     // Summary cards
     summary: {
       printing: '印刷中',

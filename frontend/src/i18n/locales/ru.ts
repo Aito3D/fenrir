@@ -2586,7 +2586,10 @@ export default {
       failed: "Ошибка",
       skipped: "Пропущено",
       cancelled: "Отменено",
+      slicing: "Нарезка",
+      slice_failed: "Ошибка нарезки",
     },
+    retrySlice: "Повторить нарезку",
     summary: {
       printing: "Печатается",
       queued: "В очереди",

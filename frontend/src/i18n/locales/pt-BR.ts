@@ -2640,7 +2640,10 @@ export default {
       failed: 'Falhou',
       skipped: 'Ignorado',
       cancelled: 'Cancelado',
+      slicing: 'Fatiando',
+      slice_failed: 'Falha ao fatiar',
     },
+    retrySlice: 'Tentar fatiar novamente',
     // Summary cards
     summary: {
       printing: 'Imprimindo',

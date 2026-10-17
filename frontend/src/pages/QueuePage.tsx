@@ -79,6 +79,7 @@ import { SkeletonGrid } from '../components/Skeleton';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { PrintModal } from '../components/PrintModal';
 import { useToast } from '../contexts/ToastContext';
+import { useSliceJobPercent } from '../hooks/useSliceJobPercent';
 import { useAuth } from '../contexts/AuthContext';
 import { QueueStatsBar } from '../components/QueueStatsBar';
 import { CompactHistoryRow } from '../components/CompactHistoryRow';
@@ -277,6 +278,28 @@ function formatWeight(g: number, useKg = false): string {
   return `${Math.round(g)}g`;
 }
 
+/** Live slice progress bar for an item whose revision is being sliced on the server. */
+function SliceProgress({ jobId }: { jobId: number | null | undefined }) {
+  const { percent } = useSliceJobPercent(jobId);
+  return (
+    <div className="mt-2 sm:mt-3 flex items-center justify-between text-xs sm:text-sm">
+      <div
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={percent ?? undefined}
+        className="flex-1 bg-bambu-dark-tertiary rounded-full h-1.5 sm:h-2 mr-3 overflow-hidden"
+      >
+        <div
+          className={`bg-teal-500 h-1.5 sm:h-2 rounded-full transition-all ${percent == null ? 'w-full animate-pulse opacity-50' : ''}`}
+          style={percent == null ? undefined : { width: `${percent}%` }}
+        />
+      </div>
+      <span className="text-white">{percent == null ? '…' : `${percent}%`}</span>
+    </div>
+  );
+}
+
 function StatusBadge({ status, waitingReason, printerState, t }: { status: PrintQueueItem['status']; waitingReason?: string | null; printerState?: string | null; t: (key: string) => string }) {
   // Special case: pending with waiting_reason shows as "Waiting"
   if (status === 'pending' && waitingReason) {
@@ -300,6 +323,8 @@ function StatusBadge({ status, waitingReason, printerState, t }: { status: Print
 
   const config = {
     pending: { icon: Clock, color: 'text-status-warning bg-status-warning/10 border-status-warning/20', label: t('queue.status.pending') },
+    slicing: { icon: Layers, color: 'text-teal-700 dark:text-teal-400 bg-teal-50 dark:bg-teal-400/10 border-teal-200 dark:border-teal-400/20', label: t('queue.status.slicing') },
+    slice_failed: { icon: XCircle, color: 'text-status-error bg-status-error/10 border-status-error/20', label: t('queue.status.slice_failed') },
     printing: { icon: Play, color: 'text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-400/10 border-blue-200 dark:border-blue-400/20', label: t('queue.status.printing') },
     completed: { icon: CheckCircle, color: 'text-status-ok bg-status-ok/10 border-status-ok/20', label: t('queue.status.completed') },
     failed: { icon: XCircle, color: 'text-status-error bg-status-error/10 border-status-error/20', label: t('queue.status.failed') },
@@ -595,6 +620,13 @@ function SortableQueueItem({
   t: (key: string, options?: Record<string, unknown>) => string;
 }) {
   const { hasAnyPermission } = useAuth();
+  const queryClient = useQueryClient();
+  const { showToast } = useToast();
+  const retrySliceMutation = useMutation({
+    mutationFn: () => api.retrySliceQueueItem(item.id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['queue'] }),
+    onError: (error: Error) => showToast(error.message, 'error'),
+  });
   // Their waiting jobs are started by someone who manages the queue (#1620)
   const awaitingReview = !hasAnyPermission('queue:update_all', 'queue:start_unreviewed');
   const hasPhysicalAmsMapping =
@@ -701,7 +733,8 @@ function SortableQueueItem({
           isPrinting ? 'border-l-blue-500' :
           isPending ? 'border-l-yellow-500' :
           item.status === 'completed' ? 'border-l-emerald-500' :
-          item.status === 'failed' ? 'border-l-red-500' :
+          item.status === 'failed' || item.status === 'slice_failed' ? 'border-l-red-500' :
+          item.status === 'slicing' ? 'border-l-teal-500' :
           'border-l-gray-500'
         }
         ${isDragging ? 'opacity-50 scale-[1.02] shadow-xl z-50' : ''}
@@ -1014,6 +1047,8 @@ function SortableQueueItem({
             )}
           </div>
 
+          {item.status === 'slicing' && <SliceProgress jobId={item.slice_job_id} />}
+
           {/* Progress bar for printing items - TODO: integrate with WebSocket */}
           {isPrinting && status && (() => {
             // Gate progress/remaining/layer on printer actually running this print.
@@ -1115,6 +1150,19 @@ function SortableQueueItem({
                 className="text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-500/10 p-1.5 sm:p-2"
               >
                 <StopCircle className="w-4 h-4" />
+              </Button>
+            )}
+            {item.status === 'slice_failed' && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => retrySliceMutation.mutate()}
+                disabled={retrySliceMutation.isPending || !canModify('queue', 'update', item.created_by_id)}
+                title={t('queue.retrySlice')}
+                aria-label={t('queue.retrySlice')}
+                className="text-bambu-green hover:text-bambu-green/80 hover:bg-bambu-green/10 p-1.5 sm:p-2"
+              >
+                <RefreshCw className="w-4 h-4" />
               </Button>
             )}
             {isPending && (
@@ -2159,7 +2207,7 @@ export function QueuePage() {
   };
 
   const activeItems = useMemo(() => {
-    let items = queue?.filter(i => i.status === 'printing') || [];
+    let items = queue?.filter(i => i.status === 'printing' || i.status === 'slicing' || i.status === 'slice_failed') || [];
     if (filterLocation) {
       items = items.filter(matchesLocationFilter);
     }
@@ -2824,6 +2872,8 @@ export function QueuePage() {
         >
           <option value="">{t('queue.filter.allStatus')}</option>
           <option value="pending">{t('queue.status.pending')}</option>
+          <option value="slicing">{t('queue.status.slicing')}</option>
+          <option value="slice_failed">{t('queue.status.slice_failed')}</option>
           <option value="printing">{t('queue.status.printing')}</option>
           <option value="completed">{t('queue.status.completed')}</option>
           <option value="failed">{t('queue.status.failed')}</option>

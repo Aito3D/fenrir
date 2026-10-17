@@ -1290,7 +1290,7 @@ export type ProjectSection = 'scan' | 'modelisation' | 'impression' | 'usinage' 
 export type RevisionStatus = 'wip' | 'valide' | 'obsolete';
 export interface RevisionRef { id: number; item_id: number; item_name: string; section: ProjectSection; number: number; status: RevisionStatus }
 export interface ProjectFileOut { id: number; filename: string; file_type: string; file_size: number; file_hash: string | null; has_thumbnail: boolean; created_at: string }
-export interface ProjectRevisionOut { id: number; number: number; status: RevisionStatus; note: string | null; derived_from: RevisionRef | null; outdated_by: RevisionRef | null; print_profile: Record<string, unknown> | null; slicer_name: string | null; slicer_version: string | null; has_snapshot: boolean; used: boolean; print_count: number; pipeline_name: string | null; files: ProjectFileOut[]; created_by: string | null; created_at: string; status_changed_at: string | null }
+export interface ProjectRevisionOut { id: number; number: number; status: RevisionStatus; note: string | null; derived_from: RevisionRef | null; outdated_by: RevisionRef | null; print_profile: Record<string, unknown> | null; slicer_name: string | null; slicer_version: string | null; has_snapshot: boolean; used: boolean; print_count: number; pipeline_name: string | null; files: ProjectFileOut[]; created_by: string | null; created_at: string; status_changed_at: string | null; slice_status: 'slicing' | 'sliced' | 'failed' | null; slice_error: string | null; slice_job_id: number | null; sliced_file: ProjectFileOut | null }
 export interface ResliceResult { project_id: number; item_id: number; revision_id: number; revision_number: number; file_id: number | null; filename: string }
 export interface ProjectItemOut { id: number; section: ProjectSection; name: string; name_key: string; forked_from: RevisionRef | null; revisions: ProjectRevisionOut[] }
 // Fenrir: File Manager bridge (projects PDM phase 5)
@@ -3001,7 +3001,9 @@ export interface PrintQueueItem {
   confirm_outcome: boolean;
   preheat_override: 'inherit' | 'on' | 'off';
   preheat_chamber_target_override: number | null;
-  status: 'pending' | 'printing' | 'completed' | 'failed' | 'skipped' | 'cancelled';
+  status: 'pending' | 'slicing' | 'slice_failed' | 'printing' | 'completed' | 'failed' | 'skipped' | 'cancelled';
+  /** Set only while status is 'slicing' (server-side slice of a project revision). */
+  slice_job_id?: number | null;
   started_at: string | null;
   completed_at: string | null;
   error_message: string | null;
@@ -7990,6 +7992,8 @@ export const api = {
     }),
   cancelQueueItem: (id: number) =>
     request<{ message: string }>(`/queue/${id}/cancel`, { method: 'POST' }),
+  retrySliceQueueItem: (id: number) =>
+    request<PrintQueueItem>(`/queue/${id}/retry-slice`, { method: 'POST' }),
   stopQueueItem: (id: number) =>
     request<{ message: string }>(`/queue/${id}/stop`, { method: 'POST' }),
   /**
@@ -10426,6 +10430,8 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+  sliceProjectRevision: (revisionId: number) =>
+    request<{ job_id: number | null; slice_status: string }>(`/projects/revisions/${revisionId}/slice`, { method: 'POST' }),
   getSliceJob: (jobId: number) =>
     request<SliceJobState>(`/slice-jobs/${jobId}`),
 

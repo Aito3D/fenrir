@@ -1593,7 +1593,10 @@ export default {
       failed: 'Misslyckad',
       skipped: 'Hoppad över',
       cancelled: 'Avbruten',
+      slicing: 'Slicar',
+      slice_failed: 'Slicing misslyckades',
     },
+    retrySlice: 'Försök slicing igen',
     // Summary cards
     summary: {
       printing: 'Skriver ut',

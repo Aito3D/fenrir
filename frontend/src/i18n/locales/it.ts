@@ -2640,7 +2640,10 @@ export default {
       failed: 'Fallito',
       skipped: 'Saltato',
       cancelled: 'Annullato',
+      slicing: 'Slicing in corso',
+      slice_failed: 'Slicing non riuscito',
     },
+    retrySlice: 'Riprova slicing',
     // Summary cards
     summary: {
       printing: 'In stampa',

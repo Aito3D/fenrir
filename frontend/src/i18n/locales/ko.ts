@@ -2570,8 +2570,11 @@ export default {
       completed: '완료',
       failed: '실패',
       skipped: '건너뜀',
-      cancelled: '취소됨'
+      cancelled: '취소됨',
+      slicing: '슬라이싱 중',
+      slice_failed: '슬라이싱 실패',
     },
+    retrySlice: '슬라이싱 재시도',
     summary: {
       printing: '인쇄 중',
       queued: '대기 중',

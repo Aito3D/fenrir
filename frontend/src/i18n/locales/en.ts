@@ -2662,7 +2662,10 @@ export default {
       failed: 'Failed',
       skipped: 'Skipped',
       cancelled: 'Cancelled',
+      slicing: 'Slicing',
+      slice_failed: 'Slice failed',
     },
+    retrySlice: 'Retry slice',
     // Summary cards
     summary: {
       printing: 'Printing',

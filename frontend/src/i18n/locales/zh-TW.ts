@@ -2640,7 +2640,10 @@ export default {
       failed: '失敗',
       skipped: '已跳過',
       cancelled: '已取消',
+      slicing: '切片中',
+      slice_failed: '切片失敗',
     },
+    retrySlice: '重試切片',
     // Summary cards
     summary: {
       printing: '列印中',

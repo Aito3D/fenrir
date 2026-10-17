@@ -2592,7 +2592,10 @@ export default {
       failed: "Не вдалося",
       skipped: "Пропущено",
       cancelled: "Скасовано",
+      slicing: "Нарізання",
+      slice_failed: "Помилка нарізання",
     },
+    retrySlice: "Повторити нарізання",
     summary: {
       printing: "Друк",
       queued: "У черзі",

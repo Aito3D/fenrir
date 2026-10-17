@@ -52,6 +52,10 @@ export function rev(overrides: Partial<ProjectRevisionOut> = {}): ProjectRevisio
     created_by: 'paul',
     created_at: '2026-10-04T10:00:00Z',
     status_changed_at: null,
+    slice_status: null,
+    slice_error: null,
+    slice_job_id: null,
+    sliced_file: null,
     ...overrides,
   };
 }

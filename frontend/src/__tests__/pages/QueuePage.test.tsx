@@ -1287,6 +1287,48 @@ describe('QueuePage', () => {
       });
     });
 
+    it('shows a slicing item with its live progress', async () => {
+      server.use(
+        http.get('/api/v1/queue/', () =>
+          HttpResponse.json([{ ...mockQueueItems[0], id: 91, status: 'slicing', slice_job_id: 7, archive_name: 'Sliced Part' }]),
+        ),
+        http.get('/api/v1/slice-jobs/7', () =>
+          HttpResponse.json({
+            job_id: 7, status: 'running', kind: 'project_revision', source_id: 1, source_name: 'r',
+            created_at: '2026-10-17T10:00:00Z', started_at: null, completed_at: null,
+            progress: { stage: 'x', total_percent: 61.6, plate_percent: 0, plate_index: 1, plate_count: 1, updated_at: 0 },
+          }),
+        ),
+      );
+      render(<QueuePage />);
+
+      expect(await screen.findByText('Slicing')).toBeInTheDocument();
+      const bar = await screen.findByRole('progressbar');
+      await waitFor(() => expect(bar).toHaveAttribute('aria-valuenow', '62'));
+    });
+
+    it('shows a slice-failed item with its error and retries the slice', async () => {
+      const user = userEvent.setup();
+      let retried: string | null = null;
+      server.use(
+        http.get('/api/v1/queue/', () =>
+          HttpResponse.json([
+            { ...mockQueueItems[0], id: 92, status: 'slice_failed', error_message: 'Slicer exploded', archive_name: 'Broken Part' },
+          ]),
+        ),
+        http.post('/api/v1/queue/:id/retry-slice', ({ params }) => {
+          retried = String(params.id);
+          return HttpResponse.json({ ...mockQueueItems[0], id: 92, status: 'slicing', slice_job_id: 8 });
+        }),
+      );
+      render(<QueuePage />);
+
+      expect(await screen.findByText('Slice failed')).toBeInTheDocument();
+      expect(screen.getByText('Slicer exploded')).toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Retry slice' }));
+      await waitFor(() => expect(retried).toBe('92'));
+    });
+
     it('shows printer names', async () => {
       render(<QueuePage />);
 
@@ -1407,6 +1449,8 @@ describe('QueuePage', () => {
 
       expect(screen.getByRole('option', { name: 'Pending' })).toBeInTheDocument();
       expect(screen.getByRole('option', { name: 'Printing' })).toBeInTheDocument();
+      expect(screen.getByRole('option', { name: 'Slicing' })).toBeInTheDocument();
+      expect(screen.getByRole('option', { name: 'Slice failed' })).toBeInTheDocument();
       expect(screen.getByRole('option', { name: 'Completed' })).toBeInTheDocument();
     });
   });

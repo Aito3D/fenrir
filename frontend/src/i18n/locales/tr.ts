@@ -2640,7 +2640,10 @@ export default {
       failed: 'Başarısız',
       skipped: 'Atlandı',
       cancelled: 'İptal edildi',
+      slicing: 'Dilimleniyor',
+      slice_failed: 'Dilimleme başarısız',
     },
+    retrySlice: 'Dilimlemeyi yeniden dene',
     // Özet kartları
     summary: {
       printing: 'Yazdırılıyor',

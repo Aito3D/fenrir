@@ -1593,7 +1593,10 @@ export default {
       failed: 'Mislukt',
       skipped: 'Overgeslagen',
       cancelled: 'Geannuleerd',
+      slicing: 'Slicen',
+      slice_failed: 'Slicen mislukt',
     },
+    retrySlice: 'Slicen opnieuw proberen',
     // Summary cards
     summary: {
       printing: 'Bezig met afdrukken',
