@@ -1303,6 +1303,8 @@ describe('QueuePage', () => {
       render(<QueuePage />);
 
       expect(await screen.findByText('Slicing')).toBeInTheDocument();
+      expect(screen.queryByText('Currently Printing')).not.toBeInTheDocument();
+      expect(screen.getAllByText('Queued').length).toBeGreaterThan(0);
       const bar = await screen.findByRole('progressbar');
       await waitFor(() => expect(bar).toHaveAttribute('aria-valuenow', '62'));
     });
@@ -1327,6 +1329,26 @@ describe('QueuePage', () => {
       expect(screen.getByText('Slicer exploded')).toBeInTheDocument();
       await user.click(screen.getByRole('button', { name: 'Retry slice' }));
       await waitFor(() => expect(retried).toBe('92'));
+    });
+
+    it.each(['slicing', 'slice_failed'])('lets a %s row be cancelled through the confirm dialog', async (status) => {
+      const user = userEvent.setup();
+      let cancelled: string | null = null;
+      server.use(
+        http.get('/api/v1/queue/', () =>
+          HttpResponse.json([{ ...mockQueueItems[0], id: 93, status, slice_job_id: status === 'slicing' ? 9 : null, archive_name: 'Cancel Me' }]),
+        ),
+        http.post('/api/v1/queue/:id/cancel', ({ params }) => {
+          cancelled = String(params.id);
+          return HttpResponse.json({ message: 'ok' });
+        }),
+      );
+      render(<QueuePage />);
+
+      await screen.findByText('Cancel Me');
+      await user.click(screen.getByRole('button', { name: 'Cancel' }));
+      await user.click(await screen.findByRole('button', { name: 'Cancel Print' }));
+      await waitFor(() => expect(cancelled).toBe('93'));
     });
 
     it('shows printer names', async () => {

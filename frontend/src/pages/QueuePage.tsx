@@ -700,7 +700,7 @@ function SortableQueueItem({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: item.id, disabled: item.status !== 'pending' || !canReorder });
+  } = useSortable({ id: item.id, disabled: !(item.status === 'pending' || item.status === 'slicing' || item.status === 'slice_failed') || !canReorder });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -709,6 +709,9 @@ function SortableQueueItem({
 
   const isPrinting = item.status === 'printing';
   const isPending = item.status === 'pending';
+  // Waiting on a slice: lives in the queued section (orderable, cancellable) but has no gcode to start or edit yet.
+  const isSlicePhase = item.status === 'slicing' || item.status === 'slice_failed';
+  const isQueued = isPending || isSlicePhase;
   const isHistory = ['completed', 'failed', 'skipped', 'cancelled'].includes(item.status);
 
   // This is an "if started now" estimate, not a cumulative queue forecast, so
@@ -756,7 +759,7 @@ function SortableQueueItem({
         {/* Mobile reorder arrows (#2667). The desktop drag handle is hidden on
             phones and touch-drag is unreliable there, so pending rows get
             tap-to-move up/down controls instead. Shown only below `sm`. */}
-        {isPending && (onMoveUp || onMoveDown) && (
+        {isQueued && (onMoveUp || onMoveDown) && (
           <div
             className="flex sm:hidden flex-col shrink-0 -my-1"
             onClick={(e) => e.stopPropagation()}
@@ -804,7 +807,7 @@ function SortableQueueItem({
         )}
 
         {/* Drag handle or position number - hidden on mobile */}
-        {isPending ? (
+        {isQueued ? (
           <div
             {...attributes}
             {...listeners}
@@ -1163,6 +1166,18 @@ function SortableQueueItem({
                 className="text-bambu-green hover:text-bambu-green/80 hover:bg-bambu-green/10 p-1.5 sm:p-2"
               >
                 <RefreshCw className="w-4 h-4" />
+              </Button>
+            )}
+            {isSlicePhase && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onCancel}
+                disabled={!canModify('queue', 'delete', item.created_by_id)}
+                title={!canModify('queue', 'delete', item.created_by_id) ? t('queue.permissions.noCancel') : t('common.cancel')}
+                className="text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-500/10 p-1.5 sm:p-2"
+              >
+                <X className="w-4 h-4" />
               </Button>
             )}
             {isPending && (
@@ -2158,7 +2173,7 @@ export function QueuePage() {
   }, [filterLocation, printers]);
 
   const pendingItems = useMemo(() => {
-    let items = queue?.filter(i => i.status === 'pending') || [];
+    let items = queue?.filter(i => i.status === 'pending' || i.status === 'slicing' || i.status === 'slice_failed') || [];
 
     // Apply location filter
     if (filterLocation) {
@@ -2196,9 +2211,11 @@ export function QueuePage() {
       return pendingSortAsc ? cmp : -cmp;
     });
   }, [queue, pendingSortBy, pendingSortAsc, matchesLocationFilter, filterLocation, settings?.queue_shortest_first]);
+  // Rows that can join a bulk edit (items still waiting on a slice cannot).
+  const selectableCount = pendingItems.filter((i) => i.status === 'pending').length;
 
   const handleSelectAll = () => {
-    const allPendingIds = pendingItems.map(i => i.id);
+    const allPendingIds = pendingItems.filter(i => i.status === 'pending').map(i => i.id);
     if (selectedItems.length === allPendingIds.length) {
       setSelectedItems([]);
     } else {
@@ -2207,7 +2224,7 @@ export function QueuePage() {
   };
 
   const activeItems = useMemo(() => {
-    let items = queue?.filter(i => i.status === 'printing' || i.status === 'slicing' || i.status === 'slice_failed') || [];
+    let items = queue?.filter(i => i.status === 'printing') || [];
     if (filterLocation) {
       items = items.filter(matchesLocationFilter);
     }
@@ -3085,12 +3102,12 @@ export function QueuePage() {
                   onClick={handleSelectAll}
                   className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm"
                 >
-                  {selectedItems.length === pendingItems.length && pendingItems.length > 0 ? (
+                  {selectedItems.length === selectableCount && selectableCount > 0 ? (
                     <CheckSquare className="w-4 h-4 text-bambu-green" />
                   ) : (
                     <Square className="w-4 h-4" />
                   )}
-                  {selectedItems.length === pendingItems.length && pendingItems.length > 0 ? t('queue.bulkEdit.deselectAll') : t('queue.bulkEdit.selectAll')}
+                  {selectedItems.length === selectableCount && selectableCount > 0 ? t('queue.bulkEdit.deselectAll') : t('queue.bulkEdit.selectAll')}
                 </Button>
                 {selectedItems.length > 0 && (
                   <>
