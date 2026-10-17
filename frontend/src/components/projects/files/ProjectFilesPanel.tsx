@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { ProjectItemOut, ProjectSection } from '../../../api/client';
+import type { ProjectItemOut, ProjectSection, ProjectTreeResponse } from '../../../api/client';
 import { CollapsibleHeader } from './CollapsibleHeader';
 import { ItemRow } from './ItemRow';
 import { SectionBlock } from './SectionBlock';
@@ -9,23 +9,14 @@ import { useFileActions } from './useFileActions';
 import { PrintRevisionFlow } from '../print/PrintRevisionFlow';
 import type { FileActions } from './useFileActions';
 import { ENABLED_SECTIONS, SECTION_LABEL_KEYS, SECTION_ORDER, isSectionEnabled } from './filesUi';
-import { sectionRevisionLabel } from './revisionLabel';
+import { useDerivedOptions } from './useDerivedOptions';
 import { useProjectTree } from '../projectQueries';
 
 export function ProjectFilesPanel({ projectId }: { projectId: number }) {
-  const { t } = useTranslation();
   const actions = useFileActions(projectId);
-  const { data: tree } = useProjectTree(projectId);
-
-  const derivedOptions = useMemo<DerivedOption[]>(
-    () =>
-      (tree?.sections ?? []).flatMap((s) =>
-        s.items.flatMap((item) =>
-          item.revisions.map((r) => ({ id: r.id, label: sectionRevisionLabel(t, s.section, item.name, r.number) })),
-        ),
-      ),
-    [tree, t],
-  );
+  // While a revision slices, the tree is polled so its card turns Sliced / Slice failed by itself.
+  const { data: tree } = useProjectTree(projectId, { refetchInterval: (query) => (anySlicing(query.state.data) ? 3000 : false) });
+  const derivedOptions = useDerivedOptions(projectId);
 
   if (!tree) return null;
   const bySection = new Map(tree.sections.map((s) => [s.section, s.items]));
@@ -37,7 +28,7 @@ export function ProjectFilesPanel({ projectId }: { projectId: number }) {
   return (
     <div className="space-y-3">
       {ENABLED_SECTIONS.map((section) => (
-        <SectionBlock key={section} section={section} items={bySection.get(section) ?? []} derivedOptions={derivedOptions} actions={actions} />
+        <SectionBlock key={section} section={section} items={bySection.get(section) ?? []} actions={actions} />
       ))}
       {legacy.length > 0 && <OlderFiles sections={legacy} derivedOptions={derivedOptions} actions={actions} />}
       {actions.reslice.printNext && (
@@ -51,6 +42,10 @@ export function ProjectFilesPanel({ projectId }: { projectId: number }) {
       )}
     </div>
   );
+}
+
+function anySlicing(tree: ProjectTreeResponse | undefined): boolean {
+  return !!tree?.sections.some((s) => s.items.some((i) => i.revisions.some((r) => r.slice_status === 'slicing')));
 }
 
 /** Items still in a disabled section, collapsed by default and read-only except delete. */

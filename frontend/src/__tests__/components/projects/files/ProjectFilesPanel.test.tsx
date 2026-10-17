@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { render } from '../../../utils';
@@ -102,6 +102,14 @@ describe('ProjectFilesPanel', () => {
   const drop = (el: Element, name: string) =>
     fireEvent.drop(el, { dataTransfer: { files: [new File(['x'], name)], types: ['Files'] } });
   const sectionOf = (label: string) => screen.getByRole('heading', { level: 3, name: new RegExp(`^${label}`) }).closest('section')!;
+  const cardOf = (id: number) => screen.getByTestId(`item-card-${id}`);
+  /** Opens an item's details tray from its card name. */
+  const openTray = async (id: number) => {
+    const card = await screen.findByTestId(`item-card-${id}`);
+    // The name button (the ⋯ menu button also carries aria-expanded, plus aria-haspopup).
+    await userEvent.click(within(card).getAllByRole('button', { expanded: false }).find((el) => !el.hasAttribute('aria-haspopup'))!);
+    return screen.getByTestId(`item-tray-${id}`);
+  };
 
   it('shows only the Printing section, with the newest revision chip', async () => {
     treeBody = printingOnly;
@@ -112,7 +120,8 @@ describe('ProjectFilesPanel', () => {
     for (const disabled of ['Scan', 'Modeling', 'Machining', 'Documents', 'Older files']) {
       expect(screen.queryByText(disabled)).not.toBeInTheDocument();
     }
-    expect(screen.getByText(/R2 · Approved/)).toBeInTheDocument();
+    expect(within(cardOf(20)).getByRole('button', { name: 'R2' })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(cardOf(20)).getByText('Approved')).toBeInTheDocument();
   });
 
   it('lists an item left in a disabled section under a collapsed "Older files" group, read-only except delete', async () => {
@@ -195,7 +204,8 @@ describe('ProjectFilesPanel', () => {
 
   it('flags an outdated print revision and its source', async () => {
     render(<ProjectFilesPanel projectId={7} />);
-    expect(await screen.findByText(/Outdated — based on Support R1, R2 approved since/)).toBeInTheDocument();
+    const badge = within(await screen.findByTestId('item-card-30')).getByText('Outdated');
+    expect(badge).toHaveAttribute('title', 'Outdated — based on Support R1, R2 approved since');
   });
 
   it('changes a status through the API', async () => {
@@ -208,7 +218,8 @@ describe('ProjectFilesPanel', () => {
 
   it('freezes files of a used revision', async () => {
     render(<ProjectFilesPanel projectId={7} />);
-    await userEvent.click(await screen.findByRole('button', { name: /Support$/ }));
+    await openTray(20);
+    await userEvent.click(within(cardOf(20)).getByRole('button', { name: 'R1' }));
     const r1 = screen.getByTestId('revision-1');
     expect(within(r1).getByText('Files frozen: this revision was printed or delivered')).toBeInTheDocument();
     expect(within(r1).queryByRole('button', { name: /Remove/ })).not.toBeInTheDocument();
@@ -226,9 +237,9 @@ describe('ProjectFilesPanel', () => {
 
   it('shows the print profile of a sliced revision', async () => {
     render(<ProjectFilesPanel projectId={7} />);
-    await userEvent.click(await screen.findByRole('button', { name: /Support X1C$/ }));
-    expect(screen.getByText(/Bambu Lab X1C/)).toBeInTheDocument();
-    expect(screen.getByText('Sliced')).toBeInTheDocument();
+    const card = await screen.findByTestId('item-card-30');
+    expect(within(card).getByText('Bambu Lab X1C · 0.4 mm · 0.2 mm · PETG')).toBeInTheDocument();
+    expect(within(card).getByText('Sliced')).toBeInTheDocument();
   });
 
   it('dropping on a section reuses an item with the same name, case-insensitively', async () => {
@@ -250,6 +261,49 @@ describe('ProjectFilesPanel', () => {
     await screen.findByText('Support');
     drop(sectionOf('Printing'), 'bracket.3mf');
     await waitFor(() => expect(calls).toEqual(['create:bracket', 'upload:99']));
+  });
+
+  it('the dashed drop card creates an item from a dropped or picked .3mf, and the section does not take it too', async () => {
+    render(<ProjectFilesPanel projectId={7} />);
+    await screen.findByText('Support');
+    const dropCard = screen.getByRole('button', { name: /Drop a \.3mf or click/ }).closest('li')!;
+    drop(dropCard, 'bracket.3mf');
+    await waitFor(() => expect(calls).toEqual(['create:bracket', 'upload:99']));
+    fireEvent.change(screen.getByTestId('new-item-drop-input-impression'), { target: { files: [new File(['x'], 'Support.3mf')] } });
+    await waitFor(() => expect(calls).toEqual(['create:bracket', 'upload:99', 'upload:20']));
+  });
+
+  it('cards sit in the File Manager grid, and the tray opens as a full-width cell right after its card', async () => {
+    render(<ProjectFilesPanel projectId={7} />);
+    await openTray(20);
+    const grid = cardOf(20).parentElement!;
+    expect(grid.className).toContain('grid-cols-2');
+    expect(grid.className).toContain('xl:grid-cols-5');
+    expect(cardOf(20).nextElementSibling).toBe(screen.getByTestId('item-tray-20'));
+    await openTray(30); // one tray at a time
+    expect(screen.queryByTestId('item-tray-20')).not.toBeInTheDocument();
+    expect(screen.getByTestId('item-tray-30')).toBeInTheDocument();
+  });
+
+  it('polls the tree every 3 s while a revision slices, and stops once none does', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      let gets = 0;
+      const slicing = projectTree({ impression: [item(20, 'impression', 'Support', [rev({ id: 2, number: 1, slice_status: 'slicing', slice_job_id: 5 })])] });
+      server.use(
+        http.get('/api/v1/projects/7/tree', () => { gets += 1; return HttpResponse.json(gets < 2 ? slicing : printingOnly); }),
+        http.get('/api/v1/slice-jobs/5', () => HttpResponse.json({ detail: 'gone' }, { status: 404 })),
+      );
+      render(<ProjectFilesPanel projectId={7} />);
+      await screen.findByText('Slicing…');
+      expect(gets).toBe(1);
+      await act(() => vi.advanceTimersByTimeAsync(3100));
+      await waitFor(() => expect(gets).toBe(2));
+      await act(() => vi.advanceTimersByTimeAsync(6200));
+      expect(gets).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('dropping on an item row uploads once and does not create an item', async () => {
@@ -298,11 +352,12 @@ describe('ProjectFilesPanel', () => {
     await waitFor(() => expect(within(section).queryByLabelText('Item name')).not.toBeInTheDocument());
   });
 
-  it('shows OUTDATED on the collapsed row, and only in the revision block once expanded', async () => {
+  it('shows the OUTDATED badge on the card, and the full chip only in the revision block once opened', async () => {
     render(<ProjectFilesPanel projectId={7} />);
     const outdated = /Outdated — based on Support R1/;
-    expect(await screen.findAllByText(outdated)).toHaveLength(1);
-    await userEvent.click(screen.getByRole('button', { name: /Support X1C$/ }));
+    expect(within(await screen.findByTestId('item-card-30')).getByText('Outdated')).toBeInTheDocument();
+    expect(screen.queryByText(outdated)).not.toBeInTheDocument();
+    await openTray(30);
     expect(screen.getAllByText(outdated)).toHaveLength(1);
     expect(within(screen.getByTestId('revision-3')).getByText(outdated)).toBeInTheDocument();
   });
@@ -342,9 +397,9 @@ describe('ProjectFilesPanel', () => {
     const row = screen.getByRole('button', { name: /Support$/ }).closest('li')!;
     expect(await within(row).findByText('Uploading…')).toBeInTheDocument();
     fireEvent.dragOver(row);
-    expect(row.className).toContain('border-bambu-green');
+    expect(row.className).toContain('ring-bambu-green');
     drop(row, 'again.3mf');
-    expect(row.className).not.toContain('border-bambu-green');
+    expect(row.className).not.toContain('ring-bambu-green');
     expect(calls).toEqual(['upload:20']);
     release();
     await waitFor(() => expect(within(row).queryByText('Uploading…')).not.toBeInTheDocument());
@@ -392,7 +447,7 @@ describe('ProjectFilesPanel', () => {
       const row = rowOf(/Support$/);
       await waitFor(() => expect(within(row).queryByText('Uploading…')).not.toBeInTheDocument());
       expect(within(row).getByRole('button', { name: 'New revision' })).toBeEnabled();
-      expect(within(row).getByText(/R2 · Approved/)).toBeInTheDocument();
+      expect(within(row).getByRole('button', { name: 'R2' })).toHaveAttribute('aria-pressed', 'true');
     });
 
     it('toasts a 4xx upload refusal, and falls back to the status code without a detail', async () => {
@@ -458,8 +513,7 @@ describe('ProjectFilesPanel', () => {
     it('keeps the old name when a rename hits a 409 name conflict', async () => {
       fail('patch', '/api/v1/projects/items/:id', 409, 'An item with this name already exists');
       render(<ProjectFilesPanel projectId={7} />);
-      await screen.findByText('Support');
-      await userEvent.click(within(rowOf(/Support$/)).getByRole('button', { name: 'Rename' }));
+      await userEvent.click(within(await openTray(20)).getByRole('button', { name: 'Rename' }));
       const input = screen.getByRole('textbox', { name: 'Rename' });
       await userEvent.clear(input);
       await userEvent.type(input, 'Gabarit{Enter}');
@@ -472,8 +526,7 @@ describe('ProjectFilesPanel', () => {
     it('keeps the item when deleting it is refused', async () => {
       fail('delete', '/api/v1/projects/items/:id', 409, 'Item has used revisions');
       render(<ProjectFilesPanel projectId={7} />);
-      await screen.findByText('Support');
-      await holdToConfirm(within(rowOf(/Support$/)).getByRole('button', { name: 'Delete item' }));
+      await holdToConfirm(within(await openTray(20)).getByRole('button', { name: 'Delete item' }));
       expect(await screen.findByText('Could not save: Item has used revisions')).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /Support$/ })).toBeInTheDocument();
     });
@@ -545,8 +598,8 @@ describe('ProjectFilesPanel', () => {
 
     it('does not rename to an unchanged or blank name, and Escape cancels', async () => {
       render(<ProjectFilesPanel projectId={7} />);
-      await screen.findByText('Support');
-      const row = () => rowOf(/Support$/);
+      const tray = await openTray(20);
+      const row = () => tray;
       await userEvent.click(within(row()).getByRole('button', { name: 'Rename' }));
       await userEvent.keyboard('{Enter}');
       expect(screen.queryByRole('textbox', { name: 'Rename' })).not.toBeInTheDocument();
@@ -564,8 +617,7 @@ describe('ProjectFilesPanel', () => {
 
     it('sends exactly one rename request for a real rename', async () => {
       render(<ProjectFilesPanel projectId={7} />);
-      await screen.findByText('Support');
-      await userEvent.click(within(rowOf(/Support$/)).getByRole('button', { name: 'Rename' }));
+      await userEvent.click(within(await openTray(20)).getByRole('button', { name: 'Rename' }));
       await userEvent.clear(screen.getByRole('textbox', { name: 'Rename' }));
       await userEvent.type(screen.getByRole('textbox', { name: 'Rename' }), 'Nouveau{Enter}');
       await waitFor(() => expect(calls).toEqual(['rename:20']));

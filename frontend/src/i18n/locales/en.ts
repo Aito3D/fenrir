@@ -10404,6 +10404,16 @@ export default {
       saveFailed: 'Could not save',
       fileCount_one: '{{count}} file',
       fileCount_other: '{{count}} files',
+      olderRevision: 'Older revision',
+      details: 'Details',
+      outdatedBadge: 'Outdated',
+      dropToCreate: 'Drop a .3mf or click',
+      dropToCreateHint: 'Creates a new item',
+    },
+    slice: {
+      failed: 'Slice failed: {{detail}}',
+      downloadSliced: 'Download sliced file',
+      openInSlicer: 'Open in slicer',
     },
     aito: {
       projectLabel: 'Project',

@@ -10333,6 +10333,16 @@ export default {
       saveFailed: "Impossible d'enregistrer",
       fileCount_one: '{{count}} fichier',
       fileCount_other: '{{count}} fichiers',
+      olderRevision: 'Révision antérieure',
+      details: 'Détails',
+      outdatedBadge: 'Périmé',
+      dropToCreate: 'Déposez un .3mf ou cliquez',
+      dropToCreateHint: 'Crée un nouvel élément',
+    },
+    slice: {
+      failed: 'Échec du tranchage : {{detail}}',
+      downloadSliced: 'Télécharger le fichier tranché',
+      openInSlicer: 'Ouvrir dans le trancheur',
     },
     aito: {
       projectLabel: 'Projet',

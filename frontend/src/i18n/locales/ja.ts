@@ -10347,6 +10347,16 @@ export default {
       saveFailed: '保存できませんでした',
       fileCount_one: '{{count}}件のファイル',
       fileCount_other: '{{count}}件のファイル',
+      olderRevision: '以前のリビジョン',
+      details: '詳細',
+      outdatedBadge: '古い',
+      dropToCreate: '.3mf をドロップまたはクリック',
+      dropToCreateHint: '新しいアイテムを作成',
+    },
+    slice: {
+      failed: 'スライスに失敗しました: {{detail}}',
+      downloadSliced: 'スライス済みファイルをダウンロード',
+      openInSlicer: 'スライサーで開く',
     },
     aito: {
       projectLabel: 'プロジェクト',

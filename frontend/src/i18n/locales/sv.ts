@@ -10372,6 +10372,16 @@ errors: {
       saveFailed: 'Kunde inte spara',
       fileCount_one: '{{count}} fil',
       fileCount_other: '{{count}} filer',
+      olderRevision: 'Äldre revision',
+      details: 'Detaljer',
+      outdatedBadge: 'Inaktuell',
+      dropToCreate: 'Släpp en .3mf eller klicka',
+      dropToCreateHint: 'Skapar ett nytt objekt',
+    },
+    slice: {
+      failed: 'Slicingen misslyckades: {{detail}}',
+      downloadSliced: 'Ladda ned den slicade filen',
+      openInSlicer: 'Öppna i slicern',
     },
     aito: {
       projectLabel: 'Projekt',

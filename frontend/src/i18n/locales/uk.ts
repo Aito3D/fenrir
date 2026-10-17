@@ -9976,6 +9976,16 @@ export default {
       saveFailed: 'Не вдалося зберегти',
       fileCount_one: 'Файлів: {{count}}',
       fileCount_other: 'Файлів: {{count}}',
+      olderRevision: 'Попередня ревізія',
+      details: 'Подробиці',
+      outdatedBadge: 'Застаріло',
+      dropToCreate: 'Перетягніть .3mf або натисніть',
+      dropToCreateHint: 'Створює новий елемент',
+    },
+    slice: {
+      failed: 'Не вдалося нарізати: {{detail}}',
+      downloadSliced: 'Завантажити нарізаний файл',
+      openInSlicer: 'Відкрити у слайсері',
     },
     aito: {
       projectLabel: 'Проєкт',

@@ -9950,6 +9950,16 @@ export default {
       saveFailed: 'Не удалось сохранить',
       fileCount_one: 'Файлов: {{count}}',
       fileCount_other: 'Файлов: {{count}}',
+      olderRevision: 'Более ранняя ревизия',
+      details: 'Подробности',
+      outdatedBadge: 'Устарело',
+      dropToCreate: 'Перетащите .3mf или нажмите',
+      dropToCreateHint: 'Создаёт новый элемент',
+    },
+    slice: {
+      failed: 'Не удалось нарезать: {{detail}}',
+      downloadSliced: 'Скачать нарезанный файл',
+      openInSlicer: 'Открыть в слайсере',
     },
     aito: {
       projectLabel: 'Проект',

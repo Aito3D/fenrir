@@ -10356,6 +10356,16 @@ export default {
       saveFailed: 'No se pudo guardar',
       fileCount_one: '{{count}} archivo',
       fileCount_other: '{{count}} archivos',
+      olderRevision: 'Revisión anterior',
+      details: 'Detalles',
+      outdatedBadge: 'Desactualizado',
+      dropToCreate: 'Suelta un .3mf o haz clic',
+      dropToCreateHint: 'Crea un elemento nuevo',
+    },
+    slice: {
+      failed: 'Error al laminar: {{detail}}',
+      downloadSliced: 'Descargar el archivo laminado',
+      openInSlicer: 'Abrir en el laminador',
     },
     aito: {
       projectLabel: 'Proyecto',

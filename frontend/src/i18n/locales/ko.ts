@@ -9967,6 +9967,16 @@ export default {
       saveFailed: '저장할 수 없습니다',
       fileCount_one: '파일 {{count}}개',
       fileCount_other: '파일 {{count}}개',
+      olderRevision: '이전 리비전',
+      details: '세부 정보',
+      outdatedBadge: '오래됨',
+      dropToCreate: '.3mf를 놓거나 클릭',
+      dropToCreateHint: '새 항목을 만듭니다',
+    },
+    slice: {
+      failed: '슬라이스 실패: {{detail}}',
+      downloadSliced: '슬라이스된 파일 다운로드',
+      openInSlicer: '슬라이서에서 열기',
     },
     aito: {
       projectLabel: '프로젝트',

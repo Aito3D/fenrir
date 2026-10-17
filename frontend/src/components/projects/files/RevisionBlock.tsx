@@ -31,13 +31,15 @@ interface Props {
   revision: ProjectRevisionOut;
   derivedOptions: DerivedOption[];
   actions: FileActions;
+  /** Opens with the fork form already showing (the card's ⋯ "Fork as new item"). */
+  initialForking?: boolean;
 }
 
 const btnCls = `inline-flex min-h-[44px] items-center gap-1 rounded-lg px-2 py-1 text-xs text-bambu-gray-light hover:bg-bambu-dark-tertiary hover:text-white md:min-h-0 ${focusRingCls}`;
 
 const isResliceable = (f: ProjectFileOut) => f.filename.toLowerCase().endsWith('.3mf'); // incl. .gcode.3mf, as the backend
 
-export function RevisionBlock({ item, revision, derivedOptions, actions }: Props) {
+export function RevisionBlock({ item, revision, derivedOptions, actions, initialForking = false }: Props) {
   const { t, i18n } = useTranslation();
   const { hasPermission } = useAuth();
   // Disabled section (printing files only for now): read-only except delete; print and download stay.
@@ -49,7 +51,9 @@ export function RevisionBlock({ item, revision, derivedOptions, actions }: Props
     hasPermission('projects:update') && hasPermission('library:upload') && hasPermission('pipelines:read') && isSectionEnabled(item.section);
   const [preview, setPreview] = useState<ProjectFileOut | null>(null);
   const [editingNote, setEditingNote] = useState(false);
-  const [forking, setForking] = useState<string | null>(null);
+  const [forking, setForking] = useState<string | null>(() =>
+    initialForking ? `${item.name} (${revisionNumberLabel(revision.number)})` : null,
+  );
   const [printing, setPrinting] = useState<ProjectFileOut | null>(null);
   const [reslicing, setReslicing] = useState<number | null>(null); // source file id
   const running = actions.reslice.runFor(item.id);

@@ -10348,6 +10348,16 @@ export default {
       saveFailed: 'Speichern fehlgeschlagen',
       fileCount_one: '{{count}} Datei',
       fileCount_other: '{{count}} Dateien',
+      olderRevision: 'Ältere Revision',
+      details: 'Einzelheiten',
+      outdatedBadge: 'Veraltet',
+      dropToCreate: '.3mf ablegen oder klicken',
+      dropToCreateHint: 'Erstellt ein neues Element',
+    },
+    slice: {
+      failed: 'Slicen fehlgeschlagen: {{detail}}',
+      downloadSliced: 'Geslicte Datei herunterladen',
+      openInSlicer: 'Im Slicer öffnen',
     },
     aito: {
       projectLabel: 'Projekt',

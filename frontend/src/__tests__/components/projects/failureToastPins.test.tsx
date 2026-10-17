@@ -10,12 +10,18 @@ vi.mock('../../../contexts/ToastContext', () => ({ useToast: () => ({ showToast 
 
 import { api } from '../../../api/client';
 import { createTestQueryClient } from '../../utils';
+import { AuthProvider } from '../../../contexts/AuthContext';
 import { useFileActions } from '../../../components/projects/files/useFileActions';
 import { useResliceJobs } from '../../../components/projects/reslice/useResliceJobs';
 
 function wrapper({ children }: { children: ReactNode }) {
   const client = createTestQueryClient();
-  return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+  // AuthProvider: useFileActions reads the settings (Open in slicer's desktop slicer).
+  return (
+    <QueryClientProvider client={client}>
+      <AuthProvider>{children}</AuthProvider>
+    </QueryClientProvider>
+  );
 }
 
 beforeEach(() => {

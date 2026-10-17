@@ -1289,7 +1289,11 @@ export interface ProjectListItem {
 export type ProjectSection = 'scan' | 'modelisation' | 'impression' | 'usinage' | 'docs';
 export type RevisionStatus = 'wip' | 'valide' | 'obsolete';
 export interface RevisionRef { id: number; item_id: number; item_name: string; section: ProjectSection; number: number; status: RevisionStatus }
-export interface ProjectFileOut { id: number; filename: string; file_type: string; file_size: number; file_hash: string | null; has_thumbnail: boolean; created_at: string }
+export interface ProjectFileOut {
+  id: number; filename: string; file_type: string; file_size: number; file_hash: string | null; has_thumbnail: boolean; created_at: string;
+  /** From the file's metadata: set on a revision's sliced file, else null. */
+  print_time_seconds?: number | null; filament_used_grams?: number | null;
+}
 export interface ProjectRevisionOut { id: number; number: number; status: RevisionStatus; note: string | null; derived_from: RevisionRef | null; outdated_by: RevisionRef | null; print_profile: Record<string, unknown> | null; slicer_name: string | null; slicer_version: string | null; has_snapshot: boolean; used: boolean; print_count: number; pipeline_name: string | null; files: ProjectFileOut[]; created_by: string | null; created_at: string; status_changed_at: string | null; slice_status: 'slicing' | 'sliced' | 'failed' | null; slice_error: string | null; slice_job_id: number | null; sliced_file: ProjectFileOut | null }
 export interface ResliceResult { project_id: number; item_id: number; revision_id: number; revision_number: number; file_id: number | null; filename: string }
 export interface ProjectItemOut { id: number; section: ProjectSection; name: string; name_key: string; forked_from: RevisionRef | null; revisions: ProjectRevisionOut[] }

@@ -98,8 +98,16 @@ async function openPrintRevision(user: ReturnType<typeof userEvent.setup>) {
   return screen.getByTestId('revision-3');
 }
 
+/** The print modal's own Print buttons (the item card's Print icon button left out). */
+const modalPrintButtons = () =>
+  screen.queryAllByRole('button', { name: /^print$/i }).filter((b) => !b.closest('[data-testid^="item-card-"]'));
+
 async function submitModal(user: ReturnType<typeof userEvent.setup>) {
-  const button = await screen.findByRole('button', { name: /^print$/i });
+  const button = await waitFor(() => {
+    const [found] = modalPrintButtons();
+    expect(found).toBeDefined();
+    return found;
+  });
   await waitFor(() => expect(button).toBeEnabled());
   await user.click(button);
   await waitFor(() => expect(bodies.length).toBe(1));
@@ -198,7 +206,7 @@ describe('Print from a project revision', () => {
     await screen.findByRole('dialog', { name: 'Which order is this print for?' });
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('dialog', { name: 'Which order is this print for?' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /^print$/i })).not.toBeInTheDocument();
+    expect(modalPrintButtons()).toEqual([]);
     expect(screen.getByTestId('revision-3')).toBeInTheDocument();
   });
 

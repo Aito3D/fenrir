@@ -10333,6 +10333,16 @@ export default {
       saveFailed: 'Não foi possível salvar',
       fileCount_one: '{{count}} arquivo',
       fileCount_other: '{{count}} arquivos',
+      olderRevision: 'Revisão anterior',
+      details: 'Detalhes',
+      outdatedBadge: 'Desatualizado',
+      dropToCreate: 'Solte um .3mf ou clique',
+      dropToCreateHint: 'Cria um novo item',
+    },
+    slice: {
+      failed: 'Falha ao fatiar: {{detail}}',
+      downloadSliced: 'Baixar o arquivo fatiado',
+      openInSlicer: 'Abrir no fatiador',
     },
     aito: {
       projectLabel: 'Projeto',

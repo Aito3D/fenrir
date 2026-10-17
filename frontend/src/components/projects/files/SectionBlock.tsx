@@ -5,8 +5,8 @@ import type { ProjectItemOut, ProjectSection } from '../../../api/client';
 import { useAuth } from '../../../contexts/AuthContext';
 import { inputCls, focusRingCls } from '../../formStyles';
 import { CollapsibleHeader } from './CollapsibleHeader';
-import { ItemRow } from './ItemRow';
-import type { DerivedOption } from './RevisionBlock';
+import { ItemCard } from './ItemCard';
+import { NewItemDropCard } from './NewItemDropCard';
 import type { FileActions } from './useFileActions';
 import { itemNameFromFile, itemNameKey } from './fileDrop';
 import { useFileDropZone } from './useFileDropZone';
@@ -15,11 +15,10 @@ import { PRINTABLE_ACCEPT, SECTION_LABEL_KEYS } from './filesUi';
 interface Props {
   section: ProjectSection;
   items: ProjectItemOut[];
-  derivedOptions: DerivedOption[];
   actions: FileActions;
 }
 
-export function SectionBlock({ section, items, derivedOptions, actions }: Props) {
+export function SectionBlock({ section, items, actions }: Props) {
   const { t } = useTranslation();
   const { hasPermission } = useAuth();
   const canUpdate = hasPermission('projects:update');
@@ -30,6 +29,8 @@ export function SectionBlock({ section, items, derivedOptions, actions }: Props)
   // Item created by this form whose first upload failed: a retry only re-uploads.
   const [createdId, setCreatedId] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // The item whose details tray is open (one at a time).
+  const [openId, setOpenId] = useState<number | null>(null);
   const chooser = useRef<HTMLInputElement>(null);
 
   const onDropFiles = async (dropped: File[]) => {
@@ -115,9 +116,15 @@ export function SectionBlock({ section, items, derivedOptions, actions }: Props)
             </form>
           )}
           {items.length === 0 && !creating && <p className="px-1 py-2 text-xs text-bambu-gray">{t('projectsPdm.files.emptySection')}</p>}
-          {items.length > 0 && (
-            <ul className="space-y-2">
-              {items.map((item) => <ItemRow key={item.id} item={item} derivedOptions={derivedOptions} actions={actions} />)}
+          {(items.length > 0 || canUpdate) && (
+            // Dense flow: the full-width tray sits right after its card in the DOM, and the cards
+            // after it fill the rest of that card's row, so the tray opens under the row.
+            <ul className="grid grid-flow-row-dense grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+              {items.map((item) => (
+                <ItemCard key={item.id} item={item} actions={actions} open={openId === item.id}
+                  onToggleDetails={() => setOpenId((id) => (id === item.id ? null : item.id))} />
+              ))}
+              {canUpdate && <NewItemDropCard section={section} onFiles={onDropFiles} />}
             </ul>
           )}
         </div>

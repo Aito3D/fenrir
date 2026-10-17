@@ -12,12 +12,18 @@ import { useAuth } from '../contexts/AuthContext';
  */
 export function useUiSettings(options: { enabled?: boolean; staleTime?: number } = {}) {
   const { hasPermission } = useAuth();
-  const readsAll = hasPermission('settings:read');
   return useQuery<UiSettings>({
-    queryKey: readsAll ? ['settings'] : ['ui-settings'],
-    queryFn: readsAll ? () => api.getSettings() : () => api.getUiSettings(),
+    ...uiSettingsQuery(hasPermission('settings:read')),
     ...options,
   });
+}
+
+/** useUiSettings' key and fetcher, for a one-off `queryClient.fetchQuery` at click time. */
+export function uiSettingsQuery(readsAll: boolean) {
+  return {
+    queryKey: readsAll ? ['settings'] : ['ui-settings'],
+    queryFn: (readsAll ? () => api.getSettings() : () => api.getUiSettings()) as () => Promise<UiSettings>,
+  };
 }
 
 /** Whether G-code snippets are set up, from either form of the settings. */

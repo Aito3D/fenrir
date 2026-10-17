@@ -79,6 +79,13 @@ beforeEach(() => {
 });
 
 const rowOf = (name: RegExp) => screen.getByRole('button', { name }).closest('li')!;
+const cardOf = (id: number) => screen.getByTestId(`item-card-${id}`);
+/** Opens an item's details tray from its card name (the ⋯ button also has aria-expanded). */
+const openTray = async (id: number) => {
+  const card = await screen.findByTestId(`item-card-${id}`);
+  await userEvent.click(within(card).getAllByRole('button', { expanded: false }).find((el) => !el.hasAttribute('aria-haspopup'))!);
+  return screen.getByTestId(`item-tray-${id}`);
+};
 const treeFetches = () => requests.filter((r) => r.method === 'GET' && r.path === '/api/v1/projects/7/tree').length;
 
 describe('ProjectFilesPanel actions', () => {
@@ -91,8 +98,7 @@ describe('ProjectFilesPanel actions', () => {
       }),
     );
     render(<ProjectFilesPanel projectId={7} />);
-    await screen.findByText('Support');
-    await userEvent.click(within(rowOf(/Support$/)).getByRole('button', { name: 'Rename' }));
+    await userEvent.click(within(await openTray(20)).getByRole('button', { name: 'Rename' }));
     const input = screen.getByRole('textbox', { name: 'Rename' });
     expect(input).toHaveValue('Support');
     await userEvent.clear(input);
@@ -110,8 +116,7 @@ describe('ProjectFilesPanel actions', () => {
       }),
     );
     render(<ProjectFilesPanel projectId={7} />);
-    await screen.findByText('Gabarit');
-    await userEvent.click(within(rowOf(/Gabarit$/)).getByRole('button', { name: 'Rename' }));
+    await userEvent.click(within(await openTray(40)).getByRole('button', { name: 'Rename' }));
     const input = screen.getByRole('textbox', { name: 'Rename' });
     await userEvent.clear(input);
     await userEvent.type(input, 'Gabarit 2');
@@ -152,12 +157,12 @@ describe('ProjectFilesPanel actions', () => {
       }),
     );
     render(<ProjectFilesPanel projectId={7} />);
-    await screen.findByText('Support');
-    await userEvent.click(within(rowOf(/Support$/)).getByRole('button', { name: 'Delete item' }));
+    const tray = await openTray(20);
+    await userEvent.click(within(tray).getByRole('button', { name: 'Delete item' }));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(mutations()).toEqual([]);
 
-    await holdToConfirm(within(rowOf(/Support$/)).getByRole('button', { name: 'Delete item' }));
+    await holdToConfirm(within(tray).getByRole('button', { name: 'Delete item' }));
     await waitFor(() => expect(screen.queryByRole('button', { name: /Support$/ })).not.toBeInTheDocument());
     expect(screen.getByRole('button', { name: /Support X1C$/ })).toBeInTheDocument();
     expect(mutations()).toEqual([{ method: 'DELETE', path: '/api/v1/projects/items/20', body: null }]);
@@ -172,16 +177,20 @@ describe('ProjectFilesPanel actions', () => {
       }),
     );
     render(<ProjectFilesPanel projectId={7} />);
-    await userEvent.click(await screen.findByRole('button', { name: /Support$/ }));
+    await openTray(20);
     // A used revision offers no delete.
+    await userEvent.click(within(cardOf(20)).getByRole('button', { name: 'R1' }));
     expect(within(screen.getByTestId('revision-1')).queryByRole('button', { name: 'Delete revision' })).not.toBeInTheDocument();
+    await userEvent.click(within(cardOf(20)).getByRole('button', { name: 'R2' }));
     await userEvent.click(within(screen.getByTestId('revision-2')).getByRole('button', { name: 'Delete revision' }));
     expect(mutations()).toEqual([]);
 
     await holdToConfirm(within(screen.getByTestId('revision-2')).getByRole('button', { name: 'Delete revision' }));
     await waitFor(() => expect(screen.queryByTestId('revision-2')).not.toBeInTheDocument());
+    // The card falls back to the newest revision left.
     expect(screen.getByTestId('revision-1')).toBeInTheDocument();
-    expect(within(rowOf(/Support$/)).getByText(/R1 · Obsolete/)).toBeInTheDocument();
+    expect(within(cardOf(20)).getByRole('button', { name: 'R1' })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(cardOf(20)).getByText('Obsolete')).toBeInTheDocument();
     expect(mutations()).toEqual([{ method: 'DELETE', path: '/api/v1/projects/revisions/2', body: null }]);
   });
 
@@ -217,9 +226,9 @@ describe('ProjectFilesPanel actions', () => {
     );
     render(<ProjectFilesPanel projectId={7} />);
     await userEvent.click(await screen.findByRole('button', { name: /Gabarit$/ }));
-    expect(within(rowOf(/Gabarit$/)).getByText(/R1 · In progress/)).toBeInTheDocument();
+    expect(within(cardOf(40)).getByText('In progress')).toBeInTheDocument();
     await userEvent.selectOptions(within(screen.getByTestId('revision-4')).getByLabelText('Status'), 'valide');
-    expect(await within(rowOf(/Gabarit$/)).findByText(/R1 · Approved/)).toBeInTheDocument();
+    expect(await within(cardOf(40)).findByText('Approved')).toBeInTheDocument();
     expect(within(screen.getByTestId('revision-4')).getByLabelText('Status')).toHaveValue('valide');
     expect(mutations()).toEqual([{ method: 'PATCH', path: '/api/v1/projects/revisions/4', body: { status: 'valide' } }]);
   });
@@ -334,10 +343,10 @@ describe('ProjectFilesPanel actions', () => {
     fireEvent.dragLeave(section, { relatedTarget: null });
     expect(section.className).not.toContain('border-bambu-green');
     fireEvent.dragOver(row);
-    expect(row.className).toContain('border-bambu-green');
+    expect(row.className).toContain('ring-bambu-green');
     expect(section.className).not.toContain('border-bambu-green'); // the item stops the drag reaching its section
     fireEvent.dragLeave(row, { relatedTarget: null });
-    expect(row.className).not.toContain('border-bambu-green');
+    expect(row.className).not.toContain('ring-bambu-green');
   });
 
   it('collapses and reopens a section', async () => {
@@ -455,11 +464,11 @@ describe('files panel drop zone handlers', () => {
     let notPrevented = true;
     expect(reachesDocument('dragover', () => (notPrevented = fireEvent.dragOver(row, textDrag)))).toBe(false);
     expect(notPrevented).toBe(false);
-    expect(row.className).toContain('border-bambu-green');
+    expect(row.className).toContain('ring-bambu-green');
     leaveTo(row, row.firstElementChild);
-    expect(row.className).toContain('border-bambu-green');
+    expect(row.className).toContain('ring-bambu-green');
     leaveTo(row, null);
-    expect(row.className).not.toContain('border-bambu-green');
+    expect(row.className).not.toContain('ring-bambu-green');
   });
 
   it('a drop on a section is claimed and bubbles on; on an item row it is claimed and stopped', async () => {
@@ -478,7 +487,7 @@ describe('files panel drop zone handlers', () => {
     notPrevented = true;
     expect(reachesDocument('drop', () => (notPrevented = fireEvent.drop(row, empty)))).toBe(false);
     expect(notPrevented).toBe(false);
-    expect(row.className).not.toContain('border-bambu-green');
+    expect(row.className).not.toContain('ring-bambu-green');
     await controlDrop();
     expect(mutations()).toEqual([uploadOf(40)]);
   });
@@ -524,7 +533,7 @@ describe('files panel drop zone handlers', () => {
       expect(section.className).not.toContain('border-bambu-green');
       const row = rowOf(/Support$/);
       expect(reachesDocument('dragover', () => expect(fireEvent.dragOver(row)).toBe(false))).toBe(false);
-      expect(row.className).not.toContain('border-bambu-green');
+      expect(row.className).not.toContain('ring-bambu-green');
       // No upload is possible here, so no positive control: spy on the client instead. A taken
       // drop reaches it synchronously (the upload chain has no await before the request).
       const create = vi.spyOn(api, 'createProjectItem');

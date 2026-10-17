@@ -10372,6 +10372,16 @@ export default {
       saveFailed: 'Opslaan mislukt',
       fileCount_one: '{{count}} bestand',
       fileCount_other: '{{count}} bestanden',
+      olderRevision: 'Oudere revisie',
+      details: 'Bijzonderheden',
+      outdatedBadge: 'Verouderd',
+      dropToCreate: 'Sleep een .3mf hierheen of klik',
+      dropToCreateHint: 'Maakt een nieuw onderdeel',
+    },
+    slice: {
+      failed: 'Slicen mislukt: {{detail}}',
+      downloadSliced: 'Geslicet bestand downloaden',
+      openInSlicer: 'Openen in de slicer',
     },
     aito: {
       projectLabel: 'Project',

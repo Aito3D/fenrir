@@ -10331,6 +10331,16 @@ export default {
       saveFailed: '无法保存',
       fileCount_one: '{{count}} 个文件',
       fileCount_other: '{{count}} 个文件',
+      olderRevision: '旧版本',
+      details: '详情',
+      outdatedBadge: '已过时',
+      dropToCreate: '拖放 .3mf 或点击',
+      dropToCreateHint: '创建新项目',
+    },
+    slice: {
+      failed: '切片失败：{{detail}}',
+      downloadSliced: '下载切片文件',
+      openInSlicer: '在切片软件中打开',
     },
     aito: {
       projectLabel: '项目',

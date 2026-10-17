@@ -10274,6 +10274,16 @@ export default {
       saveFailed: 'Kaydedilemedi',
       fileCount_one: '{{count}} dosya',
       fileCount_other: '{{count}} dosya',
+      olderRevision: 'Eski revizyon',
+      details: 'Ayrıntılar',
+      outdatedBadge: 'Güncel değil',
+      dropToCreate: 'Bir .3mf bırakın veya tıklayın',
+      dropToCreateHint: 'Yeni bir öğe oluşturur',
+    },
+    slice: {
+      failed: 'Dilimleme başarısız: {{detail}}',
+      downloadSliced: 'Dilimlenmiş dosyayı indir',
+      openInSlicer: 'Dilimleyicide aç',
     },
     aito: {
       projectLabel: 'Proje',
