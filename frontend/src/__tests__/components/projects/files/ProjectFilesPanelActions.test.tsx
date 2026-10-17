@@ -20,6 +20,7 @@ import {
   rev as baseRev,
 } from '../../../fixtures/projectTree';
 import { reachesDocument } from '../../../dragHelpers';
+import { holdToConfirm } from '../../../holdHelpers';
 
 vi.mock('../../../../components/ModelViewerModal', () => ({
   ModelViewerModal: ({ title, libraryFileId, onClose }: { title: string; libraryFileId: number; onClose: () => void }) => (
@@ -78,8 +79,6 @@ beforeEach(() => {
 });
 
 const rowOf = (name: RegExp) => screen.getByRole('button', { name }).closest('li')!;
-const dangerButton = (name: string) =>
-  screen.getAllByRole('button', { name }).find((b) => b.className.includes('bg-red-500'))!;
 const treeFetches = () => requests.filter((r) => r.method === 'GET' && r.path === '/api/v1/projects/7/tree').length;
 
 describe('ProjectFilesPanel actions', () => {
@@ -144,7 +143,7 @@ describe('ProjectFilesPanel actions', () => {
     ]);
   });
 
-  it('deletes an item only after the confirmation; cancelling sends nothing', async () => {
+  it('deletes an item only on a full hold; a tap sends nothing', async () => {
     server.use(
       http.delete('/api/v1/projects/items/:id', async ({ request }) => {
         await record(request);
@@ -155,20 +154,16 @@ describe('ProjectFilesPanel actions', () => {
     render(<ProjectFilesPanel projectId={7} />);
     await screen.findByText('Support');
     await userEvent.click(within(rowOf(/Support$/)).getByRole('button', { name: 'Delete item' }));
-    expect(screen.getByText('Delete Support and all its revisions? Files move to the project trash.')).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-    expect(screen.queryByText(/and all its revisions/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(mutations()).toEqual([]);
 
-    await userEvent.click(within(rowOf(/Support$/)).getByRole('button', { name: 'Delete item' }));
-    await userEvent.click(dangerButton('Delete item'));
+    await holdToConfirm(within(rowOf(/Support$/)).getByRole('button', { name: 'Delete item' }));
     await waitFor(() => expect(screen.queryByRole('button', { name: /Support$/ })).not.toBeInTheDocument());
-    expect(screen.queryByText(/and all its revisions/)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Support X1C$/ })).toBeInTheDocument();
     expect(mutations()).toEqual([{ method: 'DELETE', path: '/api/v1/projects/items/20', body: null }]);
   });
 
-  it('deletes a revision only after the confirmation; cancelling sends nothing', async () => {
+  it('deletes a revision only on a full hold; a tap sends nothing', async () => {
     server.use(
       http.delete('/api/v1/projects/revisions/:id', async ({ request }) => {
         await record(request);
@@ -181,20 +176,16 @@ describe('ProjectFilesPanel actions', () => {
     // A used revision offers no delete.
     expect(within(screen.getByTestId('revision-1')).queryByRole('button', { name: 'Delete revision' })).not.toBeInTheDocument();
     await userEvent.click(within(screen.getByTestId('revision-2')).getByRole('button', { name: 'Delete revision' }));
-    expect(screen.getByText('Delete Support R2? Its files move to the project trash.')).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-    expect(screen.queryByText(/Delete Support R2\?/)).not.toBeInTheDocument();
     expect(mutations()).toEqual([]);
 
-    await userEvent.click(within(screen.getByTestId('revision-2')).getByRole('button', { name: 'Delete revision' }));
-    await userEvent.click(dangerButton('Delete revision'));
+    await holdToConfirm(within(screen.getByTestId('revision-2')).getByRole('button', { name: 'Delete revision' }));
     await waitFor(() => expect(screen.queryByTestId('revision-2')).not.toBeInTheDocument());
     expect(screen.getByTestId('revision-1')).toBeInTheDocument();
     expect(within(rowOf(/Support$/)).getByText(/R1 · Obsolete/)).toBeInTheDocument();
     expect(mutations()).toEqual([{ method: 'DELETE', path: '/api/v1/projects/revisions/2', body: null }]);
   });
 
-  it('removes one file after the confirmation; cancelling sends nothing, and the file goes after the refetch', async () => {
+  it('removes one file on a full hold; a tap sends nothing, and the file goes after the refetch', async () => {
     server.use(
       http.delete('/api/v1/projects/revisions/:rid/files/:fid', async ({ request }) => {
         await record(request);
@@ -206,12 +197,9 @@ describe('ProjectFilesPanel actions', () => {
     await userEvent.click(await screen.findByRole('button', { name: /Gabarit$/ }));
     const block = () => screen.getByTestId('revision-4');
     await userEvent.click(within(block()).getByRole('button', { name: 'Remove gabarit.gcode' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-    expect(screen.queryByText(/from Gabarit R1\?/)).not.toBeInTheDocument();
     expect(mutations()).toEqual([]);
 
-    await userEvent.click(within(block()).getByRole('button', { name: 'Remove gabarit.gcode' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Remove' }));
+    await holdToConfirm(within(block()).getByRole('button', { name: 'Remove gabarit.gcode' }));
     await waitFor(() => expect(within(block()).queryByText('gabarit.gcode')).not.toBeInTheDocument());
     expect(within(block()).getByText('gabarit.3mf')).toBeInTheDocument();
     // The last file of a revision cannot be removed.
@@ -392,7 +380,7 @@ describe('ProjectFilesPanel actions', () => {
       return older;
     };
 
-    it('deletes a legacy item after the confirmation, and the group goes once it is empty', async () => {
+    it('deletes a legacy item on a hold, and the group goes once it is empty', async () => {
       server.use(
         http.delete('/api/v1/projects/items/:id', async ({ request }) => {
           await record(request);
@@ -402,9 +390,7 @@ describe('ProjectFilesPanel actions', () => {
       );
       const older = await openOlder();
       expect(within(older).getByRole('button', { name: /Older files/ })).toHaveAttribute('aria-expanded', 'true');
-      await userEvent.click(within(rowOf(/Plan$/)).getByRole('button', { name: 'Delete item' }));
-      expect(screen.getByText('Delete Plan and all its revisions? Files move to the project trash.')).toBeInTheDocument();
-      await userEvent.click(dangerButton('Delete item'));
+      await holdToConfirm(within(rowOf(/Plan$/)).getByRole('button', { name: 'Delete item' }));
       await waitFor(() => expect(screen.queryByTestId('older-files')).not.toBeInTheDocument());
       expect(screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent)).toEqual(['Printing 3']);
       expect(mutations()).toEqual([{ method: 'DELETE', path: '/api/v1/projects/items/50', body: null }]);
@@ -425,9 +411,7 @@ describe('ProjectFilesPanel actions', () => {
       for (const absent of [/Re-slice/, /^Print/, 'Preview', /^Remove/]) {
         expect(within(block).queryByRole('button', { name: absent })).not.toBeInTheDocument();
       }
-      await userEvent.click(within(block).getByRole('button', { name: 'Delete revision' }));
-      expect(screen.getByText('Delete Plan R1? Its files move to the project trash.')).toBeInTheDocument();
-      await userEvent.click(dangerButton('Delete revision'));
+      await holdToConfirm(within(block).getByRole('button', { name: 'Delete revision' }));
       await waitFor(() => expect(screen.queryByTestId('revision-5')).not.toBeInTheDocument());
       expect(within(rowOf(/Plan$/)).getByText('0 files')).toBeInTheDocument();
       expect(mutations()).toEqual([{ method: 'DELETE', path: '/api/v1/projects/revisions/5', body: null }]);

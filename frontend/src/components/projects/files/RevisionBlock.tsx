@@ -4,7 +4,7 @@ import { Download, Eye, GitFork, Plus, Printer, Scissors, Trash2, X } from 'luci
 import { api } from '../../../api/client';
 import type { ProjectFileOut, ProjectItemOut, ProjectRevisionOut, RevisionStatus } from '../../../api/client';
 import { useAuth } from '../../../contexts/AuthContext';
-import { ConfirmModal } from '../../ConfirmModal';
+import { HoldButton } from '../../aito/HoldButton';
 import { ModelViewerModal } from '../../ModelViewerModal';
 import { inputCls, focusRingCls } from '../../formStyles';
 import { formatFileSize } from '../../../utils/file';
@@ -20,7 +20,7 @@ import {
 } from './filesUi';
 import { PrintRevisionFlow } from '../print/PrintRevisionFlow';
 import { ResliceDialog } from '../reslice/ResliceDialog';
-import { outdatedParams, revisionLabel, revisionNumberLabel } from './revisionLabel';
+import { outdatedParams, revisionNumberLabel } from './revisionLabel';
 import { DropShield } from '../DropShield';
 import { OutdatedChip } from './OutdatedChip';
 
@@ -51,8 +51,6 @@ export function RevisionBlock({ item, revision, derivedOptions, actions }: Props
   const [preview, setPreview] = useState<ProjectFileOut | null>(null);
   const [editingNote, setEditingNote] = useState(false);
   const [forking, setForking] = useState<string | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const [confirmRemove, setConfirmRemove] = useState<ProjectFileOut | null>(null);
   const [printing, setPrinting] = useState<ProjectFileOut | null>(null);
   const [reslicing, setReslicing] = useState<number | null>(null); // source file id
   const running = actions.reslice.runFor(item.id);
@@ -171,7 +169,7 @@ export function RevisionBlock({ item, revision, derivedOptions, actions }: Props
               )}
               <span className="min-w-0 flex-1 basis-40 break-all text-sm text-white">{f.filename}</span>
               <span className="text-xs text-bambu-gray">{formatFileSize(f.file_size)}</span>
-              <span className="flex flex-wrap gap-1">
+              <span className="flex flex-wrap gap-1 [&>div]:flex">
                 {canPrint && isPrintableFile(f.filename) && (
                   <button type="button" className={btnCls} aria-label={t('projectsPdm.print.printFile', { name: f.filename })}
                     onClick={() => setPrinting(f)}>
@@ -193,10 +191,16 @@ export function RevisionBlock({ item, revision, derivedOptions, actions }: Props
                   <Download className="h-3.5 w-3.5" />{t('projectsPdm.files.download')}
                 </button>
                 {canUpdate && editable && revision.files.length > 1 && (
-                  <button type="button" className={btnCls} aria-label={t('projectsPdm.files.removeFile', { name: f.filename })}
-                    onClick={() => setConfirmRemove(f)}>
-                    <X className="h-3.5 w-3.5" />
-                  </button>
+                  <HoldButton
+                    onHold={() => void actions.removeFile(revision.id, f.id)}
+                    durationMs={1000}
+                    label={t('projectsPdm.files.removeFile', { name: f.filename })}
+                    hint={t('aito.holdToDelete')}
+                    progress="perimeter"
+                    className="min-h-[44px] px-2 py-1 text-bambu-gray-light hover:bg-red-400/10 hover:text-red-400 focus-visible:ring-red-400/40 data-[holding=true]:text-red-400 md:min-h-0"
+                  >
+                    <X className="relative h-3.5 w-3.5" />
+                  </HoldButton>
                 )}
               </span>
             </li>
@@ -204,7 +208,7 @@ export function RevisionBlock({ item, revision, derivedOptions, actions }: Props
         })}
       </ul>
 
-      <div className="flex flex-wrap gap-1">
+      <div className="flex flex-wrap gap-1 [&>div]:flex">
         <button type="button" className={btnCls} onClick={() => actions.download(revision.id)}>
           <Download className="h-3.5 w-3.5" />{t('projectsPdm.files.downloadAll')}
         </button>
@@ -227,9 +231,16 @@ export function RevisionBlock({ item, revision, derivedOptions, actions }: Props
           </button>
         )}
         {canDelete && !revision.used && (
-          <button type="button" className={`${btnCls} text-red-400`} onClick={() => setConfirmDelete(true)}>
-            <Trash2 className="h-3.5 w-3.5" />{t('projectsPdm.files.deleteRevision')}
-          </button>
+          <HoldButton
+            onHold={() => void actions.deleteRevision(revision.id)}
+            durationMs={1000}
+            label={t('projectsPdm.files.deleteRevision')}
+            hint={t('aito.holdToDelete')}
+            progress="bar"
+            className="min-h-[44px] gap-1 px-2 py-1 text-xs text-red-400 hover:bg-red-400/10 focus-visible:ring-red-400/40 md:min-h-0"
+          >
+            <Trash2 className="relative h-3.5 w-3.5" /><span className="relative">{t('projectsPdm.files.deleteRevision')}</span>
+          </HoldButton>
         )}
       </div>
 
@@ -269,26 +280,6 @@ export function RevisionBlock({ item, revision, derivedOptions, actions }: Props
             }}
           />
         </DropShield>
-      )}
-      {confirmRemove && (
-        <ConfirmModal
-          title={t('projectsPdm.files.removeFile', { name: confirmRemove.filename })}
-          message={t('projectsPdm.files.confirmRemoveFile', { name: confirmRemove.filename, label: revisionLabel(item.name, revision.number) })}
-          confirmText={t('projectsPdm.files.remove')}
-          variant="danger"
-          onConfirm={() => { const fileId = confirmRemove.id; setConfirmRemove(null); void actions.removeFile(revision.id, fileId); }}
-          onCancel={() => setConfirmRemove(null)}
-        />
-      )}
-      {confirmDelete && (
-        <ConfirmModal
-          title={t('projectsPdm.files.deleteRevision')}
-          message={t('projectsPdm.files.confirmDeleteRevision', { label: revisionLabel(item.name, revision.number) })}
-          confirmText={t('projectsPdm.files.deleteRevision')}
-          variant="danger"
-          onConfirm={() => { setConfirmDelete(false); void actions.deleteRevision(revision.id); }}
-          onCancel={() => setConfirmDelete(false)}
-        />
       )}
     </div>
   );

@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { delay, http, HttpResponse } from 'msw';
 import { render } from '../../../utils';
 import { server } from '../../../mocks/server';
+import { holdToConfirm } from '../../../holdHelpers';
 import { ProjectFilesPanel } from '../../../../components/projects/files/ProjectFilesPanel';
 import { itemNameFromFile, itemNameKey } from '../../../../components/projects/files/fileDrop';
 import type { ProjectRevisionOut } from '../../../../api/client';
@@ -302,13 +303,12 @@ describe('ProjectFilesPanel', () => {
     expect(within(screen.getByTestId('revision-3')).getByText(outdated)).toBeInTheDocument();
   });
 
-  it('asks before removing a file from a revision', async () => {
+  it('removes a file from a revision only on a full hold', async () => {
     render(<ProjectFilesPanel projectId={7} />);
     await userEvent.click(await screen.findByRole('button', { name: /Gabarit$/ }));
     await userEvent.click(within(screen.getByTestId('revision-4')).getByRole('button', { name: 'Remove gabarit.gcode' }));
-    expect(screen.getByText('Remove gabarit.gcode from Gabarit R1? The file moves to the project trash.')).toBeInTheDocument();
     expect(calls).toEqual([]);
-    await userEvent.click(screen.getByRole('button', { name: 'Remove' }));
+    await holdToConfirm(within(screen.getByTestId('revision-4')).getByRole('button', { name: 'Remove gabarit.gcode' }));
     await waitFor(() => expect(calls).toEqual(['remove:4:71']));
   });
 
@@ -503,15 +503,12 @@ describe('ProjectFilesPanel', () => {
       expect(screen.getAllByRole('button', { name: /Gabarit$/ })).toHaveLength(1);
     });
 
-    it('keeps the item when deleting it is refused, after the confirmation', async () => {
+    it('keeps the item when deleting it is refused', async () => {
       fail('delete', '/api/v1/projects/items/:id', 409, 'Item has used revisions');
       render(<ProjectFilesPanel projectId={7} />);
       await screen.findByText('Support');
-      await userEvent.click(within(rowOf(/Support$/)).getByRole('button', { name: 'Delete item' }));
-      expect(screen.getByText('Delete Support and all its revisions? Files move to the project trash.')).toBeInTheDocument();
-      await userEvent.click(screen.getByText('Delete item', { selector: 'button.bg-red-500, button.bg-red-500 *' }));
+      await holdToConfirm(within(rowOf(/Support$/)).getByRole('button', { name: 'Delete item' }));
       expect(await screen.findByText('Could not save: Item has used revisions')).toBeInTheDocument();
-      expect(screen.queryByText(/and all its revisions/)).not.toBeInTheDocument();
       expect(screen.getByRole('button', { name: /Support$/ })).toBeInTheDocument();
     });
 
@@ -520,9 +517,7 @@ describe('ProjectFilesPanel', () => {
       render(<ProjectFilesPanel projectId={7} />);
       await userEvent.click(await screen.findByRole('button', { name: /Gabarit$/ }));
       const block = screen.getByTestId('revision-4');
-      await userEvent.click(within(block).getByRole('button', { name: 'Delete revision' }));
-      expect(screen.getByText('Delete Gabarit R1? Its files move to the project trash.')).toBeInTheDocument();
-      await userEvent.click(screen.getAllByRole('button', { name: 'Delete revision' }).find((b) => b.className.includes('bg-red-500'))!);
+      await holdToConfirm(within(block).getByRole('button', { name: 'Delete revision' }));
       expect(await screen.findByText('Could not save: Revision is in use')).toBeInTheDocument();
       expect(screen.getByTestId('revision-4')).toBeInTheDocument();
     });
@@ -531,8 +526,7 @@ describe('ProjectFilesPanel', () => {
       fail('delete', '/api/v1/projects/revisions/:rid/files/:fid', 409, 'Revision is frozen');
       render(<ProjectFilesPanel projectId={7} />);
       await userEvent.click(await screen.findByRole('button', { name: /Gabarit$/ }));
-      await userEvent.click(within(screen.getByTestId('revision-4')).getByRole('button', { name: 'Remove gabarit.gcode' }));
-      await userEvent.click(screen.getByRole('button', { name: 'Remove' }));
+      await holdToConfirm(within(screen.getByTestId('revision-4')).getByRole('button', { name: 'Remove gabarit.gcode' }));
       expect(await screen.findByText('Could not save: Revision is frozen')).toBeInTheDocument();
       expect(within(screen.getByTestId('revision-4')).getByText('gabarit.gcode')).toBeInTheDocument();
     });

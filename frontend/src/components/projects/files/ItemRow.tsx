@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Pencil, Trash2, Upload } from 'lucide-react';
 import type { ProjectItemOut } from '../../../api/client';
 import { useAuth } from '../../../contexts/AuthContext';
-import { ConfirmModal } from '../../ConfirmModal';
+import { HoldButton } from '../../aito/HoldButton';
 import { inputCls, focusRingCls } from '../../formStyles';
 import { Chevron } from './CollapsibleHeader';
 import { OutdatedChip } from './OutdatedChip';
@@ -32,7 +32,6 @@ export function ItemRow({ item, derivedOptions, actions }: Props) {
   const input = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
   const [renaming, setRenaming] = useState<string | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState(false);
   const revisions = [...item.revisions].sort((a, b) => b.number - a.number);
   const newest = revisions[0];
   const fileCount = newest?.files.length ?? 0;
@@ -95,7 +94,7 @@ export function ItemRow({ item, derivedOptions, actions }: Props) {
         <span className="text-xs text-bambu-gray">{t('projectsPdm.files.fileCount', { count: fileCount })}</span>
         {busy && <span role="status" className="text-xs text-bambu-green">{t('projectsPdm.files.uploading')}</span>}
         {(canUpdate || (canDelete && !isSectionEnabled(item.section))) && (
-          <span className="flex">
+          <span className="flex [&>div]:flex">
             {canUpdate && (
               <>
                 <button type="button" className={`${iconBtn} disabled:opacity-40`} aria-label={t('projectsPdm.files.newRevision')}
@@ -109,10 +108,16 @@ export function ItemRow({ item, derivedOptions, actions }: Props) {
               </>
             )}
             {canDelete && (
-              <button type="button" className={`${iconBtn} hover:text-red-400`} aria-label={t('projectsPdm.files.deleteItem')}
-                title={t('projectsPdm.files.deleteItem')} onClick={() => setConfirmDelete(true)}>
-                <Trash2 className="h-4 w-4" />
-              </button>
+              <HoldButton
+                onHold={() => void actions.deleteItem(item.id)}
+                durationMs={1000}
+                label={t('projectsPdm.files.deleteItem')}
+                hint={t('aito.holdToDelete')}
+                progress="perimeter"
+                className="h-11 w-11 justify-center text-bambu-gray hover:bg-red-400/10 hover:text-red-400 focus-visible:ring-red-400/40 data-[holding=true]:text-red-400 md:h-8 md:w-8"
+              >
+                <Trash2 className="relative h-4 w-4" />
+              </HoldButton>
             )}
           </span>
         )}
@@ -159,16 +164,6 @@ export function ItemRow({ item, derivedOptions, actions }: Props) {
             <RevisionBlock key={r.id} item={item} revision={r} derivedOptions={derivedOptions} actions={actions} />
           ))}
         </div>
-      )}
-      {confirmDelete && (
-        <ConfirmModal
-          title={t('projectsPdm.files.deleteItem')}
-          message={t('projectsPdm.files.confirmDeleteItem', { name: item.name })}
-          confirmText={t('projectsPdm.files.deleteItem')}
-          variant="danger"
-          onConfirm={() => { setConfirmDelete(false); void actions.deleteItem(item.id); }}
-          onCancel={() => setConfirmDelete(false)}
-        />
       )}
     </li>
   );
