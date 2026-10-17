@@ -43,6 +43,8 @@ from backend.app.utils.local_time import utcnow_naive
 
 logger = logging.getLogger(__name__)
 
+_COPY_FAILED_REASON = "could not copy the file"  # the OSError text (server path) is only logged
+
 _DROP_SECTIONS = {
     "scan": (".ply", ".obj", ".e57", ".xyz", ".pts"),
     "modelisation": (".step", ".stp", ".iges", ".igs", ".f3d", ".stl", ".sldprt"),
@@ -442,8 +444,10 @@ async def _skip_failed_group(
     (logged with its traceback, the session rolled back, a generic reason reported)."""
     if isinstance(exc, (OSError, project_files.ProjectFilesError)):
         code = "copy_failed" if isinstance(exc, OSError) else "conflict"
-        reason = str(exc)  # a ProjectFilesError's str() is its detail
-        logger.warning("Moving files into project %s failed for item %r: %s", project_id, name, reason)
+        detail = str(exc)  # a ProjectFilesError's str() is its detail
+        logger.warning("Moving files into project %s failed for item %r: %s", project_id, name, detail)
+        # An OSError's text carries the absolute server path: log it, never report it.
+        reason = _COPY_FAILED_REASON if isinstance(exc, OSError) else detail
     else:
         code, reason = "error", "unexpected error while moving the file"
         logger.exception("Moving files into project %s failed unexpectedly for item %r", project_id, name)

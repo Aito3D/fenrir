@@ -153,7 +153,7 @@ async def put_task_deliveries(
     body: TaskDeliveriesRequest,
     db: AsyncSession = Depends(get_db),
     user: User | None = _aito_update,
-    __: User | None = _projects_read,
+    __: User | None = _projects_update,
 ) -> TaskProjectLink:
     task = await _task(db, task_id)
     async with _link_errors(db):

@@ -701,18 +701,22 @@ async def test_a_409_while_storing_skips_the_rest_of_the_group_as_conflict_and_g
 
 
 @pytest.mark.asyncio
-async def test_a_copy_failure_reason_is_the_os_error_text(db_session, root, monkeypatch):
+async def test_a_copy_failure_reason_is_generic_and_the_os_error_is_only_logged(db_session, root, monkeypatch, caplog):
     project = await _project(db_session)
     row = await _managed(db_session, "a.gcode", b"A")
     row_id = row.id
     await db_session.commit()
+    leaky = "[Errno 13] Permission denied: '/srv/fenrir/projects/P-0001/a.gcode'"
 
     def broken(src, dest):
-        raise OSError("disk full")
+        raise OSError(leaky)
 
     monkeypatch.setattr(project_files, "_copy_hashing", broken)
-    result = await _move(db_session, project, [row])
-    assert result.skipped == [{"file_id": row_id, "code": "copy_failed", "reason": "disk full"}]
+    with caplog.at_level("WARNING", logger="backend.app.services.project_filing"):
+        result = await _move(db_session, project, [row])
+    assert result.skipped == [{"file_id": row_id, "code": "copy_failed", "reason": "could not copy the file"}]
+    assert "/srv/fenrir" not in repr(result.skipped)
+    assert leaky in caplog.text
 
 
 @pytest.mark.asyncio
