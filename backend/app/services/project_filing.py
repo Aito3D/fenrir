@@ -17,13 +17,14 @@ import re
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from pathlib import Path
-from typing import NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.routes.library import calculate_file_hash, to_absolute_path
+from backend.app.core.permissions import Permission
 from backend.app.models.library import LibraryFile, LibraryFolder
 from backend.app.models.project import Project
 from backend.app.models.project_item import ProjectItem, ProjectRevision
@@ -40,6 +41,10 @@ from backend.app.services.project_storage import (
 )
 from backend.app.services.project_suggestions import SIMILAR_NAME_THRESHOLD, similar_projects
 from backend.app.utils.local_time import utcnow_naive
+
+if TYPE_CHECKING:
+    from backend.app.core.auth import ApiKeyActor
+    from backend.app.models.user import User
 
 logger = logging.getLogger(__name__)
 
@@ -623,6 +628,13 @@ async def auto_file_enabled(db: AsyncSession) -> bool:
 
     value = await get_setting(db, AUTO_FILE_SETTING_KEY)
     return True if value is None or value == "" else setting_is_true(value)
+
+
+def may_auto_file(actor: User | ApiKeyActor | None) -> bool:
+    """Whether an upload by ``actor`` may be auto-filed by its project code.
+
+    ``actor`` is None only when auth is off (allowed); otherwise it needs ``projects:update``."""
+    return actor is None or actor.has_permission(Permission.PROJECTS_UPDATE.value)
 
 
 async def auto_file_by_code(

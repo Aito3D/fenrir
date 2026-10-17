@@ -493,10 +493,8 @@ def _copy_hashing(src: Path, dest: Path, *, nofollow: bool = False) -> tuple[int
             writer.write(chunk)
             digest.update(chunk)
             size += len(chunk)
-    try:
+    with contextlib.suppress(OSError):  # timestamps are a nicety
         _copystat(src, dest)
-    except OSError:
-        pass  # timestamps are a nicety
     return size, digest.hexdigest()
 
 
@@ -1419,10 +1417,8 @@ def _copy_thumbnail(source_thumbnail: str | None) -> tuple[str | None, Path | No
 
 def _remove_empty(*folders: Path) -> None:
     for folder in folders:
-        try:
+        with contextlib.suppress(OSError):
             folder.rmdir()
-        except OSError:
-            pass
 
 
 async def fork_revision(

@@ -2828,7 +2828,7 @@ async def _auto_file_upload(
     try:
         from backend.app.services import project_filing
 
-        if actor is not None and not actor.has_permission(Permission.PROJECTS_UPDATE.value):
+        if not project_filing.may_auto_file(actor):
             return None
         filed = await project_filing.auto_file_by_code(
             db,

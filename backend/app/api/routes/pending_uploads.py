@@ -313,9 +313,9 @@ async def archive_pending_upload(
     # Fenrir: a "P-0042_…" file also lands in that project as a copy (projects PDM phase 5),
     # unless auth is on and the caller lacks projects:update (as the library upload route).
     try:
-        from backend.app.services.project_filing import auto_file_by_code
+        from backend.app.services.project_filing import auto_file_by_code, may_auto_file
 
-        if actor is None or actor.has_permission(Permission.PROJECTS_UPDATE.value):
+        if may_auto_file(actor):
             await auto_file_by_code(
                 db,
                 filename=pending.filename,
