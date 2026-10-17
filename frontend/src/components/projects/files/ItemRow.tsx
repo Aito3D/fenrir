@@ -11,7 +11,7 @@ import { RevisionBlock } from './RevisionBlock';
 import type { DerivedOption } from './RevisionBlock';
 import type { FileActions } from './useFileActions';
 import { useFileDropZone } from './useFileDropZone';
-import { PRINTABLE_ACCEPT, STATUS_CHIP_CLS, STATUS_LABEL_KEYS, chipBase, isSectionEnabled } from './filesUi';
+import { PRINTABLE_ACCEPT, STATUS_CHIP_CLS, STATUS_LABEL_KEYS, RESLICE_UI_ENABLED, chipBase, isSectionEnabled } from './filesUi';
 import { outdatedParams, revisionNumberLabel, sectionRevisionLabel } from './revisionLabel';
 
 interface Props {
@@ -122,7 +122,7 @@ export function ItemRow({ item, derivedOptions, actions }: Props) {
           </span>
         )}
         {canUpdate && (
-          <input ref={input} type="file" multiple accept={PRINTABLE_ACCEPT} className="hidden" data-testid={`new-revision-input-${item.id}`}
+          <input ref={input} type="file" accept={PRINTABLE_ACCEPT} className="hidden" data-testid={`new-revision-input-${item.id}`}
             onChange={(e) => {
               const files = Array.from(e.target.files ?? []);
               e.target.value = '';
@@ -130,7 +130,7 @@ export function ItemRow({ item, derivedOptions, actions }: Props) {
             }} />
         )}
       </div>
-      {run && (
+      {RESLICE_UI_ENABLED && run && (
         <p role="status" className={`flex flex-wrap items-center gap-x-2 px-2 pb-2 pl-8 text-xs ${run.error ? 'text-red-400' : 'text-bambu-green'}`}>
           <span className="min-w-0 break-words">
             {run.error

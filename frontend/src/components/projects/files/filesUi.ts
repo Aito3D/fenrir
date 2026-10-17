@@ -8,8 +8,19 @@ export const SECTION_ORDER: ProjectSection[] = ['scan', 'modelisation', 'impress
  *  re-enabling a section is a one-line change on each side. */
 export const ENABLED_SECTIONS: readonly ProjectSection[] = ['impression'];
 export const PRINTABLE_EXTENSIONS = ['.3mf', '.gcode', '.bgcode'] as const; // `.gcode.3mf` ends in `.3mf`
-/** `accept` for every project upload / drop input. */
-export const PRINTABLE_ACCEPT = PRINTABLE_EXTENSIONS.join(',');
+/** `accept` for every project upload / drop input: the Bambu Studio source `.3mf` only; the
+ *  server makes the sliced files itself. */
+export const PRINTABLE_ACCEPT = '.3mf';
+
+/** The pipeline Re-slice flow (dialog, button, run status) stays built but hidden: the server
+ *  slices project prints now. Flip to bring it back. */
+export const RESLICE_UI_ENABLED = false;
+
+/** A source project file a revision may be uploaded as: `.3mf`, but not a sliced `.gcode.3mf`. */
+export function isSourceFilename(name: string): boolean {
+  const lower = name.trim().toLowerCase();
+  return lower.endsWith('.3mf') && !lower.endsWith('.gcode.3mf');
+}
 
 export function isSectionEnabled(section: ProjectSection): boolean {
   return ENABLED_SECTIONS.includes(section);

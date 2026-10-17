@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { delay, http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw';
 import { render } from '../../../utils';
 import { server } from '../../../mocks/server';
 import { holdToConfirm } from '../../../holdHelpers';
@@ -96,6 +96,8 @@ describe('itemNameKey', () => {
   });
 });
 
+const ONLY_SOURCE = 'Only Bambu Studio project files (.3mf) can be added. Sliced files (.gcode.3mf, .gcode) are made by the server.';
+
 describe('ProjectFilesPanel', () => {
   const drop = (el: Element, name: string) =>
     fireEvent.drop(el, { dataTransfer: { files: [new File(['x'], name)], types: ['Files'] } });
@@ -141,13 +143,15 @@ describe('ProjectFilesPanel', () => {
     expect(calls).toEqual(['upload:20']);
   });
 
-  it('upload inputs accept printing files only', async () => {
+  it('upload inputs accept one source .3mf only', async () => {
     render(<ProjectFilesPanel projectId={7} />);
     await screen.findByText('Support');
-    expect(screen.getByTestId('new-revision-input-20')).toHaveAttribute('accept', '.3mf,.gcode,.bgcode');
+    expect(screen.getByTestId('new-revision-input-20')).toHaveAttribute('accept', '.3mf');
+    expect(screen.getByTestId('new-revision-input-20')).not.toHaveAttribute('multiple');
     const section = sectionOf('Printing');
     await userEvent.click(within(section).getByRole('button', { name: 'New item' }));
-    expect(within(section).getByTestId('new-item-files-impression')).toHaveAttribute('accept', '.3mf,.gcode,.bgcode');
+    expect(within(section).getByTestId('new-item-files-impression')).toHaveAttribute('accept', '.3mf');
+    expect(within(section).getByTestId('new-item-files-impression')).not.toHaveAttribute('multiple');
   });
 
   it('picking a .stl in the upload input toasts and sends nothing', async () => {
@@ -155,7 +159,7 @@ describe('ProjectFilesPanel', () => {
     await screen.findByText('Support');
     // fireEvent: userEvent.upload would silently drop the file on the `accept` filter.
     fireEvent.change(screen.getByTestId('new-revision-input-20'), { target: { files: [new File(['x'], 'mesh.stl')] } });
-    expect(await screen.findByText('Only 3MF and G-code files can go into a project')).toBeInTheDocument();
+    expect(await screen.findByText(ONLY_SOURCE)).toBeInTheDocument();
     // Positive control on another item (a stray upload would leave item 20 busy): any upload
     // of the .stl was sent before it, so it is recorded by the time this one is.
     fireEvent.change(screen.getByTestId('new-revision-input-30'), { target: { files: [new File(['x'], 'b.3mf')] } });
@@ -169,7 +173,7 @@ describe('ProjectFilesPanel', () => {
     fireEvent.drop(sectionOf('Printing'), {
       dataTransfer: { files: [new File(['x'], 'bracket.3mf'), new File(['x'], 'bracket.step')], types: ['Files'] },
     });
-    expect(await screen.findByText('Only 3MF and G-code files can go into a project')).toBeInTheDocument();
+    expect(await screen.findByText(ONLY_SOURCE)).toBeInTheDocument();
     // Positive control down the same create-then-upload path: a stray create of "bracket" was
     // sent first, so it would be recorded ahead of this one.
     drop(sectionOf('Printing'), 'clamp.3mf');
@@ -183,7 +187,7 @@ describe('ProjectFilesPanel', () => {
     const section = sectionOf('Printing');
     await userEvent.click(within(section).getByRole('button', { name: 'New item' }));
     fireEvent.change(within(section).getByTestId('new-item-files-impression'), { target: { files: [new File(['x'], 'plan.pdf')] } });
-    expect(await screen.findByText('Only 3MF and G-code files can go into a project')).toBeInTheDocument();
+    expect(await screen.findByText(ONLY_SOURCE)).toBeInTheDocument();
     expect(within(section).getByLabelText('Item name')).toHaveValue('');
     expect(within(section).getByRole('button', { name: 'Choose files' })).toBeInTheDocument();
     expect(within(section).queryByRole('combobox')).not.toBeInTheDocument(); // no section picker
@@ -237,7 +241,7 @@ describe('ProjectFilesPanel', () => {
   it('dropping on a section matches items on the backend name key', async () => {
     render(<ProjectFilesPanel projectId={7} />);
     await screen.findByText('Support');
-    drop(sectionOf('Printing'), 'Sup:port.gcode');
+    drop(sectionOf('Printing'), 'Sup:port.3mf');
     await waitFor(() => expect(calls).toEqual(['upload:20']));
   });
 
@@ -355,91 +359,14 @@ describe('ProjectFilesPanel', () => {
     await userEvent.upload(screen.getByTestId('new-revision-input-20'), new File(['x'], 'b.3mf'));
     expect(await screen.findByText(/Upload failed/)).toBeInTheDocument();
   });
-  describe('Re-slice', () => {
-    const pipeline = { id: 3, name: 'H2D PETG', description: null, printer_preset: { source: 'local', id: '1' }, process_preset: { source: 'local', id: '2' }, filament_presets: [], bed_type: null, target_kind: 'printer_class', target_printer_id: null, target_model_class: 'H2D', fanout_strategy: 'max_parallel', created_by: null, created_at: '', updated_at: '' };
-    let started: unknown;
-    let job: Record<string, unknown>;
-    beforeEach(() => {
-      started = null;
-      job = { job_id: 9, status: 'running', kind: 'project_revision', source_id: 2, source_name: 'support.3mf', created_at: '', started_at: '', completed_at: null, progress: null };
-      server.use(
-        http.get('/api/v1/slicer-pipelines/', () => HttpResponse.json({ pipelines: [pipeline] })),
-        http.post('/api/v1/slicer-pipelines/3/check-eligibility', () => HttpResponse.json({ ok: true, target_kind: 'printer_class', target_printer_id: null, target_printer_name: null, target_model_class: 'H2D', issues: [], printer_reports: [] })),
-        http.get('/api/v1/projects/7/orders', () => HttpResponse.json({ orders: [] })),
-        http.post('/api/v1/projects/revisions/:id/reslice', async ({ request, params }) => {
-          started = { id: params.id, body: await request.json() };
-          return HttpResponse.json({ job_id: 9, status: 'pending', status_url: '/api/v1/slice-jobs/9' }, { status: 202 });
-        }),
-        http.get('/api/v1/slice-jobs/9', () => HttpResponse.json(job)),
-      );
-    });
-
-    const startReslice = async () => {
+  describe('Re-slice hidden', () => {
+    it('offers no Re-slice button and no Add files button', async () => {
       render(<ProjectFilesPanel projectId={7} />);
       await userEvent.click(await screen.findByRole('button', { name: /Support$/ }));
-      await userEvent.click(within(screen.getByTestId('revision-2')).getByRole('button', { name: /Re-slice/ }));
-      await userEvent.click(await screen.findByRole('radio', { name: /H2D PETG/ }));
-      await userEvent.click(screen.getByRole('button', { name: 'Slice' }));
-      await waitFor(() => expect(started).toEqual({ id: '2', body: { file_id: 50, pipeline_id: 3 } }));
-      return screen.getByRole('button', { name: /Support$/ }).closest('li')!;
-    };
-
-    it('re-slices a 3MF from its revision and shows progress on the item', async () => {
-      const row = await startReslice();
-      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-      expect(await within(row).findByText('Slicing…')).toBeInTheDocument();
-      expect(within(screen.getByTestId('revision-2')).getByRole('button', { name: /Re-slice/ })).toBeDisabled();
-    });
-
-    it('shows a failed run on the item until dismissed', async () => {
-      job = { ...job, status: 'failed', error_status: 502, error_detail: 'Sidecar unreachable' };
-      const row = await startReslice();
-      expect(await within(row).findByText('Slicing failed: Sidecar unreachable', {}, { timeout: 4000 })).toBeInTheDocument();
-      expect(within(screen.getByTestId('revision-2')).getByRole('button', { name: /Re-slice/ })).toBeEnabled();
-      await userEvent.click(within(row).getByRole('button', { name: 'Dismiss' }));
-      expect(within(row).queryByText(/Slicing failed/)).not.toBeInTheDocument();
-    });
-
-    it('opens the print flow once a "Slice + queue" run finishes', async () => {
-      let libraryFetched: string | null = null;
-      // Slow tree on completion: the panel's run must still reach the print flow.
-      server.use(
-        http.get('/api/v1/projects/7/tree', async () => {
-          if (job.status === 'completed') await delay(80);
-          return HttpResponse.json(treeBody);
-        }),
-        http.get('/api/v1/printers/', () =>
-          HttpResponse.json([{ id: 1, name: 'X1 Carbon', model: 'X1C', ip_address: '192.168.1.100', enabled: true, is_active: true }])),
-        http.get('/api/v1/printers/:id/status', () => HttpResponse.json({ connected: true, state: 'IDLE', ams: [], vt_tray: [] })),
-        http.get('/api/v1/library/files/:id', ({ params }) => {
-          libraryFetched = String(params.id);
-          return HttpResponse.json({
-            id: Number(params.id), filename: 'support.gcode.3mf', print_name: null, file_type: '3mf', folder_id: null, project_id: 7,
-            file_hash: null, file_size_bytes: 1024, thumbnail_path: null, created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z',
-          });
-        }),
-        http.get('/api/v1/library/files/:id/plates', () => HttpResponse.json({ is_multi_plate: false, plates: [] })),
-        http.get('/api/v1/library/files/:id/filament-requirements', () => HttpResponse.json({ file_id: 60, filename: 'support.gcode.3mf', filaments: [] })),
-      );
-      render(<ProjectFilesPanel projectId={7} />);
-      await userEvent.click(await screen.findByRole('button', { name: /Support$/ }));
-      await userEvent.click(within(screen.getByTestId('revision-2')).getByRole('button', { name: /Re-slice/ }));
-      await userEvent.click(await screen.findByRole('radio', { name: /H2D PETG/ }));
-      // No open order: "Slice + queue" starts right away with no task.
-      await userEvent.click(screen.getByRole('button', { name: 'Slice + queue' }));
-      await waitFor(() => expect(started).toEqual({ id: '2', body: { file_id: 50, pipeline_id: 3 } }));
-      job = { ...job, status: 'completed', result: { project_id: 7, item_id: 20, revision_id: 2, revision_number: 2, file_id: 60, filename: 'support.gcode.3mf' } };
-      expect(await screen.findByText('Support R2 created', {}, { timeout: 4000 })).toBeInTheDocument();
-      // PrintRevisionFlow → PrintModal for the new file, the order picker skipped.
-      expect(await screen.findByRole('button', { name: /^print$/i }, { timeout: 4000 })).toBeInTheDocument();
-      await waitFor(() => expect(libraryFetched).toBe('60'));
-      expect(screen.queryByRole('dialog', { name: 'Which order is this print for?' })).not.toBeInTheDocument();
-    });
-
-    it('offers no Re-slice on G-code files', async () => {
-      render(<ProjectFilesPanel projectId={7} />);
-      await userEvent.click(await screen.findByRole('button', { name: /Gabarit$/ }));
-      expect(within(screen.getByTestId('revision-4')).getAllByRole('button', { name: /Re-slice/ })).toHaveLength(1);
+      await userEvent.click(screen.getByRole('button', { name: /Gabarit$/ }));
+      expect(screen.queryByRole('button', { name: /Re-slice/ })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Add files' })).not.toBeInTheDocument();
+      expect(screen.queryByTestId('add-files-input-4')).not.toBeInTheDocument();
     });
 
     it('shows the pipeline a revision was sliced with', async () => {
@@ -480,13 +407,52 @@ describe('ProjectFilesPanel', () => {
       expect(await screen.findByText('Upload failed: HTTP 422')).toBeInTheDocument();
     });
 
-    it('toasts a failed add-files and keeps the revision as it was', async () => {
-      fail('post', '/api/v1/projects/revisions/:id/files', 409, 'Revision is frozen');
+    it('shows the translated copy for the server 400s, with the file name', async () => {
+      const cases: [string, string][] = [
+        ['server: already sliced', 'b.3mf is already sliced. Upload the original .3mf project instead.'],
+        ['server: no printer setup', 'b.3mf has no printer setup. Open it in Bambu Studio, choose the printer, and save it as a project.'],
+        ['server: one .3mf only', 'A revision holds one .3mf. Upload each part as its own item.'],
+        ['server: Only Bambu Studio project files', ONLY_SOURCE],
+        ['Server says something else', 'Upload failed: Server says something else'],
+      ];
       render(<ProjectFilesPanel projectId={7} />);
-      await userEvent.click(await screen.findByRole('button', { name: /Gabarit$/ }));
-      await userEvent.upload(screen.getByTestId('add-files-input-4'), new File(['x'], 'extra.3mf'));
-      expect(await screen.findByText('Upload failed: Revision is frozen')).toBeInTheDocument();
-      expect(within(screen.getByTestId('revision-4')).getAllByRole('listitem')).toHaveLength(2);
+      await screen.findByText('Support');
+      for (const [detail, shown] of cases) {
+        fail('post', '/api/v1/projects/items/:id/revisions', 400, detail);
+        await userEvent.upload(screen.getByTestId('new-revision-input-20'), new File(['x'], 'b.3mf'));
+        expect(await screen.findByText(shown)).toBeInTheDocument();
+      }
+    });
+
+    it('a 400 "already sliced" toasts the translated copy with the name (not the server text)', async () => {
+      fail('post', '/api/v1/projects/items/:id/revisions', 400, 'server: already sliced');
+      render(<ProjectFilesPanel projectId={7} />);
+      await screen.findByText('Support');
+      await userEvent.upload(screen.getByTestId('new-revision-input-20'), new File(['x'], 'x.3mf'));
+      expect(await screen.findByText('x.3mf is already sliced. Upload the original .3mf project instead.')).toBeInTheDocument();
+      expect(screen.queryByText(/Upload failed/)).not.toBeInTheDocument();
+    });
+
+    it('refuses a dropped .gcode.3mf before sending anything', async () => {
+      render(<ProjectFilesPanel projectId={7} />);
+      await screen.findByText('Support');
+      drop(sectionOf('Printing'), 'a.gcode.3mf');
+      expect(await screen.findByText(ONLY_SOURCE)).toBeInTheDocument();
+      drop(sectionOf('Printing'), 'clamp.3mf'); // positive control: nothing from the refused drop was sent first
+      await waitFor(() => expect(calls).toContain('upload:99'));
+      expect(calls).toEqual(['create:clamp', 'upload:99']);
+    });
+
+    it('refuses two dropped .3mf files with the one-file copy and sends nothing', async () => {
+      render(<ProjectFilesPanel projectId={7} />);
+      await screen.findByText('Support');
+      fireEvent.drop(sectionOf('Printing'), {
+        dataTransfer: { files: [new File(['x'], 'a.3mf'), new File(['x'], 'b.3mf')], types: ['Files'] },
+      });
+      expect(await screen.findByText('A revision holds one .3mf. Upload each part as its own item.')).toBeInTheDocument();
+      drop(sectionOf('Printing'), 'clamp.3mf');
+      await waitFor(() => expect(calls).toContain('upload:99'));
+      expect(calls).toEqual(['create:clamp', 'upload:99']);
     });
 
     it('keeps the old name when a rename hits a 409 name conflict', async () => {

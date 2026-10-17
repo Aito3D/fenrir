@@ -308,24 +308,6 @@ describe('ProjectFilesPanel actions', () => {
     expect(screen.queryByTestId('print-warning')).not.toBeInTheDocument();
   });
 
-  it('opens the re-slice dialog for a 3MF and closes it without starting a job', async () => {
-    server.use(
-      http.get('/api/v1/slicer-pipelines/', () => HttpResponse.json({ pipelines: [] })),
-      http.get('/api/v1/projects/7/orders', () => HttpResponse.json({ orders: [] })),
-      http.post('/api/v1/projects/revisions/:id/reslice', async ({ request }) => {
-        await record(request);
-        return HttpResponse.json({}, { status: 202 });
-      }),
-    );
-    render(<ProjectFilesPanel projectId={7} />);
-    await userEvent.click(await screen.findByRole('button', { name: /Support$/ }));
-    await userEvent.click(within(screen.getByTestId('revision-2')).getByRole('button', { name: /Re-slice/ }));
-    expect(await screen.findByRole('dialog', { name: 'Re-slice support.3mf' })).toBeInTheDocument();
-    await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel' }));
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    expect(mutations().filter((r) => r.method !== 'GET')).toEqual([]);
-  });
-
   it('the visible buttons open their hidden file pickers', async () => {
     const click = vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(() => {});
     try {
@@ -333,10 +315,9 @@ describe('ProjectFilesPanel actions', () => {
       await userEvent.click(await screen.findByRole('button', { name: /Gabarit$/ }));
       const opened = () => click.mock.contexts.map((input) => (input as HTMLInputElement).dataset.testid);
       await userEvent.click(within(rowOf(/Gabarit$/)).getByRole('button', { name: 'New revision' }));
-      await userEvent.click(within(screen.getByTestId('revision-4')).getByRole('button', { name: 'Add files' }));
       await userEvent.click(screen.getByRole('button', { name: 'New item' }));
       await userEvent.click(screen.getByRole('button', { name: 'Choose files' }));
-      expect(opened()).toEqual(['new-revision-input-40', 'add-files-input-4', 'new-item-files-impression']);
+      expect(opened()).toEqual(['new-revision-input-40', 'new-item-files-impression']);
     } finally {
       click.mockRestore();
     }
@@ -569,7 +550,7 @@ describe('useFileActions', () => {
     const add = vi.spyOn(api, 'addProjectRevisionFiles');
     const { result } = renderHook(() => useFileActions(7), { wrapper });
     await act(() => result.current.addFiles(40, 4, [printable(), pdf()]));
-    expect(await screen.findByText('Only 3MF and G-code files can go into a project')).toBeInTheDocument();
+    expect(await screen.findByText('Only Bambu Studio project files (.3mf) can be added. Sliced files (.gcode.3mf, .gcode) are made by the server.')).toBeInTheDocument();
     expect(add).not.toHaveBeenCalled();
     expect(result.current.isBusy(40)).toBe(false);
   });
@@ -577,7 +558,9 @@ describe('useFileActions', () => {
   it('acceptsFiles is true for printing files only, without a toast', () => {
     const { result } = renderHook(() => useFileActions(7), { wrapper });
     expect(result.current.acceptsFiles([printable()])).toBe(true);
-    expect(screen.queryByText('Only 3MF and G-code files can go into a project')).not.toBeInTheDocument();
+    expect(result.current.acceptsFiles([printable(), printable()])).toBe(false);
+    expect(result.current.acceptsFiles([new File(['x'], 'part.gcode.3mf')])).toBe(false);
+    expect(screen.queryByText('Only Bambu Studio project files (.3mf) can be added. Sliced files (.gcode.3mf, .gcode) are made by the server.')).not.toBeInTheDocument();
   });
 
   it('a failed action thrown as a non-Error toasts the bare failure prefix and resolves undefined', async () => {

@@ -1,6 +1,6 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Download, Eye, GitFork, Plus, Printer, Scissors, Trash2, X } from 'lucide-react';
+import { Download, Eye, GitFork, Printer, Scissors, Trash2, X } from 'lucide-react';
 import { api } from '../../../api/client';
 import type { ProjectFileOut, ProjectItemOut, ProjectRevisionOut, RevisionStatus } from '../../../api/client';
 import { useAuth } from '../../../contexts/AuthContext';
@@ -11,7 +11,7 @@ import { formatFileSize } from '../../../utils/file';
 import type { FileActions } from './useFileActions';
 import {
   PREVIEWABLE_TYPES,
-  PRINTABLE_ACCEPT,
+  RESLICE_UI_ENABLED,
   STATUS_CHIP_CLS,
   STATUS_LABEL_KEYS,
   isPrintableFile,
@@ -47,7 +47,6 @@ export function RevisionBlock({ item, revision, derivedOptions, actions }: Props
   // POST /projects/revisions/{id}/reslice's gates.
   const canReslice =
     hasPermission('projects:update') && hasPermission('library:upload') && hasPermission('pipelines:read') && isSectionEnabled(item.section);
-  const addInput = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<ProjectFileOut | null>(null);
   const [editingNote, setEditingNote] = useState(false);
   const [forking, setForking] = useState<string | null>(null);
@@ -56,7 +55,6 @@ export function RevisionBlock({ item, revision, derivedOptions, actions }: Props
   const running = actions.reslice.runFor(item.id);
   const resliceRunning = running !== undefined && running.error === null;
   const resliceable = revision.files.filter(isResliceable);
-  const busy = actions.isBusy(item.id);
   const label = revisionNumberLabel(revision.number);
   const editable = revision.status === 'wip' && !revision.used;
   const pp = revision.print_profile as Record<string, unknown> | null;
@@ -176,7 +174,7 @@ export function RevisionBlock({ item, revision, derivedOptions, actions }: Props
                     <Printer className="h-3.5 w-3.5" />{t('projectsPdm.print.print')}
                   </button>
                 )}
-                {canReslice && isResliceable(f) && (
+                {RESLICE_UI_ENABLED && canReslice && isResliceable(f) && (
                   <button type="button" className={`${btnCls} disabled:opacity-40`} disabled={resliceRunning}
                     onClick={() => setReslicing(f.id)}>
                     <Scissors className="h-3.5 w-3.5" />{t('projectsPdm.reslice.action')}
@@ -212,19 +210,6 @@ export function RevisionBlock({ item, revision, derivedOptions, actions }: Props
         <button type="button" className={btnCls} onClick={() => actions.download(revision.id)}>
           <Download className="h-3.5 w-3.5" />{t('projectsPdm.files.downloadAll')}
         </button>
-        {canUpdate && editable && (
-          <>
-            <button type="button" className={`${btnCls} disabled:opacity-40`} disabled={busy} onClick={() => addInput.current?.click()}>
-              <Plus className="h-3.5 w-3.5" />{t('projectsPdm.files.addFiles')}
-            </button>
-            <input ref={addInput} type="file" multiple accept={PRINTABLE_ACCEPT} className="hidden" data-testid={`add-files-input-${revision.id}`}
-              onChange={(e) => {
-                const files = Array.from(e.target.files ?? []);
-                e.target.value = '';
-                if (files.length) actions.addFiles(item.id, revision.id, files);
-              }} />
-          </>
-        )}
         {canUpdate && (
           <button type="button" className={btnCls} onClick={() => setForking(`${item.name} (${label})`)}>
             <GitFork className="h-3.5 w-3.5" />{t('projectsPdm.files.fork')}
@@ -267,7 +252,7 @@ export function RevisionBlock({ item, revision, derivedOptions, actions }: Props
           onClose={() => setPrinting(null)}
         />
       )}
-      {reslicing !== null && (
+      {RESLICE_UI_ENABLED && reslicing !== null && (
         <DropShield>
           <ResliceDialog
             projectId={actions.projectId}
