@@ -11,6 +11,7 @@ from datetime import datetime
 
 import pytest
 from fastapi import HTTPException
+from sqlalchemy import select
 
 from backend.app.api.routes import project_files as routes
 from backend.app.models.archive import PrintArchive
@@ -446,5 +447,14 @@ async def test_tree_hides_derived_slice_and_exposes_it(db_session):
     assert out.slice_status == "sliced"
     assert out.sliced_file is not None and out.sliced_file.id == derived.id
     assert out.slice_error is None and out.slice_job_id is None
-    # the derived row still counts for the "used" checks and is not a loose file
-    assert LibraryFile.revision_sources() is not None
+    assert out.used is False
+
+    # the derived slice alone being queued makes the revision used
+    queued = PrintQueueItem(library_file_id=derived.id)
+    db_session.add(queued)
+    await db_session.commit()
+    assert find_revision(await load_tree(db_session, project), rev.id).used is True
+
+    # revision_sources() selects the source row only
+    ids = (await db_session.execute(select(LibraryFile.id).where(LibraryFile.revision_sources()))).scalars().all()
+    assert ids == [source.id]

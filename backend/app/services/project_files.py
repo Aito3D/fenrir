@@ -1751,7 +1751,7 @@ def _revision_out(
         slicer_name=rev.slicer_name,
         slicer_version=rev.slicer_version,
         has_snapshot=rev.config_snapshot is not None,
-        used=any(f.id in rows.used for f in rev_files),
+        used=any(f.id in rows.used for f in rev_files) or (sliced is not None and sliced.id in rows.used),
         files=[_file_out(f) for f in rev_files],
         slice_status=rev.slice_status,
         slice_error=rev.slice_error,

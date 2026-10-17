@@ -6819,7 +6819,7 @@ async def _run_migrations(conn):
         conn,
         "ALTER TABLE project_revisions ADD COLUMN sliced_file_id INTEGER REFERENCES library_files (id) ON DELETE SET NULL",
     )
-    await _safe_execute(conn, "ALTER TABLE library_files ADD COLUMN derived_slice BOOLEAN NOT NULL DEFAULT 0")
+    await _safe_execute(conn, "ALTER TABLE library_files ADD COLUMN derived_slice BOOLEAN NOT NULL DEFAULT FALSE")
 
     # Migration: printer-scoped groups (#1727). Defaults off, so no existing
     # group narrows anyone's printers on upgrade; the group_printers table

@@ -2,7 +2,22 @@
 
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, Select, String, Text, and_, delete, func, select
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    ColumnElement,
+    DateTime,
+    ForeignKey,
+    Integer,
+    Select,
+    String,
+    Text,
+    and_,
+    delete,
+    false,
+    func,
+    select,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -197,7 +212,7 @@ class LibraryFile(Base):
 
     # True for the server-sliced .gcode.3mf kept behind a revision
     # (``ProjectRevision.sliced_file_id``): never listed as one of its files.
-    derived_slice: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    derived_slice: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
 
     # Soft-delete / trash bin (Issue #1008). When non-null, the file is in the
     # trash and should not appear in normal listings. A background sweeper
@@ -241,7 +256,7 @@ class LibraryFile(Base):
         return select(cls).where(cls.deleted_at.is_(None))
 
     @classmethod
-    def revision_sources(cls):
+    def revision_sources(cls) -> ColumnElement[bool]:
         """Condition: a revision's own files, without its hidden derived slice."""
         return and_(cls.revision_id.isnot(None), cls.derived_slice.is_(False))
 
