@@ -456,7 +456,14 @@ async def _skip_failed_group(
     else:
         code, reason = "error", "unexpected error while moving the file"
         logger.exception("Moving files into project %s failed unexpectedly for item %r", project_id, name)
-        await db.rollback()
+        await rollback_quietly(
+            db,
+            logger,
+            logging.WARNING,
+            "Rollback after the failed move into project %s (item %r) failed too",
+            project_id,
+            name,
+        )
     for candidate in pending:
         _skip(result, candidate.file_id, code, reason)
     refreshed = await db.get(Project, project_id)  # the rollback expired it

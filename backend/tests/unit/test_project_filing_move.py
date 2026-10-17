@@ -776,6 +776,44 @@ async def test_an_unexpected_error_while_storing_skips_the_group_as_error_and_go
 
 
 @pytest.mark.asyncio
+async def test_a_failing_rollback_after_an_unexpected_group_error_still_returns_the_result(
+    db_session, root, monkeypatch, caplog
+):
+    """T-370 (user-approved): when the rollback itself fails after an unexpected per-group error,
+    the call still returns normally: earlier groups' results are kept, the failed group's files are
+    skipped as ``error`` and a WARNING with the traceback is logged."""
+    project = await _project(db_session)
+    first = await _managed(db_session, "alpha.gcode", b"A")
+    broken = await _managed(db_session, "beta.gcode", b"B")
+    ids = [first.id, broken.id]
+    await db_session.commit()
+    real_add = project_files.add_revision_from_sources
+    real_rollback = db_session.rollback
+
+    async def failing_add(db, project, item, sources, **kwargs):
+        if item.name == "beta":
+            raise RuntimeError("boom")
+        return await real_add(db, project, item, sources, **kwargs)
+
+    async def failing_rollback():
+        monkeypatch.setattr(db_session, "rollback", real_rollback)  # only the first attempt fails
+        raise RuntimeError("rollback failed")
+
+    monkeypatch.setattr(project_files, "add_revision_from_sources", failing_add)
+    monkeypatch.setattr(db_session, "rollback", failing_rollback)
+    with caplog.at_level("WARNING", logger="backend.app.services.project_filing"):
+        result = await _move(db_session, project, [first, broken])
+
+    assert [m["file_id"] for m in result.moved] == [ids[0]]
+    assert result.skipped == [{"file_id": ids[1], "code": "error", "reason": "unexpected error while moving the file"}]
+    [warning] = [r for r in caplog.records if r.levelname == "WARNING"]
+    assert warning.getMessage() == (
+        f"Rollback after the failed move into project {project.id} (item 'beta') failed too"
+    )
+    assert str(warning.exc_info[1]) == "rollback failed"
+
+
+@pytest.mark.asyncio
 async def test_an_unexpected_error_before_the_revision_rolls_the_session_back(db_session, root, monkeypatch):
     """An exception outside add_revision_from_sources (no undo of its own ran) still leaves a
     usable session: the pending item is rolled back and the next group moves."""

@@ -53,6 +53,8 @@ import { isSlicedLibraryFile } from '../utils/libraryFiles';
 import { NumberInput } from '../components/NumberInput';
 import { CalcInput } from '../components/CalcInput';
 
+const THUMB_CLS = 'w-full h-full object-cover brightness-125 contrast-110';
+
 function formatFilament(grams: number): string {
   if (grams >= 1000) {
     return `${(grams / 1000).toFixed(2)}kg`;
@@ -168,7 +170,7 @@ function ArchiveGrid({ archives, t }: { archives: Archive[]; t: TFunction }) {
             <img
               src={api.getArchiveThumbnail(archive.id)}
               alt={archive.print_name || 'Print'}
-              className="w-full h-full object-cover brightness-125 contrast-110"
+              className={THUMB_CLS}
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-bambu-gray">
@@ -1082,7 +1084,7 @@ export function ProjectDetailPage() {
                                   <img
                                     src={api.getLibraryFileThumbnailUrl(file.id)}
                                     alt={file.print_name || file.filename}
-                                    className="w-full h-full object-cover brightness-125 contrast-110"
+                                    className={THUMB_CLS}
                                   />
                                 ) : (
                                   <FileBox className="w-5 h-5 text-bambu-gray/40" />
