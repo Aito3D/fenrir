@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { api } from '../../../api/client';
 import type { LinkedProjectRef, Permission, TaskProjectLink } from '../../../api/client';
 import { useToast } from '../../../contexts/ToastContext';
-import { nonPrintableFiles } from '../files/filesUi';
+import { isSourceFilename, refusalMessage } from '../files/filesUi';
 import { useFileDropZone } from '../files/useFileDropZone';
 import { useInvalidateProjectLinks } from './useOrderProjectLinks';
 
@@ -15,14 +15,15 @@ export function canDropFiles(hasPermission: (permission: Permission) => boolean)
   return hasPermission('aito:update') && hasPermission('projects:update') && hasPermission('projects:read');
 }
 
-/** False (with a toast) when a drop holds any non-printing file: projects hold
- *  printing files only for now, and the server refuses such a drop whole. */
-export function useAcceptsPrintable() {
+/** False (with a toast) when a drop holds anything but source `.3mf` files: sliced files are
+ *  made by the server, so nothing else is sent. Several files are fine (they group by item name). */
+export function useAcceptsSource() {
   const { t } = useTranslation();
   const { showToast } = useToast();
   return (files: readonly File[]): boolean => {
-    if (nonPrintableFiles(files).length === 0) return true;
-    showToast(t('projectsPdm.files.onlyPrintable'), 'error');
+    const refused = files.find((f) => !isSourceFilename(f.name));
+    if (!refused) return true;
+    showToast(t('projectsPdm.files.onlySource', { name: refused.name }), 'error');
     return false;
   };
 }
@@ -34,9 +35,9 @@ export function useUploadToTask() {
   const { t } = useTranslation();
   const { showToast } = useToast();
   const invalidate = useInvalidateProjectLinks();
-  const acceptsPrintable = useAcceptsPrintable();
+  const acceptsSource = useAcceptsSource();
   return async (orderId: number, taskId: number, project: LinkedProjectRef, files: File[]) => {
-    if (!acceptsPrintable(files)) return;
+    if (!acceptsSource(files)) return;
     let storedIn: number | undefined;
     try {
       const result = await api.dropFilesOnTask(taskId, files);
@@ -54,7 +55,7 @@ export function useUploadToTask() {
             count: result.results.length,
             code,
             files: notStored.join(', '),
-            reason: failed.map((e) => e.detail).join('; '),
+            reason: failed.map((e) => refusalMessage(t, e.detail, e.filenames[0] ?? '') ?? e.detail).join('; '),
           }),
           'warning',
         );
@@ -62,7 +63,11 @@ export function useUploadToTask() {
         showToast(t('projectsPdm.aito.dropped', { count: result.results.length, code }), 'success');
       }
     } catch (err) {
-      showToast(err instanceof Error && err.message ? err.message : t('projectsPdm.files.uploadFailed'), 'error');
+      const detail = err instanceof Error ? err.message : '';
+      showToast(
+        (detail && refusalMessage(t, detail, files[0]?.name ?? '')) || detail || t('projectsPdm.files.uploadFailed'),
+        'error',
+      );
     } finally {
       invalidate(orderId, [project.id, storedIn]);
     }

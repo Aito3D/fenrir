@@ -10369,7 +10369,6 @@ export default {
       chooseFiles: 'Choose files',
       uploading: 'Uploading…',
       uploadFailed: 'Upload failed',
-      onlyPrintable: 'Only 3MF and G-code files can go into a project',
       onlySource: 'Only Bambu Studio project files (.3mf) can be added. Sliced files (.gcode.3mf, .gcode) are made by the server.',
       slicedRefused: '{{name}} is already sliced. Upload the original .3mf project instead.',
       noSettingsRefused: '{{name}} has no printer setup. Open it in Bambu Studio, choose the printer, and save it as a project.',

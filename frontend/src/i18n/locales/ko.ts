@@ -9932,7 +9932,6 @@ export default {
       chooseFiles: '파일 선택',
       uploading: '업로드 중…',
       uploadFailed: '업로드 실패',
-      onlyPrintable: '프로젝트에는 3MF 및 G-code 파일만 넣을 수 있습니다',
       onlySource: 'Bambu Studio 프로젝트 파일(.3mf)만 추가할 수 있습니다. 슬라이스된 파일(.gcode.3mf, .gcode)은 서버가 만듭니다.',
       slicedRefused: '{{name}}은(는) 이미 슬라이스되었습니다. 대신 원본 .3mf 프로젝트를 업로드하세요.',
       noSettingsRefused: '{{name}}에 프린터 설정이 없습니다. Bambu Studio에서 열어 프린터를 선택하고 프로젝트로 저장하세요.',

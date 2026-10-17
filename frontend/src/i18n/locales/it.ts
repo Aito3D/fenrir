@@ -10298,7 +10298,6 @@ export default {
       chooseFiles: 'Scegli file',
       uploading: 'Caricamento…',
       uploadFailed: 'Caricamento non riuscito',
-      onlyPrintable: 'In un progetto possono andare solo file 3MF e G-code',
       onlySource: 'È possibile aggiungere solo file di progetto Bambu Studio (.3mf). I file elaborati (.gcode.3mf, .gcode) li crea il server.',
       slicedRefused: '{{name}} è già elaborato. Carica invece il progetto .3mf originale.',
       noSettingsRefused: '{{name}} non ha una configurazione della stampante. Aprilo in Bambu Studio, scegli la stampante e salvalo come progetto.',

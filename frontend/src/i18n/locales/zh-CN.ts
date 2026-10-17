@@ -10296,7 +10296,6 @@ export default {
       chooseFiles: '选择文件',
       uploading: '上传中…',
       uploadFailed: '上传失败',
-      onlyPrintable: '项目只能包含 3MF 和 G-code 文件',
       onlySource: '只能添加 Bambu Studio 项目文件（.3mf）。切片文件（.gcode.3mf、.gcode）由服务器生成。',
       slicedRefused: '{{name}} 已经切片。请改为上传原始的 .3mf 项目。',
       noSettingsRefused: '{{name}} 没有打印机设置。请在 Bambu Studio 中打开，选择打印机后另存为项目。',

@@ -1,29 +1,14 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import type { TFunction } from 'i18next';
 import { api } from '../../../api/client';
 import type { DuplicateWarning, ProjectRevisionOut, ProjectSection, RevisionStatus } from '../../../api/client';
 import { useToast } from '../../../contexts/ToastContext';
 import { useResliceJobs } from '../reslice/useResliceJobs';
 import { failureMessage } from '../failureMessage';
 import { projectKeys } from '../projectQueries';
-import { isSourceFilename } from './filesUi';
-
-/** The translated copy for a server 400 about an upload, matched by substring; null otherwise
- *  (the caller then shows the server text). */
-function refusalMessage(t: TFunction, detail: string, name: string): string | null {
-  const key = detail.includes('already sliced')
-    ? 'slicedRefused'
-    : detail.includes('no printer setup')
-      ? 'noSettingsRefused'
-      : detail.includes('one .3mf')
-        ? 'oneFile'
-        : detail.includes('Only Bambu Studio project files')
-          ? 'onlySource'
-          : null;
-  return key ? t(`projectsPdm.files.${key}`, { name }) : null;
-}
+import { useAcceptsSource } from '../aito/dropFiles';
+import { refusalMessage } from './filesUi';
 
 /** Every file-panel mutation: run, invalidate the project tree, toast on failure. */
 export function useFileActions(projectId: number) {
@@ -34,11 +19,9 @@ export function useFileActions(projectId: number) {
   /** False (with a toast) unless the files are one source `.3mf`: sliced files are made by the
    *  server and a revision holds a single project file, so nothing else is sent. Content checks
    *  (already sliced, no printer setup) stay server-side. */
+  const acceptsSource = useAcceptsSource();
   const acceptsFiles = (files: readonly File[]): boolean => {
-    if (files.some((f) => !isSourceFilename(f.name))) {
-      showToast(t('projectsPdm.files.onlySource', { name: files.find((f) => !isSourceFilename(f.name))?.name ?? '' }), 'error');
-      return false;
-    }
+    if (!acceptsSource(files)) return false;
     if (files.length > 1) {
       showToast(t('projectsPdm.files.oneFile'), 'error');
       return false;

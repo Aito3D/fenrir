@@ -1,3 +1,4 @@
+import type { TFunction } from 'i18next';
 import type { ProjectSection, RevisionStatus } from '../../../api/client';
 
 export const SECTION_ORDER: ProjectSection[] = ['scan', 'modelisation', 'impression', 'usinage', 'docs'];
@@ -32,11 +33,6 @@ export function isSectionEnabled(section: ProjectSection): boolean {
 export function isPrintableFilename(name: string): boolean {
   const lower = name.trim().toLowerCase();
   return PRINTABLE_EXTENSIONS.some((ext) => lower.endsWith(ext));
-}
-
-/** The files a project would refuse (empty = all accepted). */
-export function nonPrintableFiles(files: readonly File[]): File[] {
-  return files.filter((f) => !isPrintableFilename(f.name));
 }
 
 export const SECTION_LABEL_KEYS: Record<ProjectSection, string> = {
@@ -82,4 +78,19 @@ export function printProfileLine(profile: Record<string, unknown> | null): strin
   ]
     .filter(Boolean)
     .join(' · ');
+}
+
+/** The translated copy for a server 400 about an upload, matched by substring; null otherwise
+ *  (the caller then shows the server text). */
+export function refusalMessage(t: TFunction, detail: string, name: string): string | null {
+  const key = detail.includes('already sliced')
+    ? 'slicedRefused'
+    : detail.includes('no printer setup')
+      ? 'noSettingsRefused'
+      : detail.includes('one .3mf')
+        ? 'oneFile'
+        : detail.includes('Only Bambu Studio project files')
+          ? 'onlySource'
+          : null;
+  return key ? t(`projectsPdm.files.${key}`, { name }) : null;
 }

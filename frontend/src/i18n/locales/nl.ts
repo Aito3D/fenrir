@@ -10337,7 +10337,6 @@ export default {
       chooseFiles: 'Bestanden kiezen',
       uploading: 'Uploaden…',
       uploadFailed: 'Upload mislukt',
-      onlyPrintable: 'Alleen 3MF- en G-code-bestanden kunnen in een project',
       onlySource: 'Alleen Bambu Studio-projectbestanden (.3mf) kunnen worden toegevoegd. Geslicete bestanden (.gcode.3mf, .gcode) maakt de server zelf.',
       slicedRefused: '{{name}} is al geslicet. Upload in plaats daarvan het originele .3mf-project.',
       noSettingsRefused: '{{name}} heeft geen printerinstelling. Open het in Bambu Studio, kies de printer en sla het op als project.',

@@ -10239,7 +10239,6 @@ export default {
       chooseFiles: 'Dosya seç',
       uploading: 'Yükleniyor…',
       uploadFailed: 'Yükleme başarısız',
-      onlyPrintable: 'Bir projeye yalnızca 3MF ve G-code dosyaları eklenebilir',
       onlySource: 'Yalnızca Bambu Studio proje dosyaları (.3mf) eklenebilir. Dilimlenmiş dosyaları (.gcode.3mf, .gcode) sunucu oluşturur.',
       slicedRefused: '{{name}} zaten dilimlenmiş. Bunun yerine orijinal .3mf projesini yükleyin.',
       noSettingsRefused: '{{name}} için yazıcı ayarı yok. Bambu Studio\'da açın, yazıcıyı seçin ve proje olarak kaydedin.',

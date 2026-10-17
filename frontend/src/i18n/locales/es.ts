@@ -10321,7 +10321,6 @@ export default {
       chooseFiles: 'Elegir archivos',
       uploading: 'Subiendo…',
       uploadFailed: 'Error al subir',
-      onlyPrintable: 'Solo se pueden añadir archivos 3MF y G-code a un proyecto',
       onlySource: 'Solo se pueden añadir archivos de proyecto de Bambu Studio (.3mf). Los archivos laminados (.gcode.3mf, .gcode) los genera el servidor.',
       slicedRefused: '{{name}} ya está laminado. Sube en su lugar el proyecto .3mf original.',
       noSettingsRefused: '{{name}} no tiene configuración de impresora. Ábrelo en Bambu Studio, elige la impresora y guárdalo como proyecto.',

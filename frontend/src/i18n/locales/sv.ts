@@ -10337,7 +10337,6 @@ errors: {
       chooseFiles: 'Välj filer',
       uploading: 'Laddar upp…',
       uploadFailed: 'Uppladdningen misslyckades',
-      onlyPrintable: 'Endast 3MF- och G-code-filer kan läggas i ett projekt',
       onlySource: 'Endast Bambu Studio-projektfiler (.3mf) kan läggas till. Skivade filer (.gcode.3mf, .gcode) skapas av servern.',
       slicedRefused: '{{name}} är redan skivad. Ladda upp det ursprungliga .3mf-projektet i stället.',
       noSettingsRefused: '{{name}} saknar skrivarinställning. Öppna den i Bambu Studio, välj skrivare och spara den som ett projekt.',

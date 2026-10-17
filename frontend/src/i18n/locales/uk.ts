@@ -9941,7 +9941,6 @@ export default {
       chooseFiles: 'Вибрати файли',
       uploading: 'Завантаження…',
       uploadFailed: 'Не вдалося завантажити',
-      onlyPrintable: 'До проєкту можна додавати лише файли 3MF і G-code',
       onlySource: 'Можна додавати лише файли проєктів Bambu Studio (.3mf). Нарізані файли (.gcode.3mf, .gcode) створює сервер.',
       slicedRefused: '{{name}} уже нарізано. Завантажте натомість вихідний проєкт .3mf.',
       noSettingsRefused: 'У {{name}} не вказано принтер. Відкрийте файл у Bambu Studio, виберіть принтер і збережіть його як проєкт.',

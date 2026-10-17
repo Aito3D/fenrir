@@ -423,10 +423,57 @@ describe('TaskProjectRow', () => {
     fireEvent.drop(screen.getByTestId(`task-drop-${TASK}`), {
       dataTransfer: { files: [new File(['x'], 'support.3mf'), new File(['x'], 'support.stl')], types: ['Files'] },
     });
-    expect(await screen.findByText('Only 3MF and G-code files can go into a project')).toBeInTheDocument();
+    expect(await screen.findByText('Only Bambu Studio project files (.3mf) can be added. Sliced files (.gcode.3mf, .gcode) are made by the server.')).toBeInTheDocument();
     expect(spy).not.toHaveBeenCalled();
     expect(dropped).toBeNull();
     spy.mockRestore();
+  });
+
+  it('refuses a dropped sliced .gcode.3mf before sending anything', async () => {
+    links = linked();
+    const spy = vi.spyOn(api, 'dropFilesOnTask');
+    renderRow();
+    await screen.findByRole('link', { name: 'Drone bracket' });
+    fireEvent.drop(screen.getByTestId(`task-drop-${TASK}`), {
+      dataTransfer: { files: [new File(['x'], 'support.gcode.3mf')], types: ['Files'] },
+    });
+    expect(await screen.findByText('Only Bambu Studio project files (.3mf) can be added. Sliced files (.gcode.3mf, .gcode) are made by the server.')).toBeInTheDocument();
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it('a server 400 "already sliced" shows the translated copy with the file name', async () => {
+    links = linked();
+    server.use(
+      http.post('/api/v1/aito/tasks/:id/files', () =>
+        HttpResponse.json({ detail: 'server: already sliced' }, { status: 400 }),
+      ),
+    );
+    renderRow();
+    await screen.findByRole('link', { name: 'Drone bracket' });
+    fireEvent.drop(screen.getByTestId(`task-drop-${TASK}`), {
+      dataTransfer: { files: [new File(['x'], 'part.3mf')], types: ['Files'] },
+    });
+    expect(await screen.findByText('part.3mf is already sliced. Upload the original .3mf project instead.')).toBeInTheDocument();
+  });
+
+  it('a per-file ONE_FILE error in a partial result shows the translated copy', async () => {
+    links = linked();
+    server.use(
+      http.post('/api/v1/aito/tasks/:id/files', () =>
+        HttpResponse.json({
+          project_id: 7,
+          results: [],
+          errors: [{ filenames: ['b.3mf'], status_code: 400, detail: 'server: one .3mf only' }],
+        }),
+      ),
+    );
+    renderRow();
+    await screen.findByRole('link', { name: 'Drone bracket' });
+    fireEvent.drop(screen.getByTestId(`task-drop-${TASK}`), {
+      dataTransfer: { files: [new File(['x'], 'b.3mf')], types: ['Files'] },
+    });
+    expect(await screen.findByText(/A revision holds one \.3mf\. Upload each part as its own item\./)).toBeInTheDocument();
   });
 
   it('dropping a file on an unlinked task asks for a project first', async () => {

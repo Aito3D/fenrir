@@ -187,7 +187,7 @@ describe('card file drop', () => {
       dataTransfer: { files: [new File(['x'], 'part.3mf'), new File(['x'], 'part.stl')], types: ['Files'] },
     });
     // The toast comes from the same synchronous step that would otherwise go on to read the links.
-    expect(await screen.findByText('Only 3MF and G-code files can go into a project')).toBeInTheDocument();
+    expect(await screen.findByText('Only Bambu Studio project files (.3mf) can be added. Sliced files (.gcode.3mf, .gcode) are made by the server.')).toBeInTheDocument();
     expect(linksSpy).not.toHaveBeenCalled();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(posted).toEqual([]);
