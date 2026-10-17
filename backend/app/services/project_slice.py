@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
 import uuid
 from pathlib import Path
@@ -27,7 +28,9 @@ from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core import database
+from backend.app.core.config import settings
 from backend.app.models.library import LibraryFile
+from backend.app.models.print_queue import SLICE_WAIT_STATUSES, PrintQueueItem
 from backend.app.models.project_item import ProjectRevision
 from backend.app.services import project_files
 from backend.app.services.http_status_error import HttpStatusError
@@ -37,7 +40,8 @@ from backend.app.services.project_revisions import find_revision_bundle, lock_re
 from backend.app.services.project_storage import claim_unique_file_path, revision_dir
 from backend.app.services.slice_dispatch import http_exception_to_job_error, slice_dispatch
 from backend.app.services.slicer_api import SlicerApiError
-from backend.app.utils.threemf_tools import classify_3mf
+from backend.app.utils.printer_models import is_gcode_compatible, normalize_printer_model
+from backend.app.utils.threemf_tools import classify_3mf, extract_print_time_from_3mf
 
 logger = logging.getLogger(__name__)
 
@@ -158,12 +162,118 @@ async def on_revision_slice_done(
     """Called once a slice ends, inside its transaction, after the revision's own slice fields are set
     (``sliced`` with ``sliced_file``, or ``failed`` with ``error``); the caller commits.
 
-    The revision side needs nothing more; this is where the queue items waiting for the
-    revision's G-code follow it."""
+    The queue items waiting for the revision's G-code follow it (``settle_waiting_queue_items``
+    covers an item committed after this ran)."""
     if error is None:
         logger.info("Project revision %s sliced (library file %s)", revision.id, sliced_file and sliced_file.id)
     else:
         logger.warning("Project revision %s slice failed: %s", revision.id, error)
+    # The revision's own write first: on SQLite it takes the write lock, on PostgreSQL the row
+    # lock ``settle_waiting_queue_items`` waits on, so an item committed after the read below is
+    # seen by that settle, never by neither.
+    await db.flush()
+    await _apply_slice_outcome(db, revision.id, sliced_file, error)
+
+
+def library_file_print_time(library_file: LibraryFile, plate_id: int | None) -> int | None:
+    """The file's predicted print time: the plate's own when ``plate_id`` is set and the file
+    says, else the file's whole estimate from its metadata."""
+    print_time = (library_file.file_metadata or {}).get("print_time_seconds")
+    if plate_id:
+        lib_path = Path(library_file.file_path)
+        path = lib_path if lib_path.is_absolute() else settings.base_dir / library_file.file_path
+        if path.exists():
+            plate_time = extract_print_time_from_3mf(path, plate_id)
+            if plate_time is not None:
+                print_time = plate_time
+    return print_time
+
+
+def _required_filament_types(sliced_file: LibraryFile, item: PrintQueueItem) -> str | None:
+    """A model-based item's filament types, read from the G-code now that it exists (queue time
+    read the source), plus what its overrides and earlier read named, as ``add_to_queue`` merges them."""
+    from backend.app.api.routes.print_queue import _extract_filament_types_from_3mf  # routes import this module
+
+    try:
+        types: set[str] = set(json.loads(item.required_filament_types)) if item.required_filament_types else set()
+        lib_path = Path(sliced_file.file_path)
+        path = lib_path if lib_path.is_absolute() else settings.base_dir / sliced_file.file_path
+        if path.exists():
+            types |= set(_extract_filament_types_from_3mf(path, item.plate_id))
+        if item.filament_overrides:
+            types |= {o["type"] for o in json.loads(item.filament_overrides) if isinstance(o, dict) and "type" in o}
+    except (ValueError, TypeError):  # a malformed stored list must not undo the slice it rides on
+        logger.warning("Queue item %s: unreadable filament types, left as they were", item.id, exc_info=True)
+        return item.required_filament_types
+    return json.dumps(sorted(types)) if types else None
+
+
+async def _waiting_items(db: AsyncSession, revision_id: int, statuses: tuple[str, ...]) -> list[PrintQueueItem]:
+    """Queue items in ``statuses`` on one of the revision's own (non-derived) files."""
+    sources = select(LibraryFile.id).where(LibraryFile.revision_id == revision_id, LibraryFile.revision_sources())
+    return list(
+        (
+            await db.execute(
+                select(PrintQueueItem).where(
+                    PrintQueueItem.status.in_(statuses), PrintQueueItem.library_file_id.in_(sources)
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
+async def _apply_slice_outcome(
+    db: AsyncSession, revision_id: int, sliced_file: LibraryFile | None, error: str | None
+) -> None:
+    """Success: every item waiting on the revision (``slicing``, or ``slice_failed`` from an earlier
+    attempt) moves onto the G-code as ``pending``. Failure: ``slicing`` items become
+    ``slice_failed`` with the reason. Does not commit."""
+    if sliced_file is not None and error is None:
+        sliced_for = (sliced_file.file_metadata or {}).get("sliced_for_model")
+        for item in await _waiting_items(db, revision_id, SLICE_WAIT_STATUSES):
+            # Cross-model gate (#2578), deferred from queue time: there was no G-code to read then.
+            if item.target_model and not is_gcode_compatible(sliced_for, item.target_model):
+                item.status = "slice_failed"
+                item.error_message = (
+                    f"File was sliced for {sliced_for} and cannot be dispatched to {item.target_model} printers"
+                )
+                continue
+            item.library_file_id = sliced_file.id
+            item.status = "pending"
+            item.error_message = None
+            item.print_time_seconds = await asyncio.to_thread(library_file_print_time, sliced_file, item.plate_id)
+            if item.target_model:
+                item.required_filament_types = await asyncio.to_thread(_required_filament_types, sliced_file, item)
+        return
+    for item in await _waiting_items(db, revision_id, ("slicing",)):
+        item.status = "slice_failed"
+        item.error_message = (error or "The slice failed")[:SLICE_ERROR_MAX_CHARS]
+
+
+async def settle_waiting_queue_items(db: AsyncSession, revision_id: int) -> None:
+    """Bring the revision's waiting queue items in line with its slice state now. Commits.
+
+    For a caller that just committed ``slicing`` items: the slice may have ended before they
+    existed, and its completion hook then found nothing to move. Under the revision's row lock
+    (PostgreSQL; SQLite's single writer already orders the two), so a slice committing
+    concurrently is either seen here or sees the items. A revision with no slice state left
+    after a start (no source .3mf to slice, or a start that failed before claiming it) fails
+    the items: they would otherwise wait for a slice that never comes."""
+    await lock_revision_rows(db, [revision_id], share=True)
+    revision = await db.get(ProjectRevision, revision_id, populate_existing=True)
+    if revision is not None and revision.slice_status != "slicing":
+        sliced_file = None
+        if revision.slice_status == "sliced" and revision.sliced_file_id is not None:
+            sliced_file = await db.get(LibraryFile, revision.sliced_file_id)
+        if sliced_file is not None and sliced_file.deleted_at is None:
+            await _apply_slice_outcome(db, revision_id, sliced_file, None)
+        elif revision.slice_status == "sliced":
+            await _apply_slice_outcome(db, revision_id, None, "The revision's sliced file is gone")
+        else:
+            await _apply_slice_outcome(db, revision_id, None, revision.slice_error or "The slice could not start")
+    await db.commit()
 
 
 def _error_status_and_message(exc: Exception) -> tuple[int, str]:
@@ -247,7 +357,9 @@ async def _slice_revision(db: AsyncSession, revision_id: int, *, user_id: int | 
     metadata = {
         "print_time_seconds": result.print_time_seconds,
         "filament_used_grams": result.filament_used_g,
-        "sliced_for_model": printer_model,
+        # Short name ("X1C"), as every other sliced file stores it: the queue's cross-model gate
+        # (is_gcode_compatible) does not match "Bambu Lab X1C" against an "X1C" target.
+        "sliced_for_model": normalize_printer_model(printer_model),
     }
     return await _store(
         db,

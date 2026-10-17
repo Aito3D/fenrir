@@ -32,9 +32,10 @@ from backend.app.core.printer_scope import PrinterScope, ensure_model_target_all
 from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile
 from backend.app.models.print_batch import PrintBatch, PrintBatchPlate
-from backend.app.models.print_queue import PrintQueueItem, PrintQueueVariant
+from backend.app.models.print_queue import SLICE_WAIT_STATUSES, PrintQueueItem, PrintQueueVariant
 from backend.app.models.printer import Printer
 from backend.app.models.project import Project
+from backend.app.models.project_item import ProjectRevision
 from backend.app.models.user import User
 from backend.app.schemas.print_queue import (
     PrintBatchCreate,
@@ -750,6 +751,19 @@ async def _resolve_queue_variants(
         except InvalidFilenameError as e:
             raise HTTPException(400, str(e)) from e
 
+        # Fenrir: a project source .3mf runs as its server slice; an alternative cannot wait
+        # for one (design 2026-10-17), so a revision not sliced yet is refused.
+        if _is_unsliced_project_source(library_file):
+            sliced_file = await _sliced_file_of(db, library_file.revision_id)
+            if sliced_file is None:
+                raise HTTPException(
+                    400,
+                    f"{library_file.filename} is not sliced yet — queue it without alternatives, "
+                    "or once its slice is done",
+                )
+            library_file = sliced_file
+            spec.library_file_id = sliced_file.id
+
         model = resolve_variant_model(library_file, spec.target_model)
         if not model:
             raise HTTPException(
@@ -844,6 +858,43 @@ def _variant_values(
         "required_filament_types": required_types,
         "print_time_seconds": print_time,
     }
+
+
+def _project_slice():
+    """``services.project_slice``, imported late: it imports ``project_files``, which imports the
+    library routes, which import this module."""
+    from backend.app.services import project_slice
+
+    return project_slice
+
+
+def _is_unsliced_project_source(library_file: LibraryFile) -> bool:
+    """A project revision's own .3mf (not its hidden derived slice, not a .gcode.3mf)."""
+    return library_file.revision_id is not None and not library_file.derived_slice and library_file.file_type == "3mf"
+
+
+async def _sliced_file_of(db: AsyncSession, revision_id: int | None) -> LibraryFile | None:
+    """The revision's server slice when it is ``sliced`` and the row is still live, else None."""
+    if revision_id is None:
+        return None
+    revision = await db.get(ProjectRevision, revision_id)
+    if revision is None or revision.slice_status != "sliced" or revision.sliced_file_id is None:
+        return None
+    return (
+        await db.execute(LibraryFile.active().where(LibraryFile.id == revision.sliced_file_id))
+    ).scalar_one_or_none()
+
+
+async def _start_slice_for_waiting_items(db: AsyncSession, revision_id: int, actor: User | ApiKeyActor | None) -> None:
+    """Start (or join) the revision's slice for items just committed as ``slicing``, then settle
+    them against whatever the slice already did. Never raises: the items exist either way, and a
+    failed start leaves them ``slice_failed`` with its reason."""
+    try:
+        await _project_slice().start_revision_slice(db, revision_id, user_id=actor.id if actor else None)
+    except Exception:
+        logger.warning("Could not start the slice of project revision %s for the queue", revision_id, exc_info=True)
+        await db.rollback()
+    await _project_slice().settle_waiting_queue_items(db, revision_id)
 
 
 @router.post("/", response_model=PrintQueueItemResponse)
@@ -963,6 +1014,19 @@ async def add_to_queue(
         except InvalidFilenameError as e:
             raise HTTPException(400, str(e)) from e
 
+    # Fenrir: a project revision's source .3mf prints as its server slice (design 2026-10-17,
+    # decisions 6/7). Sliced: the item runs the .gcode.3mf. Not yet: the item waits in
+    # "slicing" on the source and follows the slice (services/project_slice.py); a printer
+    # never receives the unsliced source.
+    slice_wait_revision_id: int | None = None
+    if library_file is not None and _is_unsliced_project_source(library_file):
+        sliced_file = await _sliced_file_of(db, library_file.revision_id)
+        if sliced_file is not None:
+            library_file = sliced_file
+            data.library_file_id = sliced_file.id
+        else:
+            slice_wait_revision_id = library_file.revision_id
+
     # Fenrir: revision + Aito task traceability (projects as a PDM, phase 4).
     # revision_id comes from the file, never the client. Cross-model candidates
     # carry their own files, so they must agree on one revision (or none).
@@ -983,7 +1047,7 @@ async def add_to_queue(
     # not be queued for dispatch to an incompatible model. The UI can no longer
     # produce such rows, but API-created rows must be rejected here too — the
     # scheduler assigns model-based items to hardware with no human in the loop.
-    if target_model_norm:
+    if target_model_norm and slice_wait_revision_id is None:  # no G-code yet: checked when the slice lands
         sliced_for = None
         if archive:
             sliced_for = archive.sliced_for_model
@@ -1097,7 +1161,7 @@ async def add_to_queue(
 
     # Positions are one sequence across every pending item (#3200), so a new
     # item lands relative to the whole list, not to its printer's share of it.
-    queue_scope = (PrintQueueItem.status == "pending",)
+    queue_scope = (PrintQueueItem.status.in_(("pending", *SLICE_WAIT_STATUSES)),)
     await lock_queue_positions(db)
 
     insert_position = max(1, data.insert_position or 1)
@@ -1125,15 +1189,10 @@ async def add_to_queue(
                 if plate_time is not None:
                     cached_print_time = plate_time
     elif library_file:
-        if library_file.file_metadata:
-            cached_print_time = library_file.file_metadata.get("print_time_seconds")
-        if data.plate_id:
-            lib_path = Path(library_file.file_path)
-            library_file_path = lib_path if lib_path.is_absolute() else settings.base_dir / library_file.file_path
-            if library_file_path.exists():
-                plate_time = _extract_print_time_from_3mf(library_file_path, data.plate_id)
-                if plate_time is not None:
-                    cached_print_time = plate_time
+        # A source still slicing has no plate estimate yet; the slice sets it.
+        cached_print_time = _project_slice().library_file_print_time(
+            library_file, data.plate_id if slice_wait_revision_id is None else None
+        )
 
     # Validate project exists before insert so a bogus ID yields 404, not an FK-constraint 500
     if data.project_id is not None:
@@ -1264,7 +1323,7 @@ async def add_to_queue(
             revision_id=trace.revision_id,  # Fenrir: phase 4 traceability
             aito_task_id=trace.aito_task_id,
             position=start_position + i,
-            status="pending",
+            status="pending" if slice_wait_revision_id is None else "slicing",
             created_by_id=actor.id if actor else None,
             batch_id=batch_id,
             print_time_seconds=cached_print_time,
@@ -1289,6 +1348,11 @@ async def add_to_queue(
             item.print_time_seconds = min(estimates) if estimates else None
 
     await db.commit()
+
+    if slice_wait_revision_id is not None:
+        # The items are committed first, so the slice's completion hook can find them;
+        # the settle covers a slice that ended before they existed.
+        await _start_slice_for_waiting_items(db, slice_wait_revision_id, actor)
 
     # Fenrir: best-effort story event on the task's order (phase 4); never raises.
     await record_queued(db, trace, copies=quantity, actor=current_user.username if current_user else None)
@@ -1341,7 +1405,9 @@ async def add_to_queue(
     except Exception:
         pass  # Don't fail queue add if notification fails
 
-    return _enrich_response(item)
+    response = _enrich_response(item)
+    await attach_trace_summaries(db, [response])  # Fenrir: also the slice job of a "slicing" item
+    return response
 
 
 @router.patch("/bulk", response_model=PrintQueueBulkUpdateResponse)
@@ -1787,7 +1853,18 @@ async def dispatch_batch(
         for item in created:
             item.manual_start = True
 
+    # Fenrir: clones of a run waiting for its project slice wait too; settled after the
+    # commit, like add_to_queue's, in case the slice landed before they existed.
+    waiting_file_ids = {item.library_file_id for item in created if item.status == "slicing"}
     await db.commit()
+    if waiting_file_ids:
+        revision_ids = (
+            (await db.execute(select(LibraryFile.revision_id).where(LibraryFile.id.in_(waiting_file_ids))))
+            .scalars()
+            .all()
+        )
+        for revision_id in {r for r in revision_ids if r is not None}:
+            await _project_slice().settle_waiting_queue_items(db, revision_id)
     await db.refresh(batch)
 
     logger.info("Batch %s dispatched %d item(s)", batch.id, len(created))
@@ -1950,7 +2027,9 @@ async def cancel_batch(
 
     # Cancel all pending queue items in this batch
     result = await db.execute(
-        select(PrintQueueItem).where(and_(PrintQueueItem.batch_id == batch_id, PrintQueueItem.status == "pending"))
+        select(PrintQueueItem).where(
+            and_(PrintQueueItem.batch_id == batch_id, PrintQueueItem.status.in_(("pending", *SLICE_WAIT_STATUSES)))
+        )
     )
     pending_items = result.scalars().all()
     cancelled_count = 0
@@ -2388,7 +2467,8 @@ async def reorder_queue(
         result = await db.execute(select(PrintQueueItem).where(PrintQueueItem.id == reorder_item.id))
         item = result.scalar_one_or_none()
         # Jobs on printers the caller can't see keep their place (#1727)
-        if item and item.status == "pending" and printer_scope.allows(item.printer_id):
+        # Fenrir: items waiting for a project slice hold their place in the one sequence too.
+        if item and item.status in ("pending", *SLICE_WAIT_STATUSES) and printer_scope.allows(item.printer_id):
             item.position = reorder_item.position
 
     await db.commit()
@@ -2519,7 +2599,8 @@ async def cancel_queue_item(
         if item.created_by_id != user.id:
             raise HTTPException(403, "You can only cancel your own queue items")
 
-    if item.status not in ("pending",):
+    # Fenrir: an item waiting for its project slice is queued work too.
+    if item.status not in ("pending", *SLICE_WAIT_STATUSES):
         raise HTTPException(400, f"Cannot cancel item with status '{item.status}'")
 
     item.status = "cancelled"
@@ -2541,6 +2622,70 @@ async def cancel_queue_item(
 
     logger.info("Cancelled queue item %s", item_id)
     return {"message": "Queue item cancelled"}
+
+
+@router.post("/{item_id}/retry-slice", response_model=PrintQueueItemResponse)
+async def retry_queue_item_slice(
+    item_id: int,
+    db: AsyncSession = Depends(get_db),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.QUEUE_UPDATE_ALL,
+            Permission.QUEUE_UPDATE_OWN,
+        )
+    ),
+    printer_scope: PrinterScope = RequestPrinterScope,
+    actor: User | ApiKeyActor | None = RequestActor,
+):
+    """Fenrir: slice a ``slice_failed`` item's project revision again (design 2026-10-17).
+
+    Every item waiting on that revision goes back to ``slicing`` and follows the new slice."""
+    user, can_modify_all = auth_result
+    item = (await db.execute(select(PrintQueueItem).where(PrintQueueItem.id == item_id))).scalar_one_or_none()
+    if not item or not printer_scope.allows(item.printer_id):
+        raise HTTPException(404, "Queue item not found")
+    if not can_modify_all and (user is None or item.created_by_id != user.id):
+        raise HTTPException(403, "You can only update your own queue items")
+    if item.status != "slice_failed":
+        raise HTTPException(400, "Only an item whose slice failed can be sliced again")
+    source = await db.get(LibraryFile, item.library_file_id) if item.library_file_id is not None else None
+    if source is None or source.revision_id is None:
+        raise HTTPException(400, "This item has no project revision to slice")
+    revision_id = source.revision_id
+
+    await db.execute(
+        update(PrintQueueItem)
+        .where(
+            PrintQueueItem.status == "slice_failed",
+            PrintQueueItem.library_file_id.in_(
+                select(LibraryFile.id).where(LibraryFile.revision_id == revision_id, LibraryFile.revision_sources())
+            ),
+        )
+        .values(status="slicing", error_message=None)
+        .execution_options(synchronize_session="fetch")
+    )
+    await db.commit()
+    await _start_slice_for_waiting_items(db, revision_id, actor)
+
+    item = (
+        await db.execute(
+            select(PrintQueueItem)
+            .options(
+                selectinload(PrintQueueItem.archive),
+                selectinload(PrintQueueItem.printer),
+                selectinload(PrintQueueItem.library_file),
+                selectinload(PrintQueueItem.created_by),
+                selectinload(PrintQueueItem.batch),
+                selectinload(PrintQueueItem.variants).selectinload(PrintQueueVariant.library_file),
+            )
+            .where(PrintQueueItem.id == item_id)
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one()
+    logger.info("Re-slicing project revision %s for queue item %s", revision_id, item_id)
+    response = _enrich_response(item)
+    await attach_trace_summaries(db, [response])
+    return response
 
 
 @router.post("/{item_id}/stop")

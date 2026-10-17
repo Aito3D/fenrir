@@ -423,10 +423,12 @@ async def test_reprint_copies_trace_ids_only_when_archive_has_none(
 @pytest.mark.integration
 async def test_cleanup_flag_on_revision_variant_is_rejected(async_client: AsyncClient, db_session, printer_factory):
     await printer_factory(model="X1C")
+    # A sliced revision file: an unsliced source .3mf is refused as an alternative anyway
+    # (test_project_slice_queue.py).
     library_file = LibraryFile(
-        filename="support.3mf",
-        file_path="/tmp/support.3mf",  # nosec B108 - never read
-        file_type="3mf",
+        filename="support.gcode.3mf",
+        file_path="/tmp/support.gcode.3mf",  # nosec B108 - never read
+        file_type="gcode.3mf",
         file_size=1,
         revision_id=7,
     )

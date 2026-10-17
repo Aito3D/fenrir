@@ -233,7 +233,7 @@ class PrintQueueItemResponse(BaseModel):
     confirm_outcome: bool = False
     preheat_override: Literal["inherit", "on", "off"] = "inherit"
     preheat_chamber_target_override: int | None = None
-    status: Literal["pending", "printing", "completed", "failed", "skipped", "cancelled"]
+    status: Literal["pending", "printing", "completed", "failed", "skipped", "cancelled", "slicing", "slice_failed"]
     started_at: UTCDatetime
     completed_at: UTCDatetime
     error_message: str | None
@@ -297,6 +297,9 @@ class PrintQueueItemResponse(BaseModel):
     aito_due_date: str | None = None
     aito_quantity: int | None = None
     aito_board_column: str | None = None
+    # Fenrir: the revision's slice job while the item waits for its G-code
+    # (status "slicing"); None otherwise.
+    slice_job_id: int | None = None
 
     # Shortest-job-first scheduling
     been_jumped: bool = False

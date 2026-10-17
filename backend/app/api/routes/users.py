@@ -35,7 +35,7 @@ from backend.app.models.notification_inbox import AitoWatch, Notification, UserI
 from backend.app.models.oidc_provider import UserOIDCLink
 from backend.app.models.print_batch import PrintBatch
 from backend.app.models.print_log import PrintLogEntry
-from backend.app.models.print_queue import PrintQueueItem
+from backend.app.models.print_queue import SLICE_WAIT_STATUSES, PrintQueueItem
 from backend.app.models.settings import Settings
 from backend.app.models.user import User
 from backend.app.models.user_otp_code import UserOTPCode
@@ -631,7 +631,8 @@ async def delete_user(
                 .where(
                     PrintQueueItem.created_by_id == user_id,
                     PrintQueueItem.printer_id.is_(None),
-                    PrintQueueItem.status == "pending",
+                    # Fenrir: one waiting for its project slice turns pending later.
+                    PrintQueueItem.status.in_(("pending", *SLICE_WAIT_STATUSES)),
                 )
                 .values(manual_start=True)
             )

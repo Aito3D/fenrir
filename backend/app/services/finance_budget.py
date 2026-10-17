@@ -9,7 +9,7 @@ from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.finance import BudgetReservation, CostCenter, CostCenterMember, WalletTransaction
-from backend.app.models.print_queue import PrintQueueItem
+from backend.app.models.print_queue import SLICE_WAIT_STATUSES, PrintQueueItem
 from backend.app.models.settings import Settings
 from backend.app.models.user import User
 
@@ -114,7 +114,7 @@ async def get_cost_center_reserved_map(
     )
     queue_conditions = [
         PrintQueueItem.cost_center_id.in_(cost_center_ids),
-        PrintQueueItem.status.in_(("pending", "printing")),
+        PrintQueueItem.status.in_(("pending", "printing", *SLICE_WAIT_STATUSES)),
         ~active_queue_reservation,
     ]
     if exclude_queue_item_id is not None:

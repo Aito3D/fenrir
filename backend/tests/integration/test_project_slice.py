@@ -176,7 +176,7 @@ async def test_upload_starts_slice_and_stores_hidden_gcode(async_client: AsyncCl
     assert row.file_metadata == {
         "print_time_seconds": 3600,
         "filament_used_grams": 12.5,
-        "sliced_for_model": "Bambu Lab X1C",
+        "sliced_for_model": "X1C",
     }
     path = to_absolute_path(row.file_path)
     assert path is not None and path.read_bytes() == _sliced_3mf()

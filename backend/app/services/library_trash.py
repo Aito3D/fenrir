@@ -28,7 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.core.config import settings as app_settings
 from backend.app.core.database import async_session
 from backend.app.models.library import LibraryFile, LibraryFileTag, prune_empty_library_tags
-from backend.app.models.print_queue import PrintQueueItem, PrintQueueVariant
+from backend.app.models.print_queue import SLICE_WAIT_STATUSES, PrintQueueItem, PrintQueueVariant
 from backend.app.models.settings import Settings
 from backend.app.utils.library_paths import remove_library_photos_dir
 from backend.app.utils.local_time import utcnow_naive
@@ -481,7 +481,8 @@ async def release_queue_references(db: AsyncSession, file_ids: list[int]) -> int
             # "skipped" is not terminal: clearing a printer's previous-success
             # gate puts those items back to pending, onto a file that by then
             # is gone.
-            .where(PrintQueueItem.status.in_(("pending", "skipped")))
+            # Fenrir: so are the project-slice waits, which turn pending on their own.
+            .where(PrintQueueItem.status.in_(("pending", "skipped", *SLICE_WAIT_STATUSES)))
         )
     ).all()
     for item_id, lib_id in rows:

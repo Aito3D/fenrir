@@ -10,7 +10,7 @@ own 1, 2, 3 and made a job added last land in the middle of the list.
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.models.print_queue import PrintQueueItem
+from backend.app.models.print_queue import SLICE_WAIT_STATUSES, PrintQueueItem
 
 # Advisory lock key for the shared sequence, in the 1625 namespace. The key
 # used to be the printer id, back when every printer had a sequence of its own.
@@ -34,8 +34,11 @@ async def lock_queue_positions(db: AsyncSession) -> None:
 
 
 async def max_queue_position(db: AsyncSession) -> int:
-    """Highest position among pending items, or 0 for an empty queue."""
-    result = await db.execute(select(func.max(PrintQueueItem.position)).where(PrintQueueItem.status == "pending"))
+    """Highest position among pending items (and items waiting for their project slice, which
+    become pending in place), or 0 for an empty queue."""
+    result = await db.execute(
+        select(func.max(PrintQueueItem.position)).where(PrintQueueItem.status.in_(("pending", *SLICE_WAIT_STATUSES)))
+    )
     return result.scalar() or 0
 
 

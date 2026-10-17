@@ -27,7 +27,7 @@ from sqlalchemy.orm import selectinload
 
 from backend.app.models.print_batch import PrintBatch, PrintBatchPlate
 from backend.app.models.print_log import PrintLogEntry
-from backend.app.models.print_queue import PrintQueueItem, PrintQueueVariant
+from backend.app.models.print_queue import SLICE_WAIT_STATUSES, PrintQueueItem, PrintQueueVariant
 from backend.app.services.queue_item_printer import drop_printer_resolved
 from backend.app.services.queue_position import next_queue_position
 
@@ -299,6 +299,9 @@ async def load_progress(db: AsyncSession, batch: PrintBatch) -> BatchProgress:
         )
 
     for plate_id, status, count, time_sum in item_rows:
+        # Fenrir: a run waiting for its project slice is queued work, counted as pending.
+        if status in SLICE_WAIT_STATUSES:
+            status = "pending"
         plate = by_plate.get(plate_id)
         if plate is None:
             # A queue item for a plate the order has no target row for: either
@@ -416,7 +419,7 @@ async def backfill_batch_statuses(db: AsyncSession) -> int:
                 .where(
                     ~select(PrintQueueItem.id)
                     .where(PrintQueueItem.batch_id == PrintBatch.id)
-                    .where(PrintQueueItem.status.in_(("pending", "printing")))
+                    .where(PrintQueueItem.status.in_(("pending", "printing", *SLICE_WAIT_STATUSES)))
                     .exists()
                 )
             )
@@ -518,7 +521,10 @@ def _clone_queue_item(source: PrintQueueItem, *, position: int, created_by_id: i
     out from under the rest of the order.
     """
     clone = PrintQueueItem(
-        status="pending",
+        # Fenrir: a run still waiting for its project slice points at the unsliced source;
+        # its clone waits with it (and follows the slice), never pending on that file.
+        status=source.status if source.status in SLICE_WAIT_STATUSES else "pending",
+        error_message=source.error_message if source.status == "slice_failed" else None,
         position=position,
         created_by_id=created_by_id if created_by_id is not None else source.created_by_id,
         cleanup_library_after_dispatch=False,

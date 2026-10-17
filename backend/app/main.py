@@ -7787,7 +7787,8 @@ async def _plate_restore_is_blocked_by_queue(printer_id: int) -> bool:
                 select(PrintQueueItem.id)
                 .where(
                     PrintQueueItem.printer_id == printer_id,
-                    PrintQueueItem.status.in_(("pending", "printing")),
+                    # Fenrir: "slicing" turns pending, unattended, the moment its slice lands.
+                    PrintQueueItem.status.in_(("pending", "printing", "slicing")),
                 )
                 .limit(1)
             )
@@ -8567,7 +8568,10 @@ async def on_print_complete(printer_id: int, data: dict):
 
                 async with async_session() as db:
                     count_result = await db.execute(
-                        select(sa_func.count(PrintQueueItem.id)).where(PrintQueueItem.status == "pending")
+                        # Fenrir: items waiting for a project slice are still queued work.
+                        select(sa_func.count(PrintQueueItem.id)).where(
+                            PrintQueueItem.status.in_(("pending", "slicing", "slice_failed"))
+                        )
                     )
                     pending_count = count_result.scalar() or 0
 

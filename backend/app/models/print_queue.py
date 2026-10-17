@@ -5,6 +5,12 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.core.database import Base
 
+# Fenrir: a project print queued before its revision's server slice ended waits in
+# ``slicing`` on the source .3mf, then follows the slice: ``pending`` on the
+# .gcode.3mf, or ``slice_failed`` (retryable). Both are active but never dispatched,
+# like ``pending`` with ``manual_start``; see services/project_slice.py.
+SLICE_WAIT_STATUSES = ("slicing", "slice_failed")
+
 
 class PrintQueueItem(Base):
     """Print queue item for scheduled/queued prints."""
@@ -137,7 +143,8 @@ class PrintQueueItem(Base):
     preheat_override: Mapped[str] = mapped_column(String(10), default="inherit", server_default="inherit")
     preheat_chamber_target_override: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
-    # Status: pending, printing, completed, failed, skipped, cancelled
+    # Status: pending, printing, completed, failed, skipped, cancelled, and (Fenrir,
+    # project prints) slicing / slice_failed — see SLICE_WAIT_STATUSES above.
     status: Mapped[str] = mapped_column(String(20), default="pending")
 
     # Dispatch claim (#2615). Set atomically by the scheduler the moment it

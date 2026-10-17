@@ -55,6 +55,8 @@ async def attach_trace_summaries(db: AsyncSession, responses: Iterable[PrintQueu
             row.revision_item_name = item.name
             row.revision_number = rev.number
             row.revision_status = rev.status
+            # Fenrir: the job a "slicing" item waits on (design 2026-10-17).
+            row.slice_job_id = rev.slice_job_id if row.status == "slicing" else None
         if row.aito_task_id is not None and (found := tasks.get(row.aito_task_id)):
             task, order = found
             row.aito_task_title = task.title

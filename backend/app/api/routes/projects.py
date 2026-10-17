@@ -39,7 +39,7 @@ from backend.app.models.aito_task import AitoTask  # Fenrir: Aito tasks linked t
 from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile, LibraryFolder
 from backend.app.models.print_log import PrintLogEntry
-from backend.app.models.print_queue import PrintQueueItem, PrintQueueVariant
+from backend.app.models.print_queue import SLICE_WAIT_STATUSES, PrintQueueItem, PrintQueueVariant
 from backend.app.models.project import PROJECT_PRIORITIES, PROJECT_STATUSES, Project
 from backend.app.models.project_bom import ProjectBOMItem
 from backend.app.models.project_item import (  # Fenrir: PDM items block project deletion; revisions label archives
@@ -220,7 +220,9 @@ async def _load_totals(db: AsyncSession, project_ids: Sequence[int]) -> dict[int
     queue_rows = await db.execute(
         select(
             PrintQueueItem.project_id.label("project_id"),
-            func.coalesce(func.sum(case((PrintQueueItem.status == "pending", 1), else_=0)), 0).label("queued"),
+            func.coalesce(
+                func.sum(case((PrintQueueItem.status.in_(("pending", *SLICE_WAIT_STATUSES)), 1), else_=0)), 0
+            ).label("queued"),
             func.coalesce(func.sum(case((PrintQueueItem.status == "printing", 1), else_=0)), 0).label("in_progress"),
         )
         .where(PrintQueueItem.project_id.in_(list(totals)))
@@ -531,7 +533,7 @@ async def list_projects(
         queue_count_result = await db.execute(
             select(func.count(PrintQueueItem.id)).where(
                 PrintQueueItem.project_id == project.id,
-                PrintQueueItem.status.in_(["pending", "printing"]),
+                PrintQueueItem.status.in_(["pending", "printing", *SLICE_WAIT_STATUSES]),
             )
         )
         queue_count = queue_count_result.scalar() or 0
@@ -2101,7 +2103,7 @@ async def get_project_timeline(
                     metadata={"queue_item_id": item.id},
                 )
             )
-        elif item.status == "pending":
+        elif item.status in ("pending", *SLICE_WAIT_STATUSES):
             events.append(
                 TimelineEvent(
                     event_type="queued",

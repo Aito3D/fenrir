@@ -47,7 +47,7 @@ from backend.app.core.tasks import spawn_background_task
 from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile, LibraryFileTag, LibraryFolder, LibraryTag, prune_empty_library_tags
 from backend.app.models.print_log import PrintLogEntry
-from backend.app.models.print_queue import PrintQueueItem
+from backend.app.models.print_queue import SLICE_WAIT_STATUSES, PrintQueueItem
 from backend.app.models.printer import Printer
 from backend.app.models.project import Project
 from backend.app.models.user import User
@@ -6143,7 +6143,8 @@ async def get_file_history(
     queue_result = await db.execute(
         select(PrintQueueItem)
         .options(selectinload(PrintQueueItem.printer), selectinload(PrintQueueItem.created_by))
-        .where(PrintQueueItem.status.in_(["pending", "printing"]), or_(*queue_link))
+        # Fenrir: a run waiting for its project slice is upcoming too (it points at the source).
+        .where(PrintQueueItem.status.in_(["pending", "printing", *SLICE_WAIT_STATUSES]), or_(*queue_link))
     )
     for item in queue_result.scalars().all():
         events.append(
@@ -6164,7 +6165,7 @@ async def get_file_history(
         )
 
     # Queued events first (printing above pending), then prints newest-first.
-    _queue_rank = {"printing": 0, "pending": 1}
+    _queue_rank = {"printing": 0, "pending": 1, "slicing": 1, "slice_failed": 1}
     events.sort(
         key=lambda e: (
             0 if e.type == "queued" else 1,

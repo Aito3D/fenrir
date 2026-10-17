@@ -22,7 +22,7 @@ from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
 from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile
-from backend.app.models.print_queue import PrintQueueItem
+from backend.app.models.print_queue import SLICE_WAIT_STATUSES, PrintQueueItem
 from backend.app.services.actor import record_as
 from backend.app.services.db_quiet import rollback_quietly
 from backend.app.services.http_status_error import HttpStatusError
@@ -188,7 +188,7 @@ class PrintCounts:
     queued: int = 0
 
 
-_QUEUED_STATUSES = ("pending", "printing")
+_QUEUED_STATUSES = ("pending", "printing", *SLICE_WAIT_STATUSES)
 
 
 def _is_printed():
