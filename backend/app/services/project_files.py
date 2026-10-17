@@ -1661,7 +1661,7 @@ async def _load_tree_rows(db: AsyncSession, project: Project) -> _TreeRows:
     for row in files:
         if row.derived_slice:
             derived_by_id[row.id] = row
-        else:
+        elif row.revision_id is not None:
             files_by_revision.setdefault(row.revision_id, []).append(row)
     used = (
         await used_file_ids(

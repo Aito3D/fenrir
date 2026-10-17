@@ -5702,14 +5702,6 @@
             {
                 "code": "reportArgumentType",
                 "range": {
-                    "startColumn": 37,
-                    "endColumn": 52,
-                    "lineCount": 1
-                }
-            },
-            {
-                "code": "reportArgumentType",
-                "range": {
                     "startColumn": 34,
                     "endColumn": 51,
                     "lineCount": 1
