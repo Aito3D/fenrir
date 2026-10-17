@@ -39,6 +39,9 @@ class ProjectFileOut(BaseModel):
     file_hash: str | None
     has_thumbnail: bool
     created_at: datetime
+    # From the file's metadata: set on a sliced file (the card's print time and grams), else None.
+    print_time_seconds: int | None = None
+    filament_used_grams: float | None = None
 
 
 class ProjectRevisionOut(BaseModel):

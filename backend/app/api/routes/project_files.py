@@ -481,7 +481,8 @@ async def download_revision(
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_READ),
 ):
-    """One file (``?file_id=``) or every file of the revision as a zip."""
+    """One file (``?file_id=``, which may be the revision's sliced file) or every file of the revision as
+    a zip (its own files only, never the sliced one)."""
     with _file_errors():
         revision, item, project = await svc.get_revision_bundle(db, revision_id)
     rows = (
@@ -495,6 +496,13 @@ async def download_revision(
     )
     if file_id is not None:
         row = next((r for r in rows if r.id == file_id), None)
+        if row is None and file_id == revision.sliced_file_id:
+            sliced = await db.get(LibraryFile, file_id)
+            row = (
+                sliced
+                if sliced is not None and sliced.revision_id == revision.id and sliced.deleted_at is None
+                else None
+            )
         path = svc.revision_file_path(row.file_path) if row else None
         if row is None or path is None or not path.exists():
             raise HTTPException(status_code=404, detail="File not found")

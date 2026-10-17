@@ -185,6 +185,26 @@ async def test_upload_starts_slice_and_stores_hidden_gcode(async_client: AsyncCl
 
 @pytest.mark.asyncio
 @pytest.mark.integration
+async def test_sliced_file_carries_its_facts_and_downloads(async_client: AsyncClient, sidecar, roots):
+    """The card shows the slice's print time and grams, and its ⋯ menu downloads the hidden gcode."""
+    project, _item, rev = await _upload(async_client)
+    await _wait_job(rev["slice_job_id"])
+    out = await _tree_revision(async_client, project["id"], rev["id"])
+    sliced = out["sliced_file"]
+    assert (sliced["print_time_seconds"], sliced["filament_used_grams"]) == (3600, 12.5)
+    assert (out["files"][0]["print_time_seconds"], out["files"][0]["filament_used_grams"]) == (None, None)
+
+    res = await async_client.get(f"/api/v1/projects/revisions/{rev['id']}/download?file_id={sliced['id']}")
+    assert res.status_code == 200
+    assert res.content == _sliced_3mf()
+    # the zip of the revision still holds its own files only
+    zipped = await async_client.get(f"/api/v1/projects/revisions/{rev['id']}/download")
+    with zipfile.ZipFile(io.BytesIO(zipped.content)) as zf:
+        assert zf.namelist() == ["support.3mf"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
 async def test_sidecar_down_upload_succeeds_and_slice_fails(async_client: AsyncClient, db_session, sidecar):
     sidecar.mode = "down"
     project, _item, rev = await _upload(async_client)

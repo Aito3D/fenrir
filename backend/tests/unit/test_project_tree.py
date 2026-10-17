@@ -197,6 +197,8 @@ def _file_out(row, *, file_size=10, file_hash=None, has_thumbnail=False, created
         "file_hash": file_hash,
         "has_thumbnail": has_thumbnail,
         "created_at": created_at,
+        "print_time_seconds": None,
+        "filament_used_grams": None,
     }
 
 
