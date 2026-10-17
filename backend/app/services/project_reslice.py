@@ -20,6 +20,7 @@ from backend.app.models.slicer_pipeline import SlicerPipeline
 from backend.app.schemas.project_files import ResliceBody
 from backend.app.schemas.slicer import SliceRequest
 from backend.app.services import project_files
+from backend.app.services.db_quiet import rollback_quietly
 from backend.app.services.project_files import ProjectFilesError
 from backend.app.services.project_snapshot import is_3mf
 from backend.app.services.project_storage import revision_folder_name, split_gcode_3mf
@@ -155,7 +156,13 @@ async def _drop_intermediate(db: AsyncSession, file_id: int) -> None:
                 await library_trash_service.hard_delete_many(db, [row])
             return
         except Exception:
-            await db.rollback()
+            await rollback_quietly(
+                db,
+                logger,
+                logging.WARNING,
+                "Re-trancher: rollback after a failed intermediate delete failed (%s)",
+                file_id,
+            )
             if attempt == attempts:
                 logger.exception("Re-trancher: could not delete intermediate library file %s", file_id)
                 return

@@ -9865,6 +9865,7 @@ export default {
       uploading: 'Завантаження…',
       uploadFailed: 'Не вдалося завантажити',
       onlyPrintable: 'До проєкту можна додавати лише файли 3MF і G-code',
+      itemBusy: '{{name}} ще завантажується, тому перетягнуті файли не були завантажені',
       otherSections: 'Старіші файли',
       newRevision: 'Нова ревізія',
       addFiles: 'Додати файли',

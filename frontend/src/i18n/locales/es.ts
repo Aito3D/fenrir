@@ -10247,6 +10247,7 @@ export default {
       uploading: 'Subiendo…',
       uploadFailed: 'Error al subir',
       onlyPrintable: 'Solo se pueden añadir archivos 3MF y G-code a un proyecto',
+      itemBusy: '{{name}} todavía se está subiendo, por lo que los archivos soltados no se subieron',
       otherSections: 'Archivos antiguos',
       newRevision: 'Nueva revisión',
       addFiles: 'Añadir archivos',

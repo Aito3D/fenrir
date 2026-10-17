@@ -10238,6 +10238,7 @@ export default {
       uploading: 'アップロード中…',
       uploadFailed: 'アップロードに失敗しました',
       onlyPrintable: 'プロジェクトに追加できるのは 3MF と G-code ファイルのみです',
+      itemBusy: '{{name}} はまだアップロード中のため、ドロップしたファイルはアップロードされませんでした',
       otherSections: '以前のファイル',
       newRevision: '新しいリビジョン',
       addFiles: 'ファイルを追加',

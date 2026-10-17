@@ -1618,6 +1618,7 @@ projectsPdm.files.fileCount
 projectsPdm.files.fork
 projectsPdm.files.forkNameLabel
 projectsPdm.files.frozen
+projectsPdm.files.itemBusy
 projectsPdm.files.itemNameLabel
 projectsPdm.files.newItem
 projectsPdm.files.newRevision

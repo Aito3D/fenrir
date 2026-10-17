@@ -10295,6 +10295,7 @@ export default {
       uploading: 'Uploading…',
       uploadFailed: 'Upload failed',
       onlyPrintable: 'Only 3MF and G-code files can go into a project',
+      itemBusy: '{{name}} is still uploading, so the dropped files were not uploaded',
       otherSections: 'Older files',
       newRevision: 'New revision',
       addFiles: 'Add files',

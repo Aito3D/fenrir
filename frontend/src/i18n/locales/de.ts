@@ -10239,6 +10239,7 @@ export default {
       uploading: 'Wird hochgeladen…',
       uploadFailed: 'Upload fehlgeschlagen',
       onlyPrintable: 'Nur 3MF- und G-Code-Dateien können in ein Projekt',
+      itemBusy: '{{name}} wird noch hochgeladen, die abgelegten Dateien wurden daher nicht hochgeladen',
       otherSections: 'Ältere Dateien',
       newRevision: 'Neue Revision',
       addFiles: 'Dateien hinzufügen',

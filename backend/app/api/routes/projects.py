@@ -1085,7 +1085,7 @@ async def list_project_archives(
     out = []
     for a in archives:
         data = archive_to_response(a, run_aggregate=run_aggregates.get(a.id))
-        data.update(labels.get(a.id, {"revision_label": None, "aito_task_id": None, "order_id": None}))
+        data.update(labels[a.id])
         if not can_read_aito:  # Fenrir: the Aito order behind a print is aito:read data
             data.update(aito_task_id=None, order_id=None)
         out.append(data)

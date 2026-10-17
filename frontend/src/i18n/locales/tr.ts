@@ -10164,6 +10164,7 @@ export default {
       uploading: 'Yükleniyor…',
       uploadFailed: 'Yükleme başarısız',
       onlyPrintable: 'Bir projeye yalnızca 3MF ve G-code dosyaları eklenebilir',
+      itemBusy: '{{name}} hâlâ yükleniyor, bu yüzden bırakılan dosyalar yüklenmedi',
       otherSections: 'Eski dosyalar',
       newRevision: 'Yeni revizyon',
       addFiles: 'Dosya ekle',

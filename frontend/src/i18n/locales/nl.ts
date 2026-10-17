@@ -10263,6 +10263,7 @@ export default {
       uploading: 'Uploaden…',
       uploadFailed: 'Upload mislukt',
       onlyPrintable: 'Alleen 3MF- en G-code-bestanden kunnen in een project',
+      itemBusy: '{{name}} wordt nog geüpload, dus de neergezette bestanden zijn niet geüpload',
       otherSections: 'Oudere bestanden',
       newRevision: 'Nieuwe revisie',
       addFiles: 'Bestanden toevoegen',

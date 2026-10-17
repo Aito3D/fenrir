@@ -9840,6 +9840,7 @@ export default {
       uploading: 'Загрузка…',
       uploadFailed: 'Не удалось загрузить',
       onlyPrintable: 'В проект можно добавлять только файлы 3MF и G-code',
+      itemBusy: '{{name}} ещё загружается, поэтому перетащенные файлы не были загружены',
       otherSections: 'Старые файлы',
       newRevision: 'Новая ревизия',
       addFiles: 'Добавить файлы',

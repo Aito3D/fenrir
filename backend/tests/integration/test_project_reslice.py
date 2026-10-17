@@ -610,6 +610,55 @@ async def test_intermediate_drop_failure_keeps_the_job_and_session_alive(
 
 @pytest.mark.asyncio
 @pytest.mark.integration
+async def test_intermediate_drop_and_its_rollback_failing_does_not_fail_the_job(
+    async_client: AsyncClient, db_session, fake_slicer, monkeypatch, caplog
+):
+    """T-367: the delete AND the rollback after it fail on every attempt; the new revision is
+    already committed, so the job still completes (WARNING logged) instead of 'Unexpected error'."""
+    import logging
+
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from backend.app.services.library_trash import library_trash_service
+
+    project, _item, rev = await _source_revision(async_client)
+    pipeline_id = await _pipeline(db_session)
+    state = {"armed": False, "attempts": 0, "rollbacks": 0}
+    real_rollback = AsyncSession.rollback
+
+    async def boom(*_args, **_kwargs):
+        state["attempts"] += 1
+        state["armed"] = True
+        raise OSError("disk gone")
+
+    async def rollback(self):
+        if state["armed"]:
+            state["armed"] = False
+            state["rollbacks"] += 1
+            raise RuntimeError("rollback failed too")
+        return await real_rollback(self)
+
+    monkeypatch.setattr(library_trash_service, "hard_delete_many", boom)
+    monkeypatch.setattr(AsyncSession, "rollback", rollback)
+    monkeypatch.setattr(project_reslice, "_DROP_RETRY_DELAYS", (0, 0))
+    with caplog.at_level(logging.WARNING, logger=project_reslice.logger.name):
+        started = await async_client.post(
+            f"/api/v1/projects/revisions/{rev['id']}/reslice",
+            json={"file_id": rev["files"][0]["id"], "pipeline_id": pipeline_id},
+        )
+        job = await _wait(async_client, started.json()["job_id"])
+    assert job["status"] == "completed", job
+    assert job["result"]["revision_number"] == 2
+    # The remaining attempts still run after a quiet rollback failure.
+    assert state["attempts"] == 3 and state["rollbacks"] == 3
+    warnings = [r for r in caplog.records if "rollback after a failed intermediate delete failed" in r.getMessage()]
+    assert len(warnings) == 3 and all(r.levelno == logging.WARNING and r.exc_info for r in warnings)
+    tree = (await async_client.get(f"/api/v1/projects/{project['id']}/tree")).json()
+    assert _revision_numbers(tree) == [2, 1]
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
 async def test_revision_added_helper_raising_does_not_fail_the_job(
     async_client: AsyncClient, db_session, fake_slicer, monkeypatch
 ):

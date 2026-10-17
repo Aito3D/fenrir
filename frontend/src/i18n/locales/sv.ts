@@ -10263,6 +10263,7 @@ errors: {
       uploading: 'Laddar upp…',
       uploadFailed: 'Uppladdningen misslyckades',
       onlyPrintable: 'Endast 3MF- och G-code-filer kan läggas i ett projekt',
+      itemBusy: '{{name}} laddas fortfarande upp, så de släppta filerna laddades inte upp',
       otherSections: 'Äldre filer',
       newRevision: 'Ny revision',
       addFiles: 'Lägg till filer',

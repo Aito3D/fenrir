@@ -10222,6 +10222,7 @@ export default {
       uploading: '上传中…',
       uploadFailed: '上传失败',
       onlyPrintable: '项目只能包含 3MF 和 G-code 文件',
+      itemBusy: '{{name}} 仍在上传，因此拖放的文件未上传',
       otherSections: '旧文件',
       newRevision: '新版本',
       addFiles: '添加文件',

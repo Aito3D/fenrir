@@ -10224,6 +10224,7 @@ export default {
       uploading: 'Caricamento…',
       uploadFailed: 'Caricamento non riuscito',
       onlyPrintable: 'In un progetto possono andare solo file 3MF e G-code',
+      itemBusy: '{{name}} è ancora in caricamento, quindi i file trascinati non sono stati caricati',
       otherSections: 'File precedenti',
       newRevision: 'Nuova revisione',
       addFiles: 'Aggiungi file',

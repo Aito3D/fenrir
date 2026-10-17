@@ -9857,6 +9857,7 @@ export default {
       uploading: '업로드 중…',
       uploadFailed: '업로드 실패',
       onlyPrintable: '프로젝트에는 3MF 및 G-code 파일만 넣을 수 있습니다',
+      itemBusy: '{{name}}을(를) 아직 업로드하는 중이라 드롭한 파일은 업로드되지 않았습니다',
       otherSections: '이전 파일',
       newRevision: '새 리비전',
       addFiles: '파일 추가',

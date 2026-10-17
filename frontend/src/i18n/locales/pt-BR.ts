@@ -10224,6 +10224,7 @@ export default {
       uploading: 'Enviando…',
       uploadFailed: 'Falha no envio',
       onlyPrintable: 'Somente arquivos 3MF e G-code podem ir para um projeto',
+      itemBusy: '{{name}} ainda está sendo enviado, então os arquivos soltos não foram enviados',
       otherSections: 'Arquivos antigos',
       newRevision: 'Nova revisão',
       addFiles: 'Adicionar arquivos',
