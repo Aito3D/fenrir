@@ -1263,7 +1263,6 @@ CREATE TABLE projects (
 1 export const OVERLAY_CLS
 1 export const PREVIEWABLE_TYPES
 1 export const PRINTABLE_ACCEPT
-1 export const PRINTABLE_EXTENSIONS
 1 export const projectKeys
 1 export const RADIO_ROW_CLS
 1 export const SECTION_LABEL_KEYS
@@ -1281,8 +1280,6 @@ CREATE TABLE projects (
 1 export function DropShield
 1 export function failureMessage
 1 export function filesFromDataTransfer
-1 export function inZone
-1 export function isFileDrag
 1 export function isPrintableFile
 1 export function isPrintableFilename
 1 export function isSectionEnabled

@@ -2044,6 +2044,60 @@ async def test_stream_files_removes_the_claimed_name_when_the_rename_fails(tmp_p
     assert list(folder.iterdir()) == []  # neither the claimed placeholder nor the .part survives
 
 
+@pytest.mark.asyncio
+async def test_stream_files_keeps_the_rename_error_when_removing_the_claimed_name_fails(tmp_path, monkeypatch, caplog):
+    folder = tmp_path / "R1"
+    folder.mkdir()
+    real_unlink = project_files._unlink
+
+    def refuse_replace(*_args, **_kwargs):
+        raise ValueError("rename refused")
+
+    def unlink(path, **kwargs):
+        if path.name == "a.step":
+            raise OSError("claimed name busy")
+        return real_unlink(path, **kwargs)
+
+    monkeypatch.setattr(project_files, "_replace", refuse_replace)
+    monkeypatch.setattr(project_files, "_unlink", unlink)
+    caplog.set_level("WARNING", logger=project_files.logger.name)
+    with pytest.raises(ValueError, match="rename refused"):
+        await project_files._stream_files(folder, [upload("a.step", b"geo")])
+    assert any("Could not remove" in r.getMessage() and "a.step" in r.getMessage() for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_stream_files_keeps_the_upload_error_and_cleans_earlier_files_when_the_part_cannot_go(
+    tmp_path, monkeypatch, caplog
+):
+    folder = tmp_path / "R1"
+    folder.mkdir()
+    real_stream = project_files._stream_upload_to_path
+    real_unlink = project_files._unlink
+    calls = 0
+
+    async def stream(upload_file, part, limit):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            part.write_bytes(b"half")
+            raise RuntimeError("upload broke")
+        return await real_stream(upload_file, part, limit)
+
+    def unlink(path, **kwargs):
+        if path.name.endswith(".part"):
+            raise OSError("part busy")
+        return real_unlink(path, **kwargs)
+
+    monkeypatch.setattr(project_files, "_stream_upload_to_path", stream)
+    monkeypatch.setattr(project_files, "_unlink", unlink)
+    caplog.set_level("WARNING", logger=project_files.logger.name)
+    with pytest.raises(RuntimeError, match="upload broke"):
+        await project_files._stream_files(folder, [upload("a.step", b"one"), upload("b.step", b"two")])
+    assert not (folder / "a.step").exists()  # the earlier file was still cleaned up
+    assert any("Could not remove" in r.getMessage() and ".part" in r.getMessage() for r in caplog.records)
+
+
 _STALE_PART = ".0123456789abcdef0123456789abcdef.part"
 
 

@@ -7,7 +7,7 @@ export const SECTION_ORDER: ProjectSection[] = ['scan', 'modelisation', 'impress
  *  new. Mirror of `ENABLED_SECTIONS` / `PRINTABLE_EXTENSIONS` in backend `services/project_storage.py`:
  *  re-enabling a section is a one-line change on each side. */
 export const ENABLED_SECTIONS: readonly ProjectSection[] = ['impression'];
-export const PRINTABLE_EXTENSIONS = ['.3mf', '.gcode', '.bgcode'] as const; // `.gcode.3mf` ends in `.3mf`
+const PRINTABLE_EXTENSIONS = ['.3mf', '.gcode', '.bgcode'] as const; // `.gcode.3mf` ends in `.3mf`
 /** `accept` for every project upload / drop input. */
 export const PRINTABLE_ACCEPT = PRINTABLE_EXTENSIONS.join(',');
 

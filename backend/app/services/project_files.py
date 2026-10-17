@@ -444,7 +444,7 @@ async def _stream_files(folder: Path, uploads: list[UploadFile]) -> list[_Writte
             try:
                 _replace(part, dest)
             except BaseException:
-                _unlink(dest, missing_ok=True)
+                _unlink_quietly(dest)
                 raise
             part = None
             entry = _WrittenFile(path=dest, size=size, digest=digest)
@@ -452,7 +452,7 @@ async def _stream_files(folder: Path, uploads: list[UploadFile]) -> list[_Writte
             await _post_process(entry)
     except BaseException:
         if part is not None:
-            _unlink(part, missing_ok=True)
+            _unlink_quietly(part)
         _cleanup_written(written)
         raise
     return written
