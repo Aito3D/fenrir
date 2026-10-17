@@ -117,11 +117,16 @@ export function ItemCard({ item, actions, open, onToggleDetails }: Props) {
   const [renaming, setRenaming] = useState<string | null>(null);
   const renameDone = useRef(false);
 
+  // A new revision is the newest: drop a picked older chip so the card shows it.
+  const uploadNewRevision = async (files: File[]) => {
+    if (await actions.uploadRevision(item.id, files)) setPickedId(null);
+  };
+
   const { dragOver, ...dropHandlers } = useFileDropZone({
     canDrop: canUpdate && !busy,
     canHighlight: canUpdate,
     stopPropagation: 'dragOverAndDrop',
-    onFiles: (files) => void actions.uploadRevision(item.id, files),
+    onFiles: (files) => void uploadNewRevision(files),
   });
 
   const source = shown?.files.find((f) => isSourceFilename(f.filename));
@@ -319,7 +324,7 @@ export function ItemCard({ item, actions, open, onToggleDetails }: Props) {
             onChange={(e) => {
               const files = Array.from(e.target.files ?? []);
               e.target.value = '';
-              if (files.length) void actions.uploadRevision(item.id, files);
+              if (files.length) void uploadNewRevision(files);
             }} />
         )}
       </li>

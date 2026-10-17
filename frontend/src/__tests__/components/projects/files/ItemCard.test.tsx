@@ -208,4 +208,38 @@ describe('ItemCard', () => {
     await userEvent.click(within(card()).getByRole('button', { name: 'R1' }));
     expect(within(tray).getByTestId('revision-1')).toBeInTheDocument();
   });
+  it('after uploading a new revision from the card, shows the newest revision again', async () => {
+    server.use(
+      http.post('/api/v1/projects/items/20/revisions', () => {
+        calls.push('upload:20');
+        return HttpResponse.json(
+          { revision: rev({ id: 3, number: 3, files: [file(52, 'bracket-v3.3mf', { file_type: '3mf' })] }), warnings: [] },
+          { status: 201 },
+        );
+      }),
+    );
+    render(<Harness value={bracket()} />);
+    await userEvent.click(within(card()).getByRole('button', { name: 'R1' }));
+    expect(within(card()).getByRole('button', { name: 'R1' })).toHaveAttribute('aria-pressed', 'true');
+
+    await userEvent.upload(screen.getByTestId('new-revision-input-20'), new File(['x'], 'bracket-v3.3mf'));
+    await waitFor(() => expect(calls).toContain('upload:20'));
+    await waitFor(() => expect(within(card()).getByRole('button', { name: 'R2' })).toHaveAttribute('aria-pressed', 'true'));
+    expect(within(card()).getByRole('button', { name: 'R1' })).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('a failed upload keeps the picked revision', async () => {
+    server.use(
+      http.post('/api/v1/projects/items/20/revisions', () => {
+        calls.push('upload:20');
+        return HttpResponse.json({ detail: 'nope' }, { status: 400 });
+      }),
+    );
+    render(<Harness value={bracket()} />);
+    await userEvent.click(within(card()).getByRole('button', { name: 'R1' }));
+    await userEvent.upload(screen.getByTestId('new-revision-input-20'), new File(['x'], 'bracket-v3.3mf'));
+    await waitFor(() => expect(calls).toContain('upload:20'));
+    await waitFor(() => expect(screen.queryByText('Uploading…')).not.toBeInTheDocument());
+    expect(within(card()).getByRole('button', { name: 'R1' })).toHaveAttribute('aria-pressed', 'true');
+  });
 });
