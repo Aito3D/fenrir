@@ -17,7 +17,7 @@ from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile
 from backend.app.models.pending_upload import PendingUpload
 from backend.app.models.project_item import ProjectItem, ProjectRevision
-from backend.app.services import project_files, project_filing, project_storage
+from backend.app.services import project_files, project_filing, project_slice, project_storage
 from backend.app.services.project_filing import auto_file_by_code, project_code_from_filename
 from backend.tests.project_fixtures import (
     add_user_with_group,
@@ -25,6 +25,7 @@ from backend.tests.project_fixtures import (
     bearer_headers,
     make_managed_library_file as _managed,
     projects_root_fixture,
+    threemf_bytes,
 )
 
 root = projects_root_fixture(autouse=True, subdir="projects", library=True, make_archive=True)
@@ -121,14 +122,22 @@ async def test_upload_with_code_files_next_revision(async_client: AsyncClient, d
 @pytest.mark.asyncio
 @pytest.mark.integration
 async def test_printer_card_upload_and_print_of_a_code_file_queues(
-    async_client: AsyncClient, db_session, printer_factory
+    async_client: AsyncClient, db_session, printer_factory, monkeypatch
 ):
     """T-283: the printer card uploads, then queues with the cleanup flag set.
     Auto-filing moves the upload into the project; the queue request is still
-    accepted and the flag dropped, so the revision file is never consumed."""
+    accepted and the flag dropped, so the revision file is never consumed.
+
+    The upload is a Bambu Studio project, so the item waits for the revision's
+    server slice (test_project_slice_queue.py); the slice start is stubbed."""
+
+    async def no_slice(db, revision_id, *, user_id):
+        return None
+
+    monkeypatch.setattr(project_slice, "start_revision_slice", no_slice)
     project, item_id = await _project_with_support_item(async_client, db_session)
     printer = await printer_factory()
-    upload = await _upload(async_client, f"{project['code']}_support.3mf", _3mf("r2"))
+    upload = await _upload(async_client, f"{project['code']}_support.3mf", threemf_bytes())
     assert upload.status_code == 200, upload.text
     assert upload.json()["filed_to_project"]["revision_number"] == 2
 

@@ -119,10 +119,12 @@ async def test_cleanup_flag_on_revision_file_is_accepted_and_dropped(
     card's upload-and-print flow always sends it); the flag is just dropped, so
     the file is never deleted after printing."""
     printer = await printer_factory()
+    # A sliced revision file: an unsliced .3mf queues as its revision's slice
+    # (test_project_slice_queue.py).
     library_file = LibraryFile(
-        filename="support.3mf",
-        file_path="/tmp/support.3mf",  # nosec B108 - never read
-        file_type="3mf",
+        filename="support.gcode.3mf",
+        file_path="/tmp/support.gcode.3mf",  # nosec B108 - never read
+        file_type="gcode.3mf",
         file_size=1,
         revision_id=7,
     )

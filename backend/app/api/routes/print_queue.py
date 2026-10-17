@@ -754,7 +754,7 @@ async def _resolve_queue_variants(
         # Fenrir: a project source .3mf runs as its server slice; an alternative cannot wait
         # for one (design 2026-10-17), so a revision not sliced yet is refused.
         if _is_unsliced_project_source(library_file):
-            sliced_file = await _sliced_file_of(db, library_file.revision_id)
+            sliced_file = await _sliced_file_of(db, library_file)
             if sliced_file is None:
                 raise HTTPException(
                     400,
@@ -873,10 +873,24 @@ def _is_unsliced_project_source(library_file: LibraryFile) -> bool:
     return library_file.revision_id is not None and not library_file.derived_slice and library_file.file_type == "3mf"
 
 
-async def _sliced_file_of(db: AsyncSession, revision_id: int | None) -> LibraryFile | None:
-    """The revision's server slice when it is ``sliced`` and the row is still live, else None."""
+NOT_THE_SOURCE = "This file is not the revision's source; upload it as its own item."
+NO_PROJECT_TO_SLICE = "This .3mf holds no Bambu Studio project to slice, so it cannot be printed."
+
+
+async def _sliced_file_of(db: AsyncSession, library_file: LibraryFile) -> LibraryFile | None:
+    """The server slice of ``library_file`` (an unsliced project ``.3mf``) when its revision is
+    ``sliced`` and the row is still live, else None (not sliced yet).
+
+    The slice is made from the revision's source ``.3mf`` only; any other ``.3mf`` a legacy
+    revision holds has no slice and is refused (400), so it never prints another file's G-code."""
+    revision_id = library_file.revision_id
     if revision_id is None:
         return None
+    source = await _project_slice().source_file_of(db, revision_id)
+    if source is None:
+        raise HTTPException(400, NO_PROJECT_TO_SLICE)
+    if source.id != library_file.id:
+        raise HTTPException(400, NOT_THE_SOURCE)
     revision = await db.get(ProjectRevision, revision_id)
     if revision is None or revision.slice_status != "sliced" or revision.sliced_file_id is None:
         return None
@@ -1020,7 +1034,7 @@ async def add_to_queue(
     # never receives the unsliced source.
     slice_wait_revision_id: int | None = None
     if library_file is not None and _is_unsliced_project_source(library_file):
-        sliced_file = await _sliced_file_of(db, library_file.revision_id)
+        sliced_file = await _sliced_file_of(db, library_file)
         if sliced_file is not None:
             library_file = sliced_file
             data.library_file_id = sliced_file.id
@@ -2648,19 +2662,17 @@ async def retry_queue_item_slice(
         raise HTTPException(403, "You can only update your own queue items")
     if item.status != "slice_failed":
         raise HTTPException(400, "Only an item whose slice failed can be sliced again")
-    source = await db.get(LibraryFile, item.library_file_id) if item.library_file_id is not None else None
-    if source is None or source.revision_id is None:
+    queued_file = await db.get(LibraryFile, item.library_file_id) if item.library_file_id is not None else None
+    if queued_file is None or queued_file.revision_id is None:
         raise HTTPException(400, "This item has no project revision to slice")
-    revision_id = source.revision_id
+    revision_id = queued_file.revision_id
+    source = await _project_slice().source_file_of(db, revision_id)
+    if source is None or source.id != queued_file.id:
+        raise HTTPException(400, NOT_THE_SOURCE)
 
     await db.execute(
         update(PrintQueueItem)
-        .where(
-            PrintQueueItem.status == "slice_failed",
-            PrintQueueItem.library_file_id.in_(
-                select(LibraryFile.id).where(LibraryFile.revision_id == revision_id, LibraryFile.revision_sources())
-            ),
-        )
+        .where(PrintQueueItem.status == "slice_failed", PrintQueueItem.library_file_id == source.id)
         .values(status="slicing", error_message=None)
         .execution_options(synchronize_session="fetch")
     )

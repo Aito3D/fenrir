@@ -11,12 +11,14 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import ExitStack
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
 
+from backend.app.api.routes.library import to_absolute_path
 from backend.app.core import database
 from backend.app.models.library import LibraryFile
 from backend.app.models.print_batch import PrintBatch, PrintBatchPlate
@@ -483,3 +485,99 @@ async def test_model_based_item_reads_filament_types_from_the_slice(
     item = await _item(db_session, out["id"])
     assert item.status == "pending"
     assert item.required_filament_types == '["PETG"]'
+
+
+async def _legacy_two_source_revision(client: AsyncClient, db) -> tuple[dict, int, int]:
+    """A legacy revision holding two project ``.3mf`` files (uploads now take one): the slice is made
+    from the first only (``project_slice._source_file``)."""
+    rev = await _upload(client, "partA.3mf")
+    part_a = await db.get(LibraryFile, rev["files"][0]["id"])
+    a_path = Path(part_a.file_path)
+    b_rel = str(a_path.with_name("partB.3mf"))
+    b_abs = to_absolute_path(b_rel)
+    b_abs.write_bytes(threemf_bytes())
+    part_b = LibraryFile(filename="partB.3mf", file_path=b_rel, file_size=1, file_type="3mf", revision_id=rev["id"])
+    db.add(part_b)
+    await db.commit()
+    return rev, rev["files"][0]["id"], part_b.id
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_only_the_revision_source_prints_as_its_slice(
+    async_client: AsyncClient, db_session, sidecar, printer_factory
+):
+    """partB never prints partA's G-code: it is refused, sliced revision or not."""
+    await printer_factory(model="X1C")
+    rev, part_a, part_b = await _legacy_two_source_revision(async_client, db_session)
+
+    # not sliced yet: partA waits, partB is refused (single and as an alternative)
+    response = await async_client.post("/api/v1/queue/", json={"library_file_id": part_b})
+    assert response.status_code == 400
+    assert response.json()["detail"] == "This file is not the revision's source; upload it as its own item."
+    response = await async_client.post(
+        "/api/v1/queue/", json={"variants": [{"library_file_id": part_b, "target_model": "X1C"}]}
+    )
+    assert response.status_code == 400
+    assert "not the revision's source" in response.json()["detail"]
+    waiting = await _queue(async_client, part_a)
+    assert waiting["status"] == "slicing"
+    revision = await _revision(db_session, rev["id"])
+    await _wait_job(revision.slice_job_id)
+    sliced_id = (await _revision(db_session, rev["id"])).sliced_file_id
+    item = await _item(db_session, waiting["id"])
+    assert (item.status, item.library_file_id) == ("pending", sliced_id)
+
+    # sliced: partA (single and variant) runs the slice, partB is still refused
+    assert (await _queue(async_client, part_a))["library_file_id"] == sliced_id
+    response = await async_client.post("/api/v1/queue/", json={"variants": [{"library_file_id": part_a}]})
+    assert response.status_code == 200, response.text
+    db_session.expire_all()
+    (variant,) = (
+        (
+            await db_session.execute(
+                select(PrintQueueVariant).where(PrintQueueVariant.queue_item_id == response.json()["id"])
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert variant.library_file_id == sliced_id
+    assert (await async_client.post("/api/v1/queue/", json={"library_file_id": part_b})).status_code == 400
+    response = await async_client.post(
+        "/api/v1/queue/", json={"variants": [{"library_file_id": part_b, "target_model": "X1C"}]}
+    )
+    assert response.status_code == 400
+    assert len(sidecar.slice_requests) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_landing_slice_moves_only_items_on_the_source(async_client: AsyncClient, db_session, sidecar):
+    """An item already waiting on another ``.3mf`` of the revision (e.g. inserted before this rule)
+    is not moved onto the source's G-code."""
+    rev, part_a, part_b = await _legacy_two_source_revision(async_client, db_session)
+    db_session.add(PrintQueueItem(library_file_id=part_b, status="slicing", position=1, revision_id=rev["id"]))
+    await db_session.commit()
+    stray = (
+        await db_session.execute(select(PrintQueueItem.id).where(PrintQueueItem.library_file_id == part_b))
+    ).scalar_one()
+
+    waiting = await _queue(async_client, part_a)
+    await _wait_job((await _revision(db_session, rev["id"])).slice_job_id)
+    assert (await _item(db_session, waiting["id"])).status == "pending"
+    item = await _item(db_session, stray)
+    assert (item.status, item.library_file_id) == ("slicing", part_b)
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_a_revision_3mf_with_no_project_is_refused(async_client: AsyncClient, db_session, sidecar):
+    """A revision ``.3mf`` that is neither G-code nor a project has nothing to slice: refused, not queued."""
+    rev = await _upload(async_client)
+    source = await db_session.get(LibraryFile, rev["files"][0]["id"])
+    to_absolute_path(source.file_path).write_bytes(b"PK\x05\x06" + b"\x00" * 18)  # an empty zip
+    response = await async_client.post("/api/v1/queue/", json={"library_file_id": rev["files"][0]["id"]})
+    assert response.status_code == 400
+    assert "no Bambu Studio project" in response.json()["detail"]
+    assert sidecar.slice_requests == []

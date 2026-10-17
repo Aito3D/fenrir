@@ -208,14 +208,22 @@ def _required_filament_types(sliced_file: LibraryFile, item: PrintQueueItem) -> 
     return json.dumps(sorted(types)) if types else None
 
 
+async def source_file_of(db: AsyncSession, revision_id: int) -> LibraryFile | None:
+    """The revision's source ``.3mf``: the one file its slice is made from (None when it has none)."""
+    return await _source_file(db, revision_id)
+
+
 async def _waiting_items(db: AsyncSession, revision_id: int, statuses: tuple[str, ...]) -> list[PrintQueueItem]:
-    """Queue items in ``statuses`` on one of the revision's own (non-derived) files."""
-    sources = select(LibraryFile.id).where(LibraryFile.revision_id == revision_id, LibraryFile.revision_sources())
+    """Queue items in ``statuses`` on the revision's source ``.3mf``: the slice is that file's G-code
+    only, never another ``.3mf`` a legacy revision also holds."""
+    source = await _source_file(db, revision_id)
+    if source is None:
+        return []
     return list(
         (
             await db.execute(
                 select(PrintQueueItem).where(
-                    PrintQueueItem.status.in_(statuses), PrintQueueItem.library_file_id.in_(sources)
+                    PrintQueueItem.status.in_(statuses), PrintQueueItem.library_file_id == source.id
                 )
             )
         )
