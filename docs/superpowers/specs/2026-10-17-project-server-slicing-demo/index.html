@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Printing Cards Demo</title>
+<script src="https://cdn.tailwindcss.com/3.4.16"></script>
+<script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+<script>
+tailwind.config = { theme: { extend: { colors: {
+  bg: '#0c1016', surf: '#141b23', line: '#212c37', ink: '#e9eff6', sub: '#93a4b6', mute: '#6f8496', acc: '#14b8a6',
+} } } };
+</script>
+<style>
+  html { font-size: 14.4px; }
+  body { background: #0c1016; color: #e9eff6; font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif; }
+  .thumb img { filter: brightness(1.25) contrast(1.1); }
+  .hue1 img { filter: brightness(1.25) contrast(1.1) hue-rotate(160deg); }
+  .hue2 img { filter: brightness(1.15) contrast(1.1) hue-rotate(250deg) saturate(.6); }
+  [data-lucide] { width: 1em; height: 1em; }
+  .tab[aria-selected=true] { background: #14b8a6; color: #0c1016; }
+  .hold { position: relative; overflow: hidden; }
+  .hold::after { content: ''; position: absolute; inset: 0; background: rgba(248,113,113,.25); transform: scaleX(0); transform-origin: left; transition: transform .15s; }
+  .hold:active::after { transform: scaleX(1); transition: transform 1s linear; }
+  .rev-dot[aria-current=true] { background: #14b8a6; color: #0c1016; border-color: #14b8a6; }
+</style>
+</head>
+<body class="min-h-screen p-4 md:p-8">
+
+<div class="max-w-[1400px] mx-auto">
+  <div class="flex flex-wrap items-center gap-3 mb-2">
+    <h1 class="text-lg font-semibold">Projects › Printing panel as cards</h1>
+    <span class="text-xs text-mute">Demo — static mockup, not wired to the app</span>
+  </div>
+  <div class="flex flex-wrap gap-2 mb-6" role="tablist">
+    <button class="tab px-3 py-1.5 rounded-md text-sm border border-line" data-v="a" aria-selected="false">A · File-manager grid + side drawer</button>
+    <button class="tab px-3 py-1.5 rounded-md text-sm border border-line" data-v="b" aria-selected="false">B · Grid + inline expand</button>
+    <button class="tab px-3 py-1.5 rounded-md text-sm border border-line" data-v="c" aria-selected="false">C · Revision switcher on the card</button>
+    <button class="tab px-3 py-1.5 rounded-md text-sm border border-line" data-v="d" aria-selected="true">D · B + C mix</button>
+  </div>
+
+  <!-- ===================== A ===================== -->
+  <section data-view="a" hidden>
+    <p class="text-sm text-sub mb-4 max-w-3xl">Same card as the File Manager: square thumbnail with a type badge, name and print facts under it, then an always-visible action bar. One card per <b>item</b>, showing its newest revision. Clicking the card opens the revision history in a side drawer.</p>
+    <div class="rounded-xl border border-line bg-surf/40">
+      <header class="flex items-center gap-2 px-4 py-3 border-b border-line">
+        <i data-lucide="chevron-down" class="text-mute"></i><span class="font-medium text-sm">Printing</span><span class="text-xs text-mute">3</span>
+        <button class="ml-auto text-xs text-acc flex items-center gap-1"><i data-lucide="plus"></i>New item</button>
+      </header>
+      <div class="p-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4" id="gridA"></div>
+    </div>
+  </section>
+
+  <!-- ===================== B ===================== -->
+  <section data-view="b" hidden>
+    <p class="text-sm text-sub mb-4 max-w-3xl">Same cards, but the history opens <b>in place</b>: a full-width tray slides open under the card's row (Google-Images style), so you stay in the panel. The card gets a status ribbon so the state reads at a glance.</p>
+    <div class="rounded-xl border border-line bg-surf/40">
+      <header class="flex items-center gap-2 px-4 py-3 border-b border-line">
+        <i data-lucide="chevron-down" class="text-mute"></i><span class="font-medium text-sm">Printing</span><span class="text-xs text-mute">3</span>
+        <button class="ml-auto text-xs text-acc flex items-center gap-1"><i data-lucide="plus"></i>New item</button>
+      </header>
+      <div class="p-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4" id="gridB"></div>
+    </div>
+  </section>
+
+  <!-- ===================== C ===================== -->
+  <section data-view="c" hidden>
+    <p class="text-sm text-sub mb-4 max-w-3xl">No drawer, no tray: the card itself carries the history. A row of revision chips (R1 R2 R3) sits under the thumbnail; picking one swaps the picture, facts and actions to that revision. Older revisions show a muted "not latest" state. Bigger cards, fewer per row.</p>
+    <div class="rounded-xl border border-line bg-surf/40">
+      <header class="flex items-center gap-2 px-4 py-3 border-b border-line">
+        <i data-lucide="chevron-down" class="text-mute"></i><span class="font-medium text-sm">Printing</span><span class="text-xs text-mute">3</span>
+        <button class="ml-auto text-xs text-acc flex items-center gap-1"><i data-lucide="plus"></i>New item</button>
+      </header>
+      <div class="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4" id="gridC"></div>
+    </div>
+  </section>
+</div>
+
+  <section data-view="d" class="max-w-[1400px] mx-auto">
+    <p class="text-sm text-sub mb-4 max-w-3xl">B's compact grid and status strip, C's revision chips. The strip and chip colour follow the revision you're looking at; an older revision dims the picture. Actions are icons only — hover for the name.</p>
+    <div class="rounded-xl border border-line bg-surf/40">
+      <header class="flex items-center gap-2 px-4 py-3 border-b border-line">
+        <i data-lucide="chevron-down" class="text-mute"></i><span class="font-medium text-sm">Printing</span><span class="text-xs text-mute">3</span>
+        <button class="ml-auto text-xs text-acc flex items-center gap-1"><i data-lucide="plus"></i>New item</button>
+      </header>
+      <div class="p-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4" id="gridD"></div>
+    </div>
+  </section>
+
+<!-- Drawer for A -->
+<div id="drawer" class="fixed inset-0 z-40 hidden">
+  <div class="absolute inset-0 bg-black/50" data-close></div>
+  <aside class="absolute right-0 top-0 h-full w-full max-w-[420px] bg-surf border-l border-line p-5 overflow-y-auto">
+    <div class="flex items-center gap-2 mb-4">
+      <h2 class="font-semibold" id="drawerTitle"></h2>
+      <button class="ml-auto p-1.5 rounded hover:bg-line" data-close><i data-lucide="x"></i></button>
+    </div>
+    <div id="drawerBody" class="space-y-3"></div>
+  </aside>
+</div>
+
+<script>
+const STATUS = {
+  wip:      { label: 'In progress', cls: 'bg-amber-500/15 text-amber-400 border-amber-500/40' },
+  approved: { label: 'Approved',    cls: 'bg-teal-500/15 text-teal-300 border-teal-500/40' },
+  obsolete: { label: 'Obsolete',    cls: 'bg-slate-500/15 text-slate-400 border-slate-500/40' },
+};
+const items = [
+  { name: 'LookUp Space', hue: '', revs: [
+    { n: 1, status: 'wip', by: 'admin', date: '10/17/2026', file: 'LookUp Space.3mf', type: '3MF', size: '446.2 KB',
+      printer: 'H2S', nozzle: '0.4 mm', layer: '0.2 mm', fil: 'PETG', sliced: false },
+  ]},
+  { name: 'Support bracket', hue: 'hue1', revs: [
+    { n: 3, status: 'approved', by: 'paul', date: '10/16/2026', file: 'Support bracket.3mf', type: '3MF', size: '1.2 MB',
+      printer: 'X1C', nozzle: '0.4 mm', layer: '0.16 mm', fil: 'PLA Matte', sliced: true, time: '2h 14m', grams: '38.4', prints: 4 },
+    { n: 2, status: 'obsolete', by: 'paul', date: '10/12/2026', file: 'Support bracket.3mf', type: '3MF', size: '1.1 MB',
+      printer: 'X1C', nozzle: '0.4 mm', layer: '0.2 mm', fil: 'PLA Matte', sliced: true, time: '1h 52m', grams: '36.0', prints: 2 },
+    { n: 1, status: 'obsolete', by: 'admin', date: '10/02/2026', file: 'Support bracket.3mf', type: '3MF', size: '0.9 MB',
+      printer: 'X1C', nozzle: '0.4 mm', layer: '0.2 mm', fil: 'PLA', sliced: true, time: '1h 40m', grams: '33.1', prints: 1 },
+  ]},
+  { name: 'Gabarit', hue: 'hue2', slicing: 62, revs: [
+    { n: 2, status: 'wip', by: 'admin', date: '10/17/2026', file: 'Gabarit.3mf', type: '3MF', size: '612 KB',
+      printer: 'H2D', nozzle: '0.6 mm', layer: '0.24 mm', fil: 'ABS', sliced: false, outdated: true },
+    { n: 1, status: 'approved', by: 'admin', date: '10/09/2026', file: 'Gabarit.3mf', type: '3MF', size: '598 KB',
+      printer: 'H2D', nozzle: '0.6 mm', layer: '0.24 mm', fil: 'ABS', sliced: true, time: '5h 03m', grams: '142.7', prints: 0 },
+  ]},
+];
+
+const chip = (s) => `<span class="text-[11px] px-1.5 py-0.5 rounded border ${STATUS[s].cls}">${STATUS[s].label}</span>`;
+const thumb = (it, extra = '') => `
+  <div class="thumb ${it.hue} relative aspect-square bg-bg rounded-t-lg overflow-hidden flex items-center justify-center ${extra}">
+    <img src="part.png" alt="" class="w-full h-full object-cover">
+  </div>`;
+const facts = (r) => `
+  <div class="flex items-center gap-3 mt-1 text-xs text-mute">
+    <span>${r.size}</span>
+    ${r.time ? `<span class="flex items-center gap-1"><i data-lucide="clock"></i>${r.time}</span>` : ''}
+    ${r.grams ? `<span class="flex items-center gap-1"><i data-lucide="package"></i>${r.grams}g</span>` : ''}
+  </div>
+  <div class="mt-1 text-xs text-mute flex items-center gap-1 min-w-0">
+    <i data-lucide="printer" class="flex-shrink-0"></i><span class="truncate">${r.printer} · ${r.nozzle} · ${r.layer} · ${r.fil}</span>
+  </div>`;
+const sliceLine = (it, r) => it.slicing && r === it.revs[0]
+  ? `<div class="mt-2"><div class="flex justify-between text-[11px] text-acc mb-1"><span>Slicing…</span><span>${it.slicing}%</span></div><div class="h-1 rounded bg-line overflow-hidden"><div class="h-full bg-acc" style="width:${it.slicing}%"></div></div></div>`
+  : r.sliced
+    ? `<div class="mt-1 text-xs text-acc flex items-center gap-1"><i data-lucide="check-circle-2"></i>Sliced${r.prints ? ` · printed ${r.prints}×` : ''}</div>`
+    : `<div class="mt-1 text-xs text-amber-400 flex items-center gap-1"><i data-lucide="alert-circle"></i>Not sliced</div>`;
+const actions = (r, compact) => {
+  const b = (icon, label, cls = '') => `<button title="${label}" class="flex-1 min-w-0 flex items-center justify-center gap-1 py-1.5 rounded-md text-xs text-sub hover:bg-line hover:text-ink ${cls}"><i data-lucide="${icon}"></i>${compact ? '' : `<span class="truncate">${label}</span>`}</button>`;
+  return `<div class="flex items-center gap-1 border-t border-line px-1.5 py-1.5" onclick="event.stopPropagation()">
+    ${b('printer', 'Print', r.sliced ? 'text-acc' : '')}
+    ${b('scissors', 'Re-slice')}
+    ${b('eye', 'Preview')}
+    ${b('download', 'Download')}
+    <button title="More" class="px-1.5 py-1.5 rounded-md text-sub hover:bg-line"><i data-lucide="more-vertical"></i></button>
+  </div>`;
+};
+const newCard = (aspect = 'aspect-square') => `
+  <button class="rounded-lg border-2 border-dashed border-line hover:border-acc/60 text-mute hover:text-acc flex flex-col items-center justify-center gap-2 min-h-[200px]">
+    <i data-lucide="upload-cloud" style="width:28px;height:28px"></i>
+    <span class="text-sm">Drop a .3mf or click</span>
+    <span class="text-[11px] text-mute">creates a new item</span>
+  </button>`;
+
+/* ---------- A ---------- */
+function cardA(it, i) {
+  const r = it.revs[0];
+  return `<div class="group relative bg-surf rounded-lg border border-line hover:border-acc/50 cursor-pointer transition" data-open="${i}">
+    ${thumb(it)}
+    <span class="absolute top-2 right-2 text-[11px] px-1.5 py-0.5 rounded font-medium bg-acc/90 text-white">${r.type}</span>
+    <span class="absolute top-2 left-2 text-[11px] px-1.5 py-0.5 rounded font-mono font-semibold bg-black/60 text-white">R${r.n}</span>
+    ${r.outdated ? `<span class="absolute top-9 left-2 text-[10px] px-1.5 py-0.5 rounded bg-amber-500/90 text-black font-semibold">OUTDATED</span>` : ''}
+    <div class="p-3">
+      <div class="flex items-center gap-2"><h3 class="text-sm font-medium truncate">${it.name}</h3><span class="ml-auto">${chip(r.status)}</span></div>
+      ${facts(r)}
+      ${sliceLine(it, r)}
+      <div class="mt-1 text-[11px] text-mute">${it.revs.length} revision${it.revs.length > 1 ? 's' : ''} · by ${r.by} · ${r.date}</div>
+    </div>
+    ${actions(r, true)}
+  </div>`;
+}
+document.getElementById('gridA').innerHTML = items.map(cardA).join('') + newCard();
+
+function revRow(it, r) {
+  return `<div class="rounded-lg border border-line bg-bg/60 p-3">
+    <div class="flex items-center gap-2 mb-2"><span class="font-mono text-sm font-semibold">R${r.n}</span>${chip(r.status)}<span class="ml-auto text-[11px] text-mute">${r.by} · ${r.date}</span></div>
+    <div class="flex gap-3">
+      <div class="thumb ${it.hue} w-16 h-16 rounded bg-bg overflow-hidden flex-shrink-0"><img src="part.png" class="w-full h-full object-cover"></div>
+      <div class="min-w-0 flex-1">${facts(r)}${sliceLine(it, r)}</div>
+    </div>
+    <div class="mt-2 -mx-1.5 -mb-1.5">${actions(r, false)}</div>
+  </div>`;
+}
+document.querySelectorAll('[data-open]').forEach((el) => el.addEventListener('click', () => {
+  const it = items[el.dataset.open];
+  document.getElementById('drawerTitle').textContent = it.name;
+  document.getElementById('drawerBody').innerHTML = it.revs.map((r) => revRow(it, r)).join('') +
+    `<div class="flex gap-2 pt-2"><button class="text-xs text-sub border border-line rounded-md px-2.5 py-1.5 hover:text-ink"><i data-lucide="upload"></i> New revision</button>
+     <button class="hold text-xs text-red-400 border border-line rounded-md px-2.5 py-1.5 ml-auto"><span class="relative">Hold to delete item</span></button></div>`;
+  document.getElementById('drawer').classList.remove('hidden');
+  lucide.createIcons();
+}));
+document.querySelectorAll('[data-close]').forEach((el) => el.addEventListener('click', () => document.getElementById('drawer').classList.add('hidden')));
+
+/* ---------- B ---------- */
+const ribbon = { wip: 'bg-amber-400', approved: 'bg-teal-400', obsolete: 'bg-slate-500' };
+function cardB(it, i) {
+  const r = it.revs[0];
+  return `<div class="group relative bg-surf rounded-lg border border-line hover:border-acc/50 cursor-pointer transition overflow-hidden" data-tray="${i}">
+    <div class="h-1 ${ribbon[r.status]}"></div>
+    ${thumb(it, 'rounded-none')}
+    <span class="absolute top-3 right-2 text-[11px] px-1.5 py-0.5 rounded font-medium bg-acc/90 text-white">${r.type}</span>
+    <div class="p-3">
+      <h3 class="text-sm font-medium truncate">${it.name}</h3>
+      <div class="mt-0.5 text-xs text-sub">R${r.n} · ${STATUS[r.status].label}${r.outdated ? ' · <span class="text-amber-400">outdated</span>' : ''}</div>
+      ${facts(r)}
+      ${sliceLine(it, r)}
+    </div>
+    ${actions(r, true)}
+    <div class="absolute bottom-[44px] left-1/2 -translate-x-1/2 text-mute opacity-0 group-hover:opacity-100 transition"><i data-lucide="chevron-down"></i></div>
+  </div>`;
+}
+const gridB = document.getElementById('gridB');
+gridB.innerHTML = items.map(cardB).join('') + newCard();
+let openTray = null;
+gridB.addEventListener('click', (e) => {
+  const card = e.target.closest('[data-tray]'); if (!card) return;
+  gridB.querySelector('.tray')?.remove();
+  gridB.querySelectorAll('[data-tray]').forEach((c) => c.classList.remove('ring-1', 'ring-acc', 'border-acc'));
+  const i = card.dataset.tray;
+  if (openTray === i) { openTray = null; return; }
+  openTray = i;
+  card.classList.add('ring-1', 'ring-acc', 'border-acc');
+  const it = items[i];
+  // insert after the last card of this visual row
+  const cards = [...gridB.children];
+  const top = card.offsetTop;
+  let last = card;
+  cards.forEach((c) => { if (c.offsetTop === top) last = c; });
+  const tray = document.createElement('div');
+  tray.className = 'tray col-span-full rounded-lg border border-acc/40 bg-bg/70 p-4';
+  tray.innerHTML = `<div class="flex items-center gap-2 mb-3"><span class="text-sm font-medium">${it.name} — history</span>
+      <button class="ml-auto text-xs text-sub border border-line rounded-md px-2.5 py-1 hover:text-ink">New revision</button>
+      <button class="hold text-xs text-red-400 border border-line rounded-md px-2.5 py-1"><span class="relative">Hold to delete</span></button></div>
+    <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">${it.revs.map((r) => revRow(it, r)).join('')}</div>`;
+  last.after(tray);
+  lucide.createIcons();
+});
+
+/* ---------- C ---------- */
+const sel = items.map(() => 0);
+function cardC(it, i) {
+  const r = it.revs[sel[i]];
+  const latest = sel[i] === 0;
+  return `<div class="bg-surf rounded-lg border border-line hover:border-acc/50 transition overflow-hidden" data-c="${i}">
+    <div class="relative">
+      ${thumb(it, (latest ? '' : 'opacity-50 ') + 'rounded-none aspect-[4/3]')}
+      <span class="absolute top-2 right-2 text-[11px] px-1.5 py-0.5 rounded font-medium bg-acc/90 text-white">${r.type}</span>
+      ${latest ? '' : `<span class="absolute inset-x-0 bottom-0 text-center text-[11px] py-1 bg-black/70 text-sub">Viewing an older revision</span>`}
+    </div>
+    <div class="flex items-center gap-1 px-3 pt-3">
+      ${it.revs.map((x, j) => `<button class="rev-dot text-[11px] font-mono font-semibold px-1.5 py-0.5 rounded border border-line text-sub hover:text-ink" data-pick="${i}:${j}" aria-current="${j === sel[i]}">R${x.n}</button>`).join('')}
+      <button title="New revision" class="text-[11px] px-1.5 py-0.5 rounded border border-dashed border-line text-mute hover:text-acc hover:border-acc"><i data-lucide="plus"></i></button>
+      <span class="ml-auto">${chip(r.status)}</span>
+    </div>
+    <div class="px-3 pb-3 pt-2">
+      <h3 class="text-sm font-medium truncate">${it.name}</h3>
+      ${facts(r)}
+      ${sliceLine(it, r)}
+      <div class="mt-1 text-[11px] text-mute">by ${r.by} · ${r.date}${r.outdated ? ' · <span class="text-amber-400">source changed since</span>' : ''}</div>
+    </div>
+    ${actions(r, false)}
+  </div>`;
+}
+const gridC = document.getElementById('gridC');
+const renderC = () => { gridC.innerHTML = items.map(cardC).join('') + newCard(); lucide.createIcons(); };
+gridC.addEventListener('click', (e) => {
+  const p = e.target.closest('[data-pick]'); if (!p) return;
+  const [i, j] = p.dataset.pick.split(':').map(Number); sel[i] = j; renderC();
+});
+renderC();
+
+
+/* ---------- D ---------- */
+const selD = items.map(() => 0);
+const iconBtn = (icon, label, cls = '') => `<button title="${label}" aria-label="${label}" class="flex-1 flex items-center justify-center py-2 rounded-md text-sub hover:bg-line hover:text-ink ${cls}"><i data-lucide="${icon}" style="width:15px;height:15px"></i></button>`;
+function cardD(it, i) {
+  const r = it.revs[selD[i]];
+  const latest = selD[i] === 0;
+  return `<div class="group relative bg-surf rounded-lg border border-line hover:border-acc/50 transition overflow-hidden flex flex-col">
+    <div class="h-1 ${ribbon[r.status]}"></div>
+    <div class="relative">
+      ${thumb(it, (latest ? '' : 'opacity-40 ') + 'rounded-none')}
+      <span class="absolute top-2 right-2 text-[11px] px-1.5 py-0.5 rounded font-medium bg-acc/90 text-white">${r.type}</span>
+      ${r.outdated ? `<span class="absolute top-2 left-2 text-[10px] px-1.5 py-0.5 rounded bg-amber-500/90 text-black font-semibold">OUTDATED</span>` : ''}
+      ${latest ? '' : `<span class="absolute inset-x-0 bottom-0 text-center text-[11px] py-1 bg-black/70 text-sub">Older revision</span>`}
+    </div>
+    <div class="flex items-center gap-1 px-3 pt-2.5 flex-wrap">
+      ${it.revs.map((x, j) => `<button class="rev-dot text-[11px] font-mono font-semibold px-1.5 py-0.5 rounded border border-line text-sub hover:text-ink" data-pickd="${i}:${j}" aria-current="${j === selD[i]}" title="R${x.n} · ${STATUS[x.status].label}">R${x.n}</button>`).join('')}
+      <button title="New revision" aria-label="New revision" class="text-[11px] px-1 py-0.5 rounded border border-dashed border-line text-mute hover:text-acc hover:border-acc"><i data-lucide="plus"></i></button>
+      <span class="ml-auto">${chip(r.status)}</span>
+    </div>
+    <div class="px-3 pb-3 pt-1.5 flex-1">
+      <h3 class="text-sm font-medium truncate" title="${it.name}">${it.name}</h3>
+      ${facts(r)}
+      ${sliceLine(it, r)}
+      <div class="mt-1 text-[11px] text-mute">by ${r.by} · ${r.date}</div>
+    </div>
+    <div class="flex items-center gap-0.5 border-t border-line px-1.5 py-1">
+      ${iconBtn('printer', 'Print', r.sliced ? 'text-acc' : '')}
+      ${iconBtn('scissors', 'Re-slice')}
+      ${iconBtn('eye', 'Preview')}
+      ${iconBtn('download', 'Download')}
+      ${iconBtn('more-vertical', 'More')}
+    </div>
+  </div>`;
+}
+const gridD = document.getElementById('gridD');
+const renderD = () => { gridD.innerHTML = items.map(cardD).join('') + newCard(); lucide.createIcons(); };
+gridD.addEventListener('click', (e) => {
+  const p = e.target.closest('[data-pickd]'); if (!p) return;
+  const [i, j] = p.dataset.pickd.split(':').map(Number); selD[i] = j; renderD();
+});
+renderD();
+
+/* ---------- tabs ---------- */
+document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => {
+  document.querySelectorAll('.tab').forEach((x) => x.setAttribute('aria-selected', x === t));
+  document.querySelectorAll('[data-view]').forEach((s) => s.hidden = s.dataset.view !== t.dataset.v);
+}));
+lucide.createIcons();
+</script>
+</body>
+</html>
