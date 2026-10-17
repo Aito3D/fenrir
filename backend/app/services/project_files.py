@@ -90,7 +90,7 @@ logger = logging.getLogger(__name__)
 
 
 # Thin wrappers over the filesystem calls whose failure paths are tested: tests patch these module names
-# instead of the process-wide os / shutil / Path functions.
+# instead of the process-wide os / shutil / Path functions (rename, replace, copystat, move, unlink, rmdir, os.open).
 def _replace(src: Path, dest: Path) -> None:
     os.replace(src, dest)
 
@@ -109,6 +109,18 @@ def _copystat(src: Path, dest: Path, **kwargs) -> None:
 
 def _move(src: str, dest: str) -> None:
     shutil.move(src, dest)
+
+
+def _unlink(path: Path, *, missing_ok: bool = False) -> None:
+    path.unlink(missing_ok=missing_ok)
+
+
+def _rmdir(path: Path) -> None:
+    path.rmdir()
+
+
+def _os_open(path: str | Path, flags: int) -> int:
+    return os.open(path, flags)
 
 
 # Meshes above this get a type icon instead of a rendered thumbnail (spec §2.3).
@@ -373,7 +385,7 @@ async def _make_thumbnail(path: Path) -> tuple[Path | None, dict | None]:
 def _unlink_quietly(path: Path) -> None:
     """``path.unlink(missing_ok=True)``; an OSError is logged and swallowed so a cleanup carries on."""
     try:
-        path.unlink(missing_ok=True)
+        _unlink(path, missing_ok=True)
     except OSError:
         logger.warning("Could not remove %s during cleanup", path, exc_info=True)
 
@@ -432,7 +444,7 @@ async def _stream_files(folder: Path, uploads: list[UploadFile]) -> list[_Writte
             try:
                 _replace(part, dest)
             except BaseException:
-                dest.unlink(missing_ok=True)
+                _unlink(dest, missing_ok=True)
                 raise
             part = None
             entry = _WrittenFile(path=dest, size=size, digest=digest)
@@ -440,7 +452,7 @@ async def _stream_files(folder: Path, uploads: list[UploadFile]) -> list[_Writte
             await _post_process(entry)
     except BaseException:
         if part is not None:
-            part.unlink(missing_ok=True)
+            _unlink(part, missing_ok=True)
         _cleanup_written(written)
         raise
     return written
@@ -462,7 +474,7 @@ async def _post_process(entry: _WrittenFile, *, thumbnail: bool = True) -> None:
 def _open_claimed(dest: Path):
     """Reopen a placeholder made by ``claim_unique_file_path`` for writing, refusing to follow a
     symlink swapped in at ``dest`` since the claim (``OSError``/ELOOP instead)."""
-    fd = os.open(dest, os.O_WRONLY | os.O_TRUNC | os.O_NOFOLLOW | os.O_CLOEXEC)
+    fd = _os_open(dest, os.O_WRONLY | os.O_TRUNC | os.O_NOFOLLOW | os.O_CLOEXEC)
     try:
         return os.fdopen(fd, "wb")
     except BaseException:
@@ -479,7 +491,7 @@ def _copy_claimed(src: Path, dest: Path) -> None:
 
 def _open_nofollow(path: str, flags: int) -> int:
     """``open()`` opener refusing a symlink at the leaf of ``path``."""
-    return os.open(path, flags | os.O_NOFOLLOW)
+    return _os_open(path, flags | os.O_NOFOLLOW)
 
 
 def _copy_hashing(src: Path, dest: Path, *, nofollow: bool = False) -> tuple[int, str]:
@@ -1232,7 +1244,7 @@ async def _delete_revision_locked(
 ) -> None:
     await lock_revision_rows(db, [revision.id])  # PostgreSQL: a concurrent queue/delivery waits, or is waited for
     if await revision_is_used(db, revision.id):
-        raise ProjectFilesError(409, "This revision was printed or delivered and cannot be deleted")
+        raise ProjectFilesError(409, _REVISION_USED)
     await _claim_storage_dir(db, project)
     folder = item_dir(project, item.section, item.name).joinpath(
         revision_folder_name(revision.number)
@@ -1244,7 +1256,7 @@ async def _delete_revision_locked(
         await db.flush()
         # a print or delivery may have landed since the pre-check; the write lock is held now
         if await _deleted_revision_is_used(db, revision.id, file_ids):
-            raise ProjectFilesError(409, "This revision was printed or delivered and cannot be deleted")
+            raise ProjectFilesError(409, _REVISION_USED)
         guard.trash()
         await guard.commit()
 
@@ -1339,6 +1351,7 @@ async def delete_item(db: AsyncSession, project: Project, item: ProjectItem) -> 
         await _delete_item_locked(db, project, await fresh_item(db, item.id))
 
 
+_REVISION_USED = "This revision was printed or delivered and cannot be deleted"
 _ITEM_USED = "A revision of this item was printed or delivered; the item cannot be deleted"
 
 
@@ -1418,7 +1431,7 @@ def _copy_thumbnail(source_thumbnail: str | None) -> tuple[str | None, Path | No
 def _remove_empty(*folders: Path) -> None:
     for folder in folders:
         with contextlib.suppress(OSError):
-            folder.rmdir()
+            _rmdir(folder)
 
 
 async def fork_revision(

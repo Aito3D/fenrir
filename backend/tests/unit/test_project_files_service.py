@@ -2090,10 +2090,10 @@ def test_sweep_logs_and_ignores_an_unlink_failure(tmp_path, monkeypatch, caplog)
     stale.write_bytes(b"half")
     _aged(stale, project_files.PART_GRACE_SECONDS + 60)
 
-    def refuse(self, *_args, **_kwargs):
+    def refuse(_path, **_kwargs):
         raise PermissionError("read-only folder")
 
-    monkeypatch.setattr(project_files.Path, "unlink", refuse)
+    monkeypatch.setattr(project_files, "_unlink", refuse)
     caplog.set_level("WARNING", logger=project_files.logger.name)
     project_files._sweep_stale_parts(tmp_path)  # must not raise
     assert stale.exists()
@@ -2267,14 +2267,14 @@ def test_cleanup_written_carries_on_past_a_file_that_cannot_be_removed(tmp_path,
     first, second, thumb = tmp_path / "a.step", tmp_path / "b.step", tmp_path / "b.png"
     for path in (first, second, thumb):
         path.write_bytes(b"x")
-    real_unlink = Path.unlink
+    real_unlink = project_files._unlink
 
-    def unlink(self, *args, **kwargs):
-        if self == first:
+    def unlink(path, **kwargs):
+        if path == first:
             raise OSError("busy")
-        return real_unlink(self, *args, **kwargs)
+        return real_unlink(path, **kwargs)
 
-    monkeypatch.setattr(Path, "unlink", unlink)
+    monkeypatch.setattr(project_files, "_unlink", unlink)
     caplog.set_level("WARNING", logger=project_files.logger.name)
     project_files._cleanup_written(
         [
@@ -2403,16 +2403,16 @@ async def test_add_revision_still_maps_to_409_when_the_r_folder_cannot_be_remove
     error = _commit_raises_integrity(
         db_session, monkeypatch, "UNIQUE constraint failed: project_revisions.item_id, project_revisions.number"
     )
-    real_rmdir = Path.rmdir
+    real_rmdir = project_files._rmdir
     refused: list[Path] = []
 
-    def rmdir(self, *args, **kwargs):
-        if self == folder:
-            refused.append(self)
+    def rmdir(path):
+        if path == folder:
+            refused.append(path)
             raise OSError("busy")
-        return real_rmdir(self, *args, **kwargs)
+        return real_rmdir(path)
 
-    monkeypatch.setattr(Path, "rmdir", rmdir)
+    monkeypatch.setattr(project_files, "_rmdir", rmdir)
     with pytest.raises(ProjectFilesError) as caught:
         await add_revision(db_session, project, item, [upload("a.ply")], note=None, derived_from_id=None, user_id=None)
     assert (caught.value.status_code, caught.value.detail) == (
@@ -3186,7 +3186,7 @@ def test_open_claimed_closes_the_descriptor_when_fdopen_fails(tmp_path, monkeypa
 
     dest = project_storage.claim_unique_file_path(tmp_path, "dest.bin")
     opened: list[int] = []
-    real_open = os.open
+    real_open = project_files._os_open
 
     def recording_open(*args, **kwargs):
         fd = real_open(*args, **kwargs)
@@ -3196,7 +3196,7 @@ def test_open_claimed_closes_the_descriptor_when_fdopen_fails(tmp_path, monkeypa
     def boom(_fd, *_args, **_kwargs):
         raise RuntimeError("fdopen failed")
 
-    monkeypatch.setattr(project_files.os, "open", recording_open)
+    monkeypatch.setattr(project_files, "_os_open", recording_open)
     monkeypatch.setattr(project_files.os, "fdopen", boom)
     with pytest.raises(RuntimeError, match="fdopen failed"):
         project_files._open_claimed(dest)
