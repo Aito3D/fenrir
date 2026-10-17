@@ -31,6 +31,7 @@ from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.models.library import LibraryFile
 from backend.app.models.project import Project
+from backend.app.models.project_item import ProjectRevision
 from backend.app.models.user import User
 from backend.app.schemas.aito_project_links import ProjectOrdersResponse
 from backend.app.schemas.project_files import (
@@ -48,6 +49,7 @@ from backend.app.schemas.project_files import (
     ProjectTreeResponse,
     ResliceBody,
     ResliceStarted,
+    RevisionSliceStarted,
     RevisionUploadResponse,
 )
 from backend.app.services import (
@@ -55,6 +57,7 @@ from backend.app.services import (
     project_files as svc,
     project_filing,
     project_reslice,
+    project_slice,
 )
 from backend.app.services.actor import actor_name, actor_user_id
 from backend.app.services.project_storage import revision_folder_name
@@ -315,6 +318,8 @@ async def upload_revision(
             db, project, item, files, note=note, derived_from_id=derived_from_id, user_id=actor_user_id(user)
         )
     project_id, revision_id = project.id, revision.id
+    # Decision 2: slice as soon as the .3mf is stored. Never fails the upload (sidecar down → "failed").
+    await project_slice.start_slice_after_upload(db, revision_id, user_id=actor_user_id(user))
     label, detail = aito_links.revision_added_payload(
         item_name=item.name,
         revision_number=revision.number,
@@ -398,6 +403,27 @@ async def reslice_revision(
         run=_run,
     )
     return ResliceStarted(job_id=job.id, status=job.status, status_url=f"/api/v1/slice-jobs/{job.id}")
+
+
+@router.post("/revisions/{revision_id}/slice", response_model=RevisionSliceStarted, status_code=202)
+async def slice_revision(
+    revision_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
+):
+    """Slice (or re-slice after a failure) the revision's source .3mf with its own settings, all plates.
+
+    A revision already slicing or sliced is left alone and its current job returned. Revisions made
+    before server-side slicing are sliced this way on demand (decision 9)."""
+    with _file_errors():
+        await svc.get_revision_bundle(db, revision_id)
+        job_id = await project_slice.start_revision_slice(db, revision_id, user_id=actor_user_id(user))
+        status = (
+            await db.execute(select(ProjectRevision.slice_status).where(ProjectRevision.id == revision_id))
+        ).scalar_one_or_none()
+        if status not in ("slicing", "sliced"):
+            raise svc.ProjectFilesError(400, "This revision has no source .3mf to slice")
+    return RevisionSliceStarted(job_id=job_id, slice_status=status)
 
 
 @router.patch("/revisions/{revision_id}", response_model=ProjectRevisionOut)

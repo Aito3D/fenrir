@@ -40,7 +40,7 @@ from backend.app.schemas.aito_project_links import (
     TaskProjectLink,
 )
 from backend.app.schemas.project_files import RevisionRef
-from backend.app.services import project_files, project_print_trace
+from backend.app.services import project_files, project_print_trace, project_slice
 from backend.app.services.actor import actor_name, record_as
 from backend.app.services.db_quiet import rollback_quietly
 from backend.app.services.http_status_error import HttpStatusError
@@ -661,6 +661,8 @@ async def _store_drop_group(
         db, project, item, group, note=None, derived_from_id=None, user_id=user_id
     )
     revision_id, number = revision.id, revision.number
+    # Decision 2: slice as soon as the .3mf is stored; never fails the drop.
+    await project_slice.start_slice_after_upload(db, revision_id, user_id=user_id)
     results.extend(
         DroppedFileResult(
             filename=project_files.upload_basename(upload),

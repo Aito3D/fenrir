@@ -10891,6 +10891,17 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logging.warning("[RESLICE] Startup intermediate sweep failed: %s", exc)
 
+    # Fenrir PDM: revisions a restart left "slicing" lost their in-memory job;
+    # slice them again (decision 2). Never blocks startup.
+    try:
+        from backend.app.services.project_slice import resume_interrupted_slices
+
+        resumed = await resume_interrupted_slices()
+        if resumed:
+            logging.info("[SLICE] Resumed %d interrupted project revision slice(s)", resumed)
+    except Exception as exc:
+        logging.warning("[SLICE] Resuming interrupted project slices failed: %s", exc)
+
     # Register an app-scoped httpx client for Bambu Cloud services so
     # per-request BambuCloudService instances reuse the same connection pool
     # (important for routes like /cloud/filament-info that chain many

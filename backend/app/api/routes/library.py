@@ -4326,6 +4326,30 @@ async def get_library_file_plate_thumbnail(
     raise HTTPException(status_code=404, detail=f"Thumbnail for plate {plate_index} not found")
 
 
+async def resolve_slicer_api_url(db: AsyncSession) -> str | None:
+    """The sidecar URL of the slicer chosen in Settings (``preferred_slicer``).
+
+    The per-install URL setting (Settings UI → Slicer card) wins; an empty value
+    falls back to the SLICER_API_URL / BAMBU_STUDIO_API_URL env defaults defined
+    in core/config.py. ``None`` when the chosen slicer has no URL either way;
+    ``HTTPException`` 400 for an unknown ``preferred_slicer``."""
+    from backend.app.api.routes.settings import get_setting
+
+    preferred = (await get_setting(db, "preferred_slicer")) or "bambu_studio"
+    if preferred == "orcaslicer":
+        configured = await get_setting(db, "orcaslicer_api_url")
+        api_url = (configured or app_settings.slicer_api_url).strip()
+    elif preferred == "bambu_studio":
+        configured = await get_setting(db, "bambu_studio_api_url")
+        api_url = (configured or app_settings.bambu_studio_api_url).strip()
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown preferred_slicer setting: '{preferred}'. Expected 'orcaslicer' or 'bambu_studio'.",
+        )
+    return api_url or None
+
+
 async def _try_preview_slice_filaments(
     db: AsyncSession,
     *,
@@ -4342,20 +4366,14 @@ async def _try_preview_slice_filaments(
     SliceModal's inline spinner + toast can poll the matching progress
     endpoint and show "Generating G-code (45%)" for the preview as well.
     """
-    from backend.app.api.routes.settings import get_setting
     from backend.app.services.slice_preview import get_preview_filaments
     from backend.app.services.slicer_api import get_stall_timeout_seconds
 
-    preferred = (await get_setting(db, "preferred_slicer")) or "bambu_studio"
-    if preferred == "orcaslicer":
-        configured = await get_setting(db, "orcaslicer_api_url")
-        api_url = (configured or app_settings.slicer_api_url).strip()
-    elif preferred == "bambu_studio":
-        configured = await get_setting(db, "bambu_studio_api_url")
-        api_url = (configured or app_settings.bambu_studio_api_url).strip()
-    else:
-        return None
-    if not api_url:
+    try:
+        api_url = await resolve_slicer_api_url(db)
+    except HTTPException:
+        return None  # unknown preferred_slicer: no preview, as before
+    if api_url is None:
         return None
 
     try:
@@ -4881,7 +4899,6 @@ async def _run_slicer_with_fallback(
     time. Pass None for synchronous routes that aren't tracked by the
     dispatcher.
     """
-    from backend.app.api.routes.settings import get_setting
     from backend.app.services.preset_resolver import resolve_preset_ref
     from backend.app.services.slicer_api import (
         SlicerApiServerError,
@@ -4930,22 +4947,9 @@ async def _run_slicer_with_fallback(
     if request.bed_type:
         presets["process"] = _patch_process_bed_type(presets["process"], request.bed_type)
 
-    # Slicer routing — pick the sidecar URL by preferred_slicer.
-    # The per-install URL setting (Settings UI → Slicer card) wins; an
-    # empty value falls back to the SLICER_API_URL / BAMBU_STUDIO_API_URL
-    # env defaults defined in core/config.py.
-    preferred = (await get_setting(db, "preferred_slicer")) or "bambu_studio"
-    if preferred == "orcaslicer":
-        configured = await get_setting(db, "orcaslicer_api_url")
-        api_url = (configured or app_settings.slicer_api_url).strip()
-    elif preferred == "bambu_studio":
-        configured = await get_setting(db, "bambu_studio_api_url")
-        api_url = (configured or app_settings.bambu_studio_api_url).strip()
-    else:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unknown preferred_slicer setting: '{preferred}'. Expected 'orcaslicer' or 'bambu_studio'.",
-        )
+    # Slicer routing — pick the sidecar URL by preferred_slicer (400 when unknown).
+    # An empty URL is passed on as before: the sidecar call then fails loudly.
+    api_url = (await resolve_slicer_api_url(db)) or ""
 
     # Note: an earlier version of this code stripped Metadata/project_settings.
     # config + model_settings.config + slice_info.config + cut_information.xml

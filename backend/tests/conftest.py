@@ -365,6 +365,22 @@ def reset_aito_quote_sync_rate_limit_throttle():
 
 
 @pytest.fixture(autouse=True)
+def no_project_slice_on_upload(monkeypatch):
+    """Turn off the slice a project upload starts (``project_slice.start_slice_after_upload``).
+
+    Every upload of a source .3mf would otherwise enqueue a background slice against the
+    configured sidecar URL (localhost by default): a real network call, and a task that
+    outlives its test and writes into whatever database it finds. Tests of the slicing
+    itself put the real function back and stub the sidecar (test_project_slice.py)."""
+    from backend.app.services import project_slice
+
+    async def _off(db, revision_id, *, user_id):
+        return None
+
+    monkeypatch.setattr(project_slice, "start_slice_after_upload", _off)
+
+
+@pytest.fixture(autouse=True)
 def disconnect_printers_registered_during_a_test():
     """Give every test an empty ``printer_manager`` singleton.
 

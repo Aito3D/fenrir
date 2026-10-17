@@ -57,6 +57,7 @@ _ROUTES = [
         {"json": {"file_id": 1, "pipeline_id": 1}},
         [(P.PROJECTS_UPDATE,), (P.LIBRARY_UPLOAD,), (P.PIPELINES_READ,)],
     ),
+    ("POST", "/projects/revisions/987654/slice", {}, [(P.PROJECTS_UPDATE,)]),
     ("POST", "/projects/legacy-migration/start", {}, [(P.SETTINGS_UPDATE,), (P.PROJECTS_UPDATE,)]),
     ("GET", "/projects/legacy-migration/status", {}, [(P.SETTINGS_UPDATE,), (P.PROJECTS_UPDATE,)]),
     # project_files.py: upload_router (authorised before the multipart body is read)
@@ -199,6 +200,7 @@ _KEY_MATRIX = {
     "GET /projects/revisions/987654/download": (404, _READ),
     "POST /projects/987654/import-library-files": (404, _EVERY),
     "POST /projects/revisions/987654/reslice": (404, _EVERY),
+    "POST /projects/revisions/987654/slice": (404, _MANAGE),
     "POST /projects/legacy-migration/start": (None, _NO_KEY),
     "GET /projects/legacy-migration/status": (None, _NO_KEY),
     "POST /projects/items/987654/revisions": (404, _MANAGE),

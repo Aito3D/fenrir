@@ -206,6 +206,14 @@ class ResliceBody(BaseModel):
     pipeline_id: int
 
 
+class RevisionSliceStarted(BaseModel):
+    """``POST /projects/revisions/{id}/slice``: the revision's slice job (poll ``GET /slice-jobs/{job_id}``)
+    and its ``slice_status`` (``slicing``, or ``sliced`` when there was nothing to do)."""
+
+    job_id: int | None
+    slice_status: str
+
+
 class ResliceStarted(BaseModel):
     """202 body: poll ``status_url`` (``GET /slice-jobs/{job_id}``) until completed or failed."""
 
