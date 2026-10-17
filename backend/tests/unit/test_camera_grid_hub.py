@@ -1016,7 +1016,7 @@ class TestSharedStreamHubWaitsForTeardown:
             except asyncio.CancelledError:
                 try:
                     await asyncio.wait_for(release.wait(), timeout=3.0)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     pass
                 raise
 
@@ -1338,7 +1338,7 @@ class TestParamsChangeReplaceWaitsForTeardown:
                 finally:
                     try:
                         await asyncio.wait_for(p1_release.wait(), timeout=3.0)
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         pass
                     p1_teardown_done.append(1)
 

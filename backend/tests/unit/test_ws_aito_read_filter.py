@@ -51,6 +51,10 @@ from backend.app.core.websocket import ConnectionManager
 from backend.app.models.group import Group
 from backend.app.models.user import User
 
+# Upstream (2026-10) closes a socket whose principal lost websocket:connect, and
+# checks it again right after connect: every group that opens a socket holds it.
+CONNECT = Permission.WEBSOCKET_CONNECT.value
+
 # ---------------------------------------------------------------------------
 # Layer 1: ConnectionManager.broadcast_aito (core/websocket.py)
 # ---------------------------------------------------------------------------
@@ -242,7 +246,7 @@ async def test_broadcast_aito_one_failing_client_does_not_stop_others():
 
 @pytest.mark.asyncio
 async def test_resolve_denies_a_user_without_aito_read(db_session):
-    group = Group(name="T038-no-read", permissions=[])
+    group = Group(name="T038-no-read", permissions=[CONNECT])
     user = User(username="viewer-t038", groups=[group])
     db_session.add_all([group, user])
     await db_session.commit()
@@ -255,7 +259,7 @@ async def test_resolve_denies_a_user_without_aito_read(db_session):
 
 @pytest.mark.asyncio
 async def test_resolve_allows_a_user_with_aito_read(db_session):
-    group = Group(name="T038-readers", permissions=[Permission.AITO_READ.value])
+    group = Group(name="T038-readers", permissions=[CONNECT, Permission.AITO_READ.value])
     user = User(username="reader-t038", groups=[group])
     db_session.add_all([group, user])
     await db_session.commit()
@@ -319,7 +323,7 @@ def _sent_types(fake_ws: _FakeWebSocket) -> list[str | None]:
 async def test_connect_withholds_the_initial_presence_map_without_aito_read(monkeypatch, test_engine):
     session_maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     async with session_maker() as seed:
-        group = Group(name="T038-endpoint-no-read", permissions=[])
+        group = Group(name="T038-endpoint-no-read", permissions=[CONNECT])
         seed.add(group)
         seed.add(User(username="endpoint-denied", groups=[group]))
         await seed.commit()
@@ -341,7 +345,7 @@ async def test_connect_withholds_the_initial_presence_map_without_aito_read(monk
 async def test_connect_sends_the_initial_presence_map_with_aito_read(monkeypatch, test_engine):
     session_maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     async with session_maker() as seed:
-        group = Group(name="T038-endpoint-read", permissions=[Permission.AITO_READ.value])
+        group = Group(name="T038-endpoint-read", permissions=[CONNECT, Permission.AITO_READ.value])
         seed.add(group)
         seed.add(User(username="endpoint-allowed", groups=[group]))
         await seed.commit()
@@ -431,7 +435,7 @@ class _RecordingConnectManager(ConnectionManager):
 async def test_connect_stamps_aito_read_before_admitting_an_allowed_principal(monkeypatch, test_engine):
     session_maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     async with session_maker() as seed:
-        group = Group(name="T030-allowed", permissions=[Permission.AITO_READ.value])
+        group = Group(name="T030-allowed", permissions=[CONNECT, Permission.AITO_READ.value])
         seed.add(group)
         seed.add(User(username="t030-allowed", groups=[group]))
         await seed.commit()
@@ -452,7 +456,7 @@ async def test_connect_stamps_aito_read_before_admitting_an_allowed_principal(mo
 async def test_connect_stamps_aito_read_before_admitting_a_denied_principal(monkeypatch, test_engine):
     session_maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     async with session_maker() as seed:
-        group = Group(name="T030-denied", permissions=[])
+        group = Group(name="T030-denied", permissions=[CONNECT])
         seed.add(group)
         seed.add(User(username="t030-denied", groups=[group]))
         await seed.commit()
@@ -478,6 +482,12 @@ async def test_connect_admits_with_fail_closed_aito_read_when_resolution_raises(
     assignment happens unconditionally after the try/except, before
     connect() is ever called."""
     session_maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with session_maker() as seed:
+        # Upstream refuses a principal that is gone; the blip is in the Aito resolution only.
+        group = Group(name="T030-blip", permissions=[CONNECT])
+        seed.add(group)
+        seed.add(User(username="whoever", groups=[group]))
+        await seed.commit()
     fresh_mgr = _RecordingConnectManager()
     monkeypatch.setattr(ws_route, "ws_manager", fresh_mgr)
     monkeypatch.setattr(ws_route, "async_session", session_maker)
@@ -538,7 +548,7 @@ async def test_inbound_aito_presence_is_applied_with_aito_read(monkeypatch, test
     ws, presence_spy = await _run_endpoint_with_messages(
         monkeypatch,
         test_engine,
-        group_permissions=[Permission.AITO_READ.value],
+        group_permissions=[CONNECT, Permission.AITO_READ.value],
         messages=[{"type": "aito_presence", "project_id": 5}],
     )
 
@@ -554,7 +564,7 @@ async def test_inbound_aito_presence_is_ignored_without_aito_read(monkeypatch, t
     ws, presence_spy = await _run_endpoint_with_messages(
         monkeypatch,
         test_engine,
-        group_permissions=[],
+        group_permissions=[CONNECT],
         messages=[{"type": "aito_presence", "project_id": 5}, {"type": "ping"}],
     )
 
@@ -570,7 +580,7 @@ async def test_inbound_aito_presence_with_bogus_project_id_is_ignored_without_ai
     ws, presence_spy = await _run_endpoint_with_messages(
         monkeypatch,
         test_engine,
-        group_permissions=[],
+        group_permissions=[CONNECT],
         messages=[{"type": "aito_presence", "project_id": True}],
     )
 
@@ -636,7 +646,7 @@ def _wire(monkeypatch, session_maker, *, principal, auth=True):
 @pytest.mark.asyncio
 async def test_revoked_aito_read_stops_aito_delivery_but_not_printer_updates(monkeypatch, test_engine):
     session_maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
-    await _seed_reader(session_maker, "t065-revoked", permissions=[Permission.AITO_READ.value])
+    await _seed_reader(session_maker, "t065-revoked", permissions=[CONNECT, Permission.AITO_READ.value])
     fresh_mgr = _wire(monkeypatch, session_maker, principal="t065-revoked")
     monkeypatch.setattr(ws_route, "_AITO_READ_RECHECK_SECONDS", 0.0)
     observer = _conn(True)
@@ -701,7 +711,7 @@ async def test_deleted_user_loses_aito_read_on_recheck_without_the_socket_closin
 @pytest.mark.asyncio
 async def test_still_permitted_user_keeps_aito_read_across_rechecks(monkeypatch, test_engine):
     session_maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
-    await _seed_reader(session_maker, "t065-kept", permissions=[Permission.AITO_READ.value])
+    await _seed_reader(session_maker, "t065-kept", permissions=[CONNECT, Permission.AITO_READ.value])
     fresh_mgr = _wire(monkeypatch, session_maker, principal="t065-kept")
     monkeypatch.setattr(ws_route, "_AITO_READ_RECHECK_SECONDS", 0.0)
     presence_spy = AsyncMock(wraps=fresh_mgr.set_aito_presence)
@@ -717,7 +727,7 @@ async def test_still_permitted_user_keeps_aito_read_across_rechecks(monkeypatch,
 @pytest.mark.asyncio
 async def test_recheck_is_rate_limited_to_the_interval(monkeypatch, test_engine):
     session_maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
-    await _seed_reader(session_maker, "t065-rate", permissions=[Permission.AITO_READ.value])
+    await _seed_reader(session_maker, "t065-rate", permissions=[CONNECT, Permission.AITO_READ.value])
     _wire(monkeypatch, session_maker, principal="t065-rate")
     resolve_spy = AsyncMock(wraps=ws_route._resolve_principal_and_aito_read)
     monkeypatch.setattr(ws_route, "_resolve_principal_and_aito_read", resolve_spy)
@@ -732,7 +742,7 @@ async def test_recheck_is_rate_limited_to_the_interval(monkeypatch, test_engine)
 @pytest.mark.asyncio
 async def test_recheck_failure_keeps_the_current_stamp(monkeypatch, test_engine):
     session_maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
-    await _seed_reader(session_maker, "t065-blip", permissions=[Permission.AITO_READ.value])
+    await _seed_reader(session_maker, "t065-blip", permissions=[CONNECT, Permission.AITO_READ.value])
     _wire(monkeypatch, session_maker, principal="t065-blip")
     monkeypatch.setattr(ws_route, "_AITO_READ_RECHECK_SECONDS", 0.0)
     real = ws_route._resolve_principal_and_aito_read
@@ -778,6 +788,10 @@ async def test_api_key_connection_is_never_rechecked(monkeypatch, test_engine):
     before — there is no user row to re-resolve."""
     session_maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     _wire(monkeypatch, session_maker, principal="")
+    # An API-key principal names its key id in production; this harness has none,
+    # so upstream's post-connect websocket:connect re-check is answered here.
+    monkeypatch.setattr(ws_route, "principal_may_connect", AsyncMock(return_value=True))
+    monkeypatch.setattr(ws_route, "_still_may_connect", AsyncMock(return_value=True))
     monkeypatch.setattr(ws_route, "_AITO_READ_RECHECK_SECONDS", 0.0)
     resolve_spy = AsyncMock()
     monkeypatch.setattr(ws_route, "_resolve_principal_and_aito_read", resolve_spy)
@@ -798,7 +812,7 @@ async def test_api_key_connection_is_never_rechecked(monkeypatch, test_engine):
 
 @pytest.mark.asyncio
 async def test_resolve_denies_a_deactivated_user_with_aito_read(db_session):
-    group = Group(name="T071-readers", permissions=[Permission.AITO_READ.value])
+    group = Group(name="T071-readers", permissions=[CONNECT, Permission.AITO_READ.value])
     user = User(username="t071-disabled-reader", groups=[group], is_active=False)
     db_session.add_all([group, user])
     await db_session.commit()
@@ -822,41 +836,32 @@ async def test_resolve_denies_a_deactivated_admin(db_session):
 
 
 @pytest.mark.asyncio
-async def test_deactivated_user_connects_without_aito_data_or_printer_updates(monkeypatch, test_engine):
-    """A deactivated user whose ws token is still unexpired: the socket is
-    admitted exactly as before (general websocket auth is out of scope), but
-    it gets no initial presence map, no Aito broadcast and no viewer entry.
-    Its printer scope (#1727) is empty too, fail-closed, so printer-bound
-    broadcasts stop reaching it as well."""
+async def test_deactivated_user_is_refused_at_connect(monkeypatch, test_engine):
+    """A deactivated user whose ws token is still unexpired. Upstream (2026-10)
+    re-checks websocket:connect right after admitting the socket, and a
+    deactivated account holds nothing: the socket is closed 4401 before any
+    message is read, so no Aito data and no printer update ever reach it."""
     session_maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     async with session_maker() as seed:
-        group = Group(name="t071-connect-group", permissions=[Permission.AITO_READ.value])
+        group = Group(name="t071-connect-group", permissions=[CONNECT, Permission.AITO_READ.value])
         seed.add(group)
         seed.add(User(username="t071-connect", groups=[group], is_active=False))
         await seed.commit()
     fresh_mgr = _wire(monkeypatch, session_maker, principal="t071-connect")
-    seen: dict = {}
 
-    async def broadcast_both():
-        await fresh_mgr.broadcast_aito({"type": "aito_changed", "action": "move", "project_id": 5, "actor": "x"})
-        await fresh_mgr.send_printer_status(1, {"state": "RUNNING"})
-        seen["types"] = _text_types(ws)
-        seen["viewers"] = fresh_mgr.aito_presence_state()["viewers"]
-
-    ws = _ScriptedWebSocket([{"type": "aito_presence", "project_id": 5}, broadcast_both])
+    ws = _ScriptedWebSocket([{"type": "aito_presence", "project_id": 5}])
     await ws_route.websocket_endpoint(ws, token="tok")
 
-    assert ws.state.aito_read is False
     assert "aito_presence_state" not in _sent_types(ws)
-    assert seen["types"] == []
-    assert seen["viewers"] == {}
-    ws.close.assert_not_awaited()
+    assert ws not in fresh_mgr.active_connections
+    assert fresh_mgr.aito_presence_state()["viewers"] == {}
+    ws.close.assert_awaited_once_with(code=ws_route._WS_CLOSE_UNAUTHORIZED)
 
 
 @pytest.mark.asyncio
 async def test_user_deactivated_mid_session_loses_aito_on_recheck_but_keeps_printer_updates(monkeypatch, test_engine):
     session_maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
-    await _seed_reader(session_maker, "t071-mid", permissions=[Permission.AITO_READ.value])
+    await _seed_reader(session_maker, "t071-mid", permissions=[CONNECT, Permission.AITO_READ.value])
     fresh_mgr = _wire(monkeypatch, session_maker, principal="t071-mid")
     monkeypatch.setattr(ws_route, "_AITO_READ_RECHECK_SECONDS", 0.0)
     observer = _conn(True)

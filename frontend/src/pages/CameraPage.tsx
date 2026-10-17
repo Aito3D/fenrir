@@ -11,6 +11,7 @@ import { SkipObjectsModal, SkipObjectsIcon } from '../components/SkipObjectsModa
 import { useMjpegStream } from '../hooks/useMjpegStream';
 import { useStreamReconnect } from '../hooks/useStreamReconnect';
 import { useZoomPan } from '../hooks/useZoomPan';
+import { useCameraViewerId } from '../hooks/useCameraViewerId';
 
 const MAX_RECONNECT_ATTEMPTS = 5;
 
@@ -56,8 +57,10 @@ export function CameraPage() {
 
   const isStream = streamMode === 'stream';
 
+  // On its stream and its /camera/stop: the stop ends this page's stream only.
+  const viewerId = useCameraViewerId();
   // Stream URL — quality preset is resolved server-side from settings
-  const streamUrl = `/printers/${id}/camera/stream`;
+  const streamUrl = `/printers/${id}/camera/stream?viewer=${viewerId}`;
 
   // --- Stream hooks (only active in stream mode) ---
   const mjpeg = useMjpegStream({
@@ -97,7 +100,7 @@ export function CameraPage() {
   }, [printer, t]);
 
   // Cleanup on unmount — stop the camera stream
-  useCameraStopHint(id);
+  useCameraStopHint(id, viewerId);
 
   // Fullscreen change listener
   useEffect(() => {
@@ -140,7 +143,7 @@ export function CameraPage() {
 
   const stopStream = () => {
     if (id > 0) {
-      api.stopCameraStream(id).catch(() => {});
+      api.stopCameraStream(id, viewerId).catch(() => {});
     }
   };
 

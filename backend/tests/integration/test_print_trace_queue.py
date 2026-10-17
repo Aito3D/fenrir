@@ -701,7 +701,7 @@ async def test_timeline_names_queued_and_printing_items(async_client: AsyncClien
     assert [queue_events[i.id] for i in items] == [
         ("queued", "part.gcode.3mf"),
         ("print_started", "Support reprint"),
-        ("queued", f"Print #{items[2].id}"),
+        ("queued", None),
     ]
 
 

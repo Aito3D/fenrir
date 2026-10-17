@@ -328,7 +328,7 @@ async def _origin_points_at_repo(git_path: str, git_config: list[str], app_dir, 
             start_new_session=True,
         )
         stdout, _ = await _communicate_with_timeout(process, _GIT_LOCAL_TIMEOUT_SECONDS)
-    except (OSError, asyncio.CancelledError, asyncio.TimeoutError):
+    except (TimeoutError, OSError, asyncio.CancelledError):
         # Fail closed: let the caller go through the rewrite branch if we
         # can't even invoke git (or it inexplicably hangs on a purely local
         # config read). The unconditional set-url is the safer fallback,
@@ -809,7 +809,7 @@ async def _communicate_with_timeout(process: asyncio.subprocess.Process, timeout
     """
     try:
         return await asyncio.wait_for(process.communicate(), timeout=timeout)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         _kill_process_group(process)
         try:
             await asyncio.wait_for(process.communicate(), timeout=_REAP_TIMEOUT_SECONDS)
@@ -896,7 +896,7 @@ async def _perform_update(target_ref: str):
             )
             try:
                 await _communicate_with_timeout(process, _GIT_LOCAL_TIMEOUT_SECONDS)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 logger.error("git remote set-url timed out after %ss", _GIT_LOCAL_TIMEOUT_SECONDS)
                 _update_status = {
                     "status": "error",
@@ -941,7 +941,7 @@ async def _perform_update(target_ref: str):
         )
         try:
             stdout, stderr = await _communicate_with_timeout(process, _GIT_FETCH_TIMEOUT_SECONDS)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             error_msg = f"git fetch timed out after {_GIT_FETCH_TIMEOUT_SECONDS}s"
             logger.error(error_msg)
             _update_status = {
@@ -989,7 +989,7 @@ async def _perform_update(target_ref: str):
         )
         try:
             stdout, stderr = await _communicate_with_timeout(process, _GIT_RESET_TIMEOUT_SECONDS)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             error_msg = f"git reset --hard timed out after {_GIT_RESET_TIMEOUT_SECONDS}s"
             logger.error(error_msg)
             _update_status = {
@@ -1037,7 +1037,7 @@ async def _perform_update(target_ref: str):
         )
         try:
             stdout, stderr = await _communicate_with_timeout(process, _PIP_INSTALL_TIMEOUT_SECONDS)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             error_msg = f"pip install timed out after {_PIP_INSTALL_TIMEOUT_SECONDS}s"
             logger.error(error_msg)
             _update_status = {
@@ -1074,7 +1074,7 @@ async def _perform_update(target_ref: str):
             )
             try:
                 await _communicate_with_timeout(process, _NPM_INSTALL_TIMEOUT_SECONDS)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 error_msg = f"npm install timed out after {_NPM_INSTALL_TIMEOUT_SECONDS}s"
                 logger.error(error_msg)
                 _update_status = {
@@ -1097,7 +1097,7 @@ async def _perform_update(target_ref: str):
             )
             try:
                 stdout, stderr = await _communicate_with_timeout(process, _NPM_BUILD_TIMEOUT_SECONDS)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 error_msg = f"npm run build timed out after {_NPM_BUILD_TIMEOUT_SECONDS}s"
                 logger.error(error_msg)
                 _update_status = {

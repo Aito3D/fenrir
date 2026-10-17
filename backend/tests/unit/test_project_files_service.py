@@ -3134,7 +3134,10 @@ async def test_delete_item_locks_every_revision_before_the_usage_checks(db_sessi
     ids = sorted([r1.id, r2.id])
     calls = _spy_lock_and_usage(monkeypatch, project_files)
     await delete_item(db_session, project, item)
-    assert calls == [("lock", ids, False), ("used", ids[0]), ("used", ids[1])]
+    assert calls[:3] == [("lock", ids, False), ("used", ids[0]), ("used", ids[1])]
+    # The checks run again under the SQLite write lock, before the rows go.
+    assert all(c[0] == "used" and c[1] in ids for c in calls[3:])
+    assert [c for c in calls if c[0] == "lock"] == [("lock", ids, False)]
 
 
 @pytest.mark.asyncio

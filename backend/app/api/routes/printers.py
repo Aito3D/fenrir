@@ -63,6 +63,7 @@ from backend.app.services.bambu_ftp import (
     get_storage_info_async,
     list_files_result_async,
 )
+from backend.app.services.hms_actions import HMSAction
 from backend.app.services.print_storage import (
     external_storage_warning,
     ftp_probe_paths,
@@ -212,6 +213,11 @@ async def create_printer(
     db.add(printer)
     await db.commit()
     await db.refresh(printer)
+    # A new printer has no plate references: any under its id are a deleted
+    # printer's (SQLite reuses ids; deletes before this left them behind).
+    from backend.app.services.plate_detection import remove_printer_references
+
+    remove_printer_references(printer.id)
 
     # A group given this location reaches the new printer straight away (#1727)
     if await location_grantees(db, [printer.location]):
@@ -440,6 +446,8 @@ async def update_printer(
             update_data["plate_detection_roi_w"] = None
             update_data["plate_detection_roi_h"] = None
 
+    ip_changed = "ip_address" in update_data and update_data["ip_address"] != printer.ip_address
+
     for field, value in update_data.items():
         setattr(printer, field, value)
 
@@ -448,6 +456,16 @@ async def update_printer(
 
     if access_moved:
         await ws_manager.refresh_printer_scopes()
+
+    # Proxy virtual printers forward to the IP they were started with; the
+    # sync restarts the ones aimed at this printer on the new one.
+    if ip_changed:
+        from backend.app.services.virtual_printer import virtual_printer_manager
+
+        try:
+            await virtual_printer_manager.sync_from_db()
+        except Exception as e:
+            logger.error("Failed to sync virtual printers after printer IP change: %s", e)
 
     # Reconnect if connection settings changed
     if any(k in update_data for k in ["ip_address", "access_code", "is_active"]):
@@ -485,7 +503,50 @@ async def delete_printer(
     if not printer:
         raise HTTPException(404, "Printer not found")
 
+    if delete_archives:
+        # Deleting an archive removes its queue items; one that is printing
+        # (a reprint on another printer, say) must not go from under the
+        # dispatcher -- the same 409 as DELETE /archives/{id} (#1734).
+        from backend.app.models.print_queue import PrintQueueItem
+
+        printing = await db.scalar(
+            select(func.count())
+            .select_from(PrintQueueItem)
+            .where(
+                PrintQueueItem.status == "printing",
+                PrintQueueItem.archive_id.in_(select(PrintArchive.id).where(PrintArchive.printer_id == printer_id)),
+            )
+        )
+        if printing:
+            raise HTTPException(
+                409,
+                f"Cannot delete this printer's archives — {printing} queue item(s) using them are "
+                f"currently printing. Stop the print first, or keep the archives.",
+            )
+
+    # What was limited to this printer goes with it, rather than reaching every
+    # printer (a provider's NULL printer means all) or, on SQLite, whichever
+    # printer is given this id next (an API key's list keeps the id). Providers
+    # first: retiring a Fenrir Notify one commits.
+    from backend.app.api.routes.notifications import after_providers_deleted, delete_provider
+    from backend.app.core.printer_scope import drop_printers_from_api_keys, drop_printers_from_obico
+    from backend.app.models.notification import NotificationProvider
+
+    notify = False
+    scoped = await db.execute(select(NotificationProvider).where(NotificationProvider.printer_id == printer_id))
+    for provider in scoped.scalars().all():
+        notify = await delete_provider(db, provider) or notify
+
     printer_manager.disconnect_printer(printer_id)
+
+    # Locked from the archive sweep to the commit (PostgreSQL; SQLite's single
+    # writer serialises this anyway). A print start adopting or writing an
+    # archive for this printer meanwhile then waits and is refused by the
+    # printer's foreign key, instead of passing it and being deleted by the
+    # ORM delete's cascade below: also an archive the user chose to keep, or
+    # another printer's (measured). Not earlier: retiring a Notify provider
+    # above commits, which ends a lock; nothing commits from here on.
+    await db.execute(select(Printer.id).where(Printer.id == printer_id).with_for_update())
 
     if delete_archives:
         # Delete all archives for this printer
@@ -518,8 +579,48 @@ async def delete_printer(
         )
         await db.execute(sql_delete(PrinterMaintenance).where(PrinterMaintenance.printer_id == printer_id))
 
+    await drop_printers_from_api_keys(db, [printer_id])
+    await drop_printers_from_obico(db, [printer_id])
+    # A virtual printer aimed at it goes too: without a target a queue-mode one
+    # takes jobs for any printer of its model (deleted below, with its plugs).
+    from backend.app.api.routes.virtual_printers import drop_virtual_printer, remove_upload_dir
+    from backend.app.models.virtual_printer import VirtualPrinter
+    from backend.app.services.virtual_printer import virtual_printer_manager
+
+    aimed = (
+        (await db.execute(select(VirtualPrinter.id).where(VirtualPrinter.target_printer_id == printer_id)))
+        .scalars()
+        .all()
+    )
+    # Its smart plugs too: without a printer a plug is everyone's, and users and
+    # keys limited to other printers could switch what it still powers.
+    from backend.app.api.routes.smart_plugs import delete_plug
+    from backend.app.models.smart_plug import SmartPlug
+
+    for plug in (await db.execute(select(SmartPlug).where(SmartPlug.printer_id == printer_id))).scalars().all():
+        await delete_plug(db, plug)
+    upload_dirs = []
+    for vp_id in aimed:
+        await virtual_printer_manager.remove_instance(vp_id)
+        upload_dirs.append(await drop_virtual_printer(db, vp_id))
+
     await db.delete(printer)
     await db.commit()
+    await after_providers_deleted(notify=notify)
+    for upload_dir in upload_dirs:
+        remove_upload_dir(upload_dir)
+    if aimed:
+        try:
+            await virtual_printer_manager.sync_from_db()
+        except Exception as e:
+            logger.error("Failed to sync virtual printers after printer delete: %s", e)
+    # Open connections worked out their printers at connect.
+    await ws_manager.refresh_printer_scopes()
+    # What is kept for its id in memory and on disk: SQLite gives the id to the
+    # next printer created.
+    from backend.app.main import forget_printer
+
+    await forget_printer(printer_id)
 
     return {"status": "deleted", "archives_deleted": delete_archives}
 
@@ -998,7 +1099,9 @@ async def get_current_print_user(
         raise HTTPException(404, "Printer not found")
 
     user_info = printer_manager.get_current_print_user(printer_id)
-    return user_info or {}
+    if not user_info:
+        return {}
+    return {"user_id": user_info["user_id"], "username": user_info["username"]}
 
 
 @router.post("/{printer_id}/refresh-status")
@@ -2777,7 +2880,7 @@ async def get_slot_spool_defaults(
     from backend.app.services.inventory_mode import spoolman_owns_assignments
     from backend.app.services.slot_kprofile import find_slot_kprofile_for_extruder
     from backend.app.services.slot_nozzle import resolve_slot_nozzle
-    from backend.app.services.spool_filament_preset import resolve_spool_preset, resolve_spoolman_preset
+    from backend.app.services.spool_filament_preset import resolve_spool_preset, resolve_spoolman_preset_with_own
 
     state = printer_manager.get_status(printer_id)
     model = printer_manager.get_model(printer_id)
@@ -2808,13 +2911,11 @@ async def get_slot_spool_defaults(
             )
         ).scalar_one_or_none()
         if sm_assignment is not None:
-            slicer_filament, slicer_filament_name = await resolve_spoolman_preset(
+            slicer_filament, slicer_filament_name = await resolve_spoolman_preset_with_own(
                 db,
                 spoolman_spool_id=sm_assignment.spoolman_spool_id,
                 printer_model=model,
                 nozzle_diameter=slot_nozzle.diameter,
-                fallback_filament=None,
-                fallback_name=None,
             )
     else:
         assignment = (
@@ -3599,20 +3700,12 @@ async def stop_print(
     if not client:
         raise HTTPException(400, "Printer not connected")
 
-    success = client.stop_print()
-    if not success:
+    # Sends the stop and marks the printer as stopped by the user, so the
+    # resulting "failed"/"aborted" status ends the print as cancelled.
+    from backend.app.services.print_control import stop_print_by_user
+
+    if not stop_print_by_user(printer_id):
         raise HTTPException(500, "Failed to stop print")
-
-    # Mark this printer as user-stopped so on_print_complete reclassifies
-    # the resulting "failed"/"aborted" MQTT status as "cancelled" — otherwise
-    # the HMS heuristic in _dispatch_archive_update mislabels user-cancels
-    # (e.g. the H2D's cancel-sequence module-0x0C HMS) as "Layer shift".
-    try:
-        from backend.app.main import mark_printer_stopped_by_user
-
-        mark_printer_stopped_by_user(printer_id)
-    except Exception as _mark_err:
-        logger.warning("Failed to mark printer %s as user-stopped: %s", printer_id, _mark_err)
 
     return {"success": True, "message": "Print stop command sent"}
 
@@ -4827,6 +4920,13 @@ async def execute_hms_action(
     success = client.execute_hms_action(body.print_error, body.action, body.job_id)
     if not success:
         raise HTTPException(400, "Failed to execute HMS action")
+
+    if body.action == HMSAction.STOP_PRINTING:
+        # A user stop like the Stop button: mark it before the wait below, so a
+        # completion arriving meanwhile ends the print as cancelled, not failed.
+        from backend.app.services.print_control import mark_stopped_by_user
+
+        mark_stopped_by_user(printer_id)
 
     # Give the printer time to push a state update. The dispatch helper already
     # publishes a pushall after every command, so a fresh status should arrive

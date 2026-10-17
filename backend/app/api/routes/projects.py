@@ -15,8 +15,16 @@ from sqlalchemy import and_, case, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from backend.app.api.routes.library import get_library_dir
+from backend.app.api.routes.library import (
+    classify_file_type,
+    get_library_dir,
+    get_library_files_dir,
+    to_absolute_path,
+    to_relative_path,
+)
 from backend.app.core.auth import (
+    ApiKeyActor,
+    RequestActor,
     RequestPrinterScope,
     RequirePermissionIfAuthEnabled,
     probe_permissions_if_auth_enabled,
@@ -31,8 +39,8 @@ from backend.app.models.aito_task import AitoTask  # Fenrir: Aito tasks linked t
 from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile, LibraryFolder
 from backend.app.models.print_log import PrintLogEntry
-from backend.app.models.print_queue import PrintQueueItem
-from backend.app.models.project import Project
+from backend.app.models.print_queue import PrintQueueItem, PrintQueueVariant
+from backend.app.models.project import PROJECT_PRIORITIES, PROJECT_STATUSES, Project
 from backend.app.models.project_bom import ProjectBOMItem
 from backend.app.models.project_item import (  # Fenrir: PDM items block project deletion; revisions label archives
     ProjectItem,
@@ -57,6 +65,7 @@ from backend.app.schemas.project import (
     ProjectUpdate,
     TimelineEvent,
 )
+from backend.app.services.library_folder_access import load_folder_index, visible_folder_ids
 from backend.app.services.project_files import revision_label
 from backend.app.services.project_tags import (
     UnknownTagError,
@@ -65,11 +74,21 @@ from backend.app.services.project_tags import (
     sync_project_tags_from_string,
 )
 from backend.app.utils.http import build_content_disposition
-from backend.app.utils.safe_path import safe_join_under
+from backend.app.utils.safe_path import PathTraversalError, safe_join_under
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/projects", tags=["projects"])
+
+
+def _imported_priority(value: object) -> str:
+    """An imported project's priority: one the editor accepts, else "normal"."""
+    return value if isinstance(value, str) and value in PROJECT_PRIORITIES else "normal"
+
+
+def _imported_status(value: object) -> str:
+    """An imported project's status: one the editor accepts, else "active"."""
+    return value if isinstance(value, str) and value in PROJECT_STATUSES else "active"
 
 
 _FAILURE_STATUSES = ("failed", "aborted", "cancelled", "stopped")
@@ -448,8 +467,13 @@ async def list_projects(
     status: str | None = None,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_READ),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """List all projects with basic stats."""
+    # Archive previews show only archives of the caller's printers, as the
+    # project's archive list does.
+    scope_clause = printer_scope.where(PrintArchive.printer_id)
+    preview_scope = [scope_clause] if scope_clause is not None else []
     query = select(Project)
     if status:
         query = query.where(Project.status == status)
@@ -520,7 +544,7 @@ async def list_projects(
         # Get archive previews (up to 6 most recent)
         archives_result = await db.execute(
             select(PrintArchive)
-            .where(PrintArchive.project_id == project.id, _LIVE_ARCHIVE)
+            .where(PrintArchive.project_id == project.id, _LIVE_ARCHIVE, *preview_scope)
             .order_by(PrintArchive.created_at.desc())
             .limit(6)
         )
@@ -577,7 +601,10 @@ async def create_project(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_CREATE),
 ):
     """Create a new project."""
-    # Verify parent exists if specified
+    if data.priority not in PROJECT_PRIORITIES:
+        raise HTTPException(status_code=400, detail="Invalid priority")
+    # Verify parent exists if specified; 0 is no parent, as on update
+    data.parent_id = data.parent_id or None
     parent_name = None
     if data.parent_id:
         parent_result = await db.execute(select(Project).where(Project.id == data.parent_id))
@@ -856,7 +883,7 @@ async def update_project(
     if data.color is not None:
         project.color = data.color
     if data.status is not None:
-        if data.status not in ["active", "completed", "archived"]:
+        if data.status not in PROJECT_STATUSES:
             raise HTTPException(status_code=400, detail="Invalid status")
         project.status = data.status
     if data.target_count is not None:
@@ -879,7 +906,7 @@ async def update_project(
     if "due_date" in data.model_fields_set:
         project.due_date = data.due_date
     if data.priority is not None:
-        if data.priority not in ["low", "normal", "high", "urgent"]:
+        if data.priority not in PROJECT_PRIORITIES:
             raise HTTPException(status_code=400, detail="Invalid priority")
         project.priority = data.priority
     if "budget" in data.model_fields_set:
@@ -1195,12 +1222,46 @@ async def get_project_file_progress(
     return [ProjectFileProgress(file_id=fid, completed_count=n) for fid, n in sorted(counts.items())]
 
 
+def _editable_rows(
+    model: type[PrintArchive] | type[PrintQueueItem],
+    ids: list[int],
+    printer_scope: PrinterScope,
+    actor: User | ApiKeyActor | None,
+    all_permission: Permission,
+    own_permission: Permission,
+):
+    """Select the rows of ``ids`` the caller may relink, or None for none of them.
+
+    The same rows the caller could change through the archive or queue edit:
+    on their printers, and their own unless they may change everyone's. Rows
+    outside are skipped like missing ones, so the count names no hidden id. An
+    API key changes what its owner could. Auth off (no actor) changes all.
+    """
+    query = select(model).where(model.id.in_(ids))
+    if (clause := printer_scope.where(model.printer_id)) is not None:
+        query = query.where(clause)
+    if actor is None:
+        return query
+    # A key acts with its owner's rights to these rows, not with its own scope
+    # flags (a project key needs no archive or queue flag, #1893), so it never
+    # reaches a row its owner could not change. A legacy key without an owner
+    # keeps every row of its printers.
+    user = actor.owner if isinstance(actor, ApiKeyActor) else actor
+    if user is None or user.has_permission(all_permission.value):
+        return query
+    if user.has_permission(own_permission.value):
+        return query.where(model.created_by_id == user.id)
+    return None
+
+
 @router.post("/{project_id}/add-archives")
 async def add_archives_to_project(
     project_id: int,
     data: BatchAddArchives,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
+    printer_scope: PrinterScope = RequestPrinterScope,
+    actor: User | ApiKeyActor | None = RequestActor,
 ):
     """Batch add archives to a project."""
     # Verify project exists
@@ -1208,16 +1269,19 @@ async def add_archives_to_project(
     if not result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Project not found")
 
-    # Update archives
-    updated = 0
-    for archive_id in data.archive_ids:
-        result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
-        archive = result.scalar_one_or_none()
-        if archive:
-            archive.project_id = project_id
-            updated += 1
+    query = _editable_rows(
+        PrintArchive,
+        data.archive_ids,
+        printer_scope,
+        actor,
+        Permission.ARCHIVES_UPDATE_ALL,
+        Permission.ARCHIVES_UPDATE_OWN,
+    )
+    archives = (await db.execute(query)).scalars().all() if query is not None else []
+    for archive in archives:
+        archive.project_id = project_id
 
-    return {"message": f"Added {updated} archives to project"}
+    return {"message": f"Added {len(archives)} archives to project", "count": len(archives)}
 
 
 @router.post("/{project_id}/add-queue")
@@ -1226,6 +1290,8 @@ async def add_queue_items_to_project(
     data: BatchAddQueueItems,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
+    printer_scope: PrinterScope = RequestPrinterScope,
+    actor: User | ApiKeyActor | None = RequestActor,
 ):
     """Batch add queue items to a project."""
     # Verify project exists
@@ -1233,16 +1299,19 @@ async def add_queue_items_to_project(
     if not result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Project not found")
 
-    # Update queue items
-    updated = 0
-    for item_id in data.queue_item_ids:
-        result = await db.execute(select(PrintQueueItem).where(PrintQueueItem.id == item_id))
-        item = result.scalar_one_or_none()
-        if item:
-            item.project_id = project_id
-            updated += 1
+    query = _editable_rows(
+        PrintQueueItem,
+        data.queue_item_ids,
+        printer_scope,
+        actor,
+        Permission.QUEUE_UPDATE_ALL,
+        Permission.QUEUE_UPDATE_OWN,
+    )
+    items = (await db.execute(query)).scalars().all() if query is not None else []
+    for item in items:
+        item.project_id = project_id
 
-    return {"message": f"Added {updated} queue items to project"}
+    return {"message": f"Added {len(items)} queue items to project", "count": len(items)}
 
 
 @router.post("/{project_id}/remove-archives")
@@ -1251,22 +1320,27 @@ async def remove_archives_from_project(
     data: BatchAddArchives,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
+    printer_scope: PrinterScope = RequestPrinterScope,
+    actor: User | ApiKeyActor | None = RequestActor,
 ):
     """Remove archives from a project (sets project_id to NULL)."""
-    updated = 0
-    for archive_id in data.archive_ids:
-        result = await db.execute(
-            select(PrintArchive).where(
-                PrintArchive.id == archive_id,
-                PrintArchive.project_id == project_id,
-            )
-        )
-        archive = result.scalar_one_or_none()
-        if archive:
-            archive.project_id = None
-            updated += 1
+    query = _editable_rows(
+        PrintArchive,
+        data.archive_ids,
+        printer_scope,
+        actor,
+        Permission.ARCHIVES_UPDATE_ALL,
+        Permission.ARCHIVES_UPDATE_OWN,
+    )
+    archives = (
+        (await db.execute(query.where(PrintArchive.project_id == project_id))).scalars().all()
+        if query is not None
+        else []
+    )
+    for archive in archives:
+        archive.project_id = None
 
-    return {"message": f"Removed {updated} archives from project"}
+    return {"message": f"Removed {len(archives)} archives from project", "count": len(archives)}
 
 
 def get_project_attachments_dir(project_id: int) -> Path:
@@ -1644,11 +1718,54 @@ async def delete_project_cover_image(
 # ============ Phase 7: BOM Endpoints ============
 
 
+async def _visible_archive_names(db: AsyncSession, archive_ids, printer_scope: PrinterScope) -> dict[int, str | None]:
+    """Print names of the archives among ``archive_ids`` the caller can see.
+
+    As the project's archive list: live archives on the caller's printers
+    (#1727). An archive missing from the result reads as missing.
+    """
+    ids = {i for i in archive_ids if i}
+    if not ids:
+        return {}
+    query = select(PrintArchive.id, PrintArchive.print_name).where(PrintArchive.id.in_(ids), _LIVE_ARCHIVE)
+    if (clause := printer_scope.where(PrintArchive.printer_id)) is not None:
+        query = query.where(clause)
+    return dict((await db.execute(query)).all())
+
+
+async def _ensure_linkable_archive(db: AsyncSession, archive_id: int, printer_scope: PrinterScope) -> None:
+    """Refuse a link to an archive the caller cannot see; hidden reads as missing."""
+    if archive_id not in await _visible_archive_names(db, [archive_id], printer_scope):
+        raise HTTPException(status_code=400, detail="Archive not found")
+
+
+def _bom_response(item: ProjectBOMItem, visible_names: dict[int, str | None]) -> BOMItemResponse:
+    archive_id = item.archive_id if item.archive_id in visible_names else None
+    return BOMItemResponse(
+        id=item.id,
+        project_id=item.project_id,
+        name=item.name,
+        quantity_needed=item.quantity_needed,
+        quantity_acquired=item.quantity_acquired,
+        unit_price=item.unit_price,
+        sourcing_url=item.sourcing_url,
+        archive_id=archive_id,
+        archive_name=visible_names[archive_id] if archive_id is not None else None,
+        stl_filename=item.stl_filename,
+        remarks=item.remarks,
+        sort_order=item.sort_order,
+        is_complete=item.quantity_acquired >= item.quantity_needed,
+        created_at=item.created_at,
+        updated_at=item.updated_at,
+    )
+
+
 @router.get("/{project_id}/bom", response_model=list[BOMItemResponse])
 async def list_bom_items(
     project_id: int,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_READ),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """List all BOM items for a project."""
     # Verify project exists
@@ -1664,35 +1781,8 @@ async def list_bom_items(
     )
     items = result.scalars().all()
 
-    response = []
-    for item in items:
-        # Get archive name if linked
-        archive_name = None
-        if item.archive_id:
-            archive_result = await db.execute(select(PrintArchive.print_name).where(PrintArchive.id == item.archive_id))
-            archive_name = archive_result.scalar()
-
-        response.append(
-            BOMItemResponse(
-                id=item.id,
-                project_id=item.project_id,
-                name=item.name,
-                quantity_needed=item.quantity_needed,
-                quantity_acquired=item.quantity_acquired,
-                unit_price=item.unit_price,
-                sourcing_url=item.sourcing_url,
-                archive_id=item.archive_id,
-                archive_name=archive_name,
-                stl_filename=item.stl_filename,
-                remarks=item.remarks,
-                sort_order=item.sort_order,
-                is_complete=item.quantity_acquired >= item.quantity_needed,
-                created_at=item.created_at,
-                updated_at=item.updated_at,
-            )
-        )
-
-    return response
+    names = await _visible_archive_names(db, [item.archive_id for item in items], printer_scope)
+    return [_bom_response(item, names) for item in items]
 
 
 @router.post("/{project_id}/bom", response_model=BOMItemResponse)
@@ -1701,12 +1791,18 @@ async def create_bom_item(
     data: BOMItemCreate,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Add a BOM item to a project."""
     # Verify project exists
     result = await db.execute(select(Project).where(Project.id == project_id))
     if not result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Project not found")
+
+    # 0 means no archive, as on update.
+    archive_id = data.archive_id or None
+    if archive_id is not None:
+        await _ensure_linkable_archive(db, archive_id, printer_scope)
 
     # Get max sort order
     max_order_result = await db.execute(
@@ -1720,7 +1816,7 @@ async def create_bom_item(
         quantity_needed=data.quantity_needed,
         unit_price=data.unit_price,
         sourcing_url=data.sourcing_url,
-        archive_id=data.archive_id,
+        archive_id=archive_id,
         stl_filename=data.stl_filename,
         remarks=data.remarks,
         sort_order=max_order + 1,
@@ -1729,29 +1825,7 @@ async def create_bom_item(
     await db.flush()
     await db.refresh(item)
 
-    # Get archive name if linked
-    archive_name = None
-    if item.archive_id:
-        archive_result = await db.execute(select(PrintArchive.print_name).where(PrintArchive.id == item.archive_id))
-        archive_name = archive_result.scalar()
-
-    return BOMItemResponse(
-        id=item.id,
-        project_id=item.project_id,
-        name=item.name,
-        quantity_needed=item.quantity_needed,
-        quantity_acquired=item.quantity_acquired,
-        unit_price=item.unit_price,
-        sourcing_url=item.sourcing_url,
-        archive_id=item.archive_id,
-        archive_name=archive_name,
-        stl_filename=item.stl_filename,
-        remarks=item.remarks,
-        sort_order=item.sort_order,
-        is_complete=item.quantity_acquired >= item.quantity_needed,
-        created_at=item.created_at,
-        updated_at=item.updated_at,
-    )
+    return _bom_response(item, await _visible_archive_names(db, [item.archive_id], printer_scope))
 
 
 @router.patch("/{project_id}/bom/{item_id}", response_model=BOMItemResponse)
@@ -1761,6 +1835,7 @@ async def update_bom_item(
     data: BOMItemUpdate,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Update a BOM item."""
     result = await db.execute(
@@ -1785,6 +1860,10 @@ async def update_bom_item(
     if data.sourcing_url is not None:
         item.sourcing_url = data.sourcing_url if data.sourcing_url else None
     if data.archive_id is not None:
+        # Also when unchanged: a hidden current link must answer as a missing one,
+        # or resending its id would confirm it.
+        if data.archive_id != 0:
+            await _ensure_linkable_archive(db, data.archive_id, printer_scope)
         item.archive_id = data.archive_id if data.archive_id != 0 else None
     if data.stl_filename is not None:
         item.stl_filename = data.stl_filename if data.stl_filename else None
@@ -1794,29 +1873,7 @@ async def update_bom_item(
     await db.flush()
     await db.refresh(item)
 
-    # Get archive name if linked
-    archive_name = None
-    if item.archive_id:
-        archive_result = await db.execute(select(PrintArchive.print_name).where(PrintArchive.id == item.archive_id))
-        archive_name = archive_result.scalar()
-
-    return BOMItemResponse(
-        id=item.id,
-        project_id=item.project_id,
-        name=item.name,
-        quantity_needed=item.quantity_needed,
-        quantity_acquired=item.quantity_acquired,
-        unit_price=item.unit_price,
-        sourcing_url=item.sourcing_url,
-        archive_id=item.archive_id,
-        archive_name=archive_name,
-        stl_filename=item.stl_filename,
-        remarks=item.remarks,
-        sort_order=item.sort_order,
-        is_complete=item.quantity_acquired >= item.quantity_needed,
-        created_at=item.created_at,
-        updated_at=item.updated_at,
-    )
+    return _bom_response(item, await _visible_archive_names(db, [item.archive_id], printer_scope))
 
 
 @router.delete("/{project_id}/bom/{item_id}")
@@ -1932,12 +1989,32 @@ async def create_template_from_project(
 # ============ Phase 9: Timeline Endpoint ============
 
 
+def _queue_item_name(item: PrintQueueItem) -> str | None:
+    """The name a queued job goes by, from its archive or library file.
+
+    Same sources as the queue page: the archive's print name or file name, but
+    not from a deleted archive, then the library file's print name or file name,
+    then for a job for any of several models (#671) its first candidate's file.
+    """
+    if item.archive is not None and item.archive.deleted_at is None:
+        name = item.archive.print_name or item.archive.filename
+        if name:
+            return name
+    if item.library_file is not None:
+        metadata = item.library_file.file_metadata or {}
+        return metadata.get("print_name") or item.library_file.filename
+    if item.variants and item.variants[0].library_file is not None:
+        return item.variants[0].library_file.filename
+    return None
+
+
 @router.get("/{project_id}/timeline", response_model=list[TimelineEvent])
 async def get_project_timeline(
     project_id: int,
     limit: int = 50,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_READ),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Get timeline of events for a project."""
     # Verify project exists
@@ -1959,13 +2036,17 @@ async def get_project_timeline(
     )
 
     # Get archives and add events
-    archives_result = await db.execute(
+    archive_query = (
         select(PrintArchive)
         .where(PrintArchive.project_id == project_id, _LIVE_ARCHIVE)
         .order_by(PrintArchive.created_at.desc())
         .limit(limit)
     )
-    archives = archives_result.scalars().all()
+    # Only events from printers the caller may see, as the archive and queue
+    # lists of the project (#1727)
+    if (clause := printer_scope.where(PrintArchive.printer_id)) is not None:
+        archive_query = archive_query.where(clause)
+    archives = (await db.execute(archive_query)).scalars().all()
 
     for archive in archives:
         if archive.status == "completed":
@@ -1994,26 +2075,29 @@ async def get_project_timeline(
             )
 
     # Get queue items
-    # Fenrir: PrintQueueItem has no print_name (reading it 500'd the timeline);
-    # name each item from its library file or reprinted archive, joined in.
-    queue_result = await db.execute(
-        select(PrintQueueItem, LibraryFile.filename, PrintArchive.print_name, PrintArchive.filename)
-        .outerjoin(LibraryFile, LibraryFile.id == PrintQueueItem.library_file_id)
-        .outerjoin(PrintArchive, PrintArchive.id == PrintQueueItem.archive_id)
+    queue_query = (
+        select(PrintQueueItem)
         .where(PrintQueueItem.project_id == project_id)
+        .options(
+            selectinload(PrintQueueItem.archive),
+            selectinload(PrintQueueItem.library_file),
+            selectinload(PrintQueueItem.variants).selectinload(PrintQueueVariant.library_file),
+        )
         .order_by(PrintQueueItem.created_at.desc())
         .limit(limit)
     )
+    if (clause := printer_scope.where(PrintQueueItem.printer_id)) is not None:
+        queue_query = queue_query.where(clause)
+    queue_items = (await db.execute(queue_query)).scalars().all()
 
-    for item, file_name, archive_print_name, archive_file_name in queue_result.all():
-        item_name = file_name or archive_print_name or archive_file_name or f"Print #{item.id}"  # Fenrir
+    for item in queue_items:
         if item.status == "printing":
             events.append(
                 TimelineEvent(
                     event_type="print_started",
                     timestamp=item.started_at or item.created_at,
                     title="Print started",
-                    description=item_name,
+                    description=_queue_item_name(item),
                     metadata={"queue_item_id": item.id},
                 )
             )
@@ -2023,7 +2107,7 @@ async def get_project_timeline(
                     event_type="queued",
                     timestamp=item.created_at,
                     title="Added to queue",
-                    description=item_name,
+                    description=_queue_item_name(item),
                     metadata={"queue_item_id": item.id},
                 )
             )
@@ -2037,12 +2121,33 @@ async def get_project_timeline(
 # ============ Phase 10: Import/Export Endpoints ============
 
 
+def _stored_library_path(stored: str | None) -> Path | None:
+    """Where a library file's stored path points.
+
+    Paths are relative to the data directory, except those of files imported
+    by older versions, which are relative to the library directory.
+    """
+    try:
+        path = to_absolute_path(stored)
+    except ValueError:
+        return None
+    if path is not None and not path.exists() and stored and not Path(stored).is_absolute():
+        try:
+            legacy = safe_join_under(get_library_dir(), *Path(stored).parts, http=False)
+        except PathTraversalError:
+            return path
+        if legacy.exists():
+            return legacy
+    return path
+
+
 @router.get("/{project_id}/export")
 async def export_project(
     project_id: int,
     format: str = "zip",  # "zip" (with files) or "json" (metadata only)
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_READ),
+    actor: User | ApiKeyActor | None = RequestActor,
 ):
     """Export a project. Use format=zip (default) for full export with files, or format=json for metadata only."""
     result = await db.execute(select(Project).where(Project.id == project_id))
@@ -2076,15 +2181,26 @@ async def export_project(
     )
     linked_folders = folders_result.scalars().all()
 
+    # The folders and files the caller could open in the library, and no more.
+    reads_all_files = actor is None or actor.has_permission(Permission.LIBRARY_READ_ALL.value)
+    if actor is not None and not reads_all_files:
+        if actor.has_permission(Permission.LIBRARY_READ_OWN.value):
+            visible = visible_folder_ids(await load_folder_index(db), actor)
+            linked_folders = [f for f in linked_folders if visible is None or f.id in visible]
+        else:
+            linked_folders = []
+
     folders_export = []
     files_to_include = []  # (archive_path, zip_path)
 
     for folder in linked_folders:
         # Get files in this folder
+        own_files = [] if actor is None or reads_all_files else [LibraryFile.created_by_id == actor.id]
         files_result = await db.execute(
             LibraryFile.active()
             .where(
                 LibraryFile.folder_id == folder.id,
+                *own_files,
                 # Fenrir: project revision files are not File Manager files (PDM §6.1).
                 LibraryFile.revision_id.is_(None),
             )
@@ -2102,15 +2218,14 @@ async def export_project(
                 }
             )
             # Add file to include in ZIP
-            library_dir = get_library_dir()
-            file_path = library_dir / f.file_path
-            if file_path.exists():
+            file_path = _stored_library_path(f.file_path)
+            if file_path is not None and file_path.exists():
                 zip_path = f"files/{folder.name}/{f.filename}"
                 files_to_include.append((file_path, zip_path))
                 # Also include thumbnail if exists
                 if f.thumbnail_path:
-                    thumb_path = library_dir / f.thumbnail_path
-                    if thumb_path.exists():
+                    thumb_path = _stored_library_path(f.thumbnail_path)
+                    if thumb_path is not None and thumb_path.exists():
                         thumb_zip_path = f"files/{folder.name}/.thumbnails/{f.filename}.png"
                         files_to_include.append((thumb_path, thumb_zip_path))
 
@@ -2166,11 +2281,50 @@ async def export_project(
     )
 
 
+async def _import_folder(
+    db: AsyncSession, name: str, project_id: int, actor: User | ApiKeyActor | None
+) -> LibraryFolder:
+    """The top-level folder an imported project links, by name.
+
+    An existing one is taken only when the caller could link it themselves,
+    which takes library:update_all. Otherwise a new folder of that name is
+    made, shared like every project folder (#3201).
+    """
+    candidates = (
+        await db.execute(
+            select(LibraryFolder)
+            .where(
+                LibraryFolder.name == name,
+                LibraryFolder.parent_id.is_(None),
+                LibraryFolder.is_external.is_(False),
+            )
+            .order_by(LibraryFolder.id)
+        )
+    ).scalars()
+    for folder in candidates:
+        if actor is None or actor.has_permission(Permission.LIBRARY_UPDATE_ALL.value):
+            folder.project_id = project_id
+            return folder
+    folder = LibraryFolder(
+        name=name,
+        project_id=project_id,
+        is_external=False,
+        external_readonly=False,
+        external_show_hidden=False,
+        created_by_id=actor.id if actor else None,
+        shared=True,
+    )
+    db.add(folder)
+    await db.flush()
+    return folder
+
+
 @router.post("/import", response_model=ProjectResponse)
 async def import_project(
     data: ProjectImport,
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_CREATE),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_CREATE),
+    actor: User | ApiKeyActor | None = RequestActor,
 ):
     """Import a project with optional BOM items and linked folders."""
     # Create the project
@@ -2178,14 +2332,14 @@ async def import_project(
         name=data.name,
         description=data.description,
         color=data.color,
-        status=data.status,
+        status=_imported_status(data.status),
         target_count=data.target_count,
         target_parts_count=data.target_parts_count,
         target_sets=data.target_sets,
         notes=data.notes,
         tags=data.tags,
         due_date=data.due_date,
-        priority=data.priority,
+        priority=_imported_priority(data.priority),
         budget=data.budget,
     )
     db.add(project)
@@ -2207,33 +2361,9 @@ async def import_project(
         )
         db.add(bom_item)
 
-    # Create linked folders in library
+    # Link a folder in the library for each
     for folder_data in data.linked_folders:
-        # Check if folder with this name already exists at root level
-        existing_result = await db.execute(
-            select(LibraryFolder).where(
-                LibraryFolder.name == folder_data.name,
-                LibraryFolder.parent_id.is_(None),
-            )
-        )
-        existing_folder = existing_result.scalar_one_or_none()
-
-        if existing_folder:
-            # Link existing folder to project
-            existing_folder.project_id = project.id
-        else:
-            # Create new folder linked to project
-            # A project's folder is shared, like every linked folder (#3201).
-            new_folder = LibraryFolder(
-                name=folder_data.name,
-                project_id=project.id,
-                is_external=False,
-                external_readonly=False,
-                external_show_hidden=False,
-                created_by_id=current_user.id if current_user else None,
-                shared=True,
-            )
-            db.add(new_folder)
+        await _import_folder(db, folder_data.name, project.id, actor)
 
     await db.flush()
     await db.refresh(project)
@@ -2274,7 +2404,8 @@ async def import_project(
 async def import_project_file(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_CREATE),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_CREATE),
+    actor: User | ApiKeyActor | None = RequestActor,
 ):
     """Import a project from a ZIP or JSON file."""
     if not file.filename:
@@ -2311,14 +2442,14 @@ async def import_project_file(
         name=data.get("name", "Imported Project"),
         description=data.get("description"),
         color=data.get("color"),
-        status=data.get("status", "active"),
+        status=_imported_status(data.get("status")),
         target_count=data.get("target_count"),
         target_parts_count=data.get("target_parts_count"),
         target_sets=data.get("target_sets"),
         notes=data.get("notes"),
         tags=data.get("tags"),
         due_date=datetime.fromisoformat(data["due_date"]) if data.get("due_date") else None,
-        priority=data.get("priority", 0),
+        priority=_imported_priority(data.get("priority")),
         budget=data.get("budget"),
     )
     db.add(project)
@@ -2352,38 +2483,9 @@ async def import_project_file(
         # previous code did ``library_dir / folder_name`` directly, which
         # collapses to ``Path(folder_name)`` when folder_name is absolute
         # and lets ``..`` escape after mkdir.
-        folder_path = safe_join_under(library_dir, folder_name)
+        safe_join_under(library_dir, folder_name)
 
-        # Check if folder exists
-        existing_result = await db.execute(
-            select(LibraryFolder).where(
-                LibraryFolder.name == folder_name,
-                LibraryFolder.parent_id.is_(None),
-            )
-        )
-        existing_folder = existing_result.scalar_one_or_none()
-
-        if existing_folder:
-            # Link existing folder to project
-            existing_folder.project_id = project.id
-            folder = existing_folder
-        else:
-            # Create new folder
-            # A project's folder is shared, like every linked folder (#3201).
-            folder = LibraryFolder(
-                name=folder_name,
-                project_id=project.id,
-                is_external=False,
-                external_readonly=False,
-                external_show_hidden=False,
-                created_by_id=current_user.id if current_user else None,
-                shared=True,
-            )
-            db.add(folder)
-            await db.flush()
-
-            # Create folder on disk
-            folder_path.mkdir(parents=True, exist_ok=True)
+        folder = await _import_folder(db, folder_name, project.id, actor)
 
         # Import files for this folder from ZIP
         folder_prefix = f"files/{folder_name}/"
@@ -2404,33 +2506,24 @@ async def import_project_file(
             # parts because ``safe_join_under`` rejects parts that start
             # with ``/``, and a single combined string would hide an
             # embedded ``..`` segment behind a forward slash.
-            file_disk_path = safe_join_under(
-                library_dir,
-                folder_name,
-                *Path(relative_path).parts,
+            safe_join_under(library_dir, folder_name, *Path(relative_path).parts)
+            # Stored under a name of its own, as an upload is: another folder
+            # of the same name must not share (and overwrite) its files.
+            suffix = (
+                ".gcode.3mf" if relative_path.lower().endswith(".gcode.3mf") else Path(relative_path).suffix.lower()
             )
-            file_disk_path.parent.mkdir(parents=True, exist_ok=True)
+            file_disk_path = get_library_files_dir() / f"{uuid.uuid4().hex}{suffix}"
             file_disk_path.write_bytes(file_content)
-
-            # Determine file type
-            ext = Path(relative_path).suffix.lower()
-            if ext in [".stl", ".3mf", ".obj"]:
-                file_type = "model"
-            elif ext in [".gcode"]:
-                file_type = "gcode"
-            elif ext in [".jpg", ".jpeg", ".png", ".gif", ".webp"]:
-                file_type = "image"
-            else:
-                file_type = "other"
 
             # Create library file record
             lib_file = LibraryFile(
                 folder_id=folder.id,
                 filename=relative_path,
-                file_path=f"{folder_name}/{relative_path}",
-                file_type=file_type,
+                file_path=to_relative_path(file_disk_path),
+                file_type=classify_file_type(relative_path, file_disk_path),
                 file_size=len(file_content),
                 is_external=False,
+                created_by_id=actor.id if actor else None,
             )
             db.add(lib_file)
 

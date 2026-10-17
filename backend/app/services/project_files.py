@@ -999,6 +999,24 @@ async def revision_is_used(db: AsyncSession, revision_id: int) -> bool:
     return bool(await used_file_ids(db, select(LibraryFile.id).where(LibraryFile.revision_id == revision_id)))
 
 
+async def _hold_sqlite_write_lock(db: AsyncSession, revision_id: int) -> None:
+    """Take the SQLite write lock before the rows are deleted.
+
+    A use committed since the pre-check is then seen by a re-check here. The
+    post-delete checks below no longer see everything: core/sqlite_fk applies
+    the ON DELETE rules at flush, so a queue job or archive of a deleted file
+    loses its reference before ``_deleted_revision_is_used`` looks. A
+    same-value UPDATE of the revision row: one statement, nothing changes.
+    PostgreSQL holds the rows from ``lock_revision_rows`` already.
+    """
+    await db.execute(
+        update(ProjectRevision)
+        .where(ProjectRevision.id == revision_id)
+        .values(number=ProjectRevision.number)
+        .execution_options(synchronize_session=False)
+    )
+
+
 async def _deleted_revision_is_used(db: AsyncSession, revision_id: int, file_ids: list[int]) -> bool:
     """``revision_is_used`` for a revision whose file rows this transaction already deleted.
 
@@ -1189,9 +1207,11 @@ async def _remove_file_locked(db: AsyncSession, project: Project, revision: Proj
     path = to_absolute_path(target.file_path)
     await _claim_storage_dir(db, project)
     async with _TrashGuard(db, project, path, label=f"removal of file {target.id}") as guard:
+        # the revision may have been validated, printed or delivered since the pre-check
+        await _hold_sqlite_write_lock(db, revision_id)
+        await _require_files_still_editable(db, revision_id, file_ids)
         await _delete_file_rows(db, file_ids=[target.id])
         await db.flush()
-        # the revision may have been validated, printed or delivered since the pre-check
         await _require_files_still_editable(db, revision_id, file_ids)
         guard.trash()
         await guard.commit()
@@ -1225,11 +1245,14 @@ async def _delete_revision_locked(
         revision_folder_name(revision.number)
     )  # SEC-PATH-OK: fixed "R{int}" under a resolved item dir
     async with _TrashGuard(db, project, folder, label=f"deletion of revision {revision.id}") as guard:
+        # a print or delivery may have landed since the pre-check; the write lock is held now
+        await _hold_sqlite_write_lock(db, revision.id)
+        if await revision_is_used(db, revision.id):
+            raise ProjectFilesError(409, "This revision was printed or delivered and cannot be deleted")
         file_ids = await _delete_file_rows(db, revision_ids=[revision.id])
         await _clear_links_to(db, [revision.id])
         await db.delete(revision)
         await db.flush()
-        # a print or delivery may have landed since the pre-check; the write lock is held now
         if await _deleted_revision_is_used(db, revision.id, file_ids):
             raise ProjectFilesError(409, "This revision was printed or delivered and cannot be deleted")
         guard.trash()
@@ -1335,6 +1358,11 @@ async def _delete_item_locked(db: AsyncSession, project: Project, item: ProjectI
     async with _TrashGuard(db, project, folder, label=f"deletion of item {item.id}") as guard:
         deleted_file_ids: dict[int, list[int]] = {}
         if revision_ids:
+            # a print or delivery may have landed since the pre-check; the write lock is held now
+            await _hold_sqlite_write_lock(db, revision_ids[0])
+            for revision_id in revision_ids:
+                if await revision_is_used(db, revision_id):
+                    raise ProjectFilesError(409, _ITEM_USED)
             for revision_id in revision_ids:
                 deleted_file_ids[revision_id] = await _delete_file_rows(db, revision_ids=[revision_id])
             await _clear_links_to(db, revision_ids)

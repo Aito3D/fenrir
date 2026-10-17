@@ -5,6 +5,7 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 from backend.app.core.compat import StrEnum
+from backend.app.schemas.not_null import IgnoresNullForRequiredColumns
 
 
 class EventType(StrEnum):
@@ -129,8 +130,8 @@ EVENT_VARIABLES: dict[str, list[str]] = {
         "app_name",
     ],
     # User management notifications
-    "user_created": ["username", "password", "login_url", "app_name", "timestamp"],
-    "password_reset": ["username", "password", "login_url", "app_name", "timestamp"],
+    "user_created": ["username", "login_url", "app_name", "timestamp"],
+    "password_reset": ["username", "app_name", "timestamp"],
     # User email print notifications
     "user_print_start": ["username", "printer", "filename", "timestamp", "app_name"],
     "user_print_complete": ["username", "printer", "filename", "finish_photo_url", "timestamp", "app_name"],
@@ -400,15 +401,12 @@ SAMPLE_DATA: dict[str, dict[str, str]] = {
     # User management notifications
     "user_created": {
         "username": "john_doe",
-        "password": "<generated-password>",
         "login_url": "https://bambuddy.example.com/login",
         "app_name": "Fenrir",
         "timestamp": "2024-01-15 14:30",
     },
     "password_reset": {
         "username": "john_doe",
-        "password": "<new-password>",
-        "login_url": "https://bambuddy.example.com/login",
         "app_name": "Fenrir",
         "timestamp": "2024-01-15 14:30",
     },
@@ -454,8 +452,10 @@ class NotificationTemplateBase(BaseModel):
     body_template: str = Field(..., min_length=1, max_length=2000)
 
 
-class NotificationTemplateUpdate(BaseModel):
+class NotificationTemplateUpdate(IgnoresNullForRequiredColumns):
     """Schema for updating a notification template."""
+
+    __orm_table__ = "notification_templates"
 
     title_template: str | None = Field(default=None, min_length=1, max_length=200)
     body_template: str | None = Field(default=None, min_length=1, max_length=2000)

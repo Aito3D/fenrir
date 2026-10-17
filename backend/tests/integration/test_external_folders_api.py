@@ -1404,16 +1404,15 @@ class TestCrossBoundaryMove:
         monkeypatch.setattr(AsyncSession, "commit", flaky_commit)
 
         state["armed"] = True
-        response = await async_client.post(
-            "/api/v1/library/files/move",
-            json={"file_ids": [file_id], "folder_id": writable_folder["id"]},
-        )
+        # An unhandled route error is a 500 in production (upstream's exception
+        # handler logs it); the test transport re-raises it. Only the on-disk
+        # and DB state below is the fix under test.
+        with pytest.raises(RuntimeError, match="database is locked"):
+            await async_client.post(
+                "/api/v1/library/files/move",
+                json={"file_ids": [file_id], "folder_id": writable_folder["id"]},
+            )
         assert state["triggered"], "the commit patch never fired — test would be a false positive"
-        # The app's fail-closed auth-probe middleware turns any unhandled
-        # exception from the request pipeline into a 503 (GHSA-6mf4-q26m-47pv)
-        # -- this pre-existing behavior is unrelated to the fix under test,
-        # only the on-disk/DB state below is.
-        assert response.status_code == 503
 
         # The source bytes must still be exactly where they were.
         assert managed_disk_path.exists(), "source must survive a failed commit"

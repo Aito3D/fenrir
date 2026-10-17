@@ -37,34 +37,6 @@ BAMBU_WEIGHT_USED_BASELINE_KEY = "bambu_weight_used_baseline"
 
 
 @dataclass
-class SpoolmanSpool:
-    """Represents a spool in Spoolman."""
-
-    id: int
-    filament_id: int | None
-    remaining_weight: float | None
-    used_weight: float
-    first_used: str | None
-    last_used: str | None
-    location: str | None
-    lot_nr: str | None
-    comment: str | None
-    extra: dict | None  # Contains tag_uid in extra.tag
-
-
-@dataclass
-class SpoolmanFilament:
-    """Represents a filament type in Spoolman."""
-
-    id: int
-    name: str
-    vendor_id: int | None
-    material: str | None
-    color_hex: str | None
-    weight: float | None  # Net weight in grams
-
-
-@dataclass
 class AMSTray:
     """Represents an AMS tray with filament data from Bambu printer."""
 
@@ -1119,15 +1091,6 @@ class SpoolmanClient:
                         return spool
         return None
 
-    def _find_spool_by_location(self, location: str, cached_spools: list[dict] | None) -> dict | None:
-        """Return the spool at the exact location string, or None; fallback when RFID is unavailable."""
-        if not cached_spools:
-            return None
-        for spool in cached_spools:
-            if spool.get("location") == location:
-                return spool
-        return None
-
     async def find_spools_by_location_prefix(
         self, location_prefix: str, cached_spools: list[dict] | None = None
     ) -> list[dict]:
@@ -1550,6 +1513,10 @@ class SpoolmanClient:
                 remaining_weight=remaining,
                 comment="Created by Fenrir",
                 extra=extra,
+                # The roll's own net weight: the filament may be another size's
+                # (a 250 g refill of a 1000 g line), and Spoolman copies its
+                # weight when the spool gives none (#3194).
+                initial_weight=tray.tray_weight if tray.tray_weight > 0 else None,
             )
             await self.add_native_tags(created, [tray.tray_uuid, chip_uid], tag_format)
             return created

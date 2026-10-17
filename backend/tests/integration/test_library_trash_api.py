@@ -323,11 +323,11 @@ async def test_empty_trash_all_or_nothing_on_commit_failure(
     monkeypatch.setattr(AsyncSession, "commit", flaky_commit)
 
     state["armed"] = True
-    response = await async_client.delete("/api/v1/library/trash")
+    # An unhandled route error is a 500 in production (upstream's exception
+    # handler logs it); the test transport re-raises it.
+    with pytest.raises(RuntimeError, match="database is locked"):
+        await async_client.delete("/api/v1/library/trash")
     assert state["triggered"], "the commit patch never fired — test would be a false positive"
-    # Same fail-closed behavior as T-141: any unhandled exception from the
-    # request pipeline becomes a 503 (GHSA-6mf4-q26m-47pv).
-    assert response.status_code == 503
 
     assert file_disk_path.exists()
     assert thumb_disk_path.exists()

@@ -60,6 +60,7 @@ import { EnergyWidget } from '../components/stats/EnergyWidget';
 import { PipelineWidget } from '../components/stats/PipelineWidget';
 import { TimeframeSelector } from '../components/stats/TimeframeSelector';
 import { useTimeframe } from '../components/stats/timeframe';
+import { useUiSettings } from '../hooks/useUiSettings';
 
 // Constants
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -1114,10 +1115,7 @@ export function StatsPage() {
     queryFn: () => api.getArchivesSlim(effectiveDateRange.dateFrom, effectiveDateRange.dateTo, createdByIdParam),
   });
 
-  const { data: settings } = useQuery({
-    queryKey: ['settings'],
-    queryFn: api.getSettings,
-  });
+  const { data: settings } = useUiSettings();
 
   // The supplier widget aggregates the internal spool table, which is empty
   // in Spoolman mode — there the assignments live in the Spoolman twin table.

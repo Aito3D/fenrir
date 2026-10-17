@@ -10,6 +10,7 @@ import { SkipObjectsModal, SkipObjectsIcon } from './SkipObjectsModal';
 import { useMjpegStream } from '../hooks/useMjpegStream';
 import { useStreamReconnect } from '../hooks/useStreamReconnect';
 import { useZoomPan } from '../hooks/useZoomPan';
+import { useCameraViewerId } from '../hooks/useCameraViewerId';
 
 interface EmbeddedCameraViewerProps {
   printerId: number;
@@ -115,8 +116,10 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
     checkStalled,
   });
 
+  // On its stream and its /camera/stop: the stop ends this viewer's stream only.
+  const viewerId = useCameraViewerId();
   // Stream URL — quality preset is resolved server-side from settings
-  const streamUrl = `/printers/${printerId}/camera/stream`;
+  const streamUrl = `/printers/${printerId}/camera/stream?viewer=${viewerId}`;
   const mjpeg = useMjpegStream({
     url: streamUrl,
     canvasRef,
@@ -138,7 +141,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
   }, [state, storageKey]);
 
   // Cleanup on unmount — send stop hint
-  useCameraStopHint(printerId);
+  useCameraStopHint(printerId, viewerId);
 
   // Fullscreen change listener
   useEffect(() => {
@@ -166,7 +169,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
     setStreamError(false);
     reconnect.reset();
 
-    api.stopCameraStream(printerId).catch(() => {});
+    api.stopCameraStream(printerId, viewerId).catch(() => {});
 
     if (refreshTimeoutRef.current) {
       clearTimeout(refreshTimeoutRef.current);

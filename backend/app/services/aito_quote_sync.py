@@ -3255,7 +3255,7 @@ async def flush_and_wait(project_id: int, timeout: float = FLUSH_TIMEOUT_SECONDS
     try:
         await asyncio.wait_for(asyncio.shield(waiter), timeout=timeout)
         return True
-    except asyncio.TimeoutError:
+    except TimeoutError:
         return False
     finally:
         aito_push_schedule.discard_waiter(project_id, waiter)

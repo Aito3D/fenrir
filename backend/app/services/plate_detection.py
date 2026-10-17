@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -29,6 +30,36 @@ def _get_calibration_dir() -> Path:
     from backend.app.core.config import settings
 
     return settings.plate_calibration_dir
+
+
+_REFERENCE_FILE = re.compile(r"printer_(\d+)_(?:ref_\d+\.jpg|metadata\.json)")
+
+
+def _reference_files() -> list[tuple[int, Path]]:
+    directory = _get_calibration_dir()
+    if not directory.is_dir():
+        return []
+    return [
+        (int(m[1]), path) for path in directory.iterdir() if (m := _REFERENCE_FILE.fullmatch(path.name)) is not None
+    ]
+
+
+def _remove(path: Path) -> None:
+    try:
+        path.unlink()
+    except OSError as e:
+        logger.warning("Could not remove plate reference %s: %s", path, e)
+
+
+def remove_printer_references(printer_id: int) -> None:
+    """Remove a deleted printer's plate references (camera images of its bed).
+
+    Named by printer id, so the next printer given the id (SQLite reuses it)
+    would show them and compare its plate against them.
+    """
+    for owner, path in _reference_files():
+        if owner == printer_id:
+            _remove(path)
 
 
 class PlateDetectionResult:
@@ -133,17 +164,6 @@ class PlateDetector:
             if path.exists():
                 paths.append(path)
         return paths
-
-    def _get_next_reference_slot(self, printer_id: int) -> Path:
-        """Get the path for the next reference image slot (cycles through slots)."""
-        _get_calibration_dir().mkdir(parents=True, exist_ok=True)
-        # Find first empty slot, or use oldest (slot 0) and shift others
-        for i in range(self.MAX_REFERENCES):
-            path = _get_calibration_dir() / f"printer_{printer_id}_ref_{i}.jpg"
-            if not path.exists():
-                return path
-        # All slots full - return slot 0 (will be overwritten, but we rotate first)
-        return _get_calibration_dir() / f"printer_{printer_id}_ref_0.jpg"
 
     def _rotate_references(self, printer_id: int) -> None:
         """Rotate references: delete oldest (0), shift others down."""

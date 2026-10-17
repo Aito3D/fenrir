@@ -9,7 +9,7 @@ import jwt as _jwt
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials
 from jwt.exceptions import PyJWTError
-from sqlalchemy import delete, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -39,6 +39,7 @@ from backend.app.core.auth import (
     resolve_session_max_minutes,
     revoke_jti,
     security,
+    token_outlived_its_session,
     verify_password,
 )
 from backend.app.core.database import async_session, get_db
@@ -418,7 +419,23 @@ async def setup_auth(request: SetupRequest, db: AsyncSession = Depends(get_db)):
         # Set auth enabled and mark setup as completed
         await set_auth_enabled(db, request.auth_enabled)
         await set_setup_completed(db, True)
+        if request.auth_enabled:
+            # Tokens minted while it was off name nobody (every tab mints a
+            # WebSocket one): they would reconnect the dashboards closed below.
+            await db.execute(
+                delete(AuthEphemeralToken).where(
+                    or_(AuthEphemeralToken.username.is_(None), AuthEphemeralToken.username == ""),
+                    AuthEphemeralToken.api_key_id.is_(None),
+                    AuthEphemeralToken.token_type != "revoked_jti",
+                )
+            )
         await db.commit()
+        if request.auth_enabled:
+            # Dashboards opened while it was off have every printer and would
+            # keep them. Closed, such a tab re-checks auth and goes to the login.
+            from backend.app.core.websocket import ws_manager
+
+            await ws_manager.close_anonymous()
 
         if admin_created:
             await db.refresh(admin_user)
@@ -712,7 +729,9 @@ async def mint_websocket_token(
     username = current_user.username if current_user is not None else None
     # The socket only carries the printers its minter may see (#1727)
     api_key_id = api_key.id if api_key is not None else None
-    return {"token": await create_websocket_token(username, api_key_id)}
+    # The key's prefix binds the token to this key (SQLite reuses a deleted key's id)
+    api_key_prefix = api_key.key_prefix if api_key is not None else None
+    return {"token": await create_websocket_token(username, api_key_id, api_key_prefix)}
 
 
 @router.post("/media-token")
@@ -923,13 +942,36 @@ async def save_smtp_config(
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
     db: AsyncSession = Depends(get_db),
 ):
-    """Save SMTP settings (admin only when auth enabled)."""
+    """Save SMTP settings (admin only when auth enabled).
+
+    An empty password keeps the stored one, which only goes to the server it
+    was entered for: a changed host, port or security needs it entered again
+    (without authentication, the stored password is dropped instead).
+    """
     import logging
+
+    from backend.app.services.secret_fields import SMTP_DESTINATIONS, same_value
 
     logger = logging.getLogger(__name__)
 
+    drop_password = False
+    stored = await get_smtp_settings(db)
+    if stored and stored.smtp_password and not smtp_settings.smtp_password:
+        moved = [f for f in SMTP_DESTINATIONS if not same_value(getattr(smtp_settings, f), getattr(stored, f))]
+        if moved and smtp_settings.smtp_auth_enabled:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Enter the SMTP password again: {', '.join(moved)} changed",
+            )
+        drop_password = bool(moved)
+
     try:
         await save_smtp_settings(db, smtp_settings)
+        if drop_password:
+            from backend.app.core.db_dialect import upsert_setting
+            from backend.app.models.settings import Settings
+
+            await upsert_setting(db, Settings, "smtp_password", "")
         await db.commit()
         logger.info(f"SMTP settings updated by admin user: {current_user.username if current_user else 'anonymous'}")
         return {"message": "SMTP settings saved successfully"}
@@ -1286,15 +1328,17 @@ async def forgot_password_confirm(request: ForgotPasswordConfirmRequest, db: Asy
             AuthEphemeralToken.token == request.token,
             AuthEphemeralToken.token_type == TokenType.PASSWORD_RESET,
         )
-        .returning(AuthEphemeralToken.username, AuthEphemeralToken.expires_at)
+        .returning(AuthEphemeralToken.username, AuthEphemeralToken.expires_at, AuthEphemeralToken.created_at)
     )
     row = result.one_or_none()
     await db.commit()
     if row is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired password reset token")
 
-    username, expires_at = row
-    # SQLite returns naive datetimes; treat them as UTC.
+    username, expires_at, minted_at = row
+    if await token_outlived_its_session(db, username, minted_at):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired password reset token")
+    # Stored as naive UTC on both databases; treat it as UTC.
     if expires_at.tzinfo is None:
         expires_at = expires_at.replace(tzinfo=timezone.utc)
     if now > expires_at:
@@ -1307,7 +1351,17 @@ async def forgot_password_confirm(request: ForgotPasswordConfirmRequest, db: Asy
 
     user.password_hash = get_password_hash(request.new_password)
     user.password_changed_at = now  # M-R7-B: invalidate all prior JWTs
+    # The WebSocket and camera tokens too: reusable for an hour, they would
+    # reconnect a closed dashboard straight away.
+    from backend.app.api.routes.users import drop_pending_tokens
+
+    await drop_pending_tokens(db, user.username)
     await db.commit()
+    # Open dashboards are never signed in again: one someone else had open on
+    # the account would keep receiving its printers.
+    from backend.app.core.websocket import ws_manager
+
+    await ws_manager.close_user(user.id)
     _logger.info("Password reset completed for user '%s'", username)
 
     return ForgotPasswordResponse(message="Password has been reset successfully.")

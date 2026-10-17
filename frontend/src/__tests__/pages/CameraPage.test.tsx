@@ -40,7 +40,7 @@ function renderCameraPage(printerId: number) {
     },
   });
 
-  return rtlRender(
+  const tree = (
     <QueryClientProvider client={queryClient}>
       <I18nextProvider i18n={i18n}>
         <MemoryRouter initialEntries={[`/cameras/${printerId}`]}>
@@ -57,6 +57,7 @@ function renderCameraPage(printerId: number) {
       </I18nextProvider>
     </QueryClientProvider>
   );
+  return rtlRender(tree);
 }
 
 describe('CameraPage', () => {

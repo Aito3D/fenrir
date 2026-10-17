@@ -12,6 +12,14 @@ import { setAuthToken } from '../../api/client';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
 
+// The page reads its settings from /settings, or from /settings/ui-flags for a
+// user who may not read /settings, as in the permission tests below.
+const settingsHandlers = (body: Record<string, unknown>) => [
+  http.get('/api/v1/settings/', () => HttpResponse.json(body)),
+  http.get('/api/v1/settings/ui-flags', () => HttpResponse.json(body)),
+  http.get('/api/v1/settings/ui-preferences', () => HttpResponse.json({})),
+];
+
 // Only the protocol-handler launch is stubbed — it would navigate the jsdom
 // window. Everything else in the module is a pure predicate, so keep the real
 // implementations: isSliceableFilename decides which rows even offer the
@@ -2177,7 +2185,7 @@ describe('FileManagerPage', () => {
         // about the handoff mechanics and the permission gate, not about which
         // slicer, so they run against OrcaSlicer. The Bambu Studio side is
         // covered by its own tests below.
-        http.get('/api/v1/settings/', () => HttpResponse.json({ preferred_slicer: 'orcaslicer' })),
+        ...settingsHandlers({ preferred_slicer: 'orcaslicer' }),
       );
     });
 
@@ -2216,7 +2224,7 @@ describe('FileManagerPage', () => {
 
     it('opens the in-app SliceModal when the slicer API is enabled', async () => {
       server.use(
-        http.get('/api/v1/settings/', () => HttpResponse.json({ use_slicer_api: true })),
+        ...settingsHandlers({ use_slicer_api: true }),
       );
       const user = userEvent.setup();
       render(<FileManagerPage />);
@@ -2239,7 +2247,7 @@ describe('FileManagerPage', () => {
     // worked. Nothing about STL was special; the card was just the shortest.
     it('keeps the first menu entry out of the card so it cannot be clipped (#2846)', async () => {
       server.use(
-        http.get('/api/v1/settings/', () => HttpResponse.json({ use_slicer_api: true })),
+        ...settingsHandlers({ use_slicer_api: true }),
       );
       const user = userEvent.setup();
       render(<FileManagerPage />);
@@ -2261,7 +2269,7 @@ describe('FileManagerPage', () => {
     // could only fail, with an error that blamed the file.
     it('hides the desktop handoff for an STL when the target is Bambu Studio', async () => {
       server.use(
-        http.get('/api/v1/settings/', () => HttpResponse.json({ preferred_slicer: 'bambu_studio' })),
+        ...settingsHandlers({ preferred_slicer: 'bambu_studio' }),
       );
       const user = userEvent.setup();
       render(<FileManagerPage />);
@@ -2277,9 +2285,7 @@ describe('FileManagerPage', () => {
       // preferred_slicer, which drives the sidecar -- decides whether an STL
       // can be handed over at all.
       server.use(
-        http.get('/api/v1/settings/', () =>
-          HttpResponse.json({ preferred_slicer: 'bambu_studio', open_in_slicer: 'orcaslicer' }),
-        ),
+        ...settingsHandlers({ preferred_slicer: 'bambu_studio', open_in_slicer: 'orcaslicer' }),
       );
       const user = userEvent.setup();
       render(<FileManagerPage />);
@@ -2298,9 +2304,7 @@ describe('FileManagerPage', () => {
       // The restriction is on the URL handoff, not on the file: the sidecar
       // slices an STL regardless of which desktop slicer is configured.
       server.use(
-        http.get('/api/v1/settings/', () =>
-          HttpResponse.json({ use_slicer_api: true, preferred_slicer: 'bambu_studio' }),
-        ),
+        ...settingsHandlers({ use_slicer_api: true, preferred_slicer: 'bambu_studio' }),
       );
       const user = userEvent.setup();
       render(<FileManagerPage />);
@@ -2350,7 +2354,7 @@ describe('FileManagerPage', () => {
     it('disables the Slice menu item without library:upload when the slicer API is enabled', async () => {
       mockAuthUser([]);
       server.use(
-        http.get('/api/v1/settings/', () => HttpResponse.json({ use_slicer_api: true })),
+        ...settingsHandlers({ use_slicer_api: true }),
       );
       const user = userEvent.setup();
       render(<FileManagerPage />);
@@ -2368,7 +2372,7 @@ describe('FileManagerPage', () => {
     it('enables the Slice menu item with library:upload when the slicer API is enabled', async () => {
       mockAuthUser(['library:upload']);
       server.use(
-        http.get('/api/v1/settings/', () => HttpResponse.json({ use_slicer_api: true })),
+        ...settingsHandlers({ use_slicer_api: true }),
       );
       const user = userEvent.setup();
       render(<FileManagerPage />);
@@ -2449,7 +2453,7 @@ describe('FileManagerPage', () => {
 
     it('slices from the list-view button into the in-app modal when the slicer API is enabled', async () => {
       server.use(
-        http.get('/api/v1/settings/', () => HttpResponse.json({ use_slicer_api: true })),
+        ...settingsHandlers({ use_slicer_api: true }),
       );
       const user = userEvent.setup();
       render(<FileManagerPage />);

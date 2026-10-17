@@ -420,6 +420,12 @@ async def clear_persisted_session(db: AsyncSession, printer_id: int) -> None:
         await db.commit()
 
 
+def forget_printer(printer_id: int) -> None:
+    """A deleted printer's print-start context in memory (the row goes with the printer)."""
+    _active_sessions.pop(printer_id, None)
+    _tray_change_locks.pop(printer_id, None)
+
+
 async def discard_session(db: AsyncSession, printer_id: int) -> None:
     """Forget a printer's print-start context, in memory and on disk.
 
@@ -681,7 +687,6 @@ async def on_print_complete(
     """
     from sqlalchemy import select
 
-    from backend.app.api.routes.settings import get_setting
     from backend.app.models.spool_usage_history import SpoolUsageHistory
 
     session = _active_sessions.pop(printer_id, None)
@@ -700,8 +705,9 @@ async def on_print_complete(
     handled_trays: set[tuple[int, int]] = set()
 
     # Fetch default filament cost from settings for fallback
-    default_cost_str = await get_setting(db, "default_filament_cost")
-    default_filament_cost = float(default_cost_str) if default_cost_str else 0.0
+    from backend.app.services.print_cost_estimate import default_cost_per_kg
+
+    default_filament_cost = await default_cost_per_kg(db)
 
     # Fall back to ams_mapping captured at print start (needed when auto-archive is off
     # and the caller can't retrieve the mapping from _print_ams_mappings without archive_id)
@@ -1399,9 +1405,9 @@ async def _track_from_3mf(
         return []
 
     # The queue item carries both the plate and the dispatched mapping; look it
-    # up at most once. ``.first()`` rather than ``.scalar_one_or_none()``
-    # because a batch dispatches one archive as several queue items, and
-    # raising there would cost the print all of its usage tracking.
+    # up at most once. A batch dispatches one archive as several queue items,
+    # on several printers at once: only this printer's newest is this run.
+    # Completion has already closed it, as cancelled for an aborted print.
     _queue_item_lookup: list = []
 
     async def _dispatch_queue_item():
@@ -1412,7 +1418,9 @@ async def _track_from_3mf(
                 queue_result = await db.execute(
                     select(PrintQueueItem)
                     .where(PrintQueueItem.archive_id == archive_id)
-                    .where(PrintQueueItem.status.in_(["printing", "completed", "failed"]))
+                    .where(PrintQueueItem.printer_id == printer_id)
+                    .where(PrintQueueItem.status.in_(["printing", "completed", "failed", "cancelled"]))
+                    .order_by(PrintQueueItem.id.desc())
                 )
                 _queue_item_lookup.append(queue_result.scalars().first())
         return _queue_item_lookup[0]
@@ -1420,20 +1428,21 @@ async def _track_from_3mf(
     # The caller's plate_id comes from the in-memory session, which a restart
     # mid-print destroys. Both the archive and the queue item recorded the
     # plate at dispatch — without falling back to them the parser sums every
-    # plate of a multi-plate file and charges the lot to one spool.
+    # plate of a multi-plate file and charges the lot to one spool. The
+    # newest queue item goes first: the archive keeps the plate of its first
+    # print, so a reprint of another plate is only on the queue item.
     if plate_id is None:
-        if archive is not None and archive.plate_id is not None:
+        plate_queue_item = await _dispatch_queue_item()
+        if plate_queue_item is not None and plate_queue_item.plate_id is not None:
+            plate_id = plate_queue_item.plate_id
+            logger.info(
+                "[UsageTracker] 3MF: plate_id=%s recovered from queue item %s",
+                plate_id,
+                plate_queue_item.id,
+            )
+        elif archive is not None and archive.plate_id is not None:
             plate_id = archive.plate_id
             logger.info("[UsageTracker] 3MF: plate_id=%s recovered from archive %s", plate_id, archive_id)
-        else:
-            plate_queue_item = await _dispatch_queue_item()
-            if plate_queue_item is not None and plate_queue_item.plate_id is not None:
-                plate_id = plate_queue_item.plate_id
-                logger.info(
-                    "[UsageTracker] 3MF: plate_id=%s recovered from queue item %s",
-                    plate_id,
-                    plate_queue_item.id,
-                )
 
     filament_usage = extract_filament_usage_from_3mf(file_path, plate_id)
     if not filament_usage and plate_id is not None:

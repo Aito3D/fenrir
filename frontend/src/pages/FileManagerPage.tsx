@@ -69,7 +69,6 @@ import type {
   LibraryFolderCreate,
   LibraryFolderUpdate,
   ExternalFolderCreate,
-  AppSettings,
   Archive,
   Permission,
   LibraryFileUploadResponse, // Fenrir: projects PDM phase 5
@@ -106,6 +105,7 @@ import { isSlicedLibraryFile, isSliceableLibraryFile } from '../utils/libraryFil
 // Fenrir: File Manager → project bridge (projects PDM phase 5)
 import { MoveToProjectModal } from '../components/projects/filing/MoveToProjectModal';
 import { isPrintableFilename } from '../components/projects/files/filesUi';
+import { useUiSettings } from '../hooks/useUiSettings';
 
 // Rows per request. 100 keeps the first paint under a screenful of cards on
 // a wide monitor while the look-ahead sentinel fetches the next page before
@@ -1915,10 +1915,7 @@ export function FileManagerPage() {
   }, [searchParams, setSelectedFolderId]);
 
   // Queries
-  const { data: settings } = useQuery({
-    queryKey: ['settings'],
-    queryFn: () => api.getSettings() as Promise<AppSettings>,
-  });
+  const { data: settings } = useUiSettings();
 
   const preferredSlicer: SlicerType = resolveDesktopSlicer(settings?.open_in_slicer, settings?.preferred_slicer);
 

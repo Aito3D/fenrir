@@ -3,6 +3,8 @@
 CLAUDE.md
 .superpowers/
 plans/
+CLAUDE.local.md
+.mcp.json
 
 # macOS
 .DS_Store
@@ -16,6 +18,9 @@ __pycache__/
 *.so
 venv/
 .venv/
+.typecheck-venv/
+# Fenrir: also the symlink a worktree points at the main checkout's venv
+.typecheck-venv
 env/
 .env
 docker-compose.override.yml

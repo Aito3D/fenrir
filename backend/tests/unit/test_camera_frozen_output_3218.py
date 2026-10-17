@@ -19,6 +19,7 @@ from contextlib import suppress
 import pytest
 
 from backend.app.api.routes import camera
+from backend.tests._fixtures.external_camera import INPUT_OPEN_LOG
 
 PRINTER_ID = 3218
 STREAM_ID = f"{PRINTER_ID}-fanout-frozen"
@@ -57,7 +58,16 @@ class _Stdout:
 
 
 class _Stderr:
+    """ffmpeg's log: the input-open line first (the session serves no frame
+    before it, as upstream's stderr tail), then nothing more."""
+
+    def __init__(self) -> None:
+        self._opened = False
+
     async def read(self, _size: int = -1) -> bytes:
+        if not self._opened:
+            self._opened = True
+            return INPUT_OPEN_LOG
         return b""
 
 
@@ -145,7 +155,9 @@ async def _collect(stream, limit: int) -> list[bytes]:
 
 
 async def _session(frames, limit: int = 1000) -> list[bytes]:
-    return await asyncio.wait_for(_collect(_stream(), limit=limit), timeout=10)
+    # The fixture's clock is also the event loop's: this safety net counts in
+    # fake seconds (one per frame read), not wall time.
+    return await asyncio.wait_for(_collect(_stream(), limit=limit), timeout=100_000)
 
 
 async def test_a_frozen_session_ends_and_the_next_one_is_live(rtsp):
@@ -262,7 +274,7 @@ async def test_a_session_without_a_printer_id_still_catches_a_freeze(rtsp):
         printer_id=None,
     )
 
-    frames = await asyncio.wait_for(_collect(stream, limit=1000), timeout=10)
+    frames = await asyncio.wait_for(_collect(stream, limit=1000), timeout=100_000)  # fake seconds, see _session
 
     assert 20 <= len(frames) <= 23
     assert PRINTER_ID not in camera._state.frozen_frame_crc

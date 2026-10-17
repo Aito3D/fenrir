@@ -4,6 +4,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, BeforeValidator, Field, model_validator
 
+from backend.app.schemas.not_null import IgnoresNullForRequiredColumns
 from backend.app.utils.filename import clean_display_name
 
 # Free text, punctuation and all -- only control characters are taken out, and
@@ -55,11 +56,13 @@ class ArchiveBase(BaseModel):
     external_url: NormalizedUrl = None
 
 
-class ArchiveUpdate(ArchiveBase):
+class ArchiveUpdate(IgnoresNullForRequiredColumns, ArchiveBase):
+    __orm_table__ = "print_archives"
     printer_id: int | None = None
     project_id: int | None = None
-    # Allow changing status (e.g., clearing failed flag)
-    status: str | None = None
+    # A finished outcome only. 'printing' would be closed again at the next
+    # reconnect as a missed completion, with notifications and a run of its own.
+    status: str | None = Field(default=None, pattern="^(completed|failed|aborted|cancelled)$")
     # Post-print quality verdict (#1898): 'good' / 'reject'; null clears it.
     user_verdict: str | None = Field(default=None, pattern="^(good|reject)$")
     # Which surface the verdict came from, for the "recorded when the plate was

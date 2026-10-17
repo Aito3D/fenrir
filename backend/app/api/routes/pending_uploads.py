@@ -18,6 +18,7 @@ from backend.app.core.auth import (
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.models.pending_upload import PendingUpload
+from backend.app.models.project import Project
 from backend.app.models.user import User
 from backend.app.services.archive import ArchiveService, resolve_display_stem
 
@@ -265,6 +266,11 @@ async def archive_pending_upload(
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Upload file not found on disk")
 
+    # The project must exist before anything is archived; 0 means none.
+    project_id = (request.project_id or None) if request else None
+    if project_id is not None and await db.get(Project, project_id) is None:
+        raise HTTPException(status_code=400, detail="Project not found")
+
     # Archive the file
     from backend.app.api.routes.settings import get_setting
 
@@ -290,8 +296,8 @@ async def archive_pending_upload(
             archive.tags = request.tags
         if request.notes:
             archive.notes = request.notes
-        if request.project_id:
-            archive.project_id = request.project_id
+        if project_id is not None:
+            archive.project_id = project_id
 
     # Update pending record
     pending.status = "archived"
@@ -300,7 +306,7 @@ async def archive_pending_upload(
     if request:
         pending.tags = request.tags
         pending.notes = request.notes
-        pending.project_id = request.project_id
+        pending.project_id = project_id
 
     await db.commit()
     # Fenrir: read before auto-filing below, whose failure path rolls the session back.

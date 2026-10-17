@@ -335,15 +335,12 @@ async def test_a_non_database_bug_in_the_card_move_still_500s(async_client, book
 
     monkeypatch.setattr(aito_routes, "_apply_rules", boom)
 
-    response = await async_client.post(f"/api/v1/aito/{project['id']}/quote-email", json={"to": "contact@example.pf"})
-
     # It must NOT look like the previous test: a non-database bug is not
     # allowed to reach the client as a 200 with marked_sent=False, unlike
-    # OperationalError above. (What it becomes instead — 500 vs the outer
-    # auth-probe middleware's own 503 fail-closed handling of an unexpected
-    # exception, see main.py's auth_middleware — is incidental to this
-    # handler and not this test's concern.)
-    assert response.status_code != 200
+    # OperationalError above. It is a 500 in production (upstream's exception
+    # handler logs it); the test transport re-raises it.
+    with pytest.raises(AttributeError, match="boom"):
+        await async_client.post(f"/api/v1/aito/{project['id']}/quote-email", json={"to": "contact@example.pf"})
     assert books_email == [("EST-9", ["contact@example.pf"])]  # the email really did go out
 
     kinds = await _events(async_client, project["id"])

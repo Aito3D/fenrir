@@ -384,6 +384,11 @@ class TestRestoreSuccessPath:
             with (
                 patch("backend.app.core.database.reinitialize_database", new_callable=AsyncMock) as reinit_mock,
                 patch("backend.app.core.database.init_db", new_callable=AsyncMock) as init_mock,
+                # The sign-everyone-out step (upstream) reads the restored
+                # database, which the mocked init_db never builds here.
+                patch("backend.app.core.database.invalidate_all_sessions", new_callable=AsyncMock),
+                patch("backend.app.api.routes.settings.is_auth_enabled", new_callable=AsyncMock, return_value=False),
+                patch("backend.app.core.websocket.ws_manager.refresh_printer_scopes", new_callable=AsyncMock),
             ):
                 resp = await async_client.post(
                     "/api/v1/settings/restore",

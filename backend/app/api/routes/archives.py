@@ -11,7 +11,6 @@ import zipfile
 from collections import defaultdict
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
-from decimal import ROUND_HALF_UP, Decimal
 from html import escape as html_escape
 from pathlib import Path
 
@@ -19,6 +18,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Reques
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
 from backend.app.core import database
 from backend.app.core.auth import (
@@ -38,6 +38,7 @@ from backend.app.core.printer_scope import PrinterScope
 from backend.app.models.archive import PrintArchive
 from backend.app.models.filament import Filament
 from backend.app.models.printer import Printer
+from backend.app.models.project import Project
 from backend.app.models.spool_usage_history import SpoolUsageHistory
 from backend.app.models.user import User
 from backend.app.schemas.archive import ArchiveResponse, ArchiveSlim, ArchiveStats, ArchiveUpdate, ProjectPageUpdate
@@ -53,6 +54,7 @@ from backend.app.services.print_confirmation import (
     retire_confirm_token,
     stamp_verdict,
 )
+from backend.app.services.print_cost_estimate import default_cost_per_kg as _default_cost_per_kg, price_one_print
 from backend.app.services.print_storage import (
     REASON_FTP_TRANSFER_FAILED,
     REASON_FTPS_COOLOFF,
@@ -232,6 +234,17 @@ def _owner_scope(user: User | None, can_read_all: bool) -> int | None:
     if can_read_all or user is None:
         return None
     return user.id
+
+
+def _visible_archive_clauses(user, can_read_all: bool, printer_scope: PrinterScope) -> list:
+    """WHERE clauses for the archives a caller may see, as _ensure_archive_visible decides one by one."""
+    clauses = []
+    if (scope_clause := printer_scope.where(PrintArchive.printer_id)) is not None:
+        clauses.append(scope_clause)
+    if not can_read_all:
+        # Own archives only; an ownerless one needs read-all, and no user sees none.
+        clauses.append(PrintArchive.created_by_id == user.id if user is not None else PrintArchive.id.is_(None))
+    return clauses
 
 
 def _ensure_archive_visible(
@@ -558,8 +571,10 @@ async def list_archives(
         printer_scope=printer_scope,
     )
 
-    # Get sets of duplicate hashes and duplicate (name, hash) pairs (efficient single queries)
-    duplicate_hashes, duplicate_name_hash_pairs = await service.get_duplicate_hashes_and_names()
+    # Get sets of duplicate hashes and duplicate (name, hash) pairs (efficient single queries),
+    # counted among the archives this caller may see, as the duplicates view lists them.
+    visible = _visible_archive_clauses(user, can_read_all, printer_scope)
+    duplicate_hashes, duplicate_name_hash_pairs = await service.get_duplicate_hashes_and_names(visible)
 
     # Batch-load duplicate groups once for the current page keys.
     duplicate_hashes_in_page = {
@@ -590,7 +605,7 @@ async def list_archives(
                 PrintArchive.created_at,
                 PrintArchive.content_hash,
                 func.lower(PrintArchive.print_name).label("print_name_lower"),
-            ).where(or_(*duplicate_group_conditions), PrintArchive.deleted_at.is_(None))
+            ).where(or_(*duplicate_group_conditions), PrintArchive.deleted_at.is_(None), *visible)
         )
 
         duplicate_groups_by_hash: dict[str, list[tuple[int, datetime]]] = defaultdict(list)
@@ -732,6 +747,7 @@ async def no_3mf_warning(
             Permission.ARCHIVES_READ_OWN,
         )
     ),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Whether to nudge the user about a print that archived without its 3MF,
     and why. True iff any archive in the last 30 days was created via the
@@ -769,6 +785,8 @@ async def no_3mf_warning(
     ]
     if user is not None and not can_read_all:
         conditions.append(PrintArchive.created_by_id == user.id)
+    if (scope_clause := printer_scope.where(PrintArchive.printer_id)) is not None:
+        conditions.append(scope_clause)
     # The two keys, read in SQL: decoding every row's whole extra_data (with
     # its ~9 KB _print_data snapshot) for a month of archives cost ~12 MB of
     # JSON parsing on the event loop per banner check.
@@ -1635,7 +1653,7 @@ async def _sum_live_plug_totals(db: AsyncSession) -> float:
     """
     import time as _time
 
-    from backend.app.api.routes.settings import get_setting
+    from backend.app.api.routes.settings import get_homeassistant_settings
     from backend.app.models.smart_plug import SmartPlug
     from backend.app.services.homeassistant import homeassistant_service
     from backend.app.services.mqtt_relay import mqtt_relay
@@ -1649,9 +1667,8 @@ async def _sum_live_plug_totals(db: AsyncSession) -> float:
     plugs_result = await db.execute(select(SmartPlug))
     plugs = list(plugs_result.scalars().all())
 
-    ha_url = await get_setting(db, "ha_url") or ""
-    ha_token = await get_setting(db, "ha_token") or ""
-    homeassistant_service.configure(ha_url, ha_token)
+    ha_settings = await get_homeassistant_settings(db)
+    homeassistant_service.configure(ha_settings["ha_url"], ha_settings["ha_token"])
 
     async def _plug_total(plug) -> float:
         if plug.plug_type == "tasmota":
@@ -1785,6 +1802,7 @@ async def get_all_tags(
             Permission.ARCHIVES_READ_OWN,
         )
     ),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """List all unique tags with usage counts.
 
@@ -1792,9 +1810,11 @@ async def get_all_tags(
     """
     user, can_read_all = auth_result
     # Query all archives with non-null tags
-    tag_conditions = [PrintArchive.tags.isnot(None), PrintArchive.deleted_at.is_(None)]
+    tag_conditions: list[ColumnElement[bool]] = [PrintArchive.tags.isnot(None), PrintArchive.deleted_at.is_(None)]
     if user is not None and not can_read_all:
         tag_conditions.append(PrintArchive.created_by_id == user.id)
+    if (scope_clause := printer_scope.where(PrintArchive.printer_id)) is not None:
+        tag_conditions.append(scope_clause)
     result = await db.execute(select(PrintArchive.tags).where(*tag_conditions))
     all_tags_rows = result.all()
 
@@ -1820,6 +1840,7 @@ async def rename_tag(
     request: Request,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_ALL),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Rename a tag across all archives.
 
@@ -1837,7 +1858,11 @@ async def rename_tag(
 
     # Find all archives containing the old tag
     result = await db.execute(
-        select(PrintArchive).where(PrintArchive.tags.isnot(None), PrintArchive.deleted_at.is_(None))
+        select(PrintArchive).where(
+            PrintArchive.tags.isnot(None),
+            PrintArchive.deleted_at.is_(None),
+            *_visible_archive_clauses(None, True, printer_scope),
+        )
     )
     archives = list(result.scalars().all())
 
@@ -1868,6 +1893,7 @@ async def delete_tag(
     tag_name: str,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_ALL),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Delete a tag from all archives.
 
@@ -1875,7 +1901,11 @@ async def delete_tag(
     """
     # Find all archives containing the tag
     result = await db.execute(
-        select(PrintArchive).where(PrintArchive.tags.isnot(None), PrintArchive.deleted_at.is_(None))
+        select(PrintArchive).where(
+            PrintArchive.tags.isnot(None),
+            PrintArchive.deleted_at.is_(None),
+            *_visible_archive_clauses(None, True, printer_scope),
+        )
     )
     archives = list(result.scalars().all())
 
@@ -1904,7 +1934,7 @@ async def get_archive(
             Permission.ARCHIVES_READ_OWN,
         )
     ),
-    printer_scope: PrinterScope = MediaOrRequestPrinterScope,
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Get a specific archive."""
     user, can_read_all = auth_result
@@ -1919,6 +1949,7 @@ async def get_archive(
         print_name=archive.print_name,
         makerworld_model_id=makerworld_id,
         owner_id=_owner_scope(user, can_read_all),
+        visible=_visible_archive_clauses(user, can_read_all, printer_scope),
     )
     run_aggregates = await _load_run_aggregates(db, [archive.id])
     return archive_to_response(archive, duplicates, run_aggregate=run_aggregates.get(archive.id))
@@ -1934,7 +1965,7 @@ async def get_archive_delete_impact(
             Permission.ARCHIVES_READ_OWN,
         )
     ),
-    printer_scope: PrinterScope = MediaOrRequestPrinterScope,
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Pre-flight for the delete-confirm modal (#1734).
 
@@ -1964,7 +1995,7 @@ async def list_archive_runs(
             Permission.ARCHIVES_READ_OWN,
         )
     ),
-    printer_scope: PrinterScope = MediaOrRequestPrinterScope,
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """List PrintLogEntry rows for this archive — one per print event.
 
@@ -1997,7 +2028,7 @@ async def find_similar_archives(
             Permission.ARCHIVES_READ_OWN,
         )
     ),
-    printer_scope: PrinterScope = MediaOrRequestPrinterScope,
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Find archives with similar settings for comparison.
 
@@ -2013,7 +2044,12 @@ async def find_similar_archives(
 
     service = ArchiveComparisonService(db)
     try:
-        return await service.find_similar_archives(archive_id, limit=limit, owner_id=_owner_scope(user, can_read_all))
+        return await service.find_similar_archives(
+            archive_id,
+            limit=limit,
+            owner_id=_owner_scope(user, can_read_all),
+            visible=_visible_archive_clauses(user, can_read_all, printer_scope),
+        )
     except ValueError as e:
         raise HTTPException(404, str(e))
 
@@ -2055,10 +2091,43 @@ async def update_archive(
     previous_filament_grams = archive.filament_used_grams
 
     update_payload = update_data.model_dump(exclude_unset=True)
+    # Later runs of the archive are charged from its cost and weight: a caller
+    # limited to their own archives sets neither. The one exception is the
+    # weight of an archive without its 3MF (#1820), which has none and cannot
+    # be printed again.
+    if not can_modify_all:
+        if "cost" in update_payload:
+            raise HTTPException(403, "Only users who can edit all archives can set an archive's cost")
+        if "filament_used_grams" in update_payload and update_payload["filament_used_grams"] != previous_filament_grams:
+            if previous_filament_grams is not None or archive.file_path:
+                raise HTTPException(403, "Only users who can edit all archives can change an archive's filament weight")
+    # A new printer must be one the caller may use (as on upload), and both
+    # targets must exist. None clears either: a printer-less archive is in
+    # every scope, like one uploaded without a printer.
+    new_printer_id = update_payload.get("printer_id")
+    if new_printer_id is not None and new_printer_id != archive.printer_id:
+        printer_scope.ensure(new_printer_id)
+        if await db.get(Printer, new_printer_id) is None:
+            raise HTTPException(400, "Printer not found")
+    new_project_id = update_payload.get("project_id")
+    if new_project_id is not None and new_project_id != archive.project_id:
+        if await db.get(Project, new_project_id) is None:
+            raise HTTPException(400, "Project not found")
     # #1898: how the verdict arrived is recorded with it, never on its own.
     verdict_source = update_payload.pop("user_verdict_source", None)
     for field, value in update_payload.items():
         setattr(archive, field, value)
+
+    # New grams are a new price, unless the caller set the cost as well.
+    repriced = False
+    if (
+        update_payload.get("filament_used_grams")
+        and "cost" not in update_payload
+        and update_payload["filament_used_grams"] != previous_filament_grams
+        and (can_modify_all or archive.cost is None)
+    ):
+        archive.cost = await _one_print_cost(db, archive, previous_grams=previous_filament_grams)
+        repriced = True
 
     # #1898: a landed verdict retires the one-tap capability token from the
     # push notification — the links stop changing anything once someone
@@ -2110,6 +2179,9 @@ async def update_archive(
                 latest_entry.filament_used_grams is None or latest_entry.filament_used_grams == previous_filament_grams
             ):
                 del to_mirror["filament_used_grams"]
+            # The run's cost was inherited with its grams, so it follows them.
+            if "filament_used_grams" in to_mirror and repriced:
+                to_mirror["cost"] = archive.cost
 
             for field, value in to_mirror.items():
                 setattr(latest_entry, field, value)
@@ -2141,7 +2213,7 @@ async def toggle_favorite(
             Permission.ARCHIVES_UPDATE_OWN,
         )
     ),
-    printer_scope: PrinterScope = MediaOrRequestPrinterScope,
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Toggle favorite status for an archive."""
     user, can_modify_all = auth_result
@@ -2173,6 +2245,62 @@ async def _spoolman_owns_cost(db: AsyncSession) -> bool:
     return bool(setting) and setting.lower() == "true"
 
 
+def _priced_usage_totals():
+    """Priced spool usage per archive. A row recorded without a price is left
+    out of both sums, so its grams are priced at the default rate instead of
+    counting as free filament."""
+    priced = SpoolUsageHistory.cost.is_not(None)
+    return (
+        func.sum(SpoolUsageHistory.cost),
+        func.sum(case((priced, SpoolUsageHistory.weight_used), else_=0.0)),
+    )
+
+
+async def _one_print_cost(db: AsyncSession, archive: PrintArchive, previous_grams: float | None = None) -> float | None:
+    """The archive's cost for one print of its grams (see ``price_one_print``).
+
+    A Spoolman-priced cost has no usage rows to rebuild it from (#2591); it is
+    kept, scaled to new grams when they were edited.
+    """
+    from backend.app.models.print_log import PrintLogEntry
+
+    grams = archive.filament_used_grams
+    default_cost = await _default_cost_per_kg(db)
+    usage_cost, tracked_grams = (
+        await db.execute(select(*_priced_usage_totals()).where(SpoolUsageHistory.archive_id == archive.id))
+    ).one()
+    if usage_cost is not None and usage_cost > 0:
+        printed_grams, runs = (
+            await db.execute(
+                select(func.sum(PrintLogEntry.filament_used_grams), func.count(PrintLogEntry.id)).where(
+                    PrintLogEntry.archive_id == archive.id
+                )
+            )
+        ).one()
+        return price_one_print(
+            grams,
+            float(usage_cost),
+            float(tracked_grams or 0),
+            float(printed_grams or 0),
+            int(runs or 0),
+            default_cost,
+            default_cost,
+        )
+    if not grams:
+        return archive.cost
+    if archive.cost is not None and await _spoolman_owns_cost(db):
+        if previous_grams:
+            return round(archive.cost * grams / previous_grams, 2)
+        return archive.cost
+    fallback = default_cost
+    if archive.filament_type:
+        primary_type = archive.filament_type.split(",")[0].strip()
+        catalog = await db.scalar(select(Filament.cost_per_kg).where(Filament.type == primary_type).limit(1))
+        if catalog is not None:
+            fallback = catalog
+    return price_one_print(grams, None, 0.0, 0.0, 0, fallback, default_cost)
+
+
 @router.post("/{archive_id}/rescan", response_model=ArchiveResponse)
 async def rescan_archive(
     archive_id: int,
@@ -2181,7 +2309,6 @@ async def rescan_archive(
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Rescan the 3MF file and update metadata."""
-    from backend.app.api.routes.settings import get_setting
     from backend.app.services.archive import ThreeMFParser
 
     result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
@@ -2229,43 +2356,7 @@ async def rescan_archive(
     # so the displayed cost still reflects the whole print.
 
     if archive.filament_used_grams and archive.filament_type:
-        default_cost_setting = await get_setting(db, "default_filament_cost")
-        default_cost_per_kg = float(default_cost_setting) if default_cost_setting else 25.0
-        usage_result = await db.execute(
-            select(
-                func.sum(SpoolUsageHistory.cost),
-                func.sum(SpoolUsageHistory.weight_used),
-            ).where(SpoolUsageHistory.archive_id == archive.id)
-        )
-        usage_cost_row = usage_result.one()
-        usage_cost = usage_cost_row[0]
-        tracked_grams = float(usage_cost_row[1] or 0)
-        if usage_cost is not None and usage_cost > 0:
-            total_cost = float(usage_cost)
-            untracked_grams = max(0.0, archive.filament_used_grams - tracked_grams)
-            if untracked_grams > 0 and default_cost_per_kg > 0:
-                total_cost += (untracked_grams / 1000.0) * default_cost_per_kg
-            archive.cost = float(Decimal(str(total_cost)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
-        elif await _spoolman_owns_cost(db) and archive.cost is not None:
-            # Keep what completion priced from the linked spools. A rescan
-            # re-reads the 3MF's metadata; it learns nothing about spools.
-            pass
-        else:
-            primary_type = archive.filament_type.split(",")[0].strip()
-            filament_result = await db.execute(select(Filament).where(Filament.type == primary_type).limit(1))
-            filament = filament_result.scalar_one_or_none()
-            if filament:
-                archive.cost = float(
-                    Decimal(str((archive.filament_used_grams / 1000) * filament.cost_per_kg)).quantize(
-                        Decimal("0.01"), rounding=ROUND_HALF_UP
-                    )
-                )
-            else:
-                archive.cost = float(
-                    Decimal(str((archive.filament_used_grams / 1000) * default_cost_per_kg)).quantize(
-                        Decimal("0.01"), rounding=ROUND_HALF_UP
-                    )
-                )
+        archive.cost = await _one_print_cost(db, archive)
 
     await db.commit()
     await db.refresh(archive)
@@ -2276,37 +2367,49 @@ async def rescan_archive(
 async def recalculate_all_costs(
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_ALL),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Recalculate costs for all archives based on filament usage and prices."""
 
-    from backend.app.api.routes.settings import get_setting
-
-    result = await db.execute(select(PrintArchive))
+    # Only the archives of the caller's printers, as the archive list shows them.
+    query = select(PrintArchive)
+    if (clause := printer_scope.where(PrintArchive.printer_id)) is not None:
+        query = query.where(clause)
+    result = await db.execute(query)
     archives = list(result.scalars().all())
 
     # Load all filaments for lookup
     filament_result = await db.execute(select(Filament))
     filaments = {f.type: f.cost_per_kg for f in filament_result.scalars().all()}
 
-    # Get default filament cost from settings
-    default_cost_setting = await get_setting(db, "default_filament_cost")
-    default_cost_per_kg = float(default_cost_setting) if default_cost_setting else 25.0
+    default_cost_per_kg = await _default_cost_per_kg(db)
 
     # Pre-fetch all usage costs and tracked weight by archive_id.
     # Tracked weight is used to top-up the cost at the default rate for any
     # filament grams not covered by an inventory spool (#1344).
     usage_costs_result = await db.execute(
-        select(
-            SpoolUsageHistory.archive_id,
-            func.sum(SpoolUsageHistory.cost),
-            func.sum(SpoolUsageHistory.weight_used),
-        ).group_by(SpoolUsageHistory.archive_id)
+        select(SpoolUsageHistory.archive_id, *_priced_usage_totals()).group_by(SpoolUsageHistory.archive_id)
     )
     usage_costs = usage_costs_result.fetchall()
     cost_map = {
         row[0]: (row[1], float(row[2] or 0))
         for row in usage_costs
         if row[0] is not None and row[1] is not None and row[1] > 0
+    }
+
+    from backend.app.models.print_log import PrintLogEntry
+
+    run_totals = {
+        row[0]: (float(row[1] or 0), int(row[2] or 0))
+        for row in (
+            await db.execute(
+                select(
+                    PrintLogEntry.archive_id,
+                    func.sum(PrintLogEntry.filament_used_grams),
+                    func.count(PrintLogEntry.id),
+                ).group_by(PrintLogEntry.archive_id)
+            )
+        ).all()
     }
 
     spoolman_owns = await _spoolman_owns_cost(db)
@@ -2317,24 +2420,22 @@ async def recalculate_all_costs(
         usage = cost_map.get(archive.id)
         if usage is not None:
             usage_cost, tracked_grams = usage
-            total_cost = float(usage_cost)
-            archive_grams = float(archive.filament_used_grams or 0)
-            untracked_grams = max(0.0, archive_grams - tracked_grams)
-            if untracked_grams > 0 and default_cost_per_kg > 0:
-                total_cost += (untracked_grams / 1000.0) * default_cost_per_kg
-            new_cost = round(total_cost, 2)
-        else:
-            # Fallback: sum costs for old records by print_name
-            usage_result = await db.execute(
-                select(func.sum(SpoolUsageHistory.cost)).where(
-                    SpoolUsageHistory.print_name == archive.print_name,
-                    SpoolUsageHistory.archive_id.is_(None),
-                )
+            printed_grams, runs = run_totals.get(archive.id, (0.0, 0))
+            new_cost = price_one_print(
+                archive.filament_used_grams,
+                usage_cost,
+                tracked_grams,
+                printed_grams,
+                runs,
+                default_cost_per_kg,
+                default_cost_per_kg,
             )
-            fallback_cost = usage_result.scalar()
-            if fallback_cost is not None and fallback_cost > 0:
-                new_cost = round(fallback_cost, 2)
-            elif spoolman_owns and archive.cost is not None:
+        else:
+            # No usage linked to this archive. Usage without an archive link
+            # (recorded before usage was linked, with archiving off, or of a
+            # deleted archive) is not matched by print name: that charged one
+            # print's spool cost to every archive of the same name.
+            if spoolman_owns and archive.cost is not None:
                 # Priced from the linked Spoolman spools at completion; there is
                 # nothing better to recompute it from here (#2591).
                 new_cost = None
@@ -2342,7 +2443,9 @@ async def recalculate_all_costs(
             elif archive.filament_used_grams and archive.filament_type:
                 primary_type = archive.filament_type.split(",")[0].strip()
                 cost_per_kg = filaments.get(primary_type, default_cost_per_kg)
-                new_cost = round((archive.filament_used_grams / 1000) * cost_per_kg, 2)
+                new_cost = price_one_print(
+                    archive.filament_used_grams, None, 0.0, 0.0, 0, cost_per_kg, default_cost_per_kg
+                )
             else:
                 new_cost = None
         if new_cost is not None and archive.cost != new_cost:
@@ -2360,6 +2463,7 @@ async def recalculate_all_costs(
 async def rescan_all_archives(
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_ALL),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Rescan all archives and update their metadata.
 
@@ -2373,11 +2477,15 @@ async def rescan_all_archives(
 
     from backend.app.services.archive import ThreeMFParser
 
-    result = await db.execute(
+    # Only the archives of the caller's printers, as the archive list shows them.
+    query = (
         select(PrintArchive)
         .options(defer(PrintArchive.extra_data))
         .where(PrintArchive.deleted_at.is_(None), PrintArchive.file_path != "")
     )
+    if (clause := printer_scope.where(PrintArchive.printer_id)) is not None:
+        query = query.where(clause)
+    result = await db.execute(query)
     archives = list(result.scalars().all())
 
     updated = 0
@@ -2432,7 +2540,7 @@ async def get_archive_duplicates(
             Permission.ARCHIVES_READ_OWN,
         )
     ),
-    printer_scope: PrinterScope = MediaOrRequestPrinterScope,
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Get duplicates for a specific archive."""
     user, can_read_all = auth_result
@@ -2446,6 +2554,7 @@ async def get_archive_duplicates(
         print_name=archive.print_name,
         makerworld_model_id=makerworld_id,
         owner_id=_owner_scope(user, can_read_all),
+        visible=_visible_archive_clauses(user, can_read_all, printer_scope),
     )
     return {"duplicates": duplicates, "count": len(duplicates)}
 
@@ -2454,6 +2563,7 @@ async def get_archive_duplicates(
 async def backfill_content_hashes(
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_ALL),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Compute and store content hashes for all archives missing them.
 
@@ -2469,6 +2579,7 @@ async def backfill_content_hashes(
             PrintArchive.content_hash.is_(None),
             PrintArchive.deleted_at.is_(None),
             PrintArchive.file_path != "",
+            *_visible_archive_clauses(None, True, printer_scope),
         )
     )
     archives = list(result.scalars().all())
@@ -2584,7 +2695,7 @@ async def download_archive(
             Permission.ARCHIVES_READ_OWN,
         )
     ),
-    printer_scope: PrinterScope = MediaOrRequestPrinterScope,
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Download the 3MF file."""
     user, can_read_all = auth_result
@@ -2617,7 +2728,7 @@ async def download_archive_with_filename(
             Permission.ARCHIVES_READ_OWN,
         )
     ),
-    printer_scope: PrinterScope = MediaOrRequestPrinterScope,
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Download the 3MF file with filename in URL."""
     user, can_read_all = auth_result
@@ -2645,7 +2756,7 @@ async def create_archive_slicer_token(
             Permission.ARCHIVES_READ_OWN,
         )
     ),
-    printer_scope: PrinterScope = MediaOrRequestPrinterScope,
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Create a short-lived download token for opening files in slicer applications.
 
@@ -2889,7 +3000,7 @@ async def create_archive_media_download_token(
     auth_result: tuple[User | None, bool] = Depends(
         require_ownership_permission(Permission.ARCHIVES_READ_ALL, Permission.ARCHIVES_READ_OWN)
     ),
-    printer_scope: PrinterScope = MediaOrRequestPrinterScope,
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Mint a single-use token bound to an archive's attached timelapse."""
 
@@ -2994,7 +3105,7 @@ async def delete_timelapse(
             Permission.ARCHIVES_DELETE_OWN,
         )
     ),
-    printer_scope: PrinterScope = MediaOrRequestPrinterScope,
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Remove the timelapse video from an archive."""
     user, can_modify_all = auth_result
@@ -3403,7 +3514,7 @@ async def get_timelapse_info(
             Permission.ARCHIVES_READ_OWN,
         )
     ),
-    printer_scope: PrinterScope = MediaOrRequestPrinterScope,
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Get timelapse video metadata for editor."""
     from backend.app.schemas.timelapse import TimelapseInfoResponse
@@ -3440,7 +3551,7 @@ async def get_timelapse_thumbnails(
             Permission.ARCHIVES_READ_OWN,
         )
     ),
-    printer_scope: PrinterScope = MediaOrRequestPrinterScope,
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Generate timeline thumbnail frames for visual scrubbing."""
     import base64
@@ -3606,7 +3717,7 @@ async def upload_photo(
             Permission.ARCHIVES_UPDATE_OWN,
         )
     ),
-    printer_scope: PrinterScope = MediaOrRequestPrinterScope,
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Upload a photo of the printed result."""
     user, can_modify_all = auth_result
@@ -3706,7 +3817,7 @@ async def delete_photo(
             Permission.ARCHIVES_DELETE_OWN,
         )
     ),
-    printer_scope: PrinterScope = MediaOrRequestPrinterScope,
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Delete a photo."""
     user, can_modify_all = auth_result
@@ -4166,7 +4277,7 @@ async def get_archive_capabilities(
             Permission.ARCHIVES_READ_OWN,
         )
     ),
-    printer_scope: PrinterScope = MediaOrRequestPrinterScope,
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Check what viewing capabilities are available for this 3MF file."""
     user, can_read_all = auth_result
@@ -4256,7 +4367,7 @@ async def get_gcode(
             Permission.ARCHIVES_READ_OWN,
         )
     ),
-    printer_scope: PrinterScope = MediaOrRequestPrinterScope,
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Extract and return G-code from the 3MF file.
 
@@ -4530,7 +4641,7 @@ async def get_archive_plates(
             Permission.ARCHIVES_READ_OWN,
         )
     ),
-    printer_scope: PrinterScope = MediaOrRequestPrinterScope,
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Get available plates from a multi-plate 3MF archive.
 
@@ -4951,7 +5062,7 @@ async def get_filament_requirements(
             Permission.ARCHIVES_READ_OWN,
         )
     ),
-    printer_scope: PrinterScope = MediaOrRequestPrinterScope,
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Get filament requirements from the archived 3MF file.
 
@@ -5090,7 +5201,7 @@ async def get_filament_requirements(
             filaments.sort(key=lambda x: x["slot_id"])
 
             # Enrich with nozzle mapping for dual-nozzle printers
-            nozzle_mapping = extract_nozzle_mapping_from_3mf(zf)
+            nozzle_mapping = extract_nozzle_mapping_from_3mf(zf, plate_id=plate_id)
             if nozzle_mapping:
                 for filament in filaments:
                     filament["nozzle_id"] = nozzle_mapping.get(filament["slot_id"])
@@ -5117,7 +5228,7 @@ async def slice_archive(
     request: SliceRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.LIBRARY_UPLOAD),
-    printer_scope: PrinterScope = MediaOrRequestPrinterScope,
+    printer_scope: PrinterScope = RequestPrinterScope,
     actor: User | ApiKeyActor | None = RequestActor,
 ):
     """Enqueue a slice job for an archive's source. Returns 202 + job_id;
@@ -5141,6 +5252,11 @@ async def slice_archive(
     # (RequestActor); only auth off keeps can_read_all=True.
     can_read_all = actor is None or actor.has_permission(Permission.ARCHIVES_READ_ALL.value)
     archive = _ensure_archive_visible(archive, actor, can_read_all, printer_scope)
+    # The re-sliced copy belongs to the caller and can be queued as their own,
+    # so slicing an archive needs the same right as printing it again.
+    from backend.app.api.routes.print_queue import _assert_can_queue_archive
+
+    _assert_can_queue_archive(archive, actor, printer_scope)
 
     src_relative = archive.source_3mf_path or archive.file_path
     if not src_relative:
@@ -5260,7 +5376,7 @@ async def get_project_page(
             Permission.ARCHIVES_READ_OWN,
         )
     ),
-    printer_scope: PrinterScope = MediaOrRequestPrinterScope,
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Get the project page data from the 3MF file."""
     from backend.app.schemas.archive import ProjectPageResponse
@@ -5291,7 +5407,7 @@ async def update_project_page(
             Permission.ARCHIVES_UPDATE_OWN,
         )
     ),
-    printer_scope: PrinterScope = MediaOrRequestPrinterScope,
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Update project page metadata in the 3MF file."""
     from backend.app.services.archive import ProjectPageParser
@@ -5470,7 +5586,7 @@ async def upload_source_3mf(
             Permission.ARCHIVES_UPDATE_OWN,
         )
     ),
-    printer_scope: PrinterScope = MediaOrRequestPrinterScope,
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Upload the original source 3MF project file for an archive."""
     user, can_modify_all = auth_result
@@ -5516,7 +5632,7 @@ async def download_source_3mf(
             Permission.ARCHIVES_READ_OWN,
         )
     ),
-    printer_scope: PrinterScope = MediaOrRequestPrinterScope,
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Download the source 3MF project file."""
     user, can_read_all = auth_result
@@ -5551,7 +5667,7 @@ async def download_source_3mf_for_slicer(
             Permission.ARCHIVES_READ_OWN,
         )
     ),
-    printer_scope: PrinterScope = MediaOrRequestPrinterScope,
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Download source 3MF with filename in URL."""
     user, can_read_all = auth_result
@@ -5582,7 +5698,7 @@ async def create_source_slicer_token(
             Permission.ARCHIVES_READ_OWN,
         )
     ),
-    printer_scope: PrinterScope = MediaOrRequestPrinterScope,
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Create a short-lived download token for opening source 3MF in slicer."""
     from backend.app.core.auth import create_slicer_download_token
@@ -5640,6 +5756,7 @@ async def upload_source_3mf_by_name(
     print_name: str = Query(None, description="Match archive by print name"),
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_ALL),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Upload source 3MF and match to archive by print name.
 
@@ -5660,9 +5777,11 @@ async def upload_source_3mf_by_name(
             print_name = print_name[:-7]
 
     # Find matching archive - try exact match first, then fuzzy
+    # Only an archive on the caller's printers can be matched, as it is listed.
+    visible = _visible_archive_clauses(None, True, printer_scope)
     result = await db.execute(
         select(PrintArchive)
-        .where(PrintArchive.print_name == print_name)
+        .where(PrintArchive.print_name == print_name, *visible)
         .order_by(PrintArchive.created_at.desc())
         .limit(1)
     )
@@ -5672,7 +5791,7 @@ async def upload_source_3mf_by_name(
         # Try matching filename without .gcode.3mf
         result = await db.execute(
             select(PrintArchive)
-            .where(PrintArchive.filename.like(f"{print_name}%"))
+            .where(PrintArchive.filename.like(f"{print_name}%"), *visible)
             .order_by(PrintArchive.created_at.desc())
             .limit(1)
         )
@@ -5682,7 +5801,7 @@ async def upload_source_3mf_by_name(
         # Try case-insensitive partial match on print_name
         result = await db.execute(
             select(PrintArchive)
-            .where(PrintArchive.print_name.ilike(f"%{print_name}%"))
+            .where(PrintArchive.print_name.ilike(f"%{print_name}%"), *visible)
             .order_by(PrintArchive.created_at.desc())
             .limit(1)
         )
@@ -5726,7 +5845,7 @@ async def delete_source_3mf(
             Permission.ARCHIVES_DELETE_OWN,
         )
     ),
-    printer_scope: PrinterScope = MediaOrRequestPrinterScope,
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Delete the source 3MF project file from an archive."""
     user, can_modify_all = auth_result
@@ -5764,7 +5883,7 @@ async def upload_f3d(
             Permission.ARCHIVES_UPDATE_OWN,
         )
     ),
-    printer_scope: PrinterScope = MediaOrRequestPrinterScope,
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Upload a Fusion 360 design file for an archive."""
     user, can_modify_all = auth_result
@@ -5807,7 +5926,7 @@ async def download_f3d(
             Permission.ARCHIVES_READ_OWN,
         )
     ),
-    printer_scope: PrinterScope = MediaOrRequestPrinterScope,
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Download the Fusion 360 design file."""
     user, can_read_all = auth_result
@@ -5841,7 +5960,7 @@ async def delete_f3d(
             Permission.ARCHIVES_DELETE_OWN,
         )
     ),
-    printer_scope: PrinterScope = MediaOrRequestPrinterScope,
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Delete the Fusion 360 design file from an archive."""
     user, can_modify_all = auth_result

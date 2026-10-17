@@ -14,6 +14,7 @@ import { useMjpegStream } from '../hooks/useMjpegStream';
 import { formatDuration, formatETA, type TimeFormat } from '../utils/date';
 import { mapModelCode } from '../utils/printerModel';
 import { useOverlayCameraRecovery } from '../hooks/useOverlayCameraRecovery';
+import { useStreamImgRef } from '../hooks/useStreamImgRef';
 
 type TFunction = (key: string, options?: Record<string, unknown>) => string;
 
@@ -255,7 +256,9 @@ export function StreamOverlayPage() {
     config.showModel ? mapModelCode(printer?.model ?? null) : null,
   ].filter(Boolean).join(' · ');
   const status = kiosk ? overlay : statusData;
-  const { imageKey, handleStreamError } = useOverlayCameraRecovery(id > 0 && config.showCamera && status != null);
+  const { imageKey, closing, imgRef, handleStreamError } = useOverlayCameraRecovery(id > 0 && config.showCamera && status != null);
+  // Every <img> the overlay drops (re-keyed by a renewal) has its stream closed.
+  const attachImg = useStreamImgRef(imgRef);
   const timeFormat: TimeFormat = (kiosk ? overlay?.time_format : settings?.time_format) || 'system';
 
   // WebSocket for real-time updates (JWT-authenticated; skipped in kiosk mode,
@@ -445,7 +448,7 @@ export function StreamOverlayPage() {
       customLogo={customLogo}
       progressBackground={progressBackground}
       size={config.size}
-      camera={config.showCamera ? { url: overlayCameraUrl, rotation: printer?.camera_rotation ?? 0, onError: handleStreamError } : null}
+      camera={config.showCamera ? { url: closing ? undefined : overlayCameraUrl, rotation: printer?.camera_rotation ?? 0, onError: handleStreamError, imgRef: attachImg } : null}
       name={config.showPrinter ? printer?.name ?? null : null}
       model={config.showModel ? mapModelCode(printer?.model ?? null) || null : null}
       filename={config.showFilename && status.current_print ? formatPrintName(status.current_print.replace(/\.gcode\.3mf$|\.3mf$|\.gcode$/i, ''), status.gcode_file, t) : null}
@@ -479,8 +482,9 @@ export function StreamOverlayPage() {
           // Keyed so a renewal (#3213) remounts the <img> on a fresh URL; the
           // signed overlay URL carries the API prefix and the kiosk token.
           <img
+            ref={attachImg}
             key={imageKey}
-            src={overlayCameraUrl}
+            src={closing ? undefined : overlayCameraUrl}
             onError={handleStreamError}
             alt="Camera stream"
             className="absolute inset-0 w-full h-full object-contain"

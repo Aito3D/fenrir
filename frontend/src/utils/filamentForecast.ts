@@ -158,6 +158,8 @@ export function computeSkuForecasts(
 
   const usageBySpoolId = new Map<number, SpoolUsageRecord[]>();
   for (const r of usageHistory) {
+    // Usage of a deleted spool belongs to no spool here.
+    if (r.spool_id === null) continue;
     const arr = usageBySpoolId.get(r.spool_id) ?? [];
     arr.push(r);
     usageBySpoolId.set(r.spool_id, arr);

@@ -52,6 +52,7 @@ import { getCurrencySymbol } from '../utils/currency';
 import { isSlicedLibraryFile } from '../utils/libraryFiles';
 import { NumberInput } from '../components/NumberInput';
 import { CalcInput } from '../components/CalcInput';
+import { useUiSettings } from '../hooks/useUiSettings';
 
 function formatFilament(grams: number): string {
   if (grams >= 1000) {
@@ -272,10 +273,7 @@ export function ProjectDetailPage() {
     enabled: projectId > 0,
   });
 
-  const { data: settings } = useQuery({
-    queryKey: ['settings'],
-    queryFn: api.getSettings,
-  });
+  const { data: settings } = useUiSettings();
 
   const { data: linkedFolders } = useQuery({
     queryKey: ['project-folders', projectId],

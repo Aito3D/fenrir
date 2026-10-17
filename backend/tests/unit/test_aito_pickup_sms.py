@@ -416,8 +416,10 @@ async def test_an_unexpected_send_failure_unarms_the_guard_and_still_propagates(
             raise RuntimeError("boom")
 
     _patch_send_sms(monkeypatch, fake)
-    failed = await async_client.post(f"/api/v1/aito/{project['id']}/pickup-sms", json={"message": "prêt"})
-    assert failed.status_code == 503
+    # Unchanged: a 500 in production (upstream's exception handler logs it),
+    # re-raised by the test transport.
+    with pytest.raises(RuntimeError, match="boom"):
+        await async_client.post(f"/api/v1/aito/{project['id']}/pickup-sms", json={"message": "prêt"})
     assert aito_routes._recent_sms == {}
 
     fail["on"] = False

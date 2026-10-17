@@ -2153,7 +2153,7 @@ def _full_spoolman_spool(spool_id: int) -> dict:
 
 
 class TestNfcWriteTagSpoolman:
-    """nfc/write-tag falls back to Spoolman when local DB has no matching spool."""
+    """nfc/write-tag encodes the Spoolman spool in Spoolman mode."""
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -2221,10 +2221,10 @@ class TestNfcWriteTagSpoolman:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_404_when_neither_local_nor_spoolman(
+    async def test_404_when_spoolman_has_no_such_spool(
         self, async_client: AsyncClient, device_factory, spoolman_settings
     ):
-        """404 returned when spool is missing from both local DB and Spoolman."""
+        """404 returned when the spool is missing from Spoolman."""
         await device_factory(device_id="sb-miss")
         mock_client = _mock_spoolman_client()
         mock_client.get_spool = AsyncMock(side_effect=SpoolmanNotFoundError("Spool 9999 not found"))
@@ -2245,6 +2245,34 @@ class TestNfcWriteTagSpoolman:
             )
 
         assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_spoolman_spool_wins_over_a_leftover_built_in_spool(
+        self, async_client: AsyncClient, device_factory, db_session, spool_factory, spoolman_settings
+    ):
+        """Built-in spools are kept after switching to Spoolman; one with the
+        same id as the Spoolman spool must not be the one written to the tag."""
+        import json as _json
+
+        leftover = await spool_factory(material="PETG")
+        device = await device_factory(device_id="sb-leftover")
+        mock_client = _mock_spoolman_client()
+        mock_client.get_spool = AsyncMock(return_value=_full_spoolman_spool(leftover.id))
+
+        with (
+            patch("backend.app.services.spoolman.get_spoolman_client", AsyncMock(return_value=mock_client)),
+            patch("backend.app.services.spoolman.init_spoolman_client", AsyncMock(return_value=mock_client)),
+        ):
+            resp = await async_client.post(
+                f"{API}/nfc/write-tag",
+                json={"device_id": "sb-leftover", "spool_id": leftover.id},
+            )
+
+        assert resp.status_code == 200, resp.text
+        mock_client.get_spool.assert_called_once_with(leftover.id)
+        await db_session.refresh(device)
+        assert _json.loads(device.pending_write_payload)["data_origin"] == "spoolman"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -2502,6 +2530,7 @@ class TestNfcWriteResultSpoolmanSecurityFixes:
         # Failure broadcast fires so the UI can show the error
         msg = mock_ws.broadcast.call_args[0][0]
         assert msg["type"] == "spoolbuddy_tag_link_failed"
+        assert msg["reason"] == "spoolman_link_failed"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -2548,6 +2577,7 @@ class TestNfcWriteResultSpoolmanSecurityFixes:
         msg = mock_ws.broadcast.call_args[0][0]
         assert msg["type"] == "spoolbuddy_tag_link_failed"
         assert msg["spool_id"] == 55
+        assert msg["reason"] == "spoolman_link_failed"
 
 
 class TestNfcWriteResultOrphanedSpool:
@@ -2590,6 +2620,7 @@ class TestNfcWriteResultOrphanedSpool:
         broadcast_calls = mock_ws.broadcast.call_args_list
         link_failed = [c[0][0] for c in broadcast_calls if c[0][0].get("type") == "spoolbuddy_tag_link_failed"]
         assert len(link_failed) >= 1
+        assert link_failed[0]["reason"] == "spool_not_found"
 
 
 class TestNfcWriteResultInputValidation:
@@ -2795,6 +2826,7 @@ class TestNfcWriteResultExceptionScrubbing:
         assert msg["type"] == "spoolbuddy_tag_link_failed"
         # Generic message — no internal exception details leaked
         assert msg["message"] == "Spoolman link failed", f"Expected generic message but got: {msg['message']!r}"
+        assert msg["reason"] == "spoolman_link_failed"
         assert "connection refused" not in str(msg), f"Exception text must not appear in WS message: {msg}"
         assert "192.168.1" not in str(msg), f"Internal IP must not appear in WS message: {msg}"
 

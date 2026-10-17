@@ -297,7 +297,9 @@ async def test_delete_item_refuses_a_use_of_a_later_revision_committed_after_the
     async def racing(db, revision_id):
         used = await real(db, revision_id)
         checked.append(revision_id)
-        if revision_id == second_id:
+        # Once, at the pre-check: the checks run again under the write lock,
+        # where a concurrent writer could not commit.
+        if revision_id == second_id and checked.count(second_id) == 1:
             async with sessions() as other:
                 other.add(AitoTaskDelivery(task_id=4242, revision_id=second_id))
                 await other.commit()
@@ -309,7 +311,8 @@ async def test_delete_item_refuses_a_use_of_a_later_revision_committed_after_the
         with pytest.raises(project_files.ProjectFilesError) as caught:
             await project_files.delete_item(db, project, await db.get(ProjectItem, item_id))
 
-    assert sorted(checked) == sorted([first_id, second_id])
+    # Each revision is checked at the pre-check and again under the write lock.
+    assert sorted(set(checked)) == sorted([first_id, second_id])
     assert (caught.value.status_code, caught.value.detail) == (409, ITEM_USED_DETAIL)
     assert await _item_state(sessions, item_id, first_id) == (1, 1, 1)
     assert await _item_state(sessions, item_id, second_id) == (1, 1, 1)

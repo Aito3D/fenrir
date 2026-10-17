@@ -70,6 +70,19 @@ async def _translate_spoolbuddy_errors():
         raise HTTPException(status_code=503, detail="Spoolman server is not reachable") from exc
 
 
+async def _spoolman_mode(db: AsyncSession) -> bool:
+    """Spoolman mode as every SpoolBuddy screen reads it: switched on, with a URL.
+
+    Distinct from having a usable client: a URL the SSRF guard refuses leaves the
+    mode on but no client, and the spools are still Spoolman's.
+    """
+    from backend.app.api.routes.settings import get_setting
+
+    enabled = await get_setting(db, "spoolman_enabled")
+    url = await get_setting(db, "spoolman_url")
+    return bool(enabled) and enabled.lower() == "true" and bool((url or "").strip())
+
+
 async def _get_spoolman_client_or_none(db: AsyncSession):
     """Return a SpoolmanClient if Spoolman is enabled with a safe URL, else None."""
     from backend.app.api.routes._spoolman_helpers import assert_safe_spoolman_url
@@ -458,10 +471,19 @@ async def nfc_tag_scanned(
         )
         tray_uuid = None
 
-    # _get_spoolman_client_or_none returns a usable client when spoolman_enabled
-    # is true (and the URL passes the SSRF guard), None otherwise — so its
-    # return value doubles as the mode discriminator.
+    # A usable client when Spoolman is on and its URL passes the SSRF guard.
+    # With the mode on but no usable client the spools are still Spoolman's,
+    # and the built-in table must not answer.
     client = await _get_spoolman_client_or_none(db)
+    if client is None and await _spoolman_mode(db):
+        await ws_manager.broadcast(
+            {
+                "type": "spoolman_unavailable",
+                "device_id": req.device_id,
+                "context": "nfc_tag_scanned",
+            }
+        )
+        return {"status": "ok", "matched": False, "spool_id": None}
 
     if client is not None:
         # Spoolman mode — exclusive lookup, no local-DB fallback.
@@ -642,7 +664,12 @@ async def nfc_write_tag(
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ):
-    """Queue an NFC tag write command for a SpoolBuddy device."""
+    """Queue an NFC tag write command for a SpoolBuddy device.
+
+    The spool comes from the inventory in use: Spoolman when it is enabled,
+    otherwise Fenrir's own. Built-in spools are kept after switching to
+    Spoolman, so one with the same id must not stand in for the Spoolman spool.
+    """
     from backend.app.models.spool import Spool
     from backend.app.services.opentag3d import encode_opentag3d, encode_opentag3d_from_mapped
 
@@ -652,21 +679,19 @@ async def nfc_write_tag(
     if not device:
         raise HTTPException(status_code=404, detail="Device not registered")
 
-    # Try local DB first
-    result = await db.execute(select(Spool).where(Spool.id == req.spool_id))
-    spool = result.scalar_one_or_none()
+    sm_client = await _get_spoolman_client_or_none(db)
+    if sm_client is None and await _spoolman_mode(db):
+        raise HTTPException(status_code=503, detail="Spoolman is unavailable")
 
     nfc_warnings: list[str] = []
-    if spool:
+    if sm_client is None:
+        spool = (await db.execute(select(Spool).where(Spool.id == req.spool_id))).scalar_one_or_none()
+        if spool is None:
+            raise HTTPException(status_code=404, detail="Spool not found")
         ndef_data = encode_opentag3d(spool)
         data_origin = "local"
     else:
-        # Local DB miss — fall back to Spoolman when enabled
         from backend.app.api.routes._spoolman_helpers import _map_spoolman_spool
-
-        sm_client = await _get_spoolman_client_or_none(db)
-        if sm_client is None:
-            raise HTTPException(status_code=404, detail="Spool not found")
 
         async with _translate_spoolbuddy_errors():
             sm_spool = await sm_client.get_spool(req.spool_id)
@@ -776,6 +801,7 @@ async def nfc_write_result(
                         "spool_id": req.spool_id,
                         "tag_uid": req.tag_uid,
                         "message": "Spoolman not configured",
+                        "reason": "spoolman_not_configured",
                     }
                 )
                 raise HTTPException(
@@ -895,6 +921,7 @@ async def nfc_write_result(
                         # Generic message — full exception (may contain internal URLs/hostnames)
                         # is logged server-side only to prevent information leakage via WebSocket.
                         "message": "Spoolman link failed",
+                        "reason": "spoolman_link_failed",
                     }
                 )
                 raise HTTPException(
@@ -919,6 +946,7 @@ async def nfc_write_result(
                         "device_id": req.device_id,
                         "spool_id": req.spool_id,
                         "message": "Spool not found",
+                        "reason": "spool_not_found",
                     }
                 )
                 return {"status": "ok", "linked": False, "message": "Spool not found"}
@@ -1015,6 +1043,8 @@ async def update_spool_weight(
     from backend.app.models.spool import Spool
 
     sm_client = await _get_spoolman_client_or_none(db)
+    if sm_client is None and await _spoolman_mode(db):
+        raise HTTPException(status_code=503, detail="Spoolman is unavailable")
 
     if sm_client is None:
         # Local mode — exclusive update, no Spoolman fallback.
@@ -1027,6 +1057,9 @@ async def update_spool_weight(
         spool.weight_used = max(0, spool.label_weight - net_filament)
         spool.last_scale_weight = req.weight_grams
         spool.last_weighed_at = datetime.now(timezone.utc)
+        # A measured figure, which the AMS remain% sync must not overwrite
+        # (as a hand-set one, see update_spool).
+        spool.weight_locked = True
         await db.commit()
         logger.info(
             "SpoolBuddy updated spool %d weight: %.1fg on scale, %.1fg used",
@@ -1341,7 +1374,7 @@ async def queue_diagnostic(
     device_id: str,
     diagnostic: str,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ):
     """Queue a hardware diagnostic to run on the SpoolBuddy device.
 

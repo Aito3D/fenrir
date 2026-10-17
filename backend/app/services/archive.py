@@ -7,11 +7,14 @@ import os
 import re
 import shutil
 import zipfile
+from collections.abc import Sequence
 from datetime import date, datetime, time, timezone
 from pathlib import Path
+from typing import Any
 
 from defusedxml import ElementTree as ET
 from sqlalchemy import and_, or_, select, text
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.config import settings
@@ -1303,8 +1306,12 @@ class ArchiveService:
                 sha256.update(chunk)
         return sha256.hexdigest()
 
-    async def get_duplicate_hashes_and_names(self) -> tuple[set[str], set[tuple[str, str]]]:
+    async def get_duplicate_hashes_and_names(
+        self, visible: Sequence[Any] = ()
+    ) -> tuple[set[str], set[tuple[str, str]]]:
         """Get all content hashes and (print name, hash) pairs that appear more than once.
+
+        ``visible`` limits the count to archives the caller may see.
 
         For hashes: returns all hashes with > 1 archive (true duplicates).
         For name/hash pairs: returns only pairs that have > 1 archive
@@ -1320,7 +1327,7 @@ class ArchiveService:
         # duplicate even though the user only sees one row.
         result = await self.db.execute(
             select(PrintArchive.content_hash)
-            .where(PrintArchive.content_hash.isnot(None), PrintArchive.deleted_at.is_(None))
+            .where(PrintArchive.content_hash.isnot(None), PrintArchive.deleted_at.is_(None), *visible)
             .group_by(PrintArchive.content_hash)
             .having(func.count(PrintArchive.id) > 1)
         )
@@ -1334,6 +1341,7 @@ class ArchiveService:
                 PrintArchive.print_name.isnot(None),
                 PrintArchive.content_hash.isnot(None),
                 PrintArchive.deleted_at.is_(None),
+                *visible,
             )
             .group_by(func.lower(PrintArchive.print_name), PrintArchive.content_hash)
             .having(func.count(PrintArchive.id) > 1)
@@ -1349,8 +1357,11 @@ class ArchiveService:
         print_name: str | None = None,
         makerworld_model_id: str | None = None,
         owner_id: int | None = None,
+        visible: Sequence[Any] = (),
     ) -> list[dict]:
         """Find duplicate archives based on hash or name matching.
+
+        ``visible`` holds WHERE clauses limiting matches to archives the caller may see.
 
         Returns list of dicts with id, print_name, created_at, match_type.
         ``owner_id`` limits the matches to that user's archives (a caller who
@@ -1369,6 +1380,7 @@ class ArchiveService:
                         PrintArchive.id != archive_id,
                         PrintArchive.deleted_at.is_(None),
                         *scope,
+                        *visible,
                     )
                 )
                 .order_by(PrintArchive.created_at.desc())
@@ -1388,7 +1400,7 @@ class ArchiveService:
         # Prefer strict name+hash matching when hash exists; fallback to name-only for legacy/manual
         # archives that may not have a content_hash.
         if print_name or makerworld_model_id:
-            conditions = [PrintArchive.id != archive_id, PrintArchive.deleted_at.is_(None), *scope]
+            conditions = [PrintArchive.id != archive_id, PrintArchive.deleted_at.is_(None), *scope, *visible]
 
             name_conditions = []
             if print_name:
@@ -1436,6 +1448,14 @@ class ArchiveService:
                         )
 
         return duplicates
+
+    @staticmethod
+    def _has_sliced_plate(file_path: Path, plate_number: int) -> bool:
+        try:
+            with zipfile.ZipFile(file_path) as zf:
+                return f"Metadata/plate_{plate_number}.gcode" in zf.namelist()
+        except (OSError, zipfile.BadZipFile):
+            return False
 
     async def archive_print(
         self,
@@ -1542,6 +1562,7 @@ class ArchiveService:
         # mid-copy -- rolls the session back for the caller and removes the
         # folder, instead of leaving an orphan with no row and a session stuck
         # in a failed transaction.
+        committing = False
         try:
             # Copy 3MF file with an explicit fsync'd loop (avoids a sendfile
             # short-read quirk that silently truncated 3MF archives on some
@@ -1596,6 +1617,19 @@ class ArchiveService:
                 match = re.search(r"plate_(\d+)", filename)
                 if match:
                     plate_number = int(match.group(1))
+            if plate_id is None:
+                # A print Fenrir did not dispatch only names its plate in the
+                # gcode path. Kept as the archive's plate when the file really has
+                # it: some firmware reports the .3mf name there instead, and a user
+                # name like "x_plate_2" must not label a single-plate file.
+                if plate_number is not None and await asyncio.to_thread(
+                    self._has_sliced_plate, dest_file, plate_number
+                ):
+                    plate_id = plate_number
+            else:
+                # The dispatcher knows the plate; the path may name none, or not
+                # the plate sent (#1166). Without it the parser describes another.
+                plate_number = plate_id
 
             # Parse 3MF metadata
             parser = ThreeMFParser(dest_file, plate_number=plate_number)
@@ -1782,15 +1816,27 @@ class ArchiveService:
             )
 
             self.db.add(archive)
+            committing = True
             await self.db.commit()
             await self.db.refresh(archive)
 
             return archive
-        except BaseException:
+        except BaseException as exc:
             try:
                 await self.db.rollback()
             finally:
-                shutil.rmtree(archive_dir, ignore_errors=True)
+                # The folder is this archive's own (made above). Dropped with a
+                # failed archive, except when COMMIT itself failed for anything
+                # but a refused row (IntegrityError: a printer deleted meanwhile):
+                # a connection lost during COMMIT may still have written the row,
+                # whose files these are.
+                # SQLite's "database is locked" is a refusal too: the COMMIT
+                # never started, so no row was written.
+                refused = isinstance(exc, IntegrityError) or (
+                    isinstance(exc, OperationalError) and "database is locked" in str(exc)
+                )
+                if not committing or refused:
+                    shutil.rmtree(archive_dir, ignore_errors=True)
             raise
 
     async def get_archive(self, archive_id: int) -> PrintArchive | None:
@@ -2268,9 +2314,17 @@ async def _convert_timelapse_to_mp4(archive_id: int, source_path: Path) -> None:
 
             result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
             archive = result.scalar_one_or_none()
-            if archive:
-                archive.timelapse_path = str(mp4_path.relative_to(settings.base_dir))
-                await db.commit()
+            source_rel = str(source_path.relative_to(settings.base_dir))
+            # Only if the archive still shows this video: one deleted while it
+            # converted, or replaced by a reprint's, must not come back.
+            if archive is None or archive.timelapse_path != source_rel:
+                logger.info(
+                    "Archive %s no longer shows %s; discarding its MP4 conversion", archive_id, source_path.name
+                )
+                mp4_path.unlink(missing_ok=True)
+                return
+            archive.timelapse_path = str(mp4_path.relative_to(settings.base_dir))
+            await db.commit()
 
         # Remove original non-MP4 file
         if source_path.exists():

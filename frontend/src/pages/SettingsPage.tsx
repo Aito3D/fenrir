@@ -17,6 +17,7 @@ import {
   useLocationSensorColorPrefs,
 } from '../utils/locationSensorDefaults';
 import { describeHASensorReading, iconForHASensor } from '../utils/haSensorDisplay';
+import { SECRET_PLACEHOLDER, secretsToReenter, selectPlaceholderOnFocus } from '../utils/secrets';
 import { PreheatFilamentTargetsEditor } from '../components/PreheatFilamentTargetsEditor';
 import type { Printer as PrinterInfo, APIKey, AppSettings, AppSettingsUpdate, PrinterHASensor, LocationHASensor, LocationHASensorReading, SmartPlug, SmartPlugStatus, NotificationProvider, NotificationTemplate, UpdateStatus, GitHubBackupStatus, CloudAuthStatus, UserCreate, UserUpdate, UserResponse, StorageUsageResponse, CalibrationMode } from '../api/client';
 import { Card, CardContent, CardDensityProvider, CardHeader } from '../components/Card';
@@ -226,6 +227,28 @@ function externalCameraSummary(printer: PrinterInfo): string {
     // A USB device path or an unfinished URL: show it as typed.
   }
   return `${type} · ${where}`;
+}
+
+// The settings that decide where each saved secret is sent. A Home Assistant
+// token from the HA_TOKEN environment variable is the deployment's own and has
+// none: the URL may change without it.
+function settingsSecretDestinations(settings: { ha_token_from_env?: boolean }): Record<string, readonly string[]> {
+  return {
+    mqtt_password: ['mqtt_broker', 'mqtt_port', 'mqtt_use_tls'],
+    ...(settings.ha_token_from_env ? {} : { ha_token: ['ha_url'] }),
+  };
+}
+
+/** Under a secret input showing the placeholder: kept, or to be entered again. */
+function SecretHint({ name, value, reenter }: { name: string; value: unknown; reenter: string[] }) {
+  const { t } = useTranslation();
+  if (value !== SECRET_PLACEHOLDER) return null;
+  const again = reenter.includes(name);
+  return (
+    <p className={`text-xs mt-1 ${again ? 'text-yellow-400' : 'text-bambu-gray'}`}>
+      {t(again ? 'common.secretReenter' : 'common.secretKept')}
+    </p>
+  );
 }
 
 export function SettingsPage() {
@@ -1186,6 +1209,7 @@ export function SettingsPage() {
       // cannot read /settings. Nothing invalidated it, so a currency change
       // sat behind that query's own staleTime instead of showing up (#3123).
       queryClient.invalidateQueries({ queryKey: ['ui-flags'] });
+      queryClient.invalidateQueries({ queryKey: ['ui-settings'] });
       // Switching announcements off (or to all users) changes who sees the
       // sidebar entry and the banner; don't wait for the next poll.
       queryClient.invalidateQueries({ queryKey: ['announcements'] });
@@ -1235,6 +1259,12 @@ export function SettingsPage() {
       return;
     }
 
+    // A saved secret does not follow a changed address: hold the save until it
+    // is entered again (the field says so), instead of failing on every pause.
+    if (secretsToReenter(baseline, localSettings, settingsSecretDestinations(baseline)).length > 0) {
+      return;
+    }
+
     // Check if there are actual changes
     const hasChanges =
       baseline.auto_archive !== localSettings.auto_archive ||
@@ -1279,6 +1309,8 @@ export function SettingsPage() {
       baseline.date_format !== localSettings.date_format ||
       baseline.time_format !== localSettings.time_format ||
       baseline.default_printer_id !== localSettings.default_printer_id ||
+      (baseline.pipeline_max_copies ?? 50) !== (localSettings.pipeline_max_copies ?? 50) ||
+      (baseline.docker_compose_dir ?? '') !== (localSettings.docker_compose_dir ?? '') ||
       baseline.ftp_retry_enabled !== localSettings.ftp_retry_enabled ||
       baseline.ftp_retry_count !== localSettings.ftp_retry_count ||
       baseline.ftp_retry_delay !== localSettings.ftp_retry_delay ||
@@ -1294,7 +1326,6 @@ export function SettingsPage() {
       baseline.ha_enabled !== localSettings.ha_enabled ||
       baseline.ha_url !== localSettings.ha_url ||
       baseline.ha_token !== localSettings.ha_token ||
-      (baseline.library_archive_mode ?? 'ask') !== (localSettings.library_archive_mode ?? 'ask') ||
       Number(baseline.library_disk_warning_gb ?? 5) !== Number(localSettings.library_disk_warning_gb ?? 5) ||
       (baseline.camera_light_mode ?? 'off') !== (localSettings.camera_light_mode ?? 'off') ||
       Number(baseline.camera_light_delay ?? 2) !== Number(localSettings.camera_light_delay ?? 2) ||
@@ -1408,6 +1439,8 @@ export function SettingsPage() {
         date_format: localSettings.date_format,
         time_format: localSettings.time_format,
         default_printer_id: localSettings.default_printer_id,
+        pipeline_max_copies: localSettings.pipeline_max_copies ?? 50,
+        docker_compose_dir: localSettings.docker_compose_dir ?? '',
         ftp_retry_enabled: localSettings.ftp_retry_enabled,
         ftp_retry_count: localSettings.ftp_retry_count,
         ftp_retry_delay: localSettings.ftp_retry_delay,
@@ -1423,7 +1456,6 @@ export function SettingsPage() {
         ha_enabled: localSettings.ha_enabled,
         ha_url: localSettings.ha_url,
         ha_token: localSettings.ha_token,
-        library_archive_mode: localSettings.library_archive_mode,
         library_disk_warning_gb: localSettings.library_disk_warning_gb,
         camera_view_mode: localSettings.camera_view_mode,
         camera_quality: localSettings.camera_quality,
@@ -1481,6 +1513,9 @@ export function SettingsPage() {
       }
     };
   }, [localSettings, settings, updateMutation, authEnabled, hasPermission, showToast, t]);
+
+  const secretsPendingReentry =
+    settings && localSettings ? secretsToReenter(settings, localSettings, settingsSecretDestinations(settings)) : [];
 
   const updateSetting = useCallback(<K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
     // Gate at the point of user interaction (not in the debounced-save effect —
@@ -2536,25 +2571,6 @@ export function SettingsPage() {
               </h2>
             </CardHeader>
             <CardContent className="space-y-3">
-              {/* Archive Mode */}
-              <div>
-                <label className="block text-sm text-bambu-gray mb-1">
-                  {t('settings.createArchiveEntry')}
-                </label>
-                <select
-                  value={localSettings.library_archive_mode ?? 'ask'}
-                  onChange={(e) => updateSetting('library_archive_mode', e.target.value as 'always' | 'never' | 'ask')}
-                  className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
-                >
-                  <option value="always">{t('settings.archiveMode.always')}</option>
-                  <option value="never">{t('settings.archiveMode.never')}</option>
-                  <option value="ask">{t('settings.archiveMode.ask')}</option>
-                </select>
-                <p className="text-xs text-bambu-gray mt-1">
-                  {t('settings.createArchiveEntryDescription')}
-                </p>
-              </div>
-
               {/* Disk Space Warning Threshold */}
               <div>
                 <label className="block text-sm text-bambu-gray mb-1">
@@ -3300,6 +3316,7 @@ export function SettingsPage() {
                         type="password"
                         value={localSettings.ha_token ?? ''}
                         onChange={(e) => updateSetting('ha_token', e.target.value)}
+                        onFocus={selectPlaceholderOnFocus}
                         placeholder="eyJ0eXAiOiJKV1QiLC..."
                         disabled={localSettings.ha_token_from_env}
                         className={`w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none ${
@@ -3310,6 +3327,7 @@ export function SettingsPage() {
                         <Lock className="absolute right-3 top-2.5 w-4 h-4 text-bambu-gray" />
                       )}
                     </div>
+                    {!localSettings.ha_token_from_env && <SecretHint name="ha_token" value={localSettings.ha_token} reenter={secretsPendingReentry} />}
                     {localSettings.ha_token_from_env ? (
                       <p className="text-xs text-bambu-gray mt-1">
                         {t('settings.tokenFromEnvReadOnly')}
@@ -3465,9 +3483,11 @@ export function SettingsPage() {
                       type="password"
                       value={localSettings.mqtt_password ?? ''}
                       onChange={(e) => updateSetting('mqtt_password', e.target.value)}
+                      onFocus={selectPlaceholderOnFocus}
                       placeholder={t('settings.leaveEmptyForAnonymous')}
                       className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                     />
+                    <SecretHint name="mqtt_password" value={localSettings.mqtt_password} reenter={secretsPendingReentry} />
                   </div>
 
                   <div>
@@ -3547,9 +3567,11 @@ export function SettingsPage() {
                       type="password"
                       value={localSettings.prometheus_token ?? ''}
                       onChange={(e) => updateSetting('prometheus_token', e.target.value)}
+                      onFocus={selectPlaceholderOnFocus}
                       placeholder={t('settings.leaveEmptyForNoAuth')}
                       className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                     />
+                    <SecretHint name="prometheus_token" value={localSettings.prometheus_token} reenter={secretsPendingReentry} />
                     <p className="text-xs text-bambu-gray mt-1">
                       {t('settings.bearerTokenHint')}
                     </p>
@@ -5102,34 +5124,34 @@ export function SettingsPage() {
                 </p>
                 <div className="space-y-2 font-mono text-xs">
                   <div className="p-2 bg-bambu-dark rounded">
-                    <span className="text-blue-700 dark:text-blue-400">GET</span>{' '}
-                    <span className="text-white">/api/v1/webhook/status</span>
-                    <span className="text-bambu-gray"> - {t('settings.webhook.getAllStatus')}</span>
-                  </div>
-                  <div className="p-2 bg-bambu-dark rounded">
-                    <span className="text-blue-700 dark:text-blue-400">GET</span>{' '}
-                    <span className="text-white">/api/v1/webhook/status/:id</span>
-                    <span className="text-bambu-gray"> - {t('settings.webhook.getSpecificStatus')}</span>
-                  </div>
-                  <div className="p-2 bg-bambu-dark rounded">
                     <span className="text-green-700 dark:text-green-400">POST</span>{' '}
-                    <span className="text-white">/api/v1/webhook/queue</span>
+                    <span className="text-white">/api/v1/webhook/queue/add</span>
                     <span className="text-bambu-gray"> - {t('settings.webhook.addToQueue')}</span>
                   </div>
                   <div className="p-2 bg-bambu-dark rounded">
                     <span className="text-orange-700 dark:text-orange-400">POST</span>{' '}
-                    <span className="text-white">/api/v1/webhook/printer/:id/pause</span>
-                    <span className="text-bambu-gray"> - {t('settings.webhook.pausePrint')}</span>
-                  </div>
-                  <div className="p-2 bg-bambu-dark rounded">
-                    <span className="text-orange-700 dark:text-orange-400">POST</span>{' '}
-                    <span className="text-white">/api/v1/webhook/printer/:id/resume</span>
-                    <span className="text-bambu-gray"> - {t('settings.webhook.resumePrint')}</span>
+                    <span className="text-white">/api/v1/webhook/printer/:id/start</span>
+                    <span className="text-bambu-gray"> - {t('settings.webhook.startNext')}</span>
                   </div>
                   <div className="p-2 bg-bambu-dark rounded">
                     <span className="text-red-700 dark:text-red-400">POST</span>{' '}
                     <span className="text-white">/api/v1/webhook/printer/:id/stop</span>
                     <span className="text-bambu-gray"> - {t('settings.webhook.stopPrint')}</span>
+                  </div>
+                  <div className="p-2 bg-bambu-dark rounded">
+                    <span className="text-red-700 dark:text-red-400">POST</span>{' '}
+                    <span className="text-white">/api/v1/webhook/printer/:id/cancel</span>
+                    <span className="text-bambu-gray"> - {t('settings.webhook.cancelPrint')}</span>
+                  </div>
+                  <div className="p-2 bg-bambu-dark rounded">
+                    <span className="text-blue-700 dark:text-blue-400">GET</span>{' '}
+                    <span className="text-white">/api/v1/webhook/printer/:id/status</span>
+                    <span className="text-bambu-gray"> - {t('settings.webhook.getSpecificStatus')}</span>
+                  </div>
+                  <div className="p-2 bg-bambu-dark rounded">
+                    <span className="text-blue-700 dark:text-blue-400">GET</span>{' '}
+                    <span className="text-white">/api/v1/webhook/queue</span>
+                    <span className="text-bambu-gray"> - {t('settings.webhook.queueStatus')}</span>
                   </div>
                 </div>
               </CardContent>
@@ -7731,7 +7753,7 @@ export function SettingsPage() {
                 {advancedAuthStatus?.advanced_auth_enabled && (
                   <div className="bg-bambu-dark-secondary/50 border border-bambu-green/20 rounded-lg p-3 space-y-3">
                     <p className="text-sm text-bambu-gray">
-                      {t('users.form.passwordManagedByAdvancedAuth') || 'Password is managed by Advanced Authentication. Use "Reset Password" to send a new password to the user via email.'}
+                      {t('users.form.passwordManagedByAdvancedAuth') || 'Password is managed by Advanced Authentication. Use "Reset Password" to email the user a link to set a new password.'}
                     </p>
                     <Button
                       variant="secondary"

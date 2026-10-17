@@ -5,7 +5,9 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.api.routes.print_queue import _assert_can_queue_archive
 from backend.app.core.auth import (
+    ApiKeyActor,
     api_key_printer_scope,
     check_webhook_permission,
     ensure_api_key_printer_access,
@@ -21,6 +23,7 @@ from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.printer import Printer
 from backend.app.schemas.printer import HMSErrorResponse, hms_error_responses
 from backend.app.services.print_confirmation import confirm_outcome_for_new_queue_item
+from backend.app.services.print_control import stop_print_by_user
 from backend.app.services.printer_manager import printer_manager
 from backend.app.services.queue_position import next_queue_position
 
@@ -111,11 +114,15 @@ async def webhook_add_to_queue(
     await check_webhook_permission(db, api_key, "queue")
     await ensure_api_key_printer_access(db, api_key, data.printer_id)
 
-    # Verify archive exists
+    # Verify archive exists and passes the same source gate as POST /queue/,
+    # with the key acting for its owner within its printers.
     result = await db.execute(select(PrintArchive).where(PrintArchive.id == data.archive_id))
     archive = result.scalar_one_or_none()
     if not archive:
         raise HTTPException(status_code=404, detail="Archive not found")
+    # Auth off: no owner to act for, as on POST /queue/; the key's printers still apply.
+    actor = ApiKeyActor(api_key, await resolve_apikey_owner(db, api_key)) if await is_auth_enabled(db) else None
+    _assert_can_queue_archive(archive, actor, await api_key_printer_scope(db, api_key))
 
     # Verify printer exists
     result = await db.execute(select(Printer).where(Printer.id == data.printer_id))
@@ -235,6 +242,22 @@ async def webhook_start_print(
     return {"message": "Print started", "queue_item_id": queue_item.id}
 
 
+# States in which a print can be stopped, as with the Stop button on the
+# printer card: printing or paused.
+_STOPPABLE_STATES = ("RUNNING", "PAUSE")
+
+
+def _stop_current_print(printer_id: int) -> None:
+    """Stop the print on the user's behalf (cancel and stop are the same command)."""
+    try:
+        sent = stop_print_by_user(printer_id)
+    except Exception as e:
+        logger.error("Failed to stop print on printer %s: %s", printer_id, e)
+        raise HTTPException(status_code=500, detail=str(e))
+    if not sent:
+        raise HTTPException(status_code=503, detail="Printer not connected")
+
+
 @router.post("/printer/{printer_id}/stop")
 async def webhook_stop_print(
     printer_id: int,
@@ -255,14 +278,10 @@ async def webhook_stop_print(
     if not status or not status.connected:
         raise HTTPException(status_code=503, detail="Printer not connected")
 
-    if status.state != "RUNNING":
+    if status.state not in _STOPPABLE_STATES:
         raise HTTPException(status_code=409, detail="No print in progress")
 
-    try:
-        await printer_manager.stop_print(printer_id)
-    except Exception as e:
-        logger.error("Failed to stop print: %s", e)
-        raise HTTPException(status_code=500, detail=str(e))
+    _stop_current_print(printer_id)
 
     return {"message": "Print stopped"}
 
@@ -285,14 +304,10 @@ async def webhook_cancel_print(
     if not status or not status.connected:
         raise HTTPException(status_code=503, detail="Printer not connected")
 
-    if status.state not in ["RUNNING", "PAUSE"]:
+    if status.state not in _STOPPABLE_STATES:
         raise HTTPException(status_code=409, detail="No print to cancel")
 
-    try:
-        await printer_manager.cancel_print(printer_id)
-    except Exception as e:
-        logger.error("Failed to cancel print: %s", e)
-        raise HTTPException(status_code=500, detail=str(e))
+    _stop_current_print(printer_id)
 
     return {"message": "Print cancelled"}
 

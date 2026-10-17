@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, func
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, false, func
 from sqlalchemy.orm import Mapped, mapped_column, query_expression, relationship
 
 from backend.app.core.database import Base
@@ -8,8 +8,12 @@ from backend.app.core.database import Base
 
 class PrintArchive(Base):
     __tablename__ = "print_archives"
-    # Serves the archive listing: WHERE deleted_at IS NULL ORDER BY created_at DESC.
-    __table_args__ = (Index("ix_print_archives_deleted_created", "deleted_at", "created_at"),)
+    __table_args__ = (
+        # Serves the archive listing: WHERE deleted_at IS NULL ORDER BY created_at DESC.
+        Index("ix_print_archives_deleted_created", "deleted_at", "created_at"),
+        # SQLite would give a freed id to the next row; see core/database AUTOINCREMENT_TABLES
+        {"sqlite_autoincrement": True},
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     printer_id: Mapped[int | None] = mapped_column(ForeignKey("printers.id"), nullable=True)
@@ -123,7 +127,7 @@ class PrintArchive(Base):
 
     # User additions
     is_favorite: Mapped[bool] = mapped_column(Boolean, default=False)
-    wallet_charge_skipped: Mapped[bool] = mapped_column(Boolean, default=False)
+    wallet_charge_skipped: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     tags: Mapped[str | None] = mapped_column(Text)
     notes: Mapped[str | None] = mapped_column(Text)
     cost: Mapped[float | None] = mapped_column(Float)

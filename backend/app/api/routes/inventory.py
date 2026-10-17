@@ -35,6 +35,7 @@ from backend.app.models.spool_k_profile import SpoolKProfile
 from backend.app.models.supplier import SpoolmanSpoolSupplier, SpoolSupplier, Supplier, supplier_name_key
 from backend.app.models.user import User
 from backend.app.schemas.location import LocationCreate, LocationResponse, LocationUpdate
+from backend.app.schemas.not_null import IgnoresNullForRequiredColumns
 from backend.app.schemas.spool import (
     MaterialNumberStats,
     SpoolAssignmentCreate,
@@ -423,7 +424,8 @@ class CatalogEntryCreate(BaseModel):
     weight: int
 
 
-class CatalogEntryUpdate(BaseModel):
+class CatalogEntryUpdate(IgnoresNullForRequiredColumns):
+    __orm_table__ = "spool_catalog"
     name: str
     weight: int
 
@@ -471,7 +473,8 @@ class ColorEntryCreate(BaseModel):
         return normalize_effect_type(v)
 
 
-class ColorEntryUpdate(BaseModel):
+class ColorEntryUpdate(IgnoresNullForRequiredColumns):
+    __orm_table__ = "color_catalog"
     manufacturer: str
     color_name: str
     hex_color: str = Field(..., pattern=_HEX_COLOR_PATTERN)
@@ -1671,6 +1674,29 @@ async def delete_spool(
     return {"status": "deleted"}
 
 
+async def _release_slots(db: AsyncSession, spool_ids: list[int]) -> list[tuple[int, int, int]]:
+    """Unassign archived spools from their AMS slots; returns the freed slots.
+
+    Assigning refuses an archived spool and nothing downstream checks the flag,
+    so a slot left pointing at one would keep showing it and charge it the next
+    print's usage. The caller commits, then announces the slots.
+    """
+    if not spool_ids:
+        return []
+    rows = (await db.execute(select(SpoolAssignment).where(SpoolAssignment.spool_id.in_(spool_ids)))).scalars().all()
+    freed = [(a.printer_id, a.ams_id, a.tray_id) for a in rows]
+    for assignment in rows:
+        await db.delete(assignment)
+    return freed
+
+
+async def _announce_freed_slots(freed: list[tuple[int, int, int]]) -> None:
+    for printer_id, ams_id, tray_id in freed:
+        await ws_manager.broadcast(
+            {"type": "spool_assignment_changed", "printer_id": printer_id, "ams_id": ams_id, "tray_id": tray_id}
+        )
+
+
 @router.post("/spools/{spool_id}/archive", response_model=SpoolResponse)
 async def archive_spool(
     spool_id: int,
@@ -1686,9 +1712,11 @@ async def archive_spool(
         raise HTTPException(404, "Spool not found")
 
     spool.archived_at = datetime.now(timezone.utc)
+    freed = await _release_slots(db, [spool.id])
     await db.commit()
     result = await db.execute(select(Spool).options(*spool_response_loads()).where(Spool.id == spool_id))
     await ws_manager.broadcast({"type": "inventory_changed"})
+    await _announce_freed_slots(freed)
     return result.scalar_one()
 
 
@@ -1865,9 +1893,12 @@ async def bulk_archive_spools(
             continue
         spool.archived_at = now
         archived.append(spool.id)
+    # Already-archived ones too: archived before archiving released slots.
+    freed = await _release_slots(db, archived + already)
     await db.commit()
     if archived:
         await ws_manager.broadcast({"type": "inventory_changed"})
+    await _announce_freed_slots(freed)
     return {"archived": len(archived), "already_archived": already, "not_found": not_found}
 
 
@@ -2757,9 +2788,14 @@ async def sync_weights_from_ams(
 
     Overwrites the database weight_used for every assigned spool using the
     current AMS remain% from connected printers.  This is a manual recovery
-    tool — it bypasses the normal "only increase" guard.
+    tool — it bypasses the normal "only increase" guard, and the weight lock
+    a hand-set or weighed figure carries, which it releases.
+
+    A printer that is printing is left alone: its print's usage is charged
+    when it completes, on top of whatever weight the spool has by then.
     """
-    from backend.app.services.printer_manager import printer_manager
+    from backend.app.services.printer_manager import PrinterManager, printer_manager
+    from backend.app.services.usage_tracker import _active_sessions
 
     result = await db.execute(select(SpoolAssignment).options(selectinload(SpoolAssignment.spool)))
     # Only slots on printers the caller may see (#1727)
@@ -2768,6 +2804,7 @@ async def sync_weights_from_ams(
 
     synced = 0
     skipped = 0
+    printing = 0
 
     for assignment in assignments:
         spool = assignment.spool
@@ -2776,19 +2813,26 @@ async def sync_weights_from_ams(
             skipped += 1
             continue
 
-        if spool.weight_locked:
-            logger.debug("AMS weight sync: spool %d is weight-locked, skipping", spool.id)
-            skipped += 1
-            continue
-
         state = printer_manager.get_status(assignment.printer_id)
-        if not state or not state.raw_data:
+        # A disconnected printer keeps its last report, which is not a reading.
+        if not state or not state.raw_data or getattr(state, "connected", True) is False:
             logger.info(
                 "AMS weight sync: printer %d not connected, skipping spool %d",
                 assignment.printer_id,
                 spool.id,
             )
             skipped += 1
+            continue
+
+        # Until completion has charged the print its session stays open, also
+        # after the printer has reported the print finished.
+        if (
+            str(getattr(state, "state", "") or "").upper() in PrinterManager.ACTIVE_PRINT_STATES
+            or assignment.printer_id in _active_sessions
+        ):
+            logger.info("AMS weight sync: printer %d is printing, skipping spool %d", assignment.printer_id, spool.id)
+            skipped += 1
+            printing += 1
             continue
 
         ams_raw = state.raw_data.get("ams", [])
@@ -2836,12 +2880,16 @@ async def sync_weights_from_ams(
                 remain_val,
             )
             spool.weight_used = new_used
+            spool.weight_locked = False
             synced += 1
         else:
+            if spool.weight_locked:
+                # The figure already agrees with the AMS; the override still applies.
+                spool.weight_locked = False
             skipped += 1
 
     await db.commit()
-    return {"synced": synced, "skipped": skipped}
+    return {"synced": synced, "skipped": skipped, "printing": printing}
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────

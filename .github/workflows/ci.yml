@@ -73,17 +73,21 @@ permissions:
 #                              note above that job)
 #   docker-backend-tests   5
 #   frontend-tests         2
-#   single-runner jobs     6  (backend-lint, backend-security, frontend-lint,
-#                              frontend-security, frontend-build, docker-test)
+#   single-runner jobs     9  (backend-lint, backend-typecheck, backend-security,
+#                              backend-postgres-upgrade, frontend-lint,
+#                              frontend-typecheck, frontend-security,
+#                              frontend-build, docker-test)
 #   -------------------------
-#   peak                  18   on main pushes and PRs, leaving 2 slots for
-#                              CodeQL, which runs on those same events.
-#                         13   on a feature-branch push, where the 3.11 matrix
+#   peak                  21   on main pushes and PRs (upstream's typecheck and
+#                              PostgreSQL-upgrade jobs, 2026-10-17, pushed this
+#                              past the cap; the overflow queues, and CodeQL
+#                              queues behind it).
+#                         16   on a feature-branch push, where the 3.11 matrix
 #                              sits out and CodeQL does not run at all.
 #
 # Raising any shard count past that budget makes GitHub *queue* a job, and the
 # queued one is arbitrary — quite possibly a long test shard, which costs more
-# wall-clock than the extra shard saves. Keep the total at or below 18.
+# wall-clock than the extra shard saves. Do not add shards; drop a job first.
 jobs:
   # ============================================================================
   # Backend Checks
@@ -114,6 +118,43 @@ jobs:
       - name: Run ruff format check
         run: ruff format --check backend/
 
+  backend-typecheck:
+    name: Backend Type Check
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event.pull_request.user.login != github.repository_owner
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install the pinned type-check environment
+        # requirements-typecheck.lock, not requirements.txt: the baseline only
+        # holds for these exact library versions (see requirements-typecheck.txt).
+        run: pip install -r requirements-typecheck.lock
+
+      - name: Check the lock covers requirements.txt
+        # A dependency added to requirements.txt but not to the lock would show
+        # up below as an unresolved import instead of saying what is wrong.
+        run: |
+          if ! out=$(pip install --dry-run -r requirements.txt 2>&1); then
+            echo "$out"
+            echo "::error::pip could not resolve requirements.txt against the type-check environment."
+            exit 1
+          fi
+          if echo "$out" | grep '^Would install'; then
+            echo "::error::requirements-typecheck.lock is missing packages from requirements.txt. Regenerate it as described in requirements-typecheck.txt."
+            exit 1
+          fi
+
+      - name: Run basedpyright
+        # Errors recorded in .basedpyright/baseline.json pass; any new one fails.
+        # Lock mode also fails when a baselined error was fixed but the smaller
+        # baseline was not committed.
+        run: basedpyright --pythonpath "$(which python)" --baselinemode=lock
+
   backend-security:
     name: Backend Security
     runs-on: ubuntu-latest
@@ -136,7 +177,7 @@ jobs:
           # setuptools that trips pip-audit (PYSEC-2026-3447, fixed in 83.0.0).
           # A fix exists, so we upgrade rather than --ignore-vuln.
           python -m pip install --upgrade pip setuptools
-          pip install -r requirements.txt
+          pip install -r requirements.lock
           pip install pip-audit
 
       - name: Run pip-audit
@@ -213,7 +254,7 @@ jobs:
           # restore-keys is kept deliberately: this is a *download* cache, so a
           # near-miss still saves every unchanged wheel, and pip re-validates
           # what it reuses against the pinned versions.
-          key: ${{ runner.os }}-py${{ env.PYTHON_VERSION }}-pip-${{ hashFiles('requirements.txt', 'requirements-dev.txt') }}
+          key: ${{ runner.os }}-py${{ env.PYTHON_VERSION }}-pip-${{ hashFiles('requirements.lock', 'requirements-dev.txt') }}
           restore-keys: |
             ${{ runner.os }}-py${{ env.PYTHON_VERSION }}-pip-
             ${{ runner.os }}-pip-
@@ -221,7 +262,9 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt -r requirements-dev.txt
+          # The pinned versions that ship (Docker, installers), not whatever is newest.
+          pip install -r requirements.lock
+          pip install -r requirements-dev.txt
 
       - name: Run tests (shard ${{ matrix.shard }}/5)
         timeout-minutes: 20
@@ -267,6 +310,62 @@ jobs:
             --durations-path=.test_durations \
             --splits 5 --group ${{ matrix.shard }}
 
+  backend-postgres-upgrade:
+    # The test suite runs on SQLite only. This builds PostgreSQL databases with
+    # older releases' code, upgrades them and compares each with a fresh
+    # install (see scripts/check_postgres_upgrade.py).
+    name: PostgreSQL Upgrade Check
+    runs-on: ubuntu-latest
+    # Fenrir: switched off. The check upgrades databases built by this repo's
+    # older release tags, and this fork has none (it deploys from main); the
+    # script exits "no release tags found". Run it by hand against a local
+    # PostgreSQL with upstream's tags fetched if a migration needs it.
+    if: false
+    needs: backend-lint
+    services:
+      postgres:
+        # The version the docker-compose example and the wiki use.
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # The release tags: older releases' code builds the databases to upgrade.
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache pip
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/pip
+          # Its own key: this job installs the lock only, and finishes long
+          # before the test shards, so sharing theirs would save a cache
+          # without the dev packages under their key.
+          key: ${{ runner.os }}-pip-lock-${{ hashFiles('requirements.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-lock-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.lock
+
+      - name: Upgrade from older releases and compare with a fresh install
+        timeout-minutes: 10
+        run: python scripts/check_postgres_upgrade.py --url postgresql://postgres:ci@localhost:5432/postgres
+
   # ============================================================================
   # Frontend Checks
   # ============================================================================
@@ -302,6 +401,10 @@ jobs:
         # lint rather than owning a runner.
         working-directory: frontend
         run: npm run check:i18n
+
+      - name: Unused files and dependencies (knip)
+        working-directory: frontend
+        run: npm run check:knip
 
   frontend-security:
     name: Frontend Security

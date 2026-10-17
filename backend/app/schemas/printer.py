@@ -1,10 +1,30 @@
 from datetime import datetime
-from urllib.parse import urlparse, urlunparse
 
 from pydantic import BaseModel, Field, computed_field, field_validator, model_validator
 
+from backend.app.schemas.not_null import IgnoresNullForRequiredColumns
 from backend.app.schemas.printer_location import normalize_location_name
 from backend.app.utils.printer_models import supports_nozzle_flow_type
+
+
+def _mask_url_login(url: str | None) -> str | None:
+    """A stored camera URL with its login secret masked.
+
+    One URL, not a log line: the login runs to the last ``@`` before the
+    first ``/`` after the scheme, whitespace, ``?`` and ``#`` included (when
+    in doubt it is masked). The user part up to the first ``:`` survives;
+    without a ``:`` the login may be a token and goes whole.
+    """
+    if not url or "://" not in url:
+        return url
+    start = url.index("://") + 3
+    slash = url.find("/", start)
+    end = len(url) if slash == -1 else slash
+    if "@" not in url[start:end]:
+        return url
+    login, host = url[start:end].rsplit("@", 1)
+    shown = f"{login.split(':', 1)[0]}:[REDACTED]" if ":" in login else "[REDACTED]"
+    return f"{url[:start]}{shown}@{host}{url[end:]}"
 
 
 class PrinterBase(BaseModel):
@@ -64,7 +84,8 @@ class PlateDetectionROI(BaseModel):
     h: float = Field(..., gt=0.0, le=1.0)  # Height %
 
 
-class PrinterUpdate(BaseModel):
+class PrinterUpdate(IgnoresNullForRequiredColumns):
+    __orm_table__ = "printers"
     name: str | None = None
     ip_address: str | None = Field(
         default=None,
@@ -88,23 +109,6 @@ class PrinterUpdate(BaseModel):
     camera_light_auto: bool | None = None  # #1655
     plate_detection_enabled: bool | None = None
     plate_detection_roi: PlateDetectionROI | None = None
-
-
-def _sanitize_url_credentials(url: str | None) -> str | None:
-    """Mask userinfo (username:password) in a URL with ***:***."""
-    if not url:
-        return url
-    try:
-        parsed = urlparse(url)
-        if parsed.username:
-            host = parsed.hostname or ""
-            if parsed.port:
-                host = f"{host}:{parsed.port}"
-            sanitized = parsed._replace(netloc=f"***:***@{host}")
-            return urlunparse(sanitized)
-    except Exception:
-        pass
-    return url
 
 
 class PrinterResponse(PrinterBase):
@@ -139,12 +143,6 @@ class PrinterResponse(PrinterBase):
         from backend.app.services.camera import supports_rtsp
 
         return supports_rtsp(self.model)
-
-    @model_validator(mode="after")
-    def sanitize_camera_url(self) -> "PrinterResponse":
-        """Strip credentials from external camera URLs in API responses."""
-        self.external_camera_url = _sanitize_url_credentials(self.external_camera_url)
-        return self
 
     @classmethod
     def from_orm_with_roi(cls, printer) -> "PrinterResponse":
@@ -189,9 +187,15 @@ class PrinterResponse(PrinterBase):
             )
         return cls(**data)
 
+    @field_validator("external_camera_url", "external_camera_snapshot_url", mode="after")
+    @classmethod
+    def _camera_credentials(cls, value: str | None) -> str | None:
+        """Readers see the camera URLs without the password in them."""
+        return _mask_url_login(value)
+
 
 class PrinterResponseWithSecret(PrinterResponse):
-    """PrinterResponse + access_code. Returned ONLY to callers with
+    """PrinterResponse + access_code and the full camera URLs. Returned ONLY to callers with
     PRINTERS_UPDATE (Admin / Operator JWTs, or single-trust auth-disabled mode).
 
     Viewers and API keys never receive this shape — they get the bare
@@ -200,6 +204,12 @@ class PrinterResponseWithSecret(PrinterResponse):
     """
 
     access_code: str
+
+    @field_validator("external_camera_url", "external_camera_snapshot_url", mode="after")
+    @classmethod
+    def _camera_credentials(cls, value: str | None) -> str | None:
+        """Editors keep the full camera URLs, to edit them."""
+        return value
 
 
 class HMSErrorResponse(BaseModel):

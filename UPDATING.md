@@ -58,7 +58,7 @@ cd /opt/fenrir
 sudo systemctl stop fenrir
 sudo -u fenrir git fetch origin
 sudo -u fenrir git reset --hard origin/main
-sudo -u fenrir venv/bin/pip install -r requirements.txt
+sudo -u fenrir venv/bin/pip install -r requirements.lock
 sudo systemctl start fenrir
 ```
 

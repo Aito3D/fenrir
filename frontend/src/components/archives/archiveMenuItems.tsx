@@ -132,6 +132,12 @@ export function buildArchiveMenuSections({
             openInSlicerWithToken(archive.id, filename, 'file', preferredSlicer);
           }
         },
+        // The sliced copy is printable as the user's own, so it needs the right to reprint.
+        disabled: useSlicerApi && !canModify('archives', 'reprint', archive.created_by_id),
+        title:
+          useSlicerApi && !canModify('archives', 'reprint', archive.created_by_id)
+            ? t('archives.permission.noReprint')
+            : undefined,
       },
       // Run-with-pipeline (#1425 PR B follow-up). Sources from archive's
       // source 3MF (or file_path fallback). Only when slicer-api is on.
@@ -140,10 +146,13 @@ export function buildArchiveMenuSections({
             label: t('library.runWithPipeline.actionLabel'),
             icon: <Play className="w-4 h-4" />,
             onClick: () => setShowRunPipeline(true),
-            disabled: !hasPermission('pipelines:run'),
+            // A run prints the archive again, so it needs the right to reprint it.
+            disabled: !hasPermission('pipelines:run') || !canModify('archives', 'reprint', archive.created_by_id),
             title: !hasPermission('pipelines:run')
               ? t('library.runWithPipeline.noPermission')
-              : undefined,
+              : !canModify('archives', 'reprint', archive.created_by_id)
+                ? t('archives.permission.noReprint')
+                : undefined,
           }]
         : []),
     ]),

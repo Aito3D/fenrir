@@ -649,7 +649,8 @@ export function FinancePage() {
   };
 
   const getPrivateOwnerLabel = (ownerUserId: number | null): string => {
-    if (ownerUserId == null) return t('finance.personal', 'Personal');
+    // Private centres are always created with an owner; none means they were deleted.
+    if (ownerUserId == null) return t('finance.deletedUser', 'Deleted user');
     const ownerName = usersById.get(ownerUserId);
     if (ownerName) return ownerName;
     if (user?.id === ownerUserId && user.username) return user.username;
@@ -1202,7 +1203,10 @@ export function FinancePage() {
                       const txCostCenter = tx.cost_center_id == null
                         ? null
                         : (costCenters || []).find((center) => center.id === tx.cost_center_id);
-                      const txUser = usersById.get(tx.user_id);
+                      // No user: deleted since, or with auth off never had one.
+                      const txUser = tx.user_id == null
+                        ? t('finance.noUser', 'No user')
+                        : usersById.get(tx.user_id) || t('finance.userWithId', 'User #{{id}}', { id: tx.user_id });
                       const parsed = tx.transaction_type === 'print_charge'
                         ? parsePrintChargeDescription((tx as { description: string | null }).description ?? null)
                         : null;
@@ -1212,7 +1216,7 @@ export function FinancePage() {
                         <tr key={tx.id} className="border-b border-bambu-dark-tertiary/60 text-white">
                             <td className={tableCellClass}>{formatTimestamp(tx.created_at, i18n.language)}</td>
                             {showCostCenterAccountColumn && (
-                              <td className={tableCellClass}>{txUser || t('finance.userWithId', 'User #{{id}}', { id: tx.user_id })}</td>
+                              <td className={tableCellClass}>{txUser}</td>
                             )}
                             <td className={tableCellClass}>{txCostCenter?.name || '-'}</td>
                             <td className={tableCellClass}>

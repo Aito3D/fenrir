@@ -542,7 +542,7 @@ async def fetch_catalogue(db: AsyncSession, *, refresh: bool = True) -> list[Fil
     lock = _refresh_lock
     try:
         await asyncio.wait_for(lock.acquire(), timeout=_LOCK_ACQUIRE_TIMEOUT)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         # The lock is held by a walk that has already run past a generous
         # budget. Waiting it out would only mean this caller's own HTTP
         # request times out on the client side anyway (see the constant's

@@ -19,13 +19,19 @@ import sys
 import time
 from collections.abc import AsyncGenerator, Callable
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import aiohttp
 
 from backend.app.core.logging_filters import redact_url_credentials
 from backend.app.services.camera import get_ffmpeg_path, get_rtsp_semaphore
-from backend.app.utils.ffmpeg_output import NO_FFMPEG_OUTPUT, summarize_ffmpeg_stderr
+from backend.app.utils.ffmpeg_output import (
+    FFMPEG_RTSP_LOGLEVEL,
+    NO_FFMPEG_OUTPUT,
+    read_ffmpeg_log_until_open,
+    summarize_ffmpeg_stderr,
+    watch_ffmpeg_log,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +65,16 @@ def _blocked_host_reason(hostname: str) -> str | None:
     which is the stronger answer to rebinding than a lookup in this helper
     would be.
     """
-    host = hostname.lower()
+    from backend.app.api.routes._url_safety import CLOUD_METADATA_HOSTNAMES, CLOUD_METADATA_IPS, unwrap_ipv4_mapped
+
+    # A trailing dot names the same host to every resolver.
+    host = hostname.lower().rstrip(".")
+
+    # The HTTP clients map other dot characters, fullwidth digits and similar
+    # forms to plain ASCII before they connect: a host not written in ASCII
+    # cannot be judged here, so it is refused.
+    if not host.isascii():
+        return "a host name not written in ASCII (use punycode, xn--...)"
 
     ip: ipaddress.IPv4Address | ipaddress.IPv6Address | None = None
     try:
@@ -73,15 +88,16 @@ def _blocked_host_reason(hostname: str) -> str | None:
     if ip is None:
         if host == "localhost" or host.endswith(".localhost"):
             return "localhost"
-        if host in ("metadata.google.internal", "metadata.google"):
+        if host in CLOUD_METADATA_HOSTNAMES:
             return "a cloud metadata service"
         return None
 
-    # ::ffff:127.0.0.1 is loopback wearing an IPv6 spelling.
-    mapped = getattr(ip, "ipv4_mapped", None)
-    if mapped is not None:
-        ip = mapped
+    # ::ffff:127.0.0.1 is loopback wearing an IPv6 spelling, and a zone id
+    # only hides the address it is attached to.
+    ip = unwrap_ipv4_mapped(ip)
 
+    if ip in CLOUD_METADATA_IPS:
+        return "a cloud metadata service"
     if ip.is_loopback:
         return "loopback"
     if ip.is_unspecified:
@@ -422,6 +438,51 @@ async def _capture_usb_frame(device: str, timeout: int) -> bytes | None:
         return None
 
 
+# Redirects a camera URL may take before the fetch gives up.
+_MAX_CAMERA_REDIRECTS = 5
+_REDIRECT_STATUSES = (301, 302, 303, 307, 308)
+
+
+def _with_same_camera_login(current: str, target: str) -> str:
+    """*target* with the login of *current* when it is the same camera (scheme,
+    host and port) and names no login of its own, as the HTTP client kept it."""
+    here, there = urlparse(current), urlparse(target)
+    if there.username or not here.username:
+        return target
+    if (here.scheme, here.hostname, here.port) != (there.scheme, there.hostname, there.port):
+        return target
+    return there._replace(netloc=f"{here.netloc.rsplit('@', 1)[0]}@{there.netloc}").geturl()
+
+
+@contextlib.asynccontextmanager
+async def _get_camera_url(session: aiohttp.ClientSession, url: str, schemes: tuple[str, ...]):
+    """GET a sanitized camera URL, following redirects only where the camera
+    guard allows: each destination is checked as the URL itself was. Yields
+    the response, or None when a redirect goes somewhere refused or never ends.
+    """
+    current = url
+    for _ in range(_MAX_CAMERA_REDIRECTS + 1):
+        async with session.get(current, allow_redirects=False) as response:
+            location = response.headers.get("Location") if response.status in _REDIRECT_STATUSES else None
+            if location is None:
+                yield response
+                return
+        try:
+            target = _sanitize_camera_url(_with_same_camera_login(current, urljoin(current, location)), schemes)
+        except ValueError:
+            # A malformed Location (bad IPv6 literal, port out of range).
+            target = None
+        if target is None:
+            logger.error(
+                "Camera URL redirected to a refused destination: %s", (redact_url_credentials(location) or "")[:50]
+            )
+            yield None
+            return
+        current = target
+    logger.error("Camera URL redirected more than %d times", _MAX_CAMERA_REDIRECTS)
+    yield None
+
+
 async def _capture_mjpeg_frame(url: str, timeout: int) -> bytes | None:
     """Extract a single representative frame from an MJPEG stream.
 
@@ -452,9 +513,12 @@ async def _capture_mjpeg_frame(url: str, timeout: int) -> bytes | None:
 
     try:
         async with (
+            asyncio.timeout(timeout),
             aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout)) as session,
-            session.get(safe_url, allow_redirects=False) as response,
+            _get_camera_url(session, safe_url, ("http", "https")) as response,
         ):
+            if response is None:
+                return None
             if response.status != 200:
                 logger.error("MJPEG stream returned status %s", response.status)
                 return None
@@ -540,6 +604,7 @@ async def _capture_rtsp_frame(url: str, timeout: int) -> bytes | None:
 
     cmd = [
         ffmpeg,
+        *FFMPEG_RTSP_LOGLEVEL,
         "-rtsp_transport",
         "tcp",
         # Confine ffmpeg to the protocols an RTSP camera actually speaks.
@@ -571,7 +636,10 @@ async def _capture_rtsp_frame(url: str, timeout: int) -> bytes | None:
             stderr=asyncio.subprocess.PIPE,
         )
 
-        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
+        async with asyncio.timeout(timeout):
+            state, log = await read_ffmpeg_log_until_open(process)
+            stdout, stderr = await process.communicate()
+        stderr = log + stderr
         logger.debug(
             "ffmpeg returned: code=%s, stdout=%s bytes, stderr=%s bytes",
             process.returncode,
@@ -579,7 +647,9 @@ async def _capture_rtsp_frame(url: str, timeout: int) -> bytes | None:
             len(stderr),
         )
 
-        if process.returncode != 0:
+        if state == "redirected":
+            return None
+        if process.returncode != 0 or state != "open":
             # The summariser masks the camera password the input URL carries.
             logger.error("ffmpeg RTSP capture failed: %s", summarize_ffmpeg_stderr(stderr) or NO_FFMPEG_OUTPUT)
             return None
@@ -616,8 +686,8 @@ def _transcode_to_jpeg(data: bytes) -> bytes | None:
     (plate detection, Obico, finish photo) working.
 
     Returns None if the bytes are not a decodable image (e.g. an HTML error page)
-    or if the imaging libraries are unavailable — callers fall back to the raw
-    bytes so behaviour is never worse than before.
+    or if the imaging libraries are unavailable; the caller then has no image.
+    The raw bytes are not passed on: a URL's response is not a camera frame.
     """
     try:
         import cv2
@@ -654,19 +724,27 @@ async def _capture_snapshot(url: str, timeout: int, *, session: aiohttp.ClientSe
         return None
 
     try:
+        # One deadline for every redirect and the read, as the client's own
+        # timeout covered them when it followed redirects itself.
         if session is not None:
-            async with session.get(
-                safe_url, allow_redirects=False, timeout=aiohttp.ClientTimeout(total=timeout)
-            ) as response:
+            async with (
+                asyncio.timeout(timeout),
+                _get_camera_url(session, safe_url, ("http", "https")) as response,
+            ):
+                if response is None:
+                    return None
                 if response.status != 200:
                     logger.error("Snapshot URL returned status %s", response.status)
                     return None
                 data = await response.content.read(5 * 1024 * 1024)
         else:
             async with (
+                asyncio.timeout(timeout),
                 aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout)) as sess,
-                sess.get(safe_url, allow_redirects=False) as response,
+                _get_camera_url(sess, safe_url, ("http", "https")) as response,
             ):
+                if response is None:
+                    return None
                 if response.status != 200:
                     logger.error("Snapshot URL returned status %s", response.status)
                     return None
@@ -697,15 +775,15 @@ async def _capture_snapshot(url: str, timeout: int, *, session: aiohttp.ClientSe
         return transcoded
 
     # Couldn't decode it as an image at all — most likely not an image response
-    # (HTML error page, auth redirect, wrong URL). Return the raw bytes as a last
-    # resort (unchanged behaviour) but log enough to debug.
+    # (HTML error page, auth redirect, wrong URL). Not passed on: whatever a URL
+    # returns would reach the viewer of the camera stream.
     logger.warning(
         "External camera snapshot is not a decodable image "
         "(%d bytes, header %s) — verify the camera URL returns an image",
         len(data),
         data[:4].hex(),
     )
-    return data
+    return None
 
 
 async def test_connection(url: str, camera_type: str) -> dict:
@@ -902,8 +980,10 @@ async def _stream_mjpeg(url: str) -> AsyncGenerator[bytes, None]:
         timeout = aiohttp.ClientTimeout(total=None, sock_read=30)
         async with (
             aiohttp.ClientSession(timeout=timeout) as session,
-            session.get(safe_url, allow_redirects=False) as response,
+            _get_camera_url(session, safe_url, ("http", "https")) as response,
         ):
+            if response is None:
+                return
             if response.status != 200:
                 logger.error("MJPEG stream returned status %s", response.status)
                 return
@@ -998,7 +1078,7 @@ async def _stream_rtsp(
     # run in a thread so the event loop isn't blocked for up to 5s after boot.
     socket_timeout_flag = await asyncio.to_thread(rtsp_socket_timeout_flag)
 
-    cmd = [ffmpeg]
+    cmd = [ffmpeg, *FFMPEG_RTSP_LOGLEVEL]
     if gpu_accel:
         cmd.extend(["-hwaccel", "auto"])
     cmd.extend(
@@ -1051,6 +1131,17 @@ async def _stream_rtsp(
 
     semaphore = get_rtsp_semaphore()
     process = None
+    log_watch = None
+
+    async def _end_ffmpeg() -> None:
+        """Stop a started ffmpeg on an early exit, before the streaming loop's own cleanup runs."""
+        if process and process.returncode is None:
+            process.terminate()
+            try:
+                await asyncio.wait_for(process.wait(), timeout=2.0)
+            except TimeoutError:
+                process.kill()
+                await process.wait()
 
     # Acquire semaphore only for process creation + liveness check
     logger.debug("External RTSP: waiting for semaphore")
@@ -1072,18 +1163,26 @@ async def _stream_rtsp(
             if on_process is not None:
                 on_process(process)
 
-            # Give ffmpeg a moment to start and check for immediate failures
-            await asyncio.sleep(0.5)
-            if process.returncode is not None:
-                stderr = await process.stderr.read()
-                # The summariser masks the camera password the input URL carries.
-                logger.error(
-                    "ffmpeg RTSP stream failed immediately: %s", summarize_ffmpeg_stderr(stderr) or NO_FFMPEG_OUTPUT
-                )
+            # No frame is read before ffmpeg reports the input open: a redirect it
+            # followed on the way would be in its log by then.
+            try:
+                state, log = await asyncio.wait_for(read_ffmpeg_log_until_open(process), timeout=30.0)
+            except TimeoutError:
+                logger.warning("RTSP stream did not open within 30s")
+                await _end_ffmpeg()
                 return
         except OSError as e:
             logger.error("RTSP stream error: %s", e)
             return
+        if state == "ended":
+            assert process.stderr is not None
+            log += await process.stderr.read()
+            # The summariser masks the camera password the input URL carries.
+            logger.error("ffmpeg RTSP stream failed: %s", summarize_ffmpeg_stderr(log) or NO_FFMPEG_OUTPUT)
+            return
+        if state != "open":
+            return
+        log_watch = asyncio.create_task(watch_ffmpeg_log(process))
 
     # Semaphore released — streaming loop runs without holding it
     try:
@@ -1128,6 +1227,8 @@ async def _stream_rtsp(
     except OSError as e:
         logger.error("RTSP stream error: %s", e)
     finally:
+        if log_watch is not None:
+            log_watch.cancel()
         if process and process.returncode is None:
             process.terminate()
             try:

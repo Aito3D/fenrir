@@ -1642,7 +1642,6 @@ export interface AppSettings {
   ha_token_from_env: boolean;
   ha_env_managed: boolean;
   // File Manager / Library settings
-  library_archive_mode: 'always' | 'never' | 'ask';
   library_disk_warning_gb: number;
   // Camera view settings
   camera_view_mode: 'window' | 'embedded';
@@ -1786,6 +1785,11 @@ export interface AppSettings {
 }
 
 export type AppSettingsUpdate = Partial<AppSettings>;
+
+// Settings as a page sees them: everything from GET /settings for a user who
+// may read it, otherwise the subset /settings/ui-preferences and
+// /settings/ui-flags serve, which reports G-code snippets only as set or not.
+export type UiSettings = Partial<AppSettings> & { has_gcode_snippets?: boolean };
 
 // MQTT relay status
 export interface MQTTStatus {
@@ -2317,7 +2321,8 @@ export interface PipelineJob {
     | 'printing'
     | 'completed'
     | 'failed'
-    | 'cancelled';
+    | 'cancelled'
+    | 'unknown';
   error_message: string | null;
   dispatched_at: string | null;
   completed_at: string | null;
@@ -3834,6 +3839,8 @@ export interface NotificationTestRequest {
   provider_type: ProviderType;
   config: Record<string, unknown>;
   attach_photo?: boolean;
+  /** The saved provider being edited: its stored secrets fill in the placeholders. */
+  provider_id?: number;
 }
 
 export interface NotificationTestResponse {
@@ -4298,7 +4305,8 @@ export interface CsvImportResult {
 
 export interface SpoolUsageRecord {
   id: number;
-  spool_id: number;
+  // null: the spool was deleted, its usage kept
+  spool_id: number | null;
   printer_id: number | null;
   print_name: string | null;
   weight_used: number;
@@ -5723,7 +5731,7 @@ export type WalletTransactionType = 'print_charge' | 'deposit' | 'withdraw' | 'm
 
 export interface WalletTransaction {
   id: number;
-  user_id: number;
+  user_id: number | null; // null once the user is deleted
   cost_center_id: number | null;
   transaction_type: WalletTransactionType;
   amount: number;
@@ -7619,13 +7627,13 @@ export const api = {
   // non-admin reading GET /settings gets a 403 and every gate that consults it
   // silently takes its fallback (#3023). Keep in sync with _UI_FLAG_FIELDS in
   // backend/app/api/routes/settings.py.
-  getUiFlags: () =>
-    request<{
-      billing_enabled?: boolean;
-      user_notifications_enabled?: boolean;
-      currency?: string;
-      check_updates?: boolean;
-    }>('/settings/ui-flags'),
+  getUiFlags: () => request<UiSettings>('/settings/ui-flags'),
+  // The two above together: what a page needs from the settings when its user
+  // may not read GET /settings. See useUiSettings.
+  getUiSettings: async (): Promise<UiSettings> => {
+    const [preferences, flags] = await Promise.all([api.getUiPreferences(), api.getUiFlags()]);
+    return { ...(preferences as UiSettings), ...flags };
+  },
   updateSettings: (data: AppSettingsUpdate) =>
     request<AppSettings>('/settings/', {
       method: 'PUT',
@@ -7871,10 +7879,11 @@ export const api = {
     }),
   getSmartPlugStatus: (id: number) =>
     request<SmartPlugStatus>(`/smart-plugs/${id}/status`),
-  testSmartPlugConnection: (ip_address: string, username?: string | null, password?: string | null) =>
+  // plug_id: the saved plug being edited, whose stored password fills in the placeholder.
+  testSmartPlugConnection: (ip_address: string, username?: string | null, password?: string | null, plug_id?: number) =>
     request<SmartPlugTestResult>('/smart-plugs/test-connection', {
       method: 'POST',
-      body: JSON.stringify({ ip_address, username, password }),
+      body: JSON.stringify({ ip_address, username, password, plug_id }),
     }),
   getEnergyHistory: (options?: { dateFrom?: string; dateTo?: string; bucket?: 'day' | 'hour' }) => {
     const params = new URLSearchParams();
@@ -7944,10 +7953,11 @@ export const api = {
     request<{ message: string }>(`/location-ha-sensors/${id}`, { method: 'DELETE' }),
 
   // REST smart plug
-  testRESTConnection: (url: string, method: string = 'GET', headers?: string | null) =>
+  // plug_id: the saved plug being edited, whose stored headers fill in the placeholder.
+  testRESTConnection: (url: string, method: string = 'GET', headers?: string | null, plug_id?: number) =>
     request<{ success: boolean; error: string | null }>('/smart-plugs/rest/test-connection', {
       method: 'POST',
-      body: JSON.stringify({ url, method, headers }),
+      body: JSON.stringify({ url, method, headers, plug_id }),
     }),
 
   // Print Queue
@@ -7998,6 +8008,13 @@ export const api = {
    * restores skipped items whose error_message matches the gate string
    * back to pending. Returns counts so the UI can render a precise toast.
    */
+  // A job for any printer of a model waits when the last print failed on every
+  // free one; this clears the gate on the model's printers.
+  resumeModelQueueAfterFailure: (model: string) =>
+    request<{ acknowledged: number; printers: number }>(
+      `/queue/model/${encodeURIComponent(model)}/resume`,
+      { method: 'POST' },
+    ),
   resumeQueueAfterFailure: (printerId: number) =>
     request<{ acknowledged: number; restored: number }>(
       `/queue/printer/${printerId}/resume`,
@@ -8657,7 +8674,7 @@ export const api = {
   clearSpoolUsageHistory: (spoolId: number) =>
     request<{ status: string }>(`/inventory/spools/${spoolId}/usage`, { method: 'DELETE' }),
   syncWeightsFromAms: () =>
-    request<{ synced: number; skipped: number }>('/inventory/sync-ams-weights', { method: 'POST' }),
+    request<{ synced: number; skipped: number; printing?: number }>('/inventory/sync-ams-weights', { method: 'POST' }),
   getSkuSettings: () =>
     request<FilamentSkuSettings[]>('/inventory/sku-settings'),
   upsertSkuSettings: (data: Omit<FilamentSkuSettings, 'id'>) =>
@@ -8778,7 +8795,7 @@ export const api = {
         : '/spoolman/inventory/slot-assignments/all',
     ),
   syncSpoolmanAmsWeights: () =>
-    request<{ synced: number; skipped: number }>('/spoolman/inventory/sync-ams-weights', { method: 'POST' }),
+    request<{ synced: number; skipped: number; printing?: number }>('/spoolman/inventory/sync-ams-weights', { method: 'POST' }),
 
   getSpoolmanKProfiles: (spoolId: number) =>
     request<SpoolKProfile[]>(`/spoolman/inventory/spools/${spoolId}/k-profiles`),
@@ -8958,8 +8975,8 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
-  stopCameraStream: (printerId: number) =>
-    request<void>(`/printers/${printerId}/camera/stop`, { method: 'POST' }),
+  stopCameraStream: (printerId: number, viewer?: string) =>
+    request<void>(`/printers/${printerId}/camera/stop${viewer ? `?viewer=${viewer}` : ''}`, { method: 'POST' }),
 
   // Plate Detection - Multi-reference calibration (stores up to 5 references per printer)
   checkPlateEmpty: (printerId: number, options?: { useExternal?: boolean; includeDebugImage?: boolean }) => {
@@ -9656,17 +9673,17 @@ export const api = {
   getProjectFileProgress: (id: number) =>
     request<ProjectFileProgress[]>(`/projects/${id}/file-progress`),
   addArchivesToProject: (projectId: number, archiveIds: number[]) =>
-    request<{ message: string }>(`/projects/${projectId}/add-archives`, {
+    request<{ message: string; count: number }>(`/projects/${projectId}/add-archives`, {
       method: 'POST',
       body: JSON.stringify({ archive_ids: archiveIds }),
     }),
   removeArchivesFromProject: (projectId: number, archiveIds: number[]) =>
-    request<{ message: string }>(`/projects/${projectId}/remove-archives`, {
+    request<{ message: string; count: number }>(`/projects/${projectId}/remove-archives`, {
       method: 'POST',
       body: JSON.stringify({ archive_ids: archiveIds }),
     }),
   addQueueItemsToProject: (projectId: number, queueItemIds: number[]) =>
-    request<{ message: string }>(`/projects/${projectId}/add-queue`, {
+    request<{ message: string; count: number }>(`/projects/${projectId}/add-queue`, {
       method: 'POST',
       body: JSON.stringify({ queue_item_ids: queueItemIds }),
     }),

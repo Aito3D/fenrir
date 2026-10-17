@@ -365,7 +365,7 @@ async def _wait_idle(client: AsyncClient, headers=None) -> dict:
     if runners:
         try:
             await asyncio.wait_for(asyncio.shield(asyncio.gather(*runners, return_exceptions=True)), IDLE_TIMEOUT)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             raise AssertionError("migration never finished") from None
     deadline = time.monotonic() + IDLE_TIMEOUT
     while True:

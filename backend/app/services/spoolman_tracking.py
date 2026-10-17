@@ -9,8 +9,10 @@ import json
 import logging
 import math
 from dataclasses import dataclass
+from typing import cast
 
 from sqlalchemy import delete, select
+from sqlalchemy.engine import CursorResult
 
 from backend.app.api.routes._spoolman_helpers import spoolman_net_weight
 from backend.app.core.config import settings as app_settings
@@ -150,15 +152,12 @@ async def _get_printer_serial(printer_id: int) -> str:
 def _resolve_global_tray_id(slot_id: int, slot_to_tray: list | None, ams_trays: dict | None = None) -> int:
     """Map a 1-based slot_id to a global_tray_id using optional custom mapping.
 
-    Custom mapping: slot_to_tray[slot_id - 1] is used when >= 0.
-    A value of -1 in the custom mapping means the slicer routed this slot to
-    the external spool. BambuStudio converts virtual tray IDs (254/255) to -1
-    in the flat ams_mapping array before sending to the printer — see
-    start_print() in bambu_mqtt.py which documents this convention. We mirror
-    it here: when -1 is seen, look up the external spool's actual
-    global_tray_id (254/255) in ams_trays rather than falling through to the
-    position-based default (which would map slot_id=1 to the first AMS tray
-    and credit an unrelated spool — see #1276, regression of #853).
+    Custom mapping: slot_to_tray[slot_id - 1] is used when >= 0. A negative
+    value means the slot feeds nothing and answers -1, which no tray has: the
+    flat ams_mapping writes an external spool as -1 on the wire, but the
+    captured mapping puts its 254/255 back from ams_mapping2 (#3166), so a -1
+    left in it is unmapped. Never the position-based default for such a slot,
+    which would credit an unrelated spool (#1276, regression of #853).
     Position-based default: uses sorted ams_trays keys so external spools (ID 254/255)
     naturally follow standard AMS trays, matching the slicer's slot numbering.
     Final fallback: slot_id - 1 (legacy, works for pure AMS without external spools).
@@ -167,14 +166,11 @@ def _resolve_global_tray_id(slot_id: int, slot_to_tray: list | None, ams_trays: 
         mapped_tray = slot_to_tray[slot_id - 1]
         if mapped_tray >= 0:
             return mapped_tray
-        if mapped_tray == -1 and ams_trays:
-            # -1 means external spool. 254 = VIRTUAL_TRAY_DEPUTY_ID (main on
-            # single-nozzle, left/deputy on H2D dual-nozzle); 255 =
-            # VIRTUAL_TRAY_MAIN_ID. Prefer 254 when both exist since that's
-            # what single-nozzle printers report via tray_now.
-            for ext_id in (254, 255):
-                if ext_id in ams_trays:
-                    return ext_id
+        # A negative value is a slot the print does not feed: the captured
+        # mapping already names an external spool 254/255 (#3166), and the
+        # built-in tracker charges nothing for it either. No tray has this id,
+        # so the slot is skipped rather than guessed by position.
+        return -1
     # Position-based default: sort available tray IDs so external spools (254/255)
     # come after standard AMS trays, matching the slicer's slot assignment order.
     if ams_trays:
@@ -494,12 +490,16 @@ async def store_print_data(
         # Resolve the queue item once — used both for the plate-scoped 3MF parsing
         # fallback (#1697: multi-plate file dispatched for one plate must only count
         # that plate's filament) and for the ams_mapping fallback below.
+        # This printer's: a batch prints one archive as several queue items,
+        # on several printers at once.
         queue_result = await db.execute(
             select(PrintQueueItem)
             .where(PrintQueueItem.archive_id == archive_id)
+            .where(PrintQueueItem.printer_id == printer_id)
             .where(PrintQueueItem.status == "printing")
+            .order_by(PrintQueueItem.id.desc())
         )
-        queue_item = queue_result.scalar_one_or_none()
+        queue_item = queue_result.scalars().first()
         # Caller-supplied plate_id wins (direct-Print path); fall back to the queue
         # item's plate_id (queue dispatch path).
         effective_plate_id = (
@@ -592,8 +592,11 @@ async def cleanup_tracking(
     db,
     last_layer_num: int | None = None,
     last_progress: int | None = None,
-):
-    """Report partial usage and clean up Spoolman tracking data for failed/aborted prints."""
+) -> float | None:
+    """Report partial usage and clean up Spoolman tracking data for failed/aborted prints.
+
+    Returns what the charged spools' prices make the run cost, or None when
+    none of them carries a price (or nothing was tracked)."""
     from backend.app.models.active_print_spoolman import ActivePrintSpoolman
 
     # Get tracking data first (needed for partial usage reporting)
@@ -606,15 +609,18 @@ async def cleanup_tracking(
 
     if not tracking:
         logger.debug("[SPOOLMAN] No tracking data to clean up for printer=%s, archive=%s", printer_id, archive_id)
-        return
+        return None
 
-    # Try to report partial usage before cleanup
+    # Try to report partial usage before cleanup, pricing each charge as it
+    # is made: the run's own cost, as the built-in inventory logs it.
+    print_cost = _PrintCost()
     try:
         await _report_partial_usage(
             printer_id,
             tracking,
             last_layer_num=last_layer_num,
             last_progress=last_progress,
+            cost_out=print_cost,
         )
     except Exception as e:
         logger.warning("[SPOOLMAN] Partial usage report failed: %s", e)
@@ -627,6 +633,79 @@ async def cleanup_tracking(
     )
     await db.commit()
     logger.debug("[SPOOLMAN] Cleaned up tracking data for printer=%s, archive=%s", printer_id, archive_id)
+    # A charged spool without a price at the default rate, as the built-in
+    # inventory prices its own (usage_tracker's cost_per_kg fallback).
+    run_cost = print_cost.cost
+    if print_cost.unpriced_grams > 0:
+        from backend.app.services.print_cost_estimate import default_cost_per_kg
+
+        run_cost += print_cost.unpriced_grams / 1000.0 * await default_cost_per_kg(db)
+    return round(run_cost, 2) or None
+
+
+async def release_archived_slot_rows(printer_id: int) -> None:
+    """Unassign the printer's slots whose Spoolman spool is archived or gone.
+
+    Archiving a spool through Fenrir keeps the slot of a printer whose print
+    it may be feeding: usage is charged at completion by the slot's spool, and
+    only the slot row knows it for a spool without a tag. Run once that print's
+    usage is reported. Also catches spools archived or deleted in Spoolman.
+    Best-effort: a failure leaves the rows for the next print to try again.
+    """
+    from backend.app.api.routes.settings import get_setting
+    from backend.app.core.websocket import ws_manager
+    from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
+
+    try:
+        async with async_session() as db:
+            enabled = await get_setting(db, "spoolman_enabled")
+            if not enabled or enabled.lower() != "true":
+                return
+            rows = (
+                (
+                    await db.execute(
+                        select(SpoolmanSlotAssignment).where(SpoolmanSlotAssignment.printer_id == printer_id)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            if not rows:
+                return
+            client = await _get_spoolman_client_with_fallback()
+            if not client:
+                return
+            live = {
+                spool["id"]
+                for spool in await client.get_all_spools(allow_archived=True)
+                if spool.get("id") is not None and not spool.get("archived")
+            }
+            freed: list[tuple[int, int]] = []
+            for row in rows:
+                if row.spoolman_spool_id in live:
+                    continue
+                # Keyed on the spool too: the slot may have been given another
+                # spool since the rows were read.
+                result = cast(
+                    CursorResult,
+                    await db.execute(
+                        delete(SpoolmanSlotAssignment).where(
+                            SpoolmanSlotAssignment.id == row.id,
+                            SpoolmanSlotAssignment.spoolman_spool_id == row.spoolman_spool_id,
+                        )
+                    ),
+                )
+                if result.rowcount:
+                    freed.append((row.ams_id, row.tray_id))
+            if not freed:
+                return
+            await db.commit()
+        for ams_id, tray_id in freed:
+            await ws_manager.broadcast(
+                {"type": "spool_assignment_changed", "printer_id": printer_id, "ams_id": ams_id, "tray_id": tray_id}
+            )
+    except Exception as e:  # noqa: BLE001 — best-effort cleanup after completion
+        logger.warning("[SPOOLMAN] Could not release archived spools' slots on printer %s: %s", printer_id, e)
 
 
 async def _get_spoolman_client_with_fallback():
@@ -760,6 +839,7 @@ class _PrintCost:
 
     cost: float = 0.0
     priced_grams: float = 0.0
+    unpriced_grams: float = 0.0
     priced: int = 0
     unpriced: int = 0
 
@@ -770,6 +850,7 @@ class _PrintCost:
         rate = _spool_cost_per_gram(spool)
         if rate is None:
             self.unpriced += 1
+            self.unpriced_grams += grams
             logger.debug("[SPOOLMAN] %s: spool has no usable price, will fall back to the default rate", label)
             return
         self.cost += grams * rate
@@ -1062,6 +1143,7 @@ async def _report_partial_usage(
     tracking,
     last_layer_num: int | None = None,
     last_progress: int | None = None,
+    cost_out: _PrintCost | None = None,
 ):
     """Report partial filament usage based on actual G-code layer data.
 
@@ -1153,6 +1235,7 @@ async def _report_partial_usage(
             handled_global_tray_ids=set(),
             archive_id=getattr(tracking, "archive_id", -1),
             print_used_keys=_print_used_tray_keys(slot_to_tray, getattr(tracking, "tray_now_at_start", None), state),
+            cost_out=cost_out,
         )
         return
 
@@ -1171,6 +1254,45 @@ async def _report_partial_usage(
             "[SPOOLMAN] Partial usage: slot_to_tray=%s (source: %s)",
             slot_to_tray,
             _partial_mapping_source,
+        )
+
+    # A single-filament print that switched trays (AMS backup on a runout)
+    # charges each tray its share of the partial grams, by layer up to where
+    # the print stopped, as the built-in inventory and the completion path do
+    # (#1793). The G-code split is not used here: its last segment runs to the
+    # end of the whole print. A multi-material print keeps the mapping.
+    tray_changes = list(getattr(state, "tray_change_log", None) or []) if state else []
+
+    async def _charge(usage_items: list[tuple[int, float]], method_label: str) -> int:
+        used = [(slot_id, grams) for slot_id, grams in usage_items if grams > 0]
+        if len(used) == 1 and len(tray_changes) > 1:
+            # Never short of a logged switch: a stop layer estimated from
+            # progress could otherwise give a segment more than the total.
+            split_layers = max([current_layer] + [layer for _, layer in tray_changes])
+            updated, _ = await _report_spool_usage_split_by_tray_changes(
+                client,
+                [{"slot_id": used[0][0], "used_g": used[0][1]}],
+                tray_changes,
+                ams_trays,
+                None,
+                filament_properties,
+                split_layers,
+                split_layers,
+                f"{method_label} split",
+                printer_serial,
+                printer_id=printer_id,
+                cost_out=cost_out,
+            )
+            return updated
+        return await _report_spool_usage_for_slots(
+            client,
+            usage_items,
+            ams_trays,
+            slot_to_tray,
+            method_label,
+            printer_serial,
+            printer_id=printer_id,
+            cost_out=cost_out,
         )
 
     # Try to use accurate G-code parsed data
@@ -1211,15 +1333,7 @@ async def _report_partial_usage(
                 grams_used = round(mm_to_grams(mm_used, diameter, density), 2)
                 usage_items.append((slot_id, grams_used))
 
-            spools_updated = await _report_spool_usage_for_slots(
-                client,
-                usage_items,
-                ams_trays,
-                slot_to_tray,
-                "Partial (G-code)",
-                printer_serial,
-                printer_id=printer_id,
-            )
+            spools_updated = await _charge(usage_items, "Partial (G-code)")
             if spools_updated > 0:
                 logger.info("[SPOOLMAN] Reported partial usage to %s spool(s) using G-code data", spools_updated)
             return
@@ -1249,15 +1363,7 @@ async def _report_partial_usage(
             partial_used_g = round(total_used_g * progress_ratio, 2)
             usage_items.append((slot_id, partial_used_g))
 
-    spools_updated = await _report_spool_usage_for_slots(
-        client,
-        usage_items,
-        ams_trays,
-        slot_to_tray,
-        "Partial (linear)",
-        printer_serial,
-        printer_id=printer_id,
-    )
+    spools_updated = await _charge(usage_items, "Partial (linear)")
     if spools_updated > 0:
         logger.info("[SPOOLMAN] Reported partial usage to %s spool(s) using linear interpolation", spools_updated)
 
@@ -1320,7 +1426,12 @@ async def report_usage(printer_id: int, archive_id: int):
 
         client = await _get_spoolman_client_with_fallback()
         if not client:
-            logger.warning("[SPOOLMAN] Not reachable for usage reporting")
+            logger.warning(
+                "[SPOOLMAN] Not reachable for usage reporting (printer=%s, archive=%s): "
+                "this print's usage is not sent, correct the spools in Spoolman by hand",
+                printer_id,
+                archive_id,
+            )
             return
 
         # Consult the live printer state for the tray-change log written by

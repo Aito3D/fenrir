@@ -102,7 +102,7 @@ async def _wait_for_job(client: AsyncClient, job_id: int, timeout: float = 5.0) 
     if task is not None:
         try:
             await asyncio.wait_for(asyncio.shield(task), timeout=timeout)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             raise AssertionError(f"slice job {job_id} did not finish in {timeout}s") from None
         r = await client.get(f"/api/v1/slice-jobs/{job_id}")
         if r.status_code != 200:

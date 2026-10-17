@@ -1187,14 +1187,12 @@ class TestPrinterDataIntegrity:
         printer = await printer_factory(name="Test Printer")
 
         with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
-            mock_pm.get_current_print_user.return_value = {"user_id": 42, "username": "testuser"}
+            mock_pm.get_current_print_user.return_value = {"user_id": 42, "username": "testuser", "queue_item_id": 5}
 
             response = await async_client.get(f"/api/v1/printers/{printer.id}/current-print-user")
 
             assert response.status_code == 200
-            result = response.json()
-            assert result["user_id"] == 42
-            assert result["username"] == "testuser"
+            assert response.json() == {"user_id": 42, "username": "testuser"}
 
 
 class TestPrintControlAPI:
@@ -1231,17 +1229,23 @@ class TestPrintControlAPI:
         """Verify successful stop print request."""
         printer = await printer_factory(name="Printing Printer")
 
-        mock_client = MagicMock()
-        mock_client.stop_print.return_value = True
+        from backend.app.main import _user_stopped_printers
 
-        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
-            mock_pm.get_client.return_value = mock_client
+        _user_stopped_printers.discard(printer.id)
+        with (
+            patch("backend.app.api.routes.printers.printer_manager") as mock_pm,
+            patch("backend.app.services.print_control.printer_manager.stop_print", return_value=True) as send,
+        ):
+            mock_pm.get_client.return_value = MagicMock()
 
             response = await async_client.post(f"/api/v1/printers/{printer.id}/print/stop")
 
             assert response.status_code == 200
             assert response.json()["success"] is True
-            mock_client.stop_print.assert_called_once()
+            send.assert_called_once_with(printer.id)
+        # Stopped by the user, so the printer's "failed" ends the print as cancelled.
+        assert printer.id in _user_stopped_printers
+        _user_stopped_printers.discard(printer.id)
 
     # ========================================================================
     # Pause print endpoint
@@ -5363,7 +5367,12 @@ class TestPrinterControlAPIKeyPrinterScope:
         full_key = await self._make_scoped_key(db_session, printer_a.id, name=f"ctrl-allow-{route}")
         headers = {"X-API-Key": full_key}
 
-        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+        with (
+            patch("backend.app.api.routes.printers.printer_manager") as mock_pm,
+            # A user stop goes through print_control (upstream), which reads
+            # printer_manager itself; the route's mock cannot answer for it.
+            patch("backend.app.services.print_control.stop_print_by_user", return_value=True),
+        ):
             mock_pm.get_client.return_value = MagicMock()
             response = await getattr(async_client, method)(
                 f"/api/v1/printers/{printer_a.id}/{route}",
@@ -5455,3 +5464,57 @@ class TestPrinterControlAPIKeyPrinterScope:
             response = await async_client.post(f"/api/v1/printers/{printer.id}/print/pause")
 
         assert response.status_code == 200, response.text
+
+
+class TestHMSStopCountsAsUserStop:
+    """ "Stop Printing" in the HMS error dialog is a user stop like the Stop button.
+
+    It sends its own stop payload, but used to skip the stopped-by-user mark,
+    so the print ended as failed ("print failed" notification, and the cancel
+    sequence's own error read as a fault).
+    """
+
+    @staticmethod
+    async def _act(async_client, printer_id: int, action: str):
+        mock_client = MagicMock()
+        mock_client._last_message_time = 100.0
+
+        def _send(*_a, **_kw):
+            mock_client._last_message_time = 100.5
+            return True
+
+        mock_client.execute_hms_action.side_effect = _send
+        with (
+            patch("backend.app.api.routes.printers.printer_manager") as mock_pm,
+            patch("backend.app.api.routes.printers.HMS_ACTION_ACK_WAIT_SECONDS", 0.01),
+        ):
+            mock_pm.get_client.return_value = mock_client
+            return await async_client.post(
+                f"/api/v1/printers/{printer_id}/hms/execute-action",
+                json={"print_error": "0300800A", "action": action, "job_id": None},
+            )
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_stop_printing_marks_the_printer(self, async_client: AsyncClient, printer_factory):
+        from backend.app.main import _user_stopped_printers
+
+        printer = await printer_factory(name="HMS Printer")
+        _user_stopped_printers.discard(printer.id)
+        try:
+            response = await self._act(async_client, printer.id, "STOP_PRINTING")
+            assert response.status_code == 200, response.text
+            assert printer.id in _user_stopped_printers
+        finally:
+            _user_stopped_printers.discard(printer.id)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_other_hms_actions_do_not_mark(self, async_client: AsyncClient, printer_factory):
+        from backend.app.main import _user_stopped_printers
+
+        printer = await printer_factory(name="HMS Printer 2")
+        _user_stopped_printers.discard(printer.id)
+        response = await self._act(async_client, printer.id, "RESUME_PRINTING")
+        assert response.status_code == 200, response.text
+        assert printer.id not in _user_stopped_printers

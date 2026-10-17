@@ -6,6 +6,7 @@ import json
 import logging
 import re
 import smtplib
+from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
@@ -17,6 +18,7 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.core.logging_filters import redact_refused_headers
 from backend.app.models.archive import PrintArchive
 from backend.app.models.notification import (
     NotificationDigestQueue,
@@ -362,6 +364,18 @@ class NotificationService:
         attach_photo mirrors the provider's own toggle (see _send_to_provider)
         — when set, a bundled sample image stands in for a real snapshot.
         """
+        success, message = await self._send_test_notification(provider_type, config, db, attach_photo)
+        # The text goes back to the caller: an HTTP client refusing a header
+        # quotes its value, which may be a credential the caller never sees.
+        return success, redact_refused_headers(message) or message
+
+    async def _send_test_notification(
+        self,
+        provider_type: str,
+        config: dict[str, Any],
+        db: AsyncSession | None,
+        attach_photo: bool,
+    ) -> tuple[bool, str]:
         if db:
             title, message = await self._build_message_from_template(db, "test", {})
         else:
@@ -1547,7 +1561,8 @@ class NotificationService:
             if success:
                 provider.last_success = datetime.now(timezone.utc)
             else:
-                provider.last_error = error
+                # Read by every notification reader: no refused header's value.
+                provider.last_error = redact_refused_headers(error)
                 provider.last_error_at = datetime.now(timezone.utc)
             await db.commit()
 
@@ -1605,7 +1620,7 @@ class NotificationService:
                 title=title,
                 message=message,
                 success=success,
-                error_message=error_message,
+                error_message=redact_refused_headers(error_message),
                 printer_id=printer_id,
                 printer_name=printer_name,
             )
@@ -1624,7 +1639,6 @@ class NotificationService:
         event_type: str = "unknown",
         printer_id: int | None = None,
         printer_name: str | None = None,
-        force_immediate: bool = False,
         image_data: bytes | None = None,
         variables: dict | None = None,
     ):
@@ -1699,6 +1713,7 @@ class NotificationService:
         title: str,
         message: str,
         url: str | None = None,
+        allowed: Callable[[NotificationProvider], bool] | None = None,
     ) -> int:
         """A message another application sends through Fenrir.
 
@@ -1706,9 +1721,12 @@ class NotificationService:
         through the same path as Fenrir's own events: quiet hours, the daily
         digest and the log (whose event type names the sender). The text is
         the app's own; a link, when given, is appended so every channel type
-        carries it. Returns how many channels it was handed to.
+        carries it. Returns how many channels it was handed to. ``allowed``
+        narrows the channels to those the sender may reach.
         """
         providers = await self._get_providers_for_event(db, "on_app_message")
+        if allowed is not None:
+            providers = [provider for provider in providers if allowed(provider)]
         if not providers:
             return 0
         body = f"{message}\n{url}" if url else message
@@ -2041,7 +2059,6 @@ class NotificationService:
             "print_missing_spool_assignment",
             printer_id,
             printer_name,
-            force_immediate=True,
             variables=variables,
         )
 
@@ -2074,7 +2091,6 @@ class NotificationService:
             "billing_charge_failed",
             printer_id,
             printer_name,
-            force_immediate=True,
             variables=variables,
         )
 
@@ -2122,7 +2138,7 @@ class NotificationService:
 
     async def on_printer_error(
         self,
-        printer_id: int,
+        printer_id: int | None,
         printer_name: str,
         error_type: str,
         db: AsyncSession,
@@ -2219,7 +2235,6 @@ class NotificationService:
             "plate_not_empty",
             printer_id,
             printer_name,
-            force_immediate=True,
             image_data=image_data,
             variables=variables,
         )
@@ -2326,7 +2341,7 @@ class NotificationService:
         threshold: float,
         db: AsyncSession,
     ):
-        """Handle AMS high humidity alarm event. Always sends immediately (bypasses digest)."""
+        """Handle AMS high humidity alarm event. Sent immediately, and also in the daily digest if enabled."""
         providers = await self._get_providers_for_event(db, "on_ams_humidity_high", printer_id)
         if not providers:
             return
@@ -2339,7 +2354,6 @@ class NotificationService:
         }
 
         title, message = await self._build_message_from_template(db, "ams_humidity_high", variables)
-        # Alarms always send immediately, bypassing digest mode
         await self._send_to_providers(
             providers,
             title,
@@ -2348,7 +2362,6 @@ class NotificationService:
             "ams_humidity_high",
             printer_id,
             printer_name,
-            force_immediate=True,
             variables=variables,
         )
 
@@ -2361,7 +2374,7 @@ class NotificationService:
         threshold: float,
         db: AsyncSession,
     ):
-        """Handle AMS high temperature alarm event. Always sends immediately (bypasses digest)."""
+        """Handle AMS high temperature alarm event. Sent immediately, and also in the daily digest if enabled."""
         providers = await self._get_providers_for_event(db, "on_ams_temperature_high", printer_id)
         if not providers:
             return
@@ -2374,7 +2387,6 @@ class NotificationService:
         }
 
         title, message = await self._build_message_from_template(db, "ams_temperature_high", variables)
-        # Alarms always send immediately, bypassing digest mode
         await self._send_to_providers(
             providers,
             title,
@@ -2383,7 +2395,6 @@ class NotificationService:
             "ams_temperature_high",
             printer_id,
             printer_name,
-            force_immediate=True,
             variables=variables,
         )
 
@@ -2399,7 +2410,8 @@ class NotificationService:
     ):
         """Handle automatic drying giving up on one AMS unit (#2770).
 
-        Sent immediately rather than folded into a digest: it reports that
+        Worth sending immediately (as every notification is; a daily digest only
+        repeats it): it reports that
         Fenrir has STOPPED doing something, and a report of inaction that
         arrives with tomorrow's summary has already cost the user a day.
         """
@@ -2424,7 +2436,6 @@ class NotificationService:
             "ams_drying_suspended",
             printer_id,
             printer_name,
-            force_immediate=True,
             variables=variables,
         )
 
@@ -2437,7 +2448,7 @@ class NotificationService:
         threshold: float,
         db: AsyncSession,
     ):
-        """Handle AMS-HT high humidity alarm event. Always sends immediately (bypasses digest)."""
+        """Handle AMS-HT high humidity alarm event. Sent immediately, and also in the daily digest if enabled."""
         providers = await self._get_providers_for_event(db, "on_ams_ht_humidity_high", printer_id)
         if not providers:
             return
@@ -2451,7 +2462,6 @@ class NotificationService:
 
         # Use the same template as regular AMS (can create separate templates later if needed)
         title, message = await self._build_message_from_template(db, "ams_humidity_high", variables)
-        # Alarms always send immediately, bypassing digest mode
         await self._send_to_providers(
             providers,
             title,
@@ -2460,7 +2470,6 @@ class NotificationService:
             "ams_ht_humidity_high",
             printer_id,
             printer_name,
-            force_immediate=True,
             variables=variables,
         )
 
@@ -2473,7 +2482,7 @@ class NotificationService:
         threshold: float,
         db: AsyncSession,
     ):
-        """Handle AMS-HT high temperature alarm event. Always sends immediately (bypasses digest)."""
+        """Handle AMS-HT high temperature alarm event. Sent immediately, and also in the daily digest if enabled."""
         providers = await self._get_providers_for_event(db, "on_ams_ht_temperature_high", printer_id)
         if not providers:
             return
@@ -2487,7 +2496,6 @@ class NotificationService:
 
         # Use the same template as regular AMS (can create separate templates later if needed)
         title, message = await self._build_message_from_template(db, "ams_temperature_high", variables)
-        # Alarms always send immediately, bypassing digest mode
         await self._send_to_providers(
             providers,
             title,
@@ -2496,7 +2504,6 @@ class NotificationService:
             "ams_ht_temperature_high",
             printer_id,
             printer_name,
-            force_immediate=True,
             variables=variables,
         )
 
@@ -2536,7 +2543,8 @@ class NotificationService:
     ):
         """A Home Assistant sensor bound to a printer entered its alert state (#1148).
 
-        Sent immediately rather than folded into a digest: the case this exists
+        Worth sending immediately (as every notification is; a daily digest only
+        repeats it): the case this exists
         for is an enclosure door left open, which is only worth telling someone
         about while they can still act on it.
         """
@@ -2559,7 +2567,6 @@ class NotificationService:
             "ha_sensor_alert",
             printer_id,
             printer_name,
-            force_immediate=True,
             variables=variables,
         )
 
@@ -2572,7 +2579,7 @@ class NotificationService:
     ):
         """A Home Assistant sensor bound to a storage location entered its alert state (#2824).
 
-        Sent immediately rather than folded into a digest, for the same reason
+        Worth sending immediately, for the same reason
         as on_ha_sensor_alert above: this is the "drybox went stale" case, only
         worth acting on while the humidity/temperature is still climbing.
         """
@@ -2597,7 +2604,6 @@ class NotificationService:
             message,
             db,
             "location_ha_sensor_alert",
-            force_immediate=True,
             variables=variables,
         )
 
