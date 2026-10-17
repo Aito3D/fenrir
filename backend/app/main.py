@@ -10905,6 +10905,15 @@ async def lifespan(app: FastAPI):
             logging.info("[SLICE] Resumed %d interrupted project revision slice(s)", resumed)
     except Exception as exc:
         logging.warning("[SLICE] Resuming interrupted project slices failed: %s", exc)
+    # Queue items still "slicing" on a revision that is not would wait forever.
+    try:
+        from backend.app.services.project_slice import recover_waiting_queue_items
+
+        recovered = await recover_waiting_queue_items()
+        if recovered:
+            logging.info("[SLICE] Recovered queue items waiting on %d project revision(s)", recovered)
+    except Exception as exc:
+        logging.warning("[SLICE] Recovering queue items waiting for a slice failed: %s", exc)
 
     # Register an app-scoped httpx client for Bambu Cloud services so
     # per-request BambuCloudService instances reuse the same connection pool

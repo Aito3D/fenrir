@@ -48,6 +48,8 @@ logger = logging.getLogger(__name__)
 NO_SLICER = "No slicer is configured in Settings"
 _SOURCE_MISSING = "The revision's source .3mf is missing"
 SLICE_ERROR_MAX_CHARS = 500
+NOT_THE_SOURCE = "This file is not the revision's source; upload it as its own item."
+NO_PROJECT_TO_SLICE = "This .3mf holds no Bambu Studio project to slice, so it cannot be printed."
 
 
 async def _source_file(db: AsyncSession, revision_id: int) -> LibraryFile | None:
@@ -71,6 +73,33 @@ async def _source_file(db: AsyncSession, revision_id: int) -> LibraryFile | None
         if path is not None and await asyncio.to_thread(classify_3mf, path) == "source":
             return row
     return None
+
+
+def is_unsliced_project_source(library_file: LibraryFile) -> bool:
+    """A project revision's own .3mf (not its hidden derived slice, not a .gcode.3mf)."""
+    return library_file.revision_id is not None and not library_file.derived_slice and library_file.file_type == "3mf"
+
+
+async def sliced_file_of(db: AsyncSession, library_file: LibraryFile) -> LibraryFile | None:
+    """The server slice of ``library_file`` (an unsliced project ``.3mf``) when its revision is
+    ``sliced`` and the row is still live, else None (not sliced yet).
+
+    The slice is made from the revision's source ``.3mf`` only; any other ``.3mf`` a legacy
+    revision holds has no slice and is refused (400), so it never prints another file's G-code."""
+    revision_id = library_file.revision_id
+    if revision_id is None:
+        return None
+    source = await _source_file(db, revision_id)
+    if source is None:
+        raise HTTPException(400, NO_PROJECT_TO_SLICE)
+    if source.id != library_file.id:
+        raise HTTPException(400, NOT_THE_SOURCE)
+    revision = await db.get(ProjectRevision, revision_id)
+    if revision is None or revision.slice_status != "sliced" or revision.sliced_file_id is None:
+        return None
+    return (
+        await db.execute(LibraryFile.active().where(LibraryFile.id == revision.sliced_file_id))
+    ).scalar_one_or_none()
 
 
 async def _claim(db: AsyncSession, revision_id: int, *, resume: bool) -> bool:
@@ -149,11 +178,38 @@ async def start_slice_after_upload(db: AsyncSession, revision_id: int, *, user_i
         return await start_revision_slice(db, revision_id, user_id=user_id)
     except Exception:
         logger.warning("Could not start the slice of project revision %s", revision_id, exc_info=True)
-        try:
-            await db.rollback()
-        except Exception:
-            logger.warning("Rollback after the failed slice start of revision %s failed", revision_id, exc_info=True)
+        await _rollback_quietly(db, f"the failed slice start of revision {revision_id}")
         return None
+
+
+async def _rollback_quietly(db: AsyncSession, what: str) -> None:
+    try:
+        await db.rollback()
+    except Exception:
+        logger.warning("Rollback after %s failed", what, exc_info=True)
+
+
+async def settle_waiting_queue_items_quietly(db: AsyncSession, revision_id: int) -> None:
+    """``settle_waiting_queue_items`` for a caller whose own work is already committed; never raises.
+    An item it could not settle stays ``slicing`` and ``recover_waiting_queue_items`` picks it up."""
+    try:
+        await settle_waiting_queue_items(db, revision_id)
+    except Exception:
+        logger.warning("Could not settle the queue items waiting on project revision %s", revision_id, exc_info=True)
+        await _rollback_quietly(db, f"the failed settle of revision {revision_id}")
+
+
+async def start_slice_for_waiting_items(db: AsyncSession, revision_id: int, *, user_id: int | None) -> None:
+    """Start (or join) the revision's slice for queue items already committed as ``slicing``, then
+    settle them against whatever the slice already did. Never raises: the items exist either way;
+    a failed start leaves them ``slice_failed`` with its reason, a failed settle leaves them for
+    the startup sweep."""
+    try:
+        await start_revision_slice(db, revision_id, user_id=user_id)
+    except Exception:
+        logger.warning("Could not start the slice of project revision %s for the queue", revision_id, exc_info=True)
+        await _rollback_quietly(db, f"the failed slice start of revision {revision_id}")
+    await settle_waiting_queue_items_quietly(db, revision_id)
 
 
 async def on_revision_slice_done(
@@ -300,8 +356,8 @@ async def _mark_failed(db: AsyncSession, revision_id: int, message: str) -> None
     try:
         await db.rollback()
         revision = await db.get(ProjectRevision, revision_id, populate_existing=True)
-        if revision is None:
-            return
+        if revision is None or revision.slice_status == "sliced":
+            return  # gone, or another slice already landed: its G-code stands
         revision.slice_status = "failed"
         revision.slice_error = message[:SLICE_ERROR_MAX_CHARS]
         await on_revision_slice_done(db, revision, None, revision.slice_error)
@@ -485,5 +541,82 @@ async def resume_interrupted_slices() -> int:
                     resumed += 1
             except Exception:
                 logger.exception("Could not resume the slice of project revision %s", revision_id)
-                await db.rollback()
+                await _rollback_quietly(db, f"the failed resume of revision {revision_id}")
     return resumed
+
+
+async def recover_waiting_queue_items() -> int:
+    """Startup, after ``resume_interrupted_slices``: queue items still ``slicing`` on a revision that is
+    not (a settle that failed after their commit, a crash between the two) would wait forever.
+    Each such revision's slice is started (or, already ``sliced``, just applied) and its items
+    settled. Returns how many revisions were recovered."""
+    async with database.async_session() as db:
+        rows = (
+            await db.execute(
+                select(ProjectRevision.id, ProjectRevision.created_by_id)
+                .join(LibraryFile, LibraryFile.revision_id == ProjectRevision.id)
+                .join(PrintQueueItem, PrintQueueItem.library_file_id == LibraryFile.id)
+                .where(
+                    PrintQueueItem.status == "slicing",
+                    or_(ProjectRevision.slice_status.is_(None), ProjectRevision.slice_status != "slicing"),
+                )
+                .distinct()
+                .order_by(ProjectRevision.id)
+            )
+        ).all()
+        await db.commit()
+        for revision_id, created_by_id in rows:
+            logger.info("Recovering queue items stranded in 'slicing' on project revision %s", revision_id)
+            await start_slice_for_waiting_items(db, revision_id, user_id=created_by_id)
+    return len(rows)
+
+
+async def hold_unsliced_dispatch(db: AsyncSession, item: PrintQueueItem, library_file: LibraryFile) -> bool:
+    """Dispatch-time guard: a printer never receives a project's unsliced ``.3mf``, whatever path
+    queued the item (rows queued before server slicing, batch clones, any future writer).
+
+    False: dispatch may go on, with the item repointed at the revision's G-code when it is the
+    source of a ``sliced`` revision. True: the item must not be sent; it now waits in
+    ``slicing`` with the slice started, or is ``slice_failed`` (not the revision's source).
+    Commits whatever it changed."""
+    if not is_unsliced_project_source(library_file):
+        return False
+    path = project_files.revision_file_path(library_file.file_path)
+    if path is None or await asyncio.to_thread(classify_3mf, path) != "source":
+        # Not a project by content: legacy G-code under a plain .3mf name prints as is, and a
+        # missing or unreadable file fails on the dispatch path's own checks.
+        return False
+    revision_id = library_file.revision_id
+    if revision_id is None:  # is_unsliced_project_source said otherwise; for the type checker
+        return False
+    try:
+        sliced_file = await sliced_file_of(db, library_file)
+    except HTTPException as exc:
+        await _set_waiting_status(db, item.id, "slice_failed", str(exc.detail))
+        logger.warning("Queue item %s held at dispatch: %s", item.id, exc.detail)
+        return True
+    if sliced_file is not None:
+        item.library_file_id = sliced_file.id
+        item.print_time_seconds = await asyncio.to_thread(library_file_print_time, sliced_file, item.plate_id)
+        await db.commit()
+        logger.info("Queue item %s dispatches the slice of project revision %s", item.id, revision_id)
+        return False
+    if await _set_waiting_status(db, item.id, "slicing", None):
+        logger.info("Queue item %s held at dispatch until project revision %s is sliced", item.id, revision_id)
+        await start_slice_for_waiting_items(db, revision_id, user_id=item.created_by_id)
+    return True
+
+
+async def _set_waiting_status(db: AsyncSession, item_id: int, status: str, error: str | None) -> bool:
+    """Move a still-``pending`` item to ``status`` (a cancel may have won meanwhile). Commits."""
+    moved = (
+        await db.execute(
+            update(PrintQueueItem)
+            .where(PrintQueueItem.id == item_id, PrintQueueItem.status == "pending")
+            .values(status=status, error_message=error)
+            .returning(PrintQueueItem.id)
+            .execution_options(synchronize_session="fetch")
+        )
+    ).first()
+    await db.commit()
+    return moved is not None

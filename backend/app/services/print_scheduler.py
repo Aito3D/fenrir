@@ -8370,6 +8370,17 @@ class PrintScheduler:
         except Exception:
             pass  # toast is best-effort
 
+    async def _hold_unsliced_project(self, db: AsyncSession, item: PrintQueueItem) -> bool:
+        """True when the item's library file is a project source .3mf with no G-code to run yet:
+        the item now waits (``slicing``, slice started) or failed (``slice_failed``), and must
+        not be sent. The dispatch claim is released by ``_dispatch_one`` as on every exit."""
+        library_file = await db.get(LibraryFile, item.library_file_id)
+        if library_file is None:
+            return False  # the not-found path below says why
+        from backend.app.services.project_slice import hold_unsliced_dispatch
+
+        return await hold_unsliced_dispatch(db, item, library_file)
+
     async def _start_print(self, db: AsyncSession, item: PrintQueueItem):
         """Upload file and start print for a queue item.
 
@@ -8378,6 +8389,12 @@ class PrintScheduler:
         - library_file_id: Print from a library file (file manager)
         """
         logger.info("Starting queue item %s", item.id)
+
+        # Fenrir: a printer never receives a project's unsliced source .3mf, however
+        # the item was queued (design 2026-10-17): it runs the revision's G-code, or
+        # waits in "slicing" for it. Before the budget step, which costs the file.
+        if item.library_file_id is not None and not item.archive_id and await self._hold_unsliced_project(db, item):
+            return
 
         # Also covers a reservation left active by a process interruption
         # during an earlier attempt. `_dispatch_one` releases this marker on

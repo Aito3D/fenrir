@@ -35,7 +35,6 @@ from backend.app.models.print_batch import PrintBatch, PrintBatchPlate
 from backend.app.models.print_queue import SLICE_WAIT_STATUSES, PrintQueueItem, PrintQueueVariant
 from backend.app.models.printer import Printer
 from backend.app.models.project import Project
-from backend.app.models.project_item import ProjectRevision
 from backend.app.models.user import User
 from backend.app.schemas.print_queue import (
     PrintBatchCreate,
@@ -869,46 +868,16 @@ def _project_slice():
 
 
 def _is_unsliced_project_source(library_file: LibraryFile) -> bool:
-    """A project revision's own .3mf (not its hidden derived slice, not a .gcode.3mf)."""
-    return library_file.revision_id is not None and not library_file.derived_slice and library_file.file_type == "3mf"
-
-
-NOT_THE_SOURCE = "This file is not the revision's source; upload it as its own item."
-NO_PROJECT_TO_SLICE = "This .3mf holds no Bambu Studio project to slice, so it cannot be printed."
+    return _project_slice().is_unsliced_project_source(library_file)
 
 
 async def _sliced_file_of(db: AsyncSession, library_file: LibraryFile) -> LibraryFile | None:
-    """The server slice of ``library_file`` (an unsliced project ``.3mf``) when its revision is
-    ``sliced`` and the row is still live, else None (not sliced yet).
-
-    The slice is made from the revision's source ``.3mf`` only; any other ``.3mf`` a legacy
-    revision holds has no slice and is refused (400), so it never prints another file's G-code."""
-    revision_id = library_file.revision_id
-    if revision_id is None:
-        return None
-    source = await _project_slice().source_file_of(db, revision_id)
-    if source is None:
-        raise HTTPException(400, NO_PROJECT_TO_SLICE)
-    if source.id != library_file.id:
-        raise HTTPException(400, NOT_THE_SOURCE)
-    revision = await db.get(ProjectRevision, revision_id)
-    if revision is None or revision.slice_status != "sliced" or revision.sliced_file_id is None:
-        return None
-    return (
-        await db.execute(LibraryFile.active().where(LibraryFile.id == revision.sliced_file_id))
-    ).scalar_one_or_none()
+    return await _project_slice().sliced_file_of(db, library_file)
 
 
 async def _start_slice_for_waiting_items(db: AsyncSession, revision_id: int, actor: User | ApiKeyActor | None) -> None:
-    """Start (or join) the revision's slice for items just committed as ``slicing``, then settle
-    them against whatever the slice already did. Never raises: the items exist either way, and a
-    failed start leaves them ``slice_failed`` with its reason."""
-    try:
-        await _project_slice().start_revision_slice(db, revision_id, user_id=actor.id if actor else None)
-    except Exception:
-        logger.warning("Could not start the slice of project revision %s for the queue", revision_id, exc_info=True)
-        await db.rollback()
-    await _project_slice().settle_waiting_queue_items(db, revision_id)
+    """``project_slice.start_slice_for_waiting_items``: never raises, the items are committed."""
+    await _project_slice().start_slice_for_waiting_items(db, revision_id, user_id=actor.id if actor else None)
 
 
 @router.post("/", response_model=PrintQueueItemResponse)
@@ -1878,7 +1847,7 @@ async def dispatch_batch(
             .all()
         )
         for revision_id in {r for r in revision_ids if r is not None}:
-            await _project_slice().settle_waiting_queue_items(db, revision_id)
+            await _project_slice().settle_waiting_queue_items_quietly(db, revision_id)
     await db.refresh(batch)
 
     logger.info("Batch %s dispatched %d item(s)", batch.id, len(created))
@@ -2668,7 +2637,7 @@ async def retry_queue_item_slice(
     revision_id = queued_file.revision_id
     source = await _project_slice().source_file_of(db, revision_id)
     if source is None or source.id != queued_file.id:
-        raise HTTPException(400, NOT_THE_SOURCE)
+        raise HTTPException(400, _project_slice().NOT_THE_SOURCE)
 
     await db.execute(
         update(PrintQueueItem)
