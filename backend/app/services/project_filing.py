@@ -273,7 +273,19 @@ async def move_library_files_to_project(
         _unlink_old_bytes([c.src for c in stored.candidates if not c.is_external])
         for candidate, source in zip(stored.candidates, stored.sources, strict=True):
             _add_result_entry(result, candidate, source, section, stored)
+    await _slice_new_revisions(db, list(result.revisions()), user_id)
     return result
+
+
+async def _slice_new_revisions(db: AsyncSession, revision_ids: list[int], user_id: int | None) -> None:
+    """Start the server slice of each new revision holding a source ``.3mf``, as an upload does
+    (design 2026-10-17); a revision with none (e.g. a legacy ``.gcode.3mf``) is left alone.
+    Never fails the filing, which is committed: a failed start is logged and rolled back,
+    expiring the session's instances, so callers read only plain values afterwards."""
+    from backend.app.services import project_slice  # late: project_slice imports project_files
+
+    for revision_id in revision_ids:
+        await project_slice.start_slice_after_upload(db, revision_id, user_id=user_id)
 
 
 _Groups = dict[tuple[str, str], tuple[str, list[_Candidate]]]
@@ -668,6 +680,8 @@ async def _auto_file_by_code(
             revision_number=revision.number,
             file_id=source.row.id,
         )
+        # (the library_file branch above slices inside move_library_files_to_project)
+        await _slice_new_revisions(db, [outcome.revision_id], user_id)
     logger.info("Auto-filed %r into %s > %s R%d", filename, code, outcome.item_name, outcome.revision_number)
     await _record_auto_filed(db, outcome, section, user_id)
     return outcome

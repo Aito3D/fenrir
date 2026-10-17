@@ -285,3 +285,86 @@ async def test_mark_failed_leaves_a_sliced_revision_alone(async_client: AsyncCli
 
     after = await _revision(db_session, rev["id"])
     assert (after.slice_status, after.slice_error, after.sliced_file_id) == ("sliced", None, sliced_id)
+
+
+# --- files filed into a project by move / import / auto-filing --------------------------------
+
+
+@pytest.fixture
+def real_slice_start(monkeypatch):
+    """conftest turns the upload-triggered slice off; these tests need it."""
+    from backend.tests.integration.test_project_slice import _real_start_after_upload
+
+    monkeypatch.setattr(project_slice, "start_slice_after_upload", _real_start_after_upload)
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_importing_a_source_3mf_starts_its_slice_and_a_gcode_3mf_stays_as_is(
+    async_client: AsyncClient, db_session, sidecar, real_slice_start
+):
+    from backend.tests.integration.test_project_slice import _sliced_3mf
+    from backend.tests.project_fixtures import api_project, make_managed_library_file, threemf_bytes
+
+    project = await api_project(async_client)
+    source = await make_managed_library_file(db_session, "Bracket.3mf", threemf_bytes())
+    legacy = await make_managed_library_file(db_session, "Clip.gcode.3mf", _sliced_3mf())
+    file_ids = [source.id, legacy.id]
+
+    response = await async_client.post(
+        f"/api/v1/projects/{project['id']}/import-library-files", json={"file_ids": file_ids}
+    )
+    assert response.status_code == 200, response.text
+    by_file = {m["file_id"]: m["revision_id"] for m in response.json()["moved"]}
+    assert set(by_file) == set(file_ids)
+
+    sliced_rev = await _revision(db_session, by_file[file_ids[0]])
+    assert sliced_rev.slice_status == "slicing"
+    await _wait_job(sliced_rev.slice_job_id)
+    assert (await _revision(db_session, by_file[file_ids[0]])).slice_status == "sliced"
+    assert (await _revision(db_session, by_file[file_ids[1]])).slice_status is None  # legacy G-code: allowed, unsliced
+    assert len(sidecar.slice_requests) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_a_failing_slice_start_never_fails_the_import(
+    async_client: AsyncClient, db_session, sidecar, real_slice_start, monkeypatch
+):
+    from backend.tests.project_fixtures import api_project, make_managed_library_file, threemf_bytes
+
+    project = await api_project(async_client)
+    source = await make_managed_library_file(db_session, "Bracket.3mf", threemf_bytes())
+    source_id = source.id
+
+    async def start_fails(*_args, **_kwargs):
+        raise RuntimeError("enqueue refused")
+
+    monkeypatch.setattr(project_slice, "start_revision_slice", start_fails)
+    response = await async_client.post(
+        f"/api/v1/projects/{project['id']}/import-library-files", json={"file_ids": [source_id]}
+    )
+    assert response.status_code == 200, response.text
+    assert [m["file_id"] for m in response.json()["moved"]] == [source_id]
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_auto_filing_a_received_source_3mf_starts_its_slice(
+    async_client: AsyncClient, db_session, sidecar, real_slice_start, tmp_path
+):
+    from backend.app.services.project_filing import auto_file_by_code
+    from backend.tests.project_fixtures import api_project, threemf_bytes
+
+    project = await api_project(async_client)
+    received = tmp_path / "received.3mf"
+    received.write_bytes(threemf_bytes())
+
+    result = await auto_file_by_code(
+        db_session, filename=f"{project['code']}_Bracket.3mf", path=received, library_file=None, user_id=None
+    )
+    assert result is not None
+    revision = await _revision(db_session, result.revision_id)
+    assert revision.slice_status == "slicing"
+    await _wait_job(revision.slice_job_id)
+    assert (await _revision(db_session, result.revision_id)).slice_status == "sliced"
