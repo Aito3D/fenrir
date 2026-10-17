@@ -119,7 +119,7 @@ export function SectionBlock({ section, items, actions }: Props) {
           {(items.length > 0 || canUpdate) && (
             // Dense flow: the full-width tray sits right after its card in the DOM, and the cards
             // after it fill the rest of that card's row, so the tray opens under the row.
-            <ul className="grid grid-flow-row-dense grid-cols-1 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+            <ul className="grid grid-flow-row-dense grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
               {items.map((item) => (
                 <ItemCard key={item.id} item={item} actions={actions} open={openId === item.id}
                   onToggleDetails={() => setOpenId((id) => (id === item.id ? null : item.id))} />

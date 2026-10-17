@@ -125,8 +125,13 @@ describe('ItemCard', () => {
     for (const name of ['Print', 'Open in slicer', 'Preview', 'Download', 'More actions']) {
       const button = within(card()).getByRole('button', { name });
       expect(button).toHaveAttribute('title', name);
-      expect(button.className).toContain('min-w-[44px]'); // never below a touch target, at any width
+      // 44px touch targets below md, the panel's 32px-class icon buttons from md up.
+      for (const cls of ['h-[44px]', 'min-w-[44px]', 'md:h-8', 'md:min-w-8']) expect(button.className.split(' ')).toContain(cls);
     }
+    // One row: the five buttons never wrap.
+    const row = within(card()).getByRole('button', { name: 'Print' }).parentElement!;
+    expect(row.className.split(' ')).toContain('flex-nowrap');
+    expect(row.className).not.toContain('flex-wrap ');
     expect(screen.queryByRole('button', { name: /Re-slice/ })).not.toBeInTheDocument();
   });
 

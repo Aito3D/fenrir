@@ -278,7 +278,7 @@ describe('ProjectFilesPanel', () => {
     await openTray(20);
     const grid = cardOf(20).parentElement!;
     // One full-width card per row on a phone (44px action buttons), at most 5 per row.
-    expect(grid.className.split(' ').filter((c) => c.includes('grid-cols-'))).toEqual(['grid-cols-1', 'sm:grid-cols-3', 'lg:grid-cols-4', 'xl:grid-cols-5']);
+    expect(grid.className.split(' ').filter((c) => c.includes('grid-cols-'))).toEqual(['grid-cols-1', 'sm:grid-cols-2', 'lg:grid-cols-3', 'xl:grid-cols-4', '2xl:grid-cols-5']);
     expect(grid.className).toContain('grid-flow-row-dense');
     expect(cardOf(20).nextElementSibling).toBe(screen.getByTestId('item-tray-20'));
     await openTray(30); // one tray at a time
