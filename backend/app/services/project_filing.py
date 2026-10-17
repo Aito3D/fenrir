@@ -795,7 +795,7 @@ async def _already_copied(db: AsyncSession, project_id: int, files: list[Library
             await db.execute(
                 select(LibraryFile.file_hash, LibraryFile.filename).where(
                     LibraryFile.project_id == project_id,
-                    LibraryFile.revision_id.is_not(None),
+                    LibraryFile.revision_sources(),
                     LibraryFile.deleted_at.is_(None),
                     LibraryFile.file_hash.is_not(None),
                 )

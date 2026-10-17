@@ -644,3 +644,27 @@ async def test_create_item_racing_a_same_name_create_is_409_not_500(async_client
     )
     tree = (await async_client.get(f"/api/v1/projects/{project['id']}/tree")).json()
     assert [i["name"] for s in tree["sections"] for i in s["items"]] == ["Support"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_revision_download_zip_excludes_derived(async_client: AsyncClient, db_session):
+    rev = await _revision_with_files(async_client, ("a.gcode", b"geo"))
+    source = (await db_session.execute(select(LibraryFile).where(LibraryFile.revision_id == rev["id"]))).scalar_one()
+    derived_path = to_absolute_path(source.file_path).with_name("hidden.gcode.3mf")
+    derived_path.write_bytes(b"sliced")
+    db_session.add(
+        LibraryFile(
+            filename="hidden.gcode.3mf",
+            file_path=source.file_path.replace(source.filename, "hidden.gcode.3mf"),
+            file_type="3mf",
+            file_size=6,
+            project_id=source.project_id,
+            revision_id=rev["id"],
+            derived_slice=True,
+        )
+    )
+    await db_session.commit()
+    zipped = await async_client.get(f"/api/v1/projects/revisions/{rev['id']}/download")
+    assert zipped.status_code == 200
+    assert zipfile.ZipFile(io.BytesIO(zipped.content)).namelist() == ["a.gcode"]

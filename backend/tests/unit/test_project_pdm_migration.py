@@ -1,5 +1,7 @@
 """Startup data migration for projects as a PDM (spec §7 step 1)."""
 
+import re
+
 import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -127,6 +129,26 @@ async def test_revision_pipeline_columns_are_added(tmp_path):
         await run_migrations(conn)  # idempotent
         cols = {row[1] for row in (await conn.execute(text("PRAGMA table_info(project_revisions)"))).all()}
     assert {"pipeline_id", "pipeline_name"} <= cols
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_revision_slice_columns_are_added(tmp_path):
+    engine = await _engine(tmp_path)
+    async with engine.begin() as conn:
+        # SQLite cannot drop a column that carries a FK: rebuild the table as it was before.
+        ddl = (await conn.execute(text("SELECT sql FROM sqlite_master WHERE name = 'project_revisions'"))).scalar_one()
+        ddl = re.sub(r"\n\s+(slice_status|slice_error|slice_job_id|sliced_file_id) [^\n]*,", "", ddl)
+        ddl = re.sub(r"\n\s+CONSTRAINT fk_project_revisions_sliced_file [^\n]*,", "", ddl)
+        await conn.execute(text("DROP TABLE project_revisions"))
+        await conn.execute(text(ddl))
+        await conn.execute(text("ALTER TABLE library_files DROP COLUMN derived_slice"))
+        await run_migrations(conn)
+        await run_migrations(conn)  # idempotent
+        cols = {row[1] for row in (await conn.execute(text("PRAGMA table_info(project_revisions)"))).all()}
+        lib_cols = {row[1] for row in (await conn.execute(text("PRAGMA table_info(library_files)"))).all()}
+    assert {"slice_status", "slice_error", "slice_job_id", "sliced_file_id"} <= cols
+    assert "derived_slice" in lib_cols
     await engine.dispose()
 
 

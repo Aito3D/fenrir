@@ -457,7 +457,15 @@ async def download_revision(
     """One file (``?file_id=``) or every file of the revision as a zip."""
     with _file_errors():
         revision, item, project = await svc.get_revision_bundle(db, revision_id)
-    rows = (await db.execute(select(LibraryFile).where(LibraryFile.revision_id == revision.id))).scalars().all()
+    rows = (
+        (
+            await db.execute(
+                select(LibraryFile).where(LibraryFile.revision_id == revision.id, LibraryFile.derived_slice.is_(False))
+            )
+        )
+        .scalars()
+        .all()
+    )
     if file_id is not None:
         row = next((r for r in rows if r.id == file_id), None)
         path = svc.revision_file_path(row.file_path) if row else None

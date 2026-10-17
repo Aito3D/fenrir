@@ -84,7 +84,11 @@ async def prepare_reslice(db: AsyncSession, revision_id: int, body: ResliceBody,
     project_files.require_enabled_section(item.section)
     source = (
         await db.execute(
-            select(LibraryFile).where(LibraryFile.id == body.file_id, LibraryFile.revision_id == revision.id)
+            select(LibraryFile).where(
+                LibraryFile.id == body.file_id,
+                LibraryFile.revision_id == revision.id,
+                LibraryFile.derived_slice.is_(False),
+            )
         )
     ).scalar_one_or_none()
     if source is None:

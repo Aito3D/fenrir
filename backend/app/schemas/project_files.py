@@ -59,6 +59,10 @@ class ProjectRevisionOut(BaseModel):
     status_changed_at: datetime | None
     print_count: int = 0  # printed quantity from this revision's archives (phase 4)
     pipeline_name: str | None = None  # set by Re-trancher (phase 6)
+    slice_status: str | None = None  # None | slicing | sliced | failed
+    slice_error: str | None = None
+    slice_job_id: int | None = None
+    sliced_file: ProjectFileOut | None = None  # the hidden derived .gcode.3mf, never in ``files``
 
 
 class ProjectItemOut(BaseModel):

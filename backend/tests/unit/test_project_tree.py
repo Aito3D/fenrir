@@ -178,6 +178,10 @@ def _rev_out(rev, **overrides):
         "status_changed_at": None,
         "print_count": 0,
         "pipeline_name": None,
+        "slice_status": None,
+        "slice_error": None,
+        "slice_job_id": None,
+        "sliced_file": None,
     }
     out.update(overrides)
     return out
@@ -403,3 +407,44 @@ async def test_route_item_and_revision_out_404_when_the_id_is_not_in_the_tree(mo
     with pytest.raises(HTTPException) as exc:
         await routes._revision_out(None, None, 11)
     assert (exc.value.status_code, exc.value.detail) == (404, "Revision not found")
+
+
+@pytest.mark.asyncio
+async def test_tree_hides_derived_slice_and_exposes_it(db_session):
+    project = Project(name="Tranche")
+    db_session.add(project)
+    await db_session.flush()
+    item = ProjectItem(project_id=project.id, section="impression", name="Pièce", name_key="piece")
+    db_session.add(item)
+    await db_session.flush()
+    rev = ProjectRevision(item_id=item.id, number=1, status="wip")
+    db_session.add(rev)
+    await db_session.flush()
+
+    def lib(name, **extra):
+        row = LibraryFile(
+            filename=name,
+            file_path=f"projects/{name}",
+            file_type="3mf",
+            file_size=3,
+            project_id=project.id,
+            revision_id=rev.id,
+            **extra,
+        )
+        db_session.add(row)
+        return row
+
+    source = lib("piece.3mf")
+    derived = lib("piece.gcode.3mf", derived_slice=True)
+    await db_session.flush()
+    rev.slice_status = "sliced"
+    rev.sliced_file_id = derived.id
+    await db_session.commit()
+
+    out = find_revision(await load_tree(db_session, project), rev.id)
+    assert [f.id for f in out.files] == [source.id]
+    assert out.slice_status == "sliced"
+    assert out.sliced_file is not None and out.sliced_file.id == derived.id
+    assert out.slice_error is None and out.slice_job_id is None
+    # the derived row still counts for the "used" checks and is not a loose file
+    assert LibraryFile.revision_sources() is not None

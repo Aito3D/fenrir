@@ -38,6 +38,9 @@ class ProjectItem(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
+SLICE_STATUSES = ("slicing", "sliced", "failed")
+
+
 class ProjectRevision(Base):
     """R{number} of an item: 1..n files (``library_files.revision_id``), a status,
     a note and an optional "dérivé de" link to any revision of the same project.
@@ -68,6 +71,16 @@ class ProjectRevision(Base):
     # adds none, and fresh and migrated databases must match.
     pipeline_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     pipeline_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # Server-side slicing: None | "slicing" | "sliced" | "failed" (SLICE_STATUSES). The
+    # sliced .gcode.3mf is a hidden library row (``derived_slice``) pointed at here;
+    # use_alter because library_files and project_revisions reference each other.
+    slice_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    slice_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    slice_job_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    sliced_file_id: Mapped[int | None] = mapped_column(
+        ForeignKey("library_files.id", ondelete="SET NULL", use_alter=True, name="fk_project_revisions_sliced_file"),
+        nullable=True,
+    )
     status_changed_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     status_changed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)

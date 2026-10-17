@@ -6811,6 +6811,16 @@ async def _run_migrations(conn):
     await _safe_execute(conn, "ALTER TABLE project_revisions ADD COLUMN pipeline_id INTEGER")
     await _safe_execute(conn, "ALTER TABLE project_revisions ADD COLUMN pipeline_name VARCHAR(200)")
 
+    # Projects, server-side slicing: slice state on a revision and the hidden derived file.
+    await _safe_execute(conn, "ALTER TABLE project_revisions ADD COLUMN slice_status VARCHAR(16)")
+    await _safe_execute(conn, "ALTER TABLE project_revisions ADD COLUMN slice_error TEXT")
+    await _safe_execute(conn, "ALTER TABLE project_revisions ADD COLUMN slice_job_id INTEGER")
+    await _safe_execute(
+        conn,
+        "ALTER TABLE project_revisions ADD COLUMN sliced_file_id INTEGER REFERENCES library_files (id) ON DELETE SET NULL",
+    )
+    await _safe_execute(conn, "ALTER TABLE library_files ADD COLUMN derived_slice BOOLEAN NOT NULL DEFAULT 0")
+
     # Migration: printer-scoped groups (#1727). Defaults off, so no existing
     # group narrows anyone's printers on upgrade; the group_printers table
     # itself comes from create_all(). The backfill covers a table create_all()

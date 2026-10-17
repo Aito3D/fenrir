@@ -1104,7 +1104,13 @@ async def update_revision(
 
 async def _revision_files(db: AsyncSession, revision_id: int) -> list[LibraryFile]:
     return list(
-        (await db.execute(select(LibraryFile).where(LibraryFile.revision_id == revision_id).order_by(LibraryFile.id)))
+        (
+            await db.execute(
+                select(LibraryFile)
+                .where(LibraryFile.revision_id == revision_id, LibraryFile.derived_slice.is_(False))
+                .order_by(LibraryFile.id)
+            )
+        )
         .scalars()
         .all()
     )
@@ -1606,6 +1612,7 @@ class _TreeRows:
     revisions_by_id: dict[int, ProjectRevision]
     revisions_by_item: dict[int, list[ProjectRevision]]
     files_by_revision: dict[int, list[LibraryFile]]
+    derived_by_id: dict[int, LibraryFile]
     used: set[int]
     users: dict[int, str]
     print_counts: dict[int, int]
@@ -1650,8 +1657,12 @@ async def _load_tree_rows(db: AsyncSession, project: Project) -> _TreeRows:
         else []
     )
     files_by_revision: dict[int, list[LibraryFile]] = {}
+    derived_by_id: dict[int, LibraryFile] = {}
     for row in files:
-        files_by_revision.setdefault(row.revision_id, []).append(row)
+        if row.derived_slice:
+            derived_by_id[row.id] = row
+        else:
+            files_by_revision.setdefault(row.revision_id, []).append(row)
     used = (
         await used_file_ids(
             db, select(LibraryFile.id).where(LibraryFile.project_id == project.id, LibraryFile.revision_id.isnot(None))
@@ -1671,6 +1682,7 @@ async def _load_tree_rows(db: AsyncSession, project: Project) -> _TreeRows:
         revisions_by_id=revisions_by_id,
         revisions_by_item=revisions_by_item,
         files_by_revision=files_by_revision,
+        derived_by_id=derived_by_id,
         used=used,
         users=users,
         print_counts=print_counts,
@@ -1708,12 +1720,25 @@ def _outdated_by(
     return None
 
 
+def _file_out(f: LibraryFile) -> ProjectFileOut:
+    return ProjectFileOut(
+        id=f.id,
+        filename=f.filename,
+        file_type=f.file_type,
+        file_size=f.file_size,
+        file_hash=f.file_hash,
+        has_thumbnail=bool(f.thumbnail_path),
+        created_at=f.created_at,
+    )
+
+
 def _revision_out(
     rev: ProjectRevision, item: ProjectItem, rows: _TreeRows, newest_valide: dict[int, ProjectRevision]
 ) -> ProjectRevisionOut:
     source = rows.revisions_by_id.get(rev.derived_from_id) if rev.derived_from_id else None
     source_item = rows.items_by_id.get(source.item_id) if source else None
     rev_files = rows.files_by_revision.get(rev.id, [])
+    sliced = rows.derived_by_id.get(rev.sliced_file_id) if rev.sliced_file_id else None
     return ProjectRevisionOut(
         id=rev.id,
         number=rev.number,
@@ -1727,18 +1752,11 @@ def _revision_out(
         slicer_version=rev.slicer_version,
         has_snapshot=rev.config_snapshot is not None,
         used=any(f.id in rows.used for f in rev_files),
-        files=[
-            ProjectFileOut(
-                id=f.id,
-                filename=f.filename,
-                file_type=f.file_type,
-                file_size=f.file_size,
-                file_hash=f.file_hash,
-                has_thumbnail=bool(f.thumbnail_path),
-                created_at=f.created_at,
-            )
-            for f in rev_files
-        ],
+        files=[_file_out(f) for f in rev_files],
+        slice_status=rev.slice_status,
+        slice_error=rev.slice_error,
+        slice_job_id=rev.slice_job_id,
+        sliced_file=_file_out(sliced) if sliced is not None else None,
         created_by=rows.users.get(rev.created_by_id),
         created_at=rev.created_at,
         status_changed_at=rev.status_changed_at,
