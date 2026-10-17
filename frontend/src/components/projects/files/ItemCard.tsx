@@ -73,7 +73,7 @@ const badgeCls = (fileType: string) =>
       ? 'bg-blue-500/90 text-white'
       : 'bg-bambu-gray/90 text-white';
 
-const actionBtn = `flex h-11 min-w-0 flex-1 items-center justify-center rounded-md text-bambu-gray hover:bg-bambu-dark-tertiary hover:text-white md:h-8 ${focusRingCls}`;
+const actionBtn = `flex h-11 min-w-[44px] flex-1 items-center justify-center rounded-md text-bambu-gray hover:bg-bambu-dark-tertiary hover:text-white md:h-8 ${focusRingCls}`;
 // 44px touch targets below md (the chip row wraps on a phone card), compact chips from md up.
 const chipBtn = `inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded border px-1.5 font-mono text-[11px] font-semibold md:min-h-0 md:min-w-0 md:py-0.5 ${focusRingCls}`;
 
@@ -293,7 +293,8 @@ export function ItemCard({ item, actions, open, onToggleDetails }: Props) {
           {busy && <p role="status" className="mt-1 text-bambu-green">{t('projectsPdm.files.uploading')}</p>}
         </div>
 
-        <div className="flex items-center gap-0.5 border-t border-bambu-dark-tertiary px-1.5 py-1">
+        {/* Wraps rather than shrink a button below 44px in a narrow card. */}
+        <div className="flex flex-wrap items-center gap-0.5 border-t border-bambu-dark-tertiary px-1.5 py-1">
           {canPrint && printFile &&
             icon(t('projectsPdm.print.print'), <Printer className="h-4 w-4" />, () => setPrinting(printFile), sliced ? 'text-bambu-green' : '')}
           {canHandoff && source &&

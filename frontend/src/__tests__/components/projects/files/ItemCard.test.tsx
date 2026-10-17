@@ -125,6 +125,7 @@ describe('ItemCard', () => {
     for (const name of ['Print', 'Open in slicer', 'Preview', 'Download', 'More actions']) {
       const button = within(card()).getByRole('button', { name });
       expect(button).toHaveAttribute('title', name);
+      expect(button.className).toContain('min-w-[44px]'); // never below a touch target, at any width
     }
     expect(screen.queryByRole('button', { name: /Re-slice/ })).not.toBeInTheDocument();
   });
