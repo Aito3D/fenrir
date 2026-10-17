@@ -14,7 +14,7 @@ from sqlalchemy import select
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
 from backend.app.models.library import LibraryFile
-from backend.app.models.project_item import ProjectItem
+from backend.app.models.project_item import ProjectItem, ProjectRevision
 from backend.tests.project_fixtures import api_project, projects_root_fixture, threemf_bytes
 
 root = projects_root_fixture(autouse=True)
@@ -163,6 +163,12 @@ async def _upload_files(client, item_id, *files):
     )
 
 
+async def _no_revision_rows(db):
+    return (await db.execute(select(ProjectRevision.id))).first() is None and (
+        await db.execute(select(LibraryFile.id))
+    ).first() is None
+
+
 async def _empty_tree_item(client):
     project = await _project(client)
     return project, await _impression_item(client, project["id"])
@@ -170,11 +176,12 @@ async def _empty_tree_item(client):
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-async def test_rejects_gcode_3mf_by_name(async_client: AsyncClient):
+async def test_rejects_gcode_3mf_by_name(async_client: AsyncClient, db_session):
     _p, item = await _empty_tree_item(async_client)
     response = await _upload_files(async_client, item["id"], ("part.gcode.3mf", threemf_bytes()))
     assert response.status_code == 400
     assert "Only Bambu Studio project files" in response.json()["detail"]
+    assert await _no_revision_rows(db_session)
 
 
 @pytest.mark.asyncio
@@ -197,7 +204,7 @@ async def test_rejects_sliced_content_named_3mf(async_client: AsyncClient, db_se
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-async def test_rejects_3mf_without_settings(async_client: AsyncClient, root):
+async def test_rejects_3mf_without_settings(async_client: AsyncClient, db_session, root):
     _p, item = await _empty_tree_item(async_client)
     before = _files_on_disk(root)
     bare = _zip_bytes({"3D/3dmodel.model": "<model/>"})
@@ -207,38 +214,42 @@ async def test_rejects_3mf_without_settings(async_client: AsyncClient, root):
         "bare.3mf has no printer setup. Open it in Bambu Studio, choose the printer, and save it as a project."
     )
     assert _files_on_disk(root) == before
+    assert await _no_revision_rows(db_session)
 
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-async def test_rejects_a_3mf_that_is_not_a_zip(async_client: AsyncClient, root):
+async def test_rejects_a_3mf_that_is_not_a_zip(async_client: AsyncClient, db_session, root):
     _p, item = await _empty_tree_item(async_client)
     before = _files_on_disk(root)
     response = await _upload_files(async_client, item["id"], ("junk.3mf", b"not a zip"))
     assert response.status_code == 400
     assert ONLY_SOURCE in response.json()["detail"]
     assert _files_on_disk(root) == before
+    assert await _no_revision_rows(db_session)
 
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-async def test_rejects_two_files(async_client: AsyncClient, root):
+async def test_rejects_two_files(async_client: AsyncClient, db_session, root):
     _p, item = await _empty_tree_item(async_client)
     before = _files_on_disk(root)
     response = await _upload_files(async_client, item["id"], ("a.3mf", threemf_bytes()), ("b.3mf", threemf_bytes()))
     assert response.status_code == 400
     assert response.json()["detail"] == ONE_FILE
     assert _files_on_disk(root) == before
+    assert await _no_revision_rows(db_session)
 
 
 @pytest.mark.asyncio
 @pytest.mark.integration
 @pytest.mark.parametrize("name", ["plate.gcode", "plate.bgcode"])
-async def test_rejects_gcode_and_bgcode(async_client: AsyncClient, name):
+async def test_rejects_gcode_and_bgcode(async_client: AsyncClient, db_session, name):
     _p, item = await _empty_tree_item(async_client)
     response = await _upload_files(async_client, item["id"], (name, b"G1"))
     assert response.status_code == 400
     assert ONLY_SOURCE in response.json()["detail"]
+    assert await _no_revision_rows(db_session)
 
 
 @pytest.mark.asyncio
@@ -263,3 +274,30 @@ async def test_accepts_single_source_3mf(async_client: AsyncClient):
     response = await _upload_files(async_client, item["id"], ("p.3mf", threemf_bytes()))
     assert response.status_code == 201, response.text
     assert len(response.json()["revision"]["files"]) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_drop_of_two_differently_named_3mf_makes_two_items(async_client: AsyncClient, db_session):
+    task, project = await _linked_task(async_client, db_session)
+    response = await _drop(async_client, task.id, "Support.3mf", "Bracket.3mf")
+    assert response.status_code == 201, response.text
+    assert len({r["item_id"] for r in response.json()["results"]}) == 2
+    tree = (await async_client.get(f"/api/v1/projects/{project['id']}/tree")).json()
+    items = next(s for s in tree["sections"] if s["section"] == "impression")["items"]
+    assert len(items) == 2
+    assert all(len(it["revisions"]) == 1 and len(it["revisions"][0]["files"]) == 1 for it in items)
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_drop_of_two_files_for_one_item_is_400_one_file(async_client: AsyncClient, db_session, root):
+    task, project = await _linked_task(async_client, db_session)
+    response = await _drop(async_client, task.id, "Support.3mf", "support.3mf")
+    assert response.status_code == 400
+    assert response.json()["detail"] == ONE_FILE
+    assert await _no_revision_rows(db_session)
+    assert _files_on_disk(root) == []
+    assert (
+        await db_session.execute(select(ProjectItem).where(ProjectItem.project_id == project["id"]))
+    ).first() is None

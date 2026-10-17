@@ -616,7 +616,7 @@ async def _drop_target(db: AsyncSession, task: AitoTask, uploads: list[UploadFil
     # Printing files only for now, always in Impression: a drop with any other
     # file is refused whole (400 naming them) before anything is written.
     try:
-        project_files.require_source_uploads(uploads)
+        project_files.require_source_names(uploads)
     except project_files.ProjectFilesError as exc:
         raise LinkError(exc.status_code, exc.detail) from exc
     return project
@@ -637,6 +637,9 @@ def _group_drop_uploads(uploads: list[UploadFile]) -> dict[tuple[str, str], tupl
             400,
             "Item name must not be blank; refused: " + ", ".join(project_files.upload_basename(u) for u in blank[1]),
         )
+    # One revision holds one .3mf: two files that map to the same item would need a two-file revision.
+    if any(len(group) > 1 for _name, group in groups.values()):
+        raise LinkError(400, project_files.ONE_FILE)
     return groups
 
 

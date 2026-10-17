@@ -21,16 +21,15 @@ from backend.app.services.project_files import add_revision, create_item
 from backend.app.services.project_filing import section_for_filename
 from backend.app.services.project_tags import project_tag_refs
 from backend.tests.project_fixtures import (
-    legacy_uploads_fixture,
     make_order,
     make_project,
     make_task,
     projects_root_fixture,
+    threemf_bytes,
     upload,
 )
 
 root = projects_root_fixture(autouse=True)
-legacy_uploads = legacy_uploads_fixture(autouse=True)
 _project = partial(make_project, name="Support")
 _order = make_order
 _task = make_task
@@ -44,7 +43,7 @@ async def _revision(db, project, item=None, *, section="impression", name="Suppo
         db,
         project,
         item,
-        [UploadFile(filename="p.3mf", file=io.BytesIO(b"x"))],
+        [UploadFile(filename="p.3mf", file=io.BytesIO(threemf_bytes()))],
         note=None,
         derived_from_id=None,
         user_id=None,
@@ -672,7 +671,7 @@ async def test_record_and_broadcast_with_an_unknown_actor_user_still_records_as_
 # --- file drops ------------------------------------------------------------
 
 
-_upload = partial(upload, data=b"x")
+_upload = partial(upload, data=threemf_bytes())
 
 
 @pytest.mark.parametrize(
@@ -722,7 +721,7 @@ def test_item_name_for_filename(name, expected):
 
 
 @pytest.mark.asyncio
-async def test_drop_files_routes_by_extension_and_existing_name(db_session):
+async def test_drop_files_routes_by_name_to_existing_or_new_items(db_session):
     project = await _project(db_session)
     order = await _order(db_session)
     task = await _task(db_session, order, linked_project_id=project.id)
@@ -730,28 +729,54 @@ async def test_drop_files_routes_by_extension_and_existing_name(db_session):
     await db_session.commit()
 
     response = await links.drop_files_on_task(
-        db_session,
-        task,
-        [_upload("plate.gcode.3mf"), _upload("Plate.gcode"), _upload("bracket.3mf"), _upload("bracket.bgcode")],
-        user_id=None,
-        actor="Paul",
+        db_session, task, [_upload("Plate.3mf"), _upload("bracket.3mf")], user_id=None, actor="Paul"
     )
 
-    # every drop lands in Impression (projects hold printing files only for now)
+    # every drop lands in Impression, one source .3mf per revision
     assert {r.section for r in response.results} == {"impression"}
     by_name = {r.filename: r for r in response.results}
-    assert by_name["plate.gcode.3mf"].item_id == item.id
-    assert by_name["plate.gcode.3mf"].revision_number == 2
-    # two files of the same item name in one drop share ONE revision
-    assert by_name["Plate.gcode"].item_id == item.id and by_name["Plate.gcode"].revision_number == 2
-    assert by_name["bracket.3mf"].item_id == by_name["bracket.bgcode"].item_id != item.id
+    assert by_name["Plate.3mf"].item_id == item.id and by_name["Plate.3mf"].revision_number == 2
+    assert by_name["bracket.3mf"].item_id != item.id
     assert by_name["bracket.3mf"].revision_number == 1
 
     events = await _events(db_session, "project.files_dropped")
     assert len(events) == 1
     assert events[0].project_id == order.id
     assert events[0].detail["project_id"] == project.id
-    assert len(events[0].detail["results"]) == 4
+    assert len(events[0].detail["results"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_drop_of_two_files_for_one_item_is_refused_whole(db_session):
+    project = await _project(db_session)
+    order = await _order(db_session)
+    task = await _task(db_session, order, linked_project_id=project.id)
+    await db_session.commit()
+
+    with pytest.raises(links.LinkError) as err:
+        await links.drop_files_on_task(
+            db_session, task, [_upload("a.3mf"), _upload("A.3mf"), _upload("b.3mf")], user_id=None, actor="Paul"
+        )
+
+    assert (err.value.status_code, err.value.detail) == (
+        400,
+        "A revision holds one .3mf. Upload each part as its own item.",
+    )
+    assert await _events(db_session, "project.files_dropped") == []
+    assert (await db_session.execute(select(ProjectItem))).first() is None
+
+
+@pytest.mark.asyncio
+async def test_drop_refuses_a_sliced_file_name(db_session):
+    project = await _project(db_session)
+    order = await _order(db_session)
+    task = await _task(db_session, order, linked_project_id=project.id)
+    await db_session.commit()
+
+    with pytest.raises(links.LinkError) as err:
+        await links.drop_files_on_task(db_session, task, [_upload("a.gcode.3mf")], user_id=None, actor=None)
+
+    assert err.value.status_code == 400 and err.value.detail.startswith("Only Bambu Studio project files")
 
 
 @pytest.mark.asyncio

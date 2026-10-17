@@ -103,6 +103,8 @@ def legacy_uploads_fixture(*, autouse: bool = False) -> Callable:
         from backend.app.services import project_files
 
         monkeypatch.setattr(project_files, "require_source_uploads", project_files.require_printable_uploads)
+        monkeypatch.setattr(project_files, "require_source_names", project_files.require_printable_uploads)
+        monkeypatch.setattr(project_files, "require_one_file", lambda _uploads: None)
         monkeypatch.setattr(project_files, "_require_source_content", lambda _path, _name: None)
 
     return _legacy_uploads

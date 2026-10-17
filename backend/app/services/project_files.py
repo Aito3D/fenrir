@@ -261,15 +261,25 @@ _SOURCE_REFUSALS = {
 }
 
 
-def require_source_uploads(uploads: list[UploadFile]) -> None:
-    """400 unless ``uploads`` is exactly one ``.3mf`` that is not named ``.gcode.3mf`` (nothing written yet).
+def require_source_names(uploads: list[UploadFile]) -> None:
+    """400 unless every upload is a ``.3mf`` not named ``.gcode.3mf`` (nothing written yet).
 
     The content check (``classify_3mf``) runs once the file is on disk, in ``_stream_files``."""
     names = [upload_basename(upload).strip().lower() for upload in uploads]
     if any(not name.endswith(".3mf") or name.endswith(".gcode.3mf") for name in names):
         raise ProjectFilesError(400, _ONLY_SOURCE)
+
+
+def require_one_file(uploads: list[UploadFile]) -> None:
+    """400 ``ONE_FILE`` unless ``uploads`` (the files of ONE new revision) is exactly one file."""
     if len(uploads) != 1:
         raise ProjectFilesError(400, ONE_FILE)
+
+
+def require_source_uploads(uploads: list[UploadFile]) -> None:
+    """Name check on every upload, then exactly one file: the rule for one revision's upload."""
+    require_source_names(uploads)
+    require_one_file(uploads)
 
 
 def _require_source_content(path: Path, name: str) -> None:
@@ -770,6 +780,7 @@ async def add_revision(
     (e.g. ``create_item``) first."""
     if not uploads:
         raise ProjectFilesError(400, "A revision needs at least one file")
+    require_one_file(uploads)
     async with _item_lock(item.id):
         return await _add_revision_locked(
             db,

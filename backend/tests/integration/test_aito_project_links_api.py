@@ -25,19 +25,19 @@ from backend.app.services import aito_project_links as links_service, project_fi
 from backend.tests.project_fixtures import (
     ChunkedMultipart,
     api_project,
-    legacy_uploads_fixture,
     make_order,
     make_task,
     projects_root_fixture,
+    threemf_bytes,
     upload,
 )
 
 root = projects_root_fixture(autouse=True)
-legacy_uploads = legacy_uploads_fixture(autouse=True)
 
 
 _order = partial(make_order, commit=True)
 _task = partial(make_task, commit=True)
+SRC = threemf_bytes()
 _project = partial(api_project, check=False)
 
 
@@ -47,7 +47,7 @@ async def _revision(client, project_id):
     ).json()
     response = await client.post(
         f"/api/v1/projects/items/{item['id']}/revisions",
-        files=[("files", ("p.3mf", b"x", "application/octet-stream"))],
+        files=[("files", ("p.3mf", SRC, "application/octet-stream"))],
     )
     assert response.status_code == 201, response.text
     return response.json()["revision"]["id"]
@@ -116,7 +116,7 @@ async def test_no_link_mutating_path_marks_quote_pending(async_client: AsyncClie
         expected = 200
     else:
         response = await async_client.post(
-            f"{base}/files", files=[("files", ("a.3mf", b"x", "application/octet-stream"))]
+            f"{base}/files", files=[("files", ("a.3mf", SRC, "application/octet-stream"))]
         )
         expected = 201
     assert response.status_code == expected, response.text
@@ -238,14 +238,14 @@ async def test_drop_files_endpoint(async_client: AsyncClient, db_session):
     project = await _project(async_client)
 
     unlinked = await async_client.post(
-        f"/api/v1/aito/tasks/{task.id}/files", files=[("files", ("a.3mf", b"x", "application/octet-stream"))]
+        f"/api/v1/aito/tasks/{task.id}/files", files=[("files", ("a.3mf", SRC, "application/octet-stream"))]
     )
     assert unlinked.status_code == 409
 
     await async_client.put(f"/api/v1/aito/tasks/{task.id}/project", json={"project_id": project["id"]})
     response = await async_client.post(
         f"/api/v1/aito/tasks/{task.id}/files",
-        files=[("files", ("a.3mf", b"x", "application/octet-stream"))],
+        files=[("files", ("a.3mf", SRC, "application/octet-stream"))],
     )
     assert response.status_code == 201, response.text
     body = response.json()
@@ -254,7 +254,7 @@ async def test_drop_files_endpoint(async_client: AsyncClient, db_session):
     assert "errors" not in body  # T-286: a full drop's answer keeps its old shape
 
     missing = await async_client.post(
-        "/api/v1/aito/tasks/999999/files", files=[("files", ("a.3mf", b"x", "application/octet-stream"))]
+        "/api/v1/aito/tasks/999999/files", files=[("files", ("a.3mf", SRC, "application/octet-stream"))]
     )
     assert missing.status_code == 404
 
@@ -276,7 +276,7 @@ async def test_drop_chunked_upload_over_cap_refused(async_client: AsyncClient, d
     assert refused.status_code == 413
     assert refused.json()["detail"] == "Upload exceeds the maximum size of 1024 bytes"
     assert body.sent < len(body.body)
-    accepted = await ChunkedMultipart([("a.3mf", b"x" * 1000)]).post(async_client, url)
+    accepted = await ChunkedMultipart([("a.3mf", SRC)]).post(async_client, url)
     assert accepted.status_code == 201, accepted.text
     assert accepted.json()["results"][0]["section"] == "impression"
 
@@ -422,8 +422,8 @@ async def test_drop_partial_failure_keeps_stored_group_and_records_once(
     response = await async_client.post(
         f"/api/v1/aito/tasks/{task.id}/files",
         files=[
-            ("files", ("a.3mf", b"x", "application/octet-stream")),
-            ("files", ("b.3mf", b"x", "application/octet-stream")),
+            ("files", ("a.3mf", SRC, "application/octet-stream")),
+            ("files", ("b.3mf", SRC, "application/octet-stream")),
         ],
     )
     # T-286: the stored group plus the failed group's error, instead of a bare 409
@@ -475,8 +475,8 @@ async def test_drop_with_an_os_error_on_a_later_group_returns_the_stored_part_an
     response = await async_client.post(
         f"/api/v1/aito/tasks/{task.id}/files",
         files=[
-            ("files", ("a.3mf", b"x", "application/octet-stream")),
-            ("files", ("b.3mf", b"x", "application/octet-stream")),
+            ("files", ("a.3mf", SRC, "application/octet-stream")),
+            ("files", ("b.3mf", SRC, "application/octet-stream")),
         ],
     )
     assert response.status_code == 201, response.text
@@ -534,7 +534,7 @@ async def test_drop_route_broadcasts_when_cancelled_while_recording_a_stored_gro
     monkeypatch.setattr(links_service, "_record_drop", cancelled_record_drop)
     monkeypatch.setattr(links_routes, "_broadcast_changed", fake_broadcast)
     with pytest.raises(asyncio.CancelledError):
-        await links_routes.drop_task_files(task.id, files=[upload("a.3mf", b"x")], db=db_session, user=None, __=None)
+        await links_routes.drop_task_files(task.id, files=[upload("a.3mf", SRC)], db=db_session, user=None, __=None)
     assert broadcasts == [order.id]
 
 
@@ -559,7 +559,7 @@ async def test_drop_failing_on_the_first_group_does_not_broadcast(async_client: 
     monkeypatch.setattr(links_routes, "_broadcast_changed", fake_broadcast)
 
     response = await async_client.post(
-        f"/api/v1/aito/tasks/{task.id}/files", files=[("files", ("a.3mf", b"x", "application/octet-stream"))]
+        f"/api/v1/aito/tasks/{task.id}/files", files=[("files", ("a.3mf", SRC, "application/octet-stream"))]
     )
     assert (response.status_code, response.json()["detail"]) == (409, "boom")
     assert broadcasts == []
@@ -699,8 +699,8 @@ async def test_drop_fans_revision_events_out_to_other_linked_orders(
     response = await async_client.post(
         f"/api/v1/aito/tasks/{task_a.id}/files",
         files=[
-            ("files", ("a.3mf", b"x", "application/octet-stream")),
-            ("files", ("b.gcode", b"x", "application/octet-stream")),
+            ("files", ("a.3mf", SRC, "application/octet-stream")),
+            ("files", ("b.3mf", SRC, "application/octet-stream")),
         ],
     )
     assert response.status_code == 201, response.text
@@ -780,7 +780,7 @@ async def test_concurrent_drop_creating_the_same_item_joins_it(
         monkeypatch.setattr(files_service, "_require_item_name_free", no_check)
 
     response = await async_client.post(
-        f"/api/v1/aito/tasks/{task.id}/files", files=[("files", ("a.3mf", b"x", "application/octet-stream"))]
+        f"/api/v1/aito/tasks/{task.id}/files", files=[("files", ("a.3mf", SRC, "application/octet-stream"))]
     )
     assert response.status_code == 201, response.text
     [result] = response.json()["results"]
@@ -795,7 +795,7 @@ _LINK_ERROR_SITES = [
     ("link_task", "put", "project", {"json": {"project_id": 1}}),
     ("create_project_for_task", "post", "project", {"json": {"name": "Nouveau"}}),
     ("set_deliveries", "put", "deliveries", {"json": {"revision_ids": [1]}}),
-    ("drop_files_on_task", "post", "files", {"files": [("files", ("a.3mf", b"x", "application/octet-stream"))]}),
+    ("drop_files_on_task", "post", "files", {"files": [("files", ("a.3mf", SRC, "application/octet-stream"))]}),
 ]
 
 
@@ -902,10 +902,10 @@ async def test_drop_with_a_blank_sanitised_name_is_refused_whole(
     async def drop(*names):
         return await async_client.post(
             f"/api/v1/aito/tasks/{task.id}/files",
-            files=[("files", (name, b"x", "application/octet-stream")) for name in names],
+            files=[("files", (name, SRC, "application/octet-stream")) for name in names],
         )
 
-    mixed = await drop("a.3mf", "???.3mf", "b.gcode", "...3mf")
+    mixed = await drop("a.3mf", "???.3mf", "b.3mf", "...3mf")
     assert (mixed.status_code, mixed.json()["detail"]) == (400, "Item name must not be blank; refused: ???.3mf, ...3mf")
     blank_only = await drop("???.3mf")
     assert (blank_only.status_code, blank_only.json()["detail"]) == (
@@ -914,7 +914,7 @@ async def test_drop_with_a_blank_sanitised_name_is_refused_whole(
     )
     # a non-printable file is still the first refusal, as before
     other = await drop("???.3mf", "notes.txt")
-    assert other.status_code == 400 and other.json()["detail"].startswith("Projects only accept printing files")
+    assert other.status_code == 400 and other.json()["detail"].startswith("Only Bambu Studio project files")
 
     tree = (await async_client.get(f"/api/v1/projects/{project['id']}/tree")).json()
     assert [it for sec in tree["sections"] for it in sec["items"]] == []
@@ -925,7 +925,7 @@ async def test_drop_with_a_blank_sanitised_name_is_refused_whole(
     assert events == []
     assert broadcasts == []
 
-    valid = await drop("a.3mf", "b.gcode")
+    valid = await drop("a.3mf", "b.3mf")
     assert valid.status_code == 201, valid.text
-    assert [r["filename"] for r in valid.json()["results"]] == ["a.3mf", "b.gcode"]
+    assert [r["filename"] for r in valid.json()["results"]] == ["a.3mf", "b.3mf"]
     assert broadcasts == [order_id]
