@@ -2188,6 +2188,44 @@ class TestSliceOwnershipPermissions(TestOwnershipPermissionsSetup):
         )
         assert admin.status_code == 200
 
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_project_revision_slice_jobs_are_readable_with_projects_read(self, async_client, auth_setup):
+        """Fenrir: a project revision's slice shows its progress to every reader of the project
+        tree (projects:read), not only to the uploader; a library slice stays owner-scoped."""
+        from backend.app.services.slice_dispatch import slice_dispatch
+
+        async def _noop(_job_id):
+            return {}
+
+        job = await slice_dispatch.enqueue(
+            kind="project_revision",
+            source_id=1,
+            source_name="support.3mf",
+            owner_id=auth_setup["operator2_user"]["id"],
+            run=_noop,
+        )
+        # Operators: projects:read and library:read_own, not library:read_all, not the owner.
+        other = await async_client.get(
+            f"/api/v1/slice-jobs/{job.id}",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+        )
+        assert other.status_code == 200, other.text
+        assert other.json()["kind"] == "project_revision"
+
+        library_job = await slice_dispatch.enqueue(
+            kind="library_file",
+            source_id=1,
+            source_name="secret_model.3mf",
+            owner_id=auth_setup["operator2_user"]["id"],
+            run=_noop,
+        )
+        hidden = await async_client.get(
+            f"/api/v1/slice-jobs/{library_job.id}",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+        )
+        assert hidden.status_code == 404
+
     # --- pipeline source resolution ----------------------------------------
 
     @pytest.mark.asyncio

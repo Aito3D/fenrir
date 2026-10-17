@@ -10,9 +10,16 @@ from fastapi import APIRouter, Depends, HTTPException
 from backend.app.core.auth import require_ownership_permission
 from backend.app.core.permissions import Permission
 from backend.app.models.user import User
-from backend.app.services.slice_dispatch import slice_dispatch
+from backend.app.services.slice_dispatch import SliceJob, slice_dispatch
 
 router = APIRouter(prefix="/slice-jobs", tags=["slice-jobs"])
+
+
+def _may_follow_project_slice(user: User, job: SliceJob) -> bool:
+    """Fenrir: a project revision's server slice (design 2026-10-17) is followed by whoever
+    can read the project tree that shows its progress, not only by the user whose upload
+    started it. It names only the revision's source file, which that tree already lists."""
+    return job.kind == "project_revision" and user.has_permission(Permission.PROJECTS_READ.value)
 
 
 @router.get("/{job_id}")
@@ -37,7 +44,7 @@ async def get_slice_job(
     # owner_id=None and are visible only to READ_ALL pollers (fail-closed,
     # mirrors the library ownerless-row rule). 404 not 403 to avoid job-id
     # enumeration.
-    if not can_read_all and (user is None or job.owner_id != user.id):
+    if not can_read_all and (user is None or (job.owner_id != user.id and not _may_follow_project_slice(user, job))):
         raise HTTPException(status_code=404, detail="Slice job not found or expired")
     body: dict = {
         "job_id": job.id,
