@@ -356,3 +356,76 @@ async def test_aito_drop_slices_each_new_revision(async_client: AsyncClient, db_
     revisions = list((await db_session.execute(select(ProjectRevision))).scalars().all())
     assert {r.slice_status for r in revisions} == {"sliced"}
     assert sorted(row.filename for row in await _derived_rows(db_session)) == ["Plate.gcode.3mf", "bracket.gcode.3mf"]
+
+
+def _failing_enqueue(monkeypatch) -> None:
+    async def boom(**_kwargs):
+        raise RuntimeError("dispatcher down")
+
+    monkeypatch.setattr(slice_dispatch, "enqueue", boom)
+
+
+def _failing_source_lookup(monkeypatch) -> None:
+    """Raises mid-transaction (after the start read the revision), so the trigger's rollback expires
+    every instance of the request session."""
+
+    async def boom(_db, _revision_id):
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr(project_slice, "_source_file", boom)
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_failed_slice_start_does_not_fail_the_upload(async_client: AsyncClient, db_session, sidecar, monkeypatch):
+    """A start that raises rolls the request session back (expiring its instances); the upload still answers."""
+    _failing_source_lookup(monkeypatch)
+    _project, _item, rev = await _upload(async_client)  # asserts 201
+
+    assert rev["number"] == 1
+    assert [f["filename"] for f in rev["files"]] == ["support.3mf"]
+    assert rev["slice_status"] is None  # never claimed: the retry button / POST /slice starts it
+    source = await db_session.get(LibraryFile, rev["files"][0]["id"])
+    assert source is not None
+    source_path = to_absolute_path(source.file_path)
+    assert source_path is not None and source_path.exists()
+    assert sidecar.slice_requests == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_failed_enqueue_marks_the_upload_failed(async_client: AsyncClient, sidecar, monkeypatch):
+    _failing_enqueue(monkeypatch)
+    _project, _item, rev = await _upload(async_client)  # asserts 201
+
+    assert [f["filename"] for f in rev["files"]] == ["support.3mf"]
+    assert rev["slice_status"] == "failed"  # claimed, then released: never "slicing" with no job
+    assert "dispatcher down" in rev["slice_error"]
+    assert sidecar.slice_requests == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_failed_slice_start_does_not_fail_the_aito_drop(
+    async_client: AsyncClient, db_session, sidecar, monkeypatch
+):
+    _failing_source_lookup(monkeypatch)
+    project = await make_project(db_session)
+    order = await make_order(db_session)
+    task = await make_task(db_session, order, linked_project_id=project.id)
+    await db_session.commit()
+
+    response = await aito_project_links.drop_files_on_task(
+        db_session,
+        task,
+        [upload("Plate.3mf", threemf_bytes()), upload("bracket.3mf", threemf_bytes())],
+        user_id=None,
+        actor="Paul",
+    )
+
+    assert sorted(r.filename for r in response.results) == ["Plate.3mf", "bracket.3mf"]
+    assert {r.revision_number for r in response.results} == {1}
+    db_session.expire_all()
+    revisions = list((await db_session.execute(select(ProjectRevision))).scalars().all())
+    assert len(revisions) == 2
+    assert {r.slice_status for r in revisions} == {None}

@@ -318,8 +318,6 @@ async def upload_revision(
             db, project, item, files, note=note, derived_from_id=derived_from_id, user_id=actor_user_id(user)
         )
     project_id, revision_id = project.id, revision.id
-    # Decision 2: slice as soon as the .3mf is stored. Never fails the upload (sidecar down → "failed").
-    await project_slice.start_slice_after_upload(db, revision_id, user_id=actor_user_id(user))
     label, detail = aito_links.revision_added_payload(
         item_name=item.name,
         revision_number=revision.number,
@@ -327,6 +325,9 @@ async def upload_revision(
         item_id=item.id,
         revision_id=revision_id,
     )
+    # Decision 2: slice as soon as the .3mf is stored. Never fails the upload (sidecar down → "failed").
+    # Last read of the ORM instances above: a failed start rolls back and expires them.
+    await project_slice.start_slice_after_upload(db, revision_id, user_id=actor_user_id(user))
     await _record_linked(db, project_id, "project.revision_added", user, label, detail)
     project = await _project(db, project_id)  # a failed event commit rolls back and expires the instances
     return RevisionUploadResponse(revision=await _revision_out(db, project, revision_id), warnings=warnings)
