@@ -17,9 +17,10 @@ from backend.app.models.library import LibraryFile
 from backend.app.models.slicer_pipeline import SlicerPipeline
 from backend.app.schemas.project_files import REVISION_NOTE_MAX_LENGTH
 from backend.app.services import project_storage
-from backend.tests.project_fixtures import ChunkedMultipart, api_project, projects_root_fixture
+from backend.tests.project_fixtures import ChunkedMultipart, api_project, legacy_uploads_fixture, projects_root_fixture
 
 root = projects_root_fixture(autouse=True)
+legacy_uploads = legacy_uploads_fixture(autouse=True)
 _project = partial(api_project, check=False)
 
 
@@ -82,15 +83,16 @@ async def test_errors_map_to_http(async_client: AsyncClient):
 async def test_rename_fork_delete_and_files(async_client: AsyncClient, root):
     project = await _project(async_client)
     item = await _item(async_client, project["id"])
-    rev = (await _upload(async_client, item["id"], ("a.gcode", b"x"))).json()["revision"]
+    # a legacy revision holding two files (new uploads are one .3mf each)
+    rev = (await _upload(async_client, item["id"], ("a.gcode", b"x"), ("b.gcode", b"x"))).json()["revision"]
     renamed = await async_client.patch(f"/api/v1/projects/items/{item['id']}", json={"name": "Support v2"})
     assert renamed.json()["name"] == "Support v2"
     added = await async_client.post(
         f"/api/v1/projects/revisions/{rev['id']}/files",
         files=[("files", ("b.gcode", b"x", "application/octet-stream"))],
     )
-    # same bytes as a.gcode but in the SAME revision: warnings only compare other revisions
-    assert added.status_code == 200 and added.json()["warnings"] == []
+    # a revision holds one .3mf: files are never added to an existing one
+    assert added.status_code == 400 and added.json()["detail"].startswith("A revision holds one .3mf")
     tree = (await async_client.get(f"/api/v1/projects/{project['id']}/tree")).json()
     files = tree["sections"][2]["items"][0]["revisions"][0]["files"]
     removed = await async_client.delete(f"/api/v1/projects/revisions/{rev['id']}/files/{files[0]['id']}")
@@ -564,8 +566,9 @@ async def test_chunked_upload_at_limit_passes_one_byte_over_refused(async_client
     assert over.status_code == 413
     assert over.json()["detail"] == "Upload exceeds the maximum size of 1024 bytes"
     at_limit = await ChunkedMultipart.of_size(limit, under_cap).post(async_client, files_url)
-    assert at_limit.status_code == 200, at_limit.text
-    assert at_limit.json() == {"warnings": []}
+    # the body passes the size cap; the route itself then refuses adding files
+    assert at_limit.status_code == 400, at_limit.text
+    assert at_limit.json()["detail"].startswith("A revision holds one .3mf")
     small = await ChunkedMultipart([("b.gcode", b"x" * 1000)]).post(async_client, item_url)
     assert small.status_code == 201, small.text
     assert small.json()["revision"]["files"][0]["file_size"] == 1000

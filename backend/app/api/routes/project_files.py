@@ -308,7 +308,7 @@ async def upload_revision(
     user: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
 ):
     with _file_errors():
-        svc.require_printable_uploads(files)
+        svc.require_source_uploads(files)
         item, project = await svc.get_item_for_project(db, item_id)
         svc.require_enabled_section(item.section)
         revision, warnings = await svc.add_revision(
@@ -350,12 +350,9 @@ async def add_files(
     db: AsyncSession = Depends(get_db),
     user: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
 ):
+    # A revision holds exactly one .3mf now, legacy revisions included: nothing is added to an existing one.
     with _file_errors():
-        svc.require_printable_uploads(files)
-        revision, item, project = await svc.get_revision_bundle(db, revision_id)
-        svc.require_enabled_section(item.section)
-        warnings = await svc.add_files_to_revision(db, project, item, revision, files, actor_user_id(user))
-    return {"warnings": [w.model_dump() for w in warnings]}
+        raise svc.ProjectFilesError(400, svc.ONE_FILE)
 
 
 @router.delete("/revisions/{revision_id}/files/{file_id}", status_code=204, response_model=None)

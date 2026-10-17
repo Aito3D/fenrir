@@ -15,6 +15,7 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Lock
+from typing import Literal
 
 # Parsing goes through defusedxml; the element type it hands back is the stdlib
 # one, and defusedxml does not re-export it, so annotations name it directly.
@@ -1241,6 +1242,26 @@ def carries_gcode(file_path: Path | str) -> bool:
         # Not a zip, gone, or unreadable. Callers treat that as "no G-code
         # visible", which is what they did before this check existed.
         return False
+
+
+def classify_3mf(path: Path | str) -> Literal["source", "sliced", "no_settings", "unreadable"]:
+    """What kind of 3MF is this: an editable Bambu Studio project or something else?
+
+    ``"sliced"`` when it carries plate G-code (whatever the file is called),
+    ``"no_settings"`` when it has no ``Metadata/project_settings.config`` (so no
+    printer setup to slice with), ``"unreadable"`` when it is not a zip, and
+    ``"source"`` otherwise. Reads only the zip's central directory.
+    """
+    try:
+        with zipfile.ZipFile(path, "r") as zf:
+            names = zf.namelist()
+    except (OSError, zipfile.BadZipFile):
+        return "unreadable"
+    if names_carry_gcode(names):
+        return "sliced"
+    if PROJECT_SETTINGS_PATH not in names:
+        return "no_settings"
+    return "source"
 
 
 def default_plate_number(names: list[str]) -> int | None:

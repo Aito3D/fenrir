@@ -38,6 +38,7 @@ from backend.app.models.project_item import ProjectItem, ProjectRevision
 from backend.app.schemas.aito_project_links import TaskLinkRequest
 from backend.app.services import aito_events, aito_project_links, project_files, project_filing
 from backend.tests.project_fixtures import (
+    legacy_uploads_fixture,
     projects_root_fixture,
     wal_engine_fixture,  # noqa: F401  # the ``wal_engine`` fixture
 )
@@ -161,6 +162,7 @@ ITEM_USED_DETAIL = "A revision of this item was printed or delivered; the item c
 
 
 root = projects_root_fixture(subdir="projects")
+legacy_uploads = legacy_uploads_fixture(autouse=True)
 
 
 async def _item_with_a_revision(maker) -> tuple[int, int, int, int, str]:

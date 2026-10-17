@@ -12,6 +12,7 @@ import zipfile
 import pytest
 
 from backend.app.utils.threemf_tools import (
+    classify_3mf,
     expand_to_project_slots,
     extract_bed_type_from_3mf,
     extract_embedded_presets_from_3mf,
@@ -1479,3 +1480,36 @@ class TestExtractLayerFilamentUsagePlateSelection:
         path = tmp_path / "broken.3mf"
         path.write_text("not a zip")
         assert extract_layer_filament_usage_from_3mf(path, 1) is None
+
+
+def _zip_file(tmp_path, name, members):
+    path = tmp_path / name
+    with zipfile.ZipFile(path, "w") as zf:
+        for member, data in members.items():
+            zf.writestr(member, data)
+    return path
+
+
+def test_classify_source(tmp_path):
+    path = _zip_file(tmp_path, "x.3mf", {"Metadata/project_settings.config": "{}", "3D/3dmodel.model": "<model/>"})
+    assert classify_3mf(path) == "source"
+
+
+def test_classify_sliced_even_if_named_3mf(tmp_path):
+    path = _zip_file(
+        tmp_path,
+        "x.3mf",
+        {"Metadata/project_settings.config": "{}", "Metadata/plate_1.gcode": "G1", "3D/3dmodel.model": "<model/>"},
+    )
+    assert classify_3mf(path) == "sliced"
+
+
+def test_classify_no_settings(tmp_path):
+    path = _zip_file(tmp_path, "x.3mf", {"3D/3dmodel.model": "<model/>"})
+    assert classify_3mf(path) == "no_settings"
+
+
+def test_classify_unreadable(tmp_path):
+    path = tmp_path / "x.3mf"
+    path.write_bytes(b"not a zip")
+    assert classify_3mf(path) == "unreadable"

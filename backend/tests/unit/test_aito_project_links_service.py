@@ -20,9 +20,17 @@ from backend.app.services.aito_events import KINDS
 from backend.app.services.project_files import add_revision, create_item
 from backend.app.services.project_filing import section_for_filename
 from backend.app.services.project_tags import project_tag_refs
-from backend.tests.project_fixtures import make_order, make_project, make_task, projects_root_fixture, upload
+from backend.tests.project_fixtures import (
+    legacy_uploads_fixture,
+    make_order,
+    make_project,
+    make_task,
+    projects_root_fixture,
+    upload,
+)
 
 root = projects_root_fixture(autouse=True)
+legacy_uploads = legacy_uploads_fixture(autouse=True)
 _project = partial(make_project, name="Support")
 _order = make_order
 _task = make_task

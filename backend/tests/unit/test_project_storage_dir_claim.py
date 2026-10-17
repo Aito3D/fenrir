@@ -17,12 +17,14 @@ from backend.app.models.project import Project
 from backend.app.services import project_files
 from backend.app.services.project_files import _claim_storage_dir, add_revision, create_item, get_item_for_project
 from backend.tests.project_fixtures import (
+    legacy_uploads_fixture,
     projects_root_fixture,
     upload,
     wal_engine_fixture,  # noqa: F401  # the ``wal_engine`` fixture
 )
 
 root = projects_root_fixture(subdir="projects")
+legacy_uploads = legacy_uploads_fixture(autouse=True)
 
 
 @pytest.fixture(autouse=True)

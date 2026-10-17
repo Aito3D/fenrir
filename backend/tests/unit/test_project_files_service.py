@@ -32,9 +32,16 @@ from backend.app.services.project_files import (
     revision_is_used,
     update_revision,
 )
-from backend.tests.project_fixtures import make_project as _project, projects_root_fixture, threemf_bytes, upload
+from backend.tests.project_fixtures import (
+    legacy_uploads_fixture,
+    make_project as _project,
+    projects_root_fixture,
+    threemf_bytes,
+    upload,
+)
 
 root = projects_root_fixture()
+legacy_uploads = legacy_uploads_fixture(autouse=True)
 
 
 @pytest.mark.asyncio

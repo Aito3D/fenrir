@@ -13,7 +13,7 @@ from backend.app.models.aito_task_delivery import AitoTaskDelivery
 from backend.app.models.project import Project
 from backend.app.services import project_storage
 from backend.app.services.project_files import add_revision, create_item, load_tree, revision_is_used
-from backend.tests.project_fixtures import projects_root_fixture
+from backend.tests.project_fixtures import projects_root_fixture, threemf_bytes
 
 root = projects_root_fixture(autouse=True)
 
@@ -51,7 +51,7 @@ async def test_delivered_revision_is_used(db_session):
         db_session,
         project,
         item,
-        [UploadFile(filename="p.3mf", file=io.BytesIO(b"x"))],
+        [UploadFile(filename="p.3mf", file=io.BytesIO(threemf_bytes()))],
         note=None,
         derived_from_id=None,
         user_id=None,
@@ -87,7 +87,7 @@ async def test_deleting_task_drops_its_deliveries(async_client: AsyncClient, db_
         db_session,
         project,
         item,
-        [UploadFile(filename="p.3mf", file=io.BytesIO(b"x"))],
+        [UploadFile(filename="p.3mf", file=io.BytesIO(threemf_bytes()))],
         note=None,
         derived_from_id=None,
         user_id=None,

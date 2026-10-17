@@ -616,7 +616,7 @@ async def _drop_target(db: AsyncSession, task: AitoTask, uploads: list[UploadFil
     # Printing files only for now, always in Impression: a drop with any other
     # file is refused whole (400 naming them) before anything is written.
     try:
-        project_files.require_printable_uploads(uploads)
+        project_files.require_source_uploads(uploads)
     except project_files.ProjectFilesError as exc:
         raise LinkError(exc.status_code, exc.detail) from exc
     return project

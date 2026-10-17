@@ -85,6 +85,7 @@ from backend.app.services.project_storage import (
 from backend.app.services.stl_thumbnail import MIN_USABLE_STL_BYTES, generate_stl_thumbnail
 from backend.app.utils.local_time import utcnow_naive
 from backend.app.utils.safe_path import safe_join_under
+from backend.app.utils.threemf_tools import classify_3mf
 
 logger = logging.getLogger(__name__)
 
@@ -245,6 +246,37 @@ def require_printable_uploads(uploads: list[UploadFile]) -> None:
         raise ProjectFilesError(
             400, "Projects only accept printing files (.3mf, .gcode, .bgcode); refused: " + ", ".join(rejected)
         )
+
+
+_ONLY_SOURCE = (
+    "Only Bambu Studio project files (.3mf) can be added. Sliced files (.gcode.3mf, .gcode) are made by the server."
+)
+ONE_FILE = "A revision holds one .3mf. Upload each part as its own item."
+_SOURCE_REFUSALS = {
+    "sliced": "{name} is already sliced. Upload the original .3mf project instead.",
+    "no_settings": (
+        "{name} has no printer setup. Open it in Bambu Studio, choose the printer, and save it as a project."
+    ),
+    "unreadable": _ONLY_SOURCE,
+}
+
+
+def require_source_uploads(uploads: list[UploadFile]) -> None:
+    """400 unless ``uploads`` is exactly one ``.3mf`` that is not named ``.gcode.3mf`` (nothing written yet).
+
+    The content check (``classify_3mf``) runs once the file is on disk, in ``_stream_files``."""
+    names = [upload_basename(upload).strip().lower() for upload in uploads]
+    if any(not name.endswith(".3mf") or name.endswith(".gcode.3mf") for name in names):
+        raise ProjectFilesError(400, _ONLY_SOURCE)
+    if len(uploads) != 1:
+        raise ProjectFilesError(400, ONE_FILE)
+
+
+def _require_source_content(path: Path, name: str) -> None:
+    """400 when the stored ``path`` is not an editable Bambu Studio project (sliced, no printer setup, not a zip)."""
+    kind = classify_3mf(path)
+    if kind != "source":
+        raise ProjectFilesError(400, _SOURCE_REFUSALS[kind].format(name=name))
 
 
 async def get_item_for_project(db: AsyncSession, item_id: int) -> tuple[ProjectItem, Project]:
@@ -437,6 +469,7 @@ async def _stream_files(folder: Path, uploads: list[UploadFile]) -> list[_Writte
             part = None
             entry = _WrittenFile(path=dest, size=size, digest=digest)
             written.append(entry)
+            await asyncio.to_thread(_require_source_content, dest, upload_basename(upload))
             await _post_process(entry)
     except BaseException:
         if part is not None:

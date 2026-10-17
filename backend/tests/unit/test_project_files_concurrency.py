@@ -23,12 +23,14 @@ from backend.app.services.project_files import (
     rename_item,
 )
 from backend.tests.project_fixtures import (
+    legacy_uploads_fixture,
     projects_root_fixture,
     upload,
     wal_engine_fixture,  # noqa: F401  # the ``wal_engine`` fixture
 )
 
 root = projects_root_fixture(subdir="projects")
+legacy_uploads = legacy_uploads_fixture(autouse=True)
 
 
 @pytest.fixture(autouse=True)

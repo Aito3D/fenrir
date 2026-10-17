@@ -25,6 +25,7 @@ from backend.app.services import aito_project_links as links_service, project_fi
 from backend.tests.project_fixtures import (
     ChunkedMultipart,
     api_project,
+    legacy_uploads_fixture,
     make_order,
     make_task,
     projects_root_fixture,
@@ -32,6 +33,7 @@ from backend.tests.project_fixtures import (
 )
 
 root = projects_root_fixture(autouse=True)
+legacy_uploads = legacy_uploads_fixture(autouse=True)
 
 
 _order = partial(make_order, commit=True)

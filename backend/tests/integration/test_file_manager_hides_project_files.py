@@ -10,12 +10,13 @@ from backend.app.api.routes.library import to_absolute_path
 from backend.app.models.library import LibraryFile, LibraryFileTag
 from backend.app.services import project_storage
 from backend.app.services.library_trash import library_trash_service
-from backend.tests.project_fixtures import projects_root_fixture
+from backend.tests.project_fixtures import legacy_uploads_fixture, projects_root_fixture
 
 DISK_KEYS = ("disk_free_bytes", "disk_total_bytes", "disk_used_bytes")
 
 
 root = projects_root_fixture(autouse=True)
+legacy_uploads = legacy_uploads_fixture(autouse=True)
 
 
 async def _project_file(client) -> tuple[dict, int, str]:

@@ -27,12 +27,19 @@ from backend.app.services.aito_project_links import order_links
 from backend.app.services.print_batch import _clone_queue_item
 from backend.app.services.project_files import load_tree
 from backend.app.services.project_print_trace import PrintCounts, revision_print_counts, task_print_counts
-from backend.tests.project_fixtures import api_project, make_order, make_task, projects_root_fixture
+from backend.tests.project_fixtures import (
+    api_project,
+    legacy_uploads_fixture,
+    make_order,
+    make_task,
+    projects_root_fixture,
+)
 
 KIND = "print.queued_from_revision"
 
 
 root = projects_root_fixture(autouse=True)
+legacy_uploads = legacy_uploads_fixture(autouse=True)
 
 
 @pytest.fixture

@@ -19,9 +19,12 @@ from backend.app.schemas.slicer import SliceResponse
 from backend.app.services import project_files, project_reslice, project_storage
 from backend.app.services.slice_dispatch import slice_dispatch
 from backend.tests.project_fixtures import (
+    legacy_uploads_fixture,
     make_users,
     wal_engine_fixture,  # noqa: F401  # the ``wal_engine`` fixture
 )
+
+legacy_uploads = legacy_uploads_fixture(autouse=True)
 
 _ONE_FILAMENT = json.dumps([{"source": "local", "id": "3"}])
 

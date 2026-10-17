@@ -89,6 +89,25 @@ def projects_root_fixture(
     return _root
 
 
+def legacy_uploads_fixture(*, autouse: bool = False) -> Callable:
+    """A ``legacy_uploads`` fixture putting the pre-server-slicing upload rules back.
+
+    Projects now take one source ``.3mf`` per revision, but revisions made before that hold any
+    printing files, several at a time. Tests of what those revisions do (download, zip, reslice,
+    delete, symlink guards...) seed them through the upload path, so this swaps the name/count
+    gate for the old printable-extension one and turns the content check off. Tests of the new
+    rules do not use it. Assign it to ``legacy_uploads``."""
+
+    @pytest.fixture(name="legacy_uploads", autouse=autouse)
+    def _legacy_uploads(monkeypatch) -> None:
+        from backend.app.services import project_files
+
+        monkeypatch.setattr(project_files, "require_source_uploads", project_files.require_printable_uploads)
+        monkeypatch.setattr(project_files, "_require_source_content", lambda _path, _name: None)
+
+    return _legacy_uploads
+
+
 # --- database ------------------------------------------------------------------
 
 

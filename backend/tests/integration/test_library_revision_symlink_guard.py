@@ -13,9 +13,10 @@ import pytest
 from httpx import AsyncClient
 
 from backend.app.models.library import LibraryFile
-from backend.tests.project_fixtures import api_project, projects_root_fixture
+from backend.tests.project_fixtures import api_project, legacy_uploads_fixture, projects_root_fixture
 
 root = projects_root_fixture(autouse=True)
+legacy_uploads = legacy_uploads_fixture(autouse=True)
 _project = partial(api_project, check=False)
 
 
