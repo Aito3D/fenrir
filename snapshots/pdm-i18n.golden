@@ -1,6 +1,6 @@
 ### exit: 0
 ### stdout:
---- de projectsPdm (198 keys)
+--- de projectsPdm (206 keys)
 acceptSuggestion = "{{name}} hinzufügen"  placeholders={{name}}
 aiUnavailable = "KI nicht verfügbar"
 aito.confirmUnlink = "{{name}} von dieser Aufgabe lösen? Die Liste der gelieferten Dateien wird geleert."  placeholders={{name}}
@@ -54,16 +54,16 @@ emptySearch = "Kein Projekt entspricht dieser Suche"
 files.addFiles = "Dateien hinzufügen"
 files.byAuthor = "von {{name}}"  placeholders={{name}}
 files.chooseFiles = "Dateien auswählen"
-files.confirmDeleteItem = "{{name}} und alle Revisionen löschen? Die Dateien wandern in den Papierkorb des Projekts."  placeholders={{name}}
-files.confirmDeleteRevision = "{{label}} löschen? Die Dateien wandern in den Papierkorb des Projekts."  placeholders={{label}}
-files.confirmRemoveFile = "{{name}} aus {{label}} entfernen? Die Datei wird in den Papierkorb des Projekts verschoben."  placeholders={{label}},{{name}}
 files.deleteItem = "Element löschen"
 files.deleteRevision = "Revision löschen"
 files.derivedFrom = "Abgeleitet von {{label}}"  placeholders={{label}}
 files.derivedFromLabel = "Abgeleitet von"
 files.derivedFromNone = "Nichts"
+files.details = "Einzelheiten"
 files.download = "Herunterladen"
 files.downloadAll = "Alle herunterladen (ZIP)"
+files.dropToCreate = ".3mf ablegen oder klicken"
+files.dropToCreateHint = "Erstellt ein neues Element"
 files.duplicateWarning = "{{filename}} ist identisch mit {{revision}}"  placeholders={{filename}},{{revision}}
 files.emptySection = "Noch keine Elemente"
 files.fileCount_one = "{{count}} Datei"  placeholders={{count}}
@@ -75,12 +75,16 @@ files.itemBusy = "{{name}} wird noch hochgeladen, die abgelegten Dateien wurden 
 files.itemNameLabel = "Elementname"
 files.newItem = "Neues Element"
 files.newRevision = "Neue Revision"
+files.noSettingsRefused = "{{name}} enthält keine Druckereinrichtung. Öffne die Datei in Bambu Studio, wähle den Drucker und speichere sie als Projekt."  placeholders={{name}}
 files.notSliced = "Nicht gesliced"
 files.noteLabel = "Notiz"
 files.notePlaceholder = "Was hat sich geändert…"
-files.onlyPrintable = "Nur 3MF- und G-Code-Dateien können in ein Projekt"
+files.olderRevision = "Ältere Revision"
+files.oneFile = "Eine Revision enthält genau eine .3mf. Lade jedes Teil als eigenes Element hoch."
+files.onlySource = "Nur Bambu-Studio-Projektdateien (.3mf) können hinzugefügt werden. Geslicte Dateien (.gcode.3mf, .gcode) erstellt der Server."
 files.otherSections = "Ältere Dateien"
 files.outdated = "Nicht aktuell – basiert auf {{source}}, seitdem wurde {{newer}} freigegeben"  placeholders={{newer}},{{source}}
+files.outdatedBadge = "Veraltet"
 files.preview = "Vorschau"
 files.remove = "Entfernen"
 files.removeFile = "{{name}} entfernen"  placeholders={{name}}
@@ -92,6 +96,7 @@ files.sectionModelisation = "Konstruktion"
 files.sectionScan = "3D-Scan"
 files.sectionUsinage = "Zerspanung"
 files.sliced = "Gesliced"
+files.slicedRefused = "{{name}} ist bereits geslict. Lade stattdessen das ursprüngliche .3mf-Projekt hoch."  placeholders={{name}}
 files.statusLabel = "Status"
 files.statusObsolete = "Veraltet"
 files.statusValide = "Freigegeben"
@@ -185,6 +190,9 @@ save = "Speichern"
 saveFailed = "Projekt konnte nicht gespeichert werden"
 saved = "Projekt gespeichert"
 searchPlaceholder = "Nach Code, Titel, Beschreibung oder Tag suchen…"
+slice.downloadSliced = "Geslicte Datei herunterladen"
+slice.failed = "Slicen fehlgeschlagen: {{detail}}"  placeholders={{detail}}
+slice.openInSlicer = "Im Slicer öffnen"
 statusAll = "Alle"
 statusFilterLabel = "Status"
 subtitle = "Jedes Teil, seine Dateien und sein Verlauf"
@@ -199,7 +207,7 @@ title = "Projekte"
 titleLabel = "Titel"
 viewGrid = "Rasteransicht"
 viewTable = "Tabellenansicht"
---- en projectsPdm (198 keys)
+--- en projectsPdm (206 keys)
 acceptSuggestion = "Add {{name}}"  placeholders={{name}}
 aiUnavailable = "AI unavailable"
 aito.confirmUnlink = "Unlink {{name}} from this task? Its delivered files list is cleared."  placeholders={{name}}
@@ -253,16 +261,16 @@ emptySearch = "No project matches this search"
 files.addFiles = "Add files"
 files.byAuthor = "by {{name}}"  placeholders={{name}}
 files.chooseFiles = "Choose files"
-files.confirmDeleteItem = "Delete {{name}} and all its revisions? Files move to the project trash."  placeholders={{name}}
-files.confirmDeleteRevision = "Delete {{label}}? Its files move to the project trash."  placeholders={{label}}
-files.confirmRemoveFile = "Remove {{name}} from {{label}}? The file moves to the project trash."  placeholders={{label}},{{name}}
 files.deleteItem = "Delete item"
 files.deleteRevision = "Delete revision"
 files.derivedFrom = "Derived from {{label}}"  placeholders={{label}}
 files.derivedFromLabel = "Derived from"
 files.derivedFromNone = "Nothing"
+files.details = "Details"
 files.download = "Download"
 files.downloadAll = "Download all (zip)"
+files.dropToCreate = "Drop a .3mf or click"
+files.dropToCreateHint = "Creates a new item"
 files.duplicateWarning = "{{filename}} is identical to {{revision}}"  placeholders={{filename}},{{revision}}
 files.emptySection = "No items yet"
 files.fileCount_one = "{{count}} file"  placeholders={{count}}
@@ -274,12 +282,16 @@ files.itemBusy = "{{name}} is still uploading, so the dropped files were not upl
 files.itemNameLabel = "Item name"
 files.newItem = "New item"
 files.newRevision = "New revision"
+files.noSettingsRefused = "{{name}} has no printer setup. Open it in Bambu Studio, choose the printer, and save it as a project."  placeholders={{name}}
 files.notSliced = "Not sliced"
 files.noteLabel = "Note"
 files.notePlaceholder = "What changed…"
-files.onlyPrintable = "Only 3MF and G-code files can go into a project"
+files.olderRevision = "Older revision"
+files.oneFile = "A revision holds one .3mf. Upload each part as its own item."
+files.onlySource = "Only Bambu Studio project files (.3mf) can be added. Sliced files (.gcode.3mf, .gcode) are made by the server."
 files.otherSections = "Older files"
 files.outdated = "Outdated — based on {{source}}, {{newer}} approved since"  placeholders={{newer}},{{source}}
+files.outdatedBadge = "Outdated"
 files.preview = "Preview"
 files.remove = "Remove"
 files.removeFile = "Remove {{name}}"  placeholders={{name}}
@@ -291,6 +303,7 @@ files.sectionModelisation = "Modeling"
 files.sectionScan = "Scan"
 files.sectionUsinage = "Machining"
 files.sliced = "Sliced"
+files.slicedRefused = "{{name}} is already sliced. Upload the original .3mf project instead."  placeholders={{name}}
 files.statusLabel = "Status"
 files.statusObsolete = "Obsolete"
 files.statusValide = "Approved"
@@ -384,6 +397,9 @@ save = "Save"
 saveFailed = "Could not save the project"
 saved = "Project saved"
 searchPlaceholder = "Search by code, title, description or tag…"
+slice.downloadSliced = "Download sliced file"
+slice.failed = "Slice failed: {{detail}}"  placeholders={{detail}}
+slice.openInSlicer = "Open in slicer"
 statusAll = "All"
 statusFilterLabel = "Status"
 subtitle = "Every part, its files and its history"
@@ -398,7 +414,7 @@ title = "Projects"
 titleLabel = "Title"
 viewGrid = "Grid view"
 viewTable = "Table view"
---- es projectsPdm (198 keys)
+--- es projectsPdm (206 keys)
 acceptSuggestion = "Añadir {{name}}"  placeholders={{name}}
 aiUnavailable = "IA no disponible"
 aito.confirmUnlink = "¿Desvincular {{name}} de esta tarea? Se borrará la lista de archivos entregados."  placeholders={{name}}
@@ -452,16 +468,16 @@ emptySearch = "Ningún proyecto coincide con esta búsqueda"
 files.addFiles = "Añadir archivos"
 files.byAuthor = "por {{name}}"  placeholders={{name}}
 files.chooseFiles = "Elegir archivos"
-files.confirmDeleteItem = "¿Eliminar {{name}} y todas sus revisiones? Los archivos pasan a la papelera del proyecto."  placeholders={{name}}
-files.confirmDeleteRevision = "¿Eliminar {{label}}? Sus archivos pasan a la papelera del proyecto."  placeholders={{label}}
-files.confirmRemoveFile = "¿Quitar {{name}} de {{label}}? El archivo se mueve a la papelera del proyecto."  placeholders={{label}},{{name}}
 files.deleteItem = "Eliminar elemento"
 files.deleteRevision = "Eliminar revisión"
 files.derivedFrom = "Derivado de {{label}}"  placeholders={{label}}
 files.derivedFromLabel = "Derivado de"
 files.derivedFromNone = "Nada"
+files.details = "Detalles"
 files.download = "Descargar"
 files.downloadAll = "Descargar todo (zip)"
+files.dropToCreate = "Suelta un .3mf o haz clic"
+files.dropToCreateHint = "Crea un elemento nuevo"
 files.duplicateWarning = "{{filename}} es idéntico a {{revision}}"  placeholders={{filename}},{{revision}}
 files.emptySection = "Aún no hay elementos"
 files.fileCount_one = "{{count}} archivo"  placeholders={{count}}
@@ -473,12 +489,16 @@ files.itemBusy = "{{name}} todavía se está subiendo, por lo que los archivos s
 files.itemNameLabel = "Nombre del elemento"
 files.newItem = "Nuevo elemento"
 files.newRevision = "Nueva revisión"
+files.noSettingsRefused = "{{name}} no tiene configuración de impresora. Ábrelo en Bambu Studio, elige la impresora y guárdalo como proyecto."  placeholders={{name}}
 files.notSliced = "Sin laminar"
 files.noteLabel = "Nota"
 files.notePlaceholder = "Qué ha cambiado…"
-files.onlyPrintable = "Solo se pueden añadir archivos 3MF y G-code a un proyecto"
+files.olderRevision = "Revisión anterior"
+files.oneFile = "Una revisión contiene un solo .3mf. Sube cada pieza como un elemento propio."
+files.onlySource = "Solo se pueden añadir archivos de proyecto de Bambu Studio (.3mf). Los archivos laminados (.gcode.3mf, .gcode) los genera el servidor."
 files.otherSections = "Archivos antiguos"
 files.outdated = "Desactualizado: basado en {{source}}, desde entonces se aprobó {{newer}}"  placeholders={{newer}},{{source}}
+files.outdatedBadge = "Desactualizado"
 files.preview = "Vista previa"
 files.remove = "Quitar"
 files.removeFile = "Quitar {{name}}"  placeholders={{name}}
@@ -490,6 +510,7 @@ files.sectionModelisation = "Modelado"
 files.sectionScan = "Escaneo"
 files.sectionUsinage = "Mecanizado"
 files.sliced = "Laminado"
+files.slicedRefused = "{{name}} ya está laminado. Sube en su lugar el proyecto .3mf original."  placeholders={{name}}
 files.statusLabel = "Estado"
 files.statusObsolete = "Obsoleto"
 files.statusValide = "Aprobado"
@@ -583,6 +604,9 @@ save = "Guardar"
 saveFailed = "No se pudo guardar el proyecto"
 saved = "Proyecto guardado"
 searchPlaceholder = "Buscar por código, título, descripción o etiqueta…"
+slice.downloadSliced = "Descargar el archivo laminado"
+slice.failed = "Error al laminar: {{detail}}"  placeholders={{detail}}
+slice.openInSlicer = "Abrir en el laminador"
 statusAll = "Todos"
 statusFilterLabel = "Estado"
 subtitle = "Cada pieza, sus archivos y su historial"
@@ -597,7 +621,7 @@ title = "Proyectos"
 titleLabel = "Título"
 viewGrid = "Vista de cuadrícula"
 viewTable = "Vista de tabla"
---- fr projectsPdm (198 keys)
+--- fr projectsPdm (206 keys)
 acceptSuggestion = "Ajouter {{name}}"  placeholders={{name}}
 aiUnavailable = "IA indisponible"
 aito.confirmUnlink = "Délier {{name}} de cette tâche ? La liste des fichiers livrés sera effacée."  placeholders={{name}}
@@ -651,16 +675,16 @@ emptySearch = "Aucun projet ne correspond à cette recherche"
 files.addFiles = "Ajouter des fichiers"
 files.byAuthor = "par {{name}}"  placeholders={{name}}
 files.chooseFiles = "Choisir des fichiers"
-files.confirmDeleteItem = "Supprimer {{name}} et toutes ses révisions ? Les fichiers vont dans la corbeille du projet."  placeholders={{name}}
-files.confirmDeleteRevision = "Supprimer {{label}} ? Ses fichiers vont dans la corbeille du projet."  placeholders={{label}}
-files.confirmRemoveFile = "Retirer {{name}} de {{label}} ? Le fichier va dans la corbeille du projet."  placeholders={{label}},{{name}}
 files.deleteItem = "Supprimer l'élément"
 files.deleteRevision = "Supprimer la révision"
 files.derivedFrom = "Dérivé de {{label}}"  placeholders={{label}}
 files.derivedFromLabel = "Dérivé de"
 files.derivedFromNone = "Rien"
+files.details = "Détails"
 files.download = "Télécharger"
 files.downloadAll = "Tout télécharger (zip)"
+files.dropToCreate = "Déposez un .3mf ou cliquez"
+files.dropToCreateHint = "Crée un nouvel élément"
 files.duplicateWarning = "{{filename}} est identique à {{revision}}"  placeholders={{filename}},{{revision}}
 files.emptySection = "Aucun élément"
 files.fileCount_one = "{{count}} fichier"  placeholders={{count}}
@@ -672,12 +696,16 @@ files.itemBusy = "{{name}} est encore en cours d'envoi : les fichiers déposés 
 files.itemNameLabel = "Nom de l'élément"
 files.newItem = "Nouvel élément"
 files.newRevision = "Nouvelle révision"
+files.noSettingsRefused = "{{name}} n'a pas de configuration d'imprimante. Ouvrez-le dans Bambu Studio, choisissez l'imprimante et enregistrez-le comme projet."  placeholders={{name}}
 files.notSliced = "Non tranché"
 files.noteLabel = "Note"
 files.notePlaceholder = "Ce qui a changé…"
-files.onlyPrintable = "Seuls les fichiers 3MF et G-code peuvent aller dans un projet"
+files.olderRevision = "Révision antérieure"
+files.oneFile = "Une révision contient un seul .3mf. Téléversez chaque pièce comme un élément distinct."
+files.onlySource = "Seuls les fichiers projet Bambu Studio (.3mf) peuvent être ajoutés. Les fichiers découpés (.gcode.3mf, .gcode) sont créés par le serveur."
 files.otherSections = "Autres fichiers (anciens)"
 files.outdated = "Pas à jour — basé sur {{source}}, {{newer}} validée depuis"  placeholders={{newer}},{{source}}
+files.outdatedBadge = "Périmé"
 files.preview = "Aperçu"
 files.remove = "Retirer"
 files.removeFile = "Retirer {{name}}"  placeholders={{name}}
@@ -689,6 +717,7 @@ files.sectionModelisation = "Modélisation"
 files.sectionScan = "Scan"
 files.sectionUsinage = "Usinage"
 files.sliced = "Tranché"
+files.slicedRefused = "{{name}} est déjà découpé. Téléversez plutôt le projet .3mf d'origine."  placeholders={{name}}
 files.statusLabel = "Statut"
 files.statusObsolete = "Obsolète"
 files.statusValide = "Validé"
@@ -782,6 +811,9 @@ save = "Enregistrer"
 saveFailed = "Impossible d'enregistrer le projet"
 saved = "Projet enregistré"
 searchPlaceholder = "Rechercher par code, titre, description ou étiquette…"
+slice.downloadSliced = "Télécharger le fichier tranché"
+slice.failed = "Échec du tranchage : {{detail}}"  placeholders={{detail}}
+slice.openInSlicer = "Ouvrir dans le trancheur"
 statusAll = "Tous"
 statusFilterLabel = "Statut"
 subtitle = "Chaque pièce, ses fichiers et son historique"
@@ -796,7 +828,7 @@ title = "Projets"
 titleLabel = "Titre"
 viewGrid = "Vue grille"
 viewTable = "Vue tableau"
---- it projectsPdm (198 keys)
+--- it projectsPdm (206 keys)
 acceptSuggestion = "Aggiungi {{name}}"  placeholders={{name}}
 aiUnavailable = "IA non disponibile"
 aito.confirmUnlink = "Scollegare {{name}} da questa attività? L'elenco dei file consegnati verrà svuotato."  placeholders={{name}}
@@ -850,16 +882,16 @@ emptySearch = "Nessun progetto corrisponde a questa ricerca"
 files.addFiles = "Aggiungi file"
 files.byAuthor = "di {{name}}"  placeholders={{name}}
 files.chooseFiles = "Scegli file"
-files.confirmDeleteItem = "Eliminare {{name}} e tutte le sue revisioni? I file vanno nel cestino del progetto."  placeholders={{name}}
-files.confirmDeleteRevision = "Eliminare {{label}}? I suoi file vanno nel cestino del progetto."  placeholders={{label}}
-files.confirmRemoveFile = "Rimuovere {{name}} da {{label}}? Il file viene spostato nel cestino del progetto."  placeholders={{label}},{{name}}
 files.deleteItem = "Elimina elemento"
 files.deleteRevision = "Elimina revisione"
 files.derivedFrom = "Derivato da {{label}}"  placeholders={{label}}
 files.derivedFromLabel = "Derivato da"
 files.derivedFromNone = "Niente"
+files.details = "Dettagli"
 files.download = "Scarica"
 files.downloadAll = "Scarica tutto (zip)"
+files.dropToCreate = "Rilascia un .3mf o fai clic"
+files.dropToCreateHint = "Crea un nuovo elemento"
 files.duplicateWarning = "{{filename}} è identico a {{revision}}"  placeholders={{filename}},{{revision}}
 files.emptySection = "Ancora nessun elemento"
 files.fileCount_one = "{{count}} file"  placeholders={{count}}
@@ -871,12 +903,16 @@ files.itemBusy = "{{name}} è ancora in caricamento, quindi i file trascinati no
 files.itemNameLabel = "Nome dell'elemento"
 files.newItem = "Nuovo elemento"
 files.newRevision = "Nuova revisione"
+files.noSettingsRefused = "{{name}} non ha una configurazione della stampante. Aprilo in Bambu Studio, scegli la stampante e salvalo come progetto."  placeholders={{name}}
 files.notSliced = "Non elaborato"
 files.noteLabel = "Nota"
 files.notePlaceholder = "Cosa è cambiato…"
-files.onlyPrintable = "In un progetto possono andare solo file 3MF e G-code"
+files.olderRevision = "Revisione precedente"
+files.oneFile = "Una revisione contiene un solo .3mf. Carica ogni parte come elemento a sé."
+files.onlySource = "È possibile aggiungere solo file di progetto Bambu Studio (.3mf). I file elaborati (.gcode.3mf, .gcode) li crea il server."
 files.otherSections = "File precedenti"
 files.outdated = "Superato: basato su {{source}}, da allora è stata approvata {{newer}}"  placeholders={{newer}},{{source}}
+files.outdatedBadge = "Superato"
 files.preview = "Anteprima"
 files.remove = "Rimuovi"
 files.removeFile = "Rimuovi {{name}}"  placeholders={{name}}
@@ -888,6 +924,7 @@ files.sectionModelisation = "Modellazione"
 files.sectionScan = "Scansione"
 files.sectionUsinage = "Lavorazione meccanica"
 files.sliced = "Elaborato dallo slicer"
+files.slicedRefused = "{{name}} è già elaborato. Carica invece il progetto .3mf originale."  placeholders={{name}}
 files.statusLabel = "Stato"
 files.statusObsolete = "Obsoleto"
 files.statusValide = "Approvato"
@@ -981,6 +1018,9 @@ save = "Salva"
 saveFailed = "Impossibile salvare il progetto"
 saved = "Progetto salvato"
 searchPlaceholder = "Cerca per codice, titolo, descrizione o tag…"
+slice.downloadSliced = "Scarica il file elaborato"
+slice.failed = "Elaborazione non riuscita: {{detail}}"  placeholders={{detail}}
+slice.openInSlicer = "Apri nello slicer"
 statusAll = "Tutti"
 statusFilterLabel = "Stato"
 subtitle = "Ogni pezzo, i suoi file e la sua cronologia"
@@ -995,7 +1035,7 @@ title = "Progetti"
 titleLabel = "Titolo"
 viewGrid = "Vista griglia"
 viewTable = "Vista tabella"
---- ja projectsPdm (198 keys)
+--- ja projectsPdm (206 keys)
 acceptSuggestion = "{{name}}を追加"  placeholders={{name}}
 aiUnavailable = "AIは利用できません"
 aito.confirmUnlink = "このタスクから {{name}} のリンクを解除しますか？納品ファイルの一覧は消去されます。"  placeholders={{name}}
@@ -1049,16 +1089,16 @@ emptySearch = "この検索に一致するプロジェクトはありません"
 files.addFiles = "ファイルを追加"
 files.byAuthor = "作成者: {{name}}"  placeholders={{name}}
 files.chooseFiles = "ファイルを選択"
-files.confirmDeleteItem = "{{name}}とすべてのリビジョンを削除しますか？ファイルはプロジェクトのごみ箱に移動します。"  placeholders={{name}}
-files.confirmDeleteRevision = "{{label}}を削除しますか？ファイルはプロジェクトのごみ箱に移動します。"  placeholders={{label}}
-files.confirmRemoveFile = "{{label}}から{{name}}を削除しますか？ファイルはプロジェクトのゴミ箱に移動します。"  placeholders={{label}},{{name}}
 files.deleteItem = "アイテムを削除"
 files.deleteRevision = "リビジョンを削除"
 files.derivedFrom = "{{label}}から派生"  placeholders={{label}}
 files.derivedFromLabel = "派生元"
 files.derivedFromNone = "なし"
+files.details = "詳細"
 files.download = "ダウンロード"
 files.downloadAll = "すべてダウンロード（zip）"
+files.dropToCreate = ".3mf をドロップまたはクリック"
+files.dropToCreateHint = "新しいアイテムを作成"
 files.duplicateWarning = "{{filename}}は{{revision}}と同一です"  placeholders={{filename}},{{revision}}
 files.emptySection = "アイテムはまだありません"
 files.fileCount_one = "{{count}}件のファイル"  placeholders={{count}}
@@ -1070,12 +1110,16 @@ files.itemBusy = "{{name}} はまだアップロード中のため、ドロッ�
 files.itemNameLabel = "アイテム名"
 files.newItem = "新規アイテム"
 files.newRevision = "新しいリビジョン"
+files.noSettingsRefused = "{{name}} にはプリンター設定がありません。Bambu Studio で開き、プリンターを選択してプロジェクトとして保存してください。"  placeholders={{name}}
 files.notSliced = "未スライス"
 files.noteLabel = "メモ"
 files.notePlaceholder = "変更内容…"
-files.onlyPrintable = "プロジェクトに追加できるのは 3MF と G-code ファイルのみです"
+files.olderRevision = "以前のリビジョン"
+files.oneFile = "1 つのリビジョンに入れられる .3mf は 1 つです。各パーツは別のアイテムとしてアップロードしてください。"
+files.onlySource = "追加できるのは Bambu Studio のプロジェクトファイル（.3mf）のみです。スライス済みファイル（.gcode.3mf、.gcode）はサーバーが作成します。"
 files.otherSections = "以前のファイル"
 files.outdated = "古くなっています：{{source}}が基準で、その後{{newer}}が承認されました"  placeholders={{newer}},{{source}}
+files.outdatedBadge = "古い"
 files.preview = "プレビュー"
 files.remove = "削除"
 files.removeFile = "{{name}}を削除"  placeholders={{name}}
@@ -1087,6 +1131,7 @@ files.sectionModelisation = "モデリング"
 files.sectionScan = "スキャン"
 files.sectionUsinage = "機械加工"
 files.sliced = "スライス済み"
+files.slicedRefused = "{{name}} はすでにスライス済みです。元の .3mf プロジェクトをアップロードしてください。"  placeholders={{name}}
 files.statusLabel = "ステータス"
 files.statusObsolete = "廃止"
 files.statusValide = "承認済み"
@@ -1180,6 +1225,9 @@ save = "保存"
 saveFailed = "プロジェクトを保存できませんでした"
 saved = "プロジェクトを保存しました"
 searchPlaceholder = "コード、タイトル、説明、タグで検索…"
+slice.downloadSliced = "スライス済みファイルをダウンロード"
+slice.failed = "スライスに失敗しました: {{detail}}"  placeholders={{detail}}
+slice.openInSlicer = "スライサーで開く"
 statusAll = "すべて"
 statusFilterLabel = "ステータス"
 subtitle = "すべての部品、そのファイルと履歴"
@@ -1194,7 +1242,7 @@ title = "プロジェクト"
 titleLabel = "タイトル"
 viewGrid = "グリッド表示"
 viewTable = "テーブル表示"
---- ko projectsPdm (198 keys)
+--- ko projectsPdm (206 keys)
 acceptSuggestion = "{{name}} 추가"  placeholders={{name}}
 aiUnavailable = "AI를 사용할 수 없음"
 aito.confirmUnlink = "이 작업에서 {{name}} 연결을 해제할까요? 납품 파일 목록이 지워집니다."  placeholders={{name}}
@@ -1248,16 +1296,16 @@ emptySearch = "이 검색과 일치하는 프로젝트가 없습니다"
 files.addFiles = "파일 추가"
 files.byAuthor = "{{name}}"  placeholders={{name}}
 files.chooseFiles = "파일 선택"
-files.confirmDeleteItem = "{{name}}과(와) 모든 리비전을 삭제할까요? 파일은 프로젝트 휴지통으로 이동합니다."  placeholders={{name}}
-files.confirmDeleteRevision = "{{label}}을(를) 삭제할까요? 파일은 프로젝트 휴지통으로 이동합니다."  placeholders={{label}}
-files.confirmRemoveFile = "{{label}}에서 {{name}}을(를) 제거할까요? 파일은 프로젝트 휴지통으로 이동합니다."  placeholders={{label}},{{name}}
 files.deleteItem = "항목 삭제"
 files.deleteRevision = "리비전 삭제"
 files.derivedFrom = "{{label}}에서 파생"  placeholders={{label}}
 files.derivedFromLabel = "파생 원본"
 files.derivedFromNone = "없음"
+files.details = "세부 정보"
 files.download = "다운로드"
 files.downloadAll = "모두 다운로드(zip)"
+files.dropToCreate = ".3mf를 놓거나 클릭"
+files.dropToCreateHint = "새 항목을 만듭니다"
 files.duplicateWarning = "{{filename}}은(는) {{revision}}과(와) 동일합니다"  placeholders={{filename}},{{revision}}
 files.emptySection = "아직 항목이 없습니다"
 files.fileCount_one = "파일 {{count}}개"  placeholders={{count}}
@@ -1269,12 +1317,16 @@ files.itemBusy = "{{name}}을(를) 아직 업로드하는 중이라 드롭한 �
 files.itemNameLabel = "항목 이름"
 files.newItem = "새 항목"
 files.newRevision = "새 리비전"
+files.noSettingsRefused = "{{name}}에 프린터 설정이 없습니다. Bambu Studio에서 열어 프린터를 선택하고 프로젝트로 저장하세요."  placeholders={{name}}
 files.notSliced = "슬라이스 안 됨"
 files.noteLabel = "메모"
 files.notePlaceholder = "변경된 내용…"
-files.onlyPrintable = "프로젝트에는 3MF 및 G-code 파일만 넣을 수 있습니다"
+files.olderRevision = "이전 리비전"
+files.oneFile = "리비전에는 .3mf 하나만 들어갑니다. 각 부품을 별도의 항목으로 업로드하세요."
+files.onlySource = "Bambu Studio 프로젝트 파일(.3mf)만 추가할 수 있습니다. 슬라이스된 파일(.gcode.3mf, .gcode)은 서버가 만듭니다."
 files.otherSections = "이전 파일"
 files.outdated = "오래됨 — {{source}} 기반, 이후 {{newer}} 승인됨"  placeholders={{newer}},{{source}}
+files.outdatedBadge = "오래됨"
 files.preview = "미리보기"
 files.remove = "제거"
 files.removeFile = "{{name}} 제거"  placeholders={{name}}
@@ -1286,6 +1338,7 @@ files.sectionModelisation = "모델링"
 files.sectionScan = "스캔"
 files.sectionUsinage = "기계 가공"
 files.sliced = "슬라이스됨"
+files.slicedRefused = "{{name}}은(는) 이미 슬라이스되었습니다. 대신 원본 .3mf 프로젝트를 업로드하세요."  placeholders={{name}}
 files.statusLabel = "상태"
 files.statusObsolete = "폐기됨"
 files.statusValide = "승인됨"
@@ -1379,6 +1432,9 @@ save = "저장"
 saveFailed = "프로젝트를 저장할 수 없습니다"
 saved = "프로젝트가 저장되었습니다"
 searchPlaceholder = "코드, 제목, 설명 또는 태그로 검색…"
+slice.downloadSliced = "슬라이스된 파일 다운로드"
+slice.failed = "슬라이스 실패: {{detail}}"  placeholders={{detail}}
+slice.openInSlicer = "슬라이서에서 열기"
 statusAll = "전체"
 statusFilterLabel = "상태"
 subtitle = "모든 부품, 파일 및 이력"
@@ -1393,7 +1449,7 @@ title = "프로젝트"
 titleLabel = "제목"
 viewGrid = "격자 보기"
 viewTable = "표 보기"
---- nl projectsPdm (198 keys)
+--- nl projectsPdm (206 keys)
 acceptSuggestion = "{{name}} toevoegen"  placeholders={{name}}
 aiUnavailable = "AI niet beschikbaar"
 aito.confirmUnlink = "{{name}} loskoppelen van deze taak? De lijst met geleverde bestanden wordt gewist."  placeholders={{name}}
@@ -1447,16 +1503,16 @@ emptySearch = "Geen project komt overeen met deze zoekopdracht"
 files.addFiles = "Bestanden toevoegen"
 files.byAuthor = "door {{name}}"  placeholders={{name}}
 files.chooseFiles = "Bestanden kiezen"
-files.confirmDeleteItem = "{{name}} en alle revisies verwijderen? De bestanden gaan naar de prullenbak van het project."  placeholders={{name}}
-files.confirmDeleteRevision = "{{label}} verwijderen? De bestanden gaan naar de prullenbak van het project."  placeholders={{label}}
-files.confirmRemoveFile = "{{name}} uit {{label}} verwijderen? Het bestand gaat naar de prullenbak van het project."  placeholders={{label}},{{name}}
 files.deleteItem = "Item verwijderen"
 files.deleteRevision = "Revisie verwijderen"
 files.derivedFrom = "Afgeleid van {{label}}"  placeholders={{label}}
 files.derivedFromLabel = "Afgeleid van"
 files.derivedFromNone = "Niets"
+files.details = "Bijzonderheden"
 files.download = "Downloaden"
 files.downloadAll = "Alles downloaden (zip)"
+files.dropToCreate = "Sleep een .3mf hierheen of klik"
+files.dropToCreateHint = "Maakt een nieuw onderdeel"
 files.duplicateWarning = "{{filename}} is identiek aan {{revision}}"  placeholders={{filename}},{{revision}}
 files.emptySection = "Nog geen items"
 files.fileCount_one = "{{count}} bestand"  placeholders={{count}}
@@ -1468,12 +1524,16 @@ files.itemBusy = "{{name}} wordt nog geüpload, dus de neergezette bestanden zij
 files.itemNameLabel = "Itemnaam"
 files.newItem = "Nieuw item"
 files.newRevision = "Nieuwe revisie"
+files.noSettingsRefused = "{{name}} heeft geen printerinstelling. Open het in Bambu Studio, kies de printer en sla het op als project."  placeholders={{name}}
 files.notSliced = "Niet gesliced"
 files.noteLabel = "Notitie"
 files.notePlaceholder = "Wat is er veranderd…"
-files.onlyPrintable = "Alleen 3MF- en G-code-bestanden kunnen in een project"
+files.olderRevision = "Oudere revisie"
+files.oneFile = "Een revisie bevat één .3mf. Upload elk onderdeel als een apart item."
+files.onlySource = "Alleen Bambu Studio-projectbestanden (.3mf) kunnen worden toegevoegd. Geslicete bestanden (.gcode.3mf, .gcode) maakt de server zelf."
 files.otherSections = "Oudere bestanden"
 files.outdated = "Achterhaald: gebaseerd op {{source}}, sindsdien is {{newer}} goedgekeurd"  placeholders={{newer}},{{source}}
+files.outdatedBadge = "Verouderd"
 files.preview = "Voorbeeld"
 files.remove = "Verwijderen"
 files.removeFile = "{{name}} verwijderen"  placeholders={{name}}
@@ -1485,6 +1545,7 @@ files.sectionModelisation = "Modelleren"
 files.sectionScan = "3D-scan"
 files.sectionUsinage = "Bewerking"
 files.sliced = "Gesliced"
+files.slicedRefused = "{{name}} is al geslicet. Upload in plaats daarvan het originele .3mf-project."  placeholders={{name}}
 files.statusLabel = "Status"
 files.statusObsolete = "Verouderd"
 files.statusValide = "Goedgekeurd"
@@ -1578,6 +1639,9 @@ save = "Opslaan"
 saveFailed = "Project kon niet worden opgeslagen"
 saved = "Project opgeslagen"
 searchPlaceholder = "Zoeken op code, titel, beschrijving of tag…"
+slice.downloadSliced = "Geslicet bestand downloaden"
+slice.failed = "Slicen mislukt: {{detail}}"  placeholders={{detail}}
+slice.openInSlicer = "Openen in de slicer"
 statusAll = "Alle"
 statusFilterLabel = "Status"
 subtitle = "Elk onderdeel, zijn bestanden en zijn geschiedenis"
@@ -1592,7 +1656,7 @@ title = "Projecten"
 titleLabel = "Titel"
 viewGrid = "Rasterweergave"
 viewTable = "Tabelweergave"
---- ptBR projectsPdm (198 keys)
+--- ptBR projectsPdm (206 keys)
 acceptSuggestion = "Adicionar {{name}}"  placeholders={{name}}
 aiUnavailable = "IA indisponível"
 aito.confirmUnlink = "Desvincular {{name}} desta tarefa? A lista de arquivos entregues será apagada."  placeholders={{name}}
@@ -1646,16 +1710,16 @@ emptySearch = "Nenhum projeto corresponde a esta busca"
 files.addFiles = "Adicionar arquivos"
 files.byAuthor = "por {{name}}"  placeholders={{name}}
 files.chooseFiles = "Escolher arquivos"
-files.confirmDeleteItem = "Excluir {{name}} e todas as suas revisões? Os arquivos vão para a lixeira do projeto."  placeholders={{name}}
-files.confirmDeleteRevision = "Excluir {{label}}? Os arquivos vão para a lixeira do projeto."  placeholders={{label}}
-files.confirmRemoveFile = "Remover {{name}} de {{label}}? O arquivo vai para a lixeira do projeto."  placeholders={{label}},{{name}}
 files.deleteItem = "Excluir item"
 files.deleteRevision = "Excluir revisão"
 files.derivedFrom = "Derivado de {{label}}"  placeholders={{label}}
 files.derivedFromLabel = "Derivado de"
 files.derivedFromNone = "Nada"
+files.details = "Detalhes"
 files.download = "Baixar"
 files.downloadAll = "Baixar tudo (zip)"
+files.dropToCreate = "Solte um .3mf ou clique"
+files.dropToCreateHint = "Cria um novo item"
 files.duplicateWarning = "{{filename}} é idêntico a {{revision}}"  placeholders={{filename}},{{revision}}
 files.emptySection = "Nenhum item ainda"
 files.fileCount_one = "{{count}} arquivo"  placeholders={{count}}
@@ -1667,12 +1731,16 @@ files.itemBusy = "{{name}} ainda está sendo enviado, então os arquivos soltos 
 files.itemNameLabel = "Nome do item"
 files.newItem = "Novo item"
 files.newRevision = "Nova revisão"
+files.noSettingsRefused = "{{name}} não tem configuração de impressora. Abra-o no Bambu Studio, escolha a impressora e salve-o como projeto."  placeholders={{name}}
 files.notSliced = "Não fatiado"
 files.noteLabel = "Observação"
 files.notePlaceholder = "O que mudou…"
-files.onlyPrintable = "Somente arquivos 3MF e G-code podem ir para um projeto"
+files.olderRevision = "Revisão anterior"
+files.oneFile = "Uma revisão contém um único .3mf. Envie cada peça como um item separado."
+files.onlySource = "Somente arquivos de projeto do Bambu Studio (.3mf) podem ser adicionados. Os arquivos fatiados (.gcode.3mf, .gcode) são gerados pelo servidor."
 files.otherSections = "Arquivos antigos"
 files.outdated = "Desatualizado: baseado em {{source}}, {{newer}} foi aprovada desde então"  placeholders={{newer}},{{source}}
+files.outdatedBadge = "Desatualizado"
 files.preview = "Pré-visualização"
 files.remove = "Remover"
 files.removeFile = "Remover {{name}}"  placeholders={{name}}
@@ -1684,6 +1752,7 @@ files.sectionModelisation = "Modelagem"
 files.sectionScan = "Escaneamento"
 files.sectionUsinage = "Usinagem"
 files.sliced = "Fatiado"
+files.slicedRefused = "{{name}} já está fatiado. Envie o projeto .3mf original."  placeholders={{name}}
 files.statusLabel = "Status"
 files.statusObsolete = "Obsoleto"
 files.statusValide = "Aprovado"
@@ -1777,6 +1846,9 @@ save = "Salvar"
 saveFailed = "Não foi possível salvar o projeto"
 saved = "Projeto salvo"
 searchPlaceholder = "Buscar por código, título, descrição ou tag…"
+slice.downloadSliced = "Baixar o arquivo fatiado"
+slice.failed = "Falha ao fatiar: {{detail}}"  placeholders={{detail}}
+slice.openInSlicer = "Abrir no fatiador"
 statusAll = "Todos"
 statusFilterLabel = "Status"
 subtitle = "Cada peça, seus arquivos e seu histórico"
@@ -1791,7 +1863,7 @@ title = "Projetos"
 titleLabel = "Título"
 viewGrid = "Visualização em grade"
 viewTable = "Visualização em tabela"
---- ru projectsPdm (198 keys)
+--- ru projectsPdm (206 keys)
 acceptSuggestion = "Добавить {{name}}"  placeholders={{name}}
 aiUnavailable = "ИИ недоступен"
 aito.confirmUnlink = "Отвязать {{name}} от этой задачи? Список переданных файлов будет очищен."  placeholders={{name}}
@@ -1845,16 +1917,16 @@ emptySearch = "Ни один проект не соответствует пои
 files.addFiles = "Добавить файлы"
 files.byAuthor = "автор: {{name}}"  placeholders={{name}}
 files.chooseFiles = "Выбрать файлы"
-files.confirmDeleteItem = "Удалить {{name}} и все его ревизии? Файлы попадут в корзину проекта."  placeholders={{name}}
-files.confirmDeleteRevision = "Удалить {{label}}? Файлы попадут в корзину проекта."  placeholders={{label}}
-files.confirmRemoveFile = "Убрать {{name}} из {{label}}? Файл будет перемещён в корзину проекта."  placeholders={{label}},{{name}}
 files.deleteItem = "Удалить элемент"
 files.deleteRevision = "Удалить ревизию"
 files.derivedFrom = "Производная от {{label}}"  placeholders={{label}}
 files.derivedFromLabel = "Производная от"
 files.derivedFromNone = "Ничего"
+files.details = "Подробности"
 files.download = "Скачать"
 files.downloadAll = "Скачать всё (zip)"
+files.dropToCreate = "Перетащите .3mf или нажмите"
+files.dropToCreateHint = "Создаёт новый элемент"
 files.duplicateWarning = "{{filename}} идентичен {{revision}}"  placeholders={{filename}},{{revision}}
 files.emptySection = "Элементов пока нет"
 files.fileCount_one = "Файлов: {{count}}"  placeholders={{count}}
@@ -1866,12 +1938,16 @@ files.itemBusy = "{{name}} ещё загружается, поэтому пер�
 files.itemNameLabel = "Название элемента"
 files.newItem = "Новый элемент"
 files.newRevision = "Новая ревизия"
+files.noSettingsRefused = "В {{name}} не задан принтер. Откройте файл в Bambu Studio, выберите принтер и сохраните его как проект."  placeholders={{name}}
 files.notSliced = "Не нарезано"
 files.noteLabel = "Заметка"
 files.notePlaceholder = "Что изменилось…"
-files.onlyPrintable = "В проект можно добавлять только файлы 3MF и G-code"
+files.olderRevision = "Более ранняя ревизия"
+files.oneFile = "Ревизия содержит один файл .3mf. Загружайте каждую деталь отдельным элементом."
+files.onlySource = "Можно добавлять только файлы проектов Bambu Studio (.3mf). Нарезанные файлы (.gcode.3mf, .gcode) создаёт сервер."
 files.otherSections = "Старые файлы"
 files.outdated = "Неактуально — основано на {{source}}, с тех пор утверждена {{newer}}"  placeholders={{newer}},{{source}}
+files.outdatedBadge = "Устарело"
 files.preview = "Предпросмотр"
 files.remove = "Убрать"
 files.removeFile = "Убрать {{name}}"  placeholders={{name}}
@@ -1883,6 +1959,7 @@ files.sectionModelisation = "Моделирование"
 files.sectionScan = "Скан"
 files.sectionUsinage = "Мехобработка"
 files.sliced = "Нарезано"
+files.slicedRefused = "{{name}} уже нарезан. Загрузите вместо него исходный проект .3mf."  placeholders={{name}}
 files.statusLabel = "Статус"
 files.statusObsolete = "Устарело"
 files.statusValide = "Утверждено"
@@ -1976,6 +2053,9 @@ save = "Сохранить"
 saveFailed = "Не удалось сохранить проект"
 saved = "Проект сохранён"
 searchPlaceholder = "Поиск по коду, названию, описанию или метке…"
+slice.downloadSliced = "Скачать нарезанный файл"
+slice.failed = "Не удалось нарезать: {{detail}}"  placeholders={{detail}}
+slice.openInSlicer = "Открыть в слайсере"
 statusAll = "Все"
 statusFilterLabel = "Статус"
 subtitle = "Каждая деталь, её файлы и история"
@@ -1990,7 +2070,7 @@ title = "Проекты"
 titleLabel = "Название"
 viewGrid = "Вид сеткой"
 viewTable = "Табличный вид"
---- sv projectsPdm (198 keys)
+--- sv projectsPdm (206 keys)
 acceptSuggestion = "Lägg till {{name}}"  placeholders={{name}}
 aiUnavailable = "AI är inte tillgänglig"
 aito.confirmUnlink = "Koppla bort {{name}} från den här uppgiften? Listan över levererade filer töms."  placeholders={{name}}
@@ -2044,16 +2124,16 @@ emptySearch = "Inget projekt matchar sökningen"
 files.addFiles = "Lägg till filer"
 files.byAuthor = "av {{name}}"  placeholders={{name}}
 files.chooseFiles = "Välj filer"
-files.confirmDeleteItem = "Ta bort {{name}} och alla dess revisioner? Filerna flyttas till projektets papperskorg."  placeholders={{name}}
-files.confirmDeleteRevision = "Ta bort {{label}}? Filerna flyttas till projektets papperskorg."  placeholders={{label}}
-files.confirmRemoveFile = "Ta bort {{name}} från {{label}}? Filen flyttas till projektets papperskorg."  placeholders={{label}},{{name}}
 files.deleteItem = "Ta bort objekt"
 files.deleteRevision = "Ta bort revision"
 files.derivedFrom = "Härledd från {{label}}"  placeholders={{label}}
 files.derivedFromLabel = "Härledd från"
 files.derivedFromNone = "Ingenting"
+files.details = "Detaljer"
 files.download = "Ladda ner"
 files.downloadAll = "Ladda ner allt (zip)"
+files.dropToCreate = "Släpp en .3mf eller klicka"
+files.dropToCreateHint = "Skapar ett nytt objekt"
 files.duplicateWarning = "{{filename}} är identisk med {{revision}}"  placeholders={{filename}},{{revision}}
 files.emptySection = "Inga objekt ännu"
 files.fileCount_one = "{{count}} fil"  placeholders={{count}}
@@ -2065,12 +2145,16 @@ files.itemBusy = "{{name}} laddas fortfarande upp, så de släppta filerna ladda
 files.itemNameLabel = "Objektnamn"
 files.newItem = "Nytt objekt"
 files.newRevision = "Ny revision"
+files.noSettingsRefused = "{{name}} saknar skrivarinställning. Öppna den i Bambu Studio, välj skrivare och spara den som ett projekt."  placeholders={{name}}
 files.notSliced = "Inte skivad"
 files.noteLabel = "Anteckning"
 files.notePlaceholder = "Vad som ändrats…"
-files.onlyPrintable = "Endast 3MF- och G-code-filer kan läggas i ett projekt"
+files.olderRevision = "Äldre revision"
+files.oneFile = "En revision innehåller en enda .3mf. Ladda upp varje del som ett eget objekt."
+files.onlySource = "Endast Bambu Studio-projektfiler (.3mf) kan läggas till. Skivade filer (.gcode.3mf, .gcode) skapas av servern."
 files.otherSections = "Äldre filer"
 files.outdated = "Inaktuell – baserad på {{source}}, {{newer}} har godkänts sedan dess"  placeholders={{newer}},{{source}}
+files.outdatedBadge = "Inaktuell"
 files.preview = "Förhandsvisning"
 files.remove = "Ta bort"
 files.removeFile = "Ta bort {{name}}"  placeholders={{name}}
@@ -2082,6 +2166,7 @@ files.sectionModelisation = "Modellering"
 files.sectionScan = "Skanning"
 files.sectionUsinage = "Bearbetning"
 files.sliced = "Skivad"
+files.slicedRefused = "{{name}} är redan skivad. Ladda upp det ursprungliga .3mf-projektet i stället."  placeholders={{name}}
 files.statusLabel = "Status"
 files.statusObsolete = "Föråldrad"
 files.statusValide = "Godkänd"
@@ -2175,6 +2260,9 @@ save = "Spara"
 saveFailed = "Det gick inte att spara projektet"
 saved = "Projektet sparades"
 searchPlaceholder = "Sök efter kod, titel, beskrivning eller tagg…"
+slice.downloadSliced = "Ladda ned den slicade filen"
+slice.failed = "Slicingen misslyckades: {{detail}}"  placeholders={{detail}}
+slice.openInSlicer = "Öppna i slicern"
 statusAll = "Alla"
 statusFilterLabel = "Status"
 subtitle = "Varje del, dess filer och dess historik"
@@ -2189,7 +2277,7 @@ title = "Projekt"
 titleLabel = "Titel"
 viewGrid = "Rutnätsvy"
 viewTable = "Tabellvy"
---- tr projectsPdm (198 keys)
+--- tr projectsPdm (206 keys)
 acceptSuggestion = "{{name}} ekle"  placeholders={{name}}
 aiUnavailable = "Yapay zekâ kullanılamıyor"
 aito.confirmUnlink = "{{name}} bu görevden ayrılsın mı? Teslim edilen dosyalar listesi temizlenir."  placeholders={{name}}
@@ -2243,16 +2331,16 @@ emptySearch = "Bu aramayla eşleşen proje yok"
 files.addFiles = "Dosya ekle"
 files.byAuthor = "ekleyen: {{name}}"  placeholders={{name}}
 files.chooseFiles = "Dosya seç"
-files.confirmDeleteItem = "{{name}} ve tüm revizyonları silinsin mi? Dosyalar proje çöp kutusuna taşınır."  placeholders={{name}}
-files.confirmDeleteRevision = "{{label}} silinsin mi? Dosyaları proje çöp kutusuna taşınır."  placeholders={{label}}
-files.confirmRemoveFile = "{{name}} dosyası {{label}} revizyonundan kaldırılsın mı? Dosya proje çöp kutusuna taşınır."  placeholders={{label}},{{name}}
 files.deleteItem = "Öğeyi sil"
 files.deleteRevision = "Revizyonu sil"
 files.derivedFrom = "{{label}} revizyonundan türetildi"  placeholders={{label}}
 files.derivedFromLabel = "Türetildiği kaynak"
 files.derivedFromNone = "Hiçbiri"
+files.details = "Ayrıntılar"
 files.download = "İndir"
 files.downloadAll = "Tümünü indir (zip)"
+files.dropToCreate = "Bir .3mf bırakın veya tıklayın"
+files.dropToCreateHint = "Yeni bir öğe oluşturur"
 files.duplicateWarning = "{{filename}}, {{revision}} ile aynı"  placeholders={{filename}},{{revision}}
 files.emptySection = "Henüz öğe yok"
 files.fileCount_one = "{{count}} dosya"  placeholders={{count}}
@@ -2264,12 +2352,16 @@ files.itemBusy = "{{name}} hâlâ yükleniyor, bu yüzden bırakılan dosyalar y
 files.itemNameLabel = "Öğe adı"
 files.newItem = "Yeni öğe"
 files.newRevision = "Yeni revizyon"
+files.noSettingsRefused = "{{name}} için yazıcı ayarı yok. Bambu Studio'da açın, yazıcıyı seçin ve proje olarak kaydedin."  placeholders={{name}}
 files.notSliced = "Dilimlenmedi"
 files.noteLabel = "Not"
 files.notePlaceholder = "Ne değişti…"
-files.onlyPrintable = "Bir projeye yalnızca 3MF ve G-code dosyaları eklenebilir"
+files.olderRevision = "Eski revizyon"
+files.oneFile = "Bir revizyon tek bir .3mf içerir. Her parçayı ayrı bir öğe olarak yükleyin."
+files.onlySource = "Yalnızca Bambu Studio proje dosyaları (.3mf) eklenebilir. Dilimlenmiş dosyaları (.gcode.3mf, .gcode) sunucu oluşturur."
 files.otherSections = "Eski dosyalar"
 files.outdated = "Güncel değil — {{source}} temel alınmış, o zamandan beri {{newer}} onaylandı"  placeholders={{newer}},{{source}}
+files.outdatedBadge = "Güncel değil"
 files.preview = "Önizleme"
 files.remove = "Kaldır"
 files.removeFile = "{{name}} dosyasını kaldır"  placeholders={{name}}
@@ -2281,6 +2373,7 @@ files.sectionModelisation = "Modelleme"
 files.sectionScan = "Tarama"
 files.sectionUsinage = "Talaşlı imalat"
 files.sliced = "Dilimlendi"
+files.slicedRefused = "{{name}} zaten dilimlenmiş. Bunun yerine orijinal .3mf projesini yükleyin."  placeholders={{name}}
 files.statusLabel = "Durum"
 files.statusObsolete = "Eski"
 files.statusValide = "Onaylandı"
@@ -2374,6 +2467,9 @@ save = "Kaydet"
 saveFailed = "Proje kaydedilemedi"
 saved = "Proje kaydedildi"
 searchPlaceholder = "Kod, başlık, açıklama veya etiketle ara…"
+slice.downloadSliced = "Dilimlenmiş dosyayı indir"
+slice.failed = "Dilimleme başarısız: {{detail}}"  placeholders={{detail}}
+slice.openInSlicer = "Dilimleyicide aç"
 statusAll = "Tümü"
 statusFilterLabel = "Durum"
 subtitle = "Her parça, dosyaları ve geçmişi"
@@ -2388,7 +2484,7 @@ title = "Projeler"
 titleLabel = "Başlık"
 viewGrid = "Izgara görünümü"
 viewTable = "Tablo görünümü"
---- uk projectsPdm (198 keys)
+--- uk projectsPdm (206 keys)
 acceptSuggestion = "Додати {{name}}"  placeholders={{name}}
 aiUnavailable = "ШІ недоступний"
 aito.confirmUnlink = "Відв’язати {{name}} від цього завдання? Список переданих файлів буде очищено."  placeholders={{name}}
@@ -2442,16 +2538,16 @@ emptySearch = "Жоден проєкт не відповідає пошуку"
 files.addFiles = "Додати файли"
 files.byAuthor = "автор: {{name}}"  placeholders={{name}}
 files.chooseFiles = "Вибрати файли"
-files.confirmDeleteItem = "Видалити {{name}} і всі його ревізії? Файли потраплять до кошика проєкту."  placeholders={{name}}
-files.confirmDeleteRevision = "Видалити {{label}}? Файли потраплять до кошика проєкту."  placeholders={{label}}
-files.confirmRemoveFile = "Прибрати {{name}} з {{label}}? Файл буде переміщено до кошика проєкту."  placeholders={{label}},{{name}}
 files.deleteItem = "Видалити елемент"
 files.deleteRevision = "Видалити ревізію"
 files.derivedFrom = "Похідна від {{label}}"  placeholders={{label}}
 files.derivedFromLabel = "Похідна від"
 files.derivedFromNone = "Нічого"
+files.details = "Подробиці"
 files.download = "Завантажити"
 files.downloadAll = "Завантажити все (zip)"
+files.dropToCreate = "Перетягніть .3mf або натисніть"
+files.dropToCreateHint = "Створює новий елемент"
 files.duplicateWarning = "{{filename}} ідентичний {{revision}}"  placeholders={{filename}},{{revision}}
 files.emptySection = "Елементів ще немає"
 files.fileCount_one = "Файлів: {{count}}"  placeholders={{count}}
@@ -2463,12 +2559,16 @@ files.itemBusy = "{{name}} ще завантажується, тому пере�
 files.itemNameLabel = "Назва елемента"
 files.newItem = "Новий елемент"
 files.newRevision = "Нова ревізія"
+files.noSettingsRefused = "У {{name}} не вказано принтер. Відкрийте файл у Bambu Studio, виберіть принтер і збережіть його як проєкт."  placeholders={{name}}
 files.notSliced = "Не нарізано"
 files.noteLabel = "Нотатка"
 files.notePlaceholder = "Що змінилося…"
-files.onlyPrintable = "До проєкту можна додавати лише файли 3MF і G-code"
+files.olderRevision = "Попередня ревізія"
+files.oneFile = "Ревізія містить один файл .3mf. Завантажуйте кожну деталь окремим елементом."
+files.onlySource = "Можна додавати лише файли проєктів Bambu Studio (.3mf). Нарізані файли (.gcode.3mf, .gcode) створює сервер."
 files.otherSections = "Старіші файли"
 files.outdated = "Неактуально — засновано на {{source}}, відтоді затверджено {{newer}}"  placeholders={{newer}},{{source}}
+files.outdatedBadge = "Застаріло"
 files.preview = "Попередній перегляд"
 files.remove = "Прибрати"
 files.removeFile = "Прибрати {{name}}"  placeholders={{name}}
@@ -2480,6 +2580,7 @@ files.sectionModelisation = "Моделювання"
 files.sectionScan = "Скан"
 files.sectionUsinage = "Механообробка"
 files.sliced = "Нарізано"
+files.slicedRefused = "{{name}} уже нарізано. Завантажте натомість вихідний проєкт .3mf."  placeholders={{name}}
 files.statusLabel = "Статус"
 files.statusObsolete = "Застаріло"
 files.statusValide = "Затверджено"
@@ -2573,6 +2674,9 @@ save = "Зберегти"
 saveFailed = "Не вдалося зберегти проєкт"
 saved = "Проєкт збережено"
 searchPlaceholder = "Пошук за кодом, назвою, описом або тегом…"
+slice.downloadSliced = "Завантажити нарізаний файл"
+slice.failed = "Не вдалося нарізати: {{detail}}"  placeholders={{detail}}
+slice.openInSlicer = "Відкрити у слайсері"
 statusAll = "Усі"
 statusFilterLabel = "Статус"
 subtitle = "Кожна деталь, її файли та історія"
@@ -2587,7 +2691,7 @@ title = "Проєкти"
 titleLabel = "Назва"
 viewGrid = "Вигляд сіткою"
 viewTable = "Табличний вигляд"
---- zhCN projectsPdm (198 keys)
+--- zhCN projectsPdm (206 keys)
 acceptSuggestion = "添加 {{name}}"  placeholders={{name}}
 aiUnavailable = "AI 不可用"
 aito.confirmUnlink = "要将 {{name}} 从此任务取消关联吗？已交付文件列表将被清空。"  placeholders={{name}}
@@ -2641,16 +2745,16 @@ emptySearch = "没有项目匹配此搜索"
 files.addFiles = "添加文件"
 files.byAuthor = "作者：{{name}}"  placeholders={{name}}
 files.chooseFiles = "选择文件"
-files.confirmDeleteItem = "删除 {{name}} 及其所有版本？文件将移入项目回收站。"  placeholders={{name}}
-files.confirmDeleteRevision = "删除 {{label}}？其文件将移入项目回收站。"  placeholders={{label}}
-files.confirmRemoveFile = "要从 {{label}} 中移除 {{name}} 吗？文件将移至项目回收站。"  placeholders={{label}},{{name}}
 files.deleteItem = "删除条目"
 files.deleteRevision = "删除版本"
 files.derivedFrom = "源自 {{label}}"  placeholders={{label}}
 files.derivedFromLabel = "源自"
 files.derivedFromNone = "无"
+files.details = "详情"
 files.download = "下载"
 files.downloadAll = "全部下载（zip）"
+files.dropToCreate = "拖放 .3mf 或点击"
+files.dropToCreateHint = "创建新项目"
 files.duplicateWarning = "{{filename}} 与 {{revision}} 相同"  placeholders={{filename}},{{revision}}
 files.emptySection = "暂无项目"
 files.fileCount_one = "{{count}} 个文件"  placeholders={{count}}
@@ -2662,12 +2766,16 @@ files.itemBusy = "{{name}} 仍在上传，因此拖放的文件未上传"  place
 files.itemNameLabel = "条目名称"
 files.newItem = "新建条目"
 files.newRevision = "新版本"
+files.noSettingsRefused = "{{name}} 没有打印机设置。请在 Bambu Studio 中打开，选择打印机后另存为项目。"  placeholders={{name}}
 files.notSliced = "未切片"
 files.noteLabel = "备注"
 files.notePlaceholder = "改动说明…"
-files.onlyPrintable = "项目只能包含 3MF 和 G-code 文件"
+files.olderRevision = "旧版本"
+files.oneFile = "一个修订版只能包含一个 .3mf。请将每个零件作为单独的条目上传。"
+files.onlySource = "只能添加 Bambu Studio 项目文件（.3mf）。切片文件（.gcode.3mf、.gcode）由服务器生成。"
 files.otherSections = "旧文件"
 files.outdated = "已过时：基于 {{source}}，此后 {{newer}} 已获批准"  placeholders={{newer}},{{source}}
+files.outdatedBadge = "已过时"
 files.preview = "预览"
 files.remove = "移除"
 files.removeFile = "移除 {{name}}"  placeholders={{name}}
@@ -2679,6 +2787,7 @@ files.sectionModelisation = "建模"
 files.sectionScan = "扫描"
 files.sectionUsinage = "机加工"
 files.sliced = "已切片"
+files.slicedRefused = "{{name}} 已经切片。请改为上传原始的 .3mf 项目。"  placeholders={{name}}
 files.statusLabel = "状态"
 files.statusObsolete = "已作废"
 files.statusValide = "已批准"
@@ -2772,6 +2881,9 @@ save = "保存"
 saveFailed = "无法保存项目"
 saved = "项目已保存"
 searchPlaceholder = "按编号、标题、描述或标签搜索…"
+slice.downloadSliced = "下载切片文件"
+slice.failed = "切片失败：{{detail}}"  placeholders={{detail}}
+slice.openInSlicer = "在切片软件中打开"
 statusAll = "全部"
 statusFilterLabel = "状态"
 subtitle = "每个零件、其文件和历史记录"
@@ -2786,7 +2898,7 @@ title = "项目"
 titleLabel = "标题"
 viewGrid = "网格视图"
 viewTable = "表格视图"
---- zhTW projectsPdm (198 keys)
+--- zhTW projectsPdm (206 keys)
 acceptSuggestion = "新增 {{name}}"  placeholders={{name}}
 aiUnavailable = "AI 無法使用"
 aito.confirmUnlink = "要將 {{name}} 從此任務取消連結嗎？已交付檔案清單將被清除。"  placeholders={{name}}
@@ -2840,16 +2952,16 @@ emptySearch = "沒有專案符合此搜尋"
 files.addFiles = "新增檔案"
 files.byAuthor = "作者：{{name}}"  placeholders={{name}}
 files.chooseFiles = "選擇檔案"
-files.confirmDeleteItem = "刪除 {{name}} 及其所有版本？檔案將移至專案資源回收筒。"  placeholders={{name}}
-files.confirmDeleteRevision = "刪除 {{label}}？其檔案將移至專案資源回收筒。"  placeholders={{label}}
-files.confirmRemoveFile = "要從 {{label}} 中移除 {{name}} 嗎？檔案將移至專案資源回收筒。"  placeholders={{label}},{{name}}
 files.deleteItem = "刪除項目"
 files.deleteRevision = "刪除版本"
 files.derivedFrom = "衍生自 {{label}}"  placeholders={{label}}
 files.derivedFromLabel = "衍生自"
 files.derivedFromNone = "無"
+files.details = "詳細資料"
 files.download = "下載"
 files.downloadAll = "全部下載（zip）"
+files.dropToCreate = "拖放 .3mf 或點擊"
+files.dropToCreateHint = "建立新項目"
 files.duplicateWarning = "{{filename}} 與 {{revision}} 相同"  placeholders={{filename}},{{revision}}
 files.emptySection = "尚無項目"
 files.fileCount_one = "{{count}} 個檔案"  placeholders={{count}}
@@ -2861,12 +2973,16 @@ files.itemBusy = "{{name}} 仍在上傳，因此拖放的檔案未上傳"  place
 files.itemNameLabel = "項目名稱"
 files.newItem = "新增項目"
 files.newRevision = "新版本"
+files.noSettingsRefused = "{{name}} 沒有印表機設定。請在 Bambu Studio 中開啟，選擇印表機後另存為專案。"  placeholders={{name}}
 files.notSliced = "未切片"
 files.noteLabel = "備註"
 files.notePlaceholder = "變更說明…"
-files.onlyPrintable = "專案只能包含 3MF 和 G-code 檔案"
+files.olderRevision = "舊版本"
+files.oneFile = "一個修訂版只能包含一個 .3mf。請將每個零件作為獨立項目上傳。"
+files.onlySource = "只能新增 Bambu Studio 專案檔（.3mf）。切片檔（.gcode.3mf、.gcode）由伺服器產生。"
 files.otherSections = "舊檔案"
 files.outdated = "已過時：基於 {{source}}，此後 {{newer}} 已核准"  placeholders={{newer}},{{source}}
+files.outdatedBadge = "已過時"
 files.preview = "預覽"
 files.remove = "移除"
 files.removeFile = "移除 {{name}}"  placeholders={{name}}
@@ -2878,6 +2994,7 @@ files.sectionModelisation = "建模"
 files.sectionScan = "掃描"
 files.sectionUsinage = "機械加工"
 files.sliced = "已切片"
+files.slicedRefused = "{{name}} 已經切片。請改為上傳原始的 .3mf 專案。"  placeholders={{name}}
 files.statusLabel = "狀態"
 files.statusObsolete = "已作廢"
 files.statusValide = "已核准"
@@ -2971,6 +3088,9 @@ save = "儲存"
 saveFailed = "無法儲存專案"
 saved = "專案已儲存"
 searchPlaceholder = "依編號、標題、描述或標籤搜尋…"
+slice.downloadSliced = "下載切片檔案"
+slice.failed = "切片失敗：{{detail}}"  placeholders={{detail}}
+slice.openInSlicer = "在切片軟體中開啟"
 statusAll = "全部"
 statusFilterLabel = "狀態"
 subtitle = "每個零件、其檔案與歷程"

@@ -13,7 +13,7 @@
 6 RequirePermissionIfAuthEnabled(Permission.PROJECTS_CREATE)
 3 RequirePermissionIfAuthEnabled(Permission.PROJECTS_DELETE)
 17 RequirePermissionIfAuthEnabled(Permission.PROJECTS_READ)
-23 RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE)
+24 RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE)
 2 RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE)
 
 ### stderr:

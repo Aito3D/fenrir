@@ -1820,6 +1820,18 @@
     "title": "Created At",
     "type": "string"
    },
+   "filament_used_grams": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Filament Used Grams"
+   },
    "file_hash": {
     "anyOf": [
      {
@@ -1850,6 +1862,18 @@
    "id": {
     "title": "Id",
     "type": "integer"
+   },
+   "print_time_seconds": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Print Time Seconds"
    }
   },
   "required": [
@@ -2174,6 +2198,18 @@
       "title": "Created At",
       "type": "string"
      },
+     "filament_used_grams": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Filament Used Grams"
+     },
      "file_hash": {
       "anyOf": [
        {
@@ -2204,6 +2240,18 @@
      "id": {
       "title": "Id",
       "type": "integer"
+     },
+     "print_time_seconds": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Print Time Seconds"
      }
     },
     "required": [
@@ -2314,6 +2362,53 @@
        }
       ],
       "title": "Print Profile"
+     },
+     "slice_error": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Slice Error"
+     },
+     "slice_job_id": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Slice Job Id"
+     },
+     "slice_status": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Slice Status"
+     },
+     "sliced_file": {
+      "anyOf": [
+       {
+        "$ref": "#/$defs/ProjectFileOut"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null
      },
      "slicer_name": {
       "anyOf": [
@@ -3579,6 +3674,18 @@
       "title": "Created At",
       "type": "string"
      },
+     "filament_used_grams": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Filament Used Grams"
+     },
      "file_hash": {
       "anyOf": [
        {
@@ -3609,6 +3716,18 @@
      "id": {
       "title": "Id",
       "type": "integer"
+     },
+     "print_time_seconds": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Print Time Seconds"
      }
     },
     "required": [
@@ -3757,6 +3876,53 @@
      }
     ],
     "title": "Print Profile"
+   },
+   "slice_error": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Slice Error"
+   },
+   "slice_job_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Slice Job Id"
+   },
+   "slice_status": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Slice Status"
+   },
+   "sliced_file": {
+    "anyOf": [
+     {
+      "$ref": "#/$defs/ProjectFileOut"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null
    },
    "slicer_name": {
     "anyOf": [
@@ -4131,6 +4297,18 @@
       "title": "Created At",
       "type": "string"
      },
+     "filament_used_grams": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Filament Used Grams"
+     },
      "file_hash": {
       "anyOf": [
        {
@@ -4161,6 +4339,18 @@
      "id": {
       "title": "Id",
       "type": "integer"
+     },
+     "print_time_seconds": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Print Time Seconds"
      }
     },
     "required": [
@@ -4318,6 +4508,53 @@
        }
       ],
       "title": "Print Profile"
+     },
+     "slice_error": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Slice Error"
+     },
+     "slice_job_id": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Slice Job Id"
+     },
+     "slice_status": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Slice Status"
+     },
+     "sliced_file": {
+      "anyOf": [
+       {
+        "$ref": "#/$defs/ProjectFileOut"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null
      },
      "slicer_name": {
       "anyOf": [
@@ -4838,6 +5075,18 @@
       "title": "Created At",
       "type": "string"
      },
+     "filament_used_grams": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Filament Used Grams"
+     },
      "file_hash": {
       "anyOf": [
        {
@@ -4868,6 +5117,18 @@
      "id": {
       "title": "Id",
       "type": "integer"
+     },
+     "print_time_seconds": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Print Time Seconds"
      }
     },
     "required": [
@@ -5025,6 +5286,53 @@
        }
       ],
       "title": "Print Profile"
+     },
+     "slice_error": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Slice Error"
+     },
+     "slice_job_id": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Slice Job Id"
+     },
+     "slice_status": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Slice Status"
+     },
+     "sliced_file": {
+      "anyOf": [
+       {
+        "$ref": "#/$defs/ProjectFileOut"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null
      },
      "slicer_name": {
       "anyOf": [
@@ -5470,6 +5778,32 @@
   "title": "RevisionRef",
   "type": "object"
  },
+ "RevisionSliceStarted": {
+  "description": "``POST /projects/revisions/{id}/slice``: the revision's slice job (poll ``GET /slice-jobs/{job_id}``)\nand its ``slice_status`` (``slicing``, or ``sliced`` when there was nothing to do).",
+  "properties": {
+   "job_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Job Id"
+   },
+   "slice_status": {
+    "title": "Slice Status",
+    "type": "string"
+   }
+  },
+  "required": [
+   "job_id",
+   "slice_status"
+  ],
+  "title": "RevisionSliceStarted",
+  "type": "object"
+ },
  "RevisionUploadResponse": {
   "$defs": {
    "DuplicateWarning": {
@@ -5496,6 +5830,18 @@
       "format": "date-time",
       "title": "Created At",
       "type": "string"
+     },
+     "filament_used_grams": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Filament Used Grams"
      },
      "file_hash": {
       "anyOf": [
@@ -5527,6 +5873,18 @@
      "id": {
       "title": "Id",
       "type": "integer"
+     },
+     "print_time_seconds": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Print Time Seconds"
      }
     },
     "required": [
@@ -5637,6 +5995,53 @@
        }
       ],
       "title": "Print Profile"
+     },
+     "slice_error": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Slice Error"
+     },
+     "slice_job_id": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Slice Job Id"
+     },
+     "slice_status": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Slice Status"
+     },
+     "sliced_file": {
+      "anyOf": [
+       {
+        "$ref": "#/$defs/ProjectFileOut"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null
      },
      "slicer_name": {
       "anyOf": [

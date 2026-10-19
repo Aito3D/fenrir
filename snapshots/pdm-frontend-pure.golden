@@ -12,7 +12,7 @@
   "ENABLED_SECTIONS": [
    "impression"
   ],
-  "PRINTABLE_ACCEPT": ".3mf,.gcode,.bgcode",
+  "PRINTABLE_ACCEPT": ".3mf",
   "SECTION_LABEL_KEYS": {
    "scan": "projectsPdm.files.sectionScan",
    "modelisation": "projectsPdm.files.sectionModelisation",
@@ -44,6 +44,7 @@
    "ENABLED_SECTIONS",
    "PREVIEWABLE_TYPES",
    "PRINTABLE_ACCEPT",
+   "RESLICE_UI_ENABLED",
    "SECTION_LABEL_KEYS",
    "SECTION_ORDER",
    "STATUS_CHIP_CLS",
@@ -52,8 +53,9 @@
    "isPrintableFile",
    "isPrintableFilename",
    "isSectionEnabled",
-   "nonPrintableFiles",
-   "printProfileLine"
+   "isSourceFilename",
+   "printProfileLine",
+   "refusalMessage"
   ],
   "fileDrop": [
    "filesFromDataTransfer",
@@ -119,15 +121,9 @@
   "archive.tar.gz": false,
   "  spaced  name  .gcode": true
  },
- "nonPrintableFiles": [
-  "model.stl",
-  "model.STEP",
-  "scan.ply",
-  "notes.pdf",
-  "noext",
-  "x.3mf.bak",
-  "archive.tar.gz"
- ],
+ "nonPrintableFiles": {
+  "__threw__": "TypeError: filesUi.nonPrintableFiles is not a function"
+ },
  "printProfileLine": {
   "null": "",
   "empty": "",

@@ -1826,22 +1826,6 @@
      }
     },
     {
-     "in": "query",
-     "name": "token",
-     "required": false,
-     "schema": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Token"
-     }
-    },
-    {
      "in": "header",
      "name": "X-API-Key",
      "required": false,
@@ -2232,7 +2216,7 @@
    ]
   },
   "GET /api/v1/projects/revisions/{revision_id}/download": {
-   "description": "One file (``?file_id=``) or every file of the revision as a zip.",
+   "description": "One file (``?file_id=``, which may be the revision's sliced file) or every file of the revision as\na zip (its own files only, never the sliced one).",
    "operationId": "download_revision_api_v1_projects_revisions__revision_id__download_get",
    "parameters": [
     {
@@ -3379,7 +3363,7 @@
    ]
   },
   "PATCH /api/v1/aito/{project_id}/contacted": {
-   "description": "Record \u2014 or take back \u2014 the fact that the client has been told the job\nis ready to collect.\n\nIts own route rather than a field on `AitoProjectUpdate`, for the identical\nreason `set_project_flag` is: `update_project` ends with an unconditional\n`_mark_pending_if_ours`, and Zoho has no field for this. Queueing an\nestimate push here would carry nothing, churn `quote_sync_state` on locked\nquotes where writes are already known to be unsafe, and fill the timeline\nwith `sync.queued` noise from a purely local act.\n\nRefused outside Finish and Done: \"the client can come and collect\" is not a\nstatement anyone can make about a job still on a printer, and allowing it\nearly would let someone pre-open the Done gate on work that is not\nfinished. Done is included so a card dragged back from the archive can\nstill have a mistaken contact corrected.\n\nReuses `Permission.AITO_UPDATE` \u2014 a new permission would need adding to the\nAPI-key classification lists and the role defaults, and \"may edit an Aito\ncard\" is the right authority for this.",
+   "description": "Record \u2014 or take back \u2014 the fact that the client has been told the job\nis ready to collect \u2014 or, on a job that ships, that the parcel has left.\n\nOne stamp for both: the Finish step a pickup job owes is a phone call and\nthe one a shipping job owes is the hand-over at the freight counter, and\neither is what opens the Done gate. The column does not change meaning\nper project; the event kind does (`contact_mark_kind`), so the timeline\nsays which of the two actually happened.\n\nIts own route rather than a field on `AitoProjectUpdate`, for the identical\nreason `set_project_flag` is: `update_project` ends with an unconditional\n`_mark_pending_if_ours`, and Zoho has no field for this. Queueing an\nestimate push here would carry nothing, churn `quote_sync_state` on locked\nquotes where writes are already known to be unsafe, and fill the timeline\nwith `sync.queued` noise from a purely local act.\n\nRefused outside Finish and Done: \"the client can come and collect\" is not a\nstatement anyone can make about a job still on a printer, and allowing it\nearly would let someone pre-open the Done gate on work that is not\nfinished. Done is included so a card dragged back from the archive can\nstill have a mistaken contact corrected.\n\nReuses `Permission.AITO_UPDATE` \u2014 a new permission would need adding to the\nAPI-key classification lists and the role defaults, and \"may edit an Aito\ncard\" is the right authority for this.",
    "operationId": "set_project_contacted_api_v1_aito__project_id__contacted_patch",
    "parameters": [
     {
@@ -3752,22 +3736,6 @@
      "schema": {
       "title": "Archive Id",
       "type": "integer"
-     }
-    },
-    {
-     "in": "query",
-     "name": "token",
-     "required": false,
-     "schema": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Token"
      }
     },
     {
@@ -6421,6 +6389,68 @@
     }
    ],
    "summary": "Reslice Revision",
+   "tags": [
+    "projects"
+   ]
+  },
+  "POST /api/v1/projects/revisions/{revision_id}/slice": {
+   "description": "Slice (or re-slice after a failure) the revision's source .3mf with its own settings, all plates.\n\nA revision already slicing or sliced is left alone and its current job returned. Revisions made\nbefore server-side slicing are sliced this way on demand (decision 9).",
+   "operationId": "slice_revision_api_v1_projects_revisions__revision_id__slice_post",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "revision_id",
+     "required": true,
+     "schema": {
+      "title": "Revision Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "202": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RevisionSliceStarted"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Slice Revision",
    "tags": [
     "projects"
    ]
@@ -12122,6 +12152,17 @@
      "title": "Created At",
      "type": "string"
     },
+    "filament_used_grams": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Filament Used Grams"
+    },
     "file_hash": {
      "anyOf": [
       {
@@ -12152,6 +12193,17 @@
     "id": {
      "title": "Id",
      "type": "integer"
+    },
+    "print_time_seconds": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Print Time Seconds"
     }
    },
    "required": [
@@ -13229,6 +13281,49 @@
      ],
      "title": "Print Profile"
     },
+    "slice_error": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Slice Error"
+    },
+    "slice_job_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Slice Job Id"
+    },
+    "slice_status": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Slice Status"
+    },
+    "sliced_file": {
+     "anyOf": [
+      {
+       "$ref": "#/components/schemas/ProjectFileOut"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
     "slicer_name": {
      "anyOf": [
       {
@@ -14133,6 +14228,32 @@
     "status"
    ],
    "title": "RevisionRef",
+   "type": "object"
+  },
+  "RevisionSliceStarted": {
+   "description": "``POST /projects/revisions/{id}/slice``: the revision's slice job (poll ``GET /slice-jobs/{job_id}``)\nand its ``slice_status`` (``slicing``, or ``sliced`` when there was nothing to do).",
+   "properties": {
+    "job_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Job Id"
+    },
+    "slice_status": {
+     "title": "Slice Status",
+     "type": "string"
+    }
+   },
+   "required": [
+    "job_id",
+    "slice_status"
+   ],
+   "title": "RevisionSliceStarted",
    "type": "object"
   },
   "RevisionUploadResponse": {
