@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
+import { bulkUpdateToast } from '../utils/queueBulkUpdate';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
@@ -69,6 +70,7 @@ import { PipelineRunsView } from './PipelineRunsPage';
 import { type TimeFormat, formatETA, formatDuration, formatRelativeTime, parseUTCDate } from '../utils/date';
 import { getBedTypeInfo } from '../utils/bedType';
 import { getColorName } from '../utils/colors';
+import { productLineOf, useFilamentNameByIdx } from '../components/PrintModal/useFilamentLabels';
 import type { PrintQueueItem, PrintQueueBulkUpdate, Permission, CalibrationMode, PrinterStatus, SlotSpoolIdentity } from '../api/client';
 import { formatSlotLabel, getEmptySlotKind } from '../utils/amsHelpers';
 import type { PlateMetadata } from '../types/plates';
@@ -181,6 +183,7 @@ function resolveQueueFilaments(
   loadedFilaments: LoadedFilament[] = [],
   status?: PrinterStatus,
   emptyLabel = 'Empty',
+  filamentNameByIdx: Record<string, string> = {},
 ): QueueFilamentDisplay[] {
   // A stored AMS mapping names the physical tray that will actually feed a 3MF
   // slot. Once its live tray data is available, that is more specific than
@@ -232,12 +235,16 @@ function resolveQueueFilaments(
         const override = overrides.get(filament.slot_id);
         const color = override?.color ?? filament.color;
         const type = override?.type ?? filament.type;
+        // An override is another filament: the plate's preset is not its own.
+        const productLine = override
+          ? productLineOf(override.tray_info_idx, override.type, filamentNameByIdx)
+          : productLineOf(filament.tray_info_idx, filament.type, filamentNameByIdx);
 
         return resolveSlot({
           slotId: filament.slot_id,
           type,
           color,
-          colorName: override?.color_name?.trim() || getColorName(color, type),
+          colorName: override?.color_name?.trim() || getColorName(color, productLine),
         });
       });
   }
@@ -253,7 +260,7 @@ function resolveQueueFilaments(
         color: override.color,
         colorName:
           override.color_name?.trim() ||
-          getColorName(override.color, override.type),
+          getColorName(override.color, productLineOf(override.tray_info_idx, override.type, filamentNameByIdx)),
       }),
     );
   }
@@ -690,7 +697,15 @@ function SortableQueueItem({
   // Combine plates data from either source
   const platesData = isLibraryFile ? libraryPlatesData : archivePlatesData;
   const plates = platesData?.plates ?? [];
-  const queueFilaments = resolveQueueFilaments(item, plates, loadedFilaments, status, t('ams.empty'));
+  const filamentNameByIdx = useFilamentNameByIdx();
+  const queueFilaments = resolveQueueFilaments(
+    item,
+    plates,
+    loadedFilaments,
+    status,
+    t('ams.empty'),
+    filamentNameByIdx,
+  );
 
   const canReorder = hasPermission('queue:reorder');
   const {
@@ -2072,7 +2087,8 @@ export function QueuePage() {
       queryClient.invalidateQueries({ queryKey: ['queue'] });
       setSelectedItems([]);
       setShowBulkEditModal(false);
-      showToast(result.message);
+      const toast = bulkUpdateToast(result);
+      showToast(t(toast.key, toast.params), toast.type);
     },
     onError: () => showToast(t('queue.toast.updateFailed'), 'error'),
   });

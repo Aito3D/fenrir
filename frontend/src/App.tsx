@@ -82,7 +82,6 @@ const SpoolBuddyLayout = lazyWithReload(() => import('./components/spoolbuddy/Sp
 const SpoolBuddyDashboard = lazyWithReload(() => import('./pages/spoolbuddy/SpoolBuddyDashboard').then(m => ({ default: m.SpoolBuddyDashboard })));
 const SpoolBuddyAmsPage = lazyWithReload(() => import('./pages/spoolbuddy/SpoolBuddyAmsPage').then(m => ({ default: m.SpoolBuddyAmsPage })));
 const SpoolBuddySettingsPage = lazyWithReload(() => import('./pages/spoolbuddy/SpoolBuddySettingsPage').then(m => ({ default: m.SpoolBuddySettingsPage })));
-const SpoolBuddyCalibrationPage = lazyWithReload(() => import('./pages/spoolbuddy/SpoolBuddyCalibrationPage').then(m => ({ default: m.SpoolBuddyCalibrationPage })));
 const SpoolBuddyWriteTagPage = lazyWithReload(() => import('./pages/spoolbuddy/SpoolBuddyWriteTagPage').then(m => ({ default: m.SpoolBuddyWriteTagPage })));
 const SpoolBuddyInventoryPage = lazyWithReload(() => import('./pages/spoolbuddy/SpoolBuddyInventoryPage').then(m => ({ default: m.SpoolBuddyInventoryPage })));
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null; errorInfo: ErrorInfo | null }> {
@@ -279,7 +278,8 @@ const router = createBrowserRouter(
         <Route path="spoolbuddy/write-tag" element={<SpoolBuddyWriteTagPage />} />
         <Route path="spoolbuddy/inventory" element={<SpoolBuddyInventoryPage />} />
         <Route path="spoolbuddy/settings" element={<SpoolBuddySettingsPage />} />
-        <Route path="spoolbuddy/calibration" element={<SpoolBuddyCalibrationPage />} />
+        {/* Calibration moved into the settings page; old bookmarks land there. */}
+        <Route path="spoolbuddy/calibration" element={<Navigate to="/spoolbuddy/settings" replace />} />
       </Route>
 
       {/* Main app with WebSocket for real-time updates */}

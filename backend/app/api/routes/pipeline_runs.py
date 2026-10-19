@@ -68,6 +68,8 @@ from backend.app.services.pipeline_eligibility import (
     check_pipeline_eligibility,
 )
 from backend.app.services.print_confirmation import confirm_outcome_for_new_queue_item
+from backend.app.services.print_defaults import default_print_options
+from backend.app.services.queue_announcements import announce_queue_jobs_added
 from backend.app.services.slicer_pipeline_request import slice_request_from_pipeline
 
 logger = logging.getLogger(__name__)
@@ -428,7 +430,7 @@ async def _pick_assignments(
         (
             await db.execute(
                 select(Printer)
-                .where(Printer.model == pipeline.target_model_class)
+                .where(func.lower(Printer.model) == (pipeline.target_model_class or "").lower())
                 .where(Printer.is_active.is_(True))
                 .order_by(Printer.id)
             )
@@ -453,8 +455,9 @@ async def _pick_assignments(
         # ``matching[i % len(matching)]``. Each item gets a fixed printer_id.
         return [(matching[i % len(matching)].id, None) for i in range(copies)]
     # max_parallel — leave printer_id=None, set target_model so the scheduler
-    # picks any free X1C / P1S / … for each item independently.
-    return [(None, pipeline.target_model_class)] * copies
+    # picks any free X1C / P1S / … for each item independently. In the
+    # printers' own spelling: the class is matched without regard to case.
+    return [(None, matching[0].model)] * copies
 
 
 def _make_orchestration_callable(
@@ -572,6 +575,8 @@ def _make_orchestration_callable(
 
             # No per-job ask-for-outcome toggle on a pipeline run either (#1898).
             confirm_outcome = await confirm_outcome_for_new_queue_item(session)
+            # Nor print options: the install's defaults.
+            print_options = await default_print_options(session)
 
             for job, (printer_id, target_model) in zip(jobs, assignments, strict=False):
                 queue_item = PrintQueueItem(
@@ -595,6 +600,7 @@ def _make_orchestration_callable(
                         and printer_id is None
                         and not printer_scope.is_unrestricted
                     ),
+                    **print_options,
                 )
                 session.add(queue_item)
                 await session.flush()
@@ -638,6 +644,7 @@ def _make_orchestration_callable(
                 job.status = "queued"
             run.status = "dispatching"
             await session.commit()
+            await announce_queue_jobs_added(session, [job.queue_entry_id for job in jobs if job.queue_entry_id])
             await _publish_run_event(session, run)
 
             return slice_response.model_dump()
@@ -972,6 +979,9 @@ async def cancel_run(
     if not run.error_message:
         run.error_message = "Cancelled by user"
 
+    from backend.app.services.finance_budget import release_budget_reservation
+
+    cancelled_entries: list[int] = []
     job_rows = (await db.execute(select(PipelineJob).where(PipelineJob.pipeline_run_id == run.id))).scalars().all()
     for job in job_rows:
         queue_entry = None
@@ -982,6 +992,11 @@ async def cancel_run(
             if queue_entry is not None and queue_entry.status in ("pending", "queued"):
                 queue_entry.status = "cancelled"
                 queue_entry.completed_at = datetime.now(timezone.utc)
+                # As a cancel from the queue does: its budget hold is freed
+                await release_budget_reservation(
+                    db, source_type="print_queue", source_id=queue_entry.id, status="released"
+                )
+                cancelled_entries.append(queue_entry.id)
         if job.status in ("queued", "printing") and queue_entry is None:
             # Dispatched, its entry gone: whether it printed is unknown, and
             # calling it cancelled would make retry print it again.
@@ -991,6 +1006,15 @@ async def cancel_run(
             job.completed_at = datetime.now(timezone.utc)
 
     await db.commit()
+    if cancelled_entries:
+        from backend.app.services.print_batch import refresh_batches_after
+        from backend.app.services.print_scheduler import scheduler
+
+        await refresh_batches_after(cancelled_entries)
+        # A preheating entry's dispatch is parked in a sleep and cannot see the
+        # status written above (#2727): told, it stops heating the printer.
+        for entry_id in cancelled_entries:
+            scheduler.notify_dispatch_cancelled(entry_id)
     await db.refresh(run)
     await _publish_run_event(db, run)
     return await _materialise_run(db, run)

@@ -17,6 +17,7 @@ import socket
 import subprocess
 import sys
 import time
+import zlib
 from collections.abc import AsyncGenerator, Callable
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
@@ -406,6 +407,8 @@ async def _capture_usb_frame(device: str, timeout: int) -> bytes | None:
         "-",
     ]
 
+    from backend.app.services.camera import _active_capture_pids
+
     process = None
     try:
         logger.debug("Running USB capture: %s", " ".join(cmd))
@@ -414,6 +417,9 @@ async def _capture_usb_frame(device: str, timeout: int) -> bytes | None:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
+        # Registered like the Bambu one-shot capture, or the orphan janitor
+        # (routes/camera.cleanup_orphaned_streams) kills it mid-capture.
+        _active_capture_pids.add(process.pid)
 
         stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
 
@@ -436,6 +442,9 @@ async def _capture_usb_frame(device: str, timeout: int) -> bytes | None:
     except OSError as e:
         logger.error("USB frame capture failed: %s", e)
         return None
+    finally:
+        if process is not None:
+            _active_capture_pids.discard(process.pid)
 
 
 # Redirects a camera URL may take before the fetch gives up.
@@ -786,6 +795,20 @@ async def _capture_snapshot(url: str, timeout: int, *, session: aiohttp.ClientSe
     return None
 
 
+def jpeg_resolution(frame: bytes) -> str | None:
+    """``"WIDTHxHEIGHT"`` from a JPEG's SOF marker, or None when there is none.
+
+    The SOF marker (FF C0/C1/C2) is followed by length, precision, height, width.
+    """
+    for marker in (b"\xff\xc0", b"\xff\xc1", b"\xff\xc2"):
+        idx = frame.find(marker)
+        if idx != -1 and idx + 9 <= len(frame):
+            height = (frame[idx + 5] << 8) | frame[idx + 6]
+            width = (frame[idx + 7] << 8) | frame[idx + 8]
+            return f"{width}x{height}"
+    return None
+
+
 async def test_connection(url: str, camera_type: str) -> dict:
     """Test camera connection.
 
@@ -798,23 +821,7 @@ async def test_connection(url: str, camera_type: str) -> dict:
         logger.info("Capture result: %s bytes", len(frame) if frame else 0)
 
         if frame:
-            # Try to get resolution from JPEG header
-            resolution = None
-            try:
-                # Simple JPEG dimension extraction
-                # SOF0 marker is FF C0, followed by length, precision, height, width
-                sof_markers = [b"\xff\xc0", b"\xff\xc1", b"\xff\xc2"]
-                for marker in sof_markers:
-                    idx = frame.find(marker)
-                    if idx != -1 and idx + 9 <= len(frame):
-                        height = (frame[idx + 5] << 8) | frame[idx + 6]
-                        width = (frame[idx + 7] << 8) | frame[idx + 8]
-                        resolution = f"{width}x{height}"
-                        break
-            except (IndexError, ValueError):
-                pass  # Resolution detection is optional; fall back to default
-
-            return {"success": True, "resolution": resolution}
+            return {"success": True, "resolution": jpeg_resolution(frame)}
         else:
             return {"success": False, "error": "Failed to capture frame from camera"}
 
@@ -921,10 +928,19 @@ async def generate_mjpeg_stream(
 
     elif camera_type == "rtsp":
         # Use ffmpeg to convert RTSP to MJPEG, reconnecting after routine drops.
+        # One freeze watch for the whole stream: the still-scene rule compares a
+        # new session's first frame with the one the last session froze on.
+        freeze = _FreezeWatch()
         async with contextlib.aclosing(
             _reconnecting(
                 lambda: _stream_rtsp(
-                    url, fps, gpu_accel=gpu_accel, quality=quality, threads=threads, on_process=on_process
+                    url,
+                    fps,
+                    gpu_accel=gpu_accel,
+                    quality=quality,
+                    threads=threads,
+                    on_process=on_process,
+                    freeze=freeze,
                 ),
                 "RTSP",
             )
@@ -1020,6 +1036,89 @@ async def _stream_mjpeg(url: str) -> AsyncGenerator[bytes, None]:
         logger.error("MJPEG stream error: %s", e)
 
 
+# How long an external RTSP stream may emit byte-identical frames before its
+# ffmpeg is restarted, and the longer re-check for a picture that really does
+# not change: the same rule as the printer's own RTSP stream (#3218, see
+# routes/camera._RTSP_FROZEN_SECONDS). ffmpeg's ``-r fps`` repeats its last
+# frame after the camera stops sending, so counting frames sees a live stream.
+_EXTERNAL_RTSP_FROZEN_SECONDS = 20.0
+_EXTERNAL_RTSP_STILL_RECHECK_SECONDS = 300.0
+
+
+class _FreezeWatch:
+    """Notices an RTSP picture that has stopped changing, across sessions.
+
+    A live camera rarely repeats a frame byte for byte (sensor noise), so a run
+    of identical frames usually means ffmpeg is repeating a frozen one. When the
+    first frame after the restart is that same picture again, the camera really
+    shows it (a dark, idle scene), and it is only re-checked at the longer
+    interval until it changes.
+
+    Unlike a Bambu camera, an external one can legitimately repeat frames for a
+    while: a source slower than ffmpeg's ``-r`` rate, or a surveillance camera's
+    smart codec on a static scene. So the limit is three times the longest gap
+    seen between real changes (a "freeze" after which the camera showed a new
+    picture counts as one), never below the 20 s of the printer's camera and
+    never above the still-scene interval.
+    """
+
+    def __init__(self) -> None:
+        self.frozen_crc: int | None = None
+        self.still_scene = False
+        self.unchanged_for = 0.0
+        self._last_crc: int | None = None
+        self._since = 0.0
+        self._longest_gap = 0.0
+
+    def start_session(self) -> None:
+        self._last_crc = None
+
+    def _limit(self) -> float:
+        if self.still_scene:
+            return _EXTERNAL_RTSP_STILL_RECHECK_SECONDS
+        return min(
+            max(_EXTERNAL_RTSP_FROZEN_SECONDS, 3 * self._longest_gap),
+            _EXTERNAL_RTSP_STILL_RECHECK_SECONDS,
+        )
+
+    def frozen(self, frame: bytes, now: float) -> bool:
+        crc = zlib.crc32(frame)
+        if self._last_crc is None:
+            if self.frozen_crc is not None and crc != self.frozen_crc:
+                # The picture had not frozen: the camera is just slow to change.
+                self._longest_gap = max(self._longest_gap, self.unchanged_for)
+            self.still_scene = self.frozen_crc is not None and crc == self.frozen_crc
+            self._last_crc = crc
+            self._since = now
+            return False
+        if crc != self._last_crc:
+            self._longest_gap = max(self._longest_gap, now - self._since)
+            self._last_crc = crc
+            self._since = now
+            self.still_scene = False
+            self.frozen_crc = None
+            return False
+        self.unchanged_for = now - self._since
+        if self.unchanged_for > self._limit():
+            self.frozen_crc = crc
+            return True
+        return False
+
+
+async def _end_stream_ffmpeg(process: asyncio.subprocess.Process) -> None:
+    """Stop a streaming ffmpeg, bounded.
+
+    Through the camera routes' terminator, which drains the pipes while it
+    waits: a streaming ffmpeg is usually blocked writing to a full stdout pipe,
+    where it ignores SIGTERM and, once killed, wait() never returns (#2580).
+    Unbounded, that hung the shared upstream's teardown, and with it every stop,
+    camera change, printer delete and shutdown waiting on the fan-out.
+    """
+    from backend.app.api.routes.camera import _terminate_ffmpeg
+
+    await _terminate_ffmpeg(process)
+
+
 async def _stream_rtsp(
     url: str,
     fps: int,
@@ -1028,6 +1127,7 @@ async def _stream_rtsp(
     quality: int = 5,
     threads: int = 0,
     on_process: Callable[[asyncio.subprocess.Process], None] | None = None,
+    freeze: _FreezeWatch | None = None,
 ) -> AsyncGenerator[bytes, None]:
     """Stream frames from RTSP URL via ffmpeg.
 
@@ -1183,6 +1283,8 @@ async def _stream_rtsp(
         if state != "open":
             return
         log_watch = asyncio.create_task(watch_ffmpeg_log(process))
+        if freeze is not None:
+            freeze.start_session()
 
     # Semaphore released — streaming loop runs without holding it
     try:
@@ -1217,6 +1319,16 @@ async def _stream_rtsp(
                     frame = bytes(buffer[: end_idx + 2])
                     del buffer[: end_idx + 2]
                     yield frame
+                    if freeze is not None and freeze.frozen(frame, time.monotonic()):
+                        # Ending the session restarts ffmpeg (_reconnecting).
+                        if freeze.still_scene:
+                            logger.info("External RTSP still-scene re-check, restarting ffmpeg")
+                        else:
+                            logger.warning(
+                                "External RTSP picture frozen for %.0fs, restarting ffmpeg",
+                                freeze.unchanged_for,
+                            )
+                        return
 
             except TimeoutError:
                 logger.warning("RTSP stream read timeout")
@@ -1230,12 +1342,7 @@ async def _stream_rtsp(
         if log_watch is not None:
             log_watch.cancel()
         if process and process.returncode is None:
-            process.terminate()
-            try:
-                await asyncio.wait_for(process.wait(), timeout=2.0)
-            except TimeoutError:
-                process.kill()
-                await process.wait()
+            await _end_stream_ffmpeg(process)
         if proxy_server:
             await close_tls_proxy(proxy_server)
 
@@ -1349,9 +1456,4 @@ async def _stream_usb(
         logger.error("USB stream error: %s", e)
     finally:
         if process and process.returncode is None:
-            process.terminate()
-            try:
-                await asyncio.wait_for(process.wait(), timeout=2.0)
-            except TimeoutError:
-                process.kill()
-                await process.wait()
+            await _end_stream_ffmpeg(process)

@@ -485,6 +485,17 @@ export function useWebSocket() {
         }));
         break;
 
+      case 'plate_check_failed':
+        // The plate check before a print could not run; the print goes on.
+        window.dispatchEvent(new CustomEvent('plate-check-failed', {
+          detail: {
+            printer_id: message.printer_id,
+            printer_name: (message as unknown as { printer_name?: string }).printer_name,
+            reason: (message as unknown as { reason?: string }).reason,
+          }
+        }));
+        break;
+
       case 'announcements_changed':
         // The backend fetched a newer feed: re-read the list so the sidebar dot
         // and the banner appear without a reload. The event says nothing itself.
@@ -507,6 +518,8 @@ export function useWebSocket() {
         debouncedInvalidate(inventorySuppliersQueryKey[0]);
         // The per-material-number aggregate is derived from the same rows (#2870).
         debouncedInvalidate('material-number-stats');
+        // Printer cards and slot views read a spool's weight from the slot rows.
+        debouncedInvalidate('spool-assignments');
         break;
 
       case 'spool_assignment_changed':
@@ -554,8 +567,10 @@ export function useWebSocket() {
         break;
 
       case 'spool_usage_logged':
-        // Filament consumption recorded - refresh spool data
+        // Filament consumption recorded - refresh spool data, and the slot rows
+        // printer cards read a spool's remaining weight from.
         debouncedInvalidate('inventory-spools');
+        debouncedInvalidate('spool-assignments');
         break;
 
       case 'unknown_tag': {

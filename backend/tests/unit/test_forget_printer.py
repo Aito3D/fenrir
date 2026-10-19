@@ -25,6 +25,7 @@ NOT_FORGOTTEN = {
     "_print_ams_mappings": "keyed by archive (dropped with the printer's expected/active prints)",
     "_print_cost_center_ids": "keyed by archive (dropped with the printer's expected/active prints)",
     "_print_plate_ids": "keyed by archive (dropped with the printer's expected/active prints)",
+    "_owned_print_archive_ids": "keyed by archive (dropped with the printer's expected/active prints)",
     "_ams_assignment_locks": "a lock carries nothing over; popping one a task holds would let a second be made",
     "_fallback_recovery_locks": "a lock carries nothing over (see its comment on popping)",
     "_HMS_FAILURE_REASONS": "constant",
@@ -79,6 +80,7 @@ def _entries(printer_id: int) -> dict[str, tuple]:
         "_timelapse_baselines": (printer_id, {"video.mp4"}),
         "_bed_cool_waiters": (printer_id, {"threshold": 35.0, "filename": "cube", "registered_at": 1.0}),
         "_user_stopped_printers": (printer_id, None),
+        "_kill_switch_stopped": (printer_id, None),
         "_printer_last_connected": (printer_id, True),
         "_printer_offline_published": (printer_id, None),
         "_printer_offline_notify_tasks": (printer_id, _sleeper()),
@@ -177,6 +179,9 @@ async def test_forget_printer_clears_the_services():
 
     printers._cover_cache[GONE] = {("Cube", "front"): b"png"}
     printers._cover_404_cache[GONE] = {}
+    from backend.app.services.printer_file_cache import printer_file_cache
+
+    printer_file_cache._keep((GONE, "/cache/a.3mf"), b"3mf")
 
     await main.forget_printer(GONE)
 
@@ -197,6 +202,7 @@ async def test_forget_printer_clears_the_services():
     assert GONE not in camera._active_external_streams
     assert GONE not in printers._cover_cache
     assert GONE not in printers._cover_404_cache
+    assert not [key for key in printer_file_cache._entries if key[0] == GONE]
 
 
 async def test_the_plate_references_of_a_printer_go(tmp_path, monkeypatch):

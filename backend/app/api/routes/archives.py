@@ -10,7 +10,7 @@ import uuid
 import zipfile
 from collections import defaultdict
 from contextlib import contextmanager
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from html import escape as html_escape
 from pathlib import Path
 
@@ -66,6 +66,7 @@ from backend.app.services.printer_media import TIMELAPSE_DIRECTORIES, VIDEO_SUFF
 from backend.app.utils.archive_paths import archive_photos_dir, find_archive_photo
 from backend.app.utils.dates import local_day_bounds
 from backend.app.utils.http import build_content_disposition, download_error_response, safe_download_filename
+from backend.app.utils.local_time import to_naive_utc
 from backend.app.utils.threemf_tools import (
     default_plate_gcode_name,
     expand_to_project_slots,
@@ -1298,13 +1299,18 @@ async def export_archives(
     date_to_dt = None
     if date_from:
         try:
-            date_from_dt = datetime.fromisoformat(date_from)
-        except ValueError:
+            date_from_dt = to_naive_utc(datetime.fromisoformat(date_from))
+        except (ValueError, OverflowError):
             raise HTTPException(400, "Invalid date_from format")
     if date_to:
         try:
-            date_to_dt = datetime.fromisoformat(date_to)
-        except ValueError:
+            # A date on its own ends with that day, as every other date filter
+            # here reads it; read as midnight it left out the whole day.
+            if len(date_to) == 10:
+                date_to_dt = datetime.combine(date.fromisoformat(date_to), time.max)
+            else:
+                date_to_dt = to_naive_utc(datetime.fromisoformat(date_to))
+        except (ValueError, OverflowError):
             raise HTTPException(400, "Invalid date_to format")
 
     service = ExportService(db)
@@ -2089,6 +2095,8 @@ async def update_archive(
     # Read before the writes below: the mirror needs to know whether the run's
     # figure was inherited from this archive or measured on its own (#1820).
     previous_filament_grams = archive.filament_used_grams
+    previous_cost = archive.cost
+    previous_status = archive.status
 
     update_payload = update_data.model_dump(exclude_unset=True)
     # Later runs of the archive are charged from its cost and weight: a caller
@@ -2156,9 +2164,11 @@ async def update_archive(
     # ENTRY's grams, not the archive's, so correcting only the archive would fix
     # the card and leave every aggregate reading the old figure -- or, for a
     # print that archived without its 3MF, no figure at all.
+    # While the archive is being reprinted its newest entry is the previous
+    # run's, whose outcome this edit is not about.
     mirror_fields = {"failure_reason", "status", "filament_used_grams", "user_verdict"}
     to_mirror = {k: v for k, v in update_payload.items() if k in mirror_fields}
-    if to_mirror:
+    if to_mirror and previous_status != "printing":
         from backend.app.models.print_log import PrintLogEntry
 
         latest_entry = await db.scalar(
@@ -2185,6 +2195,13 @@ async def update_archive(
 
             for field, value in to_mirror.items():
                 setattr(latest_entry, field, value)
+
+    # A cost set by hand reaches the run that had the archive's (statistics,
+    # project totals and batch sums read the run's cost).
+    if "cost" in update_payload and previous_status != "printing":
+        from backend.app.services.print_log import mirror_archive_cost
+
+        await mirror_archive_cost(db, archive, previous_cost)
 
     await db.commit()
 
@@ -2370,6 +2387,7 @@ async def recalculate_all_costs(
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Recalculate costs for all archives based on filament usage and prices."""
+    from backend.app.services.print_log import mirror_archive_cost
 
     # Only the archives of the caller's printers, as the archive list shows them.
     query = select(PrintArchive)
@@ -2449,7 +2467,10 @@ async def recalculate_all_costs(
             else:
                 new_cost = None
         if new_cost is not None and archive.cost != new_cost:
+            previous_cost = archive.cost
             archive.cost = new_cost
+            # Its run had the old figure: statistics read the run's cost.
+            await mirror_archive_cost(db, archive, previous_cost)
             updated += 1
 
     await db.commit()
@@ -3125,6 +3146,9 @@ async def delete_timelapse(
     archive.timelapse_plate_id = None
     await db.commit()
 
+    from backend.app.services.archive import _announce_timelapse
+
+    await _announce_timelapse(archive_id, attached=False)
     return {"status": "deleted"}
 
 
@@ -3138,11 +3162,12 @@ async def _pull_and_attach_timelapse(
     finished writing the file (#2704), the attach in a fresh short session, and
     only then the delete on the printer -- a size-verified transfer committed to
     the archive is the only thing that makes removing the original safe.
-    Raises HTTPException 500 on a failed download or attach, 409 while the
-    printer is still writing.
+    Raises HTTPException 502 on a failed download (504 past its deadline), 500 on
+    a failed attach, 409 while the printer is still writing.
     """
     from backend.app.core.database import async_session
     from backend.app.services.bambu_ftp import (
+        DownloadDeadlineExceeded,
         delete_archived_timelapse,
         download_file_bytes_async,
         get_ftp_retry_settings,
@@ -3152,32 +3177,36 @@ async def _pull_and_attach_timelapse(
 
     ftp_retry_enabled, ftp_retry_count, ftp_retry_delay, ftp_timeout = await get_ftp_retry_settings()
 
-    if ftp_retry_enabled:
-        timelapse_data = await with_ftp_retry(
-            download_file_bytes_async,
-            printer.ip_address,
-            printer.access_code,
-            remote_path,
-            socket_timeout=ftp_timeout,
-            printer_model=printer.model,
-            expected_size=expected_size,
-            max_retries=ftp_retry_count,
-            retry_delay=ftp_retry_delay,
-            operation_name=f"Download timelapse {name}",
-            cooloff_ip=printer.ip_address,
-        )
-    else:
-        timelapse_data = await download_file_bytes_async(
-            printer.ip_address,
-            printer.access_code,
-            remote_path,
-            socket_timeout=ftp_timeout,
-            printer_model=printer.model,
-            expected_size=expected_size,
-        )
+    try:
+        if ftp_retry_enabled:
+            timelapse_data = await with_ftp_retry(
+                download_file_bytes_async,
+                printer.ip_address,
+                printer.access_code,
+                remote_path,
+                socket_timeout=ftp_timeout,
+                printer_model=printer.model,
+                expected_size=expected_size,
+                max_retries=ftp_retry_count,
+                retry_delay=ftp_retry_delay,
+                operation_name=f"Download timelapse {name}",
+                cooloff_ip=printer.ip_address,
+            )
+        else:
+            timelapse_data = await download_file_bytes_async(
+                printer.ip_address,
+                printer.access_code,
+                remote_path,
+                socket_timeout=ftp_timeout,
+                printer_model=printer.model,
+                expected_size=expected_size,
+            )
+    except DownloadDeadlineExceeded as exc:
+        # Not retried: the deadline already fitted the file's size.
+        raise HTTPException(504, "The timelapse download took longer than its size allows") from exc
 
     if not timelapse_data:
-        raise HTTPException(500, "Failed to download timelapse")
+        raise HTTPException(502, "Could not download the timelapse from the printer")
 
     # Confirm the printer has finished writing before we commit to this file and
     # delete the original: matching the listing's size proves we got what it
@@ -3380,19 +3409,23 @@ async def scan_timelapse(
     # into a confident wrong answer. Those strategies stay for archives created
     # before the baseline was persisted.
     used_baseline = archive.timelapse_baseline is not None
+    # A video another archive of this printer holds is that print's, whichever
+    # strategy below would pick it (a short name like "1" is in every video's
+    # timestamp). Picking by hand still offers it: that is how a wrong match
+    # is corrected.
+    offered = video_files
+    async with async_session() as db:
+        claimed = await claimed_timelapse_stems(db, archive.printer_id, archive_id)
+    video_files = [f for f in video_files if Path(f.get("name", "")).stem not in claimed]
     if used_baseline:
         baseline = set(archive.timelapse_baseline)
-        async with async_session() as db:
-            claimed = await claimed_timelapse_stems(db, archive.printer_id, archive_id)
-        candidates = [
-            f for f in video_files if f.get("name", "") not in baseline and Path(f.get("name", "")).stem not in claimed
-        ]
+        candidates = [f for f in video_files if f.get("name", "") not in baseline]
         if len(candidates) == 1:
             matching_file = candidates[0]
             logger.info("Matched timelapse by print-start baseline: %s", matching_file.get("name"))
         elif candidates:
             # Ambiguous — offer only the plausible files instead of guessing.
-            video_files = candidates
+            offered = candidates
             logger.info("Baseline left %s unclaimed candidates for archive %s", len(candidates), archive_id)
         else:
             logger.info("Baseline shows no unclaimed new video on the printer for archive %s", archive_id)
@@ -3410,7 +3443,7 @@ async def scan_timelapse(
         return {
             "status": "not_found",
             "message": "No matching timelapse found - please select manually",
-            "available_files": _timelapse_choices(video_files),
+            "available_files": _timelapse_choices(offered),
         }
 
     # Download the timelapse - use the full path from the file listing
@@ -4843,6 +4876,8 @@ async def get_archive_plates(
                                     "slot_id": int(filament_id),
                                     "type": filament_type,
                                     "color": filament_color,
+                                    # The preset the slicer assigned (GFA01, ...): names the product line
+                                    "tray_info_idx": filament_elem.get("tray_info_idx", "") or "",
                                     "used_grams": round(used_grams, 1),
                                     "used_meters": float(used_m) if used_m else 0,
                                 }

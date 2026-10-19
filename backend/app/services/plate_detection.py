@@ -73,6 +73,7 @@ class PlateDetectionResult:
         message: str,
         debug_image: bytes | None = None,
         needs_calibration: bool = False,
+        failure_reason: str | None = None,
     ):
         self.is_empty = is_empty
         self.confidence = confidence  # 0.0 to 1.0
@@ -80,6 +81,10 @@ class PlateDetectionResult:
         self.message = message
         self.debug_image = debug_image  # Optional annotated image for debugging
         self.needs_calibration = needs_calibration  # True if no reference image exists
+        # Why the check could not run (no_camera_frame, decode_failed,
+        # analysis_error, opencv_missing); None when it ran. is_empty is then
+        # True only so that a print is not blocked.
+        self.failure_reason = failure_reason
 
     def to_dict(self) -> dict:
         return {
@@ -89,6 +94,7 @@ class PlateDetectionResult:
             "message": self.message,
             "has_debug_image": self.debug_image is not None,
             "needs_calibration": bool(self.needs_calibration),
+            "failure_reason": self.failure_reason,
         }
 
 
@@ -411,16 +417,6 @@ class PlateDetector:
         """Check if a printer has any calibration reference images."""
         return len(self._get_reference_paths(printer_id)) > 0
 
-    def delete_calibration(self, printer_id: int, plate_type: str | None = None) -> bool:
-        """Delete all calibration reference images for a printer."""
-        paths = self._get_reference_paths(printer_id)
-        if not paths:
-            return False
-        for path in paths:
-            path.unlink()
-        logger.info("Deleted %s plate calibration reference(s) for printer %s", len(paths), printer_id)
-        return True
-
     def analyze_frame(
         self, image_data: bytes, printer_id: int, plate_type: str | None = None, include_debug_image: bool = False
     ) -> PlateDetectionResult:
@@ -460,6 +456,7 @@ class PlateDetector:
                     confidence=0.0,
                     difference_percent=0.0,
                     message="Failed to decode current image",
+                    failure_reason="decode_failed",
                 )
 
             # Extract ROI from current frame
@@ -597,6 +594,7 @@ class PlateDetector:
                 confidence=0.0,
                 difference_percent=0.0,
                 message=f"Analysis error: {e!s}",
+                failure_reason="analysis_error",
             )
 
 
@@ -727,6 +725,7 @@ async def check_plate_empty(
             confidence=0.0,
             difference_percent=0.0,
             message="OpenCV not available - plate detection disabled",
+            failure_reason="opencv_missing",
         )
 
     image_data, camera_source = await capture_camera_image(
@@ -746,6 +745,7 @@ async def check_plate_empty(
             confidence=0.0,
             difference_percent=0.0,
             message="Failed to capture camera frame from any source",
+            failure_reason="no_camera_frame",
         )
 
     # Analyze the captured frame
@@ -841,15 +841,6 @@ def get_calibration_status(printer_id: int, plate_type: str | None = None) -> di
         "max_references": detector.MAX_REFERENCES,
         "message": message,
     }
-
-
-def delete_calibration(printer_id: int, plate_type: str | None = None) -> bool:
-    """Delete calibration for a printer and plate type."""
-    if not OPENCV_AVAILABLE:
-        return False
-
-    detector = PlateDetector()
-    return detector.delete_calibration(printer_id, plate_type)
 
 
 def is_plate_detection_available() -> bool:

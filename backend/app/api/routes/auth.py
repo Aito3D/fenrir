@@ -19,6 +19,7 @@ from backend.app.core.auth import (
     ALGORITHM,
     SECRET_KEY,
     Permission,
+    RequireAdminIfAuthEnabled,
     RequirePermissionIfAuthEnabled,
     _is_token_fresh,
     _validate_api_key,
@@ -894,6 +895,7 @@ async def logout(
 @router.post("/smtp/test", response_model=TestSMTPResponse)
 async def test_smtp_connection(
     test_request: TestSMTPRequest,
+    _admin: User | None = RequireAdminIfAuthEnabled(),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
     db: AsyncSession = Depends(get_db),
 ):
@@ -939,6 +941,7 @@ async def get_smtp_config(
 @router.post("/smtp", response_model=dict)
 async def save_smtp_config(
     smtp_settings: SMTPSettings,
+    _admin: User | None = RequireAdminIfAuthEnabled(),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
     db: AsyncSession = Depends(get_db),
 ):
@@ -1573,6 +1576,7 @@ async def _sync_ldap_user(db: AsyncSession, user: User, ldap_user, ldap_config) 
 
 @router.post("/ldap/test")
 async def test_ldap(
+    _admin: User | None = RequireAdminIfAuthEnabled(),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
     db: AsyncSession = Depends(get_db),
 ):
@@ -1638,6 +1642,7 @@ async def get_ldap_status(db: AsyncSession = Depends(get_db)):
 @router.get("/ldap/search", response_model=list[LDAPSearchResultResponse])
 async def search_ldap_directory(
     q: str,
+    _admin: User | None = RequireAdminIfAuthEnabled(),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.USERS_CREATE),
     db: AsyncSession = Depends(get_db),
 ):
@@ -1711,6 +1716,7 @@ async def search_ldap_directory(
 @router.post("/ldap/provision", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def provision_ldap_user(
     payload: LDAPProvisionRequest,
+    _admin: User | None = RequireAdminIfAuthEnabled(),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.USERS_CREATE),
     db: AsyncSession = Depends(get_db),
 ):
@@ -1722,7 +1728,7 @@ async def provision_ldap_user(
     login path (`_provision_ldap_user`), so behavior stays identical regardless
     of whether the user was created here or on first login.
 
-    Requires USERS_CREATE.
+    Admin-only with USERS_CREATE, like users.create_user.
     """
     from sqlalchemy import func as sa_func
 

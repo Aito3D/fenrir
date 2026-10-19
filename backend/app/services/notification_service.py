@@ -463,9 +463,12 @@ class NotificationService:
         if not phone or not apikey:
             return False, "Phone number and API key are required"
 
-        # URL encode the message
-        encoded_message = quote(message)
-        url = f"https://api.callmebot.com/whatsapp.php?phone={phone}&text={encoded_message}&apikey={apikey}"
+        # Every value URL-encoded: a phone number written "+49 151 ..." would
+        # otherwise lose its "+", which a query string reads as a space.
+        url = (
+            "https://api.callmebot.com/whatsapp.php"
+            f"?phone={quote(phone, safe='')}&text={quote(message, safe='')}&apikey={quote(apikey, safe='')}"
+        )
 
         client = await self._get_client()
         response = await client.get(url)
@@ -1571,8 +1574,16 @@ class NotificationService:
         db: AsyncSession,
         event_field: str,
         printer_id: int | None = None,
+        *,
+        fleet_wide: bool = False,
     ) -> list[NotificationProvider]:
         """Get all enabled providers that want a specific event type.
+
+        A provider limited to one printer gets that printer's events. An event
+        with no printer -- a job for "Any <model>" not yet assigned -- reaches
+        only "All printers" providers, unless it is about the whole fleet
+        (``fleet_wide``: the queue finishing, stock, app messages), which
+        every provider that wants it gets.
 
         Runs under ``no_autoflush`` (#2770). Callers routinely hold pending
         writes when they raise an event — the AMS sensor loop does
@@ -1595,6 +1606,8 @@ class NotificationService:
             query = query.where(
                 (NotificationProvider.printer_id.is_(None)) | (NotificationProvider.printer_id == printer_id)
             )
+        elif not fleet_wide:
+            query = query.where(NotificationProvider.printer_id.is_(None))
 
         with db.no_autoflush:
             result = await db.execute(query)
@@ -1724,7 +1737,7 @@ class NotificationService:
         carries it. Returns how many channels it was handed to. ``allowed``
         narrows the channels to those the sender may reach.
         """
-        providers = await self._get_providers_for_event(db, "on_app_message")
+        providers = await self._get_providers_for_event(db, "on_app_message", fleet_wide=True)
         if allowed is not None:
             providers = [provider for provider in providers if allowed(provider)]
         if not providers:
@@ -2587,7 +2600,7 @@ class NotificationService:
         # a single printer via provider.printer_id, and a location alert has no
         # printer to scope by, so sharing it would leak drybox alerts to a
         # provider narrowed to one printer's sensors.
-        providers = await self._get_providers_for_event(db, "on_location_ha_sensor_alert", None)
+        providers = await self._get_providers_for_event(db, "on_location_ha_sensor_alert", fleet_wide=True)
         if not providers:
             return
 
@@ -2850,9 +2863,14 @@ class NotificationService:
         target_model: str,
         waiting_reason: str,
         db: AsyncSession,
+        printer_id: int | None = None,
     ):
-        """Handle job waiting for filament event."""
-        providers = await self._get_providers_for_event(db, "on_queue_job_waiting", None)
+        """Handle job waiting for filament event.
+
+        ``printer_id`` is the printer a pinned job waits on; None for a job for
+        "Any <model>" that no printer holds.
+        """
+        providers = await self._get_providers_for_event(db, "on_queue_job_waiting", printer_id)
         if not providers:
             return
 
@@ -2919,7 +2937,7 @@ class NotificationService:
         db: AsyncSession,
     ):
         """Handle all queue jobs completed event."""
-        providers = await self._get_providers_for_event(db, "on_queue_completed", None)
+        providers = await self._get_providers_for_event(db, "on_queue_completed", fleet_wide=True)
         if not providers:
             return
 
@@ -2954,7 +2972,7 @@ class NotificationService:
         leaves out the providers that have the break alert on, so the producer can send
         the reorder event for a break SKU without telling those providers twice.
         """
-        providers = await self._get_providers_for_event(db, "on_stock_reorder_alert", None)
+        providers = await self._get_providers_for_event(db, "on_stock_reorder_alert", fleet_wide=True)
         if skip_break_subscribers:
             providers = [p for p in providers if not p.on_stock_break_alert]
         if not providers:
@@ -2990,7 +3008,7 @@ class NotificationService:
 
         ``subtype`` and ``color`` as for :meth:`on_stock_reorder_alert`.
         """
-        providers = await self._get_providers_for_event(db, "on_stock_break_alert", None)
+        providers = await self._get_providers_for_event(db, "on_stock_break_alert", fleet_wide=True)
         if not providers:
             return
 

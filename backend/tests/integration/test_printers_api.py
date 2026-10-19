@@ -1410,6 +1410,38 @@ class TestAMSLoadUnloadAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    @pytest.mark.parametrize("tray_id", [128, 135])
+    async def test_load_an_ams_ht_slot(self, async_client: AsyncClient, printer_factory, tray_id):
+        """An AMS-HT tray is its unit id; refusing it made Load impossible there."""
+        printer = await printer_factory(name="H2C")
+        client = MagicMock()
+        client.ams_load_filament.return_value = True
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = client
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/ams/load?tray_id={tray_id}")
+
+        assert response.status_code == 200, response.text
+        client.ams_load_filament.assert_called_once_with(tray_id, extruder_id=None)
+        assert response.json()["message"] == f"Loading filament from AMS HT-{'A' if tray_id == 128 else 'H'}"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize("tray_id", [127, 136, 512])
+    async def test_load_refuses_ids_next_to_the_ams_ht_range(self, async_client: AsyncClient, printer_factory, tray_id):
+        printer = await printer_factory(name="H2C")
+        client = MagicMock()
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = client
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/ams/load?tray_id={tray_id}")
+
+        assert response.status_code == 400
+        assert "128..135 (AMS-HT)" in response.json()["detail"]
+        client.ams_load_filament.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_load_not_found(self, async_client: AsyncClient):
         response = await async_client.post("/api/v1/printers/99999/ams/load?tray_id=0")
         assert response.status_code == 404
@@ -1901,6 +1933,38 @@ class TestConfigureAMSSlotAPI:
             # Slot's own storable preset wins over both the PFUS and a generic.
             assert call_kwargs.kwargs["tray_info_idx"] == "P4d64437"
             assert call_kwargs.kwargs["setting_id"] == "PFUS9ac902733670a9"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_configure_a_silk_preset_does_not_take_a_matte_slot(self, async_client: AsyncClient, printer_factory):
+        """Same material, another finish: the slot's Matte id is not reused, and
+        the generic is the one for the preset's finish."""
+        printer = await printer_factory(name="H2D")
+        mock_client = MagicMock()
+        mock_client.ams_set_filament_setting.return_value = True
+        mock_client.extrusion_cali_sel.return_value = True
+        mock_client.request_status_update.return_value = True
+        mock_status = MagicMock()
+        tray = {"id": 3, "tray_info_idx": "GFA01", "tray_type": "PLA", "tray_sub_brands": "PLA Matte"}
+        mock_status.raw_data = {"ams": {"ams": [{"id": 2, "tray": [tray]}]}}
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            mock_pm.get_status.return_value = mock_status
+            response = await async_client.post(
+                f"/api/v1/printers/{printer.id}/slots/2/3/configure",
+                params={
+                    "tray_info_idx": "PFUS9ac902733670a9",
+                    "tray_type": "PLA",
+                    "tray_sub_brands": "My PLA Silk",
+                    "tray_color": "FF0000FF",
+                    "nozzle_temp_min": 190,
+                    "nozzle_temp_max": 230,
+                },
+            )
+
+        assert response.status_code == 200
+        assert mock_client.ams_set_filament_setting.call_args.kwargs["tray_info_idx"] == "GFL96"
 
     @pytest.mark.asyncio
     @pytest.mark.integration

@@ -61,6 +61,7 @@ from backend.app.schemas.supplier import (
     SupplierUpdate,
 )
 from backend.app.services import slot_unlink_grace
+from backend.app.services.ams_assignment_lock import get_ams_assignment_lock
 from backend.app.services.ams_slot_presence import spool_present
 from backend.app.services.location_service import (
     DUPLICATE_LOCATION_NAME,
@@ -86,6 +87,7 @@ from backend.app.services.spool_filament_preset import resolve_spool_preset
 from backend.app.services.spoolman import SpoolmanClient, get_spoolman_client, init_spoolman_client
 from backend.app.services.supplier_links import apply_supplier_inheritance, apply_supplier_inheritance_to_batch
 from backend.app.services.tag_conflict import tag_already_linked
+from backend.app.utils.filament_finish import different_finish, finish_generic_id
 from backend.app.utils.filament_ids import (
     GENERIC_FILAMENT_IDS,
     GENERIC_IDS_REPLACED_ON_REUSE,
@@ -133,6 +135,7 @@ async def apply_spool_to_slot_via_mqtt(
     tray_id: int,
     current_tray_info_idx: str = "",
     current_tray_type: str = "",
+    current_tray_sub_brands: str = "",
 ) -> bool:
     """Publish ams_filament_setting + extrusion_cali_sel for a spool on a slot.
 
@@ -223,6 +226,9 @@ async def apply_spool_to_slot_via_mqtt(
             and not is_material_name(current_tray_info_idx)
             and current_tray_type
             and current_tray_type.upper() == tray_type.upper()
+            # The same type in another finish is another preset: a Silk spool
+            # does not take the slot's Matte id. Only when both name a finish.
+            and not different_finish(f"{spool.material or ''} {spool.subtype or ''}", current_tray_sub_brands)
         ):
             tray_info_idx = current_tray_info_idx
         elif tray_type:
@@ -232,7 +238,8 @@ async def apply_spool_to_slot_via_mqtt(
             # (GFG96) that reducing it to "PETG" would trade away for GFG99.
             material = (spool.material or "").upper().strip()
             generic = (
-                GENERIC_FILAMENT_IDS.get(material)
+                finish_generic_id(tray_type, f"{spool.material or ''} {spool.subtype or ''}")
+                or GENERIC_FILAMENT_IDS.get(material)
                 or GENERIC_FILAMENT_IDS.get(material.split("-")[0].split(" ")[0])
                 or GENERIC_FILAMENT_IDS.get(tray_type.upper())
                 or ""
@@ -1480,7 +1487,8 @@ async def import_spools_csv(
             # the other create paths: the file is authoritative. A CSV that
             # leaves the column blank is stating "no number", not asking for
             # one to be guessed from whatever else is in the inventory.
-            spool = Spool(**row.spool)
+            # The file has no lock column: a used weight in it is locked.
+            spool = Spool(**_lock_entered_weight(dict(row.spool), set()))
             db.add(spool)
             # Supplier assignments resolved by name during parsing (#2988).
             # Flush first so the spool has an id to hang the links on.
@@ -1565,6 +1573,15 @@ async def get_spool(
     return spool
 
 
+def _lock_entered_weight(payload: dict, fields_set: set[str]) -> dict:
+    """A used weight entered for a new spool is locked, as an edited one is:
+    otherwise the AMS remain% sync can overwrite it on its first pass. An
+    explicit ``weight_locked`` from the client wins."""
+    if (payload.get("weight_used") or 0) > 0 and "weight_locked" not in fields_set:
+        payload["weight_locked"] = True
+    return payload
+
+
 @router.post("/spools", response_model=SpoolResponse)
 async def create_spool(
     spool_data: SpoolCreate,
@@ -1576,6 +1593,7 @@ async def create_spool(
         payload = await prepare_internal_spool_payload(db, spool_data.model_dump(), set(spool_data.model_fields_set))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    payload = _lock_entered_weight(payload, set(spool_data.model_fields_set))
     # A new spool of an already-numbered product inherits its material number (#2870).
     payload = await apply_material_number_inheritance(db, payload)
     spool = Spool(**payload)
@@ -1604,6 +1622,7 @@ async def bulk_create_spools(
         payload = await prepare_internal_spool_payload(db, data.spool.model_dump(), fields_set)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    payload = _lock_entered_weight(payload, fields_set)
     # A new spool of an already-numbered product inherits its material number (#2870).
     payload = await apply_material_number_inheritance(db, payload)
     for _ in range(data.quantity):
@@ -1668,18 +1687,23 @@ async def delete_spool(
     if not spool:
         raise HTTPException(404, "Spool not found")
 
+    freed = await _release_slots(db, [spool.id])
     await db.delete(spool)
     await db.commit()
     await ws_manager.broadcast({"type": "inventory_changed"})
+    await _announce_freed_slots(freed)
     return {"status": "deleted"}
 
 
 async def _release_slots(db: AsyncSession, spool_ids: list[int]) -> list[tuple[int, int, int]]:
-    """Unassign archived spools from their AMS slots; returns the freed slots.
+    """Unassign archived or deleted spools from their AMS slots; returns the
+    freed slots.
 
     Assigning refuses an archived spool and nothing downstream checks the flag,
     so a slot left pointing at one would keep showing it and charge it the next
-    print's usage. The caller commits, then announces the slots.
+    print's usage. A deleted spool's slots go with it, but other tabs refresh
+    their slot views only when the slots are announced. The caller commits,
+    then announces the slots.
     """
     if not spool_ids:
         return []
@@ -1863,11 +1887,13 @@ async def bulk_delete_spools(
     spools = list(result.scalars().all())
     found_ids = {s.id for s in spools}
     not_found = [sid for sid in payload.ids if sid not in found_ids]
+    freed = await _release_slots(db, list(found_ids))
     for spool in spools:
         await db.delete(spool)
     await db.commit()
     if spools:
         await ws_manager.broadcast({"type": "inventory_changed"})
+    await _announce_freed_slots(freed)
     return {"deleted": len(spools), "not_found": not_found}
 
 
@@ -2190,6 +2216,7 @@ async def assign_spool(
     fingerprint_color = None
     fingerprint_type = None
     current_tray_info_idx = ""
+    current_tray_sub_brands = ""
     tray_state: int | None = None
     # Firmware's tray_exist_bits answer for this slot, when the payload carries
     # one. Outranks tray_state below — see services/ams_slot_presence.py.
@@ -2205,6 +2232,7 @@ async def assign_spool(
                     fingerprint_color = vt.get("tray_color", "")
                     fingerprint_type = vt.get("tray_type", "")
                     current_tray_info_idx = vt.get("tray_info_idx", "")
+                    current_tray_sub_brands = vt.get("tray_sub_brands", "")
                     raw_state = vt.get("state")
                     if isinstance(raw_state, int):
                         tray_state = raw_state
@@ -2228,34 +2256,37 @@ async def assign_spool(
                 fingerprint_color = tray.get("tray_color", "")
                 fingerprint_type = tray.get("tray_type", "")
                 current_tray_info_idx = tray.get("tray_info_idx", "")
+                current_tray_sub_brands = tray.get("tray_sub_brands", "")
                 raw_state = tray.get("state")
                 if isinstance(raw_state, int):
                     tray_state = raw_state
                 tray_has_spool = spool_present(tray)
 
-    # 3. Upsert assignment (replace if same printer+ams+tray)
-    existing = await db.execute(
-        select(SpoolAssignment).where(
-            SpoolAssignment.printer_id == data.printer_id,
-            SpoolAssignment.ams_id == data.ams_id,
-            SpoolAssignment.tray_id == data.tray_id,
+    # 3. Upsert assignment (replace if same printer+ams+tray), under the lock
+    # the AMS change handler writes the printer's slots with.
+    async with get_ams_assignment_lock(data.printer_id):
+        existing = await db.execute(
+            select(SpoolAssignment).where(
+                SpoolAssignment.printer_id == data.printer_id,
+                SpoolAssignment.ams_id == data.ams_id,
+                SpoolAssignment.tray_id == data.tray_id,
+            )
         )
-    )
-    old = existing.scalar_one_or_none()
-    if old:
-        await db.delete(old)
-        await db.flush()
+        old = existing.scalar_one_or_none()
+        if old:
+            await db.delete(old)
+            await db.flush()
 
-    assignment = SpoolAssignment(
-        spool_id=data.spool_id,
-        printer_id=data.printer_id,
-        ams_id=data.ams_id,
-        tray_id=data.tray_id,
-        fingerprint_color=fingerprint_color,
-        fingerprint_type=fingerprint_type,
-    )
-    db.add(assignment)
-    await db.commit()
+        assignment = SpoolAssignment(
+            spool_id=data.spool_id,
+            printer_id=data.printer_id,
+            ams_id=data.ams_id,
+            tray_id=data.tray_id,
+            fingerprint_color=fingerprint_color,
+            fingerprint_type=fingerprint_type,
+        )
+        db.add(assignment)
+        await db.commit()
     await db.refresh(assignment)
     slot_unlink_grace.forget_slot(data.printer_id, data.ams_id, data.tray_id)
 
@@ -2328,6 +2359,7 @@ async def assign_spool(
                 tray_id=data.tray_id,
                 current_tray_info_idx=current_tray_info_idx,
                 current_tray_type=fingerprint_type or "",
+                current_tray_sub_brands=current_tray_sub_brands,
             )
         except Exception as e:
             logger.warning("MQTT auto-configure failed for spool %d: %s", spool.id, e)
@@ -2393,19 +2425,20 @@ async def unassign_spool(
     _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ):
     """Unassign a spool from an AMS slot."""
-    result = await db.execute(
-        select(SpoolAssignment).where(
-            SpoolAssignment.printer_id == printer_id,
-            SpoolAssignment.ams_id == ams_id,
-            SpoolAssignment.tray_id == tray_id,
+    async with get_ams_assignment_lock(printer_id):
+        result = await db.execute(
+            select(SpoolAssignment).where(
+                SpoolAssignment.printer_id == printer_id,
+                SpoolAssignment.ams_id == ams_id,
+                SpoolAssignment.tray_id == tray_id,
+            )
         )
-    )
-    assignment = result.scalar_one_or_none()
-    if not assignment:
-        raise HTTPException(404, "Assignment not found")
+        assignment = result.scalar_one_or_none()
+        if not assignment:
+            raise HTTPException(404, "Assignment not found")
 
-    await db.delete(assignment)
-    await db.commit()
+        await db.delete(assignment)
+        await db.commit()
 
     await ws_manager.broadcast(
         {
@@ -2889,6 +2922,8 @@ async def sync_weights_from_ams(
             skipped += 1
 
     await db.commit()
+    if synced:
+        await ws_manager.broadcast({"type": "inventory_changed"})
     return {"synced": synced, "skipped": skipped, "printing": printing}
 
 
@@ -3229,17 +3264,20 @@ async def create_spool_from_slot(
     if not is_valid_tag(tray.get("tag_uid", ""), tray.get("tray_uuid", "")):
         raise HTTPException(status_code=400, detail="Slot has no RFID tag")
 
-    spool = await create_spool_from_tray(db, tray)
-    await auto_assign_spool(
-        req.printer_id,
-        req.ams_id,
-        req.tray_id,
-        spool,
-        printer_manager,
-        db,
-        tray_info_idx=tray.get("tray_info_idx", ""),
-    )
-    await db.commit()
+    # Under the slot lock from the first write: on SQLite the spool insert takes
+    # the write lock, which an AMS update holding the slot lock would wait for.
+    async with get_ams_assignment_lock(req.printer_id):
+        spool = await create_spool_from_tray(db, tray)
+        await auto_assign_spool(
+            req.printer_id,
+            req.ams_id,
+            req.tray_id,
+            spool,
+            printer_manager,
+            db,
+            tray_info_idx=tray.get("tray_info_idx", ""),
+        )
+        await db.commit()
     await ws_manager.broadcast({"type": "inventory_changed"})
     await ws_manager.broadcast(
         {

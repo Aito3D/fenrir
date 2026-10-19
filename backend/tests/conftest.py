@@ -218,6 +218,19 @@ def mfa_encryption_isolation(monkeypatch, tmp_path):
 
 
 @pytest.fixture(autouse=True)
+def reset_printer_file_cache():
+    """A fresh file-browser preview cache per test.
+
+    Test databases start their printer ids at 1 again, so a preview kept by one
+    test would be served to the next one's printer 1."""
+    from backend.app.services.printer_file_cache import printer_file_cache
+
+    printer_file_cache.clear()
+    yield
+    printer_file_cache.clear()
+
+
+@pytest.fixture(autouse=True)
 def reset_spoolman_location_sync_cache():
     """Drop the per-URL Spoolman location-sync TTL cache between tests.
 
@@ -421,82 +434,143 @@ def event_loop():
     loop.close()
 
 
+# The test database's schema as built, per worker: built once and emptied
+# between tests. Rebuilding it for every test (DROP SCHEMA + create_all, a few
+# hundred DDL statements) was 90% of a PostgreSQL run, with 30 workers and the
+# server competing for the same cores.
+_pg_schema: dict[str, object] = {}
+
+# Everything a test could change about the schema: relations (tables, indexes,
+# sequences, views) with their columns, types, nullability and defaults, and
+# every constraint.
+_PG_SCHEMA_FINGERPRINT = """
+SELECT md5(coalesce(string_agg(item, ',' ORDER BY item), '')) FROM (
+    SELECT c.relname || ':' || c.relkind::text || ':' || coalesce(a.attname, '') || ':'
+        || coalesce(format_type(a.atttypid, a.atttypmod), '') || ':' || coalesce(a.attnotnull::text, '')
+        || ':' || coalesce(pg_get_expr(d.adbin, d.adrelid), '') AS item
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    LEFT JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
+    LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
+    WHERE n.nspname = 'public'
+    UNION ALL
+    SELECT 'constraint:' || conname || ':' || pg_get_constraintdef(oid)
+    FROM pg_constraint WHERE connamespace = 'public'::regnamespace
+) AS schema_items
+"""
+
+
+# Every row out and every id back to 1. DELETE rather than TRUNCATE: TRUNCATE
+# gives each table and index a new file, about three times the cost for the few
+# rows a test leaves. Foreign-key triggers are off for this transaction only
+# (the throwaway server's superuser), so the order does not matter.
+_PG_EMPTY_TABLES = """
+DO $$
+DECLARE r record;
+BEGIN
+    PERFORM set_config('session_replication_role', 'replica', true);
+    FOR r IN SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename LOOP
+        EXECUTE format('DELETE FROM public.%I', r.tablename);
+    END LOOP;
+    FOR r IN SELECT c.oid::regclass AS seq FROM pg_class c
+             WHERE c.relkind = 'S' AND c.relnamespace = 'public'::regnamespace LOOP
+        PERFORM setval(r.seq, 1, false);
+    END LOOP;
+END $$
+"""
+
+
+async def _reset_pg_test_schema(conn) -> None:
+    """An empty test database with the models' schema, as cheaply as possible.
+
+    Emptied (ids restart at 1) when the schema is still the one built for this
+    worker; a full rebuild the first time, after a test changed the schema (a
+    migration test adding a column), and when a model loaded since adds a table.
+    """
+    from sqlalchemy import text
+
+    from backend.app.core.database import load_all_models
+
+    load_all_models()
+    tables = set(Base.metadata.tables)
+    fingerprint = (await conn.execute(text(_PG_SCHEMA_FINGERPRINT))).scalar_one()
+    if _pg_schema.get("fingerprint") != fingerprint or _pg_schema.get("tables") != tables:
+        await conn.execute(text("DROP SCHEMA public CASCADE"))
+        await conn.execute(text("CREATE SCHEMA public"))
+        await conn.run_sync(Base.metadata.create_all)
+        _pg_schema["fingerprint"] = (await conn.execute(text(_PG_SCHEMA_FINGERPRINT))).scalar_one()
+        _pg_schema["tables"] = tables
+        return
+    await conn.execute(text(_PG_EMPTY_TABLES))
+
+
+async def _finish_query_cancellations() -> None:
+    """Wait for asyncpg to finish cancelling queries in this test's loop.
+
+    A test that cancels a task mid-query (to stop the background work a
+    handler started) awaits the task, but asyncpg cancels the query on the
+    server in a task of its own. If the test ends first, that task is still
+    pending when the loop closes and is reported as an unraisable
+    "Connection._cancel" coroutine in some later test.
+    """
+    current = asyncio.current_task()
+    pending = [
+        task
+        for task in asyncio.all_tasks()
+        if task is not current
+        and not task.done()
+        and getattr(task.get_coro(), "__qualname__", "") == "Connection._cancel"
+    ]
+    if pending:
+        await asyncio.wait(pending, timeout=5)
+
+
+async def _release_app_engine() -> None:
+    """Close the app engine's pooled connections before this test's loop ends.
+
+    Code that opens its own session (print completion, services) uses the
+    app's module-level engine, shared by every test on the worker. Its pool
+    would keep a connection opened in this test's event loop into the next
+    test's, where SQLAlchemy closes it in a loop it does not belong to; on
+    PostgreSQL that leaves asyncpg's cleanup unawaited, reported as an
+    unraisable "Connection._cancel" coroutine in some later test.
+    """
+    await _finish_query_cancellations()
+    await _app_engine.dispose()
+
+
+if TEST_PG_URL is not None:
+
+    @pytest.fixture(autouse=True)
+    async def _app_engine_released_after_each_test():
+        """Every test, not only those with test_engine: any of them can reach
+        the app engine through code that opens its own session."""
+        yield
+        await _release_app_engine()
+
+
 @pytest.fixture
 async def test_engine():
     """Create a test database engine."""
     engine = create_async_engine(TEST_DATABASE_URL, echo=False)
 
-    # Import all models to register them
-    from backend.app.models import (
-        active_print_session,  # noqa: F401
-        aito_client_rating,  # noqa: F401
-        aito_project,  # noqa: F401
-        aito_task,  # noqa: F401
-        aito_task_delivery,  # noqa: F401
-        ams_history,
-        ams_label,
-        announcement,  # noqa: F401
-        api_key,
-        archive,
-        auth_ephemeral,
-        calculator,
-        color_catalog,
-        external_link,
-        filament,
-        filament_profile,
-        group,
-        kprofile_note,
-        maintenance,
-        notification,
-        notification_inbox,
-        notification_live_activity,
-        notification_lock_screen_widget,
-        notification_template,
-        oidc_provider,
-        print_log,
-        print_queue,
-        printer,
-        printer_location,
-        project,
-        project_bom,
-        project_item,
-        project_tag,
-        scheduled_drying,
-        settings,
-        slot_preset,
-        smart_plug,
-        smart_plug_energy_snapshot,  # noqa: F401
-        sponsor_toast_state,  # noqa: F401
-        spool,
-        spool_assignment,
-        spool_catalog,
-        spool_filament_preset,
-        spool_k_profile,
-        spool_usage_history,
-        spoolbuddy_device,
-        spoolman_k_profile,
-        spoolman_slot_assignment,
-        user,
-        user_email_pref,
-        user_otp_code,
-        user_totp,
-        virtual_printer,
-    )
+    # Every model, as the app's schema has them: a hand-kept list here fell
+    # behind and left four tables out of the SQLite test database.
+    from backend.app.core.database import load_all_models
+
+    load_all_models()
 
     if TEST_PG_URL is not None:
         # The same engine setup as the app's (UTC session, aware datetimes
         # made naive), on this worker's own database, emptied for each test.
-        from sqlalchemy import text
-
         from backend.app.core.database import _create_engine
 
         await engine.dispose()
         engine = _create_engine(TEST_PG_URL)
         async with engine.begin() as conn:
-            await conn.execute(text("DROP SCHEMA public CASCADE"))
-            await conn.execute(text("CREATE SCHEMA public"))
-            await conn.run_sync(Base.metadata.create_all)
+            await _reset_pg_test_schema(conn)
         yield engine
+        await _release_app_engine()
         await engine.dispose()
         return
 
@@ -504,6 +578,7 @@ async def test_engine():
         await conn.run_sync(Base.metadata.create_all)
 
     yield engine
+    await _release_app_engine()
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)

@@ -8,6 +8,7 @@ import logging
 import math
 import os
 import random
+import re
 import signal
 import struct
 import subprocess
@@ -3873,6 +3874,7 @@ async def check_plate_empty(
         - difference_percent: float - How different from calibration reference
         - message: str - Human-readable result message
         - needs_calibration: bool - True if calibration is required
+        - failure_reason: str | None - why the check could not run, None when it ran
         - light_warning: bool - True if chamber light is off
     """
     from backend.app.services.plate_detection import (
@@ -4031,47 +4033,6 @@ async def calibrate_plate_detection(
         message += " (Warning: Chamber light was off)"
 
     return {"success": success, "message": message, "index": index}
-
-
-@router.delete("/{printer_id}/camera/plate-detection/calibrate")
-async def delete_plate_calibration(
-    printer_id: int,
-    plate_type: str | None = None,
-    db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.PRINTERS_UPDATE),
-):
-    """Delete the plate detection calibration for a printer and plate type.
-
-    Args:
-        printer_id: Printer ID
-        plate_type: Type of build plate (if None, deletes legacy non-plate-specific calibration)
-
-    Returns:
-        Dict with:
-        - success: bool - Whether deletion succeeded
-        - message: str - Status message
-    """
-    from backend.app.services.plate_detection import (
-        delete_calibration,
-        is_plate_detection_available,
-    )
-
-    # Verify printer exists first (before OpenCV check)
-    await get_printer_or_404(printer_id, db)
-
-    if not is_plate_detection_available():
-        raise HTTPException(
-            status_code=503,
-            detail="Plate detection not available. Install opencv-python-headless to enable.",
-        )
-
-    deleted = delete_calibration(printer_id, plate_type)
-    plate_msg = f" for '{plate_type}'" if plate_type else ""
-
-    return {
-        "success": deleted,
-        "message": f"Calibration deleted{plate_msg}" if deleted else f"No calibration found{plate_msg}",
-    }
 
 
 @router.get("/{printer_id}/camera/plate-detection/status")
@@ -4233,22 +4194,57 @@ async def delete_reference(
     return {"success": True, "message": "Reference deleted"}
 
 
-def _scan_bambu_ffmpeg_pids() -> list[int]:
-    """Scan /proc for ffmpeg processes that are ours.
+_USB_DEVICE_ARG = re.compile(rb"^/dev/video\d{1,2}$")
 
-    Two shapes are matched, both unambiguously Fenrir's:
-    - Bambu RTSP: no other software connects to ``rtsp(s)://bblp:``.
-    - External USB (V4L2): an ffmpeg spawned with ``-f v4l2`` is our USB camera
-      stream (#2675). Only orphans are killed — the caller excludes PIDs still in
-      ``_active_streams``, so a live USB stream (now registered there) is spared.
 
-    This catches orphans that survive app restarts and are not in any tracking dict.
+def _read_ppid(pid: int) -> int | None:
+    """The parent pid of ``pid`` from /proc, or None when it cannot be read."""
+    try:
+        with open(f"/proc/{pid}/stat", "rb") as f:
+            stat = f.read()
+        # The command name in field 2 may contain spaces; the fields after it don't.
+        return int(stat[stat.rindex(b")") + 1 :].split()[1])
+    except (OSError, ValueError, IndexError):
+        return None
+
+
+def _is_our_usb_command(argv: list[bytes]) -> bool:
+    """The shape of both USB camera commands in services/external_camera:
+    ``ffmpeg -f v4l2 ... -i /dev/videoN ... -`` (output to our pipe)."""
+    if len(argv) < 5 or argv[1:3] != [b"-f", b"v4l2"] or argv[-1] != b"-":
+        return False
+    return any(arg == b"-i" and _USB_DEVICE_ARG.match(argv[i + 1]) for i, arg in enumerate(argv[:-1]))
+
+
+def _is_fenrir_ffmpeg(argv: list[bytes], ppid: int | None, own_pid: int) -> bool:
+    """Whether an ffmpeg process is one of ours: our command, run by this
+    process or orphaned to init by an earlier run.
+
+    - Bambu RTSP: ``rtsp(s)://bblp:``. Another Fenrir on the same host (a
+      second install, a test server) runs the very same command, and matching
+      the command alone made each one's cleanup kill the other's live camera
+      every minute.
+    - External USB (V4L2): our command shape. Other software reads USB cameras
+      with ffmpeg too (motion, webcam servers on a bare-metal install).
     """
-    if sys.platform != "linux":
-        return []
+    if ppid is None or ppid not in (own_pid, 1):
+        return False
+    joined = b"\x00".join(argv)
+    if b"rtsp://bblp:" in joined or b"rtsps://bblp:" in joined:
+        return True
+    return _is_our_usb_command(argv)
 
+
+def _scan_bambu_ffmpeg_pids() -> list[int]:
+    """Scan /proc for ffmpeg processes that are ours (see ``_is_fenrir_ffmpeg``).
+
+    Only orphans are killed — the caller excludes PIDs still in
+    ``_active_streams`` and ``_active_capture_pids``. This catches orphans that
+    survive app restarts and are not in any tracking dict.
+    """
     import os
 
+    own_pid = os.getpid()
     pids = []
     try:
         for entry in os.listdir("/proc"):
@@ -4259,9 +4255,8 @@ def _scan_bambu_ffmpeg_pids() -> list[int]:
                     cmdline = f.read()
                 if b"ffmpeg" not in cmdline:
                     continue
-                # Match both rtsp:// (via TLS proxy) and rtsps:// (direct), plus
-                # the `-f v4l2` input flag our USB camera command always carries.
-                if b"rtsp://bblp:" in cmdline or b"rtsps://bblp:" in cmdline or b"v4l2" in cmdline:
+                argv = cmdline.rstrip(b"\x00").split(b"\x00")
+                if _is_fenrir_ffmpeg(argv, _read_ppid(int(entry)), own_pid):
                     pids.append(int(entry))
             except (OSError, PermissionError, ValueError):
                 continue

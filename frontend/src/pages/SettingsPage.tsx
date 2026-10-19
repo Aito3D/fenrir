@@ -58,6 +58,8 @@ import { EmailSettings } from '../components/EmailSettings';
 import { LDAPSettings } from '../components/LDAPSettings';
 import { PrinterAccessSettings } from '../components/PrinterAccessSettings';
 import { TwoFactorSettings } from '../components/TwoFactorSettings';
+import { AdminDisableTwoFactor } from '../components/AdminDisableTwoFactor';
+import { cameraTestSuccessMessage } from '../utils/cameraTestMessage';
 import { OIDCProviderSettings } from '../components/OIDCProviderSettings';
 import { SecurityStatusCard } from '../components/SecurityStatusCard';
 import { APIBrowser } from '../components/APIBrowser';
@@ -334,8 +336,12 @@ export function SettingsPage() {
     setSearchParams(searchParams, { replace: true });
   };
   // A link to Printer access lands non-admins on the Users sub-tab instead
+  // and the sign-in configuration sub-tabs, whose settings only an admin may change.
   const shownUsersSubTab: UsersSubTab =
-    usersSubTab === 'printer-access' && !(authEnabled && isAdmin) ? 'users' : usersSubTab;
+    (usersSubTab === 'printer-access' && !(authEnabled && isAdmin)) ||
+    ((usersSubTab === 'email' || usersSubTab === 'ldap') && !isAdmin)
+      ? 'users'
+      : usersSubTab;
   // Workflow tab sub-tabs (#1425): 'dispatch' = current Workflow content,
   // 'pipelines' = Slicer Pipelines management. URL: ?tab=queue&sub=pipelines.
   const initialQueueSub: 'dispatch' | 'pipelines' =
@@ -1147,10 +1153,11 @@ export function SettingsPage() {
   // Sync local state when settings load
   useEffect(() => {
     if (settings && !localSettings) {
-      // Auto-detect external_url from browser if not set
+      // Auto-detect external_url from browser if not set. Admins only: only an
+      // admin may change it, and the detected value is saved like an edit.
       const settingsWithExternalUrl = {
         ...settings,
-        external_url: settings.external_url || window.location.origin,
+        external_url: settings.external_url || (isAdmin ? window.location.origin : settings.external_url),
       };
       // The baseline is the raw server row, not this adjusted copy: a detected
       // external_url has to read as a local change so it still gets persisted.
@@ -1161,7 +1168,7 @@ export function SettingsPage() {
         isInitialLoadRef.current = false;
       }, 100);
     }
-  }, [settings, localSettings]);
+  }, [settings, localSettings, isAdmin]);
 
   // #2716: reconcile a moved server snapshot into the local copy. A field the
   // user has not touched since the last reconcile takes the server's value; a
@@ -1292,6 +1299,7 @@ export function SettingsPage() {
       baseline.ams_temp_fair !== localSettings.ams_temp_fair ||
       (baseline.ams_temp_alarm ?? null) !== (localSettings.ams_temp_alarm ?? null) ||
       baseline.ams_history_retention_days !== localSettings.ams_history_retention_days ||
+      baseline.printer_sensor_history_retention_days !== localSettings.printer_sensor_history_retention_days ||
       baseline.disable_filament_warnings !== localSettings.disable_filament_warnings ||
       baseline.prefer_lowest_filament !== localSettings.prefer_lowest_filament ||
       (baseline.queue_drying_enabled ?? false) !== (localSettings.queue_drying_enabled ?? false) ||
@@ -1425,6 +1433,7 @@ export function SettingsPage() {
         ams_temp_fair: localSettings.ams_temp_fair,
         ams_temp_alarm: localSettings.ams_temp_alarm ?? null,
         ams_history_retention_days: localSettings.ams_history_retention_days,
+        printer_sensor_history_retention_days: localSettings.printer_sensor_history_retention_days,
         disable_filament_warnings: localSettings.disable_filament_warnings,
         prefer_lowest_filament: localSettings.prefer_lowest_filament,
         queue_drying_enabled: localSettings.queue_drying_enabled,
@@ -1539,15 +1548,7 @@ export function SettingsPage() {
       const result = await api.testExternalCamera(printerId, url, cameraType);
       setExtCameraTestResults(prev => ({ ...prev, [printerId]: result }));
       if (result.success) {
-        // A shared capture means the frame is real but was not fetched over a
-        // connection this test opened, so say so rather than implying the
-        // camera was just reached.
-        showToast(
-          result.coalesced
-            ? t('settings.toast.cameraConnectedCoalesced', { resolution: result.resolution || '' })
-            : t('settings.toast.cameraConnected', { resolution: result.resolution || '' }),
-          'success'
-        );
+        showToast(cameraTestSuccessMessage(result, t), 'success');
       } else {
         showToast(result.error || t('settings.toast.connectionFailed'), 'error');
       }
@@ -3114,8 +3115,11 @@ export function SettingsPage() {
                   value={localSettings.external_url ?? ''}
                   onChange={(e) => updateSetting('external_url', e.target.value)}
                   placeholder="http://192.168.1.100:8000"
-                  className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                  disabled={!isAdmin}
+                  title={!isAdmin ? t('settings.adminOnlySetting') : undefined}
+                  className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none disabled:opacity-50"
                 />
+                {!isAdmin && <p className="text-xs text-bambu-gray mt-1">{t('settings.adminOnlySetting')}</p>}
                 <p className="text-xs text-bambu-gray mt-1">
                   {t('settings.externalUrlHint')}
                 </p>
@@ -3545,12 +3549,19 @@ export function SettingsPage() {
                 <div>
                   <p className="text-white">{t('settings.enableMetricsEndpoint')}</p>
                   <p className="text-xs text-bambu-gray">{t('settings.prometheusDescription')}</p>
+                  {!isAdmin && (
+                    <p id="prometheus-admin-only" className="text-xs text-bambu-gray mt-1">
+                      {t('settings.adminOnlySetting')}
+                    </p>
+                  )}
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
                   <input
                     type="checkbox"
                     checked={localSettings.prometheus_enabled ?? false}
                     onChange={(e) => updateSetting('prometheus_enabled', e.target.checked)}
+                    disabled={!isAdmin}
+                    aria-describedby={!isAdmin ? 'prometheus-admin-only' : undefined}
                     className="sr-only peer"
                   />
                   <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
@@ -3567,6 +3578,7 @@ export function SettingsPage() {
                       type="password"
                       value={localSettings.prometheus_token ?? ''}
                       onChange={(e) => updateSetting('prometheus_token', e.target.value)}
+                      disabled={!isAdmin}
                       onFocus={selectPlaceholderOnFocus}
                       placeholder={t('settings.leaveEmptyForNoAuth')}
                       className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
@@ -5160,7 +5172,8 @@ export function SettingsPage() {
 
             {/* Connected apps: "Sign in with Fenrir" for external applications.
                 Admin-only, like the settings it sits between. */}
-            {hasPermission('settings:update') && (
+            {/* Admin-only: an app's redirect address decides where an admin's sign-in goes. */}
+            {isAdmin && (
               <Card className="mt-6">
                 <CardHeader>
                   <h3 className="text-base font-semibold text-white flex items-center gap-2" id="card-connected-apps">
@@ -6669,6 +6682,23 @@ export function SettingsPage() {
                       <span className="text-bambu-gray">{t('common.days')}</span>
                     </div>
                   </div>
+                  <div>
+                    <label htmlFor="printer-sensor-history-retention" className="block text-sm text-bambu-gray mb-1">
+                      {t('settings.keepPrinterTemperatureHistory')}
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <NumberInput
+                        id="printer-sensor-history-retention"
+                        min={1}
+                        max={365}
+                        value={localSettings.printer_sensor_history_retention_days ?? 30}
+                        onChange={(v) => updateSetting('printer_sensor_history_retention_days', v)}
+                        fallback={30}
+                        className="w-24 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                      />
+                      <span className="text-bambu-gray">{t('common.days')}</span>
+                    </div>
+                  </div>
                   <p className="text-xs text-bambu-gray">
                     {t('settings.historyRetentionDescription')}
                   </p>
@@ -6915,34 +6945,38 @@ export function SettingsPage() {
                 {t('printerAccess.tab')}
               </button>
             )}
-            <button
-              onClick={() => selectUsersSubTab('email')}
-              className={`btn-press px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
-                shownUsersSubTab === 'email'
-                  ? 'text-bambu-green border-bambu-green'
-                  : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
-              }`}
-            >
-              <Mail className="w-4 h-4" />
-              {t('settings.tabs.emailAuth') || 'Email Authentication'}
-              {advancedAuthStatus?.advanced_auth_enabled && (
-                <span className="w-2 h-2 rounded-full bg-green-400" />
-              )}
-            </button>
-            <button
-              onClick={() => selectUsersSubTab('ldap')}
-              className={`btn-press px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
-                shownUsersSubTab === 'ldap'
-                  ? 'text-bambu-green border-bambu-green'
-                  : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
-              }`}
-            >
-              <Shield className="w-4 h-4" />
-              {t('settings.tabs.ldap') || 'LDAP'}
-              {ldapStatus?.ldap_enabled && (
-                <span className="w-2 h-2 rounded-full bg-green-400" />
-              )}
-            </button>
+            {isAdmin && (
+              <>
+                <button
+                  onClick={() => selectUsersSubTab('email')}
+                  className={`btn-press px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
+                    shownUsersSubTab === 'email'
+                      ? 'text-bambu-green border-bambu-green'
+                      : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
+                  }`}
+                >
+                  <Mail className="w-4 h-4" />
+                  {t('settings.tabs.emailAuth') || 'Email Authentication'}
+                  {advancedAuthStatus?.advanced_auth_enabled && (
+                    <span className="w-2 h-2 rounded-full bg-green-400" />
+                  )}
+                </button>
+                <button
+                  onClick={() => selectUsersSubTab('ldap')}
+                  className={`btn-press px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
+                    shownUsersSubTab === 'ldap'
+                      ? 'text-bambu-green border-bambu-green'
+                      : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
+                  }`}
+                >
+                  <Shield className="w-4 h-4" />
+                  {t('settings.tabs.ldap') || 'LDAP'}
+                  {ldapStatus?.ldap_enabled && (
+                    <span className="w-2 h-2 rounded-full bg-green-400" />
+                  )}
+                </button>
+              </>
+            )}
             <button
               onClick={() => selectUsersSubTab('twofa')}
               className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px flex items-center gap-2 ${
@@ -7069,6 +7103,7 @@ export function SettingsPage() {
                   <CardContent>
                     <p className="text-sm text-bambu-gray mb-4">
                       {t('settings.sessionPolicy.description')}
+                      {!isAdmin && <> {t('settings.adminOnlySetting')}</>}
                     </p>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
                       {[
@@ -7083,7 +7118,7 @@ export function SettingsPage() {
                             key={preset.hours}
                             type="button"
                             onClick={() => updateSetting('session_max_hours', preset.hours)}
-                            disabled={authEnabled && !hasPermission('settings:update')}
+                            disabled={!isAdmin}
                             className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                               isActive
                                 ? 'bg-bambu-green text-white'
@@ -7105,7 +7140,7 @@ export function SettingsPage() {
                             if (Number.isNaN(raw)) return;
                             updateSetting('session_max_hours', Math.max(1, Math.min(720, raw)));
                           }}
-                          disabled={authEnabled && !hasPermission('settings:update')}
+                          disabled={!isAdmin}
                           aria-label={t('settings.sessionPolicy.customHoursLabel')}
                           className="w-20 px-2 py-2 bg-bambu-dark-tertiary text-white text-sm rounded-lg border border-bambu-dark-tertiary focus:border-bambu-green focus:outline-none disabled:opacity-50"
                         />
@@ -7776,6 +7811,12 @@ export function SettingsPage() {
                     </Button>
                   </div>
                 )}
+
+                {/* Two-factor authentication: admin removal for a locked-out user */}
+                <AdminDisableTwoFactor
+                  userId={editingUserId}
+                  username={usersData.find(u => u.id === editingUserId)?.username ?? userFormData.username}
+                />
 
                 {/* Groups Field */}
                 <div>

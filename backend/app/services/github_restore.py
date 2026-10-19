@@ -34,8 +34,10 @@ Design notes worth knowing before editing:
 import asyncio
 import json
 import logging
+import math
 import os
 import re
+from contextvars import ContextVar
 from dataclasses import dataclass, field as dataclasses_field
 from datetime import datetime, timezone
 
@@ -57,7 +59,7 @@ from backend.app.models.spool_usage_history import SpoolUsageHistory
 from backend.app.models.user import User
 from backend.app.schemas.auth import SMTPSettings
 from backend.app.schemas.github_backup import RestoreCategory
-from backend.app.schemas.settings import AppSettings, AppSettingsUpdate
+from backend.app.schemas.settings import ADMIN_ONLY_SETTING_KEYS, AppSettings, AppSettingsUpdate
 from backend.app.services.git_providers.factory import get_provider_backend
 from backend.app.services.model_providers.manyfold.config import normalize_url
 from backend.app.services.printer_manager import printer_manager
@@ -141,6 +143,18 @@ _PROTECTED_SETTING_KEYS = {
 # credential is exactly what an attacker authoring this file would do — they own
 # the directory being pointed at, so they need no bind credential from us.
 _PROTECTED_SETTING_PREFIXES = ("ldap_",)
+
+# Restoring as a non-admin: the settings only an admin may change through the
+# settings page (ADMIN_ONLY_SETTING_KEYS) and the mail server's, which only an
+# admin may set (routes/auth.update_smtp_settings), are kept as they are here.
+# A restore is otherwise a way around those checks. Set by preview() and
+# run_restore() for the call; an admin's restore is unchanged.
+_restoring_as_admin: ContextVar[bool] = ContextVar("restoring_as_admin", default=True)
+
+
+def _admin_only_for_restore(key: str) -> bool:
+    return key in ADMIN_ONLY_SETTING_KEYS or key in _EXTRA_RESTORABLE_KEYS
+
 
 # Nozzle diameters the backup collector iterates. A path outside this set means
 # the backup was written by a newer version, so accept it rather than dropping
@@ -486,6 +500,31 @@ class _Detail:
     params: dict[str, str | int] = dataclasses_field(default_factory=dict)
 
 
+# The archive editor's own bound on grams (ArchiveUpdate).
+_MAX_RESTORED_GRAMS = 100_000
+# What a 32-bit integer column takes (PostgreSQL rejects more).
+_MAX_RESTORED_INT = 2**31 - 1
+
+
+def _restored_number(value, *, maximum: float | None = None, integer: bool = False):
+    """A number from a backup as the database should hold it, or None.
+
+    Only a finite real number of at least 0 (and at most ``maximum``) passes:
+    a damaged or hand-edited backup must not put text, negative or absurd
+    values into the filament and cost totals.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if integer and maximum is None:
+        maximum = _MAX_RESTORED_INT
+    try:
+        if not math.isfinite(value) or value < 0 or (maximum is not None and value > maximum):
+            return None
+        return int(value) if integer else float(value)
+    except OverflowError:  # an integer too large for a float
+        return None
+
+
 class _CategoryTally:
     """Mutable accumulator matching ``GitHubRestoreCategoryResult``."""
 
@@ -655,7 +694,7 @@ class GitHubRestoreService:
             if _is_blocked_setting_key(key):
                 blocked.append(key)
                 continue
-            if _is_protected_setting_key(key):
+            if _is_protected_setting_key(key) or (not _restoring_as_admin.get() and _admin_only_for_restore(key)):
                 protected.append(key)
                 continue
             if _TWO_FACTOR_KEY.match(key):
@@ -807,12 +846,22 @@ class GitHubRestoreService:
             stored=stored,
         )
 
-    async def preview(self, db: AsyncSession, config: GitHubBackupConfig, ref: str = "HEAD") -> dict:
+    async def preview(
+        self, db: AsyncSession, config: GitHubBackupConfig, ref: str = "HEAD", *, as_admin: bool = True
+    ) -> dict:
         """Report which categories a commit contains, and how much is in each.
 
         Takes a session because the settings count depends on local state — see
         ``_plan_settings``. ``ref`` stays keyword-friendly for callers.
+        ``as_admin`` False counts as a non-admin's restore would write.
         """
+        token = _restoring_as_admin.set(as_admin)
+        try:
+            return await self._preview(db, config, ref)
+        finally:
+            _restoring_as_admin.reset(token)
+
+    async def _preview(self, db: AsyncSession, config: GitHubBackupConfig, ref: str) -> dict:
         resolved, error, commit_info = await self._resolve_ref(config, ref)
         if resolved is None:
             return {"success": False, "message": error, "ref": ref, "categories": []}
@@ -1008,8 +1057,27 @@ class GitHubRestoreService:
         ref: str,
         categories: list[RestoreCategory],
         overwrite_existing: bool = False,
+        *,
+        as_admin: bool = True,
     ) -> dict:
-        """Apply selected categories from one backup commit."""
+        """Apply selected categories from one backup commit.
+
+        ``as_admin`` False keeps the admin-only settings as they are here
+        (see ``_restoring_as_admin``).
+        """
+        token = _restoring_as_admin.set(as_admin)
+        try:
+            return await self._run_restore(config_id, ref, categories, overwrite_existing)
+        finally:
+            _restoring_as_admin.reset(token)
+
+    async def _run_restore(
+        self,
+        config_id: int,
+        ref: str,
+        categories: list[RestoreCategory],
+        overwrite_existing: bool,
+    ) -> dict:
         # Import locally to avoid a module-level cycle: the backup service takes
         # the mirror-image lock against us.
         from backend.app.services.github_backup import github_backup_service
@@ -1327,10 +1395,28 @@ class GitHubRestoreService:
             started_at = _parse_dt(entry.get("started_at"))
             existing = await self._find_archive(db, entry, started_at)
 
+            numbers = {
+                "print_time_seconds": _restored_number(entry.get("print_time_seconds"), integer=True),
+                "filament_used_grams": _restored_number(entry.get("filament_used_grams"), maximum=_MAX_RESTORED_GRAMS),
+                "cost": _restored_number(entry.get("cost")),
+                "energy_kwh": _restored_number(entry.get("energy_kwh")),
+                "energy_cost": _restored_number(entry.get("energy_cost")),
+                "wear_cost": _restored_number(entry.get("wear_cost")),
+            }
+            if any(entry.get(key) is not None and value is None for key, value in numbers.items()):
+                tally.note(
+                    "archivesNumbersDropped",
+                    "Some archives had grams, costs, energy or print times that are not valid numbers - left empty",
+                )
+            # 0 is a real quantity (a ruined plate, #3051); the archive editor
+            # takes 0..10000. Anything else is the one print it stood for.
+            quantity = _restored_number(entry.get("quantity"), maximum=10_000, integer=True)
+            if quantity is None:
+                quantity = 1
             fields = {
                 "print_name": entry.get("print_name"),
-                "print_time_seconds": entry.get("print_time_seconds"),
-                "filament_used_grams": entry.get("filament_used_grams"),
+                "print_time_seconds": numbers["print_time_seconds"],
+                "filament_used_grams": numbers["filament_used_grams"],
                 "filament_type": entry.get("filament_type"),
                 "filament_color": entry.get("filament_color"),
                 "layer_height": entry.get("layer_height"),
@@ -1348,12 +1434,12 @@ class GitHubRestoreService:
                 "is_favorite": bool(entry.get("is_favorite")),
                 "tags": entry.get("tags"),
                 "notes": entry.get("notes"),
-                "cost": entry.get("cost"),
+                "cost": numbers["cost"],
                 "failure_reason": entry.get("failure_reason"),
-                "quantity": entry.get("quantity") or 1,
-                "energy_kwh": entry.get("energy_kwh"),
-                "energy_cost": entry.get("energy_cost"),
-                "wear_cost": entry.get("wear_cost"),
+                "quantity": quantity,
+                "energy_kwh": numbers["energy_kwh"],
+                "energy_cost": numbers["energy_cost"],
+                "wear_cost": numbers["wear_cost"],
             }
 
             printer_id = entry.get("printer_id")
@@ -1803,15 +1889,26 @@ class GitHubRestoreService:
                 # they can still redo the run with both categories ticked.
                 unlinked_archives += 1
 
+            weight_used = _restored_number(entry.get("weight_used"))
+            percent_used = _restored_number(entry.get("percent_used"), integer=True)
+            cost = _restored_number(entry.get("cost"))
+            if any(
+                entry.get(key) is not None and value is None
+                for key, value in (("weight_used", weight_used), ("percent_used", percent_used), ("cost", cost))
+            ):
+                tally.note(
+                    "usageNumbersDropped",
+                    "Some usage entries had weights or costs that are not valid numbers - left empty",
+                )
             row = SpoolUsageHistory(
                 spool_id=spool_id,
                 printer_id=printer_id,
                 print_name=entry.get("print_name"),
                 archive_id=archive_id,
-                weight_used=entry.get("weight_used") or 0,
-                percent_used=entry.get("percent_used") or 0,
+                weight_used=weight_used or 0,
+                percent_used=percent_used or 0,
                 status=entry.get("status") or "completed",
-                cost=entry.get("cost"),
+                cost=cost,
             )
             if created_at is not None:
                 row.created_at = created_at

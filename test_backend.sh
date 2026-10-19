@@ -1,11 +1,21 @@
 #!/bin/sh
 
 cd backend
-ruff check && ruff format --check
+{ ruff check && ruff format --check; } || exit 1
 
 # Type check against the pinned environment (see CONTRIBUTING.md). The venv is
 # rebuilt whenever the lock changes, so it holds what CI installs (on Python
-# 3.11 exactly; newer Pythons add a few unpinned backports).
+# 3.11 exactly; newer Pythons add a few unpinned backports). Created here on
+# first use when Python 3.11 is available (through uv, or as python3.11).
+if [ ! -d ../.typecheck-venv ]; then
+    if command -v uv >/dev/null 2>&1; then
+        echo "Creating .typecheck-venv (Python 3.11, uv)"
+        uv venv -q --seed --python 3.11 ../.typecheck-venv || exit 1
+    elif command -v python3.11 >/dev/null 2>&1; then
+        echo "Creating .typecheck-venv (python3.11)"
+        python3.11 -m venv ../.typecheck-venv || exit 1
+    fi
+fi
 if [ -d ../.typecheck-venv ]; then
 (
     cd .. || exit 1
@@ -39,7 +49,7 @@ if [ -d ../.typecheck-venv ]; then
     .typecheck-venv/bin/basedpyright --pythonpath .typecheck-venv/bin/python
 ) || exit 1
 else
-echo "Skipping the type check: no .typecheck-venv (see CONTRIBUTING.md)."
+echo "Skipping the type check: no .typecheck-venv and no Python 3.11 to create it (see CONTRIBUTING.md)."
 fi
 
 # PostgreSQL upgrade check, as CI runs it, in a throwaway container. Needs
@@ -79,7 +89,7 @@ else
 fi
 
 # The same tests on PostgreSQL, in a throwaway container (--full only: about
-# eight minutes). Tests of SQLite-only behaviour are skipped there.
+# three minutes). Tests of SQLite-only behaviour are skipped there.
 if [ "$1" != "--full" ]; then
 echo "Skipping the tests on PostgreSQL (run with --full)."
 elif ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then

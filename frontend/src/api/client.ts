@@ -1,3 +1,4 @@
+import type { KProfileWriteResult } from '../utils/kprofileWrite';
 import type { ArchivePlatesResponse, LibraryFilePlatesResponse } from '../types/plates';
 import { localDateKey } from '../utils/date';
 
@@ -1543,6 +1544,7 @@ export interface AppSettings {
   // resolves to ams_temp_fair so existing installs are unaffected.
   ams_temp_alarm: number | null;
   ams_history_retention_days: number;  // days to keep AMS sensor history
+  printer_sensor_history_retention_days?: number;  // days to keep printer heater history
   // Queue auto-drying settings
   queue_drying_enabled: boolean;  // Auto-dry AMS between queued prints
   queue_drying_block: boolean;  // Block queue until drying completes
@@ -6341,8 +6343,13 @@ export const api = {
     }),
 
   // 2FA - admin
-  admin2FADisable: (userId: number) =>
-    request<{ message: string }>(`/auth/2fa/admin/${userId}`, { method: 'DELETE' }),
+  // adminPassword: the calling admin's own password; null for an admin
+  // without one (LDAP / OIDC accounts usually), whom the route does not ask.
+  admin2FADisable: (userId: number, adminPassword: string | null) =>
+    request<{ message: string; had_2fa: boolean }>(`/auth/2fa/admin/${userId}`, {
+      method: 'DELETE',
+      body: JSON.stringify({ admin_password: adminPassword }),
+    }),
 
   // OIDC providers (public list)
   getOIDCProviders: () => request<OIDCProviderPublic[]>('/auth/oidc/providers'),
@@ -6506,13 +6513,15 @@ export const api = {
       method: 'POST',
     }),
   testExternalCamera: (printerId: number, url: string, cameraType: string) =>
-    // `coalesced` is upstream's flag for "the frame came from a capture that
-    // was already running rather than a connection this test opened". This
-    // fork's backend keeps its JSON-body endpoint and never sets it, so it
-    // stays undefined here — the field exists only so the upstream
-    // SettingsPage toast code type-checks and falls through to the plain
-    // success message.
-    request<{ success: boolean; error?: string; resolution?: string; coalesced?: boolean }>(
+    // `coalesced` is true when the frame came from a capture that was already
+    // running (Obico polling, a snapshot) rather than a connection this test
+    // opened — a single-reader camera is shared rather than opened twice, so
+    // the result is real but says nothing about reaching the camera just now.
+    // `live_view` is true when the tested camera is the one a viewer is
+    // watching: the answer comes from the live frame, not a test of its own.
+    // In the body: the URL may carry the camera login, and a query string
+    // ends up in the server's access log.
+    request<{ success: boolean; error?: string; resolution?: string; coalesced?: boolean; live_view?: boolean }>(
       `/printers/${printerId}/camera/external/test`,
       { method: 'POST', body: JSON.stringify({ url, camera_type: cameraType }) }
     ),
@@ -6690,7 +6699,8 @@ export const api = {
       { method: 'POST' }
     ),
 
-  // Load filament from a tray. trayId: 0-15 for AMS (amsId*4+slotId), 254 for external spool.
+  // Load filament from a tray. trayId: 0-15 for AMS (amsId*4+slotId), 128-135 for an
+  // AMS-HT (its unit id), 254 for external spool.
   // extruderId (0 = right, 1 = left) names the hotend to feed. Pass it only on a
   // printer with a Filament Track Switch — there the AMS is bound to a switch
   // inlet rather than a hotend, so the firmware cannot work the target out and
@@ -7810,11 +7820,8 @@ export const api = {
     request<SlicerSettingDeleteResponse>(`/cloud/settings/${settingId}`, {
       method: 'DELETE',
     }),
-  getCloudDevices: () => request<CloudDevice[]>('/cloud/devices'),
   getCloudFields: (presetType: 'filament' | 'print' | 'process' | 'printer') =>
     request<FieldDefinitionsResponse>(`/cloud/fields/${presetType}`),
-  getAllCloudFields: () =>
-    request<Record<string, FieldDefinitionsResponse>>('/cloud/fields'),
   getFilamentInfo: (settingIds: string[]) =>
     request<Record<string, { name: string; k: number | null }>>('/cloud/filament-info', {
       method: 'POST',
@@ -7934,7 +7941,6 @@ export const api = {
     if (targetModel) params.set('target_model', targetModel);
     return request<PrintQueueItem[]>(`/queue/?${params}`);
   },
-  getQueueItem: (id: number) => request<PrintQueueItem>(`/queue/${id}`),
   addToQueue: (data: PrintQueueItemCreate) =>
     request<PrintQueueItem>('/queue/', {
       method: 'POST',
@@ -7998,17 +8004,11 @@ export const api = {
     const params = status ? `?status=${status}` : '';
     return request<PrintBatch[]>(`/queue/batches${params}`);
   },
-  getBatch: (id: number) => request<PrintBatch>(`/queue/batches/${id}`),
   cancelBatch: (id: number) =>
     request<{ message: string }>(`/queue/batches/${id}`, { method: 'DELETE' }),
   createBatch: (data: PrintBatchCreate) =>
     request<PrintBatch>('/queue/batches', {
       method: 'POST',
-      body: JSON.stringify(data),
-    }),
-  updateBatch: (id: number, data: PrintBatchUpdate) =>
-    request<PrintBatch>(`/queue/batches/${id}`, {
-      method: 'PATCH',
       body: JSON.stringify(data),
     }),
   dispatchBatch: (id: number, data: PrintBatchDispatchRequest = {}) =>
@@ -8026,17 +8026,17 @@ export const api = {
   getKProfiles: (printerId: number, nozzleDiameter = '0.4') =>
     request<KProfilesResponse>(`/printers/${printerId}/kprofiles/?nozzle_diameter=${nozzleDiameter}`),
   setKProfile: (printerId: number, profile: KProfileCreate) =>
-    request<{ success: boolean; message: string }>(`/printers/${printerId}/kprofiles/`, {
+    request<KProfileWriteResult>(`/printers/${printerId}/kprofiles/`, {
       method: 'POST',
       body: JSON.stringify(profile),
     }),
   deleteKProfile: (printerId: number, profile: KProfileDelete) =>
-    request<{ success: boolean; message: string }>(`/printers/${printerId}/kprofiles/`, {
+    request<KProfileWriteResult>(`/printers/${printerId}/kprofiles/`, {
       method: 'DELETE',
       body: JSON.stringify(profile),
     }),
   setKProfilesBatch: (printerId: number, profiles: KProfileCreate[]) =>
-    request<{ success: boolean; message: string }>(`/printers/${printerId}/kprofiles/batch`, {
+    request<KProfileWriteResult>(`/printers/${printerId}/kprofiles/batch`, {
       method: 'POST',
       body: JSON.stringify(profiles),
     }),
@@ -8926,8 +8926,6 @@ export const api = {
     withStreamToken(`${API_BASE}/printers/${printerId}/camera/stream?fps=${fps}`),
   getCameraSnapshotUrl: (printerId: number) =>
     withStreamToken(`${API_BASE}/printers/${printerId}/camera/snapshot`),
-  testCameraConnection: (printerId: number) =>
-    request<{ success: boolean; message?: string; error?: string }>(`/printers/${printerId}/camera/test`),
   getCameraStatus: (printerId: number) =>
     request<{ active: boolean; stalled: boolean }>(`/printers/${printerId}/camera/status`),
   diagnoseCamera: (printerId: number) =>
@@ -8960,11 +8958,6 @@ export const api = {
       `/printers/${printerId}/camera/check-plate?${params.toString()}`
     );
   },
-  getPlateDetectionStatus: (printerId: number) => {
-    return request<PlateDetectionStatus & { chamber_light?: boolean }>(
-      `/printers/${printerId}/camera/plate-detection/status`
-    );
-  },
   calibratePlateDetection: (printerId: number, options?: { label?: string; useExternal?: boolean }) => {
     const params = new URLSearchParams();
     if (options?.label) params.set('label', options.label);
@@ -8974,12 +8967,6 @@ export const api = {
     return request<CalibrationResult & { index: number }>(
       `/printers/${printerId}/camera/plate-detection/calibrate?${params.toString()}`,
       { method: 'POST' }
-    );
-  },
-  deletePlateCalibration: (printerId: number) => {
-    return request<CalibrationResult>(
-      `/printers/${printerId}/camera/plate-detection/calibrate`,
-      { method: 'DELETE' }
     );
   },
   getPlateReferences: (printerId: number) => {
@@ -10502,8 +10489,6 @@ export const api = {
   // Local Presets (OrcaSlicer imports)
   getLocalPresets: () =>
     request<LocalPresetsResponse>('/local-presets/'),
-  getLocalPresetDetail: (id: number) =>
-    request<LocalPresetDetail>(`/local-presets/${id}`),
   importLocalPresets: (formData: FormData) =>
     fetch(`${API_BASE}/local-presets/import`, {
       method: 'POST',
@@ -10516,20 +10501,8 @@ export const api = {
       }
       return res.json() as Promise<ImportResponse>;
     }),
-  createLocalPreset: (data: { name: string; preset_type: string; setting: Record<string, unknown> }) =>
-    request<LocalPreset>('/local-presets/', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    }),
-  updateLocalPreset: (id: number, data: { name?: string; setting?: Record<string, unknown> }) =>
-    request<LocalPreset>(`/local-presets/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    }),
   deleteLocalPreset: (id: number) =>
     request<{ success: boolean }>(`/local-presets/${id}`, { method: 'DELETE' }),
-  refreshBaseProfileCache: () =>
-    request<{ refreshed: number; failed: number; total: number }>('/local-presets/base-cache/refresh', { method: 'POST' }),
 };
 
 // AMS History types

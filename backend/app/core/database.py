@@ -162,10 +162,11 @@ def _create_engine(url: str | None = None):
     if is_sqlite():
         event.listen(eng.sync_engine, "connect", _set_sqlite_pragmas)
     else:
-        # Strip timezone info from aware datetimes before they reach asyncpg.
+        # Make aware datetimes naive UTC before they reach asyncpg.
         # asyncpg rejects timezone-aware values for TIMESTAMP WITHOUT TIME ZONE columns.
-        # The codebase uses datetime.now(timezone.utc) in many places — this makes
-        # Postgres behave like SQLite which ignores timezone info entirely.
+        # The codebase uses datetime.now(timezone.utc) in many places. A value
+        # with another offset is converted, not stripped; SQLite drops offsets,
+        # so request schemas convert on the way in (NaiveUTCDatetime).
         @event.listens_for(eng.sync_engine, "before_cursor_execute", retval=True)
         def _strip_tz_from_params(conn, cursor, statement, parameters, context, executemany):
             import datetime
@@ -181,7 +182,8 @@ def _create_engine(url: str | None = None):
             # correct answer is "strip datetimes at any depth".
             def _strip(val):
                 if isinstance(val, datetime.datetime) and val.tzinfo is not None:
-                    return val.replace(tzinfo=None)
+                    # Naive columns hold UTC: convert, so an offset is not lost.
+                    return val.astimezone(datetime.timezone.utc).replace(tzinfo=None)
                 if isinstance(val, dict):
                     return {k: _strip(v) for k, v in val.items()}
                 if isinstance(val, list):
@@ -1370,6 +1372,55 @@ async def _reclassify_sliced_3mf_library_files(conn) -> None:
         )
 
 
+def _hash_hex_colors(value: str) -> str:
+    """``FF8800FF,#00AE42`` -> ``#FF8800,#00AE42``: bare 6- or 8-digit hex
+    tokens get the ``#`` and lose the alpha byte; everything else is kept."""
+    tokens = []
+    for token in value.split(","):
+        bare = token.strip()
+        if re.fullmatch(r"[0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?", bare):
+            token = f"#{bare[:6].upper()}"
+        tokens.append(token)
+    return ",".join(tokens)
+
+
+async def _repair_bare_hex_filament_colors(conn) -> None:
+    """Give the colours of archives made without their 3MF a ``#``.
+
+    Such archives took their colours from the printer's AMS report and stored
+    them as it sends them (``FF8800FF``), so their swatches stayed blank and the
+    colour filter listed them apart from the same colour elsewhere. New ones are
+    written as ``#FF8800``; this brings the existing archives, and the print log
+    entries copied from them, in line.
+
+    Repeatable rather than flagged, like the failure-reason repair: the query
+    only picks values with a token lacking ``#``, and a repaired value has
+    none, so a second run changes nothing, while a restored older database is
+    still repaired.
+    """
+    from sqlalchemy import text
+
+    async with conn.begin_nested():
+        # nosec B608 -- ``table`` comes from the literal tuple below.
+        for table in ("print_archives", "print_log_entries"):
+            rows = (
+                await conn.execute(
+                    text(
+                        f"SELECT id, filament_color FROM {table} "  # nosec B608
+                        "WHERE filament_color IS NOT NULL AND filament_color != '' "
+                        "AND (filament_color NOT LIKE '#%' OR REPLACE(filament_color, ',#', '') LIKE '%,%')"
+                    )
+                )
+            ).fetchall()
+            for row_id, color in rows:
+                repaired = _hash_hex_colors(color)
+                if repaired != color:
+                    await conn.execute(
+                        text(f"UPDATE {table} SET filament_color = :c WHERE id = :i"),  # nosec B608
+                        {"c": repaired, "i": row_id},
+                    )
+
+
 async def _backfill_archive_bed_temperature(conn) -> None:
     """Fill in ``print_archives.bed_temperature`` for archives written before #2989.
 
@@ -2230,6 +2281,8 @@ async def _migrate_add_print_archive_cost_center(conn) -> None:
 # ``defaultValue`` fallback in both the editor and the Statistics breakdown, and
 # guessing at it would be worse than leaving one honest string in its own bucket.
 _LEGACY_FAILURE_REASON_LABELS: dict[str, str] = {
+    # Written by the offline queue stop before it stored the key (PC-C4).
+    "Stopped by user (printer was offline)": "userCancelled",
     "Adhesion failure": "adhesionFailure",
     "Agotamiento del filamento": "filamentRunout",
     "Alabeo": "warping",
@@ -5802,6 +5855,10 @@ async def _run_migrations(conn):
     # already on disk. One-shot; see the function for why it is gated.
     await _backfill_archive_bed_temperature(conn)
 
+    # Repair: archives made without their 3MF stored bare hex colours
+    # (FF8800FF); repeatable, see the function.
+    await _repair_bare_hex_filament_colors(conn)
+
     # Backfill: library rows typed from the filename alone kept a sliced 3MF
     # named `Foo.3mf` filed as a source-only project (#2993). Re-reads the zip
     # already on disk. One-shot, internal rows only; see the function.
@@ -5839,6 +5896,7 @@ async def _run_migrations(conn):
     # Migration: Disambiguate the four ``user_print_*`` notification template
     # names by appending " Email" (#1792). See ``_migrate_rename_user_print_template_names``.
     await _migrate_rename_user_print_template_names(conn)
+    await _migrate_clear_bug_report_emails(conn)
 
     # Migration: standalone index on library_file_tags.tag_id (#1268 follow-up).
     # The composite PK (file_id, tag_id) leads on file_id, so per-tag scans
@@ -8515,6 +8573,19 @@ async def _migrate_rename_user_print_template_names(conn) -> None:
                 text("UPDATE notification_templates SET name = :new WHERE event_type = :et AND name = :old"),
                 {"new": new_name, "et": event_type, "old": old_name},
             )
+
+
+async def _migrate_clear_bug_report_emails(conn) -> None:
+    """Clear the reporter emails stored with past bug reports.
+
+    Every report kept the email it was sent with, and nothing ever read or
+    purged the table; the email only needs to reach the relay. Repeatable:
+    nothing writes one any more.
+    """
+    from sqlalchemy import text
+
+    async with conn.begin_nested():
+        await conn.execute(text("UPDATE bug_reports SET reporter_email = NULL WHERE reporter_email IS NOT NULL"))
 
 
 async def seed_notification_templates():

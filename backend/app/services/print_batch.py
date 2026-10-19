@@ -81,6 +81,9 @@ CLONED_SETTING_COLUMNS = (
     # Fenrir: production traceability (projects as a PDM, phase 4).
     "revision_id",
     "aito_task_id",
+    # The scheduler bills and budget-checks from it; dispatch_batch checks the
+    # dispatcher may use it.
+    "cost_center_id",
 )
 
 CLONED_VARIANT_COLUMNS = (

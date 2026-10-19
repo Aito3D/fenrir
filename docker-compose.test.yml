@@ -6,8 +6,14 @@ services:
       dockerfile: Dockerfile.test
       target: backend-test
     container_name: fenrir-backend-test
+    # Reaps orphaned processes: pytest would otherwise be PID 1 and leave the
+    # children some tests kill as zombies that still answer kill(pid, 0).
+    init: true
+    # Some backend tests also read the frontend sources and scripts/.
     volumes:
       - ./backend:/app/backend:ro
+      - ./frontend/src:/app/frontend/src:ro
+      - ./scripts:/app/scripts:ro
     environment:
       - TESTING=1
       - PYTHONUNBUFFERED=1

@@ -13,6 +13,7 @@ import shutil
 import uuid
 import zipfile
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal, NamedTuple
@@ -26,7 +27,7 @@ from sqlalchemy.orm import selectinload
 
 from backend.app.api.routes.cloud import resolve_api_key_cloud_owner
 from backend.app.api.routes.library_variants import normalize_model_name, resolve_variant_model
-from backend.app.api.routes.print_queue import _extract_filament_types_from_3mf
+from backend.app.api.routes.print_queue import _extract_filament_types_from_3mf, printed_plate_of_multi_plate_file
 from backend.app.core.auth import (
     ApiKeyActor,
     QueueReviewRequired,
@@ -87,7 +88,7 @@ from backend.app.schemas.library import (
     ZipExtractResult,
 )
 from backend.app.schemas.slicer import SliceRequest, SliceResponse
-from backend.app.services.archive import ThreeMFParser
+from backend.app.services.archive import ThreeMFParser, estimate_filament_cost
 from backend.app.services.design_settings import (
     DesignOverride,
     apply_design_overrides,
@@ -109,7 +110,9 @@ from backend.app.services.library_folder_access import (
 from backend.app.services.pdf_thumbnail import generate_pdf_thumbnail
 from backend.app.services.plate_thumbnail import inject_plate_thumbnails_if_missing
 from backend.app.services.print_confirmation import confirm_outcome_for_new_queue_item
+from backend.app.services.print_defaults import default_print_options
 from backend.app.services.process_overrides import apply_process_overrides
+from backend.app.services.queue_announcements import announce_queue_jobs_added
 from backend.app.services.slice_output_check import (
     missing_start_gcode_message,
     start_gcode_is_missing,
@@ -793,9 +796,7 @@ async def save_3mf_bytes_to_library(
         # a triangle.
         try:
             if file_path.stat().st_size >= MIN_USABLE_STL_BYTES:
-                thumbnail_path = await asyncio.to_thread(
-                    generate_stl_thumbnail, file_path, get_library_thumbnails_dir()
-                )
+                thumbnail_path = await _render_stl_thumbnail(file_path, get_library_thumbnails_dir())
         except Exception as exc:  # noqa: BLE001 — a thumbnail must never fail the import
             logger.warning("Failed to render STL thumbnail for %s: %s", filename, exc)
 
@@ -970,6 +971,19 @@ MAX_CLIENT_THUMBNAIL_EDGE = 2048
 STORED_CLIENT_THUMBNAIL_EDGE = 512
 
 
+# STL thumbnails get their own single worker thread. They are made one at a
+# time anyway (stl_thumbnail._RENDER_LOCK), and in the shared default pool the
+# ones waiting their turn would hold threads that every other to_thread call in
+# the app needs: a burst of STL uploads would stall them all.
+_STL_THUMBNAIL_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="stl-thumbnail")
+
+
+async def _render_stl_thumbnail(stl_path: Path, thumbnails_dir: Path) -> str | None:
+    """generate_stl_thumbnail, off the event loop: a large mesh takes seconds."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(_STL_THUMBNAIL_EXECUTOR, generate_stl_thumbnail, stl_path, thumbnails_dir)
+
+
 async def _backfill_external_thumbnails(folder_ids: list[int]) -> None:
     """Generate STL and PDF thumbnails for an external folder tree in the background.
 
@@ -1029,7 +1043,7 @@ async def _backfill_external_thumbnails(folder_ids: list[int]) -> None:
                 continue
             try:
                 async with _stl_render_lock:
-                    thumb_path = await asyncio.to_thread(generate_stl_thumbnail, abs_path, thumbnails_dir)
+                    thumb_path = await _render_stl_thumbnail(abs_path, thumbnails_dir)
             except Exception as exc:  # noqa: BLE001 — never let one bad STL kill the rest
                 logger.debug("STL thumbnail backfill skipped %s: %s", abs_path, exc)
                 continue
@@ -3014,7 +3028,7 @@ async def upload_file(
                 try:
                     if file_path.stat().st_size >= MIN_USABLE_STL_BYTES:
                         async with _stl_render_lock:
-                            thumbnail_path = await asyncio.to_thread(generate_stl_thumbnail, file_path, thumbnails_dir)
+                            thumbnail_path = await _render_stl_thumbnail(file_path, thumbnails_dir)
                 except OSError:
                     pass
 
@@ -3408,9 +3422,7 @@ async def extract_zip_file(
                         # file via the empty-mesh branch in trimesh.load.
                         if generate_stl_thumbnails and entry_bytes_written >= MIN_USABLE_STL_BYTES:
                             async with _stl_render_lock:
-                                thumbnail_path = await asyncio.to_thread(
-                                    generate_stl_thumbnail, file_path, thumbnails_dir
-                                )
+                                thumbnail_path = await _render_stl_thumbnail(file_path, thumbnails_dir)
 
                     # Create database entry (store relative paths for portability)
                     library_file = LibraryFile(
@@ -3609,7 +3621,7 @@ async def batch_generate_stl_thumbnails(
                 thumbnail_path = await asyncio.to_thread(generate_pdf_thumbnail, file_path, thumbnails_dir)
             else:
                 async with _stl_render_lock:
-                    thumbnail_path = await asyncio.to_thread(generate_stl_thumbnail, file_path, thumbnails_dir)
+                    thumbnail_path = await _render_stl_thumbnail(file_path, thumbnails_dir)
 
             if thumbnail_path:
                 # Update database with relative path
@@ -3803,17 +3815,19 @@ async def add_files_to_queue(
     # silently declines when it finds nothing, because there, owning no such
     # printer is the user's situation rather than their mistake -- the file
     # still queues, as the unassigned row it has always been.
-    active_models: set[str] = set()
+    # Keyed without regard to case, as the scheduler matches a model, to the
+    # printers' own spelling, which the items store.
+    active_models: dict[str, str] = {}
     if request.printer_id is None:
-        active_models = {
-            model
-            for (model,) in (
-                await db.execute(select(Printer.model).where(Printer.is_active == True).distinct())  # noqa: E712
-            ).all()
-            if model
-        }
-        if target_model_norm and target_model_norm not in active_models:
-            raise HTTPException(400, f"No active printers for model: {target_model_norm}")
+        for (model,) in (
+            await db.execute(select(Printer.model).where(Printer.is_active == True).order_by(Printer.id))  # noqa: E712
+        ).all():
+            if model:
+                active_models.setdefault(model.lower(), model)
+        if target_model_norm:
+            if target_model_norm.lower() not in active_models:
+                raise HTTPException(400, f"No active printers for model: {target_model_norm}")
+            target_model_norm = active_models[target_model_norm.lower()]
 
     # Get all requested files
     result = await db.execute(LibraryFile.active().where(LibraryFile.id.in_(request.file_ids)))
@@ -3855,6 +3869,9 @@ async def add_files_to_queue(
     # There is no per-job ask-for-outcome toggle on a bulk add, so the rows take
     # the same default the print dialog seeds itself from (#1898).
     confirm_outcome = await confirm_outcome_for_new_queue_item(db)
+    # No print options on a bulk add either: the install's defaults, as the
+    # print dialog would have offered them.
+    print_options = await default_print_options(db)
 
     for file_id in request.file_ids:
         lib_file = files.get(file_id)
@@ -3922,11 +3939,16 @@ async def add_files_to_queue(
                     item_target_model = target_model_norm
                 else:
                     inferred = resolve_variant_model(lib_file)
-                    item_target_model = inferred if inferred in active_models else None
+                    item_target_model = active_models.get(inferred.lower()) if inferred else None
 
             # Filament the scheduler must match before handing a model-based
             # item to hardware. Without it the item goes to whichever printer
             # of that model is idle, whatever is loaded in it.
+            # The plate that prints: added without one, a multi-plate file
+            # prints its default plate. Stored on the item, so the filament a
+            # printer must have, the AMS mapping and the unmatched-filament
+            # check all read that plate rather than every plate.
+            printed_plate = await asyncio.to_thread(printed_plate_of_multi_plate_file, file_path)
             required_filament_types = None
             if item_target_model:
                 # POST /queue/'s own extractor, borrowed rather than
@@ -3938,7 +3960,7 @@ async def add_files_to_queue(
                 # bulk add of a few hundred -- especially from an external
                 # folder on a NAS -- the zip reads add up to a stall the whole
                 # event loop takes, status ingest included.
-                filament_types = await asyncio.to_thread(_extract_filament_types_from_3mf, file_path)
+                filament_types = await asyncio.to_thread(_extract_filament_types_from_3mf, file_path, printed_plate)
                 if filament_types:
                     required_filament_types = json.dumps(filament_types)
 
@@ -3948,6 +3970,7 @@ async def add_files_to_queue(
                 printer_id=item_printer_id,
                 target_model=item_target_model,
                 required_filament_types=required_filament_types,
+                plate_id=printed_plate,
                 library_file_id=file_id,
                 project_id=lib_file.project_id
                 or (folder_projects.get(lib_file.folder_id) if lib_file.folder_id is not None else None),
@@ -3962,6 +3985,7 @@ async def add_files_to_queue(
                 created_by_id=actor.id if actor else None,
                 # Waits for someone to start it unless they may print without review (#1620)
                 manual_start=review_required,
+                **print_options,
             )
             db.add(queue_item)
 
@@ -3994,6 +4018,7 @@ async def add_files_to_queue(
         )
 
     await db.commit()
+    await announce_queue_jobs_added(db, [a.queue_item_id for a in added])
 
     return AddToQueueResponse(added=added, errors=errors)
 
@@ -4195,6 +4220,8 @@ async def get_library_file_plates(
                                     "slot_id": int(filament_id),
                                     "type": filament_type,
                                     "color": filament_color,
+                                    # The preset the slicer assigned (GFA01, ...): names the product line
+                                    "tray_info_idx": filament_elem.get("tray_info_idx", "") or "",
                                     "used_grams": round(used_grams, 1),
                                     "used_meters": float(used_m) if used_m else 0,
                                 }
@@ -5782,9 +5809,13 @@ async def slice_and_persist_as_archive(
         bed_type=parsed_metadata.get("bed_type") or source_archive.bed_type,
         makerworld_url=source_archive.makerworld_url,
         designer=source_archive.designer,
-        # Sliced-but-not-printed: keep status default ("completed") so it
-        # surfaces in the normal archives list, but do not stamp
-        # started/completed_at — the user hasn't actually printed it yet.
+        # Sliced, not printed: "archived", as archive_print files an unprinted
+        # 3MF. It is listed under "Not printed" and is not counted as a
+        # completed print; no started/completed_at either.
+        status="archived",
+        # Priced like any archive with grams, for the card's estimate.
+        # Statistics read the print log, so nothing is counted that did not print.
+        cost=await estimate_filament_cost(db, filament_g or None, new_filament_type),
         extra_data=metadata,
         created_by_id=current_user_id,
     )

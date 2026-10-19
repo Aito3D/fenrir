@@ -42,7 +42,7 @@ def _vp(tmp_path, factory, **kwargs):
     )
 
 
-async def _enqueue(inst, tmp_path, slicer_opts: dict | None, settings: dict | None = None):
+async def _enqueue(inst, tmp_path, slicer_opts: dict | None, settings: dict | None = None, announce=None):
     file_path = tmp_path / "test.3mf"
     file_path.write_bytes(b"fake3mf")
     if slicer_opts is not None:
@@ -59,6 +59,8 @@ async def _enqueue(inst, tmp_path, slicer_opts: dict | None, settings: dict | No
             "backend.app.services.archive.ArchiveService.archive_print", new_callable=AsyncMock, return_value=archive
         ),
         patch("backend.app.services.virtual_printer.manager._SLICER_OPTIONS_WAIT_TIMEOUT", 0.05),
+        # Its own query would take a result the session mock holds for the test.
+        patch("backend.app.services.queue_announcements.announce_queue_jobs_added", announce or AsyncMock()),
     ):
         await inst._add_to_print_queue(file_path, "192.168.1.100")
     return file_path
@@ -180,6 +182,37 @@ class TestAmsOnOff:
         await _enqueue(inst, tmp_path, {"timelapse": True})
 
         assert added[0].use_ams is True
+
+    @pytest.mark.asyncio
+    async def test_a_vp_for_any_printer_leaves_it_on(self, tmp_path):
+        """The slicer saw the VP, which has no AMS; the printer the job goes to
+        is picked later and may have one (the dispatch reconciles it, #2595)."""
+        added: list = []
+        factory, _ = _session(added)
+        inst = _vp(tmp_path, factory)
+
+        await _enqueue(inst, tmp_path, {"use_ams": False})
+
+        assert added[0].use_ams is True
+
+    @pytest.mark.asyncio
+    async def test_a_vp_for_any_printer_does_not_patch_it_on_late(self, tmp_path):
+        added: list = []
+        position_max = MagicMock(scalar=MagicMock(return_value=None))
+        pending = MagicMock(all=MagicMock(return_value=[(101,)]))
+        factory, db = _session(added, [position_max, pending, MagicMock()])
+        inst = _vp(tmp_path, factory)
+        inst._mqtt = MagicMock()
+
+        file_path = await _enqueue(inst, tmp_path, None)
+        await inst.on_print_command(
+            file_path.name,
+            {"command": "project_file", "file": file_path.name, "use_ams": False, "timelapse": True},
+        )
+
+        params = dict(db.execute.await_args_list[2].args[0].compile().params)
+        assert params["timelapse"] is True
+        assert "use_ams" not in params
 
 
 class TestLateAmsMappingPerPlate:

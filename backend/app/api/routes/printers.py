@@ -54,6 +54,8 @@ from backend.app.schemas.printer import (
 )
 from backend.app.services import camera_light as camera_light_service, drying_preflight, kprofile_drift
 from backend.app.services.bambu_ftp import (
+    DownloadDeadlineExceeded,
+    FileNotOnPrinterError,
     cache_3mf_download,
     delete_file_async,
     download_file_bytes_async,
@@ -71,10 +73,14 @@ from backend.app.services.print_storage import (
     probe_filenames,
 )
 from backend.app.services.printer_diagnostic import run_connection_diagnostic
+from backend.app.services.printer_file_cache import printer_file_cache
 from backend.app.services.printer_manager import (
+    ams_units_to_dicts,
     display_temperatures,
     drying_screen_only,
     get_derived_status_name,
+    nozzle_wiring,
+    print_ams_mapping,
     printer_manager,
     resolve_expected_tray,
     resolve_plate_id,
@@ -82,10 +88,11 @@ from backend.app.services.printer_manager import (
     supports_chamber_temp,
     supports_drying,
     supports_drying_while_printing,
-    uniform_tray_filament_hint,
+    vt_trays_to_dicts,
 )
 from backend.app.services.printer_media import (
     MAX_PRINTER_ZIP_PREPARE_SECONDS,
+    PrinterFileDownloadError,
     PrinterFilesZipInsufficientSpaceError,
     PrinterFilesZipTooLargeError,
     build_printer_file,
@@ -98,8 +105,8 @@ from backend.app.services.printer_media import (
     start_printer_files_job,
 )
 from backend.app.services.slicer_filament_resolver import _ORCA_PROFILE_ID, lookup_orca_filament_id
-from backend.app.services.slot_nozzle import resolve_slot_nozzle
-from backend.app.utils.ams_humidity import ams_humidity_percent
+from backend.app.services.slot_nozzle import reports_two_nozzles, resolve_slot_nozzle
+from backend.app.utils.filament_finish import different_finish, finish_generic_id
 from backend.app.utils.filament_ids import (
     GENERIC_FILAMENT_IDS,
     GENERIC_IDS_REPLACED_ON_REUSE,
@@ -289,6 +296,9 @@ async def get_available_filaments(
 
         # Get ams_extruder_map for dual-nozzle printers
         ams_extruder_map = status.raw_data.get("ams_extruder_map", {})
+        # Same signal the scheduler matches with (#2771): without an AMS the map
+        # is empty on a dual-nozzle printer too.
+        is_dual_nozzle = reports_two_nozzles(status)
 
         # AMS trays
         for ams_unit in status.raw_data.get("ams", []):
@@ -336,7 +346,7 @@ async def get_available_filaments(
             tray_info_idx = vt.get("tray_info_idx", "")
             tray_sub_brands = vt.get("tray_sub_brands", "") or ""
             vt_id = int(vt.get("id", 254))
-            extruder_id = (255 - vt_id) if ams_extruder_map else None
+            extruder_id = (255 - vt_id) if is_dual_nozzle else None
 
             key = (vt_type.upper(), rgb, tray_sub_brands.upper(), extruder_id)
             if key not in seen:
@@ -681,133 +691,13 @@ async def get_printer_status(
 
     if "ams" in raw_data and isinstance(raw_data["ams"], list):
         ams_exists = True
-        for ams_data in raw_data["ams"]:
-            # Skip if ams_data is not a dict (defensive check)
-            if not isinstance(ams_data, dict):
-                continue
-            trays = []
-            for tray_data in ams_data.get("tray", []):
-                # Filter out empty/invalid tag values
-                tag_uid = tray_data.get("tag_uid", "")
-                if tag_uid in ("", "0000000000000000"):
-                    tag_uid = None
-                tray_uuid = tray_data.get("tray_uuid", "")
-                if tray_uuid in ("", "00000000000000000000000000000000"):
-                    tray_uuid = None
-
-                # Get K value: first try tray's k field, then lookup from K-profiles
-                k_value = tray_data.get("k")
-                cali_idx = tray_data.get("cali_idx")
-                if k_value is None:
-                    k_value = _kprofile_k(cali_idx, int(ams_data.get("id", 0)), int(tray_data.get("id", 0)))
-
-                trays.append(
-                    AMSTray(
-                        id=tray_data.get("id", 0),
-                        tray_color=tray_data.get("tray_color"),
-                        tray_type=tray_data.get("tray_type"),
-                        tray_sub_brands=tray_data.get("tray_sub_brands"),
-                        tray_id_name=tray_data.get("tray_id_name"),
-                        tray_info_idx=tray_data.get("tray_info_idx"),
-                        remain=tray_data.get("remain", 0),
-                        k=k_value,
-                        cali_idx=cali_idx,
-                        tag_uid=tag_uid,
-                        tray_uuid=tray_uuid,
-                        nozzle_temp_min=tray_data.get("nozzle_temp_min"),
-                        nozzle_temp_max=tray_data.get("nozzle_temp_max"),
-                        drying_temp=tray_data.get("drying_temp"),
-                        drying_time=tray_data.get("drying_time"),
-                        state=tray_data.get("state"),
-                        exists=tray_data.get("exists"),
-                    )
-                )
-            # Percentage only. The 1-5 ``humidity`` index is never substituted
-            # for one -- it is inverted, so it would read as the opposite of
-            # what it means (#3140). See utils/ams_humidity.
-            humidity_pct = ams_humidity_percent(ams_data)
-            humidity_value = int(round(humidity_pct)) if humidity_pct is not None else None
-            # AMS-HT has 1 tray, regular AMS has 4 trays
-            is_ams_ht = len(trays) == 1
-
-            ams_id_int = int(ams_data.get("id", 0))
-            target = drying_targets.get(ams_id_int) or {}
-            dry_target_temp: int | None = None
-            dry_filament: str | None = None
-            target_temp_val = target.get("temp")
-            target_fil_val = target.get("filament") or ""
-            if target_temp_val is not None:
-                try:
-                    dry_target_temp = int(target_temp_val)
-                except (TypeError, ValueError):
-                    dry_target_temp = None
-            if target_fil_val:
-                dry_filament = str(target_fil_val)
-            # Fallback: name the filament from the loaded trays when there is no
-            # cached target (drying started in a previous backend session, or
-            # the cache wasn't seeded), and only when they agree. The
-            # temperature has no fallback — see uniform_tray_filament_hint.
-            if not dry_filament:
-                dry_filament = uniform_tray_filament_hint([tray.tray_type or "" for tray in trays])
-
-            ams_units.append(
-                AMSUnit(
-                    id=ams_id_int,
-                    humidity=humidity_value,
-                    temp=ams_data.get("temp"),
-                    is_ams_ht=is_ams_ht,
-                    tray=trays,
-                    # Serial number: Bambu MQTT uses "sn" key on AMS unit objects
-                    serial_number=str(ams_data.get("sn") or ams_data.get("serial_number") or ""),
-                    # Firmware version: populated by _handle_version_info from info.module ams/* entries
-                    sw_ver=str(ams_data.get("sw_ver") or ""),
-                    # Drying: dry_time > 0 means drying is active (minutes remaining)
-                    dry_time=int(ams_data.get("dry_time") or 0),
-                    dry_countdown_stalled=bool(ams_data.get("dry_countdown_stalled") or False),
-                    dry_target_temp=dry_target_temp,
-                    dry_filament=dry_filament,
-                    module_type=str(ams_data.get("module_type") or ""),
-                )
-            )
+        # Same serialiser as the WebSocket push, so the card cannot lose a
+        # field between page load and the first push.
+        ams_units = [AMSUnit(**unit) for unit in ams_units_to_dicts(raw_data["ams"], _kprofile_k, drying_targets)]
 
     # Virtual tray (external spool holder) - comes from vt_tray in raw_data (list)
     if "vt_tray" in raw_data:
-        for vt_data in raw_data["vt_tray"]:
-            # Filter out empty/invalid tag values for vt_tray
-            vt_tag_uid = vt_data.get("tag_uid", "")
-            if vt_tag_uid in ("", "0000000000000000"):
-                vt_tag_uid = None
-            vt_tray_uuid = vt_data.get("tray_uuid", "")
-            if vt_tray_uuid in ("", "00000000000000000000000000000000"):
-                vt_tray_uuid = None
-
-            # Get K value: first try tray's k field, then lookup from K-profiles
-            vt_k_value = vt_data.get("k")
-            vt_cali_idx = vt_data.get("cali_idx")
-            if vt_k_value is None:
-                # External holder: id 254 is Ext-L, 255 is Ext-R. slot_extruder
-                # takes the 0/1 tray index, so normalise before asking.
-                vt_id = int(vt_data.get("id", 254))
-                vt_k_value = _kprofile_k(vt_cali_idx, 255, vt_id - 254 if vt_id >= 254 else vt_id)
-
-            tray_id = int(vt_data.get("id", 254))
-            vt_tray.append(
-                AMSTray(
-                    id=tray_id,
-                    tray_color=vt_data.get("tray_color"),
-                    tray_type=vt_data.get("tray_type"),
-                    tray_sub_brands=vt_data.get("tray_sub_brands"),
-                    tray_id_name=vt_data.get("tray_id_name"),
-                    tray_info_idx=vt_data.get("tray_info_idx"),
-                    remain=vt_data.get("remain", 0),
-                    k=vt_k_value,
-                    cali_idx=vt_cali_idx,
-                    tag_uid=vt_tag_uid,
-                    tray_uuid=vt_tray_uuid,
-                    nozzle_temp_min=vt_data.get("nozzle_temp_min"),
-                    nozzle_temp_max=vt_data.get("nozzle_temp_max"),
-                )
-            )
+        vt_tray = [AMSTray(**vt) for vt in vt_trays_to_dicts(raw_data["vt_tray"], _kprofile_k)]
 
     # Convert nozzle info to response format
     nozzles = [
@@ -854,8 +744,8 @@ async def get_printer_status(
         filament_tangle_detect=state.print_options.filament_tangle_detect,
     )
 
-    # Get AMS mapping from raw_data (which AMS is connected to which nozzle)
-    ams_mapping = raw_data.get("ams_mapping", [])
+    # The running print's AMS mapping, for the slot pills (#1762).
+    ams_mapping = print_ams_mapping(state)
     # Get per-AMS extruder map from state attribute (not raw_data, to avoid race condition
     # where raw_data gets replaced during MQTT updates and ams_extruder_map is temporarily missing)
     ams_extruder_map = state.ams_extruder_map or {}
@@ -957,6 +847,8 @@ async def get_printer_status(
                 state.tray_tar,
                 [(u.id, u.is_ams_ht) for u in ams_units],
                 raw_data.get("mapping"),
+                active_extruder=state.active_extruder,
+                ams_extruder_map=nozzle_wiring(state),
             )
             if state.state == "PAUSE"
             else None
@@ -966,6 +858,8 @@ async def get_printer_status(
                 state.tray_pre,
                 [(u.id, u.is_ams_ht) for u in ams_units],
                 raw_data.get("mapping"),
+                active_extruder=state.active_extruder,
+                ams_extruder_map=nozzle_wiring(state),
             )
             if state.state == "PAUSE"
             else None
@@ -1811,10 +1705,12 @@ async def download_printer_file(
         raise HTTPException(413, str(exc)) from exc
     except PrinterFilesZipInsufficientSpaceError as exc:
         raise HTTPException(507, str(exc)) from exc
+    except PrinterFileDownloadError as exc:
+        raise HTTPException(502, f"Could not download {path} from the printer") from exc
     except FileNotFoundError:
         raise HTTPException(404, f"File not found: {path}")
     except TimeoutError as exc:
-        raise HTTPException(504, "Printer download exceeded the 30-minute limit") from exc
+        raise HTTPException(504, str(exc) or "Printer download exceeded the 30-minute limit") from exc
 
     # Determine content type based on extension
     filename = path.split("/")[-1]
@@ -1842,6 +1738,39 @@ async def download_printer_file(
     )
 
 
+async def _download_printer_file_bytes(printer, path: str) -> bytes:
+    """Download a printer file for a preview: 404 missing, 502 failed, 504 too slow.
+
+    A failed download used to be reported as 404 "File not found" for a file the
+    browser had just listed. One FTP session, no listing first, and shared: the
+    plate picker asks once per plate, all at once, and each request downloaded
+    the whole 3MF again (see services/printer_file_cache).
+    """
+
+    async def fetch() -> bytes:
+        try:
+            data = await download_file_bytes_async(
+                printer.ip_address,
+                printer.access_code,
+                path,
+                printer_model=printer.model,
+                report_missing=True,
+                # The size the printer reports buys a slow link its time, up to
+                # the file browser's budget: print start's 300 s ceiling would
+                # add none.
+                max_total_timeout=MAX_PRINTER_ZIP_PREPARE_SECONDS,
+            )
+        except FileNotOnPrinterError as exc:
+            raise HTTPException(404, f"File not found: {path}") from exc
+        except DownloadDeadlineExceeded as exc:
+            raise HTTPException(504, f"Downloading {path} from the printer took longer than its size allows") from exc
+        if data is None:
+            raise HTTPException(502, f"Could not download {path} from the printer")
+        return data
+
+    return await printer_file_cache.get(printer.id, path, fetch)
+
+
 @router.get("/{printer_id}/files/gcode")
 async def get_printer_file_gcode(
     printer_id: int,
@@ -1853,9 +1782,7 @@ async def get_printer_file_gcode(
 
     printer = await _load_printer_or_404(printer_id)
 
-    data = await download_file_bytes_async(printer.ip_address, printer.access_code, path, printer_model=printer.model)
-    if data is None:
-        raise HTTPException(404, f"File not found: {path}")
+    data = await _download_printer_file_bytes(printer, path)
 
     filename = path.split("/")[-1]
     lower = filename.lower()
@@ -1900,9 +1827,7 @@ async def get_printer_file_plates(
             "is_multi_plate": False,
         }
 
-    data = await download_file_bytes_async(printer.ip_address, printer.access_code, path, printer_model=printer.model)
-    if data is None:
-        raise HTTPException(404, f"File not found: {path}")
+    data = await _download_printer_file_bytes(printer, path)
 
     plates = []
 
@@ -2030,6 +1955,8 @@ async def get_printer_file_plates(
                                     "slot_id": int(filament_id),
                                     "type": filament_type,
                                     "color": filament_color,
+                                    # The preset the slicer assigned (GFA01, ...): names the product line
+                                    "tray_info_idx": filament_elem.get("tray_info_idx", "") or "",
                                     "used_grams": round(used_grams, 1),
                                     "used_meters": float(used_m) if used_m else 0,
                                 }
@@ -2127,9 +2054,7 @@ async def get_printer_file_plate_thumbnail(
 
     printer = await _load_printer_or_404(printer_id)
 
-    data = await download_file_bytes_async(printer.ip_address, printer.access_code, path, printer_model=printer.model)
-    if data is None:
-        raise HTTPException(404, f"File not found: {path}")
+    data = await _download_printer_file_bytes(printer, path)
 
     try:
         with zipfile.ZipFile(io.BytesIO(data), "r") as zf:
@@ -2288,6 +2213,9 @@ async def delete_printer_file(
     from backend.app.services.bambu_ftp import DeleteResult
 
     result = await delete_file_async(printer.ip_address, printer.access_code, path, printer_model=printer.model)
+    if result != DeleteResult.FAILED:
+        # Gone from the printer: a preview must not be served from the old copy.
+        printer_file_cache.forget(printer_id, path)
     if result == DeleteResult.NOT_FOUND:
         raise HTTPException(404, f"File not found on printer: {path}")
     if result == DeleteResult.FAILED:
@@ -3119,6 +3047,7 @@ async def configure_ams_slot(
         # No preset provided — try slot reuse or generic fallback
         current_tray_info_idx = ""
         current_tray_type = ""
+        current_tray_sub_brands = ""
         state = printer_manager.get_status(printer_id)
         if state and state.raw_data:
             from backend.app.api.routes.inventory import _find_tray_in_ams_data
@@ -3130,6 +3059,7 @@ async def configure_ams_slot(
                     if isinstance(vt, dict) and int(vt.get("id", 254)) == ext_id:
                         current_tray_info_idx = vt.get("tray_info_idx", "")
                         current_tray_type = vt.get("tray_type", "")
+                        current_tray_sub_brands = vt.get("tray_sub_brands", "")
                         break
             else:
                 ams_data = state.raw_data.get("ams", {})
@@ -3144,6 +3074,7 @@ async def configure_ams_slot(
                 if cur_tray:
                     current_tray_info_idx = cur_tray.get("tray_info_idx", "")
                     current_tray_type = cur_tray.get("tray_type", "")
+                    current_tray_sub_brands = cur_tray.get("tray_sub_brands", "")
 
         if (
             # An Orca profile without an id must not inherit whatever specific
@@ -3154,6 +3085,8 @@ async def configure_ams_slot(
             and current_tray_info_idx not in GENERIC_IDS_REPLACED_ON_REUSE
             and current_tray_type
             and current_tray_type.upper() == tray_type.upper()
+            # The same type in another finish is another preset.
+            and not different_finish(tray_sub_brands, current_tray_sub_brands)
         ):
             logger.info(
                 "[configure_ams_slot] Reusing slot's existing tray_info_idx=%r (same material %r)",
@@ -3168,7 +3101,8 @@ async def configure_ams_slot(
             # to "PETG" would trade away for GFG99.
             material = requested_tray_type.upper().strip()
             generic = (
-                GENERIC_FILAMENT_IDS.get(material)
+                finish_generic_id(tray_type, f"{requested_tray_type} {tray_sub_brands}")
+                or GENERIC_FILAMENT_IDS.get(material)
                 or GENERIC_FILAMENT_IDS.get(material.split("-")[0].split(" ")[0])
                 or GENERIC_FILAMENT_IDS.get(tray_type.upper())
                 or ""
@@ -3814,7 +3748,7 @@ async def resume_print(
 @router.post("/{printer_id}/print-speed")
 async def set_print_speed(
     printer_id: int,
-    mode: int = Query(..., description="Speed mode (1=silent, 2=standard, 3=sport, 4=ludicrous)"),
+    mode: int = Query(..., ge=1, le=4, description="Speed mode (1=silent, 2=standard, 3=sport, 4=ludicrous)"),
     _=RequirePrinterPermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
     db: AsyncSession = Depends(get_db),
 ):
@@ -4749,19 +4683,26 @@ async def _apply_pa_after_refresh(printer_id: int, ams_id: int, slot_id: int):
 
 
 # 24-27 are the A2L AMS-Lite slots (normalised unit 6 = 6*4+slot); see
-# a2l-am-unit-16. They are valid global tray ids alongside the regular 0-15.
-_LOAD_TRAY_ID_ERROR = "tray_id must be 0..15 (AMS slot), 24..27 (A2L AMS-Lite), 254 (external / Ext-L), or 255 (Ext-R)"
+# a2l-am-unit-16. An AMS-HT holds one tray, numbered by its unit id 128-135, as
+# the printer's tray_now reports it. All are valid alongside the regular 0-15.
+_LOAD_TRAY_ID_ERROR = (
+    "tray_id must be 0..15 (AMS slot), 24..27 (A2L AMS-Lite), 128..135 (AMS-HT), 254 (external / Ext-L), or 255 (Ext-R)"
+)
 
 
 def _is_valid_load_tray_id(tray_id: int) -> bool:
     """Whether ``tray_id`` names a slot the load/unload commands can address."""
-    return tray_id in range(16) or tray_id in range(24, 28) or tray_id in (254, 255)
+    return tray_id in range(16) or tray_id in range(24, 28) or tray_id in range(128, 136) or tray_id in (254, 255)
 
 
 @router.post("/{printer_id}/ams/load")
 async def ams_load(
     printer_id: int,
-    tray_id: int = Query(..., description="Tray ID: 0-15 for AMS slots (ams_id*4+slot_id), 254 for external spool"),
+    tray_id: int = Query(
+        ...,
+        description="Tray ID: 0-15 for AMS slots (ams_id*4+slot_id), 128-135 for an AMS-HT (its unit id), "
+        "254 for external spool",
+    ),
     extruder_id: int | None = Query(
         None,
         ge=0,
@@ -4781,6 +4722,7 @@ async def ams_load(
 
     Tray ID encoding (matches Bambu firmware convention):
     - 0..15: AMS slot, computed as ams_id * 4 + slot_id
+    - 128..135: AMS-HT, the unit id (one tray per unit)
     - 254: external spool (single-external printers, or Ext-L on dual-nozzle H2D)
     - 255: Ext-R on dual-nozzle H2D
     """
@@ -4804,6 +4746,8 @@ async def ams_load(
         target = "external spool"
     elif tray_id == 255:
         target = "Ext-R"
+    elif tray_id >= 128:
+        target = f"AMS HT-{chr(ord('A') + tray_id - 128)}"
     else:
         target = f"AMS {tray_id // 4} slot {tray_id % 4 + 1}"
     return {"success": True, "message": f"Loading filament from {target}"}

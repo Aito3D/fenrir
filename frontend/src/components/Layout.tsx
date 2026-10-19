@@ -29,6 +29,7 @@ import { useAnnouncements } from '../hooks/useAnnouncements';
 // Required by upstream's root-level mount adopted in this merge. The fork had
 // dropped both the mount and this import; taking the mount back without it is
 // a TS2304 at build time.
+import { plateCheckFailureText } from '../utils/plateCheck';
 import {
   getHiddenSidebarSystemItemIds,
   getSidebarOrder,
@@ -510,6 +511,26 @@ export function Layout() {
     window.addEventListener('plate-not-empty', handlePlateNotEmpty);
     return () => window.removeEventListener('plate-not-empty', handlePlateNotEmpty);
   }, [hasPermission]);
+
+  // A plate check that could not run (no camera image, ...) does not hold the
+  // print, but it is not an empty plate either: say so to those who can act.
+  useEffect(() => {
+    const handlePlateCheckFailed = (event: Event) => {
+      if (!hasPermission('printers:control')) {
+        return;
+      }
+      const detail = (event as CustomEvent).detail ?? {};
+      showToast(
+        t('printers.plateDetection.couldNotRun', {
+          printer: detail.printer_name ?? '',
+          reason: plateCheckFailureText(t, detail.reason),
+        }),
+        'warning',
+      );
+    };
+    window.addEventListener('plate-check-failed', handlePlateCheckFailed);
+    return () => window.removeEventListener('plate-check-failed', handlePlateCheckFailed);
+  }, [hasPermission, showToast, t]);
 
   // A completed print asked for its outcome verdict (#1898). Same CustomEvent
   // relay as plate-not-empty, and gated the same way: the PATCH route decides

@@ -866,8 +866,9 @@ class AppSettingsUpdate(BaseModel):
     ams_temp_good: float | None = None
     ams_temp_fair: float | None = None
     ams_temp_alarm: float | None = None
-    ams_history_retention_days: int | None = None
-    printer_sensor_history_retention_days: int | None = None
+    # At least a day: 0 or less put the cleanup cutoff at now and deleted all history daily.
+    ams_history_retention_days: int | None = Field(default=None, ge=1)
+    printer_sensor_history_retention_days: int | None = Field(default=None, ge=1)
     aito_followup_quote_days: int | None = Field(default=None, ge=1, le=365)
     aito_followup_pickup_days: int | None = Field(default=None, ge=1, le=365)
     aito_followup_link_days: int | None = Field(default=None, ge=1, le=365)
@@ -1260,3 +1261,23 @@ class AppSettingsUpdate(BaseModel):
         if not isinstance(order, list) or not all(isinstance(item, str) for item in order):
             raise ValueError("sidebar order must be an array of strings")
         return v
+
+
+# Settings that decide who can sign in or where credential material goes: a
+# directory server that hands out groups, local sign-in, the session length,
+# the address password-reset and welcome links point at, the metrics
+# endpoint's token, and the folder full backups (every password hash) are
+# written to. Admin-only to change (routes/settings.update_settings, and a
+# GitHub restore by a non-admin skips them); the settings permissions keep
+# everything else.
+ADMIN_ONLY_SETTING_KEYS = frozenset(
+    {key for key in AppSettingsUpdate.model_fields if key.startswith("ldap_")}
+    | {
+        "local_login_enabled",
+        "session_max_hours",
+        "external_url",
+        "prometheus_enabled",
+        "prometheus_token",
+        "local_backup_path",
+    }
+)
