@@ -1,7 +1,9 @@
 """Aito task ↔ project link routes (spec §1.6, §4)."""
 
 import asyncio
+import io
 import logging
+import zipfile
 from datetime import datetime, timedelta
 from functools import partial
 
@@ -19,7 +21,7 @@ from backend.app.core.permissions import Permission
 from backend.app.core.websocket import ws_manager
 from backend.app.models.aito_event import AitoEvent
 from backend.app.models.group import Group
-from backend.app.models.project_item import ProjectItem
+from backend.app.models.project_item import ProjectItem, ProjectRevision
 from backend.app.models.settings import Settings
 from backend.app.models.user import User
 from backend.app.services import aito_project_links as links_service, project_files as files_service, project_storage
@@ -972,3 +974,90 @@ async def test_drop_with_a_blank_sanitised_name_is_refused_whole(
     assert valid.status_code == 201, valid.text
     assert [r["filename"] for r in valid.json()["results"]] == ["a.3mf", "b.3mf"]
     assert broadcasts == [order_id]
+
+
+def _zip_of(members: dict[str, str]) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as zf:
+        for name, data in members.items():
+            zf.writestr(name, data)
+    return buffer.getvalue()
+
+
+SLICED_CONTENT = _zip_of({"Metadata/project_settings.config": "{}", "Metadata/plate_1.gcode": "G1"})
+NO_SETTINGS = _zip_of({"3D/3dmodel.model": "<model/>"})
+
+
+async def _linked_task_project(async_client, db_session):
+    order = await _order(db_session)
+    task = await _task(db_session, order)
+    project = await _project(async_client)
+    await async_client.put(f"/api/v1/aito/tasks/{task.id}/project", json={"project_id": project["id"]})
+    return task.id, project["id"]
+
+
+async def _items_and_revisions(db_session) -> tuple[list, list]:
+    db_session.expire_all()
+    items = (await db_session.execute(select(ProjectItem.name))).scalars().all()
+    revisions = (await db_session.execute(select(ProjectRevision.id))).scalars().all()
+    return list(items), list(revisions)
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("content", "detail"),
+    [
+        (SLICED_CONTENT, "x.3mf is already sliced. Upload the original .3mf project instead."),
+        (
+            NO_SETTINGS,
+            "x.3mf has no printer setup. Open it in Bambu Studio, choose the printer, and save it as a project.",
+        ),
+        (b"not a zip", "Only Bambu Studio project files"),
+    ],
+    ids=["sliced", "no-settings", "not-a-zip"],
+)
+async def test_drop_refuses_a_3mf_by_content_and_stores_nothing(
+    async_client: AsyncClient, db_session, root, content, detail
+):
+    """The drop entry point refuses what the revision upload refuses by content: 400, no revision, no file
+    left on disk. Current behavior pinned: the empty item the group was created under (``x``) is kept."""
+    task_id, _project_id = await _linked_task_project(async_client, db_session)
+    before = sorted(p for p in root.rglob("*") if p.is_file())
+
+    response = await async_client.post(
+        f"/api/v1/aito/tasks/{task_id}/files", files=[("files", ("x.3mf", content, "application/octet-stream"))]
+    )
+    assert response.status_code == 400, response.text
+    assert detail in response.json()["detail"]
+    assert await _items_and_revisions(db_session) == (["x"], [])
+    assert sorted(p for p in root.rglob("*") if p.is_file()) == before
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_drop_second_group_failing_the_content_check_keeps_the_first_group(
+    async_client: AsyncClient, db_session, root
+):
+    task_id, _project_id = await _linked_task_project(async_client, db_session)
+    response = await async_client.post(
+        f"/api/v1/aito/tasks/{task_id}/files",
+        files=[
+            ("files", ("a.3mf", SRC, "application/octet-stream")),
+            ("files", ("b.3mf", SLICED_CONTENT, "application/octet-stream")),
+        ],
+    )
+    # PARTIAL state, pinned as it is today: the valid first group is stored (201) and the sliced second group is
+    # reported in ``errors`` (400 detail) while its empty item ``b`` stays behind with no revision.
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert [r["filename"] for r in body["results"]] == ["a.3mf"]
+    assert body["errors"] == [
+        {
+            "filenames": ["b.3mf"],
+            "status_code": 400,
+            "detail": "b.3mf is already sliced. Upload the original .3mf project instead.",
+        }
+    ]
+    assert await _items_and_revisions(db_session) == (["a", "b"], [1])
+    assert sorted(p.name for p in root.rglob("*") if p.is_file()) == ["a.3mf"]

@@ -368,3 +368,25 @@ async def test_auto_filing_a_received_source_3mf_starts_its_slice(
     assert revision.slice_status == "slicing"
     await _wait_job(revision.slice_job_id)
     assert (await _revision(db_session, result.revision_id)).slice_status == "sliced"
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_sweep_fails_a_stranded_item_whose_source_is_gone(async_client: AsyncClient, db_session, sidecar):
+    """A ``slicing`` item left over from before a restart, its source ``.3mf`` deleted meanwhile:
+    the sweep marks it ``slice_failed`` instead of leaving it for every later startup."""
+    from backend.app.api.routes.library import to_absolute_path
+
+    rev = await _upload(async_client)
+    source_id = rev["files"][0]["id"]
+    source_path = to_absolute_path((await db_session.get(LibraryFile, source_id)).file_path)
+    db_session.add(PrintQueueItem(library_file_id=source_id, status="slicing", position=1))
+    await db_session.commit()
+    source_path.unlink()
+
+    assert await project_slice.recover_waiting_queue_items() == 1
+    db_session.expire_all()
+    item = (await db_session.execute(select(PrintQueueItem))).scalar_one()
+    assert (item.status, item.error_message) == ("slice_failed", "The slice could not start")
+    assert sidecar.slice_requests == []
+    assert await project_slice.recover_waiting_queue_items() == 0  # not stranded any more

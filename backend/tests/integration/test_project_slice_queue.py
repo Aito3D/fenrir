@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import ExitStack
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -581,3 +582,94 @@ async def test_a_revision_3mf_with_no_project_is_refused(async_client: AsyncClie
     assert response.status_code == 400
     assert "no Bambu Studio project" in response.json()["detail"]
     assert sidecar.slice_requests == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_slice_failing_on_a_missing_source_fails_the_waiting_items(
+    async_client: AsyncClient, db_session, sidecar
+):
+    """The source ``.3mf`` vanishes from disk while an item waits on it: the failed slice moves the
+    item to ``slice_failed`` with the reason (it used to stay ``slicing`` forever)."""
+    rev = await _upload(async_client)
+    source_id = rev["files"][0]["id"]
+    source_path = to_absolute_path((await db_session.get(LibraryFile, source_id)).file_path)
+    db_session.add(PrintQueueItem(library_file_id=source_id, status="slicing", position=1, revision_id=rev["id"]))
+    (await _revision(db_session, rev["id"])).slice_status = "slicing"
+    await db_session.commit()
+    source_path.unlink()
+
+    with pytest.raises(Exception):  # noqa: B017  # the job's own error
+        await project_slice._run_slice(rev["id"], user_id=None, job_id=0)
+
+    db_session.expire_all()
+    item = (await db_session.execute(select(PrintQueueItem))).scalar_one()
+    item_id = item.id
+    assert (item.status, item.error_message) == ("slice_failed", "The revision's source .3mf is missing")
+    assert item.library_file_id == source_id
+    assert (await _revision(db_session, rev["id"])).slice_status == "failed"
+    assert sidecar.slice_requests == []
+    retried = await async_client.post(f"/api/v1/queue/{item_id}/retry-slice")
+    # a retry needs a source to slice: refused with the reason while it is gone, the item stays removable
+    assert retried.status_code == 400
+    assert "not the revision's source" in retried.json()["detail"]
+    assert (await async_client.delete(f"/api/v1/queue/{item_id}")).status_code == 200
+
+
+async def _slicing_item_on(db, file_id: int) -> int:
+    item = PrintQueueItem(library_file_id=file_id, status="slicing", position=1)
+    db.add(item)
+    await db.commit()
+    return item.id
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_settle_fails_items_when_the_sliced_file_is_gone(async_client: AsyncClient, db_session, sidecar):
+    """A ``sliced`` revision whose G-code row is soft-deleted has nothing to run: the waiting item fails."""
+    rev = await _upload(async_client)
+    source_id = rev["files"][0]["id"]
+    await _slice_now(async_client, rev["id"])
+    sliced_id = (await _revision(db_session, rev["id"])).sliced_file_id
+    item_id = await _slicing_item_on(db_session, source_id)
+    sliced = await db_session.get(LibraryFile, sliced_id)
+    sliced.deleted_at = datetime.now(timezone.utc)
+    await db_session.commit()
+
+    await project_slice.settle_waiting_queue_items(db_session, rev["id"])
+    item = await _item(db_session, item_id)
+    assert (item.status, item.error_message) == ("slice_failed", "The revision's sliced file is gone")
+    assert item.library_file_id == source_id
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_settle_fails_items_when_the_sliced_file_id_is_unset(async_client: AsyncClient, db_session, sidecar):
+    rev = await _upload(async_client)
+    source_id = rev["files"][0]["id"]
+    await _slice_now(async_client, rev["id"])
+    item_id = await _slicing_item_on(db_session, source_id)
+    (await _revision(db_session, rev["id"])).sliced_file_id = None
+    await db_session.commit()
+
+    await project_slice.settle_waiting_queue_items(db_session, rev["id"])
+    item = await _item(db_session, item_id)
+    assert (item.status, item.error_message) == ("slice_failed", "The revision's sliced file is gone")
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+@pytest.mark.parametrize(("slice_error", "expected"), [(None, "The slice could not start"), ("boom", "boom")])
+async def test_settle_fails_items_of_a_revision_that_never_started_a_slice(
+    async_client: AsyncClient, db_session, sidecar, slice_error, expected
+):
+    rev = await _upload(async_client)
+    item_id = await _slicing_item_on(db_session, rev["files"][0]["id"])
+    revision = await _revision(db_session, rev["id"])
+    assert revision.slice_status is None
+    revision.slice_error = slice_error
+    await db_session.commit()
+
+    await project_slice.settle_waiting_queue_items(db_session, rev["id"])
+    item = await _item(db_session, item_id)
+    assert (item.status, item.error_message) == ("slice_failed", expected)

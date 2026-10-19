@@ -288,12 +288,33 @@ async def _waiting_items(db: AsyncSession, revision_id: int, statuses: tuple[str
     )
 
 
+async def _slicing_items_of_revision(db: AsyncSession, revision_id: int) -> list[PrintQueueItem]:
+    """Every ``slicing`` queue item on a non-derived file of the revision, whether or not the source
+    ``.3mf`` can still be read: a failed slice must reach them all, or they wait forever."""
+    return list(
+        (
+            await db.execute(
+                select(PrintQueueItem).where(
+                    PrintQueueItem.status == "slicing",
+                    PrintQueueItem.library_file_id.in_(
+                        select(LibraryFile.id).where(
+                            LibraryFile.revision_id == revision_id, LibraryFile.derived_slice.is_(False)
+                        )
+                    ),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
 async def _apply_slice_outcome(
     db: AsyncSession, revision_id: int, sliced_file: LibraryFile | None, error: str | None
 ) -> None:
-    """Success: every item waiting on the revision (``slicing``, or ``slice_failed`` from an earlier
-    attempt) moves onto the G-code as ``pending``. Failure: ``slicing`` items become
-    ``slice_failed`` with the reason. Does not commit."""
+    """Success: every item waiting on the revision's source (``slicing``, or ``slice_failed`` from an
+    earlier attempt) moves onto the G-code as ``pending``. Failure: every ``slicing`` item on the
+    revision's files becomes ``slice_failed`` with the reason, even once the source is gone. Does not commit."""
     if sliced_file is not None and error is None:
         sliced_for = (sliced_file.file_metadata or {}).get("sliced_for_model")
         for item in await _waiting_items(db, revision_id, SLICE_WAIT_STATUSES):
@@ -311,7 +332,7 @@ async def _apply_slice_outcome(
             if item.target_model:
                 item.required_filament_types = await asyncio.to_thread(_required_filament_types, sliced_file, item)
         return
-    for item in await _waiting_items(db, revision_id, ("slicing",)):
+    for item in await _slicing_items_of_revision(db, revision_id):
         item.status = "slice_failed"
         item.error_message = (error or "The slice failed")[:SLICE_ERROR_MAX_CHARS]
 
