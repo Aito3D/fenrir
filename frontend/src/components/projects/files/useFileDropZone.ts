@@ -5,13 +5,13 @@ import { filesFromDataTransfer } from './fileDrop';
 /** The modals a task row opens are portalled to <body>, but React still
  *  bubbles their events through the row: only a target really inside the
  *  row's DOM counts as a drop on the task. */
-export function inZone(e: DragEvent): boolean {
+function inZone(e: DragEvent): boolean {
   return e.currentTarget.contains(e.target as Node);
 }
 
 /** True for an OS file drag. dnd-kit reorders with pointer events, so a native
  *  drag carrying `Files` can only be a file drop. */
-export function isFileDrag(dt: DataTransfer | null): boolean {
+function isFileDrag(dt: DataTransfer | null): boolean {
   return !!dt && Array.from(dt.types ?? []).includes('Files');
 }
 

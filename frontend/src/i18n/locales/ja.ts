@@ -10305,6 +10305,7 @@ export default {
       slicedRefused: '{{name}} はすでにスライス済みです。元の .3mf プロジェクトをアップロードしてください。',
       noSettingsRefused: '{{name}} にはプリンター設定がありません。Bambu Studio で開き、プリンターを選択してプロジェクトとして保存してください。',
       oneFile: '1 つのリビジョンに入れられる .3mf は 1 つです。各パーツは別のアイテムとしてアップロードしてください。',
+      itemBusy: '{{name}} はまだアップロード中のため、ドロップしたファイルはアップロードされませんでした',
       otherSections: '以前のファイル',
       newRevision: '新しいリビジョン',
       addFiles: 'ファイルを追加',

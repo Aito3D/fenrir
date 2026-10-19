@@ -10291,6 +10291,7 @@ export default {
       slicedRefused: '{{name}} è già elaborato. Carica invece il progetto .3mf originale.',
       noSettingsRefused: '{{name}} non ha una configurazione della stampante. Aprilo in Bambu Studio, scegli la stampante e salvalo come progetto.',
       oneFile: 'Una revisione contiene un solo .3mf. Carica ogni parte come elemento a sé.',
+      itemBusy: '{{name}} è ancora in caricamento, quindi i file trascinati non sono stati caricati',
       otherSections: 'File precedenti',
       newRevision: 'Nuova revisione',
       addFiles: 'Aggiungi file',

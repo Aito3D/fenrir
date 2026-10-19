@@ -17,13 +17,14 @@ import re
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from pathlib import Path
-from typing import NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.routes.library import calculate_file_hash, to_absolute_path
+from backend.app.core.permissions import Permission
 from backend.app.models.library import LibraryFile, LibraryFolder
 from backend.app.models.project import Project
 from backend.app.models.project_item import ProjectItem, ProjectRevision
@@ -41,7 +42,13 @@ from backend.app.services.project_storage import (
 from backend.app.services.project_suggestions import SIMILAR_NAME_THRESHOLD, similar_projects
 from backend.app.utils.local_time import utcnow_naive
 
+if TYPE_CHECKING:
+    from backend.app.core.auth import ApiKeyActor
+    from backend.app.models.user import User
+
 logger = logging.getLogger(__name__)
+
+_COPY_FAILED_REASON = "could not copy the file"  # the OSError text (server path) is only logged
 
 _DROP_SECTIONS = {
     "scan": (".ply", ".obj", ".e57", ".xyz", ".pts"),
@@ -142,10 +149,17 @@ class _Candidate:
 
 def _source_path(file: LibraryFile, external: dict[int, Path]) -> Path | None:
     """Where to copy ``file`` from; an external file only if ``_vetted_external_paths`` kept it."""
-    if file.is_external:
-        return external.get(file.id)
+    return _source_path_of(file.id, file.is_external, file.file_path, external)
+
+
+def _source_path_of(
+    file_id: int, is_external: bool | None, file_path: str | None, external: dict[int, Path]
+) -> Path | None:
+    """``_source_path`` from the row's values, so it can run in a worker thread."""
+    if is_external:
+        return external.get(file_id)
     try:
-        return to_absolute_path(file.file_path)
+        return to_absolute_path(file_path)
     except ValueError:  # a stored path escaping the data dir is treated as missing
         return None
 
@@ -172,6 +186,12 @@ async def _vetted_external_paths(db: AsyncSession, files: list[LibraryFile]) -> 
             .distinct()
         )
     ).scalars()
+    # Path.resolve() stats every component, and external folders are network mounts: off the loop.
+    return await asyncio.to_thread(_contained_paths, list(mount_paths), externals)
+
+
+def _contained_paths(mount_paths: list[str | None], externals: list[tuple[int, str]]) -> dict[int, Path]:
+    """``_vetted_external_paths``' filesystem part (blocking: run in a thread)."""
     mounts = [m for m in (_resolved_or_none(Path(p)) for p in mount_paths if p) if m is not None]
     out: dict[int, Path] = {}
     for file_id, file_path in externals:
@@ -253,7 +273,7 @@ async def move_library_files_to_project(
 
     # Classify while the caller's instances are loaded: commits and rollbacks below expire them.
     external = await _vetted_external_paths(db, files)
-    groups = _classify_files(result, files, target, new_item_name, external)
+    groups = await _classify_files(result, files, target, new_item_name, external)
 
     for (section, key), (name, candidates) in groups.items():
         project, stored = await _store_group(
@@ -291,7 +311,32 @@ async def _slice_new_revisions(db: AsyncSession, revision_ids: list[int], user_i
 _Groups = dict[tuple[str, str], tuple[str, list[_Candidate]]]
 
 
-def _classify_files(
+def _early_skip(file: LibraryFile) -> tuple[str, str] | None:
+    """``(code, reason)`` when ``file`` cannot go for a reason its row alone shows."""
+    if file.revision_id is not None:
+        return "already_in_project", "file already belongs to a project"
+    if file.deleted_at is not None:
+        return "trashed", "file is in the trash"
+    if not is_printable_filename(file.filename):
+        return "not_printable", "projects only accept printing files (.3mf, .gcode, .bgcode)"
+    return None
+
+
+def _sources_on_disk(
+    rows: list[tuple[int, bool | None, str | None] | None], external: dict[int, Path]
+) -> list[Path | None]:
+    """Per row (``None`` = not checked): its source path when that is a regular file, else None.
+
+    Blocking (each path is resolved and stat'ed, possibly on a network mount): run in a thread.
+    """
+    out: list[Path | None] = []
+    for row in rows:
+        src = _source_path_of(*row, external) if row is not None else None
+        out.append(src if src is not None and src.is_file() else None)
+    return out
+
+
+async def _classify_files(
     result: MoveToProjectResult,
     files: list[LibraryFile],
     target: ProjectItem | None,
@@ -299,21 +344,20 @@ def _classify_files(
     external: dict[int, Path],
 ) -> _Groups:
     """Skip what cannot go (into ``result``); group the rest by ``(section, name_key)`` -> ``(item name, files)``."""
+    early = [_early_skip(file) for file in files]
+    rows = [
+        (file.id, file.is_external, file.file_path) if skip is None else None
+        for file, skip in zip(files, early, strict=True)
+    ]
+    on_disk = await asyncio.to_thread(_sources_on_disk, rows, external)
     groups: _Groups = {}
-    for file in files:
+    for file, skip, src in zip(files, early, on_disk, strict=True):
         file_id, filename = file.id, file.filename
-        if file.revision_id is not None:
-            _skip(result, file_id, "already_in_project", "file already belongs to a project")
-            continue
-        if file.deleted_at is not None:
-            _skip(result, file_id, "trashed", "file is in the trash")
+        if skip is not None:
+            _skip(result, file_id, *skip)
             continue
         section = section_for_filename(filename)  # "impression" for every printable file
-        if not is_printable_filename(filename):
-            _skip(result, file_id, "not_printable", "projects only accept printing files (.3mf, .gcode, .bgcode)")
-            continue
-        src = _source_path(file, external)
-        if src is None or not src.is_file():
+        if src is None:
             _skip(result, file_id, "source_missing", "source file missing on disk")
             continue
         candidate = _Candidate(file_id, filename, bool(file.is_external), src, file.file_path)
@@ -417,12 +461,21 @@ async def _skip_failed_group(
     (logged with its traceback, the session rolled back, a generic reason reported)."""
     if isinstance(exc, (OSError, project_files.ProjectFilesError)):
         code = "copy_failed" if isinstance(exc, OSError) else "conflict"
-        reason = str(exc)  # a ProjectFilesError's str() is its detail
-        logger.warning("Moving files into project %s failed for item %r: %s", project_id, name, reason)
+        detail = str(exc)  # a ProjectFilesError's str() is its detail
+        logger.warning("Moving files into project %s failed for item %r: %s", project_id, name, detail)
+        # An OSError's text carries the absolute server path: log it, never report it.
+        reason = _COPY_FAILED_REASON if isinstance(exc, OSError) else detail
     else:
         code, reason = "error", "unexpected error while moving the file"
         logger.exception("Moving files into project %s failed unexpectedly for item %r", project_id, name)
-        await db.rollback()
+        await rollback_quietly(
+            db,
+            logger,
+            logging.WARNING,
+            "Rollback after the failed move into project %s (item %r) failed too",
+            project_id,
+            name,
+        )
     for candidate in pending:
         _skip(result, candidate.file_id, code, reason)
     refreshed = await db.get(Project, project_id)  # the rollback expired it
@@ -594,6 +647,13 @@ async def auto_file_enabled(db: AsyncSession) -> bool:
 
     value = await get_setting(db, AUTO_FILE_SETTING_KEY)
     return True if value is None or value == "" else setting_is_true(value)
+
+
+def may_auto_file(actor: User | ApiKeyActor | None) -> bool:
+    """Whether an upload by ``actor`` may be auto-filed by its project code.
+
+    ``actor`` is None only when auth is off (allowed); otherwise it needs ``projects:update``."""
+    return actor is None or actor.has_permission(Permission.PROJECTS_UPDATE.value)
 
 
 async def auto_file_by_code(
@@ -797,6 +857,17 @@ async def _legacy_files(db: AsyncSession, project_id: int) -> list[LibraryFile]:
     return [row for row in rows if is_printable_filename(row.filename)]
 
 
+def _digest_if_file(path: Path) -> str | None:
+    """SHA-256 of ``path``; None when it is not a regular file or cannot be read
+    (the move reports it: source_missing / copy_failed). Blocking: run in a thread."""
+    if not path.is_file():
+        return None
+    try:
+        return calculate_file_hash(path)
+    except OSError:
+        return None
+
+
 async def _already_copied(db: AsyncSession, project_id: int, files: list[LibraryFile]) -> set[int]:
     """External files the project already holds a copy of (an earlier run): same
     SHA-256 and same filename as one of its revision files."""
@@ -822,12 +893,11 @@ async def _already_copied(db: AsyncSession, project_id: int, files: list[Library
         return set()
     out: set[int] = set()
     for file_id, filename, path in externals:
-        if path is None or not path.is_file():
+        if path is None:
             continue
-        try:
-            digest = await asyncio.to_thread(calculate_file_hash, path)
-        except OSError:
-            continue  # the move reports it (source_missing / copy_failed)
+        digest = await asyncio.to_thread(_digest_if_file, path)
+        if digest is None:
+            continue
         if (digest, filename) in held:
             logger.info(
                 "Legacy migration of project %s: external file %s (%r) already copied, skipping",

@@ -10330,6 +10330,7 @@ errors: {
       slicedRefused: '{{name}} är redan skivad. Ladda upp det ursprungliga .3mf-projektet i stället.',
       noSettingsRefused: '{{name}} saknar skrivarinställning. Öppna den i Bambu Studio, välj skrivare och spara den som ett projekt.',
       oneFile: 'En revision innehåller en enda .3mf. Ladda upp varje del som ett eget objekt.',
+      itemBusy: '{{name}} laddas fortfarande upp, så de släppta filerna laddades inte upp',
       otherSections: 'Äldre filer',
       newRevision: 'Ny revision',
       addFiles: 'Lägg till filer',

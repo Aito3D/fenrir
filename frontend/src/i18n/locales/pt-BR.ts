@@ -10291,6 +10291,7 @@ export default {
       slicedRefused: '{{name}} já está fatiado. Envie o projeto .3mf original.',
       noSettingsRefused: '{{name}} não tem configuração de impressora. Abra-o no Bambu Studio, escolha a impressora e salve-o como projeto.',
       oneFile: 'Uma revisão contém um único .3mf. Envie cada peça como um item separado.',
+      itemBusy: '{{name}} ainda está sendo enviado, então os arquivos soltos não foram enviados',
       otherSections: 'Arquivos antigos',
       newRevision: 'Nova revisão',
       addFiles: 'Adicionar arquivos',

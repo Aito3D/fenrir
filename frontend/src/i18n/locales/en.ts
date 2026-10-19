@@ -10362,6 +10362,7 @@ export default {
       slicedRefused: '{{name}} is already sliced. Upload the original .3mf project instead.',
       noSettingsRefused: '{{name}} has no printer setup. Open it in Bambu Studio, choose the printer, and save it as a project.',
       oneFile: 'A revision holds one .3mf. Upload each part as its own item.',
+      itemBusy: '{{name}} is still uploading, so the dropped files were not uploaded',
       otherSections: 'Older files',
       newRevision: 'New revision',
       addFiles: 'Add files',

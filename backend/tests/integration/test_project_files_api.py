@@ -80,6 +80,30 @@ async def test_errors_map_to_http(async_client: AsyncClient):
 
 @pytest.mark.asyncio
 @pytest.mark.integration
+async def test_rename_losing_a_same_name_race_is_409(async_client: AsyncClient, monkeypatch):
+    """T-363: the name check passes (a concurrent create or rename commits right after it), the unique
+    constraint refuses the commit, and the client gets the name 409 instead of a 500."""
+    from backend.app.services import project_files as files_service
+
+    project = await _project(async_client)
+    await _item(async_client, project["id"], name="Support")
+    other = await _item(async_client, project["id"], name="Other")
+
+    async def free(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(files_service, "_require_item_name_free", free)
+    response = await async_client.patch(f"/api/v1/projects/items/{other['id']}", json={"name": "SUPPORT"})
+    assert response.status_code == 409
+    assert response.json() == {"detail": "An item with this name already exists in this section"}
+    monkeypatch.undo()
+    tree = (await async_client.get(f"/api/v1/projects/{project['id']}/tree")).json()
+    names = sorted(i["name"] for sec in tree["sections"] for i in sec["items"])
+    assert names == ["Other", "Support"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
 async def test_rename_fork_delete_and_files(async_client: AsyncClient, root):
     project = await _project(async_client)
     item = await _item(async_client, project["id"])

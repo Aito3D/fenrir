@@ -12,11 +12,6 @@
   "ENABLED_SECTIONS": [
    "impression"
   ],
-  "PRINTABLE_EXTENSIONS": [
-   ".3mf",
-   ".gcode",
-   ".bgcode"
-  ],
   "PRINTABLE_ACCEPT": ".3mf,.gcode,.bgcode",
   "SECTION_LABEL_KEYS": {
    "scan": "projectsPdm.files.sectionScan",
@@ -49,7 +44,6 @@
    "ENABLED_SECTIONS",
    "PREVIEWABLE_TYPES",
    "PRINTABLE_ACCEPT",
-   "PRINTABLE_EXTENSIONS",
    "SECTION_LABEL_KEYS",
    "SECTION_ORDER",
    "STATUS_CHIP_CLS",

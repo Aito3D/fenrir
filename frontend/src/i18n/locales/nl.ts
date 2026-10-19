@@ -10330,6 +10330,7 @@ export default {
       slicedRefused: '{{name}} is al geslicet. Upload in plaats daarvan het originele .3mf-project.',
       noSettingsRefused: '{{name}} heeft geen printerinstelling. Open het in Bambu Studio, kies de printer en sla het op als project.',
       oneFile: 'Een revisie bevat één .3mf. Upload elk onderdeel als een apart item.',
+      itemBusy: '{{name}} wordt nog geüpload, dus de neergezette bestanden zijn niet geüpload',
       otherSections: 'Oudere bestanden',
       newRevision: 'Nieuwe revisie',
       addFiles: 'Bestanden toevoegen',

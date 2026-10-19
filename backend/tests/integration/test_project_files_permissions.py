@@ -85,7 +85,7 @@ _ROUTES = [
     ("GET", "/aito/tasks/987654/project-suggestions", {}, [(P.AITO_READ,), (P.PROJECTS_READ,)]),
     ("PUT", "/aito/tasks/987654/project", {"json": {"project_id": None}}, [(P.AITO_UPDATE,), (P.PROJECTS_READ,)]),
     ("POST", "/aito/tasks/987654/project", {"json": {"name": "p"}}, [(P.AITO_UPDATE,), (P.PROJECTS_CREATE,)]),
-    ("PUT", "/aito/tasks/987654/deliveries", {"json": {"revision_ids": []}}, [(P.AITO_UPDATE,), (P.PROJECTS_READ,)]),
+    ("PUT", "/aito/tasks/987654/deliveries", {"json": {"revision_ids": []}}, [(P.AITO_UPDATE,), (P.PROJECTS_UPDATE,)]),
     ("POST", "/aito/tasks/987654/files", {"files": _FILE}, [(P.AITO_UPDATE,), (P.PROJECTS_UPDATE,)]),
     ("GET", "/aito/987654/project-links", {}, [(P.AITO_READ,), (P.PROJECTS_READ,)]),
 ]

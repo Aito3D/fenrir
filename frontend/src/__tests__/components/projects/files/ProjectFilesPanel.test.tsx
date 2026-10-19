@@ -389,6 +389,23 @@ describe('ProjectFilesPanel', () => {
     expect(within(row).getByRole('button', { name: 'New revision' })).toBeEnabled();
   });
 
+  it('T-368: files dropped on a section for an item whose upload is running toast and send nothing', async () => {
+    let release!: () => void;
+    holdUpload = new Promise<void>((r) => { release = r; });
+    render(<ProjectFilesPanel projectId={7} />);
+    await screen.findByText('Support');
+    await userEvent.upload(screen.getByTestId('new-revision-input-20'), new File(['x'], 'b.3mf'));
+    const row = screen.getByRole('button', { name: /Support$/ }).closest('li')!;
+    expect(await within(row).findByText('Uploading…')).toBeInTheDocument();
+    expect(screen.queryByText(/is still uploading/)).not.toBeInTheDocument();
+    drop(sectionOf('Printing'), 'Support.3mf');
+    expect(await screen.findByText('Support is still uploading, so the dropped files were not uploaded')).toBeInTheDocument();
+    expect(calls).toEqual(['upload:20']);
+    release();
+    await waitFor(() => expect(within(row).queryByText('Uploading…')).not.toBeInTheDocument());
+    expect(calls).toEqual(['upload:20']);
+  });
+
   it('a busy item still highlights under a drag, but takes no drop until the upload ends', async () => {
     let release!: () => void;
     holdUpload = new Promise<void>((r) => { release = r; });

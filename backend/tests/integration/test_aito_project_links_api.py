@@ -1,6 +1,7 @@
 """Aito task ↔ project link routes (spec §1.6, §4)."""
 
 import asyncio
+import logging
 from datetime import datetime, timedelta
 from functools import partial
 
@@ -363,6 +364,48 @@ async def test_status_change_survives_event_failure(async_client: AsyncClient, d
     assert statuses == ["valide"]
     kinds = (await db_session.execute(select(AitoEvent.kind).where(AitoEvent.project_id == order.id))).scalars().all()
     assert "project.revision_status_changed" not in kinds
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_status_change_survives_event_and_rollback_failure(
+    async_client: AsyncClient, db_session, monkeypatch, caplog
+):
+    """T-362: the event write fails and so does its rollback; the committed status change still answers 200."""
+    project, _order_row, revision_id = await _linked_revision(async_client, db_session)
+    real_rollback = AsyncSession.rollback
+    calls = {"n": 0}
+
+    async def boom(*_a, **_k):
+        raise RuntimeError("event store down")
+
+    async def first_rollback_fails(self):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise OperationalError("ROLLBACK", {}, Exception("connection invalidated"))
+        return await real_rollback(self)
+
+    monkeypatch.setattr(files_routes.aito_links, "record_on_linked_orders", boom)
+    monkeypatch.setattr(AsyncSession, "rollback", first_rollback_fails)
+    with caplog.at_level(logging.WARNING, logger=files_routes.__name__):
+        response = await async_client.patch(f"/api/v1/projects/revisions/{revision_id}", json={"status": "valide"})
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "valide"
+    assert calls["n"] >= 1
+    warnings = [
+        (r.getMessage(), r.exc_info is not None)
+        for r in caplog.records
+        if r.name == files_routes.__name__ and r.levelno == logging.WARNING
+    ]
+    assert warnings == [
+        (f"project.revision_status_changed event failed for project {project['id']}", True),
+        (f"Rollback after the failed project.revision_status_changed event failed for project {project['id']}", True),
+    ]
+
+    monkeypatch.undo()
+    tree = (await async_client.get(f"/api/v1/projects/{project['id']}/tree")).json()
+    statuses = [r["status"] for sec in tree["sections"] for it in sec["items"] for r in it["revisions"]]
+    assert statuses == ["valide"]
 
 
 @pytest.mark.asyncio

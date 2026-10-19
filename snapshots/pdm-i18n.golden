@@ -1,6 +1,6 @@
 ### exit: 0
 ### stdout:
---- de projectsPdm (197 keys)
+--- de projectsPdm (198 keys)
 acceptSuggestion = "{{name}} hinzufügen"  placeholders={{name}}
 aiUnavailable = "KI nicht verfügbar"
 aito.confirmUnlink = "{{name}} von dieser Aufgabe lösen? Die Liste der gelieferten Dateien wird geleert."  placeholders={{name}}
@@ -71,6 +71,7 @@ files.fileCount_other = "{{count}} Dateien"  placeholders={{count}}
 files.fork = "Als neues Element abspalten"
 files.forkNameLabel = "Name des neuen Elements"
 files.frozen = "Dateien gesperrt: Diese Revision wurde gedruckt oder geliefert"
+files.itemBusy = "{{name}} wird noch hochgeladen, die abgelegten Dateien wurden daher nicht hochgeladen"  placeholders={{name}}
 files.itemNameLabel = "Elementname"
 files.newItem = "Neues Element"
 files.newRevision = "Neue Revision"
@@ -198,7 +199,7 @@ title = "Projekte"
 titleLabel = "Titel"
 viewGrid = "Rasteransicht"
 viewTable = "Tabellenansicht"
---- en projectsPdm (197 keys)
+--- en projectsPdm (198 keys)
 acceptSuggestion = "Add {{name}}"  placeholders={{name}}
 aiUnavailable = "AI unavailable"
 aito.confirmUnlink = "Unlink {{name}} from this task? Its delivered files list is cleared."  placeholders={{name}}
@@ -269,6 +270,7 @@ files.fileCount_other = "{{count}} files"  placeholders={{count}}
 files.fork = "Fork as new item"
 files.forkNameLabel = "New item name"
 files.frozen = "Files frozen: this revision was printed or delivered"
+files.itemBusy = "{{name}} is still uploading, so the dropped files were not uploaded"  placeholders={{name}}
 files.itemNameLabel = "Item name"
 files.newItem = "New item"
 files.newRevision = "New revision"
@@ -396,7 +398,7 @@ title = "Projects"
 titleLabel = "Title"
 viewGrid = "Grid view"
 viewTable = "Table view"
---- es projectsPdm (197 keys)
+--- es projectsPdm (198 keys)
 acceptSuggestion = "Añadir {{name}}"  placeholders={{name}}
 aiUnavailable = "IA no disponible"
 aito.confirmUnlink = "¿Desvincular {{name}} de esta tarea? Se borrará la lista de archivos entregados."  placeholders={{name}}
@@ -467,6 +469,7 @@ files.fileCount_other = "{{count}} archivos"  placeholders={{count}}
 files.fork = "Bifurcar como nuevo elemento"
 files.forkNameLabel = "Nombre del nuevo elemento"
 files.frozen = "Archivos bloqueados: esta revisión ya se imprimió o entregó"
+files.itemBusy = "{{name}} todavía se está subiendo, por lo que los archivos soltados no se subieron"  placeholders={{name}}
 files.itemNameLabel = "Nombre del elemento"
 files.newItem = "Nuevo elemento"
 files.newRevision = "Nueva revisión"
@@ -594,7 +597,7 @@ title = "Proyectos"
 titleLabel = "Título"
 viewGrid = "Vista de cuadrícula"
 viewTable = "Vista de tabla"
---- fr projectsPdm (197 keys)
+--- fr projectsPdm (198 keys)
 acceptSuggestion = "Ajouter {{name}}"  placeholders={{name}}
 aiUnavailable = "IA indisponible"
 aito.confirmUnlink = "Délier {{name}} de cette tâche ? La liste des fichiers livrés sera effacée."  placeholders={{name}}
@@ -665,6 +668,7 @@ files.fileCount_other = "{{count}} fichiers"  placeholders={{count}}
 files.fork = "Dupliquer en nouvel élément"
 files.forkNameLabel = "Nom du nouvel élément"
 files.frozen = "Fichiers figés : révision déjà imprimée ou livrée"
+files.itemBusy = "{{name}} est encore en cours d'envoi : les fichiers déposés n'ont pas été envoyés"  placeholders={{name}}
 files.itemNameLabel = "Nom de l'élément"
 files.newItem = "Nouvel élément"
 files.newRevision = "Nouvelle révision"
@@ -792,7 +796,7 @@ title = "Projets"
 titleLabel = "Titre"
 viewGrid = "Vue grille"
 viewTable = "Vue tableau"
---- it projectsPdm (197 keys)
+--- it projectsPdm (198 keys)
 acceptSuggestion = "Aggiungi {{name}}"  placeholders={{name}}
 aiUnavailable = "IA non disponibile"
 aito.confirmUnlink = "Scollegare {{name}} da questa attività? L'elenco dei file consegnati verrà svuotato."  placeholders={{name}}
@@ -863,6 +867,7 @@ files.fileCount_other = "{{count}} file"  placeholders={{count}}
 files.fork = "Duplica come nuovo elemento"
 files.forkNameLabel = "Nome del nuovo elemento"
 files.frozen = "File bloccati: questa revisione è già stata stampata o consegnata"
+files.itemBusy = "{{name}} è ancora in caricamento, quindi i file trascinati non sono stati caricati"  placeholders={{name}}
 files.itemNameLabel = "Nome dell'elemento"
 files.newItem = "Nuovo elemento"
 files.newRevision = "Nuova revisione"
@@ -990,7 +995,7 @@ title = "Progetti"
 titleLabel = "Titolo"
 viewGrid = "Vista griglia"
 viewTable = "Vista tabella"
---- ja projectsPdm (197 keys)
+--- ja projectsPdm (198 keys)
 acceptSuggestion = "{{name}}を追加"  placeholders={{name}}
 aiUnavailable = "AIは利用できません"
 aito.confirmUnlink = "このタスクから {{name}} のリンクを解除しますか？納品ファイルの一覧は消去されます。"  placeholders={{name}}
@@ -1061,6 +1066,7 @@ files.fileCount_other = "{{count}}件のファイル"  placeholders={{count}}
 files.fork = "新しいアイテムとして分岐"
 files.forkNameLabel = "新しいアイテム名"
 files.frozen = "ファイルはロックされています：このリビジョンは印刷または納品済みです"
+files.itemBusy = "{{name}} はまだアップロード中のため、ドロップしたファイルはアップロードされませんでした"  placeholders={{name}}
 files.itemNameLabel = "アイテム名"
 files.newItem = "新規アイテム"
 files.newRevision = "新しいリビジョン"
@@ -1188,7 +1194,7 @@ title = "プロジェクト"
 titleLabel = "タイトル"
 viewGrid = "グリッド表示"
 viewTable = "テーブル表示"
---- ko projectsPdm (197 keys)
+--- ko projectsPdm (198 keys)
 acceptSuggestion = "{{name}} 추가"  placeholders={{name}}
 aiUnavailable = "AI를 사용할 수 없음"
 aito.confirmUnlink = "이 작업에서 {{name}} 연결을 해제할까요? 납품 파일 목록이 지워집니다."  placeholders={{name}}
@@ -1259,6 +1265,7 @@ files.fileCount_other = "파일 {{count}}개"  placeholders={{count}}
 files.fork = "새 항목으로 분기"
 files.forkNameLabel = "새 항목 이름"
 files.frozen = "파일 잠김: 이 리비전은 이미 출력되었거나 납품되었습니다"
+files.itemBusy = "{{name}}을(를) 아직 업로드하는 중이라 드롭한 파일은 업로드되지 않았습니다"  placeholders={{name}}
 files.itemNameLabel = "항목 이름"
 files.newItem = "새 항목"
 files.newRevision = "새 리비전"
@@ -1386,7 +1393,7 @@ title = "프로젝트"
 titleLabel = "제목"
 viewGrid = "격자 보기"
 viewTable = "표 보기"
---- nl projectsPdm (197 keys)
+--- nl projectsPdm (198 keys)
 acceptSuggestion = "{{name}} toevoegen"  placeholders={{name}}
 aiUnavailable = "AI niet beschikbaar"
 aito.confirmUnlink = "{{name}} loskoppelen van deze taak? De lijst met geleverde bestanden wordt gewist."  placeholders={{name}}
@@ -1457,6 +1464,7 @@ files.fileCount_other = "{{count}} bestanden"  placeholders={{count}}
 files.fork = "Splitsen als nieuw item"
 files.forkNameLabel = "Naam van nieuw item"
 files.frozen = "Bestanden vergrendeld: deze revisie is al geprint of geleverd"
+files.itemBusy = "{{name}} wordt nog geüpload, dus de neergezette bestanden zijn niet geüpload"  placeholders={{name}}
 files.itemNameLabel = "Itemnaam"
 files.newItem = "Nieuw item"
 files.newRevision = "Nieuwe revisie"
@@ -1584,7 +1592,7 @@ title = "Projecten"
 titleLabel = "Titel"
 viewGrid = "Rasterweergave"
 viewTable = "Tabelweergave"
---- ptBR projectsPdm (197 keys)
+--- ptBR projectsPdm (198 keys)
 acceptSuggestion = "Adicionar {{name}}"  placeholders={{name}}
 aiUnavailable = "IA indisponível"
 aito.confirmUnlink = "Desvincular {{name}} desta tarefa? A lista de arquivos entregues será apagada."  placeholders={{name}}
@@ -1655,6 +1663,7 @@ files.fileCount_other = "{{count}} arquivos"  placeholders={{count}}
 files.fork = "Bifurcar como novo item"
 files.forkNameLabel = "Nome do novo item"
 files.frozen = "Arquivos bloqueados: esta revisão já foi impressa ou entregue"
+files.itemBusy = "{{name}} ainda está sendo enviado, então os arquivos soltos não foram enviados"  placeholders={{name}}
 files.itemNameLabel = "Nome do item"
 files.newItem = "Novo item"
 files.newRevision = "Nova revisão"
@@ -1782,7 +1791,7 @@ title = "Projetos"
 titleLabel = "Título"
 viewGrid = "Visualização em grade"
 viewTable = "Visualização em tabela"
---- ru projectsPdm (197 keys)
+--- ru projectsPdm (198 keys)
 acceptSuggestion = "Добавить {{name}}"  placeholders={{name}}
 aiUnavailable = "ИИ недоступен"
 aito.confirmUnlink = "Отвязать {{name}} от этой задачи? Список переданных файлов будет очищен."  placeholders={{name}}
@@ -1853,6 +1862,7 @@ files.fileCount_other = "Файлов: {{count}}"  placeholders={{count}}
 files.fork = "Выделить в новый элемент"
 files.forkNameLabel = "Название нового элемента"
 files.frozen = "Файлы заблокированы: эта ревизия уже напечатана или передана"
+files.itemBusy = "{{name}} ещё загружается, поэтому перетащенные файлы не были загружены"  placeholders={{name}}
 files.itemNameLabel = "Название элемента"
 files.newItem = "Новый элемент"
 files.newRevision = "Новая ревизия"
@@ -1980,7 +1990,7 @@ title = "Проекты"
 titleLabel = "Название"
 viewGrid = "Вид сеткой"
 viewTable = "Табличный вид"
---- sv projectsPdm (197 keys)
+--- sv projectsPdm (198 keys)
 acceptSuggestion = "Lägg till {{name}}"  placeholders={{name}}
 aiUnavailable = "AI är inte tillgänglig"
 aito.confirmUnlink = "Koppla bort {{name}} från den här uppgiften? Listan över levererade filer töms."  placeholders={{name}}
@@ -2051,6 +2061,7 @@ files.fileCount_other = "{{count}} filer"  placeholders={{count}}
 files.fork = "Förgrena som nytt objekt"
 files.forkNameLabel = "Nytt objektnamn"
 files.frozen = "Filer låsta: den här revisionen har skrivits ut eller levererats"
+files.itemBusy = "{{name}} laddas fortfarande upp, så de släppta filerna laddades inte upp"  placeholders={{name}}
 files.itemNameLabel = "Objektnamn"
 files.newItem = "Nytt objekt"
 files.newRevision = "Ny revision"
@@ -2178,7 +2189,7 @@ title = "Projekt"
 titleLabel = "Titel"
 viewGrid = "Rutnätsvy"
 viewTable = "Tabellvy"
---- tr projectsPdm (197 keys)
+--- tr projectsPdm (198 keys)
 acceptSuggestion = "{{name}} ekle"  placeholders={{name}}
 aiUnavailable = "Yapay zekâ kullanılamıyor"
 aito.confirmUnlink = "{{name}} bu görevden ayrılsın mı? Teslim edilen dosyalar listesi temizlenir."  placeholders={{name}}
@@ -2249,6 +2260,7 @@ files.fileCount_other = "{{count}} dosya"  placeholders={{count}}
 files.fork = "Yeni öğe olarak ayır"
 files.forkNameLabel = "Yeni öğe adı"
 files.frozen = "Dosyalar kilitli: bu revizyon basıldı veya teslim edildi"
+files.itemBusy = "{{name}} hâlâ yükleniyor, bu yüzden bırakılan dosyalar yüklenmedi"  placeholders={{name}}
 files.itemNameLabel = "Öğe adı"
 files.newItem = "Yeni öğe"
 files.newRevision = "Yeni revizyon"
@@ -2376,7 +2388,7 @@ title = "Projeler"
 titleLabel = "Başlık"
 viewGrid = "Izgara görünümü"
 viewTable = "Tablo görünümü"
---- uk projectsPdm (197 keys)
+--- uk projectsPdm (198 keys)
 acceptSuggestion = "Додати {{name}}"  placeholders={{name}}
 aiUnavailable = "ШІ недоступний"
 aito.confirmUnlink = "Відв’язати {{name}} від цього завдання? Список переданих файлів буде очищено."  placeholders={{name}}
@@ -2447,6 +2459,7 @@ files.fileCount_other = "Файлів: {{count}}"  placeholders={{count}}
 files.fork = "Виділити в новий елемент"
 files.forkNameLabel = "Назва нового елемента"
 files.frozen = "Файли заблоковано: цю ревізію вже надруковано або передано"
+files.itemBusy = "{{name}} ще завантажується, тому перетягнуті файли не були завантажені"  placeholders={{name}}
 files.itemNameLabel = "Назва елемента"
 files.newItem = "Новий елемент"
 files.newRevision = "Нова ревізія"
@@ -2574,7 +2587,7 @@ title = "Проєкти"
 titleLabel = "Назва"
 viewGrid = "Вигляд сіткою"
 viewTable = "Табличний вигляд"
---- zhCN projectsPdm (197 keys)
+--- zhCN projectsPdm (198 keys)
 acceptSuggestion = "添加 {{name}}"  placeholders={{name}}
 aiUnavailable = "AI 不可用"
 aito.confirmUnlink = "要将 {{name}} 从此任务取消关联吗？已交付文件列表将被清空。"  placeholders={{name}}
@@ -2645,6 +2658,7 @@ files.fileCount_other = "{{count}} 个文件"  placeholders={{count}}
 files.fork = "另存为新条目"
 files.forkNameLabel = "新条目名称"
 files.frozen = "文件已锁定：此版本已打印或已交付"
+files.itemBusy = "{{name}} 仍在上传，因此拖放的文件未上传"  placeholders={{name}}
 files.itemNameLabel = "条目名称"
 files.newItem = "新建条目"
 files.newRevision = "新版本"
@@ -2772,7 +2786,7 @@ title = "项目"
 titleLabel = "标题"
 viewGrid = "网格视图"
 viewTable = "表格视图"
---- zhTW projectsPdm (197 keys)
+--- zhTW projectsPdm (198 keys)
 acceptSuggestion = "新增 {{name}}"  placeholders={{name}}
 aiUnavailable = "AI 無法使用"
 aito.confirmUnlink = "要將 {{name}} 從此任務取消連結嗎？已交付檔案清單將被清除。"  placeholders={{name}}
@@ -2843,6 +2857,7 @@ files.fileCount_other = "{{count}} 個檔案"  placeholders={{count}}
 files.fork = "另存為新項目"
 files.forkNameLabel = "新項目名稱"
 files.frozen = "檔案已鎖定：此版本已列印或已交付"
+files.itemBusy = "{{name}} 仍在上傳，因此拖放的檔案未上傳"  placeholders={{name}}
 files.itemNameLabel = "項目名稱"
 files.newItem = "新增項目"
 files.newRevision = "新版本"

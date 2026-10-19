@@ -328,6 +328,7 @@ def is_printable_filename(name: str)
 def is_resliceable(filename: str)
 def item_dir(project, section: str, item_name: str)
 def item_name_for_filename(name: str)
+def may_auto_file(actor: User | ApiKeyActor | None)
 def move_to_trash(project, path: Path)
 def name_key(name: str)
 def output_filename(source_filename: str)
@@ -1262,7 +1263,6 @@ CREATE TABLE projects (
 1 export const OVERLAY_CLS
 1 export const PREVIEWABLE_TYPES
 1 export const PRINTABLE_ACCEPT
-1 export const PRINTABLE_EXTENSIONS
 1 export const projectKeys
 1 export const RADIO_ROW_CLS
 1 export const SECTION_LABEL_KEYS
@@ -1280,8 +1280,6 @@ CREATE TABLE projects (
 1 export function DropShield
 1 export function failureMessage
 1 export function filesFromDataTransfer
-1 export function inZone
-1 export function isFileDrag
 1 export function isPrintableFile
 1 export function isPrintableFilename
 1 export function isSectionEnabled
@@ -1618,6 +1616,7 @@ projectsPdm.files.fileCount
 projectsPdm.files.fork
 projectsPdm.files.forkNameLabel
 projectsPdm.files.frozen
+projectsPdm.files.itemBusy
 projectsPdm.files.itemNameLabel
 projectsPdm.files.newItem
 projectsPdm.files.newRevision

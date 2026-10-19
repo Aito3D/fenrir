@@ -154,6 +154,22 @@ async def test_3mf_snapshot_written_once(db_session, root):
 
 
 @pytest.mark.asyncio
+async def test_3mf_overlong_slicer_strings_are_stored_capped_at_64(db_session, root):
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr(
+            "3D/3dmodel.model",
+            f'<model><metadata name="Application">{"N" * 100}-{"9" * 100}</metadata></model>',
+        )
+    project = await _project(db_session)
+    item = await create_item(db_session, project, section="impression", name="Long slicer", user_id=None)
+    rev, _ = await add_revision(
+        db_session, project, item, [upload("plate.3mf", buf.getvalue())], note=None, derived_from_id=None, user_id=None
+    )
+    assert (rev.slicer_name, rev.slicer_version) == ("N" * 64, "9" * 64)
+
+
+@pytest.mark.asyncio
 async def test_3mf_snapshot_fills_all_five_revision_columns(db_session, root, tmp_path):
     from backend.app.services.project_snapshot import read_print_snapshot
 
@@ -460,6 +476,45 @@ async def test_rename_item_rolls_folder_back_on_db_failure(db_session, root, mon
     monkeypatch.setattr(db_session, "commit", boom)
     with pytest.raises(RuntimeError):
         await rename_item(db_session, project, item, "Nouveau")
+    assert (base / "Modélisation" / "Support" / "R1" / "a.step").exists()
+    assert not (base / "Modélisation" / "Nouveau").exists()
+
+
+@pytest.mark.asyncio
+async def test_rename_item_racing_a_same_name_item_is_the_name_409_and_moves_the_folder_back(
+    db_session, root, monkeypatch
+):
+    """T-363: the loser of a same-name race fails at commit on the unique constraint; that is the name 409."""
+    project = await _project(db_session)
+    item, _rev1 = await _rev(db_session, project)
+    base = root / project.storage_dir
+    await create_item(db_session, project, section="modelisation", name="Nouveau", user_id=None)
+    await db_session.commit()
+    _name_check_passes(monkeypatch)
+    with pytest.raises(ProjectFilesError) as caught:
+        await rename_item(db_session, project, item, "NOUVEAU")
+    assert (caught.value.status_code, caught.value.detail) == (
+        409,
+        "An item with this name already exists in this section",
+    )
+    assert isinstance(caught.value.__cause__, IntegrityError)
+    assert (base / "Modélisation" / "Support" / "R1" / "a.step").exists()
+
+
+@pytest.mark.asyncio
+async def test_rename_item_lets_another_integrity_error_through(db_session, root, monkeypatch):
+    project = await _project(db_session)
+    item, _rev1 = await _rev(db_session, project)
+    base = root / project.storage_dir
+    error = IntegrityError("UPDATE", {}, Exception("NOT NULL constraint failed: project_items.name"))
+
+    async def boom():
+        raise error
+
+    monkeypatch.setattr(db_session, "commit", boom)
+    with pytest.raises(IntegrityError) as caught:
+        await rename_item(db_session, project, item, "Nouveau")
+    assert caught.value is error
     assert (base / "Modélisation" / "Support" / "R1" / "a.step").exists()
     assert not (base / "Modélisation" / "Nouveau").exists()
 
@@ -867,6 +922,95 @@ async def test_revision_from_sources_records_derivation_and_pipeline(db_session,
     assert rev.pipeline_name == "H2D"
     assert rev.status == "wip"
     assert src.exists()  # sources are never touched
+
+
+# T-364: the derived-from target lives in another item, so the uploader's item
+# lock does not exclude its deletion while the files stream (or between a
+# PATCH's check and its flush). The link is checked again under the write lock.
+
+
+async def _delete_elsewhere(test_engine, revision_id: int) -> None:
+    """``delete_revision`` of ``revision_id`` through its own session, as a concurrent request would."""
+    async with AsyncSession(test_engine, expire_on_commit=False) as other:
+        revision, item, project = await project_files.get_revision_bundle(other, revision_id)
+        await delete_revision(other, project, item, revision)
+
+
+async def _upload_while_target_is_deleted(db_session, root, monkeypatch, test_engine, *, target_is_newest: bool):
+    project = await _project(db_session)
+    source_item, target = await _rev(db_session, project, section="scan", name="Mesh")
+    if not target_is_newest:
+        await add_revision(
+            db_session, project, source_item, [upload("b.ply")], note=None, derived_from_id=None, user_id=None
+        )
+    item = await create_item(db_session, project, section="modelisation", name="Support", user_id=None)
+    storage_dir, item_id, target_id = project.storage_dir, item.id, target.id
+    await db_session.commit()
+    real = project_files._stream_files
+
+    async def racing(folder, uploads):
+        await _delete_elsewhere(test_engine, target_id)
+        return await real(folder, uploads)
+
+    monkeypatch.setattr(project_files, "_stream_files", racing)
+    with pytest.raises(ProjectFilesError) as refused:
+        await add_revision(
+            db_session, project, item, [upload("c.step")], note=None, derived_from_id=target_id, user_id=None
+        )
+    assert (refused.value.status_code, refused.value.detail) == (
+        400,
+        "Derived-from revision must belong to the same project",
+    )
+    assert await _fresh_scalars(test_engine, select(ProjectRevision.id).where(ProjectRevision.item_id == item_id)) == []
+    assert await _fresh_scalars(test_engine, select(LibraryFile.id).where(LibraryFile.filename == "c.step")) == []
+    assert await _fresh_scalars(test_engine, select(ProjectRevision.id).where(ProjectRevision.id == target_id)) == []
+    assert list(root.rglob("c.step")) == []
+    assert all(list(folder.iterdir()) == [] for folder in (root / storage_dir).glob("*/Support/R1"))
+
+
+@pytest.mark.asyncio
+async def test_upload_refuses_a_derived_from_target_deleted_while_streaming(db_session, root, monkeypatch, test_engine):
+    await _upload_while_target_is_deleted(db_session, root, monkeypatch, test_engine, target_is_newest=False)
+
+
+@pytest.mark.asyncio
+async def test_upload_refuses_a_deleted_target_whose_id_the_new_revision_reused(
+    db_session, root, monkeypatch, test_engine
+):
+    # project_revisions.id has no AUTOINCREMENT: deleting the newest row hands its id to the next insert
+    await _upload_while_target_is_deleted(db_session, root, monkeypatch, test_engine, target_is_newest=True)
+
+
+@pytest.mark.asyncio
+async def test_update_revision_refuses_a_derived_from_target_deleted_after_the_check(
+    db_session, root, monkeypatch, test_engine
+):
+    project = await _project(db_session)
+    _scan, target = await _rev(db_session, project, section="scan", name="Mesh")
+    _cad, revision = await _rev(db_session, project)
+    target_id, revision_id = target.id, revision.id
+    await db_session.commit()
+    real = project_files._check_derived_from
+    calls = []
+
+    async def racing(db, project, revision_id, target_id):
+        await real(db, project, revision_id, target_id)
+        if not calls:
+            calls.append(target_id)
+            await _delete_elsewhere(test_engine, target_id)
+
+    monkeypatch.setattr(project_files, "_check_derived_from", racing)
+    with pytest.raises(ProjectFilesError) as refused:
+        await update_revision(db_session, project, revision, fields={"derived_from_id": target_id}, user_id=None)
+    assert (refused.value.status_code, refused.value.detail) == (
+        400,
+        "Derived-from revision must belong to the same project",
+    )
+    assert calls == [target_id]
+    await db_session.rollback()  # what get_db does with the route's error
+    assert await _fresh_scalars(
+        test_engine, select(ProjectRevision.derived_from_id).where(ProjectRevision.id == revision_id)
+    ) == [None]
 
 
 # A cancellation (BaseHTTPMiddleware on client disconnect) that lands while the
@@ -1907,6 +2051,60 @@ async def test_stream_files_removes_the_claimed_name_when_the_rename_fails(tmp_p
     assert list(folder.iterdir()) == []  # neither the claimed placeholder nor the .part survives
 
 
+@pytest.mark.asyncio
+async def test_stream_files_keeps_the_rename_error_when_removing_the_claimed_name_fails(tmp_path, monkeypatch, caplog):
+    folder = tmp_path / "R1"
+    folder.mkdir()
+    real_unlink = project_files._unlink
+
+    def refuse_replace(*_args, **_kwargs):
+        raise ValueError("rename refused")
+
+    def unlink(path, **kwargs):
+        if path.name == "a.step":
+            raise OSError("claimed name busy")
+        return real_unlink(path, **kwargs)
+
+    monkeypatch.setattr(project_files, "_replace", refuse_replace)
+    monkeypatch.setattr(project_files, "_unlink", unlink)
+    caplog.set_level("WARNING", logger=project_files.logger.name)
+    with pytest.raises(ValueError, match="rename refused"):
+        await project_files._stream_files(folder, [upload("a.step", b"geo")])
+    assert any("Could not remove" in r.getMessage() and "a.step" in r.getMessage() for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_stream_files_keeps_the_upload_error_and_cleans_earlier_files_when_the_part_cannot_go(
+    tmp_path, monkeypatch, caplog
+):
+    folder = tmp_path / "R1"
+    folder.mkdir()
+    real_stream = project_files._stream_upload_to_path
+    real_unlink = project_files._unlink
+    calls = 0
+
+    async def stream(upload_file, part, limit):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            part.write_bytes(b"half")
+            raise RuntimeError("upload broke")
+        return await real_stream(upload_file, part, limit)
+
+    def unlink(path, **kwargs):
+        if path.name.endswith(".part"):
+            raise OSError("part busy")
+        return real_unlink(path, **kwargs)
+
+    monkeypatch.setattr(project_files, "_stream_upload_to_path", stream)
+    monkeypatch.setattr(project_files, "_unlink", unlink)
+    caplog.set_level("WARNING", logger=project_files.logger.name)
+    with pytest.raises(RuntimeError, match="upload broke"):
+        await project_files._stream_files(folder, [upload("a.step", b"one"), upload("b.step", b"two")])
+    assert not (folder / "a.step").exists()  # the earlier file was still cleaned up
+    assert any("Could not remove" in r.getMessage() and ".part" in r.getMessage() for r in caplog.records)
+
+
 _STALE_PART = ".0123456789abcdef0123456789abcdef.part"
 
 
@@ -1953,10 +2151,10 @@ def test_sweep_logs_and_ignores_an_unlink_failure(tmp_path, monkeypatch, caplog)
     stale.write_bytes(b"half")
     _aged(stale, project_files.PART_GRACE_SECONDS + 60)
 
-    def refuse(self, *_args, **_kwargs):
+    def refuse(_path, **_kwargs):
         raise PermissionError("read-only folder")
 
-    monkeypatch.setattr(project_files.Path, "unlink", refuse)
+    monkeypatch.setattr(project_files, "_unlink", refuse)
     caplog.set_level("WARNING", logger=project_files.logger.name)
     project_files._sweep_stale_parts(tmp_path)  # must not raise
     assert stale.exists()
@@ -2130,14 +2328,14 @@ def test_cleanup_written_carries_on_past_a_file_that_cannot_be_removed(tmp_path,
     first, second, thumb = tmp_path / "a.step", tmp_path / "b.step", tmp_path / "b.png"
     for path in (first, second, thumb):
         path.write_bytes(b"x")
-    real_unlink = Path.unlink
+    real_unlink = project_files._unlink
 
-    def unlink(self, *args, **kwargs):
-        if self == first:
+    def unlink(path, **kwargs):
+        if path == first:
             raise OSError("busy")
-        return real_unlink(self, *args, **kwargs)
+        return real_unlink(path, **kwargs)
 
-    monkeypatch.setattr(Path, "unlink", unlink)
+    monkeypatch.setattr(project_files, "_unlink", unlink)
     caplog.set_level("WARNING", logger=project_files.logger.name)
     project_files._cleanup_written(
         [
@@ -2266,16 +2464,16 @@ async def test_add_revision_still_maps_to_409_when_the_r_folder_cannot_be_remove
     error = _commit_raises_integrity(
         db_session, monkeypatch, "UNIQUE constraint failed: project_revisions.item_id, project_revisions.number"
     )
-    real_rmdir = Path.rmdir
+    real_rmdir = project_files._rmdir
     refused: list[Path] = []
 
-    def rmdir(self, *args, **kwargs):
-        if self == folder:
-            refused.append(self)
+    def rmdir(path):
+        if path == folder:
+            refused.append(path)
             raise OSError("busy")
-        return real_rmdir(self, *args, **kwargs)
+        return real_rmdir(path)
 
-    monkeypatch.setattr(Path, "rmdir", rmdir)
+    monkeypatch.setattr(project_files, "_rmdir", rmdir)
     with pytest.raises(ProjectFilesError) as caught:
         await add_revision(db_session, project, item, [upload("a.ply")], note=None, derived_from_id=None, user_id=None)
     assert (caught.value.status_code, caught.value.detail) == (
@@ -3049,7 +3247,7 @@ def test_open_claimed_closes_the_descriptor_when_fdopen_fails(tmp_path, monkeypa
 
     dest = project_storage.claim_unique_file_path(tmp_path, "dest.bin")
     opened: list[int] = []
-    real_open = os.open
+    real_open = project_files._os_open
 
     def recording_open(*args, **kwargs):
         fd = real_open(*args, **kwargs)
@@ -3059,7 +3257,7 @@ def test_open_claimed_closes_the_descriptor_when_fdopen_fails(tmp_path, monkeypa
     def boom(_fd, *_args, **_kwargs):
         raise RuntimeError("fdopen failed")
 
-    monkeypatch.setattr(project_files.os, "open", recording_open)
+    monkeypatch.setattr(project_files, "_os_open", recording_open)
     monkeypatch.setattr(project_files.os, "fdopen", boom)
     with pytest.raises(RuntimeError, match="fdopen failed"):
         project_files._open_claimed(dest)

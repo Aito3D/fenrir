@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Plus } from 'lucide-react';
 import type { ProjectItemOut, ProjectSection } from '../../../api/client';
 import { useAuth } from '../../../contexts/AuthContext';
+import { useToast } from '../../../contexts/ToastContext';
 import { inputCls, focusRingCls } from '../../formStyles';
 import { ItemCard } from './ItemCard';
 import { NewItemDropCard } from './NewItemDropCard';
@@ -21,6 +22,7 @@ interface Props {
 export function SectionBlock({ section, items, actions }: Props) {
   const { t } = useTranslation();
   const { hasPermission } = useAuth();
+  const { showToast } = useToast();
   const canUpdate = hasPermission('projects:update');
   const [creating, setCreating] = useState(false);
   const arrived = useArrivals(items.map((i) => i.id));
@@ -39,7 +41,8 @@ export function SectionBlock({ section, items, actions }: Props) {
     const key = itemNameKey(itemName);
     const existing = items.find((i) => i.name_key === key);
     if (existing) {
-      if (!actions.isBusy(existing.id)) await actions.uploadRevision(existing.id, dropped);
+      if (actions.isBusy(existing.id)) showToast(t('projectsPdm.files.itemBusy', { name: existing.name }), 'error');
+      else await actions.uploadRevision(existing.id, dropped);
       return;
     }
     const id = await actions.createItem(section, itemName);

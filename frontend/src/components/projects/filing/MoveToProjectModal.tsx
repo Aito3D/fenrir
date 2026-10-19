@@ -80,6 +80,155 @@ function moveResultMessage(t: Translate, result: MoveToProjectResult, code: stri
   return parts.join(' · ');
 }
 
+const optionCls = (selected: boolean) =>
+  `flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-white transition-colors ${
+    selected ? 'bg-bambu-green/20 ring-1 ring-bambu-green/60' : 'hover:bg-bambu-dark-tertiary/40'
+  } ${focusRingCls}`;
+const radioRowCls =
+  'flex min-h-[40px] cursor-pointer items-center gap-3 rounded-lg border border-bambu-dark-tertiary px-3 py-2 text-sm text-white hover:bg-bambu-dark-tertiary has-[:checked]:border-bambu-green/60';
+
+type Suggestion = Awaited<ReturnType<typeof api.getFileProjectSuggestions>>[number];
+type ProjectSearch = ReturnType<typeof useProjectSearch>;
+
+/** The project chooser: the first file's suggestions, then the project search
+ *  and its results (the search state lives in the modal). */
+function ProjectChooser({ suggestions, search, searching, project, onPick }: {
+  suggestions: Suggestion[];
+  search: Pick<ProjectSearch, 'q' | 'setQ' | 'results'>;
+  searching: boolean;
+  project: PickedProject | null;
+  onPick: (p: PickedProject, itemId?: number | null) => void;
+}) {
+  const { t } = useTranslation();
+  const { q, setQ, results } = search;
+  return (
+    <>
+      {suggestions.length > 0 && (
+        <section className="space-y-1">
+          <h3 className="text-xs font-medium uppercase tracking-wide text-bambu-gray">{t('projectsPdm.filing.suggested')}</h3>
+          <ul className="space-y-0.5">
+            {suggestions.map((s) => {
+              const selected = project?.id === s.project_id;
+              return (
+                <li key={s.project_id}>
+                  <ProjectOptionButton
+                    code={s.code}
+                    name={s.name}
+                    pressed={selected}
+                    onClick={() => onPick({ id: s.project_id, code: s.code, name: s.name }, s.item_id)}
+                    className={optionCls(selected)}
+                  >
+                    {s.item_name && <span className="flex-shrink-0 truncate text-xs text-bambu-gray">{s.item_name}</span>}
+                  </ProjectOptionButton>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
+
+      <section className="space-y-1">
+        <ProjectSearchInput
+          value={q}
+          onChange={setQ}
+          label={t('projectsPdm.filing.searchProject')}
+          className="flex items-center gap-2 rounded-md border border-bambu-dark-tertiary bg-bambu-dark px-2 py-1.5"
+        >
+          {searching && <Loader2 aria-hidden="true" className="h-3.5 w-3.5 animate-spin text-bambu-gray" />}
+        </ProjectSearchInput>
+        {results.length > 0 && (
+          <ul className="max-h-48 space-y-0.5 overflow-y-auto">
+            {results.map((p) => {
+              const selected = project?.id === p.id;
+              return (
+                <li key={p.id}>
+                  <ProjectOptionButton
+                    code={p.code}
+                    name={p.name}
+                    pressed={selected}
+                    onClick={() => onPick({ id: p.id, code: p.code, name: p.name })}
+                    className={optionCls(selected)}
+                  />
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+    </>
+  );
+}
+
+/** Which Impression item the files go into: automatic, an existing one, or a new one. */
+function TargetItemFieldset({ items, treeLoading, itemChoice, onItemChoice, newItemName, onNewItemName }: {
+  items: { id: number; name: string }[];
+  treeLoading: boolean;
+  itemChoice: ItemChoice;
+  onItemChoice: (choice: ItemChoice) => void;
+  newItemName: string;
+  onNewItemName: (name: string) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <fieldset className="space-y-2">
+      <legend className="mb-1 text-xs font-medium uppercase tracking-wide text-bambu-gray">
+        {t('projectsPdm.filing.targetItem')}
+      </legend>
+      <label className={radioRowCls}>
+        <input
+          type="radio"
+          name="move-to-project-item"
+          checked={itemChoice === 'auto'}
+          onChange={() => onItemChoice('auto')}
+          className="accent-bambu-green"
+        />
+        <span>{t('projectsPdm.filing.autoItem')}</span>
+      </label>
+      {treeLoading ? (
+        <p role="status" className="flex items-center gap-2 px-3 text-sm text-bambu-gray-light">
+          <Loader2 className="h-4 w-4 animate-spin text-bambu-green" aria-hidden="true" />
+          {t('common.loading')}
+        </p>
+      ) : (
+        items.map((item) => (
+          <label key={item.id} className={radioRowCls}>
+            <input
+              type="radio"
+              name="move-to-project-item"
+              checked={itemChoice === item.id}
+              onChange={() => onItemChoice(item.id)}
+              className="accent-bambu-green"
+            />
+            <span className="min-w-0 break-words">{item.name}</span>
+          </label>
+        ))
+      )}
+      <label className={radioRowCls}>
+        <input
+          type="radio"
+          name="move-to-project-item"
+          checked={itemChoice === 'new'}
+          onChange={() => onItemChoice('new')}
+          className="accent-bambu-green"
+        />
+        <span>{t('projectsPdm.filing.newItem')}</span>
+      </label>
+      {itemChoice === 'new' && (
+        <input
+          type="text"
+          autoFocus
+          value={newItemName}
+          onChange={(e) => onNewItemName(e.target.value)}
+          aria-label={t('projectsPdm.filing.newItem')}
+          placeholder={t('projectsPdm.filing.newItemPlaceholder')}
+          maxLength={200}
+          className="w-full rounded-md border border-bambu-dark-tertiary bg-bambu-dark px-3 py-2 text-sm text-white placeholder:text-bambu-gray focus:border-bambu-green focus:outline-none"
+        />
+      )}
+    </fieldset>
+  );
+}
+
 /** File Manager → project: suggestions for the first file, a project search,
  *  then which Impression item the files go into. */
 export function MoveToProjectModal({ fileIds, fileName, onClose, onMoved }: Props) {
@@ -144,13 +293,6 @@ export function MoveToProjectModal({ fileIds, fileName, onClose, onMoved }: Prop
   const subject =
     fileIds.length === 1 && fileName ? fileName : t('projectsPdm.filing.fileCount', { count: fileIds.length });
 
-  const optionCls = (selected: boolean) =>
-    `flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-white transition-colors ${
-      selected ? 'bg-bambu-green/20 ring-1 ring-bambu-green/60' : 'hover:bg-bambu-dark-tertiary/40'
-    } ${focusRingCls}`;
-  const radioRowCls =
-    'flex min-h-[40px] cursor-pointer items-center gap-3 rounded-lg border border-bambu-dark-tertiary px-3 py-2 text-sm text-white hover:bg-bambu-dark-tertiary has-[:checked]:border-bambu-green/60';
-
   return createPortal(
     <div className={OVERLAY_CLS} onClick={onClose}>
       <div
@@ -169,116 +311,23 @@ export function MoveToProjectModal({ fileIds, fileName, onClose, onMoved }: Prop
           </p>
         </div>
 
-        {suggestions.length > 0 && (
-          <section className="space-y-1">
-            <h3 className="text-xs font-medium uppercase tracking-wide text-bambu-gray">{t('projectsPdm.filing.suggested')}</h3>
-            <ul className="space-y-0.5">
-              {suggestions.map((s) => {
-                const selected = project?.id === s.project_id;
-                return (
-                  <li key={s.project_id}>
-                    <ProjectOptionButton
-                      code={s.code}
-                      name={s.name}
-                      pressed={selected}
-                      onClick={() => pick({ id: s.project_id, code: s.code, name: s.name }, s.item_id)}
-                      className={optionCls(selected)}
-                    >
-                      {s.item_name && <span className="flex-shrink-0 truncate text-xs text-bambu-gray">{s.item_name}</span>}
-                    </ProjectOptionButton>
-                  </li>
-                );
-              })}
-            </ul>
-          </section>
-        )}
-
-        <section className="space-y-1">
-          <ProjectSearchInput
-            value={q}
-            onChange={setQ}
-            label={t('projectsPdm.filing.searchProject')}
-            className="flex items-center gap-2 rounded-md border border-bambu-dark-tertiary bg-bambu-dark px-2 py-1.5"
-          >
-            {searching && <Loader2 aria-hidden="true" className="h-3.5 w-3.5 animate-spin text-bambu-gray" />}
-          </ProjectSearchInput>
-          {results.length > 0 && (
-            <ul className="max-h-48 space-y-0.5 overflow-y-auto">
-              {results.map((p) => {
-                const selected = project?.id === p.id;
-                return (
-                  <li key={p.id}>
-                    <ProjectOptionButton
-                      code={p.code}
-                      name={p.name}
-                      pressed={selected}
-                      onClick={() => pick({ id: p.id, code: p.code, name: p.name })}
-                      className={optionCls(selected)}
-                    />
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </section>
+        <ProjectChooser
+          suggestions={suggestions}
+          search={{ q, setQ, results }}
+          searching={searching}
+          project={project}
+          onPick={pick}
+        />
 
         {project && (
-          <fieldset className="space-y-2">
-            <legend className="mb-1 text-xs font-medium uppercase tracking-wide text-bambu-gray">
-              {t('projectsPdm.filing.targetItem')}
-            </legend>
-            <label className={radioRowCls}>
-              <input
-                type="radio"
-                name="move-to-project-item"
-                checked={itemChoice === 'auto'}
-                onChange={() => setItemChoice('auto')}
-                className="accent-bambu-green"
-              />
-              <span>{t('projectsPdm.filing.autoItem')}</span>
-            </label>
-            {treeLoading ? (
-              <p role="status" className="flex items-center gap-2 px-3 text-sm text-bambu-gray-light">
-                <Loader2 className="h-4 w-4 animate-spin text-bambu-green" aria-hidden="true" />
-                {t('common.loading')}
-              </p>
-            ) : (
-              items.map((item) => (
-                <label key={item.id} className={radioRowCls}>
-                  <input
-                    type="radio"
-                    name="move-to-project-item"
-                    checked={itemChoice === item.id}
-                    onChange={() => setItemChoice(item.id)}
-                    className="accent-bambu-green"
-                  />
-                  <span className="min-w-0 break-words">{item.name}</span>
-                </label>
-              ))
-            )}
-            <label className={radioRowCls}>
-              <input
-                type="radio"
-                name="move-to-project-item"
-                checked={itemChoice === 'new'}
-                onChange={() => setItemChoice('new')}
-                className="accent-bambu-green"
-              />
-              <span>{t('projectsPdm.filing.newItem')}</span>
-            </label>
-            {itemChoice === 'new' && (
-              <input
-                type="text"
-                autoFocus
-                value={newItemName}
-                onChange={(e) => setNewItemName(e.target.value)}
-                aria-label={t('projectsPdm.filing.newItem')}
-                placeholder={t('projectsPdm.filing.newItemPlaceholder')}
-                maxLength={200}
-                className="w-full rounded-md border border-bambu-dark-tertiary bg-bambu-dark px-3 py-2 text-sm text-white placeholder:text-bambu-gray focus:border-bambu-green focus:outline-none"
-              />
-            )}
-          </fieldset>
+          <TargetItemFieldset
+            items={items}
+            treeLoading={treeLoading}
+            itemChoice={itemChoice}
+            onItemChoice={setItemChoice}
+            newItemName={newItemName}
+            onNewItemName={setNewItemName}
+          />
         )}
 
         <div className="flex justify-end gap-2">

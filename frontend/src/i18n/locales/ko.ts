@@ -9925,6 +9925,7 @@ export default {
       slicedRefused: '{{name}}은(는) 이미 슬라이스되었습니다. 대신 원본 .3mf 프로젝트를 업로드하세요.',
       noSettingsRefused: '{{name}}에 프린터 설정이 없습니다. Bambu Studio에서 열어 프린터를 선택하고 프로젝트로 저장하세요.',
       oneFile: '리비전에는 .3mf 하나만 들어갑니다. 각 부품을 별도의 항목으로 업로드하세요.',
+      itemBusy: '{{name}}을(를) 아직 업로드하는 중이라 드롭한 파일은 업로드되지 않았습니다',
       otherSections: '이전 파일',
       newRevision: '새 리비전',
       addFiles: '파일 추가',

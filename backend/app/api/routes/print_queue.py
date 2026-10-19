@@ -623,6 +623,13 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
     return response
 
 
+def _hide_aito_task(response: PrintQueueItemResponse, can_read_aito: bool) -> PrintQueueItemResponse:
+    """Fenrir: the Aito order a queue item is printed for is aito:read data."""
+    if not can_read_aito:
+        response.aito_task_id = None
+    return response
+
+
 @router.get("/", response_model=list[PrintQueueItemResponse])
 async def list_queue(
     printer_id: int | None = Query(None, description="Filter by printer (-1 for unassigned)"),
@@ -637,6 +644,7 @@ async def list_queue(
             Permission.QUEUE_READ_OWN,
         )
     ),
+    can_read_aito: bool = Depends(probe_permissions_if_auth_enabled(Permission.AITO_READ)),  # Fenrir
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """List all queue items, optionally filtered by printer or status."""
@@ -700,7 +708,7 @@ async def list_queue(
 
     result = await db.execute(query)
     items = result.scalars().all()
-    responses = [_enrich_response(item) for item in items]
+    responses = [_hide_aito_task(_enrich_response(item), can_read_aito) for item in items]
     await attach_trace_summaries(db, responses)
     return responses
 
@@ -2126,6 +2134,7 @@ async def get_queue_item(
             Permission.QUEUE_READ_OWN,
         )
     ),
+    can_read_aito: bool = Depends(probe_permissions_if_auth_enabled(Permission.AITO_READ)),  # Fenrir
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Get a specific queue item."""
@@ -2152,7 +2161,7 @@ async def get_queue_item(
         and (item.created_by_id is None or item.created_by_id != current_user.id)
     ):
         raise HTTPException(404, "Queue item not found")
-    response = _enrich_response(item)
+    response = _hide_aito_task(_enrich_response(item), can_read_aito)
     await attach_trace_summaries(db, [response])
     return response
 

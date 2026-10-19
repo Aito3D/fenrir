@@ -4,7 +4,8 @@ the three sites that share it: ``routes.project_files._record_linked``,
 
 A fake session records every call so the side-effect ORDER is asserted, plus
 the failure contract of each site (what is swallowed, what propagates, which
-logger and message, what is returned, whether the broadcast happens)."""
+logger and message, what is returned, whether the broadcast happens). A failing
+rollback is swallowed and logged as a second warning (T-362)."""
 
 import logging
 from types import SimpleNamespace
@@ -156,12 +157,17 @@ async def test_route_commit_failure_is_swallowed(patched, caplog):
 
 
 @pytest.mark.asyncio
-async def test_route_rollback_failure_propagates(patched):
+async def test_route_rollback_failure_is_swallowed_and_logged(patched, caplog):
     patched["record_fails"] = True
     db = patched["db"] = FakeSession(fail_rollback=True)
-    with pytest.raises(RuntimeError, match="rollback failed"):
-        await _call_route(db)
+    with caplog.at_level(logging.WARNING):
+        assert await _call_route(db) is None
     assert db.calls[-1] == ("rollback",)
+    assert not any(call[0] == "broadcast" for call in db.calls)
+    assert _warnings(caplog) == [
+        (ROUTE_LOGGER, f"{KIND} event failed for project 7", True),
+        (ROUTE_LOGGER, f"Rollback after the failed {KIND} event failed for project 7", True),
+    ]
 
 
 @pytest.mark.asyncio
@@ -253,11 +259,16 @@ async def test_filing_commit_failure_is_swallowed(patched, caplog):
 
 
 @pytest.mark.asyncio
-async def test_filing_rollback_failure_propagates(patched):
+async def test_filing_rollback_failure_is_swallowed_and_logged(patched, caplog):
     patched["record_fails"] = True
     db = patched["db"] = FakeSession(fail_rollback=True)
-    with pytest.raises(RuntimeError, match="rollback failed"):
-        await project_filing.record_revision_added(db, 7, ENTRY, 42)
+    with caplog.at_level(logging.WARNING):
+        assert await project_filing.record_revision_added(db, 7, ENTRY, 42) is None
+    assert db.calls[-1] == ("rollback",)
+    assert _warnings(caplog) == [
+        (FILING_LOGGER, "project.revision_added event failed for project 7", True),
+        (FILING_LOGGER, "Rollback after the failed project.revision_added event failed for project 7", True),
+    ]
 
 
 @pytest.mark.asyncio
@@ -327,11 +338,16 @@ async def test_fan_out_commit_failure_returns_empty_list(patched, caplog):
 
 
 @pytest.mark.asyncio
-async def test_fan_out_rollback_failure_propagates(patched):
+async def test_fan_out_rollback_failure_returns_empty_list(patched, caplog):
     patched["record_fails"] = True
     db = patched["db"] = FakeSession(fail_rollback=True)
-    with pytest.raises(RuntimeError, match="rollback failed"):
-        await _call_fan_out(db)
+    with caplog.at_level(logging.WARNING):
+        assert await _call_fan_out(db) == []
+    assert db.calls[-1] == ("rollback",)
+    assert _warnings(caplog) == [
+        (LINKS_LOGGER, "project.revision_added fan-out failed for project 7", True),
+        (LINKS_LOGGER, "Rollback after the failed project.revision_added fan-out failed for project 7", True),
+    ]
 
 
 @pytest.mark.asyncio

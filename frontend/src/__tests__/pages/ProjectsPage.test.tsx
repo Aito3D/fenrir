@@ -120,14 +120,10 @@ describe('ProjectsPage', () => {
 
       await user.click(screen.getByText('New Project'));
 
-      // Modal should open - look for modal content
-      await waitFor(() => {
-        // Modal may show "Create Project" or similar text
-        const modalContent = screen.queryByText(/create/i) ||
-                           screen.queryByRole('dialog') ||
-                           screen.queryByText(/name/i);
-        expect(modalContent).toBeTruthy();
-      });
+      // The create modal renders its own "New Project" heading (it has no dialog role)
+      // and the form's name field, neither of which exists on the list page.
+      expect(await screen.findByRole('heading', { name: 'New Project' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Create' })).toBeInTheDocument();
     });
   });
 
@@ -141,12 +137,11 @@ describe('ProjectsPage', () => {
 
       render(<ProjectsPage />);
 
-      await waitFor(() => {
-        // Either empty state message or the page title should be visible
-        const emptyMsg = screen.queryByText(/no projects/i);
-        const pageTitle = screen.queryByText('Projects');
-        expect(emptyMsg || pageTitle).toBeTruthy();
-      });
+      // The status filter defaults to "active", hence the filtered empty-state copy.
+      expect(await screen.findByRole('heading', { name: 'No active projects' })).toBeInTheDocument();
+      expect(screen.getByText("You don't have any active projects. Projects will appear here when their status changes.")).toBeInTheDocument();
+      expect(screen.queryByText('Functional Parts')).not.toBeInTheDocument();
+      expect(screen.queryByText('Art Collection')).not.toBeInTheDocument();
     });
   });
 

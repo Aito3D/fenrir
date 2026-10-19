@@ -43,6 +43,133 @@ function taskDescription(task: TaskDraft): string {
     .join('. ');
 }
 
+type LinkedProject = NonNullable<TaskProjectLink['project']>;
+/** 'pick' = the revision picker; a file = the print modal for it. */
+type PrintingState = 'pick' | { file: ProjectFileOut; warning?: string } | null;
+
+/** Linked: the project's code and name (to the project page), print and unlink. */
+function LinkedProjectControls({ project, canPrint, canLink, onPrint, onUnlink }: {
+  project: LinkedProject;
+  canPrint: boolean;
+  canLink: boolean;
+  onPrint: () => void;
+  onUnlink: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <>
+      <ProjectCodeChip code={project.code} />
+      <Link
+        to={`/projects/${project.id}`}
+        className={`min-w-0 truncate text-sm text-white hover:underline ${focusRingCls}`}
+      >
+        {project.name}
+      </Link>
+      {canPrint && (
+        <button type="button" className={`ml-auto ${smallBtn}`} onClick={onPrint}>
+          <Printer aria-hidden="true" className="h-3 w-3" />
+          {t('projectsPdm.print.print')}
+        </button>
+      )}
+      {canLink && (
+        <button type="button" className={`${canPrint ? '' : 'ml-auto '}${smallBtn}`} onClick={onUnlink}>
+          <Unlink aria-hidden="true" className="h-3 w-3" />
+          {t('projectsPdm.aito.unlink')}
+        </button>
+      )}
+    </>
+  );
+}
+
+/** Not linked (and allowed to link): create a project from the task, or pick an existing one. */
+function UnlinkedProjectControls({ canCreate, picking, onCreate, onTogglePicking }: {
+  canCreate: boolean;
+  picking: boolean;
+  onCreate: () => void;
+  onTogglePicking: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <>
+      {canCreate && (
+        <button type="button" className={smallBtn} onClick={onCreate}>
+          <FolderPlus aria-hidden="true" className="h-3 w-3" />
+          {t('projectsPdm.aito.newProject')}
+        </button>
+      )}
+      <button
+        type="button"
+        className={smallBtn}
+        aria-expanded={picking}
+        onClick={onTogglePicking}
+      >
+        <Link2 aria-hidden="true" className="h-3 w-3" />
+        {t('projectsPdm.aito.linkExisting')}
+      </button>
+    </>
+  );
+}
+
+/** The delivered files line of a linked task, with the edit button. */
+function DeliveredFilesLine({ deliveredText, canLink, onEdit }: { deliveredText: string; canLink: boolean; onEdit: () => void }) {
+  const { t, i18n } = useTranslation();
+  return (
+    <div className="flex items-center gap-2 text-bambu-gray">
+      <span className="flex-shrink-0">
+        {/* French sets a space before the colon. */}
+        {`${t('projectsPdm.aito.deliveredFiles')}${i18n.language?.startsWith('fr') ? ' :' : ':'}`}
+      </span>
+      <span className="min-w-0 flex-1 truncate text-bambu-gray-light" title={deliveredText}>
+        {deliveredText}
+      </span>
+      {canLink && (
+        <button
+          type="button"
+          aria-label={t('projectsPdm.aito.editDeliveries')}
+          title={t('projectsPdm.aito.editDeliveries')}
+          className={smallBtn}
+          onClick={onEdit}
+        >
+          <Pencil aria-hidden="true" className="h-3 w-3" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** Print from the linked project: the revision picker, then the print modal for the picked file. */
+function TaskPrintFlow({ printing, project, taskId, onPrinting, onPrinted }: {
+  printing: Exclude<PrintingState, null>;
+  project: LinkedProject;
+  taskId: number;
+  onPrinting: (printing: PrintingState) => void;
+  onPrinted: () => void;
+}) {
+  return (
+    <DropShield>
+      {printing === 'pick' ? (
+        <PrintRevisionPicker
+          projectId={project.id}
+          onPick={(file, warning) => onPrinting({ file, warning })}
+          onClose={() => onPrinting(null)}
+        />
+      ) : (
+        <PrintModal
+          mode="create"
+          libraryFileId={printing.file.id}
+          archiveName={printing.file.filename}
+          projectId={project.id}
+          aitoTaskId={taskId}
+          revisionWarning={printing.warning}
+          isolateEscape
+          onClose={() => onPrinting(null)}
+          onSuccess={onPrinted}
+        />
+      )}
+    </DropShield>
+  );
+}
+
 /** The "Projet" line of a saved Aito task (spec §4.1/§4.3): link or create a
  *  PDM project; once linked, its code and name (to the project page), unlink,
  *  and the delivered files with their picker. Never goes through the task
@@ -58,7 +185,7 @@ export function TaskProjectRow({
   taskId: number;
   link: TaskProjectLink | undefined;
 }) {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const { hasPermission } = useAuth();
   const { showToast } = useToast();
   const invalidate = useInvalidateProjectLinks();
@@ -69,8 +196,7 @@ export function TaskProjectRow({
   const [picking, setPicking] = useState(false);
   const [confirmUnlink, setConfirmUnlink] = useState(false);
   const [editingDeliveries, setEditingDeliveries] = useState(false);
-  // 'pick' = the revision picker; a file = the print modal for it.
-  const [printing, setPrinting] = useState<'pick' | { file: ProjectFileOut; warning?: string } | null>(null);
+  const [printing, setPrinting] = useState<PrintingState>(null);
   const project = link?.project ?? null;
   const deliveries = link?.deliveries ?? [];
 
@@ -107,71 +233,27 @@ export function TaskProjectRow({
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <span className="font-medium uppercase tracking-wide text-bambu-gray">{t('projectsPdm.aito.projectLabel')}</span>
         {project ? (
-          <>
-            <ProjectCodeChip code={project.code} />
-            <Link
-              to={`/projects/${project.id}`}
-              className={`min-w-0 truncate text-sm text-white hover:underline ${focusRingCls}`}
-            >
-              {project.name}
-            </Link>
-            {canPrint && (
-              <button type="button" className={`ml-auto ${smallBtn}`} onClick={() => setPrinting('pick')}>
-                <Printer aria-hidden="true" className="h-3 w-3" />
-                {t('projectsPdm.print.print')}
-              </button>
-            )}
-            {canLink && (
-              <button type="button" className={`${canPrint ? '' : 'ml-auto '}${smallBtn}`} onClick={() => setConfirmUnlink(true)}>
-                <Unlink aria-hidden="true" className="h-3 w-3" />
-                {t('projectsPdm.aito.unlink')}
-              </button>
-            )}
-          </>
+          <LinkedProjectControls
+            project={project}
+            canPrint={canPrint}
+            canLink={canLink}
+            onPrint={() => setPrinting('pick')}
+            onUnlink={() => setConfirmUnlink(true)}
+          />
         ) : !canLink ? (
           <span className="text-bambu-gray">—</span>
         ) : (
-          <>
-            {canCreate && (
-              <button type="button" className={smallBtn} onClick={() => setCreating(true)}>
-                <FolderPlus aria-hidden="true" className="h-3 w-3" />
-                {t('projectsPdm.aito.newProject')}
-              </button>
-            )}
-            <button
-              type="button"
-              className={smallBtn}
-              aria-expanded={picking}
-              onClick={() => setPicking((v) => !v)}
-            >
-              <Link2 aria-hidden="true" className="h-3 w-3" />
-              {t('projectsPdm.aito.linkExisting')}
-            </button>
-          </>
+          <UnlinkedProjectControls
+            canCreate={canCreate}
+            picking={picking}
+            onCreate={() => setCreating(true)}
+            onTogglePicking={() => setPicking((v) => !v)}
+          />
         )}
       </div>
 
       {project && (
-        <div className="flex items-center gap-2 text-bambu-gray">
-          <span className="flex-shrink-0">
-            {/* French sets a space before the colon. */}
-            {`${t('projectsPdm.aito.deliveredFiles')}${i18n.language?.startsWith('fr') ? ' :' : ':'}`}
-          </span>
-          <span className="min-w-0 flex-1 truncate text-bambu-gray-light" title={deliveredText}>
-            {deliveredText}
-          </span>
-          {canLink && (
-            <button
-              type="button"
-              aria-label={t('projectsPdm.aito.editDeliveries')}
-              title={t('projectsPdm.aito.editDeliveries')}
-              className={smallBtn}
-              onClick={() => setEditingDeliveries(true)}
-            >
-              <Pencil aria-hidden="true" className="h-3 w-3" />
-            </button>
-          )}
-        </div>
+        <DeliveredFilesLine deliveredText={deliveredText} canLink={canLink} onEdit={() => setEditingDeliveries(true)} />
       )}
 
       {picking && !project && (
@@ -214,31 +296,16 @@ export function TaskProjectRow({
           />,
           document.body,
         )}
-      {printing &&
-        project && (
-          <DropShield>
-            {printing === 'pick' ? (
-              <PrintRevisionPicker
-                projectId={project.id}
-                onPick={(file, warning) => setPrinting({ file, warning })}
-                onClose={() => setPrinting(null)}
-              />
-            ) : (
-              <PrintModal
-                mode="create"
-                libraryFileId={printing.file.id}
-                archiveName={printing.file.filename}
-                projectId={project.id}
-                aitoTaskId={taskId}
-                revisionWarning={printing.warning}
-                isolateEscape
-                onClose={() => setPrinting(null)}
-                // Links (counts), codes, the order timeline, tree and orders.
-                onSuccess={() => invalidate(orderId, [project.id])}
-              />
-            )}
-          </DropShield>
-        )}
+      {printing && project && (
+        <TaskPrintFlow
+          printing={printing}
+          project={project}
+          taskId={taskId}
+          onPrinting={setPrinting}
+          // Links (counts), codes, the order timeline, tree and orders.
+          onPrinted={() => invalidate(orderId, [project.id])}
+        />
+      )}
       {editingDeliveries && project && (
         <DeliveriesPicker
           orderId={orderId}

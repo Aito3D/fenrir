@@ -10314,6 +10314,7 @@ export default {
       slicedRefused: '{{name}} ya está laminado. Sube en su lugar el proyecto .3mf original.',
       noSettingsRefused: '{{name}} no tiene configuración de impresora. Ábrelo en Bambu Studio, elige la impresora y guárdalo como proyecto.',
       oneFile: 'Una revisión contiene un solo .3mf. Sube cada pieza como un elemento propio.',
+      itemBusy: '{{name}} todavía se está subiendo, por lo que los archivos soltados no se subieron',
       otherSections: 'Archivos antiguos',
       newRevision: 'Nueva revisión',
       addFiles: 'Añadir archivos',

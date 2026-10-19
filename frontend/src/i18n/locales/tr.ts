@@ -10232,6 +10232,7 @@ export default {
       slicedRefused: '{{name}} zaten dilimlenmiş. Bunun yerine orijinal .3mf projesini yükleyin.',
       noSettingsRefused: '{{name}} için yazıcı ayarı yok. Bambu Studio\'da açın, yazıcıyı seçin ve proje olarak kaydedin.',
       oneFile: 'Bir revizyon tek bir .3mf içerir. Her parçayı ayrı bir öğe olarak yükleyin.',
+      itemBusy: '{{name}} hâlâ yükleniyor, bu yüzden bırakılan dosyalar yüklenmedi',
       otherSections: 'Eski dosyalar',
       newRevision: 'Yeni revizyon',
       addFiles: 'Dosya ekle',

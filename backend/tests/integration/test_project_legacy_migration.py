@@ -548,7 +548,7 @@ async def test_a_read_error_while_hashing_defers_to_the_move(db_session, tmp_pat
     with pytest.raises(project_filing.LegacyMigrationError) as exc:
         await project_filing.migrate_project_legacy(db_session, await _fresh(db_session, Project, project_id))
 
-    assert str(exc.value) == "1 file(s) could not be moved (copy_failed: I/O error); run it again"
+    assert str(exc.value) == "1 file(s) could not be moved (copy_failed: could not copy the file); run it again"
     assert await _revisions(db_session, project_id) == [("impression", "Arm", 1, ["Arm.gcode"])]
     arm_row = await _fresh(db_session, LibraryFile, arm_id)
     assert (arm_row.revision_id, arm_row.file_path) == (None, arm_path)

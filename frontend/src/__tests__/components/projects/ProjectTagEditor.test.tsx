@@ -95,4 +95,24 @@ describe('ProjectTagEditor', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Suggest tags' }));
     expect(await screen.findByText('AI unavailable')).toBeInTheDocument();
   });
+
+  it('says AI is unavailable on a 502 and leaves the tags unchanged', async () => {
+    server.use(http.post('/api/v1/projects/ai/suggest-tags', () => HttpResponse.json({ detail: 'bad gateway' }, { status: 502 })));
+    const onChange = vi.fn();
+    render(<ProjectTagEditor value={[{ id: 1, name: 'drone' }]} onChange={onChange} title="Support" description="" />);
+    await userEvent.click(screen.getByRole('button', { name: 'Suggest tags' }));
+    expect(await screen.findByText('AI unavailable')).toBeInTheDocument();
+    expect(screen.queryByText('No suggestions')).not.toBeInTheDocument();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('says there are no suggestions when the AI returns an empty list', async () => {
+    server.use(http.post('/api/v1/projects/ai/suggest-tags', () => HttpResponse.json({ suggestions: [], model: 'm' })));
+    const onChange = vi.fn();
+    render(<ProjectTagEditor value={[]} onChange={onChange} title="Support" description="" />);
+    await userEvent.click(screen.getByRole('button', { name: 'Suggest tags' }));
+    expect(await screen.findByText('No suggestions')).toBeInTheDocument();
+    expect(screen.queryByText('AI unavailable')).not.toBeInTheDocument();
+    expect(onChange).not.toHaveBeenCalled();
+  });
 });

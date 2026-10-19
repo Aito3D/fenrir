@@ -10306,6 +10306,7 @@ export default {
       slicedRefused: '{{name}} ist bereits geslict. Lade stattdessen das ursprüngliche .3mf-Projekt hoch.',
       noSettingsRefused: '{{name}} enthält keine Druckereinrichtung. Öffne die Datei in Bambu Studio, wähle den Drucker und speichere sie als Projekt.',
       oneFile: 'Eine Revision enthält genau eine .3mf. Lade jedes Teil als eigenes Element hoch.',
+      itemBusy: '{{name}} wird noch hochgeladen, die abgelegten Dateien wurden daher nicht hochgeladen',
       otherSections: 'Ältere Dateien',
       newRevision: 'Neue Revision',
       addFiles: 'Dateien hinzufügen',

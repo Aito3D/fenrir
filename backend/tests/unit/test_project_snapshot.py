@@ -319,3 +319,29 @@ def test_lying_header_settings_part_leaves_config_empty(tmp_path):
         path.write_bytes(zf.fp.getvalue())
     snap = read_print_snapshot(path)
     assert snap is not None and snap.config is None and snap.config_hash is None
+
+
+def _model_zip(path, application, header_version=None, config_version=None):
+    files = {"3D/3dmodel.model": f'<model><metadata name="Application">{application}</metadata></model>'}
+    if header_version is not None:
+        files["Metadata/slice_info.config"] = f'<header_item key="X-BBL-Client-Version" value="{header_version}"/>'
+    if config_version is not None:
+        files["Metadata/project_settings.config"] = json.dumps({"version": config_version})
+    return _zip(path, files)
+
+
+def test_overlong_application_is_capped_at_64_chars(tmp_path):
+    snap = read_print_snapshot(_model_zip(tmp_path / "a.3mf", "N" * 100 + "-" + "9" * 100))
+    assert (snap.slicer_name, snap.slicer_version) == ("N" * 64, "9" * 64)
+
+
+def test_overlong_header_and_config_versions_are_capped(tmp_path):
+    from_header = read_print_snapshot(_model_zip(tmp_path / "b.3mf", "Slicer", header_version="1" * 90))
+    assert (from_header.slicer_name, from_header.slicer_version) == ("Slicer", "1" * 64)
+    from_config = read_print_snapshot(_model_zip(tmp_path / "c.3mf", "Slicer", config_version="2" * 90))
+    assert from_config.slicer_version == "2" * 64
+
+
+def test_exactly_64_chars_is_untouched(tmp_path):
+    snap = read_print_snapshot(_model_zip(tmp_path / "d.3mf", "N" * 64 + "-" + "9" * 64))
+    assert (snap.slicer_name, snap.slicer_version) == ("N" * 64, "9" * 64)

@@ -10291,6 +10291,7 @@ export default {
       slicedRefused: '{{name}} est déjà découpé. Téléversez plutôt le projet .3mf d\'origine.',
       noSettingsRefused: '{{name}} n\'a pas de configuration d\'imprimante. Ouvrez-le dans Bambu Studio, choisissez l\'imprimante et enregistrez-le comme projet.',
       oneFile: 'Une révision contient un seul .3mf. Téléversez chaque pièce comme un élément distinct.',
+      itemBusy: '{{name}} est encore en cours d\'envoi : les fichiers déposés n\'ont pas été envoyés',
       otherSections: 'Autres fichiers (anciens)',
       newRevision: 'Nouvelle révision',
       addFiles: 'Ajouter des fichiers',

@@ -134,6 +134,58 @@ describe('useResliceJobs', () => {
     expect(result.current.runFor(20)).toBeUndefined();
   });
 
+  it('shows the generic error when a failed job carries no detail', async () => {
+    const { result } = renderHook(() => useResliceJobs(7), { wrapper });
+    await act(() => result.current.start(20, 1, 50, 3, undefined));
+    jobState = { ...jobState, status: 'failed', error_status: 500, error_detail: '' };
+    await waitFor(() => expect(result.current.runFor(20)?.error).toBe('Unknown error'), POLL_WAIT);
+  });
+
+  it('resets the percent to null when a running job reports no progress', async () => {
+    const { result } = renderHook(() => useResliceJobs(7), { wrapper });
+    await act(() => result.current.start(20, 1, 50, 3, undefined));
+    await waitFor(() => expect(result.current.runFor(20)?.percent).toBe(40), POLL_WAIT);
+    jobState = { ...jobState, progress: undefined };
+    await waitFor(() => expect(result.current.runFor(20)?.percent).toBeNull(), POLL_WAIT);
+    expect(result.current.runFor(20)?.error).toBeNull();
+  });
+
+  describe('a run replaced on the same item while its poll is in flight', () => {
+    // Job 5's read is held open until released; meanwhile start() replaces the run with job 6.
+    const replaceDuringPoll = async (oldAnswer: () => Response) => {
+      let oldRequested = false;
+      let releaseOld!: () => void;
+      const oldGate = new Promise<void>((r) => { releaseOld = r; });
+      server.use(
+        http.post('/api/v1/projects/revisions/11/reslice', () => HttpResponse.json({ job_id: 6, status: 'pending', status_url: '/api/v1/slice-jobs/6' }, { status: 202 })),
+        http.get('/api/v1/slice-jobs/5', async () => {
+          oldRequested = true;
+          await oldGate;
+          return oldAnswer();
+        }),
+        http.get('/api/v1/slice-jobs/6', () => HttpResponse.json({ ...jobState, job_id: 6, progress: undefined })),
+      );
+      const hook = renderHook(() => useResliceJobs(7), { wrapper });
+      await act(() => hook.result.current.start(20, 1, 50, 3, undefined));
+      await waitFor(() => expect(oldRequested).toBe(true), POLL_WAIT);
+      await act(() => hook.result.current.start(20, 11, 60, 3, undefined));
+      expect(hook.result.current.runFor(20)).toMatchObject({ jobId: 6, error: null });
+      releaseOld();
+      await act(() => sleep(100)); // let the stale answer reach the poll loop
+      return hook.result;
+    };
+
+    it('does not overwrite the new run with the old job failure', async () => {
+      const result = await replaceDuringPoll(() => HttpResponse.json({ ...jobState, status: 'failed', error_detail: 'old failure' }) as Response);
+      expect(result.current.runFor(20)).toMatchObject({ jobId: 6, error: null });
+    });
+
+    it('does not mark the new run as lost when the old job answers 404', async () => {
+      const result = await replaceDuringPoll(() => HttpResponse.json({ detail: 'Job not found' }, { status: 404 }) as Response);
+      expect(result.current.runFor(20)).toMatchObject({ jobId: 6, error: null });
+    });
+  });
+
   it('records no run when the start request fails', async () => {
     server.use(http.post('/api/v1/projects/revisions/1/reslice', () => HttpResponse.json({ detail: 'nope' }, { status: 403 })));
     const { result } = renderHook(() => useResliceJobs(7), { wrapper });

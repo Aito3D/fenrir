@@ -2855,7 +2855,7 @@ async def _auto_file_upload(
     try:
         from backend.app.services import project_filing
 
-        if actor is not None and not actor.has_permission(Permission.PROJECTS_UPDATE.value):
+        if not project_filing.may_auto_file(actor):
             return None
         filed = await project_filing.auto_file_by_code(
             db,
@@ -3723,7 +3723,7 @@ async def combine_files(
     for lib_file in sources:
         if not lib_file.filename.lower().endswith(".stl"):
             raise HTTPException(status_code=400, detail=f"Only STL files can be combined: {lib_file.filename}")
-        src_path = _resolve_source_disk_path(lib_file)
+        src_path = _resolve_source_disk_path(lib_file) if lib_file.revision_id is None else _by_id_read_path(lib_file)
         if src_path is None or not src_path.exists():
             raise HTTPException(status_code=404, detail=f"Source file missing on disk: {lib_file.filename}")
         parts.append(CombinePart(name=lib_file.filename, path=src_path, copies=copies_by_id[lib_file.id]))
@@ -3880,9 +3880,9 @@ async def add_files_to_queue(
 
         try:
             # Verify file exists on disk
-            file_path = Path(app_settings.base_dir) / lib_file.file_path
+            file_path = _by_id_read_path(lib_file, refused_as_missing=True)
 
-            if not file_path.exists():
+            if file_path is None or not file_path.exists():
                 errors.append(
                     AddToQueueError(file_id=file_id, filename=lib_file.filename, error="File not found on disk")
                 )
@@ -4026,7 +4026,7 @@ async def get_library_file_plates(
     if not lib_file:
         raise HTTPException(status_code=404, detail="File not found")
 
-    file_path = Path(app_settings.base_dir) / lib_file.file_path
+    file_path = _by_id_read_path(lib_file)
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="File not found on disk")
 
@@ -4310,7 +4310,7 @@ async def get_library_file_plate_thumbnail(
     result = await db.execute(LibraryFile.active().where(LibraryFile.id == file_id))
     lib_file = _ensure_library_file_visible(result.scalar_one_or_none(), user, can_read_all)
 
-    file_path = Path(app_settings.base_dir) / lib_file.file_path
+    file_path = _by_id_read_path(lib_file)
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="File not found on disk")
 
@@ -4427,7 +4427,7 @@ async def get_library_file_filament_requirements(
     lib_file = _ensure_library_file_visible(result.scalar_one_or_none(), user, can_read_all)
 
     # Get the full file path
-    file_path = Path(app_settings.base_dir) / lib_file.file_path
+    file_path = _by_id_read_path(lib_file)
 
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="File not found on disk")
@@ -5850,7 +5850,7 @@ async def slice_library_file(
     if not (src_lower.endswith(".stl") or src_lower.endswith(".3mf")):
         raise HTTPException(status_code=400, detail="Source file must be STL or 3MF")
 
-    src_path = Path(app_settings.base_dir) / lib_file.file_path
+    src_path = _by_id_read_path(lib_file)
     if not src_path.exists():
         raise HTTPException(status_code=404, detail="Source file missing on disk")
 
@@ -6341,6 +6341,30 @@ def _guarded_read_path(file: LibraryFile) -> Path | None:
 
     path = revision_file_path(file.file_path)
     if path is None:
+        raise HTTPException(status_code=404, detail="File not found")
+    return path
+
+
+def _by_id_read_path(file: LibraryFile, *, refused_as_missing: bool = False) -> Path | None:
+    """Fenrir: where a by-id library route outside ``_guarded_read_path`` reads ``file`` from.
+
+    A file that is not a project revision keeps the plain ``base_dir / file_path``
+    join those routes always used. A revision file goes through the projects-tree
+    symlink guard (``project_files.revision_file_path``). One it refuses, or whose
+    link leaves ``base_dir`` (``to_absolute_path`` raises for that), answers 404
+    "File not found" like ``_guarded_read_path``; with ``refused_as_missing`` it
+    comes back as ``None`` instead, for a batch route that reports it like a file
+    missing on disk.
+    """
+    if file.revision_id is None:
+        return Path(app_settings.base_dir) / file.file_path
+    from backend.app.services.project_files import revision_file_path
+
+    try:
+        path = revision_file_path(file.file_path)
+    except ValueError:  # a symlink leading out of base_dir
+        path = None
+    if path is None and not refused_as_missing:
         raise HTTPException(status_code=404, detail="File not found")
     return path
 

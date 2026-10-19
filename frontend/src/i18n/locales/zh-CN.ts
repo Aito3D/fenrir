@@ -10289,6 +10289,7 @@ export default {
       slicedRefused: '{{name}} 已经切片。请改为上传原始的 .3mf 项目。',
       noSettingsRefused: '{{name}} 没有打印机设置。请在 Bambu Studio 中打开，选择打印机后另存为项目。',
       oneFile: '一个修订版只能包含一个 .3mf。请将每个零件作为单独的条目上传。',
+      itemBusy: '{{name}} 仍在上传，因此拖放的文件未上传',
       otherSections: '旧文件',
       newRevision: '新版本',
       addFiles: '添加文件',
