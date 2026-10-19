@@ -28,10 +28,12 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 COPY backend/ ./backend/
 COPY pyproject.toml ./
 
-# Cross-stack contract fixtures: backend tests assert the frontend's
-# generated fixtures match the current backend rules
-# (tests/unit/test_aito_board_rules_contract.py).
-COPY frontend/src/__tests__/fixtures/ ./frontend/src/__tests__/fixtures/
+# Backend tests also read the frontend sources (cross-stack contract fixtures
+# in tests/unit/test_aito_board_rules_contract.py, and source sweeps such as
+# test_webhook_endpoint_list.py) and scripts/ (test_check_postgres_upgrade.py).
+# CI runs this image without mounts, so they are copied in.
+COPY frontend/src/ ./frontend/src/
+COPY scripts/ ./scripts/
 
 
 # Create necessary directories
