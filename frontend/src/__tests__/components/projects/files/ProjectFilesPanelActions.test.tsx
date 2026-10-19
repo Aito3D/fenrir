@@ -349,16 +349,11 @@ describe('ProjectFilesPanel actions', () => {
     expect(row.className).not.toContain('ring-bambu-green');
   });
 
-  it('collapses and reopens a section', async () => {
+  it('keeps the section always open, with no collapse toggle', async () => {
     render(<ProjectFilesPanel projectId={7} />);
     await screen.findByText('Support');
-    const toggle = screen.getByRole('button', { name: /^Printing/ });
-    expect(toggle).toHaveAttribute('aria-expanded', 'true');
-    await userEvent.click(toggle);
-    expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    expect(screen.queryByText('Support')).not.toBeInTheDocument();
-    await userEvent.click(toggle);
-    expect(screen.getByText('Support')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Printing/ })).not.toBeInTheDocument();
+    expect(screen.getByText('Printing')).toBeInTheDocument();
   });
 
   describe('"Older files" group', () => {

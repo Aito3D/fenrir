@@ -5886,10 +5886,10 @@ export default {
       energy: '에너지',
       totalCost: '총 비용',
       total: '합계',
-      includesBom: 'BOM 포함',
       wear: '프린터 마모',
       budget: '예산',
-      remaining: '남은 예산'
+      remaining: '남은 예산',
+      overBudget: '예산 초과',
     },
     subProjects: {
       title: '하위 프로젝트 ({{count}})',
@@ -5916,30 +5916,19 @@ export default {
       progressTooltip: '{{target}}회 중 {{done}}회 인쇄 완료',
       noFiles: '이 폴더에 파일이 없습니다.'
     },
-    bom: {
-      title: '부품 목록',
-      acquired: '{{total}}개 중 {{completed}}개 확보',
-      showAll: '전체 표시',
-      hideDone: '완료된 것 숨기기',
-      addPart: '부품 추가',
-      noAddPermission: '부품 추가 권한이 없습니다',
-      partNamePlaceholder: '부품 이름 (예: M3x8 나사)',
-      partName: '부품 이름',
-      qty: '수량',
-      price: '가격 ({{currency}})',
-      sourcingUrlPlaceholder: '구매 URL (선택사항)',
-      remarksPlaceholder: '비고 (선택사항)',
-      deletePart: '부품 삭제',
-      deleteConfirm: '"{{name}}"을(를) 삭제하시겠습니까?',
-      noUpdatePermission: '부품 업데이트 권한이 없습니다',
-      noEditPermission: '부품 편집 권한이 없습니다',
-      noDeletePermission: '부품 삭제 권한이 없습니다',
-      totalCost: '총 비용:',
-      empty: '부품 목록에 부품이 없습니다. 하드웨어, 전자 부품 또는 기타 구성품을 추가하여 조달이 필요한 것을 추적하세요.'
-    },
     timeline: {
       title: '활동 타임라인',
-      empty: '아직 활동이 없습니다.'
+      empty: '아직 활동이 없습니다.',
+      earlier: '이전',
+      showAll: '모두 보기 ({{total}})',
+      showLess: '간단히 보기',
+    },
+    details: {
+      title: '세부 정보',
+      linkedFolders: '연결된 폴더',
+      subProjects: '하위 프로젝트',
+      created: '생성일',
+      queueEmpty: '대기열 없음',
     },
     template: {
       saveAsTemplate: '템플릿으로 저장',

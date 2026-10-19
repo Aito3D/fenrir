@@ -1019,6 +1019,19 @@ body {
   --sidebar-in-duration: 400ms;
 }
 
+/* A fresh "Sliced" on a project card: the check gives one press as it lands.
+   Plays only when the slice finishes while the card is on screen. */
+@keyframes slice-done {
+  from { transform: scale(0.85); }
+  to { transform: scale(1); }
+}
+.animate-slice-done {
+  animation: slice-done 200ms var(--ease-signature);
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-slice-done { animation: none; }
+}
+
 /* Generic mount entrance — the app-wide counterpart to .animate-calc-rise.
    `backwards` fill keeps staggered children hidden through their delay. */
 @keyframes rise {

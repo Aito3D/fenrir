@@ -7,7 +7,7 @@
 /// <reference types="@testing-library/jest-dom" />
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { ProjectDetailPage } from '../../pages/ProjectDetailPage';
@@ -183,9 +183,15 @@ describe('ProjectDetailPage', () => {
 
       render(<ProjectDetailPage />);
 
+      // Once in the Linked folders panel (with its file count) and once in the
+      // Details rail, both opening the folder in the File Manager.
       await waitFor(() => {
-        expect(screen.getByText('Sliced Files')).toBeInTheDocument();
+        expect(screen.getAllByText('Sliced Files')).toHaveLength(2);
       });
+      const panel = screen.getByTestId('project-linked-folders');
+      expect(within(panel).getByText('Sliced Files').closest('a')).toHaveAttribute('href', '/files?folder=10');
+      const details = screen.getByTestId('project-details');
+      expect(within(details).getByRole('link', { name: 'Sliced Files' })).toHaveAttribute('href', '/files?folder=10');
     });
   });
 

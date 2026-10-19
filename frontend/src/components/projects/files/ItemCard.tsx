@@ -56,6 +56,8 @@ interface Props {
   /** The details tray is open under this card's row. */
   open: boolean;
   onToggleDetails: () => void;
+  /** Arrived after the grid first rendered (a fresh upload): rises in once. */
+  entering?: boolean;
 }
 
 /** The 4px strip on top of the card: the shown revision's status (decision 14). */
@@ -77,7 +79,7 @@ const badgeCls = (fileType: string) =>
 // files panel's other icon buttons. One row of five always fits (arithmetic in the task-7 report).
 const actionBtn = `flex h-[44px] min-w-[44px] flex-1 items-center justify-center rounded-md text-bambu-gray hover:bg-bambu-dark-tertiary hover:text-white md:h-8 md:min-w-8 ${focusRingCls}`;
 // 44px touch targets below md (the chip row wraps on a phone card), compact chips from md up.
-const chipBtn = `inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded border px-1.5 font-mono text-[11px] font-semibold md:min-h-0 md:min-w-0 md:py-0.5 ${focusRingCls}`;
+const chipBtn = `inline-flex h-[44px] min-w-[44px] items-center justify-center rounded-md border px-2 font-mono text-sm font-semibold md:h-8 md:min-w-[40px] ${focusRingCls}`;
 
 const isPreviewable = (f: ProjectFileOut) =>
   PREVIEWABLE_TYPES.includes(f.file_type.toLowerCase()) ||
@@ -94,7 +96,7 @@ function printFileOf(revision: ProjectRevisionOut, state: RevisionSliceState): P
 
 /** One Printing item as a card (layout D): the picked revision's picture, facts and slice state,
  *  icon actions, and the details tray rendered as the next grid cell. */
-export function ItemCard({ item, actions, open, onToggleDetails }: Props) {
+export function ItemCard({ item, actions, open, onToggleDetails, entering = false }: Props) {
   const { t, i18n } = useTranslation();
   const { hasPermission, hasAnyPermission } = useAuth();
   const canUpdate = hasPermission('projects:update') && isSectionEnabled(item.section);
@@ -106,6 +108,10 @@ export function ItemCard({ item, actions, open, onToggleDetails }: Props) {
   const shown = revisions.find((r) => r.id === pickedId) ?? revisions[0];
   const older = shown !== undefined && shown !== revisions[0];
   const slice = useRevisionSlice(shown);
+  // The slice state each revision first showed on this card: a later change is news worth a
+  // short entrance; the state a revision loads with (or is switched to via a chip) is not.
+  const firstSlice = useRef(new Map<number, string>());
+  if (shown && !firstSlice.current.has(shown.id)) firstSlice.current.set(shown.id, slice.state);
   const busy = actions.isBusy(item.id);
   const input = useRef<HTMLInputElement>(null);
   const moreRef = useRef<HTMLButtonElement>(null);
@@ -206,7 +212,7 @@ export function ItemCard({ item, actions, open, onToggleDetails }: Props) {
     <>
       <li
         data-testid={`item-card-${item.id}`}
-        className={`relative flex flex-col overflow-hidden rounded-lg border bg-bambu-dark-secondary transition-colors ${
+        className={`relative flex flex-col overflow-hidden rounded-lg border bg-bambu-dark-secondary transition-colors ${entering ? 'animate-rise' : ''} ${
           open || dragOver ? 'border-bambu-green ring-1 ring-bambu-green' : 'border-bambu-dark-tertiary can-hover:hover:border-bambu-green/50'
         }`}
         {...dropHandlers}
@@ -215,7 +221,7 @@ export function ItemCard({ item, actions, open, onToggleDetails }: Props) {
         <div className="relative">
           <div
             data-testid={`card-thumb-${item.id}`}
-            className={`flex aspect-square items-center justify-center overflow-hidden bg-bambu-dark ${older ? 'opacity-40' : ''}`}
+            className={`flex aspect-square items-center justify-center overflow-hidden bg-bambu-dark transition-opacity duration-200 ease-[var(--ease-signature)] ${older ? 'opacity-40' : ''}`}
           >
             {display?.has_thumbnail ? (
               <img src={api.getLibraryFileThumbnailUrl(display.id)} loading="lazy" alt=""
@@ -236,13 +242,13 @@ export function ItemCard({ item, actions, open, onToggleDetails }: Props) {
             </span>
           )}
           {older && (
-            <span className="absolute inset-x-0 bottom-0 bg-black/70 py-1 text-center text-[11px] text-bambu-gray-light">
+            <span className="absolute inset-x-0 bottom-0 animate-fade-in bg-black/70 py-1 text-center text-[11px] text-bambu-gray-light">
               {t('projectsPdm.files.olderRevision')}
             </span>
           )}
         </div>
 
-        <div className="flex flex-wrap items-center gap-1 px-3 pt-2.5">
+        <div className="flex flex-wrap items-center gap-1.5 px-3 pt-2.5">
           {revisions.map((r) => {
             const current = r === shown;
             return (
@@ -256,7 +262,7 @@ export function ItemCard({ item, actions, open, onToggleDetails }: Props) {
           <button type="button" aria-label={t('projectsPdm.files.newRevision')} title={t('projectsPdm.files.newRevision')}
             disabled={!canUpdate || busy} onClick={() => input.current?.click()}
             className={`${chipBtn} border-dashed border-bambu-dark-tertiary text-bambu-gray hover:border-bambu-green hover:text-bambu-green disabled:opacity-40 disabled:hover:border-bambu-dark-tertiary disabled:hover:text-bambu-gray`}>
-            <Plus className="h-3 w-3" />
+            <Plus className="h-4 w-4" />
           </button>
           {shown && (
             <span className={`${chipBase} ml-auto text-[11px] ${STATUS_CHIP_CLS[shown.status]}`}>{t(STATUS_LABEL_KEYS[shown.status])}</span>
@@ -289,7 +295,8 @@ export function ItemCard({ item, actions, open, onToggleDetails }: Props) {
                   <span className="truncate" title={profileLine}>{profileLine}</span>
                 </div>
               )}
-              <SliceLine state={slice.state} percent={slice.percent} error={slice.error} printCount={shown.print_count}
+              <SliceLine key={`${shown.id}-${slice.state}`} state={slice.state} percent={slice.percent} error={slice.error} printCount={shown.print_count}
+                changed={slice.state !== firstSlice.current.get(shown.id)}
                 onRetry={canUpdate && source ? () => void actions.sliceRevision(shown.id) : undefined} />
               <div className="mt-1 text-[11px]">
                 {[shown.created_by ? t('projectsPdm.files.byAuthor', { name: shown.created_by }) : null,
@@ -366,7 +373,10 @@ export function ItemCard({ item, actions, open, onToggleDetails }: Props) {
   );
 }
 
-function SliceLine({ state, percent, error, printCount, onRetry }: {
+// `changed`: the state moved since the card mounted, so the new line fades in (and a
+// fresh "Sliced" gives its check one press). A page load never animates.
+function SliceLine({ state, percent, error, printCount, onRetry, changed }: {
+  changed: boolean;
   state: RevisionSliceState;
   percent: number | null;
   error: string | null;
@@ -374,24 +384,25 @@ function SliceLine({ state, percent, error, printCount, onRetry }: {
   onRetry?: () => void;
 }) {
   const { t } = useTranslation();
+  const enter = changed ? 'animate-fade-in' : '';
   if (state === 'slicing') {
     return (
-      <div className="mt-2">
+      <div className={`mt-2 ${enter}`}>
         <div className="mb-1 flex justify-between text-[11px] text-bambu-green">
           <span>{t('slice.slicing')}</span>
           {percent !== null && <span>{`${percent}%`}</span>}
         </div>
         <div role="progressbar" aria-label={t('slice.slicing')} aria-valuemin={0} aria-valuemax={100}
           aria-valuenow={percent ?? undefined} className="h-1 overflow-hidden rounded bg-bambu-dark-tertiary">
-          <div className={`h-full bg-bambu-green transition-[width] ${percent === null ? 'w-1/3 animate-pulse' : ''}`}
-            style={percent !== null ? { width: `${percent}%` } : undefined} />
+          <div className={`h-full bg-bambu-green ${percent === null ? 'w-1/3 animate-pulse' : 'w-full origin-left transition-transform duration-300 ease-[var(--ease-signature)]'}`}
+            style={percent !== null ? { transform: `scaleX(${percent / 100})` } : undefined} />
         </div>
       </div>
     );
   }
   if (state === 'failed') {
     return (
-      <div className="mt-1 flex flex-wrap items-center gap-x-2 text-red-400">
+      <div className={`mt-1 flex flex-wrap items-center gap-x-2 text-red-400 ${enter}`}>
         <span className="flex min-w-0 items-center gap-1 break-words">
           <AlertCircle className="h-3 w-3 shrink-0" aria-hidden />
           {error ? t('projectsPdm.slice.failed', { detail: error }) : t('queue.status.slice_failed')}
@@ -407,14 +418,14 @@ function SliceLine({ state, percent, error, printCount, onRetry }: {
   }
   if (state === 'none') {
     return (
-      <div className="mt-1 flex items-center gap-1 text-amber-400">
+      <div className={`mt-1 flex items-center gap-1 text-amber-400 ${enter}`}>
         <AlertCircle className="h-3 w-3" aria-hidden />{t('projectsPdm.files.notSliced')}
       </div>
     );
   }
   return (
-    <div className="mt-1 flex items-center gap-1 text-bambu-green">
-      <CheckCircle2 className="h-3 w-3" aria-hidden />
+    <div className={`mt-1 flex items-center gap-1 text-bambu-green ${enter}`}>
+      <CheckCircle2 className={`h-3 w-3 ${changed ? 'animate-slice-done' : ''}`} aria-hidden />
       <span>{t('projectsPdm.files.sliced')}</span>
       {printCount > 0 && <span>{`· ${t('projectsPdm.print.printCount', { count: printCount })}`}</span>}
     </div>

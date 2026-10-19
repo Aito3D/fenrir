@@ -1,10 +1,10 @@
 import { useRef, useState } from 'react';
+import { useArrivals } from '../../../hooks/useArrivals';
 import { useTranslation } from 'react-i18next';
 import { Plus } from 'lucide-react';
 import type { ProjectItemOut, ProjectSection } from '../../../api/client';
 import { useAuth } from '../../../contexts/AuthContext';
 import { inputCls, focusRingCls } from '../../formStyles';
-import { CollapsibleHeader } from './CollapsibleHeader';
 import { ItemCard } from './ItemCard';
 import { NewItemDropCard } from './NewItemDropCard';
 import type { FileActions } from './useFileActions';
@@ -22,8 +22,8 @@ export function SectionBlock({ section, items, actions }: Props) {
   const { t } = useTranslation();
   const { hasPermission } = useAuth();
   const canUpdate = hasPermission('projects:update');
-  const [open, setOpen] = useState(items.length > 0);
   const [creating, setCreating] = useState(false);
+  const arrived = useArrivals(items.map((i) => i.id));
   const [name, setName] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   // Item created by this form whose first upload failed: a retry only re-uploads.
@@ -35,7 +35,6 @@ export function SectionBlock({ section, items, actions }: Props) {
 
   const onDropFiles = async (dropped: File[]) => {
     if (!actions.acceptsFiles(dropped)) return;
-    setOpen(true);
     const itemName = itemNameFromFile(dropped[0].name);
     const key = itemNameKey(itemName);
     const existing = items.find((i) => i.name_key === key);
@@ -79,56 +78,57 @@ export function SectionBlock({ section, items, actions }: Props) {
     >
       <div className="flex flex-wrap items-center gap-2 p-2">
         <h3 className="min-w-0 flex-1 basis-32 text-sm font-semibold text-white">
-          <CollapsibleHeader open={open} onToggle={() => setOpen((o) => !o)} label={t(SECTION_LABEL_KEYS[section])} count={items.length} />
+          <span className="flex min-h-[44px] items-center gap-1.5 md:min-h-0">
+            <span>{t(SECTION_LABEL_KEYS[section])}</span>{' '}
+            <span className="text-xs font-normal text-bambu-gray">{items.length}</span>
+          </span>
         </h3>
         {canUpdate && (
-          <button type="button" onClick={() => { setOpen(true); if (creating) closeForm(); else setCreating(true); }}
+          <button type="button" onClick={() => { if (creating) closeForm(); else setCreating(true); }}
             className={`inline-flex min-h-[44px] items-center gap-1 rounded-lg px-2 py-1 text-xs text-bambu-green hover:bg-bambu-dark-tertiary md:min-h-0 ${focusRingCls}`}>
             <Plus className="h-3.5 w-3.5" />{t('projectsPdm.files.newItem')}
           </button>
         )}
       </div>
-      {open && (
-        <div className="space-y-2 px-2 pb-2">
-          {creating && (
-            <form className="flex flex-wrap items-center gap-2" onSubmit={(e) => { e.preventDefault(); void submit(); }}>
-              <input autoFocus value={name} onChange={(e) => setName(e.target.value)} disabled={createdId !== null}
-                aria-label={t('projectsPdm.files.itemNameLabel')} placeholder={t('projectsPdm.files.itemNameLabel')}
-                className={`${inputCls} min-w-0 flex-1 basis-40`} />
-              <button type="button" onClick={() => chooser.current?.click()}
-                className={`min-h-[44px] rounded-lg bg-bambu-dark-tertiary px-3 py-1.5 text-xs text-white md:min-h-0 ${focusRingCls}`}>
-                {files.length ? files.map((f) => f.name).join(', ') : t('projectsPdm.files.chooseFiles')}
-              </button>
-              <input ref={chooser} type="file" accept={PRINTABLE_ACCEPT} className="hidden" data-testid={`new-item-files-${section}`}
-                onChange={(e) => {
-                  const picked = Array.from(e.target.files ?? []);
-                  if (!actions.acceptsFiles(picked)) {
-                    e.target.value = '';
-                    return;
-                  }
-                  setFiles(picked);
-                  if (picked.length && !name.trim()) setName(itemNameFromFile(picked[0].name));
-                }} />
-              <button type="submit" disabled={!name.trim() || !files.length || submitting}
-                className={`min-h-[44px] rounded-lg bg-bambu-green px-3 py-1.5 text-xs text-white disabled:opacity-50 md:min-h-0 ${focusRingCls}`}>
-                {submitting ? t('projectsPdm.files.uploading') : t('projectsPdm.files.newItem')}
-              </button>
-            </form>
-          )}
-          {items.length === 0 && !creating && <p className="px-1 py-2 text-xs text-bambu-gray">{t('projectsPdm.files.emptySection')}</p>}
-          {(items.length > 0 || canUpdate) && (
-            // Dense flow: the full-width tray sits right after its card in the DOM, and the cards
-            // after it fill the rest of that card's row, so the tray opens under the row.
-            <ul className="grid grid-flow-row-dense grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-              {items.map((item) => (
-                <ItemCard key={item.id} item={item} actions={actions} open={openId === item.id}
-                  onToggleDetails={() => setOpenId((id) => (id === item.id ? null : item.id))} />
-              ))}
-              {canUpdate && <NewItemDropCard section={section} onFiles={onDropFiles} />}
-            </ul>
-          )}
-        </div>
-      )}
+      <div className="space-y-2 px-2 pb-2">
+        {creating && (
+          <form className="flex flex-wrap items-center gap-2" onSubmit={(e) => { e.preventDefault(); void submit(); }}>
+            <input autoFocus value={name} onChange={(e) => setName(e.target.value)} disabled={createdId !== null}
+              aria-label={t('projectsPdm.files.itemNameLabel')} placeholder={t('projectsPdm.files.itemNameLabel')}
+              className={`${inputCls} min-w-0 flex-1 basis-40`} />
+            <button type="button" onClick={() => chooser.current?.click()}
+              className={`min-h-[44px] rounded-lg bg-bambu-dark-tertiary px-3 py-1.5 text-xs text-white md:min-h-0 ${focusRingCls}`}>
+              {files.length ? files.map((f) => f.name).join(', ') : t('projectsPdm.files.chooseFiles')}
+            </button>
+            <input ref={chooser} type="file" accept={PRINTABLE_ACCEPT} className="hidden" data-testid={`new-item-files-${section}`}
+              onChange={(e) => {
+                const picked = Array.from(e.target.files ?? []);
+                if (!actions.acceptsFiles(picked)) {
+                  e.target.value = '';
+                  return;
+                }
+                setFiles(picked);
+                if (picked.length && !name.trim()) setName(itemNameFromFile(picked[0].name));
+              }} />
+            <button type="submit" disabled={!name.trim() || !files.length || submitting}
+              className={`min-h-[44px] rounded-lg bg-bambu-green px-3 py-1.5 text-xs text-white disabled:opacity-50 md:min-h-0 ${focusRingCls}`}>
+              {submitting ? t('projectsPdm.files.uploading') : t('projectsPdm.files.newItem')}
+            </button>
+          </form>
+        )}
+        {items.length === 0 && !creating && <p className="px-1 py-2 text-xs text-bambu-gray">{t('projectsPdm.files.emptySection')}</p>}
+        {(items.length > 0 || canUpdate) && (
+          // Dense flow: the full-width tray sits right after its card in the DOM, and the cards
+          // after it fill the rest of that card's row, so the tray opens under the row.
+          <ul className="grid grid-flow-row-dense grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+            {items.map((item) => (
+              <ItemCard key={item.id} item={item} actions={actions} open={openId === item.id}
+                onToggleDetails={() => setOpenId((id) => (id === item.id ? null : item.id))} entering={arrived.has(item.id)} />
+            ))}
+            {canUpdate && <NewItemDropCard section={section} onFiles={onDropFiles} />}
+          </ul>
+        )}
+      </div>
     </section>
   );
 }

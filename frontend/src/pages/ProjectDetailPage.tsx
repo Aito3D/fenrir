@@ -11,10 +11,8 @@ import {
   Edit3,
   Loader2,
   Package,
-  Clock,
   CheckCircle,
   XCircle,
-  ListTodo,
   Printer,
   ChevronRight,
   FileText,
@@ -22,44 +20,33 @@ import {
   AlertTriangle,
   Save,
   X,
-  Trash2,
-  Plus,
-  History,
   FolderTree,
   Copy,
-  ExternalLink,
-  ShoppingCart,
   FolderOpen,
+  FolderKanban,
   Download,
-  Pencil,
   FileBox,
+  Info,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { projectKeys } from '../components/projects/projectQueries';
-import { parseUTCDate, formatDateOnly, formatDateTime, formatDurationFromHours, type TimeFormat } from '../utils/date';
-import type { Archive, ProjectUpdate, BOMItem, BOMItemCreate, BOMItemUpdate, LibraryFileListItem } from '../api/client';
-import { Card, CardContent } from '../components/Card';
+import { parseUTCDate, formatDateOnly, type TimeFormat } from '../utils/date';
+import type { Archive, ProjectUpdate, LibraryFileListItem } from '../api/client';
 import { Button } from '../components/Button';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import { RichTextEditor } from '../components/RichTextEditor';
-import { ConfirmModal } from '../components/ConfirmModal';
 import { PrintModal } from '../components/PrintModal';
 
 // Project edit modal (reused from ProjectsPage)
 import { ProjectModal } from './ProjectsPage';
 import { getCurrencySymbol } from '../utils/currency';
 import { isSlicedLibraryFile } from '../utils/libraryFiles';
-import { NumberInput } from '../components/NumberInput';
-import { CalcInput } from '../components/CalcInput';
 import { useUiSettings } from '../hooks/useUiSettings';
-
-function formatFilament(grams: number): string {
-  if (grams >= 1000) {
-    return `${(grams / 1000).toFixed(2)}kg`;
-  }
-  return `${Math.round(grams)}g`;
-}
+import { ProjectPanel } from '../components/projects/detail/ProjectPanel';
+import { ProjectKpiStrip } from '../components/projects/detail/ProjectKpiStrip';
+import { ProjectActivityRail } from '../components/projects/detail/ProjectActivityRail';
+import { formatFilament } from '../components/projects/detail/format';
 
 type TFunction = (key: string, options?: Record<string, unknown>) => string;
 
@@ -78,42 +65,9 @@ function StatusBadge({ status, t }: { status: string; t: TFunction }) {
   };
 
   return (
-    <span className={`px-2 py-1 rounded text-sm font-medium ${color}`}>
+    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${color}`}>
       {labels[status] || status.charAt(0).toUpperCase() + status.slice(1)}
     </span>
-  );
-}
-
-function StatCard({
-  icon: Icon,
-  label,
-  value,
-  subValue,
-  hint,
-  color = 'text-bambu-gray',
-}: {
-  icon: React.ElementType;
-  label: string;
-  value: string | number;
-  subValue?: string;
-  hint?: string;
-  color?: string;
-}) {
-  return (
-    <Card>
-      <CardContent className="p-4">
-        <div className="flex items-center gap-3" title={hint}>
-          <div className={`p-2 rounded-lg bg-bambu-dark ${color}`}>
-            <Icon className="w-5 h-5" />
-          </div>
-          <div>
-            <p className="text-sm text-bambu-gray">{label}</p>
-            <p className="text-xl font-semibold text-white">{value}</p>
-            {subValue && <p className="text-xs text-bambu-gray/70">{subValue}</p>}
-          </div>
-        </div>
-      </CardContent>
-    </Card>
   );
 }
 
@@ -122,28 +76,6 @@ function revisionCaption(archive: Archive, t: TFunction): string {
   return [archive.revision_label, archive.order_id != null ? t('projectsPdm.aito.orderLabel', { id: archive.order_id }) : null]
     .filter(Boolean)
     .join(' · ');
-}
-
-// Fenrir: a BOM part's price field (add and edit forms) — takes a calculation, never negative, two decimals.
-function BomPriceInput({
-  value,
-  onValueChange,
-  placeholder,
-}: {
-  value: string;
-  onValueChange: (raw: string) => void;
-  placeholder: string;
-}) {
-  return (
-    <CalcInput
-      value={value}
-      onValueChange={onValueChange}
-      normalize={(n) => Math.max(0, Math.round(n * 100) / 100)}
-      wrapperClassName="flex-1 min-w-0"
-      className="w-full bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded px-3 py-2 text-sm text-white placeholder-bambu-gray focus:outline-none focus:border-bambu-green"
-      placeholder={placeholder}
-    />
-  );
 }
 
 function ArchiveGrid({ archives, t }: { archives: Archive[]; t: TFunction }) {
@@ -157,7 +89,7 @@ function ArchiveGrid({ archives, t }: { archives: Archive[]; t: TFunction }) {
   }
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+    <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 2xl:grid-cols-7 gap-3">
       {archives.map((archive) => (
         <Link
           key={archive.id}
@@ -214,7 +146,10 @@ function PriorityBadge({ priority, t }: { priority: string; t: TFunction }) {
   const { color, label } = config[priority as keyof typeof config] || config.normal;
 
   return (
-    <span className={`px-2 py-1 rounded text-xs font-medium flex items-center gap-1 ${color}`}>
+    <span
+      title={`${t('projectDetail.priorityLabel')} ${label}`}
+      className={`px-2 py-0.5 rounded-full text-xs font-medium flex items-center gap-1 ${color}`}
+    >
       {priority === 'urgent' && <AlertTriangle className="w-3 h-3" />}
       {label}
     </span>
@@ -258,12 +193,6 @@ export function ProjectDetailPage() {
   const { data: archives, isLoading: archivesLoading } = useQuery({
     queryKey: ['project-archives', projectId],
     queryFn: () => api.getProjectArchives(projectId),
-    enabled: projectId > 0,
-  });
-
-  const { data: bomItems, isLoading: bomLoading } = useQuery({
-    queryKey: ['project-bom', projectId],
-    queryFn: () => api.getProjectBOM(projectId),
     enabled: projectId > 0,
   });
 
@@ -355,126 +284,6 @@ export function ProjectDetailPage() {
     setNotesContent('');
   };
 
-  // BOM handlers
-  const [newBomName, setNewBomName] = useState('');
-  const [newBomQty, setNewBomQty] = useState(1);
-  const [newBomPrice, setNewBomPrice] = useState('');
-  const [newBomUrl, setNewBomUrl] = useState('');
-  const [newBomRemarks, setNewBomRemarks] = useState('');
-  const [showBomForm, setShowBomForm] = useState(false);
-  const [hideBomCompleted, setHideBomCompleted] = useState(false);
-  const [editingBomItem, setEditingBomItem] = useState<BOMItem | null>(null);
-  const [editBomName, setEditBomName] = useState('');
-  const [editBomQty, setEditBomQty] = useState(1);
-  const [editBomPrice, setEditBomPrice] = useState('');
-  const [editBomUrl, setEditBomUrl] = useState('');
-  const [editBomRemarks, setEditBomRemarks] = useState('');
-
-  // Confirm modal state
-  const [confirmModal, setConfirmModal] = useState<{
-    isOpen: boolean;
-    title: string;
-    message: string;
-    onConfirm: () => void;
-  }>({ isOpen: false, title: '', message: '', onConfirm: () => {} });
-
-  const createBomMutation = useMutation({
-    mutationFn: (data: BOMItemCreate) => api.createBOMItem(projectId, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['project-bom', projectId] });
-      queryClient.invalidateQueries({ queryKey: projectKeys.project(projectId) });
-      setNewBomName('');
-      setNewBomQty(1);
-      setNewBomPrice('');
-      setNewBomUrl('');
-      setNewBomRemarks('');
-      setShowBomForm(false);
-      showToast(t('projectDetail.toast.partAdded'), 'success');
-    },
-    onError: (error: Error) => showToast(error.message, 'error'),
-  });
-
-  const updateBomMutation = useMutation({
-    mutationFn: ({ itemId, data }: { itemId: number; data: BOMItemUpdate }) =>
-      api.updateBOMItem(projectId, itemId, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['project-bom', projectId] });
-      queryClient.invalidateQueries({ queryKey: projectKeys.project(projectId) });
-      setEditingBomItem(null);
-    },
-    onError: (error: Error) => showToast(error.message, 'error'),
-  });
-
-  const deleteBomMutation = useMutation({
-    mutationFn: (itemId: number) => api.deleteBOMItem(projectId, itemId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['project-bom', projectId] });
-      queryClient.invalidateQueries({ queryKey: projectKeys.project(projectId) });
-      showToast(t('projectDetail.toast.partRemoved'), 'success');
-    },
-    onError: (error: Error) => showToast(error.message, 'error'),
-  });
-
-  const handleAddBomItem = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newBomName.trim()) return;
-    createBomMutation.mutate({
-      name: newBomName.trim(),
-      quantity_needed: newBomQty,
-      unit_price: newBomPrice ? parseFloat(newBomPrice) : undefined,
-      sourcing_url: newBomUrl.trim() || undefined,
-      remarks: newBomRemarks.trim() || undefined,
-    });
-  };
-
-  const handleToggleAcquired = (item: BOMItem) => {
-    const newQty = item.is_complete ? 0 : item.quantity_needed;
-    updateBomMutation.mutate({
-      itemId: item.id,
-      data: { quantity_acquired: newQty },
-    });
-  };
-
-  const handleDeleteBomItem = (itemId: number, itemName: string) => {
-    setConfirmModal({
-      isOpen: true,
-      title: t('projectDetail.bom.deletePart'),
-      message: t('projectDetail.bom.deleteConfirm', { name: itemName }),
-      onConfirm: () => {
-        setConfirmModal(prev => ({ ...prev, isOpen: false }));
-        deleteBomMutation.mutate(itemId);
-      },
-    });
-  };
-
-  const handleEditBomItem = (item: BOMItem) => {
-    setEditingBomItem(item);
-    setEditBomName(item.name);
-    setEditBomQty(item.quantity_needed);
-    setEditBomPrice(item.unit_price?.toString() || '');
-    setEditBomUrl(item.sourcing_url || '');
-    setEditBomRemarks(item.remarks || '');
-  };
-
-  const handleSaveBomEdit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingBomItem || !editBomName.trim()) return;
-    updateBomMutation.mutate({
-      itemId: editingBomItem.id,
-      data: {
-        name: editBomName.trim(),
-        quantity_needed: editBomQty,
-        unit_price: editBomPrice ? parseFloat(editBomPrice) : undefined,
-        sourcing_url: editBomUrl.trim() || undefined,
-        remarks: editBomRemarks.trim() || undefined,
-      },
-    });
-  };
-
-  const handleCancelBomEdit = () => {
-    setEditingBomItem(null);
-  };
-
   const handleExportProject = async () => {
     try {
       const { blob, filename } = await api.exportProjectZip(Number(projectId));
@@ -500,15 +309,6 @@ export function ProjectDetailPage() {
     onError: (error: Error) => showToast(error.message, 'error'),
   });
 
-  const formatTimelineDate = (timestamp: string) => {
-    return formatDateTime(timestamp, timeFormat, {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
-
   if (projectLoading) {
     return (
       <div className="flex items-center justify-center py-24">
@@ -531,1032 +331,457 @@ export function ProjectDetailPage() {
   }
 
   const stats = project.stats;
-  // Plates progress: total_archives / target_count
-  const platesProgressPercent = stats?.progress_percent ?? 0;
-  // Parts progress: completed_prints / target_parts_count
-  const partsProgressPercent = stats?.parts_progress_percent ?? 0;
+  const children = project.children ?? [];
+  const folders = linkedFolders ?? [];
+  const dueStatus = getDueDateStatus(project.due_date, t);
+  const canUpdate = hasPermission('projects:update');
+
+  const notesAction = !editingNotes ? (
+    <Button
+      variant="secondary"
+      size="sm"
+      onClick={handleStartEditNotes}
+      disabled={!canUpdate}
+      title={!canUpdate ? t('projectDetail.notes.noEditPermission') : undefined}
+    >
+      <Edit3 className="w-4 h-4 mr-1" />
+      {t('common.edit')}
+    </Button>
+  ) : (
+    <>
+      <Button variant="secondary" size="sm" onClick={handleCancelNotes} disabled={updateMutation.isPending}>
+        <X className="w-4 h-4 mr-1" />
+        {t('common.cancel')}
+      </Button>
+      <Button size="sm" onClick={handleSaveNotes} disabled={updateMutation.isPending}>
+        {updateMutation.isPending ? (
+          <Loader2 className="w-4 h-4 animate-spin mr-1" />
+        ) : (
+          <Save className="w-4 h-4 mr-1" />
+        )}
+        {t('common.save')}
+      </Button>
+    </>
+  );
 
   return (
-    <div className="p-4 md:p-8 space-y-8">
-      {/* Breadcrumb */}
-      <div className="flex items-center gap-2 text-sm text-bambu-gray">
-        <Link to="/projects" className="hover:text-white transition-colors">
-          {t('nav.projects')}
-        </Link>
-        <ChevronRight className="w-4 h-4" />
-        <span className="text-white">{project.name}</span>
-      </div>
-
-      {/* Header: wraps on phones (buttons drop below); while the title form is
-          open it takes the full row under the back button. */}
-      <div className="flex flex-wrap items-start gap-x-4 gap-y-3 animate-rise-lg vt-page-title">
+    <div className="p-4 md:p-8 space-y-5">
+      {/* Breadcrumb, with the way back */}
+      <div className="flex items-center gap-2 text-sm text-bambu-gray min-w-0">
         <button
           onClick={() => navigate('/projects')}
-          className="p-2 rounded-lg bg-bambu-card hover:bg-bambu-dark-tertiary transition-colors"
+          aria-label={t('projectDetail.backToProjects')}
+          title={t('projectDetail.backToProjects')}
+          className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg hover:bg-bambu-dark-tertiary transition-colors md:min-h-9 md:min-w-9"
         >
           <ArrowLeft className="w-5 h-5 text-bambu-gray" />
         </button>
-        <div
-          className="mt-3 w-4 h-4 rounded-full shrink-0"
-          style={{ backgroundColor: project.color || '#6b7280' }}
-        />
-        <div className={`min-w-0 ${headerEditing ? 'order-last basis-full' : 'flex-1 basis-56 sm:flex-initial sm:basis-auto'}`}>
-          <ProjectHeader key={project.id} project={project} onEditingChange={setHeaderEditing} />
-        </div>
-        <StatusBadge status={project.status} t={t} />
-        <div className="flex gap-2 sm:ml-auto">
-          <Button
-            variant="secondary"
-            onClick={handleExportProject}
-            disabled={!hasPermission('projects:read')}
-            title={!hasPermission('projects:read') ? t('projectDetail.noExportPermission') : t('projectDetail.exportProject')}
-          >
-            <Download className="w-4 h-4 mr-2" />
-            {t('projectDetail.export')}
-          </Button>
-          <Button
-            onClick={() => setShowEditModal(true)}
-            disabled={!hasPermission('projects:update')}
-            title={!hasPermission('projects:update') ? t('projectDetail.noEditPermission') : undefined}
-          >
-            <Edit3 className="w-4 h-4 mr-2" />
-            {t('common.edit')}
-          </Button>
-        </div>
+        <Link to="/projects" className="hover:text-white transition-colors">
+          {t('nav.projects')}
+        </Link>
+        <ChevronRight className="w-4 h-4 shrink-0" />
+        <span className="text-white truncate">{project.name}</span>
       </div>
 
-      <ProjectFilesPanel projectId={projectId} />
-
-      <ProjectOrdersCard projectId={projectId} />
-
-      {/* Progress bars (if targets set) */}
-      {(project.target_count || project.target_parts_count || project.target_sets) && (
-        <Card>
-          <CardContent className="p-4 space-y-4">
-            {/* Plates progress */}
-            {project.target_count && (
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm text-bambu-gray">{t('projectDetail.progress.platesProgress')}</span>
-                  <span className="text-sm font-medium text-white">
-                    {stats?.total_archives || 0} / {project.target_count} {t('projectDetail.progress.printJobs')}
-                  </span>
-                </div>
-                <div className="h-3 bg-bambu-dark rounded-full overflow-hidden">
-                  <div
-                    className="h-full transition-all duration-500"
-                    style={{
-                      width: `${Math.min(platesProgressPercent, 100)}%`,
-                      backgroundColor: platesProgressPercent >= 100 ? '#22c55e' : project.color || '#6b7280',
-                    }}
-                  />
-                </div>
-                <div className="flex justify-between mt-1">
-                  <span className="text-xs text-bambu-gray/70">
-                    {t('projectDetail.progress.percentComplete', { percent: platesProgressPercent.toFixed(0) })}
-                  </span>
-                  {stats?.remaining_prints != null && stats.remaining_prints > 0 && (
-                    <span className="text-xs text-bambu-gray/70">
-                      {t('projectDetail.progress.remaining', { count: stats.remaining_prints })}
-                    </span>
-                  )}
-                </div>
-              </div>
+      {/* Header card: cover, title (edited in place), badges, meta, actions, KPIs */}
+      <header
+        data-testid="project-header"
+        className="rounded-xl border border-bambu-dark-tertiary bg-bambu-dark-secondary card-shadow p-4 md:p-5 animate-rise-lg vt-page-title"
+      >
+        <div className="flex flex-wrap items-start gap-4">
+          <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-bambu-dark-tertiary bg-bambu-dark">
+            {project.cover_image_filename ? (
+              <img
+                src={api.getProjectCoverImageUrl(project.id, project.updated_at)}
+                alt={t('projects.coverImageAlt')}
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              <FolderKanban
+                data-testid="project-cover-placeholder"
+                className="h-7 w-7"
+                style={{ color: project.color || '#6b7280' }}
+                aria-hidden="true"
+              />
             )}
-            {/* Parts progress */}
-            {project.target_parts_count && (
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm text-bambu-gray">{t('projectDetail.progress.partsProgress')}</span>
-                  <span className="text-sm font-medium text-white">
-                    {stats?.completed_prints || 0} / {project.target_parts_count} {t('projectDetail.progress.parts')}
-                  </span>
-                </div>
-                <div className="h-3 bg-bambu-dark rounded-full overflow-hidden">
-                  <div
-                    className="h-full transition-all duration-500"
-                    style={{
-                      width: `${Math.min(partsProgressPercent, 100)}%`,
-                      backgroundColor: partsProgressPercent >= 100 ? '#22c55e' : project.color || '#6b7280',
-                    }}
-                  />
-                </div>
-                <div className="flex justify-between mt-1">
-                  <span className="text-xs text-bambu-gray/70">
-                    {t('projectDetail.progress.percentComplete', { percent: partsProgressPercent.toFixed(0) })}
-                  </span>
-                  {stats?.remaining_parts != null && stats.remaining_parts > 0 && (
-                    <span className="text-xs text-bambu-gray/70">
-                      {t('projectDetail.progress.remaining', { count: stats.remaining_parts })}
+          </div>
+          <div className={`min-w-0 ${headerEditing ? 'order-last basis-full' : 'flex-1 basis-56'}`}>
+            <ProjectHeader
+              key={project.id}
+              project={project}
+              onEditingChange={setHeaderEditing}
+              badges={
+                <>
+                  <StatusBadge status={project.status} t={t} />
+                  {project.priority && project.priority !== 'normal' && (
+                    <PriorityBadge priority={project.priority} t={t} />
+                  )}
+                </>
+              }
+              meta={
+                project.due_date ? (
+                  <span className="flex items-center gap-1" data-testid="project-due">
+                    <Calendar className="w-3.5 h-3.5" aria-hidden="true" />
+                    <span className="text-white">
+                      {formatDateOnly(project.due_date, { year: 'numeric', month: 'short', day: 'numeric' })}
                     </span>
-                  )}
-                </div>
-              </div>
-            )}
-            {/* Complete sets progress (#1897): min per-file completed count */}
-            {project.target_sets ? (
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm text-bambu-gray">{t('projectDetail.progress.setsProgress')}</span>
-                  <span className="text-sm font-medium text-white">
-                    {completeSets ?? 0} / {project.target_sets} {t('projectDetail.progress.sets')}
+                    {dueStatus && (
+                      <>
+                        <span aria-hidden="true">·</span>
+                        <span className={dueStatus.color}>{dueStatus.label}</span>
+                      </>
+                    )}
                   </span>
-                </div>
-                <div className="h-3 bg-bambu-dark rounded-full overflow-hidden">
-                  <div
-                    className="h-full transition-all duration-500"
-                    style={{
-                      width: `${Math.min(((completeSets ?? 0) / project.target_sets) * 100, 100)}%`,
-                      backgroundColor: (completeSets ?? 0) >= project.target_sets ? '#22c55e' : project.color || '#6b7280',
-                    }}
-                  />
-                </div>
-                <p className="text-xs text-bambu-gray/70 mt-1">{t('projectDetail.progress.setsHint')}</p>
-              </div>
-            ) : null}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Stats grid */}
-      {stats && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-bambu-dark text-bambu-green">
-                  <Package className="w-5 h-5" />
-                </div>
-                <div>
-                  <p className="text-sm text-bambu-gray">{t('projectDetail.stats.printJobs')}</p>
-                  <p className="text-xl font-semibold text-white">{stats.total_archives} <span className="text-sm font-normal text-bambu-gray">{t('projectDetail.stats.total')}</span></p>
-                  {stats.failed_prints > 0 && (
-                    <p className="text-sm text-status-error">{t('projectDetail.stats.failed', { count: stats.failed_prints })}</p>
-                  )}
-                  <p className="text-sm text-bambu-gray">{t('projectDetail.stats.partsPrinted', { count: stats.completed_prints })}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <StatCard
-            icon={Clock}
-            label={t('projectDetail.stats.printTime')}
-            value={formatDurationFromHours(stats.total_print_time_hours)}
-            color="text-yellow-600 dark:text-yellow-400"
-          />
-          <StatCard
-            icon={Printer}
-            label={t('projectDetail.stats.filamentUsed')}
-            value={formatFilament(stats.total_filament_grams)}
-            color="text-purple-600 dark:text-purple-400"
-          />
+                ) : undefined
+              }
+            />
+          </div>
+          <div className="flex w-full gap-2 sm:ml-auto sm:w-auto">
+            <Button
+              variant="secondary"
+              className="flex-1 sm:flex-none"
+              onClick={handleExportProject}
+              disabled={!hasPermission('projects:read')}
+              title={!hasPermission('projects:read') ? t('projectDetail.noExportPermission') : t('projectDetail.exportProject')}
+            >
+              <Download className="w-4 h-4 mr-2" />
+              {t('projectDetail.export')}
+            </Button>
+            <Button
+              className="flex-1 sm:flex-none"
+              onClick={() => setShowEditModal(true)}
+              disabled={!canUpdate}
+              title={!canUpdate ? t('projectDetail.noEditPermission') : undefined}
+            >
+              <Edit3 className="w-4 h-4 mr-2" />
+              {t('common.edit')}
+            </Button>
+          </div>
         </div>
-      )}
+        <ProjectKpiStrip project={project} completeSets={completeSets} currency={currency} />
+      </header>
 
-      {/* #1264: the whole programme in one place. Deliberately a separate card
-          from the stats grid above — the figures there are this project's own
-          prints, and the two must not read as one set. The API sends
-          rollup_stats only when there is a sub-project, so there is never an
-          identical pair on screen. */}
-      {project.rollup_stats && (
-        <Card>
-          <CardContent className="p-4">
-            <h2 className="text-lg font-semibold text-white flex items-center gap-2 mb-3">
-              <FolderTree className="w-5 h-5" />
-              {t('projectDetail.rollup.title', { count: project.descendant_count })}
-            </h2>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div>
-                <p className="text-xs text-bambu-gray uppercase">{t('projectDetail.stats.printJobs')}</p>
-                <p className="text-lg font-semibold text-white">{project.rollup_stats.total_archives}</p>
-                <p className="text-sm text-bambu-gray">
-                  {t('projectDetail.stats.partsPrinted', { count: project.rollup_stats.completed_prints })}
-                </p>
+      {/* Workspace + side rail: two columns on xl, the rail after the main column below */}
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="min-w-0 space-y-5" data-testid="project-main">
+          <ProjectFilesPanel projectId={projectId} />
+
+          <ProjectOrdersCard projectId={projectId} />
+
+          <ProjectPanel icon={Package} title={t('projectDetail.prints.title', { count: archives?.length || 0 })}>
+            {archivesLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-6 h-6 animate-spin text-bambu-green" />
               </div>
-              <div>
-                <p className="text-xs text-bambu-gray uppercase">{t('projectDetail.stats.printTime')}</p>
-                <p className="text-lg font-semibold text-white">
-                  {formatDurationFromHours(project.rollup_stats.total_print_time_hours)}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-bambu-gray uppercase">{t('projectDetail.stats.filamentUsed')}</p>
-                <p className="text-lg font-semibold text-white">
-                  {formatFilament(project.rollup_stats.total_filament_grams)}
-                </p>
-              </div>
-              {(() => {
-                const rollupCost =
-                  project.rollup_stats.estimated_cost +
-                  project.rollup_stats.total_energy_cost +
-                  (project.rollup_stats.total_wear_cost ?? 0) +
-                  project.rollup_stats.bom_cost;
-                if (rollupCost <= 0) return null;
-                return (
-                  <div>
-                    <p className="text-xs text-bambu-gray uppercase">{t('projectDetail.cost.totalCost')}</p>
-                    <p className="text-lg font-semibold text-bambu-green">
-                      {currency}{rollupCost.toFixed(2)}
-                    </p>
-                  </div>
-                );
-              })()}
-            </div>
-            {project.rollup_stats.progress_percent !== null && (
-              <div className="mt-4">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm text-bambu-gray">{t('projectDetail.rollup.progress')}</span>
-                  <span className="text-sm font-medium text-white">
-                    {t('projectDetail.rollup.percentComplete', {
-                      percent: project.rollup_stats.progress_percent.toFixed(0),
-                    })}
-                  </span>
-                </div>
-                <div className="h-3 bg-bambu-dark rounded-full overflow-hidden">
-                  <div
-                    className="h-full transition-all duration-500"
-                    style={{
-                      width: `${Math.min(project.rollup_stats.progress_percent, 100)}%`,
-                      backgroundColor:
-                        project.rollup_stats.progress_percent >= 100 ? '#22c55e' : project.color || '#6b7280',
-                    }}
-                  />
-                </div>
-              </div>
+            ) : (
+              <ArchiveGrid archives={archives || []} t={t} />
             )}
-          </CardContent>
-        </Card>
-      )}
+          </ProjectPanel>
 
-      {/* Cost tracking */}
-      {stats && (() => {
-        const totalCost = stats.estimated_cost + stats.total_energy_cost + (stats.total_wear_cost ?? 0) + stats.bom_cost;
-        return (stats.estimated_cost > 0 || totalCost > 0 || project.budget !== null);
-      })() && (
-        <Card>
-          <CardContent className="p-4">
-            <h2 className="text-lg font-semibold text-white mb-3">
-              {t('projectDetail.cost.title')}
-            </h2>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div>
-                <p className="text-xs text-bambu-gray uppercase">{t('projectDetail.cost.filamentCost')}</p>
-                <p className="text-lg font-semibold text-white">
-                  {currency}{stats.estimated_cost.toFixed(2)}
-                </p>
+          <ProjectPanel icon={FileText} title={t('projectDetail.notes.title')} action={notesAction} testId="project-notes">
+            {editingNotes ? (
+              <RichTextEditor
+                content={notesContent}
+                onChange={setNotesContent}
+                placeholder={t('projectDetail.notes.placeholder')}
+              />
+            ) : project.notes ? (
+              <div
+                className="prose prose-invert prose-sm max-w-none"
+                dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(project.notes) }}
+              />
+            ) : (
+              <p className="text-bambu-gray/70 text-sm italic">{t('projectDetail.notes.empty')}</p>
+            )}
+          </ProjectPanel>
+
+          {children.length > 0 && (
+            <ProjectPanel icon={FolderTree} title={t('projectDetail.subProjects.title', { count: children.length })}>
+              <div className="space-y-2">
+                {children.map((child) => (
+                  <Link
+                    key={child.id}
+                    to={`/projects/${child.id}`}
+                    className="flex items-center justify-between gap-4 p-3 bg-bambu-dark rounded-lg hover:bg-bambu-dark-tertiary transition-colors"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div
+                        className="w-3 h-3 rounded-full flex-shrink-0"
+                        style={{ backgroundColor: child.color || '#6b7280' }}
+                      />
+                      <span className="text-white truncate">{child.name}</span>
+                      <span className={`text-xs px-2 py-0.5 rounded flex-shrink-0 ${
+                        child.status === 'completed' ? 'bg-status-ok/20 text-status-ok' :
+                        child.status === 'archived' ? 'bg-bambu-gray/20 text-bambu-gray' :
+                        'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400'
+                      }`}>
+                        {child.status}
+                      </span>
+                      {/* A branch of its own, so its figures cover more than the
+                          one project named on this row (#1264). */}
+                      {child.descendant_count > 0 && (
+                        <span className="text-xs text-bambu-gray flex-shrink-0 inline-flex items-center gap-1">
+                          <FolderTree className="w-3 h-3" />
+                          {child.descendant_count}
+                        </span>
+                      )}
+                    </div>
+                    {/* Each row carries its own branch's roll-up, so the rows add
+                        up to the header's roll-up line minus this project's own prints. */}
+                    <div className="flex items-center gap-4 text-sm text-bambu-gray flex-shrink-0">
+                      {child.total_archives > 0 && (
+                        <span className="hidden sm:inline">
+                          {t('projectDetail.subProjects.jobs', { count: child.total_archives })}
+                        </span>
+                      )}
+                      {child.total_filament_grams > 0 && (
+                        <span className="hidden md:inline">{formatFilament(child.total_filament_grams)}</span>
+                      )}
+                      {child.total_cost > 0 && (
+                        <span className="hidden md:inline">{currency}{child.total_cost.toFixed(2)}</span>
+                      )}
+                      {child.progress_percent !== null && (
+                        <span>{child.progress_percent.toFixed(0)}%</span>
+                      )}
+                    </div>
+                  </Link>
+                ))}
               </div>
-              {stats.total_energy_kwh > 0 && (
-                <div>
-                  <p className="text-xs text-bambu-gray uppercase">{t('projectDetail.cost.energy')}</p>
-                  <p className="text-lg font-semibold text-white">
-                    {stats.total_energy_kwh.toFixed(3)} kWh
-                    {stats.total_energy_cost > 0 && (
-                      <span className="text-sm text-bambu-gray ml-1">
-                        ({currency}{stats.total_energy_cost.toFixed(2)})
-                      </span>
-                    )}
-                  </p>
-                </div>
-              )}
-              {(stats.total_wear_cost ?? 0) > 0 && (
-                <div>
-                  <p className="text-xs text-bambu-gray uppercase">{t('projectDetail.cost.wear')}</p>
-                  <p className="text-lg font-semibold text-white">
-                    {currency}{stats.total_wear_cost.toFixed(2)}
-                  </p>
-                </div>
-              )}
-              {(() => {
-                const totalCost = stats.estimated_cost + stats.total_energy_cost + (stats.total_wear_cost ?? 0) + stats.bom_cost;
-                if (totalCost <= 0) return null;
-                return (
-                  <div>
-                    <p className="text-xs text-bambu-gray uppercase">{t('projectDetail.cost.totalCost')}</p>
-                    <p className="text-lg font-semibold text-bambu-green">
-                      {currency}{totalCost.toFixed(2)}
-                    </p>
-                    {stats.bom_cost > 0 && (
-                      <p className="text-xs text-bambu-gray/70">{t('projectDetail.cost.includesBom')}</p>
-                    )}
-                  </div>
-                );
-              })()}
-              {project.budget !== null && (() => {
-                const totalCost = stats.estimated_cost + stats.total_energy_cost + (stats.total_wear_cost ?? 0) + stats.bom_cost;
-                const remaining = project.budget - totalCost;
-                return (
-                  <div>
-                    <p className="text-xs text-bambu-gray uppercase">{t('projectDetail.cost.budget')}</p>
-                    <p className="text-sm text-bambu-gray">
-                      {t('projectDetail.cost.total')}: <span className="text-white font-semibold">{currency}{project.budget.toFixed(2)}</span>
-                    </p>
-                    <p className={`text-sm ${remaining >= 0 ? 'text-bambu-green' : 'text-red-700 dark:text-red-400'}`}>
-                      {t('projectDetail.cost.remaining')}: <span className="font-semibold">{currency}{remaining.toFixed(2)}</span>
-                    </p>
-                  </div>
-                );
-              })()}
-            </div>
-          </CardContent>
-        </Card>
-      )}
+            </ProjectPanel>
+          )}
 
-      {/* Sub-projects */}
-      {project.children && project.children.length > 0 && (
-        <Card>
-          <CardContent className="p-4">
-            <h2 className="text-lg font-semibold text-white flex items-center gap-2 mb-3">
-              <FolderTree className="w-5 h-5" />
-              {t('projectDetail.subProjects.title', { count: project.children.length })}
-            </h2>
-            <div className="space-y-2">
-              {project.children.map((child) => (
-                <Link
-                  key={child.id}
-                  to={`/projects/${child.id}`}
-                  className="flex items-center justify-between gap-4 p-3 bg-bambu-dark rounded-lg hover:bg-bambu-dark-tertiary transition-colors"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div
-                      className="w-3 h-3 rounded-full flex-shrink-0"
-                      style={{ backgroundColor: child.color || '#6b7280' }}
-                    />
-                    <span className="text-white truncate">{child.name}</span>
-                    <span className={`text-xs px-2 py-0.5 rounded flex-shrink-0 ${
-                      child.status === 'completed' ? 'bg-status-ok/20 text-status-ok' :
-                      child.status === 'archived' ? 'bg-bambu-gray/20 text-bambu-gray' :
-                      'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400'
-                    }`}>
-                      {child.status}
-                    </span>
-                    {/* A branch of its own, so its figures cover more than the
-                        one project named on this row (#1264). */}
-                    {child.descendant_count > 0 && (
-                      <span className="text-xs text-bambu-gray flex-shrink-0 inline-flex items-center gap-1">
-                        <FolderTree className="w-3 h-3" />
-                        {child.descendant_count}
-                      </span>
-                    )}
-                  </div>
-                  {/* Each row carries its own branch's roll-up, so the rows add
-                      up to the card above minus this project's own prints. */}
-                  <div className="flex items-center gap-4 text-sm text-bambu-gray flex-shrink-0">
-                    {child.total_archives > 0 && (
-                      <span className="hidden sm:inline">
-                        {t('projectDetail.subProjects.jobs', { count: child.total_archives })}
-                      </span>
-                    )}
-                    {child.total_filament_grams > 0 && (
-                      <span className="hidden md:inline">{formatFilament(child.total_filament_grams)}</span>
-                    )}
-                    {child.total_cost > 0 && (
-                      <span className="hidden md:inline">{currency}{child.total_cost.toFixed(2)}</span>
-                    )}
-                    {child.progress_percent !== null && (
-                      <span>{child.progress_percent.toFixed(0)}%</span>
-                    )}
-                  </div>
+          {/* Linked File Manager folders with their printable files */}
+          {folders.length > 0 && (
+            <ProjectPanel
+              icon={FolderOpen}
+              title={t('projectDetail.details.linkedFolders')}
+              count={folders.length}
+              testId="project-linked-folders"
+            >
+              <p className="text-xs text-bambu-gray mb-3">
+                <Link to="/files" className="text-bambu-green hover:underline">
+                  {t('projectDetail.files.linkFolders')}
                 </Link>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
+                {' '}{t('projectDetail.files.forQuickAccess')}
+              </p>
+              <div className="space-y-4">
+                {folders.map((folder) => {
+                  const files = filesByFolder.get(folder.id) ?? [];
+                  return (
+                    <div key={folder.id}>
+                      {/* Folder header — links to File Manager */}
+                      <Link
+                        to={`/files?folder=${folder.id}`}
+                        className="flex items-center justify-between p-3 bg-bambu-dark rounded-lg hover:bg-bambu-dark-tertiary transition-colors mb-2"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <FolderOpen className="w-5 h-5 text-bambu-green shrink-0" />
+                          <div className="min-w-0">
+                            <p className="text-sm text-white truncate">{folder.name}</p>
+                            <p className="text-xs text-bambu-gray">
+                              {t('projectDetail.files.fileCount', { count: folder.file_count })}
+                            </p>
+                          </div>
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-bambu-gray shrink-0" />
+                      </Link>
 
-      {/* Meta info row - Tags, Due Date, Priority */}
-      {(project.due_date || project.priority !== 'normal') && (
-        <div className="flex flex-wrap items-center gap-4">
-          {/* Priority */}
-          {project.priority && project.priority !== 'normal' && (
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-bambu-gray uppercase">{t('projectDetail.priorityLabel')}</span>
-              <PriorityBadge priority={project.priority} t={t} />
-            </div>
-          )}
+                      {/* File list within the folder */}
+                      {projectFilesLoading ? (
+                        <div className="flex items-center gap-2 px-3 py-2 text-bambu-gray text-sm">
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        </div>
+                      ) : files.length === 0 ? (
+                        <p className="text-bambu-gray/60 text-xs italic px-3">
+                          {t('projectDetail.files.noFiles')}
+                        </p>
+                      ) : (
+                        <div className="space-y-1 pl-3">
+                          {files.map((file) => {
+                            const printable = isSlicedLibraryFile(file);
+                            return (
+                              <div
+                                key={file.id}
+                                className="flex items-center gap-3 p-2 rounded-lg hover:bg-bambu-dark-tertiary transition-colors"
+                              >
+                                {/* Thumbnail */}
+                                <div className="w-10 h-10 shrink-0 rounded bg-bambu-dark overflow-hidden flex items-center justify-center">
+                                  {file.thumbnail_path ? (
+                                    <img
+                                      src={api.getLibraryFileThumbnailUrl(file.id)}
+                                      alt={file.print_name || file.filename}
+                                      className="w-full h-full object-cover brightness-125 contrast-110"
+                                    />
+                                  ) : (
+                                    <FileBox className="w-5 h-5 text-bambu-gray/40" />
+                                  )}
+                                </div>
 
-          {/* Due Date */}
-          {project.due_date && (
-            <div className="flex items-center gap-2">
-              <Calendar className="w-4 h-4 text-bambu-gray" />
-              <span className="text-sm text-white">{formatDateOnly(project.due_date, { year: 'numeric', month: 'short', day: 'numeric' })}</span>
-              {getDueDateStatus(project.due_date, t) && (
-                <span className={`text-xs ${getDueDateStatus(project.due_date, t)!.color}`}>
-                  ({getDueDateStatus(project.due_date, t)!.label})
-                </span>
-              )}
-            </div>
+                                {/* Name + type badge */}
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm text-white truncate" title={file.print_name || file.filename}>
+                                    {file.print_name || file.filename}
+                                  </p>
+                                  <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
+                                    file.file_type === '3mf' ? 'bg-bambu-green/20 text-bambu-green'
+                                    : (file.file_type === 'gcode' || file.file_type === 'gcode.3mf') ? 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400'
+                                    : 'bg-bambu-gray/20 text-bambu-gray'
+                                  }`}>
+                                    {file.file_type.toUpperCase()}
+                                  </span>
+                                </div>
+
+                                {/* Per-file print progress (#1897) */}
+                                {printable && (() => {
+                                  const done = progressByFileId.get(file.id) ?? 0;
+                                  const target = project.target_sets;
+                                  if (!target) {
+                                    // No copies-per-file target — show a plain printed-count badge
+                                    return done > 0 ? (
+                                      <span
+                                        className="shrink-0 text-xs px-1.5 py-0.5 rounded-full bg-bambu-dark text-bambu-gray"
+                                        title={t('projectDetail.files.printedCount', { count: done })}
+                                      >
+                                        {done}×
+                                      </span>
+                                    ) : null;
+                                  }
+                                  const pct = Math.min((done / target) * 100, 100);
+                                  const textColor =
+                                    done >= target ? 'text-status-ok' : done > 0 ? 'text-status-warning' : 'text-bambu-gray';
+                                  const barColor =
+                                    done >= target ? 'bg-status-ok' : done > 0 ? 'bg-status-warning' : 'bg-bambu-gray';
+                                  return (
+                                    <div
+                                      className="shrink-0 w-20"
+                                      title={t('projectDetail.files.progressTooltip', { done, target })}
+                                    >
+                                      <p className={`text-xs font-medium text-right ${textColor}`}>
+                                        {done} / {target}
+                                      </p>
+                                      <div className="h-1 bg-bambu-dark rounded-full overflow-hidden mt-1">
+                                        <div className={`h-full ${barColor}`} style={{ width: `${pct}%` }} />
+                                      </div>
+                                    </div>
+                                  );
+                                })()}
+
+                                {/* Print actions for sliced files */}
+                                {printable && (
+                                  <div className="flex items-center gap-1 shrink-0">
+                                    <button
+                                      onClick={() => setPrintFile(file)}
+                                      title={t('common.print')}
+                                      className="flex min-h-[44px] min-w-[44px] items-center justify-center p-1.5 rounded hover:bg-bambu-green/20 text-bambu-green transition-colors md:min-h-0 md:min-w-0"
+                                    >
+                                      <Printer className="w-4 h-4" />
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </ProjectPanel>
           )}
         </div>
-      )}
 
-      {/* Notes section */}
-      <Card>
-        <CardContent className="p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-              <FileText className="w-5 h-5" />
-              {t('projectDetail.notes.title')}
-            </h2>
-            {!editingNotes ? (
+        <aside className="min-w-0 space-y-5" data-testid="project-rail">
+          <ProjectActivityRail events={timeline} isLoading={timelineLoading} timeFormat={timeFormat} />
+
+          <ProjectPanel icon={Info} title={t('projectDetail.details.title')} testId="project-details">
+            <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm">
+              <dt className="text-bambu-gray">{t('projectDetail.queue.title')}</dt>
+              <dd className="min-w-0 space-y-0.5">
+                {stats && (stats.in_progress_prints > 0 || stats.queued_prints > 0) ? (
+                  <p className="flex flex-wrap gap-x-2">
+                    {stats.in_progress_prints > 0 && (
+                      <span className="text-yellow-700 dark:text-yellow-400">
+                        {t('projectDetail.queue.printing', { count: stats.in_progress_prints })}
+                      </span>
+                    )}
+                    {stats.queued_prints > 0 && (
+                      <span className="text-bambu-gray-light">
+                        {t('projectDetail.queue.queued', { count: stats.queued_prints })}
+                      </span>
+                    )}
+                  </p>
+                ) : (
+                  <p className="text-bambu-gray">{t('projectDetail.details.queueEmpty')}</p>
+                )}
+                <Link to={`/queue?project=${projectId}`} className="inline-block text-bambu-green hover:underline">
+                  {t('projectDetail.queue.viewAll')}
+                </Link>
+              </dd>
+
+              <dt className="text-bambu-gray">{t('projectDetail.details.linkedFolders')}</dt>
+              <dd className="min-w-0">
+                {folders.length > 0 ? (
+                  <ul className="space-y-0.5">
+                    {folders.map((folder) => (
+                      <li key={folder.id} className="truncate">
+                        <Link to={`/files?folder=${folder.id}`} className="text-bambu-gray-light hover:text-white">
+                          {folder.name}
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <Link to="/files" title={t('projectDetail.files.empty')} className="text-bambu-green hover:underline">
+                    {t('projectDetail.files.linkFolders')}
+                  </Link>
+                )}
+              </dd>
+
+              {project.parent_id != null && (
+                <>
+                  <dt className="text-bambu-gray">{t('projectDetail.partOf')}</dt>
+                  <dd className="min-w-0 truncate">
+                    <Link to={`/projects/${project.parent_id}`} className="text-bambu-gray-light hover:text-white">
+                      {project.parent_name || `#${project.parent_id}`}
+                    </Link>
+                  </dd>
+                </>
+              )}
+
+              <dt className="text-bambu-gray">{t('projectDetail.details.subProjects')}</dt>
+              <dd className="text-bambu-gray-light" data-testid="details-subprojects">
+                {children.length > 0
+                  ? (project.descendant_count ?? 0) > children.length
+                    ? `${children.length} (${project.descendant_count})`
+                    : children.length
+                  : '—'}
+              </dd>
+
+              <dt className="text-bambu-gray">{t('projectDetail.details.created')}</dt>
+              <dd className="text-bambu-gray-light">{formatDateOnly(project.created_at)}</dd>
+            </dl>
+
+            {/* Template action */}
+            {!project.is_template && (
               <Button
                 variant="secondary"
                 size="sm"
-                onClick={handleStartEditNotes}
-                disabled={!hasPermission('projects:update')}
-                title={!hasPermission('projects:update') ? t('projectDetail.notes.noEditPermission') : undefined}
+                className="mt-4 w-full"
+                onClick={() => createTemplateMutation.mutate()}
+                disabled={createTemplateMutation.isPending || !hasPermission('projects:create')}
+                title={!hasPermission('projects:create') ? t('projectDetail.template.noCreatePermission') : undefined}
               >
-                <Edit3 className="w-4 h-4 mr-1" />
-                {t('common.edit')}
+                {createTemplateMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                ) : (
+                  <Copy className="w-4 h-4 mr-2" />
+                )}
+                {t('projectDetail.template.saveAsTemplate')}
               </Button>
-            ) : (
-              <div className="flex gap-2">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={handleCancelNotes}
-                  disabled={updateMutation.isPending}
-                >
-                  <X className="w-4 h-4 mr-1" />
-                  {t('common.cancel')}
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={handleSaveNotes}
-                  disabled={updateMutation.isPending}
-                >
-                  {updateMutation.isPending ? (
-                    <Loader2 className="w-4 h-4 animate-spin mr-1" />
-                  ) : (
-                    <Save className="w-4 h-4 mr-1" />
-                  )}
-                  {t('common.save')}
-                </Button>
-              </div>
             )}
-          </div>
-
-          {editingNotes ? (
-            <RichTextEditor
-              content={notesContent}
-              onChange={setNotesContent}
-              placeholder={t('projectDetail.notes.placeholder')}
-            />
-          ) : project.notes ? (
-            <div
-              className="prose prose-invert prose-sm max-w-none"
-              dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(project.notes) }}
-            />
-          ) : (
-            <p className="text-bambu-gray/70 text-sm italic">
-              {t('projectDetail.notes.empty')}
-            </p>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Files section - linked folders from File Manager with printable files */}
-      <Card>
-        <CardContent className="p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-              <FolderOpen className="w-5 h-5" />
-              {t('projectDetail.files.title')}
-            </h2>
-          </div>
-
-          <p className="text-xs text-bambu-gray mb-3">
-            <Link to="/files" className="text-bambu-green hover:underline">
-              {t('projectDetail.files.linkFolders')}
-            </Link>
-            {' '}{t('projectDetail.files.forQuickAccess')}
-          </p>
-
-          {linkedFolders && linkedFolders.length > 0 ? (
-            <div className="space-y-4">
-              {linkedFolders.map((folder) => {
-                const files = filesByFolder.get(folder.id) ?? [];
-                const isLoading = projectFilesLoading;
-
-                return (
-                  <div key={folder.id}>
-                    {/* Folder header — links to File Manager */}
-                    <Link
-                      to={`/files?folder=${folder.id}`}
-                      className="flex items-center justify-between p-3 bg-bambu-dark rounded-lg hover:bg-bambu-dark-tertiary transition-colors mb-2"
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <FolderOpen className="w-5 h-5 text-bambu-green shrink-0" />
-                        <div className="min-w-0">
-                          <p className="text-sm text-white truncate">{folder.name}</p>
-                          <p className="text-xs text-bambu-gray">
-                            {t('projectDetail.files.fileCount', { count: folder.file_count })}
-                          </p>
-                        </div>
-                      </div>
-                      <ChevronRight className="w-4 h-4 text-bambu-gray shrink-0" />
-                    </Link>
-
-                    {/* File list within the folder */}
-                    {isLoading ? (
-                      <div className="flex items-center gap-2 px-3 py-2 text-bambu-gray text-sm">
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      </div>
-                    ) : files.length === 0 ? (
-                      <p className="text-bambu-gray/60 text-xs italic px-3">
-                        {t('projectDetail.files.noFiles')}
-                      </p>
-                    ) : (
-                      <div className="space-y-1 pl-3">
-                        {files.map((file) => {
-                          const printable = isSlicedLibraryFile(file);
-                          return (
-                            <div
-                              key={file.id}
-                              className="flex items-center gap-3 p-2 rounded-lg hover:bg-bambu-dark-tertiary transition-colors"
-                            >
-                              {/* Thumbnail */}
-                              <div className="w-10 h-10 shrink-0 rounded bg-bambu-dark overflow-hidden flex items-center justify-center">
-                                {file.thumbnail_path ? (
-                                  <img
-                                    src={api.getLibraryFileThumbnailUrl(file.id)}
-                                    alt={file.print_name || file.filename}
-                                    className="w-full h-full object-cover brightness-125 contrast-110"
-                                  />
-                                ) : (
-                                  <FileBox className="w-5 h-5 text-bambu-gray/40" />
-                                )}
-                              </div>
-
-                              {/* Name + type badge */}
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm text-white truncate" title={file.print_name || file.filename}>
-                                  {file.print_name || file.filename}
-                                </p>
-                                <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
-                                  file.file_type === '3mf' ? 'bg-bambu-green/20 text-bambu-green'
-                                  : (file.file_type === 'gcode' || file.file_type === 'gcode.3mf') ? 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400'
-                                  : 'bg-bambu-gray/20 text-bambu-gray'
-                                }`}>
-                                  {file.file_type.toUpperCase()}
-                                </span>
-                              </div>
-
-                              {/* Per-file print progress (#1897) */}
-                              {printable && (() => {
-                                const done = progressByFileId.get(file.id) ?? 0;
-                                const target = project.target_sets;
-                                if (!target) {
-                                  // No copies-per-file target — show a plain printed-count badge
-                                  return done > 0 ? (
-                                    <span
-                                      className="shrink-0 text-xs px-1.5 py-0.5 rounded-full bg-bambu-dark text-bambu-gray"
-                                      title={t('projectDetail.files.printedCount', { count: done })}
-                                    >
-                                      {done}×
-                                    </span>
-                                  ) : null;
-                                }
-                                const pct = Math.min((done / target) * 100, 100);
-                                const textColor =
-                                  done >= target ? 'text-status-ok' : done > 0 ? 'text-status-warning' : 'text-bambu-gray';
-                                const barColor =
-                                  done >= target ? 'bg-status-ok' : done > 0 ? 'bg-status-warning' : 'bg-bambu-gray';
-                                return (
-                                  <div
-                                    className="shrink-0 w-20"
-                                    title={t('projectDetail.files.progressTooltip', { done, target })}
-                                  >
-                                    <p className={`text-xs font-medium text-right ${textColor}`}>
-                                      {done} / {target}
-                                    </p>
-                                    <div className="h-1 bg-bambu-dark rounded-full overflow-hidden mt-1">
-                                      <div className={`h-full ${barColor}`} style={{ width: `${pct}%` }} />
-                                    </div>
-                                  </div>
-                                );
-                              })()}
-
-                              {/* Print actions for sliced files */}
-                              {printable && (
-                                <div className="flex items-center gap-1 shrink-0">
-                                  <button
-                                    onClick={() => setPrintFile(file)}
-                                    title={t('common.print')}
-                                    className="p-1.5 rounded hover:bg-bambu-green/20 text-bambu-green transition-colors"
-                                  >
-                                    <Printer className="w-4 h-4" />
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <p className="text-bambu-gray/70 text-sm italic">
-              {t('projectDetail.files.empty')}
-            </p>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* BOM Section - Parts to source/purchase */}
-      <Card>
-        <CardContent className="p-4">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-              <ShoppingCart className="w-5 h-5" />
-              {t('projectDetail.bom.title')}
-              {stats && stats.bom_total_items > 0 && (
-                <span className="text-sm font-normal text-bambu-gray">
-                  ({t('projectDetail.bom.acquired', { completed: stats.bom_completed_items, total: stats.bom_total_items })})
-                </span>
-              )}
-            </h2>
-            <div className="flex items-center gap-2">
-              {bomItems && bomItems.some(item => item.is_complete) && (
-                <button
-                  onClick={() => setHideBomCompleted(!hideBomCompleted)}
-                  className={`text-xs px-2 py-1 rounded transition-colors ${
-                    hideBomCompleted
-                      ? 'bg-bambu-green/20 text-bambu-green'
-                      : 'bg-bambu-dark text-bambu-gray hover:text-white'
-                  }`}
-                >
-                  {hideBomCompleted ? t('projectDetail.bom.showAll') : t('projectDetail.bom.hideDone')}
-                </button>
-              )}
-              {!showBomForm && (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => setShowBomForm(true)}
-                  disabled={!hasPermission('projects:update')}
-                  title={!hasPermission('projects:update') ? t('projectDetail.bom.noAddPermission') : undefined}
-                >
-                  <Plus className="w-4 h-4 mr-1" />
-                  {t('projectDetail.bom.addPart')}
-                </Button>
-              )}
-            </div>
-          </div>
-
-          {/* Add BOM item form */}
-          {showBomForm && (
-            <form onSubmit={handleAddBomItem} className="bg-bambu-dark rounded-lg p-4 mb-4 space-y-3">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <input
-                  type="text"
-                  value={newBomName}
-                  onChange={(e) => setNewBomName(e.target.value)}
-                  className="bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded px-3 py-2 text-sm text-white placeholder-bambu-gray focus:outline-none focus:border-bambu-green"
-                  placeholder={t('projectDetail.bom.partNamePlaceholder')}
-                  autoFocus
-                />
-                <div className="flex gap-2">
-                  <NumberInput
-                    value={newBomQty}
-                    onChange={setNewBomQty}
-                    fallback={1}
-                    className="w-20 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-bambu-green"
-                    min={1}
-                    placeholder={t('projectDetail.bom.qty')}
-                  />
-                  <BomPriceInput
-                    value={newBomPrice}
-                    onValueChange={setNewBomPrice}
-                    placeholder={t('projectDetail.bom.price', { currency })}
-                  />
-                </div>
-              </div>
-              <input
-                type="url"
-                value={newBomUrl}
-                onChange={(e) => setNewBomUrl(e.target.value)}
-                className="w-full bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded px-3 py-2 text-sm text-white placeholder-bambu-gray focus:outline-none focus:border-bambu-green"
-                placeholder={t('projectDetail.bom.sourcingUrlPlaceholder')}
-              />
-              <input
-                type="text"
-                value={newBomRemarks}
-                onChange={(e) => setNewBomRemarks(e.target.value)}
-                className="w-full bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded px-3 py-2 text-sm text-white placeholder-bambu-gray focus:outline-none focus:border-bambu-green"
-                placeholder={t('projectDetail.bom.remarksPlaceholder')}
-              />
-              <div className="flex justify-end gap-2">
-                <Button type="button" variant="secondary" size="sm" onClick={() => setShowBomForm(false)}>
-                  {t('common.cancel')}
-                </Button>
-                <Button type="submit" size="sm" disabled={!newBomName.trim() || createBomMutation.isPending}>
-                  {createBomMutation.isPending ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    t('projectDetail.bom.addPart')
-                  )}
-                </Button>
-              </div>
-            </form>
-          )}
-
-          {bomLoading ? (
-            <div className="flex items-center justify-center py-4">
-              <Loader2 className="w-6 h-6 animate-spin text-bambu-green" />
-            </div>
-          ) : bomItems && bomItems.length > 0 ? (
-            <div className="space-y-2">
-              {bomItems
-                .filter(item => !hideBomCompleted || !item.is_complete)
-                .map((item) => (
-                <div
-                  key={item.id}
-                  className={`p-3 rounded-lg transition-colors ${
-                    item.is_complete ? 'bg-status-ok/10' : 'bg-bambu-dark'
-                  }`}
-                >
-                  {editingBomItem?.id === item.id ? (
-                    // Edit form for this BOM item
-                    <form onSubmit={handleSaveBomEdit} className="space-y-3">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <input
-                          type="text"
-                          value={editBomName}
-                          onChange={(e) => setEditBomName(e.target.value)}
-                          className="bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded px-3 py-2 text-sm text-white placeholder-bambu-gray focus:outline-none focus:border-bambu-green"
-                          placeholder={t('projectDetail.bom.partName')}
-                          autoFocus
-                        />
-                        <div className="flex gap-2">
-                          <NumberInput
-                            value={editBomQty}
-                            onChange={setEditBomQty}
-                            fallback={1}
-                            className="w-20 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-bambu-green"
-                            min={1}
-                            placeholder={t('projectDetail.bom.qty')}
-                          />
-                          <BomPriceInput
-                            value={editBomPrice}
-                            onValueChange={setEditBomPrice}
-                            placeholder={t('projectDetail.bom.price', { currency })}
-                          />
-                        </div>
-                      </div>
-                      <input
-                        type="url"
-                        value={editBomUrl}
-                        onChange={(e) => setEditBomUrl(e.target.value)}
-                        className="w-full bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded px-3 py-2 text-sm text-white placeholder-bambu-gray focus:outline-none focus:border-bambu-green"
-                        placeholder={t('projectDetail.bom.sourcingUrlPlaceholder')}
-                      />
-                      <input
-                        type="text"
-                        value={editBomRemarks}
-                        onChange={(e) => setEditBomRemarks(e.target.value)}
-                        className="w-full bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded px-3 py-2 text-sm text-white placeholder-bambu-gray focus:outline-none focus:border-bambu-green"
-                        placeholder={t('projectDetail.bom.remarksPlaceholder')}
-                      />
-                      <div className="flex justify-end gap-2">
-                        <Button type="button" variant="secondary" size="sm" onClick={handleCancelBomEdit}>
-                          {t('common.cancel')}
-                        </Button>
-                        <Button type="submit" size="sm" disabled={!editBomName.trim() || updateBomMutation.isPending}>
-                          {updateBomMutation.isPending ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                          ) : (
-                            t('common.save')
-                          )}
-                        </Button>
-                      </div>
-                    </form>
-                  ) : (
-                    // Display mode
-                    <div className="flex items-start gap-3">
-                      <button
-                        onClick={() => hasPermission('projects:update') && handleToggleAcquired(item)}
-                        disabled={updateBomMutation.isPending || !hasPermission('projects:update')}
-                        title={!hasPermission('projects:update') ? t('projectDetail.bom.noUpdatePermission') : undefined}
-                        className={`w-5 h-5 mt-0.5 rounded border-2 flex items-center justify-center transition-colors shrink-0 ${
-                          item.is_complete
-                            ? 'bg-status-ok border-status-ok text-white'
-                            : hasPermission('projects:update')
-                              ? 'border-bambu-gray hover:border-bambu-green'
-                              : 'border-bambu-gray/50 cursor-not-allowed'
-                        }`}
-                      >
-                        {item.is_complete && <CheckCircle className="w-3 h-3" />}
-                      </button>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <p className={`text-sm font-medium ${item.is_complete ? 'text-bambu-gray line-through' : 'text-white'}`}>
-                              {item.name}
-                              <span className="text-bambu-gray font-normal ml-2">
-                                x{item.quantity_needed}
-                              </span>
-                            </p>
-                            {item.unit_price !== null && (
-                              <span className="text-xs text-bambu-green whitespace-nowrap">
-                                {currency}{(item.unit_price * item.quantity_needed).toFixed(2)}
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <button
-                              onClick={() => hasPermission('projects:update') && handleEditBomItem(item)}
-                              disabled={!hasPermission('projects:update')}
-                              className={`p-1 rounded transition-colors shrink-0 ${
-                                hasPermission('projects:update')
-                                  ? 'hover:bg-bambu-dark-tertiary text-bambu-gray hover:text-white'
-                                  : 'text-bambu-gray/50 cursor-not-allowed'
-                              }`}
-                              title={!hasPermission('projects:update') ? t('projectDetail.bom.noEditPermission') : t('common.edit')}
-                            >
-                              <Pencil className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => hasPermission('projects:update') && handleDeleteBomItem(item.id, item.name)}
-                              disabled={!hasPermission('projects:update')}
-                              className={`p-1 rounded transition-colors shrink-0 ${
-                                hasPermission('projects:update')
-                                  ? 'hover:bg-bambu-dark-tertiary text-bambu-gray hover:text-red-400'
-                                  : 'text-bambu-gray/50 cursor-not-allowed'
-                              }`}
-                              title={!hasPermission('projects:update') ? t('projectDetail.bom.noDeletePermission') : t('common.delete')}
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </div>
-                        {/* Sourcing URL */}
-                        {item.sourcing_url && (
-                          <a
-                            href={item.sourcing_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center gap-1 mt-1 text-xs text-blue-700 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300 transition-colors"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <ExternalLink className="w-3 h-3 shrink-0" />
-                            <span className="truncate">
-                              {(() => {
-                                try {
-                                  return new URL(item.sourcing_url).hostname.replace('www.', '');
-                                } catch {
-                                  return item.sourcing_url;
-                                }
-                              })()}
-                            </span>
-                          </a>
-                        )}
-                        {/* Remarks */}
-                        {item.remarks && (
-                          <p className="mt-1 text-xs text-bambu-gray/80 italic">
-                            {item.remarks}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ))}
-              {/* BOM Total */}
-              {stats && stats.bom_cost > 0 && (
-                <div className="pt-2 mt-2 border-t border-bambu-dark-tertiary flex justify-between text-sm">
-                  <span className="text-bambu-gray">{t('projectDetail.bom.totalCost')}</span>
-                  <span className="text-white font-medium">
-                    {currency}{stats.bom_cost.toFixed(2)}
-                  </span>
-                </div>
-              )}
-            </div>
-          ) : (
-            <p className="text-bambu-gray/70 text-sm italic">
-              {t('projectDetail.bom.empty')}
-            </p>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Timeline Section */}
-      <Card>
-        <CardContent className="p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-              <History className="w-5 h-5" />
-              {t('projectDetail.timeline.title')}
-            </h2>
-          </div>
-
-          {timelineLoading ? (
-            <div className="flex items-center justify-center py-4">
-              <Loader2 className="w-6 h-6 animate-spin text-bambu-green" />
-            </div>
-          ) : timeline && timeline.length > 0 ? (
-            <div className="space-y-3">
-              {timeline.slice(0, 10).map((event, index) => (
-                <div key={index} className="flex gap-3">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
-                    event.event_type === 'print_completed' ? 'bg-status-ok/20 text-status-ok' :
-                    event.event_type === 'print_failed' ? 'bg-status-error/20 text-status-error' :
-                    event.event_type === 'print_started' ? 'bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400' :
-                    'bg-bambu-dark-tertiary text-bambu-gray'
-                  }`}>
-                    {event.event_type === 'print_completed' && <CheckCircle className="w-4 h-4" />}
-                    {event.event_type === 'print_failed' && <XCircle className="w-4 h-4" />}
-                    {event.event_type === 'print_started' && <Printer className="w-4 h-4" />}
-                    {event.event_type === 'queued' && <ListTodo className="w-4 h-4" />}
-                    {event.event_type === 'project_created' && <Plus className="w-4 h-4" />}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-white">{event.title}</p>
-                    {event.description && (
-                      <p className="text-xs text-bambu-gray truncate">{event.description}</p>
-                    )}
-                    <p className="text-xs text-bambu-gray/70">{formatTimelineDate(event.timestamp)}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-bambu-gray/70 text-sm italic">
-              {t('projectDetail.timeline.empty')}
-            </p>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Template action */}
-      {!project.is_template && (
-        <div className="flex justify-end">
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => createTemplateMutation.mutate()}
-            disabled={createTemplateMutation.isPending || !hasPermission('projects:create')}
-            title={!hasPermission('projects:create') ? t('projectDetail.template.noCreatePermission') : undefined}
-          >
-            {createTemplateMutation.isPending ? (
-              <Loader2 className="w-4 h-4 animate-spin mr-2" />
-            ) : (
-              <Copy className="w-4 h-4 mr-2" />
-            )}
-            {t('projectDetail.template.saveAsTemplate')}
-          </Button>
-        </div>
-      )}
-
-      {/* Queue section */}
-      {stats && (stats.queued_prints > 0 || stats.in_progress_prints > 0) && (
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-                <ListTodo className="w-5 h-5" />
-                {t('projectDetail.queue.title')}
-              </h2>
-              <Link
-                to={`/queue?project=${projectId}`}
-                className="text-sm text-bambu-green hover:underline"
-              >
-                {t('projectDetail.queue.viewAll')}
-              </Link>
-            </div>
-            <div className="flex items-center gap-4 text-sm">
-              {stats.in_progress_prints > 0 && (
-                <span className="text-yellow-700 dark:text-yellow-400">
-                  {t('projectDetail.queue.printing', { count: stats.in_progress_prints })}
-                </span>
-              )}
-              {stats.queued_prints > 0 && (
-                <span className="text-bambu-gray">
-                  {t('projectDetail.queue.queued', { count: stats.queued_prints })}
-                </span>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Archives section */}
-      <div>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-            <Package className="w-5 h-5" />
-            {t('projectDetail.prints.title', { count: archives?.length || 0 })}
-          </h2>
-        </div>
-        {archivesLoading ? (
-          <div className="flex items-center justify-center py-8">
-            <Loader2 className="w-6 h-6 animate-spin text-bambu-green" />
-          </div>
-        ) : (
-          <ArchiveGrid archives={archives || []} t={t} />
-        )}
+          </ProjectPanel>
+        </aside>
       </div>
 
       {/* Edit Modal */}
@@ -1582,18 +807,6 @@ export function ProjectDetailPage() {
           onClose={() => setShowEditModal(false)}
           onSave={(data) => updateMutation.mutate(data as ProjectUpdate)}
           isLoading={updateMutation.isPending}
-        />
-      )}
-
-      {/* Confirm Modal */}
-      {confirmModal.isOpen && (
-        <ConfirmModal
-          title={confirmModal.title}
-          message={confirmModal.message}
-          confirmText={t('common.delete')}
-          variant="danger"
-          onConfirm={confirmModal.onConfirm}
-          onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
         />
       )}
 

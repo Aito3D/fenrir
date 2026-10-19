@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation } from '@tanstack/react-query';
 import { Pencil } from 'lucide-react';
@@ -19,10 +19,16 @@ import { useInvalidateProjects } from './projectQueries';
 export function ProjectHeader({
   project,
   onEditingChange,
+  badges,
+  meta,
 }: {
   project: Project;
   /** Lets the page give the form the full row while it is open. */
   onEditingChange?: (editing: boolean) => void;
+  /** Shown after the title (status, priority). */
+  badges?: ReactNode;
+  /** Shown on the tag row, before the tags (due date, created). */
+  meta?: ReactNode;
 }) {
   const { t } = useTranslation();
   const { hasPermission } = useAuth();
@@ -62,7 +68,7 @@ export function ProjectHeader({
   if (!editing) {
     return (
       <div className="min-w-0 space-y-2">
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <ProjectCodeChip code={project.code} className="text-sm" />
           <h1 className="min-w-0 break-words text-2xl font-bold text-white">{project.name}</h1>
           {hasPermission('projects:update') && (
@@ -71,14 +77,22 @@ export function ProjectHeader({
               onClick={startEdit}
               aria-label={t('projectsPdm.editHeader')}
               title={t('projectsPdm.editHeader')}
-              className={`rounded p-1 text-bambu-gray hover:text-white ${focusRingCls}`}
+              className={`inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded p-1 text-bambu-gray hover:text-white md:min-h-0 md:min-w-0 ${focusRingCls}`}
             >
               <Pencil className="h-4 w-4" />
             </button>
           )}
+          {badges}
         </div>
         {project.description && <p className="text-bambu-gray">{project.description}</p>}
-        <ProjectTagChips tags={project.tag_list ?? []} />
+        {meta ? (
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-bambu-gray">
+            {meta}
+            <ProjectTagChips tags={project.tag_list ?? []} />
+          </div>
+        ) : (
+          <ProjectTagChips tags={project.tag_list ?? []} />
+        )}
       </div>
     );
   }

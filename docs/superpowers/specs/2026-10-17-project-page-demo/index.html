@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Project Page Rework</title>
+<script src="https://cdn.tailwindcss.com/3.4.16"></script>
+<script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+<script>
+tailwind.config = { theme: { extend: { colors: {
+  bg: '#0c1016', surf: '#141b23', line: '#212c37', ink: '#e9eff6', sub: '#93a4b6', mute: '#6f8496', acc: '#14b8a6',
+} } } };
+</script>
+<style>
+  html { font-size: 14.4px; }
+  body { background: #0c1016; color: #e9eff6; font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif; }
+  [data-lucide] { width: 1em; height: 1em; }
+  .thumb img { filter: brightness(1.25) contrast(1.1); }
+  .hue1 img { filter: brightness(1.25) contrast(1.1) hue-rotate(160deg); }
+  .hue2 img { filter: brightness(1.15) contrast(1.1) hue-rotate(250deg) saturate(.6); }
+  .tab[aria-selected=true] { background: #14b8a6; color: #0c1016; }
+  .ptab[aria-selected=true] { color: #e9eff6; border-color: #14b8a6; }
+  .rev[aria-pressed=true] { background: rgba(20,184,166,.15); border-color: #14b8a6; color: #fff; }
+  /* vertical timeline rail */
+  .rail { position: relative; }
+  .rail::before { content: ''; position: absolute; left: 15px; top: 6px; bottom: 6px; width: 2px; background: #212c37; border-radius: 2px; }
+</style>
+</head>
+<body class="min-h-screen">
+<div class="flex">
+  <!-- app sidebar (static) -->
+  <aside class="hidden lg:flex w-[200px] shrink-0 min-h-screen flex-col gap-1 border-r border-line bg-[#0e131a] p-3 text-sm text-sub">
+    <div class="px-2 py-3 text-lg font-bold tracking-widest text-ink">AITO<span class="text-acc">3D</span></div>
+    <a class="px-2 py-2 rounded hover:bg-line flex items-center gap-2"><i data-lucide="printer"></i>Printers</a>
+    <a class="px-2 py-2 rounded hover:bg-line flex items-center gap-2"><i data-lucide="archive"></i>Archives</a>
+    <a class="px-2 py-2 rounded hover:bg-line flex items-center gap-2"><i data-lucide="list-ordered"></i>Print Queue</a>
+    <a class="px-2 py-2 rounded bg-acc text-bg font-medium flex items-center gap-2"><i data-lucide="folder-kanban"></i>Projects</a>
+    <a class="px-2 py-2 rounded hover:bg-line flex items-center gap-2"><i data-lucide="kanban-square"></i>Aito</a>
+    <a class="px-2 py-2 rounded hover:bg-line flex items-center gap-2"><i data-lucide="folder-open"></i>File Manager</a>
+  </aside>
+
+  <main class="flex-1 min-w-0 p-4 md:p-8">
+    <div class="flex flex-wrap items-center gap-2 mb-4">
+      <span class="text-xs text-mute">Demo — static mockup, not wired to the app ·</span>
+      <div class="flex gap-2" role="tablist">
+        <button class="tab px-3 py-1.5 rounded-md text-sm border border-line" data-v="a" aria-selected="true">A · Workspace + side rail</button>
+        <button class="tab px-3 py-1.5 rounded-md text-sm border border-line" data-v="b" aria-selected="false">B · Tabs</button>
+      </div>
+    </div>
+
+    <!-- Breadcrumb + header (shared) -->
+    <nav class="text-xs text-mute mb-3">Projects <span class="mx-1">›</span> <span class="text-sub">LookUp Space</span></nav>
+    <header class="rounded-xl border border-line bg-surf p-4 md:p-5 mb-5">
+      <div class="flex flex-wrap items-start gap-4">
+        <div class="thumb w-16 h-16 rounded-lg overflow-hidden bg-bg border border-line shrink-0"><img src="part.png" class="w-full h-full object-cover"></div>
+        <div class="min-w-0 flex-1">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="font-mono text-[11px] px-1.5 py-0.5 rounded border border-acc/40 text-acc">P-0001</span>
+            <h1 class="text-2xl font-semibold truncate">LookUp Space</h1>
+            <span class="text-[11px] px-2 py-0.5 rounded-full bg-acc/15 text-acc border border-acc/30">Active</span>
+            <span class="text-[11px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 flex items-center gap-1"><i data-lucide="flag"></i>High</span>
+          </div>
+          <p class="text-sm text-sub mt-1">Wall-mounted phone stand range for the shop window · client: Café Moana</p>
+          <div class="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs text-mute">
+            <span class="flex items-center gap-1"><i data-lucide="calendar"></i>Due Oct 24 · <span class="text-amber-300">7 days left</span></span>
+            <span class="flex items-center gap-1"><i data-lucide="tag"></i>window, stands</span>
+            <span class="flex items-center gap-1"><i data-lucide="user"></i>admin</span>
+          </div>
+        </div>
+        <div class="flex gap-2 ml-auto">
+          <button class="px-3 py-2 rounded-md border border-line text-sm text-sub hover:text-ink flex items-center gap-1.5"><i data-lucide="download"></i>Export</button>
+          <button class="px-3 py-2 rounded-md bg-acc text-bg text-sm font-medium flex items-center gap-1.5"><i data-lucide="pencil"></i>Edit</button>
+        </div>
+      </div>
+      <!-- KPI strip -->
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
+        <div class="rounded-lg bg-bg/60 border border-line p-3"><div class="text-[11px] uppercase tracking-wide text-mute">Prints</div><div class="text-xl font-semibold mt-0.5">7 <span class="text-xs font-normal text-mute">/ 12 parts</span></div><div class="h-1 rounded bg-line mt-2"><div class="h-full w-[58%] rounded bg-acc"></div></div></div>
+        <div class="rounded-lg bg-bg/60 border border-line p-3"><div class="text-[11px] uppercase tracking-wide text-mute">Print time</div><div class="text-xl font-semibold mt-0.5">14h 20m</div><div class="text-[11px] text-mute mt-1.5">2h 05m printing now</div></div>
+        <div class="rounded-lg bg-bg/60 border border-line p-3"><div class="text-[11px] uppercase tracking-wide text-mute">Filament</div><div class="text-xl font-semibold mt-0.5">412 g</div><div class="text-[11px] text-mute mt-1.5">PETG · PLA Matte</div></div>
+        <div class="rounded-lg bg-bg/60 border border-line p-3"><div class="text-[11px] uppercase tracking-wide text-mute">Cost</div><div class="text-xl font-semibold mt-0.5 text-acc">2 840 XPF</div><div class="text-[11px] text-mute mt-1.5">of 6 000 budget · 3 160 left</div></div>
+      </div>
+    </header>
+
+    <!-- ============ A: workspace + side rail ============ -->
+    <section data-view="a">
+      <div class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <div class="space-y-5 min-w-0" id="mainA"></div>
+        <aside class="space-y-5" id="railA"></aside>
+      </div>
+    </section>
+
+    <!-- ============ B: tabs ============ -->
+    <section data-view="b" hidden>
+      <div class="flex gap-1 border-b border-line mb-5 overflow-x-auto" role="tablist">
+        <button class="ptab px-4 py-2.5 text-sm text-sub border-b-2 border-transparent -mb-px" data-p="files" aria-selected="true">Files <span class="text-mute text-xs">3</span></button>
+        <button class="ptab px-4 py-2.5 text-sm text-sub border-b-2 border-transparent -mb-px" data-p="orders" aria-selected="false">Orders <span class="text-mute text-xs">2</span></button>
+        <button class="ptab px-4 py-2.5 text-sm text-sub border-b-2 border-transparent -mb-px" data-p="prints" aria-selected="false">Prints <span class="text-mute text-xs">7</span></button>
+        <button class="ptab px-4 py-2.5 text-sm text-sub border-b-2 border-transparent -mb-px" data-p="activity" aria-selected="false">Activity</button>
+        <button class="ptab px-4 py-2.5 text-sm text-sub border-b-2 border-transparent -mb-px" data-p="notes" aria-selected="false">Notes</button>
+      </div>
+      <div id="paneB"></div>
+    </section>
+  </main>
+</div>
+
+<script>
+const items = [
+  { name: 'LookUp Space', hue: '', revs: [{ n: 1, st: 'wip', sliced: 'slicing', pct: 62, printer: 'H2S · 0.4 · 0.2 · PETG' }] },
+  { name: 'Support bracket', hue: 'hue1', revs: [{ n: 3, st: 'valide', sliced: 'sliced', time: '2h 14m', g: '38.4', printer: 'X1C · 0.4 · 0.16 · PLA Matte' }, { n: 2, st: 'obsolete' }, { n: 1, st: 'obsolete' }] },
+  { name: 'Gabarit', hue: 'hue2', revs: [{ n: 2, st: 'wip', sliced: 'failed', err: 'no preset for H2D', printer: 'H2D · 0.6 · 0.24 · ABS' }, { n: 1, st: 'valide' }] },
+];
+const STRIP = { wip: 'bg-amber-400', valide: 'bg-teal-400', obsolete: 'bg-slate-500' };
+const CHIP = { wip: ['In progress', 'bg-amber-500/15 text-amber-300 border-amber-500/40'], valide: ['Approved', 'bg-teal-500/15 text-teal-300 border-teal-500/40'], obsolete: ['Obsolete', 'bg-slate-500/15 text-slate-400 border-slate-500/40'] };
+const chip = (s) => `<span class="text-[11px] px-1.5 py-0.5 rounded border ${CHIP[s][1]}">${CHIP[s][0]}</span>`;
+const icon = (n, l, c = '') => `<button title="${l}" class="flex-1 h-8 min-w-8 flex items-center justify-center rounded-md text-sub hover:bg-line hover:text-ink ${c}"><i data-lucide="${n}" style="width:15px;height:15px"></i></button>`;
+
+function sliceLine(r) {
+  if (r.sliced === 'slicing') return `<div class="mt-2"><div class="flex justify-between text-[11px] text-acc mb-1"><span>Slicing…</span><span>${r.pct}%</span></div><div class="h-1 rounded bg-line overflow-hidden"><div class="h-full bg-acc" style="width:${r.pct}%"></div></div></div>`;
+  if (r.sliced === 'sliced') return `<div class="mt-1 text-xs text-acc flex items-center gap-1"><i data-lucide="check-circle-2"></i>Sliced · ${r.time} · ${r.g} g</div>`;
+  return `<div class="mt-1 text-xs text-red-400 flex items-center gap-1"><i data-lucide="alert-circle"></i>Slice failed: ${r.err} <button class="underline ml-1">Retry</button></div>`;
+}
+function card(it) {
+  const r = it.revs[0];
+  return `<div class="bg-surf rounded-lg border border-line hover:border-acc/50 overflow-hidden flex flex-col">
+    <div class="h-1 ${STRIP[r.st]}"></div>
+    <div class="thumb ${it.hue} relative aspect-square bg-bg"><img src="part.png" class="w-full h-full object-cover">
+      <span class="absolute top-2 right-2 text-[11px] px-1.5 py-0.5 rounded font-medium bg-acc/90 text-white">3MF</span></div>
+    <div class="flex flex-wrap items-center gap-1.5 px-3 pt-2.5">
+      ${it.revs.map((x, j) => `<button class="rev h-8 min-w-[40px] px-2 rounded-md border border-line font-mono text-sm font-semibold text-sub" aria-pressed="${j === 0}">R${x.n}</button>`).join('')}
+      <button class="h-8 min-w-[40px] rounded-md border border-dashed border-line text-mute hover:text-acc flex items-center justify-center"><i data-lucide="plus"></i></button>
+      <span class="ml-auto">${chip(r.st)}</span>
+    </div>
+    <div class="px-3 pb-3 pt-1.5 flex-1">
+      <h3 class="text-sm font-medium truncate">${it.name}</h3>
+      <div class="mt-1 text-xs text-mute flex items-center gap-1"><i data-lucide="printer"></i>${r.printer}</div>
+      ${sliceLine(r)}
+    </div>
+    <div class="flex border-t border-line px-1.5 py-1">${icon('printer', 'Print', r.sliced === 'sliced' ? 'text-acc' : '')}${icon('external-link', 'Open in slicer')}${icon('eye', 'Preview')}${icon('download', 'Download')}${icon('more-vertical', 'More')}</div>
+  </div>`;
+}
+const dropCard = `<button class="rounded-lg border-2 border-dashed border-line hover:border-acc/60 text-mute hover:text-acc flex flex-col items-center justify-center gap-2 min-h-[220px]"><i data-lucide="upload-cloud" style="width:28px;height:28px"></i><span class="text-sm">Drop a .3mf</span><span class="text-[11px]">creates a new item</span></button>`;
+
+const panel = (title, iconName, body, action = '') => `
+  <section class="rounded-xl border border-line bg-surf">
+    <header class="flex items-center gap-2 px-4 py-3 border-b border-line">
+      <i data-lucide="${iconName}" class="text-mute"></i><h2 class="text-sm font-semibold">${title}</h2>${action}
+    </header>
+    <div class="p-4">${body}</div>
+  </section>`;
+
+const printing = (cols) => panel('Printing <span class="text-mute font-normal text-xs ml-1">3</span>', 'box',
+  `<div class="grid gap-4 ${cols}">${items.map(card).join('')}${dropCard}</div>`,
+  `<button class="ml-auto text-xs text-acc flex items-center gap-1"><i data-lucide="plus"></i>New item</button>`);
+
+const orders = panel('Orders <span class="text-mute font-normal text-xs ml-1">2</span>', 'shopping-bag', `
+  <div class="divide-y divide-line -my-2">
+    ${[['#1042', 'Café Moana', '4 × Support bracket R3', 'In production', 'text-amber-300'], ['#1038', 'Studio Hina', '1 × LookUp Space R1', 'Done', 'text-acc']].map(([id, c, what, st, cls]) => `
+    <div class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2.5">
+      <span class="font-mono text-xs text-sub">${id}</span><span class="text-sm">${c}</span><span class="text-xs text-mute">${what}</span>
+      <span class="ml-auto text-xs ${cls}">${st}</span><button class="text-mute hover:text-ink"><i data-lucide="chevron-right"></i></button>
+    </div>`).join('')}
+  </div>`, `<button class="ml-auto text-xs text-acc flex items-center gap-1"><i data-lucide="plus"></i>New order</button>`);
+
+const prints = (cols) => panel('Prints <span class="text-mute font-normal text-xs ml-1">7</span>', 'image', `
+  <div class="grid gap-3 ${cols}">
+    ${['', 'hue1', 'hue2', 'hue1', '', 'hue2', 'hue1'].map((h, i) => `
+      <div class="thumb ${h} relative aspect-square rounded-lg overflow-hidden border border-line bg-bg"><img src="part.png" class="w-full h-full object-cover">
+        <span class="absolute bottom-1 left-1 text-[10px] px-1 rounded bg-black/70 ${i === 2 ? 'text-red-300' : 'text-acc'}">${i === 2 ? 'Failed' : 'Done'}</span></div>`).join('')}
+  </div>`);
+
+const notes = panel('Notes', 'file-text', `<div class="text-sm text-sub space-y-2"><p>Client wants the logo engraved 0.4 mm deep on the front face. Use the matte black PETG spool from shelf B.</p><p class="text-xs text-mute">Edited Oct 16 by paul</p></div>`,
+  `<button class="ml-auto text-xs text-sub hover:text-ink flex items-center gap-1"><i data-lucide="pencil"></i>Edit</button>`);
+
+const events = [
+  ['loader', 'text-acc bg-acc/15', 'Slicing LookUp Space R1', '62% · Bambu Studio', '2 min ago', true],
+  ['check-circle-2', 'text-emerald-300 bg-emerald-500/15', 'Print completed', 'Support bracket R3 · H2S #2 · 2h 14m', '1 h ago'],
+  ['printer', 'text-amber-300 bg-amber-500/15', 'Print started', 'Support bracket R3 · H2S #2', '3 h ago'],
+  ['x-circle', 'text-red-300 bg-red-500/15', 'Print failed', 'Gabarit R1 · X1C · spaghetti detected', 'Yesterday 16:40'],
+  ['git-branch', 'text-sky-300 bg-sky-500/15', 'New revision', 'Gabarit R2 uploaded by admin', 'Yesterday 15:02'],
+  ['list-plus', 'text-sub bg-line', 'Queued', '4 × Support bracket R3 for order #1042', 'Oct 15'],
+  ['plus', 'text-sub bg-line', 'Project created', 'by admin', 'Oct 12'],
+];
+function timeline(group) {
+  let last = '';
+  return `<ol class="rail space-y-4">${events.map(([ic, cls, title, desc, when, live]) => {
+    const day = /ago/.test(when) ? 'Today' : /Yesterday/.test(when) ? 'Yesterday' : 'Earlier';
+    const head = group && day !== last ? `<li class="relative pl-10 text-[11px] uppercase tracking-wide text-mute">${(last = day)}</li>` : '';
+    return head + `<li class="relative pl-10">
+      <span class="absolute left-0 top-0 w-8 h-8 rounded-full flex items-center justify-center ring-4 ring-surf ${cls}"><i data-lucide="${ic}" class="${live ? 'animate-spin' : ''}"></i></span>
+      <div class="flex items-baseline gap-2"><p class="text-sm">${title}</p><span class="ml-auto text-[11px] text-mute whitespace-nowrap">${when}</span></div>
+      <p class="text-xs text-sub mt-0.5">${desc}</p>
+    </li>`;
+  }).join('')}</ol>`;
+}
+const activity = (group) => panel('Activity', 'history', timeline(group), `<button class="ml-auto text-xs text-sub hover:text-ink">View all</button>`);
+
+const details = panel('Details', 'info', `
+  <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
+    <dt class="text-mute">Queue</dt><dd><a class="text-acc">2 waiting · 1 slicing</a></dd>
+    <dt class="text-mute">Linked folders</dt><dd class="text-sub">Clients / Café Moana</dd>
+    <dt class="text-mute">Sub-projects</dt><dd class="text-sub">—</dd>
+    <dt class="text-mute">Created</dt><dd class="text-sub">Oct 12 by admin</dd>
+  </dl>`);
+
+/* A */
+document.getElementById('mainA').innerHTML = printing('grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4') + orders + prints('grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 2xl:grid-cols-7') + notes;
+document.getElementById('railA').innerHTML = activity(true) + details;
+
+/* B */
+const panes = {
+  files: printing('grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5'),
+  orders,
+  prints: prints('grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8'),
+  activity: `<div class="grid gap-5 lg:grid-cols-[minmax(0,640px)_1fr]">${activity(true)}${details}</div>`,
+  notes,
+};
+function showPane(p) {
+  document.getElementById('paneB').innerHTML = panes[p];
+  document.querySelectorAll('.ptab').forEach((b) => b.setAttribute('aria-selected', b.dataset.p === p));
+  lucide.createIcons();
+}
+document.querySelectorAll('.ptab').forEach((b) => b.addEventListener('click', () => showPane(b.dataset.p)));
+showPane('files');
+
+document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => {
+  document.querySelectorAll('.tab').forEach((x) => x.setAttribute('aria-selected', x === t));
+  document.querySelectorAll('[data-view]').forEach((s) => s.hidden = s.dataset.view !== t.dataset.v);
+  lucide.createIcons();
+}));
+document.addEventListener('click', (e) => {
+  const r = e.target.closest('.rev'); if (!r) return;
+  r.parentElement.querySelectorAll('.rev').forEach((x) => x.setAttribute('aria-pressed', x === r));
+});
+lucide.createIcons();
+</script>
+</body>
+</html>

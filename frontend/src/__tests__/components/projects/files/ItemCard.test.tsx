@@ -92,6 +92,8 @@ describe('ItemCard', () => {
     render(<Harness value={bracket({ slice_status: 'slicing', slice_job_id: 12, sliced_file: null })} />);
     const bar = within(card()).getByRole('progressbar');
     await waitFor(() => expect(bar).toHaveAttribute('aria-valuenow', '62'));
+    // Progress is a transform, not a width: no layout pass per update.
+    expect((bar.firstElementChild as HTMLElement).style.transform).toBe('scaleX(0.62)');
     expect(within(card()).getByText('Slicing…')).toBeInTheDocument();
     expect(within(card()).getByText('62%')).toBeInTheDocument();
   });
@@ -241,5 +243,31 @@ describe('ItemCard', () => {
     await waitFor(() => expect(calls).toContain('upload:20'));
     await waitFor(() => expect(screen.queryByText('Uploading…')).not.toBeInTheDocument());
     expect(within(card()).getByRole('button', { name: 'R1' })).toHaveAttribute('aria-pressed', 'true');
+  });
+});
+
+describe('ItemCard motion', () => {
+  it('fades the slice line in only when the state changes on screen, with one press on a fresh Sliced', async () => {
+    const { rerender } = render(<Harness value={bracket({ slice_status: 'slicing', slice_job_id: null, sliced_file: null })} />);
+    const slicing = await screen.findByRole('progressbar');
+    expect(slicing.closest('.animate-fade-in')).toBeNull();
+
+    rerender(<Harness value={bracket()} />);
+    const line = await screen.findByText('Sliced');
+    expect(line.parentElement).toHaveClass('animate-fade-in');
+    expect(line.parentElement?.querySelector('svg')).toHaveClass('animate-slice-done');
+  });
+
+  it('does not animate a card that loads already sliced', async () => {
+    render(<Harness value={bracket()} />);
+    const line = await screen.findByText('Sliced');
+    expect(line.parentElement).not.toHaveClass('animate-fade-in');
+    expect(line.parentElement?.querySelector('.animate-slice-done')).toBeNull();
+  });
+
+  it('rises the details tray in when opened', async () => {
+    render(<Harness value={bracket()} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Bracket' }));
+    expect(document.querySelector('.col-span-full')).toHaveClass('animate-rise');
   });
 });

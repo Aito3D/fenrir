@@ -1,6 +1,6 @@
 /**
  * ProjectDetailPage: error / not-found states, the optional cards (progress,
- * cost, queue, sub-projects, prints grid), and the BOM, notes, export and
+ * cost, queue, sub-projects, prints grid), and the notes, export and
  * template actions with their success and failure toasts.
  */
 
@@ -76,27 +76,8 @@ const baseStats = {
   bom_cost: 0,
 };
 
-function bomItem(overrides: Record<string, unknown>) {
-  return {
-    id: 1,
-    project_id: 1,
-    name: 'M3 screws',
-    quantity_needed: 4,
-    quantity_acquired: 0,
-    unit_price: null,
-    sourcing_url: null,
-    remarks: null,
-    is_complete: false,
-    ...overrides,
-  };
-}
-
 function useProject(project: Record<string, unknown>) {
   server.use(http.get('/api/v1/projects/:id', () => HttpResponse.json(project)));
-}
-
-function useBom(items: Record<string, unknown>[]) {
-  server.use(http.get('/api/v1/projects/:id/bom', () => HttpResponse.json(items)));
 }
 
 describe('ProjectDetailPage actions and states', () => {
@@ -106,7 +87,6 @@ describe('ProjectDetailPage actions and states', () => {
       http.get('/api/v1/projects/:id/tree', () => HttpResponse.json({ project_id: 1, code: null, sections: [] })),
       http.get('/api/v1/projects/:id', () => HttpResponse.json(baseProject)),
       http.get('/api/v1/projects/:id/archives', () => HttpResponse.json([])),
-      http.get('/api/v1/projects/:id/bom', () => HttpResponse.json([])),
       http.get('/api/v1/projects/:id/timeline', () => HttpResponse.json([])),
       http.get('/api/v1/library/folders/by-project/:id', () => HttpResponse.json([])),
       http.get('/api/v1/library/files', () => HttpResponse.json([]))
@@ -132,14 +112,21 @@ describe('ProjectDetailPage actions and states', () => {
       expect(navigateMock).toHaveBeenCalledWith('/projects');
     });
 
-    it('shows the empty-state copy for prints, bom, timeline, notes and folders', async () => {
+    it('shows the empty-state copy for prints, timeline, notes and folders', async () => {
       render(<ProjectDetailPage />);
 
       expect(await screen.findByText('No prints in this project yet')).toBeInTheDocument();
-      expect(screen.getByText(/No parts in the bill of materials/)).toBeInTheDocument();
+      expect(screen.queryByText('Bill of Materials')).not.toBeInTheDocument();
       expect(screen.getByText('No activity yet.')).toBeInTheDocument();
       expect(screen.getByText(/No notes yet/)).toBeInTheDocument();
-      expect(screen.getByText(/No folders linked/)).toBeInTheDocument();
+      // No linked folders: no panel, and the Details rail offers the File Manager instead.
+      expect(screen.queryByTestId('project-linked-folders')).not.toBeInTheDocument();
+      const details = screen.getByTestId('project-details');
+      const link = within(details).getByRole('link', { name: 'Link folders from the File Manager' });
+      expect(link).toHaveAttribute('href', '/files');
+      expect(link).toHaveAttribute('title', expect.stringMatching(/No folders linked/));
+      expect(within(details).getByText('Nothing queued')).toBeInTheDocument();
+      expect(within(details).getByTestId('details-subprojects')).toHaveTextContent('—');
     });
 
     it('goes back to the projects list from the header arrow', async () => {
@@ -169,13 +156,17 @@ describe('ProjectDetailPage actions and states', () => {
       expect(screen.getByText('3 / 10 print jobs')).toBeInTheDocument();
       expect(screen.getByText('30% complete')).toBeInTheDocument();
       expect(screen.getByText('7 remaining')).toBeInTheDocument();
-      expect(screen.getByText('2 / 8 parts')).toBeInTheDocument();
-      expect(screen.getByText('100% complete')).toBeInTheDocument();
+      // Parts progress lives in the Prints KPI tile.
+      const prints = screen.getByTestId('kpi-prints');
+      expect(prints).toHaveTextContent('2 / 8 parts');
+      expect(prints).toHaveTextContent('100% complete');
+      expect(prints).toHaveTextContent('3 print jobs');
+      expect(prints).toHaveTextContent('1 failed');
       expect(screen.getByText('Complete Sets')).toBeInTheDocument();
       expect(screen.getByText('0 / 2 sets')).toBeInTheDocument();
     });
 
-    it('shows cost, energy, wear, total with BOM and the remaining budget', async () => {
+    it('shows cost, energy, wear, total and the remaining budget, leaving any BOM cost out', async () => {
       useProject({
         ...baseProject,
         budget: 100,
@@ -190,22 +181,43 @@ describe('ProjectDetailPage actions and states', () => {
       });
       render(<ProjectDetailPage />);
 
-      expect(await screen.findByText('Cost Tracking')).toBeInTheDocument();
-      expect(screen.getByText('$20.00')).toBeInTheDocument();
+      const tile = await screen.findByTestId('kpi-cost');
+      expect(within(tile).getByText('Estimated Cost')).toBeInTheDocument();
+      expect(within(tile).getByText('$20.00')).toBeInTheDocument();
       expect(screen.getByText(/1\.500 kWh/)).toBeInTheDocument();
       expect(screen.getByText('($0.50)')).toBeInTheDocument();
       expect(screen.getByText('Printer Wear')).toBeInTheDocument();
-      expect(screen.getByText('$32.50')).toBeInTheDocument();
-      expect(screen.getByText('incl. BOM')).toBeInTheDocument();
-      expect(screen.getByText('$100.00')).toBeInTheDocument();
-      expect(screen.getByText('$67.50')).toBeInTheDocument();
+      // Total = filament + energy + wear; the BOM cost stays out.
+      expect(within(tile).getByTestId('kpi-cost-total')).toHaveTextContent('$22.50');
+      expect(within(tile).getByTestId('kpi-cost-total')).toHaveClass('text-bambu-green');
+      expect(screen.queryByText('incl. BOM')).not.toBeInTheDocument();
+      expect(within(tile).getByText('$100.00')).toBeInTheDocument();
+      const remaining = within(tile).getByTestId('kpi-cost-remaining');
+      expect(remaining).toHaveTextContent('Remaining: $77.50');
+      expect(remaining).toHaveClass('text-bambu-green');
+      expect(remaining).not.toHaveTextContent('Over budget');
     });
 
-    it('flags an exceeded budget with a negative remainder', async () => {
+    it('flags an exceeded budget in red with a negative remainder', async () => {
       useProject({ ...baseProject, budget: 3, stats: { ...baseStats, estimated_cost: 5 } });
       render(<ProjectDetailPage />);
 
-      expect(await screen.findByText('$-2.00')).toBeInTheDocument();
+      const tile = await screen.findByTestId('kpi-cost');
+      expect(within(tile).getByTestId('kpi-cost-total')).toHaveTextContent('$5.00');
+      expect(within(tile).getByTestId('kpi-cost-total')).toHaveClass('text-red-700');
+      const remaining = within(tile).getByTestId('kpi-cost-remaining');
+      expect(within(remaining).getByText('$-2.00')).toBeInTheDocument();
+      expect(remaining).toHaveTextContent('Over budget');
+      expect(remaining).toHaveClass('text-red-700');
+    });
+
+    it('shows the cost tile without a budget line when no budget is set', async () => {
+      useProject({ ...baseProject, stats: { ...baseStats, estimated_cost: 5 } });
+      render(<ProjectDetailPage />);
+
+      const tile = await screen.findByTestId('kpi-cost');
+      expect(within(tile).getByTestId('kpi-cost-total')).toHaveTextContent('$5.00');
+      expect(within(tile).queryByTestId('kpi-cost-remaining')).not.toBeInTheDocument();
     });
 
     it('shows urgent priority and an overdue due date', async () => {
@@ -213,7 +225,8 @@ describe('ProjectDetailPage actions and states', () => {
       render(<ProjectDetailPage />);
 
       expect(await screen.findByText('Urgent')).toBeInTheDocument();
-      expect(screen.getByText('(Overdue)')).toBeInTheDocument();
+      expect(screen.getByTestId('project-due')).toHaveTextContent('Overdue');
+      expect(screen.getByText('Overdue')).toHaveClass('text-red-700');
     });
 
     it('shows days left for a due date a few days out', async () => {
@@ -222,16 +235,37 @@ describe('ProjectDetailPage actions and states', () => {
       render(<ProjectDetailPage />);
 
       expect(await screen.findByText('High')).toBeInTheDocument();
-      expect(screen.getByText('(3 days left)')).toBeInTheDocument();
+      expect(screen.getByText('3 days left')).toBeInTheDocument();
     });
 
-    it('shows the queue card with a link to the project queue', async () => {
-      useProject({ ...baseProject, stats: { ...baseStats, queued_prints: 2, in_progress_prints: 1 } });
+    it('summarises the queue in the Details rail with a link to the project queue', async () => {
+      useProject({
+        ...baseProject,
+        parent_id: 9,
+        parent_name: 'Programme',
+        stats: { ...baseStats, queued_prints: 2, in_progress_prints: 1 },
+      });
       render(<ProjectDetailPage />);
 
-      expect(await screen.findByText('1 printing')).toBeInTheDocument();
-      expect(screen.getByText('2 queued')).toBeInTheDocument();
-      expect(screen.getByRole('link', { name: 'View all' })).toHaveAttribute('href', '/queue?project=1');
+      const details = await screen.findByTestId('project-details');
+      expect(within(details).getByText('1 printing')).toBeInTheDocument();
+      expect(within(details).getByText('2 queued')).toBeInTheDocument();
+      expect(within(details).getByRole('link', { name: 'View all' })).toHaveAttribute('href', '/queue?project=1');
+      expect(within(details).getByRole('link', { name: 'Programme' })).toHaveAttribute('href', '/projects/9');
+      // The print-time tile repeats what is printing right now.
+      expect(within(screen.getByTestId('kpi-time')).getByText('1 printing')).toBeInTheDocument();
+      // The rail comes after the main column (single column below xl).
+      const main = screen.getByTestId('project-main');
+      const rail = screen.getByTestId('project-rail');
+      expect(main.compareDocumentPosition(rail) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it('holds the save-as-template action in the Details panel', async () => {
+      render(<ProjectDetailPage />);
+
+      const details = await screen.findByTestId('project-details');
+      expect(within(details).getByRole('button', { name: /Save as Template/ })).toBeInTheDocument();
+      expect(within(screen.getByTestId('project-main')).queryByRole('button', { name: /Save as Template/ })).toBeNull();
     });
 
     it('colours sub-project rows by status', async () => {
@@ -259,6 +293,7 @@ describe('ProjectDetailPage actions and states', () => {
       const row = (await screen.findByText('Child completed')).closest('a');
       expect(row).toHaveAttribute('href', '/projects/10');
       expect(within(row as HTMLElement).getByText('completed')).toHaveClass('text-status-ok');
+      expect(screen.getByTestId('details-subprojects')).toHaveTextContent('3');
       expect(screen.getByText('archived')).toHaveClass('text-bambu-gray');
       expect(screen.getByText('active')).toHaveClass('text-blue-700');
     });
@@ -302,197 +337,72 @@ describe('ProjectDetailPage actions and states', () => {
       expect(screen.getByText('Print failed')).toBeInTheDocument();
       expect(screen.getByText('Queued a plate')).toBeInTheDocument();
     });
-  });
 
-  describe('bill of materials', () => {
-    it('adds a part and toasts, sending the typed fields', async () => {
-      let body: Record<string, unknown> | null = null;
+    it('groups the vertical activity rail under Today / Yesterday / Earlier, newest first', async () => {
+      const now = new Date();
+      const at = (daysBack: number, hours: number) =>
+        new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysBack, hours, 0, 0).toISOString();
+      // Deliberately out of order: the rail sorts newest first itself.
       server.use(
-        http.post('/api/v1/projects/:id/bom', async ({ request }) => {
-          body = (await request.json()) as Record<string, unknown>;
-          return HttpResponse.json(bomItem({ name: 'Bolt' }));
-        })
+        http.get('/api/v1/projects/:id/timeline', () =>
+          HttpResponse.json([
+            { event_type: 'project_created', title: 'Created long ago', description: 'by admin', timestamp: at(9, 12) },
+            { event_type: 'print_failed', title: 'Failed yesterday', description: null, timestamp: at(1, 15) },
+            { event_type: 'print_completed', title: 'Done today', description: 'Benchy', timestamp: at(0, 0) },
+            { event_type: 'queued', title: 'Queued yesterday', description: null, timestamp: at(1, 18) },
+          ])
+        )
       );
-      const user = userEvent.setup();
       render(<ProjectDetailPage />);
 
-      await user.click(await screen.findByRole('button', { name: /Add Part/ }));
-      const submit = screen.getAllByRole('button', { name: 'Add Part' }).find((b) => b.getAttribute('type') === 'submit')!;
-      expect(submit).toBeDisabled();
-      await user.type(screen.getByPlaceholderText('Part name (e.g., M3x8 screws)'), '  Bolt  ');
-      await user.type(screen.getByPlaceholderText('Remarks (optional)'), 'zinc');
-      await user.type(screen.getByPlaceholderText('Sourcing URL (optional)'), 'https://shop.example/bolt');
-      await user.click(submit);
-
-      expect(await screen.findByText('Part added')).toBeInTheDocument();
-      expect(body).toMatchObject({ name: 'Bolt', quantity_needed: 1, remarks: 'zinc', sourcing_url: 'https://shop.example/bolt' });
-      // the form closes again
-      expect(screen.queryByPlaceholderText('Part name (e.g., M3x8 screws)')).not.toBeInTheDocument();
-    });
-
-    it('keeps the form open and shows the server error when adding fails', async () => {
-      server.use(
-        http.post('/api/v1/projects/:id/bom', () => HttpResponse.json({ detail: 'BOM is locked' }, { status: 409 }))
-      );
-      const user = userEvent.setup();
-      render(<ProjectDetailPage />);
-
-      await user.click(await screen.findByRole('button', { name: /Add Part/ }));
-      await user.type(screen.getByPlaceholderText('Part name (e.g., M3x8 screws)'), 'Bolt');
-      await user.click(screen.getAllByRole('button', { name: 'Add Part' }).find((b) => b.getAttribute('type') === 'submit')!);
-
-      expect(await screen.findByText('BOM is locked')).toBeInTheDocument();
-      expect(screen.getByPlaceholderText('Part name (e.g., M3x8 screws)')).toHaveValue('Bolt');
-    });
-
-    it('cancels the add form', async () => {
-      const user = userEvent.setup();
-      render(<ProjectDetailPage />);
-
-      await user.click(await screen.findByRole('button', { name: /Add Part/ }));
-      await user.click(screen.getByRole('button', { name: 'Cancel' }));
-      expect(screen.queryByPlaceholderText('Part name (e.g., M3x8 screws)')).not.toBeInTheDocument();
-    });
-
-    it('shows part price, sourcing host, remarks and the BOM total', async () => {
-      useProject({ ...baseProject, stats: { ...baseStats, bom_total_items: 2, bom_completed_items: 1, bom_cost: 12.5 } });
-      useBom([
-        bomItem({ id: 1, unit_price: 2.5, quantity_needed: 4, sourcing_url: 'https://www.shop.example/p/1', remarks: 'zinc' }),
-        bomItem({ id: 2, name: 'Insert', is_complete: true, quantity_acquired: 4, sourcing_url: 'not a url' }),
+      const rail = await screen.findByTestId('project-activity');
+      await within(rail).findByText('Done today');
+      const items = within(rail).getAllByRole('listitem').map((li) => li.textContent ?? '');
+      expect(items.map((text) => text.replace(/\s+/g, ' '))).toEqual([
+        'Today',
+        expect.stringContaining('Done today'),
+        'Yesterday',
+        expect.stringContaining('Queued yesterday'),
+        expect.stringContaining('Failed yesterday'),
+        'Earlier',
+        expect.stringContaining('Created long ago'),
       ]);
-      render(<ProjectDetailPage />);
-
-      expect(await screen.findByText('(1/2 acquired)')).toBeInTheDocument();
-      expect(screen.getByText('$10.00')).toBeInTheDocument();
-      expect(screen.getByText('shop.example')).toBeInTheDocument();
-      expect(screen.getByText('not a url')).toBeInTheDocument();
-      expect(screen.getByText('zinc')).toBeInTheDocument();
-      expect(screen.getByText('Total cost:')).toBeInTheDocument();
+      // One header per day, and each event keeps its type's colour.
+      expect(within(rail).getAllByTestId(/^activity-day-/).map((el) => el.dataset.testid)).toEqual([
+        'activity-day-today',
+        'activity-day-yesterday',
+        'activity-day-earlier',
+      ]);
+      const failed = within(rail).getByText('Failed yesterday').closest('li')!;
+      expect(failed.querySelector('.text-status-error')).not.toBeNull();
+      expect(failed.querySelector('svg.lucide-circle-x, svg.lucide-x-circle')).not.toBeNull();
     });
 
-    it('hides and shows completed parts', async () => {
-      useBom([bomItem({ id: 1 }), bomItem({ id: 2, name: 'Insert', is_complete: true, quantity_acquired: 4 })]);
-      const user = userEvent.setup();
-      render(<ProjectDetailPage />);
-
-      await screen.findByText('Insert');
-      await user.click(screen.getByRole('button', { name: 'Hide done' }));
-      expect(screen.queryByText('Insert')).not.toBeInTheDocument();
-      expect(screen.getByText('M3 screws')).toBeInTheDocument();
-      await user.click(screen.getByRole('button', { name: 'Show all' }));
-      expect(screen.getByText('Insert')).toBeInTheDocument();
-    });
-
-    it('marks a part acquired with its full quantity, and clears it again', async () => {
-      useBom([bomItem({ id: 1 }), bomItem({ id: 2, name: 'Insert', is_complete: true, quantity_acquired: 4 })]);
-      const bodies: Record<string, unknown>[] = [];
+    it('shows the first 10 events, then all 20 on demand', async () => {
+      const base = Date.now();
       server.use(
-        http.patch('/api/v1/projects/:id/bom/:itemId', async ({ request, params }) => {
-          bodies.push({ itemId: params.itemId, ...((await request.json()) as Record<string, unknown>) });
-          return HttpResponse.json(bomItem({}));
-        })
+        http.get('/api/v1/projects/:id/timeline', () =>
+          HttpResponse.json(
+            Array.from({ length: 20 }, (_, i) => ({
+              event_type: 'print_completed',
+              title: `Event ${i + 1}`,
+              description: null,
+              timestamp: new Date(base - i * 60_000).toISOString(),
+            }))
+          )
+        )
       );
       const user = userEvent.setup();
       render(<ProjectDetailPage />);
 
-      await screen.findByText('Insert');
-      const toggles = screen
-        .getAllByRole('button')
-        .filter((b) => b.className.includes('w-5 h-5 mt-0.5'));
-      expect(toggles).toHaveLength(2);
-      await user.click(toggles[0]);
-      await waitFor(() => expect(bodies).toHaveLength(1));
-      await user.click(toggles[1]);
-      await waitFor(() => expect(bodies).toHaveLength(2));
-      expect(bodies[0]).toEqual({ itemId: '1', quantity_acquired: 4 });
-      expect(bodies[1]).toEqual({ itemId: '2', quantity_acquired: 0 });
-    });
-
-    it('edits a part inline and saves the trimmed values', async () => {
-      useBom([bomItem({ id: 7, unit_price: 1.5, sourcing_url: 'https://a.example/x', remarks: 'old' })]);
-      let body: Record<string, unknown> | null = null;
-      server.use(
-        http.patch('/api/v1/projects/:id/bom/:itemId', async ({ request }) => {
-          body = (await request.json()) as Record<string, unknown>;
-          return HttpResponse.json(bomItem({ id: 7 }));
-        })
-      );
-      const user = userEvent.setup();
-      render(<ProjectDetailPage />);
-
-      await user.click(await screen.findByTitle('Edit', { selector: 'button' }));
-      const name = screen.getByPlaceholderText('Part name');
-      expect(name).toHaveValue('M3 screws');
-      await user.clear(name);
-      await user.type(name, ' M4 screws ');
-      await user.click(screen.getByRole('button', { name: 'Save' }));
-
-      await waitFor(() => expect(body).not.toBeNull());
-      expect(body).toMatchObject({
-        name: 'M4 screws',
-        quantity_needed: 4,
-        unit_price: 1.5,
-        sourcing_url: 'https://a.example/x',
-        remarks: 'old',
-      });
-      await waitFor(() => expect(screen.queryByPlaceholderText('Part name')).not.toBeInTheDocument());
-    });
-
-    it('cancels an inline edit without saving, and surfaces a failed save', async () => {
-      useBom([bomItem({ id: 7 })]);
-      server.use(
-        http.patch('/api/v1/projects/:id/bom/:itemId', () => HttpResponse.json({ detail: 'Cannot update part' }, { status: 400 }))
-      );
-      const user = userEvent.setup();
-      render(<ProjectDetailPage />);
-
-      await user.click(await screen.findByTitle('Edit', { selector: 'button' }));
-      await user.click(screen.getByRole('button', { name: 'Cancel' }));
-      expect(screen.queryByPlaceholderText('Part name')).not.toBeInTheDocument();
-
-      await user.click(screen.getByTitle('Edit', { selector: 'button' }));
-      await user.click(screen.getByRole('button', { name: 'Save' }));
-      expect(await screen.findByText('Cannot update part')).toBeInTheDocument();
-      // still editing: the failed save did not close the form
-      expect(screen.getByPlaceholderText('Part name')).toBeInTheDocument();
-    });
-
-    it('asks for confirmation before deleting a part, then removes it', async () => {
-      useBom([bomItem({ id: 7 })]);
-      let deleted: string | readonly string[] | undefined;
-      server.use(
-        http.delete('/api/v1/projects/:id/bom/:itemId', ({ params }) => {
-          deleted = params.itemId;
-          return HttpResponse.json({ status: 'ok', message: 'deleted' });
-        })
-      );
-      const user = userEvent.setup();
-      render(<ProjectDetailPage />);
-
-      await user.click(await screen.findByTitle('Delete', { selector: 'button' }));
-      expect(screen.getByText('Are you sure you want to delete "M3 screws"?')).toBeInTheDocument();
-      await user.click(screen.getByRole('button', { name: 'Cancel' }));
-      expect(deleted).toBeUndefined();
-      expect(screen.queryByText(/Are you sure you want to delete/)).not.toBeInTheDocument();
-
-      await user.click(screen.getByTitle('Delete', { selector: 'button' }));
-      await user.click(screen.getByText('Delete', { selector: 'button' }));
-      expect(await screen.findByText('Part removed')).toBeInTheDocument();
-      expect(deleted).toBe('7');
-    });
-
-    it('toasts the server error when a part cannot be deleted', async () => {
-      useBom([bomItem({ id: 7 })]);
-      server.use(
-        http.delete('/api/v1/projects/:id/bom/:itemId', () => HttpResponse.json({ detail: 'Part is in use' }, { status: 409 }))
-      );
-      const user = userEvent.setup();
-      render(<ProjectDetailPage />);
-
-      await user.click(await screen.findByTitle('Delete', { selector: 'button' }));
-      await user.click(screen.getByText('Delete', { selector: 'button' }));
-      expect(await screen.findByText('Part is in use')).toBeInTheDocument();
-      expect(screen.getByText('M3 screws')).toBeInTheDocument();
+      const rail = await screen.findByTestId('project-activity');
+      await within(rail).findByText('Event 1');
+      expect(within(rail).getAllByTestId('activity-event')).toHaveLength(10);
+      expect(within(rail).queryByText('Event 11')).toBeNull();
+      await user.click(within(rail).getByRole('button', { name: 'Show all (20)' }));
+      expect(within(rail).getAllByTestId('activity-event')).toHaveLength(20);
+      await user.click(within(rail).getByRole('button', { name: 'Show less' }));
+      expect(within(rail).getAllByTestId('activity-event')).toHaveLength(10);
     });
   });
 
@@ -517,7 +427,7 @@ describe('ProjectDetailPage actions and states', () => {
       render(<ProjectDetailPage />);
 
       await screen.findByText(/No notes yet/);
-      const notesCard = screen.getByText('Notes').closest('div.flex')!.parentElement as HTMLElement;
+      const notesCard = screen.getByRole('region', { name: 'Notes' });
       await user.click(within(notesCard).getByRole('button', { name: 'Edit' }));
       expect(screen.queryByText(/No notes yet/)).not.toBeInTheDocument();
       await user.click(within(notesCard).getByRole('button', { name: 'Cancel' }));
@@ -540,7 +450,7 @@ describe('ProjectDetailPage actions and states', () => {
       render(<ProjectDetailPage />);
 
       await screen.findByText(/No notes yet/);
-      const notesCard = screen.getByText('Notes').closest('div.flex')!.parentElement as HTMLElement;
+      const notesCard = screen.getByRole('region', { name: 'Notes' });
       await user.click(within(notesCard).getByRole('button', { name: 'Edit' }));
       await user.click(within(notesCard).getByRole('button', { name: 'Save' }));
       expect(await screen.findByText('Notes too long')).toBeInTheDocument();

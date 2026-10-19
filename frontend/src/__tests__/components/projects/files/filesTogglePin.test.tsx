@@ -37,13 +37,12 @@ beforeEach(() => {
 const chipOf = (el: HTMLElement) => within(el).getByText(/OUTDATED/i).outerHTML;
 
 describe('files panel toggles (pinned DOM)', () => {
-  it('SectionBlock and Older files headers, open and closed', async () => {
+  it('SectionBlock header has no toggle; Older files header, open and closed', async () => {
     const user = userEvent.setup();
     render(<ProjectFilesPanel projectId={7} />);
-    const section = await screen.findByRole('button', { name: 'Printing 2' });
-    expect(section.outerHTML).toMatchInlineSnapshot(`"<button type="button" aria-expanded="true" class="flex min-h-[44px] w-full items-center gap-1.5 rounded-lg text-left md:min-h-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green/40"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-down h-4 w-4 shrink-0 text-bambu-gray" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg><span>Printing</span> <span class="text-xs font-normal text-bambu-gray">2</span></button>"`);
-    await user.click(section);
-    expect(section.outerHTML).toMatchInlineSnapshot(`"<button type="button" aria-expanded="false" class="flex min-h-[44px] w-full items-center gap-1.5 rounded-lg text-left md:min-h-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green/40"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-right h-4 w-4 shrink-0 text-bambu-gray" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg><span>Printing</span> <span class="text-xs font-normal text-bambu-gray">2</span></button>"`);
+    await screen.findByText('Printing');
+    // The section is always open: no toggle button, its cards are rendered.
+    expect(screen.queryByRole('button', { name: /^Printing/ })).not.toBeInTheDocument();
     const older = screen.getByRole('button', { name: 'Older files 1' });
     expect(older.outerHTML).toMatchInlineSnapshot(`"<button type="button" aria-expanded="false" class="flex min-h-[44px] w-full items-center gap-1.5 rounded-lg text-left md:min-h-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green/40"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-right h-4 w-4 shrink-0 text-bambu-gray" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg><span>Older files</span> <span class="text-xs font-normal text-bambu-gray">1</span></button>"`);
     await user.click(older);

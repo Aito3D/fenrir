@@ -39,7 +39,7 @@ export function ItemDetailsTray({ item, revision, actions, dropHandlers, renameF
 
   return (
     <li data-testid={`item-tray-${item.id}`}
-      className="col-span-full space-y-2 rounded-lg border border-bambu-green/40 bg-bambu-dark/70 p-3" {...dropHandlers}>
+      className="col-span-full animate-rise space-y-2 rounded-lg border border-bambu-green/40 bg-bambu-dark/70 p-3" {...dropHandlers}>
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         {renameField || <span className="min-w-0 flex-1 basis-40 break-all text-sm font-medium text-white">{item.name}</span>}
         <span className="flex [&>div]:flex">

@@ -1375,46 +1375,6 @@ export interface ProjectUpdate {
   new_tag_names?: string[];
 }
 
-// BOM Types - Tracks sourced/purchased parts (hardware, electronics, etc.)
-export interface BOMItem {
-  id: number;
-  project_id: number;
-  name: string;
-  quantity_needed: number;
-  quantity_acquired: number;
-  unit_price: number | null;
-  sourcing_url: string | null;
-  archive_id: number | null;
-  archive_name: string | null;
-  stl_filename: string | null;
-  remarks: string | null;
-  sort_order: number;
-  is_complete: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface BOMItemCreate {
-  name: string;
-  quantity_needed?: number;
-  unit_price?: number;
-  sourcing_url?: string;
-  archive_id?: number;
-  stl_filename?: string;
-  remarks?: string;
-}
-
-export interface BOMItemUpdate {
-  name?: string;
-  quantity_needed?: number;
-  quantity_acquired?: number;
-  unit_price?: number;
-  sourcing_url?: string;
-  archive_id?: number;
-  stl_filename?: string;
-  remarks?: string;
-}
-
 // Project Export/Import Types
 export interface BOMItemExport {
   name: string;
@@ -9764,24 +9724,6 @@ export const api = {
   },
   deleteProjectCoverImage: (projectId: number) =>
     request<{ status: string }>(`/projects/${projectId}/cover-image`, { method: 'DELETE' }),
-
-  // BOM (Bill of Materials)
-  getProjectBOM: (projectId: number) =>
-    request<BOMItem[]>(`/projects/${projectId}/bom`),
-  createBOMItem: (projectId: number, data: BOMItemCreate) =>
-    request<BOMItem>(`/projects/${projectId}/bom`, {
-      method: 'POST',
-      body: JSON.stringify(data),
-    }),
-  updateBOMItem: (projectId: number, itemId: number, data: BOMItemUpdate) =>
-    request<BOMItem>(`/projects/${projectId}/bom/${itemId}`, {
-      method: 'PATCH',
-      body: JSON.stringify(data),
-    }),
-  deleteBOMItem: (projectId: number, itemId: number) =>
-    request<{ status: string; message: string }>(`/projects/${projectId}/bom/${itemId}`, {
-      method: 'DELETE',
-    }),
 
   // Templates
   getTemplates: () => request<ProjectListItem[]>('/projects/templates/'),
