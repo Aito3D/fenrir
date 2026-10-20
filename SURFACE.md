@@ -1234,8 +1234,9 @@ CREATE TABLE projects (
 ```
 1 settings.archive_dir
 3 settings.base_dir
-2 settings.config
+4 settings.config
 2 settings.library_max_upload_bytes
+1 settings.library_max_zip_extract_bytes
 ```
 
 ## Permissions guarding the routes (count per permission)

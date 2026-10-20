@@ -20,6 +20,8 @@ import hashlib
 import json
 import logging
 import uuid
+import zipfile
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 
@@ -37,6 +39,7 @@ from backend.app.services.http_status_error import HttpStatusError
 from backend.app.services.project_files import ProjectFilesError
 from backend.app.services.project_reslice import output_filename
 from backend.app.services.project_revisions import find_revision_bundle, lock_revision_rows
+from backend.app.services.project_snapshot import _MAX_PART_BYTES
 from backend.app.services.project_storage import claim_unique_file_path, revision_dir
 from backend.app.services.slice_dispatch import http_exception_to_job_error, slice_dispatch
 from backend.app.services.slicer_api import SlicerApiError
@@ -402,6 +405,33 @@ async def _run_slice(revision_id: int, *, user_id: int | None, job_id: int) -> d
             raise http_exception_to_job_error(HTTPException(status, message[:SLICE_ERROR_MAX_CHARS])) from exc
 
 
+_SETTINGS_PART = "Metadata/project_settings.config"
+_SETTINGS_TOO_BIG = "The .3mf's project settings are too large to slice (over {limit} MB)"
+_SOURCE_TOO_BIG = "The .3mf is too large once unpacked to slice (over {limit} MB)"
+
+
+def _check_source_within_caps(model_bytes: bytes) -> None:
+    """Refuse a source whose settings part or declared unpacked size is over the caps.
+
+    The sanitiser inflates ``project_settings.config`` (and rewrites every entry) in memory, so a
+    zip bomb would take the process down. ``zipfile`` stops a read at the entry's declared size, so
+    the declared sizes are the bound. Caps: ``project_snapshot._MAX_PART_BYTES`` for the settings
+    part, ``library_max_zip_extract_bytes`` for the whole archive. Not a zip: left to the slicer."""
+    try:
+        with zipfile.ZipFile(BytesIO(model_bytes)) as zf:
+            max_total = settings.library_max_zip_extract_bytes
+            if sum(info.file_size for info in zf.infolist()) > max_total:
+                raise ProjectFilesError(413, _SOURCE_TOO_BIG.format(limit=max_total // (1024 * 1024)))
+            try:
+                declared = zf.getinfo(_SETTINGS_PART).file_size
+            except KeyError:
+                return
+            if declared > _MAX_PART_BYTES:
+                raise ProjectFilesError(413, _SETTINGS_TOO_BIG.format(limit=_MAX_PART_BYTES // (1024 * 1024)))
+    except zipfile.BadZipFile:
+        return
+
+
 async def _slice_revision(db: AsyncSession, revision_id: int, *, user_id: int | None, job_id: int) -> dict[str, Any]:
     from backend.app.api.routes.library import resolve_slicer_api_url
     from backend.app.services.slicer_api import SlicerApiService, get_stall_timeout_seconds
@@ -421,6 +451,7 @@ async def _slice_revision(db: AsyncSession, revision_id: int, *, user_id: int | 
         model_bytes = await asyncio.to_thread(path.read_bytes)
     except OSError as exc:
         raise ProjectFilesError(404, f"{_SOURCE_MISSING} on disk") from exc
+    await asyncio.to_thread(_check_source_within_caps, model_bytes)
     url = await resolve_slicer_api_url(db)
     if url is None:
         raise ProjectFilesError(400, NO_SLICER)

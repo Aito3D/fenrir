@@ -13,6 +13,7 @@ import asyncio
 from contextlib import ExitStack
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -673,3 +674,145 @@ async def test_settle_fails_items_of_a_revision_that_never_started_a_slice(
     await project_slice.settle_waiting_queue_items(db_session, rev["id"])
     item = await _item(db_session, item_id)
     assert (item.status, item.error_message) == ("slice_failed", expected)
+
+
+async def _failed_items_on_source(db, printer_factory, async_client: AsyncClient):
+    """A revision whose source has three ``slice_failed`` items: the caller's own, another user's, and one
+    on a printer outside the caller's scope. Returns (revision, caller, own_id, other_id, out_of_scope_id, in_scope_printer)."""
+    from backend.app.models.user import User
+
+    rev = await _upload(async_client)
+    source_id = rev["files"][0]["id"]
+    caller = User(username="retrier", role="user")
+    other = User(username="someone-else", role="user")
+    db.add_all([caller, other])
+    await db.flush()
+    mine = await printer_factory()
+    outside = await printer_factory()
+    ids = []
+    for owner, printer in ((caller, mine), (other, mine), (caller, outside)):
+        item = PrintQueueItem(
+            library_file_id=source_id,
+            status="slice_failed",
+            error_message="boom",
+            position=1,
+            revision_id=rev["id"],
+            created_by_id=owner.id,
+            printer_id=printer.id,
+        )
+        db.add(item)
+        await db.flush()
+        ids.append(item.id)
+    await db.commit()
+    # the route only reads ``user.id``; a plain object survives the route's own commits
+    return rev, SimpleNamespace(id=caller.id), ids, mine
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_retry_slice_update_own_user_only_rearms_their_in_scope_items(
+    async_client: AsyncClient, db_session, printer_factory, sidecar
+):
+    from backend.app.api.routes.print_queue import retry_queue_item_slice
+    from backend.app.core.printer_scope import PrinterScope
+
+    sidecar.block = True
+    rev, caller, (own_id, other_id, outside_id), mine = await _failed_items_on_source(
+        db_session, printer_factory, async_client
+    )
+    caller_id = caller.id
+
+    await retry_queue_item_slice(
+        own_id,
+        db=db_session,
+        auth_result=(caller, False),
+        can_read_aito=True,
+        printer_scope=PrinterScope(frozenset({mine.id})),
+        actor=None,
+    )
+
+    assert (await _item(db_session, own_id)).status == "slicing"
+    other = await _item(db_session, other_id)
+    assert (other.status, other.error_message) == ("slice_failed", "boom")  # another user's job
+    outside = await _item(db_session, outside_id)
+    assert (outside.status, outside.error_message) == ("slice_failed", "boom")  # printer outside the scope
+    assert outside.created_by_id == caller_id
+    sidecar.release.set()
+    await _wait_job((await _revision(db_session, rev["id"])).slice_job_id)
+    assert (await _item(db_session, own_id)).status == "pending"
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_retry_slice_update_all_user_rearms_every_item(
+    async_client: AsyncClient, db_session, printer_factory, sidecar
+):
+    from backend.app.api.routes.print_queue import retry_queue_item_slice
+    from backend.app.core.printer_scope import PrinterScope
+
+    sidecar.block = True
+    rev, caller, ids, _mine = await _failed_items_on_source(db_session, printer_factory, async_client)
+
+    await retry_queue_item_slice(
+        ids[0],
+        db=db_session,
+        auth_result=(caller, True),
+        can_read_aito=True,
+        printer_scope=PrinterScope(),
+        actor=None,
+    )
+
+    for item_id in ids:
+        assert (await _item(db_session, item_id)).status == "slicing"
+    sidecar.release.set()
+    await _wait_job((await _revision(db_session, rev["id"])).slice_job_id)
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_retry_slice_hides_the_aito_task_without_aito_read(
+    async_client: AsyncClient, db_session, printer_factory, sidecar
+):
+    from backend.app.api.routes.print_queue import retry_queue_item_slice
+    from backend.app.core.printer_scope import PrinterScope
+    from backend.app.models.aito_project import AitoProject
+    from backend.app.models.aito_task import AitoTask
+
+    sidecar.block = True
+    rev, caller, (own_id, _other_id, _outside_id), mine = await _failed_items_on_source(
+        db_session, printer_factory, async_client
+    )
+    order = AitoProject(description="Porte-canettes", board_column="print", client_name="Teva", due_date="2026-10-18")
+    db_session.add(order)
+    await db_session.flush()
+    task = AitoTask(project_id=order.id, title="Porte-canettes", impression_quantity=6)
+    db_session.add(task)
+    await db_session.flush()
+    mine_id, task_id = mine.id, task.id
+    (await _item(db_session, own_id)).aito_task_id = task_id
+    await db_session.commit()
+    aito_fields = ("aito_task_id", "aito_task_title", "aito_client_name", "aito_due_date", "aito_quantity")
+
+    async def retry(can_read_aito: bool):
+        (await _item(db_session, own_id)).status = "slice_failed"
+        await db_session.commit()
+        return await retry_queue_item_slice(
+            own_id,
+            db=db_session,
+            auth_result=(caller, True),
+            can_read_aito=can_read_aito,
+            printer_scope=PrinterScope(frozenset({mine_id})),
+            actor=None,
+        )
+
+    visible = await retry(True)
+    assert (visible.aito_task_id, visible.aito_task_title, visible.aito_client_name) == (
+        task_id,
+        "Porte-canettes",
+        "Teva",
+    )
+    assert visible.aito_quantity == 6
+    hidden = await retry(False)
+    assert [getattr(hidden, name) for name in aito_fields] == [None] * 5
+    sidecar.release.set()
+    await _wait_job((await _revision(db_session, rev["id"])).slice_job_id)

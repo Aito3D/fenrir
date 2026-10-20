@@ -449,3 +449,49 @@ async def test_failed_slice_start_does_not_fail_the_aito_drop(
     revisions = list((await db_session.execute(select(ProjectRevision))).scalars().all())
     assert len(revisions) == 2
     assert {r.slice_status for r in revisions} == {None}
+
+
+def _zip_with(settings: bytes | None) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as zf:
+        if settings is not None:
+            zf.writestr("Metadata/project_settings.config", settings)
+        zf.writestr("3D/3dmodel.model", "<model/>")
+    return buffer.getvalue()
+
+
+@pytest.mark.parametrize(
+    ("content", "part_cap", "total_cap", "expected"),
+    [
+        (b'{"a": "' + b"x" * 100 + b'"}', 50, None, "project settings are too large"),
+        (b'{"a": "1"}', None, 10, "too large once unpacked"),
+    ],
+)
+def test_source_over_a_cap_is_refused_before_the_sanitiser(monkeypatch, content, part_cap, total_cap, expected):
+    if part_cap is not None:
+        monkeypatch.setattr(project_slice, "_MAX_PART_BYTES", part_cap)
+    if total_cap is not None:
+        monkeypatch.setattr(app_settings, "library_max_zip_extract_bytes", total_cap)
+    with pytest.raises(project_slice.ProjectFilesError) as raised:
+        project_slice._check_source_within_caps(_zip_with(content))
+    assert raised.value.status_code == 413
+    assert expected in str(raised.value.detail)
+
+
+def test_source_within_the_caps_or_not_a_zip_is_left_to_the_slicer():
+    project_slice._check_source_within_caps(_zip_with(b'{"a": "1"}'))
+    project_slice._check_source_within_caps(_zip_with(None))  # no settings part
+    project_slice._check_source_within_caps(b"not a zip")
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_oversized_settings_part_fails_the_slice_with_a_reason(async_client: AsyncClient, sidecar, monkeypatch):
+    monkeypatch.setattr(project_slice, "_MAX_PART_BYTES", 16)
+    project, _item, rev = await _upload(async_client)
+    await _wait_job(rev["slice_job_id"])
+
+    out = await _tree_revision(async_client, project["id"], rev["id"])
+    assert out["slice_status"] == "failed"
+    assert "project settings are too large" in out["slice_error"]
+    assert sidecar.slice_requests == []

@@ -2679,6 +2679,7 @@ async def retry_queue_item_slice(
             Permission.QUEUE_UPDATE_OWN,
         )
     ),
+    can_read_aito: bool = Depends(probe_permissions_if_auth_enabled(Permission.AITO_READ)),
     printer_scope: PrinterScope = RequestPrinterScope,
     actor: User | ApiKeyActor | None = RequestActor,
 ):
@@ -2701,12 +2702,15 @@ async def retry_queue_item_slice(
     if source is None or source.id != queued_file.id:
         raise HTTPException(400, _project_slice().NOT_THE_SOURCE)
 
-    await db.execute(
-        update(PrintQueueItem)
-        .where(PrintQueueItem.status == "slice_failed", PrintQueueItem.library_file_id == source.id)
-        .values(status="slicing", error_message=None)
-        .execution_options(synchronize_session="fetch")
+    # Only the items the caller may modify (own unless update_all, printers in scope) are re-armed.
+    rearm = update(PrintQueueItem).where(
+        PrintQueueItem.status == "slice_failed", PrintQueueItem.library_file_id == source.id
     )
+    if not can_modify_all:
+        rearm = rearm.where(PrintQueueItem.created_by_id == user.id)
+    if (scope_clause := printer_scope.where(PrintQueueItem.printer_id)) is not None:
+        rearm = rearm.where(scope_clause)
+    await db.execute(rearm.values(status="slicing", error_message=None).execution_options(synchronize_session="fetch"))
     await db.commit()
     await _start_slice_for_waiting_items(db, revision_id, actor)
 
@@ -2726,7 +2730,7 @@ async def retry_queue_item_slice(
         )
     ).scalar_one()
     logger.info("Re-slicing project revision %s for queue item %s", revision_id, item_id)
-    response = _enrich_response(item)
+    response = _hide_aito_task(_enrich_response(item), can_read_aito)
     await attach_trace_summaries(db, [response])
     return response
 
