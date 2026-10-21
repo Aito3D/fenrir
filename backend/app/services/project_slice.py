@@ -105,6 +105,10 @@ async def sliced_file_of(db: AsyncSession, library_file: LibraryFile) -> Library
     ).scalar_one_or_none()
 
 
+# Revisions a start in this process is claiming or enqueuing (between its claim and its job id write).
+_starting: set[int] = set()
+
+
 async def _claim(db: AsyncSession, revision_id: int, *, resume: bool) -> bool:
     """Mark the revision ``slicing`` unless another slice holds it; True when this call claimed it.
 
@@ -128,12 +132,33 @@ async def _claim(db: AsyncSession, revision_id: int, *, resume: bool) -> bool:
     return claimed is not None
 
 
+def _job_is_live(job_id: int | None) -> bool:
+    """True while ``slice_dispatch`` still has the job pending or running (the in-memory job is
+    gone after a restart, and a finished job does not hold its revision)."""
+    job = slice_dispatch.get(job_id) if job_id is not None else None
+    return job is not None and job.status in ("pending", "running")
+
+
 async def _start(db: AsyncSession, revision_id: int, *, user_id: int | None, resume: bool) -> int | None:
     revision = await db.get(ProjectRevision, revision_id, populate_existing=True)
     if revision is None:
         return None
-    if not resume and revision.slice_status in ("slicing", "sliced"):
+    if not resume and revision.slice_status == "sliced":
         return revision.slice_job_id
+    if not resume and revision.slice_status == "slicing":
+        # A start between another's claim and its job id is still in flight: leave it alone. A
+        # revision whose job is gone (its failure could not be recorded) is interrupted: re-claim it.
+        if revision_id in _starting or _job_is_live(revision.slice_job_id):
+            return revision.slice_job_id
+        resume = True
+    _starting.add(revision_id)
+    try:
+        return await _start_claimed(db, revision_id, user_id=user_id, resume=resume)
+    finally:
+        _starting.discard(revision_id)
+
+
+async def _start_claimed(db: AsyncSession, revision_id: int, *, user_id: int | None, resume: bool) -> int | None:
     source = await _source_file(db, revision_id)
     if source is None:
         return None
@@ -167,9 +192,11 @@ async def _start(db: AsyncSession, revision_id: int, *, user_id: int | None, res
 async def start_revision_slice(db: AsyncSession, revision_id: int, *, user_id: int | None) -> int | None:
     """Slice the revision's source ``.3mf`` in the background; returns the job id. Commits.
 
-    A revision already ``slicing`` or ``sliced`` is left alone (its current job id is
-    returned); one without a source ``.3mf`` is too (``None``). Otherwise the revision
-    becomes ``slicing`` and a ``project_revision`` job owned by ``user_id`` is enqueued."""
+    A revision already ``sliced``, or ``slicing`` with a live job, is left alone (its current
+    job id is returned); one without a source ``.3mf`` is too (``None``). A revision left
+    ``slicing`` whose job is gone (its failure could not be recorded) is re-claimed like a
+    resume. Otherwise the revision becomes ``slicing`` and a ``project_revision`` job owned by
+    ``user_id`` is enqueued."""
     return await _start(db, revision_id, user_id=user_id, resume=False)
 
 
@@ -216,13 +243,18 @@ async def start_slice_for_waiting_items(db: AsyncSession, revision_id: int, *, u
 
 
 async def on_revision_slice_done(
-    db: AsyncSession, revision: ProjectRevision, sliced_file: LibraryFile | None, error: str | None
+    db: AsyncSession,
+    revision: ProjectRevision,
+    sliced_file: LibraryFile | None,
+    error: str | None,
+    facts: _OutcomeFacts | None = None,
 ) -> None:
     """Called once a slice ends, inside its transaction, after the revision's own slice fields are set
     (``sliced`` with ``sliced_file``, or ``failed`` with ``error``); the caller commits.
 
     The queue items waiting for the revision's G-code follow it (``settle_waiting_queue_items``
-    covers an item committed after this ran)."""
+    covers an item committed after this ran). ``facts``: the file reads ``_store`` made before it took
+    the write lock."""
     if error is None:
         logger.info("Project revision %s sliced (library file %s)", revision.id, sliced_file and sliced_file.id)
     else:
@@ -231,7 +263,7 @@ async def on_revision_slice_done(
     # lock ``settle_waiting_queue_items`` waits on, so an item committed after the read below is
     # seen by that settle, never by neither.
     await db.flush()
-    await _apply_slice_outcome(db, revision.id, sliced_file, error)
+    await _apply_slice_outcome(db, revision.id, sliced_file, error, facts)
 
 
 def library_file_print_time(library_file: LibraryFile, plate_id: int | None) -> int | None:
@@ -248,17 +280,24 @@ def library_file_print_time(library_file: LibraryFile, plate_id: int | None) -> 
     return print_time
 
 
-def _required_filament_types(sliced_file: LibraryFile, item: PrintQueueItem) -> str | None:
-    """A model-based item's filament types, read from the G-code now that it exists (queue time
-    read the source), plus what its overrides and earlier read named, as ``add_to_queue`` merges them."""
+def _gcode_filament_types(sliced_file: LibraryFile, plate_id: int | None) -> set[str]:
+    """The filament types the sliced G-code names for ``plate_id`` (none when its file is missing)."""
     from backend.app.api.routes.print_queue import _extract_filament_types_from_3mf  # routes import this module
 
+    lib_path = Path(sliced_file.file_path)
+    path = lib_path if lib_path.is_absolute() else settings.base_dir / sliced_file.file_path
+    return set(_extract_filament_types_from_3mf(path, plate_id)) if path.exists() else set()
+
+
+def _required_filament_types(item: PrintQueueItem, gcode_types: set[str] | Exception) -> str | None:
+    """A model-based item's filament types, read from the G-code now that it exists (queue time
+    read the source; ``gcode_types`` is what that read found, or the error it raised), plus what
+    the item's overrides and earlier read named, as ``add_to_queue`` merges them."""
     try:
         types: set[str] = set(json.loads(item.required_filament_types)) if item.required_filament_types else set()
-        lib_path = Path(sliced_file.file_path)
-        path = lib_path if lib_path.is_absolute() else settings.base_dir / sliced_file.file_path
-        if path.exists():
-            types |= set(_extract_filament_types_from_3mf(path, item.plate_id))
+        if isinstance(gcode_types, Exception):
+            raise gcode_types
+        types |= gcode_types
         if item.filament_overrides:
             types |= {o["type"] for o in json.loads(item.filament_overrides) if isinstance(o, dict) and "type" in o}
     except (ValueError, TypeError):  # a malformed stored list must not undo the slice it rides on
@@ -267,22 +306,77 @@ def _required_filament_types(sliced_file: LibraryFile, item: PrintQueueItem) -> 
     return json.dumps(sorted(types)) if types else None
 
 
+class _OutcomeFacts:
+    """What a landing slice reads from files for its waiting items: the revision's source id, and the
+    print time and G-code filament types per plate, each read once however many items wait on the plate.
+
+    ``_store`` fills them before it takes the database's write lock (``_read_outcome_facts``); the
+    outcome then runs row writes only. A plate nobody read yet (an item committed meanwhile) is read
+    on first use, so the values are the same either way."""
+
+    def __init__(self) -> None:
+        self._source_known = False
+        self._source_id: int | None = None
+        self._print_times: dict[int | None, int | None] = {}
+        self._gcode_types: dict[int | None, set[str] | Exception] = {}
+
+    async def source_id(self, db: AsyncSession, revision_id: int) -> int | None:
+        if not self._source_known:
+            source = await _source_file(db, revision_id)
+            self._source_id = source.id if source is not None else None
+            self._source_known = True
+        return self._source_id
+
+    async def print_time(self, sliced_file: LibraryFile, plate_id: int | None) -> int | None:
+        if plate_id not in self._print_times:
+            self._print_times[plate_id] = await asyncio.to_thread(library_file_print_time, sliced_file, plate_id)
+        return self._print_times[plate_id]
+
+    async def gcode_types(self, sliced_file: LibraryFile, plate_id: int | None) -> set[str] | Exception:
+        if plate_id not in self._gcode_types:
+            try:
+                self._gcode_types[plate_id] = await asyncio.to_thread(_gcode_filament_types, sliced_file, plate_id)
+            except Exception as exc:  # raised again where the item uses it, as a direct read would
+                self._gcode_types[plate_id] = exc
+        return self._gcode_types[plate_id]
+
+
+def _fails_cross_model_gate(sliced_file: LibraryFile, item: PrintQueueItem) -> bool:
+    """Cross-model gate (#2578), deferred from queue time: there was no G-code to read then."""
+    sliced_for = (sliced_file.file_metadata or {}).get("sliced_for_model")
+    return bool(item.target_model) and not is_gcode_compatible(sliced_for, item.target_model)
+
+
+async def _read_outcome_facts(db: AsyncSession, revision_id: int, sliced_file: LibraryFile) -> _OutcomeFacts:
+    """Read, for the items waiting now, everything ``_apply_slice_outcome`` would read from files."""
+    facts = _OutcomeFacts()
+    for item in await _waiting_items(db, revision_id, SLICE_WAIT_STATUSES, facts):
+        if _fails_cross_model_gate(sliced_file, item):
+            continue
+        await facts.print_time(sliced_file, item.plate_id)
+        if item.target_model:
+            await facts.gcode_types(sliced_file, item.plate_id)
+    return facts
+
+
 async def source_file_of(db: AsyncSession, revision_id: int) -> LibraryFile | None:
     """The revision's source ``.3mf``: the one file its slice is made from (None when it has none)."""
     return await _source_file(db, revision_id)
 
 
-async def _waiting_items(db: AsyncSession, revision_id: int, statuses: tuple[str, ...]) -> list[PrintQueueItem]:
+async def _waiting_items(
+    db: AsyncSession, revision_id: int, statuses: tuple[str, ...], facts: _OutcomeFacts
+) -> list[PrintQueueItem]:
     """Queue items in ``statuses`` on the revision's source ``.3mf``: the slice is that file's G-code
     only, never another ``.3mf`` a legacy revision also holds."""
-    source = await _source_file(db, revision_id)
-    if source is None:
+    source_id = await facts.source_id(db, revision_id)
+    if source_id is None:
         return []
     return list(
         (
             await db.execute(
                 select(PrintQueueItem).where(
-                    PrintQueueItem.status.in_(statuses), PrintQueueItem.library_file_id == source.id
+                    PrintQueueItem.status.in_(statuses), PrintQueueItem.library_file_id == source_id
                 )
             )
         )
@@ -312,32 +406,68 @@ async def _slicing_items_of_revision(db: AsyncSession, revision_id: int) -> list
     )
 
 
+async def _move_waiting_item(db: AsyncSession, item_id: int, statuses: tuple[str, ...], **values: Any) -> bool:
+    """Write ``values`` onto the item only while it is still in ``statuses`` (a conditional UPDATE: a cancel
+    or delete that landed since the item was read stays as it is). True when the row matched."""
+    moved = (
+        await db.execute(
+            update(PrintQueueItem)
+            .where(PrintQueueItem.id == item_id, PrintQueueItem.status.in_(statuses))
+            .values(**values)
+            .returning(PrintQueueItem.id)
+            .execution_options(synchronize_session="fetch")
+        )
+    ).first()
+    return moved is not None
+
+
 async def _apply_slice_outcome(
-    db: AsyncSession, revision_id: int, sliced_file: LibraryFile | None, error: str | None
+    db: AsyncSession,
+    revision_id: int,
+    sliced_file: LibraryFile | None,
+    error: str | None,
+    facts: _OutcomeFacts | None = None,
 ) -> None:
     """Success: every item waiting on the revision's source (``slicing``, or ``slice_failed`` from an
     earlier attempt) moves onto the G-code as ``pending``. Failure: every ``slicing`` item on the
-    revision's files becomes ``slice_failed`` with the reason, even once the source is gone. Does not commit."""
+    revision's files becomes ``slice_failed`` with the reason, even once the source is gone. Does not commit.
+
+    Each item is written with a conditional UPDATE on its waiting status, so an item cancelled or
+    deleted since it was read (PostgreSQL's READ COMMITTED lets that happen) is skipped, never undone.
+    ``facts`` carries the file reads made ahead of the write lock (``_read_outcome_facts``)."""
+    facts = facts or _OutcomeFacts()
     if sliced_file is not None and error is None:
         sliced_for = (sliced_file.file_metadata or {}).get("sliced_for_model")
-        for item in await _waiting_items(db, revision_id, SLICE_WAIT_STATUSES):
-            # Cross-model gate (#2578), deferred from queue time: there was no G-code to read then.
-            if item.target_model and not is_gcode_compatible(sliced_for, item.target_model):
-                item.status = "slice_failed"
-                item.error_message = (
-                    f"File was sliced for {sliced_for} and cannot be dispatched to {item.target_model} printers"
+        for item in await _waiting_items(db, revision_id, SLICE_WAIT_STATUSES, facts):
+            if _fails_cross_model_gate(sliced_file, item):
+                await _move_waiting_item(
+                    db,
+                    item.id,
+                    SLICE_WAIT_STATUSES,
+                    status="slice_failed",
+                    error_message=f"File was sliced for {sliced_for} and cannot be dispatched to {item.target_model} printers",
                 )
                 continue
-            item.library_file_id = sliced_file.id
-            item.status = "pending"
-            item.error_message = None
-            item.print_time_seconds = await asyncio.to_thread(library_file_print_time, sliced_file, item.plate_id)
+            values: dict[str, Any] = {
+                "library_file_id": sliced_file.id,
+                "status": "pending",
+                "error_message": None,
+                "print_time_seconds": await facts.print_time(sliced_file, item.plate_id),
+            }
             if item.target_model:
-                item.required_filament_types = await asyncio.to_thread(_required_filament_types, sliced_file, item)
+                values["required_filament_types"] = _required_filament_types(
+                    item, await facts.gcode_types(sliced_file, item.plate_id)
+                )
+            await _move_waiting_item(db, item.id, SLICE_WAIT_STATUSES, **values)
         return
     for item in await _slicing_items_of_revision(db, revision_id):
-        item.status = "slice_failed"
-        item.error_message = (error or "The slice failed")[:SLICE_ERROR_MAX_CHARS]
+        await _move_waiting_item(
+            db,
+            item.id,
+            ("slicing",),
+            status="slice_failed",
+            error_message=(error or "The slice failed")[:SLICE_ERROR_MAX_CHARS],
+        )
 
 
 async def settle_waiting_queue_items(db: AsyncSession, revision_id: int) -> None:
@@ -537,6 +667,9 @@ async def _store(
                     created_by_id=user_id,
                 )
                 row.derived_slice = True
+                # The source id and the waiting items' print times and filament types are read from
+                # the files now, before the flush takes the write lock.
+                facts = await _read_outcome_facts(db, revision_id, row)
                 db.add(row)
                 await db.flush()
                 # The flush holds SQLite's write lock (PostgreSQL: the row lock below): a revision
@@ -550,7 +683,7 @@ async def _store(
                 revision.sliced_file_id = row.id
                 revision.slice_status = "sliced"
                 revision.slice_error = None
-                await on_revision_slice_done(db, revision, row, None)
+                await on_revision_slice_done(db, revision, row, None, facts)
                 result = {
                     "revision_id": revision.id,
                     "file_id": row.id,

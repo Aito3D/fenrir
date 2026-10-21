@@ -18,7 +18,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import select
+from sqlalchemy import delete, select, update
 
 from backend.app.api.routes.library import to_absolute_path
 from backend.app.core import database
@@ -28,6 +28,7 @@ from backend.app.models.print_queue import PrintQueueItem, PrintQueueVariant
 from backend.app.models.project_item import ProjectRevision
 from backend.app.services import project_slice
 from backend.app.services.print_scheduler import PrintScheduler
+from backend.app.services.slice_dispatch import slice_dispatch
 from backend.tests.integration.test_project_slice import (  # noqa: F401  # fixtures
     _wait_job,
     roots,
@@ -816,3 +817,187 @@ async def test_retry_slice_hides_the_aito_task_without_aito_read(
     assert [getattr(hidden, name) for name in aito_fields] == [None] * 5
     sidecar.release.set()
     await _wait_job((await _revision(db_session, rev["id"])).slice_job_id)
+
+
+async def _race_waiting_items(monkeypatch, name: str, cancel_id: int, delete_id: int, *, on_call: int = 1) -> None:
+    """After the slice reads its waiting items, a user cancels one and deletes another (what PostgreSQL's
+    READ COMMITTED allows between the SELECT and the write; the slice's own transaction stands in here)."""
+    real = getattr(project_slice, name)
+    calls = []
+
+    async def raced(db, *args, **kwargs):
+        items = await real(db, *args, **kwargs)
+        calls.append(1)
+        if len(calls) != on_call:
+            return items
+        await db.execute(
+            update(PrintQueueItem)
+            .where(PrintQueueItem.id == cancel_id)
+            .values(status="cancelled")
+            .execution_options(synchronize_session=False)
+        )
+        await db.execute(
+            delete(PrintQueueItem).where(PrintQueueItem.id == delete_id).execution_options(synchronize_session=False)
+        )
+        return items
+
+    monkeypatch.setattr(project_slice, name, raced)
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_landing_slice_leaves_an_item_cancelled_or_deleted_meanwhile_alone(
+    async_client: AsyncClient, db_session, sidecar, monkeypatch
+):
+    rev = await _upload(async_client)
+    sidecar.block = True
+    started = (await async_client.post(f"/api/v1/projects/revisions/{rev['id']}/slice")).json()
+    await asyncio.wait_for(sidecar.entered.wait(), timeout=10)
+    cancelled, deleted, kept_one, kept_two = [
+        (await _queue(async_client, rev["files"][0]["id"], plate_id=n))["id"] for n in (1, 2, 3, 4)
+    ]
+    # the landing slice reads its items twice: ahead of the write lock (file reads), then to write them
+    await _race_waiting_items(monkeypatch, "_waiting_items", cancelled, deleted, on_call=2)
+
+    sidecar.release.set()
+    await _wait_job(started["job_id"])
+
+    assert slice_job_status(started["job_id"]) == "completed"  # a deleted item no longer fails the slice
+    revision = await _revision(db_session, rev["id"])
+    assert revision.slice_status == "sliced"
+    sliced_id = revision.sliced_file_id
+    cancelled_item = await _item(db_session, cancelled)
+    assert (cancelled_item.status, cancelled_item.library_file_id) == ("cancelled", rev["files"][0]["id"])
+    assert await _item(db_session, deleted) is None
+    for item_id in (kept_one, kept_two):
+        item = await _item(db_session, item_id)
+        assert (item.status, item.library_file_id, item.print_time_seconds) == (
+            "pending",
+            sliced_id,
+            3600,
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_failing_slice_leaves_an_item_cancelled_or_deleted_meanwhile_alone(
+    async_client: AsyncClient, db_session, sidecar, monkeypatch
+):
+    rev = await _upload(async_client)
+    source_id = rev["files"][0]["id"]
+    rows = [
+        PrintQueueItem(library_file_id=source_id, status="slicing", position=n, revision_id=rev["id"])
+        for n in (1, 2, 3)
+    ]
+    db_session.add_all(rows)
+    (await _revision(db_session, rev["id"])).slice_status = "slicing"
+    await db_session.commit()
+    cancelled, deleted, kept = (row.id for row in rows)
+    await _race_waiting_items(monkeypatch, "_slicing_items_of_revision", cancelled, deleted)
+    sidecar.mode = "down"
+
+    with pytest.raises(Exception):  # noqa: B017  # the job's own error
+        await project_slice._run_slice(rev["id"], user_id=None, job_id=0)
+
+    assert (await _revision(db_session, rev["id"])).slice_status == "failed"
+    assert (await _item(db_session, cancelled)).status == "cancelled"
+    assert await _item(db_session, deleted) is None
+    item = await _item(db_session, kept)
+    assert (item.status, bool(item.error_message)) == ("slice_failed", True)
+
+
+def slice_job_status(job_id: int) -> str | None:
+    job = slice_dispatch.get(job_id)
+    return job.status if job is not None else None
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_landing_slice_reads_its_files_once_per_plate_before_the_write_lock(
+    async_client: AsyncClient, db_session, sidecar, printer_factory, monkeypatch
+):
+    from backend.app.api.routes import print_queue as print_queue_routes
+
+    type_reads: list[int | None] = []
+    time_reads: list[tuple[int | None, int | None]] = []  # (plate, id of the sliced row: None = not flushed yet)
+    real_time = project_slice.library_file_print_time
+
+    def types_of(path, plate_id=None):
+        type_reads.append(plate_id)
+        return ["PETG"]
+
+    def time_of(library_file, plate_id):
+        time_reads.append((plate_id, library_file.id))
+        return real_time(library_file, plate_id)
+
+    monkeypatch.setattr(print_queue_routes, "_extract_filament_types_from_3mf", types_of)
+    monkeypatch.setattr(project_slice, "library_file_print_time", time_of)
+    await printer_factory(model="X1C")
+    rev = await _upload(async_client)
+    sidecar.block = True
+    started = (await async_client.post(f"/api/v1/projects/revisions/{rev['id']}/slice")).json()
+    await asyncio.wait_for(sidecar.entered.wait(), timeout=10)
+    ids = [
+        (await _queue(async_client, rev["files"][0]["id"], target_model="X1C", plate_id=plate))["id"]
+        for plate in (1, 1, 1, 2, 2)
+    ]
+    type_reads.clear()  # queueing read the source; only the landing slice's reads count
+    time_reads.clear()
+    real_read = project_slice._read_outcome_facts
+
+    async def read_then_a_late_item(db, revision_id, sliced_file):
+        facts = await real_read(db, revision_id, sliced_file)
+        late = PrintQueueItem(
+            library_file_id=rev["files"][0]["id"],
+            status="slicing",
+            position=99,
+            revision_id=rev["id"],
+            plate_id=7,
+            target_model="X1C",
+        )
+        db.add(late)
+        await db.flush()
+        ids.append(late.id)
+        return facts
+
+    monkeypatch.setattr(project_slice, "_read_outcome_facts", read_then_a_late_item)
+
+    sidecar.release.set()
+    await _wait_job(started["job_id"])
+
+    assert sorted(type_reads) == [1, 2, 7]  # one read per plate, the late plate on first use
+    assert sorted(plate for plate, _ in time_reads) == [1, 2, 7]
+    assert [row_id is None for plate, row_id in time_reads if plate in (1, 2)] == [True, True]  # before the flush
+    for item_id in ids:
+        item = await _item(db_session, item_id)
+        assert (item.status, item.print_time_seconds, item.required_filament_types) == ("pending", 3600, '["PETG"]')
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_an_unreadable_plate_leaves_only_its_items_filament_types_as_they_were(
+    async_client: AsyncClient, db_session, sidecar, printer_factory, monkeypatch, caplog
+):
+    from backend.app.api.routes import print_queue as print_queue_routes
+
+    def types_of(path, plate_id=None):
+        if not str(path).endswith(".gcode.3mf"):
+            return []  # queue time reads the source
+        if plate_id == 2:
+            raise ValueError("unreadable plate")
+        return ["PETG"]
+
+    monkeypatch.setattr(print_queue_routes, "_extract_filament_types_from_3mf", types_of)
+    await printer_factory(model="X1C")
+    rev = await _upload(async_client)
+    sidecar.block = True
+    good = await _queue(async_client, rev["files"][0]["id"], target_model="X1C", plate_id=1)
+    bad = await _queue(async_client, rev["files"][0]["id"], target_model="X1C", plate_id=2)
+
+    sidecar.release.set()
+    await _wait_job(good["slice_job_id"])
+
+    assert (await _item(db_session, good["id"])).required_filament_types == '["PETG"]'
+    item = await _item(db_session, bad["id"])
+    assert (item.status, item.required_filament_types) == ("pending", None)
+    assert f"Queue item {bad['id']}: unreadable filament types" in caplog.text

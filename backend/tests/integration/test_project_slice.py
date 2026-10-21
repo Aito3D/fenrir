@@ -330,6 +330,58 @@ async def test_resume_interrupted_slices(async_client: AsyncClient, db_session, 
 
 @pytest.mark.asyncio
 @pytest.mark.integration
+@pytest.mark.parametrize("dead_job", ["unknown", "finished"])
+async def test_a_slicing_revision_with_no_live_job_is_sliced_again(
+    async_client: AsyncClient, db_session, sidecar, dead_job
+):
+    """A failed slice whose ``failed`` write was refused leaves the row ``slicing`` with a dead job:
+    Retry starts a new slice at once (T-428), where it used to hand the dead job id back."""
+    sidecar.mode = "down"
+    project, _item, rev = await _upload(async_client)
+    await _wait_job(rev["slice_job_id"])
+    dead_id = 9999 if dead_job == "unknown" else rev["slice_job_id"]
+    await db_session.execute(
+        update(ProjectRevision)
+        .where(ProjectRevision.id == rev["id"])
+        .values(slice_status="slicing", slice_job_id=dead_id)
+    )
+    await db_session.commit()
+
+    sidecar.mode = "ok"
+    started = await async_client.post(f"/api/v1/projects/revisions/{rev['id']}/slice")
+    assert started.status_code == 202, started.text
+    body = started.json()
+    assert body["slice_status"] == "slicing"
+    assert body["job_id"] not in (None, dead_id)
+    await _wait_job(body["job_id"])
+
+    out = await _tree_revision(async_client, project["id"], rev["id"])
+    assert (out["slice_status"], out["slice_job_id"]) == ("sliced", body["job_id"])
+    assert len(sidecar.slice_requests) == 2  # the failed first attempt and the new slice
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_a_slicing_revision_with_a_live_job_is_left_alone(async_client: AsyncClient, db_session, sidecar):
+    sidecar.block = True
+    _project, _item, rev = await _upload(async_client)
+    await asyncio.wait_for(sidecar.entered.wait(), timeout=10)
+    assert _job_status(rev["slice_job_id"]) == "running"
+
+    again = await project_slice.start_revision_slice(db_session, rev["id"], user_id=None)
+    assert again == rev["slice_job_id"]
+    sidecar.release.set()
+    await _wait_job(rev["slice_job_id"])
+    assert len(sidecar.slice_requests) == 1
+
+
+def _job_status(job_id: int) -> str | None:
+    job = slice_dispatch.get(job_id)
+    return job.status if job is not None else None
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
 async def test_legacy_unsliced_revision_can_be_sliced_on_demand(async_client: AsyncClient, sidecar, monkeypatch):
     _no_auto_slice(monkeypatch)
     project, _item, rev = await _upload(async_client)
