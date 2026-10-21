@@ -87,6 +87,7 @@ def _entries(printer_id: int) -> dict[str, tuple]:
         "_unknown_tag_last_broadcast": (printer_id, {(0, 0): ("uid", "x")}),
         "_last_status_broadcast": (printer_id, "hash"),
         "_nozzle_count_updated": (printer_id, None),
+        "_runtime_seen_connected": (printer_id, None),
         "_fallback_3mf_retry_tasks": (printer_id, _sleeper()),
         "_connection_watchdog_last_attempt": (printer_id, 1.0),
         "_ams_index_only_logged": ((printer_id, 0), None),
@@ -175,6 +176,7 @@ async def test_forget_printer_clears_the_services():
     camera._last_frame_times[GONE] = 1.0
     camera._stream_start_times[GONE] = 1.0
     camera._active_external_streams[GONE] = 1
+    camera._external_live_readers[GONE] = 1
     from backend.app.api.routes import printers
 
     printers._cover_cache[GONE] = {("Cube", "front"): b"png"}
@@ -200,6 +202,7 @@ async def test_forget_printer_clears_the_services():
     assert GONE not in camera._last_frame_times
     assert GONE not in camera._stream_start_times
     assert GONE not in camera._active_external_streams
+    assert GONE not in camera._external_live_readers
     assert GONE not in printers._cover_cache
     assert GONE not in printers._cover_404_cache
     assert not [key for key in printer_file_cache._entries if key[0] == GONE]

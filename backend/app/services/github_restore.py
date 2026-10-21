@@ -348,10 +348,6 @@ def _checked_setting(key: str, value: object) -> tuple[bool | None, str]:
 #   * the other four switch an integration on with no way to authenticate to it,
 #     which breaks the login path (LDAP) or the connection (MQTT, HA).
 #
-# virtual_printer_enabled is largely vestigial post-migration — core/database.py
-# copies the rows into the virtual_printers table — but it is the same shape, and
-# refusing a vestigial toggle is a harmless no-op.
-#
 # ldap_enabled is deliberately NOT here. It was, paired with
 # ldap_bind_password — but this rule judges availability ("will the integration
 # work?"), and that is the wrong question for an authentication source. An
@@ -363,7 +359,6 @@ _COMPANION_CREDENTIALS = {
     "prometheus_enabled": "prometheus_token",
     "mqtt_enabled": "mqtt_password",
     "ha_enabled": "ha_token",
-    "virtual_printer_enabled": "virtual_printer_access_code",
 }
 
 # Companion credentials a reader takes from the environment rather than from a
@@ -1413,6 +1408,15 @@ class GitHubRestoreService:
             quantity = _restored_number(entry.get("quantity"), maximum=10_000, integer=True)
             if quantity is None:
                 quantity = 1
+            # A print running when the backup was made is long over: closed
+            # here the way the stale-archive cleanup closes one. Restored as
+            # running, the next reconnect closed it as a print that had just
+            # failed, with a failure notification and a Print Log row (ST/I7).
+            status = entry.get("status") or "completed"
+            failure_reason = entry.get("failure_reason")
+            backed_up_in_flight = status in ("printing", "paused")
+            if backed_up_in_flight:
+                status, failure_reason = "cancelled", "noStatusUpdate"
             fields = {
                 "print_name": entry.get("print_name"),
                 "print_time_seconds": numbers["print_time_seconds"],
@@ -1425,7 +1429,7 @@ class GitHubRestoreService:
                 "bed_temperature": entry.get("bed_temperature"),
                 "nozzle_temperature": entry.get("nozzle_temperature"),
                 "sliced_for_model": entry.get("sliced_for_model"),
-                "status": entry.get("status") or "completed",
+                "status": status,
                 "started_at": started_at,
                 "completed_at": _parse_dt(entry.get("completed_at")),
                 "makerworld_url": entry.get("makerworld_url"),
@@ -1435,7 +1439,7 @@ class GitHubRestoreService:
                 "tags": entry.get("tags"),
                 "notes": entry.get("notes"),
                 "cost": numbers["cost"],
-                "failure_reason": entry.get("failure_reason"),
+                "failure_reason": failure_reason,
                 "quantity": quantity,
                 "energy_kwh": numbers["energy_kwh"],
                 "energy_cost": numbers["energy_cost"],
@@ -1541,6 +1545,13 @@ class GitHubRestoreService:
                         "archivesUndeleted",
                         "Archive(s) deleted since the backup are visible again — overwrite was on",
                     )
+                if backed_up_in_flight:
+                    # The local row is that same print, still running or since
+                    # ended: it knows more about its outcome than the backup's
+                    # snapshot of it mid-way. Closing it here would end a live
+                    # print's archive, or overwrite a real result.
+                    for key in ("status", "failure_reason", "completed_at"):
+                        fields.pop(key, None)
                 for key, value in fields.items():
                     setattr(existing, key, value)
                 tally.restored += 1
@@ -1684,6 +1695,14 @@ class GitHubRestoreService:
             for late_field in ("material_number", "category", "low_stock_threshold_pct", "storage_location"):
                 if late_field in entry:
                     fields[late_field] = entry[late_field]
+            # The "Reset Total Consumed" point (WU-7), same late-field rule; a
+            # value that is no amount of filament keeps what the row holds.
+            baseline = _restored_number(entry.get("weight_used_baseline"))
+            if baseline is not None:
+                fields["weight_used_baseline"] = baseline
+            # When it was last used (LU-4), same late-field rule.
+            if "last_used" in entry:
+                fields["last_used"] = _parse_dt(entry.get("last_used"))
             # Last drying (#2863), same late-field rule.
             if "last_dried_at" in entry:
                 fields["last_dried_at"] = _parse_dt(entry.get("last_dried_at"))

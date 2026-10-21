@@ -6,7 +6,6 @@ import { clearNewProjectDraft } from '../hooks/useNewProjectDraft';
 interface AuthContextType {
   user: UserResponse | null;
   authEnabled: boolean;
-  requiresSetup: boolean;
   loading: boolean;
   isAdmin: boolean;
   /** Login with username/password. Returns LoginResponse (may include requires_2fa). */
@@ -14,11 +13,9 @@ interface AuthContextType {
   /** Finalise login after 2FA or OIDC — store token and set user directly. */
   loginWithToken: (token: string, user: UserResponse, persistence?: TokenPersistence) => void;
   logout: () => void;
-  refreshUser: () => Promise<void>;
   refreshAuth: () => Promise<void>;
   hasPermission: (permission: Permission) => boolean;
   hasAnyPermission: (...permissions: Permission[]) => boolean;
-  hasAllPermissions: (...permissions: Permission[]) => boolean;
   canModify: (resource: 'queue' | 'archives' | 'library', action: 'update' | 'delete' | 'reprint', createdById: number | null | undefined) => boolean;
 }
 
@@ -307,22 +304,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     window.location.href = '/login';
   };
 
-  const refreshUser = async () => {
-    if (authEnabled && getAuthToken()) {
-      try {
-        const currentUser = await api.getCurrentUser();
-        if (mountedRef.current) {
-          setUser(currentUser);
-        }
-      } catch {
-        setAuthToken(null);
-        if (mountedRef.current) {
-          setUser(null);
-        }
-      }
-    }
-  };
-
   const refreshAuth = async () => {
     await checkAuthStatus();
   };
@@ -349,12 +330,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!authEnabled) return true;
     if (isAdmin) return true;
     return permissions.some(p => permissionSet.has(p));
-  }, [authEnabled, isAdmin, permissionSet]);
-
-  const hasAllPermissions = useCallback((...permissions: Permission[]): boolean => {
-    if (!authEnabled) return true;
-    if (isAdmin) return true;
-    return permissions.every(p => permissionSet.has(p));
   }, [authEnabled, isAdmin, permissionSet]);
 
   // Ownership-based permission check
@@ -387,17 +362,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       value={{
         user,
         authEnabled,
-        requiresSetup,
         loading,
         isAdmin,
         login,
         loginWithToken,
         logout,
-        refreshUser,
         refreshAuth,
         hasPermission,
         hasAnyPermission,
-        hasAllPermissions,
         canModify,
       }}
     >

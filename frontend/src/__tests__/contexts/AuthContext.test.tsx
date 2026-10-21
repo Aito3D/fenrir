@@ -147,42 +147,42 @@ describe('AuthContext', () => {
         result.current.hasAnyPermission('printers:read' as Permission, 'settings:update' as Permission)
       ).toBe(true);
     });
-
-    it('hasAllPermissions returns true for any permissions when auth disabled', async () => {
-      const { result } = renderHook(() => useAuth(), {
-        wrapper: createWrapper(),
-      });
-
-      await waitFor(() => {
-        expect(result.current.authEnabled).toBe(false);
-      });
-
-      expect(
-        result.current.hasAllPermissions('printers:read' as Permission, 'settings:update' as Permission)
-      ).toBe(true);
-    });
   });
 
-  describe('when auth requires setup', () => {
+  describe('first-run setup', () => {
+    const realLocation = window.location;
+
+    function stubLocation(pathname: string) {
+      const { origin, protocol, host, hostname, port } = realLocation;
+      const location = { origin, protocol, host, hostname, port, pathname, href: origin + pathname, search: '', hash: '' };
+      Object.defineProperty(window, 'location', { configurable: true, value: location });
+      return location;
+    }
+
     beforeEach(() => {
       server.use(
-        http.get('/api/v1/auth/status', () => {
-          return HttpResponse.json({
-            auth_enabled: false,
-            requires_setup: true,
-          });
-        })
+        http.get('/api/v1/auth/status', () => HttpResponse.json({ auth_enabled: false, requires_setup: true }))
       );
     });
 
-    it('requiresSetup is true', async () => {
-      const { result } = renderHook(() => useAuth(), {
-        wrapper: createWrapper(),
-      });
+    afterEach(() => {
+      Object.defineProperty(window, 'location', { configurable: true, value: realLocation });
+    });
 
-      await waitFor(() => {
-        expect(result.current.requiresSetup).toBe(true);
-      });
+    it('sends a new install to the setup page', async () => {
+      const location = stubLocation('/');
+
+      renderHook(() => useAuth(), { wrapper: createWrapper() });
+
+      await waitFor(() => expect(location.href).toBe('/setup'));
+    });
+
+    it('leaves a camera page where it is', async () => {
+      const location = stubLocation('/camera/1');
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+
+      await waitFor(() => expect(result.current.loading).toBe(false));
+      expect(location.href).toBe(`${realLocation.origin}/camera/1`);
     });
   });
 
@@ -298,24 +298,6 @@ describe('AuthContext', () => {
 
       expect(
         result.current.hasAnyPermission(
-          'api_keys:create' as Permission,
-          'groups:delete' as Permission
-        )
-      ).toBe(true);
-    });
-
-    it('hasAllPermissions returns true for any combination', async () => {
-      const { result } = renderHook(() => useAuth(), {
-        wrapper: createWrapper(),
-      });
-
-      await waitFor(() => {
-        expect(result.current.loading).toBe(false);
-      });
-
-      expect(
-        result.current.hasAllPermissions(
-          'settings:update' as Permission,
           'api_keys:create' as Permission,
           'groups:delete' as Permission
         )
@@ -1107,9 +1089,6 @@ describe('AuthContext', () => {
       expect(
         result.current.hasAnyPermission('printers:read' as Permission, 'settings:update' as Permission)
       ).toBe(true);
-      expect(
-        result.current.hasAllPermissions('printers:read' as Permission, 'settings:update' as Permission)
-      ).toBe(true);
     });
 
     it('non-admin with a narrow permission list only passes matching checks', async () => {
@@ -1124,9 +1103,6 @@ describe('AuthContext', () => {
       expect(
         result.current.hasAnyPermission('users:delete' as Permission, 'printers:read' as Permission)
       ).toBe(true);
-      expect(
-        result.current.hasAllPermissions('printers:read' as Permission, 'users:delete' as Permission)
-      ).toBe(false);
     });
   });
 
@@ -1430,165 +1406,13 @@ describe('AuthContext', () => {
   // makes a single attempt and clears the token + user unconditionally on
   // ANY failure — it's meant for "the server told us this token is stale
   // right now", not a resilient mount-time check.
-  describe('refreshUser() (T-081)', () => {
-    beforeEach(() => {
-      setAuthToken('valid-token', 'persistent');
-      server.use(
-        http.get('/api/v1/auth/status', () =>
-          HttpResponse.json({ auth_enabled: true, requires_setup: false })
-        )
-      );
-    });
-
-    afterEach(() => {
-      setAuthToken(null);
-      localStorage.removeItem('auth_token');
-    });
-
-    it('updates the user in place on success, leaving the token untouched', async () => {
-      server.use(
-        http.get('/api/v1/auth/me', () =>
-          HttpResponse.json({ id: 1, username: 'alice', is_active: true, permissions: [], groups: [] })
-        )
-      );
-
-      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
-      await waitFor(() => expect(result.current.user?.username).toBe('alice'));
-
-      // Swap the handler so a manual refresh observes a changed user.
-      server.use(
-        http.get('/api/v1/auth/me', () =>
-          HttpResponse.json({
-            id: 1,
-            username: 'bob',
-            is_active: true,
-            permissions: ['printers:read' as Permission],
-            groups: [],
-          })
-        )
-      );
-
-      await act(async () => {
-        await result.current.refreshUser();
-      });
-
-      expect(result.current.user?.username).toBe('bob');
-      expect(result.current.user?.permissions).toEqual(['printers:read']);
-      expect(getAuthToken()).toBe('valid-token');
-    });
-
-    it('clears the token (both storages) and the user on any failure — no retry', async () => {
-      server.use(
-        http.get('/api/v1/auth/me', () =>
-          HttpResponse.json({ id: 1, username: 'alice', is_active: true, permissions: [], groups: [] })
-        )
-      );
-
-      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
-      // Positive evidence first: a real user is set before the failing refresh.
-      await waitFor(() => expect(result.current.user?.username).toBe('alice'));
-
-      server.use(http.get('/api/v1/auth/me', () => new HttpResponse(null, { status: 500 })));
-
-      await act(async () => {
-        await result.current.refreshUser();
-      });
-
-      expect(result.current.user).toBeNull();
-      expect(getAuthToken()).toBeNull();
-      expect(localStorage.getItem('auth_token')).toBeNull();
-      expect(sessionStorage.getItem('auth_token')).toBeNull();
-    });
-
-    it('clears the token and user on a 401 too, unlike checkAuthStatus which only clears on a definitive 401 after retries', async () => {
-      server.use(
-        http.get('/api/v1/auth/me', () =>
-          HttpResponse.json({ id: 1, username: 'alice', is_active: true, permissions: [], groups: [] })
-        )
-      );
-
-      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
-      await waitFor(() => expect(result.current.user?.username).toBe('alice'));
-
-      server.use(
-        http.get('/api/v1/auth/me', () =>
-          HttpResponse.json({ detail: 'Could not validate credentials' }, { status: 401 })
-        )
-      );
-
-      await act(async () => {
-        await result.current.refreshUser();
-      });
-
-      expect(result.current.user).toBeNull();
-      expect(getAuthToken()).toBeNull();
-    });
-
-    it('no-ops without calling /auth/me when auth is disabled', async () => {
-      server.use(
-        http.get('/api/v1/auth/status', () =>
-          HttpResponse.json({ auth_enabled: false, requires_setup: false })
-        )
-      );
-      let meCalled = false;
-      server.use(
-        http.get('/api/v1/auth/me', () => {
-          meCalled = true;
-          return HttpResponse.json({ id: 1, username: 'alice', is_active: true, permissions: [], groups: [] });
-        })
-      );
-
-      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
-      await waitFor(() => expect(result.current.loading).toBe(false));
-      expect(result.current.authEnabled).toBe(false);
-
-      await act(async () => {
-        await result.current.refreshUser();
-      });
-
-      expect(meCalled).toBe(false);
-      expect(result.current.user).toBeNull();
-    });
-
-    it('no-ops without calling /auth/me when no token is present', async () => {
-      setAuthToken(null);
-      let meCalled = false;
-      server.use(
-        http.get('/api/v1/auth/me', () => {
-          meCalled = true;
-          return HttpResponse.json({ id: 1, username: 'alice', is_active: true, permissions: [], groups: [] });
-        })
-      );
-
-      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
-      await waitFor(() => expect(result.current.loading).toBe(false));
-      expect(getAuthToken()).toBeNull();
-      expect(result.current.user).toBeNull();
-
-      await act(async () => {
-        await result.current.refreshUser();
-      });
-
-      expect(meCalled).toBe(false);
-      expect(result.current.user).toBeNull();
-    });
-  });
-
-  // T-109: refreshAuth() is the public re-check-auth-status function exposed
-  // on the context (SetupPage calls it right after api.setupAuth() succeeds,
-  // to pick up the freshly-flipped auth_enabled/requires_setup flags without
-  // a full page reload). It's a thin wrapper around checkAuthStatus() — see
-  // the "token validation on mount (#1889)" describe above for that
-  // function's full retry/401 behaviour; these tests exercise it via the
-  // manual refreshAuth() entry point instead of the mount-time effect, and
-  // confirm it actually re-hits the network rather than replaying stale state.
   describe('refreshAuth (T-109)', () => {
     afterEach(() => {
       setAuthToken(null);
       localStorage.removeItem('auth_token');
     });
 
-    it('re-fetches /auth/status (and /auth/me once a token exists) and updates authEnabled/requiresSetup/user, mirroring the post-setup admin-bootstrap re-check', async () => {
+    it('re-fetches /auth/status (and /auth/me once a token exists) and updates authEnabled/user, mirroring the post-setup admin-bootstrap re-check', async () => {
       let statusCalls = 0;
       let meCalls = 0;
       server.use(
@@ -1602,7 +1426,7 @@ describe('AuthContext', () => {
 
       // Before: setup is still required, no user, and only the mount-time
       // fetch has happened.
-      await waitFor(() => expect(result.current.requiresSetup).toBe(true));
+      await waitFor(() => expect(statusCalls).toBe(1));
       expect(result.current.authEnabled).toBe(false);
       expect(result.current.user).toBeNull();
       expect(statusCalls).toBe(1);
@@ -1641,7 +1465,6 @@ describe('AuthContext', () => {
       expect(statusCalls).toBe(2);
       expect(meCalls).toBe(1);
       expect(result.current.authEnabled).toBe(true);
-      expect(result.current.requiresSetup).toBe(false);
       expect(result.current.user?.username).toBe('admin');
     });
 

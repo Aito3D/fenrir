@@ -161,7 +161,7 @@ _stl_render_lock = asyncio.Lock()
 
 def _ensure_library_file_visible(
     library_file: LibraryFile | None,
-    user: User | None,
+    user: User | ApiKeyActor | None,
     can_read_all: bool,
 ) -> LibraryFile:
     """Per-file visibility gate for ownership-scoped LIBRARY reads (#1726-adjacent).
@@ -213,7 +213,7 @@ def _archive_link(archive_id: int | None, archives: dict[int, str | None]) -> di
     return {"archive_id": archive_id, "archive_name": archives[archive_id]}
 
 
-def _own_files_filter(user: User | None) -> list:
+def _own_files_filter(user: User | ApiKeyActor | None) -> list:
     """Extra WHERE terms that count only ``user``'s files, for a read_own user.
 
     Folder file counts and activity times must not reveal files the user
@@ -224,7 +224,7 @@ def _own_files_filter(user: User | None) -> list:
     return [LibraryFile.created_by_id == user.id]
 
 
-async def _load_index(db: AsyncSession, user: User | None) -> FolderIndex:
+async def _load_index(db: AsyncSession, user: User | ApiKeyActor | None) -> FolderIndex:
     """The folder index a response for ``user`` needs (#3201).
 
     Who owns which file is needed only to decide what a read_own user sees
@@ -237,7 +237,7 @@ async def _load_index(db: AsyncSession, user: User | None) -> FolderIndex:
     return await load_folder_index(db, with_files=needs_files)
 
 
-def _folder_access_fields(index: FolderIndex, folder: LibraryFolder, user: User | None) -> dict:
+def _folder_access_fields(index: FolderIndex, folder: LibraryFolder, user: User | ApiKeyActor | None) -> dict:
     """The ownership fields of a folder response, for the user asking (#3201)."""
     return {
         "created_by_id": folder.created_by_id,
@@ -1060,7 +1060,7 @@ async def _backfill_external_thumbnails(folder_ids: list[int]) -> None:
 async def list_folders(
     response: Response,
     db: AsyncSession = Depends(get_db),
-    auth_result: tuple[User | None, bool] = Depends(
+    auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_READ_ALL,
             Permission.LIBRARY_READ_OWN,
@@ -1186,7 +1186,7 @@ async def list_folders(
 async def get_folders_by_project(
     project_id: int,
     db: AsyncSession = Depends(get_db),
-    auth_result: tuple[User | None, bool] = Depends(
+    auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_READ_ALL,
             Permission.LIBRARY_READ_OWN,
@@ -1254,7 +1254,7 @@ async def get_folders_by_project(
 async def get_folders_by_archive(
     archive_id: int,
     db: AsyncSession = Depends(get_db),
-    auth_result: tuple[User | None, bool] = Depends(
+    auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_READ_ALL,
             Permission.LIBRARY_READ_OWN,
@@ -1264,18 +1264,28 @@ async def get_folders_by_archive(
 ):
     """Get all folders linked to a specific archive, those the user may see (#3201)."""
     user, _ = auth_result
-    archives = await _linkable_archives(db, [archive_id], printer_scope)
-    if archive_id not in archives:
-        return []
+    return (await _folders_by_archive(db, user, [archive_id], printer_scope))[archive_id]
+
+
+async def _folders_by_archive(
+    db: AsyncSession, user: User | ApiKeyActor | None, archive_ids: list[int], printer_scope: PrinterScope
+) -> dict[int, list]:
+    """The folders linked to each archive that *user* may see (#3201), by archive id.
+
+    An archive on a printer outside *printer_scope* has none.
+    """
+    folders: dict[int, list] = {archive_id: [] for archive_id in archive_ids}
+    archives = await _linkable_archives(db, archive_ids, printer_scope)
+    if not archives:
+        return folders
     index = await _load_index(db, user)
     visible = visible_folder_ids(index, user)
     own_files = _own_files_filter(user)
     result = await db.execute(
-        select(LibraryFolder).where(LibraryFolder.archive_id == archive_id).order_by(LibraryFolder.name)
+        select(LibraryFolder).where(LibraryFolder.archive_id.in_(list(archives))).order_by(LibraryFolder.name)
     )
     rows = [folder for folder in result.scalars().all() if visible is None or folder.id in visible]
 
-    folders = []
     for folder in rows:
         # Get file count + latest file activity (#1770/#2680) in one trip. Prefer
         # the real on-disk mtime (external scans), fall back to the DB updated_at.
@@ -1294,7 +1304,8 @@ async def get_folders_by_archive(
         own_activity = folder.fs_modified_at or folder.updated_at
         latest_activity_at = max(own_activity, latest_file) if latest_file is not None else own_activity
 
-        folders.append(
+        assert folder.archive_id is not None  # selected by archive_id
+        folders[folder.archive_id].append(
             FolderResponse(
                 id=folder.id,
                 name=folder.name,
@@ -1384,7 +1395,7 @@ async def create_folder(
 async def get_folder(
     folder_id: int,
     db: AsyncSession = Depends(get_db),
-    auth_result: tuple[User | None, bool] = Depends(
+    auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_READ_ALL,
             Permission.LIBRARY_READ_OWN,
@@ -1453,7 +1464,7 @@ _README_PREFERRED_STEMS = ("readme", "description")
 async def get_folder_readme(
     folder_id: int,
     db: AsyncSession = Depends(get_db),
-    auth_result: tuple[User | None, bool] = Depends(
+    auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_READ_ALL,
             Permission.LIBRARY_READ_OWN,
@@ -1514,7 +1525,7 @@ async def update_folder(
     folder_id: int,
     data: FolderUpdate,
     db: AsyncSession = Depends(get_db),
-    auth_result: tuple[User | None, bool] = Depends(
+    auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_UPDATE_ALL,
             Permission.LIBRARY_UPDATE_OWN,
@@ -1637,7 +1648,7 @@ async def update_folder(
 async def delete_folder(
     folder_id: int,
     db: AsyncSession = Depends(get_db),
-    auth_result: tuple[User | None, bool] = Depends(
+    auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_DELETE_ALL,
             Permission.LIBRARY_DELETE_OWN,
@@ -2462,7 +2473,7 @@ async def list_files(
     limit: int = Query(default=100, ge=1, le=2000),
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
-    auth_result: tuple[User | None, bool] = Depends(
+    auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_READ_ALL,
             Permission.LIBRARY_READ_OWN,
@@ -3529,7 +3540,7 @@ STL_THUMBNAIL_BATCH_LIMIT = 100
 async def batch_generate_stl_thumbnails(
     request: BatchThumbnailRequest,
     db: AsyncSession = Depends(get_db),
-    auth_result: tuple[User | None, bool] = Depends(
+    auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_UPDATE_ALL,
             Permission.LIBRARY_UPDATE_OWN,
@@ -4027,7 +4038,7 @@ async def add_files_to_queue(
 async def get_library_file_plates(
     file_id: int,
     db: AsyncSession = Depends(get_db),
-    auth_result: tuple[User | None, bool] = Depends(
+    auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_READ_ALL,
             Permission.LIBRARY_READ_OWN,
@@ -4320,7 +4331,7 @@ async def get_library_file_plate_thumbnail(
     file_id: int,
     plate_index: int,
     db: AsyncSession = Depends(get_db),
-    auth_result: tuple[User | None, bool] = Depends(
+    auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_media_token_ownership(
             Permission.LIBRARY_READ_ALL,
             Permission.LIBRARY_READ_OWN,
@@ -4426,7 +4437,7 @@ async def get_library_file_filament_requirements(
     request_id: str | None = None,
     full_slots: bool = False,
     db: AsyncSession = Depends(get_db),
-    auth_result: tuple[User | None, bool] = Depends(
+    auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_READ_ALL,
             Permission.LIBRARY_READ_OWN,
@@ -5982,7 +5993,7 @@ async def print_library_file(
 async def get_file(
     file_id: int,
     db: AsyncSession = Depends(get_db),
-    auth_result: tuple[User | None, bool] = Depends(
+    auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_READ_ALL,
             Permission.LIBRARY_READ_OWN,
@@ -6230,7 +6241,7 @@ async def update_file(
     file_id: int,
     data: FileUpdate,
     db: AsyncSession = Depends(get_db),
-    auth_result: tuple[User | None, bool] = Depends(
+    auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_UPDATE_ALL,
             Permission.LIBRARY_UPDATE_OWN,
@@ -6264,12 +6275,21 @@ async def update_file(
         # and _without_print_name strips the embedded 3MF Title on import (#1489).
 
     if data.folder_id is not None:
-        if data.folder_id == 0:
-            file.folder_id = None
-        else:
+        target_folder = None
+        if data.folder_id != 0:
             # library:update_all moves into any folder, as before (#3201).
-            await get_writable_folder(db, data.folder_id, None if can_modify_all else user)
-            file.folder_id = data.folder_id
+            target_folder = await get_writable_folder(db, data.folder_id, None if can_modify_all else user)
+        # Into or out of an external folder the bytes have to move too, and a
+        # read-only one refuses them: that is the move route's work. Here only
+        # folder_id changed, so the file showed in a folder its bytes were not
+        # in (F8).
+        unchanged = (target_folder.id if target_folder is not None else None) == file.folder_id
+        if not unchanged and (file.is_external or (target_folder is not None and target_folder.is_external)):
+            raise HTTPException(
+                status_code=400,
+                detail="Move a file into or out of an external folder with POST /api/v1/library/files/move",
+            )
+        file.folder_id = target_folder.id if target_folder is not None else None
 
     if data.project_id is not None:
         if data.project_id == 0:
@@ -6301,7 +6321,7 @@ async def update_file(
 async def delete_file(
     file_id: int,
     db: AsyncSession = Depends(get_db),
-    auth_result: tuple[User | None, bool] = Depends(
+    auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_DELETE_ALL,
             Permission.LIBRARY_DELETE_OWN,
@@ -6404,7 +6424,7 @@ def _by_id_read_path(file: LibraryFile, *, refused_as_missing: bool = False) -> 
 async def download_file(
     file_id: int,
     db: AsyncSession = Depends(get_db),
-    auth_result: tuple[User | None, bool] = Depends(
+    auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_READ_ALL,
             Permission.LIBRARY_READ_OWN,
@@ -6431,7 +6451,7 @@ async def download_file(
 async def create_library_slicer_token(
     file_id: int,
     db: AsyncSession = Depends(get_db),
-    auth_result: tuple[User | None, bool] = Depends(
+    auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_READ_ALL,
             Permission.LIBRARY_READ_OWN,
@@ -6493,7 +6513,7 @@ async def download_library_file_for_slicer(
 async def get_thumbnail(
     file_id: int,
     db: AsyncSession = Depends(get_db),
-    auth_result: tuple[User | None, bool] = Depends(
+    auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_media_token_ownership(
             Permission.LIBRARY_READ_ALL,
             Permission.LIBRARY_READ_OWN,
@@ -6534,7 +6554,7 @@ async def upload_preview_thumbnail(
     file_id: int,
     thumbnail: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
-    auth_result: tuple[User | None, bool] = Depends(
+    auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_UPDATE_ALL,
             Permission.LIBRARY_UPDATE_OWN,
@@ -6635,7 +6655,7 @@ async def upload_file_photo(
     file_id: int,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
-    auth_result: tuple[User | None, bool] = Depends(
+    auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_UPDATE_ALL,
             Permission.LIBRARY_UPDATE_OWN,
@@ -6691,7 +6711,7 @@ async def get_file_photo(
     file_id: int,
     filename: str,
     db: AsyncSession = Depends(get_db),
-    auth_result: tuple[User | None, bool] = Depends(
+    auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_media_token_ownership(
             Permission.LIBRARY_READ_ALL,
             Permission.LIBRARY_READ_OWN,
@@ -6724,7 +6744,7 @@ async def delete_file_photo(
     file_id: int,
     filename: str,
     db: AsyncSession = Depends(get_db),
-    auth_result: tuple[User | None, bool] = Depends(
+    auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_UPDATE_ALL,
             Permission.LIBRARY_UPDATE_OWN,
@@ -6770,7 +6790,7 @@ async def get_gcode(
     file_id: int,
     plate: int | None = None,
     db: AsyncSession = Depends(get_db),
-    auth_result: tuple[User | None, bool] = Depends(
+    auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_READ_ALL,
             Permission.LIBRARY_READ_OWN,
@@ -6833,7 +6853,7 @@ async def get_gcode(
 async def move_files(
     data: FileMoveRequest,
     db: AsyncSession = Depends(get_db),
-    auth_result: tuple[User | None, bool] = Depends(
+    auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_UPDATE_ALL,
             Permission.LIBRARY_UPDATE_OWN,
@@ -6967,7 +6987,7 @@ async def move_files(
 async def bulk_delete(
     data: BulkDeleteRequest,
     db: AsyncSession = Depends(get_db),
-    auth_result: tuple[User | None, bool] = Depends(
+    auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_DELETE_ALL,
             Permission.LIBRARY_DELETE_OWN,
@@ -7068,7 +7088,7 @@ async def bulk_delete(
 @router.get("/stats")
 async def get_library_stats(
     db: AsyncSession = Depends(get_db),
-    auth_result: tuple[User | None, bool] = Depends(
+    auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_READ_ALL,
             Permission.LIBRARY_READ_OWN,

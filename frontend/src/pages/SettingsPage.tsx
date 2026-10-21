@@ -75,6 +75,7 @@ import type { UsersSubTab } from '../lib/settingsSearch';
 import { availableEngines, hasEngineChoice, resolveEngine, type SliceEngineId } from '../lib/sliceEngines';
 import { NumberInput } from '../components/NumberInput';
 import { PrinterSearchPicker } from '../components/PrinterSearchPicker';
+import { UsbCameraDevicePicker } from '../components/UsbCameraDevicePicker';
 
 const validTabs = ['general', 'plugs', 'sensors', 'notifications', 'queue', 'filament', 'camera', 'network', 'apikeys', 'virtual-printer', 'spoolbuddy', 'failure-detection', 'users', 'backup', 'zoho', 'projects'] as const; // Fenrir: + projects
 type TabType = typeof validTabs[number];
@@ -1027,7 +1028,8 @@ export function SettingsPage() {
     const updateData: UserUpdate = {
       username: userFormData.username || undefined,
       password: userFormData.password || undefined,
-      email: userFormData.email || undefined,
+      // Empty removes the email; the backend reads null as "unchanged".
+      email: userFormData.email,
       role: userFormData.role,
       group_ids: userFormData.group_ids,
     };
@@ -1275,7 +1277,6 @@ export function SettingsPage() {
     // Check if there are actual changes
     const hasChanges =
       baseline.auto_archive !== localSettings.auto_archive ||
-      baseline.save_thumbnails !== localSettings.save_thumbnails ||
       baseline.capture_finish_photo !== localSettings.capture_finish_photo ||
       (baseline.finish_photo_restore_plate ?? true) !== (localSettings.finish_photo_restore_plate ?? true) ||
       baseline.default_filament_cost !== localSettings.default_filament_cost ||
@@ -1291,7 +1292,6 @@ export function SettingsPage() {
       (baseline.announcements_enabled ?? true) !== (localSettings.announcements_enabled ?? true) ||
       (baseline.announcements_all_users ?? false) !== (localSettings.announcements_all_users ?? false) ||
       (baseline.local_login_enabled ?? true) !== (localSettings.local_login_enabled ?? true) ||
-      baseline.notification_language !== localSettings.notification_language ||
       (baseline.bed_cooled_threshold ?? 35) !== (localSettings.bed_cooled_threshold ?? 35) ||
       baseline.ams_humidity_good !== localSettings.ams_humidity_good ||
       baseline.ams_humidity_fair !== localSettings.ams_humidity_fair ||
@@ -1401,7 +1401,6 @@ export function SettingsPage() {
       // Only send the fields we manage on this page (exclude virtual_printer_* which are managed separately)
       const settingsToSave: AppSettingsUpdate = {
         auto_archive: localSettings.auto_archive,
-        save_thumbnails: localSettings.save_thumbnails,
         capture_finish_photo: localSettings.capture_finish_photo,
         // #2547: `?? true` mirrors the toggle's own default, so an install
         // whose settings payload predates this field saves what the user is
@@ -1425,7 +1424,6 @@ export function SettingsPage() {
         announcements_enabled: localSettings.announcements_enabled ?? true,
         announcements_all_users: localSettings.announcements_all_users ?? false,
         local_login_enabled: localSettings.local_login_enabled,
-        notification_language: localSettings.notification_language,
         bed_cooled_threshold: localSettings.bed_cooled_threshold,
         ams_humidity_good: localSettings.ams_humidity_good,
         ams_humidity_fair: localSettings.ams_humidity_fair,
@@ -1568,6 +1566,8 @@ export function SettingsPage() {
   const [localSnapshotUrls, setLocalSnapshotUrls] = useState<Record<number, string>>({});
   const snapshotUrlSaveTimeoutRef = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
   const [openCameraPrinterId, setOpenCameraPrinterId] = useState<number | null>(null);
+  // USB cameras whose device path is typed instead of picked from the list.
+  const [usbManualEntry, setUsbManualEntry] = useState<Record<number, boolean>>({});
   const initializedPrinterSnapshotUrlsRef = useRef<Set<number>>(new Set());
 
   // Initialize local camera URLs from printer data
@@ -2148,23 +2148,6 @@ export function SettingsPage() {
                     type="checkbox"
                     checked={localSettings.auto_archive}
                     onChange={(e) => updateSetting('auto_archive', e.target.checked)}
-                    className="sr-only peer"
-                  />
-                  <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
-                </label>
-              </div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-white">{t('settings.saveThumbnails')}</p>
-                  <p className="text-sm text-bambu-gray">
-                    {t('settings.saveThumbnailsDescription')}
-                  </p>
-                </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={localSettings.save_thumbnails}
-                    onChange={(e) => updateSetting('save_thumbnails', e.target.checked)}
                     className="sr-only peer"
                   />
                   <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
@@ -4132,29 +4115,6 @@ export function SettingsPage() {
               </div>
             </div>
 
-            {/* Notification Language Setting */}
-            <Card className="mb-4">
-              <CardContent className="py-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-white text-sm font-medium">{t('settings.notificationLanguage')}</p>
-                    <p className="text-xs text-bambu-gray">{t('settings.notificationLanguageDescription')}</p>
-                  </div>
-                  <select
-                    value={localSettings.notification_language || 'en'}
-                    onChange={(e) => updateSetting('notification_language', e.target.value)}
-                    className="px-2 py-1.5 bg-bambu-dark border border-bambu-dark-tertiary rounded text-white text-sm focus:outline-none focus:ring-1 focus:ring-bambu-green"
-                  >
-                    {availableLanguages.map((lang) => (
-                      <option key={lang.code} value={lang.code}>
-                        {lang.nativeName}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </CardContent>
-            </Card>
-
             {/* Bed Cooled Threshold Setting */}
             <Card className="mb-4">
               <CardContent className="py-3">
@@ -4595,14 +4555,34 @@ export function SettingsPage() {
 
                             {isOpen && (
                           <div className="space-y-2 px-2 pb-3 pt-1 bg-bambu-dark/40">
-                            <input
-                              type="text"
-                              aria-label={`${t('settings.cameraPlaceholderUrl')}: ${printer.name}`}
-                              placeholder={printer.external_camera_type === 'usb' ? t('settings.cameraPlaceholderUsb') : t('settings.cameraPlaceholderUrl')}
-                              value={localCameraUrls[printer.id] ?? printer.external_camera_url ?? ''}
-                              onChange={(e) => handleCameraUrlChange(printer.id, e.target.value)}
-                              className="w-full px-2 py-1.5 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-white text-sm focus:border-bambu-green focus:outline-none"
-                            />
+                            {printer.external_camera_type === 'usb' && !usbManualEntry[printer.id] ? (
+                              <UsbCameraDevicePicker
+                                printerName={printer.name}
+                                value={localCameraUrls[printer.id] ?? printer.external_camera_url ?? ''}
+                                onSelect={(device) => handleCameraUrlChange(printer.id, device)}
+                                onEnterManually={() => setUsbManualEntry(prev => ({ ...prev, [printer.id]: true }))}
+                              />
+                            ) : (
+                              <>
+                                <input
+                                  type="text"
+                                  aria-label={`${t('settings.cameraPlaceholderUrl')}: ${printer.name}`}
+                                  placeholder={printer.external_camera_type === 'usb' ? t('settings.cameraPlaceholderUsb') : t('settings.cameraPlaceholderUrl')}
+                                  value={localCameraUrls[printer.id] ?? printer.external_camera_url ?? ''}
+                                  onChange={(e) => handleCameraUrlChange(printer.id, e.target.value)}
+                                  className="w-full px-2 py-1.5 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-white text-sm focus:border-bambu-green focus:outline-none"
+                                />
+                                {printer.external_camera_type === 'usb' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setUsbManualEntry(prev => ({ ...prev, [printer.id]: false }))}
+                                    className="text-xs text-bambu-green hover:underline"
+                                  >
+                                    {t('settings.usbCameraPickFromList')}
+                                  </button>
+                                )}
+                              </>
+                            )}
                             <div className="flex flex-wrap items-center gap-2">
                               <select
                                 value={printer.external_camera_type || 'mjpeg'}

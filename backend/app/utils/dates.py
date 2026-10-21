@@ -1,6 +1,8 @@
 """Date-range helpers shared by stats/list endpoints."""
 
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone, tzinfo
+
+from backend.app.utils.local_time import day_zone
 
 
 def local_day_bounds(
@@ -29,3 +31,14 @@ def local_day_bounds(
         else None
     )
     return dt_from, dt_to
+
+
+def request_day_zone(tz: str | None, tz_offset_minutes: int | None = None) -> tzinfo:
+    """The zone a request's calendar dates are in.
+
+    The IANA ``tz`` when sent (it knows DST); else the fixed UTC offset older
+    clients send as ``tz_offset_minutes``; else the server's own zone.
+    """
+    if not tz and tz_offset_minutes is not None:
+        return timezone(timedelta(minutes=tz_offset_minutes))
+    return day_zone(tz)

@@ -930,6 +930,7 @@ export default {
       done: 'Klaar',
       starting: 'Starten...',
       uploadFirmware: 'Firmware uploaden',
+      printerBusy: 'De printer is bezig. Firmware kan alleen worden geüpload als hij inactief is.',
       uploadFailed: 'Upload starten mislukt: {{error}}',
       uploadedToast: 'Firmware geüpload! Start de update vanaf het printerscherm.',
       availableVersions: 'Beschikbare versies',
@@ -2377,8 +2378,6 @@ export default {
     upToDate: 'Je bent up-to-date',
     updateAvailable: 'Update beschikbaar',
     // Notifications
-    notificationLanguage: 'Taal voor meldingen',
-    notificationLanguageDescription: 'Taal voor pushmeldingen',
     bedCooledThreshold: 'Drempel voor afgekoeld bed',
     bedCooledThresholdDescription: 'Temperatuur waaronder het bed na een afdruk als afgekoeld wordt beschouwd',
     userNotificationsEnabled: 'Gebruikersmeldingen',
@@ -2505,7 +2504,6 @@ export default {
     // Sidebar
     sidebarOrder: 'Volgorde zijbalk',
     // Camera
-    saveThumbnails: 'Miniaturen opslaan',
     captureFinishPhoto: 'Eindfoto vastleggen',
     noPrintersConfigured: 'Geen printers geconfigureerd',
     // Updates
@@ -2616,7 +2614,7 @@ export default {
     updateEnergyCostDescription: 'Sta toe dat deze sleutel via POST een nieuwe elektriciteitsprijs per kWh naar /settings/electricity-price stuurt. Handig voor Home Assistant-automatiseringen met dynamische tarieven (Tibber, Octopus, enz.). Dit is het enige instellingenveld dat via een API-sleutel schrijfbaar is.',
     energyCostBadge: 'Energie',
     sendNotifications: 'Meldingen versturen',
-    sendNotificationsDescription: 'Staat deze sleutel toe berichten te versturen via de meldingskanalen die berichten van gekoppelde apps accepteren (POST /notifications/app-message). Voor apps zoals Bambuddy Orders. Verder niets: de sleutel kan de kanalen niet lezen of wijzigen.',
+    sendNotificationsDescription: 'Staat deze sleutel toe berichten te versturen via de meldingskanalen die berichten van gekoppelde apps accepteren (POST /notifications/app-message) en een aantal te tonen op de zijbalklink die naar de app wijst (PUT /external-links/badge). Voor apps zoals Bambuddy Orders. Verder niets: de sleutel kan de kanalen en links niet lezen of wijzigen.',
     sendNotificationsBadge: 'Meldingen',
     legacyKey: 'Verouderd',
     legacyKeyTooltip: 'Aangemaakt vóór eigendom per gebruiker; maak opnieuw om cloudtoegang te gebruiken',
@@ -3049,7 +3047,6 @@ export default {
     // Archive
     autoArchivePrints: 'Afdrukken automatisch archiveren',
     autoArchiveDescription: '3MF-bestanden automatisch opslaan wanneer afdrukken zijn voltooid. Uit: geen enkele printer archiveert afdrukken die buiten Fenrir zijn gestart.',
-    saveThumbnailsDescription: 'Voorbeeldafbeeldingen uit 3MF-bestanden extraheren en opslaan',
     captureFinishPhotoDescription: 'Maak een foto met de printercamera wanneer de afdruk is voltooid. Fenrir neemt tijdens de afdruk een korte timelapse op zodat de foto kan worden genomen van het moment voordat het bed zakt; het timelapsebestand blijft behouden als je timelapse voor deze afdruk hebt ingeschakeld, anders wordt het automatisch verwijderd nadat de foto is vastgelegd.',
     finishPhotoRestorePlate: 'Plaat herstellen voor eindfoto',
     finishPhotoRestorePlateDescription: 'De printer laat de bouwplaat ongeveer 100 mm zakken wanneer een afdruk eindigt, waardoor de voltooide afdruk onder het camerabeeld komt. Fenrir brengt de plaat terug tot net boven de laatst geprinte laag, maakt de foto en laat hem daarna weer zakken. Wordt overgeslagen wanneer de afdrukhoogte onbekend is of er een andere taak in de wachtrij staat.',
@@ -3062,6 +3059,15 @@ export default {
     cameraWindowDescription: 'Camera opent in een apart browservenster',
     externalCamerasDescription: 'Configureer externe camera\'s ter vervanging van de ingebouwde printercamera. Ondersteunt MJPEG-streams, RTSP, HTTP-momentopnamen en USB-camera\'s (V4L2). Wanneer ingeschakeld wordt de externe camera gebruikt voor liveweergave en eindfoto\'s.',
     cameraPlaceholderUsb: 'Apparaatpad (/dev/video0)',
+    usbCameraDevice: 'USB-apparaat',
+    usbCameraSelect: 'Kies een apparaat',
+    usbCameraSearching: 'Apparaten zoeken…',
+    usbCameraNotFound: '{{device}} (niet gevonden)',
+    usbCameraRefresh: 'Opnieuw naar apparaten zoeken',
+    usbCameraListFailed: 'De videoapparaten konden niet worden opgehaald.',
+    usbCameraNoneFound: 'Fenrir ziet geen videoapparaten. Geef in Docker de camera door aan de container:',
+    usbCameraEnterManually: 'Pad handmatig invoeren',
+    usbCameraPickFromList: 'Een gevonden apparaat kiezen',
     cameraPlaceholderUrl: 'Camera-URL (rtsp://... of http://...)',
     cameraTypeMjpeg: 'MJPEG-stream',
     cameraTypeRtsp: 'RTSP-stream',
@@ -3240,6 +3246,9 @@ export default {
       linkedAccounts: 'Gekoppelde SSO-accounts',
       linkedAccountsDesc: 'Deze externe identiteitsproviders zijn gekoppeld aan je account.',
       oidcUnlinked: 'Account ontkoppeld.',
+      oidcUnlinkConfirmTitle: 'Account ontkoppelen?',
+      oidcUnlinkConfirmMessage: 'Je kunt dan niet meer inloggen met {{provider}}.',
+      oidcUnlinkConfirmAction: 'Ontkoppelen',
     },
 
     // Session Policy (#1706) — admin-configurable session lifetime ceiling.
@@ -3623,6 +3632,7 @@ export default {
     deleteFilesConfirm: '{{count}} geselecteerde bestanden verwijderen? Dit kan niet ongedaan worden gemaakt.',
     noFiles: 'Geen bestanden op printer',
     printerUnavailable: 'De bestandsservice van de printer is niet beschikbaar. Probeer het opnieuw wanneer de printer bereikbaar is.',
+    listingTimedOut: 'De printer antwoordt, maar het tonen van deze map duurt te lang (een grote map op een trage SD-kaart). Probeer het zo opnieuw.',
     loadingFiles: 'Bestanden laden...',
     failedToLoad: 'Bestanden laden mislukt',
     toast: {
@@ -5201,8 +5211,6 @@ export default {
     linkToSpoolman: 'Koppelen aan Spoolman',
     openInSpoolman: 'Openen in Spoolman',
     unlinkSpool: 'Spoel ontkoppelen',
-    unlinkConfirmTitle: 'Spoeltoewijzing verwijderen?',
-    unlinkConfirmMessage: 'Hiermee wordt de spoel uit deze sleuf verwijderd. De spoelgegevens zelf blijven ongewijzigd.',
     selectSpool: 'Spoel selecteren',
     noUnlinkedSpools: 'Geen niet-toegewezen spoelen beschikbaar',
     linkSuccess: 'Spoel succesvol toegewezen',
@@ -5288,6 +5296,8 @@ export default {
       updateFailed: 'Bulkupdate mislukt',
       updatePartial: '{{ok}} spoelen bijgewerkt, {{failed}} mislukt',
       updateAllFailed: 'Alle {{count}} spoelupdates zijn mislukt — selectie blijft behouden zodat je opnieuw kunt proberen',
+      resetPartial: 'Teller gereset voor {{ok}} spoel(en), {{failed}} mislukt',
+      resetAllFailed: 'Geen teller gereset: alle {{count}} mislukt',
       deleteSuccess: '{{count}} spoelen verwijderd',
       deleteFailed: 'Bulkverwijdering mislukt',
       deletePartial: '{{ok}} spoelen verwijderd, {{failed}} mislukt',
@@ -5441,6 +5451,7 @@ export default {
     measuredWeight: 'Gemeten gewicht',
     spoolName: 'Spoel',
     costPerKg: 'Kosten per kg',
+    costFromFilament: '(filamentprijs)',
     storageLocation: 'Opslaglocatie',
     temperature: 'Temperatuur',
     humidity: 'Luchtvochtigheid',
@@ -5965,6 +5976,8 @@ export default {
     backupSkippedNoChanges: 'Back-up overgeslagen - geen wijzigingen',
     backupFailed2: 'Back-up mislukt: {{message}}',
     clearedLogs: '{{count}} logboeken gewist',
+    clearHistoryConfirmTitle: 'Back-upgeschiedenis wissen?',
+    clearHistoryConfirmMessage: 'Dit verwijdert alle items uit de back-upgeschiedenis. De back-ups zelf blijven bewaard.',
     failedToClearLogs: 'Logboeken wissen mislukt: {{message}}',
 
     // Restore from Git backup (#2656)
@@ -6084,47 +6097,8 @@ export default {
     processing: 'Verwerken...',
     doNotClosePage: 'Sluit deze pagina niet en navigeer niet weg. Deze bewerking kan bij grote back-ups enkele minuten duren.',
 
-    // RestoreModal
+    // Restore (GitHubBackupSettings)
     restoring: 'Herstellen...',
-    restoreComplete: 'Herstel voltooid',
-    restoreFailed2: 'Herstel mislukt',
-    importSettings: 'Instellingen importeren uit een back-upbestand',
-    pleaseWaitRestoring: 'Wacht terwijl je gegevens worden hersteld',
-    selectBackupFile: 'Klik om een back-upbestand te selecteren (.json of .zip)',
-    duplicateHandling: 'Zo werkt afhandeling van duplicaten:',
-    matchPrinters: 'Printers',
-    matchPrintersBy: 'gekoppeld op serienummer',
-    matchSmartPlugs: 'Slimme stekkers',
-    matchSmartPlugsBy: 'gekoppeld op IP-adres',
-    matchNotificationProviders: 'Meldingsproviders',
-    matchNotificationProvidersBy: 'gekoppeld op naam',
-    matchFilaments: 'Filamenten',
-    matchFilamentsBy: 'gekoppeld op naam + type + merk',
-    matchArchives: 'Archieven',
-    matchArchivesBy: 'gekoppeld op inhoudshash (altijd overgeslagen)',
-    matchPendingUploads: 'Openstaande uploads',
-    matchPendingUploadsBy: 'gekoppeld op bestandsnaam',
-    matchSettingsTemplates: 'Instellingen en sjablonen',
-    matchSettingsTemplatesBy: 'altijd overschreven',
-    replaceExisting: 'Bestaande gegevens vervangen',
-    keepExisting: 'Bestaande gegevens behouden',
-    overwriteDescription: 'Items die al bestaan overschrijven met gegevens uit de back-up',
-    keepDescription: 'Alleen items herstellen die nog niet bestaan',
-    overwriteCaution: 'Let op:',
-    overwriteWarning: 'Overschrijven vervangt je huidige configuraties met gegevens uit de back-up. Printertoegangscodes worden om veiligheidsredenen nooit overschreven.',
-    cancel: 'Annuleren',
-    processingBackup: 'Back-upbestand verwerken...',
-    itemsRestored: 'Items hersteld',
-    itemsSkipped: 'Items overgeslagen',
-    restored: 'Hersteld',
-    skippedAlreadyExist: 'Overgeslagen (bestaan al)',
-    filesCategory: 'Bestanden (3MF, miniaturen, enz.)',
-    andMore: '...en {{count}} meer',
-    newApiKeysGenerated: 'Nieuwe API-sleutels gegenereerd',
-    keysShownOnce: 'Deze sleutels worden maar één keer getoond. Kopieer ze nu!',
-    copy: 'Kopiëren',
-    noDataFound: 'Er zijn geen gegevens gevonden om uit het back-upbestand te herstellen.',
-    close: 'Sluiten',
 
     // Scheduled local backups (#884)
     scheduledBackup: 'Geplande back-ups',
@@ -6162,24 +6136,15 @@ export default {
       ephemeralTitle: 'Deze back-ups blijven niet behouden na een herstart van de container',
       container_ephemeral: '{{path}} bevindt zich in de Fenrir-container, niet op de host. Back-ups die daar worden opgeslagen gaan verloren wanneer de container opnieuw wordt aangemaakt. Koppel de map vanaf de host:',
     },
-
-    // Category labels
-    categories: {
-      settings: 'Instellingen',
-      notification_providers: 'Meldingsproviders',
-      notification_templates: 'Meldingssjablonen',
-      smart_plugs: 'Slimme stekkers',
-      printers: 'Printers',
-      filaments: 'Filamenten',
-      maintenance_types: 'Onderhoudstypen',
-      archives: 'Archieven',
-      projects: 'Projecten',
-      pending_uploads: 'Openstaande uploads',
-      external_links: 'Externe links',
-      api_keys: 'API-sleutels',
-    },
   },
 
+  // Timelapse editor
+  timelapseEditor: {
+    processing: 'Bezig met verwerken…',
+    processingPercent: 'Bezig met verwerken… {{percent}}%',
+    failed: 'Verwerken mislukt',
+    cancelled: 'Verwerken geannuleerd',
+  },
   // Tags
   tags: {
     title: 'Tags',
@@ -6246,7 +6211,7 @@ export default {
     itemsPrintedHelp: 'Aantal items dat met deze afdruktaak is geproduceerd. Gebruik 0 als de hele plaat mislukt is.',
     filamentUsed: 'Gebruikt filament (g)',
     filamentUsedPlaceholder: 'bijv. 46.16',
-    filamentUsedHelp: 'Stel dit handmatig in wanneer een afdruk zonder 3MF is gearchiveerd, zodat deze toch meetelt in de filamenttotalen. Bij het opnieuw scannen van een archief met een 3MF wordt de waarde weer uit het bestand gelezen.',
+    filamentUsedHelp: 'Stel dit handmatig in wanneer een afdruk zonder 3MF is gearchiveerd, zodat deze toch meetelt in de filamenttotalen.',
     filamentUsedLocked: 'Alleen gebruikers die alle archieven mogen bewerken, kunnen deze waarde wijzigen: latere afdrukken van dit archief worden ermee afgerekend.',
     statusHelp: 'Mislukt en Afgebroken tellen in de statistieken als mislukt. Geannuleerd telt als gestopt en verlaagt het succespercentage niet.',
     notes: 'Notities',
@@ -6419,23 +6384,9 @@ export default {
 
   // Virtual Printer
   virtualPrinter: {
-    title: 'Virtuele printer',
-    running: 'Actief',
-    stopped: 'Gestopt',
-    description: {
-      default: 'Schakel een virtuele printer in die zichtbaar wordt in Bambu Studio en OrcaSlicer. Bestanden die naar deze printer worden gestuurd, worden direct gearchiveerd zonder te worden afgedrukt.',
-      proxy: 'Schakel een proxy in die slicerverkeer doorstuurt naar een echte printer, zodat je via elk netwerk op afstand kunt afdrukken.',
-    },
-    enable: {
-      title: 'Virtuele printer inschakelen',
-      visibleInSlicer: 'Zichtbaar als "Fenrir" in slicerdetectie',
-      proxyingTo: 'Proxy naar {{name}}',
-      notActive: 'Niet actief',
-    },
     model: {
       title: 'Printermodel',
       description: 'Selecteer welk printermodel moet worden geëmuleerd.',
-      restartWarning: 'Als je het model wijzigt, wordt de virtuele printer opnieuw gestart',
     },
     accessCode: {
       title: 'Toegangscode',
@@ -6443,7 +6394,6 @@ export default {
       notSet: 'Geen toegangscode ingesteld - vereist om in te schakelen',
       placeholder: 'Voer een code van 8 tekens in',
       placeholderChange: 'Voer een nieuwe code in om te wijzigen',
-      hint: 'Moet precies 8 tekens zijn. Wordt door slicers gebruikt voor authenticatie.',
       charCount: '({{count}}/8)',
       inheritedFromTarget: 'Overgenomen van doelprinter',
       derivedFromTargetHint: 'Gebruikt de toegangscode van de doelprinter. De bridge stuurt de slicerauthenticatie door naar de echte printer, dus de codes moeten overeenkomen — bewerk de toegangscode van de printer om deze waarde te wijzigen.',
@@ -6452,18 +6402,12 @@ export default {
     },
     targetPrinter: {
       title: 'Doelprinter',
-      configured: 'Proxydoel geconfigureerd',
-      notConfigured: 'Geen doelprinter geselecteerd - vereist voor proxymodus',
       placeholder: 'Selecteer een printer...',
-      hint: 'Selecteer de printer waarnaar slicerverkeer via de proxy moet worden doorgestuurd. De printer moet in LAN-modus staan.',
-      noPrinters: 'Geen printers geconfigureerd. Voeg eerst een printer toe om de proxymodus te gebruiken.',
     },
     remoteInterface: {
       title: 'Overschrijving netwerkinterface',
-      configured: 'Interface-overschrijving actief',
       optional: 'Optioneel - gebruik dit als het automatisch gedetecteerde IP-adres onjuist is (bijv. meerdere NIC\'s, Docker, VPN)',
       placeholder: 'Automatisch detecteren (standaard)...',
-      hint: 'Overschrijf het IP-adres dat via SSDP wordt geadverteerd en in het TLS-certificaat wordt gebruikt. Handig wanneer Fenrir meerdere netwerkinterfaces heeft.',
     },
     mode: {
       title: 'Modus',
@@ -6520,19 +6464,6 @@ export default {
       step1: 'Op hetzelfde LAN verschijnen virtuele printers automatisch in je slicer (Bambu Studio / OrcaSlicer) via detectie. Vanaf andere netwerken voeg je ze handmatig toe met IP-adres en toegangscode.',
       step2: 'Gebruik in de modi Archief, Beoordelen en Wachtrij de knop "Verzenden" in je slicer om 3MF-bestanden naar Fenrir te uploaden. De slicer toont "Afdruk geslaagd" — het bestand wordt opgeslagen, niet afgedrukt.',
       step3: 'In proxymodus stuurt de virtuele printer al het verkeer door naar een echte printer — afdrukken starten direct alsof je rechtstreeks verbonden bent.',
-    },
-    status: {
-      title: 'Statusdetails',
-      printerName: 'Printernaam',
-      model: 'Model',
-      serialNumber: 'Serienummer',
-      mode: 'Modus',
-      pendingFiles: 'Bestanden in behandeling',
-      targetPrinter: 'Doelprinter',
-      ftpPort: 'FTP-poort',
-      mqttPort: 'MQTT-poort',
-      ftpConnections: 'FTP-verbindingen',
-      mqttConnections: 'MQTT-verbindingen',
     },
     toast: {
       updated: 'Instellingen virtuele printer bijgewerkt',
@@ -7471,9 +7402,13 @@ export default {
     hexLabel: 'Hex: #{{hex}}',
     resetting: 'Resetten...',
     resetSlot: 'Slot resetten',
+    resetConfirmTitle: 'Slot resetten?',
+    resetConfirmMessage: 'Dit wist de filamentinstelling van dit slot op de printer.',
+    resetBlockedPrinting: 'Niet beschikbaar terwijl de printer print',
     cancel: 'Annuleren',
     configuring: 'Configureren...',
     configureSlot: 'Sleuf configureren',
+    kValueUnsent: 'Het filament is ingesteld, maar de K-waarde kon niet naar de printer worden verzonden.',
     // Why an Orca profile went into the slot as the generic for its material (#3216)
     orcaFallback: {
       no_filament_id: 'Dit Orca-profiel heeft geen eigen filament-ID, dus OrcaSlicer ziet deze sleuf als Generic {{material}}.',
@@ -7687,12 +7622,8 @@ export default {
       plateClearFailed: 'Plaat kon niet als vrij worden gemarkeerd',
     },
     modal: {
-      spoolDetected: 'Spoel gedetecteerd',
       assignToAms: 'Aan AMS toewijzen',
       syncWeight: 'Gewicht synchroniseren',
-      weightSynced: 'Gesynchroniseerd!',
-      syncing: 'Synchroniseren...',
-      newTagDetected: 'Nieuwe tag gedetecteerd',
       addToInventory: 'Aan voorraad toevoegen',
       assignToAmsTitle: 'Aan AMS toewijzen',
       selectSlot: 'Selecteer een slot',
@@ -7706,9 +7637,6 @@ export default {
       slot: 'Sleuf',
     },
     weight: {
-      noReading: 'Geen meting',
-      stable: 'Stabiel',
-      measuring: 'Meten...',
       tare: 'Tarreren',
       calibrate: 'Kalibreren',
     },
@@ -7835,6 +7763,7 @@ export default {
       linkFailedSpoolNotFound: 'De tag is geschreven, maar de spoel bestaat niet meer',
       spoolmanUnavailable: 'Spoolman is niet beschikbaar. Controleer de URL in de Spoolman-instellingen.',
       queueFailed: 'Schrijfopdracht in wachtrij plaatsen mislukt',
+      linkedToAms: 'Deze spoel is via de AMS gekoppeld aan zijn Bambu-RFID-tag. Een sticker zou die koppeling in Spoolman vervangen.',
       tryAgain: 'Opnieuw proberen',
       cancel: 'Annuleren',
       replaceWarning: 'Oude tag wordt ontkoppeld. Nieuwe tag vervangt deze.',
@@ -8554,6 +8483,8 @@ export default {
   },
   // Forecast & Inventory Intelligence
   forecast: {
+    clearAllConfirmTitle: 'Boodschappenlijst leegmaken?',
+    clearAllConfirmMessage: 'Dit verwijdert alle {{count}} item(s) van de boodschappenlijst.',
     title: 'Prognose',
     noSpools: 'Geen actieve spoelen gevonden. Voeg spoelen toe aan je voorraad om prognosegegevens te zien.',
     noUsageData: 'Geen verbruiksgegevens beschikbaar — voorraadverloop kan niet worden voorspeld.',

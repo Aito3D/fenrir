@@ -2028,6 +2028,7 @@ export default {
       done: 'Terminé',
       starting: 'Démarrage...',
       uploadFirmware: 'Téléverser le Firmware',
+      printerBusy: 'L\'imprimante est occupée. Le firmware ne peut être envoyé que lorsqu\'elle est inactive.',
       uploadFailed: 'Échec du téléversement : {{error}}',
       uploadedToast: 'Firmware téléversé ! Lancez la mise à jour sur l\'écran.',
       availableVersions: 'Versions disponibles',
@@ -3381,8 +3382,6 @@ export default {
     upToDate: 'Fenrir est à jour',
     updateAvailable: 'Mise à jour disponible',
     // Notifications
-    notificationLanguage: 'Langue des notifications',
-    notificationLanguageDescription: 'Langue pour les notifications push',
     bedCooledThreshold: 'Seuil de refroidissement du plateau',
     bedCooledThresholdDescription: 'Température en dessous de laquelle le plateau est considéré comme refroidi',
     userNotificationsEnabled: 'Notifications utilisateur',
@@ -3509,7 +3508,6 @@ export default {
     // Sidebar
     sidebarOrder: 'Ordre de la barre latérale',
     // Camera
-    saveThumbnails: 'Enregistrer les vignettes',
     captureFinishPhoto: 'Prendre une photo à la fin',
     noPrintersConfigured: 'Aucune imprimante configurée',
     // Updates
@@ -3620,7 +3618,7 @@ export default {
     updateEnergyCostDescription: 'Autoriser cette clé à POSTer un nouveau tarif électrique par kWh sur /settings/electricity-price. Utile pour les automatisations Home Assistant à tarif dynamique (Tibber, Octopus, etc.). Il s\'agit du seul champ de paramètres modifiable via clé API.',
     energyCostBadge: 'Énergie',
     sendNotifications: 'Envoyer des notifications',
-    sendNotificationsDescription: 'Autorise cette clé à envoyer des messages via les canaux de notification qui acceptent les messages des applications connectées (POST /notifications/app-message). Pour des applications comme Bambuddy Orders. Rien d\'autre : la clé ne peut ni lire ni modifier les canaux.',
+    sendNotificationsDescription: 'Autorise cette clé à envoyer des messages via les canaux de notification qui acceptent les messages des applications connectées (POST /notifications/app-message), et à afficher un nombre sur le lien de la barre latérale qui pointe vers l\'application (PUT /external-links/badge). Pour des applications comme Bambuddy Orders. Rien d\'autre : la clé ne peut ni lire ni modifier les canaux ou les liens.',
     sendNotificationsBadge: 'Notif.',
     legacyKey: 'Hérité',
     legacyKeyTooltip: 'Créé avant la propriété par utilisateur ; recréez pour l\'accès cloud',
@@ -4055,7 +4053,6 @@ export default {
     progressInTitleDescription: 'Affiche le pourcentage de l\'impression en cours et un anneau de progression dans l\'onglet du navigateur.',
     autoArchivePrints: 'Archiver automatiquement les impressions',
     autoArchiveDescription: 'Sauvegarder automatiquement les fichiers 3MF à la fin des impressions. Désactivé : aucune imprimante n\'archive les impressions lancées en dehors de Fenrir.',
-    saveThumbnailsDescription: 'Extraire et sauvegarder les images d\'aperçu des fichiers 3MF',
     captureFinishPhotoDescription: 'Prendre une photo avec la caméra de l\'imprimante à la fin de l\'impression. Fenrir enregistre un court timelapse pendant l\'impression afin que la photo puisse provenir du moment précédant l\'abaissement du plateau ; le fichier du timelapse est conservé si vous avez activé le timelapse pour cette impression, sinon il est supprimé automatiquement après la capture de la photo.',
     finishPhotoRestorePlate: 'Remonter le plateau pour la photo finale',
     finishPhotoRestorePlateDescription: 'L\'imprimante abaisse le plateau d\'environ 100 mm à la fin d\'une impression, plaçant l\'objet terminé sous le cadrage de la caméra. Fenrir le remonte juste au-dessus de la dernière couche imprimée, prend la photo, puis le rabaisse. Ignoré si la hauteur d\'impression est inconnue ou si un autre travail est en file d\'attente.',
@@ -4067,6 +4064,15 @@ export default {
     cameraWindowDescription: 'La caméra s\'ouvre dans une fenêtre de navigateur séparée',
     externalCamerasDescription: 'Configurer des caméras externes pour remplacer la caméra intégrée. Supporte les flux MJPEG, RTSP, snapshots HTTP et caméras USB (V4L2). Lorsqu\'activée, la caméra externe est utilisée pour la vue en direct et les photos de fin.',
     cameraPlaceholderUsb: 'Chemin du périphérique (/dev/video0)',
+    usbCameraDevice: 'Périphérique USB',
+    usbCameraSelect: 'Choisir un périphérique',
+    usbCameraSearching: 'Recherche des périphériques…',
+    usbCameraNotFound: '{{device}} (introuvable)',
+    usbCameraRefresh: 'Rechercher à nouveau les périphériques',
+    usbCameraListFailed: 'Impossible de lister les périphériques vidéo.',
+    usbCameraNoneFound: 'Fenrir ne voit aucun périphérique vidéo. Sous Docker, transmettez la caméra au conteneur :',
+    usbCameraEnterManually: 'Saisir le chemin manuellement',
+    usbCameraPickFromList: 'Choisir un périphérique détecté',
     cameraPlaceholderUrl: 'URL caméra (rtsp://... ou http://...)',
     cameraTypeMjpeg: 'Flux MJPEG',
     cameraTypeRtsp: 'Flux RTSP',
@@ -4254,6 +4260,9 @@ export default {
       linkedAccounts: 'Comptes SSO liés',
       linkedAccountsDesc: 'Ces fournisseurs d\'identité externes sont liés à votre compte.',
       oidcUnlinked: 'Compte dissocié.',
+      oidcUnlinkConfirmTitle: 'Dissocier le compte ?',
+      oidcUnlinkConfirmMessage: 'Vous ne pourrez plus vous connecter avec {{provider}}.',
+      oidcUnlinkConfirmAction: 'Dissocier',
     },
     // Session Policy (#1706)
     sessionPolicy: {
@@ -4651,6 +4660,7 @@ export default {
     deleteFilesConfirm: 'Supprimer les {{count}} fichiers sélectionnés ?',
     noFiles: 'Aucun fichier sur l\'imprimante',
     printerUnavailable: 'Le service de fichiers de l\'imprimante est indisponible. Réessayez lorsque l\'imprimante est accessible.',
+    listingTimedOut: "L'imprimante répond, mais lister ce dossier prend trop de temps (un dossier volumineux sur une carte SD lente). Réessayez dans un instant.",
     loadingFiles: 'Chargement...',
     failedToLoad: 'Échec chargement fichiers',
     toast: {
@@ -6424,8 +6434,6 @@ export default {
     linkToSpoolman: 'Lier à Spoolman',
     openInSpoolman: 'Ouvrir Spoolman',
     unlinkSpool: 'Délier bobine',
-    unlinkConfirmTitle: 'Désassigner la bobine ?',
-    unlinkConfirmMessage: 'Cela retirera la bobine de cet emplacement. Les données de la bobine elles-mêmes resteront inchangées.',
     selectSpool: 'Choisir bobine',
     noUnlinkedSpools: 'Pas de bobine libre',
     linkSuccess: 'Bobine assignée avec succès',
@@ -6510,6 +6518,8 @@ export default {
       updateFailed: 'Mise à jour groupée échouée',
       updatePartial: '{{ok}} bobines mises à jour, {{failed}} échouées',
       updateAllFailed: 'Les {{count}} mises à jour ont échoué — la sélection est conservée pour réessayer',
+      resetPartial: 'Compteur réinitialisé pour {{ok}} bobine(s), {{failed}} en échec',
+      resetAllFailed: 'Aucun compteur réinitialisé : les {{count}} ont échoué',
       deleteSuccess: '{{count}} bobines supprimées',
       deleteFailed: 'Suppression groupée échouée',
       deletePartial: '{{ok}} bobines supprimées, {{failed}} échouées',
@@ -6663,6 +6673,7 @@ export default {
     measuredWeight: 'Poids mesuré',
     spoolName: 'Bobine',
     costPerKg: 'Coût par kg',
+    costFromFilament: '(prix du filament)',
     storageLocation: 'Emplacement de stockage',
     temperature: 'Température',
     humidity: 'Humidité',
@@ -7223,6 +7234,8 @@ export default {
     backupSkippedNoChanges: 'Sauvegarde ignorée - aucun changement',
     backupFailed2: 'Échec de la sauvegarde : {{message}}',
     clearedLogs: '{{count}} journaux supprimés',
+    clearHistoryConfirmTitle: 'Effacer l\'historique des sauvegardes ?',
+    clearHistoryConfirmMessage: 'Cela supprime toutes les entrées de l\'historique des sauvegardes. Les sauvegardes elles-mêmes sont conservées.',
     failedToClearLogs: 'Échec de la suppression des journaux : {{message}}',
 
     // Restore from Git backup (#2656)
@@ -7337,47 +7350,8 @@ export default {
     processing: 'Traitement...',
     doNotClosePage: 'Veuillez ne pas fermer cette page ni naviguer ailleurs. Cette opération peut prendre plusieurs minutes pour les sauvegardes volumineuses.',
 
-    // RestoreModal
+    // Restore (GitHubBackupSettings)
     restoring: 'Restauration...',
-    restoreComplete: 'Restauration terminée',
-    restoreFailed2: 'Échec de la restauration',
-    importSettings: 'Importer les paramètres depuis un fichier de sauvegarde',
-    pleaseWaitRestoring: 'Veuillez patienter pendant la restauration de vos données',
-    selectBackupFile: 'Cliquez pour sélectionner un fichier de sauvegarde (.json ou .zip)',
-    duplicateHandling: 'Comment fonctionne la gestion des doublons :',
-    matchPrinters: 'Imprimantes',
-    matchPrintersBy: 'correspondance par numéro de série',
-    matchSmartPlugs: 'Prises connectées',
-    matchSmartPlugsBy: 'correspondance par adresse IP',
-    matchNotificationProviders: 'Fournisseurs de notifications',
-    matchNotificationProvidersBy: 'correspondance par nom',
-    matchFilaments: 'Filaments',
-    matchFilamentsBy: 'correspondance par nom + type + marque',
-    matchArchives: 'Archives',
-    matchArchivesBy: 'correspondance par hash de contenu (toujours ignoré)',
-    matchPendingUploads: 'Téléchargements en attente',
-    matchPendingUploadsBy: 'correspondance par nom de fichier',
-    matchSettingsTemplates: 'Paramètres et modèles',
-    matchSettingsTemplatesBy: 'toujours écrasés',
-    replaceExisting: 'Remplacer les données existantes',
-    keepExisting: 'Conserver les données existantes',
-    overwriteDescription: 'Écraser les éléments qui existent déjà avec les données de sauvegarde',
-    keepDescription: 'Restaurer uniquement les éléments qui n\'existent pas encore',
-    overwriteCaution: 'Attention :',
-    overwriteWarning: 'L\'écrasement remplacera vos configurations actuelles par les données de la sauvegarde. Les codes d\'accès des imprimantes ne sont jamais écrasés pour des raisons de sécurité.',
-    cancel: 'Annuler',
-    processingBackup: 'Traitement du fichier de sauvegarde...',
-    itemsRestored: 'Éléments restaurés',
-    itemsSkipped: 'Éléments ignorés',
-    restored: 'Restaurés',
-    skippedAlreadyExist: 'Ignorés (existent déjà)',
-    filesCategory: 'Fichiers (3MF, miniatures, etc.)',
-    andMore: '...et {{count}} de plus',
-    newApiKeysGenerated: 'Nouvelles clés API générées',
-    keysShownOnce: 'Ces clés ne sont affichées qu\'une seule fois. Copiez-les maintenant !',
-    copy: 'Copier',
-    noDataFound: 'Aucune donnée à restaurer n\'a été trouvée dans le fichier de sauvegarde.',
-    close: 'Fermer',
 
     // Scheduled local backups (#884)
     scheduledBackup: 'Sauvegardes planifiées',
@@ -7415,24 +7389,15 @@ export default {
       ephemeralTitle: 'Ces sauvegardes ne survivront pas à la recréation du conteneur',
       container_ephemeral: '{{path}} se trouve dans le conteneur Fenrir, pas sur l\'hôte. Les sauvegardes qui y sont écrites sont perdues à la recréation du conteneur. Montez le répertoire depuis l\'hôte :',
     },
-
-    // Category labels
-    categories: {
-      settings: 'Paramètres',
-      notification_providers: 'Fournisseurs de notifications',
-      notification_templates: 'Modèles de notifications',
-      smart_plugs: 'Prises connectées',
-      printers: 'Imprimantes',
-      filaments: 'Filaments',
-      maintenance_types: 'Types de maintenance',
-      archives: 'Archives',
-      projects: 'Projets',
-      pending_uploads: 'Téléchargements en attente',
-      external_links: 'Liens externes',
-      api_keys: 'Clés API',
-    },
   },
 
+  // Timelapse editor
+  timelapseEditor: {
+    processing: 'Traitement…',
+    processingPercent: 'Traitement… {{percent}} %',
+    failed: 'Échec du traitement',
+    cancelled: 'Traitement annulé',
+  },
   // Tags
   tags: {
     title: 'Étiquettes',
@@ -7499,7 +7464,7 @@ export default {
     itemsPrintedHelp: 'Nombre d\'objets produits. Indiquez 0 si tout le plateau est raté.',
     filamentUsed: 'Filament utilisé (g)',
     filamentUsedPlaceholder: 'p. ex. 46.16',
-    filamentUsedHelp: 'À saisir à la main lorsqu\'une impression a été archivée sans son 3MF, afin qu\'elle compte quand même dans les totaux de filament. Une nouvelle analyse d\'une archive qui possède son 3MF relit la valeur depuis le fichier.',
+    filamentUsedHelp: 'À saisir à la main lorsqu\'une impression a été archivée sans son 3MF, afin qu\'elle compte quand même dans les totaux de filament.',
     filamentUsedLocked: 'Seuls les utilisateurs autorisés à modifier toutes les archives peuvent changer cette valeur : les impressions suivantes de cette archive sont facturées à partir d\'elle.',
     statusHelp: 'Échouée et Interrompue comptent comme des échecs dans les statistiques. Annulée compte comme arrêtée et ne fait pas baisser le taux de réussite.',
     notes: 'Notes',
@@ -7672,23 +7637,9 @@ export default {
 
   // Virtual Printer
   virtualPrinter: {
-    title: 'Imprimante Virtuelle',
-    running: 'En cours',
-    stopped: 'Arrêtée',
-    description: {
-      default: 'Active une imprimante qui apparaît dans Bambu Studio. Les fichiers envoyés sont archivés sans impression.',
-      proxy: 'Active un proxy qui relaie le trafic vers une imprimante réelle, permettant l\'impression à distance.',
-    },
-    enable: {
-      title: 'Activer l\'imprimante virtuelle',
-      visibleInSlicer: 'Visible comme "Fenrir" dans le Slicer',
-      proxyingTo: 'Proxy vers {{name}}',
-      notActive: 'Inactive',
-    },
     model: {
       title: 'Modèle d\'imprimante',
       description: 'Choisissez le modèle à émuler.',
-      restartWarning: 'Changer le modèle redémarrera le service',
     },
     accessCode: {
       title: 'Code d\'accès',
@@ -7696,7 +7647,6 @@ export default {
       notSet: 'Code requis pour activer',
       placeholder: 'Code 8 char',
       placeholderChange: 'Entrez nouveau code',
-      hint: 'Exactement 8 caractères. Sert à l\'auth du Slicer.',
       charCount: '({{count}}/8)',
       inheritedFromTarget: 'Hérité de l\'imprimante cible',
       derivedFromTargetHint: 'Utilise le code d\'accès de l\'imprimante cible. Le pont transmet l\'authentification du slicer à l\'imprimante réelle, donc les codes doivent correspondre — modifiez le code dans les paramètres de l\'imprimante.',
@@ -7705,18 +7655,12 @@ export default {
     },
     targetPrinter: {
       title: 'Imprimante cible',
-      configured: 'Cible configurée',
-      notConfigured: 'Imprimante requise pour mode Proxy',
       placeholder: 'Choisir imprimante...',
-      hint: 'L\'imprimante doit être en mode LAN.',
-      noPrinters: 'Ajoutez une imprimante réelle d\'abord.',
     },
     remoteInterface: {
       title: 'Exception Interface Réseau',
-      configured: 'Override actif',
       optional: 'Optionnel - si IP auto est fausse (VPN, Docker, multi-NIC).',
       placeholder: 'Auto (défaut)...',
-      hint: 'Force l\'IP annoncée via SSDP.',
     },
     mode: {
       title: 'Mode',
@@ -7759,19 +7703,6 @@ export default {
       step1: 'Sur le même LAN, les imprimantes virtuelles apparaissent automatiquement dans votre slicer (Bambu Studio / OrcaSlicer). Depuis d\'autres réseaux, ajoutez-les manuellement par adresse IP et code d\'accès.',
       step2: 'En mode Archive, Revue et File d\'attente, utilisez le bouton "Envoyer" dans votre slicer pour envoyer des fichiers 3MF à Fenrir. Le slicer affichera "Impression réussie" — le fichier est stocké, pas imprimé.',
       step3: 'En mode Proxy, l\'imprimante virtuelle relaie tout le trafic vers une vraie imprimante — les impressions démarrent immédiatement comme en connexion directe.',
-    },
-    status: {
-      title: 'Détails du statut',
-      printerName: 'Nom',
-      model: 'Modèle',
-      serialNumber: 'Série',
-      mode: 'Mode',
-      pendingFiles: 'Fichiers en attente',
-      targetPrinter: 'Cible',
-      ftpPort: 'Port FTP',
-      mqttPort: 'Port MQTT',
-      ftpConnections: 'Connexions FTP',
-      mqttConnections: 'Connexions MQTT',
     },
     toast: {
       updated: 'Réglages virtuels mis à jour',
@@ -8724,9 +8655,13 @@ export default {
     hexLabel: 'Hex : #{{hex}}',
     resetting: 'Réinitialisation...',
     resetSlot: 'Réinitialiser le slot',
+    resetConfirmTitle: 'Réinitialiser l\'emplacement ?',
+    resetConfirmMessage: 'Cela efface le réglage de filament de cet emplacement sur l\'imprimante.',
+    resetBlockedPrinting: 'Indisponible pendant que l\'imprimante imprime',
     cancel: 'Annuler',
     configuring: 'Configuration...',
     configureSlot: 'Configurer le slot',
+    kValueUnsent: "Le filament a été configuré, mais la valeur K n'a pas pu être envoyée à l'imprimante.",
     // Why an Orca profile went into the slot as the generic for its material (#3216)
     orcaFallback: {
       no_filament_id: 'Ce profil Orca n’a pas d’identifiant de filament propre : OrcaSlicer verra cet emplacement comme Generic {{material}}.',
@@ -8942,12 +8877,8 @@ export default {
       plateClearFailed: 'Impossible de marquer le plateau comme libéré',
     },
     modal: {
-      spoolDetected: 'Bobine détectée',
       assignToAms: 'Assigner à l\'AMS',
       syncWeight: 'Synchroniser le poids',
-      weightSynced: 'Synchronisé !',
-      syncing: 'Synchronisation...',
-      newTagDetected: 'Nouveau tag détecté',
       addToInventory: 'Ajouter à l\'inventaire',
       assignToAmsTitle: 'Assigner à l\'AMS',
       selectSlot: 'Sélectionner un emplacement',
@@ -8961,9 +8892,6 @@ export default {
       slot: 'Emplacement',
     },
     weight: {
-      noReading: 'Pas de lecture',
-      stable: 'Stable',
-      measuring: 'Mesure...',
       tare: 'Tarer',
       calibrate: 'Calibrer',
     },
@@ -9090,6 +9018,7 @@ export default {
       linkFailedSpoolNotFound: 'L\'étiquette a été écrite, mais la bobine n\'existe plus',
       spoolmanUnavailable: 'Spoolman n\'est pas disponible. Vérifiez son URL dans les paramètres Spoolman.',
       queueFailed: 'Impossible de mettre en file la commande d\'écriture',
+      linkedToAms: "Cette bobine est liée à son tag RFID Bambu via l'AMS. Un autocollant remplacerait ce lien dans Spoolman.",
       tryAgain: 'Réessayer',
       cancel: 'Annuler',
       replaceWarning: 'L\'ancien tag sera dissocié. Le nouveau tag le remplacera.',
@@ -9808,6 +9737,8 @@ export default {
 
   // Forecast & Inventory Intelligence
   forecast: {
+    clearAllConfirmTitle: 'Vider la liste de courses ?',
+    clearAllConfirmMessage: 'Cela retire les {{count}} article(s) de la liste de courses.',
     title: 'Prévision des stocks',
     noSpools: 'Aucune bobine active trouvée. Ajoutez des bobines à votre inventaire pour voir les données de prévision.',
     noUsageData: 'Aucune donnée d\'utilisation disponible — impossible de projeter la chronologie des stocks.',

@@ -1,6 +1,6 @@
 import json
 import logging
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, timezone
 
 import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
@@ -95,6 +95,7 @@ from backend.app.utils.filament_ids import (
     normalize_slicer_filament,
 )
 from backend.app.utils.filament_types import is_material_name, nozzle_temp_range, printer_filament_type
+from backend.app.utils.local_time import day_zone, local_date_end, local_date_start
 from backend.app.utils.natural_sort import natural_sort_key
 from backend.app.utils.tag_normalization import normalize_tag_uid, normalize_tray_uuid
 
@@ -641,14 +642,24 @@ async def _spool_counts_for_locations(
     db: AsyncSession,
     locations: list[Location],
     settings: dict[str, str],
+    *,
+    strict: bool = False,
 ) -> dict[int, int]:
+    """Spools at each location. In Spoolman mode they are Spoolman's; when it
+    can't be read the built-in counts are shown instead, which ``strict``
+    refuses with a 503 (SM-C13): the built-in table holds no Spoolman spools,
+    so a location still in use would count as empty and could be deleted."""
     if _spoolman_is_enabled(settings):
         client = await _ensure_spoolman_client(settings)
+        if not client and strict:
+            raise HTTPException(status_code=503, detail="Spoolman is unavailable")
         if client:
             try:
                 spools = await client.get_all_spools(allow_archived=False)
-            except Exception:
+            except Exception as exc:
                 logger.warning("Failed to fetch Spoolman spools for location counts", exc_info=True)
+                if strict:
+                    raise HTTPException(status_code=503, detail="Spoolman is unavailable") from exc
             else:
                 # Use the canonical key helper so this matches what the
                 # migration backfill, Location.name_key, and every other
@@ -791,7 +802,7 @@ async def delete_location(
         raise HTTPException(status_code=404, detail="Location not found")
 
     settings = await _load_settings_map(db)
-    counts = await _spool_counts_for_locations(db, [location], settings)
+    counts = await _spool_counts_for_locations(db, [location], settings, strict=True)
     if counts.get(location.id, 0) > 0:
         raise HTTPException(status_code=409, detail="Location has spools assigned and cannot be deleted")
 
@@ -1417,7 +1428,6 @@ async def export_spools_csv(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
 ):
     """Export the active inventory as CSV (same schema the importer accepts)."""
-    from datetime import datetime, timezone
 
     query = (
         select(Spool)
@@ -1728,7 +1738,6 @@ async def archive_spool(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ):
     """Soft-delete a spool by setting archived_at."""
-    from datetime import datetime, timezone
 
     result = await db.execute(select(Spool).where(Spool.id == spool_id))
     spool = result.scalar_one_or_none()
@@ -1820,7 +1829,8 @@ async def bulk_reset_spool_consumed_counter(
         spool.weight_used_baseline = spool.weight_used or 0
     await db.commit()
     await ws_manager.broadcast({"type": "inventory_changed"})
-    return {"reset": len(spools)}
+    found = {spool.id for spool in spools}
+    return {"reset": len(spools), "not_found": [sid for sid in spool_ids if sid not in found]}
 
 
 class BulkUpdateRequest(BaseModel):
@@ -1904,7 +1914,6 @@ async def bulk_archive_spools(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ):
     """Soft-archive every listed spool (sets archived_at). Already-archived spools are left alone and counted in already_archived."""
-    from datetime import datetime, timezone
 
     result = await db.execute(select(Spool).where(Spool.id.in_(payload.ids)))
     spools = list(result.scalars().all())
@@ -2607,6 +2616,9 @@ async def get_spool_usage_history(
 async def get_supplier_stats(
     date_from: date | None = Query(None, description="Start date (inclusive), YYYY-MM-DD"),
     date_to: date | None = Query(None, description="End date (inclusive), YYYY-MM-DD"),
+    tz: str | None = Query(
+        None, max_length=64, description="IANA zone the dates are calendar days in; the server's when omitted"
+    ),
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
 ):
@@ -2627,9 +2639,9 @@ async def get_supplier_stats(
     purchase_link = (SpoolSupplier.spool_id == Spool.id) & SpoolSupplier.is_purchase_source.is_(True)
     usage_window = []
     if date_from:
-        usage_window.append(SpoolUsageHistory.created_at >= datetime.combine(date_from, time.min, tzinfo=timezone.utc))
+        usage_window.append(SpoolUsageHistory.created_at >= local_date_start(date_from, day_zone(tz)))
     if date_to:
-        usage_window.append(SpoolUsageHistory.created_at <= datetime.combine(date_to, time.max, tzinfo=timezone.utc))
+        usage_window.append(SpoolUsageHistory.created_at <= local_date_end(date_to, day_zone(tz)))
 
     remaining = Spool.label_weight - Spool.weight_used
     inventory_rows = await db.execute(
@@ -2695,6 +2707,9 @@ async def get_supplier_stats(
 async def get_material_number_stats(
     date_from: date | None = Query(None),
     date_to: date | None = Query(None),
+    tz: str | None = Query(
+        None, max_length=64, description="IANA zone the dates are calendar days in; the server's when omitted"
+    ),
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
 ):
@@ -2719,11 +2734,13 @@ async def get_material_number_stats(
     # validator, so NULL is the only "unset" state to exclude here.
     has_number = Spool.material_number.is_not(None)
 
-    usage_filters = [has_number]
+    from sqlalchemy import ColumnElement
+
+    usage_filters: list[ColumnElement[bool]] = [has_number]
     if date_from:
-        usage_filters.append(SpoolUsageHistory.created_at >= datetime.combine(date_from, time.min, tzinfo=timezone.utc))
+        usage_filters.append(SpoolUsageHistory.created_at >= local_date_start(date_from, day_zone(tz)))
     if date_to:
-        usage_filters.append(SpoolUsageHistory.created_at <= datetime.combine(date_to, time.max, tzinfo=timezone.utc))
+        usage_filters.append(SpoolUsageHistory.created_at <= local_date_end(date_to, day_zone(tz)))
 
     # Clamped PER SPOOL, like every other remaining-weight computation in the
     # codebase: a spool whose weight_used overshot its label_weight holds 0 g,
@@ -2828,7 +2845,7 @@ async def sync_weights_from_ams(
     when it completes, on top of whatever weight the spool has by then.
     """
     from backend.app.services.printer_manager import PrinterManager, printer_manager
-    from backend.app.services.usage_tracker import _active_sessions
+    from backend.app.services.usage_tracker import printer_is_charging
 
     result = await db.execute(select(SpoolAssignment).options(selectinload(SpoolAssignment.spool)))
     # Only slots on printers the caller may see (#1727)
@@ -2857,12 +2874,10 @@ async def sync_weights_from_ams(
             skipped += 1
             continue
 
-        # Until completion has charged the print its session stays open, also
-        # after the printer has reported the print finished.
-        if (
-            str(getattr(state, "state", "") or "").upper() in PrinterManager.ACTIVE_PRINT_STATES
-            or assignment.printer_id in _active_sessions
-        ):
+        # Until completion has charged the print the printer counts as printing,
+        # also after it has reported the print finished.
+        printer_state = str(getattr(state, "state", "") or "").upper()
+        if printer_state in PrinterManager.ACTIVE_PRINT_STATES or printer_is_charging(assignment.printer_id):
             logger.info("AMS weight sync: printer %d is printing, skipping spool %d", assignment.printer_id, spool.id)
             skipped += 1
             printing += 1
@@ -3133,7 +3148,6 @@ async def update_shopping_list_status(
     ),
 ):
     """Update the purchase status of a shopping list item."""
-    from datetime import datetime, timezone
 
     from backend.app.models.shopping_list import ShoppingListItem
 

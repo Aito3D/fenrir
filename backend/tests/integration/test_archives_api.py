@@ -112,6 +112,35 @@ class TestArchivesAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_upload_archives_bulk_numbers_each_outcome_by_its_file(
+        self, async_client: AsyncClient, archive_factory, printer_factory
+    ):
+        """Two files of the same name in one batch, the second failing: the
+        upload dialog matched outcomes to its rows by name, so both rows took
+        the first one's success. Each outcome now says which file it was."""
+        printer = await printer_factory()
+        archive = await archive_factory(printer.id, print_name="Benchy")
+        archive_print_mock = AsyncMock(side_effect=[archive, None])
+
+        files = [
+            ("files", ("Benchy.3mf", b"PK\x03\x04fake3mf", "application/octet-stream")),
+            ("files", ("Benchy.3mf", b"PK\x03\x04fake3mf", "application/octet-stream")),
+            ("files", ("notes.txt", b"hello", "text/plain")),
+        ]
+
+        with patch(
+            "backend.app.api.routes.archives.ArchiveService.archive_print",
+            archive_print_mock,
+        ):
+            response = await async_client.post("/api/v1/archives/upload-bulk", files=files)
+
+        assert response.status_code == 200
+        body = response.json()
+        assert [(r["index"], r["id"]) for r in body["results"]] == [(0, archive.id)]
+        assert [e["index"] for e in body["errors"]] == [1, 2]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_upload_archives_bulk_defaults_prefer_filename_for_name_false(
         self, async_client: AsyncClient, archive_factory, printer_factory
     ):
@@ -889,8 +918,8 @@ class TestArchivesAPI:
         self, async_client: AsyncClient, archive_factory, printer_factory, db_session
     ):
         """#1820: a print that archived without its 3MF has no filament figure
-        and no way to recover one — rescan needs a file this archive does not
-        have. The edit is the only route, so it has to reach the log entry too:
+        and no way to recover one — the figure is read from a 3MF this archive
+        does not have. The edit is the only route, so it has to reach the log entry too:
         the Projects roll-up and the Prometheus counter sum PrintLogEntry, not
         the archive.
         """
@@ -3166,121 +3195,6 @@ class TestFilamentVendorAPI:
                     }
                 ),
             )
-
-    @pytest.mark.asyncio
-    @pytest.mark.integration
-    async def test_rescan_backfills_filament_vendor(
-        self, async_client: AsyncClient, archive_factory, printer_factory, tmp_path, monkeypatch
-    ):
-        """POST /archives/{id}/rescan on a pre-feature archive (vendor NULL)
-        re-parses the stored 3MF and fills filament_vendor — the documented
-        backfill path for archives created before the column existed."""
-        monkeypatch.setattr(settings, "base_dir", tmp_path)
-        printer = await printer_factory()
-        self._write_3mf(tmp_path / "archives" / "vendor.gcode.3mf")
-        archive = await archive_factory(
-            printer.id,
-            file_path="archives/vendor.gcode.3mf",
-            filament_vendor=None,
-        )
-
-        response = await async_client.post(f"/api/v1/archives/{archive.id}/rescan")
-
-        assert response.status_code == 200, response.text
-        assert response.json()["filament_vendor"] == "SUNLU"
-
-    @pytest.mark.asyncio
-    @pytest.mark.integration
-    async def test_rescan_keeps_existing_vendor_when_file_has_none(
-        self, async_client: AsyncClient, archive_factory, printer_factory, tmp_path, monkeypatch
-    ):
-        """A rescan of a 3MF without vendor metadata must not wipe a stored
-        vendor (same guarded-update convention as filament_type/color)."""
-        import zipfile
-
-        monkeypatch.setattr(settings, "base_dir", tmp_path)
-        printer = await printer_factory()
-        path = tmp_path / "archives" / "novendor.gcode.3mf"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with zipfile.ZipFile(path, "w") as zf:
-            zf.writestr("3D/3dmodel.model", "<model/>")
-        archive = await archive_factory(
-            printer.id,
-            file_path="archives/novendor.gcode.3mf",
-            filament_vendor="SUNLU",
-        )
-
-        response = await async_client.post(f"/api/v1/archives/{archive.id}/rescan")
-
-        assert response.status_code == 200, response.text
-        assert response.json()["filament_vendor"] == "SUNLU"
-
-    @pytest.mark.asyncio
-    @pytest.mark.integration
-    async def test_rescan_all_backfills_every_archive(
-        self, async_client: AsyncClient, archive_factory, printer_factory, tmp_path, monkeypatch
-    ):
-        monkeypatch.setattr(settings, "base_dir", tmp_path)
-        printer = await printer_factory()
-        self._write_3mf(tmp_path / "archives" / "a.gcode.3mf", vendor="SUNLU")
-        self._write_3mf(tmp_path / "archives" / "b.gcode.3mf", vendor="Bambu Lab")
-        a = await archive_factory(printer.id, file_path="archives/a.gcode.3mf")
-        b = await archive_factory(printer.id, file_path="archives/b.gcode.3mf")
-
-        response = await async_client.post("/api/v1/archives/rescan-all")
-        assert response.status_code == 200, response.text
-
-        detail_a = await async_client.get(f"/api/v1/archives/{a.id}")
-        detail_b = await async_client.get(f"/api/v1/archives/{b.id}")
-        assert detail_a.json()["filament_vendor"] == "SUNLU"
-        assert detail_b.json()["filament_vendor"] == "Bambu Lab"
-
-    @pytest.mark.asyncio
-    @pytest.mark.integration
-    async def test_rescan_all_skips_fallback_and_deleted_archives(
-        self, async_client: AsyncClient, archive_factory, printer_factory, db_session, tmp_path, monkeypatch
-    ):
-        """A no-3MF fallback (every H2 Studio print) is not a "File not found"
-        error, and a soft-deleted archive is not rescanned."""
-        from datetime import datetime, timezone
-
-        monkeypatch.setattr(settings, "base_dir", tmp_path)
-        printer = await printer_factory()
-        self._write_3mf(tmp_path / "archives" / "live.gcode.3mf", vendor="SUNLU")
-        live = await archive_factory(printer.id, file_path="archives/live.gcode.3mf")
-        await archive_factory(printer.id, file_path="", file_size=0)
-        gone = await archive_factory(printer.id, file_path="archives/gone.gcode.3mf", filament_vendor=None)
-        gone.deleted_at = datetime.now(timezone.utc)
-        await db_session.commit()
-
-        body = (await async_client.post("/api/v1/archives/rescan-all")).json()
-        assert body == {"updated": 1, "errors": []}
-        assert (await async_client.get(f"/api/v1/archives/{live.id}")).json()["filament_vendor"] == "SUNLU"
-
-    @pytest.mark.asyncio
-    @pytest.mark.integration
-    async def test_rescan_all_parses_off_the_event_loop(
-        self, async_client: AsyncClient, archive_factory, printer_factory, tmp_path, monkeypatch
-    ):
-        """Parsing every 3MF on the loop froze MQTT, WebSocket and cameras."""
-        import threading
-
-        from backend.app.services.archive import ThreeMFParser
-
-        monkeypatch.setattr(settings, "base_dir", tmp_path)
-        printer = await printer_factory()
-        self._write_3mf(tmp_path / "archives" / "a.gcode.3mf")
-        await archive_factory(printer.id, file_path="archives/a.gcode.3mf")
-        threads: list = []
-        real_parse = ThreeMFParser.parse
-
-        def _parse(self):
-            threads.append(threading.current_thread())
-            return real_parse(self)
-
-        monkeypatch.setattr(ThreeMFParser, "parse", _parse)
-        await async_client.post("/api/v1/archives/rescan-all")
-        assert threads and all(t is not threading.main_thread() for t in threads)
 
     @pytest.mark.asyncio
     @pytest.mark.integration

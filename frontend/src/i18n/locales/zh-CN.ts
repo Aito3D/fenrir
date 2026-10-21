@@ -2028,6 +2028,7 @@ export default {
       done: '完成',
       starting: '启动中...',
       uploadFirmware: '上传固件',
+      printerBusy: '打印机正忙。只有在空闲时才能上传固件。',
       uploadFailed: '上传启动失败：{{error}}',
       uploadedToast: '固件已上传！请在打印机屏幕上触发更新。',
       availableVersions: '可用版本',
@@ -3426,8 +3427,6 @@ export default {
     upToDate: '已是最新版本',
     updateAvailable: '有可用更新',
     // Notifications
-    notificationLanguage: '通知语言',
-    notificationLanguageDescription: '推送通知的语言',
     bedCooledThreshold: '热床冷却阈值',
     bedCooledThresholdDescription: '打印后热床被视为已冷却的温度',
     userNotificationsEnabled: '用户通知',
@@ -3554,7 +3553,6 @@ export default {
     // Sidebar
     sidebarOrder: '侧边栏顺序',
     // Camera
-    saveThumbnails: '保存缩略图',
     captureFinishPhoto: '拍摄完成照片',
     noPrintersConfigured: '未配置打印机',
     // Updates
@@ -3665,7 +3663,7 @@ export default {
     updateEnergyCostDescription: '允许此密钥向 /settings/electricity-price POST 新的每千瓦时电价。适用于 Home Assistant 动态电价自动化（Tibber、Octopus 等）。这是唯一可通过 API 密钥写入的设置字段。',
     energyCostBadge: '能耗',
     sendNotifications: '发送通知',
-    sendNotificationsDescription: '允许此密钥通过接受已连接应用消息的通知渠道发送消息（POST /notifications/app-message）。适用于 Bambuddy Orders 等应用。仅此而已：该密钥无法读取或更改渠道。',
+    sendNotificationsDescription: '允许此密钥通过接受已连接应用消息的通知渠道发送消息（POST /notifications/app-message），并在指向该应用的侧边栏链接上显示数字（PUT /external-links/badge）。适用于 Bambuddy Orders 等应用。仅此而已：该密钥无法读取或更改渠道和链接。',
     sendNotificationsBadge: '通知',
     legacyKey: '传统',
     legacyKeyTooltip: '在按用户所有权之前创建；需重建以使用云端访问',
@@ -4099,7 +4097,6 @@ export default {
     progressInTitleDescription: '在浏览器标签页中显示当前打印的百分比和进度环。',
     autoArchivePrints: '自动归档打印',
     autoArchiveDescription: '打印完成时自动保存3MF文件。关闭时，所有打印机都不会归档在 Fenrir 之外启动的打印。',
-    saveThumbnailsDescription: '从3MF文件中提取并保存预览图像',
     captureFinishPhotoDescription: '打印完成时从打印机摄像头拍照。Fenrir 会在打印期间录制一段短延时摄影，以便从热床下降前的瞬间获取照片；如果您为本次打印启用了延时摄影，文件将保留，否则会在拍照完成后自动删除。',
     finishPhotoRestorePlate: '为完成照片抬升热床',
     finishPhotoRestorePlateDescription: '打印结束时打印机会将热床下降约 100 mm，使完成的模型落在相机取景范围之下。Fenrir 会将热床抬回到最后一层打印高度略上方，拍摄照片后再次下降。若打印高度未知或队列中还有其他任务，则跳过此步骤。',
@@ -4111,6 +4108,15 @@ export default {
     cameraWindowDescription: '摄像头在单独的浏览器窗口中打开',
     externalCamerasDescription: '配置外部摄像头以替换内置打印机摄像头。支持MJPEG流、RTSP、HTTP快照和USB摄像头（V4L2）。启用后，外部摄像头将用于实时查看和完成照片。',
     cameraPlaceholderUsb: '设备路径 (/dev/video0)',
+    usbCameraDevice: 'USB 设备',
+    usbCameraSelect: '选择设备',
+    usbCameraSearching: '正在查找设备…',
+    usbCameraNotFound: '{{device}}（未找到）',
+    usbCameraRefresh: '重新查找设备',
+    usbCameraListFailed: '无法列出视频设备。',
+    usbCameraNoneFound: 'Fenrir 看不到任何视频设备。在 Docker 中，请将摄像头传给容器：',
+    usbCameraEnterManually: '手动输入路径',
+    usbCameraPickFromList: '选择检测到的设备',
     cameraPlaceholderUrl: '摄像头URL (rtsp://... 或 http://...)',
     cameraTypeMjpeg: 'MJPEG 流',
     cameraTypeRtsp: 'RTSP 流',
@@ -4298,6 +4304,9 @@ export default {
       linkedAccounts: '已关联的 SSO 账户',
       linkedAccountsDesc: '以下外部身份提供商已与您的账户关联。',
       oidcUnlinked: '账户已解除关联。',
+      oidcUnlinkConfirmTitle: '解除账户关联？',
+      oidcUnlinkConfirmMessage: '你将无法再使用 {{provider}} 登录。',
+      oidcUnlinkConfirmAction: '解除关联',
     },
     // Session Policy (#1706)
     sessionPolicy: {
@@ -4650,6 +4659,7 @@ export default {
     deleteFilesConfirm: '删除 {{count}} 个选中的文件？此操作无法撤销。',
     noFiles: '打印机上没有文件',
     printerUnavailable: '打印机文件服务不可用。请在打印机可访问时重试。',
+    listingTimedOut: '打印机有响应，但列出此文件夹耗时过长（慢速 SD 卡上的大文件夹）。请稍后重试。',
     loadingFiles: '加载文件中...',
     failedToLoad: '加载文件失败',
     toast: {
@@ -6423,8 +6433,6 @@ export default {
     linkToSpoolman: '链接到 Spoolman',
     openInSpoolman: '在 Spoolman 中打开',
     unlinkSpool: '取消链接耗材',
-    unlinkConfirmTitle: '取消分配料盘？',
-    unlinkConfirmMessage: '这将从此插槽中移除料盘。料盘本身的数据将保持不变。',
     selectSpool: '选择耗材',
     noUnlinkedSpools: '无未分配的料盘',
     linkSuccess: '料盘分配成功',
@@ -6509,6 +6517,8 @@ export default {
       updateFailed: '批量更新失败',
       updatePartial: '已更新 {{ok}} 个，{{failed}} 个失败',
       updateAllFailed: '{{count}} 个料盘更新全部失败 — 已保留选择以便重试',
+      resetPartial: '已重置 {{ok}} 个料盘的计数器，{{failed}} 个失败',
+      resetAllFailed: '未重置任何计数器：{{count}} 个全部失败',
       deleteSuccess: '已删除 {{count}} 个料盘',
       deleteFailed: '批量删除失败',
       deletePartial: '已删除 {{ok}} 个，{{failed}} 个失败',
@@ -6662,6 +6672,7 @@ export default {
     measuredWeight: '称量重量',
     spoolName: '线轴',
     costPerKg: '每公斤成本',
+    costFromFilament: '(耗材价格)',
     storageLocation: '存放位置',
     temperature: '温度',
     humidity: '湿度',
@@ -7222,6 +7233,8 @@ export default {
     backupSkippedNoChanges: '备份已跳过 - 无更改',
     backupFailed2: '备份失败：{{message}}',
     clearedLogs: '已清除 {{count}} 条日志',
+    clearHistoryConfirmTitle: '清除备份历史？',
+    clearHistoryConfirmMessage: '这会删除备份历史中的所有条目。备份本身会保留。',
     failedToClearLogs: '清除日志失败：{{message}}',
 
     // Restore from Git backup (#2656)
@@ -7336,47 +7349,8 @@ export default {
     processing: '处理中...',
     doNotClosePage: '请不要关闭此页面或导航离开。对于大型备份，此操作可能需要几分钟。',
 
-    // RestoreModal
+    // Restore (GitHubBackupSettings)
     restoring: '恢复中...',
-    restoreComplete: '恢复完成',
-    restoreFailed2: '恢复失败',
-    importSettings: '从备份文件导入设置',
-    pleaseWaitRestoring: '请等待数据恢复中',
-    selectBackupFile: '点击选择备份文件（.json 或 .zip）',
-    duplicateHandling: '重复项处理方式：',
-    matchPrinters: '打印机',
-    matchPrintersBy: '按序列号匹配',
-    matchSmartPlugs: '智能插座',
-    matchSmartPlugsBy: '按 IP 地址匹配',
-    matchNotificationProviders: '通知提供者',
-    matchNotificationProvidersBy: '按名称匹配',
-    matchFilaments: '耗材',
-    matchFilamentsBy: '按名称 + 类型 + 品牌匹配',
-    matchArchives: '档案',
-    matchArchivesBy: '按内容哈希匹配（始终跳过）',
-    matchPendingUploads: '待上传',
-    matchPendingUploadsBy: '按文件名匹配',
-    matchSettingsTemplates: '设置和模板',
-    matchSettingsTemplatesBy: '始终覆盖',
-    replaceExisting: '替换现有数据',
-    keepExisting: '保留现有数据',
-    overwriteDescription: '用备份数据覆盖已存在的项目',
-    keepDescription: '仅恢复尚不存在的项目',
-    overwriteCaution: '注意：',
-    overwriteWarning: '覆盖将用备份数据替换您当前的配置。出于安全考虑，打印机访问代码永远不会被覆盖。',
-    cancel: '取消',
-    processingBackup: '正在处理备份文件...',
-    itemsRestored: '已恢复项目',
-    itemsSkipped: '已跳过项目',
-    restored: '已恢复',
-    skippedAlreadyExist: '已跳过（已存在）',
-    filesCategory: '文件（3MF、缩略图等）',
-    andMore: '...还有 {{count}} 项',
-    newApiKeysGenerated: '已生成新的 API 密钥',
-    keysShownOnce: '这些密钥仅显示一次。请立即复制！',
-    copy: '复制',
-    noDataFound: '在备份文件中未找到可恢复的数据。',
-    close: '关闭',
 
     // Scheduled local backups (#884)
     scheduledBackup: '定时备份',
@@ -7414,24 +7388,15 @@ export default {
       ephemeralTitle: '这些备份在容器重建后会丢失',
       container_ephemeral: '{{path}} 位于 Fenrir 容器内部，而不是宿主机上。写入其中的备份会在容器重建时丢失。请从宿主机挂载该目录：',
     },
-
-    // Category labels
-    categories: {
-      settings: '设置',
-      notification_providers: '通知提供者',
-      notification_templates: '通知模板',
-      smart_plugs: '智能插座',
-      printers: '打印机',
-      filaments: '耗材',
-      maintenance_types: '维护类型',
-      archives: '档案',
-      projects: '项目',
-      pending_uploads: '待上传',
-      external_links: '外部链接',
-      api_keys: 'API 密钥',
-    },
   },
 
+  // Timelapse editor
+  timelapseEditor: {
+    processing: '处理中…',
+    processingPercent: '处理中… {{percent}}%',
+    failed: '处理失败',
+    cancelled: '已取消处理',
+  },
   // Tags
   tags: {
     title: '标签',
@@ -7498,7 +7463,7 @@ export default {
     itemsPrintedHelp: '此打印任务中生产的物品数量。整块打印板报废时填 0。',
     filamentUsed: '已用耗材 (g)',
     filamentUsedPlaceholder: '例如 46.16',
-    filamentUsedHelp: '当打印任务在没有 3MF 的情况下归档时，可手动填写，使其仍计入耗材总量。重新扫描带有 3MF 的归档时，该数值会从文件中重新读取。',
+    filamentUsedHelp: '当打印任务在没有 3MF 的情况下归档时，可手动填写，使其仍计入耗材总量。',
     filamentUsedLocked: '只有可以编辑所有归档的用户才能更改此数值：此归档之后的打印将据此计费。',
     statusHelp: '在统计中，“失败”和“已中止”计为失败。“已取消”计为停止，不会降低成功率。',
     notes: '备注',
@@ -7671,23 +7636,9 @@ export default {
 
   // Virtual Printer
   virtualPrinter: {
-    title: '虚拟打印机',
-    running: '运行中',
-    stopped: '已停止',
-    description: {
-      default: '启用虚拟打印机，使其在 Bambu Studio 和 OrcaSlicer 中可见。发送到此打印机的文件将直接归档而不打印。',
-      proxy: '启用代理，将切片软件流量中继到真实打印机，允许在任何网络上远程打印。',
-    },
-    enable: {
-      title: '启用虚拟打印机',
-      visibleInSlicer: '在切片软件发现中显示为"Fenrir"',
-      proxyingTo: '代理到 {{name}}',
-      notActive: '未激活',
-    },
     model: {
       title: '打印机型号',
       description: '选择要模拟的打印机型号。',
-      restartWarning: '更改型号将重启虚拟打印机',
     },
     accessCode: {
       title: '访问码',
@@ -7695,7 +7646,6 @@ export default {
       notSet: '未设置访问码 - 需要设置才能启用',
       placeholder: '输入 8 位字符代码',
       placeholderChange: '输入新代码以更改',
-      hint: '必须恰好 8 个字符。切片软件使用此代码进行认证。',
       charCount: '({{count}}/8)',
       inheritedFromTarget: '继承自目标打印机',
       derivedFromTargetHint: '使用目标打印机的访问码。桥接会将切片软件的认证转发到实际打印机，因此两个访问码必须匹配 — 如需更改，请在打印机设置中编辑访问码。',
@@ -7704,18 +7654,12 @@ export default {
     },
     targetPrinter: {
       title: '目标打印机',
-      configured: '代理目标已配置',
-      notConfigured: '未选择目标打印机 - 代理模式需要设置',
       placeholder: '选择打印机...',
-      hint: '选择要将切片软件流量代理到的打印机。打印机必须处于局域网模式。',
-      noPrinters: '未配置打印机。请先添加打印机以使用代理模式。',
     },
     remoteInterface: {
       title: '网络接口覆盖',
-      configured: '接口覆盖已激活',
       optional: '可选 - 当自动检测的 IP 不正确时使用（例如多网卡、Docker、VPN）',
       placeholder: '自动检测（默认）...',
-      hint: '覆盖通过 SSDP 广播并在 TLS 证书中使用的 IP 地址。在 Fenrir 有多个网络接口时很有用。',
     },
     mode: {
       title: '模式',
@@ -7772,19 +7716,6 @@ export default {
       step1: '在同一局域网中，虚拟打印机会通过发现机制自动出现在您的切片软件（Bambu Studio / OrcaSlicer）中。从其他网络，通过 IP 地址和访问码手动添加。',
       step2: '在归档、审核和队列模式下，使用切片软件中的"发送"按钮将 3MF 文件上传到 Fenrir。切片软件会显示"打印成功"— 文件已存储，未打印。',
       step3: '在代理模式下，虚拟打印机将所有流量中继到真实打印机 — 打印会立即开始，就像直接连接一样。',
-    },
-    status: {
-      title: '状态详情',
-      printerName: '打印机名称',
-      model: '型号',
-      serialNumber: '序列号',
-      mode: '模式',
-      pendingFiles: '待处理文件',
-      targetPrinter: '目标打印机',
-      ftpPort: 'FTP 端口',
-      mqttPort: 'MQTT 端口',
-      ftpConnections: 'FTP 连接',
-      mqttConnections: 'MQTT 连接',
     },
     toast: {
       updated: '虚拟打印机设置已更新',
@@ -8721,9 +8652,13 @@ export default {
     hexLabel: '十六进制：#{{hex}}',
     resetting: '重置中...',
     resetSlot: '重置槽位',
+    resetConfirmTitle: '重置槽位？',
+    resetConfirmMessage: '这会清除打印机上此槽位的耗材设置。',
+    resetBlockedPrinting: '打印机打印时不可用',
     cancel: '取消',
     configuring: '配置中...',
     configureSlot: '配置槽位',
+    kValueUnsent: '耗材已设置，但无法将 K 值发送到打印机。',
     // Why an Orca profile went into the slot as the generic for its material (#3216)
     orcaFallback: {
       no_filament_id: '此 Orca 配置文件没有自己的耗材 ID，因此 OrcaSlicer 会将此槽位识别为 Generic {{material}}。',
@@ -8939,12 +8874,8 @@ export default {
       plateClearFailed: '无法将热床标记为已清理',
     },
     modal: {
-      spoolDetected: '检测到耗材',
       assignToAms: '分配到 AMS',
       syncWeight: '同步重量',
-      weightSynced: '已同步！',
-      syncing: '同步中...',
-      newTagDetected: '检测到新标签',
       addToInventory: '添加到库存',
       assignToAmsTitle: '分配到 AMS',
       selectSlot: '选择槽位',
@@ -8958,9 +8889,6 @@ export default {
       slot: '槽位',
     },
     weight: {
-      noReading: '无读数',
-      stable: '稳定',
-      measuring: '测量中...',
       tare: '去皮',
       calibrate: '校准',
     },
@@ -9087,6 +9015,7 @@ export default {
       linkFailedSpoolNotFound: '标签已写入，但料卷已不存在',
       spoolmanUnavailable: 'Spoolman 不可用。请检查 Spoolman 设置中的 URL。',
       queueFailed: '排队写入命令失败',
+      linkedToAms: '此料卷已通过 AMS 关联到其 Bambu RFID 标签。写入贴纸会替换 Spoolman 中的这一关联。',
       tryAgain: '重试',
       cancel: '取消',
       replaceWarning: '旧标签将被取消链接。新标签将替换它。',
@@ -9805,6 +9734,8 @@ export default {
 
   // Forecast & Inventory Intelligence
   forecast: {
+    clearAllConfirmTitle: '清空购物清单？',
+    clearAllConfirmMessage: '这会从购物清单中移除全部 {{count}} 项。',
     title: '库存预测',
     noSpools: '未找到活跃的料卷。请将料卷添加到库存中以查看预测数据。',
     noUsageData: '无可用使用数据 — 无法预测库存时间线。',

@@ -249,9 +249,10 @@ async def list_usb_cameras(
     Returns:
         List of dicts with {device: str, name: str, capabilities: list, formats?: list}
     """
-    from backend.app.services.external_camera import list_usb_cameras
+    from backend.app.services import external_camera
 
-    cameras = list_usb_cameras()
+    # v4l2-ctl runs twice per device, with a 5 s timeout each.
+    cameras = await asyncio.to_thread(external_camera.list_usb_cameras)
     return {"cameras": cameras}
 
 
@@ -646,7 +647,12 @@ async def get_printer_status(
     printer = result.scalar_one_or_none()
     if not printer:
         raise HTTPException(404, "Printer not found")
+    return await _printer_status(db, printer)
 
+
+async def _printer_status(db: AsyncSession, printer: Printer) -> PrinterStatus:
+    """The live status of *printer*, as the status endpoints report it."""
+    printer_id = printer.id
     state = printer_manager.get_status(printer_id)
     if not state:
         # No MQTT client state — the printer was never connected this run, or it
@@ -1049,22 +1055,6 @@ async def disconnect_printer(
     return {"connected": False}
 
 
-@router.post("/test")
-async def test_printer_connection(
-    ip_address: str,
-    serial_number: str,
-    access_code: str,
-    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CREATE),
-):
-    """Test connection to a printer without saving."""
-    result = await printer_manager.test_connection(
-        ip_address=ip_address,
-        serial_number=serial_number,
-        access_code=access_code,
-    )
-    return result
-
-
 @router.post("/diagnostic", response_model=PrinterDiagnosticResult)
 async def diagnose_connection(
     req: DiagnosticRequest,
@@ -1086,7 +1076,6 @@ async def diagnose_connection(
 async def diagnose_printer(
     printer_id: int,
     _=RequirePrinterPermissionIfAuthEnabled(Permission.PRINTERS_READ),
-    db: AsyncSession = Depends(get_db),
 ):
     """Run connection diagnostics for an existing saved printer.
 
@@ -1098,8 +1087,9 @@ async def diagnose_printer(
     """
     from backend.app.services.printer_diagnostic import PUBLISH_WAIT_DEFAULT
 
-    result = await db.execute(select(Printer).where(Printer.id == printer_id))
-    printer = result.scalar_one_or_none()
+    # A short session, released before the probes and the wait (as RC-C9).
+    async with database.async_session() as db:
+        printer = (await db.execute(select(Printer).where(Printer.id == printer_id))).scalar_one_or_none()
     if not printer:
         raise HTTPException(404, "Printer not found")
     return await run_connection_diagnostic(
@@ -1680,7 +1670,10 @@ async def list_printer_files(
     return {
         "path": path,
         "files": files,
-        "warnings": [] if listing.available else ["printer_unavailable"],
+        # Slow is not gone: a large folder on a slow card can outlast the wait (TO-C13).
+        "warnings": (
+            [] if listing.available else ["listing_timed_out"] if listing.timed_out else ["printer_unavailable"]
+        ),
     }
 
 
@@ -2642,8 +2635,11 @@ async def get_slot_presets(
 ):
     """Get all saved slot-to-preset mappings for a printer."""
     result = await db.execute(select(SlotPresetMapping).where(SlotPresetMapping.printer_id == printer_id))
-    mappings = result.scalars().all()
+    return _slot_presets_by_key(result.scalars().all())
 
+
+def _slot_presets_by_key(mappings) -> dict:
+    """One printer's slot-to-preset mappings, keyed as ``get_slot_presets`` returns them."""
     return {
         _slot_preset_key(mapping.ams_id, mapping.tray_id): {
             "ams_id": mapping.ams_id,
@@ -3201,6 +3197,7 @@ async def configure_ams_slot(
     # the existing profile's metadata (extruder_id, nozzle_id, name, setting_id),
     # corrupting it — e.g., overwriting a High Flow extruder 1 profile with
     # hardcoded extruder_id=0 and nozzle_id=HS00.
+    k_value_unsent = False
     if k_value > 0 and cali_idx < 0:
         # Calculate global tray ID for extrusion_cali_set
         if ams_id <= 3:
@@ -3210,7 +3207,7 @@ async def configure_ams_slot(
         else:
             global_tray_id = tray_id
 
-        client.extrusion_cali_set(
+        k_value_unsent = not client.extrusion_cali_set(
             tray_id=global_tray_id,
             k_value=k_value,
             nozzle_diameter=nozzle_diameter,
@@ -3405,6 +3402,10 @@ async def configure_ams_slot(
         # "lookup_failed" or "no_permission". Cleared when a K-profile realigned
         # the slot to its own specific filament after all.
         "orca_fallback_reason": "" if realigned_to_kprofile else orca_fallback_reason,
+        # The filament setting went out but a manual K value did not (FW-C5).
+        # Only the send is known: the printer's answer to it is not trusted --
+        # an X1C answers "fail" to a K value it applied.
+        "k_value_unsent": k_value_unsent,
     }
 
 
@@ -3424,6 +3425,9 @@ async def reset_ams_slot(
     client = printer_manager.get_client(printer_id)
     if not client:
         raise HTTPException(status_code=400, detail="Printer not connected")
+    # A running print may be feeding from this tray.
+    if client.state and client.state.state in printer_manager.ACTIVE_PRINT_STATES:
+        raise HTTPException(status_code=409, detail="The printer is printing; reset the slot once it is idle")
 
     # Reset the slot
     success = client.reset_ams_slot(ams_id=ams_id, tray_id=tray_id)
@@ -3465,6 +3469,11 @@ async def get_ams_labels(
     serial-to-ams_id mapping from the live printer state so the response is still
     keyed by ams_id for UI compatibility.
     """
+    return await _ams_labels(db, printer_id)
+
+
+async def _ams_labels(db: AsyncSession, printer_id: int) -> dict[int, str]:
+    """*printer_id*'s AMS labels keyed by AMS unit id; see ``get_ams_labels``."""
     # Build serial -> ams_id map from live printer state
     serial_to_ams_id: dict[str, int] = {}
     state = printer_manager.get_status(printer_id)
@@ -3563,54 +3572,6 @@ async def delete_ams_label(
         await db.commit()
 
     return {"success": True}
-
-
-@router.post("/{printer_id}/debug/simulate-print-complete")
-async def debug_simulate_print_complete(
-    printer_id: int,
-    db: AsyncSession = Depends(get_db),
-    _=RequirePrinterPermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
-):
-    """DEBUG: Simulate print completion to test freeze behavior.
-
-    This triggers the same code path as a real print completion,
-    without needing to wait for an actual print to finish.
-    """
-    from backend.app.main import _active_prints, on_print_complete
-    from backend.app.models.archive import PrintArchive
-
-    # Get the most recent archive for this printer
-    result = await db.execute(
-        select(PrintArchive)
-        .where(PrintArchive.printer_id == printer_id)
-        .order_by(PrintArchive.created_at.desc())
-        .limit(1)
-    )
-    archive = result.scalar_one_or_none()
-
-    if not archive:
-        raise HTTPException(status_code=404, detail="No archives found for this printer")
-
-    # Register this archive as "active" so on_print_complete can find it
-    filename = archive.file_path.split("/")[-1] if archive.file_path else "test.3mf"
-    subtask_name = archive.print_name or "Test Print"
-    _active_prints[(printer_id, filename)] = archive.id
-    _active_prints[(printer_id, subtask_name)] = archive.id
-
-    # Simulate print completion data
-    data = {
-        "status": "completed",
-        "filename": filename,
-        "subtask_name": subtask_name,
-        "timelapse_was_active": False,
-    }
-
-    logger.info("Simulating print complete for printer %s, archive %s", printer_id, archive.id)
-
-    # Call the actual on_print_complete handler
-    await on_print_complete(printer_id, data)
-
-    return {"success": True, "archive_id": archive.id, "message": "Print completion simulated"}
 
 
 # =============================================================================
@@ -4226,7 +4187,6 @@ async def get_printable_objects(
     printer_id: int,
     reload: bool = False,
     _=RequirePrinterPermissionIfAuthEnabled(Permission.PRINTERS_READ),
-    db: AsyncSession = Depends(get_db),
 ):
     """Get the list of printable objects for the current print.
 
@@ -4236,8 +4196,10 @@ async def get_printable_objects(
     Args:
         reload: If True, reload objects from the archive file (useful after restart)
     """
-    result = await db.execute(select(Printer).where(Printer.id == printer_id))
-    printer = result.scalar_one_or_none()
+    # Short sessions, released before the FTP download below (RC-C9): it can
+    # take a while from a printer that is mid-print.
+    async with database.async_session() as db:
+        printer = (await db.execute(select(Printer).where(Printer.id == printer_id))).scalar_one_or_none()
     if not printer:
         raise HTTPException(404, "Printer not found")
 
@@ -4260,16 +4222,17 @@ async def get_printable_objects(
 
         subtask_id = str(getattr(client.state, "subtask_id", "") or "").strip()
         if subtask_id not in ("", "0"):
-            archive = await db.scalar(
-                select(PrintArchive)
-                .where(
-                    PrintArchive.printer_id == printer_id,
-                    PrintArchive.status == "printing",
-                    PrintArchive.subtask_id == subtask_id,
+            async with database.async_session() as db:
+                archive = await db.scalar(
+                    select(PrintArchive)
+                    .where(
+                        PrintArchive.printer_id == printer_id,
+                        PrintArchive.status == "printing",
+                        PrintArchive.subtask_id == subtask_id,
+                    )
+                    .order_by(PrintArchive.created_at.desc())
+                    .limit(1)
                 )
-                .order_by(PrintArchive.created_at.desc())
-                .limit(1)
-            )
             if archive is not None:
                 objects, bbox_all = extract_printable_objects_from_archive(
                     settings.base_dir / archive.file_path,
@@ -4792,40 +4755,6 @@ async def ams_unload(
         raise HTTPException(500, "Failed to send unload command")
 
     return {"success": True, "message": "Unloading filament"}
-
-
-@router.get("/{printer_id}/runtime-debug")
-async def get_runtime_debug(
-    printer_id: int,
-    _=RequirePrinterPermissionIfAuthEnabled(Permission.PRINTERS_READ),
-    db: AsyncSession = Depends(get_db),
-):
-    """Debug endpoint: Get runtime tracking status for a printer."""
-    result = await db.execute(select(Printer).where(Printer.id == printer_id))
-    printer = result.scalar_one_or_none()
-    if not printer:
-        raise HTTPException(404, "Printer not found")
-
-    state = printer_manager.get_status(printer_id)
-
-    return {
-        "printer_name": printer.name,
-        "runtime_seconds": printer.runtime_seconds,
-        "runtime_hours": printer.runtime_seconds / 3600.0 if printer.runtime_seconds else 0,
-        "print_hours_offset": printer.print_hours_offset,
-        "total_hours": (printer.runtime_seconds / 3600.0 if printer.runtime_seconds else 0)
-        + (printer.print_hours_offset or 0),
-        "last_runtime_update": printer.last_runtime_update.isoformat() if printer.last_runtime_update else None,
-        "mqtt_state": {
-            "connected": state.connected if state else False,
-            "state": state.state if state else None,
-            "progress": state.progress if state else None,
-            "gcode_file": state.gcode_file if state else None,
-        }
-        if state
-        else None,
-        "is_active": printer.is_active,
-    }
 
 
 @router.post("/{printer_id}/hms/execute-action")

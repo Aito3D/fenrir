@@ -1,6 +1,6 @@
 import csv
 import io
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import select
@@ -204,11 +204,11 @@ class ExportService:
             days=days,
             date_from=date_from,
             date_to=date_to,
-            tz_offset_minutes=tz_offset_minutes,
             printer_id=printer_id,
             project_id=project_id,
             created_by_id=created_by_id,
             printer_scope=printer_scope,
+            day_zone=timezone(timedelta(minutes=tz_offset_minutes)),
         )
 
         # Build stats rows

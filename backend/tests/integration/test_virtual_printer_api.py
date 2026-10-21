@@ -25,10 +25,7 @@ class TestVirtualPrinterSettingsAPI:
 
         assert response.status_code == 200
         result = response.json()
-        assert "enabled" in result
-        assert "access_code_set" in result
-        assert "mode" in result
-        assert "status" in result
+        assert set(result) == {"tailscale_disabled", "archive_name_source", "status"}
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -52,137 +49,78 @@ class TestVirtualPrinterSettingsAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_update_mode(self, async_client: AsyncClient):
-        """Verify mode can be updated."""
-        response = await async_client.put("/api/v1/settings/virtual-printer?mode=review")
+    @pytest.mark.parametrize(
+        "query",
+        [
+            "enabled=true",
+            "enabled=false",
+            "access_code=12345678",
+            "mode=review",
+            "mode=print_queue",
+            "model=BL-P001",
+            "target_printer_id=1",
+            "remote_interface_ip=10.0.0.5",
+        ],
+    )
+    async def test_settings_the_virtual_printers_never_read_are_refused(self, async_client: AsyncClient, query):
+        """vp-3: these were saved to settings keys nothing reads any more -- each
+        virtual printer keeps its own -- and answered 200 as if applied."""
+        response = await async_client.put(f"/api/v1/settings/virtual-printer?{query}")
 
-        assert response.status_code == 200
-        result = response.json()
-        assert result["mode"] == "review"
-
-    @pytest.mark.asyncio
-    @pytest.mark.integration
-    async def test_update_mode_to_queue(self, async_client: AsyncClient):
-        """Verify mode can be set to the canonical 'queue' value."""
-        response = await async_client.put("/api/v1/settings/virtual-printer?mode=queue")
-
-        assert response.status_code == 200
-        result = response.json()
-        assert result["mode"] == "queue"
-
-    @pytest.mark.asyncio
-    @pytest.mark.integration
-    async def test_update_mode_legacy_print_queue_normalises_to_queue(self, async_client: AsyncClient):
-        """Legacy `print_queue` is accepted on input and translated to `queue` on
-        storage so the UI button label and the support-bundle field agree
-        (#1429 mode-label discrepancy)."""
-        response = await async_client.put("/api/v1/settings/virtual-printer?mode=print_queue")
-
-        assert response.status_code == 200
-        result = response.json()
-        assert result["mode"] == "queue"
-
-    @pytest.mark.asyncio
-    @pytest.mark.integration
-    async def test_update_mode_legacy_immediate_normalises_to_archive(self, async_client: AsyncClient):
-        """Legacy `immediate` is accepted on input and translated to `archive`
-        on storage (#1429 mode-label discrepancy)."""
-        response = await async_client.put("/api/v1/settings/virtual-printer?mode=immediate")
-
-        assert response.status_code == 200
-        result = response.json()
-        assert result["mode"] == "archive"
-
-    @pytest.mark.asyncio
-    @pytest.mark.integration
-    async def test_update_mode_to_archive(self, async_client: AsyncClient):
-        """Verify mode can be set to the canonical 'archive' value."""
-        response = await async_client.put("/api/v1/settings/virtual-printer?mode=archive")
-
-        assert response.status_code == 200
-        result = response.json()
-        assert result["mode"] == "archive"
-
-    @pytest.mark.asyncio
-    @pytest.mark.integration
-    async def test_update_access_code(self, async_client: AsyncClient):
-        """Verify access code can be set."""
-        response = await async_client.put("/api/v1/settings/virtual-printer?access_code=12345678")
-
-        assert response.status_code == 200
-        result = response.json()
-        assert result["access_code_set"] is True
-
-    @pytest.mark.asyncio
-    @pytest.mark.integration
-    async def test_update_access_code_wrong_length(self, async_client: AsyncClient):
-        """Verify access code validation for length."""
-        response = await async_client.put("/api/v1/settings/virtual-printer?access_code=123")
-
-        # Should fail validation
         assert response.status_code == 400
+        assert "/api/v1/virtual-printers/" in response.json()["detail"]
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_enable_without_access_code(self, async_client: AsyncClient):
-        """Verify enabling fails without access code set."""
-        # First ensure no access code is set by checking current state
-        # Then try to enable
-        response = await async_client.put("/api/v1/settings/virtual-printer?enabled=true")
+    async def test_stale_legacy_settings_do_not_block_the_archive_name_source(
+        self, async_client: AsyncClient, db_session
+    ):
+        """An old single-VP install left mode "proxy", enabled, aimed at a
+        printer since deleted: the route checked those before saving, and
+        refused the one setting it still serves."""
+        from backend.app.models.settings import Settings
 
-        # If access code wasn't set, this should fail
-        # If it was already set, it will succeed
-        # Both are valid test outcomes
-        assert response.status_code in [200, 400]
+        db_session.add_all(
+            [
+                Settings(key="virtual_printer_mode", value="proxy"),
+                Settings(key="virtual_printer_enabled", value="true"),
+                Settings(key="virtual_printer_target_printer_id", value="999"),
+            ]
+        )
+        await db_session.commit()
 
-    @pytest.mark.asyncio
-    @pytest.mark.integration
-    async def test_enable_with_access_code(self, async_client: AsyncClient):
-        """Verify enabling succeeds when access code is set."""
-        # First set access code
-        await async_client.put("/api/v1/settings/virtual-printer?access_code=12345678")
+        response = await async_client.put("/api/v1/settings/virtual-printer?archive_name_source=filename")
 
-        # Then enable (this will start the servers which may fail in test env)
-        # We mock the manager to avoid actually starting servers
-        with patch("backend.app.services.virtual_printer.virtual_printer_manager") as mock_manager:
-            mock_manager.configure = AsyncMock()
-            mock_manager.get_status = MagicMock(
-                return_value={
-                    "enabled": True,
-                    "running": True,
-                    "mode": "archive",
-                    "name": "Fenrir",
-                    "serial": "00M09A391800001",
-                    "pending_files": 0,
-                }
-            )
-
-            response = await async_client.put("/api/v1/settings/virtual-printer?enabled=true")
-
-            assert response.status_code == 200
+        assert response.status_code == 200, response.text
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_disable_virtual_printer(self, async_client: AsyncClient):
-        """Verify virtual printer can be disabled."""
-        with patch("backend.app.services.virtual_printer.virtual_printer_manager") as mock_manager:
-            mock_manager.configure = AsyncMock()
-            mock_manager.get_status = MagicMock(
-                return_value={
-                    "enabled": False,
-                    "running": False,
-                    "mode": "archive",
-                    "name": "Fenrir",
-                    "serial": "00M09A391800001",
-                    "pending_files": 0,
-                }
-            )
+    async def test_the_archive_name_source_is_still_saved(self, async_client: AsyncClient):
+        response = await async_client.put("/api/v1/settings/virtual-printer?archive_name_source=filename")
 
-            response = await async_client.put("/api/v1/settings/virtual-printer?enabled=false")
+        assert response.status_code == 200
+        assert response.json()["archive_name_source"] == "filename"
 
-            assert response.status_code == 200
-            result = response.json()
-            assert result["enabled"] is False
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_the_tailscale_switch_reaches_the_first_virtual_printer(self, async_client: AsyncClient, db_session):
+        """It only changes what that printer's card shows; nothing is restarted."""
+        from sqlalchemy import select
+
+        from backend.app.models.virtual_printer import VirtualPrinter
+
+        with patch("backend.app.services.virtual_printer.virtual_printer_manager.sync_from_db", AsyncMock()) as sync:
+            created = await async_client.post("/api/v1/virtual-printers", json={"name": "first", "mode": "archive"})
+            assert created.status_code in (200, 201), created.text
+            sync.reset_mock()
+            response = await async_client.put("/api/v1/settings/virtual-printer?tailscale_disabled=false")
+
+        assert response.status_code == 200, response.text
+        assert response.json()["tailscale_disabled"] is False
+        db_session.expire_all()
+        first = (await db_session.execute(select(VirtualPrinter))).scalar_one()
+        assert first.tailscale_disabled is False
+        sync.assert_not_called()
 
     # ========================================================================
     # Update settings — proxy-mode / model / archive_name_source validation
@@ -194,90 +132,12 @@ class TestVirtualPrinterSettingsAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_proxy_mode_enabled_without_target_returns_400(self, async_client: AsyncClient):
-        """Enabling proxy mode without a target printer must be rejected."""
-        response = await async_client.put("/api/v1/settings/virtual-printer?mode=proxy&enabled=true")
-
-        assert response.status_code == 400
-        assert response.json()["detail"] == "Target printer is required for proxy mode"
-
-    @pytest.mark.asyncio
-    @pytest.mark.integration
-    async def test_proxy_mode_switch_without_enabling_or_target_auto_disables(self, async_client: AsyncClient):
-        """Switching to proxy mode without an explicit `enabled` flag and without
-        a target printer auto-disables instead of erroring (only an explicit
-        `enabled=true` triggers the 400 above)."""
-        response = await async_client.put("/api/v1/settings/virtual-printer?mode=proxy")
-
-        assert response.status_code == 200
-        result = response.json()
-        assert result["mode"] == "proxy"
-        assert result["enabled"] is False
-
-    @pytest.mark.asyncio
-    @pytest.mark.integration
-    async def test_proxy_mode_with_nonexistent_target_returns_400(self, async_client: AsyncClient):
-        """A target_printer_id that doesn't resolve to a real printer is rejected."""
-        response = await async_client.put("/api/v1/settings/virtual-printer?mode=proxy&target_printer_id=999999")
-
-        assert response.status_code == 400
-        assert response.json()["detail"] == "Printer with ID 999999 not found"
-
-    @pytest.mark.asyncio
-    @pytest.mark.integration
-    async def test_proxy_mode_with_valid_target_succeeds(self, async_client: AsyncClient, printer_factory):
-        """A valid target_printer_id resolves the printer and succeeds (sanity
-        check that the 400 above is specific to a bad id, not proxy mode itself)."""
-        printer = await printer_factory(name="Target Printer", access_code="TARGETXX")
-
-        with patch("backend.app.services.virtual_printer.virtual_printer_manager") as mock_manager:
-            mock_manager.configure = AsyncMock()
-            mock_manager.get_status = MagicMock(
-                return_value={
-                    "enabled": False,
-                    "running": False,
-                    "mode": "proxy",
-                    "name": "Fenrir",
-                    "serial": "00M09A391800001",
-                    "pending_files": 0,
-                }
-            )
-
-            response = await async_client.put(
-                f"/api/v1/settings/virtual-printer?mode=proxy&target_printer_id={printer.id}"
-            )
-
-        assert response.status_code == 200
-        assert response.json()["mode"] == "proxy"
-
-    @pytest.mark.asyncio
-    @pytest.mark.integration
     async def test_archive_name_source_invalid_value_returns_400(self, async_client: AsyncClient):
         """archive_name_source only accepts 'metadata' or 'filename'."""
         response = await async_client.put("/api/v1/settings/virtual-printer?archive_name_source=bogus")
 
         assert response.status_code == 400
         assert response.json()["detail"] == "archive_name_source must be 'metadata' or 'filename'"
-
-    @pytest.mark.asyncio
-    @pytest.mark.integration
-    async def test_invalid_model_returns_400(self, async_client: AsyncClient):
-        """An unrecognized model code is rejected with the list of valid models."""
-        response = await async_client.put("/api/v1/settings/virtual-printer?model=not-a-real-model")
-
-        assert response.status_code == 400
-        detail = response.json()["detail"]
-        assert detail.startswith("Invalid model. Must be one of: ")
-
-    @pytest.mark.asyncio
-    @pytest.mark.integration
-    async def test_invalid_mode_returns_400(self, async_client: AsyncClient):
-        """An unrecognized mode value is rejected with the list of valid modes."""
-        response = await async_client.put("/api/v1/settings/virtual-printer?mode=not-a-real-mode")
-
-        assert response.status_code == 400
-        detail = response.json()["detail"]
-        assert detail.startswith("Mode must be one of: ")
 
 
 class TestPendingUploadsAPI:

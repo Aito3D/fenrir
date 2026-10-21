@@ -28,11 +28,26 @@ def _ffmpeg_present(monkeypatch):
     monkeypatch.setattr(tp, "get_ffmpeg_path", lambda: "/usr/bin/ffmpeg")
 
 
+class _HangingStream:
+    async def read(self):
+        await asyncio.sleep(3600)
+        return b""
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        await asyncio.sleep(3600)
+        raise StopAsyncIteration
+
+
 class _HangingProcess:
     def __init__(self):
         self.killed = False
         self.waited = False
         self.returncode = None
+        self.stdout = _HangingStream()
+        self.stderr = _HangingStream()
 
     async def communicate(self):
         await asyncio.sleep(3600)
@@ -83,6 +98,7 @@ async def test_a_failed_replace_leaves_no_temp_output(
     async_client, archive_factory, printer_factory, db_session, tmp_path
 ):
     from backend.app.core.config import settings
+    from backend.app.services import timelapse_jobs
 
     printer = await printer_factory()
     archive = await archive_factory(printer.id)
@@ -104,8 +120,15 @@ async def test_a_failed_replace_leaves_no_temp_output(
             response = await async_client.post(
                 f"/api/v1/archives/{archive.id}/timelapse/process", data={"save_mode": "replace", "speed": "2"}
             )
-        assert response.status_code == 500
+            # A background job since upstream's progress reporting: wait for it.
+            assert response.status_code == 202
+            job = timelapse_jobs.get_job(archive.id)
+            assert job is not None and job.task is not None
+            await job.task
+        assert job.status == timelapse_jobs.FAILED
         assert seen and not seen[0].exists(), "the failed output was left behind"
+        # The temp output sits beside the original, so the swap is a rename.
+        assert seen[0].parent == video.parent
         assert video.read_bytes() == b"original"
     finally:
         video.unlink(missing_ok=True)

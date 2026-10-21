@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { renderHook, waitFor, act, screen } from '@testing-library/react';
+import { renderHook, act, screen, waitFor } from '@testing-library/react';
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ToastProvider } from '../../contexts/ToastContext';
@@ -250,27 +250,6 @@ describe('useWebSocket hook', () => {
       expect(ws.url).toContain('/api/v1/ws');
       // GHSA-r2qv: the ws-token mint result is appended as ?token=...
       expect(ws.url).toContain('token=test-ws-token');
-    });
-
-    it('reports connected state when WebSocket opens', async () => {
-      const { useWebSocket } = await import('../../hooks/useWebSocket');
-
-      const { result } = renderHook(() => useWebSocket(), {
-        wrapper: createWrapper(queryClient),
-      });
-
-      // Initially not connected
-      expect(result.current.isConnected).toBe(false);
-
-      // Simulate connection opening
-      const ws = await waitForWs();
-      act(() => {
-        ws.open();
-      });
-
-      await waitFor(() => {
-        expect(result.current.isConnected).toBe(true);
-      });
     });
   });
 
@@ -651,6 +630,9 @@ describe('useWebSocket hook', () => {
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['slotPresets'] });
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['spool-assignments'] });
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['spoolman-slot-assignments'] });
+      // The print dialog prices each slot and shows its grams from this one,
+      // in both modes; an open dialog kept the previous spool's figures.
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['printer-inventory-remain'] });
 
       vi.useRealTimers();
       vi.unstubAllGlobals();
@@ -767,7 +749,6 @@ describe('useWebSocket hook', () => {
             printer_name: 'Printer A',
             slot: 'A1',
             verified: false,
-            saw_tray: true,
           });
         });
       }).not.toThrow();
@@ -1308,49 +1289,6 @@ describe('useWebSocket hook', () => {
       } finally {
         vi.useRealTimers();
       }
-    });
-  });
-
-  describe('sendMessage', () => {
-    it('sends JSON message when connected', async () => {
-      const { useWebSocket } = await import('../../hooks/useWebSocket');
-
-      const { result } = renderHook(() => useWebSocket(), {
-        wrapper: createWrapper(queryClient),
-      });
-
-      const ws = await waitForWs();
-
-      // Open connection
-      act(() => {
-        ws.open();
-      });
-
-      act(() => {
-        result.current.sendMessage({ type: 'test', data: 'hello' });
-      });
-
-      expect(ws.send).toHaveBeenCalledWith(
-        JSON.stringify({ type: 'test', data: 'hello' })
-      );
-    });
-
-    it('does not send when disconnected', async () => {
-      const { useWebSocket } = await import('../../hooks/useWebSocket');
-
-      const { result } = renderHook(() => useWebSocket(), {
-        wrapper: createWrapper(queryClient),
-      });
-
-      const ws = await waitForWs();
-
-      // Don't open connection - still in CONNECTING state
-
-      act(() => {
-        result.current.sendMessage({ type: 'test' });
-      });
-
-      expect(ws.send).not.toHaveBeenCalled();
     });
   });
 

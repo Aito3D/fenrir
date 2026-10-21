@@ -331,7 +331,7 @@ class TestRestoreSuccessPath:
         # is_enabled is a plain `len(self._instances) > 0` property; fake a
         # running virtual printer without touching the class descriptor.
         monkeypatch.setattr(virtual_printer_manager, "_instances", {1: object()})
-        monkeypatch.setattr(virtual_printer_manager, "configure", AsyncMock())
+        monkeypatch.setattr(virtual_printer_manager, "stop_all", AsyncMock())
         monkeypatch.setattr(virtual_printer_manager, "sync_from_db", AsyncMock())
 
         return print_scheduler, smart_plug_manager, notification_service, virtual_printer_manager
@@ -420,7 +420,7 @@ class TestRestoreSuccessPath:
             # A successful restore intentionally leaves the paused services
             # stopped (a restart is required anyway) rather than restarting
             # them.
-            virtual_printer_manager.configure.assert_awaited_once()
+            virtual_printer_manager.stop_all.assert_awaited_once()
             print_scheduler.stop.assert_called_once()
             smart_plug_manager.stop_scheduler.assert_called_once()
             notification_service.stop_digest_scheduler.assert_called_once()

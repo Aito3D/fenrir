@@ -541,7 +541,7 @@ class TestForgotPasswordAPI:
         from datetime import datetime, timedelta, timezone
 
         from backend.app.core.auth import get_password_hash
-        from backend.app.models.auth_ephemeral import AuthEphemeralToken
+        from backend.app.models.auth_ephemeral import AuthEphemeralToken, TokenType
         from backend.app.models.user import User
 
         # admin_token's fixture already called /auth/setup, enabling auth.
@@ -557,8 +557,9 @@ class TestForgotPasswordAPI:
 
         expired_token = secrets.token_urlsafe(32)
         db_session.add(
-            AuthEphemeralToken.new_password_reset(
+            AuthEphemeralToken(
                 token=expired_token,
+                token_type=TokenType.PASSWORD_RESET,
                 username="expiredreset",
                 expires_at=datetime.now(timezone.utc) - timedelta(hours=1),
             )

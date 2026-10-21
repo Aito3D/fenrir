@@ -197,7 +197,6 @@ _BOOL_SETTING_KEYS = frozenset(
         "include_beta_updates",
         "announcements_enabled",
         "announcements_all_users",
-        "virtual_printer_enabled",
         "ftp_retry_enabled",
         "mqtt_enabled",
         "mqtt_use_tls",
@@ -1472,7 +1471,7 @@ async def _import_sqlite_to_postgres(sqlite_path: Path):
 
                 # Identify columns that need type conversion (SQLite stores booleans
                 # as int and datetimes as str — asyncpg requires native Python types)
-                from datetime import datetime as dt
+                from datetime import datetime as dt, timezone
 
                 bool_columns = set()
                 datetime_columns = set()
@@ -1504,7 +1503,9 @@ async def _import_sqlite_to_postgres(sqlite_path: Path):
                                     if sd is not None:
                                         not_null_defaults[col.name] = sd
 
-                now = dt.now()
+                # Naive UTC, as every stored timestamp is: the host's local
+                # time put backfilled rows hours off (DB-C4).
+                now = dt.now(timezone.utc).replace(tzinfo=None)
                 value_fixes = _restored_value_fixes(table_name)
 
                 def _convert_row(
@@ -1770,11 +1771,16 @@ async def restore_backup(
                 raise HTTPException(400, f"Invalid backup: bambuddy.db is not readable ({exc})") from exc
 
         try:
-            # 3. Stop virtual printer if running (releases file locks)
+            # 3. Stop the virtual printers if running (releases file locks).
+            # stop_all, not the legacy configure(): that ignores its arguments
+            # and re-syncs from the database not yet replaced, so their FTP,
+            # MQTT and SSDP services ran on through the restore (vp-2). Like
+            # the services below, they come back with the restart a
+            # successful restore asks for.
             try:
                 if virtual_printer_manager.is_enabled:
-                    logger.info("Stopping virtual printer for restore...")
-                    await virtual_printer_manager.configure(enabled=False)
+                    logger.info("Stopping virtual printers for restore...")
+                    await virtual_printer_manager.stop_all()
                     await asyncio.sleep(1)
             except Exception as e:
                 logger.warning("Failed to stop virtual printer: %s", e)
@@ -2059,35 +2065,17 @@ async def get_virtual_printer_settings(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
-    """Get virtual printer settings and status."""
-    from backend.app.services.virtual_printer import (
-        DEFAULT_VIRTUAL_PRINTER_MODEL,
-        virtual_printer_manager,
-    )
+    """Get the settings this route still sets, and the virtual printers' status.
 
-    enabled = await get_setting(db, "virtual_printer_enabled")
-    access_code = await get_setting(db, "virtual_printer_access_code")
-    mode = await get_setting(db, "virtual_printer_mode")
-    model = await get_setting(db, "virtual_printer_model")
-    target_printer_id = await get_setting(db, "virtual_printer_target_printer_id")
-    remote_interface_ip = await get_setting(db, "virtual_printer_remote_interface_ip")
+    Every other virtual printer setting lives on its own row
+    (``GET /virtual-printers``).
+    """
+    from backend.app.services.virtual_printer import virtual_printer_manager
+
     tailscale_disabled_raw = await get_setting(db, "virtual_printer_tailscale_disabled")
     archive_name_source = await get_setting(db, "virtual_printer_archive_name_source")
 
-    from backend.app.models.virtual_printer import VP_MODE_ARCHIVE, normalize_vp_mode
-
     return {
-        "enabled": enabled == "true" if enabled else False,
-        "access_code_set": bool(access_code),
-        # Normalize on read so older settings rows (with `immediate` /
-        # `print_queue`) come out as `archive` / `queue` for the frontend.
-        "mode": normalize_vp_mode(mode) or VP_MODE_ARCHIVE,
-        "model": model or DEFAULT_VIRTUAL_PRINTER_MODEL,
-        # A target the caller can't see is not named.
-        "target_printer_id": int(target_printer_id)
-        if target_printer_id and printer_scope.allows(int(target_printer_id))
-        else None,
-        "remote_interface_ip": remote_interface_ip or "",
         "tailscale_disabled": tailscale_disabled_raw == "true" if tailscale_disabled_raw else True,
         "archive_name_source": archive_name_source if archive_name_source in ("metadata", "filename") else "metadata",
         "status": _legacy_vp_status(virtual_printer_manager.get_status(), printer_scope),
@@ -2108,45 +2096,21 @@ async def update_virtual_printer_settings(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
-    """Update virtual printer settings and restart services if needed.
+    """Legacy single-printer settings: the archive name source and the first
+    virtual printer's Tailscale switch.
 
-    For proxy mode with SSDP proxy (dual-homed setup):
-    - remote_interface_ip: IP of interface on slicer's network (LAN B)
-    - Local interface is auto-detected based on target printer IP
+    Every other virtual printer setting lives on its own row, set with
+    ``PUT /virtual-printers/{id}``; the rest of this route's parameters are
+    refused (vp-3).
     """
     from sqlalchemy import select
 
-    from backend.app.models.printer import Printer
-    from backend.app.services.virtual_printer import (
-        DEFAULT_VIRTUAL_PRINTER_MODEL,
-        VIRTUAL_PRINTER_MODELS,
-        virtual_printer_manager,
-    )
-
-    # Get current values
-    current_enabled = await get_setting(db, "virtual_printer_enabled") == "true"
-    current_access_code = await get_setting(db, "virtual_printer_access_code") or ""
-    # Default to `archive` (the canonical name) but tolerate legacy `immediate`
-    # in the stored value — normalized later before validation.
-    current_mode = await get_setting(db, "virtual_printer_mode") or "archive"
-    current_model = await get_setting(db, "virtual_printer_model") or DEFAULT_VIRTUAL_PRINTER_MODEL
-    current_target_id_str = await get_setting(db, "virtual_printer_target_printer_id")
-    current_target_id = int(current_target_id_str) if current_target_id_str else None
-    current_remote_iface = await get_setting(db, "virtual_printer_remote_interface_ip") or ""
-    current_ts_disabled_raw = await get_setting(db, "virtual_printer_tailscale_disabled")
-    # Default True (opt-in) when the setting has never been saved — matches the model default.
-    current_ts_disabled = current_ts_disabled_raw == "true" if current_ts_disabled_raw else True
-
-    # Apply updates
-    new_enabled = enabled if enabled is not None else current_enabled
-    new_access_code = access_code if access_code is not None else current_access_code
-    new_mode = mode if mode is not None else current_mode
-    new_model = model if model is not None else current_model
-    new_target_id = target_printer_id if target_printer_id is not None else current_target_id
-    # One bridging to a printer the caller can't use is not theirs to change,
-    # and they can't aim it at such a printer.
     from backend.app.models.virtual_printer import VirtualPrinter as FirstVP
 
+    current_target_id_str = await get_setting(db, "virtual_printer_target_printer_id")
+    current_target_id = int(current_target_id_str) if current_target_id_str else None
+    # One bridging to a printer the caller can't use is not theirs to change,
+    # and they can't aim it at such a printer.
     # The first virtual printer is the one these settings reach.
     first_vp = (await db.execute(select(FirstVP).order_by(FirstVP.position, FirstVP.id).limit(1))).scalar_one_or_none()
     if not printer_scope.allows(current_target_id) or (
@@ -2155,132 +2119,47 @@ async def update_virtual_printer_settings(
         return JSONResponse(status_code=404, content={"detail": "Virtual printer not found"})
     if target_printer_id is not None and not printer_scope.allows(target_printer_id):
         return JSONResponse(status_code=400, content={"detail": f"Printer with ID {target_printer_id} not found"})
-    new_remote_iface = remote_interface_ip if remote_interface_ip is not None else current_remote_iface
-    new_ts_disabled = tailscale_disabled if tailscale_disabled is not None else current_ts_disabled
-
-    # Validate mode. Canonical wire values are `archive` / `review` / `queue`
-    # / `proxy`; legacy `immediate` and `print_queue` are accepted as aliases
-    # and translated before storage so support bundles stop showing the old
-    # confusing pair (#1429 mode-label discrepancy).
-    from backend.app.models.virtual_printer import VP_MODE_VALUES, normalize_vp_mode
-
-    canonical_mode = normalize_vp_mode(new_mode)
-    if canonical_mode not in VP_MODE_VALUES:
+    # Each virtual printer keeps these itself now; this route wrote them to
+    # settings keys nothing reads and answered 200 as if applied (vp-3). The
+    # stored legacy values are not checked either: an old install's stale
+    # mode or deleted target printer refused the settings this still serves.
+    unread = [
+        name
+        for name, value in (
+            ("enabled", enabled),
+            ("access_code", access_code),
+            ("mode", mode),
+            ("model", model),
+            ("target_printer_id", target_printer_id),
+            ("remote_interface_ip", remote_interface_ip),
+        )
+        if value is not None
+    ]
+    if unread:
         return JSONResponse(
             status_code=400,
             content={
-                "detail": f"Mode must be one of: {', '.join(VP_MODE_VALUES)}",
+                "detail": f"{', '.join(unread)} cannot be set here any more: set them for each virtual printer "
+                "with PUT /api/v1/virtual-printers/{id}"
             },
         )
-    new_mode = canonical_mode
 
-    # Validate archive_name_source
     if archive_name_source is not None and archive_name_source not in ("metadata", "filename"):
         return JSONResponse(
             status_code=400,
             content={"detail": "archive_name_source must be 'metadata' or 'filename'"},
         )
 
-    # Validate model
-    if model is not None and model not in VIRTUAL_PRINTER_MODELS:
-        return JSONResponse(
-            status_code=400,
-            content={"detail": f"Invalid model. Must be one of: {', '.join(VIRTUAL_PRINTER_MODELS.keys())}"},
-        )
-
-    # Mode-specific validation and printer lookup
-    target_printer_ip = ""
-    target_printer_serial = ""
-    if new_mode == "proxy":
-        # Proxy mode requires target printer when enabling
-        if new_enabled and not new_target_id:
-            # If just switching to proxy mode (not explicitly enabling), auto-disable
-            if enabled is None:
-                new_enabled = False
-            else:
-                return JSONResponse(
-                    status_code=400,
-                    content={"detail": "Target printer is required for proxy mode"},
-                )
-
-        # Look up printer IP and serial if we have a target
-        if new_target_id:
-            result = await db.execute(select(Printer).where(Printer.id == new_target_id))
-            printer = result.scalar_one_or_none()
-            if not printer:
-                return JSONResponse(
-                    status_code=400,
-                    content={"detail": f"Printer with ID {new_target_id} not found"},
-                )
-            target_printer_ip = printer.ip_address
-            target_printer_serial = printer.serial_number
-        # Access code not required for proxy mode
-    else:
-        # Non-proxy modes require access code when enabling
-        if new_enabled and not new_access_code:
-            # If just switching modes (not explicitly enabling), auto-disable
-            if enabled is None:
-                new_enabled = False
-            else:
-                return JSONResponse(
-                    status_code=400,
-                    content={"detail": "Access code is required when enabling virtual printer"},
-                )
-
-        # Validate access code length (Bambu Studio requires exactly 8 characters)
-        if access_code is not None and access_code and len(access_code) != 8:
-            return JSONResponse(
-                status_code=400,
-                content={"detail": "Access code must be exactly 8 characters"},
-            )
-
-    # Save settings
-    await set_setting(db, "virtual_printer_enabled", "true" if new_enabled else "false")
-    if access_code is not None:
-        await set_setting(db, "virtual_printer_access_code", access_code)
-    await set_setting(db, "virtual_printer_mode", new_mode)
-    if model is not None:
-        await set_setting(db, "virtual_printer_model", model)
-    if target_printer_id is not None:
-        await set_setting(db, "virtual_printer_target_printer_id", str(target_printer_id))
-    if remote_interface_ip is not None:
-        await set_setting(db, "virtual_printer_remote_interface_ip", remote_interface_ip)
     if tailscale_disabled is not None:
         await set_setting(db, "virtual_printer_tailscale_disabled", "true" if tailscale_disabled else "false")
+        # The first virtual printer's card shows its Tailscale address by it.
+        if first_vp is not None:
+            first_vp.tailscale_disabled = tailscale_disabled
     if archive_name_source is not None:
         await set_setting(db, "virtual_printer_archive_name_source", archive_name_source)
 
-    # Propagate tailscale_disabled to the first VirtualPrinter row so sync_from_db() picks it up
-    if tailscale_disabled is not None:
-        if first_vp is not None:
-            first_vp.tailscale_disabled = new_ts_disabled
-
     await db.commit()
     db.expire_all()
-
-    # Reconfigure virtual printer
-    try:
-        await virtual_printer_manager.configure(
-            enabled=new_enabled,
-            access_code=new_access_code,
-            mode=new_mode,
-            model=new_model,
-            target_printer_ip=target_printer_ip,
-            target_printer_serial=target_printer_serial,
-            remote_interface_ip=new_remote_iface,
-        )
-    except ValueError as e:
-        logger.warning("Virtual printer configuration validation error: %s", e)
-        return JSONResponse(
-            status_code=400,
-            content={"detail": "Invalid virtual printer configuration. Check the provided values."},
-        )
-    except Exception as e:
-        logger.error("Failed to configure virtual printer: %s", e, exc_info=True)
-        return JSONResponse(
-            status_code=500,
-            content={"detail": "Failed to configure virtual printer. Check server logs for details."},
-        )
 
     return await get_virtual_printer_settings(db, printer_scope=printer_scope)
 

@@ -152,6 +152,18 @@ class TestVirtualPrinterInstance:
         assert status["running"] is False
         assert status["pending_files"] == 0
 
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("handler", ["_archive_file", "_queue_file", "_add_to_print_queue"])
+    async def test_a_file_that_cannot_be_handled_leaves_the_pending_count(self, instance, handler):
+        """Without a database the file is dropped, and the status stops counting it."""
+        file_path = Path("/tmp/test.3mf")  # nosec B108
+        instance._session_factory = None
+        instance._pending_files = {file_path.name: file_path}
+
+        await getattr(instance, handler)(file_path, "192.168.1.100")
+
+        assert instance.get_status()["pending_files"] == 0
+
     # ========================================================================
     # Tests for file handling
     # ========================================================================
@@ -2391,7 +2403,7 @@ class TestVirtualPrinterInstance:
         position_max_result = MagicMock()
         position_max_result.scalar = MagicMock(return_value=None)
         select_pending_result = MagicMock()
-        select_pending_result.all = MagicMock(return_value=[(101,)])
+        select_pending_result.all = MagicMock(return_value=[(101, None, None)])
         update_result = MagicMock()
         mock_db.execute = AsyncMock(side_effect=[position_max_result, select_pending_result, update_result])
 
@@ -2504,7 +2516,7 @@ class TestVirtualPrinterInstance:
         position_max_result.scalar = MagicMock(return_value=None)
         select_pending_result = MagicMock()
         # (queue_item_id, archive_id) — matches the id set by db.add above.
-        select_pending_result.all = MagicMock(return_value=[(101, 55)])
+        select_pending_result.all = MagicMock(return_value=[(101, 55, None)])
         update_result = MagicMock()
         select_archives_result = MagicMock()
         select_archives_result.scalars = MagicMock(
@@ -2603,7 +2615,7 @@ class TestVirtualPrinterInstance:
         position_max_result = MagicMock()
         position_max_result.scalar = MagicMock(return_value=None)
         select_pending_result = MagicMock()
-        select_pending_result.all = MagicMock(return_value=[(201, 65)])
+        select_pending_result.all = MagicMock(return_value=[(201, 65, None)])
         update_result = MagicMock()
         # No 4th execute() expected — the archive patch must be skipped
         # entirely, so only 3 calls should ever happen.
@@ -2699,7 +2711,7 @@ class TestVirtualPrinterInstance:
         position_max_result = MagicMock()
         position_max_result.scalar = MagicMock(return_value=None)
         select_pending_result = MagicMock()
-        select_pending_result.all = MagicMock(return_value=[(301, 75)])
+        select_pending_result.all = MagicMock(return_value=[(301, 75, None)])
         update_result = MagicMock()
         select_archives_result = MagicMock()
         select_archives_result.scalars = MagicMock(
@@ -2794,7 +2806,7 @@ class TestVirtualPrinterInstance:
         position_max_result = MagicMock()
         position_max_result.scalar = MagicMock(return_value=None)
         select_pending_result = MagicMock()
-        select_pending_result.all = MagicMock(return_value=[(401, 85)])
+        select_pending_result.all = MagicMock(return_value=[(401, 85, None)])
         update_result = MagicMock()
         # No 4th execute(): with nothing to save there is no archive SELECT.
         mock_db.execute = AsyncMock(side_effect=[position_max_result, select_pending_result, update_result])
@@ -2881,7 +2893,7 @@ class TestVirtualPrinterInstance:
         position_max_result = MagicMock()
         position_max_result.scalar = MagicMock(return_value=None)
         select_pending_result = MagicMock()
-        select_pending_result.all = MagicMock(return_value=[(301,)])
+        select_pending_result.all = MagicMock(return_value=[(301, None, None)])
         update_result = MagicMock()
         mock_db.execute = AsyncMock(side_effect=[position_max_result, select_pending_result, update_result])
 
@@ -3181,27 +3193,6 @@ class TestVirtualPrinterManager:
         assert status["model_name"] == "P1P"
         assert status["pending_files"] == 1
 
-    def test_manager_get_all_status(self, manager, tmp_path):
-        """Verify get_all_status returns status for all instances."""
-        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
-
-        for i in range(1, 3):
-            inst = VirtualPrinterInstance(
-                vp_id=i,
-                name=f"VP{i}",
-                mode="archive",
-                model="C11",
-                access_code="12345678",
-                serial_suffix=f"39180000{i}",
-                base_dir=tmp_path,
-            )
-            manager._instances[i] = inst
-
-        statuses = manager.get_all_status()
-        assert len(statuses) == 2
-        assert statuses[0]["name"] == "VP1"
-        assert statuses[1]["name"] == "VP2"
-
     @pytest.mark.asyncio
     async def test_manager_stop_all(self, manager, tmp_path):
         """Verify stop_all removes all instances."""
@@ -3431,7 +3422,6 @@ class TestVirtualPrinterManager:
             model="C11",
             access_code="12345678",
             serial_suffix="391800001",
-            tailscale_disabled=False,
             base_dir=tmp_path,
         )
         inst.stop_server = AsyncMock()
@@ -3887,39 +3877,6 @@ class TestCertificateService:
         key_content = key_path.read_text()
         assert "BEGIN" in key_content and "KEY" in key_content
 
-    def test_certificates_reused_if_exist(self, cert_service):
-        """Verify existing certificates are reused."""
-        # First generation
-        cert_path1, key_path1 = cert_service.generate_certificates()
-        mtime1 = cert_path1.stat().st_mtime
-
-        # Second call should reuse (via ensure_certificates)
-        cert_path2, key_path2 = cert_service.ensure_certificates()
-        mtime2 = cert_path2.stat().st_mtime
-
-        assert mtime1 == mtime2  # File wasn't regenerated
-
-    def test_delete_certificates(self, cert_service):
-        """Verify certificates can be deleted."""
-        cert_service.generate_certificates()
-
-        assert cert_service.cert_path.exists()
-        assert cert_service.key_path.exists()
-
-        cert_service.delete_certificates()
-
-        assert not cert_service.cert_path.exists()
-        assert not cert_service.key_path.exists()
-
-    def test_ensure_creates_if_not_exist(self, cert_service):
-        """Verify ensure_certificates generates if not existing."""
-        assert not cert_service.cert_path.exists()
-
-        cert_path, key_path = cert_service.ensure_certificates()
-
-        assert cert_path.exists()
-        assert key_path.exists()
-
     # --- CA identity (#3014) ------------------------------------------------
     #
     # A slicer trust store is a flat list of certificates, and OpenSSL resolves
@@ -4256,21 +4213,20 @@ class TestSlicerProxyManager:
         )
 
         # Mock asyncio.create_task and asyncio.gather to prevent actual
-        # server start. Close every coroutine handed to gather — otherwise
-        # the ~110 run_with_logging() coros built inside start() are
-        # garbage-collected unfinalized and surface later as
-        # PytestUnraisableExceptionWarning at random in other tests.
-        async def _close_pending(*coros, **_):
-            for c in coros:
-                if asyncio.iscoroutine(c):
-                    c.close()
+        # server start. Close every coroutine handed to create_task (gather
+        # only sees the stand-in tasks) — otherwise the ~110
+        # run_with_logging() coros built inside start() are garbage-collected
+        # unfinalized and surface later as PytestUnraisableExceptionWarning at
+        # random in other tests.
+        def _close_and_stand_in(coro, **_):
+            coro.close()
+            return MagicMock()
 
         with (
-            patch("asyncio.create_task") as mock_create_task,
-            patch("asyncio.gather", side_effect=_close_pending),
+            patch("asyncio.create_task", side_effect=_close_and_stand_in),
+            patch("asyncio.gather", new=AsyncMock()),
             patch.object(SlicerProxyManager, "_log_activity"),
         ):
-            mock_create_task.return_value = MagicMock()
             await mgr.start()
 
         # FTP, FileTransfer, RTSP should be TCPProxy (transparent)

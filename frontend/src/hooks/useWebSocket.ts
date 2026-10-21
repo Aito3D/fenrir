@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useToast } from '../contexts/ToastContext';
 import { useTranslation } from 'react-i18next';
 import { api, ApiError, bumpArchiveThumbnail } from '../api/client';
@@ -39,7 +39,6 @@ interface WebSocketMessage {
   slot?: string;
   verified?: boolean;
   kprofile_applied?: boolean;
-  saw_tray?: boolean;
   // Slicer Pipeline run events (#1425 PR C). ``run`` carries the full
   // PipelineRunResponse payload — typed loosely here so the WebSocket hook
   // doesn't pull the full client.ts types in.
@@ -70,7 +69,6 @@ export function useWebSocket() {
   const handshakeDelayRef = useRef(0);
   const queryClient = useQueryClient();
   const boardSync = useBoardSync();
-  const [isConnected, setIsConnected] = useState(false);
   const lastMissingSpoolWarningRef = useRef<Map<number, string>>(new Map());
   const { showToast } = useToast();
   const { t } = useTranslation();
@@ -186,7 +184,6 @@ export function useWebSocket() {
       opened = true;
       handshakeDelayRef.current = 0;
       if (import.meta.env.MODE !== 'test') console.log('[WebSocket] Connected');
-      setIsConnected(true);
       // A fresh socket has no memory of what this client was presenting
       // before it dropped — the server's viewer map lost us the instant the
       // old connection closed. Registering a live sender here replays our
@@ -225,7 +222,6 @@ export function useWebSocket() {
         clearInterval(pingInterval);
         pingInterval = null;
       }
-      setIsConnected(false);
       wsRef.current = null;
       // No live socket to send through — own presence is remembered by the
       // store and replays automatically once a new sender registers on open.
@@ -380,6 +376,8 @@ export function useWebSocket() {
     queryClient.invalidateQueries({ queryKey: ['spool-assignments'] });
     queryClient.invalidateQueries({ queryKey: ['spoolman-slot-assignments'] });
     queryClient.invalidateQueries({ queryKey: ['slotPresets'] });
+    // Both modes' bindings, which the print dialog prices and weighs slots from.
+    queryClient.invalidateQueries({ queryKey: ['printer-inventory-remain'] });
   }, [queryClient]);
 
   const handleMessage = useCallback((message: WebSocketMessage) => {
@@ -778,12 +776,4 @@ export function useWebSocket() {
       }
     };
   }, [connect]);
-
-  const sendMessage = useCallback((message: Record<string, unknown>) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify(message));
-    }
-  }, []);
-
-  return { isConnected, sendMessage };
 }

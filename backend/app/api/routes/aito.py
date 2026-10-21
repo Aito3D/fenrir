@@ -102,7 +102,6 @@ from backend.app.services import aito_quote_sync, aito_tracking as tracking_serv
 from backend.app.services.aito_board_rules import AWAY_STATUSES, SERVICES, TaskSummary, evaluate, summarise
 from backend.app.services.aito_client_history import compute_client_history
 from backend.app.services.aito_client_rating import read_client_rating
-from backend.app.services.aito_quote_rating import read_client_quote_rating
 from backend.app.services.aito_customer_credit import read_customer_credit
 from backend.app.services.aito_deposit_apply import (
     DepositAmountTooHigh,
@@ -122,6 +121,7 @@ from backend.app.services.aito_invoice_create import (
 )
 from backend.app.services.aito_payment_links import current_link, current_links, link_view, reconcile_payment_links
 from backend.app.services.aito_quote_import import build_preview
+from backend.app.services.aito_quote_rating import read_client_quote_rating
 from backend.app.services.aito_quote_status import adopt_quote_status, apply_quote_decision, push_quote_status
 from backend.app.services.aito_quote_sync import (
     _bump_requeue_marker,

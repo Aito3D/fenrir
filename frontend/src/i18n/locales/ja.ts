@@ -2026,6 +2026,7 @@ export default {
       done: '完了',
       starting: '開始中...',
       uploadFirmware: 'ファームウェアをアップロード',
+      printerBusy: 'プリンターは使用中です。ファームウェアはアイドル状態のときのみアップロードできます。',
       uploadFailed: 'アップロード開始に失敗しました: {{error}}',
       uploadedToast: 'ファームウェアをアップロードしました！プリンター画面からアップデートを実行してください。',
       availableVersions: '利用可能なバージョン',
@@ -3425,8 +3426,6 @@ export default {
     upToDate: '最新です',
     updateAvailable: 'アップデートあり',
     // Notifications
-    notificationLanguage: '通知の言語',
-    notificationLanguageDescription: 'プッシュ通知の言語',
     bedCooledThreshold: 'ベッド冷却しきい値',
     bedCooledThresholdDescription: '印刷後にベッドが冷却されたと見なす温度',
     userNotificationsEnabled: 'ユーザー通知',
@@ -3553,7 +3552,6 @@ export default {
     // Sidebar
     sidebarOrder: 'サイドバーの順序',
     // Camera
-    saveThumbnails: 'サムネイルを保存',
     captureFinishPhoto: '完了写真を撮影',
     noPrintersConfigured: 'プリンターが設定されていません',
     // Updates
@@ -3664,7 +3662,7 @@ export default {
     updateEnergyCostDescription: 'このキーが /settings/electricity-price に新しいkWhごとの電気料金をPOSTすることを許可。Home Assistantの動的料金自動化（Tibber、Octopusなど）に便利。これはAPIキーで書き込み可能な唯一の設定フィールドです。',
     energyCostBadge: '電力',
     sendNotifications: '通知の送信',
-    sendNotificationsDescription: 'このキーで、連携アプリからのメッセージを受け付ける通知チャネル経由でメッセージを送信できるようにします（POST /notifications/app-message）。Bambuddy Orders などのアプリ向けです。それ以外の権限はなく、チャネルの読み取りや変更はできません。',
+    sendNotificationsDescription: 'このキーで、連携アプリからのメッセージを受け付ける通知チャネル経由でメッセージを送信し（POST /notifications/app-message）、そのアプリを指すサイドバーのリンクに件数を表示できるようにします（PUT /external-links/badge）。Bambuddy Orders などのアプリ向けです。それ以外の権限はなく、チャネルやリンクの読み取りや変更はできません。',
     sendNotificationsBadge: '通知',
     legacyKey: 'レガシー',
     legacyKeyTooltip: 'ユーザー所有以前に作成 - クラウドアクセスには再作成が必要',
@@ -4101,7 +4099,6 @@ export default {
     // Archive
     autoArchivePrints: '印刷を自動アーカイブ',
     autoArchiveDescription: '印刷完了時に3MFファイルを自動保存。オフの場合、Fenrir 以外から開始された印刷はどのプリンターでもアーカイブされません。',
-    saveThumbnailsDescription: '3MFファイルからプレビュー画像を抽出して保存',
     captureFinishPhotoDescription: '印刷完了時にプリンターカメラから写真を撮影します。Fenrir は印刷中に短いタイムラプスを記録し、ベッドが下がる前の瞬間から写真を取得できるようにします。この印刷でタイムラプスを有効にしていた場合はタイムラプスファイルが保存され、それ以外の場合は写真の取得後に自動的に削除されます。',
     finishPhotoRestorePlate: '完了写真のためにプレートを戻す',
     finishPhotoRestorePlateDescription: 'プリンターは印刷終了時にビルドプレートを約 100 mm 下降させるため、完成した造形物がカメラの画角より下に来ます。Fenrir はプレートを最終印刷レイヤーのすぐ上まで戻して写真を撮影し、その後再び下降させます。造形高さが不明な場合や次のジョブがキューにある場合はスキップされます。',
@@ -4114,6 +4111,15 @@ export default {
     cameraWindowDescription: '別のブラウザウィンドウでカメラを表示',
     externalCamerasDescription: '内蔵プリンターカメラの代わりに外部カメラを設定。MJPEGストリーム、RTSP、HTTPスナップショット、USBカメラ（V4L2）をサポート。有効にすると、ライブビューと完了写真に外部カメラが使用されます。',
     cameraPlaceholderUsb: 'デバイスパス (/dev/video0)',
+    usbCameraDevice: 'USBデバイス',
+    usbCameraSelect: 'デバイスを選択',
+    usbCameraSearching: 'デバイスを検索中…',
+    usbCameraNotFound: '{{device}}（見つかりません）',
+    usbCameraRefresh: 'デバイスを再検索',
+    usbCameraListFailed: 'ビデオデバイスを一覧表示できませんでした。',
+    usbCameraNoneFound: 'Fenrir からビデオデバイスが見えません。Docker ではカメラをコンテナに渡してください：',
+    usbCameraEnterManually: 'パスを手動で入力',
+    usbCameraPickFromList: '検出されたデバイスを選択',
     cameraPlaceholderUrl: 'カメラURL (rtsp://... または http://...)',
     cameraTypeMjpeg: 'MJPEGストリーム',
     cameraTypeRtsp: 'RTSPストリーム',
@@ -4311,6 +4317,9 @@ export default {
       linkedAccounts: 'リンクされたSSOアカウント',
       linkedAccountsDesc: 'これらの外部IDプロバイダーがあなたのアカウントにリンクされています。',
       oidcUnlinked: 'アカウントのリンクを解除しました。',
+      oidcUnlinkConfirmTitle: 'アカウントのリンクを解除しますか？',
+      oidcUnlinkConfirmMessage: '{{provider}} でサインインできなくなります。',
+      oidcUnlinkConfirmAction: 'リンク解除',
     },
     // Session Policy (#1706)
     sessionPolicy: {
@@ -4663,6 +4672,7 @@ export default {
     deleteFilesConfirm: '選択した{{count}}件のファイルを削除しますか？元に戻せません。',
     noFiles: 'このディレクトリにファイルがありません',
     printerUnavailable: 'プリンターのファイルサービスを利用できません。プリンターに接続できる状態で再試行してください。',
+    listingTimedOut: 'プリンターは応答していますが、このフォルダーの一覧取得に時間がかかりすぎています（遅い SD カード上の大きなフォルダー）。少し待ってから再試行してください。',
     loadingFiles: 'ファイルを読み込み中...',
     failedToLoad: 'ファイルの読み込みに失敗しました',
     toast: {
@@ -6436,8 +6446,6 @@ export default {
     linkToSpoolman: 'Spoolmanに連携',
     openInSpoolman: 'Spoolmanで開く',
     unlinkSpool: 'スプールのリンクを解除',
-    unlinkConfirmTitle: 'スプールの割り当てを解除しますか？',
-    unlinkConfirmMessage: 'このスロットからスプールが削除されます。スプール自体のデータは変更されません。',
     selectSpool: 'スプールを選択',
     noUnlinkedSpools: '割り当てられていないスプールがありません',
     linkSuccess: 'スプールが正常に割り当てられました',
@@ -6522,6 +6530,8 @@ export default {
       updateFailed: '一括更新に失敗しました',
       updatePartial: '{{ok}} 件更新、{{failed}} 件失敗',
       updateAllFailed: '{{count}} 件すべての更新に失敗しました — 再試行のため選択は維持されます',
+      resetPartial: '{{ok}} 件のカウンターをリセット、{{failed}} 件失敗',
+      resetAllFailed: 'カウンターはリセットされませんでした: {{count}} 件すべて失敗',
       deleteSuccess: '{{count}} 件のスプールを削除しました',
       deleteFailed: '一括削除に失敗しました',
       deletePartial: '{{ok}} 件削除、{{failed}} 件失敗',
@@ -6675,6 +6685,7 @@ export default {
     measuredWeight: '計測重量',
     spoolName: 'スプール',
     costPerKg: 'kgあたりのコスト',
+    costFromFilament: '(フィラメント価格)',
     storageLocation: '保管場所',
     temperature: '温度',
     humidity: '湿度',
@@ -7236,6 +7247,8 @@ export default {
     backupSkippedNoChanges: 'バックアップをスキップ - 変更なし',
     backupFailed2: 'バックアップに失敗しました: {{message}}',
     clearedLogs: '{{count}}件のログを削除しました',
+    clearHistoryConfirmTitle: 'バックアップ履歴を消去しますか？',
+    clearHistoryConfirmMessage: 'バックアップ履歴のすべての項目を削除します。バックアップ自体は保持されます。',
     failedToClearLogs: 'ログの削除に失敗しました: {{message}}',
 
     // Restore from Git backup (#2656)
@@ -7350,47 +7363,8 @@ export default {
     processing: '処理中...',
     doNotClosePage: 'このページを閉じたり、移動しないでください。大きなバックアップの場合、この操作には数分かかることがあります。',
 
-    // RestoreModal
+    // Restore (GitHubBackupSettings)
     restoring: '復元中...',
-    restoreComplete: '復元完了',
-    restoreFailed2: '復元失敗',
-    importSettings: 'バックアップファイルから設定をインポート',
-    pleaseWaitRestoring: 'データの復元中です。お待ちください',
-    selectBackupFile: 'クリックしてバックアップファイルを選択 (.jsonまたは.zip)',
-    duplicateHandling: '重複処理の仕組み:',
-    matchPrinters: 'プリンター',
-    matchPrintersBy: 'シリアル番号で照合',
-    matchSmartPlugs: 'スマートプラグ',
-    matchSmartPlugsBy: 'IPアドレスで照合',
-    matchNotificationProviders: '通知プロバイダー',
-    matchNotificationProvidersBy: '名前で照合',
-    matchFilaments: 'フィラメント',
-    matchFilamentsBy: '名前 + タイプ + ブランドで照合',
-    matchArchives: 'アーカイブ',
-    matchArchivesBy: 'コンテンツハッシュで照合（常にスキップ）',
-    matchPendingUploads: '保留中のアップロード',
-    matchPendingUploadsBy: 'ファイル名で照合',
-    matchSettingsTemplates: '設定とテンプレート',
-    matchSettingsTemplatesBy: '常に上書き',
-    replaceExisting: '既存のデータを置き換え',
-    keepExisting: '既存のデータを保持',
-    overwriteDescription: '既に存在する項目をバックアップデータで上書き',
-    keepDescription: 'まだ存在しない項目のみ復元',
-    overwriteCaution: '注意:',
-    overwriteWarning: '上書きすると、現在の設定がバックアップのデータで置き換えられます。プリンターのアクセスコードはセキュリティのため上書きされません。',
-    cancel: 'キャンセル',
-    processingBackup: 'バックアップファイルを処理しています...',
-    itemsRestored: '復元済み',
-    itemsSkipped: 'スキップ済み',
-    restored: '復元済み',
-    skippedAlreadyExist: 'スキップ（既に存在）',
-    filesCategory: 'ファイル（3MF、サムネイルなど）',
-    andMore: '...他{{count}}件',
-    newApiKeysGenerated: '新しいAPIキーが生成されました',
-    keysShownOnce: 'これらのキーは一度だけ表示されます。今すぐコピーしてください！',
-    copy: 'コピー',
-    noDataFound: 'バックアップファイルに復元するデータが見つかりませんでした。',
-    close: '閉じる',
 
     // Scheduled local backups (#884)
     scheduledBackup: 'スケジュールされたバックアップ',
@@ -7428,24 +7402,15 @@ export default {
       ephemeralTitle: 'これらのバックアップはコンテナの再作成で失われます',
       container_ephemeral: '{{path}} はホストではなく Fenrir コンテナ内にあります。そこに書き込まれたバックアップはコンテナを再作成すると失われます。ホスト側のディレクトリをマウントしてください:',
     },
-
-    // Category labels
-    categories: {
-      settings: '設定',
-      notification_providers: '通知プロバイダー',
-      notification_templates: '通知テンプレート',
-      smart_plugs: 'スマートプラグ',
-      printers: 'プリンター',
-      filaments: 'フィラメント',
-      maintenance_types: 'メンテナンスタイプ',
-      archives: 'アーカイブ',
-      projects: 'プロジェクト',
-      pending_uploads: '保留中のアップロード',
-      external_links: '外部リンク',
-      api_keys: 'APIキー',
-    },
   },
 
+  // Timelapse editor
+  timelapseEditor: {
+    processing: '処理中…',
+    processingPercent: '処理中… {{percent}}%',
+    failed: '処理に失敗しました',
+    cancelled: '処理をキャンセルしました',
+  },
   // Tags
   tags: {
     title: 'タグ',
@@ -7512,7 +7477,7 @@ export default {
     itemsPrintedHelp: 'この印刷ジョブで製造したアイテム数。プレート全体が失敗した場合は 0 を入力します。',
     filamentUsed: '使用フィラメント (g)',
     filamentUsedPlaceholder: '例: 46.16',
-    filamentUsedHelp: '3MF なしでアーカイブされた印刷は、手入力するとフィラメント合計に反映されます。3MF があるアーカイブを再スキャンすると、この値はファイルから読み直されます。',
+    filamentUsedHelp: '3MF なしでアーカイブされた印刷は、手入力するとフィラメント合計に反映されます。',
     filamentUsedLocked: 'この値を変更できるのは、すべてのアーカイブを編集できるユーザーだけです。このアーカイブの以降の印刷はこの値に基づいて課金されます。',
     statusHelp: '統計では「失敗」と「中断」は失敗として数えられます。「キャンセル」は停止として数えられ、成功率を下げません。',
     notes: 'メモ',
@@ -7685,23 +7650,9 @@ export default {
 
   // Virtual Printer
   virtualPrinter: {
-    title: '仮想プリンター',
-    running: '稼働中',
-    stopped: '停止',
-    description: {
-      default: 'Bambu StudioとOrcaSlicerに表示される仮想プリンターを有効化。このプリンターに送信されたファイルは印刷せずに直接アーカイブされます。',
-      proxy: 'スライサーのトラフィックを実際のプリンターに転送するプロキシを有効化。任意のネットワーク経由でリモート印刷が可能です。',
-    },
-    enable: {
-      title: '仮想プリンターを有効化',
-      visibleInSlicer: 'スライサーの検出リストに「Fenrir」として表示',
-      proxyingTo: '{{name}}にプロキシ中',
-      notActive: '非アクティブ',
-    },
     model: {
       title: 'プリンターモデル',
       description: 'エミュレートするプリンターモデルを選択。',
-      restartWarning: 'モデルを変更すると仮想プリンターが再起動されます',
     },
     accessCode: {
       title: 'アクセスコード',
@@ -7709,7 +7660,6 @@ export default {
       notSet: 'アクセスコード未設定 - 有効化に必要です',
       placeholder: '8文字のコードを入力',
       placeholderChange: '新しいコードを入力して変更',
-      hint: '正確に8文字必要です。スライサーの認証に使用されます。',
       charCount: '({{count}}/8)',
       inheritedFromTarget: 'ターゲットプリンターから継承',
       derivedFromTargetHint: 'ターゲットプリンターのアクセスコードを使用します。ブリッジはスライサーの認証情報を実機プリンターに転送するため、コードが一致している必要があります。変更するにはプリンターの設定でアクセスコードを編集してください。',
@@ -7718,18 +7668,12 @@ export default {
     },
     targetPrinter: {
       title: 'ターゲットプリンター',
-      configured: 'プロキシターゲット設定済み',
-      notConfigured: 'ターゲットプリンター未選択 - プロキシモードに必要です',
       placeholder: 'プリンターを選択...',
-      hint: 'スライサートラフィックの転送先プリンターを選択。プリンターはLANモードである必要があります。',
-      noPrinters: 'プリンターが設定されていません。プロキシモードを使用するにはまずプリンターを追加してください。',
     },
     remoteInterface: {
       title: 'ネットワークインターフェース上書き',
-      configured: 'インターフェース上書き有効',
       optional: 'オプション — 自動検出IPが間違っている場合に使用（複数NIC、Docker、VPNなど）',
       placeholder: '自動検出（デフォルト）...',
-      hint: 'SSDPで広告され、TLS証明書に使用されるIPアドレスを上書きします。Fenrirに複数のネットワークインターフェースがある場合に便利です。',
     },
     mode: {
       title: 'モード',
@@ -7772,19 +7716,6 @@ export default {
       step1: '同じLAN上では、仮想プリンターはスライサー（Bambu Studio / OrcaSlicer）に自動的に表示されます。他のネットワークからは、IPアドレスとアクセスコードで手動で追加してください。',
       step2: 'アーカイブ、レビュー、キューモードでは、スライサーの「送信」ボタンを使用して3MFファイルをFenrirにアップロードします。スライサーは「印刷成功」と表示しますが、ファイルは保存され、印刷はされません。',
       step3: 'プロキシモードでは、仮想プリンターはすべてのトラフィックを実際のプリンターに転送します。直接接続されているかのように印刷がすぐに開始されます。',
-    },
-    status: {
-      title: 'ステータス詳細',
-      printerName: 'プリンター名',
-      model: 'モデル',
-      serialNumber: 'シリアル番号',
-      mode: 'モード',
-      pendingFiles: '保留中のファイル',
-      targetPrinter: 'ターゲットプリンター',
-      ftpPort: 'FTPポート',
-      mqttPort: 'MQTTポート',
-      ftpConnections: 'FTP接続数',
-      mqttConnections: 'MQTT接続数',
     },
     toast: {
       updated: '仮想プリンター設定を更新しました',
@@ -8737,9 +8668,13 @@ export default {
     hexLabel: '16進: #{{hex}}',
     resetting: 'リセット中...',
     resetSlot: 'スロットをリセット',
+    resetConfirmTitle: 'スロットをリセットしますか？',
+    resetConfirmMessage: 'プリンター上のこのスロットのフィラメント設定を消去します。',
+    resetBlockedPrinting: 'プリンターの印刷中は使用できません',
     cancel: 'キャンセル',
     configuring: '設定中...',
     configureSlot: 'スロットを設定',
+    kValueUnsent: 'フィラメントは設定されましたが、K 値をプリンターに送信できませんでした。',
     // Why an Orca profile went into the slot as the generic for its material (#3216)
     orcaFallback: {
       no_filament_id: 'このOrcaプロファイルには独自のフィラメントIDがないため、OrcaSlicerではこのスロットがGeneric {{material}}として表示されます。',
@@ -8955,12 +8890,8 @@ export default {
       plateClearFailed: 'プレートを片付け済みにできませんでした',
     },
     modal: {
-      spoolDetected: 'スプール検出',
       assignToAms: 'AMSに割り当て',
       syncWeight: '重量同期',
-      weightSynced: '同期完了！',
-      syncing: '同期中...',
-      newTagDetected: '新しいタグを検出',
       addToInventory: 'インベントリに追加',
       assignToAmsTitle: 'AMSに割り当て',
       selectSlot: 'スロットを選択',
@@ -8974,9 +8905,6 @@ export default {
       slot: 'スロット',
     },
     weight: {
-      noReading: '読み取りなし',
-      stable: '安定',
-      measuring: '計測中...',
       tare: '風袋引き',
       calibrate: 'キャリブレーション',
     },
@@ -9103,6 +9031,7 @@ export default {
       linkFailedSpoolNotFound: 'タグは書き込まれましたが、スプールはもう存在しません',
       spoolmanUnavailable: 'Spoolman が利用できません。Spoolman 設定の URL を確認してください。',
       queueFailed: '書込みコマンドのキューに失敗しました',
+      linkedToAms: 'このスプールは AMS を通じて Bambu の RFID タグに紐付けられています。ステッカーを書き込むと Spoolman 上のその紐付けが置き換えられます。',
       tryAgain: '再試行',
       cancel: 'キャンセル',
       replaceWarning: '古いタグのリンクが解除され、新しいタグに置き換わります。',
@@ -9821,6 +9750,8 @@ export default {
 
   // Forecast & Inventory Intelligence
   forecast: {
+    clearAllConfirmTitle: '買い物リストを空にしますか？',
+    clearAllConfirmMessage: '買い物リストから {{count}} 件すべてを削除します。',
     title: '在庫予測',
     noSpools: 'アクティブなスプールが見つかりません。予測データを表示するには、在庫にスプールを追加してください。',
     noUsageData: '使用データがありません — 在庫のタイムラインを予測できません。',

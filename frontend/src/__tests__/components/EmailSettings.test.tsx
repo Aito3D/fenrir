@@ -122,7 +122,8 @@ describe('EmailSettings', () => {
     await user.click(sendButton);
 
     await waitFor(() => expect(testBodies).toHaveLength(1));
-    expect(testBodies[0]).toEqual({ test_recipient: 'qa@example.com' });
+    // The form's SMTP settings go along, saved or not (upstream).
+    expect(testBodies[0]).toMatchObject({ test_recipient: 'qa@example.com', smtp: expect.any(Object) });
   });
 
   it('refuses to toggle advanced authentication when global authentication is disabled', async () => {

@@ -1981,6 +1981,7 @@ export default {
       done: '완료',
       starting: '시작 중...',
       uploadFirmware: '펌웨어 업로드',
+      printerBusy: '프린터가 사용 중입니다. 펌웨어는 유휴 상태일 때만 업로드할 수 있습니다.',
       uploadFailed: '업로드 시작 실패: {{error}}',
       uploadedToast: '펌웨어 업로드됨! 프린터 화면에서 업데이트를 시작하세요.',
       availableVersions: '사용 가능한 버전',
@@ -3332,8 +3333,6 @@ export default {
     latestVersion: '최신 버전',
     upToDate: '최신 상태입니다',
     updateAvailable: '업데이트 가능',
-    notificationLanguage: '알림 언어',
-    notificationLanguageDescription: '푸시 알림 언어',
     bedCooledThreshold: '베드 냉각 임계값',
     bedCooledThresholdDescription: '인쇄 후 베드가 냉각된 것으로 간주되는 온도',
     userNotificationsEnabled: '사용자 알림',
@@ -3453,7 +3452,6 @@ export default {
     allPrinters: '모든 프린터',
     noDefaultPrinter: '기본값 없음 (매번 묻기)',
     sidebarOrder: '사이드바 순서',
-    saveThumbnails: '썸네일 저장',
     captureFinishPhoto: '완료 사진 캡처',
     noPrintersConfigured: '설정된 프린터 없음',
     checkForUpdatesLabel: '업데이트 확인',
@@ -3966,7 +3964,6 @@ export default {
     progressInTitleDescription: '브라우저 탭에 진행 중인 인쇄의 백분율과 진행 링을 표시합니다.',
     autoArchivePrints: '인쇄 자동 아카이브',
     autoArchiveDescription: '인쇄 완료 시 3MF 파일 자동 저장. 끄면 Fenrir 외부에서 시작된 인쇄는 어떤 프린터에서도 보관되지 않습니다.',
-    saveThumbnailsDescription: '3MF 파일에서 미리보기 이미지 추출 및 저장',
     captureFinishPhotoDescription: '인쇄 완료 시 프린터 카메라로 사진 촬영. Fenrir는 인쇄 중 짧은 타임랩스를 기록하여 베드가 내려가기 전 순간에서 사진을 가져올 수 있도록 합니다. 이 인쇄에 대해 타임랩스를 활성화한 경우 타임랩스 파일이 보관되며, 그렇지 않으면 사진 촬영 후 자동으로 삭제됩니다.',
     finishPhotoRestorePlate: '완료 사진을 위해 베드 올리기',
     finishPhotoRestorePlateDescription: '프린터는 인쇄가 끝나면 베드를 약 100 mm 내리므로 완성된 출력물이 카메라 화각 아래에 놓입니다. Fenrir는 베드를 마지막 인쇄 레이어 바로 위까지 다시 올려 사진을 찍은 뒤 다시 내립니다. 출력 높이를 알 수 없거나 다른 작업이 대기 중이면 건너뜁니다.',
@@ -3978,6 +3975,15 @@ export default {
     cameraWindowDescription: '카메라가 별도의 브라우저 창에서 열립니다',
     externalCamerasDescription: '내장 프린터 카메라를 교체할 외부 카메라를 설정하세요. MJPEG 스트림, RTSP, HTTP 스냅샷, USB 카메라(V4L2)를 지원합니다.',
     cameraPlaceholderUsb: '장치 경로 (/dev/video0)',
+    usbCameraDevice: 'USB 장치',
+    usbCameraSelect: '장치 선택',
+    usbCameraSearching: '장치 검색 중…',
+    usbCameraNotFound: '{{device}} (찾을 수 없음)',
+    usbCameraRefresh: '장치 다시 검색',
+    usbCameraListFailed: '비디오 장치 목록을 가져올 수 없습니다.',
+    usbCameraNoneFound: 'Fenrir에서 비디오 장치가 보이지 않습니다. Docker에서는 카메라를 컨테이너에 전달하세요:',
+    usbCameraEnterManually: '경로 직접 입력',
+    usbCameraPickFromList: '감지된 장치 선택',
     cameraPlaceholderUrl: '카메라 URL (rtsp://... 또는 http://...)',
     cameraTypeMjpeg: 'MJPEG 스트림',
     cameraTypeRtsp: 'RTSP 스트림',
@@ -4162,7 +4168,10 @@ export default {
       newBackupCodes: '새 백업 코드',
       linkedAccounts: '연결된 SSO 계정',
       linkedAccountsDesc: '이 외부 ID 제공자가 계정에 연결되어 있습니다.',
-      oidcUnlinked: '계정 연결이 해제되었습니다.'
+      oidcUnlinked: '계정 연결이 해제되었습니다.',
+      oidcUnlinkConfirmTitle: '계정 연결을 해제할까요?',
+      oidcUnlinkConfirmMessage: '더 이상 {{provider}}(으)로 로그인할 수 없습니다.',
+      oidcUnlinkConfirmAction: '연결 해제',
     },
     // 세션 정책 (#1706)
     sessionPolicy: {
@@ -4253,7 +4262,7 @@ export default {
     updateEnergyCostDescription: '이 키가 /settings/electricity-price에 새 kWh당 전기 요금을 POST할 수 있도록 허용합니다. Home Assistant 동적 요금 자동화(Tibber, Octopus 등)에 유용합니다. API 키로 쓸 수 있는 유일한 설정 필드입니다.',
     energyCostBadge: '에너지',
     sendNotifications: '알림 보내기',
-    sendNotificationsDescription: '이 키가 연결된 앱의 메시지를 받는 알림 채널을 통해 메시지를 보낼 수 있도록 허용합니다(POST /notifications/app-message). Bambuddy Orders 같은 앱용입니다. 그 외에는 없으며, 키로 채널을 읽거나 변경할 수 없습니다.',
+    sendNotificationsDescription: '이 키가 연결된 앱의 메시지를 받는 알림 채널을 통해 메시지를 보내고(POST /notifications/app-message), 해당 앱을 가리키는 사이드바 링크에 숫자를 표시할 수 있도록 허용합니다(PUT /external-links/badge). Bambuddy Orders 같은 앱용입니다. 그 외에는 없으며, 키로 채널이나 링크를 읽거나 변경할 수 없습니다.',
     sendNotificationsBadge: '알림',
     passwordRequirements: '최소 8자, 대문자, 소문자, 숫자, 특수문자 각 1개 이상 포함',
 
@@ -4507,6 +4516,7 @@ export default {
     deleteFilesConfirm: '선택된 {{count}}개 파일을 삭제하시겠습니까? 이 작업은 취소할 수 없습니다.',
     noFiles: '프린터에 파일 없음',
     printerUnavailable: '프린터 파일 서비스를 사용할 수 없습니다. 프린터에 연결할 수 있을 때 다시 시도하세요.',
+    listingTimedOut: '프린터는 응답하지만 이 폴더 목록을 가져오는 데 너무 오래 걸립니다(느린 SD 카드의 큰 폴더). 잠시 후 다시 시도하세요.',
     loadingFiles: '파일 로딩 중...',
     failedToLoad: '파일 로드 실패',
     toast: {
@@ -6226,8 +6236,6 @@ export default {
     linkToSpoolman: 'Spoolman에 연결',
     openInSpoolman: 'Spoolman에서 열기',
     unlinkSpool: '스풀 연결 해제',
-    unlinkConfirmTitle: '스풀 할당 해제?',
-    unlinkConfirmMessage: '이 슬롯에서 스풀을 제거합니다. 스풀 데이터 자체는 변경되지 않습니다.',
     selectSpool: '스풀 선택',
     noUnlinkedSpools: '할당되지 않은 스풀 없음',
     linkSuccess: '스풀이 성공적으로 할당되었습니다',
@@ -6310,6 +6318,8 @@ export default {
       updateFailed: '일괄 업데이트 실패',
       updatePartial: '{{ok}}개 업데이트, {{failed}}개 실패',
       updateAllFailed: '{{count}}개의 업데이트가 모두 실패했습니다 — 재시도를 위해 선택이 유지됩니다',
+      resetPartial: '{{ok}}개 카운터 초기화, {{failed}}개 실패',
+      resetAllFailed: '초기화된 카운터 없음: {{count}}개 모두 실패',
       deleteSuccess: '{{count}}개의 스풀 삭제됨',
       deleteFailed: '일괄 삭제 실패',
       deletePartial: '{{ok}}개 삭제, {{failed}}개 실패',
@@ -6463,6 +6473,7 @@ export default {
     measuredWeight: '측정된 무게',
     spoolName: '스풀',
     costPerKg: 'kg당 비용',
+    costFromFilament: '(필라멘트 가격)',
     storageLocation: '보관 위치',
     temperature: '온도',
     humidity: '습도',
@@ -6997,6 +7008,8 @@ export default {
     backupSkippedNoChanges: '변경 사항 없어 백업 건너뜀',
     backupFailed2: '백업 실패: {{message}}',
     clearedLogs: '{{count}}개 로그 초기화됨',
+    clearHistoryConfirmTitle: '백업 기록을 지울까요?',
+    clearHistoryConfirmMessage: '백업 기록의 모든 항목을 삭제합니다. 백업 자체는 유지됩니다.',
     failedToClearLogs: '로그 초기화 실패: {{message}}',
 
     // Restore from Git backup (#2656)
@@ -7107,45 +7120,6 @@ export default {
     processing: '처리 중...',
     doNotClosePage: '이 페이지를 닫거나 다른 곳으로 이동하지 마세요. 대용량 백업의 경우 몇 분이 걸릴 수 있습니다.',
     restoring: '복원 중...',
-    restoreComplete: '복원 완료',
-    restoreFailed2: '복원 실패',
-    importSettings: '백업 파일에서 설정 가져오기',
-    pleaseWaitRestoring: '데이터가 복원되는 동안 기다려 주세요',
-    selectBackupFile: '백업 파일 클릭하여 선택 (.json 또는 .zip)',
-    duplicateHandling: '중복 처리 방법:',
-    matchPrinters: '프린터',
-    matchPrintersBy: '일련번호로 일치',
-    matchSmartPlugs: '스마트 플러그',
-    matchSmartPlugsBy: 'IP 주소로 일치',
-    matchNotificationProviders: '알림 제공자',
-    matchNotificationProvidersBy: '이름으로 일치',
-    matchFilaments: '필라멘트',
-    matchFilamentsBy: '이름 + 유형 + 브랜드로 일치',
-    matchArchives: '아카이브',
-    matchArchivesBy: '콘텐츠 해시로 일치 (항상 건너뜀)',
-    matchPendingUploads: '대기 중인 업로드',
-    matchPendingUploadsBy: '파일 이름으로 일치',
-    matchSettingsTemplates: '설정 및 템플릿',
-    matchSettingsTemplatesBy: '항상 덮어씀',
-    replaceExisting: '기존 데이터 교체',
-    keepExisting: '기존 데이터 유지',
-    overwriteDescription: '백업 데이터로 이미 존재하는 항목 덮어쓰기',
-    keepDescription: '아직 존재하지 않는 항목만 복원',
-    overwriteCaution: '주의:',
-    overwriteWarning: '덮어쓰기는 현재 구성을 백업 데이터로 교체합니다. 보안상 프린터 액세스 코드는 절대 덮어쓰지 않습니다.',
-    cancel: '취소',
-    processingBackup: '백업 파일 처리 중...',
-    itemsRestored: '복원된 항목',
-    itemsSkipped: '건너뛴 항목',
-    restored: '복원됨',
-    skippedAlreadyExist: '건너뜀 (이미 존재)',
-    filesCategory: '파일 (3MF, 썸네일 등)',
-    andMore: '...및 {{count}}개 더',
-    newApiKeysGenerated: '새 API 키 생성됨',
-    keysShownOnce: '이 키는 한 번만 표시됩니다. 지금 복사하세요!',
-    copy: '복사',
-    noDataFound: '백업 파일에서 복원할 데이터를 찾을 수 없습니다.',
-    close: '닫기',
     scheduledBackup: '예약 백업',
     scheduledBackupDescription: '일정에 따라 백업 스냅샷을 자동으로 생성합니다. 출력 디렉토리를 NAS 또는 외부 저장소에 마운트할 수 있습니다.',
     frequency: '주기',
@@ -7181,23 +7155,16 @@ export default {
       ephemeralTitle: '이 백업은 컨테이너를 다시 만들면 사라집니다',
       container_ephemeral: '{{path}}은(는) 호스트가 아니라 Fenrir 컨테이너 내부에 있습니다. 여기에 기록된 백업은 컨테이너를 재생성하면 사라집니다. 호스트의 디렉터리를 마운트하세요:',
     },
-    categories: {
-      settings: '설정',
-      notification_providers: '알림 제공자',
-      notification_templates: '알림 템플릿',
-      smart_plugs: '스마트 플러그',
-      printers: '프린터',
-      filaments: '필라멘트',
-      maintenance_types: '유지 관리 유형',
-      archives: '아카이브',
-      projects: '프로젝트',
-      pending_uploads: '대기 중인 업로드',
-      external_links: '외부 링크',
-      api_keys: 'API 키'
-    },
     repoIsPrivate: '저장소가 비공개입니다 — 안전하게 백업할 수 있습니다.',
     repoIsPublicWarning: '저장소가 공개입니다. Fenrir 백업에는 MQTT 자격증명, Home Assistant 토큰, Prometheus 토큰, Bambu Cloud 이메일, K-프로파일을 통한 프린터 액세스 코드가 포함됩니다. 공급자 설정에서 저장소를 비공개로 변경할 때까지 저장이 차단됩니다.',
     repoVisibilityUnknown: '저장소 공개 여부를 확인할 수 없습니다. Fenrir는 비공개로 확인된 저장소에만 백업하며, 저장이 차단됩니다.'
+  },
+  // Timelapse editor
+  timelapseEditor: {
+    processing: '처리 중…',
+    processingPercent: '처리 중… {{percent}}%',
+    failed: '처리에 실패했습니다',
+    cancelled: '처리가 취소되었습니다',
   },
   tags: {
     title: '태그',
@@ -7258,7 +7225,7 @@ export default {
     itemsPrintedHelp: '이 인쇄 작업에서 생산된 항목 수. 플레이트 전체를 버린 경우 0을 입력하세요.',
     filamentUsed: '사용된 필라멘트 (g)',
     filamentUsedPlaceholder: '예: 46.16',
-    filamentUsedHelp: '3MF 없이 보관된 인쇄는 직접 입력하면 필라멘트 합계에 반영됩니다. 3MF가 있는 보관 항목을 다시 스캔하면 이 값은 파일에서 다시 읽어옵니다.',
+    filamentUsedHelp: '3MF 없이 보관된 인쇄는 직접 입력하면 필라멘트 합계에 반영됩니다.',
     filamentUsedLocked: '모든 아카이브를 편집할 수 있는 사용자만 이 값을 변경할 수 있습니다. 이 아카이브의 이후 출력은 이 값을 기준으로 청구됩니다.',
     statusHelp: '통계에서 \'실패\'와 \'중단됨\'은 실패로 집계됩니다. \'취소됨\'은 중지로 집계되며 성공률을 낮추지 않습니다.',
     notes: '메모',
@@ -7417,23 +7384,9 @@ export default {
     }
   },
   virtualPrinter: {
-    title: '가상 프린터',
-    running: '실행 중',
-    stopped: '중지됨',
-    description: {
-      default: 'Bambu Studio 및 OrcaSlicer에 표시되는 가상 프린터를 활성화합니다. 이 프린터로 전송된 파일은 인쇄 없이 바로 아카이브됩니다.',
-      proxy: '실제 프린터로 슬라이서 트래픽을 릴레이하는 프록시를 활성화하여 모든 네트워크에서 원격 인쇄가 가능합니다.'
-    },
-    enable: {
-      title: '가상 프린터 활성화',
-      visibleInSlicer: '슬라이서 검색에서 "Fenrir"로 표시됨',
-      proxyingTo: '{{name}}으로 프록시 중',
-      notActive: '활성화되지 않음'
-    },
     model: {
       title: '프린터 모델',
       description: '에뮬레이션할 프린터 모델을 선택하세요.',
-      restartWarning: '모델 변경 시 가상 프린터가 재시작됩니다'
     },
     accessCode: {
       title: '액세스 코드',
@@ -7441,7 +7394,6 @@ export default {
       notSet: '액세스 코드가 설정되지 않음 - 활성화하려면 필요',
       placeholder: '8자리 코드 입력',
       placeholderChange: '변경하려면 새 코드 입력',
-      hint: '정확히 8자여야 합니다. 슬라이서가 인증하는 데 사용됩니다.',
       charCount: '({{count}}/8)',
       inheritedFromTarget: '대상 프린터에서 상속됨',
       derivedFromTargetHint: '대상 프린터의 액세스 코드를 사용합니다. 브리지는 슬라이서 인증을 실제 프린터로 전달하므로 코드가 일치해야 합니다 — 변경하려면 프린터 설정에서 액세스 코드를 편집하세요.',
@@ -7450,18 +7402,12 @@ export default {
     },
     targetPrinter: {
       title: '대상 프린터',
-      configured: '프록시 대상 구성됨',
-      notConfigured: '대상 프린터가 선택되지 않음 - 프록시 모드에 필요',
       placeholder: '프린터 선택...',
-      hint: '슬라이서 트래픽을 프록시할 프린터를 선택하세요. 프린터는 LAN 모드여야 합니다.',
-      noPrinters: '구성된 프린터 없음. 프록시 모드를 사용하려면 먼저 프린터를 추가하세요.'
     },
     remoteInterface: {
       title: '네트워크 인터페이스 재정의',
-      configured: '인터페이스 재정의 활성',
       optional: '선택사항 - 자동 감지된 IP가 잘못된 경우 사용 (예: 여러 NIC, Docker, VPN)',
       placeholder: '자동 감지 (기본값)...',
-      hint: 'SSDP를 통해 광고되고 TLS 인증서에 사용되는 IP 주소를 재정의합니다. Fenrir에 여러 네트워크 인터페이스가 있을 때 유용합니다.'
     },
     mode: {
       title: '모드',
@@ -7510,19 +7456,6 @@ export default {
       step1: '같은 LAN에서 가상 프린터는 검색을 통해 슬라이서(Bambu Studio / OrcaSlicer)에 자동으로 나타납니다. 다른 네트워크에서는 IP 주소와 액세스 코드로 수동으로 추가하세요.',
       step2: '아카이브, 검토, 대기열 모드에서 슬라이서의 "전송" 버튼을 사용하여 3MF 파일을 Fenrir에 업로드하세요. 슬라이서는 "인쇄 성공"을 표시하지만 파일은 저장되고 인쇄되지 않습니다.',
       step3: '프록시 모드에서 가상 프린터는 모든 트래픽을 실제 프린터로 릴레이합니다 — 직접 연결된 것처럼 즉시 인쇄가 시작됩니다.'
-    },
-    status: {
-      title: '상태 세부 정보',
-      printerName: '프린터 이름',
-      model: '모델',
-      serialNumber: '일련 번호',
-      mode: '모드',
-      pendingFiles: '대기 중인 파일',
-      targetPrinter: '대상 프린터',
-      ftpPort: 'FTP 포트',
-      mqttPort: 'MQTT 포트',
-      ftpConnections: 'FTP 연결',
-      mqttConnections: 'MQTT 연결'
     },
     toast: {
       updated: '가상 프린터 설정 업데이트됨',
@@ -8422,9 +8355,13 @@ export default {
     hexLabel: '16진수: #{{hex}}',
     resetting: '초기화 중...',
     resetSlot: '슬롯 초기화',
+    resetConfirmTitle: '슬롯을 초기화할까요?',
+    resetConfirmMessage: '프린터에서 이 슬롯의 필라멘트 설정을 지웁니다.',
+    resetBlockedPrinting: '프린터가 출력 중일 때는 사용할 수 없습니다',
     cancel: '취소',
     configuring: '구성 중...',
     configureSlot: '슬롯 구성',
+    kValueUnsent: '필라멘트는 설정되었지만 K 값을 프린터로 보내지 못했습니다.',
     // Why an Orca profile went into the slot as the generic for its material (#3216)
     orcaFallback: {
       no_filament_id: '이 Orca 프로필에는 자체 필라멘트 ID가 없어 OrcaSlicer에서 이 슬롯이 Generic {{material}}(으)로 표시됩니다.',
@@ -8598,12 +8535,8 @@ export default {
       plateClearFailed: '플레이트를 초기화됨으로 표시할 수 없음'
     },
     modal: {
-      spoolDetected: '스풀 감지됨',
       assignToAms: 'AMS에 할당',
       syncWeight: '무게 동기화',
-      weightSynced: '동기화됨!',
-      syncing: '동기화 중...',
-      newTagDetected: '새 태그 감지됨',
       addToInventory: '재고에 추가',
       assignToAmsTitle: 'AMS에 할당',
       selectSlot: '슬롯 선택',
@@ -8617,9 +8550,6 @@ export default {
       slot: '슬롯'
     },
     weight: {
-      noReading: '읽기 없음',
-      stable: '안정됨',
-      measuring: '측정 중...',
       tare: '영점 조정',
       calibrate: '보정'
     },
@@ -8741,6 +8671,7 @@ export default {
       linkFailedSpoolNotFound: '태그는 기록되었지만 스풀이 더 이상 존재하지 않습니다',
       spoolmanUnavailable: 'Spoolman을 사용할 수 없습니다. Spoolman 설정에서 URL을 확인하세요.',
       queueFailed: '쓰기 명령 대기 실패',
+      linkedToAms: '이 스풀은 AMS를 통해 Bambu RFID 태그에 연결되어 있습니다. 스티커를 쓰면 Spoolman에서 그 연결이 대체됩니다.',
       tryAgain: '다시 시도',
       cancel: '취소',
       replaceWarning: '이전 태그가 연결 해제됩니다. 새 태그가 교체합니다.',
@@ -9259,6 +9190,8 @@ export default {
     }
   },
   forecast: {
+    clearAllConfirmTitle: '쇼핑 목록을 비울까요?',
+    clearAllConfirmMessage: '쇼핑 목록에서 {{count}}개 항목을 모두 삭제합니다.',
     title: '예측',
     noSpools: '활성 스풀을 찾을 수 없습니다. 예측 데이터를 보려면 재고에 스풀을 추가하세요.',
     noUsageData: '사용 데이터를 사용할 수 없습니다 — 재고 타임라인을 예측할 수 없습니다.',

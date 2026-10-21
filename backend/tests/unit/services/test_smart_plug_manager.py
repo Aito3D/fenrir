@@ -367,21 +367,6 @@ class TestSmartPlugManager:
         with patch.object(manager, "_mark_auto_off_pending", new_callable=AsyncMock):
             manager._cancel_pending_off(999)  # Non-existent plug ID
 
-    @pytest.mark.asyncio
-    async def test_cancel_all_pending(self, manager, mock_plug):
-        """Verify all pending tasks can be cancelled."""
-        mock_task1 = MagicMock()
-        mock_task2 = MagicMock()
-        manager._pending_off[1] = mock_task1
-        manager._pending_off[2] = mock_task2
-
-        with patch("asyncio.create_task"):
-            manager.cancel_all_pending()
-
-        assert len(manager._pending_off) == 0
-        mock_task1.cancel.assert_called_once()
-        mock_task2.cancel.assert_called_once()
-
     # ========================================================================
     # Tests for scheduler
     # ========================================================================
@@ -390,15 +375,20 @@ class TestSmartPlugManager:
         """Verify scheduler can be started."""
         assert manager._scheduler_task is None
 
-        # Mock _schedule_loop to return a mock coroutine to avoid unawaited coroutine warning
+        # The patched loops are AsyncMocks, so each call still builds a
+        # coroutine: the stand-in create_task closes it, or it is reported
+        # unawaited in a later test.
+        def _close_and_stand_in(coro, **_):
+            coro.close()
+            return MagicMock()
+
         with (
             patch.object(manager, "_schedule_loop") as mock_loop,
             patch.object(manager, "_snapshot_loop"),
             patch.object(manager, "_power_alert_loop") as mock_power_alert,
             patch.object(manager, "_relay_energy_loop") as mock_relay_energy,
-            patch("asyncio.create_task") as mock_create,
+            patch("asyncio.create_task", side_effect=_close_and_stand_in),
         ):
-            mock_create.return_value = MagicMock()
             manager.start_scheduler()
 
             assert manager._scheduler_task is not None

@@ -14,6 +14,14 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter } from 'react-router-dom';
 import { render } from '../utils';
 import { PrintModal } from '../../components/PrintModal';
+
+// Submit waits for the printer's live status (#2589), which reaches the modal
+// through the batched reads; clicking it while disabled does nothing.
+async function clickSubmit(user: ReturnType<typeof userEvent.setup>) {
+  const submit = document.querySelector('button[type="submit"]') as HTMLButtonElement;
+  await waitFor(() => expect(submit).toBeEnabled());
+  await user.click(submit);
+}
 import { AuthProvider } from '../../contexts/AuthContext';
 import { ThemeProvider } from '../../contexts/ThemeContext';
 import { ToastProvider } from '../../contexts/ToastContext';
@@ -514,7 +522,10 @@ describe('PrintModal', () => {
       />
     );
 
-    await user.click(screen.getByRole('button', { name: /save/i }));
+    // Save waits for the printer's live status (#2589)
+    const save = screen.getByRole('button', { name: /save/i });
+    await waitFor(() => expect(save).toBeEnabled());
+    await user.click(save);
 
     await waitFor(() => expect(body).not.toBeNull());
     expect(body!.manual_start).toBe(true);
@@ -1406,7 +1417,7 @@ describe('PrintModal', () => {
       // Checkbox only renders once snippets are loaded AND quantity > 1
       await user.click(await screen.findByLabelText(/inject auto-print/i));
 
-      await user.click(document.querySelector('button[type="submit"]') as HTMLElement);
+      await clickSubmit(user);
 
       await waitFor(() => expect(queueCalls.length).toBe(1));
       // One queue item carrying all copies, and zero immediate reprint dispatches
@@ -1451,7 +1462,7 @@ describe('PrintModal', () => {
       // a render and the displayed `checked` attribute would track it.
       await waitFor(() => expect(checkbox.checked).toBe(true));
 
-      await user.click(document.querySelector('button[type="submit"]') as HTMLElement);
+      await clickSubmit(user);
 
       await waitFor(() => expect(queueCalls.length).toBe(1));
       // The injection flag actually reaches the API — pre-fix the parent reset
@@ -1487,7 +1498,7 @@ describe('PrintModal', () => {
       expect(qty.value).toBe('3');
 
       // Leave injection unticked: unified dispatch still queues all copies.
-      await user.click(document.querySelector('button[type="submit"]') as HTMLElement);
+      await clickSubmit(user);
 
       await waitFor(() => expect(queueCalls.length).toBe(1));
       expect(queueCalls[0].quantity).toBe(3);
@@ -1821,7 +1832,7 @@ describe('PrintModal', () => {
       );
 
       await user.click(pill());
-      await user.click(document.querySelector('button[type="submit"]') as HTMLElement);
+      await clickSubmit(user);
 
       await waitFor(() => expect(capturedBody).not.toBeNull());
       expect(capturedBody!.confirm_outcome).toBe(true);
@@ -1963,7 +1974,7 @@ describe('PrintModal — per-plate filament mapping (#2551 follow-up)', () => {
     await selectBothPlates(user);
     await waitFor(() => expect(screen.getByText(/Filament Mapping — Plate 2/)).toBeInTheDocument());
 
-    await user.click(document.querySelector('button[type="submit"]') as HTMLElement);
+    await clickSubmit(user);
 
     await waitFor(() => expect(queued.length).toBe(2));
 
@@ -1997,7 +2008,7 @@ describe('PrintModal — per-plate filament mapping (#2551 follow-up)', () => {
     await waitFor(() => expect(screen.getByText('Plate 2')).toBeInTheDocument());
     await user.click(screen.getByText('Plate 2'));
 
-    await user.click(document.querySelector('button[type="submit"]') as HTMLElement);
+    await clickSubmit(user);
 
     await waitFor(() => expect(queued.length).toBe(4)); // 2 plates x 2 printers
     queued.forEach((q) => expect(q.ams_mapping ?? null).toBeNull());
@@ -2023,7 +2034,7 @@ describe('PrintModal — per-plate filament mapping (#2551 follow-up)', () => {
     await waitFor(() => expect(screen.getByRole('combobox')).toBeInTheDocument());
     await user.selectOptions(screen.getByRole('combobox'), 'X1C');
 
-    await user.click(document.querySelector('button[type="submit"]') as HTMLElement);
+    await clickSubmit(user);
 
     await waitFor(() => expect(queued.length).toBe(2));
     queued.forEach((q) => expect(q.ams_mapping ?? null).toBeNull());
@@ -2057,7 +2068,7 @@ describe('PrintModal — per-plate filament mapping (#2551 follow-up)', () => {
     await user.click(screen.getByText('X1 Carbon')); // deselect
     await user.click(screen.getByText('P1S'));
 
-    await user.click(document.querySelector('button[type="submit"]') as HTMLElement);
+    await clickSubmit(user);
     await waitFor(() => expect(queued.length).toBe(2));
 
     // Plate 1 auto-matches red (tray 0) on the new printer. Tray 1 is the stale pick.
@@ -2091,7 +2102,7 @@ describe('PrintModal — per-plate filament mapping (#2551 follow-up)', () => {
     await user.click(screen.getByText('X1 Carbon'));
     await user.click(screen.getByText('P1S'));
 
-    await user.click(document.querySelector('button[type="submit"]') as HTMLElement);
+    await clickSubmit(user);
     await waitFor(() => expect(screen.getByText(/Not enough filament/i)).toBeInTheDocument());
     await user.click(screen.getByRole('button', { name: /print anyway/i }));
 
@@ -2127,7 +2138,7 @@ describe('PrintModal — per-plate filament mapping (#2551 follow-up)', () => {
     await selectBothPlates(user);
     await waitFor(() => expect(screen.getByText(/Filament Mapping — Plate 2/)).toBeInTheDocument());
 
-    await user.click(document.querySelector('button[type="submit"]') as HTMLElement);
+    await clickSubmit(user);
 
     // 80 g needed from a spool with 60 g left → the acknowledgement dialog, not a
     // silent queue.
@@ -2191,7 +2202,7 @@ describe('PrintModal — per-plate filament mapping (#2551 follow-up)', () => {
     await selectBothPlates(user);
     await waitFor(() => expect(screen.getByText(/Filament Mapping — Plate 2/)).toBeInTheDocument());
 
-    await user.click(document.querySelector('button[type="submit"]') as HTMLElement);
+    await clickSubmit(user);
 
     await waitFor(() => expect(queued.length).toBe(2));
     expect(screen.queryByText(/Not enough filament/i)).not.toBeInTheDocument();
@@ -2209,7 +2220,7 @@ describe('PrintModal — per-plate filament mapping (#2551 follow-up)', () => {
     await selectBothPlates(user);
     await waitFor(() => expect(screen.getByText(/Filament Mapping — Plate 2/)).toBeInTheDocument());
 
-    await user.click(document.querySelector('button[type="submit"]') as HTMLElement);
+    await clickSubmit(user);
 
     await waitFor(() => expect(screen.getByText(/Not enough filament/i)).toBeInTheDocument());
     expect(screen.getByText(/needs 80g, 70g available across matching spools/i)).toBeInTheDocument();
@@ -2226,7 +2237,7 @@ describe('PrintModal — per-plate filament mapping (#2551 follow-up)', () => {
     await selectBothPlates(user);
     await waitFor(() => expect(screen.getByText(/Filament Mapping — Plate 2/)).toBeInTheDocument());
 
-    await user.click(document.querySelector('button[type="submit"]') as HTMLElement);
+    await clickSubmit(user);
 
     await waitFor(() => expect(screen.getByText(/Not enough filament/i)).toBeInTheDocument());
     expect(screen.getByText(/needs 80g, remaining 60g/i)).toBeInTheDocument();
@@ -2399,7 +2410,7 @@ describe('PrintModal — per-plate filament override in model mode (#2552)', () 
     expect(forceBoxes).toHaveLength(2); // one slot per plate
     await user.click(forceBoxes[1]);
 
-    await user.click(document.querySelector('button[type="submit"]') as HTMLElement);
+    await clickSubmit(user);
 
     await waitFor(() => expect(queued.length).toBe(2));
 
@@ -2443,7 +2454,7 @@ describe('PrintModal — per-plate filament override in model mode (#2552)', () 
       await waitFor(() => expect(screen.getAllByText(/PLA Matte/).length).toBeGreaterThan(0));
 
       await user.click(screen.getAllByRole('checkbox', { name: /force color match/i })[1]);
-      await user.click(document.querySelector('button[type="submit"]') as HTMLElement);
+      await clickSubmit(user);
 
       await waitFor(() => expect(queued.length).toBe(2));
       expect(queued.find((q) => q.plate_id === 2)?.filament_overrides).toEqual([
@@ -2486,7 +2497,7 @@ describe('PrintModal — per-plate filament override in model mode (#2552)', () 
       const pickers = screen.getAllByRole('combobox', { name: /filament override for/i });
       await user.click(pickers[pickers.length - 1]);
       await user.click(within(await screen.findByRole('listbox')).getByText(/Green/));
-      await user.click(document.querySelector('button[type="submit"]') as HTMLElement);
+      await clickSubmit(user);
 
       await waitFor(() => expect(queued.length).toBe(2));
       expect(queued.find((q) => q.plate_id === 2)?.filament_overrides).toEqual([
@@ -2612,7 +2623,7 @@ describe('PrintModal — per-plate quantity (#342)', () => {
     await waitFor(() => expect(screen.getByText(/6 runs in total/i)).toBeInTheDocument());
 
     await user.click(screen.getAllByRole('button', { name: /X1 Carbon/i })[0]);
-    await user.click(document.querySelector('button[type="submit"]') as HTMLElement);
+    await clickSubmit(user);
 
     await waitFor(() => expect(queued.length).toBe(3));
 
@@ -2652,7 +2663,7 @@ describe('PrintModal — per-plate quantity (#342)', () => {
     // Two printers: the printer count already answers "how many".
     await user.click(screen.getAllByRole('button', { name: /X1 Carbon/i })[0]);
     await user.click(screen.getAllByRole('button', { name: /P1S/i })[0]);
-    await user.click(document.querySelector('button[type="submit"]') as HTMLElement);
+    await clickSubmit(user);
 
     await waitFor(() => expect(queued.length).toBe(4)); // 2 plates × 2 printers
     expect(queued.every((q) => q.quantity === undefined)).toBe(true);
@@ -2730,7 +2741,7 @@ describe('PrintModal — override survives "Any model" -> "Specific Printer" (#3
   };
 
   const submit = async (user: ReturnType<typeof userEvent.setup>) => {
-    await user.click(document.querySelector('button[type="submit"]') as HTMLElement);
+    await clickSubmit(user);
   };
 
   // The slot picker's list is portaled to <body>, outside the dialog's own
@@ -3065,7 +3076,7 @@ describe('PrintModal — a deliberate material substitution is acknowledged (#27
     await user.click(await screen.findByRole('combobox', { name: /printer slot for/i }));
     const listbox = await screen.findByRole('listbox');
     await user.click(within(listbox).getAllByRole('option')[option]);
-    await user.click(document.querySelector('button[type="submit"]') as HTMLElement);
+    await clickSubmit(user);
 
     await waitFor(() => expect(patched).toHaveLength(1));
     return patched[0];
@@ -3087,7 +3098,7 @@ describe('PrintModal — a deliberate material substitution is acknowledged (#27
     render(<PrintModal mode="edit-queue-item" archiveId={1} archiveName="Job" queueItem={item} onClose={mockOnClose} />);
 
     await waitFor(() => expect(screen.getByText(/filament mapping/i)).toBeInTheDocument());
-    await user.click(document.querySelector('button[type="submit"]') as HTMLElement);
+    await clickSubmit(user);
 
     await waitFor(() => expect(patched).toHaveLength(1));
     expect(patched[0].ams_mapping).toEqual([1]);

@@ -663,6 +663,7 @@ GUARDED_BODY_URLS = {
     # github_backup._enforce_private_repo, which both POST and PATCH funnel through.
     ("GitHubBackupConfigCreate", "repository_url"),
     ("GitHubBackupConfigUpdate", "repository_url"),
+    ("GitHubTestConnectionRequest", "repo_url"),  # same guard, in the test route
     # SmartPlug{Create,Update} persist these; every read goes back out through
     # RESTSmartPlugService._send_request, which applies the same guard.
     ("SmartPlugCreate", "rest_on_url"),
@@ -683,6 +684,7 @@ NOT_A_FETCH_TARGET = {
     ("AppSettingsUpdate", "external_url"),  # Fenrir's own address (see exempt list above)
     ("AppSettingsUpdate", "fenrir_internal_url"),
     ("AppSettingsUpdate", "ldap_server_url"),  # ldap://, handed to an LDAP client
+    ("LDAPTestRequest", "ldap_server_url"),  # the same ldap:// value, tested before it is saved
     ("ProjectCreate", "url"),  # stored link, rendered in the UI, never fetched
     ("ProjectUpdate", "url"),
     ("BOMItemCreate", "sourcing_url"),  # stored supplier link, never fetched
@@ -693,6 +695,7 @@ NOT_A_FETCH_TARGET = {
     ("SystemConfigRequest", "backend_url"),
     ("ExternalLinkCreate", "url"),  # sidebar link, rendered in the UI, never requested
     ("ExternalLinkUpdate", "url"),
+    ("ExternalLinkBadgeSet", "url"),  # compared with the sidebar links' addresses, never requested
     ("AppMessage", "url"),  # an app's link, appended to the notification text; never requested
     ("FileUpdate", "external_url"),  # library file link (#3077), rendered in the UI, never fetched
     ("MaintenanceTypeCreate", "wiki_url"),  # documentation link surfaced in the UI/notifications

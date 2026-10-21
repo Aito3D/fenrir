@@ -930,6 +930,7 @@ export default {
       done: 'Klar',
       starting: 'Startar...',
       uploadFirmware: 'Ladda upp firmware',
+      printerBusy: 'Skrivaren är upptagen. Firmware kan bara laddas upp när den är inaktiv.',
       uploadFailed: 'Kunde inte starta uppladdning: {{error}}',
       uploadedToast: 'Firmware uppladdat! Trigga uppdatering från skrivarens skärm.',
       availableVersions: 'Tillgängliga versioner',
@@ -2376,8 +2377,6 @@ export default {
     upToDate: 'Du har den senaste versionen',
     updateAvailable: 'Uppdatering tillgänglig',
     // Notifications
-    notificationLanguage: 'Notisspråk',
-    notificationLanguageDescription: 'Språk för push-notiser',
     bedCooledThreshold: 'Tröskelvärde för sval byggplatta',
     bedCooledThresholdDescription: 'Temperatur under vilken byggplattan anses sval efter en utskrift',
     userNotificationsEnabled: 'Användarnotiser',
@@ -2504,7 +2503,6 @@ export default {
     // Sidebar
     sidebarOrder: 'Sidofältsordning',
     // Camera
-    saveThumbnails: 'Spara minibilder',
     captureFinishPhoto: 'Ta färdig-foto',
     noPrintersConfigured: 'Inga skrivare konfigurerade',
     // Updates
@@ -2615,7 +2613,7 @@ export default {
     updateEnergyCostDescription: 'Tillåt denna nyckel att POST:a ett nytt pris per kWh till /settings/electricity-price. Användbart för Home Assistants dynamiska tariffautomatiseringar (Tibber, Octopus, etc.). Detta är det enda inställningsfält som kan skrivas via API-nyckel.',
     energyCostBadge: 'Energi',
     sendNotifications: 'Skicka aviseringar',
-    sendNotificationsDescription: 'Tillåter nyckeln att skicka meddelanden via de aviseringskanaler som tar emot meddelanden från anslutna appar (POST /notifications/app-message). För appar som Bambuddy Orders. Inget annat: nyckeln kan inte läsa eller ändra kanalerna.',
+    sendNotificationsDescription: 'Tillåter nyckeln att skicka meddelanden via de aviseringskanaler som tar emot meddelanden från anslutna appar (POST /notifications/app-message) och att visa ett antal på sidofältslänken som pekar på appen (PUT /external-links/badge). För appar som Bambuddy Orders. Inget annat: nyckeln kan inte läsa eller ändra kanalerna eller länkarna.',
     sendNotificationsBadge: 'Avis.',
     legacyKey: 'Äldre nyckel',
     legacyKeyTooltip: 'Skapad före användarägande; skapa igen för att använda molnåtkomst',
@@ -3048,7 +3046,6 @@ export default {
     // Archive
     autoArchivePrints: 'Auto-arkivera utskrifter',
     autoArchiveDescription: 'Spara automatiskt 3MF-filer när utskrifter slutförs. Av: ingen skrivare arkiverar utskrifter som startats utanför Fenrir.',
-    saveThumbnailsDescription: 'Extrahera och spara förhandsvisningsbilder från 3MF-filer',
     captureFinishPhotoDescription: 'Ta ett foto från skrivarkameran när utskriften slutförs. Fenrir spelar in en kort timelapse under utskriften så att fotot kan hämtas från ögonblicket innan byggplattan sänks; timelapse-filen behålls om du aktiverat timelapse för denna utskrift, annars tas den automatiskt bort efter att fotot tagits.',
     finishPhotoRestorePlate: 'Återställ platta för foto',
     finishPhotoRestorePlateDescription: 'Skrivaren sänker byggplattan cirka 100 mm när en utskrift slutförs, vilket lämnar den färdiga utskriften under kamerans bildruta. Fenrir höjer tillbaka den precis ovanför det sista utskrivna skiktet, tar fotot och sänker den igen. Hoppas över när utskriftshöjden är okänd eller om ett annat jobb är köat.',
@@ -3061,6 +3058,15 @@ export default {
     cameraWindowDescription: 'Kameran öppnas i ett separat webbläsarfönster',
     externalCamerasDescription: 'Konfigurera externa kameror för att ersätta den inbyggda skrivarkameran. Stöder MJPEG-strömmar, RTSP, HTTP-ögonblicksbilder och USB-kameror (V4L2). När aktiverad används den externa kameran för live-vy och färdigbilder.',
     cameraPlaceholderUsb: 'Enhetssökväg (/dev/video0)',
+    usbCameraDevice: 'USB-enhet',
+    usbCameraSelect: 'Välj en enhet',
+    usbCameraSearching: 'Söker efter enheter…',
+    usbCameraNotFound: '{{device}} (hittades inte)',
+    usbCameraRefresh: 'Sök efter enheter igen',
+    usbCameraListFailed: 'Det gick inte att lista videoenheterna.',
+    usbCameraNoneFound: 'Fenrir ser inga videoenheter. I Docker skickar du kameran vidare till containern:',
+    usbCameraEnterManually: 'Ange sökvägen manuellt',
+    usbCameraPickFromList: 'Välj en hittad enhet',
     cameraPlaceholderUrl: 'Kamera-URL (rtsp://... eller http://...)',
     cameraTypeMjpeg: 'MJPEG-ström',
     cameraTypeRtsp: 'RTSP-ström',
@@ -3237,6 +3243,9 @@ export default {
       linkedAccounts: 'Länkade SSO-konton',
       linkedAccountsDesc: 'Dessa externa identitetsleverantörer är länkade till ditt konto.',
       oidcUnlinked: 'Konto bortkopplat.',
+      oidcUnlinkConfirmTitle: 'Koppla bort kontot?',
+      oidcUnlinkConfirmMessage: 'Du kan inte längre logga in med {{provider}}.',
+      oidcUnlinkConfirmAction: 'Koppla bort',
     },
 
     // Session Policy (#1706) — admin-configurable session lifetime ceiling.
@@ -3622,6 +3631,7 @@ errors: {
     deleteFilesConfirm: 'Ta bort {{count}} markerade filer? Detta kan inte ångras.',
     noFiles: 'Inga filer på skrivaren',
     printerUnavailable: 'Skrivarfiltjänsten är inte tillgänglig. Försök igen när skrivaren är tillgänglig.',
+    listingTimedOut: 'Skrivaren svarar, men det tar för lång tid att lista den här mappen (en stor mapp på ett långsamt SD-kort). Försök igen om en stund.',
     loadingFiles: 'Laddar filer...',
     failedToLoad: 'Kunde inte ladda filer',
     toast: {
@@ -5200,8 +5210,6 @@ errors: {
     linkToSpoolman: 'Länka till Spoolman',
     openInSpoolman: 'Öppna i Spoolman',
     unlinkSpool: 'Avlänka rulle',
-    unlinkConfirmTitle: 'Avlänka rulle?',
-    unlinkConfirmMessage: 'Detta kommer att ta bort rullen från detta fack. Rulldatan i sig kommer att förbli oförändrad.',
     selectSpool: 'Välj rulle',
     noUnlinkedSpools: 'Inga olänkade rullar tillgängliga',
     linkSuccess: 'Rulle tilldelad',
@@ -5287,6 +5295,8 @@ errors: {
       updateFailed: 'Kunde inte uppdatera',
       updatePartial: '{{ok}} rullar uppdaterade, {{failed}} misslyckades',
       updateAllFailed: 'Alla {{count}} rulluppdateringar misslyckades — val bevaras så att du kan försöka igen',
+      resetPartial: 'Räknaren nollställd för {{ok}} rulle/rullar, {{failed}} misslyckades',
+      resetAllFailed: 'Ingen räknare nollställdes: alla {{count}} misslyckades',
       deleteSuccess: '{{count}} rullar borttagna',
       deleteFailed: 'Kunde inte ta bort',
       deletePartial: '{{ok}} rullar borttagna, {{failed}} misslyckades',
@@ -5440,6 +5450,7 @@ errors: {
     measuredWeight: 'Uppmätt vikt',
     spoolName: 'Rulle',
     costPerKg: 'Kostnad per kg',
+    costFromFilament: '(filamentpris)',
     storageLocation: 'Lagringsplats',
     temperature: 'Temperatur',
     humidity: 'Luftfuktighet',
@@ -5963,6 +5974,8 @@ errors: {
     backupSkippedNoChanges: 'Säkerhetskopia hoppade över - inga ändringar',
     backupFailed2: 'Kunde inte skapa säkerhetskopia: {{message}}',
     clearedLogs: 'Rensade {{count}} loggar',
+    clearHistoryConfirmTitle: 'Rensa säkerhetskopieringshistorik?',
+    clearHistoryConfirmMessage: 'Detta tar bort alla poster i säkerhetskopieringshistoriken. Själva säkerhetskopiorna behålls.',
     failedToClearLogs: 'Kunde inte rensa loggar: {{message}}',
 
     // Restore from Git backup (#2656)
@@ -6082,47 +6095,8 @@ errors: {
     processing: 'Bearbetar...',
     doNotClosePage: 'Stäng inte denna sida eller navigera bort. Denna operation kan ta flera minuter för stora säkerhetskopior.',
 
-    // RestoreModal
+    // Restore (GitHubBackupSettings)
     restoring: 'Återställer...',
-    restoreComplete: 'Återställning slutförd',
-    restoreFailed2: 'Kunde inte återställa',
-    importSettings: 'Importera inställningar från en säkerhetskopia',
-    pleaseWaitRestoring: 'Vänligen vänta medan din data återställs',
-    selectBackupFile: 'Klicka för att välja säkerhetskopia (.json eller .zip)',
-    duplicateHandling: 'Hur dubbletter hanteras:',
-    matchPrinters: 'Skrivare',
-    matchPrintersBy: 'matchade efter serienummer',
-    matchSmartPlugs: 'Kontakter',
-    matchSmartPlugsBy: 'matchade efter IP-adress',
-    matchNotificationProviders: 'Notisleverantörer',
-    matchNotificationProvidersBy: 'matchade efter namn',
-    matchFilaments: 'Filament',
-    matchFilamentsBy: 'matchade efter namn + typ + märke',
-    matchArchives: 'Arkiv',
-    matchArchivesBy: 'matchade efter innehållshash (hoppas alltid över)',
-    matchPendingUploads: 'Väntande uppladdningar',
-    matchPendingUploadsBy: 'matchade efter filnamn',
-    matchSettingsTemplates: 'Inställningar & mallar',
-    matchSettingsTemplatesBy: 'skrivs alltid över',
-    replaceExisting: 'Ersätt befintlig data',
-    keepExisting: 'Behåll befintlig data',
-    overwriteDescription: 'Skriv över objekt som redan finns med säkerhetskopiedata',
-    keepDescription: 'Endast återställ objekt som inte redan finns',
-    overwriteCaution: 'Försiktighet:',
-    overwriteWarning: 'Att skriva över kommer att ersätta dina nuvarande konfigurationer med data från säkerhetskopian. Skrivaråtkomstkoder skrivs aldrig över av säkerhetskäl.',
-    cancel: 'Avbryt',
-    processingBackup: 'Bearbetar säkerhetskopia...',
-    itemsRestored: 'Objekt återställda',
-    itemsSkipped: 'Objekt hoppades över',
-    restored: 'Återställd',
-    skippedAlreadyExist: 'Hoppade över (finns redan)',
-    filesCategory: 'Filer (3MF, minibilder, etc.)',
-    andMore: '...och {{count}} till',
-    newApiKeysGenerated: 'Nya API-nycklar genererade',
-    keysShownOnce: 'Dessa nycklar visas endast en gång. Kopiera dem nu!',
-    copy: 'Kopiera',
-    noDataFound: 'Ingen data att återställa hittades i säkerhetskopian.',
-    close: 'Stäng',
 
     // Scheduled local backups (#884)
     scheduledBackup: 'Schemalagda säkerhetskopior',
@@ -6160,24 +6134,15 @@ errors: {
       ephemeralTitle: 'Dessa säkerhetskopior kommer inte att överleva en container-omstart',
       container_ephemeral: '{{path}} är inne i Fenrir-containern, inte på värden. Säkerhetskopior som skrivs dit försvinner när containern skapas om. Montera katalogen från värden:',
     },
-
-    // Category labels
-    categories: {
-      settings: 'Inställningar',
-      notification_providers: 'Notisleverantörer',
-      notification_templates: 'Notismallar',
-      smart_plugs: 'Kontakter',
-      printers: 'Skrivare',
-      filaments: 'Filament',
-      maintenance_types: 'Underhållstyper',
-      archives: 'Arkiv',
-      projects: 'Projekt',
-      pending_uploads: 'Väntande uppladdningar',
-      external_links: 'Externa länkar',
-      api_keys: 'API-nycklar',
-    },
   },
 
+  // Timelapse editor
+  timelapseEditor: {
+    processing: 'Bearbetar…',
+    processingPercent: 'Bearbetar… {{percent}} %',
+    failed: 'Bearbetningen misslyckades',
+    cancelled: 'Bearbetningen avbröts',
+  },
   // Tags
   tags: {
     title: 'Taggar',
@@ -6244,7 +6209,7 @@ errors: {
     itemsPrintedHelp: 'Antal objekt som producerats i detta utskriftsjobb',
     filamentUsed: 'Filament använt (g)',
     filamentUsedPlaceholder: 't.ex. 46,16',
-    filamentUsedHelp: 'Ställ in detta manuellt när en utskrift arkiveras utan sin 3MF, så att den fortfarande räknas mot filamenttotalen. Om man skannar om ett arkiv som har sin 3MF läser man tillbaka siffran från filen.',
+    filamentUsedHelp: 'Ställ in detta manuellt när en utskrift arkiveras utan sin 3MF, så att den fortfarande räknas mot filamenttotalen.',
     filamentUsedLocked: 'Endast användare som får redigera alla arkiv kan ändra detta värde: senare utskrifter av arkivet debiteras utifrån det.',
     statusHelp: 'Misslyckad och Avbruten räknas som fel i statistiken. Stoppad räknas som stoppad och sänker inte andelen lyckade utskrifter.',
     notes: 'Anteckningar',
@@ -6417,23 +6382,9 @@ errors: {
 
   // Virtual Printer
   virtualPrinter: {
-    title: 'Virtuell skrivare',
-    running: 'Körs',
-    stopped: 'Stoppad',
-    description: {
-      default: 'Aktivera en virtuell skrivare som visas i Bambu Studio och OrcaSlicer. Filer som skickas till denna skrivare kommer att arkiveras direkt utan utskrift.',
-      proxy: 'Aktivera en proxy som vidarebefordrar slicer-trafik till en riktig skrivare, vilket möjliggör fjärrutskrift över vilket nätverk som helst.',
-    },
-    enable: {
-      title: 'Aktivera virtuell skrivare',
-      visibleInSlicer: 'Synlig som "Fenrir" i slicer-uppäckt',
-      proxyingTo: 'Vidarebefordrar till {{name}}',
-      notActive: 'Inte aktiv',
-    },
     model: {
       title: 'Skrivarmodell',
       description: 'Välj vilken skrivarmodell som ska emuleras.',
-      restartWarning: 'Att ändra modellen kommer att starta om den virtuella skrivaren',
     },
     accessCode: {
       title: 'Åtkomstkod',
@@ -6441,7 +6392,6 @@ errors: {
       notSet: 'Ingen åtkomstkod inställd — krävs för att aktivera',
       placeholder: 'Ange 8-teckens kod',
       placeholderChange: 'Ange ny kod för att ändra',
-      hint: 'Måste vara exakt 8 tecken. Används av slicer för autentisering.',
       charCount: '({{count}}/8)',
       inheritedFromTarget: 'Ärvd från mål',
       derivedFromTargetHint: 'Använder målskrivarens åtkomstkod. Bryggan vidarebefordrar slicer-autentisering till den riktiga skrivaren, så koderna måste matcha — redigera målskrivarens åtkomstkod för att ändra detta värde.',
@@ -6450,18 +6400,12 @@ errors: {
     },
     targetPrinter: {
       title: 'Målskrivare',
-      configured: 'Proxy-mål konfigurerat',
-      notConfigured: 'Ingen målskrivare vald — krävs för proxyläge',
       placeholder: 'Välj en skrivare...',
-      hint: 'Välj den skrivare som slicer-trafiken ska vidarebefordras till. Skrivaren måste vara i LAN-läge.',
-      noPrinters: 'Inga skrivare konfigurerade. Lägg till en skrivare först för att använda proxyläge.',
     },
     remoteInterface: {
       title: 'Åsidosättning för nätverksgränssnitt',
-      configured: 'Åsidosättning för nätverksgränssnitt aktiv',
       optional: 'Valfritt — använd om auto-upptäckt IP är fel (t.ex. flera nätverkskort, Docker, VPN)',
       placeholder: 'Auto-upptäckt (standard)...',
-      hint: 'Åsidosätter IP-adressen som annonseras via SSDP och används i TLS-certifikatet. Användbart när Fenrir har flera nätverksgränssnitt.',
     },
     mode: {
       title: 'Läge',
@@ -6518,19 +6462,6 @@ errors: {
       step1: 'På samma subnät visas virtuella skrivare automatiskt i din slicer (Bambu Studio / OrcaSlicer) via upptäckt. Från andra nätverk lägger du till dem manuellt via IP-adress och åtkomstkod.',
       step2: 'I Arkiv-, Gransknings- och Kölägen, använd knappen "Skicka" i din slicer för att ladda upp 3MF-filer till Fenrir. Slicern kommer att visa "Utskrift lyckades" — filen lagras, inte skrivs ut.',
       step3: 'I Proxyläge vidarebefordrar den virtuella skrivaren all trafik till en riktig skrivare — utskrifter startar omedelbart som om den vore ansluten direkt.',
-    },
-    status: {
-      title: 'Statusdetaljer',
-      printerName: 'Skrivarnamn',
-      model: 'Modell',
-      serialNumber: 'Serienummer',
-      mode: 'Läge',
-      pendingFiles: 'Väntande filer',
-      targetPrinter: 'Målskrivare',
-      ftpPort: 'FTP-port',
-      mqttPort: 'MQTT-port',
-      ftpConnections: 'FTP-anslutningar',
-      mqttConnections: 'MQTT-anslutningar',
     },
     toast: {
       updated: 'Inställningar för virtuell skrivare uppdaterade',
@@ -7469,9 +7400,13 @@ errors: {
     hexLabel: 'Hex: #{{hex}}',
     resetting: 'Återställer...',
     resetSlot: 'Återställ fack',
+    resetConfirmTitle: 'Återställa fack?',
+    resetConfirmMessage: 'Detta rensar filamentinställningen för det här facket på skrivaren.',
+    resetBlockedPrinting: 'Inte tillgängligt medan skrivaren skriver ut',
     cancel: 'Avbryt',
     configuring: 'Konfigurerar...',
     configureSlot: 'Konfigurera fack',
+    kValueUnsent: 'Filamentet ställdes in, men K-värdet kunde inte skickas till skrivaren.',
     // Why an Orca profile went into the slot as the generic for its material (#3216)
     orcaFallback: {
       no_filament_id: 'Den här Orca-profilen har inget eget filament-ID, så OrcaSlicer kommer att se den här platsen som Generic {{material}}.',
@@ -7687,12 +7622,8 @@ errors: {
       plateClearFailed: 'Kunde inte markera platta som rensad',
     },
     modal: {
-      spoolDetected: 'Rulle upptäckt',
       assignToAms: 'Tilldela till AMS',
       syncWeight: 'Synkronisera vikt',
-      weightSynced: 'Synkroniserad!',
-      syncing: 'Synkroniserar...',
-      newTagDetected: 'Ny tagg upptäckt',
       addToInventory: 'Lägg till i inventarium',
       assignToAmsTitle: 'Tilldela till AMS',
       selectSlot: 'Välj ett fack',
@@ -7706,9 +7637,6 @@ errors: {
       slot: 'Fack',
     },
     weight: {
-      noReading: 'Ingen avläsning',
-      stable: 'Stabil',
-      measuring: 'Mäter...',
       tare: 'Tara',
       calibrate: 'Kalibrera',
     },
@@ -7835,6 +7763,7 @@ errors: {
       linkFailedSpoolNotFound: 'Taggen skrevs, men spolen finns inte längre',
       spoolmanUnavailable: 'Spoolman är inte tillgängligt. Kontrollera URL:en i Spoolman-inställningarna.',
       queueFailed: 'Kunde inte köa skrivkommando',
+      linkedToAms: 'Den här spolen är länkad till sin Bambu-RFID-tagg via AMS. En klistermärkesetikett skulle ersätta den länken i Spoolman.',
       tryAgain: 'Försök igen',
       cancel: 'Avbryt',
       replaceWarning: 'Gamla taggen kommer att avlänkas. Ny tagg kommer att ersätta den.',
@@ -8554,6 +8483,8 @@ errors: {
   },
   // Forecast & Inventory Intelligence
   forecast: {
+    clearAllConfirmTitle: 'Tömma inköpslistan?',
+    clearAllConfirmMessage: 'Detta tar bort alla {{count}} objekt från inköpslistan.',
     title: 'Prognos',
     noSpools: 'Inga aktiva rullar hittade. Lägg till rullar till din inventering för att se prognosdata.',
     noUsageData: 'Inga användningsdata tillgängliga — kan inte projicera lagertidslinje.',

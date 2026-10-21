@@ -37,7 +37,7 @@ from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, Requ
 from fastapi.responses import RedirectResponse
 from jwt import PyJWKClient
 from passlib.context import CryptContext
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload, undefer
 
@@ -73,7 +73,6 @@ from backend.app.schemas.auth import (
     EmailOTPDisableRequest,
     EmailOTPEnableConfirmRequest,
     EmailOTPSendRequest,
-    GroupBrief,
     LoginResponse,
     OIDCAuthorizeResponse,
     OIDCExchangeRequest,
@@ -202,17 +201,12 @@ router = APIRouter(prefix="/auth", tags=["2fa", "oidc"])
 # Helper: user response
 # ---------------------------------------------------------------------------
 def _user_to_response(user: User) -> UserResponse:
-    return UserResponse(
-        id=user.id,
-        username=user.username,
-        email=user.email,
-        role=user.role,
-        is_active=user.is_active,
-        is_admin=user.is_admin,
-        groups=[GroupBrief(id=g.id, name=g.name) for g in user.groups],
-        permissions=sorted(user.get_permissions()),
-        created_at=user.created_at.isoformat(),
-    )
+    # The auth routes' builder, not a copy: the copy here left out
+    # ``auth_source``, so a 2FA or OIDC login reported LDAP and OIDC users as
+    # local and the page offered them "Change Password" (PC-C9).
+    from backend.app.api.routes.auth import _user_to_response as build
+
+    return build(user)
 
 
 # ---------------------------------------------------------------------------
@@ -2702,6 +2696,15 @@ async def remove_oidc_link(
     link = result.scalar_one_or_none()
     if not link:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="OIDC link not found")
+    # A user created from an SSO login has no password: their last link is
+    # their only way to sign in.
+    if current_user.auth_source == "oidc" and not current_user.password_hash:
+        links = await db.execute(select(func.count()).where(UserOIDCLink.user_id == current_user.id))
+        if links.scalar_one() <= 1:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This is the only way this account can sign in; it can't be unlinked",
+            )
 
     await db.delete(link)
     await db.commit()

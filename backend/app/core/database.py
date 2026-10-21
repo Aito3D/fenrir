@@ -449,9 +449,9 @@ async def _migrate_sqlite_autoincrement(conn) -> None:
             await conn.execute(text(f"DROP TABLE IF EXISTS {copy}"))
             await conn.execute(text(new_sql))
             names = ", ".join(f'"{r[1]}"' for r in await conn.execute(text(f"PRAGMA table_info({table})")))
-            await conn.execute(text(f"INSERT INTO {copy} ({names}) SELECT {names} FROM {table}"))
-            original = (await conn.execute(text(f"SELECT count(*) FROM {table}"))).scalar_one()
-            copied = (await conn.execute(text(f"SELECT count(*) FROM {copy}"))).scalar_one()
+            await conn.execute(text(f"INSERT INTO {copy} ({names}) SELECT {names} FROM {table}"))  # nosec B608 -- table from AUTOINCREMENT_TABLES, columns from its own PRAGMA
+            original = (await conn.execute(text(f"SELECT count(*) FROM {table}"))).scalar_one()  # nosec B608 -- table from AUTOINCREMENT_TABLES, columns from its own PRAGMA
+            copied = (await conn.execute(text(f"SELECT count(*) FROM {copy}"))).scalar_one()  # nosec B608 -- table from AUTOINCREMENT_TABLES, columns from its own PRAGMA
             if copied != original:
                 raise RuntimeError(f"{table} AUTOINCREMENT rebuild: {original} rows, {copied} copied")
             await conn.execute(text(f"DROP TABLE {table}"))
@@ -6687,6 +6687,7 @@ async def _run_migrations(conn):
     # IntegrityError the route maps back to the same 400. create_all() adds it
     # on fresh installs only — this covers databases whose table predates it.
     await _migrate_location_ha_sensor_unique_binding(conn)
+    await _migrate_printer_maintenance_unique(conn)
 
     # Migration: the stock alert templates name the colour and subtype (#2955).
     # The forecast groups by colour, so two colours of one product would
@@ -7081,7 +7082,7 @@ async def _migrate_pg_columns_to_model(conn) -> None:
         extra = ""
         if (table, column) == ("oidc_providers", "email_claim"):
             extra = ", auto_link_existing_accounts = false"
-        filled = await conn.execute(text(f"UPDATE {table} SET {column} = {fill}{extra} WHERE {column} IS NULL"))
+        filled = await conn.execute(text(f"UPDATE {table} SET {column} = {fill}{extra} WHERE {column} IS NULL"))  # nosec B608 -- table/column from _PG_COLUMNS_SET_FROM_MODEL, fill from the model default
         if filled.rowcount:
             logger.info("Filled %d NULL %s.%s value(s) with %s", filled.rowcount, table, column, fill)
         await _safe_execute(conn, f"ALTER TABLE {table} ALTER COLUMN {column} SET NOT NULL")
@@ -7148,13 +7149,13 @@ async def _migrate_pg_column_types(conn) -> None:
         if current != old_type:
             continue
         if new_type == "JSON":
-            rows = await conn.execute(text(f"SELECT id, {column} FROM {table} WHERE {column} IS NOT NULL"))
+            rows = await conn.execute(text(f"SELECT id, {column} FROM {table} WHERE {column} IS NOT NULL"))  # nosec B608 -- table/column from _PG_COLUMN_TYPE_FIXES
             for row_id, value in rows.all():
                 try:
                     json.loads(value, parse_constant=_reject_non_json_constant)
                 except ValueError:
                     logger.warning("Clearing %s.%s of row %s: not valid JSON", table, column, row_id)
-                    await conn.execute(text(f"UPDATE {table} SET {column} = NULL WHERE id = :id"), {"id": row_id})
+                    await conn.execute(text(f"UPDATE {table} SET {column} = NULL WHERE id = :id"), {"id": row_id})  # nosec B608 -- table/column from _PG_COLUMN_TYPE_FIXES; id bound
         # Float to text gives the shortest exact decimal only with
         # extra_float_digits >= 1, PostgreSQL's default since 12, which a server,
         # database or role setting can lower: at 0 text keeps 6 digits.
@@ -7411,7 +7412,7 @@ async def _migrate_add_missing_set_null_fks(conn) -> None:
             continue
         cleared = await conn.execute(
             text(
-                f"UPDATE {table} SET {column} = NULL WHERE {column} IS NOT NULL "
+                f"UPDATE {table} SET {column} = NULL WHERE {column} IS NOT NULL "  # nosec B608 -- table/column/parent from _MISSING_SET_NULL_FKS
                 f"AND NOT EXISTS (SELECT 1 FROM {parent} WHERE {parent}.id = {table}.{column})"
             )
         )
@@ -8230,6 +8231,59 @@ async def _migrate_location_ha_sensor_unique_binding(conn) -> None:
     )
 
 
+async def _migrate_printer_maintenance_unique(conn) -> None:
+    """Unique index on printer_maintenance (printer_id, maintenance_type_id) (FO-C14).
+
+    A printer's maintenance rows are created on first read with no constraint,
+    so two concurrent reads could each create one. Same name and shape as the
+    Index in the model, so fresh and upgraded databases end up identical.
+
+    Duplicates are merged first, since CREATE UNIQUE INDEX refuses to build
+    over them: the most recently performed row is kept (the highest id, the
+    one the page showed, when none was performed), and the history of the
+    others moves onto it.
+    """
+    from sqlalchemy import text
+
+    async with conn.begin_nested():
+        rows = (
+            await conn.execute(
+                text(
+                    "SELECT id, printer_id, maintenance_type_id, last_performed_at FROM printer_maintenance "
+                    "WHERE (printer_id, maintenance_type_id) IN ("
+                    "SELECT printer_id, maintenance_type_id FROM printer_maintenance "
+                    "GROUP BY printer_id, maintenance_type_id HAVING COUNT(*) > 1)"
+                )
+            )
+        ).all()
+        groups: dict[tuple[int, int], list] = {}
+        for row in rows:
+            groups.setdefault((row.printer_id, row.maintenance_type_id), []).append(row)
+        for group in groups.values():
+            # Latest performance first; never-performed rows last, oldest first.
+            performed = sorted(
+                (r for r in group if r.last_performed_at is not None), key=lambda r: str(r.last_performed_at)
+            )
+            # Never performed: the highest id, the row the page showed (it
+            # kept the last one read) and so the one holding the user's settings.
+            keep = performed[-1] if performed else max(group, key=lambda r: r.id)
+            for row in group:
+                if row.id == keep.id:
+                    continue
+                await conn.execute(
+                    text(
+                        "UPDATE maintenance_history SET printer_maintenance_id = :keep WHERE printer_maintenance_id = :gone"
+                    ),
+                    {"keep": keep.id, "gone": row.id},
+                )
+                await conn.execute(text("DELETE FROM printer_maintenance WHERE id = :gone"), {"gone": row.id})
+    await _safe_execute(
+        conn,
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_printer_maintenance_printer_type "
+        "ON printer_maintenance (printer_id, maintenance_type_id)",
+    )
+
+
 async def _migrate_normalize_printer_locations(conn) -> None:
     """Trim printer locations and store a blank one as NULL (#2962).
 
@@ -8250,8 +8304,8 @@ async def _migrate_normalize_printer_locations(conn) -> None:
             )
             await conn.execute(
                 text(
-                    f"UPDATE {table} SET {column} = TRIM({column}) WHERE {column} IS NOT NULL AND {column} <> TRIM({column})"
-                )  # noqa: S608  # nosec B608 — fixed identifiers
+                    f"UPDATE {table} SET {column} = TRIM({column}) WHERE {column} IS NOT NULL AND {column} <> TRIM({column})"  # noqa: S608  # nosec B608 — fixed identifiers
+                )
             )
 
 

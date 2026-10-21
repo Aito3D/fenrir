@@ -412,7 +412,7 @@ describe('FinancePage — editing a wallet transaction', () => {
       () => {
         expect(capturedBody).toEqual({
           user_id: 1,
-          cost_center_id: undefined,
+          cost_center_id: null,
           amount: 12.34,
           description: 'Initial deposit',
         });
@@ -469,7 +469,7 @@ describe('FinancePage — editing a wallet transaction', () => {
     expect(screen.queryByText('Amount must be a valid number')).not.toBeInTheDocument();
   });
 
-  it('omits cost_center_id and description from the PATCH when they are cleared (means "no change", not "clear to null")', async () => {
+  it('omits a cleared description from the PATCH, and sends cost_center_id null to move it to no cost center', async () => {
     let capturedBody: Record<string, unknown> | null = null;
     server.use(
       ...editHandlers([
@@ -509,7 +509,8 @@ describe('FinancePage — editing a wallet transaction', () => {
     // intentionally-cleared field never reaches the server as `null` —
     // it simply isn't sent, leaving the stored value untouched server-side.
     expect(capturedBody).not.toHaveProperty('description');
-    expect(capturedBody).not.toHaveProperty('cost_center_id');
+    // No cost center is a choice of its own: null moves it there (upstream #finance).
+    expect(capturedBody).toHaveProperty('cost_center_id', null);
     expect((capturedBody as unknown as { user_id: number }).user_id).toBe(1);
   });
 

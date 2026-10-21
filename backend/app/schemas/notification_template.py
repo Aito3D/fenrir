@@ -32,6 +32,19 @@ class EventType(StrEnum):
 
 # Available variables for each event type
 EVENT_VARIABLES: dict[str, list[str]] = {
+    # Post-print outcome request (#1898): good/reject are the one-tap links,
+    # confirm_url opens the archive's confirmation dialog.
+    "print_confirm_request": [
+        "printer",
+        "filename",
+        "confirm_url",
+        "good_url",
+        "reject_url",
+        "archive_id",
+        "finish_photo_url",
+        "timestamp",
+        "app_name",
+    ],
     "print_start": ["printer", "filename", "estimated_time", "eta", "timestamp", "app_name"],
     "print_complete": [
         "printer",
@@ -137,11 +150,14 @@ EVENT_VARIABLES: dict[str, list[str]] = {
     "user_print_complete": ["username", "printer", "filename", "finish_photo_url", "timestamp", "app_name"],
     "user_print_failed": ["username", "printer", "filename", "finish_photo_url", "timestamp", "app_name"],
     "user_print_stopped": ["username", "printer", "filename", "finish_photo_url", "timestamp", "app_name"],
+    # Aito
+    "aito_payment_received": ["client_name", "reference", "amount", "currency", "source", "project_id"],
 }
 
 # Events whose real notification can carry a camera snapshot — mirrors which
 # NotificationService.on_* methods accept image_data.
 PHOTO_CAPABLE_EVENTS: set[str] = {
+    "print_confirm_request",
     "print_start",
     "print_complete",
     "print_failed",
@@ -242,6 +258,17 @@ SAMPLE_DATA: dict[str, dict[str, str]] = {
         "confidence": "0.87",
         "action": "pause",
         "timestamp": "2024-01-15 15:10",
+        "app_name": "Fenrir",
+    },
+    "print_confirm_request": {
+        "printer": "Bambu X1C",
+        "filename": "Benchy",
+        "confirm_url": "http://bambuddy.local:8000/archives?confirm=42",
+        "good_url": "http://bambuddy.local:8000/api/v1/archives/confirm/sample-token/good",
+        "reject_url": "http://bambuddy.local:8000/api/v1/archives/confirm/sample-token/reject",
+        "archive_id": "42",
+        "finish_photo_url": "/api/v1/archives/42/photos/finish_20240115_143500_abc12345.jpg",
+        "timestamp": "2024-01-15 14:35",
         "app_name": "Fenrir",
     },
     "plate_not_empty": {
@@ -442,6 +469,14 @@ SAMPLE_DATA: dict[str, dict[str, str]] = {
         "timestamp": "2024-01-15 15:15",
         "app_name": "Fenrir",
     },
+    "aito_payment_received": {
+        "client_name": "Atelier Dupont",
+        "reference": "DEV-2638",
+        "amount": "120.00",
+        "currency": "XPF",
+        "source": "link",
+        "project_id": "42",
+    },
 }
 
 
@@ -473,13 +508,6 @@ class NotificationTemplateResponse(NotificationTemplateBase):
 
     class Config:
         from_attributes = True
-
-
-class TemplateVariableInfo(BaseModel):
-    """Information about a template variable."""
-
-    name: str
-    description: str
 
 
 class EventVariablesResponse(BaseModel):

@@ -2039,6 +2039,7 @@ export default {
       done: 'Done',
       starting: 'Starting...',
       uploadFirmware: 'Upload Firmware',
+      printerBusy: 'The printer is busy. Firmware can only be uploaded while it is idle.',
       uploadFailed: 'Failed to start upload: {{error}}',
       uploadedToast: 'Firmware uploaded! Trigger update from printer screen.',
       availableVersions: 'Available versions',
@@ -3452,8 +3453,6 @@ export default {
     upToDate: 'You are up to date',
     updateAvailable: 'Update available',
     // Notifications
-    notificationLanguage: 'Notification Language',
-    notificationLanguageDescription: 'Language for push notifications',
     bedCooledThreshold: 'Bed Cooled Threshold',
     bedCooledThresholdDescription: 'Temperature below which the bed is considered cooled after a print',
     userNotificationsEnabled: 'User Notifications',
@@ -3580,7 +3579,6 @@ export default {
     // Sidebar
     sidebarOrder: 'Sidebar order',
     // Camera
-    saveThumbnails: 'Save thumbnails',
     captureFinishPhoto: 'Capture finish photo',
     noPrintersConfigured: 'No printers configured',
     // Updates
@@ -3691,7 +3689,7 @@ export default {
     updateEnergyCostDescription: 'Allow this key to POST a new per-kWh electricity price to /settings/electricity-price. Useful for Home Assistant dynamic-tariff automations (Tibber, Octopus, etc.). This is the only settings field writable via API key.',
     energyCostBadge: 'Energy',
     sendNotifications: 'Send notifications',
-    sendNotificationsDescription: 'Allow this key to send messages through the notification channels that accept messages from connected apps (POST /notifications/app-message). For apps like Bambuddy Orders. Nothing else: the key can\'t read or change the channels.',
+    sendNotificationsDescription: 'Allow this key to send messages through the notification channels that accept messages from connected apps (POST /notifications/app-message), and to show a count on the sidebar link that points at the app (PUT /external-links/badge). For apps like Bambuddy Orders. Nothing else: the key can\'t read or change the channels or the links.',
     sendNotificationsBadge: 'Notify',
     legacyKey: 'Legacy',
     legacyKeyTooltip: 'Created before per-user ownership; recreate to use cloud access',
@@ -4128,7 +4126,6 @@ export default {
     // Archive
     autoArchivePrints: 'Auto-archive prints',
     autoArchiveDescription: 'Automatically save 3MF files when prints complete. When off, no printer archives prints started outside Fenrir.',
-    saveThumbnailsDescription: 'Extract and save preview images from 3MF files',
     captureFinishPhotoDescription: 'Take a photo from printer camera when print completes. Fenrir records a brief timelapse during the print so the photo can be sourced from the moment before the bed drops; the timelapse file is kept if you enabled timelapse for this print, otherwise it is deleted automatically after the photo is captured.',
     finishPhotoRestorePlate: 'Restore plate for finish photo',
     finishPhotoRestorePlateDescription: 'The printer drops the build plate about 100 mm when a print ends, leaving the finished print below the camera\'s framing. Fenrir raises it back to just above the last printed layer, takes the photo, then lowers it again. Skipped when the print height is unknown or another job is queued.',
@@ -4141,6 +4138,15 @@ export default {
     cameraWindowDescription: 'Camera opens in a separate browser window',
     externalCamerasDescription: 'Configure external cameras to replace the built-in printer camera. Supports MJPEG streams, RTSP, HTTP snapshots, and USB cameras (V4L2). When enabled, the external camera is used for live view and finish photos.',
     cameraPlaceholderUsb: 'Device path (/dev/video0)',
+    usbCameraDevice: 'USB device',
+    usbCameraSelect: 'Select a device',
+    usbCameraSearching: 'Looking for devices…',
+    usbCameraNotFound: '{{device}} (not found)',
+    usbCameraRefresh: 'Look for devices again',
+    usbCameraListFailed: 'Could not list the video devices.',
+    usbCameraNoneFound: 'No video devices are visible to Fenrir. In Docker, pass the camera to the container:',
+    usbCameraEnterManually: 'Enter path manually',
+    usbCameraPickFromList: 'Choose a detected device',
     cameraPlaceholderUrl: 'Camera URL (rtsp://... or http://...)',
     cameraTypeMjpeg: 'MJPEG Stream',
     cameraTypeRtsp: 'RTSP Stream',
@@ -4338,6 +4344,9 @@ export default {
       linkedAccounts: 'Linked SSO Accounts',
       linkedAccountsDesc: 'These external identity providers are linked to your account.',
       oidcUnlinked: 'Account unlinked.',
+      oidcUnlinkConfirmTitle: 'Unlink account?',
+      oidcUnlinkConfirmMessage: 'You will no longer be able to sign in with {{provider}}.',
+      oidcUnlinkConfirmAction: 'Unlink',
     },
 
     // Session Policy (#1706) — admin-configurable session lifetime ceiling.
@@ -4699,6 +4708,7 @@ export default {
     deleteFilesConfirm: 'Delete {{count}} selected files? This cannot be undone.',
     noFiles: 'No files on printer',
     printerUnavailable: 'The printer file service is unavailable. Try again when the printer is reachable.',
+    listingTimedOut: 'The printer is answering, but listing this folder is taking too long (a large folder on a slow SD card). Try again in a moment.',
     loadingFiles: 'Loading files...',
     failedToLoad: 'Failed to load files',
     toast: {
@@ -6477,8 +6487,6 @@ export default {
     linkToSpoolman: 'Link to Spoolman',
     openInSpoolman: 'Open in Spoolman',
     unlinkSpool: 'Unlink Spool',
-    unlinkConfirmTitle: 'Unassign Spool?',
-    unlinkConfirmMessage: 'This will remove the spool from this slot. The spool data itself will remain unchanged.',
     selectSpool: 'Select Spool',
     noUnlinkedSpools: 'No unassigned spools available',
     linkSuccess: 'Spool assigned successfully',
@@ -6564,6 +6572,8 @@ export default {
       updateFailed: 'Bulk update failed',
       updatePartial: '{{ok}} spools updated, {{failed}} failed',
       updateAllFailed: 'All {{count}} spool updates failed — selection kept so you can retry',
+      resetPartial: 'Counter reset for {{ok}} spool(s), {{failed}} failed',
+      resetAllFailed: 'No counter was reset: all {{count}} failed',
       deleteSuccess: '{{count}} spools deleted',
       deleteFailed: 'Bulk delete failed',
       deletePartial: '{{ok}} spools deleted, {{failed}} failed',
@@ -6717,6 +6727,7 @@ export default {
     measuredWeight: 'Measured Weight',
     spoolName: 'Spool',
     costPerKg: 'Cost per kg',
+    costFromFilament: '(filament price)',
     storageLocation: 'Storage Location',
     temperature: 'Temperature',
     humidity: 'Humidity',
@@ -7287,6 +7298,8 @@ export default {
     backupSkippedNoChanges: 'Backup skipped - no changes',
     backupFailed2: 'Backup failed: {{message}}',
     clearedLogs: 'Cleared {{count}} logs',
+    clearHistoryConfirmTitle: 'Clear backup history?',
+    clearHistoryConfirmMessage: 'This removes every entry from the backup history. The backups themselves are kept.',
     failedToClearLogs: 'Failed to clear logs: {{message}}',
 
     // Restore from Git backup (#2656)
@@ -7406,47 +7419,8 @@ export default {
     processing: 'Processing...',
     doNotClosePage: 'Please do not close this page or navigate away. This operation may take several minutes for large backups.',
 
-    // RestoreModal
+    // Restore (GitHubBackupSettings)
     restoring: 'Restoring...',
-    restoreComplete: 'Restore Complete',
-    restoreFailed2: 'Restore Failed',
-    importSettings: 'Import settings from a backup file',
-    pleaseWaitRestoring: 'Please wait while your data is being restored',
-    selectBackupFile: 'Click to select backup file (.json or .zip)',
-    duplicateHandling: 'How duplicate handling works:',
-    matchPrinters: 'Printers',
-    matchPrintersBy: 'matched by serial number',
-    matchSmartPlugs: 'Smart Plugs',
-    matchSmartPlugsBy: 'matched by IP address',
-    matchNotificationProviders: 'Notification Providers',
-    matchNotificationProvidersBy: 'matched by name',
-    matchFilaments: 'Filaments',
-    matchFilamentsBy: 'matched by name + type + brand',
-    matchArchives: 'Archives',
-    matchArchivesBy: 'matched by content hash (always skipped)',
-    matchPendingUploads: 'Pending Uploads',
-    matchPendingUploadsBy: 'matched by filename',
-    matchSettingsTemplates: 'Settings & Templates',
-    matchSettingsTemplatesBy: 'always overwritten',
-    replaceExisting: 'Replace existing data',
-    keepExisting: 'Keep existing data',
-    overwriteDescription: 'Overwrite items that already exist with backup data',
-    keepDescription: "Only restore items that don't already exist",
-    overwriteCaution: 'Caution:',
-    overwriteWarning: 'Overwriting will replace your current configurations with data from the backup. Printer access codes are never overwritten for security.',
-    cancel: 'Cancel',
-    processingBackup: 'Processing backup file...',
-    itemsRestored: 'Items Restored',
-    itemsSkipped: 'Items Skipped',
-    restored: 'Restored',
-    skippedAlreadyExist: 'Skipped (already exist)',
-    filesCategory: 'Files (3MF, thumbnails, etc.)',
-    andMore: '...and {{count}} more',
-    newApiKeysGenerated: 'New API Keys Generated',
-    keysShownOnce: 'These keys are only shown once. Copy them now!',
-    copy: 'Copy',
-    noDataFound: 'No data was found to restore in the backup file.',
-    close: 'Close',
 
     // Scheduled local backups (#884)
     scheduledBackup: 'Scheduled Backups',
@@ -7484,24 +7458,15 @@ export default {
       ephemeralTitle: 'These backups will not survive a container restart',
       container_ephemeral: '{{path}} is inside the Fenrir container, not on the host. Backups written there are lost when the container is recreated. Mount the directory from the host:',
     },
-
-    // Category labels
-    categories: {
-      settings: 'Settings',
-      notification_providers: 'Notification Providers',
-      notification_templates: 'Notification Templates',
-      smart_plugs: 'Smart Plugs',
-      printers: 'Printers',
-      filaments: 'Filaments',
-      maintenance_types: 'Maintenance Types',
-      archives: 'Archives',
-      projects: 'Projects',
-      pending_uploads: 'Pending Uploads',
-      external_links: 'External Links',
-      api_keys: 'API Keys',
-    },
   },
 
+  // Timelapse editor
+  timelapseEditor: {
+    processing: 'Processing…',
+    processingPercent: 'Processing… {{percent}}%',
+    failed: 'Processing failed',
+    cancelled: 'Processing cancelled',
+  },
   // Tags
   tags: {
     title: 'Tags',
@@ -7568,7 +7533,7 @@ export default {
     itemsPrintedHelp: 'Number of items produced in this print job. Use 0 if the whole plate was ruined.',
     filamentUsed: 'Filament used (g)',
     filamentUsedPlaceholder: 'e.g. 46.16',
-    filamentUsedHelp: 'Set this by hand when a print archived without its 3MF, so it still counts towards the filament totals. Rescanning an archive that has its 3MF reads the figure back from the file.',
+    filamentUsedHelp: 'Set this by hand when a print archived without its 3MF, so it still counts towards the filament totals.',
     filamentUsedLocked: 'Only users who can edit all archives can change this figure: later prints of this archive are charged from it.',
     statusHelp: 'Failed and Aborted count as failures in the statistics. Cancelled counts as stopped and does not lower the success rate.',
     notes: 'Notes',
@@ -7741,23 +7706,9 @@ export default {
 
   // Virtual Printer
   virtualPrinter: {
-    title: 'Virtual Printer',
-    running: 'Running',
-    stopped: 'Stopped',
-    description: {
-      default: 'Enable a virtual printer that appears in Bambu Studio and OrcaSlicer. Files sent to this printer will be archived directly without printing.',
-      proxy: 'Enable a proxy that relays slicer traffic to a real printer, allowing remote printing over any network.',
-    },
-    enable: {
-      title: 'Enable Virtual Printer',
-      visibleInSlicer: 'Visible as "Fenrir" in slicer discovery',
-      proxyingTo: 'Proxying to {{name}}',
-      notActive: 'Not active',
-    },
     model: {
       title: 'Printer Model',
       description: 'Select which printer model to emulate.',
-      restartWarning: 'Changing the model will restart the virtual printer',
     },
     accessCode: {
       title: 'Access Code',
@@ -7765,7 +7716,6 @@ export default {
       notSet: 'No access code set - required to enable',
       placeholder: 'Enter 8-char code',
       placeholderChange: 'Enter new code to change',
-      hint: 'Must be exactly 8 characters. Used by slicers to authenticate.',
       charCount: '({{count}}/8)',
       inheritedFromTarget: 'Inherited from target',
       derivedFromTargetHint: 'Uses the target printer\'s access code. The bridge forwards slicer auth to the real printer, so the codes must match — edit the printer\'s access code to change this value.',
@@ -7774,18 +7724,12 @@ export default {
     },
     targetPrinter: {
       title: 'Target Printer',
-      configured: 'Proxy target configured',
-      notConfigured: 'No target printer selected - required for proxy mode',
       placeholder: 'Select a printer...',
-      hint: 'Select the printer to proxy slicer traffic to. The printer must be in LAN mode.',
-      noPrinters: 'No printers configured. Add a printer first to use proxy mode.',
     },
     remoteInterface: {
       title: 'Network Interface Override',
-      configured: 'Interface override active',
       optional: 'Optional - use if auto-detected IP is wrong (e.g. multiple NICs, Docker, VPN)',
       placeholder: 'Auto-detect (default)...',
-      hint: 'Override the IP address advertised via SSDP and used in the TLS certificate. Useful when Fenrir has multiple network interfaces.',
     },
     mode: {
       title: 'Mode',
@@ -7842,19 +7786,6 @@ export default {
       step1: 'On the same LAN, virtual printers appear in your slicer (Bambu Studio / OrcaSlicer) automatically via discovery. From other networks, add them manually by IP address and access code.',
       step2: 'In Archive, Review, and Queue modes, use the "Send" button in your slicer to upload 3MF files to Fenrir. The slicer will show "Print success" — the file is stored, not printed.',
       step3: 'In Proxy mode, the virtual printer relays all traffic to a real printer — prints start immediately as if connected directly.',
-    },
-    status: {
-      title: 'Status Details',
-      printerName: 'Printer Name',
-      model: 'Model',
-      serialNumber: 'Serial Number',
-      mode: 'Mode',
-      pendingFiles: 'Pending Files',
-      targetPrinter: 'Target Printer',
-      ftpPort: 'FTP Port',
-      mqttPort: 'MQTT Port',
-      ftpConnections: 'FTP Connections',
-      mqttConnections: 'MQTT Connections',
     },
     toast: {
       updated: 'Virtual printer settings updated',
@@ -8793,9 +8724,13 @@ export default {
     hexLabel: 'Hex: #{{hex}}',
     resetting: 'Resetting...',
     resetSlot: 'Reset Slot',
+    resetConfirmTitle: 'Reset slot?',
+    resetConfirmMessage: 'This clears the filament setting of this slot on the printer.',
+    resetBlockedPrinting: 'Not available while the printer is printing',
     cancel: 'Cancel',
     configuring: 'Configuring...',
     configureSlot: 'Configure Slot',
+    kValueUnsent: 'The filament was set, but the K value could not be sent to the printer.',
     // Why an Orca profile went into the slot as the generic for its material (#3216)
     orcaFallback: {
       no_filament_id: 'This Orca profile has no filament ID of its own, so OrcaSlicer will see this slot as Generic {{material}}.',
@@ -9011,12 +8946,8 @@ export default {
       plateClearFailed: 'Could not mark plate as cleared',
     },
     modal: {
-      spoolDetected: 'Spool Detected',
       assignToAms: 'Assign to AMS',
       syncWeight: 'Sync Weight',
-      weightSynced: 'Synced!',
-      syncing: 'Syncing...',
-      newTagDetected: 'New Tag Detected',
       addToInventory: 'Add to Inventory',
       assignToAmsTitle: 'Assign to AMS',
       selectSlot: 'Select a slot',
@@ -9030,9 +8961,6 @@ export default {
       slot: 'Slot',
     },
     weight: {
-      noReading: 'No reading',
-      stable: 'Stable',
-      measuring: 'Measuring...',
       tare: 'Tare',
       calibrate: 'Calibrate',
     },
@@ -9159,6 +9087,7 @@ export default {
       linkFailedSpoolNotFound: 'The tag was written, but the spool no longer exists',
       spoolmanUnavailable: 'Spoolman is unavailable. Check its URL in the Spoolman settings.',
       queueFailed: 'Failed to queue write command',
+      linkedToAms: 'This spool is linked to its Bambu RFID tag through the AMS. A sticker would replace that link in Spoolman.',
       tryAgain: 'Try Again',
       cancel: 'Cancel',
       replaceWarning: 'Old tag will be unlinked. New tag will replace it.',
@@ -9878,6 +9807,8 @@ export default {
   },
   // Forecast & Inventory Intelligence
   forecast: {
+    clearAllConfirmTitle: 'Clear shopping list?',
+    clearAllConfirmMessage: 'This removes all {{count}} item(s) from the shopping list.',
     title: 'Forecast',
     noSpools: 'No active spools found. Add spools to your inventory to see forecast data.',
     noUsageData: 'No usage data available — cannot project stock timeline.',

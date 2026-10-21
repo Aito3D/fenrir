@@ -38,6 +38,7 @@ from backend.app.api.routes import (
     archives,
     auth,
     bug_report,
+    bulk,
     calculator,
     camera,
     cloud,
@@ -127,6 +128,7 @@ from backend.app.services.archive import (
 )
 from backend.app.services.archive_cost_estimate import (
     schedule_archive_cost_estimate as _schedule_archive_cost_estimate,
+    settle_archive_cost_estimate as _settle_archive_cost_estimate,
 )
 from backend.app.services.archive_purge import archive_purge_service
 from backend.app.services.bambu_ftp import (
@@ -1230,6 +1232,7 @@ async def forget_printer(printer_id: int) -> None:
         _kill_switch_stopped,
         _printer_offline_published,
         _nozzle_count_updated,
+        _runtime_seen_connected,
     ):
         marked.discard(printer_id)
 
@@ -2094,6 +2097,9 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
         state.firmware_version,
         state.developer_mode,
         tuple(state.print_ams_mapping) if isinstance(state.print_ams_mapping, list) else None,
+        # Cooling/heating, switched on the printer's screen too: on an idle
+        # printer nothing else moves the key (PSF-4).
+        state.airduct_mode,
     )
     status_key = f"{status_key}:{machine_key}"
 
@@ -2940,11 +2946,12 @@ async def on_ams_change(printer_id: int, ams_data: list):
     """Handle AMS data changes - sync to Spoolman if enabled and auto mode."""
     logger = logging.getLogger(__name__)
 
-    # Snapshot BEFORE any await: if a print is active, skip weight sync later.
-    # on_print_complete may pop _active_sessions during our awaits (#880).
-    from backend.app.services.usage_tracker import _active_sessions
+    # Snapshot BEFORE any await: if a print is active, or a finished one is
+    # still being charged, skip weight sync later. on_print_complete may pop
+    # _active_sessions during our awaits (#880).
+    from backend.app.services.usage_tracker import printer_is_charging
 
-    _print_active = printer_id in _active_sessions
+    _print_active = printer_is_charging(printer_id)
 
     # A slot that reports empty while a print is running is a filament runout,
     # not a spool swap: the spool is still physically in the AMS, just
@@ -3275,12 +3282,14 @@ async def on_ams_change(printer_id: int, ams_data: list):
 
             # Load existing Spoolman slot assignments for the no-RFID fallback path
             spoolman_slot_map: dict[tuple[int, int], int] = {}
+            slot_map_read = False
             try:
                 slot_result = await db.execute(
                     select(SpoolmanSlotAssignment).where(SpoolmanSlotAssignment.printer_id == printer_id)
                 )
                 for slot in slot_result.scalars().all():
                     spoolman_slot_map[(slot.ams_id, slot.tray_id)] = slot.spoolman_spool_id
+                slot_map_read = True
             except Exception as e:
                 logger.warning("Could not load Spoolman slot assignments for printer %s: %s", printer_id, e)
 
@@ -3425,57 +3434,27 @@ async def on_ams_change(printer_id: int, ams_data: list):
             if synced > 0:
                 logger.info("Auto-synced %s AMS trays to Spoolman for printer %s", synced, printer_id)
 
-            # Persist slot assignment changes to the local table
+            # Persist slot assignment changes to the local table: only slots
+            # whose spool this pass changed, and only while they still hold what
+            # it read before awaiting Spoolman, so a spool assigned by hand in
+            # between stays (SSA-3). The changed slots are announced: the slot
+            # card reads slot_preset_mappings (rewritten above) ahead of the live
+            # tray, so with no event it kept the previous spool's preset name.
             if slot_changes or empty_slots:
+                from backend.app.services.spoolman_slot_sync import write_slot_results
+
                 try:
-                    for ams_id, tray_id, spool_id in slot_changes:
-                        await db.execute(
-                            text(
-                                "INSERT INTO spoolman_slot_assignments"
-                                " (printer_id, ams_id, tray_id, spoolman_spool_id)"
-                                " VALUES (:printer_id, :ams_id, :tray_id, :spool_id)"
-                                " ON CONFLICT(printer_id, ams_id, tray_id)"
-                                " DO UPDATE SET spoolman_spool_id = excluded.spoolman_spool_id"
-                            ),
-                            {
-                                "printer_id": printer_id,
-                                "ams_id": ams_id,
-                                "tray_id": tray_id,
-                                "spool_id": spool_id,
-                            },
-                        )
-                    for ams_id, tray_id in empty_slots:
-                        await db.execute(
-                            delete(SpoolmanSlotAssignment).where(
-                                SpoolmanSlotAssignment.printer_id == printer_id,
-                                SpoolmanSlotAssignment.ams_id == ams_id,
-                                SpoolmanSlotAssignment.tray_id == tray_id,
-                            )
-                        )
-                    await db.commit()
+                    await write_slot_results(
+                        db,
+                        {(printer_id, a_id, t_id): spool_id for (a_id, t_id), spool_id in spoolman_slot_map.items()}
+                        if slot_map_read
+                        else None,
+                        [(printer_id, a_id, t_id, spool_id) for a_id, t_id, spool_id in slot_changes],
+                        [(printer_id, a_id, t_id) for a_id, t_id in empty_slots],
+                    )
                 except Exception as e:
                     await db.rollback()
                     logger.error("Error persisting Spoolman slot assignments for printer %s: %s", printer_id, e)
-                else:
-                    # Tell open browsers the slot changed. This loop rewrites
-                    # slot_preset_mappings via upsert_slot_preset_for_spoolman_spool
-                    # above, and the AMS slot card reads that row ahead of the
-                    # live tray_info_idx -- so with no event the card keeps
-                    # showing the previous spool's preset name. Internal mode
-                    # raises spool_auto_assigned for the same reason; this loop
-                    # broadcast nothing at all, which made Spoolman mode the
-                    # worse half of the same bug. On the else branch so a
-                    # failed commit stays silent and a broadcast failure cannot
-                    # roll back rows that are already committed.
-                    for ams_id, tray_id, *_ in (*slot_changes, *empty_slots):
-                        await ws_manager.broadcast(
-                            {
-                                "type": "spool_assignment_changed",
-                                "printer_id": printer_id,
-                                "ams_id": ams_id,
-                                "tray_id": tray_id,
-                            }
-                        )
 
     except Exception as e:
         logging.getLogger(__name__).error("Spoolman AMS sync failed for printer %s: %s", printer_id, e)
@@ -4088,6 +4067,27 @@ async def _recover_fallback_archive_locked(
             source_3mf,
             recovered.file_size,
         )
+        # Spoolman's tracking stored no 3MF usage at print start and would
+        # charge the AMS remain% change; the built-in tracker reads the archive
+        # at completion and needs nothing. Also at the print's end (``price``
+        # False): that recovery runs inside the close-out, before the charge.
+        try:
+            from backend.app.services.spoolman_tracking import attach_recovered_3mf
+            from backend.app.services.usage_tracker import is_completing
+
+            await attach_recovered_3mf(
+                printer_id,
+                recovered.id,
+                recovered.file_path,
+                db,
+                printer_manager,
+                plate_id=_get_start_plate_id(recovered.id) or recovered.plate_id,
+                may_start=not price or (recovered.status == "printing" and not is_completing(printer_id)),
+            )
+        except Exception:
+            logger.warning(
+                "[RECOVER] Archive %s: could not add the 3MF to Spoolman's usage tracking", archive_id, exc_info=True
+            )
         if price and recovered.status == "printing":
             # Print start priced it from the default rate, having no 3MF to
             # estimate from; now it has one. An ended print is left alone: its
@@ -4682,6 +4682,11 @@ async def _promote_expected_archive(
     expected_keys = _expected_print_keys(printer_id, filename, subtask_name)
 
     expected_archive_id = None
+    # Who queued it, taken with the entries it was registered beside: left
+    # behind once those are gone (the archive deleted mid-dispatch, or the
+    # start notification already sent), the expiry never saw it, and an
+    # unrelated later print of that name was attributed to that user (EP-2).
+    fallback_creator = None
     for key in expected_keys:
         expected_archive_id = _expected_prints.pop(key, None)
         _expected_print_registered_at.pop(key, None)
@@ -4690,6 +4695,9 @@ async def _promote_expected_archive(
             for other_key in expected_keys:
                 _expected_prints.pop(other_key, None)
                 _expected_print_registered_at.pop(other_key, None)
+                creator = _expected_print_creators.pop(other_key, None)
+                if fallback_creator is None:
+                    fallback_creator = creator
             break
 
     if expected_archive_id:
@@ -4937,13 +4945,7 @@ async def _promote_expected_archive(
             if not notification_sent:
                 # Use archive's created_by_id; fall back to the creator registered via
                 # register_expected_print (handles library-file-based queue items where
-                # the freshly-created archive has no created_by_id yet).
-                # Pop ALL matching keys so no stale entries remain in the dict.
-                fallback_creator = None
-                for key in expected_keys:
-                    popped = _expected_print_creators.pop(key, None)
-                    if fallback_creator is None:
-                        fallback_creator = popped
+                # the freshly-created archive has no created_by_id yet), taken above.
                 archive_data = {
                     "print_time_seconds": archive.print_time_seconds,
                     "created_by_id": archive.created_by_id or fallback_creator,
@@ -6198,21 +6200,13 @@ async def _run_plate_check(db, printer, printer_id: int, logger) -> None:
                 printer.plate_detection_roi_h,
             )
 
-        # Auto-turn on chamber light if it's off for better detection
-        light_was_off = False
-        client = printer_manager.get_client(printer_id)
-        if client and client.state:
-            light_was_off = not client.state.chamber_light
-            if light_was_off:
-                logger.info("[PLATE CHECK] Turning on chamber light for printer %s", printer_id)
-                client.set_chamber_light(True)
-                # Wait for light to physically turn on and camera to adjust exposure
-                await asyncio.sleep(2.5)
-
+        # The light is held, not switched, so a live view opened
+        # meanwhile keeps it when the check lets go (SP-C11). Every
+        # printer, whatever the camera light mode: detection needs it.
         plate_photo_data = None
         objects_detected = False
         check_failure: str | None = None
-        try:
+        async with camera_light(printer, any_mode=True, settle=2.5):
             logger.info("[PLATE CHECK] Running plate detection for printer %s", printer_id)
             plate_result = await check_plate_empty(
                 printer_id=printer_id,
@@ -6250,19 +6244,6 @@ async def _run_plate_check(db, printer, printer_id: int, logger) -> None:
                     plate_photo_data = await _capture_snapshot_for_notification(printer_id, printer, logger)
                 except Exception as snap_err:
                     logger.warning("[PLATE CHECK] Failed to capture snapshot for printer %s: %s", printer_id, snap_err)
-        finally:
-            # Restore chamber light to original state as soon as the
-            # camera is done with it, whatever happened above.
-            if light_was_off and client:
-                logger.info("[PLATE CHECK] Restoring chamber light to off for printer %s", printer_id)
-                try:
-                    client.set_chamber_light(False)
-                except Exception as light_err:
-                    logger.warning(
-                        "[PLATE CHECK] Failed to restore chamber light for printer %s: %s",
-                        printer_id,
-                        light_err,
-                    )
 
         if objects_detected:
             # Send notification about plate not empty
@@ -7324,6 +7305,7 @@ async def _restore_usage_tracking_session(printer_id: int, state, db, logger) ->
         from backend.app.api.routes.settings import get_setting
         from backend.app.services.usage_tracker import (
             clear_persisted_session,
+            get_persisted_ams_mapping,
             get_persisted_print_name,
             restore_session,
         )
@@ -7351,6 +7333,11 @@ async def _restore_usage_tracking_session(printer_id: int, state, db, logger) ->
                 printer_id,
                 register_active=not (bool(_spoolman_on) and _spoolman_on.lower() == "true"),
             )
+            # The slot pills (#1762) read the mapping captured from the print
+            # command, which dies with the process as well. One this process
+            # has captured since is newer.
+            if state.print_ams_mapping is None:
+                state.print_ams_mapping = await get_persisted_ams_mapping(db, printer_id)
         if persisted_log:
             restored = [tuple(entry) for entry in persisted_log if isinstance(entry, (list, tuple)) and len(entry) == 2]
             # Anything this process already observed goes after the persisted
@@ -8568,7 +8555,22 @@ async def _cleanup_sd_card_after_print(
 
 
 async def on_print_complete(printer_id: int, data: dict):
-    """Handle print completion - update the archive status."""
+    """Handle print completion - update the archive status.
+
+    The printer counts as printing until the print's usage is booked (or this
+    ends), so the AMS remain% weight sync can't charge it a second time while
+    the usage tracker works (WU-3). Marked before the first await.
+    """
+    from backend.app.services.usage_tracker import done_completing, mark_completing
+
+    mark_completing(printer_id)
+    try:
+        await _close_out_print(printer_id, data)
+    finally:
+        done_completing(printer_id)
+
+
+async def _close_out_print(printer_id: int, data: dict):
     import time
 
     logger = logging.getLogger(__name__)
@@ -8677,7 +8679,19 @@ async def on_print_complete(printer_id: int, data: dict):
     subtask_name = data.get("subtask_name", "")
 
     if not filename and not subtask_name:
+        # Which print ended can't be told: the printer reported no name since
+        # Fenrir started (a print that failed while preparing, a calibration).
+        # Charge nothing, but close the print session, which otherwise kept the
+        # AMS weight sync off until the next print (AS-5). A print archived as
+        # running is closed and charged by the reconnect reconcile.
         logger.warning("Print complete without filename or subtask_name")
+        try:
+            from backend.app.services.usage_tracker import discard_session
+
+            async with async_session() as db:
+                await discard_session(db, printer_id)
+        except Exception as e:
+            logger.warning("Failed to clear print session for printer %s: %s", printer_id, e)
         return
 
     logger.info("Print complete - filename: %s, subtask: %s, status: %s", filename, subtask_name, data.get("status"))
@@ -8988,6 +9002,10 @@ async def on_print_complete(printer_id: int, data: dict):
     if archive_id:
         notify_plate_id = _print_plate_ids.pop(archive_id, None)
 
+    # The start estimate must not outlive the real cost written below (COST-4).
+    if archive_id:
+        await _settle_archive_cost_estimate(archive_id)
+
     # Internal inventory: track AMS remain% deltas (skip if Spoolman handles usage)
     try:
         async with async_session() as db:
@@ -9101,7 +9119,15 @@ async def on_print_complete(printer_id: int, data: dict):
                             # How long it really ran, as the archive path reports it (#1198).
                             started = to_naive_utc(queue_item.started_at)
                             ended = to_naive_utc(queue_item.completed_at)
-                            if started and ended and (ended - started).total_seconds() > 0:
+                            # Not for a completion reconciled at reconnect: it
+                            # ended at an unknown time while the printer was
+                            # offline, and "now" is the reconnect (DB-C9).
+                            if (
+                                not data.get("_reconciled")
+                                and started
+                                and ended
+                                and (ended - started).total_seconds() > 0
+                            ):
                                 no_archive_data["actual_time_seconds"] = int((ended - started).total_seconds())
                             # Estimated time: the queue item caches it from its
                             # archive or library file; otherwise read the library
@@ -9831,7 +9857,11 @@ async def on_print_complete(printer_id: int, data: dict):
                         # Falls back to None so the notification path can decide whether to
                         # render the slicer estimate as a last resort.
                         actual_time_seconds = None
-                        if archive.started_at and archive.completed_at:
+                        # Unknown for a completion reconciled at reconnect: the
+                        # print ended while the printer was offline and
+                        # completed_at is the reconnect, so the gap would read
+                        # as the duration -- 14 h for a night offline (DB-C9).
+                        if archive.started_at and archive.completed_at and not data.get("_reconciled"):
                             elapsed = (archive.completed_at - archive.started_at).total_seconds()
                             if elapsed > 0:
                                 actual_time_seconds = int(elapsed)
@@ -10689,6 +10719,16 @@ def stop_printer_sensor_history_recording():
 _runtime_tracking_task: asyncio.Task | None = None
 RUNTIME_TRACKING_INTERVAL = 30  # Update every 30 seconds
 
+# Printers the runtime tracker has seen connected since startup. One of them
+# going offline clears its timestamp, so the time it was away is not counted
+# when it comes back printing (DB-C5). A printer not yet seen -- still
+# connecting after a restart -- keeps it for a grace period: a print that ran
+# on through a Fenrir restart is counted from the stored timestamp, as before.
+_runtime_seen_connected: set[int] = set()
+# A printer never seen connected this long after the tracker started is
+# offline, not still connecting: its stored timestamp predates a gap too.
+RUNTIME_STARTUP_GRACE_SECONDS = 120
+
 
 async def track_printer_runtime():
     """Background task to track printer active runtime (RUNNING state only).
@@ -10702,6 +10742,7 @@ async def track_printer_runtime():
 
     # Wait for MQTT connections to establish on startup
     await asyncio.sleep(15)
+    started = time.monotonic()
 
     while True:
         try:
@@ -10729,7 +10770,23 @@ async def track_printer_runtime():
                     continue
                 if not state.connected:
                     logger.debug("[%s] Runtime tracking: not connected", pname)
+                    offline = pid in _runtime_seen_connected or (
+                        time.monotonic() - started > RUNTIME_STARTUP_GRACE_SECONDS
+                    )
+                    if offline and last_update is not None:
+                        try:
+                            async with async_session() as db:
+                                printer = await db.get(Printer, pid)
+                                if printer:
+                                    printer.last_runtime_update = None
+                                    await db.commit()
+                        except Exception as e:
+                            # Still marked: the next offline tick tries again.
+                            logger.warning("[%s] Runtime tracking commit failed: %s", pname, e)
+                            continue
+                    _runtime_seen_connected.discard(pid)
                     continue
+                _runtime_seen_connected.add(pid)
 
                 needs_commit = False
                 new_runtime = runtime_secs
@@ -11502,10 +11559,6 @@ async def lifespan(app: FastAPI):
                     # but the K-profile (cali_idx) did not — the reporter's exact
                     # "loaded but no flow profile" symptom.
                     "kprofile_applied": detail.get("kprofile_applied", True),
-                    # Present on failure: whether any tray telemetry was seen in
-                    # the window (distinguishes "printer silent" from "printer
-                    # stored something else").
-                    "saw_tray": detail.get("saw_tray", False),
                 }
             )
         except Exception as e:
@@ -11791,6 +11844,10 @@ async def lifespan(app: FastAPI):
     from backend.app.services.printer_media import stop_printer_download_cleanup
 
     await stop_printer_download_cleanup()
+    # Stops a timelapse editor's ffmpeg rather than leaving it to the OS.
+    from backend.app.services import timelapse_jobs
+
+    await timelapse_jobs.cancel_all()
     printer_manager.disconnect_all()
     slot_unlink_grace.reset()
     await close_spoolman_client()
@@ -12545,6 +12602,7 @@ app.include_router(websocket.router, prefix=app_settings.api_prefix)
 app.include_router(discovery.router, prefix=app_settings.api_prefix)
 app.include_router(pending_uploads.router, prefix=app_settings.api_prefix)
 app.include_router(firmware.router, prefix=app_settings.api_prefix)
+app.include_router(bulk.router, prefix=app_settings.api_prefix)
 app.include_router(github_backup.router, prefix=app_settings.api_prefix)
 app.include_router(local_backup.router, prefix=app_settings.api_prefix)
 app.include_router(obico.router, prefix=app_settings.api_prefix)
