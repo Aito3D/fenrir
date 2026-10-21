@@ -1,0 +1,1 @@
+var e=`/assets/aito3d_logo-D1hFNf2S.png`;export{e as t};
