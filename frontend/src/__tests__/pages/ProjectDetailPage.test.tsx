@@ -391,6 +391,54 @@ describe('ProjectDetailPage', () => {
       expect(screen.getByText('100g')).toBeInTheDocument();
     });
 
+    it('totals the roll-up cost and shows its progress bar', async () => {
+      server.use(http.get('/api/v1/projects/:id', () => HttpResponse.json(withChildren)));
+
+      render(<ProjectDetailPage />);
+
+      const rollup = await screen.findByTestId('project-rollup');
+      expect(within(rollup).getByText(/Estimated Cost/)).toBeInTheDocument();
+      expect(within(rollup).getByText('$17.50')).toBeInTheDocument();
+      expect(within(rollup).getByText(/Overall progress/)).toBeInTheDocument();
+      expect(within(rollup).getByText(/40% complete/)).toBeInTheDocument();
+      expect(rollup.querySelector('[style*="width: 40%"]')).not.toBeNull();
+    });
+
+    it('hides the roll-up total cost when the roll-up cost is zero', async () => {
+      server.use(
+        http.get('/api/v1/projects/:id', () =>
+          HttpResponse.json({
+            ...withChildren,
+            rollup_stats: { ...withChildren.rollup_stats, estimated_cost: 0, total_energy_cost: 0 },
+          })
+        )
+      );
+
+      render(<ProjectDetailPage />);
+
+      const rollup = await screen.findByTestId('project-rollup');
+      expect(within(rollup).getByText('350g')).toBeInTheDocument();
+      expect(within(rollup).queryByText(/Estimated Cost/)).not.toBeInTheDocument();
+    });
+
+    it('omits the roll-up progress bar when the roll-up has no progress figure', async () => {
+      server.use(
+        http.get('/api/v1/projects/:id', () =>
+          HttpResponse.json({
+            ...withChildren,
+            rollup_stats: { ...withChildren.rollup_stats, progress_percent: null },
+          })
+        )
+      );
+
+      render(<ProjectDetailPage />);
+
+      const rollup = await screen.findByTestId('project-rollup');
+      expect(within(rollup).getByText('$17.50')).toBeInTheDocument();
+      expect(within(rollup).queryByText(/Overall progress/)).not.toBeInTheDocument();
+      expect(rollup.querySelector('[style*="width"]')).toBeNull();
+    });
+
     it('stays quiet when the project has no sub-projects', async () => {
       // Reversion-proof: if the roll-up were computed unconditionally it would
       // print a second, identical set of figures under every ordinary project.

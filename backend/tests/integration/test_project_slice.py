@@ -408,6 +408,71 @@ async def test_resume_interrupted_slices(async_client: AsyncClient, db_session, 
     assert len(await _derived_rows(db_session)) == 1
 
 
+async def _strand_slicing(db, revision_id: int, job_id: int = 9999) -> None:
+    await db.execute(
+        update(ProjectRevision)
+        .where(ProjectRevision.id == revision_id)
+        .values(slice_status="slicing", slice_job_id=job_id)
+    )
+    await db.commit()
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_resume_fails_a_stranded_revision_whose_source_is_gone(async_client: AsyncClient, db_session, sidecar):
+    sidecar.mode = "down"
+    _project, _item, rev = await _upload(async_client)
+    await _wait_job(rev["slice_job_id"])
+    await _strand_slicing(db_session, rev["id"])
+    source = (await db_session.execute(select(LibraryFile).where(LibraryFile.revision_id == rev["id"]))).scalar_one()
+    source_path = to_absolute_path(source.file_path)
+    assert source_path is not None
+    source_path.unlink()
+    sidecar.slice_requests.clear()
+
+    assert await project_slice.resume_interrupted_slices() == 0
+
+    db_session.expire_all()
+    revision = await db_session.get(ProjectRevision, rev["id"])
+    assert revision.slice_status == "failed"
+    assert revision.slice_error == "The revision's source .3mf is missing"
+    assert sidecar.slice_requests == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_resume_goes_on_after_one_revision_fails_to_restart(
+    async_client: AsyncClient, db_session, sidecar, monkeypatch
+):
+    sidecar.mode = "down"
+    _p1, _i1, first = await _upload(async_client)
+    await _wait_job(first["slice_job_id"])
+    _p2, _i2, second = await _upload(async_client)
+    await _wait_job(second["slice_job_id"])
+    await _strand_slicing(db_session, first["id"])
+    await _strand_slicing(db_session, second["id"], job_id=9998)
+
+    real_start = project_slice._start
+
+    async def flaky_start(db, revision_id, *, user_id, resume):
+        if revision_id == first["id"]:
+            raise RuntimeError("boom")
+        return await real_start(db, revision_id, user_id=user_id, resume=resume)
+
+    monkeypatch.setattr(project_slice, "_start", flaky_start)
+    sidecar.mode = "ok"
+
+    assert await project_slice.resume_interrupted_slices() == 1
+
+    db_session.expire_all()
+    resumed = await db_session.get(ProjectRevision, second["id"])
+    assert resumed.slice_job_id not in (None, 9998)
+    await _wait_job(resumed.slice_job_id)
+    untouched = await db_session.get(ProjectRevision, first["id"])
+    assert untouched.slice_status == "slicing"
+    assert untouched.slice_job_id == 9999
+
+
 @pytest.mark.asyncio
 @pytest.mark.integration
 @pytest.mark.parametrize("dead_job", ["unknown", "finished"])

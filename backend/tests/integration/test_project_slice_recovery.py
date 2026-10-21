@@ -269,6 +269,77 @@ async def test_pending_item_on_a_non_source_3mf_fails_at_dispatch(
     assert sidecar.slice_requests == []
 
 
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_hold_lets_a_sliced_3mf_under_a_revision_print_as_is(async_client: AsyncClient, db_session, sidecar):
+    """Legacy G-code stored under a plain ``.3mf`` name in a revision is not a project by content:
+    the guard returns False, the item stays as queued and no slice is started."""
+    from backend.app.api.routes.library import to_absolute_path
+    from backend.tests.integration.test_project_slice import _sliced_3mf
+
+    rev = await _upload(async_client)
+    source = await db_session.get(LibraryFile, rev["files"][0]["id"])
+    legacy_rel = str(Path(source.file_path).with_name("legacy.3mf"))
+    to_absolute_path(legacy_rel).write_bytes(_sliced_3mf())
+    legacy = LibraryFile(
+        filename="legacy.3mf", file_path=legacy_rel, file_size=1, file_type="3mf", revision_id=rev["id"]
+    )
+    db_session.add(legacy)
+    await db_session.commit()
+    legacy_id = legacy.id
+    item_id = await _pending_on(db_session, legacy_id)
+
+    item = await _item(db_session, item_id)
+    held = await project_slice.hold_unsliced_dispatch(db_session, item, await db_session.get(LibraryFile, legacy_id))
+
+    assert held is False
+    after = await _item(db_session, item_id)
+    assert (after.status, after.library_file_id, after.error_message) == ("pending", legacy_id, None)
+    assert (await _revision(db_session, rev["id"])).slice_status is None
+    assert sidecar.slice_requests == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_hold_fails_an_item_whose_revision_has_no_slicable_source(async_client: AsyncClient, db_session, sidecar):
+    """The file reads as a project but the revision names no source ``.3mf`` (here the row's name no
+    longer ends in ``.3mf``): ``sliced_file_of`` refuses and the item is ``slice_failed``, not sliced."""
+    rev = await _upload(async_client)
+    source_id = rev["files"][0]["id"]
+    await db_session.execute(update(LibraryFile).where(LibraryFile.id == source_id).values(filename="support.bin"))
+    await db_session.commit()
+    item_id = await _pending_on(db_session, source_id)
+
+    item = await _item(db_session, item_id)
+    held = await project_slice.hold_unsliced_dispatch(db_session, item, await db_session.get(LibraryFile, source_id))
+
+    assert held is True
+    after = await _item(db_session, item_id)
+    assert (after.status, after.error_message) == ("slice_failed", project_slice.NO_PROJECT_TO_SLICE)
+    assert sidecar.slice_requests == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_hold_starts_no_slice_for_an_item_cancelled_meanwhile(async_client: AsyncClient, db_session, sidecar):
+    """A cancel that wins the race against the guard keeps its status: the item is not moved to
+    ``slicing`` and no slice is started on its behalf. The dispatch is still held."""
+    rev = await _upload(async_client)
+    source_id = rev["files"][0]["id"]
+    item_id = await _pending_on(db_session, source_id)
+    item = await _item(db_session, item_id)
+    source = await db_session.get(LibraryFile, source_id)
+    await db_session.execute(update(PrintQueueItem).where(PrintQueueItem.id == item_id).values(status="cancelled"))
+    await db_session.commit()
+
+    held = await project_slice.hold_unsliced_dispatch(db_session, item, source)
+
+    assert held is True
+    assert (await _item(db_session, item_id)).status == "cancelled"
+    assert (await _revision(db_session, rev["id"])).slice_status is None
+    assert sidecar.slice_requests == []
+
+
 # --- _mark_failed ------------------------------------------------------------------------------
 
 
