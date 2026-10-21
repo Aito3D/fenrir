@@ -1382,3 +1382,61 @@ async def test_list_customer_invoices_pages_and_maps_history_fields(async_client
             "last_modified_time": "",
         },
     ]
+
+
+@pytest.mark.asyncio
+async def test_list_customer_estimates_refuses_empty_or_overlong_ids_before_any_call(db_session):
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(str(request.url))
+        return httpx.Response(200, json={"estimates": []})
+
+    zoho_service.transport = _transport(handler)
+    assert await zoho_service.list_customer_estimates(db_session, "") == []
+    assert await zoho_service.list_customer_estimates(db_session, "1" * 51) == []
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_list_customer_estimates_pages_newest_first_and_maps_rows(async_client, db_session):
+    await _configure(async_client)
+    pages = {
+        "1": {
+            "estimates": [
+                {
+                    "estimate_id": "e1",
+                    "estimate_number": "DEV-26-0001",
+                    "customer_name": "Coria",
+                    "date": "2026-08-01",
+                    "total": 12000,
+                    "currency_code": "XPF",
+                    "status": "declined",
+                }
+            ],
+            "page_context": {"has_more_page": True},
+        },
+        "2": {
+            "estimates": [{"estimate_id": "e2", "estimate_number": "DEV-26-0002", "status": "invoiced"}],
+            "page_context": {"has_more_page": False},
+        },
+    }
+    seen: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "oauth" in request.url.path:
+            return httpx.Response(200, json={"access_token": "t", "expires_in": 3600})
+        assert request.url.path.endswith("/estimates")
+        params = dict(request.url.params)
+        seen.append(params)
+        return httpx.Response(200, json=pages[params["page"]])
+
+    zoho_service.transport = _transport(handler)
+    rows = await zoho_service.list_customer_estimates(db_session, "C1")
+
+    assert [p["customer_id"] for p in seen] == ["C1", "C1"]
+    assert [(p["per_page"], p["sort_column"], p["sort_order"]) for p in seen] == [("200", "date", "D")] * 2
+    assert [(r["number"], r["status"], r["date"]) for r in rows] == [
+        ("DEV-26-0001", "declined", "2026-08-01"),
+        ("DEV-26-0002", "invoiced", ""),
+    ]

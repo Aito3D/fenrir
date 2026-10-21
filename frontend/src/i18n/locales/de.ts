@@ -587,6 +587,13 @@ export default {
       stale: 'Books nicht erreichbar — letzte bekannte Bewertung',
       companyTerms: 'als Unternehmen bewertet',
     },
+    quoteRating: {
+      ariaLabel: 'Angebotsbewertung: {{tier}}. {{reason}}',
+      accepted: '{{accepted}} von {{decided}} Angeboten angenommen',
+      unanswered: '{{n}} nie beantwortet',
+      pending: '{{n}} warten auf Antwort',
+      newTip: 'Noch kein Angebot beantwortet',
+    },
     tasksReused_one: '{{count}} Aufgabe hinzugefügt',
     tasksReused_other: '{{count}} Aufgaben hinzugefügt',
     taskTitlePlaceholder: 'Titel (optional)',

@@ -590,6 +590,13 @@ export default {
       stale: 'Books unreachable — last known rating',
       companyTerms: 'rated as a company',
     },
+    quoteRating: {
+      ariaLabel: 'Quote rating: {{tier}}. {{reason}}',
+      accepted: '{{accepted}} of {{decided}} quotes accepted',
+      unanswered: '{{n}} never answered',
+      pending: '{{n}} awaiting an answer',
+      newTip: 'No quote answered yet',
+    },
     tasksReused_one: '{{count}} task added',
     tasksReused_other: '{{count}} tasks added',
     taskTitlePlaceholder: 'Optional title',

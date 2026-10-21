@@ -587,6 +587,13 @@ export default {
       stale: 'Books に接続できません — 最後に確認した評価',
       companyTerms: '法人として評価',
     },
+    quoteRating: {
+      ariaLabel: '見積評価：{{tier}}。{{reason}}',
+      accepted: '見積 {{decided}} 件中 {{accepted}} 件承認',
+      unanswered: '{{n}} 件未回答',
+      pending: '{{n}} 件回答待ち',
+      newTip: '回答済みの見積はまだありません',
+    },
     tasksReused_one: '{{count}} 件のタスクを追加しました',
     tasksReused_other: '{{count}} 件のタスクを追加しました',
     taskTitlePlaceholder: 'タイトル（任意）',

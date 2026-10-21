@@ -587,6 +587,13 @@ export default {
       stale: 'Books injoignable — dernière note connue',
       companyTerms: 'noté comme entreprise',
     },
+    quoteRating: {
+      ariaLabel: 'Note devis : {{tier}}. {{reason}}',
+      accepted: '{{accepted}} devis acceptés sur {{decided}}',
+      unanswered: '{{n}} sans réponse',
+      pending: '{{n}} en attente de réponse',
+      newTip: 'Aucune réponse à un devis pour l’instant',
+    },
     tasksReused_one: '{{count}} tâche ajoutée',
     tasksReused_other: '{{count}} tâches ajoutées',
     taskTitlePlaceholder: 'Titre (facultatif)',

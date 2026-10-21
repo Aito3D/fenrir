@@ -587,6 +587,13 @@ export default {
       stale: 'Books non raggiungibile — ultima valutazione nota',
       companyTerms: 'valutato come azienda',
     },
+    quoteRating: {
+      ariaLabel: 'Valutazione preventivi: {{tier}}. {{reason}}',
+      accepted: '{{accepted}} preventivi accettati su {{decided}}',
+      unanswered: '{{n}} senza risposta',
+      pending: '{{n}} in attesa di risposta',
+      newTip: 'Nessun preventivo ha ancora ricevuto risposta',
+    },
     tasksReused_one: '{{count}} attività aggiunta',
     tasksReused_other: '{{count}} attività aggiunte',
     taskTitlePlaceholder: 'Titolo (opzionale)',

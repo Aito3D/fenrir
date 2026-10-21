@@ -587,6 +587,13 @@ export default {
       stale: 'Books erişilemiyor — bilinen son puan',
       companyTerms: 'şirket olarak puanlandı',
     },
+    quoteRating: {
+      ariaLabel: 'Teklif puanı: {{tier}}. {{reason}}',
+      accepted: '{{decided}} tekliften {{accepted}} tanesi kabul edildi',
+      unanswered: '{{n}} yanıtsız',
+      pending: '{{n}} yanıt bekliyor',
+      newTip: 'Henüz yanıtlanan teklif yok',
+    },
     tasksReused_one: '{{count}} görev eklendi',
     tasksReused_other: '{{count}} görev eklendi',
     taskTitlePlaceholder: 'Başlık (isteğe bağlı)',

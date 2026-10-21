@@ -9261,6 +9261,13 @@ errors: {
       stale: 'Books ej nåbart — senast kända betyg',
       companyTerms: 'betygsatt som företag',
     },
+    quoteRating: {
+      ariaLabel: 'Offertbetyg: {{tier}}. {{reason}}',
+      accepted: '{{accepted}} av {{decided}} offerter accepterade',
+      unanswered: '{{n}} aldrig besvarade',
+      pending: '{{n}} väntar på svar',
+      newTip: 'Ingen offert besvarad ännu',
+    },
     tasksReused_one: '{{count}} uppgift tillagd',
     tasksReused_other: '{{count}} uppgifter tillagda',
     taskTitlePlaceholder: 'Valfri titel',

@@ -587,6 +587,13 @@ export default {
       stale: 'Books no disponible — última valoración conocida',
       companyTerms: 'valorado como empresa',
     },
+    quoteRating: {
+      ariaLabel: 'Valoración de presupuestos: {{tier}}. {{reason}}',
+      accepted: '{{accepted}} de {{decided}} presupuestos aceptados',
+      unanswered: '{{n}} sin respuesta',
+      pending: '{{n}} pendientes de respuesta',
+      newTip: 'Ningún presupuesto respondido aún',
+    },
     tasksReused_one: '{{count}} tarea añadida',
     tasksReused_other: '{{count}} tareas añadidas',
     taskTitlePlaceholder: 'Título (opcional)',

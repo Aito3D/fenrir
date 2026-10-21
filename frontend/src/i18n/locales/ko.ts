@@ -587,6 +587,13 @@ export default {
       stale: 'Books에 연결할 수 없음 — 마지막으로 확인된 평가',
       companyTerms: '기업으로 평가됨',
     },
+    quoteRating: {
+      ariaLabel: '견적 평가: {{tier}}. {{reason}}',
+      accepted: '견적 {{decided}}건 중 {{accepted}}건 수락',
+      unanswered: '{{n}}건 무응답',
+      pending: '{{n}}건 답변 대기 중',
+      newTip: '아직 답변된 견적이 없습니다',
+    },
     tasksReused_one: '작업 {{count}}개 추가됨',
     tasksReused_other: '작업 {{count}}개 추가됨',
     taskTitlePlaceholder: '제목 (선택사항)',

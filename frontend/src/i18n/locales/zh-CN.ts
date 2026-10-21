@@ -587,6 +587,13 @@ export default {
       stale: 'Books 无法访问 — 最近一次已知评级',
       companyTerms: '按企业评级',
     },
+    quoteRating: {
+      ariaLabel: '报价评级：{{tier}}。{{reason}}',
+      accepted: '{{decided}} 份报价中接受了 {{accepted}} 份',
+      unanswered: '{{n}} 份未回复',
+      pending: '{{n}} 份等待回复',
+      newTip: '尚无已答复的报价',
+    },
     tasksReused_one: '已添加 {{count}} 个任务',
     tasksReused_other: '已添加 {{count}} 个任务',
     taskTitlePlaceholder: '标题（可选）',

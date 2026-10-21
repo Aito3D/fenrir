@@ -587,6 +587,13 @@ export default {
       stale: 'Books недоступен — последний известный рейтинг',
       companyTerms: 'оценка как компании',
     },
+    quoteRating: {
+      ariaLabel: 'Рейтинг смет: {{tier}}. {{reason}}',
+      accepted: 'Принято смет: {{accepted}} из {{decided}}',
+      unanswered: 'Без ответа: {{n}}',
+      pending: 'Ожидают ответа: {{n}}',
+      newTip: 'Пока нет ответов на сметы',
+    },
     tasksReused_one: '{{count}} задача добавлена',
     tasksReused_other: '{{count}} задач добавлено',
     taskTitlePlaceholder: 'Заголовок (необязательно)',

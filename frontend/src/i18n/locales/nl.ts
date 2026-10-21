@@ -9261,6 +9261,13 @@ export default {
       stale: 'Books onbereikbaar — laatst bekende beoordeling',
       companyTerms: 'beoordeeld als bedrijf',
     },
+    quoteRating: {
+      ariaLabel: 'Offertebeoordeling: {{tier}}. {{reason}}',
+      accepted: '{{accepted}} van {{decided}} offertes geaccepteerd',
+      unanswered: '{{n}} nooit beantwoord',
+      pending: '{{n}} wachten op antwoord',
+      newTip: 'Nog geen offerte beantwoord',
+    },
     tasksReused_one: '{{count}} taak toegevoegd',
     tasksReused_other: '{{count}} taken toegevoegd',
     taskTitlePlaceholder: 'Titel (optioneel)',

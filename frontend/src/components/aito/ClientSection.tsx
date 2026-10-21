@@ -8,8 +8,8 @@ import type { AitoTask, ZohoContact } from '../../api/client';
 import { ClientCombobox } from './ClientCombobox';
 import { ClientHistory } from './ClientHistory';
 import { ContactPersonPicker } from './ContactPersonPicker';
-import { useClientRating } from './useClientRating';
-import { ClientRatingPill } from './ClientRatingPill';
+import { useClientQuoteRating, useClientRating } from './useClientRating';
+import { ClientQuoteRatingPill, ClientRatingPill } from './ClientRatingPill';
 import { PhoneInput } from './PhoneInput';
 import { SocialInput } from './SocialInput';
 import { FieldError } from './FieldError';
@@ -79,6 +79,7 @@ export function ClientSection({
   // Empty id for the walk-in default: the hook disables itself, and the
   // backend would answer `new` for it anyway.
   const rating = useClientRating(value.isDefault ? '' : value.id);
+  const quoteRating = useClientQuoteRating(value.isDefault ? '' : value.id);
 
   // Contact-person bookkeeping, keyed by client id so a client switch resets
   // it: whether Books listed anybody (hides the plain inputs behind the
@@ -246,7 +247,12 @@ export function ClientSection({
         onCreateNew={onCreateNew}
         onReset={() => onChange(defaultClientDraft(defaultContactId, defaultContactName))}
         showReset={value.id !== defaultContactId}
-        trailing={<ClientRatingPill rating={rating.data} />}
+        trailing={
+          <>
+            <ClientRatingPill rating={rating.data} />
+            <ClientQuoteRatingPill rating={quoteRating.data} />
+          </>
+        }
       />
 
       <ClientHistory clientId={value.id} isDefault={value.isDefault} onReuse={onReuseTasks} />

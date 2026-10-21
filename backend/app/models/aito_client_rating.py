@@ -9,7 +9,7 @@ never deleted, so a customer gone from Books keeps a harmless stale row.
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Integer, String
+from sqlalchemy import Boolean, DateTime, Float, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.app.core.database import Base
@@ -29,5 +29,25 @@ class AitoClientRating(Base):
     worst_overdue_number: Mapped[str | None] = mapped_column(String(50), nullable=True)
     # Scored under the company profile (Books `customer_sub_type` = business).
     is_company: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
+    # Naive UTC, like every other Aito timestamp.
+    computed_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
+class AitoClientQuoteRating(Base):
+    """One row per Zoho customer: how readily they accept a quote, as last
+    computed by services/aito_quote_rating.read_client_quote_rating. Same
+    cache contract as ``AitoClientRating`` above, its own row so a Books
+    failure on one read never blanks the other."""
+
+    __tablename__ = "aito_client_quote_ratings"
+
+    customer_id: Mapped[str] = mapped_column(String(50), primary_key=True)
+    tier: Mapped[str] = mapped_column(String(10), nullable=False)  # good|medium|bad|new
+    accepted_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    declined_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    expired_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    pending_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # The smoothed acceptance rate, 0..1; None while nothing is decided.
+    score: Mapped[float | None] = mapped_column(Float, nullable=True)
     # Naive UTC, like every other Aito timestamp.
     computed_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)

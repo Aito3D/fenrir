@@ -588,6 +588,13 @@ export default {
       stale: "Books недоступний — останній відомий рейтинг",
       companyTerms: "оцінено як компанію",
     },
+    quoteRating: {
+      ariaLabel: 'Рейтинг кошторисів: {{tier}}. {{reason}}',
+      accepted: 'Прийнято кошторисів: {{accepted}} з {{decided}}',
+      unanswered: 'Без відповіді: {{n}}',
+      pending: 'Очікують відповіді: {{n}}',
+      newTip: 'Поки немає відповідей на кошториси',
+    },
     tasksReused_one: "{{count}} завдання додано",
     tasksReused_other: "{{count}} завдань додано",
     taskTitlePlaceholder: "Необов’язкова назва",

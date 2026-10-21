@@ -1,6 +1,7 @@
 import type { CSSProperties, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { AitoClientRating, AitoClientRatingTier } from '../../api/client';
+import { FileText } from 'lucide-react';
+import type { AitoClientQuoteRating, AitoClientRating, AitoClientRatingTier } from '../../api/client';
 import { Tooltip } from '../Tooltip';
 import { formatRelativeTime } from '../../utils/date';
 
@@ -106,11 +107,118 @@ export function ClientRatingPill({
   side?: 'top' | 'bottom';
   className?: string;
 }) {
-  const { label, ago, tip, ariaLabel } = useRatingText(rating);
+  const text = useRatingText(rating);
   if (!rating || rating.tier === 'unavailable') return null;
+  return (
+    <RatingPill
+      tier={rating.tier}
+      stale={rating.stale}
+      text={text}
+      align={align}
+      side={side}
+      className={className}
+      testId="client-rating-unfold"
+      mark={
+        <span
+          aria-hidden="true"
+          className="h-[7px] w-[7px] rounded-full"
+          style={{ backgroundColor: 'var(--c)', boxShadow: '0 0 0 2px color-mix(in srgb, var(--c) 30%, transparent)' }}
+        />
+      }
+    />
+  );
+}
 
+/** Everything the quote pill says, in the viewer's language — the quote
+ *  rating's counterpart of `useRatingText`. "Decided" is accepted plus every
+ *  "no" (declined or left to expire), which is what the score is out of. */
+function useQuoteRatingText(rating: AitoClientQuoteRating | undefined) {
+  const { t } = useTranslation();
+  const safe = rating ?? EMPTY_QUOTE;
+  const decided = safe.accepted_count + safe.declined_count + safe.expired_count;
+  const label = safe.tier === 'unavailable' ? '' : t(`aito.rating.${safe.tier}`);
+  const reason =
+    decided === 0
+      ? t('aito.quoteRating.newTip')
+      : t('aito.quoteRating.accepted', { accepted: safe.accepted_count, decided });
+  const ago = formatRelativeTime(safe.computed_at, 'system', t);
+  const tip = [
+    safe.stale ? t('aito.rating.stale') : null,
+    `${label} — ${reason}`,
+    safe.expired_count > 0 ? t('aito.quoteRating.unanswered', { n: safe.expired_count }) : null,
+    safe.pending_count > 0 ? t('aito.quoteRating.pending', { n: safe.pending_count }) : null,
+    safe.computed_at ? t('aito.rating.checked', { ago }) : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  return { label, ago, tip, ariaLabel: t('aito.quoteRating.ariaLabel', { tier: label, reason }) };
+}
+
+const EMPTY_QUOTE: AitoClientQuoteRating = {
+  tier: 'unavailable',
+  accepted_count: 0,
+  declined_count: 0,
+  expired_count: 0,
+  pending_count: 0,
+  score: null,
+  computed_at: null,
+  stale: false,
+};
+
+/** How readily the client accepts a quote, as a pill beside the payment one
+ *  in the drawer — the cue to not sink time into a quote for someone who
+ *  rarely says yes. A document glyph replaces the payment pill's dot so the
+ *  two never read as the same verdict twice. Same loading/unavailable/stale
+ *  behaviour as `ClientRatingPill`. */
+export function ClientQuoteRatingPill({
+  rating,
+  align = 'center',
+  side = 'top',
+  className = '',
+}: {
+  rating: AitoClientQuoteRating | undefined;
+  align?: 'start' | 'center' | 'end';
+  side?: 'top' | 'bottom';
+  className?: string;
+}) {
+  const text = useQuoteRatingText(rating);
+  if (!rating || rating.tier === 'unavailable') return null;
+  return (
+    <RatingPill
+      tier={rating.tier}
+      stale={rating.stale}
+      text={text}
+      align={align}
+      side={side}
+      className={className}
+      testId="client-quote-rating-unfold"
+      mark={<FileText aria-hidden="true" className="h-3 w-3" strokeWidth={2.5} />}
+    />
+  );
+}
+
+/** The shared dot-and-word pill both drawer ratings render through. */
+function RatingPill({
+  tier,
+  stale,
+  text,
+  mark,
+  align,
+  side,
+  className,
+  testId,
+}: {
+  tier: Exclude<AitoClientRatingTier, 'unavailable'>;
+  stale: boolean;
+  text: { label: string; ago: string; tip: string; ariaLabel: string };
+  mark: ReactNode;
+  align: 'start' | 'center' | 'end';
+  side: 'top' | 'bottom';
+  className: string;
+  testId: string;
+}) {
   const style = {
-    '--c': TIER_COLOR[rating.tier],
+    '--c': TIER_COLOR[tier],
     color: 'var(--c)',
     backgroundColor: 'color-mix(in srgb, var(--c) 16%, transparent)',
     borderColor: 'color-mix(in srgb, var(--c) 35%, transparent)',
@@ -122,27 +230,23 @@ export function ClientRatingPill({
     // width rather than landing at full size: `.aito-unfold-x` opens the
     // track from zero and the input narrows with it. It remounts on every
     // client switch (the rating is `undefined` while the new one loads, and
-    // this returns null), so the entrance replays each time — and never on a
-    // mere re-render, since @starting-style fires only on first paint.
-    <span data-testid="client-rating-unfold" className={`aito-unfold-x flex-shrink-0 ${className}`}>
+    // the caller returns null), so the entrance replays each time — and never
+    // on a mere re-render, since @starting-style fires only on first paint.
+    <span data-testid={testId} className={`aito-unfold-x flex-shrink-0 ${className}`}>
       <span>
-        <Tooltip content={tip} align={align} side={side}>
+        <Tooltip content={text.tip} align={align} side={side}>
           <span
-            data-tier={rating.tier}
-            data-stale={rating.stale ? 'true' : undefined}
+            data-tier={tier}
+            data-stale={stale ? 'true' : undefined}
             role="img"
-            aria-label={ariaLabel}
+            aria-label={text.ariaLabel}
             style={style}
             className={`inline-flex flex-shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-[3px] text-xs font-semibold leading-none tracking-[0.01em] ${
-              rating.stale ? 'opacity-55' : ''
+              stale ? 'opacity-55' : ''
             }`}
           >
-            <span
-              aria-hidden="true"
-              className="h-[7px] w-[7px] rounded-full"
-              style={{ backgroundColor: 'var(--c)', boxShadow: '0 0 0 2px color-mix(in srgb, var(--c) 30%, transparent)' }}
-            />
-            {rating.stale ? `${label} · ${ago}` : label}
+            {mark}
+            {stale ? `${text.label} · ${text.ago}` : text.label}
           </span>
         </Tooltip>
       </span>

@@ -587,6 +587,13 @@ export default {
       stale: 'Books 無法連線 — 最近一次已知評級',
       companyTerms: '按企業評級',
     },
+    quoteRating: {
+      ariaLabel: '報價評等：{{tier}}。{{reason}}',
+      accepted: '{{decided}} 份報價中接受了 {{accepted}} 份',
+      unanswered: '{{n}} 份未回覆',
+      pending: '{{n}} 份等待回覆',
+      newTip: '尚無已回覆的報價',
+    },
     tasksReused_one: '已新增 {{count}} 個任務',
     tasksReused_other: '已新增 {{count}} 個任務',
     taskTitlePlaceholder: '標題（可選）',

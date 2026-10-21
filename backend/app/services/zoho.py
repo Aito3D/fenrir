@@ -1569,6 +1569,37 @@ class ZohoService:
                 break
         return rows
 
+    async def list_customer_estimates(self, db: AsyncSession, customer_id: str) -> list[dict]:
+        """Every estimate Books holds for this customer, newest first, mapped
+        by ``_map_estimate_summary``.
+
+        The quote rating's one read, paged and capped like
+        ``list_customer_invoices`` (same ``_MAX_INVOICE_PAGES``, same pinned
+        newest-first sort so the cap only ever drops the oldest rows). The
+        same guard on ``customer_id`` too: Books reads an empty filter as no
+        filter and would answer with the org's entire estimate list.
+        """
+        if not customer_id or len(customer_id) > 50:
+            return []
+        rows: list[dict] = []
+        for page in range(1, _MAX_INVOICE_PAGES + 1):
+            payload = await self._request(
+                db,
+                "GET",
+                "/estimates",
+                params={
+                    "customer_id": customer_id,
+                    "per_page": "200",
+                    "page": str(page),
+                    "sort_column": "date",
+                    "sort_order": "D",
+                },
+            )
+            rows.extend(_map_estimate_summary(e) for e in payload.get("estimates") or [])
+            if not (payload.get("page_context") or {}).get("has_more_page"):
+                break
+        return rows
+
     async def apply_invoice_credits(self, db: AsyncSession, invoice_id: str, invoice_payments: list[dict]) -> None:
         """Point existing customer payments at an invoice.
 

@@ -20,3 +20,15 @@ export function useClientRating(clientId: string) {
     retry: false,
   });
 }
+
+/** How readily the customer accepts a quote — the drawer's second pill.
+ *  Same caching and disabling rules as `useClientRating`. */
+export function useClientQuoteRating(clientId: string) {
+  return useQuery({
+    queryKey: ['aito-client-quote-rating', clientId],
+    queryFn: () => api.getAitoClientQuoteRating(clientId),
+    enabled: clientId !== '',
+    staleTime: RATING_STALE_MS,
+    retry: false,
+  });
+}

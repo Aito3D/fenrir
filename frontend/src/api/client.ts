@@ -4908,6 +4908,23 @@ export interface AitoClientRating {
   stale: boolean;
 }
 
+/** How readily a customer accepts a quote — see
+ *  routes/aito.py:get_client_quote_rating and
+ *  docs/superpowers/specs/2026-10-21-aito-quote-rating-design.md.
+ *  Declined and expired are both a "no" in `score` (the smoothed acceptance
+ *  rate, null while nothing is decided); pending quotes are not scored.
+ *  `unavailable` and `stale` mean what they mean on `AitoClientRating`. */
+export interface AitoClientQuoteRating {
+  tier: AitoClientRatingTier;
+  accepted_count: number;
+  declined_count: number;
+  expired_count: number;
+  pending_count: number;
+  score: number | null;
+  computed_at: string | null;
+  stale: boolean;
+}
+
 export type AitoTrackingInvoice = 'paid' | 'unpaid' | 'overdue';
 
 /** One part line. `quantity` is null unless every priced service on the
@@ -9392,6 +9409,10 @@ export const api = {
   getAitoClientRating: (clientId: string, refresh = false) =>
     request<AitoClientRating>(
       `/aito/clients/${encodeURIComponent(clientId)}/rating${refresh ? '?refresh=1' : ''}`,
+    ),
+  getAitoClientQuoteRating: (clientId: string, refresh = false) =>
+    request<AitoClientQuoteRating>(
+      `/aito/clients/${encodeURIComponent(clientId)}/quote-rating${refresh ? '?refresh=1' : ''}`,
     ),
   /** The public tracking page's payload — see routes/aito.py:get_tracking.
    *  No auth: the token in the URL is the credential. An optional signal

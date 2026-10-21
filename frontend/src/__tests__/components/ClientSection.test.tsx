@@ -335,6 +335,37 @@ describe('client rating in the drawer', () => {
     expect(await screen.findByText('New')).toBeInTheDocument();
   });
 
+  it('shows the quote rating pill beside the payment one', async () => {
+    const seen: string[] = [];
+    server.use(
+      http.get('/api/v1/aito/clients/:clientId/rating', () => HttpResponse.json(goodRating)),
+      http.get('/api/v1/aito/clients/:clientId/quote-rating', ({ params }) => {
+        seen.push(String(params.clientId));
+        return HttpResponse.json({
+          tier: 'bad', accepted_count: 2, declined_count: 18, expired_count: 0, pending_count: 0,
+          score: 0.19, computed_at: new Date().toISOString(), stale: false,
+        });
+      }),
+    );
+    renderSection(draftFromContact(acme, DEFAULT_ID));
+    expect(await screen.findByRole('img', { name: /quote rating: bad/i })).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: /^client rating: good/i })).toBeInTheDocument();
+    expect(seen).toEqual(['z1']);
+  });
+
+  it('never asks the quote rating for the walk-in default contact', async () => {
+    const seen: string[] = [];
+    server.use(
+      http.get('/api/v1/aito/clients/:clientId/quote-rating', ({ params }) => {
+        seen.push(String(params.clientId));
+        return HttpResponse.json({});
+      }),
+    );
+    renderSection();
+    await waitFor(() => expect(screen.getByRole('combobox', { name: /client/i })).toHaveValue(DEFAULT_NAME));
+    expect(seen).toEqual([]);
+  });
+
   it('never asks for the walk-in default contact', async () => {
     const seen: string[] = [];
     server.use(

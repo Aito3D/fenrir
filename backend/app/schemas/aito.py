@@ -1506,6 +1506,27 @@ class AitoClientRatingResponse(BaseModel):
     stale: bool
 
 
+class AitoClientQuoteRatingResponse(BaseModel):
+    """How readily a customer accepts a quote, for the new-card drawer — see
+    docs/superpowers/specs/2026-10-21-aito-quote-rating-design.md.
+
+    Counts rather than a sentence, as for the payment rating. ``declined``
+    and ``expired`` are both a "no" in the score; they are sent apart so the
+    tooltip can say how many were simply never answered. ``score`` is the
+    smoothed acceptance rate (0..1), None while nothing is decided.
+    ``unavailable`` and ``stale`` mean what they mean on the payment rating.
+    """
+
+    tier: Literal["good", "medium", "bad", "new", "unavailable"]
+    accepted_count: int = 0
+    declined_count: int = 0
+    expired_count: int = 0
+    pending_count: int = 0
+    score: float | None = None
+    computed_at: datetime | None
+    stale: bool
+
+
 class AitoTrackingShipping(BaseModel):
     island: str
     service: str

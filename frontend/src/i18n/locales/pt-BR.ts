@@ -587,6 +587,13 @@ export default {
       stale: 'Books inacessível — última avaliação conhecida',
       companyTerms: 'avaliado como empresa',
     },
+    quoteRating: {
+      ariaLabel: 'Avaliação de orçamentos: {{tier}}. {{reason}}',
+      accepted: '{{accepted}} de {{decided}} orçamentos aceitos',
+      unanswered: '{{n}} sem resposta',
+      pending: '{{n}} aguardando resposta',
+      newTip: 'Nenhum orçamento respondido ainda',
+    },
     tasksReused_one: '{{count}} tarefa adicionada',
     tasksReused_other: '{{count}} tarefas adicionadas',
     taskTitlePlaceholder: 'Título (opcional)',

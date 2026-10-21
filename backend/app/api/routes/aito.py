@@ -36,6 +36,7 @@ from backend.app.schemas.aito import (
     AitoApplyDepositRequest,
     AitoClientEdit,
     AitoClientHistoryResponse,
+    AitoClientQuoteRatingResponse,
     AitoClientRatingResponse,
     AitoClientTransfer,
     AitoContactedUpdate,
@@ -101,6 +102,7 @@ from backend.app.services import aito_quote_sync, aito_tracking as tracking_serv
 from backend.app.services.aito_board_rules import AWAY_STATUSES, SERVICES, TaskSummary, evaluate, summarise
 from backend.app.services.aito_client_history import compute_client_history
 from backend.app.services.aito_client_rating import read_client_rating
+from backend.app.services.aito_quote_rating import read_client_quote_rating
 from backend.app.services.aito_customer_credit import read_customer_credit
 from backend.app.services.aito_deposit_apply import (
     DepositAmountTooHigh,
@@ -1325,6 +1327,33 @@ async def get_client_rating(
     if not _CLIENT_ID_RE.match(client_id):
         raise HTTPException(status_code=422, detail="client_id is not a Zoho Books contact id")
     return await read_client_rating(db, client_id, refresh=refresh)
+
+
+@router.get("/clients/{client_id}/quote-rating", response_model=AitoClientQuoteRatingResponse)
+async def get_client_quote_rating(
+    client_id: str,
+    request: Request,
+    refresh: bool = Query(False, description="Re-read Books even if the cached rating is fresh"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
+):
+    """How readily the customer accepts a quote, for the new-card drawer.
+    Cached an hour per customer; degrades to the stale row or to
+    `unavailable` rather than failing when Books cannot answer. Declared
+    ahead of the `/{project_id}` routes so `clients` is never parsed as an
+    id."""
+    # Bounded like the payment rating (T-024): its own rate-limit bucket on
+    # the same budget, and the same id-shape check before any Books call.
+    _check_rate_limit(
+        request,
+        current_user,
+        bucket="client_quote_rating",
+        max_calls=_CLIENT_RATING_MAX_CALLS,
+        detail=_CLIENT_RATING_DETAIL,
+    )
+    if not _CLIENT_ID_RE.match(client_id):
+        raise HTTPException(status_code=422, detail="client_id is not a Zoho Books contact id")
+    return await read_client_quote_rating(db, client_id, refresh=refresh)
 
 
 # The public tracking route: a 6-character code (services/aito_tracking.py)
