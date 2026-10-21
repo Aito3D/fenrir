@@ -7132,8 +7132,6 @@ export default {
     tokenHint: 'Nur schreibend — leer lassen, um das aktuelle Token zu behalten',
     depositPct: 'Anzahlung (%)',
     depositPctDescription: '0 fordert das komplette Angebot; sonst gilt der Link für diesen Anteil.',
-    validityDays: 'Angebotsgültigkeit (Tage)',
-    validityDaysDescription: 'Ablaufdatum auf jedem neuen Angebot; der Zahlungslink endet am selben Tag.',
     save: 'Speichern',
     saved: 'Heimdall-Einstellungen gespeichert',
     test: 'Verbindung testen',

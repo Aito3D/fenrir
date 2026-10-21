@@ -9956,8 +9956,6 @@ export default {
     tokenHint: 'Alleen-schrijven — laat leeg om het huidige token te behouden',
     depositPct: 'Aanbetaling (%)',
     depositPctDescription: '0 vraagt om de volledige offerte; anders geldt de link voor dit percentage ervan.',
-    validityDays: 'Geldigheid offerte (dagen)',
-    validityDaysDescription: 'Vervaldatum vermeld op elke nieuwe offerte; de betaallink verloopt dezelfde dag.',
     save: 'Opslaan',
     saved: 'Heimdall-instellingen opgeslagen',
     test: 'Verbinding testen',

@@ -54,7 +54,7 @@ from backend.app.services.aito_board_rules import AWAY_STATUSES
 from backend.app.services.aito_customer_credit import read_customer_credit
 from backend.app.services.aito_events import contact_mark_kind, record, utc_now_naive
 from backend.app.services.aito_invoice_sweep import _same_reference, sweep_inbox, sweep_invoices
-from backend.app.services.aito_payment_links import deposit_pct, required_amount
+from backend.app.services.aito_payment_links import add_one_month, deposit_pct, required_amount
 from backend.app.services.aito_quote_export import (
     SERVICES,
     SERVICES_WITH_QUANTITY,
@@ -670,7 +670,7 @@ async def _create_quote(db: AsyncSession, project: AitoProject) -> None:
         "reference_number": reference_number,
         "is_inclusive_tax": True,
         # The payment link dies the same day (services/aito_payment_links.py).
-        "expiry_date": expiry_for(None, await quote_validity_days(db)),
+        "expiry_date": expiry_for(None),
         "line_items": line_items,
     }
     estimate = await zoho_service.create_estimate(db, payload)
@@ -1273,7 +1273,7 @@ async def _update_quote(db: AsyncSession, project: AitoProject) -> None:
     if not estimate.get("expiry_date"):
         try:
             await zoho_service.update_estimate_fields(
-                db, project.quote_id, {"expiry_date": expiry_for(estimate.get("date"), await quote_validity_days(db))}
+                db, project.quote_id, {"expiry_date": expiry_for(estimate.get("date"))}
             )
         except (ZohoUpstreamError, ZohoNotConfiguredError, ValueError):
             # ValueError too: `expiry_for` parses the estimate's own `date`,
@@ -2870,27 +2870,15 @@ async def run_change_pass(db: AsyncSession) -> int:
 # test_aito_quote_sync_interval.
 _DEFAULT_INTERVAL_SECONDS = 300
 
-_DEFAULT_QUOTE_VALIDITY_DAYS = 15
 
-
-async def quote_validity_days(db: AsyncSession) -> int:
-    from backend.app.api.routes.settings import get_setting
-
-    raw = await get_setting(db, "aito_quote_validity_days")
-    try:
-        return max(1, min(365, int(raw))) if raw else _DEFAULT_QUOTE_VALIDITY_DAYS
-    except ValueError:
-        return _DEFAULT_QUOTE_VALIDITY_DAYS
-
-
-def expiry_for(quote_date: str | None, validity_days: int) -> str:
-    """The estimate's expiry_date: quote date + validity, ISO YYYY-MM-DD.
-    Today when the quote has no date yet (a create, whose date Books
-    assigns as today anyway)."""
-    from datetime import date, timedelta
+def expiry_for(quote_date: str | None) -> str:
+    """The estimate's expiry_date: one calendar month after the quote date
+    (`add_one_month`), ISO YYYY-MM-DD. Today when the quote has no date yet
+    (a create, whose date Books assigns as today anyway)."""
+    from datetime import date
 
     start = date.fromisoformat(quote_date) if quote_date else date.today()
-    return (start + timedelta(days=validity_days)).isoformat()
+    return add_one_month(start).isoformat()
 
 
 def _paid_retainer_total(estimate: dict) -> float:

@@ -262,8 +262,6 @@ async def create_invoice_payment_link(
 ):
     """An OSB link for this project's invoice (quote links are minted by the
     reconciler and never through here)."""
-    from backend.app.services.aito_quote_sync import quote_validity_days
-
     _check_counter_payment_rate_limit(request, current_user)
     project = await _get_active_project_or_404(db, project_id)
     document = await _document(db, project, "invoice", body.document_id)
@@ -285,7 +283,6 @@ async def create_invoice_payment_link(
             actor_name=_actor(current_user),
             now=_now(),
             today=date.today(),
-            validity_days=await quote_validity_days(db),
         )
     except InvoiceLinkExists as e:
         raise _refuse(409, "link_exists", str(e)) from e

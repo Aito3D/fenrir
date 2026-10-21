@@ -9,6 +9,7 @@ from backend.app.api.routes.settings import set_setting
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.aito_task import AitoTask
 from backend.app.services import aito_quote_sync
+from backend.app.services.aito_payment_links import add_one_month
 from backend.app.services.aito_quote_sync import _apply_estimate, _create_quote, _paid_retainer_total, expiry_for
 from backend.app.services.zoho import ZohoUpstreamError, zoho_service
 
@@ -36,9 +37,27 @@ async def _pending_project(db) -> AitoProject:
     return p
 
 
-def test_expiry_for_adds_validity_days_to_the_quote_date():
-    assert expiry_for("2026-09-12", 15) == "2026-09-27"
-    assert expiry_for(None, 15) == (date.today().fromordinal(date.today().toordinal() + 15)).isoformat()
+@pytest.mark.parametrize(
+    ("start", "expected"),
+    [
+        (date(2026, 10, 21), date(2026, 11, 21)),
+        (date(2026, 1, 31), date(2026, 2, 28)),  # clamped to the month's last day
+        (date(2028, 1, 31), date(2028, 2, 29)),  # leap year
+        (date(2026, 3, 31), date(2026, 4, 30)),
+        (date(2026, 12, 15), date(2027, 1, 15)),  # year rollover
+        (date(2026, 12, 31), date(2027, 1, 31)),
+    ],
+)
+def test_add_one_month_is_the_same_day_next_month_clamped(start, expected):
+    assert add_one_month(start) == expected
+
+
+def test_expiry_for_is_one_calendar_month_after_the_quote_date():
+    assert expiry_for("2026-10-21") == "2026-11-21"
+    assert expiry_for("2026-01-31") == "2026-02-28"
+    assert expiry_for("2028-01-31") == "2028-02-29"
+    assert expiry_for("2026-12-15") == "2027-01-15"
+    assert expiry_for(None) == add_one_month(date.today()).isoformat()
 
 
 def test_required_amount_is_the_total_or_the_ceiled_deposit_share():
@@ -70,8 +89,9 @@ def test_apply_estimate_copies_expiry_back():
 
 
 @pytest.mark.asyncio
-async def test_create_sends_expiry_date_from_the_setting(db_session, monkeypatch):
+async def test_create_sends_expiry_one_month_from_today(db_session, monkeypatch):
     await _configure_zoho(db_session)
+    # The retired days setting, still stored on an upgraded install, is ignored.
     await set_setting(db_session, "aito_quote_validity_days", "20")
     await db_session.commit()
     p = await _pending_project(db_session)
@@ -102,7 +122,7 @@ async def test_create_sends_expiry_date_from_the_setting(db_session, monkeypatch
     # get_catalogue is NOT patched: it reads the settings table, no network —
     # the same shape backend/tests/unit/test_aito_tracking_delivery.py relies on.
     await _create_quote(db_session, p)
-    assert captured["expiry_date"] == expiry_for(date.today().isoformat(), 20)
+    assert captured["expiry_date"] == add_one_month(date.today()).isoformat()
     assert p.quote_expiry_date == captured["expiry_date"]
 
 

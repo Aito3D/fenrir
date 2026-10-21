@@ -7118,8 +7118,6 @@ export default {
     tokenHint: 'Solo scrittura — lasciare vuoto per mantenere il token attuale',
     depositPct: 'Acconto (%)',
     depositPctDescription: '0 richiede il preventivo intero; altrimenti il link copre questa quota.',
-    validityDays: 'Validità del preventivo (giorni)',
-    validityDaysDescription: 'Data di scadenza scritta su ogni nuovo preventivo; il link di pagamento termina lo stesso giorno.',
     save: 'Salva',
     saved: 'Impostazioni Heimdall salvate',
     test: 'Prova la connessione',

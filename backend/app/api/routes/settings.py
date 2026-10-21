@@ -278,7 +278,6 @@ _INT_SETTING_KEYS = frozenset(
         "aito_followup_pickup_days",
         "aito_followup_link_days",
         "aito_deposit_pct",
-        "aito_quote_validity_days",
     }
 )
 

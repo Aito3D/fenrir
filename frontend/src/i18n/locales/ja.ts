@@ -7132,8 +7132,6 @@ export default {
     tokenHint: '書き込み専用 — 現在のトークンを保持するには空欄のままにしてください',
     depositPct: '着手金（%）',
     depositPctDescription: '0 の場合は見積の全額を請求し、それ以外はこの割合分のリンクになります。',
-    validityDays: '見積の有効期間（日数）',
-    validityDaysDescription: '新しい見積ごとに記載される有効期限です。決済リンクも同じ日に終了します。',
     save: '保存',
     saved: 'Heimdall の設定を保存しました',
     test: '接続をテスト',

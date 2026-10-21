@@ -113,7 +113,7 @@ async def test_a_forged_snapshot_is_replaced_by_books_figures(async_client, db_s
 
     # The payment link the wake would mint is Books' reference and amount.
     project = await db_session.get(AitoProject, body["id"])
-    wanted = links_svc.wanted_link(project, pct=50, validity_days=30, today=date(2026, 9, 26))
+    wanted = links_svc.wanted_link(project, pct=50, today=date(2026, 9, 26))
     assert wanted is not None
     assert wanted.reference == "DEV26-0042"
     assert wanted.amount == links_svc.required_amount(18000.0, 50)

@@ -1734,7 +1734,6 @@ export interface AppSettings {
   heimdall_api_token: string;
   /** 0 = payment links ask for the full quote; otherwise the deposit share. */
   aito_deposit_pct: number;
-  aito_quote_validity_days: number;
   aito_payment_mode_card: string;
   aito_payment_mode_cheque: string;
   aito_payment_mode_cash: string;

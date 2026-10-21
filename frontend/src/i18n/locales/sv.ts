@@ -9950,8 +9950,6 @@ errors: {
     tokenHint: 'Endast skrivbar — lämna tomt för att behålla nuvarande token',
     depositPct: 'Förskott (%)',
     depositPctDescription: '0 begär hela offertbeloppet; annars gäller länken denna andel av det.',
-    validityDays: 'Offertens giltighet (dagar)',
-    validityDaysDescription: 'Utgångsdatum skrivs på varje ny offert; betalningslänken upphör samma dag.',
     save: 'Spara',
     saved: 'Heimdall-inställningar sparade',
     test: 'Testa anslutning',
