@@ -524,9 +524,26 @@ async def _mark_failed(db: AsyncSession, revision_id: int, message: str) -> None
             logger.warning("Rollback after recording a failed slice raised", exc_info=True)
 
 
+# At most this many project slices run at once; the others wait their turn before reading their source
+# or calling the sidecar (a bulk move or a startup resume would otherwise start one sidecar call per
+# revision). A waiting job looks like a job the sidecar has not answered yet: ``running``, no progress;
+# the stall clock only starts with its sidecar call.
+_MAX_CONCURRENT_SLICES = 2
+# One semaphore per event loop: an asyncio.Semaphore binds to the loop it first waits on.
+_slice_slots: tuple[asyncio.AbstractEventLoop, asyncio.Semaphore] | None = None
+
+
+def _slice_slot() -> asyncio.Semaphore:
+    global _slice_slots
+    loop = asyncio.get_running_loop()
+    if _slice_slots is None or _slice_slots[0] is not loop:
+        _slice_slots = (loop, asyncio.Semaphore(_MAX_CONCURRENT_SLICES))
+    return _slice_slots[1]
+
+
 async def _run_slice(revision_id: int, *, user_id: int | None, job_id: int) -> dict[str, Any]:
     """The background job: slice, store, mark ``sliced``; on any error mark ``failed`` and fail the job."""
-    async with database.async_session() as db:
+    async with _slice_slot(), database.async_session() as db:
         try:
             return await _slice_revision(db, revision_id, user_id=user_id, job_id=job_id)
         except Exception as exc:

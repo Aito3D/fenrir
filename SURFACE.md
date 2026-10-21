@@ -1333,6 +1333,7 @@ CREATE TABLE projects (
 1 export function itemNameFromFile
 1 export function itemNameKey
 1 export function ItemRow
+1 export function LinkedFoldersPanel
 1 export function MoveToProjectModal
 1 export function NewItemDropCard
 1 export function NewProjectModal
@@ -1371,6 +1372,7 @@ CREATE TABLE projects (
 1 export function SectionBlock
 1 export function sectionRevisionLabel
 1 export function splitTagDrafts
+1 export function SubProjectsPanel
 1 export function TaskDropZone
 1 export function TaskProjectRow
 1 export function timelineDay
@@ -1384,6 +1386,7 @@ CREATE TABLE projects (
 1 export function useOpenOrders
 1 export function useOrderProjectLinks
 1 export function useProjectCodes
+1 export function useProjectLinkedFiles
 1 export function useProjectOrders
 1 export function useProjectSearch
 1 export function useProjectTree

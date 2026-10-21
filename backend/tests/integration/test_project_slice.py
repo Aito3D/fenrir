@@ -547,3 +547,55 @@ async def test_oversized_settings_part_fails_the_slice_with_a_reason(async_clien
     assert out["slice_status"] == "failed"
     assert "project settings are too large" in out["slice_error"]
     assert sidecar.slice_requests == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_parallel_slices_wait_their_turn_and_all_complete(async_client: AsyncClient, sidecar, monkeypatch):
+    """A bulk start (a Move-to-project of many 3MFs, a startup resume) sends at most
+    ``_MAX_CONCURRENT_SLICES`` slices to the sidecar at once; the others wait their turn, reported
+    like a slice the sidecar has not answered yet (``running``, no progress), and all complete."""
+    _no_auto_slice(monkeypatch)
+    limit = project_slice._MAX_CONCURRENT_SLICES
+    in_flight = 0
+    peak = 0
+    plain_handler = sidecar.handler
+
+    async def counting_handler(request: httpx.Request) -> httpx.Response:
+        nonlocal in_flight, peak
+        if not _is_slice_post(request):
+            return await plain_handler(request)
+        in_flight += 1
+        peak = max(peak, in_flight)
+        try:
+            return await plain_handler(request)
+        finally:
+            in_flight -= 1
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(counting_handler), timeout=10.0)
+    slicer_api_module.set_shared_http_client(client)
+
+    revisions = [await _upload(async_client, f"part{n}.3mf") for n in range(limit + 3)]
+    sidecar.block = True
+    job_ids = []
+    for _project, _item, rev in revisions:
+        started = await async_client.post(f"/api/v1/projects/revisions/{rev['id']}/slice")
+        assert started.status_code == 202, started.text
+        job_ids.append(started.json()["job_id"])
+    await asyncio.wait_for(sidecar.entered.wait(), timeout=10)
+    for _ in range(50):
+        await asyncio.sleep(0.01)
+    assert len(sidecar.slice_requests) == limit
+    for (project, _item, rev), job_id in zip(revisions, job_ids, strict=True):
+        assert (await _tree_revision(async_client, project["id"], rev["id"]))["slice_status"] == "slicing"
+        job = (await async_client.get(f"/api/v1/slice-jobs/{job_id}")).json()
+        assert job["status"] == "running"
+        assert job["progress"] is None
+
+    sidecar.release.set()
+    for job_id in job_ids:
+        await _wait_job(job_id)
+    assert len(sidecar.slice_requests) == len(revisions)
+    assert peak == limit
+    for project, _item, rev in revisions:
+        assert (await _tree_revision(async_client, project["id"], rev["id"]))["slice_status"] == "sliced"
