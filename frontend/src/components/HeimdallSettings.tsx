@@ -31,7 +31,6 @@ export function HeimdallSettings() {
   const [baseUrl, setBaseUrl] = useState('');
   const [token, setToken] = useState('');
   const [depositPct, setDepositPct] = useState('0');
-  const [validityDays, setValidityDays] = useState('15');
   const [paymentModeCard, setPaymentModeCard] = useState('');
   const [paymentModeCheque, setPaymentModeCheque] = useState('');
   const [paymentModeCash, setPaymentModeCash] = useState('');
@@ -49,7 +48,6 @@ export function HeimdallSettings() {
       setBaseUrl(settings.heimdall_base_url ?? '');
       setToken('');
       setDepositPct(String(settings.aito_deposit_pct ?? 0));
-      setValidityDays(String(settings.aito_quote_validity_days ?? 15));
       setPaymentModeCard(settings.aito_payment_mode_card ?? '');
       setPaymentModeCheque(settings.aito_payment_mode_cheque ?? '');
       setPaymentModeCash(settings.aito_payment_mode_cash ?? '');
@@ -73,7 +71,6 @@ export function HeimdallSettings() {
       // Omit an untouched token so saving never wipes the stored one.
       ...(token.trim() ? { heimdall_api_token: token.trim() } : {}),
       aito_deposit_pct: clampInt(depositPct, settings?.aito_deposit_pct ?? 0, 0, 100),
-      aito_quote_validity_days: clampInt(validityDays, settings?.aito_quote_validity_days ?? 15, 1, 365),
       aito_payment_mode_card: paymentModeCard.trim(),
       aito_payment_mode_cheque: paymentModeCheque.trim(),
       aito_payment_mode_cash: paymentModeCash.trim(),
@@ -177,22 +174,6 @@ export function HeimdallSettings() {
               className={INPUT}
             />
             <p className="text-sm text-bambu-gray mt-1">{t('heimdall.depositPctDescription')}</p>
-          </div>
-          <div>
-            <label htmlFor="heimdall-validity" className="block text-sm text-bambu-gray mb-1">
-              {t('heimdall.validityDays')}
-            </label>
-            <input
-              id="heimdall-validity"
-              type="number"
-              min={1}
-              max={365}
-              step={1}
-              value={validityDays}
-              onChange={(e) => setValidityDays(e.target.value)}
-              className={INPUT}
-            />
-            <p className="text-sm text-bambu-gray mt-1">{t('heimdall.validityDaysDescription')}</p>
           </div>
         </div>
         <div className="pt-4 border-t border-bambu-dark-tertiary">

@@ -7132,8 +7132,6 @@ export default {
     tokenHint: 'Solo escritura: déjelo vacío para conservar el token actual',
     depositPct: 'Anticipo (%)',
     depositPctDescription: '0 pide el presupuesto completo; si no, el enlace cubre esta parte.',
-    validityDays: 'Validez del presupuesto (días)',
-    validityDaysDescription: 'Fecha de caducidad escrita en cada presupuesto nuevo; el enlace de pago termina el mismo día.',
     save: 'Guardar',
     saved: 'Ajustes de Heimdall guardados',
     test: 'Probar la conexión',

@@ -7111,8 +7111,6 @@ export default {
     tokenHint: '僅寫入——留空則保留目前的權杖',
     depositPct: '訂金（%）',
     depositPctDescription: '填 0 表示收取報價單全額；否則連結只收取該比例。',
-    validityDays: '報價單有效期（天）',
-    validityDaysDescription: '寫入每份新報價單的到期日期；付款連結在同一天失效。',
     save: '儲存',
     saved: 'Heimdall 設定已儲存',
     test: '測試連線',

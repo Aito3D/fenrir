@@ -9,7 +9,7 @@ async def test_defaults(async_client):
     assert body["heimdall_base_url"] == ""
     assert body["heimdall_api_token"] == ""
     assert body["aito_deposit_pct"] == 0
-    assert body["aito_quote_validity_days"] == 15
+    assert "aito_quote_validity_days" not in body  # retired: quotes expire one calendar month out
     assert body["aito_followup_link_days"] == 3
 
 
@@ -29,12 +29,11 @@ async def test_token_is_write_only(async_client):
 async def test_integers_round_trip_as_integers(async_client):
     r = await async_client.put(
         "/api/v1/settings/",
-        json={"aito_deposit_pct": 30, "aito_quote_validity_days": 20, "aito_followup_link_days": 5},
+        json={"aito_deposit_pct": 30, "aito_followup_link_days": 5},
     )
     assert r.status_code == 200, r.text
     body = (await async_client.get("/api/v1/settings/")).json()
     assert body["aito_deposit_pct"] == 30 and isinstance(body["aito_deposit_pct"], int)
-    assert body["aito_quote_validity_days"] == 20 and isinstance(body["aito_quote_validity_days"], int)
     assert body["aito_followup_link_days"] == 5 and isinstance(body["aito_followup_link_days"], int)
 
 
@@ -44,14 +43,25 @@ async def test_integers_round_trip_as_integers(async_client):
     [
         ("aito_deposit_pct", -1),
         ("aito_deposit_pct", 101),
-        ("aito_quote_validity_days", 0),
-        ("aito_quote_validity_days", 366),
         ("aito_followup_link_days", 0),
     ],
 )
 async def test_out_of_range_is_rejected(async_client, field, value):
     r = await async_client.put("/api/v1/settings/", json={field: value})
     assert r.status_code == 422, r.text
+
+
+@pytest.mark.asyncio
+async def test_a_stored_quote_validity_row_is_ignored(async_client, db_session):
+    """The retired `aito_quote_validity_days` row an upgraded install still
+    holds neither surfaces in the settings response nor breaks it."""
+    from backend.app.api.routes.settings import set_setting
+
+    await set_setting(db_session, "aito_quote_validity_days", "20")
+    await db_session.commit()
+    r = await async_client.get("/api/v1/settings/")
+    assert r.status_code == 200, r.text
+    assert "aito_quote_validity_days" not in r.json()
 
 
 @pytest.mark.asyncio

@@ -7112,8 +7112,6 @@ export default {
     tokenHint: 'Écriture seule — laisser vide pour conserver le jeton actuel',
     depositPct: 'Acompte (%)',
     depositPctDescription: '0 demande le devis complet ; sinon le lien porte sur cette part.',
-    validityDays: 'Validité du devis (jours)',
-    validityDaysDescription: "Date d'expiration inscrite sur chaque nouveau devis ; le lien de paiement expire le même jour.",
     save: 'Enregistrer',
     saved: 'Réglages Heimdall enregistrés',
     test: 'Tester la connexion',

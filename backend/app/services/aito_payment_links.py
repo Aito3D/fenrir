@@ -6,6 +6,7 @@ This module starts with the money rule; the reconcile loop follows.
 """
 
 import asyncio
+import calendar
 import logging
 import math
 import time
@@ -128,7 +129,16 @@ class Wanted:
     expires_on: str
 
 
-def wanted_link(project: AitoProject, *, pct: int, validity_days: int, today: date) -> Wanted | None:
+def add_one_month(d: date) -> date:
+    """Same day next calendar month, clamped to that month's last day:
+    Oct 21 -> Nov 21, Jan 31 -> Feb 28 (Feb 29 in a leap year), Dec 15 ->
+    Jan 15. The validity of every quote Aito writes to Books, and of a
+    payment link minted before the quote carries its own expiry."""
+    year, month = (d.year + 1, 1) if d.month == 12 else (d.year, d.month + 1)
+    return date(year, month, min(d.day, calendar.monthrange(year, month)[1]))
+
+
+def wanted_link(project: AitoProject, *, pct: int, today: date) -> Wanted | None:
     """The link this project should have right now, or None for "no live
     link": trashed, decided the other way, invoiced, already covered by paid
     retainers, or nothing to pay. Spec §5.3."""
@@ -142,7 +152,7 @@ def wanted_link(project: AitoProject, *, pct: int, validity_days: int, today: da
     amount = outstanding_amount(required, project.retainer_paid_total)
     if amount <= 0:
         return None
-    expires_on = project.quote_expiry_date or (today + timedelta(days=validity_days)).isoformat()
+    expires_on = project.quote_expiry_date or add_one_month(today).isoformat()
     return Wanted(reference=project.quote_number, amount=amount, expires_on=expires_on)
 
 
@@ -572,7 +582,6 @@ async def _replace_lost(
     *,
     now: datetime,
     pct: int,
-    validity_days: int,
     today: date,
 ) -> None:
     """Heimdall answered 404 for an id this ledger holds: the link was
@@ -594,7 +603,7 @@ async def _replace_lost(
     row.status = "failed"
     row.sync_error = str(exc)[:500]
     row.checked_at = now
-    wanted = wanted_link(project, pct=pct, validity_days=validity_days, today=today)
+    wanted = wanted_link(project, pct=pct, today=today)
     if wanted is None:
         await record(
             db,
@@ -634,7 +643,6 @@ async def reconcile_project(
     project: AitoProject,
     *,
     pct: int,
-    validity_days: int,
     today: date,
     now: datetime,
     force: bool = False,
@@ -659,7 +667,7 @@ async def reconcile_project(
     project_id: int | None = None
     try:
         project_id = project.id
-        wanted = wanted_link(project, pct=pct, validity_days=validity_days, today=today)
+        wanted = wanted_link(project, pct=pct, today=today)
         row = await current_link(db, project_id)
         if row is not None and not force and _in_backoff(row, now):
             return False
@@ -828,7 +836,7 @@ async def reconcile_project(
         if project_id is None:
             return False
         try:
-            await _replace_lost(db, project_id, exc, now=now, pct=pct, validity_days=validity_days, today=today)
+            await _replace_lost(db, project_id, exc, now=now, pct=pct, today=today)
         except HeimdallRateLimited:
             raise
         except (HeimdallUpstreamError, HeimdallNotConfigured, SQLAlchemyError) as exc2:
@@ -1042,10 +1050,7 @@ async def _run_pass(
 
     now = now or _now()
     today = today or now.date()
-    from backend.app.services.aito_quote_sync import quote_validity_days
-
     pct = await deposit_pct(db)
-    validity = await quote_validity_days(db)
     stmt = select(AitoProject.id).where(
         AitoProject.quote_number.is_not(None), AitoProject.quote_sync_state != "unmanaged"
     )
@@ -1055,11 +1060,7 @@ async def _run_pass(
     if changes_only:
         have = await current_links(db, project_ids)
         projects = (await db.execute(select(AitoProject).where(AitoProject.id.in_(project_ids)))).scalars()
-        drifted = {
-            p.id
-            for p in projects
-            if needs_action(have.get(p.id), wanted_link(p, pct=pct, validity_days=validity, today=today), today)
-        }
+        drifted = {p.id for p in projects if needs_action(have.get(p.id), wanted_link(p, pct=pct, today=today), today)}
         project_ids = [pid for pid in project_ids if pid in drifted]
     visited = 0
     stood_down = False  # a HeimdallUnreachable in this pass: no more Heimdall calls
@@ -1078,9 +1079,7 @@ async def _run_pass(
                 if project is None:
                     continue
                 visited += 1
-                if await reconcile_project(
-                    db, project, pct=pct, validity_days=validity, today=today, now=now, force=force
-                ):
+                if await reconcile_project(db, project, pct=pct, today=today, now=now, force=force):
                     stood_down = True
                     logger.warning("payment link pass: Heimdall unreachable, standing down for this pass")
                     break
@@ -1146,7 +1145,7 @@ async def _run_pass(
                             await db.commit()
                         continue
                     try:
-                        await _replace_lost(db, project_id, exc, now=now, pct=pct, validity_days=validity, today=today)
+                        await _replace_lost(db, project_id, exc, now=now, pct=pct, today=today)
                     except HeimdallRateLimited:
                         raise
                     except (HeimdallUpstreamError, HeimdallNotConfigured, SQLAlchemyError) as exc2:
@@ -1224,7 +1223,6 @@ async def create_invoice_link(
     actor_name: str | None,
     now: datetime,
     today: date,
-    validity_days: int,
 ) -> AitoPaymentLink:
     """On-demand link for an INVOICE (reference `FA…`). Same reservation
     discipline as the quote links: reserve + commit, POST, adopt + commit. A
@@ -1267,7 +1265,7 @@ async def create_invoice_link(
             idempotency_key=await _next_key(db, project_id),
             reference=document.number,
             amount=int(amount),
-            expires_on=(today + timedelta(days=validity_days)).isoformat(),
+            expires_on=add_one_month(today).isoformat(),
             created_at=now,
             document_kind="invoice",
             document_number=document.number,

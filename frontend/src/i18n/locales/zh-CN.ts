@@ -7111,8 +7111,6 @@ export default {
     tokenHint: '仅写入——留空则保留当前令牌',
     depositPct: '定金（%）',
     depositPctDescription: '填 0 表示收取报价单全额；否则链接只收取该比例。',
-    validityDays: '报价单有效期（天）',
-    validityDaysDescription: '写入每份新报价单的到期日期；支付链接在同一天失效。',
     save: '保存',
     saved: 'Heimdall 设置已保存',
     test: '测试连接',

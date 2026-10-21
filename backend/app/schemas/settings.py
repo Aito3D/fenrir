@@ -737,9 +737,6 @@ class AppSettings(BaseModel):
     # 0 = the payment link asks for the full quote total; otherwise the deposit
     # share (ceil). Also the threshold the paid-retainer auto-accept uses.
     aito_deposit_pct: int = Field(default=0, ge=0, le=100, description="Deposit share of the quote, in percent")
-    # expiry_date written on every quote Aito creates; the payment link dies
-    # the same day.
-    aito_quote_validity_days: int = Field(default=15, ge=1, le=365, description="Days a new quote stays valid")
     # Zoho Books `payment_mode` names for a payment recorded by hand from a
     # project card. Zoho's stock modes; a French org may have renamed them.
     aito_payment_mode_card: str = Field(default="creditcard", description="Zoho payment mode for a card payment")
@@ -992,7 +989,6 @@ class AppSettingsUpdate(BaseModel):
     heimdall_base_url: str | None = None
     heimdall_api_token: str | None = None
     aito_deposit_pct: int | None = Field(default=None, ge=0, le=100)
-    aito_quote_validity_days: int | None = Field(default=None, ge=1, le=365)
     aito_payment_mode_card: str | None = None
     aito_payment_mode_cheque: str | None = None
     aito_payment_mode_cash: str | None = None

@@ -6893,8 +6893,6 @@ export default {
     tokenHint: '쓰기 전용 — 현재 토큰을 유지하려면 비워 두세요',
     depositPct: '계약금 (%)',
     depositPctDescription: '0이면 견적 전액을 청구하고, 그 외에는 이 비율만큼의 링크를 만듭니다.',
-    validityDays: '견적 유효 기간 (일)',
-    validityDaysDescription: '새 견적마다 기록되는 만료일이며, 결제 링크도 같은 날 종료됩니다.',
     save: '저장',
     saved: 'Heimdall 설정이 저장되었습니다',
     test: '연결 테스트',

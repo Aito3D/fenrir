@@ -7176,8 +7176,6 @@ export default {
     tokenHint: 'Write-only — leave blank to keep the current token',
     depositPct: 'Deposit (%)',
     depositPctDescription: '0 asks for the full quote; otherwise the link is for this share of it.',
-    validityDays: 'Quote validity (days)',
-    validityDaysDescription: 'Expiry written on every new quote; the payment link ends the same day.',
     save: 'Save',
     saved: 'Heimdall settings saved',
     test: 'Test connection',

@@ -7101,8 +7101,6 @@ export default {
     tokenHint: 'Yalnızca yazma — mevcut belirteci korumak için boş bırakın',
     depositPct: 'Kapora (%)',
     depositPctDescription: '0 teklifin tamamını ister; aksi halde bağlantı bu oranı kapsar.',
-    validityDays: 'Teklif geçerliliği (gün)',
-    validityDaysDescription: 'Her yeni teklife yazılan son geçerlilik tarihi; ödeme bağlantısı da aynı gün sona erer.',
     save: 'Kaydet',
     saved: 'Heimdall ayarları kaydedildi',
     test: 'Bağlantıyı test et',

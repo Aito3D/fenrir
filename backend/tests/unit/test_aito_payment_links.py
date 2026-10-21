@@ -231,10 +231,10 @@ def test_wanted_link_shapes():
         quote_status="sent",
         quote_expiry_date="2026-09-20",
     )
-    assert wanted_link(p, pct=0, validity_days=15, today=TODAY) == Wanted("DEV-1", 10000, "2026-09-20")
-    assert wanted_link(p, pct=30, validity_days=15, today=TODAY) == Wanted("DEV-1", 3000, "2026-09-20")
+    assert wanted_link(p, pct=0, today=TODAY) == Wanted("DEV-1", 10000, "2026-09-20")
+    assert wanted_link(p, pct=30, today=TODAY) == Wanted("DEV-1", 3000, "2026-09-20")
     p.quote_expiry_date = None
-    assert wanted_link(p, pct=0, validity_days=15, today=TODAY) == Wanted("DEV-1", 10000, "2026-09-27")
+    assert wanted_link(p, pct=0, today=TODAY) == Wanted("DEV-1", 10000, "2026-10-12")  # one calendar month
     for field, value in [
         ("status", "deleted"),
         ("quote_status", "declined"),
@@ -254,11 +254,11 @@ def test_wanted_link_shapes():
             quote_expiry_date="2026-09-20",
         )
         setattr(q, field, value)
-        assert wanted_link(q, pct=0, validity_days=15, today=TODAY) is None, field
+        assert wanted_link(q, pct=0, today=TODAY) is None, field
     # A retainer smaller than the required amount still leaves a link to ask
     # for — the franc that is still outstanding.
     p.retainer_paid_total = 2999.0
-    assert wanted_link(p, pct=30, validity_days=15, today=TODAY) == Wanted("DEV-1", 1, "2026-09-27")
+    assert wanted_link(p, pct=30, today=TODAY) == Wanted("DEV-1", 1, "2026-10-12")
 
 
 def test_wanted_link_asks_only_for_what_the_paid_retainers_leave_outstanding():
@@ -274,17 +274,17 @@ def test_wanted_link_asks_only_for_what_the_paid_retainers_leave_outstanding():
     )
     # Quote 1000, 400 already paid by a retainer invoice: the link is for 600.
     p.retainer_paid_total = 400.0
-    assert wanted_link(p, pct=0, validity_days=15, today=TODAY) == Wanted("DEV-1", 600, "2026-09-20")
+    assert wanted_link(p, pct=0, today=TODAY) == Wanted("DEV-1", 600, "2026-09-20")
     # Never a franc short: a fractional retainer rounds the outstanding UP.
     p.retainer_paid_total = 400.4
-    assert wanted_link(p, pct=0, validity_days=15, today=TODAY) == Wanted("DEV-1", 600, "2026-09-20")
+    assert wanted_link(p, pct=0, today=TODAY) == Wanted("DEV-1", 600, "2026-09-20")
     # The deposit share is netted the same way: 60% of 1000 is 600, 400 paid -> 200.
-    assert wanted_link(p, pct=60, validity_days=15, today=TODAY) == Wanted("DEV-1", 200, "2026-09-20")
+    assert wanted_link(p, pct=60, today=TODAY) == Wanted("DEV-1", 200, "2026-09-20")
     # A retainer covering the deposit share means nothing is outstanding.
-    assert wanted_link(p, pct=40, validity_days=15, today=TODAY) is None
+    assert wanted_link(p, pct=40, today=TODAY) is None
     # The whole total paid by retainers: no link at all.
     p.retainer_paid_total = 1000.0
-    assert wanted_link(p, pct=0, validity_days=15, today=TODAY) is None
+    assert wanted_link(p, pct=0, today=TODAY) is None
 
 
 def test_expires_in_days_is_at_least_one():
@@ -438,7 +438,7 @@ def test_link_view_minted_reflects_heimdall_id():
 @pytest.mark.asyncio
 async def test_create_reserves_then_completes(db_session, fake):
     p = await _project(db_session)
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
     rows = await _rows(db_session, p.id)
     assert len(rows) == 1
     r = rows[0]
@@ -453,11 +453,11 @@ async def test_create_reserves_then_completes(db_session, fake):
 async def test_a_reservation_is_retried_with_the_same_key(db_session, fake):
     p = await _project(db_session)
     fake.fail_with = HeimdallUpstreamError("down")
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
     (r,) = await _rows(db_session, p.id)
     assert r.heimdall_id is None and r.sync_error and r.sync_failures == 1
     fake.fail_with = None
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW + timedelta(minutes=10))
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW + timedelta(minutes=10))
     (r,) = await _rows(db_session, p.id)
     assert r.heimdall_id == "L1" and r.sync_error is None and r.sync_failures == 0
     assert [c[1] for c in fake.calls if c[0] == "create"] == [f"aito:{p.id}:1", f"aito:{p.id}:1"]
@@ -481,14 +481,14 @@ async def test_a_reservation_for_a_dead_quote_completes_quietly_then_cancels(db_
     `payment_link.created`) and cancelled in the very same pass instead."""
     p = await _project(db_session)
     fake.fail_with = HeimdallUpstreamError("down")
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
     (r,) = await _rows(db_session, p.id)
     assert r.heimdall_id is None  # still a reservation
     fake.fail_with = None
     setattr(p, field, value)
     await db_session.commit()
     later = NOW + timedelta(minutes=10)  # past the reservation's backoff window
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=later)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=later)
     (r,) = await _rows(db_session, p.id)
     assert r.status == "cancelled" and r.heimdall_id == "L1"
     assert [c[0] for c in fake.calls if c[0] in ("create", "cancel")][-2:] == ["create", "cancel"]
@@ -506,12 +506,12 @@ async def test_a_reservation_for_a_dead_quote_completes_quietly_then_cancels(db_
 async def test_a_reservation_whose_quote_was_renumbered_completes_quietly_then_replaces(db_session, fake):
     p = await _project(db_session)
     fake.fail_with = HeimdallUpstreamError("down")
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
     fake.fail_with = None
     p.quote_number = "DEV-2026-9999"
     await db_session.commit()
     later = NOW + timedelta(minutes=10)  # past the reservation's backoff window
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=later)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=later)
     rows = await _rows(db_session, p.id)
     assert [r.reference for r in rows] == ["DEV-2026-1234", "DEV-2026-9999"]
     assert rows[0].status == "cancelled" and rows[0].superseded_at is not None
@@ -531,12 +531,12 @@ async def test_a_reservation_whose_quote_was_renumbered_completes_quietly_then_r
 async def test_a_reservation_whose_amount_moved_completes_quietly_then_replaces(db_session, fake):
     p = await _project(db_session)
     fake.fail_with = HeimdallUpstreamError("down")
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
     fake.fail_with = None
     p.quote_total = 20000.0
     await db_session.commit()
     later = NOW + timedelta(minutes=10)  # past the reservation's backoff window
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=later)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=later)
     rows = await _rows(db_session, p.id)
     assert rows[0].status == "cancelled" and rows[0].amount == 12500
     assert rows[1].amount == 20000 and rows[1].status == "pending"
@@ -559,7 +559,7 @@ async def test_a_stale_reservation_that_turns_out_paid_is_credited_not_replaced(
     p = await _project(db_session)
     pid = p.id
     fake.fail_with = HeimdallUpstreamError("down")
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
     fake.fail_with = None
     p.quote_number = "DEV-2026-9999"
     await db_session.commit()
@@ -573,7 +573,7 @@ async def test_a_stale_reservation_that_turns_out_paid_is_credited_not_replaced(
 
     monkeypatch.setattr(heimdall_service, "create_link", create_then_pay)
     later = NOW + timedelta(minutes=10)  # past the reservation's backoff window
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=later)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=later)
     (r,) = await _rows(db_session, pid)
     assert r.status == "paid" and r.paid_at == later
     kinds = await _kinds(db_session, pid)
@@ -586,20 +586,20 @@ async def test_a_stale_reservation_that_turns_out_paid_is_credited_not_replaced(
 @pytest.mark.asyncio
 async def test_pending_and_equal_does_nothing(db_session, fake):
     p = await _project(db_session)
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
     n = len(fake.calls)
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
     assert len(fake.calls) == n
 
 
 @pytest.mark.asyncio
 async def test_amount_or_expiry_change_patches(db_session, fake):
     p = await _project(db_session)
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
     p.quote_total = 13000.0
     p.quote_expiry_date = "2026-09-30"
     await db_session.commit()
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
     assert fake.calls[-1] == ("patch", "L1", 13000, 18)
     (r,) = await _rows(db_session, p.id)
     assert r.amount == 13000 and r.expires_on == "2026-09-30"
@@ -612,7 +612,7 @@ async def test_create_stores_the_confirmed_expiry_not_the_raw_quote_date(db_sess
     three years out) must never leave `expires_on` reading a date the link
     will never actually reach."""
     p = await _project(db_session, quote_expiry_date="2030-01-01")
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
     assert fake.calls == [("create", f"aito:{p.id}:1", "DEV-2026-1234", 12500, 365)]
     (r,) = await _rows(db_session, p.id)
     assert r.expires_on == (TODAY + timedelta(days=365)).isoformat()
@@ -627,10 +627,10 @@ async def test_patch_stores_the_confirmed_expiry_not_the_wanted_date(db_session,
     confirmed, not the date we asked for — and a second pass on the same
     day must be stable (no immediate re-PATCH loop)."""
     p = await _project(db_session)
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
     p.quote_expiry_date = "2033-01-01"
     await db_session.commit()
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
     assert fake.calls[-1] == ("patch", "L1", None, 365)
     (r,) = await _rows(db_session, p.id)
     assert r.expires_on == (TODAY + timedelta(days=365)).isoformat()
@@ -638,7 +638,7 @@ async def test_patch_stores_the_confirmed_expiry_not_the_wanted_date(db_session,
 
     calls_before = len(fake.calls)
     p = await db_session.get(AitoProject, p.id)
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
     assert len(fake.calls) == calls_before, "already at the confirmed ceiling: no same-day re-patch"
 
 
@@ -653,7 +653,7 @@ async def test_permanently_clamped_expiry_settles_instead_of_repatching_daily(db
     the live `today` stops that residual drift without weakening detection
     of a real expiry change."""
     p = await _project(db_session, quote_expiry_date="2033-01-01")
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
     (r,) = await _rows(db_session, p.id)
     assert r.expires_on == (TODAY + timedelta(days=365)).isoformat()
 
@@ -661,9 +661,7 @@ async def test_permanently_clamped_expiry_settles_instead_of_repatching_daily(db
     # A day later: the naive `today`-based ceiling would have advanced by a
     # day and mismatched again. It must not, now.
     p = await db_session.get(AitoProject, p.id)
-    await reconcile_project(
-        db_session, p, pct=0, validity_days=15, today=TODAY + timedelta(days=1), now=NOW + timedelta(days=1)
-    )
+    await reconcile_project(db_session, p, pct=0, today=TODAY + timedelta(days=1), now=NOW + timedelta(days=1))
     assert len(fake.calls) == calls_before, "a permanently-clamped link must not re-patch a day later"
 
     # A genuine expiry change — now well inside Heimdall's cap — is still
@@ -671,9 +669,7 @@ async def test_permanently_clamped_expiry_settles_instead_of_repatching_daily(db
     p = await db_session.get(AitoProject, p.id)
     p.quote_expiry_date = "2026-10-15"
     await db_session.commit()
-    await reconcile_project(
-        db_session, p, pct=0, validity_days=15, today=TODAY + timedelta(days=1), now=NOW + timedelta(days=1)
-    )
+    await reconcile_project(db_session, p, pct=0, today=TODAY + timedelta(days=1), now=NOW + timedelta(days=1))
     assert len(fake.calls) > calls_before, "a real expiry change must still be detected"
     (r,) = await _rows(db_session, p.id)
     # `fake._confirm` (this fixture) always answers off the module-level
@@ -697,13 +693,13 @@ async def test_patch_that_never_converges_backs_off_instead_of_looping_forever(d
     for. A fifth pass shortly after the fourth must be skipped: the backoff
     this failure count now carries actually engages."""
     p = await _project(db_session)
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
     p.quote_total = 20000.0
     await db_session.commit()
     fake.stubborn = True
     for i in range(4):
         p = await db_session.get(AitoProject, p.id)
-        await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW + timedelta(hours=i))
+        await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW + timedelta(hours=i))
     patch_calls = [c for c in fake.calls if c[0] == "patch"]
     assert patch_calls == [("patch", "L1", 20000, None)] * 4
     (r,) = await _rows(db_session, p.id)
@@ -715,9 +711,7 @@ async def test_patch_that_never_converges_backs_off_instead_of_looping_forever(d
     # Backoff for 4 failures is min(4, 6) ticks == 20 minutes: a pass 5
     # minutes after the 4th must be skipped, not send a 5th identical PATCH.
     p = await db_session.get(AitoProject, p.id)
-    await reconcile_project(
-        db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW + timedelta(hours=3, minutes=5)
-    )
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW + timedelta(hours=3, minutes=5))
     assert len([c for c in fake.calls if c[0] == "patch"]) == 4, "still inside its backoff window"
 
 
@@ -729,10 +723,10 @@ async def test_patch_that_converges_records_the_change_with_no_error(db_session,
     exposed (`events: []` even though the amount changed and a client who
     already saw the old figure was never told anything moved)."""
     p = await _project(db_session)
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
     p.quote_total = 13000.0
     await db_session.commit()
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
     (r,) = await _rows(db_session, p.id)
     assert r.amount == 13000 and r.sync_error is None and r.sync_failures == 0
     kinds = await _kinds(db_session, p.id)
@@ -755,11 +749,11 @@ async def test_patch_that_converges_records_the_change_with_no_error(db_session,
 @pytest.mark.asyncio
 async def test_absent_confirmed_expiry_falls_back_to_the_wanted_date_on_patch(db_session, fake):
     p = await _project(db_session)
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
     p.quote_expiry_date = "2026-09-30"
     await db_session.commit()
     fake.expires_at_override = None  # Heimdall's reply omits `expires_at`
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
     (r,) = await _rows(db_session, p.id)
     assert r.expires_on == "2026-09-30"
 
@@ -767,11 +761,11 @@ async def test_absent_confirmed_expiry_falls_back_to_the_wanted_date_on_patch(db
 @pytest.mark.asyncio
 async def test_malformed_confirmed_expiry_falls_back_to_the_wanted_date_on_patch(db_session, fake):
     p = await _project(db_session)
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
     p.quote_expiry_date = "2026-09-30"
     await db_session.commit()
     fake.expires_at_override = "not-a-real-timestamp"
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
     (r,) = await _rows(db_session, p.id)
     assert r.expires_on == "2026-09-30" and r.sync_error is None
 
@@ -779,7 +773,7 @@ async def test_malformed_confirmed_expiry_falls_back_to_the_wanted_date_on_patch
 @pytest.mark.asyncio
 async def test_a_paid_retainer_shrinks_the_live_link_to_the_outstanding_amount(db_session, fake):
     p = await _project(db_session)
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
     (r,) = await _rows(db_session, p.id)
     assert r.amount == 12500
     # Books reports a 5000 retainer paid: the next reconcile patches the link
@@ -787,7 +781,7 @@ async def test_a_paid_retainer_shrinks_the_live_link_to_the_outstanding_amount(d
     # (amount only — the expiry did not move, so it is not re-sent).
     p.retainer_paid_total = 5000.0
     await db_session.commit()
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
     assert fake.calls[-1] == ("patch", "L1", 7500, None)
     (r,) = await _rows(db_session, p.id)
     assert r.amount == 7500
@@ -796,10 +790,10 @@ async def test_a_paid_retainer_shrinks_the_live_link_to_the_outstanding_amount(d
 @pytest.mark.asyncio
 async def test_reference_change_replaces(db_session, fake):
     p = await _project(db_session)
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
     p.quote_number = "DEV-2026-9999"
     await db_session.commit()
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
     rows = await _rows(db_session, p.id)
     assert [r.reference for r in rows] == ["DEV-2026-1234", "DEV-2026-9999"]
     assert rows[0].superseded_at is not None and rows[0].status == "cancelled"
@@ -830,10 +824,10 @@ async def test_reference_change_replaces(db_session, fake):
 )
 async def test_pending_with_nothing_wanted_cancels(db_session, fake, field, value, reason):
     p = await _project(db_session)
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
     setattr(p, field, value)
     await db_session.commit()
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
     (r,) = await _rows(db_session, p.id)
     assert r.status == "cancelled" and fake.calls[-1] == ("cancel", "L1")
     ev = (
@@ -847,13 +841,13 @@ async def test_pending_with_nothing_wanted_cancels(db_session, fake, field, valu
 @pytest.mark.asyncio
 async def test_paid_is_never_touched_even_when_the_total_moves(db_session, fake):
     p = await _project(db_session)
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
     fake.set_status("L1", "paid")
     await poll_link(db_session, (await _rows(db_session, p.id))[0], now=NOW)
     p.quote_total = 20000.0
     await db_session.commit()
     n = len(fake.calls)
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
     assert len(fake.calls) == n
     (r,) = await _rows(db_session, p.id)
     assert r.status == "paid" and r.amount == 12500 and r.superseded_at is None
@@ -863,10 +857,10 @@ async def test_paid_is_never_touched_even_when_the_total_moves(db_session, fake)
 @pytest.mark.parametrize("dead", ["expired", "cancelled", "failed"])
 async def test_a_dead_link_on_an_open_quote_is_replaced(db_session, fake, dead):
     p = await _project(db_session)
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
     fake.set_status("L1", dead)
     await poll_link(db_session, (await _rows(db_session, p.id))[0], now=NOW)
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
     rows = await _rows(db_session, p.id)
     assert len(rows) == 2 and rows[0].superseded_at is not None and rows[1].status == "pending"
     assert rows[1].idempotency_key == f"aito:{p.id}:2"
@@ -878,11 +872,11 @@ async def test_a_dead_link_on_an_open_quote_is_replaced(db_session, fake, dead):
 async def test_patch_conflict_rereads_instead_of_retrying(db_session, fake):
     p = await _project(db_session)
     pid = p.id
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
     fake.set_status("L1", "paid")  # paid at OSB, we don't know yet
     p.quote_total = 13000.0
     await db_session.commit()
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
     (r,) = await _rows(db_session, pid)
     assert r.status == "paid" and r.sync_error is None and r.paid_at == NOW
     assert fake.calls[-1] == ("get", "L1")
@@ -898,11 +892,11 @@ async def test_patch_conflict_rereads_instead_of_retrying(db_session, fake):
 async def test_cancel_conflict_with_a_paid_link_credits_instead_of_cancelling(db_session, fake):
     p = await _project(db_session)
     pid = p.id
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
     fake.set_status("L1", "paid")  # paid at OSB, right as we go to cancel it
     p.quote_invoiced = True  # nothing wanted any more -> reconcile_project tries to cancel
     await db_session.commit()
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
     (r,) = await _rows(db_session, pid)
     assert r.status == "paid" and r.paid_at == NOW and r.sync_error is None
     assert fake.calls[-1] == ("get", "L1")
@@ -920,7 +914,7 @@ async def test_cancel_conflict_on_a_row_already_paid_returns_true_commits_and_re
     Heimdall refuses the cancel, and the cancel must still report money."""
     p = await _project(db_session)
     pid = p.id
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
     fake.set_status("L1", "paid")
     (row,) = await _rows(db_session, pid)
     row_id = row.id
@@ -943,11 +937,11 @@ async def test_cancel_conflict_on_a_row_already_paid_returns_true_commits_and_re
 async def test_a_quote_with_nothing_left_to_pay_cancels_its_link_as_nothing_to_pay(db_session, fake):
     p = await _project(db_session)
     pid = p.id
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
     p.quote_total = 0.0
     await db_session.commit()
 
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
 
     (r,) = await _rows(db_session, pid)
     assert r.status == "cancelled" and fake.calls[-1] == ("cancel", "L1")
@@ -963,11 +957,11 @@ async def test_a_retried_reservation_replays_the_same_expiry(db_session, fake):
     instead of replaying the first response."""
     p = await _project(db_session)
     fake.fail_with = HeimdallUpstreamError("down")
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
     fake.fail_with = None
     later = NOW + timedelta(days=2)
     p = await db_session.get(AitoProject, p.id)
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=later.date(), now=later)
+    await reconcile_project(db_session, p, pct=0, today=later.date(), now=later)
     creates = [c for c in fake.calls if c[0] == "create"]
     assert len(creates) == 2
     assert creates[0][4] == creates[1][4] == 15
@@ -979,7 +973,7 @@ async def test_a_retried_reservation_replays_the_same_expiry(db_session, fake):
 @pytest.mark.asyncio
 async def test_poll_paid_stamps_records_and_accepts(db_session, fake):
     p = await _project(db_session)
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
     fake.set_status("L1", "paid")
     await poll_link(db_session, (await _rows(db_session, p.id))[0], now=NOW)
     (r,) = await _rows(db_session, p.id)
@@ -1003,7 +997,7 @@ async def test_poll_paid_stamps_records_and_accepts(db_session, fake):
 @pytest.mark.asyncio
 async def test_poll_failure_is_stored_and_counted(db_session, fake):
     p = await _project(db_session)
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
     fake.fail_with = HeimdallUpstreamError("boom")
     await poll_link(db_session, (await _rows(db_session, p.id))[0], now=NOW)
     (r,) = await _rows(db_session, p.id)
@@ -1125,7 +1119,7 @@ async def test_backoff_skips_a_failing_row_for_a_few_ticks(db_session, fake):
     p = await _project(db_session)
     pid = p.id
     fake.fail_with = HeimdallUpstreamError("down")
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
     # A real rollback (a transaction was genuinely open when the failure
     # hit) expires every ORM object the session tracks, `p` included — the
     # production pass loop now re-fetches by id every iteration rather than
@@ -1133,20 +1127,20 @@ async def test_backoff_skips_a_failing_row_for_a_few_ticks(db_session, fake):
     # mirror that here instead of reusing the same possibly-expired `p`.
     p = await db_session.get(AitoProject, pid)
     # One failure: skipped for one tick (300 s) counted from checked_at.
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW + timedelta(seconds=100))
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW + timedelta(seconds=100))
     (r,) = await _rows(db_session, pid)
     assert r.sync_failures == 1 and r.checked_at == NOW
     p = await db_session.get(AitoProject, pid)
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW + timedelta(seconds=400))
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW + timedelta(seconds=400))
     (r,) = await _rows(db_session, pid)
     assert r.sync_failures == 2 and r.checked_at == NOW + timedelta(seconds=400)
     fake.calls.clear()
     p = await db_session.get(AitoProject, pid)
     # Two failures: skipped until 2 * 300 s have passed since the last attempt.
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW + timedelta(seconds=900))
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW + timedelta(seconds=900))
     assert fake.calls == []
     p = await db_session.get(AitoProject, pid)
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW + timedelta(seconds=1100))
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW + timedelta(seconds=1100))
     assert fake.calls != []
 
 
@@ -1157,7 +1151,7 @@ async def test_force_bypasses_the_backoff(db_session, fake):
     bypass the button would be a no-op for the next 5–30 minutes."""
     p = await _project(db_session)
     pid = p.id
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
     # A failed row that also has work waiting for it (a moved total), so a
     # bypassed pass has something to call Heimdall about.
     (r,) = await _rows(db_session, pid)
@@ -1171,11 +1165,11 @@ async def test_force_bypasses_the_backoff(db_session, fake):
 
     fake.calls.clear()
     p = await db_session.get(AitoProject, pid)
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=later)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=later)
     assert fake.calls == []
 
     p = await db_session.get(AitoProject, pid)
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=later, force=True)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=later, force=True)
     assert fake.calls == [("patch", "L1", 13000, None)]  # amount only; the expiry did not move
     (r,) = await _rows(db_session, pid)
     assert r.amount == 13000 and r.sync_error is None and r.sync_failures == 0
@@ -1192,7 +1186,7 @@ async def test_a_renumber_that_finds_the_old_link_paid_survives_a_failed_books_p
     row is never re-adopted, so that error would have stuck forever."""
     p = await _project(db_session)
     pid = p.id
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
     fake.set_status("L1", "paid")  # paid at OSB; our row still says pending
 
     async def boom(db, estimate_id, target, current=None):
@@ -1203,7 +1197,7 @@ async def test_a_renumber_that_finds_the_old_link_paid_survives_a_failed_books_p
     p.quote_number = "DEV-2026-9999"
     await db_session.commit()
     p = await db_session.get(AitoProject, pid)
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
 
     rows = await _rows(db_session, pid)
     assert len(rows) == 1, "money wins: the paid link is not superseded by a replacement"
@@ -1329,7 +1323,7 @@ async def test_a_link_lost_at_heimdall_is_replaced_in_the_same_pass(db_session, 
     p.quote_total = 9000.0
     await db_session.commit()
 
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
 
     old, new = await _rows(db_session, p.id)
     assert old.status == "failed" and old.superseded_at is not None and old.heimdall_id == "L1"
@@ -1360,7 +1354,7 @@ async def test_a_lost_link_nobody_wants_anymore_is_marked_dead_and_told(db_sessi
     p.quote_status = "declined"
     await db_session.commit()
 
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
 
     (row,) = await _rows(db_session, p.id)
     assert row.status == "failed" and row.superseded_at is None
@@ -1369,7 +1363,7 @@ async def test_a_lost_link_nobody_wants_anymore_is_marked_dead_and_told(db_sessi
         {"reference": "DEV-2026-1234", "reason": "lost", "heimdall_id": "L1"}
     ]
     # And the next pass leaves it alone: dead and unwanted is settled.
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
     assert [c[0] for c in fake.calls] == ["cancel"]
 
 
@@ -1514,7 +1508,7 @@ async def test_reconciles_own_404_replacement_failing_is_recorded_not_silently_d
     directly, reached through a drifted amount, so the SAME double-failure
     handler runs through the reconcile half instead."""
     p = await _project(db_session)
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
     fake.calls.clear()
 
     async def not_found_patch(db, heimdall_id, **kw):
@@ -1528,7 +1522,7 @@ async def test_reconciles_own_404_replacement_failing_is_recorded_not_silently_d
 
     p.quote_total = 13000.0
     await db_session.commit()
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW + timedelta(hours=1))
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW + timedelta(hours=1))
 
     old, reservation = await _rows(db_session, p.id)
     assert old.status == "failed" and old.superseded_at is not None and old.heimdall_id == "L1"
@@ -1550,7 +1544,7 @@ async def test_a_rate_limit_during_the_reconciles_own_replacement_propagates(db_
     `test_a_rate_limit_during_the_lost_links_replacement_stands_the_whole_pass_down`
     for this other, previously-untested `except HeimdallNotFound` block."""
     p = await _project(db_session)
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
     fake.calls.clear()
 
     async def not_found_patch(db, heimdall_id, **kw):
@@ -1566,7 +1560,7 @@ async def test_a_rate_limit_during_the_reconciles_own_replacement_propagates(db_
     await db_session.commit()
 
     with pytest.raises(HeimdallRateLimited):
-        await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW + timedelta(hours=1))
+        await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW + timedelta(hours=1))
 
     old, reservation = await _rows(db_session, p.id)
     assert old.status == "failed" and old.superseded_at is not None
@@ -1721,7 +1715,7 @@ async def test_paid_invoice_link_records_but_never_accepts_the_quote(db_session,
 @pytest.mark.asyncio
 async def test_create_invoice_link_reserves_posts_and_records(db_session, fake):
     p = await _project(db_session)
-    fake.expires_at_override = "2026-10-08T23:59:59.999Z"
+    fake.expires_at_override = "2026-10-23T23:59:59.999Z"
     doc = PaymentDocument(kind="invoice", id="inv-1", number="FA-26-0001", customer_id="c1", balance=23000)
     row = await svc.create_invoice_link(
         db_session,
@@ -1731,13 +1725,12 @@ async def test_create_invoice_link_reserves_posts_and_records(db_session, fake):
         actor_name="paul",
         now=datetime(2026, 9, 23),
         today=date(2026, 9, 23),
-        validity_days=15,
     )
     creates = [c for c in fake.calls if c[0] == "create"]
     assert len(creates) == 1
     _, key, reference, amount, days = creates[0]
-    assert reference == "FA-26-0001" and amount == 23000 and days == 15
-    assert row.document_kind == "invoice" and row.url == "https://osb/pay/L1" and row.expires_on == "2026-10-08"
+    assert reference == "FA-26-0001" and amount == 23000 and days == 30  # one calendar month
+    assert row.document_kind == "invoice" and row.url == "https://osb/pay/L1" and row.expires_on == "2026-10-23"
     kinds = await _kinds(db_session, p.id)
     assert "payment_link.created" in kinds
     ev = (
@@ -1758,7 +1751,6 @@ async def test_create_invoice_link_reserves_posts_and_records(db_session, fake):
             actor_name=None,
             now=datetime(2026, 9, 23),
             today=date(2026, 9, 23),
-            validity_days=15,
         )
 
 
@@ -1776,7 +1768,6 @@ async def test_create_invoice_link_marks_reservation_on_not_configured_and_rerai
             actor_name="paul",
             now=datetime(2026, 9, 23),
             today=date(2026, 9, 23),
-            validity_days=15,
         )
     (row,) = await _rows(db_session, p.id)
     assert row.heimdall_id is None and row.sync_error is not None and "configured" in row.sync_error.lower()
@@ -1797,7 +1788,6 @@ async def test_create_invoice_link_replays_a_stuck_reservation_under_its_own_key
             actor_name="paul",
             now=datetime(2026, 9, 23),
             today=date(2026, 9, 23),
-            validity_days=15,
         )
     (stuck,) = await _rows(db_session, p.id)
     assert stuck.heimdall_id is None and stuck.sync_error == "boom"
@@ -1817,7 +1807,6 @@ async def test_create_invoice_link_replays_a_stuck_reservation_under_its_own_key
         actor_name="paul",
         now=datetime(2026, 10, 1),
         today=date(2026, 10, 1),
-        validity_days=15,
     )
     assert row.id == stuck.id  # replayed the same reservation, not a second one
     rows = await _rows(db_session, p.id)
@@ -1859,7 +1848,6 @@ async def test_create_invoice_link_falls_through_a_dead_link_to_a_new_row(db_ses
         actor_name="paul",
         now=datetime(2026, 9, 23),
         today=date(2026, 9, 23),
-        validity_days=15,
     )
     assert row.id != old_id
     assert row.idempotency_key.endswith(":2")
@@ -1902,7 +1890,6 @@ async def test_create_invoice_link_replays_a_reservation_with_no_sync_error_yet(
         actor_name="paul",
         now=datetime(2026, 9, 23),
         today=date(2026, 9, 23),
-        validity_days=15,
     )
     assert replayed.id == row_id and len(await _rows(db_session, p.id)) == 1
     creates = [c for c in fake.calls if c[0] == "create"]
@@ -2118,7 +2105,6 @@ async def test_two_concurrent_invoice_link_creates_reserve_exactly_one_row(
                 actor_name="paul",
                 now=NOW,
                 today=TODAY,
-                validity_days=15,
             )
 
     outcomes = await asyncio.gather(click(), click(), return_exceptions=True)
@@ -2160,7 +2146,6 @@ async def test_an_operator_create_racing_the_reconcilers_reserve_gets_a_distinct
                 actor_name="paul",
                 now=NOW,
                 today=TODAY,
-                validity_days=15,
             )
 
     async def reconciler():
@@ -2199,7 +2184,6 @@ async def test_a_key_collision_from_another_process_is_refused_as_link_exists(
             actor_name="paul",
             now=NOW,
             today=TODAY,
-            validity_days=15,
         )
     assert [c for c in fake.calls if c[0] == "create"] == []
     rows = await _rows(db_session, project_id)  # the session survived the rollback
@@ -2229,7 +2213,6 @@ async def test_a_key_collision_with_no_open_link_left_still_surfaces_the_databas
             actor_name="paul",
             now=NOW,
             today=TODAY,
-            validity_days=15,
         )
     assert [c for c in fake.calls if c[0] == "create"] == []
     rows = await _rows(db_session, project_id)
@@ -2291,7 +2274,7 @@ async def test_a_not_configured_poll_is_recorded_and_the_poll_half_still_runs(db
 @pytest.mark.asyncio
 async def test_poll_link_stores_not_configured_on_the_row(db_session, fake):
     p = await _project(db_session)
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
     fake.fail_with = HeimdallNotConfigured(_BAD_TOKEN_ERROR)
     await poll_link(db_session, (await _rows(db_session, p.id))[0], now=NOW)
     (r,) = await _rows(db_session, p.id)
@@ -2326,7 +2309,7 @@ async def test_a_not_configured_replacement_after_reconciles_own_404_is_recorded
     """T-056: the same, through `reconcile_project`'s OWN 404 handler (a
     PATCH answering 404 on a drifted amount)."""
     p = await _project(db_session)
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
 
     async def not_found_patch(db, heimdall_id, **kw):
         raise HeimdallNotFound(f"Heimdall HTTP 404 not_found: no payment {heimdall_id}")
@@ -2339,7 +2322,7 @@ async def test_a_not_configured_replacement_after_reconciles_own_404_is_recorded
     p.quote_total = 13000.0
     await db_session.commit()
 
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW + timedelta(hours=1))
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW + timedelta(hours=1))
 
     old, reservation = await _rows(db_session, p.id)
     assert old.status == "failed" and old.superseded_at is not None
@@ -2463,10 +2446,10 @@ async def test_reconcile_project_reports_only_a_transport_failure(db_session, fa
     p = await _project(db_session)
     pid = p.id
     fake.fail_with = HeimdallUpstreamError("Heimdall HTTP 500 internal: boom")
-    assert await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW) is False
+    assert await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW) is False
     fake.fail_with = None
     p = await db_session.get(AitoProject, pid)
-    assert await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW, force=True) is False
+    assert await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW, force=True) is False
 
     async def not_found_patch(db, heimdall_id, **kw):
         raise HeimdallNotFound(f"Heimdall HTTP 404 not_found: no payment {heimdall_id}")
@@ -2480,11 +2463,11 @@ async def test_reconcile_project_reports_only_a_transport_failure(db_session, fa
     p.quote_total = 13000.0
     await db_session.commit()
     later = NOW + timedelta(hours=1)
-    assert await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=later) is True
+    assert await reconcile_project(db_session, p, pct=0, today=TODAY, now=later) is True
     p = await db_session.get(AitoProject, pid)
     fake.fail_with = HeimdallUnreachable("Heimdall unreachable: again")
     monkeypatch.setattr(heimdall_service, "create_link", fake.create_link)
-    assert await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=later, force=True) is True
+    assert await reconcile_project(db_session, p, pct=0, today=TODAY, now=later, force=True) is True
 
 
 @pytest.mark.asyncio
@@ -2593,14 +2576,14 @@ async def test_a_failed_acceptance_on_a_cancel_conflict_is_retried_by_the_forced
     it — once."""
     p = await _project(db_session)
     pid = p.id
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
     fake.set_status("L1", "paid")
     p.quote_invoiced = True  # nothing wanted any more -> the reconcile tries to cancel
     await db_session.commit()
     notified = _spy_notifications(monkeypatch)
     _fail_rules_once(monkeypatch)
 
-    await reconcile_project(db_session, p, pct=0, validity_days=15, today=TODAY, now=NOW)
+    await reconcile_project(db_session, p, pct=0, today=TODAY, now=NOW)
     (r,) = await _rows(db_session, pid)
     await db_session.refresh(r)
     assert r.status == "pending" and r.paid_at is None and "database is locked" in r.sync_error

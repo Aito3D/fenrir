@@ -7111,8 +7111,6 @@ export default {
     tokenHint: 'Somente escrita — deixe em branco para manter o token atual',
     depositPct: 'Sinal (%)',
     depositPctDescription: '0 cobra o orçamento inteiro; caso contrário, o link cobre essa parte.',
-    validityDays: 'Validade do orçamento (dias)',
-    validityDaysDescription: 'Data de expiração escrita em cada novo orçamento; o link de pagamento termina no mesmo dia.',
     save: 'Salvar',
     saved: 'Configurações do Heimdall salvas',
     test: 'Testar a conexão',
