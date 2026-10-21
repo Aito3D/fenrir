@@ -3,9 +3,7 @@ import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import {
-  AlertCircle,
   Box,
-  CheckCircle2,
   Clock,
   Download,
   ExternalLink,
@@ -18,7 +16,6 @@ import {
   Pencil,
   Plus,
   Printer,
-  RotateCw,
   Scissors,
 } from 'lucide-react';
 import { api } from '../../../api/client';
@@ -37,6 +34,7 @@ import { useFileDropZone } from './useFileDropZone';
 import { useRevisionSlice } from './useRevisionSlice';
 import type { RevisionSliceState } from './useRevisionSlice';
 import { ItemDetailsTray } from './ItemDetailsTray';
+import { SliceLine } from './SliceLine';
 import {
   PREVIEWABLE_TYPES,
   PRINTABLE_ACCEPT,
@@ -120,8 +118,7 @@ export function ItemCard({ item, actions, open, onToggleDetails, entering = fals
   const [preview, setPreview] = useState<ProjectFileOut | null>(null);
   // The ⋯ fork request: the tray opens that revision's block with its fork form showing.
   const [fork, setFork] = useState<{ revisionId: number; nonce: number } | null>(null);
-  const [renaming, setRenaming] = useState<string | null>(null);
-  const renameDone = useRef(false);
+  const rename = useItemRename(item, actions);
 
   // A new revision is the newest: drop a picked older chip so the card shows it.
   const uploadNewRevision = async (files: File[]) => {
@@ -145,29 +142,6 @@ export function ItemCard({ item, actions, open, onToggleDetails, entering = fals
   const outdated = shown?.outdated_by && shown.derived_from ? outdatedParams(shown.derived_from, shown.outdated_by) : null;
   const canSlice = canUpdate && !!source && (slice.state === 'none' || slice.state === 'failed');
 
-  const startRename = () => {
-    renameDone.current = false;
-    setRenaming(item.name);
-  };
-  const cancelRename = () => {
-    renameDone.current = true;
-    setRenaming(null);
-  };
-  const submitRename = async () => {
-    if (renameDone.current) return;
-    renameDone.current = true;
-    const name = (renaming ?? '').trim();
-    setRenaming(null);
-    if (name && name !== item.name) await actions.renameItem(item.id, name);
-  };
-  const renameField = renaming !== null && (
-    <form className="flex min-w-0 flex-1 basis-40" onSubmit={(e) => { e.preventDefault(); void submitRename(); }}>
-      <input autoFocus value={renaming} onChange={(e) => setRenaming(e.target.value)} onBlur={() => void submitRename()}
-        aria-label={t('projectsPdm.files.rename')} className={inputCls}
-        onKeyDown={(e) => e.key === 'Escape' && cancelRename()} />
-    </form>
-  );
-
   const toggleDetails = () => {
     if (open) setFork(null);
     onToggleDetails();
@@ -175,7 +149,7 @@ export function ItemCard({ item, actions, open, onToggleDetails, entering = fals
 
   const menuItems: ContextMenuItem[] = [
     { label: t('projectsPdm.files.details'), icon: <Info className="h-4 w-4" />, onClick: toggleDetails },
-    ...(canUpdate ? [{ label: t('projectsPdm.files.rename'), icon: <Pencil className="h-4 w-4" />, onClick: startRename }] : []),
+    ...(canUpdate ? [{ label: t('projectsPdm.files.rename'), icon: <Pencil className="h-4 w-4" />, onClick: rename.start }] : []),
     ...(shown?.sliced_file
       ? [{
           label: t('projectsPdm.slice.downloadSliced'),
@@ -270,8 +244,8 @@ export function ItemCard({ item, actions, open, onToggleDetails, entering = fals
         </div>
 
         <div className="flex-1 px-3 pb-3 pt-1.5 text-xs text-bambu-gray">
-          {renaming !== null && !open ? (
-            renameField
+          {rename.renaming !== null && !open ? (
+            rename.field
           ) : (
             <button type="button" aria-expanded={open} onClick={toggleDetails} title={item.name}
               className={`block min-h-[44px] w-full truncate rounded text-left text-sm font-medium text-white md:min-h-0 ${focusRingCls}`}>
@@ -342,8 +316,8 @@ export function ItemCard({ item, actions, open, onToggleDetails, entering = fals
           revision={shown}
           actions={actions}
           dropHandlers={dropHandlers}
-          renameField={renameField || null}
-          onRename={startRename}
+          renameField={rename.field || null}
+          onRename={rename.start}
           onClose={toggleDetails}
           fork={fork}
         />
@@ -373,61 +347,34 @@ export function ItemCard({ item, actions, open, onToggleDetails, entering = fals
   );
 }
 
-// `changed`: the state moved since the card mounted, so the new line fades in (and a
-// fresh "Sliced" gives its check one press). A page load never animates.
-function SliceLine({ state, percent, error, printCount, onRetry, changed }: {
-  changed: boolean;
-  state: RevisionSliceState;
-  percent: number | null;
-  error: string | null;
-  printCount: number;
-  onRetry?: () => void;
-}) {
+/** The card's inline rename: the draft name (null when closed), the form that edits it, and
+ *  `start`. Enter and blur save once (a changed, non-blank name); Escape cancels. */
+function useItemRename(item: ProjectItemOut, actions: FileActions) {
   const { t } = useTranslation();
-  const enter = changed ? 'animate-fade-in' : '';
-  if (state === 'slicing') {
-    return (
-      <div className={`mt-2 ${enter}`}>
-        <div className="mb-1 flex justify-between text-[11px] text-bambu-green">
-          <span>{t('slice.slicing')}</span>
-          {percent !== null && <span>{`${percent}%`}</span>}
-        </div>
-        <div role="progressbar" aria-label={t('slice.slicing')} aria-valuemin={0} aria-valuemax={100}
-          aria-valuenow={percent ?? undefined} className="h-1 overflow-hidden rounded bg-bambu-dark-tertiary">
-          <div className={`h-full bg-bambu-green ${percent === null ? 'w-1/3 animate-pulse' : 'w-full origin-left transition-transform duration-300 ease-[var(--ease-signature)]'}`}
-            style={percent !== null ? { transform: `scaleX(${percent / 100})` } : undefined} />
-        </div>
-      </div>
-    );
-  }
-  if (state === 'failed') {
-    return (
-      <div className={`mt-1 flex flex-wrap items-center gap-x-2 text-red-400 ${enter}`}>
-        <span className="flex min-w-0 items-center gap-1 break-words">
-          <AlertCircle className="h-3 w-3 shrink-0" aria-hidden />
-          {error ? t('projectsPdm.slice.failed', { detail: error }) : t('queue.status.slice_failed')}
-        </span>
-        {onRetry && (
-          <button type="button" onClick={onRetry}
-            className={`inline-flex min-h-[44px] items-center gap-1 rounded underline md:min-h-0 ${focusRingCls}`}>
-            <RotateCw className="h-3 w-3" aria-hidden />{t('common.retry')}
-          </button>
-        )}
-      </div>
-    );
-  }
-  if (state === 'none') {
-    return (
-      <div className={`mt-1 flex items-center gap-1 text-amber-400 ${enter}`}>
-        <AlertCircle className="h-3 w-3" aria-hidden />{t('projectsPdm.files.notSliced')}
-      </div>
-    );
-  }
-  return (
-    <div className={`mt-1 flex items-center gap-1 text-bambu-green ${enter}`}>
-      <CheckCircle2 className={`h-3 w-3 ${changed ? 'animate-slice-done' : ''}`} aria-hidden />
-      <span>{t('projectsPdm.files.sliced')}</span>
-      {printCount > 0 && <span>{`· ${t('projectsPdm.print.printCount', { count: printCount })}`}</span>}
-    </div>
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const renameDone = useRef(false);
+
+  const start = () => {
+    renameDone.current = false;
+    setRenaming(item.name);
+  };
+  const cancelRename = () => {
+    renameDone.current = true;
+    setRenaming(null);
+  };
+  const submitRename = async () => {
+    if (renameDone.current) return;
+    renameDone.current = true;
+    const name = (renaming ?? '').trim();
+    setRenaming(null);
+    if (name && name !== item.name) await actions.renameItem(item.id, name);
+  };
+  const field = renaming !== null && (
+    <form className="flex min-w-0 flex-1 basis-40" onSubmit={(e) => { e.preventDefault(); void submitRename(); }}>
+      <input autoFocus value={renaming} onChange={(e) => setRenaming(e.target.value)} onBlur={() => void submitRename()}
+        aria-label={t('projectsPdm.files.rename')} className={inputCls}
+        onKeyDown={(e) => e.key === 'Escape' && cancelRename()} />
+    </form>
   );
+  return { renaming, field, start };
 }

@@ -1371,6 +1371,7 @@ CREATE TABLE projects (
 1 export function revisionNumberLabel
 1 export function SectionBlock
 1 export function sectionRevisionLabel
+1 export function SliceLine
 1 export function splitTagDrafts
 1 export function SubProjectsPanel
 1 export function TaskDropZone

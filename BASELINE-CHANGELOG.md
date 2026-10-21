@@ -1126,3 +1126,4 @@ so it is not stranded.
 - 2026-10-21 re-baseline: additive internal export LinkedFoldersPanel for T-444
 - 2026-10-21 re-baseline: additive internal export SubProjectsPanel for T-444
 - 2026-10-21 re-baseline: additive internal export useProjectLinkedFiles for T-444
+- 2026-10-21 re-baseline: additive internal export SliceLine for T-446

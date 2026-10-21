@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import io
 import zipfile
+from datetime import datetime
 
 import httpx
 import pytest
@@ -201,6 +202,85 @@ async def test_sliced_file_carries_its_facts_and_downloads(async_client: AsyncCl
     zipped = await async_client.get(f"/api/v1/projects/revisions/{rev['id']}/download")
     with zipfile.ZipFile(io.BytesIO(zipped.content)) as zf:
         assert zf.namelist() == ["support.3mf"]
+
+
+async def _sliced_upload(client: AsyncClient) -> tuple[dict, dict]:
+    """Upload a source and wait for its slice: (revision as the tree shows it, its sliced file)."""
+    project, _item, rev = await _upload(client)
+    await _wait_job(rev["slice_job_id"])
+    out = await _tree_revision(client, project["id"], rev["id"])
+    assert out["slice_status"] == "sliced", out
+    return out, out["sliced_file"]
+
+
+async def _download_404(client: AsyncClient, revision_id: int, file_id: int) -> None:
+    res = await client.get(f"/api/v1/projects/revisions/{revision_id}/download?file_id={file_id}")
+    assert res.status_code == 404, res.text
+    assert res.json() == {"detail": "File not found"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_download_refuses_another_revisions_sliced_file(async_client: AsyncClient, db_session, sidecar):
+    """``?file_id=`` serves only the revision's OWN sliced file: another revision's slice is 404, also
+    when the revision's ``sliced_file_id`` points at it (the row must belong to the revision)."""
+    rev_a, sliced_a = await _sliced_upload(async_client)
+    rev_b, sliced_b = await _sliced_upload(async_client)
+    assert sliced_a["id"] != sliced_b["id"]
+
+    await _download_404(async_client, rev_a["id"], sliced_b["id"])
+
+    await db_session.execute(
+        update(ProjectRevision).where(ProjectRevision.id == rev_a["id"]).values(sliced_file_id=sliced_b["id"])
+    )
+    await db_session.commit()
+    await _download_404(async_client, rev_a["id"], sliced_b["id"])
+    # revision B still serves its own slice
+    ok = await async_client.get(f"/api/v1/projects/revisions/{rev_b['id']}/download?file_id={sliced_b['id']}")
+    assert ok.status_code == 200 and ok.content == _sliced_3mf()
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_download_unknown_file_id_is_404(async_client: AsyncClient, sidecar):
+    rev, _sliced = await _sliced_upload(async_client)
+    await _download_404(async_client, rev["id"], 987654)
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_download_soft_deleted_sliced_file_is_404(async_client: AsyncClient, db_session, sidecar):
+    rev, sliced = await _sliced_upload(async_client)
+    await db_session.execute(
+        update(LibraryFile).where(LibraryFile.id == sliced["id"]).values(deleted_at=datetime(2026, 10, 1))
+    )
+    await db_session.commit()
+    await _download_404(async_client, rev["id"], sliced["id"])
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_download_sliced_file_missing_on_disk_is_404(async_client: AsyncClient, db_session, sidecar):
+    rev, sliced = await _sliced_upload(async_client)
+    (row,) = await _derived_rows(db_session)
+    assert row.id == sliced["id"]
+    path = to_absolute_path(row.file_path)
+    assert path is not None
+    path.unlink()
+    await _download_404(async_client, rev["id"], sliced["id"])
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_download_file_id_on_an_unsliced_revision_is_404(async_client: AsyncClient, sidecar, monkeypatch):
+    """A revision with no slice (``sliced_file_id`` null) serves no file outside its own files."""
+    _, other_sliced = await _sliced_upload(async_client)
+    _no_auto_slice(monkeypatch)
+    project, _item, rev = await _upload(async_client)
+    out = await _tree_revision(async_client, project["id"], rev["id"])
+    assert (out["slice_status"], out["sliced_file"]) == (None, None)
+    await _download_404(async_client, rev["id"], other_sliced["id"])
+    await _download_404(async_client, rev["id"], 987654)
 
 
 @pytest.mark.asyncio
