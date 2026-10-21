@@ -1355,7 +1355,6 @@ CREATE TABLE projects (
 1 export function ProjectListPage
 1 export function ProjectModal
 1 export function ProjectOptionButton
-1 export function ProjectOptionLabel
 1 export function ProjectOrdersCard
 1 export function ProjectPanel
 1 export function ProjectSearchInput

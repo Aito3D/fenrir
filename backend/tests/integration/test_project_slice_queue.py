@@ -490,6 +490,37 @@ async def test_model_based_item_reads_filament_types_from_the_slice(
     assert item.required_filament_types == '["PETG"]'
 
 
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_model_based_item_keeps_an_unreadable_filament_list_when_the_slice_lands(
+    async_client: AsyncClient, db_session, sidecar, printer_factory, monkeypatch
+):
+    """A corrupt stored ``required_filament_types`` must not undo the slice it rides on: the item
+    still moves onto the G-code, its column left as it was."""
+    from backend.app.api.routes import print_queue as print_queue_routes
+
+    def types_of(path, plate_id=None):
+        return ["PETG"] if str(path).endswith(".gcode.3mf") else []
+
+    monkeypatch.setattr(print_queue_routes, "_extract_filament_types_from_3mf", types_of)
+    await printer_factory(model="X1C")
+    rev = await _upload(async_client)
+    sidecar.block = True
+    out = await _queue(async_client, rev["files"][0]["id"], target_model="X1C", plate_id=1)
+    assert out["status"] == "slicing"
+    await db_session.execute(
+        update(PrintQueueItem).where(PrintQueueItem.id == out["id"]).values(required_filament_types="not json")
+    )
+    await db_session.commit()
+
+    sidecar.release.set()
+    await _wait_job(out["slice_job_id"])
+    sliced_id = (await _revision(db_session, rev["id"])).sliced_file_id
+    item = await _item(db_session, out["id"])
+    assert (item.status, item.library_file_id) == ("pending", sliced_id)
+    assert item.required_filament_types == "not json"
+
+
 async def _legacy_two_source_revision(client: AsyncClient, db) -> tuple[dict, int, int]:
     """A legacy revision holding two project ``.3mf`` files (uploads now take one): the slice is made
     from the first only (``project_slice._source_file``)."""
@@ -675,6 +706,38 @@ async def test_settle_fails_items_of_a_revision_that_never_started_a_slice(
     await project_slice.settle_waiting_queue_items(db_session, rev["id"])
     item = await _item(db_session, item_id)
     assert (item.status, item.error_message) == ("slice_failed", expected)
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_a_failed_slice_message_is_cut_to_the_column_cap(async_client: AsyncClient, db_session, sidecar):
+    rev = await _upload(async_client)
+    item_id = await _slicing_item_on(db_session, rev["files"][0]["id"])
+    revision = await _revision(db_session, rev["id"])
+    message = "e" * (project_slice.SLICE_ERROR_MAX_CHARS + 100)
+
+    await project_slice.on_revision_slice_done(db_session, revision, None, message)
+    await db_session.commit()
+    item = await _item(db_session, item_id)
+    assert item.status == "slice_failed"
+    assert len(item.error_message) == 500
+    assert item.error_message == message[:500]
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_a_slice_ending_with_neither_file_nor_error_fails_the_items(
+    async_client: AsyncClient, db_session, sidecar
+):
+    """No sliced file and no reason: the waiting items still fail, with the default message."""
+    rev = await _upload(async_client)
+    item_id = await _slicing_item_on(db_session, rev["files"][0]["id"])
+    revision = await _revision(db_session, rev["id"])
+
+    await project_slice.on_revision_slice_done(db_session, revision, None, None)
+    await db_session.commit()
+    item = await _item(db_session, item_id)
+    assert (item.status, item.error_message) == ("slice_failed", "The slice failed")
 
 
 async def _failed_items_on_source(db, printer_factory, async_client: AsyncClient):

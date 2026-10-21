@@ -1127,3 +1127,4 @@ so it is not stranded.
 - 2026-10-21 re-baseline: additive internal export SubProjectsPanel for T-444
 - 2026-10-21 re-baseline: additive internal export useProjectLinkedFiles for T-444
 - 2026-10-21 re-baseline: additive internal export SliceLine for T-446
+- 2026-10-21 T-403: user-approved behavior change (user-approved 2026-10-16) — frontend/src/components/projects/ProjectCodeChip.tsx: `ProjectOptionLabel` is no longer exported (module-private; its only use is ProjectOptionButton in the same file; repo-wide grep, tests included, found no importer — the ProjectLinkPicker/MoveToProjectModal uses noted for T-270 now go through ProjectOptionButton). Removal of this export is sanctioned by the approval. Nothing changes at runtime. SURFACE.md regenerated: the `export function ProjectOptionLabel` line removed. Goldens re-recorded: none (11/11 match).

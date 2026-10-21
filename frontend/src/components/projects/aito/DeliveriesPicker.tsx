@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { useMutation } from '@tanstack/react-query';
 import { api } from '../../../api/client';
-import type { ProjectTreeResponse } from '../../../api/client';
+import type { ProjectOrderTask, ProjectTreeResponse } from '../../../api/client';
 import { Button } from '../../Button';
 import { useToast } from '../../../contexts/ToastContext';
 import { SECTION_LABEL_KEYS, STATUS_LABEL_KEYS, isSectionEnabled } from '../files/filesUi';
@@ -31,6 +31,123 @@ function suggestLatestApproved(tree: ProjectTreeResponse): Map<number, number> {
   return picks;
 }
 
+/** The picker's checked revision ids, seeded from the task's `current` list:
+ *  one toggled at a time, the suggestion applied per item, or the whole set
+ *  replaced by another order's deliveries. */
+function useDeliveryChecks(current: number[]) {
+  const [checked, setChecked] = useState(() => new Set(current));
+
+  const toggle = (id: number) =>
+    setChecked((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const suggest = (tree: ProjectTreeResponse | undefined) => {
+    if (!tree) return;
+    const picks = suggestLatestApproved(tree);
+    setChecked((prev) => {
+      const next = new Set(prev);
+      for (const section of tree.sections) {
+        for (const item of section.items) {
+          const pick = picks.get(item.id);
+          if (pick === undefined) continue;
+          item.revisions.forEach((r) => next.delete(r.id));
+          next.add(pick);
+        }
+      }
+      return next;
+    });
+  };
+
+  const replace = (ids: number[]) => setChecked(new Set(ids));
+
+  return { checked, toggle, suggest, replace };
+}
+
+/** "Reuse the files of another order": picking an order replaces the checks
+ *  with what that order delivered. */
+function ReuseFromOrderSelect({
+  reusable,
+  onPick,
+}: {
+  reusable: ProjectOrderTask[];
+  onPick: (ids: number[]) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <select
+      value=""
+      aria-label={t('projectsPdm.aito.reuseFromOrderPlaceholder')}
+      onChange={(e) => {
+        const order = reusable.find((o) => String(o.task_id) === e.target.value);
+        if (order) onPick(order.deliveries.map((d) => d.id));
+      }}
+      className="min-w-0 flex-1 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark px-2 py-1.5 text-sm text-white"
+    >
+      <option value="" disabled>
+        {t('projectsPdm.aito.reuseFromOrderPlaceholder')}
+      </option>
+      {reusable.map((o) => (
+        <option key={o.task_id} value={o.task_id}>
+          {t('projectsPdm.aito.reuseFromOrder', { order: o.order_id })}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+/** The checkbox rows: section → item → one checkbox per revision, items with
+ *  no revision left out (an empty notice when nothing is left). */
+function DeliveryRevisionList({
+  tree,
+  checked,
+  onToggle,
+}: {
+  tree: ProjectTreeResponse | undefined;
+  checked: Set<number>;
+  onToggle: (id: number) => void;
+}) {
+  const { t } = useTranslation();
+  const sections = (tree?.sections ?? []).filter((s) => s.items.some((i) => i.revisions.length > 0));
+  return (
+    <div className="min-h-0 flex-1 space-y-3 overflow-y-auto">
+      {tree && sections.length === 0 && <p className="text-sm text-bambu-gray">{t('projectsPdm.files.emptySection')}</p>}
+      {sections.map((s) => (
+        <section key={s.section} className="space-y-1">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-bambu-gray">
+            {t(SECTION_LABEL_KEYS[s.section])}
+          </h3>
+          {s.items
+            .filter((i) => i.revisions.length > 0)
+            .map((item) => (
+              <div key={item.id} className="space-y-0.5 pl-1">
+                <p className="text-sm text-white">{item.name}</p>
+                {item.revisions.map((r) => (
+                  <label key={r.id} className="flex items-center gap-2 pl-2 text-sm text-bambu-gray-light">
+                    <input
+                      type="checkbox"
+                      checked={checked.has(r.id)}
+                      onChange={() => onToggle(r.id)}
+                      aria-label={`${revisionLabel(item.name, r.number)} · ${t(STATUS_LABEL_KEYS[r.status])}`}
+                      className="accent-bambu-green"
+                    />
+                    <span aria-hidden="true" className="tabular-nums">{revisionNumberLabel(r.number)}</span>
+                    <span aria-hidden="true" className="text-xs text-bambu-gray">
+                      {t(STATUS_LABEL_KEYS[r.status])}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            ))}
+        </section>
+      ))}
+    </div>
+  );
+}
+
 /** Which of the linked project's revisions this task delivered: a checkbox per
  *  revision, grouped section → item, with the suggestion and "reuse the files
  *  of another order" shortcuts. Saving replaces the task's whole list. */
@@ -50,7 +167,7 @@ export function DeliveriesPicker({
   const { t } = useTranslation();
   const { showToast } = useToast();
   const invalidate = useInvalidateProjectLinks();
-  const [checked, setChecked] = useState(() => new Set(current));
+  const { checked, toggle, suggest, replace } = useDeliveryChecks(current);
   const dialogRef = useRef<HTMLDivElement>(null);
   useIsolatedEscape(onClose, dialogRef);
 
@@ -73,33 +190,6 @@ export function DeliveriesPicker({
     onError: () => showToast(t('projectsPdm.files.saveFailed'), 'error'),
   });
 
-  const toggle = (id: number) =>
-    setChecked((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-
-  const suggest = () => {
-    if (!tree) return;
-    const picks = suggestLatestApproved(tree);
-    setChecked((prev) => {
-      const next = new Set(prev);
-      for (const section of tree.sections) {
-        for (const item of section.items) {
-          const pick = picks.get(item.id);
-          if (pick === undefined) continue;
-          item.revisions.forEach((r) => next.delete(r.id));
-          next.add(pick);
-        }
-      }
-      return next;
-    });
-  };
-
-  const sections = (tree?.sections ?? []).filter((s) => s.items.some((i) => i.revisions.length > 0));
-
   // Portalled: the panel's task row is a file drop target and must not see
   // drops (or stacking) from this modal.
   return createPortal(
@@ -119,64 +209,12 @@ export function DeliveriesPicker({
       >
         <h2 className="text-lg font-semibold text-white">{t('projectsPdm.aito.deliveredFiles')}</h2>
         <div className="flex flex-wrap items-center gap-2">
-          <Button type="button" variant="secondary" size="sm" onClick={suggest} disabled={!tree}>
+          <Button type="button" variant="secondary" size="sm" onClick={() => suggest(tree)} disabled={!tree}>
             {t('projectsPdm.aito.deliveriesSuggest')}
           </Button>
-          {reusable.length > 0 && (
-            <select
-              value=""
-              aria-label={t('projectsPdm.aito.reuseFromOrderPlaceholder')}
-              onChange={(e) => {
-                const order = reusable.find((o) => String(o.task_id) === e.target.value);
-                if (order) setChecked(new Set(order.deliveries.map((d) => d.id)));
-              }}
-              className="min-w-0 flex-1 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark px-2 py-1.5 text-sm text-white"
-            >
-              <option value="" disabled>
-                {t('projectsPdm.aito.reuseFromOrderPlaceholder')}
-              </option>
-              {reusable.map((o) => (
-                <option key={o.task_id} value={o.task_id}>
-                  {t('projectsPdm.aito.reuseFromOrder', { order: o.order_id })}
-                </option>
-              ))}
-            </select>
-          )}
+          {reusable.length > 0 && <ReuseFromOrderSelect reusable={reusable} onPick={replace} />}
         </div>
-        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto">
-          {tree && sections.length === 0 && (
-            <p className="text-sm text-bambu-gray">{t('projectsPdm.files.emptySection')}</p>
-          )}
-          {sections.map((s) => (
-            <section key={s.section} className="space-y-1">
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-bambu-gray">
-                {t(SECTION_LABEL_KEYS[s.section])}
-              </h3>
-              {s.items
-                .filter((i) => i.revisions.length > 0)
-                .map((item) => (
-                  <div key={item.id} className="space-y-0.5 pl-1">
-                    <p className="text-sm text-white">{item.name}</p>
-                    {item.revisions.map((r) => (
-                      <label key={r.id} className="flex items-center gap-2 pl-2 text-sm text-bambu-gray-light">
-                        <input
-                          type="checkbox"
-                          checked={checked.has(r.id)}
-                          onChange={() => toggle(r.id)}
-                          aria-label={`${revisionLabel(item.name, r.number)} · ${t(STATUS_LABEL_KEYS[r.status])}`}
-                          className="accent-bambu-green"
-                        />
-                        <span aria-hidden="true" className="tabular-nums">{revisionNumberLabel(r.number)}</span>
-                        <span aria-hidden="true" className="text-xs text-bambu-gray">
-                          {t(STATUS_LABEL_KEYS[r.status])}
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                ))}
-            </section>
-          ))}
-        </div>
+        <DeliveryRevisionList tree={tree} checked={checked} onToggle={toggle} />
         <div className="flex justify-end gap-2">
           <Button type="button" variant="secondary" onClick={onClose}>
             {t('common.cancel')}
