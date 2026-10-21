@@ -247,10 +247,12 @@ export function ClientSection({
         onCreateNew={onCreateNew}
         onReset={() => onChange(defaultClientDraft(defaultContactId, defaultContactName))}
         showReset={value.id !== defaultContactId}
+        // `end`: the pills sit at the right of the drawer's clipping column,
+        // where a centred bubble loses its right half to the overflow.
         trailing={
           <>
-            <ClientRatingPill rating={rating.data} />
-            <ClientQuoteRatingPill rating={quoteRating.data} />
+            <ClientRatingPill rating={rating.data} align="end" />
+            <ClientQuoteRatingPill rating={quoteRating.data} align="end" />
           </>
         }
       />

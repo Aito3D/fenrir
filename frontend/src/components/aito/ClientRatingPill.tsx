@@ -233,7 +233,10 @@ function RatingPill({
     // the caller returns null), so the entrance replays each time — and never
     // on a mere re-render, since @starting-style fires only on first paint.
     <span data-testid={testId} className={`aito-unfold-x flex-shrink-0 ${className}`}>
-      <span>
+      {/* `flex`, not a bare inline box: a line box would sit the pill on its
+          mark's baseline, and the dot and the quote glyph have different
+          ones, so the two pills landed ~2px apart side by side. */}
+      <span className="flex">
         <Tooltip content={text.tip} align={align} side={side}>
           <span
             data-tier={tier}

@@ -353,6 +353,23 @@ describe('client rating in the drawer', () => {
     expect(seen).toEqual(['z1']);
   });
 
+  it('hangs both rating tooltips leftward so the drawer edge never clips them', async () => {
+    server.use(
+      http.get('/api/v1/aito/clients/:clientId/rating', () => HttpResponse.json(goodRating)),
+      http.get('/api/v1/aito/clients/:clientId/quote-rating', () =>
+        HttpResponse.json({
+          tier: 'good', accepted_count: 3, declined_count: 0, expired_count: 0, pending_count: 0,
+          score: 0.67, computed_at: new Date().toISOString(), stale: false,
+        }),
+      ),
+    );
+    renderSection(draftFromContact(acme, DEFAULT_ID));
+    await screen.findByRole('img', { name: /quote rating: good/i });
+    const tips = screen.getAllByRole('tooltip').filter((tip) => tip.closest('[data-testid$="rating-unfold"]'));
+    expect(tips).toHaveLength(2);
+    for (const tip of tips) expect(tip).toHaveClass('right-0');
+  });
+
   it('never asks the quote rating for the walk-in default contact', async () => {
     const seen: string[] = [];
     server.use(
