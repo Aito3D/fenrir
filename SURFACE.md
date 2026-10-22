@@ -1242,7 +1242,7 @@ CREATE TABLE projects (
 ## Permissions guarding the routes (count per permission)
 ```regen: grep -hoE 'Permission\.[A-Z_]+' backend/app/api/routes/projects_pdm.py backend/app/api/routes/project_files.py backend/app/api/routes/aito_project_links.py backend/app/api/routes/projects.py | sort | uniq -c | sed 's/^ *//'```
 ```
-3 Permission.AITO_READ
+4 Permission.AITO_READ
 2 Permission.AITO_UPDATE
 2 Permission.ARCHIVES_UPDATE_ALL
 2 Permission.ARCHIVES_UPDATE_OWN

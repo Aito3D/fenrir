@@ -1477,7 +1477,10 @@ def revision_file_path(file_path: str | None) -> Path | None:
     swapped for a symlink to ``.jwt_secret`` or the database. ``None`` (read it
     as "missing") unless the resolved path sits under the projects root and no
     component below that root is a symlink. The root itself may be one."""
-    path = to_absolute_path(file_path)
+    try:
+        path = to_absolute_path(file_path)
+    except ValueError:  # a symlink on the share leads out of the data dir
+        return None
     if path is None:
         return None
     root = project_storage.projects_root().resolve()

@@ -6382,7 +6382,7 @@ def _by_id_read_path(file: LibraryFile, *, refused_as_missing: bool = False) -> 
     A file that is not a project revision keeps the plain ``base_dir / file_path``
     join those routes always used. A revision file goes through the projects-tree
     symlink guard (``project_files.revision_file_path``). One it refuses, or whose
-    link leaves ``base_dir`` (``to_absolute_path`` raises for that), answers 404
+    link leaves ``base_dir``, answers 404
     "File not found" like ``_guarded_read_path``; with ``refused_as_missing`` it
     comes back as ``None`` instead, for a batch route that reports it like a file
     missing on disk.
@@ -6391,10 +6391,7 @@ def _by_id_read_path(file: LibraryFile, *, refused_as_missing: bool = False) -> 
         return Path(app_settings.base_dir) / file.file_path
     from backend.app.services.project_files import revision_file_path
 
-    try:
-        path = revision_file_path(file.file_path)
-    except ValueError:  # a symlink leading out of base_dir
-        path = None
+    path = revision_file_path(file.file_path)
     if path is None and not refused_as_missing:
         raise HTTPException(status_code=404, detail="File not found")
     return path

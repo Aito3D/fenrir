@@ -51,6 +51,8 @@ logger = logging.getLogger(__name__)
 NO_SLICER = "No slicer is configured in Settings"
 _SOURCE_MISSING = "The revision's source .3mf is missing"
 SLICE_ERROR_MAX_CHARS = 500
+UNEXPECTED_SLICE_ERROR = "Unexpected error while slicing"
+COULD_NOT_START_SLICE = "Could not start the slice"
 NOT_THE_SOURCE = "This file is not the revision's source; upload it as its own item."
 NO_PROJECT_TO_SLICE = "This .3mf holds no Bambu Studio project to slice, so it cannot be printed."
 
@@ -175,8 +177,10 @@ async def _start_claimed(db: AsyncSession, revision_id: int, *, user_id: int | N
         job = await slice_dispatch.enqueue(
             kind="project_revision", source_id=revision_id, source_name=source_name, owner_id=user_id, run=run
         )
-    except Exception as exc:
-        await _mark_failed(db, revision_id, f"Could not start the slice: {exc}")  # not "slicing" with no job
+    except Exception:
+        # The revision card and the queue items show a generic reason: the raw error can carry server paths.
+        logger.warning("Could not start the slice of project revision %s", revision_id, exc_info=True)
+        await _mark_failed(db, revision_id, COULD_NOT_START_SLICE)  # not "slicing" with no job
         raise
     # Only this column: the job may already be writing its outcome to the same row.
     await db.execute(
@@ -501,7 +505,9 @@ def _error_status_and_message(exc: Exception) -> tuple[int, str]:
         return exc.status_code, str(exc.detail)
     if isinstance(exc, SlicerApiError):
         return 502, str(exc) or type(exc).__name__
-    return 500, f"Unexpected error: {exc}"
+    # Anything else (a disk or permission failure...) can carry server paths in its text: log it, show a generic reason.
+    logger.error("Unexpected error while slicing a project revision", exc_info=exc)
+    return 500, UNEXPECTED_SLICE_ERROR
 
 
 async def _mark_failed(db: AsyncSession, revision_id: int, message: str) -> None:

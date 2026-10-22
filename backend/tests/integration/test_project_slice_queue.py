@@ -1064,3 +1064,24 @@ async def test_an_unreadable_plate_leaves_only_its_items_filament_types_as_they_
     item = await _item(db_session, bad["id"])
     assert (item.status, item.required_filament_types) == ("pending", None)
     assert f"Queue item {bad['id']}: unreadable filament types" in caplog.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_unexpected_slice_error_reaches_the_queue_item_as_a_generic_message(
+    async_client: AsyncClient, db_session, sidecar, monkeypatch
+):
+    """T-426: the waiting item's error is the generic reason, never the raw OS error with a server path."""
+    rev = await _upload(async_client)
+
+    def boom(_model_bytes):
+        raise PermissionError("[Errno 13] Permission denied: '/srv/fenrir/projects/P-0001/secret.3mf'")
+
+    monkeypatch.setattr(project_slice, "_check_source_within_caps", boom)
+    out = await _queue(async_client, rev["files"][0]["id"])
+    await _wait_job((await _revision(db_session, rev["id"])).slice_job_id)
+
+    item = await _item(db_session, out["id"])
+    assert item.status == "slice_failed"
+    assert item.error_message == "Unexpected error while slicing"
+    assert "/srv/fenrir" not in item.error_message

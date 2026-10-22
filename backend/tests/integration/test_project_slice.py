@@ -611,13 +611,15 @@ async def test_failed_slice_start_does_not_fail_the_upload(async_client: AsyncCl
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-async def test_failed_enqueue_marks_the_upload_failed(async_client: AsyncClient, sidecar, monkeypatch):
+async def test_failed_enqueue_marks_the_upload_failed(async_client: AsyncClient, sidecar, monkeypatch, caplog):
     _failing_enqueue(monkeypatch)
     _project, _item, rev = await _upload(async_client)  # asserts 201
 
     assert [f["filename"] for f in rev["files"]] == ["support.3mf"]
     assert rev["slice_status"] == "failed"  # claimed, then released: never "slicing" with no job
-    assert "dispatcher down" in rev["slice_error"]
+    assert rev["slice_error"] == "Could not start the slice"  # generic (T-426); the cause is only logged
+    assert "dispatcher down" not in rev["slice_error"]
+    assert any(r.exc_info and "dispatcher down" in str(r.exc_info[1]) for r in caplog.records)
     assert sidecar.slice_requests == []
 
 
@@ -744,3 +746,31 @@ async def test_parallel_slices_wait_their_turn_and_all_complete(async_client: As
     assert peak == limit
     for project, _item, rev in revisions:
         assert (await _tree_revision(async_client, project["id"], rev["id"]))["slice_status"] == "sliced"
+
+
+_LEAKY_ERROR = "[Errno 13] Permission denied: '/srv/fenrir/projects/P-0001/secret.3mf'"
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_unexpected_slice_error_shows_a_generic_message_and_is_logged(
+    async_client: AsyncClient, sidecar, monkeypatch, caplog
+):
+    """T-426: a disk or permission failure never puts its OS text (with a server path) on the revision card."""
+
+    def boom(_model_bytes):
+        raise PermissionError(_LEAKY_ERROR)
+
+    monkeypatch.setattr(project_slice, "_check_source_within_caps", boom)
+    project, _item, rev = await _upload(async_client)
+    await _wait_job(rev["slice_job_id"])
+
+    out = await _tree_revision(async_client, project["id"], rev["id"])
+    assert out["slice_status"] == "failed"
+    assert out["slice_error"] == "Unexpected error while slicing"
+    assert "/srv/fenrir" not in out["slice_error"]
+    job = (await async_client.get(f"/api/v1/slice-jobs/{rev['slice_job_id']}")).json()
+    assert "/srv/fenrir" not in str(job)
+    logged = [r for r in caplog.records if r.exc_info and isinstance(r.exc_info[1], PermissionError)]
+    assert logged and _LEAKY_ERROR in str(logged[0].exc_info[1])
+    assert sidecar.slice_requests == []
