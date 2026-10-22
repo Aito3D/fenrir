@@ -17,22 +17,10 @@ import type { LibraryFileUploadResponse, MoveToProjectResult } from '../../api/c
 // null = real AuthProvider (auth disabled: everything allowed).
 let granted: Set<string> | null = null;
 vi.mock('../../contexts/AuthContext', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../contexts/AuthContext')>();
-  return {
-    ...actual,
-    useAuth: () => {
-      const real = actual.useAuth();
-      if (!granted) return real;
-      const g = granted;
-      return {
-        ...real,
-        hasPermission: (p: string) => g.has(p),
-        hasAnyPermission: (...ps: string[]) => ps.some((p) => g.has(p)),
-        canModify: (resource: string, action: string) =>
-          g.has(`${resource}:${action}_all`) || g.has(`${resource}:${action}_own`),
-      };
-    },
-  };
+  const { withGrantedPermissions } = await import('../fixtures/authPermissions');
+  return withGrantedPermissions(await importOriginal<typeof import('../../contexts/AuthContext')>(), () => granted, {
+    derived: true,
+  });
 });
 
 // The modal has its own suite; here only which files it gets and what the

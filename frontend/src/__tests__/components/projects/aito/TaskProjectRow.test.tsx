@@ -268,6 +268,19 @@ describe('TaskProjectRow', () => {
     expect(await screen.findByRole('link', { name: 'Drone bracket' })).toHaveAttribute('href', '/projects/7');
   });
 
+  it('Escape in the link picker closes it and leaves the task unlinked', async () => {
+    const user = userEvent.setup();
+    renderRow();
+    const toggle = await screen.findByRole('button', { name: 'Link an existing project' });
+    await user.click(toggle);
+    await screen.findByRole('button', { name: /Drone bracket/ });
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('button', { name: /Drone bracket/ })).not.toBeInTheDocument());
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(puts).toEqual([]);
+  });
+
   it('a linked task shows the code, a link to the project and the delivered files', async () => {
     links = linked();
     renderRow();
