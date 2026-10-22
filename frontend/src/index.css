@@ -601,6 +601,10 @@ body {
    only; the shadow stays neutral black. */
 .queue-job-hover-card {
   --card-tint: 59 130 246;
+  /* Same one-shade lift as .aito-page: the default muted grey reads at about
+     3:1 on this tinted surface, too faint for the card's 10-12px labels. */
+  --color-bambu-gray: var(--text-secondary);
+  --color-bambu-gray-light: color-mix(in srgb, var(--text-secondary) 55%, var(--text-primary));
   background-image: linear-gradient(rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.02));
   background-color: color-mix(in srgb, var(--bg-tertiary) 92%, rgb(var(--card-tint)) 8%);
   backdrop-filter: blur(18px) saturate(140%);

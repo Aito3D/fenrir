@@ -49,7 +49,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 function Section({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) {
   return (
     <div className="px-3 py-2 border-b border-white/[0.07] last:border-b-0">
-      <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-bambu-gray/80 mb-1">
+      <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-bambu-gray mb-1">
         {icon}
         {title}
       </div>
@@ -240,7 +240,7 @@ export function QueueJobHoverCard({ event, anchor, nowMs, t, onMouseEnter, onMou
             )}
           </>
         ) : (
-          <div className="text-bambu-gray/70">{c('noProject')}</div>
+          <div className="text-bambu-gray">{c('noProject')}</div>
         )}
       </Section>
 
@@ -258,7 +258,7 @@ export function QueueJobHoverCard({ event, anchor, nowMs, t, onMouseEnter, onMou
             )}
           </>
         ) : (
-          <div className="text-bambu-gray/70">{c('noTask')}</div>
+          <div className="text-bambu-gray">{c('noTask')}</div>
         )}
       </Section>
     </div>,
