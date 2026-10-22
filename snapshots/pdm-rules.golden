@@ -663,7 +663,9 @@
   "TASK_UNUSABLE": "This Aito task can't be used for this file",
   "QUEUED_STATUSES": [
    "pending",
-   "printing"
+   "printing",
+   "slicing",
+   "slice_failed"
   ]
  },
  "aito_project_links": {

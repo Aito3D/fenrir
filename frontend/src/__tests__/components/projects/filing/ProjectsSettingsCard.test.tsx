@@ -140,6 +140,50 @@ describe('ProjectsSettingsCard', () => {
     expect(screen.getByText('checksum mismatch')).toBeInTheDocument();
   });
 
+  it('labels a failed project that has no code by its id', async () => {
+    statuses = [idle(1, [{ project_id: 12, code: null, error: 'no storage dir' }])];
+    serve();
+    render(<ProjectsSettingsCard />);
+    expect(await screen.findByText('#12')).toBeInTheDocument();
+    expect(screen.getByText('no storage dir')).toBeInTheDocument();
+  });
+
+  it('disables the start button while the start request is in flight', async () => {
+    statuses = [idle(2)];
+    serve();
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    server.use(
+      http.post('/api/v1/projects/legacy-migration/start', async () => {
+        startCalls += 1;
+        await held;
+        return HttpResponse.json({ running: true, total: 0, done: 0, current: null, failures: [], pending: 0 }, { status: 202 });
+      }),
+    );
+    render(<ProjectsSettingsCard />);
+    const start = await screen.findByRole('button', { name: 'Move them now' });
+    expect(start).toBeEnabled();
+    await userEvent.click(start);
+    await waitFor(() => expect(startCalls).toBe(1));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Move them now' })).toBeDisabled());
+    // A second click while pending sends nothing.
+    await userEvent.click(screen.getByRole('button', { name: 'Move them now' }));
+    expect(startCalls).toBe(1);
+    release();
+    await waitFor(() => expect(statusCalls).toBeGreaterThanOrEqual(2));
+  });
+
+  it('renders the auto-filing toggle on when the settings payload lacks the flag', async () => {
+    serve();
+    server.use(http.get('/api/v1/settings/', () => HttpResponse.json({ currency: 'EUR' })));
+    render(<ProjectsSettingsCard />);
+    const toggle = await screen.findByRole('switch', { name: 'File uploads named after a project code' });
+    await waitFor(() => expect(toggle).toBeEnabled());
+    expect(toggle).toHaveAttribute('aria-checked', 'true');
+  });
+
   it('shows the last run result after a run finishes', async () => {
     statuses = [{
       ...idle(0),

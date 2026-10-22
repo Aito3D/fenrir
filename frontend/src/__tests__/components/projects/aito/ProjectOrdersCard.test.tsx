@@ -14,8 +14,8 @@ import type { ProjectOrderTask } from '../../../../api/client';
 
 const granted = new Set<string>();
 vi.mock('../../../../contexts/AuthContext', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../../../contexts/AuthContext')>();
-  return { ...actual, useAuth: () => ({ hasPermission: (p: string) => granted.has(p) }) };
+  const { withGrantedPermissions } = await import('../../../fixtures/authPermissions');
+  return withGrantedPermissions(await importOriginal<typeof import('../../../../contexts/AuthContext')>(), () => granted);
 });
 
 function order(overrides: Partial<ProjectOrderTask>): ProjectOrderTask {

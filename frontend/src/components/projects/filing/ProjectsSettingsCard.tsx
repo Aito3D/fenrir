@@ -32,18 +32,31 @@ export function ProjectsSettingsCard() {
 
 function ProjectsSettingsCardBody() {
   const { t } = useTranslation();
+  return (
+    <Card id="card-projects-filing">
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <FolderKanban className="w-5 h-5 text-gray-400" />
+          <h2 className="text-lg font-semibold text-white">{t('projectsPdm.filing.settingsTitle')}</h2>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        <AutoFileSetting />
+        <LegacyMigrationSection />
+      </CardContent>
+    </Card>
+  );
+}
+
+/** The projects_auto_file_by_code toggle; shows the pending value while it saves. */
+function AutoFileSetting() {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
 
   const { data: settings, isLoading: settingsLoading } = useQuery<AppSettings>({
     queryKey: ['settings'],
     queryFn: api.getSettings,
-  });
-
-  const { data: status } = useQuery<LegacyMigrationStatus>({
-    queryKey: legacyMigrationStatusKey,
-    queryFn: api.getLegacyMigrationStatus,
-    refetchInterval: (query) => (query.state.data?.running ? 2000 : false),
   });
 
   const autoFileMutation = useMutation({
@@ -55,6 +68,39 @@ function ProjectsSettingsCardBody() {
     onError: (error: Error) => showToast(error.message, 'error'),
   });
 
+  const autoFile = autoFileMutation.isPending
+    ? (autoFileMutation.variables ?? true)
+    : (settings?.projects_auto_file_by_code ?? true);
+
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <div className="min-w-0">
+        <p className="text-sm text-white">{t('projectsPdm.filing.autoFileLabel')}</p>
+        <p className="text-xs text-bambu-gray mt-0.5">{t('projectsPdm.filing.autoFileHint')}</p>
+      </div>
+      <Toggle
+        checked={autoFile}
+        disabled={settingsLoading || autoFileMutation.isPending}
+        onChange={(value) => autoFileMutation.mutate(value)}
+        aria-label={t('projectsPdm.filing.autoFileLabel')}
+      />
+    </div>
+  );
+}
+
+/** The one-off legacy migration: last run, progress (polled while running) or
+ *  the start button, and the failures of the last run. */
+function LegacyMigrationSection() {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const { showToast } = useToast();
+
+  const { data: status } = useQuery<LegacyMigrationStatus>({
+    queryKey: legacyMigrationStatusKey,
+    queryFn: api.getLegacyMigrationStatus,
+    refetchInterval: (query) => (query.state.data?.running ? 2000 : false),
+  });
+
   const startMutation = useMutation({
     mutationFn: api.startLegacyMigration,
     // The 202 body may still say total=0; the polled status is the truth.
@@ -63,90 +109,71 @@ function ProjectsSettingsCardBody() {
     onError: (error: Error) => showToast(error.message, 'error'),
   });
 
-  const autoFile = autoFileMutation.isPending
-    ? (autoFileMutation.variables ?? true)
-    : (settings?.projects_auto_file_by_code ?? true);
   const running = !!status?.running;
   const pending = status?.pending ?? 0;
   const lastRun = !running ? status?.last_run : null;
 
   return (
-    <Card id="card-projects-filing">
-      <CardHeader>
-        <div className="flex items-center gap-2">
-          <FolderKanban className="w-5 h-5 text-gray-400" />
-          <h2 className="text-lg font-semibold text-white">{t('projectsPdm.filing.settingsTitle')}</h2>
+    <div className="border-t border-bambu-dark-tertiary pt-4 space-y-3">
+      <p className="text-sm font-medium text-white">{t('projectsPdm.filing.migrationTitle')}</p>
+      {lastRun && (
+        <p className="text-sm text-white" data-testid="legacy-migration-last-run">
+          {t('projectsPdm.filing.migrationLastRun', {
+            files: t('projectsPdm.filing.migrationLastRunFiles', {
+              count: lastRun.files_moved + lastRun.files_copied,
+            }),
+            projects: t('projectsPdm.filing.migrationLastRunProjects', { count: lastRun.projects }),
+          })}
+        </p>
+      )}
+      {!status ? (
+        <Loader2 className="w-4 h-4 animate-spin text-bambu-gray" />
+      ) : running ? (
+        <div className="flex items-center justify-between gap-4">
+          <p className="text-sm text-bambu-gray flex items-center gap-2" role="status">
+            <Loader2 className="w-4 h-4 animate-spin text-bambu-green shrink-0" />
+            {t('projectsPdm.filing.migrationRunning', {
+              done: status.done,
+              total: status.total,
+              code: status.current?.code ?? '…',
+            })}
+          </p>
+          <Button size="sm" disabled>
+            {t('projectsPdm.filing.migrationStart')}
+          </Button>
         </div>
-      </CardHeader>
-      <CardContent className="space-y-5">
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <p className="text-sm text-white">{t('projectsPdm.filing.autoFileLabel')}</p>
-            <p className="text-xs text-bambu-gray mt-0.5">{t('projectsPdm.filing.autoFileHint')}</p>
-          </div>
-          <Toggle
-            checked={autoFile}
-            disabled={settingsLoading || autoFileMutation.isPending}
-            onChange={(value) => autoFileMutation.mutate(value)}
-            aria-label={t('projectsPdm.filing.autoFileLabel')}
-          />
+      ) : pending > 0 ? (
+        <div className="flex items-center justify-between gap-4">
+          <p className="text-sm text-bambu-gray">{t('projectsPdm.filing.migrationPending', { count: pending })}</p>
+          <Button size="sm" disabled={startMutation.isPending} onClick={() => startMutation.mutate()}>
+            {startMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+            {t('projectsPdm.filing.migrationStart')}
+          </Button>
         </div>
+      ) : (
+        <p className="text-sm text-bambu-gray">{t('projectsPdm.filing.migrationNone')}</p>
+      )}
 
-        <div className="border-t border-bambu-dark-tertiary pt-4 space-y-3">
-          <p className="text-sm font-medium text-white">{t('projectsPdm.filing.migrationTitle')}</p>
-          {lastRun && (
-            <p className="text-sm text-white" data-testid="legacy-migration-last-run">
-              {t('projectsPdm.filing.migrationLastRun', {
-                files: t('projectsPdm.filing.migrationLastRunFiles', {
-                  count: lastRun.files_moved + lastRun.files_copied,
-                }),
-                projects: t('projectsPdm.filing.migrationLastRunProjects', { count: lastRun.projects }),
-              })}
-            </p>
-          )}
-          {!status ? (
-            <Loader2 className="w-4 h-4 animate-spin text-bambu-gray" />
-          ) : running ? (
-            <div className="flex items-center justify-between gap-4">
-              <p className="text-sm text-bambu-gray flex items-center gap-2" role="status">
-                <Loader2 className="w-4 h-4 animate-spin text-bambu-green shrink-0" />
-                {t('projectsPdm.filing.migrationRunning', {
-                  done: status.done,
-                  total: status.total,
-                  code: status.current?.code ?? '…',
-                })}
-              </p>
-              <Button size="sm" disabled>
-                {t('projectsPdm.filing.migrationStart')}
-              </Button>
-            </div>
-          ) : pending > 0 ? (
-            <div className="flex items-center justify-between gap-4">
-              <p className="text-sm text-bambu-gray">{t('projectsPdm.filing.migrationPending', { count: pending })}</p>
-              <Button size="sm" disabled={startMutation.isPending} onClick={() => startMutation.mutate()}>
-                {startMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-                {t('projectsPdm.filing.migrationStart')}
-              </Button>
-            </div>
-          ) : (
-            <p className="text-sm text-bambu-gray">{t('projectsPdm.filing.migrationNone')}</p>
-          )}
+      {status && <MigrationFailures failures={status.failures} />}
+    </div>
+  );
+}
 
-          {status && status.failures.length > 0 && (
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-red-400">{t('projectsPdm.filing.migrationFailures')}</p>
-              <ul className="space-y-1">
-                {status.failures.map((f) => (
-                  <li key={f.project_id} className="text-xs flex gap-2 min-w-0">
-                    <span className="font-mono text-white shrink-0">{f.code ?? `#${f.project_id}`}</span>
-                    <span className="text-bambu-gray break-words min-w-0">{f.error}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-      </CardContent>
-    </Card>
+/** Projects the last run could not move, by code (or id when it has none). */
+function MigrationFailures({ failures }: { failures: LegacyMigrationStatus['failures'] }) {
+  const { t } = useTranslation();
+  if (failures.length === 0) return null;
+  return (
+    <div className="space-y-1">
+      <p className="text-xs font-medium text-red-400">{t('projectsPdm.filing.migrationFailures')}</p>
+      <ul className="space-y-1">
+        {failures.map((f) => (
+          <li key={f.project_id} className="text-xs flex gap-2 min-w-0">
+            <span className="font-mono text-white shrink-0">{f.code ?? `#${f.project_id}`}</span>
+            <span className="text-bambu-gray break-words min-w-0">{f.error}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }

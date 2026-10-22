@@ -88,6 +88,7 @@ client method — and fails the iteration unless the user approved it.
 /api/v1/projects/revisions/{revision_id}/files ['POST']
 /api/v1/projects/revisions/{revision_id}/files/{file_id} ['DELETE']
 /api/v1/projects/revisions/{revision_id}/reslice ['POST']
+/api/v1/projects/revisions/{revision_id}/slice ['POST']
 /api/v1/projects/search ['GET']
 /api/v1/projects/tags ['GET']
 /api/v1/projects/templates ['GET']
@@ -174,6 +175,7 @@ client method — and fails the iteration unless the user approved it.
 @router.post("/items/{item_id}/fork", response_model=ProjectItemOut, status_code=201)
 @router.post("/legacy-migration/start", response_model=LegacyMigrationStatus, status_code=202)
 @router.post("/revisions/{revision_id}/reslice", response_model=ResliceStarted, status_code=202)
+@router.post("/revisions/{revision_id}/slice", response_model=RevisionSliceStarted, status_code=202)
 @router.post("/tasks/{task_id}/project", status_code=201)
 @router.put("/tasks/{task_id}/deliveries")
 @router.put("/tasks/{task_id}/project")
@@ -237,6 +239,7 @@ async def get_project_timeline(
 async def get_project(
 async def get_revision_bundle(db: AsyncSession, revision_id: int)
 async def get_tree(
+async def hold_unsliced_dispatch(db: AsyncSession, item: PrintQueueItem, library_file: LibraryFile)
 async def import_library_files(
 async def import_project_file(
 async def import_project(
@@ -256,6 +259,7 @@ async def lock_revision_rows(
 async def migrate_project_legacy(db: AsyncSession, project: Project)
 async def move_library_files_to_project(
 async def move_task_print_trace(db: AsyncSession, copy_by_source: Mapping[int, int])
+async def on_revision_slice_done(
 async def order_links(db: AsyncSession, order_id: int)
 async def orders_for_project(db: AsyncSession, project_id: int)
 async def post_task_project(
@@ -268,6 +272,7 @@ async def record_and_broadcast(
 async def record_on_linked_orders(
 async def record_queued(db: AsyncSession, context: PrintContext, *, copies: int, actor: str | None)
 async def record_revision_added(db: AsyncSession, project_id: int, entry: dict, user_id: int | None)
+async def recover_waiting_queue_items()
 async def reformulate_text(
 async def refresh_tag_mirrors(db: AsyncSession, project_ids: list[int])
 async def remove_archives_from_project(
@@ -277,14 +282,23 @@ async def rename_item(
 async def rename_item(db: AsyncSession, project: Project, item: ProjectItem, new_name: str)
 async def reslice_revision(
 async def resolve_print_context(
+async def resume_interrupted_slices()
 async def revision_is_used(db: AsyncSession, revision_id: int)
 async def revision_print_counts(db: AsyncSession, revision_ids: Collection[int])
 async def run_reslice(db: AsyncSession, req: ResliceRequest, *, job_id: int | None = None)
 async def search_projects(
 async def set_deliveries(
 async def set_project_tags(db: AsyncSession, project: Project, tag_ids: list[int])
+async def settle_waiting_queue_items_quietly(db: AsyncSession, revision_id: int)
+async def settle_waiting_queue_items(db: AsyncSession, revision_id: int)
 async def similar_projects(
+async def slice_revision(
+async def sliced_file_of(db: AsyncSession, library_file: LibraryFile)
+async def source_file_of(db: AsyncSession, revision_id: int)
 async def start_legacy_migration(
+async def start_revision_slice(db: AsyncSession, revision_id: int, *, user_id: int | None)
+async def start_slice_after_upload(db: AsyncSession, revision_id: int, *, user_id: int | None)
+async def start_slice_for_waiting_items(db: AsyncSession, revision_id: int, *, user_id: int | None)
 async def suggest_projects_for_filename(
 async def suggest_projects(db: AsyncSession, task: AitoTask, limit: int = 8)
 async def suggest_tags(
@@ -326,8 +340,10 @@ def get_project_attachments_dir(project_id: int)
 def is_3mf(filename: str)
 def is_printable_filename(name: str)
 def is_resliceable(filename: str)
+def is_unsliced_project_source(library_file: LibraryFile)
 def item_dir(project, section: str, item_name: str)
 def item_name_for_filename(name: str)
+def library_file_print_time(library_file: LibraryFile, plate_id: int | None)
 def may_auto_file(actor: User | ApiKeyActor | None)
 def move_to_trash(project, path: Path)
 def name_key(name: str)
@@ -338,7 +354,10 @@ def projects_root()
 def rank_tag_suggestions(
 def read_print_snapshot(path: Path)
 def require_enabled_section(section: str)
+def require_one_file(uploads: list[UploadFile])
 def require_printable_uploads(uploads: list[UploadFile])
+def require_source_names(uploads: list[UploadFile])
+def require_source_uploads(uploads: list[UploadFile])
 def reset_legacy_migration_state()
 def reslice_note(source_number: int, pipeline_name: str)
 def resolve_in_projects(*parts: str)
@@ -426,6 +445,7 @@ class ProjectUpdate
 class ResliceBody
 class ResliceStarted
 class RevisionRef
+class RevisionSliceStarted
 class RevisionUploadResponse
 class SectionRevisionSummary
 class SkippedFileOut
@@ -634,12 +654,14 @@ print(json.dumps(out, indent=1, sort_keys=True))" 2>/dev/null```
  },
  "ProjectFileOut": {
   "created_at": "<class 'datetime.datetime'>",
+  "filament_used_grams": "float | None",
   "file_hash": "str | None",
   "file_size": "<class 'int'>",
   "file_type": "<class 'str'>",
   "filename": "<class 'str'>",
   "has_thumbnail": "<class 'bool'>",
-  "id": "<class 'int'>"
+  "id": "<class 'int'>",
+  "print_time_seconds": "int | None"
  },
  "ProjectFileProgress": {
   "completed_count": "<class 'int'>",
@@ -771,6 +793,10 @@ print(json.dumps(out, indent=1, sort_keys=True))" 2>/dev/null```
   "pipeline_name": "str | None",
   "print_count": "<class 'int'>",
   "print_profile": "dict | None",
+  "slice_error": "str | None",
+  "slice_job_id": "int | None",
+  "slice_status": "str | None",
+  "sliced_file": "backend.app.schemas.project_files.ProjectFileOut | None",
   "slicer_name": "str | None",
   "slicer_version": "str | None",
   "status": "<class 'str'>",
@@ -901,6 +927,10 @@ print(json.dumps(out, indent=1, sort_keys=True))" 2>/dev/null```
   "section": "<class 'str'>",
   "status": "<class 'str'>"
  },
+ "RevisionSliceStarted": {
+  "job_id": "int | None",
+  "slice_status": "<class 'str'>"
+ },
  "RevisionUploadResponse": {
   "revision": "<class 'backend.app.schemas.project_files.ProjectRevisionOut'>",
   "warnings": "list[backend.app.schemas.project_files.DuplicateWarning]"
@@ -1022,6 +1052,7 @@ CREATE TABLE library_files (
 	variant_target_model VARCHAR(50), 
 	created_by_id INTEGER, 
 	revision_id INTEGER, 
+	derived_slice BOOLEAN DEFAULT 0 NOT NULL, 
 	deleted_at DATETIME, 
 	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
 	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
@@ -1064,22 +1095,22 @@ CREATE TABLE print_queue (
 	nozzle_mapping TEXT, 
 	nozzles_info TEXT, 
 	nozzle_rack_choice TEXT, 
-	cleanup_library_after_dispatch BOOLEAN NOT NULL, 
-	bed_levelling VARCHAR(8) NOT NULL, 
-	flow_cali VARCHAR(8) NOT NULL, 
+	cleanup_library_after_dispatch BOOLEAN DEFAULT 0 NOT NULL, 
+	bed_levelling VARCHAR(8) DEFAULT 'auto' NOT NULL, 
+	flow_cali VARCHAR(8) DEFAULT 'auto' NOT NULL, 
 	vibration_cali BOOLEAN NOT NULL, 
 	layer_inspect BOOLEAN NOT NULL, 
 	timelapse BOOLEAN NOT NULL, 
 	use_ams BOOLEAN NOT NULL, 
-	nozzle_offset_cali VARCHAR(8) NOT NULL, 
+	nozzle_offset_cali VARCHAR(8) DEFAULT 'auto' NOT NULL, 
 	confirm_outcome BOOLEAN DEFAULT '0' NOT NULL, 
-	preheat_override VARCHAR(10) NOT NULL, 
+	preheat_override VARCHAR(10) DEFAULT 'inherit' NOT NULL, 
 	preheat_chamber_target_override INTEGER, 
 	status VARCHAR(20) NOT NULL, 
 	dispatching_at DATETIME, 
-	gate_acknowledged BOOLEAN NOT NULL, 
-	filament_short BOOLEAN NOT NULL, 
-	skip_filament_check BOOLEAN NOT NULL, 
+	gate_acknowledged BOOLEAN DEFAULT 0 NOT NULL, 
+	filament_short BOOLEAN DEFAULT 0 NOT NULL, 
+	skip_filament_check BOOLEAN DEFAULT 0 NOT NULL, 
 	started_at DATETIME, 
 	completed_at DATETIME, 
 	error_message TEXT, 
@@ -1144,6 +1175,10 @@ CREATE TABLE project_revisions (
 	print_profile JSON, 
 	pipeline_id INTEGER, 
 	pipeline_name VARCHAR(200), 
+	slice_status VARCHAR(16), 
+	slice_error TEXT, 
+	slice_job_id INTEGER, 
+	sliced_file_id INTEGER, 
 	status_changed_by_id INTEGER, 
 	status_changed_at DATETIME, 
 	created_by_id INTEGER, 
@@ -1152,6 +1187,7 @@ CREATE TABLE project_revisions (
 	CONSTRAINT uq_project_revisions_item_number UNIQUE (item_id, number), 
 	FOREIGN KEY(item_id) REFERENCES project_items (id) ON DELETE CASCADE, 
 	FOREIGN KEY(derived_from_id) REFERENCES project_revisions (id) ON DELETE SET NULL, 
+	CONSTRAINT fk_project_revisions_sliced_file FOREIGN KEY(sliced_file_id) REFERENCES library_files (id) ON DELETE SET NULL, 
 	FOREIGN KEY(status_changed_by_id) REFERENCES users (id) ON DELETE SET NULL, 
 	FOREIGN KEY(created_by_id) REFERENCES users (id) ON DELETE SET NULL
 );
@@ -1197,26 +1233,31 @@ CREATE TABLE projects (
 ```regen: grep -hoE 'get_setting\(db, "[a-z_]+"|os\.environ\.get\("[A-Z_]+"|settings\.[a-z_]+' backend/app/api/routes/projects_pdm.py backend/app/api/routes/project_files.py backend/app/api/routes/aito_project_links.py backend/app/api/routes/projects.py backend/app/services/project_*.py backend/app/services/aito_project_links.py | sort | uniq -c | sed 's/^ *//'```
 ```
 1 settings.archive_dir
-1 settings.base_dir
-2 settings.config
+3 settings.base_dir
+4 settings.config
 2 settings.library_max_upload_bytes
+1 settings.library_max_zip_extract_bytes
 ```
 
 ## Permissions guarding the routes (count per permission)
 ```regen: grep -hoE 'Permission\.[A-Z_]+' backend/app/api/routes/projects_pdm.py backend/app/api/routes/project_files.py backend/app/api/routes/aito_project_links.py backend/app/api/routes/projects.py | sort | uniq -c | sed 's/^ *//'```
 ```
-3 Permission.AITO_READ
+4 Permission.AITO_READ
 2 Permission.AITO_UPDATE
-1 Permission.LIBRARY_READ_ALL
-1 Permission.LIBRARY_READ_OWN
-1 Permission.LIBRARY_UPDATE_ALL
+2 Permission.ARCHIVES_UPDATE_ALL
+2 Permission.ARCHIVES_UPDATE_OWN
+2 Permission.LIBRARY_READ_ALL
+2 Permission.LIBRARY_READ_OWN
+2 Permission.LIBRARY_UPDATE_ALL
 1 Permission.LIBRARY_UPDATE_OWN
 1 Permission.LIBRARY_UPLOAD
 1 Permission.PIPELINES_READ
 7 Permission.PROJECTS_CREATE
 3 Permission.PROJECTS_DELETE
 18 Permission.PROJECTS_READ
-26 Permission.PROJECTS_UPDATE
+27 Permission.PROJECTS_UPDATE
+1 Permission.QUEUE_UPDATE_ALL
+1 Permission.QUEUE_UPDATE_OWN
 2 Permission.SETTINGS_UPDATE
 ```
 
@@ -1265,6 +1306,7 @@ CREATE TABLE projects (
 1 export const PRINTABLE_ACCEPT
 1 export const projectKeys
 1 export const RADIO_ROW_CLS
+1 export const RESLICE_UI_ENABLED
 1 export const SECTION_LABEL_KEYS
 1 export const SECTION_ORDER
 1 export const STATUS_CHIP_CLS
@@ -1280,15 +1322,21 @@ CREATE TABLE projects (
 1 export function DropShield
 1 export function failureMessage
 1 export function filesFromDataTransfer
+1 export function formatFilament
+1 export function groupTimeline
 1 export function isPrintableFile
 1 export function isPrintableFilename
 1 export function isSectionEnabled
+1 export function isSourceFilename
+1 export function ItemCard
+1 export function ItemDetailsTray
 1 export function itemNameFromFile
 1 export function itemNameKey
 1 export function ItemRow
+1 export function LinkedFoldersPanel
 1 export function MoveToProjectModal
+1 export function NewItemDropCard
 1 export function NewProjectModal
-1 export function nonPrintableFiles
 1 export function OrderPickerDialog
 1 export function OutdatedChip
 1 export function outdatedParams
@@ -1296,33 +1344,42 @@ CREATE TABLE projects (
 1 export function printProfileLine
 1 export function PrintRevisionFlow
 1 export function PrintRevisionPicker
+1 export function ProjectActivityRail
 1 export function ProjectCodeChip
+1 export function projectCost
 1 export function ProjectDetailPage
 1 export function ProjectFilesPanel
 1 export function ProjectHeader
+1 export function ProjectKpiStrip
 1 export function ProjectLinkPicker
 1 export function ProjectListPage
 1 export function ProjectModal
 1 export function ProjectOptionButton
-1 export function ProjectOptionLabel
 1 export function ProjectOrdersCard
+1 export function ProjectPanel
 1 export function ProjectSearchInput
 1 export function ProjectsPage
 1 export function ProjectsSettingsCard
 1 export function ProjectTagChips
 1 export function ProjectTagEditor
 1 export function projectTreeQuery
+1 export function refusalMessage
 1 export function ResliceDialog
 1 export function RevisionBlock
 1 export function revisionLabel
 1 export function revisionNumberLabel
 1 export function SectionBlock
 1 export function sectionRevisionLabel
+1 export function SliceLine
 1 export function splitTagDrafts
+1 export function StatusBadge
+1 export function SubProjectsPanel
 1 export function TaskDropZone
 1 export function TaskProjectRow
-1 export function useAcceptsPrintable
+1 export function timelineDay
+1 export function useAcceptsSource
 1 export function useCardDrop
+1 export function useDerivedOptions
 1 export function useFileActions
 1 export function useFileDropZone
 1 export function useInvalidateProjectLinks
@@ -1330,17 +1387,22 @@ CREATE TABLE projects (
 1 export function useOpenOrders
 1 export function useOrderProjectLinks
 1 export function useProjectCodes
+1 export function useProjectLinkedFiles
 1 export function useProjectOrders
 1 export function useProjectSearch
 1 export function useProjectTree
 1 export function useResliceJobs
+1 export function useRevisionSlice
 1 export function useTaskFileDrop
 1 export function useTaskProjectLink
 1 export function useUploadToTask
 1 export interface DerivedOption
 1 export interface PrintCounts
 1 export interface TagDraft
+1 export interface TimelineGroup
 1 export type FileActions
+1 export type RevisionSliceState
+1 export type TimelineDay
 ```
 
 ## App.tsx — project routes
@@ -1388,7 +1450,6 @@ const ProjectDetailPage = lazyWithReload(() => import('./pages/ProjectDetailPage
   getProject
   getProjectArchives
   getProjectAttachmentUrl
-  getProjectBOM
   getProjectCoverImageUrl
   getProjectFileProgress
   getProjectOrders
@@ -1419,6 +1480,7 @@ const ProjectDetailPage = lazyWithReload(() => import('./pages/ProjectDetailPage
   setAitoProjectContacted
   setAitoProjectDueDate
   setAitoProjectFlag
+  sliceProjectRevision
   startLegacyMigration
   suggested_description
   suggestProjectTags
@@ -1597,19 +1659,19 @@ projectsPdm.descriptionLabel
 projectsPdm.editHeader
 projectsPdm.empty
 projectsPdm.emptySearch
-projectsPdm.files.addFiles
+projectsPdm.files
 projectsPdm.files.byAuthor
 projectsPdm.files.chooseFiles
-projectsPdm.files.confirmDeleteItem
-projectsPdm.files.confirmDeleteRevision
-projectsPdm.files.confirmRemoveFile
 projectsPdm.files.deleteItem
 projectsPdm.files.deleteRevision
 projectsPdm.files.derivedFrom
 projectsPdm.files.derivedFromLabel
 projectsPdm.files.derivedFromNone
+projectsPdm.files.details
 projectsPdm.files.download
 projectsPdm.files.downloadAll
+projectsPdm.files.dropToCreate
+projectsPdm.files.dropToCreateHint
 projectsPdm.files.duplicateWarning
 projectsPdm.files.emptySection
 projectsPdm.files.fileCount
@@ -1623,11 +1685,13 @@ projectsPdm.files.newRevision
 projectsPdm.files.noteLabel
 projectsPdm.files.notePlaceholder
 projectsPdm.files.notSliced
-projectsPdm.files.onlyPrintable
+projectsPdm.files.olderRevision
+projectsPdm.files.oneFile
+projectsPdm.files.onlySource
 projectsPdm.files.otherSections
 projectsPdm.files.outdated
+projectsPdm.files.outdatedBadge
 projectsPdm.files.preview
-projectsPdm.files.remove
 projectsPdm.files.removeFile
 projectsPdm.files.rename
 projectsPdm.files.saveFailed
@@ -1710,6 +1774,9 @@ projectsPdm.save
 projectsPdm.saved
 projectsPdm.saveFailed
 projectsPdm.searchPlaceholder
+projectsPdm.slice.downloadSliced
+projectsPdm.slice.failed
+projectsPdm.slice.openInSlicer
 projectsPdm.statusAll
 projectsPdm.statusFilterLabel
 projectsPdm.subtitle

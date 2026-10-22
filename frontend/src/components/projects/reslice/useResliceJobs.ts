@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { RefObject } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { api, ApiError } from '../../../api/client';
 import type { ProjectFileOut, ProjectTreeResponse, ResliceResult } from '../../../api/client';
 import { useToast } from '../../../contexts/ToastContext';
@@ -83,13 +85,7 @@ export function useResliceJobs(projectId: number): ResliceJobs {
         // The revision exists anyway; the panel refetches on its own.
       }
       if (!mountedRef.current) return;
-      const items = tree?.sections.flatMap((s) => s.items) ?? [];
-      const file =
-        result.file_id === null
-          ? undefined
-          : items.flatMap((i) => i.revisions).flatMap((r) => r.files).find((f) => f.id === result.file_id);
-      const name = items.find((i) => i.id === result.item_id)?.name ?? result.filename;
-      const values = { name, number: result.revision_number };
+      const { file, values } = finishedRevision(tree, result);
       if (run.queueTaskId !== undefined && !file) {
         showToast(t('projectsPdm.reslice.queueSkipped', values), 'info');
         return;
@@ -104,46 +100,7 @@ export function useResliceJobs(projectId: number): ResliceJobs {
   );
 
   const pending = [...runs.values()].filter((r) => r.error === null).length;
-  useEffect(() => {
-    if (pending === 0) return;
-    let cancelled = false;
-    let polling = false; // one poll round in flight at a time (see SliceJobTrackerContext)
-    const timer = setInterval(async () => {
-      if (cancelled || polling) return;
-      polling = true;
-      try {
-        for (const run of [...runsRef.current.values()].filter((r) => r.error === null)) {
-          try {
-            const state = await api.getSliceJob(run.jobId);
-            if (cancelled) return;
-            // Dismissed or replaced while the request was in flight.
-            if (runsRef.current.get(run.itemId)?.jobId !== run.jobId) continue;
-            if (state.status === 'completed' && state.result && 'revision_id' in state.result) {
-              await finish(run, state.result);
-            } else if (state.status === 'failed') {
-              update(run.itemId, { ...run, error: state.error_detail || t('common.unknownError') });
-            } else {
-              update(run.itemId, { ...run, percent: state.progress ? Math.round(state.progress.total_percent) : null });
-            }
-          } catch (e) {
-            // A 404 means the job is gone (restart, expiry, no read permission): stop, don't spin forever.
-            if (e instanceof ApiError && e.status === 404) {
-              if (runsRef.current.get(run.itemId)?.jobId === run.jobId) {
-                update(run.itemId, { ...run, error: t('projectsPdm.reslice.jobLost') });
-              }
-            }
-            // anything else is transient: retry next tick
-          }
-        }
-      } finally {
-        polling = false;
-      }
-    }, POLL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
-  }, [pending, finish, t, update]);
+  useResliceJobPoll(pending, runsRef, finish, update, t);
 
   return {
     runFor: (itemId: number) => runs.get(itemId),
@@ -152,4 +109,80 @@ export function useResliceJobs(projectId: number): ResliceJobs {
     printNext: printQueue[0] ?? null,
     clearPrintNext: () => setPrintQueue((q) => q.slice(1)),
   };
+}
+
+/** The finished run's new file, looked up in the freshly read tree (undefined when the
+ *  result names none or the tree is missing it), and the toast values: the item's name
+ *  (the result's filename when the tree lacks the item) and the new revision number. */
+function finishedRevision(tree: ProjectTreeResponse | undefined, result: ResliceResult) {
+  const items = tree?.sections.flatMap((s) => s.items) ?? [];
+  const file =
+    result.file_id === null
+      ? undefined
+      : items.flatMap((i) => i.revisions).flatMap((r) => r.files).find((f) => f.id === result.file_id);
+  const name = items.find((i) => i.id === result.item_id)?.name ?? result.filename;
+  return { file, values: { name, number: result.revision_number } };
+}
+
+/** Polls every pending (error-free) run each POLL_MS while there is at least one; restarts
+ *  whenever the count of pending runs changes. One poll round in flight at a time. */
+function useResliceJobPoll(
+  pending: number,
+  runsRef: RefObject<ReadonlyMap<number, ResliceRun>>,
+  finish: (run: ResliceRun, result: ResliceResult) => Promise<void>,
+  update: (itemId: number, next: ResliceRun | null) => void,
+  t: TFunction,
+) {
+  useEffect(() => {
+    if (pending === 0) return;
+    let cancelled = false;
+    let polling = false; // one poll round in flight at a time (see SliceJobTrackerContext)
+    const timer = setInterval(async () => {
+      if (cancelled || polling) return;
+      polling = true;
+      try {
+        await pollRuns(runsRef, () => cancelled, finish, update, t);
+      } finally {
+        polling = false;
+      }
+    }, POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [pending, finish, t, update, runsRef]);
+}
+
+/** One poll round: reads each pending run's job and finishes, fails or advances it. Stops
+ *  as soon as the poll is cancelled; skips a run dismissed or replaced meanwhile. */
+async function pollRuns(
+  runsRef: RefObject<ReadonlyMap<number, ResliceRun>>,
+  isCancelled: () => boolean,
+  finish: (run: ResliceRun, result: ResliceResult) => Promise<void>,
+  update: (itemId: number, next: ResliceRun | null) => void,
+  t: TFunction,
+) {
+  for (const run of [...runsRef.current.values()].filter((r) => r.error === null)) {
+    try {
+      const state = await api.getSliceJob(run.jobId);
+      if (isCancelled()) return;
+      // Dismissed or replaced while the request was in flight.
+      if (runsRef.current.get(run.itemId)?.jobId !== run.jobId) continue;
+      if (state.status === 'completed' && state.result && 'revision_id' in state.result) {
+        await finish(run, state.result);
+      } else if (state.status === 'failed') {
+        update(run.itemId, { ...run, error: state.error_detail || t('common.unknownError') });
+      } else {
+        update(run.itemId, { ...run, percent: state.progress ? Math.round(state.progress.total_percent) : null });
+      }
+    } catch (e) {
+      // A 404 means the job is gone (restart, expiry, no read permission): stop, don't spin forever.
+      if (e instanceof ApiError && e.status === 404) {
+        if (runsRef.current.get(run.itemId)?.jobId === run.jobId) {
+          update(run.itemId, { ...run, error: t('projectsPdm.reslice.jobLost') });
+        }
+      }
+      // anything else is transient: retry next tick
+    }
+  }
 }

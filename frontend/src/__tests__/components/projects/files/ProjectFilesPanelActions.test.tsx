@@ -333,6 +333,30 @@ describe('ProjectFilesPanel actions', () => {
     expect(mutations()).toEqual([]);
   });
 
+  it('a cancelled file picker (empty selection) resets the input but sends nothing and changes nothing', async () => {
+    const { container } = render(<ProjectFilesPanel projectId={7} />);
+    await screen.findByText('Support');
+    await waitFor(() => expect(treeFetches()).toBe(1));
+    const before = container.innerHTML;
+    // The card's "New revision" picker and the dashed new-item card's picker (uploads are
+    // source-only, so revisions have no "add files" picker any more).
+    for (const testId of ['new-revision-input-20', 'new-item-drop-input-impression']) {
+      const input = screen.getByTestId(testId) as HTMLInputElement;
+      // React tracks the value on the node itself, so spy there (the reset lets the same file be picked again).
+      const setValue = vi.spyOn(input, 'value', 'set');
+      try {
+        fireEvent.change(input, { target: { files: [] } });
+        expect(setValue.mock.calls).toEqual([['']]);
+      } finally {
+        setValue.mockRestore();
+      }
+    }
+    await act(async () => {});
+    expect(mutations()).toEqual([]);
+    expect(treeFetches()).toBe(1);
+    expect(container.innerHTML).toBe(before);
+  });
+
   it('highlights the section and the item under a drag, and clears it when the drag leaves', async () => {
     render(<ProjectFilesPanel projectId={7} />);
     await screen.findByText('Support');

@@ -10,6 +10,7 @@ from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import and_, case, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -1126,6 +1127,7 @@ async def list_project_queue(
     project_id: int,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_READ),
+    can_read_aito: bool = Depends(probe_permissions_if_auth_enabled(Permission.AITO_READ)),  # Fenrir
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """List queue items in a project."""
@@ -1141,6 +1143,13 @@ async def list_project_queue(
     result = await db.execute(query)
     items = result.scalars().all()
 
+    if not can_read_aito:  # Fenrir: the Aito task behind a queued print is aito:read data
+        out = []
+        for item in items:
+            data = jsonable_encoder(item)
+            data["aito_task_id"] = None
+            out.append(data)
+        return out
     return items
 
 

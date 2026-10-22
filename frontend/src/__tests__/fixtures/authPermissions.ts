@@ -11,16 +11,32 @@
  *   });
  *
  * A null set keeps the real provider's behaviour (auth disabled: everything granted).
+ *
+ * Pass `{ derived: true }` to also derive `hasAnyPermission` and `canModify`
+ * (`<resource>:<action>_all|_own`) from the granted set; by default only
+ * `hasPermission` is replaced and the real provider answers the rest.
  */
 type AuthModule = { useAuth: () => { hasPermission: (p: string) => boolean } };
 
-export function withGrantedPermissions<M extends AuthModule>(actual: M, getGranted: () => Set<string> | null): M {
+export function withGrantedPermissions<M extends AuthModule>(
+  actual: M,
+  getGranted: () => Set<string> | null,
+  options: { derived?: boolean } = {},
+): M {
   return {
     ...actual,
     useAuth: () => {
       const real = actual.useAuth();
       const granted = getGranted();
-      return granted ? { ...real, hasPermission: (p: string) => granted.has(p) } : real;
+      if (!granted) return real;
+      const mocked = { ...real, hasPermission: (p: string) => granted.has(p) };
+      if (!options.derived) return mocked;
+      return {
+        ...mocked,
+        hasAnyPermission: (...ps: string[]) => ps.some((p) => granted.has(p)),
+        canModify: (resource: string, action: string) =>
+          granted.has(`${resource}:${action}_all`) || granted.has(`${resource}:${action}_own`),
+      };
     },
   };
 }

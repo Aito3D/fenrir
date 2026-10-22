@@ -19,7 +19,7 @@ export function ProjectCodeChip({ code, className = '' }: { code: string | null;
 
 /** A project option's label inside a picker button: the code chip, then the
  *  name, truncated to the space left. */
-export function ProjectOptionLabel({ code, name }: { code: string | null; name: string }) {
+function ProjectOptionLabel({ code, name }: { code: string | null; name: string }) {
   return (
     <>
       <ProjectCodeChip code={code} />

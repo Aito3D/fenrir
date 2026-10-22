@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import io
 import zipfile
+from datetime import datetime
 
 import httpx
 import pytest
@@ -203,6 +204,85 @@ async def test_sliced_file_carries_its_facts_and_downloads(async_client: AsyncCl
         assert zf.namelist() == ["support.3mf"]
 
 
+async def _sliced_upload(client: AsyncClient) -> tuple[dict, dict]:
+    """Upload a source and wait for its slice: (revision as the tree shows it, its sliced file)."""
+    project, _item, rev = await _upload(client)
+    await _wait_job(rev["slice_job_id"])
+    out = await _tree_revision(client, project["id"], rev["id"])
+    assert out["slice_status"] == "sliced", out
+    return out, out["sliced_file"]
+
+
+async def _download_404(client: AsyncClient, revision_id: int, file_id: int) -> None:
+    res = await client.get(f"/api/v1/projects/revisions/{revision_id}/download?file_id={file_id}")
+    assert res.status_code == 404, res.text
+    assert res.json() == {"detail": "File not found"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_download_refuses_another_revisions_sliced_file(async_client: AsyncClient, db_session, sidecar):
+    """``?file_id=`` serves only the revision's OWN sliced file: another revision's slice is 404, also
+    when the revision's ``sliced_file_id`` points at it (the row must belong to the revision)."""
+    rev_a, sliced_a = await _sliced_upload(async_client)
+    rev_b, sliced_b = await _sliced_upload(async_client)
+    assert sliced_a["id"] != sliced_b["id"]
+
+    await _download_404(async_client, rev_a["id"], sliced_b["id"])
+
+    await db_session.execute(
+        update(ProjectRevision).where(ProjectRevision.id == rev_a["id"]).values(sliced_file_id=sliced_b["id"])
+    )
+    await db_session.commit()
+    await _download_404(async_client, rev_a["id"], sliced_b["id"])
+    # revision B still serves its own slice
+    ok = await async_client.get(f"/api/v1/projects/revisions/{rev_b['id']}/download?file_id={sliced_b['id']}")
+    assert ok.status_code == 200 and ok.content == _sliced_3mf()
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_download_unknown_file_id_is_404(async_client: AsyncClient, sidecar):
+    rev, _sliced = await _sliced_upload(async_client)
+    await _download_404(async_client, rev["id"], 987654)
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_download_soft_deleted_sliced_file_is_404(async_client: AsyncClient, db_session, sidecar):
+    rev, sliced = await _sliced_upload(async_client)
+    await db_session.execute(
+        update(LibraryFile).where(LibraryFile.id == sliced["id"]).values(deleted_at=datetime(2026, 10, 1))
+    )
+    await db_session.commit()
+    await _download_404(async_client, rev["id"], sliced["id"])
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_download_sliced_file_missing_on_disk_is_404(async_client: AsyncClient, db_session, sidecar):
+    rev, sliced = await _sliced_upload(async_client)
+    (row,) = await _derived_rows(db_session)
+    assert row.id == sliced["id"]
+    path = to_absolute_path(row.file_path)
+    assert path is not None
+    path.unlink()
+    await _download_404(async_client, rev["id"], sliced["id"])
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_download_file_id_on_an_unsliced_revision_is_404(async_client: AsyncClient, sidecar, monkeypatch):
+    """A revision with no slice (``sliced_file_id`` null) serves no file outside its own files."""
+    _, other_sliced = await _sliced_upload(async_client)
+    _no_auto_slice(monkeypatch)
+    project, _item, rev = await _upload(async_client)
+    out = await _tree_revision(async_client, project["id"], rev["id"])
+    assert (out["slice_status"], out["sliced_file"]) == (None, None)
+    await _download_404(async_client, rev["id"], other_sliced["id"])
+    await _download_404(async_client, rev["id"], 987654)
+
+
 @pytest.mark.asyncio
 @pytest.mark.integration
 async def test_sidecar_down_upload_succeeds_and_slice_fails(async_client: AsyncClient, db_session, sidecar):
@@ -328,6 +408,123 @@ async def test_resume_interrupted_slices(async_client: AsyncClient, db_session, 
     assert len(await _derived_rows(db_session)) == 1
 
 
+async def _strand_slicing(db, revision_id: int, job_id: int = 9999) -> None:
+    await db.execute(
+        update(ProjectRevision)
+        .where(ProjectRevision.id == revision_id)
+        .values(slice_status="slicing", slice_job_id=job_id)
+    )
+    await db.commit()
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_resume_fails_a_stranded_revision_whose_source_is_gone(async_client: AsyncClient, db_session, sidecar):
+    sidecar.mode = "down"
+    _project, _item, rev = await _upload(async_client)
+    await _wait_job(rev["slice_job_id"])
+    await _strand_slicing(db_session, rev["id"])
+    source = (await db_session.execute(select(LibraryFile).where(LibraryFile.revision_id == rev["id"]))).scalar_one()
+    source_path = to_absolute_path(source.file_path)
+    assert source_path is not None
+    source_path.unlink()
+    sidecar.slice_requests.clear()
+
+    assert await project_slice.resume_interrupted_slices() == 0
+
+    db_session.expire_all()
+    revision = await db_session.get(ProjectRevision, rev["id"])
+    assert revision.slice_status == "failed"
+    assert revision.slice_error == "The revision's source .3mf is missing"
+    assert sidecar.slice_requests == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_resume_goes_on_after_one_revision_fails_to_restart(
+    async_client: AsyncClient, db_session, sidecar, monkeypatch
+):
+    sidecar.mode = "down"
+    _p1, _i1, first = await _upload(async_client)
+    await _wait_job(first["slice_job_id"])
+    _p2, _i2, second = await _upload(async_client)
+    await _wait_job(second["slice_job_id"])
+    await _strand_slicing(db_session, first["id"])
+    await _strand_slicing(db_session, second["id"], job_id=9998)
+
+    real_start = project_slice._start
+
+    async def flaky_start(db, revision_id, *, user_id, resume):
+        if revision_id == first["id"]:
+            raise RuntimeError("boom")
+        return await real_start(db, revision_id, user_id=user_id, resume=resume)
+
+    monkeypatch.setattr(project_slice, "_start", flaky_start)
+    sidecar.mode = "ok"
+
+    assert await project_slice.resume_interrupted_slices() == 1
+
+    db_session.expire_all()
+    resumed = await db_session.get(ProjectRevision, second["id"])
+    assert resumed.slice_job_id not in (None, 9998)
+    await _wait_job(resumed.slice_job_id)
+    untouched = await db_session.get(ProjectRevision, first["id"])
+    assert untouched.slice_status == "slicing"
+    assert untouched.slice_job_id == 9999
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+@pytest.mark.parametrize("dead_job", ["unknown", "finished"])
+async def test_a_slicing_revision_with_no_live_job_is_sliced_again(
+    async_client: AsyncClient, db_session, sidecar, dead_job
+):
+    """A failed slice whose ``failed`` write was refused leaves the row ``slicing`` with a dead job:
+    Retry starts a new slice at once (T-428), where it used to hand the dead job id back."""
+    sidecar.mode = "down"
+    project, _item, rev = await _upload(async_client)
+    await _wait_job(rev["slice_job_id"])
+    dead_id = 9999 if dead_job == "unknown" else rev["slice_job_id"]
+    await db_session.execute(
+        update(ProjectRevision)
+        .where(ProjectRevision.id == rev["id"])
+        .values(slice_status="slicing", slice_job_id=dead_id)
+    )
+    await db_session.commit()
+
+    sidecar.mode = "ok"
+    started = await async_client.post(f"/api/v1/projects/revisions/{rev['id']}/slice")
+    assert started.status_code == 202, started.text
+    body = started.json()
+    assert body["slice_status"] == "slicing"
+    assert body["job_id"] not in (None, dead_id)
+    await _wait_job(body["job_id"])
+
+    out = await _tree_revision(async_client, project["id"], rev["id"])
+    assert (out["slice_status"], out["slice_job_id"]) == ("sliced", body["job_id"])
+    assert len(sidecar.slice_requests) == 2  # the failed first attempt and the new slice
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_a_slicing_revision_with_a_live_job_is_left_alone(async_client: AsyncClient, db_session, sidecar):
+    sidecar.block = True
+    _project, _item, rev = await _upload(async_client)
+    await asyncio.wait_for(sidecar.entered.wait(), timeout=10)
+    assert _job_status(rev["slice_job_id"]) == "running"
+
+    again = await project_slice.start_revision_slice(db_session, rev["id"], user_id=None)
+    assert again == rev["slice_job_id"]
+    sidecar.release.set()
+    await _wait_job(rev["slice_job_id"])
+    assert len(sidecar.slice_requests) == 1
+
+
+def _job_status(job_id: int) -> str | None:
+    job = slice_dispatch.get(job_id)
+    return job.status if job is not None else None
+
+
 @pytest.mark.asyncio
 @pytest.mark.integration
 async def test_legacy_unsliced_revision_can_be_sliced_on_demand(async_client: AsyncClient, sidecar, monkeypatch):
@@ -414,13 +611,15 @@ async def test_failed_slice_start_does_not_fail_the_upload(async_client: AsyncCl
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-async def test_failed_enqueue_marks_the_upload_failed(async_client: AsyncClient, sidecar, monkeypatch):
+async def test_failed_enqueue_marks_the_upload_failed(async_client: AsyncClient, sidecar, monkeypatch, caplog):
     _failing_enqueue(monkeypatch)
     _project, _item, rev = await _upload(async_client)  # asserts 201
 
     assert [f["filename"] for f in rev["files"]] == ["support.3mf"]
     assert rev["slice_status"] == "failed"  # claimed, then released: never "slicing" with no job
-    assert "dispatcher down" in rev["slice_error"]
+    assert rev["slice_error"] == "Could not start the slice"  # generic (T-426); the cause is only logged
+    assert "dispatcher down" not in rev["slice_error"]
+    assert any(r.exc_info and "dispatcher down" in str(r.exc_info[1]) for r in caplog.records)
     assert sidecar.slice_requests == []
 
 
@@ -449,3 +648,129 @@ async def test_failed_slice_start_does_not_fail_the_aito_drop(
     revisions = list((await db_session.execute(select(ProjectRevision))).scalars().all())
     assert len(revisions) == 2
     assert {r.slice_status for r in revisions} == {None}
+
+
+def _zip_with(settings: bytes | None) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as zf:
+        if settings is not None:
+            zf.writestr("Metadata/project_settings.config", settings)
+        zf.writestr("3D/3dmodel.model", "<model/>")
+    return buffer.getvalue()
+
+
+@pytest.mark.parametrize(
+    ("content", "part_cap", "total_cap", "expected"),
+    [
+        (b'{"a": "' + b"x" * 100 + b'"}', 50, None, "project settings are too large"),
+        (b'{"a": "1"}', None, 10, "too large once unpacked"),
+    ],
+)
+def test_source_over_a_cap_is_refused_before_the_sanitiser(monkeypatch, content, part_cap, total_cap, expected):
+    if part_cap is not None:
+        monkeypatch.setattr(project_slice, "_MAX_PART_BYTES", part_cap)
+    if total_cap is not None:
+        monkeypatch.setattr(app_settings, "library_max_zip_extract_bytes", total_cap)
+    with pytest.raises(project_slice.ProjectFilesError) as raised:
+        project_slice._check_source_within_caps(_zip_with(content))
+    assert raised.value.status_code == 413
+    assert expected in str(raised.value.detail)
+
+
+def test_source_within_the_caps_or_not_a_zip_is_left_to_the_slicer():
+    project_slice._check_source_within_caps(_zip_with(b'{"a": "1"}'))
+    project_slice._check_source_within_caps(_zip_with(None))  # no settings part
+    project_slice._check_source_within_caps(b"not a zip")
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_oversized_settings_part_fails_the_slice_with_a_reason(async_client: AsyncClient, sidecar, monkeypatch):
+    monkeypatch.setattr(project_slice, "_MAX_PART_BYTES", 16)
+    project, _item, rev = await _upload(async_client)
+    await _wait_job(rev["slice_job_id"])
+
+    out = await _tree_revision(async_client, project["id"], rev["id"])
+    assert out["slice_status"] == "failed"
+    assert "project settings are too large" in out["slice_error"]
+    assert sidecar.slice_requests == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_parallel_slices_wait_their_turn_and_all_complete(async_client: AsyncClient, sidecar, monkeypatch):
+    """A bulk start (a Move-to-project of many 3MFs, a startup resume) sends at most
+    ``_MAX_CONCURRENT_SLICES`` slices to the sidecar at once; the others wait their turn, reported
+    like a slice the sidecar has not answered yet (``running``, no progress), and all complete."""
+    _no_auto_slice(monkeypatch)
+    limit = project_slice._MAX_CONCURRENT_SLICES
+    in_flight = 0
+    peak = 0
+    plain_handler = sidecar.handler
+
+    async def counting_handler(request: httpx.Request) -> httpx.Response:
+        nonlocal in_flight, peak
+        if not _is_slice_post(request):
+            return await plain_handler(request)
+        in_flight += 1
+        peak = max(peak, in_flight)
+        try:
+            return await plain_handler(request)
+        finally:
+            in_flight -= 1
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(counting_handler), timeout=10.0)
+    slicer_api_module.set_shared_http_client(client)
+
+    revisions = [await _upload(async_client, f"part{n}.3mf") for n in range(limit + 3)]
+    sidecar.block = True
+    job_ids = []
+    for _project, _item, rev in revisions:
+        started = await async_client.post(f"/api/v1/projects/revisions/{rev['id']}/slice")
+        assert started.status_code == 202, started.text
+        job_ids.append(started.json()["job_id"])
+    await asyncio.wait_for(sidecar.entered.wait(), timeout=10)
+    for _ in range(50):
+        await asyncio.sleep(0.01)
+    assert len(sidecar.slice_requests) == limit
+    for (project, _item, rev), job_id in zip(revisions, job_ids, strict=True):
+        assert (await _tree_revision(async_client, project["id"], rev["id"]))["slice_status"] == "slicing"
+        job = (await async_client.get(f"/api/v1/slice-jobs/{job_id}")).json()
+        assert job["status"] == "running"
+        assert job["progress"] is None
+
+    sidecar.release.set()
+    for job_id in job_ids:
+        await _wait_job(job_id)
+    assert len(sidecar.slice_requests) == len(revisions)
+    assert peak == limit
+    for project, _item, rev in revisions:
+        assert (await _tree_revision(async_client, project["id"], rev["id"]))["slice_status"] == "sliced"
+
+
+_LEAKY_ERROR = "[Errno 13] Permission denied: '/srv/fenrir/projects/P-0001/secret.3mf'"
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_unexpected_slice_error_shows_a_generic_message_and_is_logged(
+    async_client: AsyncClient, sidecar, monkeypatch, caplog
+):
+    """T-426: a disk or permission failure never puts its OS text (with a server path) on the revision card."""
+
+    def boom(_model_bytes):
+        raise PermissionError(_LEAKY_ERROR)
+
+    monkeypatch.setattr(project_slice, "_check_source_within_caps", boom)
+    project, _item, rev = await _upload(async_client)
+    await _wait_job(rev["slice_job_id"])
+
+    out = await _tree_revision(async_client, project["id"], rev["id"])
+    assert out["slice_status"] == "failed"
+    assert out["slice_error"] == "Unexpected error while slicing"
+    assert "/srv/fenrir" not in out["slice_error"]
+    job = (await async_client.get(f"/api/v1/slice-jobs/{rev['slice_job_id']}")).json()
+    assert "/srv/fenrir" not in str(job)
+    logged = [r for r in caplog.records if r.exc_info and isinstance(r.exc_info[1], PermissionError)]
+    assert logged and _LEAKY_ERROR in str(logged[0].exc_info[1])
+    assert sidecar.slice_requests == []

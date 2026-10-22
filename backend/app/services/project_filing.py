@@ -281,10 +281,7 @@ async def move_library_files_to_project(
             result,
             project,
             project_id,
-            section,
-            key,
-            name,
-            candidates,
+            _Group(section, key, name, candidates),
             target_item_id=target_item_id,
             user_id=user_id,
         )
@@ -370,6 +367,16 @@ async def _classify_files(
     return groups
 
 
+@dataclass(frozen=True)
+class _Group:
+    """One group of files bound for the same item: its section, name key, item name and files."""
+
+    section: str
+    key: str
+    name: str
+    candidates: list[_Candidate]
+
+
 @dataclass
 class _StoredGroup:
     """One group stored as a revision: its item, the revision and the files that went in."""
@@ -412,17 +419,17 @@ async def _store_group(
     result: MoveToProjectResult,
     project: Project,
     project_id: int,
-    section: str,
-    key: str,
-    name: str,
-    candidates: list[_Candidate],
+    group: _Group,
     *,
     target_item_id: int | None,
     user_id: int | None,
 ) -> tuple[Project, _StoredGroup | None]:
     """Store one group as a revision (committed). None when nothing was stored: every file
     skipped, or the group failed (``copy_failed`` / ``conflict`` / ``error``, rolled back).
-    Returns the project too, re-read if a commit or rollback replaced it."""
+    Returns the project too, re-read if a commit or rollback replaced it.
+
+    ``project_id`` is ``project.id`` read before any commit or rollback could expire ``project``."""
+    section, key, name, candidates = group.section, group.key, group.name, group.candidates
     pending = candidates  # what a failure below reports as skipped
     try:
         if target_item_id is not None:

@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
+import type { RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { Loader2 } from 'lucide-react';
 import { api } from '../../../api/client';
 import type { LinkedProjectRef } from '../../../api/client';
@@ -32,11 +34,7 @@ export function useCardDrop({
 }) {
   const { t } = useTranslation();
   const { hasPermission } = useAuth();
-  const { showToast } = useToast();
-  const upload = useUploadToTask();
-  const acceptsSource = useAcceptsSource();
-  const [busy, setBusy] = useState(false);
-  const [choices, setChoices] = useState<Choice[] | null>(null);
+  const { busy, choices, setChoices, send, handleDrop } = useCardDropUpload(orderId, onExpand, t);
   const chooserRef = useRef<HTMLDivElement>(null);
   const chooserOpen = choices !== null;
   // Outside press dismisses the chooser and forgets the pending files.
@@ -47,9 +45,38 @@ export function useCardDrop({
     };
     document.addEventListener('pointerdown', close);
     return () => document.removeEventListener('pointerdown', close);
-  }, [chooserOpen]);
+  }, [chooserOpen, setChoices]);
   // projects:read too: choosing a task needs the order's links (aito:read + projects:read).
   const canDrop = !disabled && canDropFiles(hasPermission);
+
+  // Claims every file drag over the card, or the browser opens the file.
+  const { dragOver, onDragOver, onDragLeave, onDrop } = useFileDropZone({
+    canDrop,
+    fileDragsOnly: true,
+    stopPropagation: 'drop',
+    onFiles: handleDrop,
+  });
+
+  const overlay = renderOverlay({ busy, choices, chooserRef, setChoices, send, t });
+
+  if (disabled) return { handlers: {}, className: '', title: undefined, overlay: null };
+  return {
+    handlers: { onDragOver, onDragLeave, onDrop },
+    className: dragOver ? DROP_HIGHLIGHT_CLS : '',
+    title: dragOver ? t('projectsPdm.aito.dropHere') : undefined,
+    overlay,
+  };
+}
+
+/** The drop upload: reads the order's linked tasks, then sends the files to the only one,
+ *  offers a choice between several (`choices`), or toasts and opens the card for none.
+ *  `busy` covers the links read and the upload. */
+function useCardDropUpload(orderId: number, onExpand: (() => void) | undefined, t: TFunction) {
+  const { showToast } = useToast();
+  const upload = useUploadToTask();
+  const acceptsSource = useAcceptsSource();
+  const [busy, setBusy] = useState(false);
+  const [choices, setChoices] = useState<Choice[] | null>(null);
 
   const send = async (taskId: number, project: LinkedProjectRef, files: File[]) => {
     setBusy(true);
@@ -91,15 +118,27 @@ export function useCardDrop({
     );
   };
 
-  // Claims every file drag over the card, or the browser opens the file.
-  const { dragOver, onDragOver, onDragLeave, onDrop } = useFileDropZone({
-    canDrop,
-    fileDragsOnly: true,
-    stopPropagation: 'drop',
-    onFiles: handleDrop,
-  });
+  return { busy, choices, setChoices, send, handleDrop };
+}
 
-  const overlay = (
+/** The busy spinner and the task chooser, rendered inside the card's shell. A plain render
+ *  function, not a component: the elements sit directly in the card's tree. */
+function renderOverlay({
+  busy,
+  choices,
+  chooserRef,
+  setChoices,
+  send,
+  t,
+}: {
+  busy: boolean;
+  choices: Choice[] | null;
+  chooserRef: RefObject<HTMLDivElement | null>;
+  setChoices: (choices: Choice[] | null) => void;
+  send: (taskId: number, project: LinkedProjectRef, files: File[]) => Promise<void>;
+  t: TFunction;
+}) {
+  return (
     <>
       {busy && (
         <span
@@ -147,12 +186,4 @@ export function useCardDrop({
       )}
     </>
   );
-
-  if (disabled) return { handlers: {}, className: '', title: undefined, overlay: null };
-  return {
-    handlers: { onDragOver, onDragLeave, onDrop },
-    className: dragOver ? DROP_HIGHLIGHT_CLS : '',
-    title: dragOver ? t('projectsPdm.aito.dropHere') : undefined,
-    overlay,
-  };
 }
