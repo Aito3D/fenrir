@@ -494,5 +494,25 @@ describe('NotificationBell', () => {
       expect(bell.querySelector('.bell-ring')).not.toBeNull();
       expect(chime).not.toHaveBeenCalled();
     });
+
+    it('shows exactly one bell icon while ringing and after the ring ends', async () => {
+      signIn();
+      render(<NotificationBell />);
+      const bell = await screen.findByTestId('notification-bell');
+      await screen.findByTestId('notification-badge');
+      await waitFor(() => expect(prefsServed).toBe(true));
+      expect(bell.querySelectorAll('svg')).toHaveLength(1);
+
+      await refetchWith(row({ id: 20, kind: 'aito.paid', title: 'aito.paid' }));
+      await waitFor(() => expect(bell.querySelector('.bell-ring')).not.toBeNull());
+      expect(bell.querySelectorAll('svg')).toHaveLength(1);
+
+      await refetchWith(row({ id: 21, kind: 'aito.paid', title: 'aito.paid' }));
+      await waitFor(() => expect(screen.getByTestId('notification-badge')).toHaveTextContent('4'));
+      expect(bell.querySelectorAll('svg')).toHaveLength(1);
+
+      await waitFor(() => expect(bell.querySelector('.bell-ring')).toBeNull(), { timeout: 2000 });
+      expect(bell.querySelectorAll('svg')).toHaveLength(1);
+    });
   });
 });

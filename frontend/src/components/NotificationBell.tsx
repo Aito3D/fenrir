@@ -33,7 +33,9 @@ function SignedInBell() {
   const buttonRef = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   const [ringing, setRinging] = useState(false);
-  // Bumped per arrival: remounts the ring and the badge so both replay.
+  // Bumped per arrival: remounts the ring and the badge so both replay. The two
+  // are siblings, so their keys need distinct prefixes: a shared key makes React
+  // leave the previous ringing icon behind, and the button shows two bells.
   const [arrivals, setArrivals] = useState(0);
   const [pos, setPos] = useState<CSSProperties>({});
 
@@ -188,10 +190,10 @@ function SignedInBell() {
           open ? 'text-bambu-green' : 'text-bambu-gray-light hover:text-white'
         }`}
       >
-        {ringing ? <BellRing key={arrivals} className="w-5 h-5 bell-ring" /> : <Bell className="w-5 h-5" />}
+        {ringing ? <BellRing key={`ring-${arrivals}`} className="w-5 h-5 bell-ring" /> : <Bell className="w-5 h-5" />}
         {unread > 0 && (
           <span
-            key={arrivals}
+            key={`badge-${arrivals}`}
             data-testid="notification-badge"
             className="badge-pop absolute -top-0.5 -right-0.5 min-w-[1.1rem] h-[1.1rem] px-1 rounded-full bg-bambu-green text-[10px] font-bold leading-[1.1rem] text-bambu-dark text-center tabular-nums ring-2 ring-bambu-dark-secondary"
           >
