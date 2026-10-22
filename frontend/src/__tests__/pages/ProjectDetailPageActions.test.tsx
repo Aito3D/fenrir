@@ -292,10 +292,12 @@ describe('ProjectDetailPage actions and states', () => {
 
       const row = (await screen.findByText('Child completed')).closest('a');
       expect(row).toHaveAttribute('href', '/projects/10');
-      expect(within(row as HTMLElement).getByText('completed')).toHaveClass('text-status-ok');
+      expect(within(row as HTMLElement).getByText('Completed')).toHaveClass('text-blue-700');
       expect(screen.getByTestId('details-subprojects')).toHaveTextContent('3');
-      expect(screen.getByText('archived')).toHaveClass('text-bambu-gray');
-      expect(screen.getByText('active')).toHaveClass('text-blue-700');
+      const archivedRow = screen.getByText('Child archived').closest('a') as HTMLElement;
+      expect(within(archivedRow).getByText('Archived')).toHaveClass('text-bambu-gray');
+      const activeRow = screen.getByText('Child active').closest('a') as HTMLElement;
+      expect(within(activeRow).getByText('Active')).toHaveClass('text-bambu-green');
     });
   });
 

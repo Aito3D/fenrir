@@ -3,6 +3,7 @@
 import asyncio
 import io
 import logging
+import sys
 import zipfile
 from datetime import datetime, timedelta
 from functools import partial
@@ -856,14 +857,19 @@ async def test_link_error_rolls_back_then_maps_to_its_status(
     task = await _task(db_session, order)
     calls: list[str] = []
 
-    async def teapot(*_a, **_k):
+    async def teapot(db, *_a, **_k):
         calls.append("op")
+        db.add(Settings(key="partial-link-state", value="x"))  # work the failed op left half done
+        await db.flush()
         raise links_service.LinkError(418, "teapot")
 
     real_rollback = AsyncSession.rollback
 
+    rolled_back_for: list[type] = []
+
     async def spy_rollback(self):
         calls.append("rollback")
+        rolled_back_for.append(type(sys.exception()))  # the exception being handled when the session rolls back
         return await real_rollback(self)
 
     monkeypatch.setattr(links_routes.svc, op, teapot)
@@ -872,8 +878,14 @@ async def test_link_error_rolls_back_then_maps_to_its_status(
     monkeypatch.undo()
     assert response.status_code == 418
     assert response.json()["detail"] == "teapot"
-    # The route's own rollback, then get_db's teardown rollback on the propagating HTTPException.
-    assert calls == ["op", "rollback", "rollback"]
+    # The op ran first and the session was rolled back after it (how many teardown rollbacks follow is
+    # the framework's business), and the op's half-done work did not survive.
+    assert calls[0] == "op"
+    assert "rollback" in calls[1:]
+    # The route itself rolled back while handling the LinkError (a teardown rollback sees the HTTPException).
+    assert links_service.LinkError in rolled_back_for
+    db_session.expire_all()
+    assert (await db_session.execute(select(Settings).where(Settings.key == "partial-link-state"))).first() is None
 
 
 @pytest.mark.asyncio

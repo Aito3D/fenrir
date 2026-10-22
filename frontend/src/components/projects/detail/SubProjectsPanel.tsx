@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { FolderTree } from 'lucide-react';
 import type { ProjectChildPreview } from '../../../api/client';
 import { ProjectPanel } from './ProjectPanel';
+import { StatusBadge } from './StatusBadge';
 import { formatFilament } from './format';
 
 /** The project's direct sub-projects, one link row each with its own branch's figures (#1264). */
@@ -23,13 +24,7 @@ export function SubProjectsPanel({ subProjects, currency }: { subProjects: Proje
                 style={{ backgroundColor: child.color || '#6b7280' }}
               />
               <span className="text-white truncate">{child.name}</span>
-              <span className={`text-xs px-2 py-0.5 rounded flex-shrink-0 ${
-                child.status === 'completed' ? 'bg-status-ok/20 text-status-ok' :
-                child.status === 'archived' ? 'bg-bambu-gray/20 text-bambu-gray' :
-                'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400'
-              }`}>
-                {child.status}
-              </span>
+              <StatusBadge status={child.status} t={t} />
               {/* A branch of its own, so its figures cover more than the
                   one project named on this row (#1264). */}
               {child.descendant_count > 0 && (
