@@ -606,9 +606,17 @@ async def _require_reuse_rows_unchanged(db: AsyncSession, written: list[_Written
             raise ProjectFilesError(409, "A file changed while it was being moved; try again")
 
 
+@dataclass(frozen=True)
+class _RowOwner:
+    """Where a new library row belongs and who made it: its project, revision and creator."""
+
+    project_id: int
+    revision_id: int
+    created_by_id: int | None
+
+
 def _new_library_row(
-    project_id: int,
-    revision_id: int,
+    owner: _RowOwner,
     path: Path,
     *,
     file_type: str,
@@ -616,12 +624,11 @@ def _new_library_row(
     file_hash: str | None,
     thumbnail_path: str | None,
     file_metadata: dict | None,
-    created_by_id: int | None,
 ) -> LibraryFile:
     """A new (unadded) project-revision library row for the file stored at ``path``."""
     return LibraryFile(
-        project_id=project_id,
-        revision_id=revision_id,
+        project_id=owner.project_id,
+        revision_id=owner.revision_id,
         folder_id=None,
         is_external=False,
         filename=path.name,
@@ -631,7 +638,7 @@ def _new_library_row(
         file_hash=file_hash,
         thumbnail_path=thumbnail_path,
         file_metadata=file_metadata,
-        created_by_id=created_by_id,
+        created_by_id=owner.created_by_id,
     )
 
 
@@ -689,15 +696,13 @@ async def _add_file_rows(
         reuse = entry.source.reuse_row if entry.source is not None else None
         if reuse is None:
             row = _new_library_row(
-                project.id,
-                revision.id,
+                _RowOwner(project.id, revision.id, user_id),
                 entry.path,
                 file_type=file_type,
                 file_size=entry.size,
                 file_hash=entry.digest,
                 thumbnail_path=entry.thumbnail_rel,
                 file_metadata=entry.metadata,
-                created_by_id=user_id,
             )
             db.add(row)
         else:
@@ -808,9 +813,7 @@ async def add_revision(
             project,
             await fresh_item(db, item.id),
             lambda folder: _stream_files(folder, uploads),
-            note,
-            derived_from_id,
-            user_id,
+            _RevisionMeta(note=note, derived_from_id=derived_from_id, user_id=user_id),
         )
 
 
@@ -845,11 +848,13 @@ async def add_revision_from_sources(
             project,
             await fresh_item(db, item.id),
             lambda folder: _copy_sources(folder, sources),
-            note,
-            derived_from_id,
-            user_id,
-            pipeline_id=pipeline_id,
-            pipeline_name=pipeline_name,
+            _RevisionMeta(
+                note=note,
+                derived_from_id=derived_from_id,
+                user_id=user_id,
+                pipeline_id=pipeline_id,
+                pipeline_name=pipeline_name,
+            ),
         )
         return revision
 
@@ -977,18 +982,25 @@ class _CommitGuard:
         return False
 
 
+@dataclass(frozen=True)
+class _RevisionMeta:
+    """What a new revision records besides its files: note, lineage, author and Re-trancher pipeline."""
+
+    note: str | None
+    derived_from_id: int | None
+    user_id: int | None
+    pipeline_id: int | None = None
+    pipeline_name: str | None = None
+
+
 async def _add_revision_locked(
     db: AsyncSession,
     project: Project,
     item: ProjectItem,
     write: Callable[[Path], Awaitable[list[_WrittenFile]]],
-    note: str | None,
-    derived_from_id: int | None,
-    user_id: int | None,
-    *,
-    pipeline_id: int | None = None,
-    pipeline_name: str | None = None,
+    meta: _RevisionMeta,
 ) -> tuple[ProjectRevision, list[DuplicateWarning]]:
+    note, derived_from_id, user_id = meta.note, meta.derived_from_id, meta.user_id
     if derived_from_id is not None:
         await _check_derived_from(db, project, None, derived_from_id)
     item_id, section, name = item.id, item.section, item.name
@@ -1020,8 +1032,8 @@ async def _add_revision_locked(
             status="wip",
             note=(note or "").strip() or None,
             derived_from_id=derived_from_id,
-            pipeline_id=pipeline_id,
-            pipeline_name=pipeline_name,
+            pipeline_id=meta.pipeline_id,
+            pipeline_name=meta.pipeline_name,
             created_by_id=user_id,
         )
         db.add(revision)
@@ -1607,15 +1619,13 @@ def _add_fork_rows(
         source = entry.copied_from  # always set on a fork copy
         db.add(
             _new_library_row(
-                project_id,
-                revision_id,
+                _RowOwner(project_id, revision_id, user_id),
                 entry.path,
                 file_type=source.file_type,
                 file_size=source.file_size,
                 file_hash=source.file_hash,
                 thumbnail_path=entry.thumbnail_rel,
                 file_metadata=source.file_metadata,
-                created_by_id=user_id,
             )
         )
 

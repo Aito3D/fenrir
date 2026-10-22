@@ -673,15 +673,13 @@ async def _store(
             async with project_files._CommitGuard(db, undo, label=f"slice of revision {revision_id}") as commit:
                 await asyncio.to_thread(_write_claimed, dest, content)
                 row = project_files._new_library_row(
-                    project.id,
-                    revision.id,
+                    project_files._RowOwner(project.id, revision.id, user_id),
                     dest,
                     file_type="gcode.3mf",
                     file_size=len(content),
                     file_hash=hashlib.sha256(content).hexdigest(),
                     thumbnail_path=None,
                     file_metadata=metadata,
-                    created_by_id=user_id,
                 )
                 row.derived_slice = True
                 # The source id and the waiting items' print times and filament types are read from

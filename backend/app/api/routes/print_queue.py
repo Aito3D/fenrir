@@ -2706,7 +2706,7 @@ async def retry_queue_item_slice(
     rearm = update(PrintQueueItem).where(
         PrintQueueItem.status == "slice_failed", PrintQueueItem.library_file_id == source.id
     )
-    if not can_modify_all:
+    if not can_modify_all and user is not None:
         rearm = rearm.where(PrintQueueItem.created_by_id == user.id)
     if (scope_clause := printer_scope.where(PrintQueueItem.printer_id)) is not None:
         rearm = rearm.where(scope_clause)
