@@ -3532,3 +3532,82 @@ async def test_create_item_maps_the_postgresql_constraint_name_to_the_name_409(d
         "An item with this name already exists in this section",
     )
     assert caught.value.__cause__ is error
+
+
+def _commit_and_rollback_fail(db_session, monkeypatch) -> tuple[RuntimeError, list[str]]:
+    """The commit fails, then the undo's rollback fails too (a dropped connection); returns the
+    commit's error and the rollbacks attempted. ``monkeypatch.undo()`` puts the real ones back."""
+    commit_error, rollbacks = RuntimeError("db down"), []
+
+    async def commit():
+        raise commit_error
+
+    async def rollback():
+        rollbacks.append("rollback")
+        raise ConnectionError("connection lost")
+
+    monkeypatch.setattr(db_session, "commit", commit)
+    monkeypatch.setattr(db_session, "rollback", rollback)
+    return commit_error, rollbacks
+
+
+@pytest.mark.asyncio
+async def test_add_revision_removes_its_files_even_when_the_rollback_fails(db_session, root, monkeypatch, caplog):
+    """T-482: the written files and the new R{n} folder go before the rollback is tried, so a
+    failing rollback leaves no orphan on disk (the commit's error is still the one raised)."""
+    project = await _project(db_session)
+    item = await create_item(db_session, project, section="modelisation", name="Support", user_id=None)
+    await db_session.commit()
+    folder = root / project.storage_dir / "Modélisation" / "Support" / "R1"
+    commit_error, rollbacks = _commit_and_rollback_fail(db_session, monkeypatch)
+    caplog.set_level("WARNING", logger=project_files.logger.name)
+    with pytest.raises(RuntimeError) as caught:
+        await add_revision(
+            db_session,
+            project,
+            item,
+            [upload("a.step"), upload("b.step", b"other")],
+            note=None,
+            derived_from_id=None,
+            user_id=None,
+        )
+    assert caught.value is commit_error
+    assert rollbacks == ["rollback"]
+    assert not folder.exists()
+    assert any("Undo after the failed" in r.getMessage() and r.exc_info for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_add_revision_into_an_existing_folder_removes_only_its_files_when_the_rollback_fails(
+    db_session, root, monkeypatch
+):
+    """T-482: a revision folder that already held something is kept, only this call's files go."""
+    project = await _project(db_session)
+    item = await create_item(db_session, project, section="modelisation", name="Support", user_id=None)
+    await db_session.commit()
+    folder = root / project.storage_dir / "Modélisation" / "Support" / "R1"
+    folder.mkdir(parents=True)
+    (folder / "keep.txt").write_bytes(b"x")
+    commit_error, rollbacks = _commit_and_rollback_fail(db_session, monkeypatch)
+    with pytest.raises(RuntimeError) as caught:
+        await add_revision(db_session, project, item, [upload("a.step")], note=None, derived_from_id=None, user_id=None)
+    assert caught.value is commit_error
+    assert rollbacks == ["rollback"]
+    assert sorted(p.name for p in folder.iterdir()) == ["keep.txt"]
+
+
+@pytest.mark.asyncio
+async def test_fork_removes_its_copies_and_folders_even_when_the_rollback_fails(db_session, root, monkeypatch):
+    """T-482: a fork whose commit and rollback both fail leaves no new item folder behind, so the
+    next fork to that name is not refused with 'A folder with this name already exists'."""
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project, files=[upload("a.step"), upload("b.step", b"other")])
+    await db_session.commit()
+    base = root / project.storage_dir / "Modélisation"
+    commit_error, rollbacks = _commit_and_rollback_fail(db_session, monkeypatch)
+    with pytest.raises(RuntimeError) as caught:
+        await fork_revision(db_session, project, item, rev, "Copie", user_id=None)
+    assert caught.value is commit_error
+    assert rollbacks == ["rollback"]
+    assert not (base / "Copie").exists()
+    assert (base / "Support" / "R1" / "a.step").exists()  # the source is untouched

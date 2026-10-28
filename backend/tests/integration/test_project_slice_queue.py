@@ -1077,7 +1077,7 @@ async def test_unexpected_slice_error_reaches_the_queue_item_as_a_generic_messag
     def boom(_model_bytes):
         raise PermissionError("[Errno 13] Permission denied: '/srv/fenrir/projects/P-0001/secret.3mf'")
 
-    monkeypatch.setattr(project_slice, "_check_source_within_caps", boom)
+    monkeypatch.setattr(project_slice, "check_source_within_caps", boom)
     out = await _queue(async_client, rev["files"][0]["id"])
     await _wait_job((await _revision(db_session, rev["id"])).slice_job_id)
 
@@ -1085,3 +1085,144 @@ async def test_unexpected_slice_error_reaches_the_queue_item_as_a_generic_messag
     assert item.status == "slice_failed"
     assert item.error_message == "Unexpected error while slicing"
     assert "/srv/fenrir" not in item.error_message
+
+
+# --- T-481: removing a revision's source .3mf drops the slice made from it ---------------------
+
+
+async def _sliced_two_source_revision(client: AsyncClient, db) -> tuple[dict, int, int, int, Path]:
+    """``_legacy_two_source_revision`` sliced (from partA): also returns the slice row id and its path."""
+    rev, part_a, part_b = await _legacy_two_source_revision(client, db)
+    await _slice_now(client, rev["id"])
+    revision = await _revision(db, rev["id"])
+    assert revision.slice_status == "sliced"
+    derived_id = revision.sliced_file_id
+    derived_path = to_absolute_path((await db.get(LibraryFile, derived_id)).file_path)
+    assert derived_path.exists()
+    return rev, part_a, part_b, derived_id, derived_path
+
+
+def _trash_names(roots: Path) -> list[str]:
+    """File names under any project's ``_trash`` folder."""
+    return sorted(p.name for p in (roots / "projects").rglob("*") if p.is_file() and "_trash" in p.parts)
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_removing_the_source_unslices_the_revision_and_the_next_print_waits_for_a_new_slice(
+    async_client: AsyncClient, db_session, sidecar, roots
+):
+    """T-481 (user-approved 2026-10-26): partB never prints partA's G-code once partA is removed."""
+    rev, part_a, part_b, derived_id, derived_path = await _sliced_two_source_revision(async_client, db_session)
+
+    removed = await async_client.delete(f"/api/v1/projects/revisions/{rev['id']}/files/{part_a}")
+    assert removed.status_code == 204, removed.text
+    revision = await _revision(db_session, rev["id"])
+    assert (revision.slice_status, revision.slice_error, revision.sliced_file_id) == (None, None, None)
+    assert await db_session.get(LibraryFile, derived_id) is None
+    assert not derived_path.exists()  # moved to the project trash, not deleted
+    assert any(name.endswith(".gcode.3mf") for name in _trash_names(roots))
+
+    waiting = await _queue(async_client, part_b)
+    assert (waiting["status"], waiting["library_file_id"]) == ("slicing", part_b)
+    await _wait_job((await _revision(db_session, rev["id"])).slice_job_id)
+    revision = await _revision(db_session, rev["id"])
+    assert revision.slice_status == "sliced"
+    assert derived_path.name.startswith("partA")
+    # SQLite may hand the deleted slice's id out again: the row is told apart by its source's name
+    new_slice_id = revision.sliced_file_id
+    assert (await db_session.get(LibraryFile, new_slice_id)).filename.startswith("partB")
+    item = await _item(db_session, waiting["id"])
+    assert (item.status, item.library_file_id) == ("pending", new_slice_id)
+    assert len(sidecar.slice_requests) == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_removing_another_file_keeps_the_slice_of_the_source(async_client: AsyncClient, db_session, sidecar):
+    rev, part_a, part_b, derived_id, derived_path = await _sliced_two_source_revision(async_client, db_session)
+
+    removed = await async_client.delete(f"/api/v1/projects/revisions/{rev['id']}/files/{part_b}")
+    assert removed.status_code == 204, removed.text
+    revision = await _revision(db_session, rev["id"])
+    assert (revision.slice_status, revision.sliced_file_id) == ("sliced", derived_id)
+    assert derived_path.exists()
+    assert (await _queue(async_client, part_a))["library_file_id"] == derived_id
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("status", "error", "expected"),
+    [("failed", "boom", (None, None)), ("slicing", None, ("slicing", None))],
+)
+async def test_removing_the_source_of_an_unsliced_revision(
+    async_client: AsyncClient, db_session, sidecar, status, error, expected
+):
+    """A failed slice (of the removed file) is cleared; a slice in flight is left to its job."""
+    rev, part_a, part_b = await _legacy_two_source_revision(async_client, db_session)
+    revision = await _revision(db_session, rev["id"])
+    revision.slice_status, revision.slice_error = status, error
+    await db_session.commit()
+
+    removed = await async_client.delete(f"/api/v1/projects/revisions/{rev['id']}/files/{part_a}")
+    assert removed.status_code == 204, removed.text
+    revision = await _revision(db_session, rev["id"])
+    assert (revision.slice_status, revision.slice_error) == expected
+    assert revision.sliced_file_id is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_removing_the_source_with_its_slice_file_missing_on_disk(async_client: AsyncClient, db_session, sidecar):
+    rev, part_a, part_b, derived_id, derived_path = await _sliced_two_source_revision(async_client, db_session)
+    derived_path.unlink()
+
+    removed = await async_client.delete(f"/api/v1/projects/revisions/{rev['id']}/files/{part_a}")
+    assert removed.status_code == 204, removed.text
+    revision = await _revision(db_session, rev["id"])
+    assert (revision.slice_status, revision.sliced_file_id) == (None, None)
+    assert await db_session.get(LibraryFile, derived_id) is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+@pytest.mark.parametrize("restore_fails", [False, True])
+async def test_a_failed_source_removal_puts_the_slice_back(
+    async_client: AsyncClient, db_session, sidecar, monkeypatch, caplog, restore_fails
+):
+    """The commit fails: the slice row and its G-code come back with the removed file, the revision stays
+    ``sliced``. A restore that fails too is logged, and the rollback still runs."""
+    from backend.app.models.project import Project
+    from backend.app.models.project_item import ProjectItem
+    from backend.app.services import project_files
+
+    rev, part_a, part_b, derived_id, derived_path = await _sliced_two_source_revision(async_client, db_session)
+    db_session.expire_all()
+    revision = await db_session.get(ProjectRevision, rev["id"])
+    item = await db_session.get(ProjectItem, revision.item_id)
+    project = await db_session.get(Project, item.project_id)
+    commit_error = RuntimeError("db down")
+
+    async def boom():
+        if restore_fails:
+            monkeypatch.setattr(project_files, "_move", _raise_os_error)
+        raise commit_error
+
+    monkeypatch.setattr(db_session, "commit", boom)
+    caplog.set_level("WARNING", logger=project_files.logger.name)
+    with pytest.raises(RuntimeError) as caught:
+        await project_files.remove_file_from_revision(db_session, project, item, revision, part_a)
+    assert caught.value is commit_error
+    monkeypatch.undo()
+
+    revision = await _revision(db_session, rev["id"])
+    assert (revision.slice_status, revision.sliced_file_id) == ("sliced", derived_id)
+    assert await db_session.get(LibraryFile, derived_id) is not None
+    assert derived_path.exists() is not restore_fails
+    if restore_fails:
+        assert any(str(derived_path) in r.getMessage() and r.exc_info for r in caplog.records)
+
+
+def _raise_os_error(*_args, **_kwargs):
+    raise OSError("move back failed")

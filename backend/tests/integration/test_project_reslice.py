@@ -282,6 +282,63 @@ async def test_pipeline_without_filament_preset_is_400_and_starts_no_job(
 
 @pytest.mark.asyncio
 @pytest.mark.integration
+@pytest.mark.parametrize(
+    ("cap", "expected"),
+    [
+        ("part", "The .3mf's project settings are too large to slice (over 0 MB)"),
+        ("total", "The .3mf is too large once unpacked to slice (over 0 MB)"),
+    ],
+)
+async def test_source_over_a_slicing_cap_is_413_and_starts_no_job(
+    async_client: AsyncClient, db_session, fake_slicer, monkeypatch, cap, expected
+):
+    """T-479: the Re-slice route runs the server slice's zip-bomb guard on the source bytes
+    before enqueueing, so an oversized source is a 413 and no job is started."""
+    from backend.app.services import project_slice
+
+    _project, _item, rev = await _source_revision(async_client)
+    pipeline_id = await _pipeline(db_session)
+    if cap == "part":
+        monkeypatch.setattr(project_slice, "_MAX_PART_BYTES", 8)
+    else:
+        monkeypatch.setattr(app_settings, "library_max_zip_extract_bytes", 8)
+    tasks_before = set(slice_dispatch._tasks)
+    jobs_before = set(slice_dispatch._jobs)
+    response = await async_client.post(
+        f"/api/v1/projects/revisions/{rev['id']}/reslice",
+        json={"file_id": rev["files"][0]["id"], "pipeline_id": pipeline_id},
+    )
+    assert response.status_code == 413, response.text
+    assert response.json()["detail"] == expected
+    assert set(slice_dispatch._jobs) == jobs_before and set(slice_dispatch._tasks) <= tasks_before
+    assert fake_slicer["calls"] == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_source_within_the_slicing_caps_reaches_the_slicer_unchanged(
+    async_client: AsyncClient, db_session, fake_slicer, monkeypatch
+):
+    """T-479: the guard sees the exact bytes the job slices."""
+    from backend.app.services import project_slice
+
+    seen: list[bytes] = []
+    real = project_slice.check_source_within_caps
+    monkeypatch.setattr(project_slice, "check_source_within_caps", lambda b: (seen.append(b), real(b))[1])
+    _project, _item, rev = await _source_revision(async_client)
+    pipeline_id = await _pipeline(db_session)
+    started = await async_client.post(
+        f"/api/v1/projects/revisions/{rev['id']}/reslice",
+        json={"file_id": rev["files"][0]["id"], "pipeline_id": pipeline_id},
+    )
+    assert started.status_code == 202, started.text
+    job = await _wait(async_client, started.json()["job_id"])
+    assert job["status"] == "completed", job
+    assert seen == [fake_slicer["calls"][0]["model_bytes"]]
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
 async def test_slicer_failure_creates_nothing(async_client: AsyncClient, db_session, fake_slicer):
     project, item, rev = await _source_revision(async_client)
     pipeline_id = await _pipeline(db_session)

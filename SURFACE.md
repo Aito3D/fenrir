@@ -319,6 +319,7 @@ class RevisionSource
 class TooManyNewTagsError(HTTPException)
 class UnknownTagError(ValueError)
 def allocate_code_number(connection: Connection)
+def check_source_within_caps(model_bytes: bytes)
 def claim_unique_file_path(directory: Path, filename: str)
 def clean_item_name(name: str)
 def clean_tag_name(name: str)

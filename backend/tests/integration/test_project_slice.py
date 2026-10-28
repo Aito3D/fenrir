@@ -672,15 +672,15 @@ def test_source_over_a_cap_is_refused_before_the_sanitiser(monkeypatch, content,
     if total_cap is not None:
         monkeypatch.setattr(app_settings, "library_max_zip_extract_bytes", total_cap)
     with pytest.raises(project_slice.ProjectFilesError) as raised:
-        project_slice._check_source_within_caps(_zip_with(content))
+        project_slice.check_source_within_caps(_zip_with(content))
     assert raised.value.status_code == 413
     assert expected in str(raised.value.detail)
 
 
 def test_source_within_the_caps_or_not_a_zip_is_left_to_the_slicer():
-    project_slice._check_source_within_caps(_zip_with(b'{"a": "1"}'))
-    project_slice._check_source_within_caps(_zip_with(None))  # no settings part
-    project_slice._check_source_within_caps(b"not a zip")
+    project_slice.check_source_within_caps(_zip_with(b'{"a": "1"}'))
+    project_slice.check_source_within_caps(_zip_with(None))  # no settings part
+    project_slice.check_source_within_caps(b"not a zip")
 
 
 @pytest.mark.asyncio
@@ -761,7 +761,7 @@ async def test_unexpected_slice_error_shows_a_generic_message_and_is_logged(
     def boom(_model_bytes):
         raise PermissionError(_LEAKY_ERROR)
 
-    monkeypatch.setattr(project_slice, "_check_source_within_caps", boom)
+    monkeypatch.setattr(project_slice, "check_source_within_caps", boom)
     project, _item, rev = await _upload(async_client)
     await _wait_job(rev["slice_job_id"])
 

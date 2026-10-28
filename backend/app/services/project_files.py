@@ -1011,10 +1011,13 @@ async def _add_revision_locked(
     written: list[_WrittenFile] = []
 
     async def undo() -> None:
-        await db.rollback()
-        _cleanup_written(written)
-        if created_folder:
-            _remove_empty(folder)
+        # files first: a failing rollback must not leave them on disk with no row
+        try:
+            _cleanup_written(written)
+            if created_folder:
+                _remove_empty(folder)
+        finally:
+            await db.rollback()
 
     def translate(exc: BaseException) -> Exception | None:
         if isinstance(exc, IntegrityError) and (
@@ -1250,7 +1253,7 @@ class _TrashGuard(_CommitGuard):
     calls ``guard.trash()`` (moves ``path`` to the project trash; a no-op when
     ``path`` is None) and ends with ``await guard.commit()``. The undo is
     ``_restore_and_rollback(db, moved, path)``, ``moved`` being None until
-    ``trash()`` ran.
+    ``trash()`` ran; it first puts back what ``trash_also()`` moved.
     """
 
     def __init__(self, db: AsyncSession, project: Project, path: Path | None, *, label: str = "commit") -> None:
@@ -1258,12 +1261,26 @@ class _TrashGuard(_CommitGuard):
         self._project = project
         self._path = path
         self._moved: Path | None = None
+        self._also_moved: list[tuple[Path, Path]] = []
 
     async def _restore(self) -> None:
-        await _restore_and_rollback(self._db, self._moved, self._path)
+        try:
+            for moved, original in reversed(self._also_moved):
+                try:
+                    _move(str(moved), str(original))
+                except Exception:
+                    logger.warning("Could not restore %s from the trash (%s)", original, moved, exc_info=True)
+        finally:
+            await _restore_and_rollback(self._db, self._moved, self._path)
 
     def trash(self) -> None:
         self._moved = move_to_trash(self._project, self._path) if self._path is not None else None
+
+    def trash_also(self, path: Path) -> None:
+        """Move one more ``path`` of the project to the trash; the undo puts it back too."""
+        moved = move_to_trash(self._project, path)
+        if moved is not None:
+            self._also_moved.append((moved, path))
 
     async def commit(self) -> None:
         await self._commit()
@@ -1292,16 +1309,55 @@ async def _remove_file_locked(db: AsyncSession, project: Project, revision: Proj
 
     revision_id, file_ids = revision.id, [f.id for f in files]
     path = to_absolute_path(target.file_path)
+    removes_source = await _is_slice_source(db, revision_id, target.id)
     await _claim_storage_dir(db, project)
     async with _TrashGuard(db, project, path, label=f"removal of file {target.id}") as guard:
         # the revision may have been validated, printed or delivered since the pre-check
         await _hold_sqlite_write_lock(db, revision_id)
         await _require_files_still_editable(db, revision_id, file_ids)
         await _delete_file_rows(db, file_ids=[target.id])
+        derived = await _drop_slice_of_removed_source(db, revision) if removes_source else None
         await db.flush()
-        await _require_files_still_editable(db, revision_id, file_ids)
+        await _require_files_still_editable(db, revision_id, file_ids + ([derived.id] if derived else []))
         guard.trash()
+        if derived is not None and derived.path is not None:
+            guard.trash_also(derived.path)
         await guard.commit()
+
+
+async def _is_slice_source(db: AsyncSession, revision_id: int, file_id: int) -> bool:
+    """``file_id`` is the revision's source ``.3mf``, the one its server slice is made from."""
+    from backend.app.services.project_slice import source_file_of  # it imports this module
+
+    source = await source_file_of(db, revision_id)
+    return source is not None and source.id == file_id
+
+
+@dataclass(frozen=True)
+class _DroppedSlice:
+    id: int
+    path: Path | None
+
+
+async def _drop_slice_of_removed_source(db: AsyncSession, revision: ProjectRevision) -> _DroppedSlice | None:
+    """The revision's source is being removed: its slice is that file's G-code, so the revision goes
+    back to unsliced (status, error and sliced file cleared) and the derived slice row is deleted;
+    returns that row's id and path (None when it had none). The next print slices the new source.
+
+    A slice in flight (``slicing``) is left alone. Does not commit."""
+    await db.refresh(revision)
+    if revision.slice_status == "slicing":
+        return None
+    derived_id = revision.sliced_file_id
+    revision.slice_status = None
+    revision.slice_error = None
+    revision.sliced_file_id = None
+    if derived_id is None:
+        return None
+    derived = await db.get(LibraryFile, derived_id)
+    derived_path = revision_file_path(derived.file_path) if derived is not None else None
+    await _delete_file_rows(db, file_ids=[derived_id])
+    return _DroppedSlice(derived_id, derived_path)
 
 
 async def _clear_links_to(db: AsyncSession, revision_ids: list[int]) -> None:
@@ -1564,9 +1620,12 @@ async def _fork_revision_locked(
     copies: list[_WrittenFile] = []
 
     async def undo() -> None:
-        await db.rollback()
-        _cleanup_written(copies)
-        _remove_empty(folder, new_item_dir)
+        # files first: a failing rollback must not leave the new item folder behind
+        try:
+            _cleanup_written(copies)
+            _remove_empty(folder, new_item_dir)
+        finally:
+            await db.rollback()
 
     def translate(exc: BaseException) -> Exception | None:
         if isinstance(exc, IntegrityError):

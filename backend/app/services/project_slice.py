@@ -563,13 +563,14 @@ _SETTINGS_TOO_BIG = "The .3mf's project settings are too large to slice (over {l
 _SOURCE_TOO_BIG = "The .3mf is too large once unpacked to slice (over {limit} MB)"
 
 
-def _check_source_within_caps(model_bytes: bytes) -> None:
+def check_source_within_caps(model_bytes: bytes) -> None:
     """Refuse a source whose settings part or declared unpacked size is over the caps.
 
     The sanitiser inflates ``project_settings.config`` (and rewrites every entry) in memory, so a
     zip bomb would take the process down. ``zipfile`` stops a read at the entry's declared size, so
     the declared sizes are the bound. Caps: ``project_snapshot._MAX_PART_BYTES`` for the settings
-    part, ``library_max_zip_extract_bytes`` for the whole archive. Not a zip: left to the slicer."""
+    part, ``library_max_zip_extract_bytes`` for the whole archive. Not a zip: left to the slicer.
+    Also run by ``project_reslice.prepare_reslice`` before a Re-slice job is enqueued."""
     try:
         with zipfile.ZipFile(BytesIO(model_bytes)) as zf:
             max_total = settings.library_max_zip_extract_bytes
@@ -604,7 +605,7 @@ async def _slice_revision(db: AsyncSession, revision_id: int, *, user_id: int | 
         model_bytes = await asyncio.to_thread(path.read_bytes)
     except OSError as exc:
         raise ProjectFilesError(404, f"{_SOURCE_MISSING} on disk") from exc
-    await asyncio.to_thread(_check_source_within_caps, model_bytes)
+    await asyncio.to_thread(check_source_within_caps, model_bytes)
     url = await resolve_slicer_api_url(db)
     if url is None:
         raise ProjectFilesError(400, NO_SLICER)
