@@ -1492,6 +1492,22 @@ async def delete_item(db: AsyncSession, project: Project, item: ProjectItem) -> 
         await _delete_item_locked(db, project, await fresh_item(db, item.id))
 
 
+async def _discard_empty_item(db: AsyncSession, project_id: int, item_id: int) -> None:
+    """Delete an item that holds no revision (and its empty folder): the item a drop created for a file the
+    upload then refused. Under the item lock, so an upload that reached the item first keeps it. Commits."""
+    async with _item_lock(item_id):
+        item = await db.get(ProjectItem, item_id, populate_existing=True)
+        project = await db.get(Project, project_id, populate_existing=True)
+        if item is None or project is None or item.last_revision_number or await _item_revision_ids(db, item_id):
+            return
+        # no folder name claimed yet (a legacy project): the refused upload's claim was rolled back with it
+        folder = item_dir(project, item.section, item.name) if project.storage_dir else None
+        await db.delete(item)
+        await db.commit()
+    if folder is not None:
+        _remove_empty(folder)
+
+
 _REVISION_USED = "This revision was printed or delivered and cannot be deleted"
 _ITEM_USED = "A revision of this item was printed or delivered; the item cannot be deleted"
 

@@ -1195,7 +1195,7 @@ async def test_drop_with_a_blank_sanitised_name_raises_before_storing(db_session
     async def never(*_args, **_kwargs):
         raise AssertionError("nothing may be stored")
 
-    monkeypatch.setattr(links, "find_or_create_item", never)
+    monkeypatch.setattr(links, "_find_or_create_item", never)
     with pytest.raises(links.LinkError) as err:
         await links.drop_files_on_task(
             db_session, task, [_upload("a.3mf"), _upload("dir/???.3mf")], user_id=None, actor="Paul"
@@ -1322,3 +1322,70 @@ async def test_drop_broadcast_failing_for_one_order_still_reaches_the_others(db_
     assert [r.filename for r in response.results] == ["a.3mf"]
     assert sent == others
     assert f"aito_changed broadcast failed for order {others[0]}" in caplog.text
+
+
+# --- T-484: a refused drop removes only the empty item it created -------------------------------
+
+
+@pytest.mark.asyncio
+async def test_failed_removal_of_a_refused_drops_item_is_logged_and_the_refusal_stands(db_session, monkeypatch, caplog):
+    """The removal is best effort: if it fails, the drop's own refusal is the error the caller gets."""
+    project = await _project(db_session)
+    order = await _order(db_session)
+    task = await _task(db_session, order, linked_project_id=project.id)
+    await db_session.commit()
+
+    async def removal_fails(*_args, **_kwargs):
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr(project_files, "_discard_empty_item", removal_fails)
+    sliced = UploadFile(filename="x.3mf", file=io.BytesIO(b"not a zip"))
+    with caplog.at_level(logging.WARNING, logger=links.logger.name), pytest.raises(project_files.ProjectFilesError):
+        await links.drop_files_on_task(db_session, task, [sliced], user_id=None, actor="Paul")
+
+    assert "Could not remove the empty item" in caplog.text
+    names = (await db_session.execute(select(ProjectItem.name))).scalars().all()
+    assert names == ["x"]  # left as it was before T-484
+
+
+@pytest.mark.asyncio
+async def test_discard_empty_item_keeps_an_item_holding_a_revision(db_session):
+    """An upload that reached the item first (under its lock) keeps it."""
+    project = await _project(db_session)
+    project_id = project.id
+    item, _rev = await _revision(db_session, project)
+    item_id = item.id
+
+    await project_files._discard_empty_item(db_session, project_id, item_id)
+
+    db_session.expire_all()
+    assert await db_session.get(ProjectItem, item_id) is not None
+
+
+@pytest.mark.asyncio
+async def test_discard_empty_item_of_a_gone_item_or_project_is_a_no_op(db_session):
+    project = await _project(db_session)
+    item = await create_item(db_session, project, section="impression", name="Vide", user_id=None)
+    project_id, item_id = project.id, item.id
+    await db_session.commit()
+
+    await project_files._discard_empty_item(db_session, project_id, item_id + 1000)
+    await project_files._discard_empty_item(db_session, project_id + 1000, item_id)
+
+    db_session.expire_all()
+    assert await db_session.get(ProjectItem, item_id) is not None
+
+
+@pytest.mark.asyncio
+async def test_discard_empty_item_of_a_project_without_a_folder_name_deletes_the_row_only(db_session, root):
+    project = await _project(db_session)
+    item = await create_item(db_session, project, section="impression", name="Vide", user_id=None)
+    project.storage_dir = None
+    project_id, item_id = project.id, item.id
+    await db_session.commit()
+
+    await project_files._discard_empty_item(db_session, project_id, item_id)
+
+    db_session.expire_all()
+    assert await db_session.get(ProjectItem, item_id) is None
+    assert (await db_session.get(Project, project_id)).storage_dir is None  # no folder name claimed by the removal

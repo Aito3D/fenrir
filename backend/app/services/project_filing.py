@@ -96,14 +96,22 @@ async def find_or_create_item(
     create: the loser hits the name check (409) or the unique constraint, so
     it re-reads the winner's item and adds its revision there instead of
     failing. Returns the project too, re-read if the rollback expired it."""
+    item, project, _created = await _find_or_create_item(db, project, section, key, name, user_id)
+    return item, project
+
+
+async def _find_or_create_item(
+    db: AsyncSession, project: Project, section: str, key: str, name: str, user_id: int | None
+) -> tuple[ProjectItem, Project, bool]:
+    """``find_or_create_item``, plus True when THIS call created (and committed) the item."""
     project_id = project.id
     item = await find_item_by_key(db, project_id, section, key)
     if item is not None:
-        return item, project
+        return item, project, False
     try:
         item = await project_files.create_item(db, project, section=section, name=name, user_id=user_id)
         await db.commit()
-        return item, project
+        return item, project, True
     except (IntegrityError, project_files.ProjectFilesError) as exc:
         if isinstance(exc, project_files.ProjectFilesError) and exc.status_code != 409:
             raise
@@ -112,7 +120,7 @@ async def find_or_create_item(
         item = await find_item_by_key(db, project_id, section, key)
         if item is None or project is None:
             raise project_files.ProjectFilesError(409, "This item was changed meanwhile; drop the files again") from exc
-        return item, project
+        return item, project, False
 
 
 # --- moving File Manager files into a project --------------------------------

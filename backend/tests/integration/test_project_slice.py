@@ -18,6 +18,7 @@ from httpx import AsyncClient
 from sqlalchemy import select, update
 
 from backend.app.api.routes.library import to_absolute_path
+from backend.app.core import database
 from backend.app.core.config import settings as app_settings
 from backend.app.models.library import LibraryFile
 from backend.app.models.project_item import ProjectRevision
@@ -774,3 +775,76 @@ async def test_unexpected_slice_error_shows_a_generic_message_and_is_logged(
     logged = [r for r in caplog.records if r.exc_info and isinstance(r.exc_info[1], PermissionError)]
     assert logged and _LEAKY_ERROR in str(logged[0].exc_info[1])
     assert sidecar.slice_requests == []
+
+
+# --- T-488: concurrent starts (the _starting guard and the lost-claim branch) ------------------
+
+
+def _project_revision_jobs(revision_id: int, before: set[int]) -> list[int]:
+    """The revision's slice jobs enqueued since ``before`` (the dispatcher is process-wide: earlier tests' jobs
+    can carry the same revision id)."""
+    return [
+        job_id
+        for job_id, job in slice_dispatch._jobs.items()
+        if job_id not in before and job.kind == "project_revision" and job.source_id == revision_id
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_a_start_while_another_is_starting_returns_the_stored_job_and_enqueues_nothing(
+    async_client: AsyncClient, db_session, sidecar, monkeypatch
+):
+    """Between another start's claim and its job id write, the row is ``slicing`` with no live job:
+    ``_starting`` keeps this start from re-claiming it as an interrupted slice."""
+    _no_auto_slice(monkeypatch)
+    _project, _item, rev = await _upload(async_client)
+    before = set(slice_dispatch._jobs)
+    await _strand_slicing(db_session, rev["id"], job_id=4242)  # a job id slice_dispatch does not know
+    monkeypatch.setattr(project_slice, "_starting", {rev["id"]})
+
+    assert await project_slice.start_revision_slice(db_session, rev["id"], user_id=None) == 4242
+
+    assert _project_revision_jobs(rev["id"], before) == []
+    assert sidecar.slice_requests == []
+    db_session.expire_all()
+    revision = await db_session.get(ProjectRevision, rev["id"])
+    assert (revision.slice_status, revision.slice_job_id) == ("slicing", 4242)
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_a_start_that_loses_the_claim_returns_the_winners_job(
+    async_client: AsyncClient, db_session, sidecar, monkeypatch
+):
+    """Another start claims the revision between this one's source read and its claim."""
+    _no_auto_slice(monkeypatch)
+    _project, _item, rev = await _upload(async_client)
+    before = set(slice_dispatch._jobs)
+    real_source_file = project_slice._source_file
+
+    async def source_then_lose_the_race(db, revision_id):
+        source = await real_source_file(db, revision_id)
+        async with database.async_session() as other:
+            await _strand_slicing(other, revision_id, job_id=777)
+        return source
+
+    monkeypatch.setattr(project_slice, "_source_file", source_then_lose_the_race)
+
+    assert await project_slice.start_revision_slice(db_session, rev["id"], user_id=None) == 777
+
+    assert _project_revision_jobs(rev["id"], before) == []
+    assert sidecar.slice_requests == []
+    assert project_slice._starting == set()
+
+
+def test_slice_slot_gives_each_event_loop_its_own_semaphore(monkeypatch):
+    monkeypatch.setattr(project_slice, "_slice_slots", None)
+
+    async def slots() -> tuple[asyncio.Semaphore, asyncio.Semaphore]:
+        return project_slice._slice_slot(), project_slice._slice_slot()
+
+    first_a, first_b = asyncio.run(slots())
+    second_a, _ = asyncio.run(slots())
+    assert first_a is first_b  # one per loop
+    assert second_a is not first_a  # a new loop never waits on a semaphore bound to a closed one

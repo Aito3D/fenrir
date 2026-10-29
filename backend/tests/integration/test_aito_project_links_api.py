@@ -1033,7 +1033,8 @@ async def test_drop_refuses_a_3mf_by_content_and_stores_nothing(
     async_client: AsyncClient, db_session, root, content, detail
 ):
     """The drop entry point refuses what the revision upload refuses by content: 400, no revision, no file
-    left on disk. Current behavior pinned: the empty item the group was created under (``x``) is kept."""
+    left on disk. T-484 (user-approved 2026-10-26): the item the group was created under (``x``) is removed
+    again, with its empty folder, so a refused drop leaves no empty item behind."""
     task_id, _project_id = await _linked_task_project(async_client, db_session)
     before = sorted(p for p in root.rglob("*") if p.is_file())
 
@@ -1042,8 +1043,16 @@ async def test_drop_refuses_a_3mf_by_content_and_stores_nothing(
     )
     assert response.status_code == 400, response.text
     assert detail in response.json()["detail"]
-    assert await _items_and_revisions(db_session) == (["x"], [])
+    assert await _items_and_revisions(db_session) == ([], [])
     assert sorted(p for p in root.rglob("*") if p.is_file()) == before
+    assert [p for p in root.rglob("x") if p.is_dir()] == []
+
+    # a retry is refused the same way and still leaves nothing behind
+    again = await async_client.post(
+        f"/api/v1/aito/tasks/{task_id}/files", files=[("files", ("x.3mf", content, "application/octet-stream"))]
+    )
+    assert (again.status_code, again.json()) == (response.status_code, response.json())
+    assert await _items_and_revisions(db_session) == ([], [])
 
 
 @pytest.mark.asyncio
@@ -1059,8 +1068,8 @@ async def test_drop_second_group_failing_the_content_check_keeps_the_first_group
             ("files", ("b.3mf", SLICED_CONTENT, "application/octet-stream")),
         ],
     )
-    # PARTIAL state, pinned as it is today: the valid first group is stored (201) and the sliced second group is
-    # reported in ``errors`` (400 detail) while its empty item ``b`` stays behind with no revision.
+    # PARTIAL state: the valid first group is stored (201) and the sliced second group is reported in ``errors``
+    # (400 detail); T-484 (user-approved 2026-10-26): the item ``b`` it created is removed again.
     assert response.status_code == 201, response.text
     body = response.json()
     assert [r["filename"] for r in body["results"]] == ["a.3mf"]
@@ -1071,5 +1080,36 @@ async def test_drop_second_group_failing_the_content_check_keeps_the_first_group
             "detail": "b.3mf is already sliced. Upload the original .3mf project instead.",
         }
     ]
-    assert await _items_and_revisions(db_session) == (["a", "b"], [1])
+    assert await _items_and_revisions(db_session) == (["a"], [1])
     assert sorted(p.name for p in root.rglob("*") if p.is_file()) == ["a.3mf"]
+    assert [p for p in root.rglob("b") if p.is_dir()] == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_drop_refused_by_content_onto_an_existing_item_keeps_that_item(
+    async_client: AsyncClient, db_session, root
+):
+    """T-484: only an item the refused drop itself created is removed; an existing item (empty or not) stays."""
+    task_id, project_id = await _linked_task_project(async_client, db_session)
+    for name in ("x", "y"):
+        created = await async_client.post(
+            f"/api/v1/projects/{project_id}/items", json={"section": "impression", "name": name}
+        )
+        assert created.status_code == 201, created.text
+    stored = await async_client.post(
+        f"/api/v1/aito/tasks/{task_id}/files", files=[("files", ("y.3mf", SRC, "application/octet-stream"))]
+    )
+    assert stored.status_code == 201, stored.text
+
+    for name in ("x", "y"):
+        response = await async_client.post(
+            f"/api/v1/aito/tasks/{task_id}/files",
+            files=[("files", (f"{name}.3mf", SLICED_CONTENT, "application/octet-stream"))],
+        )
+        assert (response.status_code, response.json()["detail"]) == (
+            400,
+            f"{name}.3mf is already sliced. Upload the original .3mf project instead.",
+        )
+    items, revisions = await _items_and_revisions(db_session)
+    assert (sorted(items), len(revisions)) == (["x", "y"], 1)

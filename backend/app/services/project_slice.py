@@ -510,24 +510,41 @@ def _error_status_and_message(exc: Exception) -> tuple[int, str]:
     return 500, UNEXPECTED_SLICE_ERROR
 
 
+# ``_mark_failed`` tries its write this many times, waiting ``_MARK_FAILED_BACKOFF_SECONDS * attempt`` between
+# tries (as ``PrintScheduler._clear_dispatch_claim`` does): the failure in practice is transient (SQLite
+# busy, a dropped PostgreSQL connection), and one failed write left the revision and its queue items
+# ``slicing`` until a restart.
+_MARK_FAILED_ATTEMPTS = 3
+_MARK_FAILED_BACKOFF_SECONDS = 0.5
+
+
 async def _mark_failed(db: AsyncSession, revision_id: int, message: str) -> None:
     """``failed`` with ``message``, unless the revision is gone. Never raises: the slice's own error is the one
-    the job reports."""
-    try:
-        await db.rollback()
-        revision = await db.get(ProjectRevision, revision_id, populate_existing=True)
-        if revision is None or revision.slice_status == "sliced":
-            return  # gone, or another slice already landed: its G-code stands
-        revision.slice_status = "failed"
-        revision.slice_error = message[:SLICE_ERROR_MAX_CHARS]
-        await on_revision_slice_done(db, revision, None, revision.slice_error)
-        await db.commit()
-    except Exception:
-        logger.exception("Could not record the failed slice of project revision %s", revision_id)
+    the job reports. A failed write is retried a few times (each attempt rolls back first)."""
+    for attempt in range(1, _MARK_FAILED_ATTEMPTS + 1):
         try:
-            await db.rollback()
+            await _mark_failed_once(db, revision_id, message)
+            return
         except Exception:
-            logger.warning("Rollback after recording a failed slice raised", exc_info=True)
+            if attempt < _MARK_FAILED_ATTEMPTS:  # the next attempt rolls back first
+                await asyncio.sleep(_MARK_FAILED_BACKOFF_SECONDS * attempt)
+                continue
+            logger.exception("Could not record the failed slice of project revision %s", revision_id)
+            try:
+                await db.rollback()
+            except Exception:
+                logger.warning("Rollback after recording a failed slice raised", exc_info=True)
+
+
+async def _mark_failed_once(db: AsyncSession, revision_id: int, message: str) -> None:
+    await db.rollback()
+    revision = await db.get(ProjectRevision, revision_id, populate_existing=True)
+    if revision is None or revision.slice_status == "sliced":
+        return  # gone, or another slice already landed: its G-code stands
+    revision.slice_status = "failed"
+    revision.slice_error = message[:SLICE_ERROR_MAX_CHARS]
+    await on_revision_slice_done(db, revision, None, revision.slice_error)
+    await db.commit()
 
 
 # At most this many project slices run at once; the others wait their turn before reading their source

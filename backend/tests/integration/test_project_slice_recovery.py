@@ -358,6 +358,88 @@ async def test_mark_failed_leaves_a_sliced_revision_alone(async_client: AsyncCli
     assert (after.slice_status, after.slice_error, after.sliced_file_id) == ("sliced", None, sliced_id)
 
 
+async def _slicing_revision_with_waiting_item(client: AsyncClient, db) -> tuple[int, int]:
+    """A revision left ``slicing`` with a ``slicing`` queue item on its source, as a slice whose job just failed."""
+    rev = await _upload(client)
+    await db.execute(update(ProjectRevision).where(ProjectRevision.id == rev["id"]).values(slice_status="slicing"))
+    item = PrintQueueItem(library_file_id=rev["files"][0]["id"], status="slicing", position=1)
+    db.add(item)
+    await db.commit()
+    return rev["id"], item.id
+
+
+def _flaky_commit(db, monkeypatch, failures: int | None) -> list[int]:
+    """Make ``db.commit`` raise its first ``failures`` calls (every call when None); returns the call log."""
+    real_commit = db.commit
+    calls: list[int] = []
+
+    async def commit():
+        calls.append(1)
+        if failures is None or len(calls) <= failures:
+            raise RuntimeError("database is locked")
+        await real_commit()
+
+    monkeypatch.setattr(db, "commit", commit)  # this session only
+    return calls
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_mark_failed_retries_a_failed_write_and_fails_the_waiting_items(
+    async_client: AsyncClient, db_session, sidecar, monkeypatch
+):
+    revision_id, item_id = await _slicing_revision_with_waiting_item(async_client, db_session)
+    monkeypatch.setattr(project_slice, "_MARK_FAILED_BACKOFF_SECONDS", 0)
+
+    async with database.async_session() as db:
+        calls = _flaky_commit(db, monkeypatch, failures=1)
+        await project_slice._mark_failed(db, revision_id, "The slicer refused the file")
+
+    assert len(calls) == 2
+    revision = await _revision(db_session, revision_id)
+    assert (revision.slice_status, revision.slice_error) == ("failed", "The slicer refused the file")
+    item = await _item(db_session, item_id)
+    assert (item.status, item.error_message) == ("slice_failed", "The slicer refused the file")
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_mark_failed_gives_up_after_its_attempts_and_logs_once(
+    async_client: AsyncClient, db_session, sidecar, monkeypatch, caplog
+):
+    revision_id, item_id = await _slicing_revision_with_waiting_item(async_client, db_session)
+    monkeypatch.setattr(project_slice, "_MARK_FAILED_BACKOFF_SECONDS", 0)
+    async with database.async_session() as db:
+        calls = _flaky_commit(db, monkeypatch, failures=None)
+        with caplog.at_level("WARNING", logger=project_slice.logger.name):
+            await project_slice._mark_failed(db, revision_id, "The slicer refused the file")
+
+    assert len(calls) == project_slice._MARK_FAILED_ATTEMPTS == 3
+    failures = [r for r in caplog.records if r.getMessage().startswith("Could not record the failed slice")]
+    assert len(failures) == 1 and failures[0].levelname == "ERROR" and failures[0].exc_info
+    assert (await _revision(db_session, revision_id)).slice_status == "slicing"
+    assert (await _item(db_session, item_id)).status == "slicing"
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_mark_failed_logs_a_rollback_that_raises_after_its_last_attempt(
+    async_client: AsyncClient, db_session, sidecar, monkeypatch, caplog
+):
+    revision_id, _item_id = await _slicing_revision_with_waiting_item(async_client, db_session)
+    monkeypatch.setattr(project_slice, "_MARK_FAILED_BACKOFF_SECONDS", 0)
+
+    async with database.async_session() as db:
+        monkeypatch.setattr(db, "rollback", AsyncMock(side_effect=RuntimeError("connection reset")))
+        with caplog.at_level("WARNING", logger=project_slice.logger.name):
+            await project_slice._mark_failed(db, revision_id, "x")
+
+    messages = [r.getMessage() for r in caplog.records]
+    assert messages.count(f"Could not record the failed slice of project revision {revision_id}") == 1
+    assert "Rollback after recording a failed slice raised" in messages
+    assert (await _revision(db_session, revision_id)).slice_status == "slicing"
+
+
 # --- files filed into a project by move / import / auto-filing --------------------------------
 
 
