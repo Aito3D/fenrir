@@ -8,7 +8,7 @@
 #
 # Added or changed a dependency in requirements.txt? Regenerate requirements.lock
 # first (see CONTRIBUTING.md), then this lock, keeping every other pin:
-#   uv pip compile requirements-typecheck.txt --python-version 3.11 \
+#   uv pip compile requirements-typecheck.txt -c requirements.lock --python-version 3.11 \
 #       --python-platform x86_64-unknown-linux-gnu -o requirements-typecheck.lock
 # If that moves the pin of a package already in the lock and the type check
 # then reports errors in code you did not touch, regenerate the baseline as
@@ -19,8 +19,11 @@
 #   basedpyright --pythonpath <venv>/bin/python --writebaseline
 # and commit lock and baseline together.
 
-# The same versions that ship (see requirements.lock).
--r requirements.lock
+# The shipped dependency set, pinned to the versions that ship by the
+# `-c requirements.lock` on the compile command above. Not `-r requirements.lock`
+# here: GitHub's dependency-graph job evaluates this file with pip and only
+# fetches `-r` children named *.txt / *.in, so a `.lock` include fails it.
+-r requirements.txt
 
 # Exact pin: the baseline is only valid for one checker version.
 basedpyright==1.40.2
