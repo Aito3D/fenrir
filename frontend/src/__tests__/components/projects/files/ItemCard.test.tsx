@@ -105,6 +105,46 @@ describe('ItemCard', () => {
     await waitFor(() => expect(calls).toEqual(['slice:2']));
   });
 
+  it('shows a slicing revision whose job already failed as failed, before the tree catches up', async () => {
+    server.use(
+      http.get('/api/v1/slice-jobs/12', () =>
+        HttpResponse.json({
+          job_id: 12, status: 'failed', kind: 'project_revision', source_id: 2, source_name: 'bracket.3mf',
+          created_at: '2026-10-17T10:00:00Z', started_at: null, completed_at: null, progress: null,
+        }),
+      ),
+    );
+    render(
+      <Harness value={bracket({ slice_status: 'slicing', slice_job_id: 12, slice_error: 'Plate 2 is empty', sliced_file: null })} />,
+    );
+    expect(await within(card()).findByText('Slice failed: Plate 2 is empty')).toBeInTheDocument();
+    expect(within(card()).getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+    expect(within(card()).queryByRole('progressbar')).not.toBeInTheDocument();
+    expect(within(card()).queryByText('Slicing…')).not.toBeInTheDocument();
+  });
+
+  it('shows an indeterminate bar for a slicing revision whose job is unknown', async () => {
+    server.use(http.get('/api/v1/slice-jobs/12', () => HttpResponse.json({ detail: 'gone' }, { status: 404 })));
+    render(<Harness value={bracket({ slice_status: 'slicing', slice_job_id: 12, sliced_file: null })} />);
+    const bar = within(card()).getByRole('progressbar');
+    expect(within(card()).getByText('Slicing…')).toBeInTheDocument();
+    // Let the job lookup settle: a 404 stays indeterminate.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(bar).not.toHaveAttribute('aria-valuenow');
+    expect(within(card()).queryByText(/%/)).not.toBeInTheDocument();
+  });
+
+  it('adds the print count after Sliced once the revision has been printed', () => {
+    render(<Harness value={bracket({ print_count: 3 })} />);
+    expect(within(card()).getByText('Sliced')).toBeInTheDocument();
+    expect(within(card()).getByText('· printed 3 times')).toBeInTheDocument();
+  });
+
+  it('shows no print count on a sliced revision never printed', () => {
+    render(<Harness value={bracket({ print_count: 0 })} />);
+    expect(within(card()).queryByText(/printed/)).not.toBeInTheDocument();
+  });
+
   it('a legacy sliced revision (no server slice state) reads as sliced', () => {
     render(<Harness value={bracket({ slice_status: null, sliced_file: null, print_profile: { ...profile, sliced: true } })} />);
     expect(within(card()).getByText('Sliced')).toBeInTheDocument();
