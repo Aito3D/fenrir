@@ -1,9 +1,31 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { delay, http, HttpResponse } from 'msw';
 import { server } from '../../../mocks/server';
 import { wrapper } from '../../../utils';
 import { useResliceJobs } from '../../../../components/projects/reslice/useResliceJobs';
+
+// Every toast still reaches the real provider; the spy lets a test see whether one fired.
+const toastSpy = vi.hoisted(() => vi.fn());
+vi.mock('../../../../contexts/ToastContext', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../../contexts/ToastContext')>();
+  const React = await import('react');
+  return {
+    ...actual,
+    useToast: () => {
+      const real = actual.useToast();
+      const realShow = real.showToast;
+      const showToast = React.useCallback<typeof realShow>(
+        (...args) => {
+          toastSpy(...args);
+          return realShow(...args);
+        },
+        [realShow],
+      );
+      return React.useMemo(() => ({ ...real, showToast }), [real, showToast]);
+    },
+  };
+});
 
 // Real timers throughout: the hook polls every 1500 ms (POLL_MS) and every job read
 // answers after a small network delay, so no transition depends on a manual clock advance.
@@ -21,7 +43,12 @@ const completed = (fileId: number | null) => ({
   result: { project_id: 7, item_id: 20, revision_id: 2, revision_number: 2, file_id: fileId, filename: 'support.gcode.3mf' },
 });
 
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 beforeEach(() => {
+  toastSpy.mockClear();
   jobState = { job_id: 5, status: 'running', kind: 'project_revision', source_id: 1, source_name: 'support.3mf', created_at: '', started_at: '', completed_at: null, progress: { stage: 'x', total_percent: 40, plate_percent: 40, plate_index: 1, plate_count: 1, updated_at: 0 } };
   server.use(
     http.post('/api/v1/projects/revisions/1/reslice', () => HttpResponse.json({ job_id: 5, status: 'pending', status_url: '/api/v1/slice-jobs/5' }, { status: 202 })),
@@ -194,13 +221,23 @@ describe('useResliceJobs', () => {
   });
 
   it('forgets runs on unmount without breaking the tree', async () => {
+    // Only the poll interval is on a manual clock: requests and msw keep running on real timers.
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     let polls = 0;
     server.use(http.get('/api/v1/slice-jobs/5', () => { polls += 1; return HttpResponse.json(jobState); }));
     const { result, unmount } = renderHook(() => useResliceJobs(7), { wrapper });
     await act(() => result.current.start(20, 1, 50, 3, 31));
+    // Control: while mounted, one poll round runs.
+    await act(async () => {
+      vi.advanceTimersByTime(POLL_MS);
+      await sleep(JOB_LATENCY_MS + 50);
+    });
+    expect(polls).toBe(1);
     unmount();
-    await sleep(POLL_MS * 2 + 200); // two would-be poll rounds: no poll after unmount, no throw
-    expect(polls).toBe(0);
+    vi.advanceTimersByTime(POLL_MS * 2); // two would-be poll rounds: no poll after unmount, no throw
+    await sleep(JOB_LATENCY_MS + 50);
+    expect(polls).toBe(1);
+    expect(vi.getTimerCount()).toBe(0);
   });
 });
 
@@ -261,9 +298,11 @@ describe('useResliceJobs with real timers', () => {
     jobState = completed(91);
     await act(() => result.current.start(20, 1, 50, 3, 31));
     await waitFor(() => expect(result.current.runFor(20)).toBeUndefined(), { timeout: 4000 });
+    toastSpy.mockClear();
     unmount();
     await new Promise((r) => setTimeout(r, 200)); // the tree resolves after unmount: no throw
-    expect(result.current.printNext).toBeNull();
+    // The completion is dropped silently: finish() returns before any toast (done or skipped).
+    expect(toastSpy).not.toHaveBeenCalled();
   });
 });
 

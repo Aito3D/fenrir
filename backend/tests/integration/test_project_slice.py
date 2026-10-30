@@ -23,7 +23,13 @@ from backend.app.core.config import settings as app_settings
 from backend.app.models.library import LibraryFile
 from backend.app.models.project_item import ProjectRevision
 from backend.app.models.settings import Settings
-from backend.app.services import aito_project_links, project_slice, project_storage, slicer_api as slicer_api_module
+from backend.app.services import (
+    aito_project_links,
+    project_files,
+    project_slice,
+    project_storage,
+    slicer_api as slicer_api_module,
+)
 from backend.app.services.project_slice import start_slice_after_upload as _real_start_after_upload
 from backend.app.services.slice_dispatch import slice_dispatch
 from backend.tests.project_fixtures import (
@@ -524,6 +530,51 @@ async def test_a_slicing_revision_with_a_live_job_is_left_alone(async_client: As
 def _job_status(job_id: int) -> str | None:
     job = slice_dispatch.get(job_id)
     return job.status if job is not None else None
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_store_removes_the_written_slice_even_when_the_rollback_fails(
+    async_client: AsyncClient, db_session, monkeypatch, roots, caplog
+):
+    """T-464: the slice's commit fails and so does the undo's rollback (a dropped connection): the
+    written .gcode.3mf is unlinked before the rollback is tried, so no orphan stays in R{n}/ and the
+    commit's error is the one raised."""
+    _no_auto_slice(monkeypatch)
+    _project, _item, rev = await _upload(async_client)
+    commit_error, rollbacks = RuntimeError("db down"), []
+    real_commit, real_rollback = db_session.commit, db_session.rollback
+
+    async def commit():
+        # fail only the slice's own commit, i.e. once its file is on disk
+        if list(roots.rglob("*.gcode.3mf")):
+            raise commit_error
+        await real_commit()
+
+    async def rollback():
+        rollbacks.append("rollback")
+        raise ConnectionError("connection lost")
+
+    monkeypatch.setattr(db_session, "commit", commit)
+    monkeypatch.setattr(db_session, "rollback", rollback)
+    caplog.set_level("WARNING", logger=project_files.logger.name)
+    with pytest.raises(RuntimeError) as caught:
+        await project_slice._store(
+            db_session,
+            rev["id"],
+            "support.gcode.3mf",
+            b"sliced",
+            {"print_time_seconds": 60, "filament_used_grams": 1.5},
+            None,
+        )
+    monkeypatch.undo()
+    await real_rollback()
+
+    assert caught.value is commit_error
+    assert rollbacks == ["rollback"]
+    assert list(roots.rglob("*.gcode.3mf")) == []
+    assert await _derived_rows(db_session) == []
+    assert any("Undo after the failed" in r.getMessage() and r.exc_info for r in caplog.records)
 
 
 @pytest.mark.asyncio

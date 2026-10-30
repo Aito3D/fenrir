@@ -99,6 +99,7 @@ describe('ProjectListPage', () => {
     await screen.findByText('P-0001');
     await userEvent.click(screen.getByRole('button', { name: 'Grid view' }));
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /P-0001/ })).toBeInTheDocument();
     expect(localStorage.getItem('projects-view')).toBe('grid');
   });
 
@@ -198,9 +199,12 @@ describe('ProjectListPage', () => {
   it('opens the project when a grid card is clicked', async () => {
     localStorage.setItem('projects-view', 'grid');
     window.history.pushState({}, '', '/projects');
+    const push = vi.spyOn(window.history, 'pushState');
     render(<ProjectListPage />);
     await userEvent.click(await screen.findByRole('button', { name: /P-0002/ }));
     expect(window.location.pathname).toBe('/projects/2');
+    expect(push.mock.calls.filter((c) => c[2] === '/projects/2')).toHaveLength(1);
+    push.mockRestore();
   });
 
   it('opens the project when a table row is clicked', async () => {
@@ -247,15 +251,6 @@ describe('ProjectListPage', () => {
     expect(within(table).getByText('P-0002')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Table view' })).toHaveAttribute('aria-pressed', 'true');
     expect(localStorage.getItem('projects-view')).toBe('table');
-  });
-
-  it('opens the project when its grid card is clicked', async () => {
-    localStorage.setItem('projects-view', 'grid');
-    const push = vi.spyOn(window.history, 'pushState');
-    render(<ProjectListPage />);
-    await userEvent.click(await screen.findByRole('button', { name: /P-0002/ }));
-    expect(push.mock.calls.filter((c) => c[2] === '/projects/2')).toHaveLength(1);
-    push.mockRestore();
   });
 
   it('falls back to the table view when the stored view cannot be read', async () => {

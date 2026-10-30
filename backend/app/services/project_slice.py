@@ -690,8 +690,11 @@ async def _store(
         result: dict[str, Any] = {}
 
         async def undo() -> None:
-            await db.rollback()
-            project_files._unlink_quietly(dest)
+            # file first: a failing rollback must not leave it on disk with no row
+            try:
+                project_files._unlink_quietly(dest)
+            finally:
+                await db.rollback()
 
         try:
             async with project_files._CommitGuard(db, undo, label=f"slice of revision {revision_id}") as commit:
