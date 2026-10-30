@@ -431,7 +431,7 @@ async def slice_revision(
 async def upload_sliced_file(
     revision_id: int,
     file: UploadFile = File(...),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     user: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
 ):
     """Hand-slice fallback (design 2026-10-30): the sliced plate file (.gcode.3mf) Bambu Studio exported

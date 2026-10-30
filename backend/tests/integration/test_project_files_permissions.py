@@ -63,6 +63,12 @@ _ROUTES = [
     # project_files.py: upload_router (authorised before the multipart body is read)
     ("POST", "/projects/items/987654/revisions", {"files": _FILE}, [(P.PROJECTS_UPDATE,)]),
     ("POST", "/projects/revisions/987654/files", {"files": _FILE}, [(P.PROJECTS_UPDATE,)]),
+    (
+        "POST",
+        "/projects/revisions/987654/sliced-file",
+        {"files": {"file": ("support.gcode.3mf", b"PK", "application/octet-stream")}},
+        [(P.PROJECTS_UPDATE,)],
+    ),
     # project_files.py: library_router
     (
         "GET",
@@ -205,6 +211,7 @@ _KEY_MATRIX = {
     "GET /projects/legacy-migration/status": (None, _NO_KEY),
     "POST /projects/items/987654/revisions": (404, _MANAGE),
     "POST /projects/revisions/987654/files": (400, _MANAGE),  # refused for every revision: one .3mf each
+    "POST /projects/revisions/987654/sliced-file": (404, _MANAGE),
     "GET /library/files/987654/project-suggestions": (404, _READ),
     "GET /projects/search": (200, _READ),
     "GET /projects/tags": (200, _READ),
