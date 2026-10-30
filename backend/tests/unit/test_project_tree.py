@@ -202,9 +202,8 @@ def _file_out(row, *, file_size=10, file_hash=None, has_thumbnail=False, created
     }
 
 
-@pytest.mark.asyncio
-async def test_load_tree_full_payload(db_session):
-    project, r = await _build(db_session)
+def _expected_full_payload(project, r) -> dict:
+    """The payload `_build` must load as, spelled out section by section."""
     support, bras, mesh, print_a, print_b, plan = (
         r["support"],
         r["bras"],
@@ -215,10 +214,7 @@ async def test_load_tree_full_payload(db_session):
     )
     c1, c2, c3, c4, b1, s1 = r["c1"], r["c2"], r["c3"], r["c4"], r["b1"], r["s1"]
     p1, p2, p3, q1, q2, d1 = r["p1"], r["p2"], r["p3"], r["q1"], r["q2"], r["d1"]
-
-    tree = await load_tree(db_session, project)
-
-    assert tree.model_dump() == {
+    return {
         "project_id": project.id,
         "code": project.code,
         "sections": [
@@ -334,6 +330,16 @@ async def test_load_tree_full_payload(db_session):
             },
         ],
     }
+
+
+@pytest.mark.asyncio
+async def test_load_tree_full_payload(db_session):
+    project, r = await _build(db_session)
+    p1 = r["p1"]
+
+    tree = await load_tree(db_session, project)
+
+    assert tree.model_dump() == _expected_full_payload(project, r)
     # the field order of the payload is part of the contract (the HTTP golden compares bytes)
     assert list(tree.model_dump()["sections"][2]["items"][1]["revisions"][2]) == list(_rev_out(p1))
 

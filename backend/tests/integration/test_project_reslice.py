@@ -18,6 +18,7 @@ from backend.app.models.slicer_pipeline import SlicerPipeline
 from backend.app.schemas.slicer import SliceResponse
 from backend.app.services import project_files, project_reslice, project_storage
 from backend.app.services.slice_dispatch import slice_dispatch
+from backend.tests.integration.test_project_slice_recovery import _run_startup_through_the_slice_sweeps
 from backend.tests.project_fixtures import (
     legacy_uploads_fixture,
     make_users,
@@ -1024,16 +1025,46 @@ async def test_startup_sweep_keeps_a_marked_intermediate_any_usage_column_refere
     assert await project_reslice.sweep_orphan_intermediates(db_session) == 0
 
 
-def test_lifespan_runs_the_intermediate_sweep_after_the_migrations_and_never_blocks_startup():
-    """Wiring check, read from the source like test_oidc_env_startup.py: the lifespan is too
-    large to run here. The sweep's behaviour is pinned by the test above."""
-    import inspect
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_startup_deletes_an_orphan_intermediate_through_the_real_lifespan(
+    async_client: AsyncClient, db_session, roots, monkeypatch
+):
+    """Wiring check against the real ``lifespan`` (the harness of test_project_slice_recovery
+    stops it right after the startup sweeps): a marked orphan is gone once startup got that far."""
+    _project, _item, rev = await _source_revision(async_client)
+    orphan = _loose(roots, "orphan.gcode.3mf", sliced_from=rev["files"][0]["id"], marker=True)
+    db_session.add(orphan)
+    await db_session.commit()
+    orphan_id = orphan.id
 
-    from backend.app.main import lifespan
+    await _run_startup_through_the_slice_sweeps(monkeypatch)
 
-    source = inspect.getsource(lifespan)
-    call = source.index("await sweep_orphan_intermediates(")
-    assert source.index("await init_db()") < call
-    guard = source.rindex("try:", 0, call)
-    assert "except Exception" in source[call : source.index("\n\n", call)]
-    assert source.index("from backend.app.services.project_reslice import sweep_orphan_intermediates") > guard
+    ids = set((await db_session.execute(select(LibraryFile.id))).scalars().all())
+    assert orphan_id not in ids
+    assert not (roots / "library" / "orphan.gcode.3mf").exists()
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_a_raising_intermediate_sweep_never_blocks_startup(async_client: AsyncClient, db_session, monkeypatch):
+    """The sweep raising must not stop the lifespan: the next startup step (the slice resume
+    sweep) still runs, and startup reaches the stop sign after the sweeps."""
+    from backend.app.services import project_slice
+
+    calls: list[str] = []
+
+    async def sweep(*_args, **_kwargs):
+        calls.append("sweep")
+        raise RuntimeError("database went away")
+
+    async def resume():
+        calls.append("resume")
+        return 0
+
+    monkeypatch.setattr(project_reslice, "sweep_orphan_intermediates", sweep)
+    monkeypatch.setattr(project_slice, "resume_interrupted_slices", resume)
+
+    await _run_startup_through_the_slice_sweeps(monkeypatch)
+
+    assert calls == ["sweep", "resume"]
