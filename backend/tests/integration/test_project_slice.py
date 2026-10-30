@@ -641,7 +641,7 @@ def _failing_source_lookup(monkeypatch) -> None:
     async def boom(_db, _revision_id):
         raise RuntimeError("database is locked")
 
-    monkeypatch.setattr(project_slice, "_source_file", boom)
+    monkeypatch.setattr(project_slice, "source_file_of", boom)
 
 
 @pytest.mark.asyncio
@@ -872,7 +872,7 @@ async def test_a_start_that_loses_the_claim_returns_the_winners_job(
     _no_auto_slice(monkeypatch)
     _project, _item, rev = await _upload(async_client)
     before = set(slice_dispatch._jobs)
-    real_source_file = project_slice._source_file
+    real_source_file = project_slice.source_file_of
 
     async def source_then_lose_the_race(db, revision_id):
         source = await real_source_file(db, revision_id)
@@ -880,7 +880,7 @@ async def test_a_start_that_loses_the_claim_returns_the_winners_job(
             await _strand_slicing(other, revision_id, job_id=777)
         return source
 
-    monkeypatch.setattr(project_slice, "_source_file", source_then_lose_the_race)
+    monkeypatch.setattr(project_slice, "source_file_of", source_then_lose_the_race)
 
     assert await project_slice.start_revision_slice(db_session, rev["id"], user_id=None) == 777
 

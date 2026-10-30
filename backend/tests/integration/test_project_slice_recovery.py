@@ -643,3 +643,24 @@ async def test_startup_still_recovers_the_stranded_item_when_the_resume_sweep_ra
     sliced_id = revision.sliced_file_id
     item = await _item(db_session, item_id)
     assert (item.status, item.library_file_id) == ("pending", sliced_id)
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_starting_a_slice_for_a_missing_revision_returns_none(db_session):
+    assert await project_slice.start_revision_slice(db_session, 987654, user_id=None) is None
+
+
+@pytest.mark.parametrize(
+    ("exc", "expected"),
+    [
+        (project_slice.HttpStatusError(409, "taken"), (409, "taken")),
+        (project_slice.HTTPException(404, "gone"), (404, "gone")),
+        (project_slice.ProjectFilesError(413, "too big"), (413, "too big")),
+        (project_slice.SlicerApiError("sidecar down"), (502, "sidecar down")),
+        (project_slice.SlicerApiError(""), (502, "SlicerApiError")),
+        (OSError("/srv/data/secret.3mf"), (500, project_slice.UNEXPECTED_SLICE_ERROR)),
+    ],
+)
+def test_error_status_and_message_per_error_kind(exc, expected):
+    assert project_slice._error_status_and_message(exc) == expected

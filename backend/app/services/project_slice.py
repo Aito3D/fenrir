@@ -35,6 +35,7 @@ from backend.app.models.library import LibraryFile
 from backend.app.models.print_queue import SLICE_WAIT_STATUSES, PrintQueueItem
 from backend.app.models.project_item import ProjectRevision
 from backend.app.services import project_files
+from backend.app.services.db_quiet import rollback_quietly
 from backend.app.services.http_status_error import HttpStatusError
 from backend.app.services.project_files import ProjectFilesError
 from backend.app.services.project_reslice import output_filename
@@ -57,7 +58,7 @@ NOT_THE_SOURCE = "This file is not the revision's source; upload it as its own i
 NO_PROJECT_TO_SLICE = "This .3mf holds no Bambu Studio project to slice, so it cannot be printed."
 
 
-async def _source_file(db: AsyncSession, revision_id: int) -> LibraryFile | None:
+async def source_file_of(db: AsyncSession, revision_id: int) -> LibraryFile | None:
     """The revision's source ``.3mf``: its first non-derived ``.3mf`` whose content is a project
     (``classify_3mf`` says ``source``; a ``.gcode.3mf``, renamed or not, is not one)."""
     rows = (
@@ -94,7 +95,7 @@ async def sliced_file_of(db: AsyncSession, library_file: LibraryFile) -> Library
     revision_id = library_file.revision_id
     if revision_id is None:
         return None
-    source = await _source_file(db, revision_id)
+    source = await source_file_of(db, revision_id)
     if source is None:
         raise HTTPException(400, NO_PROJECT_TO_SLICE)
     if source.id != library_file.id:
@@ -161,7 +162,7 @@ async def _start(db: AsyncSession, revision_id: int, *, user_id: int | None, res
 
 
 async def _start_claimed(db: AsyncSession, revision_id: int, *, user_id: int | None, resume: bool) -> int | None:
-    source = await _source_file(db, revision_id)
+    source = await source_file_of(db, revision_id)
     if source is None:
         return None
     source_name = source.filename
@@ -212,15 +213,10 @@ async def start_slice_after_upload(db: AsyncSession, revision_id: int, *, user_i
         return await start_revision_slice(db, revision_id, user_id=user_id)
     except Exception:
         logger.warning("Could not start the slice of project revision %s", revision_id, exc_info=True)
-        await _rollback_quietly(db, f"the failed slice start of revision {revision_id}")
+        await rollback_quietly(
+            db, logger, logging.WARNING, "Rollback after %s failed", f"the failed slice start of revision {revision_id}"
+        )
         return None
-
-
-async def _rollback_quietly(db: AsyncSession, what: str) -> None:
-    try:
-        await db.rollback()
-    except Exception:
-        logger.warning("Rollback after %s failed", what, exc_info=True)
 
 
 async def settle_waiting_queue_items_quietly(db: AsyncSession, revision_id: int) -> None:
@@ -230,7 +226,9 @@ async def settle_waiting_queue_items_quietly(db: AsyncSession, revision_id: int)
         await settle_waiting_queue_items(db, revision_id)
     except Exception:
         logger.warning("Could not settle the queue items waiting on project revision %s", revision_id, exc_info=True)
-        await _rollback_quietly(db, f"the failed settle of revision {revision_id}")
+        await rollback_quietly(
+            db, logger, logging.WARNING, "Rollback after %s failed", f"the failed settle of revision {revision_id}"
+        )
 
 
 async def start_slice_for_waiting_items(db: AsyncSession, revision_id: int, *, user_id: int | None) -> None:
@@ -242,7 +240,9 @@ async def start_slice_for_waiting_items(db: AsyncSession, revision_id: int, *, u
         await start_revision_slice(db, revision_id, user_id=user_id)
     except Exception:
         logger.warning("Could not start the slice of project revision %s for the queue", revision_id, exc_info=True)
-        await _rollback_quietly(db, f"the failed slice start of revision {revision_id}")
+        await rollback_quietly(
+            db, logger, logging.WARNING, "Rollback after %s failed", f"the failed slice start of revision {revision_id}"
+        )
     await settle_waiting_queue_items_quietly(db, revision_id)
 
 
@@ -326,7 +326,7 @@ class _OutcomeFacts:
 
     async def source_id(self, db: AsyncSession, revision_id: int) -> int | None:
         if not self._source_known:
-            source = await _source_file(db, revision_id)
+            source = await source_file_of(db, revision_id)
             self._source_id = source.id if source is not None else None
             self._source_known = True
         return self._source_id
@@ -361,11 +361,6 @@ async def _read_outcome_facts(db: AsyncSession, revision_id: int, sliced_file: L
         if item.target_model:
             await facts.gcode_types(sliced_file, item.plate_id)
     return facts
-
-
-async def source_file_of(db: AsyncSession, revision_id: int) -> LibraryFile | None:
-    """The revision's source ``.3mf``: the one file its slice is made from (None when it has none)."""
-    return await _source_file(db, revision_id)
 
 
 async def _waiting_items(
@@ -499,9 +494,7 @@ async def settle_waiting_queue_items(db: AsyncSession, revision_id: int) -> None
 
 
 def _error_status_and_message(exc: Exception) -> tuple[int, str]:
-    if isinstance(exc, HttpStatusError):
-        return exc.status_code, str(exc.detail)
-    if isinstance(exc, HTTPException):
+    if isinstance(exc, (HttpStatusError, HTTPException)):
         return exc.status_code, str(exc.detail)
     if isinstance(exc, SlicerApiError):
         return 502, str(exc) or type(exc).__name__
@@ -530,10 +523,7 @@ async def _mark_failed(db: AsyncSession, revision_id: int, message: str) -> None
                 await asyncio.sleep(_MARK_FAILED_BACKOFF_SECONDS * attempt)
                 continue
             logger.exception("Could not record the failed slice of project revision %s", revision_id)
-            try:
-                await db.rollback()
-            except Exception:
-                logger.warning("Rollback after recording a failed slice raised", exc_info=True)
+            await rollback_quietly(db, logger, logging.WARNING, "Rollback after recording a failed slice raised")
 
 
 async def _mark_failed_once(db: AsyncSession, revision_id: int, message: str) -> None:
@@ -613,7 +603,7 @@ async def _slice_revision(db: AsyncSession, revision_id: int, *, user_id: int | 
         return {}
     revision, _item, _project = bundle
     printer_model = (revision.print_profile or {}).get("printer_model")
-    source = await _source_file(db, revision_id)
+    source = await source_file_of(db, revision_id)
     path = project_files.revision_file_path(source.file_path) if source is not None else None
     if source is None or path is None:
         raise ProjectFilesError(404, _SOURCE_MISSING)
@@ -761,14 +751,20 @@ async def resume_interrupted_slices() -> int:
         await db.commit()
         for revision_id, created_by_id in rows:
             try:
-                if await _source_file(db, revision_id) is None:
+                if await source_file_of(db, revision_id) is None:
                     await _mark_failed(db, revision_id, _SOURCE_MISSING)
                     continue
                 if await _start(db, revision_id, user_id=created_by_id, resume=True) is not None:
                     resumed += 1
             except Exception:
                 logger.exception("Could not resume the slice of project revision %s", revision_id)
-                await _rollback_quietly(db, f"the failed resume of revision {revision_id}")
+                await rollback_quietly(
+                    db,
+                    logger,
+                    logging.WARNING,
+                    "Rollback after %s failed",
+                    f"the failed resume of revision {revision_id}",
+                )
     return resumed
 
 

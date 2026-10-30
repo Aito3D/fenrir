@@ -523,7 +523,7 @@ async def test_model_based_item_keeps_an_unreadable_filament_list_when_the_slice
 
 async def _legacy_two_source_revision(client: AsyncClient, db) -> tuple[dict, int, int]:
     """A legacy revision holding two project ``.3mf`` files (uploads now take one): the slice is made
-    from the first only (``project_slice._source_file``)."""
+    from the first only (``project_slice.source_file_of``)."""
     rev = await _upload(client, "partA.3mf")
     part_a = await db.get(LibraryFile, rev["files"][0]["id"])
     a_path = Path(part_a.file_path)
