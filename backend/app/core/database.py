@@ -989,6 +989,11 @@ def _sqlstate(exc) -> str | None:
     return None
 
 
+def _timestamp_type() -> str:
+    """The DDL type a migration adds a timestamp column as: PostgreSQL has no DATETIME."""
+    return "DATETIME" if is_sqlite() else "TIMESTAMP"
+
+
 def _is_already_applied(exc, sql: str) -> bool:
     """Return True if a failed DDL statement had simply already been applied."""
     is_rename = "rename column" in sql.lower()
@@ -4491,10 +4496,9 @@ async def _run_migrations(conn):
             "ALTER TABLE notification_providers ADD COLUMN on_aito_payment_received BOOLEAN DEFAULT 0",
         )
     else:
-        await _safe_execute(
-            conn,
-            "ALTER TABLE notification_providers ADD COLUMN on_aito_payment_received BOOLEAN DEFAULT FALSE",
-        )
+        # No server default: the model has none, and the PostgreSQL upgrade check
+        # compares an upgraded database with a fresh install column by column.
+        await _safe_execute(conn, "ALTER TABLE notification_providers ADD COLUMN on_aito_payment_received BOOLEAN")
 
     # Reprints reuse their source archive, so archive uniqueness must only be
     # the legacy fallback for rows without a per-run UUID. The globally unique
@@ -4628,6 +4632,30 @@ async def _run_migrations(conn):
     # the printer's SD after extraction — the user didn't opt in to a
     # timelapse recording. Postgres rejects `DEFAULT 0` for BOOLEAN; SQLite
     # accepts both 0/FALSE — branch the literal.
+    # A database made before the Fenrir rename holds this column as
+    # bambuddy_forced_timelapse: rename it (its values carry over) rather than
+    # add an empty twin. One that already got both keeps the set values and
+    # drops the old column.
+    _old_forced = await _column_exists(conn, "print_archives", "bambuddy_forced_timelapse")
+    _new_forced = await _column_exists(conn, "print_archives", "fenrir_forced_timelapse")
+    if _old_forced and not _new_forced:
+        await _safe_execute(
+            conn, "ALTER TABLE print_archives RENAME COLUMN bambuddy_forced_timelapse TO fenrir_forced_timelapse"
+        )
+    elif _old_forced and _new_forced:
+        async with conn.begin_nested():
+            await conn.execute(
+                text(
+                    "UPDATE print_archives SET fenrir_forced_timelapse = TRUE "
+                    "WHERE bambuddy_forced_timelapse = TRUE AND fenrir_forced_timelapse IS NOT TRUE"
+                )
+            )
+        await _safe_execute(
+            conn,
+            "ALTER TABLE print_archives DROP COLUMN IF EXISTS bambuddy_forced_timelapse"
+            if _is_pg_conn(conn)
+            else "ALTER TABLE print_archives DROP COLUMN bambuddy_forced_timelapse",
+        )
     _bool_false_literal = "0" if is_sqlite() else "FALSE"
     await _safe_execute(
         conn,
@@ -5564,6 +5592,15 @@ async def _run_migrations(conn):
             )
             marker_sql = "INSERT INTO settings (key, value) VALUES (:key, :value) ON CONFLICT (key) DO NOTHING"
         async with conn.begin_nested():
+            if not is_sqlite():
+                # Rows written with explicit ids (an import, a restore) leave the sequence
+                # behind them; the INSERT below takes its ids from it, so move it past them.
+                await conn.execute(
+                    _text(
+                        "SELECT setval(pg_get_serial_sequence('print_log_entries', 'id'), "
+                        "COALESCE((SELECT MAX(id) FROM print_log_entries), 0) + 1, false)"
+                    )
+                )
             backfill_result = await conn.execute(
                 _text(f"""
                 INSERT INTO print_log_entries
@@ -5993,7 +6030,9 @@ async def _run_migrations(conn):
         await conn.execute(
             text(
                 "UPDATE calculator_filaments "
-                "SET margin_pct = ROUND(((sale_price_per_kg / cost_per_kg) - 1) * 100, 2) "
+                # CAST AS NUMERIC: PostgreSQL has no ROUND(double precision, int), only
+                # ROUND(numeric, int); SQLite accepts the cast and rounds the same.
+                "SET margin_pct = ROUND(CAST(((sale_price_per_kg / cost_per_kg) - 1) * 100 AS NUMERIC), 2) "
                 "WHERE margin_pct IS NULL AND cost_per_kg > 0 AND sale_price_per_kg IS NOT NULL"
             )
         )
@@ -6008,7 +6047,8 @@ async def _run_migrations(conn):
         # "unchanged" branch can leave some behind), and the WHERE makes it a
         # no-op for every row that already agrees.
         # Named once so the SET and the WHERE can never drift apart.
-        derived_sale = "ROUND(cost_per_kg * (1 + margin_pct / 100.0), 2)"
+        # CAST AS NUMERIC for PostgreSQL's ROUND(numeric, int), as above.
+        derived_sale = "ROUND(CAST(cost_per_kg * (1 + margin_pct / 100.0) AS NUMERIC), 2)"
         # The 0.011 tolerance (one cent, plus slack for binary float noise) is
         # NOT arbitrary: SQLite's ROUND is half-AWAY-from-zero while the route's
         # derive_sale_price (api/routes/calculator.py) uses Python's round,
@@ -6079,7 +6119,7 @@ async def _run_migrations(conn):
     # be measured from the go-ahead rather than the quote draft. Backfilled
     # once from the event log — see _backfill_aito_quote_accepted_at.
     _quote_accepted_at_existed = await _column_exists(conn, "aito_projects", "quote_accepted_at")
-    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN quote_accepted_at DATETIME")
+    await _safe_execute(conn, f"ALTER TABLE aito_projects ADD COLUMN quote_accepted_at {_timestamp_type()}")
     if not _quote_accepted_at_existed:
         await _backfill_aito_quote_accepted_at(conn)
 
@@ -6088,13 +6128,13 @@ async def _run_migrations(conn):
     # from the event log — see _backfill_aito_quote_sent_at; the invoice
     # columns start NULL and fill on the sweep's first pass.
     _quote_sent_at_existed = await _column_exists(conn, "aito_projects", "quote_sent_at")
-    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN quote_sent_at DATETIME")
+    await _safe_execute(conn, f"ALTER TABLE aito_projects ADD COLUMN quote_sent_at {_timestamp_type()}")
     if not _quote_sent_at_existed:
         await _backfill_aito_quote_sent_at(conn)
     await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN invoice_status VARCHAR(30)")
     await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN invoice_balance FLOAT")
     await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN invoice_due_date VARCHAR(10)")
-    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN invoice_checked_at DATETIME")
+    await _safe_execute(conn, f"ALTER TABLE aito_projects ADD COLUMN invoice_checked_at {_timestamp_type()}")
     # Migration: the cached invoice's total (2026-10-13 tracking-page amounts).
     # Starts NULL and fills on the sweep's next pass.
     await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN invoice_total FLOAT")
@@ -6339,7 +6379,7 @@ async def _run_migrations(conn):
     # allows 1,000-10,000 requests/day per org; an unconditional comment fetch
     # per poll per project is not affordable.
     await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN zoho_comments_watermark VARCHAR(30)")
-    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN zoho_comments_checked_at DATETIME")
+    await _safe_execute(conn, f"ALTER TABLE aito_projects ADD COLUMN zoho_comments_checked_at {_timestamp_type()}")
 
     # Migration: Aito shipping (Livraison Avion). Six nullable columns; a NULL
     # shipping_island means the project has no shipment. All existing rows
@@ -6370,7 +6410,7 @@ async def _run_migrations(conn):
     # nobody was ever asked, so stamping a contact time would invent a fact
     # and a date. The gate only fires on the Finish -> Done transition, so a
     # legacy Done card stays draggable back to Finish either way.
-    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN client_contacted_at DATETIME")
+    await _safe_execute(conn, f"ALTER TABLE aito_projects ADD COLUMN client_contacted_at {_timestamp_type()}")
 
     # Migration: promised delivery date (2026-09-04). Nullable, so no
     # backfill: an existing card promised nothing.
@@ -6380,15 +6420,20 @@ async def _run_migrations(conn):
     # archive's sort and month grouping. Backfilled once from the event log —
     # see _backfill_aito_done_at.
     _done_at_existed = await _column_exists(conn, "aito_projects", "done_at")
-    await _safe_execute(conn, "ALTER TABLE aito_projects ADD COLUMN done_at DATETIME")
+    await _safe_execute(conn, f"ALTER TABLE aito_projects ADD COLUMN done_at {_timestamp_type()}")
     if not _done_at_existed:
         await _backfill_aito_done_at(conn)
 
     # Migration: the rush surcharge was removed (2026-09-07). Drop the columns
-    # it added on 2026-09-04 where they exist; _safe_execute ignores a DB that
-    # never had them or a SQLite too old for DROP COLUMN.
-    await _safe_execute(conn, "ALTER TABLE calculator_defaults DROP COLUMN rush_pct")
-    await _safe_execute(conn, "ALTER TABLE aito_tasks DROP COLUMN impression_rush")
+    # it added on 2026-09-04 where they exist; _safe_execute ignores a SQLite
+    # that never had them or is too old for DROP COLUMN. PostgreSQL needs IF
+    # EXISTS: a missing column is an error there, not an idempotency case.
+    if _is_pg_conn(conn):
+        await _safe_execute(conn, "ALTER TABLE calculator_defaults DROP COLUMN IF EXISTS rush_pct")
+        await _safe_execute(conn, "ALTER TABLE aito_tasks DROP COLUMN IF EXISTS impression_rush")
+    else:
+        await _safe_execute(conn, "ALTER TABLE calculator_defaults DROP COLUMN rush_pct")
+        await _safe_execute(conn, "ALTER TABLE aito_tasks DROP COLUMN impression_rush")
 
     # Migration: public tracking link token (2026-09-06). Nullable, minted on
     # first use, so no backfill. The unique index is what the public lookup
@@ -6400,13 +6445,15 @@ async def _run_migrations(conn):
     # Migration: tracking page view log (2026-09-06). A row is a card and a
     # timestamp — no IP, no user agent — so it answers "is the page used?"
     # and nothing about who used it.
-    await _safe_execute(
-        conn,
-        "CREATE TABLE IF NOT EXISTS aito_tracking_views ("
-        " id INTEGER PRIMARY KEY AUTOINCREMENT,"
-        " project_id INTEGER NOT NULL,"
-        " viewed_at DATETIME NOT NULL)",
-    )
+    # SQLite DDL (AUTOINCREMENT, DATETIME); PostgreSQL gets aito_tracking_views from create_all.
+    if is_sqlite():
+        await _safe_execute(
+            conn,
+            "CREATE TABLE IF NOT EXISTS aito_tracking_views ("
+            " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+            " project_id INTEGER NOT NULL,"
+            " viewed_at DATETIME NOT NULL)",
+        )
     await _safe_execute(
         conn, "CREATE INDEX IF NOT EXISTS ix_aito_tracking_views_viewed_at ON aito_tracking_views(viewed_at)"
     )
@@ -6430,44 +6477,48 @@ async def _run_migrations(conn):
     # Migration: per-customer payment rating cache (2026-09-22). See
     # models/aito_client_rating.py. A new table, so IF NOT EXISTS is the
     # whole migration — create_all also makes it on a fresh database.
-    await _safe_execute(
-        conn,
-        "CREATE TABLE IF NOT EXISTS aito_client_ratings ("
-        " customer_id VARCHAR(50) PRIMARY KEY,"
-        " tier VARCHAR(10) NOT NULL,"
-        " reason VARCHAR(20) NOT NULL,"
-        " settled_count INTEGER NOT NULL DEFAULT 0,"
-        " on_time_count INTEGER NOT NULL DEFAULT 0,"
-        " overdue_count INTEGER NOT NULL DEFAULT 0,"
-        " past_due_count INTEGER NOT NULL DEFAULT 0,"
-        " worst_overdue_days INTEGER NOT NULL DEFAULT 0,"
-        " worst_overdue_number VARCHAR(50),"
-        " computed_at DATETIME NOT NULL)",
-    )
+    # SQLite DDL (AUTOINCREMENT, DATETIME); PostgreSQL gets aito_client_ratings from create_all.
+    if is_sqlite():
+        await _safe_execute(
+            conn,
+            "CREATE TABLE IF NOT EXISTS aito_client_ratings ("
+            " customer_id VARCHAR(50) PRIMARY KEY,"
+            " tier VARCHAR(10) NOT NULL,"
+            " reason VARCHAR(20) NOT NULL,"
+            " settled_count INTEGER NOT NULL DEFAULT 0,"
+            " on_time_count INTEGER NOT NULL DEFAULT 0,"
+            " overdue_count INTEGER NOT NULL DEFAULT 0,"
+            " past_due_count INTEGER NOT NULL DEFAULT 0,"
+            " worst_overdue_days INTEGER NOT NULL DEFAULT 0,"
+            " worst_overdue_number VARCHAR(50),"
+            " computed_at DATETIME NOT NULL)",
+        )
     # Migration: the rating rework of 2026-09-23 scores companies on their
     # own profile and remembers which one the cached row was scored under.
-    await _safe_execute(conn, "ALTER TABLE aito_client_ratings ADD COLUMN is_company BOOLEAN NOT NULL DEFAULT 0")
-    await _safe_execute(
-        conn,
-        "CREATE TABLE IF NOT EXISTS aito_payment_links ("
-        " id INTEGER PRIMARY KEY AUTOINCREMENT,"
-        " project_id INTEGER NOT NULL,"
-        " idempotency_key VARCHAR(64) NOT NULL UNIQUE,"
-        " heimdall_id VARCHAR(36) UNIQUE,"
-        " reference VARCHAR(64) NOT NULL,"
-        " amount INTEGER NOT NULL,"
-        " currency VARCHAR(3) NOT NULL DEFAULT 'XPF',"
-        " expires_on VARCHAR(10) NOT NULL,"
-        " url VARCHAR(500),"
-        " status VARCHAR(20) NOT NULL DEFAULT 'pending',"
-        " paid_at DATETIME,"
-        " checked_at DATETIME,"
-        " sync_error TEXT,"
-        " sync_failures INTEGER NOT NULL DEFAULT 0,"
-        " superseded_at DATETIME,"
-        " created_at DATETIME DEFAULT CURRENT_TIMESTAMP,"
-        " updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
-    )
+    await _safe_execute(conn, "ALTER TABLE aito_client_ratings ADD COLUMN is_company BOOLEAN NOT NULL DEFAULT FALSE")
+    # SQLite DDL (AUTOINCREMENT, DATETIME); PostgreSQL gets aito_payment_links from create_all.
+    if is_sqlite():
+        await _safe_execute(
+            conn,
+            "CREATE TABLE IF NOT EXISTS aito_payment_links ("
+            " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+            " project_id INTEGER NOT NULL,"
+            " idempotency_key VARCHAR(64) NOT NULL UNIQUE,"
+            " heimdall_id VARCHAR(36) UNIQUE,"
+            " reference VARCHAR(64) NOT NULL,"
+            " amount INTEGER NOT NULL,"
+            " currency VARCHAR(3) NOT NULL DEFAULT 'XPF',"
+            " expires_on VARCHAR(10) NOT NULL,"
+            " url VARCHAR(500),"
+            " status VARCHAR(20) NOT NULL DEFAULT 'pending',"
+            " paid_at DATETIME,"
+            " checked_at DATETIME,"
+            " sync_error TEXT,"
+            " sync_failures INTEGER NOT NULL DEFAULT 0,"
+            " superseded_at DATETIME,"
+            " created_at DATETIME DEFAULT CURRENT_TIMESTAMP,"
+            " updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
+        )
     await _safe_execute(
         conn, "CREATE INDEX IF NOT EXISTS ix_aito_payment_links_project_id ON aito_payment_links(project_id)"
     )
@@ -6476,30 +6527,32 @@ async def _run_migrations(conn):
     # Migration: terminal (TPE) charges started from a project card (2026-09-23).
     # See models/aito_terminal_payment.py. New table: IF NOT EXISTS is the whole
     # migration; create_all makes it on a fresh database.
-    await _safe_execute(
-        conn,
-        "CREATE TABLE IF NOT EXISTS aito_terminal_payments ("
-        " id INTEGER PRIMARY KEY AUTOINCREMENT,"
-        " project_id INTEGER NOT NULL,"
-        " document_kind VARCHAR(10) NOT NULL,"
-        " document_id VARCHAR(50) NOT NULL,"
-        " document_number VARCHAR(64) NOT NULL,"
-        " idempotency_key VARCHAR(64) NOT NULL UNIQUE,"
-        " heimdall_id VARCHAR(36) UNIQUE,"
-        " amount INTEGER NOT NULL,"
-        " amount_confirmed INTEGER,"
-        " status VARCHAR(20) NOT NULL DEFAULT 'pending',"
-        " native_state VARCHAR(30),"
-        " booking_status VARCHAR(20),"
-        " booking_error TEXT,"
-        " zoho_payment_id VARCHAR(50),"
-        " sync_error TEXT,"
-        " created_by VARCHAR(100),"
-        " created_at DATETIME DEFAULT CURRENT_TIMESTAMP,"
-        " checked_at DATETIME,"
-        " settled_at DATETIME,"
-        " updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
-    )
+    # SQLite DDL (AUTOINCREMENT, DATETIME); PostgreSQL gets aito_terminal_payments from create_all.
+    if is_sqlite():
+        await _safe_execute(
+            conn,
+            "CREATE TABLE IF NOT EXISTS aito_terminal_payments ("
+            " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+            " project_id INTEGER NOT NULL,"
+            " document_kind VARCHAR(10) NOT NULL,"
+            " document_id VARCHAR(50) NOT NULL,"
+            " document_number VARCHAR(64) NOT NULL,"
+            " idempotency_key VARCHAR(64) NOT NULL UNIQUE,"
+            " heimdall_id VARCHAR(36) UNIQUE,"
+            " amount INTEGER NOT NULL,"
+            " amount_confirmed INTEGER,"
+            " status VARCHAR(20) NOT NULL DEFAULT 'pending',"
+            " native_state VARCHAR(30),"
+            " booking_status VARCHAR(20),"
+            " booking_error TEXT,"
+            " zoho_payment_id VARCHAR(50),"
+            " sync_error TEXT,"
+            " created_by VARCHAR(100),"
+            " created_at DATETIME DEFAULT CURRENT_TIMESTAMP,"
+            " checked_at DATETIME,"
+            " settled_at DATETIME,"
+            " updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
+        )
     await _safe_execute(
         conn,
         "CREATE INDEX IF NOT EXISTS ix_aito_terminal_payments_project_id ON aito_terminal_payments(project_id)",
@@ -6800,7 +6853,7 @@ async def _run_migrations(conn):
     # Migration: a settled terminal charge whose event/acceptance failed is
     # re-driven by the sweep (2026-09-26). Nullable, no backfill: existing
     # rows read NULL, i.e. nothing owed.
-    await _safe_execute(conn, "ALTER TABLE aito_terminal_payments ADD COLUMN effects_pending_at DATETIME")
+    await _safe_execute(conn, f"ALTER TABLE aito_terminal_payments ADD COLUMN effects_pending_at {_timestamp_type()}")
 
     await _migrate_unlock_retainer_locked_quotes(conn)
 
@@ -6881,6 +6934,14 @@ async def _run_migrations(conn):
     # project_revisions come from create_all.
     await _safe_execute(conn, "ALTER TABLE library_files ADD COLUMN revision_id INTEGER")
     await _safe_execute(conn, "CREATE INDEX IF NOT EXISTS ix_library_files_revision_id ON library_files (revision_id)")
+    if _is_pg_conn(conn):
+        # The model's FK (ondelete SET NULL), which ADD COLUMN cannot carry; SQLite
+        # runs with foreign keys off and cannot add one to an existing table.
+        await _safe_execute(
+            conn,
+            "ALTER TABLE library_files ADD CONSTRAINT library_files_revision_id_fkey "
+            "FOREIGN KEY (revision_id) REFERENCES project_revisions(id) ON DELETE SET NULL",
+        )
 
     # Projects as a PDM, phase 3 (spec §1.6): task -> project link.
     # aito_task_deliveries comes from create_all.
@@ -6906,7 +6967,7 @@ async def _run_migrations(conn):
 
     # Projects as a PDM, phase 5 (File Manager bridge): when a project's legacy
     # printing files were moved into its tree. NULL = not migrated yet.
-    await _safe_execute(conn, "ALTER TABLE projects ADD COLUMN legacy_migrated_at DATETIME")
+    await _safe_execute(conn, f"ALTER TABLE projects ADD COLUMN legacy_migrated_at {_timestamp_type()}")
 
     # Projects as a PDM, phase 6 (spec §12.1): revisions made by Re-trancher
     # record the pipeline. No FK, like the phase 4 columns.
