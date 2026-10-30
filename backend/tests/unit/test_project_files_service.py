@@ -20,7 +20,6 @@ from backend.app.models.project_item import ProjectItem, ProjectRevision
 from backend.app.services import project_files, project_storage
 from backend.app.services.project_files import (
     ProjectFilesError,
-    add_files_to_revision,
     add_revision,
     create_item,
     delete_item,
@@ -334,8 +333,7 @@ async def _mark_used(db, rev):
 @pytest.mark.asyncio
 async def test_add_and_remove_files_on_unused_wip(db_session, root):
     project = await _project(db_session)
-    item, rev = await _rev(db_session, project)
-    await add_files_to_revision(db_session, project, item, rev, [upload("b.step", b"b")], user_id=None)
+    item, rev = await _rev(db_session, project, files=[upload("a.step"), upload("b.step", b"b")])
     files = (await db_session.execute(select(LibraryFile).where(LibraryFile.revision_id == rev.id))).scalars().all()
     assert len(files) == 2
     await remove_file_from_revision(db_session, project, item, rev, files[0].id)
@@ -352,8 +350,10 @@ async def test_used_or_validated_revision_files_are_frozen(db_session, root):
     project = await _project(db_session)
     item, rev = await _rev(db_session, project)
     await update_revision(db_session, project, rev, fields={"status": "valide"}, user_id=None)
-    with pytest.raises(ProjectFilesError):
-        await add_files_to_revision(db_session, project, item, rev, [upload("c.step")], user_id=None)
+    file_id = (await db_session.execute(select(LibraryFile.id).where(LibraryFile.revision_id == rev.id))).scalar_one()
+    with pytest.raises(ProjectFilesError) as frozen:
+        await remove_file_from_revision(db_session, project, item, rev, file_id)
+    assert (frozen.value.status_code, frozen.value.detail) == (409, "Only an in-progress revision can change its files")
     item2, rev2 = await _rev(db_session, project, name="Autre")
     await _mark_used(db_session, rev2)
     with pytest.raises(ProjectFilesError) as used:
@@ -1469,29 +1469,6 @@ async def test_delete_item_stays_trashed_when_the_commit_task_is_cancelled_at_sh
 
 
 @pytest.mark.asyncio
-async def test_add_files_keeps_files_when_the_commit_task_is_cancelled_at_shutdown(
-    db_session, root, monkeypatch, test_engine
-):
-    project = await _project(db_session)
-    item, rev = await _rev(db_session, project)
-    await db_session.commit()
-    base, rev_id = root / project.storage_dir, rev.id
-    in_flight, release, started = _commit_task_cancelled_at_shutdown(db_session, monkeypatch)
-    await _shutdown_mid_commit(
-        add_files_to_revision(db_session, project, item, rev, [upload("b.step", b"b")], user_id=None),
-        in_flight,
-        release,
-        started,
-    )
-    names = await _fresh_scalars(test_engine, select(LibraryFile.filename).where(LibraryFile.revision_id == rev_id))
-    assert sorted(names) == ["a.step", "b.step"]
-    folder = base / "Modélisation" / "Support" / "R1"
-    assert sorted(p.name for p in folder.iterdir()) == ["a.step", "b.step"]
-    assert (folder / "a.step").read_bytes() == b"data"
-    assert (folder / "b.step").read_bytes() == b"b"  # no cleanup: the committed row still points at its bytes
-
-
-@pytest.mark.asyncio
 async def test_rename_item_keeps_the_new_folder_when_the_commit_task_is_cancelled_at_shutdown(
     db_session, root, monkeypatch, test_engine
 ):
@@ -1542,88 +1519,6 @@ async def test_fork_keeps_the_copied_files_when_the_commit_task_is_cancelled_at_
     copied_thumb = to_absolute_path(rows[0].thumbnail_path)
     assert copied_thumb is not None and copied_thumb.parent == thumbs and copied_thumb.is_file()
     assert len(list(thumbs.iterdir())) == 2  # no cleanup: the source's thumbnail and the copy's own
-
-
-@pytest.mark.asyncio
-async def test_add_files_commit_failure_rolls_back_and_removes_the_written_files(db_session, root, monkeypatch):
-    project = await _project(db_session)
-    item, rev = await _rev(db_session, project)
-    base, item_id, rev_id = root / project.storage_dir, item.id, rev.id
-    before = (await db_session.execute(select(LibraryFile.id).where(LibraryFile.revision_id == rev_id))).scalars().all()
-    folder = base / "Modélisation" / "Support" / "R1"
-    seen_on_disk = []
-    real_rollback = db_session.rollback
-    rolled_back = []
-
-    async def boom():
-        seen_on_disk.append(sorted(p.name for p in folder.iterdir()))
-        raise RuntimeError("db down")
-
-    async def rollback():
-        rolled_back.append(True)
-        await real_rollback()
-
-    monkeypatch.setattr(db_session, "commit", boom)
-    monkeypatch.setattr(db_session, "rollback", rollback)
-    with pytest.raises(RuntimeError, match="db down"):
-        await add_files_to_revision(db_session, project, item, rev, [upload("b.step", b"b")], user_id=None)
-
-    assert seen_on_disk == [["a.step", "b.step"]]  # the file was written before the commit failed
-    assert rolled_back == [True]
-    assert sorted(p.name for p in folder.iterdir()) == ["a.step"]  # and removed again
-    after = (await db_session.execute(select(LibraryFile.id).where(LibraryFile.revision_id == rev_id))).scalars().all()
-    assert after == before
-    assert (await db_session.execute(select(ProjectItem.id).where(ProjectItem.id == item_id))).scalar_one() == item_id
-
-
-@pytest.mark.asyncio
-async def test_add_files_keeps_files_when_a_cancelled_commit_lands(db_session, root, monkeypatch, test_engine):
-    project = await _project(db_session)
-    item, rev = await _rev(db_session, project)
-    await db_session.commit()
-    base, rev_id = root / project.storage_dir, rev.id
-    in_flight, release = _commit_outlives_cancel(db_session, monkeypatch)
-    await _cancel_mid_commit(
-        add_files_to_revision(db_session, project, item, rev, [upload("b.step", b"b")], user_id=None),
-        in_flight,
-        release,
-    )
-    names = await _fresh_scalars(test_engine, select(LibraryFile.filename).where(LibraryFile.revision_id == rev_id))
-    assert sorted(names) == ["a.step", "b.step"]
-    folder = base / "Modélisation" / "Support" / "R1"
-    assert (folder / "a.step").read_bytes() == b"data"
-    assert (folder / "b.step").read_bytes() == b"b"  # the committed row still points at its bytes
-
-
-@pytest.mark.asyncio
-async def test_add_files_cleans_up_when_a_cancelled_commit_fails(db_session, root, monkeypatch, test_engine):
-    project = await _project(db_session)
-    item, rev = await _rev(db_session, project)
-    await db_session.commit()
-    base, rev_id = root / project.storage_dir, rev.id
-    in_flight, release = _commit_outlives_cancel(db_session, monkeypatch, fails=True)
-    await _cancel_mid_commit(
-        add_files_to_revision(db_session, project, item, rev, [upload("b.step", b"b")], user_id=None),
-        in_flight,
-        release,
-    )
-    names = await _fresh_scalars(test_engine, select(LibraryFile.filename).where(LibraryFile.revision_id == rev_id))
-    assert names == ["a.step"]
-    assert sorted(p.name for p in (base / "Modélisation" / "Support" / "R1").iterdir()) == ["a.step"]
-
-
-@pytest.mark.asyncio
-async def test_add_files_cleans_up_when_cancelled_before_the_commit(db_session, root, monkeypatch, test_engine):
-    project = await _project(db_session)
-    item, rev = await _rev(db_session, project)
-    await db_session.commit()
-    base, rev_id = root / project.storage_dir, rev.id
-    await _cancelled_before_commit(db_session, monkeypatch)
-    with pytest.raises(asyncio.CancelledError):
-        await add_files_to_revision(db_session, project, item, rev, [upload("b.step", b"b")], user_id=None)
-    names = await _fresh_scalars(test_engine, select(LibraryFile.filename).where(LibraryFile.revision_id == rev_id))
-    assert names == ["a.step"]
-    assert sorted(p.name for p in (base / "Modélisation" / "Support" / "R1").iterdir()) == ["a.step"]
 
 
 @pytest.mark.asyncio
@@ -2668,32 +2563,11 @@ async def test_revision_writes_refuse_an_empty_file_list(db_session, root):
     with pytest.raises(ProjectFilesError) as no_source:
         await project_files.add_revision_from_sources(db_session, project, item, [], note=None, user_id=None)
     assert (no_source.value.status_code, no_source.value.detail) == (400, "A revision needs at least one file")
-    with pytest.raises(ProjectFilesError) as no_file:
-        await add_files_to_revision(db_session, project, item, rev, [], user_id=None)
-    assert (no_file.value.status_code, no_file.value.detail) == (400, "No file")
 
     numbers = (await db_session.execute(select(ProjectRevision.number))).scalars().all()
     assert numbers == [1]  # no R2 was created
     assert len((await db_session.execute(select(LibraryFile))).scalars().all()) == 1
     assert sorted(p.relative_to(folder).as_posix() for p in folder.rglob("*")) == before
-
-
-@pytest.mark.asyncio
-async def test_adding_files_to_a_used_wip_revision_is_refused(db_session, root):
-    project = await _project(db_session)
-    item, rev = await _rev(db_session, project)
-    await _mark_used(db_session, rev)
-    folder = project_storage.item_dir(project, item.section, item.name) / "R1"
-
-    with pytest.raises(ProjectFilesError) as used:
-        await add_files_to_revision(db_session, project, item, rev, [upload("b.step", b"b")], user_id=None)
-    assert (used.value.status_code, used.value.detail) == (
-        409,
-        "This revision was printed or delivered; make a new revision instead",
-    )
-    assert sorted(p.name for p in folder.iterdir()) == ["a.step"]
-    files = (await db_session.execute(select(LibraryFile.filename).where(LibraryFile.revision_id == rev.id))).all()
-    assert [f.filename for f in files] == ["a.step"]
 
 
 @pytest.mark.asyncio
@@ -2998,27 +2872,6 @@ async def test_reuse_row_changed_during_copy_is_refused(test_engine, tmp_path, m
 
 
 @pytest.mark.asyncio
-async def test_add_files_to_revision_writes_nothing_to_the_db_before_streaming_finishes(db_session, root, monkeypatch):
-    project = await _project(db_session)
-    item, rev = await _rev(db_session, project)
-    await db_session.commit()
-    real = project_files._stream_files
-    seen = {}
-
-    async def spy(folder, uploads):
-        seen["new"] = list(db_session.new)
-        seen["dirty"] = list(db_session.dirty)
-        seen["deleted"] = list(db_session.deleted)
-        return await real(folder, uploads)
-
-    monkeypatch.setattr(project_files, "_stream_files", spy)
-    await add_files_to_revision(db_session, project, item, rev, [upload("b.step", b"b")], user_id=None)
-    assert seen == {"new": [], "dirty": [], "deleted": []}
-    files = (await db_session.execute(select(LibraryFile).where(LibraryFile.revision_id == rev.id))).scalars().all()
-    assert len(files) == 2
-
-
-@pytest.mark.asyncio
 async def test_add_revision_from_sources_writes_nothing_to_the_db_while_copying(
     db_session, root, tmp_path, monkeypatch
 ):
@@ -3097,24 +2950,6 @@ async def test_add_revision_classifies_files_before_the_db_step(db_session, root
     assert calls == [("plate.3mf", False), ("a.step", False)]
     files = (await db_session.execute(select(LibraryFile).where(LibraryFile.revision_id == rev.id))).scalars().all()
     assert sorted((f.filename, f.file_type) for f in files) == [("a.step", "step"), ("plate.3mf", "gcode.3mf")]
-
-
-@pytest.mark.asyncio
-async def test_add_files_to_revision_classifies_files_before_the_db_step(db_session, root, monkeypatch):
-    project = await _project(db_session)
-    item, rev = await _rev(db_session, project)
-    await db_session.commit()
-    calls = _classify_during_write_spy(monkeypatch, "_stream_files")
-    await add_files_to_revision(
-        db_session, project, item, rev, [upload("b.3mf", _sliced_3mf_bytes()), upload("c.stl", b"x")], user_id=None
-    )
-    assert calls == [("b.3mf", False), ("c.stl", False)]
-    files = (await db_session.execute(select(LibraryFile).where(LibraryFile.revision_id == rev.id))).scalars().all()
-    assert sorted((f.filename, f.file_type) for f in files) == [
-        ("a.step", "step"),
-        ("b.3mf", "gcode.3mf"),
-        ("c.stl", "stl"),
-    ]
 
 
 @pytest.mark.asyncio
@@ -3611,3 +3446,90 @@ async def test_fork_removes_its_copies_and_folders_even_when_the_rollback_fails(
     assert rollbacks == ["rollback"]
     assert not (base / "Copie").exists()
     assert (base / "Support" / "R1" / "a.step").exists()  # the source is untouched
+
+
+def test_require_printable_uploads_names_every_refused_file():
+    project_files.require_printable_uploads(
+        [upload("ok.3mf"), upload("p.gcode"), upload("q.BGCODE")]
+    )  # nothing refused, no error
+    with pytest.raises(ProjectFilesError) as refused:
+        project_files.require_printable_uploads([upload("a.3mf"), upload("plan.pdf"), upload("mesh.stl")])
+    assert (refused.value.status_code, refused.value.detail) == (
+        400,
+        "Projects only accept printing files (.3mf, .gcode, .bgcode); refused: plan.pdf, mesh.stl",
+    )
+
+
+async def _used_once_deleted(monkeypatch) -> list[int]:
+    """``_deleted_revision_is_used`` answers True: a use only the post-delete re-check sees."""
+    seen: list[int] = []
+
+    async def used(_db, revision_id, _file_ids):
+        seen.append(revision_id)
+        return True
+
+    monkeypatch.setattr(project_files, "_deleted_revision_is_used", used)
+    return seen
+
+
+@pytest.mark.asyncio
+async def test_delete_revision_refuses_a_use_seen_only_by_the_post_delete_recheck(
+    db_session, root, monkeypatch, test_engine
+):
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project)
+    await db_session.commit()
+    base, rev_id = root / project.storage_dir, rev.id
+    seen = await _used_once_deleted(monkeypatch)
+    with pytest.raises(ProjectFilesError) as exc:
+        await delete_revision(db_session, project, item, rev)
+    assert seen == [rev_id]
+    assert (exc.value.status_code, exc.value.detail) == (
+        409,
+        "This revision was printed or delivered and cannot be deleted",
+    )
+    assert await _fresh_scalars(test_engine, select(ProjectRevision.id).where(ProjectRevision.id == rev_id)) == [rev_id]
+    assert (base / "Modélisation" / "Support" / "R1" / "a.step").read_bytes() == b"data"
+    assert _trash_entries(base) == []
+
+
+@pytest.mark.asyncio
+async def test_delete_item_refuses_a_use_seen_only_by_the_post_delete_recheck(
+    db_session, root, monkeypatch, test_engine
+):
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project)
+    await db_session.commit()
+    base, item_id, rev_id = root / project.storage_dir, item.id, rev.id
+    seen = await _used_once_deleted(monkeypatch)
+    with pytest.raises(ProjectFilesError) as exc:
+        await delete_item(db_session, project, item)
+    assert seen == [rev_id]
+    assert (exc.value.status_code, exc.value.detail) == (
+        409,
+        "A revision of this item was printed or delivered; the item cannot be deleted",
+    )
+    assert await _fresh_scalars(test_engine, select(ProjectItem.id).where(ProjectItem.id == item_id)) == [item_id]
+    assert (base / "Modélisation" / "Support" / "R1" / "a.step").read_bytes() == b"data"
+    assert _trash_entries(base) == []
+
+
+@pytest.mark.asyncio
+async def test_removing_a_file_from_a_used_wip_revision_is_refused(db_session, root):
+    project = await _project(db_session)
+    item, rev = await _rev(db_session, project, files=[upload("a.step"), upload("b.step", b"b")])
+    await _mark_used(db_session, rev)
+    folder = project_storage.item_dir(project, item.section, item.name) / "R1"
+    file_id = (
+        (await db_session.execute(select(LibraryFile.id).where(LibraryFile.revision_id == rev.id))).scalars().first()
+    )
+
+    with pytest.raises(ProjectFilesError) as used:
+        await remove_file_from_revision(db_session, project, item, rev, file_id)
+    assert (used.value.status_code, used.value.detail) == (
+        409,
+        "This revision was printed or delivered; make a new revision instead",
+    )
+    assert sorted(p.name for p in folder.iterdir()) == ["a.step", "b.step"]
+    files = (await db_session.execute(select(LibraryFile.filename).where(LibraryFile.revision_id == rev.id))).all()
+    assert sorted(f.filename for f in files) == ["a.step", "b.step"]

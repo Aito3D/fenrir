@@ -181,7 +181,6 @@ client method — and fails the iteration unless the user approved it.
 ```regen: grep -hE '^(def|class|async def) [a-zA-Z]' backend/app/api/routes/projects_pdm.py backend/app/api/routes/project_files.py backend/app/api/routes/aito_project_links.py backend/app/api/routes/projects.py backend/app/services/project_*.py backend/app/services/aito_project_links.py | sed 's/) *->.*/)/; s/:$//' | sort```
 ```
 async def add_archives_to_project(
-async def add_files_to_revision(
 async def add_files(
 async def add_queue_items_to_project(
 async def add_revision_from_sources(

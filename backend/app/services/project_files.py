@@ -1184,40 +1184,6 @@ async def _require_files_still_editable(db: AsyncSession, revision_id: int, file
         raise ProjectFilesError(409, _USED_NOT_EDITABLE)
 
 
-async def add_files_to_revision(
-    db: AsyncSession,
-    project: Project,
-    item: ProjectItem,
-    revision: ProjectRevision,
-    uploads: list[UploadFile],
-    user_id: int | None,
-) -> list[DuplicateWarning]:
-    if not uploads:
-        raise ProjectFilesError(400, "No file")
-    async with _item_lock(item.id):
-        item = await fresh_item(db, item.id)
-        revision = await _fresh_revision(db, revision.id, item.id)
-        await _require_editable_files(db, revision)
-        item_id, section, name = item.id, item.section, item.name
-        await _claim_storage_dir(db, project)
-        folder = revision_dir(project, section, name, revision.number)
-        written: list[_WrittenFile] = []
-
-        async def undo() -> None:
-            await db.rollback()
-            _cleanup_written(written)
-
-        async with _CommitGuard(db, undo, label=f"files added to revision {revision.id}") as commit:
-            written = await _stream_files(folder, uploads)
-            await _require_item_unchanged(db, item_id, section, name)
-            # the revision may have been validated or used while streaming
-            await _require_editable_files(db, await _fresh_revision(db, revision.id, item_id))
-            rows = await _add_file_rows(db, project, revision, written, user_id)
-            warnings = await _duplicate_warnings(db, item, revision, rows)
-            await commit()
-        return warnings
-
-
 async def _delete_file_rows(
     db: AsyncSession, *, file_ids: list[int] | None = None, revision_ids: list[int] | None = None
 ) -> list[int]:

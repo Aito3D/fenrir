@@ -46,9 +46,9 @@ describe('failure toast pins', () => {
     [new Error('too big'), 'Upload failed: too big'],
     [42, 'Upload failed: '],
   ])('useFileActions run (upload key) with %s', async (err, text) => {
-    vi.spyOn(api, 'addProjectRevisionFiles').mockRejectedValue(err);
+    vi.spyOn(api, 'uploadProjectRevision').mockRejectedValue(err);
     const { result } = renderHook(() => useFileActions(7), { wrapper });
-    await act(() => result.current.addFiles(20, 3, [new File(['x'], 'a.3mf')]));
+    await act(() => result.current.uploadRevision(20, [new File(['x'], 'a.3mf')]));
     expect(showToast.mock.calls).toEqual([[text, 'error']]);
   });
 

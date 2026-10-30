@@ -5550,14 +5550,6 @@
                 }
             },
             {
-                "code": "reportPossiblyUnboundVariable",
-                "range": {
-                    "startColumn": 15,
-                    "endColumn": 23,
-                    "lineCount": 1
-                }
-            },
-            {
                 "code": "reportIncompatibleMethodOverride",
                 "range": {
                     "startColumn": 14,

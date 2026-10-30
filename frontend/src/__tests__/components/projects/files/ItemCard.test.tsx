@@ -201,6 +201,17 @@ describe('ItemCard', () => {
     expect(vi.mocked(openInSlicer).mock.calls[0][1]).toBe('orcaslicer');
   });
 
+  it('Open in slicer still opens the default desktop slicer when the settings cannot be read', async () => {
+    server.use(http.get('/api/v1/settings/', () => HttpResponse.json({ detail: 'down' }, { status: 500 })));
+    render(<Harness value={bracket()} />);
+    await userEvent.click(within(card()).getByRole('button', { name: 'Open in slicer' }));
+    await waitFor(() => expect(openInSlicer).toHaveBeenCalledTimes(1));
+    expect(calls).toEqual(['token:51']);
+    const [url, slicer] = vi.mocked(openInSlicer).mock.calls[0];
+    expect(url).toBe(`${window.location.origin}/api/v1/library/files/51/dl/tok/bracket.3mf`);
+    expect(slicer).toBe('bambu_studio');
+  });
+
   it('Open in slicer toasts a refused token and falls back to the plain download URL', async () => {
     server.use(http.post('/api/v1/library/files/:id/slicer-token', () => HttpResponse.json({ detail: 'no' }, { status: 403 })));
     render(<Harness value={bracket()} />);
